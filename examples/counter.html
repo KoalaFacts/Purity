@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Purity — Counter Example</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: #f8f9fa;
+      color: #212529;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 2rem;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      text-align: center;
+      min-width: 300px;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 1rem; color: #6c5ce7; }
+    .count { font-size: 3rem; font-weight: 700; margin: 1rem 0; }
+    .parity { font-size: 0.9rem; color: #868e96; margin-bottom: 1.5rem; }
+    .buttons { display: flex; gap: 0.5rem; justify-content: center; }
+    button {
+      padding: 0.5rem 1.5rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      background: #6c5ce7;
+      color: white;
+      transition: background 0.15s;
+    }
+    button:hover { background: #5a4bd1; }
+    button.secondary { background: #dee2e6; color: #495057; }
+    button.secondary:hover { background: #ced4da; }
+    .items { margin-top: 1.5rem; text-align: left; }
+    .items li {
+      padding: 0.3rem 0;
+      border-bottom: 1px solid #f1f3f5;
+      list-style: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import {
+      state, computed, effect,
+      html, mount, show, each,
+      onMount, onDestroy,
+    } from '../src/index.js';
+
+    function Counter() {
+      const count = state(0);
+      const doubled = computed(() => count() * 2);
+      const parity = computed(() => count() % 2 === 0 ? 'even' : 'odd');
+      const items = state([]);
+
+      onMount(() => {
+        console.log('Counter mounted!');
+      });
+
+      onDestroy(() => {
+        console.log('Counter destroyed!');
+      });
+
+      const increment = () => count(count() + 1);
+      const decrement = () => count(count() - 1);
+      const reset = () => { count(0); items([]); };
+      const addItem = () => {
+        items([...items(), `Item #${count()}`]);
+      };
+
+      return html`
+        <div class="card">
+          <h1>Purity Counter</h1>
+
+          <div class="count">${() => count()}</div>
+          <div class="parity">
+            ${() => parity()} &middot; doubled: ${() => doubled()}
+          </div>
+
+          <div class="buttons">
+            <button @click=${decrement}>-1</button>
+            <button @click=${increment}>+1</button>
+            <button class="secondary" @click=${reset}>Reset</button>
+            <button class="secondary" @click=${addItem}>Add Item</button>
+          </div>
+
+          ${show(
+            () => count() > 5,
+            () => html`<p style="margin-top:1rem;color:#e17055;">Count is over 5!</p>`
+          )}
+
+          ${show(
+            () => items().length > 0,
+            () => html`
+              <ul class="items">
+                ${each(items, (item) => html`<li>${item}</li>`)}
+              </ul>
+            `
+          )}
+        </div>
+      `;
+    }
+
+    mount(Counter, document.getElementById('app'));
+  </script>
+</body>
+</html>

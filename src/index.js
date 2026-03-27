@@ -1,0 +1,25 @@
+// ---------------------------------------------------------------------------
+// Purity — a minimal, lightweight, super performant web framework
+//           built on native signals.
+// ---------------------------------------------------------------------------
+
+// Reactive primitives
+export { state, computed, effect, batch, Signal } from './signals.js';
+
+// Tagged template rendering
+export { html } from './render.js';
+
+// Component system & lifecycle hooks
+export {
+  mount,
+  onBeforeMount,
+  onMount,
+  onBeforeUpdate,
+  onUpdate,
+  onBeforeDestroy,
+  onDestroy,
+  onError,
+} from './component.js';
+
+// Template helpers
+export { show, each } from './helpers.js';

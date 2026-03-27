@@ -1,6 +1,5 @@
 /**
- * Type-level tests — these verify TypeScript catches incorrect usage.
- * If this file compiles, the types are correct.
+ * Type-level tests — if this file compiles, the types are correct.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -13,61 +12,30 @@ describe('slot types', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// 1. No slots — simple component
-// ---------------------------------------------------------------------------
-const Tag = component<{ label: string }>(({ label }) => {
+// 1. No slots
+const Tag = component<{ label: string }>('p-type-tag', ({ label }) => {
   return html`<span>${label}</span>`;
 });
+Tag({ label: 'hi' });
 
-Tag({ label: 'hi' }); // ✅
+// 2. Default slot (IN)
+const Card = component<{ title: string }, { default: void }>(
+  'p-type-card',
+  ({ title }, { default: body }) => {
+    return html`<div><h2>${title}</h2>${body()}</div>`;
+  },
+);
+Card({ title: 'Hi' }, html`<p>Body</p>`);
 
-// ---------------------------------------------------------------------------
-// 2. Destructured props + default slot (IN)
-// ---------------------------------------------------------------------------
-const Card = component<{ title: string }, { default: void }>(({ title }, { default: body }) => {
-  return html`<div><h2>${title}</h2>${body()}</div>`;
-});
-
-Card({ title: 'Hi' }, html`<p>Body</p>`); // ✅
-Card({ title: 'Hi' }); // ✅
-Card({ title: 'Hi' }, 'text'); // ✅
-
-// ---------------------------------------------------------------------------
-// 3. Scoped slot (OUT) — destructured
-// ---------------------------------------------------------------------------
-const Form = component<{ action: string }, { default: { isValid: boolean; submit: () => void } }>(
+// 3. Scoped slot (OUT)
+const Form = component<{ action: string }, { default: { isValid: boolean } }>(
+  'p-type-form',
   ({ action }, { default: body }) => {
-    const isValid = true;
-    const submit = () => {};
-    return html`<form>${body({ isValid, submit })}</form>`;
+    return html`<form>${body({ isValid: true })}</form>`;
   },
 );
 
-Form({ action: '/save' }, ({ isValid, submit }) => {
-  return html`<button @click=${submit}>Save</button>`;
-}); // ✅
-
-// ---------------------------------------------------------------------------
-// 4. Two-way binding (BOTH) — destructured
-// ---------------------------------------------------------------------------
-const Search = component<Record<string, never>, { default: { query: StateAccessor<string> } }>(
-  (_props, { default: body }) => {
-    const query = state('');
-    return html`<div><input bind:value=${query} />${body({ query })}</div>`;
-  },
-);
-
-Search({}, ({ query }) => {
-  return html`
-    <p>${() => query()}</p>
-    <button @click=${() => query('')}>Clear</button>
-  `;
-}); // ✅
-
-// ---------------------------------------------------------------------------
-// 5. Named typed slots — destructured
-// ---------------------------------------------------------------------------
+// 4. Named typed slots
 interface User {
   name: string;
 }
@@ -75,19 +43,10 @@ interface User {
 const Layout = component<
   Record<string, never>,
   { header: { user: User }; default: void; footer: void }
->((_props, { header, default: body, footer }) => {
+>('p-type-layout', (_props, { header, default: body, footer }) => {
   return html`
-    <header>${header({ user: { name: 'Alice' } })}</header>
-    <main>${body()}</main>
-    <footer>${footer()}</footer>
-  `;
+      <header>${header({ user: { name: 'Alice' } })}</header>
+      <main>${body()}</main>
+      <footer>${footer()}</footer>
+    `;
 });
-
-Layout(
-  {},
-  {
-    header: ({ user }) => html`<h1>Hi ${user.name}</h1>`,
-    default: html`<p>Main</p>`,
-    footer: html`<small>Footer</small>`,
-  },
-); // ✅

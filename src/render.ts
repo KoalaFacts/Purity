@@ -4,7 +4,7 @@ import { watch } from './signals.js';
 // Types
 // ---------------------------------------------------------------------------
 
-type AttrType = 'event' | 'bool' | 'prop' | 'bind' | 'attr';
+type AttrType = 'event' | 'bool' | 'prop' | 'bind' | 'reactive-prop' | 'attr';
 
 interface AttrBinding {
   index: number;
@@ -88,7 +88,7 @@ function buildTemplate(strings: TemplateStringsArray): CachedTemplate {
 function detectAttribute(htmlStr: string): AttrInfo | null {
   const stripped = htmlStr.trimEnd();
 
-  const match = stripped.match(/(?:^|[\s])([.?@]?[a-zA-Z_][\w.:-]*)=(?:["']?)$/);
+  const match = stripped.match(/(?:^|[\s])([.?@:]?[a-zA-Z_][\w.:-]*)=(?:["']?)$/);
 
   if (!match) return null;
 
@@ -108,6 +108,9 @@ function detectAttribute(htmlStr: string): AttrInfo | null {
   } else if (fullName.startsWith('bind:')) {
     type = 'bind';
     name = fullName.slice(5);
+  } else if (fullName.startsWith(':')) {
+    type = 'reactive-prop';
+    name = fullName.slice(1);
   }
 
   const attrStart = stripped.lastIndexOf(`${fullName}=`);
@@ -213,7 +216,11 @@ function processAttributeValue(el: HTMLElement, binding: AttrBinding, value: unk
 
   if (type === 'event') {
     if (typeof value === 'function') {
+      // Standard DOM event listener
       el.addEventListener(name, value as EventListener);
+      // Also store as property for custom element prop resolution
+      // e.g. @saved → __purity_event_saved, component reads it as onSaved
+      (el as any)[`__purity_event_${name}`] = value;
     }
     return;
   }
@@ -286,6 +293,25 @@ function processAttributeValue(el: HTMLElement, binding: AttrBinding, value: unk
           accessor(prop);
         });
       }
+    }
+    return;
+  }
+
+  if (type === 'reactive-prop') {
+    // :propName=${value} — set as JS property, reactive if function
+    // Works on native elements AND custom elements
+    // Store in _props for custom element connectedCallback
+    if ((el as any)._props) {
+      (el as any)._props[name] = value;
+    }
+    if (typeof value === 'function') {
+      watch(() => {
+        const v = (value as () => unknown)();
+        (el as any)[name] = v;
+        if ((el as any)._props) (el as any)._props[name] = v;
+      });
+    } else {
+      (el as any)[name] = value;
     }
     return;
   }

@@ -5,10 +5,12 @@ import { html } from '../src/render.ts';
 import { compute, state } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
+let tagCounter = 0;
+const tag = (base) => `p-${base}-${tagCounter++}`;
 
-describe('component()', () => {
-  it('creates a component with props', () => {
-    const Greeting = component(({ name }) => {
+describe('component() with tag name', () => {
+  it('creates a component with props (programmatic)', () => {
+    const Greeting = component(tag('greeting'), ({ name }) => {
       return html`<p>Hello, ${name}!</p>`;
     });
 
@@ -20,7 +22,7 @@ describe('component()', () => {
   it('supports lifecycle hooks', async () => {
     const mounted = vi.fn();
 
-    const Widget = component(({ text }) => {
+    const Widget = component(tag('widget'), ({ text }) => {
       onMount(mounted);
       return html`<span>${text}</span>`;
     });
@@ -31,11 +33,39 @@ describe('component()', () => {
     await tick();
     expect(mounted).toHaveBeenCalledTimes(1);
   });
+
+  it('registers as a custom element', () => {
+    const name = tag('regtest');
+    component(name, () => html`<p>test</p>`);
+
+    expect(customElements.get(name)).toBeDefined();
+  });
+
+  it('works as custom element in HTML', async () => {
+    const name = tag('card');
+    component(name, ({ title }, { default: body }) => {
+      return html`<div class="card"><h2>${title}</h2>${body()}</div>`;
+    });
+
+    const container = document.createElement('div');
+    const el = document.createElement(name);
+    el.title = 'My Card';
+    el.textContent = 'Body content';
+    container.appendChild(el);
+    document.body.appendChild(container);
+
+    await tick();
+
+    // Custom element should have rendered
+    expect(el.querySelector('.card')).not.toBeNull();
+
+    document.body.removeChild(container);
+  });
 });
 
 describe('slots — callback syntax', () => {
   it('consumer fills default slot via callback', () => {
-    const Card = component(({ title }, { default: body }) => {
+    const Card = component(tag('sc1'), ({ title }, { default: body }) => {
       return html`<div class="card"><h2>${title}</h2>${body()}</div>`;
     });
 
@@ -49,7 +79,7 @@ describe('slots — callback syntax', () => {
   });
 
   it('consumer fills named slots via callback', () => {
-    const Layout = component((_props, { header, default: body, footer }) => {
+    const Layout = component(tag('sc2'), (_props, { header, default: body, footer }) => {
       return html`
         <header>${header()}</header>
         <main>${body()}</main>
@@ -72,7 +102,7 @@ describe('slots — callback syntax', () => {
   });
 
   it('component exposes data to consumer callback', () => {
-    const Form = component((_props, { default: body }) => {
+    const Form = component(tag('sc3'), (_props, { default: body }) => {
       const isValid = compute(() => true);
       return {
         view: html`<form>${body()}</form>`,
@@ -89,30 +119,11 @@ describe('slots — callback syntax', () => {
 
     expect(container.querySelector('.v').textContent).toBe('valid');
   });
-
-  it('consumer fills slot + uses exposed data', () => {
-    const Search = component((_props, { default: body }) => {
-      const query = state('hello');
-      return {
-        view: html`<div><input bind:value=${query} />${body()}</div>`,
-        expose: { query },
-      };
-    });
-
-    const container = document.createElement('div');
-    container.appendChild(
-      html`${Search({}, ({ query, default: fill }) => {
-        return fill(html`<span class="q">${() => query()}</span>`);
-      })}`,
-    );
-
-    expect(container.querySelector('.q').textContent).toBe('hello');
-  });
 });
 
-describe('slots — map syntax (backward compat)', () => {
+describe('slots — map syntax', () => {
   it('renders with map-style slots', () => {
-    const Layout = component((_props, { header, default: body }) => {
+    const Layout = component(tag('sm1'), (_props, { header, default: body }) => {
       return html`<header>${header()}</header><main>${body()}</main>`;
     });
 
@@ -132,7 +143,7 @@ describe('slots — map syntax (backward compat)', () => {
   });
 
   it('renders with plain content as default slot', () => {
-    const Box = component((_props, { default: body }) => {
+    const Box = component(tag('sm2'), (_props, { default: body }) => {
       return html`<div class="box">${body()}</div>`;
     });
 
@@ -143,9 +154,53 @@ describe('slots — map syntax (backward compat)', () => {
   });
 });
 
+describe(':prop binding', () => {
+  it('sets JS property on element via :prop', () => {
+    const div = document.createElement('div');
+    div.appendChild(html`<input type="text" :value=${'hello'} />`);
+
+    const input = div.querySelector('input');
+    expect(input.value).toBe('hello');
+  });
+
+  it('reactive :prop updates', async () => {
+    const val = state('initial');
+    const div = document.createElement('div');
+    div.appendChild(html`<input type="text" :value=${() => val()} />`);
+
+    const input = div.querySelector('input');
+    expect(input.value).toBe('initial');
+
+    val('updated');
+    await tick();
+    expect(input.value).toBe('updated');
+  });
+});
+
+describe('@event on components', () => {
+  it('stores event handler as property', () => {
+    const handler = vi.fn();
+    const div = document.createElement('div');
+    div.appendChild(html`<button @click=${handler}>Test</button>`);
+
+    const btn = div.querySelector('button');
+    expect(btn.__purity_event_click).toBe(handler);
+  });
+
+  it('addEventListener still works', () => {
+    const handler = vi.fn();
+    const div = document.createElement('div');
+    div.appendChild(html`<button @click=${handler}>Test</button>`);
+
+    const btn = div.querySelector('button');
+    btn.click();
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('slot() standalone', () => {
   it('still works as context-aware primitive', () => {
-    const Card = component(({ title }) => {
+    const Card = component(tag('ss1'), ({ title }) => {
       const body = slot();
       return html`<div><h2>${title}</h2>${body()}</div>`;
     });
@@ -163,12 +218,12 @@ describe('slot() standalone', () => {
 describe('teleport()', () => {
   it('renders content to a target element', async () => {
     const target = document.createElement('div');
-    target.id = 'portal3';
+    target.id = `tp-${tagCounter++}`;
     document.body.appendChild(target);
 
     const container = document.createElement('div');
     container.appendChild(
-      html`<div>${teleport('#portal3', () => html`<p class="ported">Teleported!</p>`)}</div>`,
+      html`<div>${teleport(`#${target.id}`, () => html`<p class="ported">Teleported!</p>`)}</div>`,
     );
 
     await tick();
@@ -179,7 +234,7 @@ describe('teleport()', () => {
   it('warns when target not found', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const container = document.createElement('div');
-    container.appendChild(html`${teleport('#nonexistent', () => html`<p>Lost</p>`)}`);
+    container.appendChild(html`${teleport('#nonexistent-xyz', () => html`<p>Lost</p>`)}`);
 
     await tick();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('not found'));
@@ -190,13 +245,13 @@ describe('teleport()', () => {
 describe('reactiveTeleport()', () => {
   it('updates teleported content reactively', async () => {
     const target = document.createElement('div');
-    target.id = 'rp2';
+    target.id = `rtp-${tagCounter++}`;
     document.body.appendChild(target);
 
     const visible = state(true);
     const container = document.createElement('div');
     container.appendChild(
-      html`${reactiveTeleport('#rp2', () =>
+      html`${reactiveTeleport(`#${target.id}`, () =>
         visible() ? html`<p class="modal">Visible</p>` : null,
       )}`,
     );

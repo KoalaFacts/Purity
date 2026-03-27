@@ -4,7 +4,7 @@ import { watch } from './signals.js';
 // Types
 // ---------------------------------------------------------------------------
 
-type AttrType = 'event' | 'bool' | 'prop' | 'attr';
+type AttrType = 'event' | 'bool' | 'prop' | 'bind' | 'attr';
 
 interface AttrBinding {
   index: number;
@@ -88,7 +88,7 @@ function buildTemplate(strings: TemplateStringsArray): CachedTemplate {
 function detectAttribute(htmlStr: string): AttrInfo | null {
   const stripped = htmlStr.trimEnd();
 
-  const match = stripped.match(/(?:^|[\s])([.?@]?[a-zA-Z_][\w.-]*)=(?:["']?)$/);
+  const match = stripped.match(/(?:^|[\s])([.?@]?[a-zA-Z_][\w.:-]*)=(?:["']?)$/);
 
   if (!match) return null;
 
@@ -105,6 +105,9 @@ function detectAttribute(htmlStr: string): AttrInfo | null {
   } else if (fullName.startsWith('.')) {
     type = 'prop';
     name = fullName.slice(1);
+  } else if (fullName.startsWith('bind:')) {
+    type = 'bind';
+    name = fullName.slice(5);
   }
 
   const attrStart = stripped.lastIndexOf(`${fullName}=`);
@@ -229,6 +232,59 @@ function processAttributeValue(el: HTMLElement, binding: AttrBinding, value: unk
         el.setAttribute(name, '');
       } else {
         el.removeAttribute(name);
+      }
+    }
+    return;
+  }
+
+  if (type === 'bind') {
+    // Two-way binding: bind:value=${signal} or bind:checked=${signal}
+    // The value must be a StateAccessor (callable getter/setter)
+    if (typeof value === 'function') {
+      const accessor = value as any;
+
+      // Determine the event and property for this binding
+      const propName =
+        name === 'group' ? ((el as HTMLInputElement).type === 'radio' ? 'checked' : 'value') : name;
+      const eventName = name === 'checked' || name === 'group' ? 'change' : 'input';
+
+      if (name === 'group') {
+        // Radio/checkbox group binding
+        const inputEl = el as HTMLInputElement;
+        if (inputEl.type === 'radio') {
+          watch(() => {
+            inputEl.checked = accessor() === inputEl.value;
+          });
+          el.addEventListener('change', () => {
+            if (inputEl.checked) accessor(inputEl.value);
+          });
+        } else {
+          // Checkbox group — accessor holds an array
+          watch(() => {
+            const arr = accessor() as unknown[];
+            inputEl.checked = arr.includes(inputEl.value);
+          });
+          el.addEventListener('change', () => {
+            const arr = [...(accessor() as unknown[])];
+            if (inputEl.checked) {
+              if (!arr.includes(inputEl.value)) arr.push(inputEl.value);
+            } else {
+              const idx = arr.indexOf(inputEl.value);
+              if (idx !== -1) arr.splice(idx, 1);
+            }
+            accessor(arr);
+          });
+        }
+      } else {
+        // Standard property binding (value, checked, etc.)
+        watch(() => {
+          (el as any)[name] = accessor();
+        });
+
+        el.addEventListener(eventName, () => {
+          const prop = name === 'checked' ? (el as HTMLInputElement).checked : (el as any)[name];
+          accessor(prop);
+        });
       }
     }
     return;

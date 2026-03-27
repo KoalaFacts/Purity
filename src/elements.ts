@@ -2,34 +2,84 @@ import { ComponentContext, getCurrentContext, popContext, pushContext } from './
 import { watch } from './signals.js';
 
 // ---------------------------------------------------------------------------
-// Slot types
+// Slot types — a slot is a built-in component with in/out/both-way binding
+//
+// IN:   parent passes static content → slot()
+// OUT:  component exposes data → slot(exposedProps) → parent render fn
+// BOTH: component exposes state accessors → parent reads AND writes
 // ---------------------------------------------------------------------------
 
-type SlotContent = Node | DocumentFragment | string | null | undefined;
+type SlotContent<E = unknown> =
+  | Node
+  | DocumentFragment
+  | string
+  | ((exposed: E) => Node | DocumentFragment | string)
+  | null
+  | undefined;
+
+type SlotMap<E = unknown> = Record<string, SlotContent<E>>;
 
 export interface SlotFn {
+  /** Render default slot with no exposed props */
   (): Node | null;
+  /** Render default slot with exposed props (OUT / BOTH) */
+  <E>(exposed: E): Node | null;
+  /** Render named slot with no exposed props */
   (name: string): Node | null;
+  /** Render named slot with exposed props */
+  <E>(name: string, exposed: E): Node | null;
 }
 
-function createSlotFn(children?: SlotContent | Record<string, SlotContent>): SlotFn {
-  return ((name?: string): Node | null => {
+function createSlotFn(children?: SlotContent | SlotMap): SlotFn {
+  return ((...args: any[]): Node | null => {
     if (children == null) return null;
 
-    // Named slots: { default, header, footer, ... }
-    if (typeof children === 'object' && !(children instanceof Node)) {
-      const key = name ?? 'default';
-      return resolveContent((children as Record<string, SlotContent>)[key]);
+    // Parse args: (name?, exposed?)
+    let name: string | undefined;
+    let exposed: unknown;
+
+    if (args.length === 0) {
+      name = 'default';
+    } else if (args.length === 1) {
+      if (typeof args[0] === 'string') {
+        name = args[0];
+      } else {
+        // Single non-string arg = exposed props for default slot
+        name = 'default';
+        exposed = args[0];
+      }
+    } else {
+      name = args[0];
+      exposed = args[1];
     }
 
-    // Default slot
+    // Named slots: { default, header, footer, ... }
+    if (
+      typeof children === 'object' &&
+      !(children instanceof Node) &&
+      typeof children !== 'function'
+    ) {
+      const slots = children as SlotMap;
+      return resolveSlot(slots[name!], exposed);
+    }
+
+    // Default slot only
     if (name && name !== 'default') return null;
-    return resolveContent(children as SlotContent);
+    return resolveSlot(children as SlotContent, exposed);
   }) as SlotFn;
 }
 
-function resolveContent(content: SlotContent): Node | null {
+function resolveSlot(content: SlotContent | undefined, exposed: unknown): Node | null {
   if (content == null) return null;
+
+  // Render function — call with exposed props (scoped slot)
+  if (typeof content === 'function') {
+    const result = content(exposed);
+    if (result instanceof Node) return result;
+    if (typeof result === 'string') return document.createTextNode(result);
+    return null;
+  }
+
   if (content instanceof Node) return content;
   return document.createTextNode(String(content));
 }
@@ -37,17 +87,34 @@ function resolveContent(content: SlotContent): Node | null {
 // ---------------------------------------------------------------------------
 // component(renderFn) — define a reusable component with props + slots
 //
+//   // IN: static slot content
 //   const Card = component<{ title: string }>((props, slot) => {
-//     onMount(() => console.log('Card mounted'));
 //     return html`<div><h2>${props.title}</h2>${slot()}</div>`;
 //   });
-//
-//   // Default slot:
 //   Card({ title: 'Hi' }, html`<p>Body</p>`)
 //
-//   // Named slots:
+//   // OUT: expose data through slot
+//   const Form = component((props, slot) => {
+//     const isValid = compute(() => ...);
+//     return html`<form>${slot({ isValid, submit })}</form>`;
+//   });
+//   Form({}, ({ isValid, submit }) => html`
+//     <button @click=${submit} ?disabled=${() => !isValid()}>Save</button>
+//   `)
+//
+//   // BOTH: expose state accessor, parent reads AND writes
+//   const Search = component((props, slot) => {
+//     const query = state('');
+//     return html`<div><input bind:value=${query} />${slot({ query })}</div>`;
+//   });
+//   Search({}, ({ query }) => html`
+//     <p>Searching: ${() => query()}</p>
+//     <button @click=${() => query('')}>Clear</button>
+//   `)
+//
+//   // Named scoped slots:
 //   Layout({}, {
-//     header: html`<h1>Title</h1>`,
+//     header: ({ user }) => html`<h1>Hi ${user.name}</h1>`,
 //     default: html`<p>Main</p>`,
 //     footer: html`<small>Footer</small>`,
 //   })
@@ -57,8 +124,8 @@ type RenderFn<P> = (props: P, slot: SlotFn) => Node | DocumentFragment;
 
 export function component<P extends Record<string, unknown> = Record<string, never>>(
   renderFn: RenderFn<P>,
-): (props: P, children?: SlotContent | Record<string, SlotContent>) => Node | DocumentFragment {
-  return (props: P, children?: SlotContent | Record<string, SlotContent>) => {
+): (props: P, children?: SlotContent | SlotMap) => Node | DocumentFragment {
+  return (props: P, children?: SlotContent | SlotMap) => {
     const ctx = new ComponentContext();
     const parentCtx = getCurrentContext();
     if (parentCtx) {

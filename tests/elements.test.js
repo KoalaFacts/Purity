@@ -96,6 +96,88 @@ describe('component()', () => {
 
     expect(container.textContent).toContain('hello text');
   });
+
+  it('OUT: component exposes data through slot', () => {
+    const DataProvider = component((props, slot) => {
+      const data = { message: 'from child', count: 42 };
+      return html`<div>${slot(data)}</div>`;
+    });
+
+    const container = document.createElement('div');
+    container.appendChild(
+      html`${DataProvider({}, ({ message, count }) => html`<p>${message} - ${count}</p>`)}`,
+    );
+
+    expect(container.textContent).toContain('from child - 42');
+  });
+
+  it('BOTH: component exposes state accessor, parent reads and writes', () => {
+    const SearchBox = component((props, slot) => {
+      const query = state('');
+      return html`<div>
+        <input class="search" bind:value=${query} />
+        ${slot({ query })}
+      </div>`;
+    });
+
+    const container = document.createElement('div');
+    container.appendChild(
+      html`${SearchBox(
+        {},
+        ({ query }) => html`
+        <span class="display">${() => query()}</span>
+        <button class="clear" @click=${() => query('')}>Clear</button>
+      `,
+      )}`,
+    );
+
+    // Parent can write to the exposed state
+    const clearBtn = container.querySelector('.clear');
+    expect(clearBtn).not.toBeNull();
+  });
+
+  it('named scoped slots with exposed props', () => {
+    const Table = component((props, slot) => {
+      const cols = ['Name', 'Age'];
+      const rows = [
+        { name: 'Alice', age: 30 },
+        { name: 'Bob', age: 25 },
+      ];
+      return html`<table>
+        <thead>${slot('header', { cols })}</thead>
+        <tbody>${rows.map((row) => slot('row', { row }))}</tbody>
+      </table>`;
+    });
+
+    const container = document.createElement('div');
+    container.appendChild(
+      html`${Table(
+        {},
+        {
+          header: ({ cols }) => html`<tr>${cols.map((c) => html`<th>${c}</th>`)}</tr>`,
+          row: ({ row }) => html`<tr><td>${row.name}</td><td>${String(row.age)}</td></tr>`,
+        },
+      )}`,
+    );
+
+    expect(container.querySelectorAll('th').length).toBe(2);
+    expect(container.querySelectorAll('td').length).toBe(4);
+    expect(container.querySelector('th').textContent).toBe('Name');
+    expect(container.querySelector('td').textContent).toBe('Alice');
+  });
+
+  it('slot render fn receives undefined when no exposed props', () => {
+    const Wrapper = component((props, slot) => {
+      return html`<div>${slot()}</div>`;
+    });
+
+    const container = document.createElement('div');
+    container.appendChild(
+      html`${Wrapper({}, (exposed) => html`<p>${exposed === undefined ? 'no props' : 'has props'}</p>`)}`,
+    );
+
+    expect(container.textContent).toContain('no props');
+  });
 });
 
 describe('teleport()', () => {

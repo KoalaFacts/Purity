@@ -20,6 +20,26 @@ describe('state', () => {
     expect(count.get()).toBe(20);
   });
 
+  it('accepts updater function', () => {
+    const count = state(5);
+    count(v => v + 1);
+    expect(count()).toBe(6);
+    count(v => v * 3);
+    expect(count()).toBe(18);
+  });
+
+  it('updater works with arrays', () => {
+    const items = state(['a', 'b']);
+    items(v => [...v, 'c']);
+    expect(items()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('updater works with booleans', () => {
+    const flag = state(true);
+    flag(v => !v);
+    expect(flag()).toBe(false);
+  });
+
   it('supports .peek() without tracking', () => {
     const count = state(42);
     expect(count.peek()).toBe(42);

@@ -7,6 +7,7 @@ import { Signal } from 'signal-polyfill';
 export interface StateAccessor<T> {
   (): T;
   (value: T): T;
+  (updater: (current: T) => T): T;
   get(): T;
   set(value: T): void;
   peek(): T;
@@ -59,8 +60,13 @@ function flush(): void {
 export function state<T>(initial: T): StateAccessor<T> {
   const s = new Signal.State<T>(initial);
 
-  const accessor = function (value?: T): T {
+  const accessor = function (value?: T | ((current: T) => T)): T {
     if (arguments.length === 0) return s.get();
+    if (typeof value === 'function') {
+      const next = (value as (current: T) => T)(s.get());
+      s.set(next);
+      return next;
+    }
     s.set(value!);
     return value!;
   } as StateAccessor<T>;

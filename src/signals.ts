@@ -154,7 +154,15 @@ function _effect(fn: () => void | Dispose): Dispose {
 //   watch([a, b], ([va, vb], [oa, ob]) => { ... }) // multiple sources
 // ---------------------------------------------------------------------------
 
-type WatchSource<T> = StateAccessor<T> | ComputedAccessor<T> | (() => T);
+export type WatchSource<T> = StateAccessor<T> | ComputedAccessor<T> | (() => T);
+
+// Infer T from a WatchSource<T>
+type InferSource<S> = S extends WatchSource<infer T> ? T : never;
+
+// Map a tuple of WatchSources to a tuple of their value types
+type InferSources<S extends readonly WatchSource<any>[]> = {
+  [K in keyof S]: InferSource<S[K]>;
+};
 
 // Overload: auto-tracking effect
 export function watch(fn: () => void | Dispose): Dispose;
@@ -165,10 +173,10 @@ export function watch<T>(
   cb: (value: T, oldValue: T) => void | Dispose
 ): Dispose;
 
-// Overload: multiple sources
-export function watch<T extends readonly unknown[]>(
-  sources: { [K in keyof T]: WatchSource<T[K]> },
-  cb: (values: T, oldValues: T) => void | Dispose
+// Overload: multiple sources (tuple inference)
+export function watch<const S extends readonly WatchSource<any>[]>(
+  sources: [...S],
+  cb: (values: InferSources<S>, oldValues: InferSources<S>) => void | Dispose
 ): Dispose;
 
 export function watch(

@@ -11,7 +11,7 @@ A minimal, lightweight, super performant JavaScript web framework built on [nati
 
 ```html
 <script type="module">
-  import { state, computed, html, mount, onMount } from 'purity-js';
+  import { state, computed, html, mount, onMount } from 'purity';
 
   function App() {
     const count = state(0);

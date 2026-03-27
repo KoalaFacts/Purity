@@ -2,11 +2,7 @@ import { ComponentContext, getCurrentContext, popContext, pushContext } from './
 import { watch } from './signals.js';
 
 // ---------------------------------------------------------------------------
-// Slot types — a slot is a built-in component with in/out/both-way binding
-//
-// IN:   parent passes static content → slot()
-// OUT:  component exposes data → slot(exposedProps) → parent render fn
-// BOTH: component exposes state accessors → parent reads AND writes
+// Slot content types
 // ---------------------------------------------------------------------------
 
 type SlotContent<E = unknown> =
@@ -17,62 +13,68 @@ type SlotContent<E = unknown> =
   | null
   | undefined;
 
-type SlotMap<E = unknown> = Record<string, SlotContent<E>>;
+type SlotMap = Record<string, SlotContent>;
 
-export interface SlotFn {
-  /** Render default slot with no exposed props */
+// ---------------------------------------------------------------------------
+// SlotAccessor — returned by slot(), call it to render
+// ---------------------------------------------------------------------------
+
+export interface SlotAccessor {
+  /** Render slot with no exposed props */
   (): Node | null;
-  /** Render default slot with exposed props (OUT / BOTH) */
+  /** Render slot with exposed props (OUT / BOTH) */
   <E>(exposed: E): Node | null;
-  /** Render named slot with no exposed props */
-  (name: string): Node | null;
-  /** Render named slot with exposed props */
-  <E>(name: string, exposed: E): Node | null;
 }
 
-function createSlotFn(children?: SlotContent | SlotMap): SlotFn {
-  return ((...args: any[]): Node | null => {
-    if (children == null) return null;
+// ---------------------------------------------------------------------------
+// slot(name?) — context-aware slot primitive
+//
+// Reads from the current component's children. Works like onMount() —
+// must be called inside a component() body.
+//
+//   const Card = component((props) => {
+//     const header = slot('header');
+//     const body = slot();          // default slot
+//     return html`<div>${header()}${body({ validate })}</div>`;
+//   });
+// ---------------------------------------------------------------------------
 
-    // Parse args: (name?, exposed?)
-    let name: string | undefined;
-    let exposed: unknown;
+export function slot(name?: string): SlotAccessor {
+  const ctx = getCurrentContext();
+  if (!ctx) {
+    throw new Error('slot() must be called inside a component');
+  }
 
-    if (args.length === 0) {
-      name = 'default';
-    } else if (args.length === 1) {
-      if (typeof args[0] === 'string') {
-        name = args[0];
-      } else {
-        // Single non-string arg = exposed props for default slot
-        name = 'default';
-        exposed = args[0];
-      }
-    } else {
-      name = args[0];
-      exposed = args[1];
-    }
+  const slotName = name ?? 'default';
+  const children = ctx._slotContent;
 
-    // Named slots: { default, header, footer, ... }
-    if (
-      typeof children === 'object' &&
-      !(children instanceof Node) &&
-      typeof children !== 'function'
-    ) {
-      const slots = children as SlotMap;
-      return resolveSlot(slots[name!], exposed);
-    }
+  return ((exposed?: unknown): Node | null => {
+    return resolveFromContent(children, slotName, exposed);
+  }) as SlotAccessor;
+}
 
-    // Default slot only
-    if (name && name !== 'default') return null;
-    return resolveSlot(children as SlotContent, exposed);
-  }) as SlotFn;
+function resolveFromContent(children: unknown, name: string, exposed: unknown): Node | null {
+  if (children == null) return null;
+
+  // Named slots: { default, header, footer, ... }
+  if (
+    typeof children === 'object' &&
+    !(children instanceof Node) &&
+    typeof children !== 'function'
+  ) {
+    const slots = children as SlotMap;
+    return resolveSlot(slots[name], exposed);
+  }
+
+  // Default slot only
+  if (name !== 'default') return null;
+  return resolveSlot(children as SlotContent, exposed);
 }
 
 function resolveSlot(content: SlotContent | undefined, exposed: unknown): Node | null {
   if (content == null) return null;
 
-  // Render function — call with exposed props (scoped slot)
+  // Render function — scoped slot
   if (typeof content === 'function') {
     const result = content(exposed);
     if (result instanceof Node) return result;
@@ -85,42 +87,20 @@ function resolveSlot(content: SlotContent | undefined, exposed: unknown): Node |
 }
 
 // ---------------------------------------------------------------------------
-// component(renderFn) — define a reusable component with props + slots
+// component(renderFn) — define a reusable component
 //
-//   // IN: static slot content
-//   const Card = component<{ title: string }>((props, slot) => {
-//     return html`<div><h2>${props.title}</h2>${slot()}</div>`;
+//   // With slot() as context-aware primitive:
+//   const Card = component<{ title: string }>((props) => {
+//     const body = slot();
+//     return html`<div><h2>${props.title}</h2>${body()}</div>`;
 //   });
-//   Card({ title: 'Hi' }, html`<p>Body</p>`)
 //
-//   // OUT: expose data through slot
-//   const Form = component((props, slot) => {
-//     const isValid = compute(() => ...);
-//     return html`<form>${slot({ isValid, submit })}</form>`;
-//   });
-//   Form({}, ({ isValid, submit }) => html`
-//     <button @click=${submit} ?disabled=${() => !isValid()}>Save</button>
-//   `)
-//
-//   // BOTH: expose state accessor, parent reads AND writes
-//   const Search = component((props, slot) => {
-//     const query = state('');
-//     return html`<div><input bind:value=${query} />${slot({ query })}</div>`;
-//   });
-//   Search({}, ({ query }) => html`
-//     <p>Searching: ${() => query()}</p>
-//     <button @click=${() => query('')}>Clear</button>
-//   `)
-//
-//   // Named scoped slots:
-//   Layout({}, {
-//     header: ({ user }) => html`<h1>Hi ${user.name}</h1>`,
-//     default: html`<p>Main</p>`,
-//     footer: html`<small>Footer</small>`,
-//   })
+//   // IN:  Card({ title: 'Hi' }, html`<p>Body</p>`)
+//   // OUT: Form({}, ({ isValid }) => html`...`)
+//   // BOTH: Search({}, ({ query }) => html`${() => query()}`)
 // ---------------------------------------------------------------------------
 
-type RenderFn<P> = (props: P, slot: SlotFn) => Node | DocumentFragment;
+type RenderFn<P> = (props: P) => Node | DocumentFragment;
 
 export function component<P extends Record<string, unknown> = Record<string, never>>(
   renderFn: RenderFn<P>,
@@ -133,13 +113,14 @@ export function component<P extends Record<string, unknown> = Record<string, nev
       parentCtx.children.push(ctx);
     }
 
-    pushContext(ctx);
+    // Store children on context so slot() can read them
+    ctx._slotContent = children;
 
-    const slot = createSlotFn(children);
+    pushContext(ctx);
 
     let result: Node | DocumentFragment;
     try {
-      result = renderFn(props, slot);
+      result = renderFn(props);
     } catch (err) {
       popContext();
       ctx._handleError(err);
@@ -166,12 +147,23 @@ export function component<P extends Record<string, unknown> = Record<string, nev
 }
 
 // ---------------------------------------------------------------------------
-// teleport(target, viewFn) — render content to a different DOM location
+// teleport(target, viewFn?) — context-aware, renders content elsewhere
 //
-//   html`${teleport('#modal-root', () => html`<div class="modal">...</div>`)}`
+// As a standalone:
+//   html`${teleport('#modal-root', () => html`<div>...</div>`)}`
+//
+// Inside a component with slot:
+//   const Modal = component((props) => {
+//     const content = slot();
+//     teleport('#modal-root', () => content());
+//     return html`<!--modal-->`;
+//   });
 // ---------------------------------------------------------------------------
 
-export function teleport(target: string | Element, viewFn: () => Node | DocumentFragment): Comment {
+export function teleport(
+  target: string | Element,
+  viewFn?: () => Node | DocumentFragment | null,
+): Comment {
   const anchor = document.createComment('teleport');
 
   queueMicrotask(() => {
@@ -181,8 +173,10 @@ export function teleport(target: string | Element, viewFn: () => Node | Document
       return;
     }
 
-    const content = viewFn();
-    if (content) container.appendChild(content);
+    if (viewFn) {
+      const content = viewFn();
+      if (content) container.appendChild(content);
+    }
   });
 
   return anchor;
@@ -190,8 +184,6 @@ export function teleport(target: string | Element, viewFn: () => Node | Document
 
 // ---------------------------------------------------------------------------
 // reactiveTeleport(target, viewFn) — reactive version, re-renders on change
-//
-//   html`${reactiveTeleport('#overlay', () => visible() ? html`<Modal/>` : null)}`
 // ---------------------------------------------------------------------------
 
 export function reactiveTeleport(

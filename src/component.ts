@@ -29,6 +29,7 @@ export class ComponentContext {
   children: ComponentContext[] = [];
   _isMounted = false;
   _isDestroyed = false;
+  _slotContent: unknown = undefined; // raw children passed to component
 
   _run(callbacks: ((...args: any[]) => void)[], ...args: unknown[]): void {
     for (const fn of callbacks) {

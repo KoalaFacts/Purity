@@ -20,9 +20,9 @@ export {
 export type { Ref } from './composables.js';
 // Composables
 export { useMemo, useRef, useStore, useWatch } from './composables.js';
-export type { SlotFn } from './elements.js';
+export type { SlotAccessor } from './elements.js';
 // Component, slots, teleport
-export { component, reactiveTeleport, teleport } from './elements.js';
+export { component, reactiveTeleport, slot, teleport } from './elements.js';
 // Template helpers
 export { each, match, when } from './helpers.js';
 // Dependency injection

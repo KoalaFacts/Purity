@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { mount, onDestroy, onMount } from '../src/component.ts';
-import { component, reactiveTeleport, teleport } from '../src/elements.ts';
+import { component, reactiveTeleport, slot, teleport } from '../src/elements.ts';
 import { html } from '../src/render.ts';
-import { state } from '../src/signals.ts';
+import { compute, state } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
@@ -13,48 +13,9 @@ describe('component()', () => {
     });
 
     const container = document.createElement('div');
-    const fragment = html`<div>${Greeting({ name: 'World' })}</div>`;
-    container.appendChild(fragment);
+    container.appendChild(html`<div>${Greeting({ name: 'World' })}</div>`);
 
     expect(container.textContent).toContain('Hello, World!');
-  });
-
-  it('supports default slot', () => {
-    const Card = component((props, slot) => {
-      return html`<div class="card"><h2>${props.title}</h2>${slot()}</div>`;
-    });
-
-    const container = document.createElement('div');
-    const fragment = html`${Card({ title: 'My Card' }, html`<p>Body content</p>`)}`;
-    container.appendChild(fragment);
-
-    expect(container.querySelector('h2').textContent).toBe('My Card');
-    expect(container.querySelector('p').textContent).toBe('Body content');
-  });
-
-  it('supports named slots', () => {
-    const Layout = component((props, slot) => {
-      return html`
-        <header>${slot('header')}</header>
-        <main>${slot()}</main>
-        <footer>${slot('footer')}</footer>
-      `;
-    });
-
-    const container = document.createElement('div');
-    const fragment = html`${Layout(
-      {},
-      {
-        header: html`<h1>Title</h1>`,
-        default: html`<p>Main content</p>`,
-        footer: html`<small>Footer text</small>`,
-      },
-    )}`;
-    container.appendChild(fragment);
-
-    expect(container.querySelector('header h1').textContent).toBe('Title');
-    expect(container.querySelector('main p').textContent).toBe('Main content');
-    expect(container.querySelector('footer small').textContent).toBe('Footer text');
   });
 
   it('supports lifecycle hooks', async () => {
@@ -73,11 +34,57 @@ describe('component()', () => {
     await tick();
     expect(mounted).toHaveBeenCalledTimes(1);
   });
+});
 
-  it('renders empty slot as null', () => {
-    const Box = component((props, slot) => {
+describe('slot()', () => {
+  it('renders default slot with static content', () => {
+    const Card = component((props) => {
+      const body = slot();
+      return html`<div class="card"><h2>${props.title}</h2>${body()}</div>`;
+    });
+
+    const container = document.createElement('div');
+    container.appendChild(html`${Card({ title: 'My Card' }, html`<p>Body content</p>`)}`);
+
+    expect(container.querySelector('h2').textContent).toBe('My Card');
+    expect(container.querySelector('p').textContent).toBe('Body content');
+  });
+
+  it('renders named slots', () => {
+    const Layout = component(() => {
       const header = slot('header');
-      return html`<div>${header}${slot()}</div>`;
+      const body = slot();
+      const footer = slot('footer');
+
+      return html`
+        <header>${header()}</header>
+        <main>${body()}</main>
+        <footer>${footer()}</footer>
+      `;
+    });
+
+    const container = document.createElement('div');
+    container.appendChild(
+      html`${Layout(
+        {},
+        {
+          header: html`<h1>Title</h1>`,
+          default: html`<p>Main content</p>`,
+          footer: html`<small>Footer text</small>`,
+        },
+      )}`,
+    );
+
+    expect(container.querySelector('header h1').textContent).toBe('Title');
+    expect(container.querySelector('main p').textContent).toBe('Main content');
+    expect(container.querySelector('footer small').textContent).toBe('Footer text');
+  });
+
+  it('returns null for missing named slot', () => {
+    const Box = component(() => {
+      const header = slot('header');
+      const body = slot();
+      return html`<div>${header()}${body()}</div>`;
     });
 
     const container = document.createElement('div');
@@ -87,8 +94,9 @@ describe('component()', () => {
   });
 
   it('supports string slot content', () => {
-    const Tag = component((props, slot) => {
-      return html`<span>${slot()}</span>`;
+    const Tag = component(() => {
+      const body = slot();
+      return html`<span>${body()}</span>`;
     });
 
     const container = document.createElement('div');
@@ -98,9 +106,10 @@ describe('component()', () => {
   });
 
   it('OUT: component exposes data through slot', () => {
-    const DataProvider = component((props, slot) => {
+    const DataProvider = component(() => {
       const data = { message: 'from child', count: 42 };
-      return html`<div>${slot(data)}</div>`;
+      const body = slot();
+      return html`<div>${body(data)}</div>`;
     });
 
     const container = document.createElement('div');
@@ -112,11 +121,12 @@ describe('component()', () => {
   });
 
   it('BOTH: component exposes state accessor, parent reads and writes', () => {
-    const SearchBox = component((props, slot) => {
+    const SearchBox = component(() => {
       const query = state('');
+      const body = slot();
       return html`<div>
         <input class="search" bind:value=${query} />
-        ${slot({ query })}
+        ${body({ query })}
       </div>`;
     });
 
@@ -131,21 +141,22 @@ describe('component()', () => {
       )}`,
     );
 
-    // Parent can write to the exposed state
     const clearBtn = container.querySelector('.clear');
     expect(clearBtn).not.toBeNull();
   });
 
   it('named scoped slots with exposed props', () => {
-    const Table = component((props, slot) => {
+    const Table = component(() => {
       const cols = ['Name', 'Age'];
       const rows = [
         { name: 'Alice', age: 30 },
         { name: 'Bob', age: 25 },
       ];
+      const header = slot('header');
+      const row = slot('row');
       return html`<table>
-        <thead>${slot('header', { cols })}</thead>
-        <tbody>${rows.map((row) => slot('row', { row }))}</tbody>
+        <thead>${header({ cols })}</thead>
+        <tbody>${rows.map((r) => row({ row: r }))}</tbody>
       </table>`;
     });
 
@@ -167,16 +178,24 @@ describe('component()', () => {
   });
 
   it('slot render fn receives undefined when no exposed props', () => {
-    const Wrapper = component((props, slot) => {
-      return html`<div>${slot()}</div>`;
+    const Wrapper = component(() => {
+      const body = slot();
+      return html`<div>${body()}</div>`;
     });
 
     const container = document.createElement('div');
     container.appendChild(
-      html`${Wrapper({}, (exposed) => html`<p>${exposed === undefined ? 'no props' : 'has props'}</p>`)}`,
+      html`${Wrapper(
+        {},
+        (exposed) => html`<p>${exposed === undefined ? 'no props' : 'has props'}</p>`,
+      )}`,
     );
 
     expect(container.textContent).toContain('no props');
+  });
+
+  it('throws when called outside a component', () => {
+    expect(() => slot()).toThrow('must be called inside a component');
   });
 });
 
@@ -220,6 +239,27 @@ describe('teleport()', () => {
     await tick();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('not found'));
     warn.mockRestore();
+  });
+
+  it('works inside a component with slot', async () => {
+    const target = document.createElement('div');
+    target.id = 'modal-target';
+    document.body.appendChild(target);
+
+    const Modal = component(() => {
+      const content = slot();
+      teleport('#modal-target', () => content());
+      return html`<!--modal-->`;
+    });
+
+    const container = document.createElement('div');
+    mount(() => html`${Modal({}, html`<p class="modal-body">Hello Modal</p>`)}`, container);
+
+    await tick();
+    expect(target.querySelector('.modal-body')).not.toBeNull();
+    expect(target.querySelector('.modal-body').textContent).toBe('Hello Modal');
+
+    document.body.removeChild(target);
   });
 });
 

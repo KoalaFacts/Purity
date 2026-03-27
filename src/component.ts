@@ -67,11 +67,11 @@ export function getCurrentContext(): ComponentContext | null {
   return contextStack[contextStack.length - 1] || null;
 }
 
-function pushContext(ctx: ComponentContext): void {
+export function pushContext(ctx: ComponentContext): void {
   contextStack.push(ctx);
 }
 
-function popContext(): ComponentContext | undefined {
+export function popContext(): ComponentContext | undefined {
   return contextStack.pop();
 }
 

@@ -2,142 +2,143 @@ import { ComponentContext, getCurrentContext, popContext, pushContext } from './
 import { watch } from './signals.js';
 
 // ---------------------------------------------------------------------------
-// Slot type system
-//
-// Slots are declared as the second generic on component<Props, Slots>.
-// Each key is a slot name, value is the type of exposed props.
-// void = no exposed props (IN only — static content).
-//
-//   component<
-//     { title: string },
-//     { header: void; default: { validate: () => boolean } }
-//   >(({ title }, { header, default: body }) => { ... })
+// Slot types
 // ---------------------------------------------------------------------------
 
-/** Typed accessor — call it to render the slot content */
 export type SlotAccessor<E = void> = E extends void
   ? () => Node | null
   : (exposed: E) => Node | null;
 
-/** Map of typed slot accessors, built from the Slots generic */
-type SlotAccessors<S> = { [K in keyof S]: SlotAccessor<S[K]> };
-
-/** What the consumer provides for a single slot */
-type SlotInput<E> = E extends void
-  ? Node | DocumentFragment | string | (() => Node | DocumentFragment | string) | null | undefined
-  : ((exposed: E) => Node | DocumentFragment | string) | null | undefined;
-
-/** Map of consumer-provided slot content, typed per slot */
-type SlotInputMap<S> = { [K in keyof S]?: SlotInput<S[K]> };
-
-/** What component() returns — the callable factory */
-type ComponentFactory<P, S> = keyof S extends never
-  ? (props: P) => Node | DocumentFragment
-  : keyof S extends 'default'
-    ? S extends { default: void }
-      ? (props: P, children?: SlotInput<void>) => Node | DocumentFragment
-      : (props: P, children?: SlotInput<S[keyof S]> | SlotInputMap<S>) => Node | DocumentFragment
-    : (props: P, children?: SlotInputMap<S>) => Node | DocumentFragment;
+type ConsumerSlot = (content?: Node | DocumentFragment | string | null) => Node | null;
 
 // ---------------------------------------------------------------------------
-// Internal: build SlotAccessors from children
+// Internal: slot registry
 // ---------------------------------------------------------------------------
 
-function buildSlotAccessors(children: unknown): Record<string, SlotAccessor<any>> {
-  const accessors: Record<string, SlotAccessor<any>> = {};
+interface SlotRegistry {
+  filled: Map<string, unknown>;
+  accessorNames: Set<string>;
+}
 
-  return new Proxy(accessors, {
+function createRegistry(): SlotRegistry {
+  return { filled: new Map(), accessorNames: new Set() };
+}
+
+function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<any>> {
+  return new Proxy({} as Record<string, SlotAccessor<any>>, {
     get(_target, prop: string) {
       if (typeof prop !== 'string') return undefined;
-
-      // Return a slot accessor function
-      return (exposed?: unknown): Node | null => {
-        return resolveFromContent(children, prop, exposed);
+      registry.accessorNames.add(prop);
+      return (_exposed?: unknown): Node | null => {
+        const content = registry.filled.get(prop);
+        return resolveContent(content);
       };
     },
   });
 }
 
-function resolveFromContent(children: unknown, name: string, exposed: unknown): Node | null {
-  if (children == null) return null;
-
-  // Named slots map: { default, header, footer, ... }
-  if (
-    typeof children === 'object' &&
-    !(children instanceof Node) &&
-    typeof children !== 'function'
-  ) {
-    const slots = children as Record<string, unknown>;
-    return resolveSlot(slots[name], exposed);
+function createConsumerBag(registry: SlotRegistry): Record<string, ConsumerSlot> {
+  const bag: Record<string, ConsumerSlot> = {};
+  for (const name of registry.accessorNames) {
+    bag[name] = (content?: Node | DocumentFragment | string | null): Node | null => {
+      registry.filled.set(name, content ?? null);
+      return null; // placeholder — real rendering happens on second pass
+    };
   }
-
-  // Default slot only
-  if (name !== 'default') return null;
-  return resolveSlot(children, exposed);
+  // Always include 'default'
+  if (!bag.default) {
+    bag.default = (content?: Node | DocumentFragment | string | null): Node | null => {
+      registry.filled.set('default', content ?? null);
+      return null;
+    };
+  }
+  return bag;
 }
 
-function resolveSlot(content: unknown, exposed: unknown): Node | null {
+function resolveContent(content: unknown): Node | null {
   if (content == null) return null;
-
-  if (typeof content === 'function') {
-    const result = (content as (...args: any[]) => unknown)(exposed);
-    if (result instanceof Node) return result as Node;
-    if (typeof result === 'string') return document.createTextNode(result);
-    return null;
-  }
-
   if (content instanceof Node) return content;
   if (typeof content === 'string') return document.createTextNode(content);
   return null;
 }
 
 // ---------------------------------------------------------------------------
-// slot(name?) — context-aware slot primitive (still works standalone)
+// slot(name?) — standalone context-aware primitive
 // ---------------------------------------------------------------------------
 
 export function slot<E = void>(name?: string): SlotAccessor<E> {
   const ctx = getCurrentContext();
-  if (!ctx) {
-    throw new Error('slot() must be called inside a component');
-  }
+  if (!ctx) throw new Error('slot() must be called inside a component');
 
   const slotName = name ?? 'default';
   const children = ctx._slotContent;
 
-  return ((exposed?: unknown): Node | null => {
-    return resolveFromContent(children, slotName, exposed);
+  return ((_exposed?: unknown): Node | null => {
+    return resolveFromRaw(children, slotName, _exposed);
   }) as SlotAccessor<E>;
 }
 
+function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node | null {
+  if (children == null) return null;
+
+  if (
+    typeof children === 'object' &&
+    !(children instanceof Node) &&
+    typeof children !== 'function'
+  ) {
+    const slot = (children as Record<string, unknown>)[name];
+    if (typeof slot === 'function') {
+      const r = (slot as (...a: any[]) => unknown)(exposed);
+      if (r instanceof Node) return r as Node;
+      if (typeof r === 'string') return document.createTextNode(r);
+      return null;
+    }
+    return resolveContent(slot);
+  }
+
+  if (name !== 'default') return null;
+  if (typeof children === 'function') {
+    const r = (children as (...a: any[]) => unknown)(exposed);
+    if (r instanceof Node) return r as Node;
+    if (typeof r === 'string') return document.createTextNode(r);
+    return null;
+  }
+  return resolveContent(children);
+}
+
 // ---------------------------------------------------------------------------
-// component<Props, Slots>(renderFn) — define a typed component
+// component<Props, Slots, Expose>(renderFn)
 //
-//   // Destructured props + slots:
-//   const Card = component<
-//     { title: string },
-//     { header: void; default: { validate: () => boolean } }
-//   >(({ title }, { header, default: body }) => {
-//     return html`
-//       <h2>${title}</h2>
-//       ${header()}
-//       ${body({ validate: isValid })}
-//     `;
-//   });
+// Component controls layout. Consumer fills slots + gets exposed data.
 //
-//   // Consumer:
-//   Card({ title: 'Hi' }, {
-//     header: html`<h1>Title</h1>`,
-//     default: ({ validate }) => html`<button>Save</button>`,
-//   })
+// Usage A — callback (new syntax):
+//   Card({ title: 'Hi' }, ({ header, validate }) => html`
+//     ${header(html`<h1>...</h1>`)}
+//     <button ?disabled=${() => !validate()}>Save</button>
+//   `)
+//
+// Usage B — map (named slots):
+//   Layout({}, { header: html`<h1>...</h1>`, default: html`<p>Main</p>` })
+//
+// Usage C — plain content (default slot):
+//   Box({}, html`<p>Content</p>`)
 // ---------------------------------------------------------------------------
 
-type RenderFn<P, S> = (props: P, slots: SlotAccessors<S>) => Node | DocumentFragment;
+interface RenderOutput<X> {
+  view: Node | DocumentFragment;
+  expose?: X;
+}
+
+type RenderFn<P, S> = (
+  props: P,
+  slots: { [K in keyof S]: SlotAccessor<S[K]> },
+) => Node | DocumentFragment | RenderOutput<any>;
 
 export function component<
   P extends Record<string, unknown> = Record<string, never>,
   S extends Record<string, unknown> = Record<string, never>,
->(renderFn: RenderFn<P, S>): ComponentFactory<P, S> {
-  return ((props: P, children?: unknown) => {
+>(renderFn: RenderFn<P, S>): (props: P, children?: any) => Node | DocumentFragment {
+  return (props: P, children?: any) => {
     const ctx = new ComponentContext();
     const parentCtx = getCurrentContext();
     if (parentCtx) {
@@ -146,21 +147,66 @@ export function component<
     }
 
     ctx._slotContent = children;
+    const registry = createRegistry();
+    const slotAccessors = createAccessors(registry);
 
-    pushContext(ctx);
-
-    const slots = buildSlotAccessors(children) as SlotAccessors<S>;
-
-    let result: Node | DocumentFragment;
-    try {
-      result = renderFn(props, slots);
-    } catch (err) {
-      popContext();
-      ctx._handleError(err);
-      return document.createComment('component-error');
+    // --- Pre-fill registry for non-callback children ---
+    if (children != null && typeof children !== 'function') {
+      if (children instanceof Node || typeof children === 'string') {
+        registry.filled.set('default', children);
+      } else if (typeof children === 'object') {
+        for (const [k, v] of Object.entries(children as Record<string, unknown>)) {
+          registry.filled.set(k, v);
+        }
+      }
     }
 
-    popContext();
+    // --- First render (discovers slot accessor names) ---
+    let result: Node | DocumentFragment;
+    let exposed: Record<string, unknown> = {};
+
+    const doRender = (): Node | DocumentFragment => {
+      pushContext(ctx);
+      try {
+        const output = renderFn(props, slotAccessors as any);
+        if (output && typeof output === 'object' && 'view' in output) {
+          const ro = output as RenderOutput<any>;
+          exposed = ro.expose ?? {};
+          return ro.view;
+        }
+        return output as Node | DocumentFragment;
+      } catch (err) {
+        popContext();
+        ctx._handleError(err);
+        return document.createComment('component-error');
+      } finally {
+        popContext();
+      }
+    };
+
+    if (typeof children === 'function') {
+      // Pass 1: render to discover slot names + collect exposed data
+      doRender();
+
+      // Build consumer bag: slot fillers + exposed data
+      const bag = { ...createConsumerBag(registry), ...exposed };
+
+      // Call consumer callback — it fills slots via bag.header(...) etc.
+      const consumerResult = children(bag);
+
+      // If consumer returned content, treat as default slot
+      if (consumerResult instanceof Node) {
+        registry.filled.set('default', consumerResult);
+      } else if (typeof consumerResult === 'string') {
+        registry.filled.set('default', consumerResult);
+      }
+
+      // Pass 2: re-render with filled slots
+      result = doRender();
+    } else {
+      // Non-callback: registry already pre-filled, single render
+      result = doRender();
+    }
 
     if (result instanceof DocumentFragment) {
       ctx.nodes = Array.from(result.childNodes);
@@ -170,17 +216,14 @@ export function component<
 
     ctx._run(ctx.beforeMount);
     ctx._isMounted = true;
-
-    queueMicrotask(() => {
-      ctx._run(ctx.mounted);
-    });
+    queueMicrotask(() => ctx._run(ctx.mounted));
 
     return result;
-  }) as ComponentFactory<P, S>;
+  };
 }
 
 // ---------------------------------------------------------------------------
-// teleport(target, viewFn?) — render content to a different DOM location
+// teleport
 // ---------------------------------------------------------------------------
 
 export function teleport(
@@ -188,25 +231,22 @@ export function teleport(
   viewFn?: () => Node | DocumentFragment | null,
 ): Comment {
   const anchor = document.createComment('teleport');
-
   queueMicrotask(() => {
     const container = typeof target === 'string' ? document.querySelector(target) : target;
     if (!container) {
       console.warn(`teleport: target "${String(target)}" not found`);
       return;
     }
-
     if (viewFn) {
       const content = viewFn();
       if (content) container.appendChild(content);
     }
   });
-
   return anchor;
 }
 
 // ---------------------------------------------------------------------------
-// reactiveTeleport(target, viewFn) — reactive version
+// reactiveTeleport
 // ---------------------------------------------------------------------------
 
 export function reactiveTeleport(
@@ -215,23 +255,19 @@ export function reactiveTeleport(
 ): Comment {
   const anchor = document.createComment('teleport');
   let currentNodes: Node[] = [];
-
   queueMicrotask(() => {
     const container = typeof target === 'string' ? document.querySelector(target) : target;
     if (!container) {
       console.warn(`teleport: target "${String(target)}" not found`);
       return;
     }
-
     watch(() => {
       for (const node of currentNodes) {
         if (node.parentNode) node.parentNode.removeChild(node);
       }
       currentNodes = [];
-
       const content = viewFn();
       if (content == null) return;
-
       if (content instanceof DocumentFragment) {
         currentNodes = Array.from(content.childNodes);
         container.appendChild(content);
@@ -241,6 +277,5 @@ export function reactiveTeleport(
       }
     });
   });
-
   return anchor;
 }

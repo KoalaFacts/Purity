@@ -53,8 +53,8 @@
 
   <script type="module">
     import {
-      state, compute, effect,
-      html, mount, show, each,
+      state, compute, watch,
+      html, mount, match, each,
       onMount, onDestroy,
     } from '../src/index.ts';
 
@@ -95,19 +95,17 @@
             <button class="secondary" @click=${addItem}>Add Item</button>
           </div>
 
-          ${show(
-            () => count() > 5,
-            () => html`<p style="margin-top:1rem;color:#e17055;">Count is over 5!</p>`
-          )}
+          ${match(() => count() > 5, {
+            true: () => html`<p style="margin-top:1rem;color:#e17055;">Count is over 5!</p>`,
+          })}
 
-          ${show(
-            () => items().length > 0,
-            () => html`
+          ${match(() => items().length > 0, {
+            true: () => html`
               <ul class="items">
                 ${each(items, (item) => html`<li>${item}</li>`)}
               </ul>
-            `
-          )}
+            `,
+          })}
         </div>
       `;
     }

@@ -1,4 +1,4 @@
-import { effect } from './signals.js';
+import { watch } from './signals.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -174,7 +174,7 @@ function processContentValue(marker: Comment, value: unknown): void {
     const textNode = document.createTextNode('');
     parent.replaceChild(textNode, marker);
 
-    effect(() => {
+    watch(() => {
       const result = (value as () => unknown)();
       if (result instanceof Node) {
         textNode.replaceWith(result);
@@ -223,7 +223,7 @@ function processAttributeValue(el: HTMLElement, binding: AttrBinding, value: unk
 
   if (type === 'bool') {
     if (typeof value === 'function') {
-      effect(() => {
+      watch(() => {
         if ((value as () => unknown)()) {
           el.setAttribute(name, '');
         } else {
@@ -242,7 +242,7 @@ function processAttributeValue(el: HTMLElement, binding: AttrBinding, value: unk
 
   if (type === 'prop') {
     if (typeof value === 'function') {
-      effect(() => {
+      watch(() => {
         (el as any)[name] = (value as () => unknown)();
       });
     } else {
@@ -253,7 +253,7 @@ function processAttributeValue(el: HTMLElement, binding: AttrBinding, value: unk
 
   // Regular attribute
   if (typeof value === 'function') {
-    effect(() => {
+    watch(() => {
       const v = (value as () => unknown)();
       if (v == null || v === false) {
         el.removeAttribute(name);

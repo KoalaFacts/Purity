@@ -1,6 +1,6 @@
 import {
-  state, compute, effect,
-  html, mount, show, each,
+  state, compute, watch,
+  html, mount, match, each,
   onMount, onDestroy,
   type StateAccessor, type ComputedAccessor,
 } from '../src/index.ts';
@@ -94,7 +94,7 @@ function TodoApp(): DocumentFragment {
     }
   });
 
-  effect(() => {
+  watch(() => {
     const list = todos();
     localStorage.setItem('purity-todos-ts', JSON.stringify(list));
   });
@@ -133,10 +133,9 @@ function TodoApp(): DocumentFragment {
         >Done</button>
       </div>
 
-      ${show(
-        () => filteredTodos().length === 0,
-        () => html`<p class="empty">No todos here yet.</p>`,
-        () => html`
+      ${match(() => filteredTodos().length === 0, {
+        true:  () => html`<p class="empty">No todos here yet.</p>`,
+        false: () => html`
           <ul class="todo-list">
             ${each(
               filteredTodos,
@@ -158,15 +157,14 @@ function TodoApp(): DocumentFragment {
               (todo: Todo) => todo.id
             )}
           </ul>
-        `
-      )}
+        `,
+      })}
 
       <div class="footer">
         <span>${() => remaining()} item${() => (remaining() === 1 ? '' : 's')} left</span>
-        ${show(
-          () => hasDone(),
-          () => html`<button class="clear-btn" @click=${clearDone}>Clear done</button>`
-        )}
+        ${match(() => hasDone(), {
+          true: () => html`<button class="clear-btn" @click=${clearDone}>Clear done</button>`,
+        })}
       </div>
     </div>
   `;

@@ -217,11 +217,6 @@ export function watch(
   });
 }
 
-// Keep effect as an alias for the auto-track overload
-export const effect = (fn: () => void | Dispose): Dispose => watch(fn);
-
-// Keep computed as an alias for compute
-export const computed = compute;
 
 // ---------------------------------------------------------------------------
 // batch(fn) — batch multiple state updates into a single flush

@@ -1,4 +1,4 @@
-import { effect } from './signals.js';
+import { watch } from './signals.js';
 
 // ---------------------------------------------------------------------------
 // match(sourceFn, cases, fallback?) — reactive pattern matching
@@ -33,7 +33,7 @@ export function match<T extends string | number | boolean>(
 
   let currentNodes: Node[] = [];
 
-  effect(() => {
+  watch(() => {
     const value = sourceFn();
 
     for (const node of currentNodes) {
@@ -72,20 +72,6 @@ export function match<T extends string | number | boolean>(
   return fragment;
 }
 
-// Keep show as an alias for boolean match
-export function show(
-  conditionFn: () => boolean,
-  viewFn: MatchView,
-  elseFn?: MatchView
-): DocumentFragment {
-  return match(
-    (() => String(conditionFn())) as () => 'true' | 'false',
-    {
-      true: viewFn,
-      ...(elseFn ? { false: elseFn } : {}),
-    }
-  );
-}
 
 // ---------------------------------------------------------------------------
 // each(listAccessor, mapFn, keyFn?) — list rendering
@@ -114,7 +100,7 @@ export function each<T>(
     ? listAccessor as () => T[]
     : () => listAccessor;
 
-  effect(() => {
+  watch(() => {
     const list = getList() || [];
     const parent = endMarker.parentNode;
     if (!parent) return;

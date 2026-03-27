@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { state, compute, effect, watch, batch } from '../src/signals.ts';
+import { state, compute, watch, batch } from '../src/signals.ts';
 
 describe('state', () => {
   it('reads the initial value', () => {
@@ -94,12 +94,12 @@ describe('computed', () => {
   });
 });
 
-describe('effect', () => {
+describe('watch (auto-track)', () => {
   it('runs immediately on creation', () => {
     const fn = vi.fn();
     const count = state(0);
 
-    effect(() => {
+    watch(() => {
       fn(count());
     });
 
@@ -110,7 +110,7 @@ describe('effect', () => {
     const values = [];
     const count = state(0);
 
-    effect(() => {
+    watch(() => {
       values.push(count());
     });
 
@@ -130,7 +130,7 @@ describe('effect', () => {
     const values = [];
     const count = state(0);
 
-    const dispose = effect(() => {
+    const dispose = watch(() => {
       values.push(count());
     });
 
@@ -147,7 +147,7 @@ describe('effect', () => {
     const cleanups = [];
     const count = state(0);
 
-    effect(() => {
+    watch(() => {
       count(); // track dependency
       return () => cleanups.push('cleanup');
     });
@@ -258,7 +258,7 @@ describe('batch', () => {
     const a = state(0);
     const b = state(0);
 
-    effect(() => {
+    watch(() => {
       values.push(`${a()}-${b()}`);
     });
 

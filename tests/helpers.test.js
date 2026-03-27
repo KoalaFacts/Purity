@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { state } from '../src/signals.ts';
-import { match, show, each } from '../src/helpers.ts';
+import { match, each } from '../src/helpers.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
@@ -158,50 +158,6 @@ describe('match', () => {
     await tick();
     expect(container.querySelector('.login')).toBeNull();
     expect(container.querySelector('.welcome')).not.toBeNull();
-  });
-});
-
-describe('show (alias)', () => {
-  it('renders view when condition is true', async () => {
-    const visible = state(true);
-    const fragment = show(
-      () => visible(),
-      () => {
-        const el = document.createElement('p');
-        el.className = 'show-target';
-        return el;
-      }
-    );
-
-    const container = document.createElement('div');
-    container.appendChild(fragment);
-
-    await tick();
-    expect(container.querySelector('.show-target')).not.toBeNull();
-  });
-
-  it('renders else content when condition is false', async () => {
-    const ok = state(false);
-    const fragment = show(
-      () => ok(),
-      () => {
-        const el = document.createElement('p');
-        el.className = 'yes';
-        return el;
-      },
-      () => {
-        const el = document.createElement('p');
-        el.className = 'no';
-        return el;
-      }
-    );
-
-    const container = document.createElement('div');
-    container.appendChild(fragment);
-
-    await tick();
-    expect(container.querySelector('.yes')).toBeNull();
-    expect(container.querySelector('.no')).not.toBeNull();
   });
 });
 

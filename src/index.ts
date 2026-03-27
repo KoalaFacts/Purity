@@ -26,4 +26,4 @@ export {
 export type { LifecycleCallback, ErrorCallback, ComponentFn, MountResult } from './component.js';
 
 // Template helpers
-export { match, each } from './helpers.js';
+export { match, when, each } from './helpers.js';

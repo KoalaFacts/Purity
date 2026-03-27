@@ -72,6 +72,28 @@ export function match<T extends string | number | boolean>(
   return fragment;
 }
 
+// ---------------------------------------------------------------------------
+// when(conditionFn, thenFn, elseFn?) — boolean conditional rendering
+//
+//   when(() => loggedIn(),
+//     () => html`<p>Welcome</p>`,
+//     () => html`<p>Login</p>`
+//   )
+// ---------------------------------------------------------------------------
+
+export function when(
+  conditionFn: () => boolean,
+  thenFn: MatchView,
+  elseFn?: MatchView
+): DocumentFragment {
+  return match(
+    (() => String(conditionFn())) as () => 'true' | 'false',
+    {
+      true: thenFn,
+      ...(elseFn ? { false: elseFn } : {}),
+    }
+  );
+}
 
 // ---------------------------------------------------------------------------
 // each(listAccessor, mapFn, keyFn?) — list rendering

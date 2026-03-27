@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { state, computed, effect, batch } from '../src/signals.ts';
+import { state, computed, effect, watch, batch } from '../src/signals.ts';
 
 describe('state', () => {
   it('reads the initial value', () => {
@@ -155,6 +155,100 @@ describe('effect', () => {
     count(1);
     await new Promise((r) => queueMicrotask(r));
     expect(cleanups).toEqual(['cleanup']);
+  });
+});
+
+describe('watch', () => {
+  it('auto-tracks like effect', () => {
+    const fn = vi.fn();
+    const count = state(0);
+
+    watch(() => fn(count()));
+    expect(fn).toHaveBeenCalledWith(0);
+  });
+
+  it('watches a single source with old/new values', async () => {
+    const calls = [];
+    const count = state(0);
+
+    watch(count, (val, old) => {
+      calls.push({ val, old });
+    });
+
+    count(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual([{ val: 1, old: 0 }]);
+
+    count(5);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual([
+      { val: 1, old: 0 },
+      { val: 5, old: 1 },
+    ]);
+  });
+
+  it('watches multiple sources', async () => {
+    const calls = [];
+    const a = state(1);
+    const b = state('x');
+
+    watch([a, b], (vals, olds) => {
+      calls.push({ vals: [...vals], olds: [...olds] });
+    });
+
+    a(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual([{ vals: [2, 'x'], olds: [1, 'x'] }]);
+
+    b('y');
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual([
+      { vals: [2, 'x'], olds: [1, 'x'] },
+      { vals: [2, 'y'], olds: [2, 'x'] },
+    ]);
+  });
+
+  it('watches a computed source', async () => {
+    const calls = [];
+    const count = state(1);
+    const doubled = computed(() => count() * 2);
+
+    watch(doubled, (val, old) => {
+      calls.push({ val, old });
+    });
+
+    count(3);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual([{ val: 6, old: 2 }]);
+  });
+
+  it('does not fire callback on initial run (explicit source)', async () => {
+    const fn = vi.fn();
+    const count = state(0);
+
+    watch(count, fn);
+    expect(fn).not.toHaveBeenCalled();
+
+    count(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns dispose function (explicit source)', async () => {
+    const calls = [];
+    const count = state(0);
+
+    const stop = watch(count, (val) => calls.push(val));
+
+    count(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual([1]);
+
+    stop();
+
+    count(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual([1]);
   });
 });
 

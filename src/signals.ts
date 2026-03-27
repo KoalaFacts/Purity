@@ -98,7 +98,7 @@ export function computed<T>(fn: () => T): ComputedAccessor<T> {
 }
 
 // ---------------------------------------------------------------------------
-// effect(fn) — auto-tracking side effect
+// Internal effect runner (used by both watch overloads)
 // ---------------------------------------------------------------------------
 
 let _currentEffect: EffectHandle | null = null;
@@ -107,7 +107,7 @@ export function getCurrentEffect(): EffectHandle | null {
   return _currentEffect;
 }
 
-export function effect(fn: () => void | Dispose): Dispose {
+function _effect(fn: () => void | Dispose): Dispose {
   let cleanup: void | Dispose;
   let disposed = false;
 
@@ -145,6 +145,72 @@ export function effect(fn: () => void | Dispose): Dispose {
 
   return () => effectHandle._dispose();
 }
+
+// ---------------------------------------------------------------------------
+// watch — unified reactive watcher
+//
+//   watch(() => console.log(count()))              // auto-track
+//   watch(count, (val, old) => { ... })            // explicit source
+//   watch([a, b], ([va, vb], [oa, ob]) => { ... }) // multiple sources
+// ---------------------------------------------------------------------------
+
+type WatchSource<T> = StateAccessor<T> | ComputedAccessor<T> | (() => T);
+
+// Overload: auto-tracking effect
+export function watch(fn: () => void | Dispose): Dispose;
+
+// Overload: single source
+export function watch<T>(
+  source: WatchSource<T>,
+  cb: (value: T, oldValue: T) => void | Dispose
+): Dispose;
+
+// Overload: multiple sources
+export function watch<T extends readonly unknown[]>(
+  sources: { [K in keyof T]: WatchSource<T[K]> },
+  cb: (values: T, oldValues: T) => void | Dispose
+): Dispose;
+
+export function watch(
+  sourceOrFn: WatchSource<any> | WatchSource<any>[] | (() => void | Dispose),
+  cb?: (value: any, oldValue: any) => void | Dispose
+): Dispose {
+  // Auto-track overload: watch(() => { ... })
+  if (!cb) {
+    return _effect(sourceOrFn as () => void | Dispose);
+  }
+
+  // Explicit source overload
+  const isArray = Array.isArray(sourceOrFn);
+  const sources: WatchSource<any>[] = isArray
+    ? sourceOrFn
+    : [sourceOrFn as WatchSource<any>];
+
+  const read = (): any[] => sources.map((s) => s());
+
+  let oldValues = read();
+  let first = true;
+
+  return _effect(() => {
+    const newValues = read();
+
+    if (first) {
+      first = false;
+      oldValues = newValues;
+      return;
+    }
+
+    const result = isArray
+      ? cb(newValues, oldValues)
+      : cb(newValues[0], oldValues[0]);
+
+    oldValues = newValues;
+    return result;
+  });
+}
+
+// Keep effect as an alias for the auto-track overload
+export const effect = (fn: () => void | Dispose): Dispose => watch(fn);
 
 // ---------------------------------------------------------------------------
 // batch(fn) — batch multiple state updates into a single flush

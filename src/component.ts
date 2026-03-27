@@ -1,36 +1,36 @@
 // ---------------------------------------------------------------------------
 // Component context & lifecycle hooks
-//
-// Lifecycle:
-//   onBeforeMount ─→ [DOM insertion] ─→ onMount
-//   onBeforeUpdate ─→ [DOM patch] ─→ onUpdate  (on each reactive update)
-//   onBeforeDestroy ─→ [removal] ─→ onDestroy
-//   onError — wraps component render & effects
 // ---------------------------------------------------------------------------
 
+export type LifecycleCallback = () => void;
+export type ErrorCallback = (err: unknown) => void;
+export type ComponentFn = () => Node | DocumentFragment;
+
+export interface MountResult {
+  unmount: () => void;
+  context: ComponentContext;
+}
+
 // ---------------------------------------------------------------------------
-// ComponentContext — holds lifecycle callbacks for one component instance
+// ComponentContext
 // ---------------------------------------------------------------------------
 
-class ComponentContext {
-  constructor() {
-    this.beforeMount = [];
-    this.mounted = [];
-    this.beforeUpdate = [];
-    this.updated = [];
-    this.beforeDestroy = [];
-    this.destroyed = [];
-    this.errorHandlers = [];
-    this.disposers = []; // effect dispose functions owned by this component
-    this.nodes = null; // DOM nodes owned by this component
-    this.parent = null; // parent context
-    this.children = []; // child component contexts
-    this._isMounted = false;
-    this._isDestroyed = false;
-  }
+export class ComponentContext {
+  beforeMount: LifecycleCallback[] = [];
+  mounted: LifecycleCallback[] = [];
+  beforeUpdate: LifecycleCallback[] = [];
+  updated: LifecycleCallback[] = [];
+  beforeDestroy: LifecycleCallback[] = [];
+  destroyed: LifecycleCallback[] = [];
+  errorHandlers: ErrorCallback[] = [];
+  disposers: (() => void)[] = [];
+  nodes: Node[] | null = null;
+  parent: ComponentContext | null = null;
+  children: ComponentContext[] = [];
+  _isMounted = false;
+  _isDestroyed = false;
 
-  /** Run all callbacks in an array, with optional error boundary. */
-  _run(callbacks, ...args) {
+  _run(callbacks: ((...args: any[]) => void)[], ...args: unknown[]): void {
     for (const fn of callbacks) {
       try {
         fn(...args);
@@ -40,8 +40,7 @@ class ComponentContext {
     }
   }
 
-  /** Handle an error — delegate to error handlers, or rethrow. */
-  _handleError(err) {
+  _handleError(err: unknown): void {
     if (this.errorHandlers.length > 0) {
       for (const handler of this.errorHandlers) {
         try {
@@ -59,73 +58,67 @@ class ComponentContext {
 }
 
 // ---------------------------------------------------------------------------
-// Context stack — tracks the currently executing component so hooks can
-// register without needing an explicit reference.
+// Context stack
 // ---------------------------------------------------------------------------
 
-const contextStack = [];
+const contextStack: ComponentContext[] = [];
 
-export function getCurrentContext() {
+export function getCurrentContext(): ComponentContext | null {
   return contextStack[contextStack.length - 1] || null;
 }
 
-function pushContext(ctx) {
+function pushContext(ctx: ComponentContext): void {
   contextStack.push(ctx);
 }
 
-function popContext() {
+function popContext(): ComponentContext | undefined {
   return contextStack.pop();
 }
 
 // ---------------------------------------------------------------------------
-// Lifecycle hook registration functions
+// Lifecycle hook registration
 // ---------------------------------------------------------------------------
 
-export function onBeforeMount(fn) {
+export function onBeforeMount(fn: LifecycleCallback): void {
   const ctx = getCurrentContext();
   if (ctx) ctx.beforeMount.push(fn);
 }
 
-export function onMount(fn) {
+export function onMount(fn: LifecycleCallback): void {
   const ctx = getCurrentContext();
   if (ctx) ctx.mounted.push(fn);
 }
 
-export function onBeforeUpdate(fn) {
+export function onBeforeUpdate(fn: LifecycleCallback): void {
   const ctx = getCurrentContext();
   if (ctx) ctx.beforeUpdate.push(fn);
 }
 
-export function onUpdate(fn) {
+export function onUpdate(fn: LifecycleCallback): void {
   const ctx = getCurrentContext();
   if (ctx) ctx.updated.push(fn);
 }
 
-export function onBeforeDestroy(fn) {
+export function onBeforeDestroy(fn: LifecycleCallback): void {
   const ctx = getCurrentContext();
   if (ctx) ctx.beforeDestroy.push(fn);
 }
 
-export function onDestroy(fn) {
+export function onDestroy(fn: LifecycleCallback): void {
   const ctx = getCurrentContext();
   if (ctx) ctx.destroyed.push(fn);
 }
 
-export function onError(fn) {
+export function onError(fn: ErrorCallback): void {
   const ctx = getCurrentContext();
   if (ctx) ctx.errorHandlers.push(fn);
 }
 
 // ---------------------------------------------------------------------------
-// mount(component, container) — instantiate a component and attach to DOM
-//
-//   mount(Counter, document.getElementById('app'));
-//   mount(() => html`<p>Hello</p>`, document.body);
-//
-// Returns an object with an `unmount()` method to tear down the component.
+// mount(component, container)
 // ---------------------------------------------------------------------------
 
-export function mount(component, container) {
+export function mount(component: ComponentFn, container: Element): MountResult {
   const ctx = new ComponentContext();
   const parentCtx = getCurrentContext();
   if (parentCtx) {
@@ -135,18 +128,17 @@ export function mount(component, container) {
 
   pushContext(ctx);
 
-  let fragment;
+  let fragment: Node | DocumentFragment;
   try {
     fragment = component();
   } catch (err) {
     popContext();
     ctx._handleError(err);
-    return { unmount: () => {} };
+    return { unmount: () => {}, context: ctx };
   }
 
   popContext();
 
-  // Collect the top-level nodes so we can remove them on unmount
   if (fragment instanceof DocumentFragment) {
     ctx.nodes = Array.from(fragment.childNodes);
   } else if (fragment instanceof Node) {
@@ -155,44 +147,37 @@ export function mount(component, container) {
     ctx.nodes = [];
   }
 
-  // --- onBeforeMount ---
   ctx._run(ctx.beforeMount);
 
-  // --- Insert into DOM ---
   if (container && fragment) {
     container.appendChild(fragment);
   }
 
   ctx._isMounted = true;
 
-  // --- onMount ---
-  // Use microtask to ensure DOM is settled
   queueMicrotask(() => {
     ctx._run(ctx.mounted);
   });
 
   return {
-    unmount: () => unmountContext(ctx, container),
+    unmount: () => unmountContext(ctx),
     context: ctx,
   };
 }
 
 // ---------------------------------------------------------------------------
-// unmountContext — tear down a component and its children
+// unmountContext
 // ---------------------------------------------------------------------------
 
-function unmountContext(ctx, container) {
+function unmountContext(ctx: ComponentContext): void {
   if (ctx._isDestroyed) return;
 
-  // --- onBeforeDestroy ---
   ctx._run(ctx.beforeDestroy);
 
-  // Recursively unmount children first
   for (const child of ctx.children) {
     unmountContext(child);
   }
 
-  // Remove DOM nodes
   if (ctx.nodes) {
     for (const node of ctx.nodes) {
       if (node.parentNode) {
@@ -201,7 +186,6 @@ function unmountContext(ctx, container) {
     }
   }
 
-  // Dispose all effects owned by this component
   for (const dispose of ctx.disposers) {
     try {
       dispose();
@@ -213,10 +197,8 @@ function unmountContext(ctx, container) {
   ctx._isDestroyed = true;
   ctx._isMounted = false;
 
-  // --- onDestroy ---
   ctx._run(ctx.destroyed);
 
-  // Remove from parent's children list
   if (ctx.parent) {
     const idx = ctx.parent.children.indexOf(ctx);
     if (idx !== -1) ctx.parent.children.splice(idx, 1);
@@ -224,17 +206,16 @@ function unmountContext(ctx, container) {
 }
 
 // ---------------------------------------------------------------------------
-// notifyBeforeUpdate / notifyUpdate — called by the reactive render system
-// around DOM patches so lifecycle hooks fire.
+// notifyBeforeUpdate / notifyUpdate
 // ---------------------------------------------------------------------------
 
-export function notifyBeforeUpdate(ctx) {
+export function notifyBeforeUpdate(ctx: ComponentContext | null): void {
   if (ctx && ctx._isMounted && !ctx._isDestroyed) {
     ctx._run(ctx.beforeUpdate);
   }
 }
 
-export function notifyUpdate(ctx) {
+export function notifyUpdate(ctx: ComponentContext | null): void {
   if (ctx && ctx._isMounted && !ctx._isDestroyed) {
     ctx._run(ctx.updated);
   }

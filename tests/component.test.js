@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { html } from '../src/render.js';
+import { html } from '../src/render.ts';
 import {
   mount,
   onBeforeMount,
@@ -7,7 +7,7 @@ import {
   onBeforeDestroy,
   onDestroy,
   onError,
-} from '../src/component.js';
+} from '../src/component.ts';
 
 describe('mount', () => {
   it('mounts a component into a container', () => {

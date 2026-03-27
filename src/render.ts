@@ -1,32 +1,42 @@
 import { effect } from './signals.js';
 
 // ---------------------------------------------------------------------------
-// Template cache — keyed by the TemplateStringsArray identity so the same
-// tagged-template call site reuses its parsed <template> element.
+// Types
 // ---------------------------------------------------------------------------
 
-const templateCache = new WeakMap();
+type AttrType = 'event' | 'bool' | 'prop' | 'attr';
 
-// Marker prefix used in comment nodes to identify dynamic slots.
+interface AttrBinding {
+  index: number;
+  name: string;
+  type: AttrType;
+}
+
+interface CachedTemplate {
+  tpl: HTMLTemplateElement;
+  attrBindings: AttrBinding[];
+}
+
+interface AttrInfo {
+  name: string;
+  type: AttrType;
+  before: string;
+}
+
+// ---------------------------------------------------------------------------
+// Template cache
+// ---------------------------------------------------------------------------
+
+const templateCache = new WeakMap<TemplateStringsArray, CachedTemplate>();
+
 const MARKER = 'purity-';
-
-// Attribute marker for dynamic attribute bindings.
 const ATTR_MARKER = `__purity_`;
 
 // ---------------------------------------------------------------------------
 // html`` — tagged template literal that returns real DOM nodes
-//
-// Usage:
-//   html`<p>Hello ${name}</p>`                     // static value
-//   html`<p>${() => count()}</p>`                  // reactive binding
-//   html`<button @click=${handler}>Click</button>` // event binding
-//   html`<div class=${() => cls()}>...</div>`      // reactive attribute
-//   html`<input ?disabled=${() => off()} />`       // boolean attribute
-//   html`<div .textContent=${val}>...</div>`        // property binding
 // ---------------------------------------------------------------------------
 
-export function html(strings, ...values) {
-  // 1. Get or create the cached template for this call site
+export function html(strings: TemplateStringsArray, ...values: unknown[]): DocumentFragment {
   let cached = templateCache.get(strings);
 
   if (!cached) {
@@ -34,40 +44,32 @@ export function html(strings, ...values) {
     templateCache.set(strings, cached);
   }
 
-  // 2. Clone the template and hydrate with values
   return hydrate(cached, values);
 }
 
 // ---------------------------------------------------------------------------
-// buildTemplate — parse the static parts into a <template> with markers
+// buildTemplate
 // ---------------------------------------------------------------------------
 
-function buildTemplate(strings) {
+function buildTemplate(strings: TemplateStringsArray): CachedTemplate {
   let htmlStr = '';
-  const attrBindings = []; // { index, name, type } for attribute-position values
+  const attrBindings: AttrBinding[] = [];
 
   for (let i = 0; i < strings.length; i++) {
     htmlStr += strings[i];
 
     if (i < strings.length - 1) {
-      // Detect if this expression is inside an attribute
       const attrInfo = detectAttribute(htmlStr);
 
       if (attrInfo) {
-        // This value is inside an attribute — use a sentinel attribute value
-        // that we can find later via querySelectorAll.
         const markerAttr = `${ATTR_MARKER}${i}`;
         attrBindings.push({
           index: i,
           name: attrInfo.name,
-          type: attrInfo.type, // 'event' | 'bool' | 'prop' | 'attr'
+          type: attrInfo.type,
         });
-
-        // Replace the attribute in the HTML with a marker data attribute.
-        // Remove the partial attribute (name="...value-so-far) and add marker.
         htmlStr = attrInfo.before + ` ${markerAttr}=""`;
       } else {
-        // Content position — insert a comment marker
         htmlStr += `<!--${MARKER}${i}-->`;
       }
     }
@@ -80,20 +82,12 @@ function buildTemplate(strings) {
 }
 
 // ---------------------------------------------------------------------------
-// detectAttribute — check if the current position in HTML is inside an
-// attribute value. Returns { name, type, before } or null.
-//
-// We look backwards from the end of `html` for an unclosed attribute pattern:
-//   name="...   or   @event=${   or   ?bool=${   or   .prop=${
+// detectAttribute
 // ---------------------------------------------------------------------------
 
-function detectAttribute(htmlStr) {
-  // Walk backwards to find if we're inside an attribute value or at attr=
-  // Pattern: we just wrote `attrName=` or `attrName="` or `attrName='`
+function detectAttribute(htmlStr: string): AttrInfo | null {
   const stripped = htmlStr.trimEnd();
 
-  // Match patterns like: name=, name=", name='
-  // Also handle @event=, ?bool=, .prop=
   const match = stripped.match(
     /(?:^|[\s])([.?@]?[a-zA-Z_][\w.-]*)=(?:["']?)$/
   );
@@ -101,7 +95,7 @@ function detectAttribute(htmlStr) {
   if (!match) return null;
 
   const fullName = match[1];
-  let type = 'attr';
+  let type: AttrType = 'attr';
   let name = fullName;
 
   if (fullName.startsWith('@')) {
@@ -115,7 +109,6 @@ function detectAttribute(htmlStr) {
     name = fullName.slice(1);
   }
 
-  // `before` is the HTML up to (but not including) the attribute assignment
   const attrStart = stripped.lastIndexOf(fullName + '=');
   const before = stripped.slice(0, attrStart).trimEnd();
 
@@ -123,12 +116,12 @@ function detectAttribute(htmlStr) {
 }
 
 // ---------------------------------------------------------------------------
-// hydrate — clone the template, find markers, and bind values
+// hydrate
 // ---------------------------------------------------------------------------
 
-function hydrate(cached, values) {
+function hydrate(cached: CachedTemplate, values: unknown[]): DocumentFragment {
   const { tpl, attrBindings } = cached;
-  const fragment = tpl.content.cloneNode(true);
+  const fragment = tpl.content.cloneNode(true) as DocumentFragment;
 
   // --- Process content markers (comment nodes) ---
   const walker = document.createTreeWalker(
@@ -137,19 +130,18 @@ function hydrate(cached, values) {
     null
   );
 
-  const markers = [];
-  let node;
+  const markers: { node: Comment; index: number }[] = [];
+  let node: Node | null;
   while ((node = walker.nextNode())) {
-    const text = node.textContent;
+    const text = (node as Comment).textContent ?? '';
     if (text.startsWith(MARKER)) {
       const index = parseInt(text.slice(MARKER.length), 10);
-      markers.push({ node, index });
+      markers.push({ node: node as Comment, index });
     }
   }
 
   for (const { node: marker, index } of markers) {
-    const value = values[index];
-    processContentValue(marker, value);
+    processContentValue(marker, values[index]);
   }
 
   // --- Process attribute bindings ---
@@ -160,36 +152,31 @@ function hydrate(cached, values) {
     if (!el) continue;
 
     el.removeAttribute(markerAttr);
-    const value = values[binding.index];
-
-    processAttributeValue(el, binding, value);
+    processAttributeValue(el as HTMLElement, binding, values[binding.index]);
   }
 
   return fragment;
 }
 
 // ---------------------------------------------------------------------------
-// processContentValue — replace a comment marker with the appropriate DOM
+// processContentValue
 // ---------------------------------------------------------------------------
 
-function processContentValue(marker, value) {
-  const parent = marker.parentNode;
+function processContentValue(marker: Comment, value: unknown): void {
+  const parent = marker.parentNode!;
 
   if (value == null || value === false) {
-    // Render nothing — just remove the marker
     parent.removeChild(marker);
     return;
   }
 
   if (typeof value === 'function') {
-    // Reactive binding — create a text node and effect to update it
     const textNode = document.createTextNode('');
     parent.replaceChild(textNode, marker);
 
     effect(() => {
-      const result = value();
+      const result = (value as () => unknown)();
       if (result instanceof Node) {
-        // If the function returns a DOM node, replace the text node
         textNode.replaceWith(result);
       } else {
         textNode.data = result == null ? '' : String(result);
@@ -216,31 +203,28 @@ function processContentValue(marker, value) {
     return;
   }
 
-  // Primitive — string / number
   const textNode = document.createTextNode(String(value));
   parent.replaceChild(textNode, marker);
 }
 
 // ---------------------------------------------------------------------------
-// processAttributeValue — bind a value to an element attribute / property
+// processAttributeValue
 // ---------------------------------------------------------------------------
 
-function processAttributeValue(el, binding, value) {
+function processAttributeValue(el: HTMLElement, binding: AttrBinding, value: unknown): void {
   const { name, type } = binding;
 
   if (type === 'event') {
-    // @click=${handler}  →  addEventListener('click', handler)
     if (typeof value === 'function') {
-      el.addEventListener(name, value);
+      el.addEventListener(name, value as EventListener);
     }
     return;
   }
 
   if (type === 'bool') {
-    // ?disabled=${bool}  →  toggle attribute
     if (typeof value === 'function') {
       effect(() => {
-        if (value()) {
+        if ((value as () => unknown)()) {
           el.setAttribute(name, '');
         } else {
           el.removeAttribute(name);
@@ -257,13 +241,12 @@ function processAttributeValue(el, binding, value) {
   }
 
   if (type === 'prop') {
-    // .textContent=${val}  →  el.textContent = val
     if (typeof value === 'function') {
       effect(() => {
-        el[name] = value();
+        (el as any)[name] = (value as () => unknown)();
       });
     } else {
-      el[name] = value;
+      (el as any)[name] = value;
     }
     return;
   }
@@ -271,7 +254,7 @@ function processAttributeValue(el, binding, value) {
   // Regular attribute
   if (typeof value === 'function') {
     effect(() => {
-      const v = value();
+      const v = (value as () => unknown)();
       if (v == null || v === false) {
         el.removeAttribute(name);
       } else {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { state } from '../src/signals.js';
-import { html } from '../src/render.js';
+import { state } from '../src/signals.ts';
+import { html } from '../src/render.ts';
 
 describe('html tagged template', () => {
   it('creates a DocumentFragment from static HTML', () => {

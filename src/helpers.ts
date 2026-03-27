@@ -2,15 +2,13 @@ import { effect } from './signals.js';
 
 // ---------------------------------------------------------------------------
 // show(conditionFn, viewFn, elseFn?) — conditional rendering
-//
-// Returns a DocumentFragment with start/end marker comments. An effect
-// watches the condition and swaps DOM content between the markers.
-//
-//   html`<div>${show(() => isVisible(), () => html`<p>Hello</p>`)}</div>`
-//   html`<div>${show(() => ok(), () => html`<p>Yes</p>`, () => html`<p>No</p>`)}</div>`
 // ---------------------------------------------------------------------------
 
-export function show(conditionFn, viewFn, elseFn) {
+export function show(
+  conditionFn: () => boolean,
+  viewFn: () => Node | DocumentFragment | string,
+  elseFn?: () => Node | DocumentFragment | string
+): DocumentFragment {
   const startMarker = document.createComment('show-start');
   const endMarker = document.createComment('show-end');
 
@@ -18,12 +16,11 @@ export function show(conditionFn, viewFn, elseFn) {
   fragment.appendChild(startMarker);
   fragment.appendChild(endMarker);
 
-  let currentNodes = [];
+  let currentNodes: Node[] = [];
 
   effect(() => {
     const shouldShow = conditionFn();
 
-    // Remove current nodes between markers
     for (const node of currentNodes) {
       if (node.parentNode) {
         node.parentNode.removeChild(node);
@@ -31,11 +28,10 @@ export function show(conditionFn, viewFn, elseFn) {
     }
     currentNodes = [];
 
-    // Insert new content
     const parent = endMarker.parentNode;
     if (!parent) return;
 
-    let content;
+    let content: Node | DocumentFragment | string | null = null;
     if (shouldShow) {
       content = typeof viewFn === 'function' ? viewFn() : null;
     } else {
@@ -54,7 +50,7 @@ export function show(conditionFn, viewFn, elseFn) {
       }
 
       parent.insertBefore(
-        content instanceof DocumentFragment ? content : content,
+        content instanceof Node ? content : document.createTextNode(String(content)),
         endMarker
       );
     }
@@ -65,15 +61,18 @@ export function show(conditionFn, viewFn, elseFn) {
 
 // ---------------------------------------------------------------------------
 // each(listAccessor, mapFn, keyFn?) — list rendering
-//
-// Renders a list reactively. When the list changes, items are added, removed,
-// or reordered efficiently using an optional key function.
-//
-//   html`<ul>${each(() => items(), (item, i) => html`<li>${item}</li>`)}</ul>`
-//   html`<ul>${each(items, (item) => html`<li>${item}</li>`, (item) => item.id)}</ul>`
 // ---------------------------------------------------------------------------
 
-export function each(listAccessor, mapFn, keyFn) {
+interface EachEntry {
+  nodes: Node[];
+  dispose?: () => void;
+}
+
+export function each<T>(
+  listAccessor: (() => T[]) | T[],
+  mapFn: (item: T, index: number) => Node | DocumentFragment | string,
+  keyFn?: (item: T, index: number) => unknown
+): DocumentFragment {
   const startMarker = document.createComment('each-start');
   const endMarker = document.createComment('each-end');
 
@@ -81,13 +80,10 @@ export function each(listAccessor, mapFn, keyFn) {
   fragment.appendChild(startMarker);
   fragment.appendChild(endMarker);
 
-  // Map from key → { nodes: Node[], dispose?: Function }
-  let keyToEntry = new Map();
-  let prevKeys = [];
+  let keyToEntry = new Map<unknown, EachEntry>();
 
-  // Normalize listAccessor: if it's a signal accessor, call it; if array, wrap
   const getList = typeof listAccessor === 'function'
-    ? listAccessor
+    ? listAccessor as () => T[]
     : () => listAccessor;
 
   effect(() => {
@@ -95,22 +91,19 @@ export function each(listAccessor, mapFn, keyFn) {
     const parent = endMarker.parentNode;
     if (!parent) return;
 
-    const newKeys = [];
-    const newEntries = new Map();
+    const newKeys: unknown[] = [];
+    const newEntries = new Map<unknown, EachEntry>();
 
-    // 1. Build new key → entry map
     for (let i = 0; i < list.length; i++) {
       const item = list[i];
       const key = keyFn ? keyFn(item, i) : i;
       newKeys.push(key);
 
       if (keyToEntry.has(key)) {
-        // Reuse existing entry
-        newEntries.set(key, keyToEntry.get(key));
+        newEntries.set(key, keyToEntry.get(key)!);
       } else {
-        // Create new entry
         const content = mapFn(item, i);
-        let nodes;
+        let nodes: Node[];
 
         if (content instanceof DocumentFragment) {
           nodes = Array.from(content.childNodes);
@@ -125,7 +118,6 @@ export function each(listAccessor, mapFn, keyFn) {
       }
     }
 
-    // 2. Remove entries that are no longer in the list
     for (const [key, entry] of keyToEntry) {
       if (!newEntries.has(key)) {
         for (const node of entry.nodes) {
@@ -135,20 +127,16 @@ export function each(listAccessor, mapFn, keyFn) {
       }
     }
 
-    // 3. Insert/reorder nodes in correct order before endMarker
-    // We work backwards from endMarker for efficient insertBefore
-    let nextSibling = endMarker;
+    let nextSibling: Node = endMarker;
 
     for (let i = newKeys.length - 1; i >= 0; i--) {
       const key = newKeys[i];
-      const entry = newEntries.get(key);
+      const entry = newEntries.get(key)!;
       const nodes = entry.nodes;
 
-      // Check if nodes are already in correct position
       const firstNode = nodes[0];
       if (firstNode && firstNode.nextSibling !== nextSibling &&
           firstNode !== nextSibling) {
-        // Need to move — insert all nodes of this entry before nextSibling
         for (const node of nodes) {
           parent.insertBefore(node, nextSibling);
         }
@@ -157,9 +145,7 @@ export function each(listAccessor, mapFn, keyFn) {
       nextSibling = nodes[0] || nextSibling;
     }
 
-    // 4. Update state
     keyToEntry = newEntries;
-    prevKeys = newKeys;
   });
 
   return fragment;

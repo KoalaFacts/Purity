@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { state, computed, effect, batch } from '../src/signals.js';
+import { state, computed, effect, batch } from '../src/signals.ts';
 
 describe('state', () => {
   it('reads the initial value', () => {

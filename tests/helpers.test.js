@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { state } from '../src/signals.js';
-import { show, each } from '../src/helpers.js';
+import { state } from '../src/signals.ts';
+import { show, each } from '../src/helpers.ts';
 
 describe('show', () => {
   it('renders view when condition is true', async () => {

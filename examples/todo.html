@@ -129,7 +129,7 @@
 
   <script type="module">
     import {
-      state, computed, effect,
+      state, compute, effect,
       html, mount, show, each,
       onMount, onDestroy,
     } from '../src/index.ts';
@@ -142,7 +142,7 @@
       let nextId = 1;
 
       // --- Derived ---
-      const filteredTodos = computed(() => {
+      const filteredTodos = compute(() => {
         const f = filter();
         const list = todos();
         if (f === 'active') return list.filter(t => !t.done);
@@ -150,11 +150,11 @@
         return list;
       });
 
-      const remaining = computed(() =>
+      const remaining = compute(() =>
         todos().filter(t => !t.done).length
       );
 
-      const hasDone = computed(() =>
+      const hasDone = compute(() =>
         todos().some(t => t.done)
       );
 

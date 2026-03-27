@@ -53,15 +53,15 @@
 
   <script type="module">
     import {
-      state, computed, effect,
+      state, compute, effect,
       html, mount, show, each,
       onMount, onDestroy,
     } from '../src/index.ts';
 
     function Counter() {
       const count = state(0);
-      const doubled = computed(() => count() * 2);
-      const parity = computed(() => count() % 2 === 0 ? 'even' : 'odd');
+      const doubled = compute(() => count() * 2);
+      const parity = compute(() => count() % 2 === 0 ? 'even' : 'odd');
       const items = state([]);
 
       onMount(() => {

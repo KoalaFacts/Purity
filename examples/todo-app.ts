@@ -1,5 +1,5 @@
 import {
-  state, computed, effect,
+  state, compute, effect,
   html, mount, show, each,
   onMount, onDestroy,
   type StateAccessor, type ComputedAccessor,
@@ -29,7 +29,7 @@ function TodoApp(): DocumentFragment {
   let nextId = 1;
 
   // --- Derived ---
-  const filteredTodos: ComputedAccessor<Todo[]> = computed(() => {
+  const filteredTodos: ComputedAccessor<Todo[]> = compute(() => {
     const f = filter();
     const list = todos();
     if (f === 'active') return list.filter((t) => !t.done);
@@ -37,11 +37,11 @@ function TodoApp(): DocumentFragment {
     return list;
   });
 
-  const remaining: ComputedAccessor<number> = computed(() =>
+  const remaining: ComputedAccessor<number> = compute(() =>
     todos().filter((t) => !t.done).length
   );
 
-  const hasDone: ComputedAccessor<boolean> = computed(() =>
+  const hasDone: ComputedAccessor<boolean> = compute(() =>
     todos().some((t) => t.done)
   );
 

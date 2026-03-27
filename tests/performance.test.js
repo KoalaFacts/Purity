@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { state, computed, watch, batch } from '../src/signals.ts';
+import { state, compute, watch, batch } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
@@ -21,7 +21,7 @@ describe('performance', () => {
       const start = performance.now();
       const signals = [];
       for (let i = 0; i < 100_000; i++) {
-        signals.push(computed(() => source() + i));
+        signals.push(compute(() => source() + i));
       }
       const elapsed = performance.now() - start;
       console.log(`  100k computed signals: ${elapsed.toFixed(2)}ms`);
@@ -74,7 +74,7 @@ describe('performance', () => {
       let current = source;
       for (let i = 0; i < 1000; i++) {
         const prev = current;
-        current = computed(() => prev() + 1);
+        current = compute(() => prev() + 1);
       }
 
       const start = performance.now();
@@ -90,7 +90,7 @@ describe('performance', () => {
       const source = state(0);
       const deps = [];
       for (let i = 0; i < 10_000; i++) {
-        deps.push(computed(() => source() + i));
+        deps.push(compute(() => source() + i));
       }
 
       const start = performance.now();
@@ -110,9 +110,9 @@ describe('performance', () => {
       let cCount = 0;
       let dCount = 0;
 
-      const b = computed(() => { bCount++; return source() + 1; });
-      const c = computed(() => { cCount++; return source() * 2; });
-      const d = computed(() => { dCount++; return b() + c(); });
+      const b = compute(() => { bCount++; return source() + 1; });
+      const c = compute(() => { cCount++; return source() * 2; });
+      const d = compute(() => { dCount++; return b() + c(); });
 
       // Initial read
       d();

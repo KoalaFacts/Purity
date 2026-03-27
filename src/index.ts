@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 
 // Reactive primitives
-export { state, computed, watch, effect, batch, Signal } from './signals.js';
+export { state, compute, computed, watch, effect, batch, Signal } from './signals.js';
 export type { StateAccessor, ComputedAccessor, Dispose, EffectHandle } from './signals.js';
 
 // Tagged template rendering

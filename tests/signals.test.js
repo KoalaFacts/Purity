@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { state, computed, effect, watch, batch } from '../src/signals.ts';
+import { state, compute, effect, watch, batch } from '../src/signals.ts';
 
 describe('state', () => {
   it('reads the initial value', () => {
@@ -64,13 +64,13 @@ describe('state', () => {
 describe('computed', () => {
   it('derives a value from state', () => {
     const count = state(5);
-    const doubled = computed(() => count() * 2);
+    const doubled = compute(() => count() * 2);
     expect(doubled()).toBe(10);
   });
 
   it('updates when dependency changes', () => {
     const count = state(1);
-    const doubled = computed(() => count() * 2);
+    const doubled = compute(() => count() * 2);
 
     expect(doubled()).toBe(2);
     count(3);
@@ -79,8 +79,8 @@ describe('computed', () => {
 
   it('chains multiple computed values', () => {
     const a = state(1);
-    const b = computed(() => a() + 1);
-    const c = computed(() => b() * 2);
+    const b = compute(() => a() + 1);
+    const c = compute(() => b() * 2);
 
     expect(c()).toBe(4);
     a(5);
@@ -89,7 +89,7 @@ describe('computed', () => {
 
   it('supports .peek() without tracking', () => {
     const count = state(3);
-    const doubled = computed(() => count() * 2);
+    const doubled = compute(() => count() * 2);
     expect(doubled.peek()).toBe(6);
   });
 });
@@ -211,7 +211,7 @@ describe('watch', () => {
   it('watches a computed source', async () => {
     const calls = [];
     const count = state(1);
-    const doubled = computed(() => count() * 2);
+    const doubled = compute(() => count() * 2);
 
     watch(doubled, (val, old) => {
       calls.push({ val, old });

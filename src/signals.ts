@@ -80,10 +80,10 @@ export function state<T>(initial: T): StateAccessor<T> {
 }
 
 // ---------------------------------------------------------------------------
-// computed(fn) — reactive read-only derived value
+// compute(fn) — reactive read-only derived value
 // ---------------------------------------------------------------------------
 
-export function computed<T>(fn: () => T): ComputedAccessor<T> {
+export function compute<T>(fn: () => T): ComputedAccessor<T> {
   const c = new Signal.Computed<T>(fn);
 
   const accessor = function (): T {
@@ -219,6 +219,9 @@ export function watch(
 
 // Keep effect as an alias for the auto-track overload
 export const effect = (fn: () => void | Dispose): Dispose => watch(fn);
+
+// Keep computed as an alias for compute
+export const computed = compute;
 
 // ---------------------------------------------------------------------------
 // batch(fn) — batch multiple state updates into a single flush

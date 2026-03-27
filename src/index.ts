@@ -3,27 +3,24 @@
 //           built on native signals.
 // ---------------------------------------------------------------------------
 
-// Reactive primitives
-export { state, compute, watch, batch, Signal } from './signals.js';
-export type { StateAccessor, ComputedAccessor, Dispose, EffectHandle } from './signals.js';
-
-// Tagged template rendering
-export { html } from './render.js';
-
+export type { ComponentFn, ErrorCallback, LifecycleCallback, MountResult } from './component.js';
 // Component system & lifecycle hooks
 export {
+  ComponentContext,
+  getCurrentContext,
   mount,
-  onBeforeMount,
-  onMount,
-  onBeforeUpdate,
-  onUpdate,
   onBeforeDestroy,
+  onBeforeMount,
+  onBeforeUpdate,
   onDestroy,
   onError,
-  getCurrentContext,
-  ComponentContext,
+  onMount,
+  onUpdate,
 } from './component.js';
-export type { LifecycleCallback, ErrorCallback, ComponentFn, MountResult } from './component.js';
-
 // Template helpers
-export { match, when, each } from './helpers.js';
+export { each, match, when } from './helpers.js';
+// Tagged template rendering
+export { html } from './render.js';
+export type { ComputedAccessor, Dispose, EffectHandle, StateAccessor } from './signals.js';
+// Reactive primitives
+export { batch, compute, Signal, state, watch } from './signals.js';

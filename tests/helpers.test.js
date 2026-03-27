@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { each, match } from '../src/helpers.ts';
 import { state } from '../src/signals.ts';
-import { match, each } from '../src/helpers.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
@@ -77,7 +77,7 @@ describe('match', () => {
         el.className = 'fallback';
         el.textContent = 'Unknown state';
         return el;
-      }
+      },
     );
 
     const container = document.createElement('div');
@@ -170,7 +170,7 @@ describe('each', () => {
         const li = document.createElement('li');
         li.textContent = item;
         return li;
-      }
+      },
     );
 
     const container = document.createElement('ul');
@@ -192,7 +192,7 @@ describe('each', () => {
         const li = document.createElement('li');
         li.textContent = item;
         return li;
-      }
+      },
     );
 
     const container = document.createElement('ul');
@@ -216,7 +216,7 @@ describe('each', () => {
         const li = document.createElement('li');
         li.textContent = item;
         return li;
-      }
+      },
     );
 
     const container = document.createElement('ul');
@@ -240,7 +240,7 @@ describe('each', () => {
         const li = document.createElement('li');
         li.textContent = item;
         return li;
-      }
+      },
     );
 
     const container = document.createElement('ul');

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { state, compute, watch, batch } from '../src/signals.ts';
+import { describe, expect, it } from 'vitest';
+import { batch, compute, state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
@@ -95,9 +95,9 @@ describe('performance', () => {
 
       const start = performance.now();
       source(1);
-      let sum = 0;
+      let _sum = 0;
       for (const d of deps) {
-        sum += d();
+        _sum += d();
       }
       const elapsed = performance.now() - start;
       console.log(`  1 source → 10k computed: ${elapsed.toFixed(2)}ms`);
@@ -110,13 +110,24 @@ describe('performance', () => {
       let cCount = 0;
       let dCount = 0;
 
-      const b = compute(() => { bCount++; return source() + 1; });
-      const c = compute(() => { cCount++; return source() * 2; });
-      const d = compute(() => { dCount++; return b() + c(); });
+      const b = compute(() => {
+        bCount++;
+        return source() + 1;
+      });
+      const c = compute(() => {
+        cCount++;
+        return source() * 2;
+      });
+      const d = compute(() => {
+        dCount++;
+        return b() + c();
+      });
 
       // Initial read
       d();
-      bCount = 0; cCount = 0; dCount = 0;
+      bCount = 0;
+      cCount = 0;
+      dCount = 0;
 
       source(5);
       const result = d();
@@ -133,7 +144,10 @@ describe('performance', () => {
       let count = 0;
 
       for (let i = 0; i < 1000; i++) {
-        watch(() => { source(); count++; });
+        watch(() => {
+          source();
+          count++;
+        });
       }
       count = 0; // reset after initial run
 
@@ -150,7 +164,10 @@ describe('performance', () => {
       const source = state(0);
       let runs = 0;
 
-      watch(() => { source(); runs++; });
+      watch(() => {
+        source();
+        runs++;
+      });
       runs = 0;
 
       const start = performance.now();
@@ -169,7 +186,9 @@ describe('performance', () => {
       const source = state(0);
       const changes = [];
 
-      watch(source, (val, old) => { changes.push(val); });
+      watch(source, (val, _old) => {
+        changes.push(val);
+      });
 
       const start = performance.now();
       for (let i = 1; i <= 10_000; i++) {
@@ -177,7 +196,9 @@ describe('performance', () => {
       }
       await tick();
       const elapsed = performance.now() - start;
-      console.log(`  watch(source) 10k changes: ${elapsed.toFixed(2)}ms (${changes.length} callbacks)`);
+      console.log(
+        `  watch(source) 10k changes: ${elapsed.toFixed(2)}ms (${changes.length} callbacks)`,
+      );
       // Last value should be captured
       expect(changes[changes.length - 1]).toBe(10_000);
       expect(elapsed).toBeLessThan(200);
@@ -218,7 +239,11 @@ describe('performance', () => {
       const disposers = [];
 
       for (let i = 0; i < 10_000; i++) {
-        disposers.push(watch(() => { source(); }));
+        disposers.push(
+          watch(() => {
+            source();
+          }),
+        );
       }
 
       const start = performance.now();

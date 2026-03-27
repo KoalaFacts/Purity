@@ -21,7 +21,10 @@
     "build": "rollup -c",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dev": "vite examples"
+    "dev": "vite examples",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "check": "biome check --write ."
   },
   "keywords": [
     "signals",
@@ -35,6 +38,7 @@
     "signal-polyfill": "^0.2.2"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.9",
     "@rollup/plugin-node-resolve": "^16.0.0",
     "@rollup/plugin-typescript": "^12.3.0",
     "jsdom": "^25.0.0",

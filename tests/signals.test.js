@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { state, compute, watch, batch } from '../src/signals.ts';
+import { describe, expect, it, vi } from 'vitest';
+import { batch, compute, state, watch } from '../src/signals.ts';
 
 describe('state', () => {
   it('reads the initial value', () => {
@@ -22,21 +22,21 @@ describe('state', () => {
 
   it('accepts updater function', () => {
     const count = state(5);
-    count(v => v + 1);
+    count((v) => v + 1);
     expect(count()).toBe(6);
-    count(v => v * 3);
+    count((v) => v * 3);
     expect(count()).toBe(18);
   });
 
   it('updater works with arrays', () => {
     const items = state(['a', 'b']);
-    items(v => [...v, 'c']);
+    items((v) => [...v, 'c']);
     expect(items()).toEqual(['a', 'b', 'c']);
   });
 
   it('updater works with booleans', () => {
     const flag = state(true);
-    flag(v => !v);
+    flag((v) => !v);
     expect(flag()).toBe(false);
   });
 

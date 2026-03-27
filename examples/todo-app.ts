@@ -1,8 +1,14 @@
 import {
-  state, compute, watch,
-  html, mount, match, each,
-  onMount, onDestroy,
-  type StateAccessor, type ComputedAccessor,
+  type ComputedAccessor,
+  compute,
+  each,
+  html,
+  match,
+  mount,
+  onMount,
+  type StateAccessor,
+  state,
+  watch,
 } from '../src/index.ts';
 
 // ---------------------------------------------------------------------------
@@ -37,13 +43,9 @@ function TodoApp(): DocumentFragment {
     return list;
   });
 
-  const remaining: ComputedAccessor<number> = compute(() =>
-    todos().filter((t) => !t.done).length
-  );
+  const remaining: ComputedAccessor<number> = compute(() => todos().filter((t) => !t.done).length);
 
-  const hasDone: ComputedAccessor<boolean> = compute(() =>
-    todos().some((t) => t.done)
-  );
+  const hasDone: ComputedAccessor<boolean> = compute(() => todos().some((t) => t.done));
 
   // --- Actions ---
   const addTodo = (): void => {
@@ -54,9 +56,7 @@ function TodoApp(): DocumentFragment {
   };
 
   const toggleTodo = (id: number): void => {
-    todos(
-      todos().map((t) => (t.id === id ? { ...t, done: !t.done } : t))
-    );
+    todos(todos().map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
   };
 
   const deleteTodo = (id: number): void => {
@@ -134,7 +134,7 @@ function TodoApp(): DocumentFragment {
       </div>
 
       ${match(() => filteredTodos().length === 0, {
-        true:  () => html`<p class="empty">No todos here yet.</p>`,
+        true: () => html`<p class="empty">No todos here yet.</p>`,
         false: () => html`
           <ul class="todo-list">
             ${each(
@@ -154,7 +154,7 @@ function TodoApp(): DocumentFragment {
                   </button>
                 </li>
               `,
-              (todo: Todo) => todo.id
+              (todo: Todo) => todo.id,
             )}
           </ul>
         `,

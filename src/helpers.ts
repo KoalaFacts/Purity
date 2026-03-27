@@ -22,7 +22,7 @@ type MatchCases<T extends string | number | boolean> = Partial<Record<`${T}`, Ma
 export function match<T extends string | number | boolean>(
   sourceFn: () => T,
   cases: MatchCases<T>,
-  fallback?: MatchView
+  fallback?: MatchView,
 ): DocumentFragment {
   const startMarker = document.createComment('match-start');
   const endMarker = document.createComment('match-end');
@@ -65,7 +65,7 @@ export function match<T extends string | number | boolean>(
 
     parent.insertBefore(
       content instanceof Node ? content : document.createTextNode(String(content)),
-      endMarker
+      endMarker,
     );
   });
 
@@ -84,15 +84,12 @@ export function match<T extends string | number | boolean>(
 export function when(
   conditionFn: () => boolean,
   thenFn: MatchView,
-  elseFn?: MatchView
+  elseFn?: MatchView,
 ): DocumentFragment {
-  return match(
-    (() => String(conditionFn())) as () => 'true' | 'false',
-    {
-      true: thenFn,
-      ...(elseFn ? { false: elseFn } : {}),
-    }
-  );
+  return match((() => String(conditionFn())) as () => 'true' | 'false', {
+    true: thenFn,
+    ...(elseFn ? { false: elseFn } : {}),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +104,7 @@ interface EachEntry {
 export function each<T>(
   listAccessor: (() => T[]) | T[],
   mapFn: (item: T, index: number) => Node | DocumentFragment | string,
-  keyFn?: (item: T, index: number) => unknown
+  keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment {
   const startMarker = document.createComment('each-start');
   const endMarker = document.createComment('each-end');
@@ -118,9 +115,8 @@ export function each<T>(
 
   let keyToEntry = new Map<unknown, EachEntry>();
 
-  const getList = typeof listAccessor === 'function'
-    ? listAccessor as () => T[]
-    : () => listAccessor;
+  const getList =
+    typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
 
   watch(() => {
     const list = getList() || [];
@@ -171,8 +167,7 @@ export function each<T>(
       const nodes = entry.nodes;
 
       const firstNode = nodes[0];
-      if (firstNode && firstNode.nextSibling !== nextSibling &&
-          firstNode !== nextSibling) {
+      if (firstNode && firstNode.nextSibling !== nextSibling && firstNode !== nextSibling) {
         for (const node of nodes) {
           parent.insertBefore(node, nextSibling);
         }

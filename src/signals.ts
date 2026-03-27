@@ -60,16 +60,17 @@ function flush(): void {
 export function state<T>(initial: T): StateAccessor<T> {
   const s = new Signal.State<T>(initial);
 
-  const accessor = function (value?: T | ((current: T) => T)): T {
-    if (arguments.length === 0) return s.get();
+  const accessor = ((...args: [T | ((current: T) => T)] | []): T => {
+    if (args.length === 0) return s.get();
+    const value = args[0];
     if (typeof value === 'function') {
       const next = (value as (current: T) => T)(s.get());
       s.set(next);
       return next;
     }
-    s.set(value!);
-    return value!;
-  } as StateAccessor<T>;
+    s.set(value as T);
+    return value as T;
+  }) as StateAccessor<T>;
 
   (accessor as any).get = () => s.get();
   (accessor as any).set = (v: T) => s.set(v);
@@ -86,9 +87,7 @@ export function state<T>(initial: T): StateAccessor<T> {
 export function compute<T>(fn: () => T): ComputedAccessor<T> {
   const c = new Signal.Computed<T>(fn);
 
-  const accessor = function (): T {
-    return c.get();
-  } as ComputedAccessor<T>;
+  const accessor = ((): T => c.get()) as ComputedAccessor<T>;
 
   (accessor as any).get = () => c.get();
   (accessor as any).peek = () => Signal.subtle.untrack(() => c.get());
@@ -107,8 +106,8 @@ export function getCurrentEffect(): EffectHandle | null {
   return _currentEffect;
 }
 
-function _effect(fn: () => void | Dispose): Dispose {
-  let cleanup: void | Dispose;
+function _effect(fn: () => undefined | Dispose): Dispose {
+  let cleanup: undefined | Dispose;
   let disposed = false;
 
   const c = new Signal.Computed<void>(() => {
@@ -165,34 +164,32 @@ type InferSources<S extends readonly WatchSource<any>[]> = {
 };
 
 // Overload: auto-tracking effect
-export function watch(fn: () => void | Dispose): Dispose;
+export function watch(fn: () => undefined | Dispose): Dispose;
 
 // Overload: single source
 export function watch<T>(
   source: WatchSource<T>,
-  cb: (value: T, oldValue: T) => void | Dispose
+  cb: (value: T, oldValue: T) => undefined | Dispose,
 ): Dispose;
 
 // Overload: multiple sources (tuple inference)
 export function watch<const S extends readonly WatchSource<any>[]>(
   sources: [...S],
-  cb: (values: InferSources<S>, oldValues: InferSources<S>) => void | Dispose
+  cb: (values: InferSources<S>, oldValues: InferSources<S>) => undefined | Dispose,
 ): Dispose;
 
 export function watch(
-  sourceOrFn: WatchSource<any> | WatchSource<any>[] | (() => void | Dispose),
-  cb?: (value: any, oldValue: any) => void | Dispose
+  sourceOrFn: WatchSource<any> | WatchSource<any>[] | (() => undefined | Dispose),
+  cb?: (value: any, oldValue: any) => undefined | Dispose,
 ): Dispose {
   // Auto-track overload: watch(() => { ... })
   if (!cb) {
-    return _effect(sourceOrFn as () => void | Dispose);
+    return _effect(sourceOrFn as () => undefined | Dispose);
   }
 
   // Explicit source overload
   const isArray = Array.isArray(sourceOrFn);
-  const sources: WatchSource<any>[] = isArray
-    ? sourceOrFn
-    : [sourceOrFn as WatchSource<any>];
+  const sources: WatchSource<any>[] = isArray ? sourceOrFn : [sourceOrFn as WatchSource<any>];
 
   const read = (): any[] => sources.map((s) => s());
 
@@ -208,15 +205,12 @@ export function watch(
       return;
     }
 
-    const result = isArray
-      ? cb(newValues, oldValues)
-      : cb(newValues[0], oldValues[0]);
+    const result = isArray ? cb(newValues, oldValues) : cb(newValues[0], oldValues[0]);
 
     oldValues = newValues;
     return result;
   });
 }
-
 
 // ---------------------------------------------------------------------------
 // batch(fn) — batch multiple state updates into a single flush

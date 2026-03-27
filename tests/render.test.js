@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
-import { state } from '../src/signals.ts';
+import { describe, expect, it, vi } from 'vitest';
 import { html } from '../src/render.ts';
+import { state } from '../src/signals.ts';
 
 describe('html tagged template', () => {
   it('creates a DocumentFragment from static HTML', () => {
@@ -28,10 +28,7 @@ describe('html tagged template', () => {
   });
 
   it('inserts arrays of values', () => {
-    const items = [
-      document.createElement('li'),
-      document.createElement('li'),
-    ];
+    const items = [document.createElement('li'), document.createElement('li')];
     items[0].textContent = 'A';
     items[1].textContent = 'B';
 

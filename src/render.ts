@@ -68,7 +68,7 @@ function buildTemplate(strings: TemplateStringsArray): CachedTemplate {
           name: attrInfo.name,
           type: attrInfo.type,
         });
-        htmlStr = attrInfo.before + ` ${markerAttr}=""`;
+        htmlStr = `${attrInfo.before} ${markerAttr}=""`;
       } else {
         htmlStr += `<!--${MARKER}${i}-->`;
       }
@@ -88,9 +88,7 @@ function buildTemplate(strings: TemplateStringsArray): CachedTemplate {
 function detectAttribute(htmlStr: string): AttrInfo | null {
   const stripped = htmlStr.trimEnd();
 
-  const match = stripped.match(
-    /(?:^|[\s])([.?@]?[a-zA-Z_][\w.-]*)=(?:["']?)$/
-  );
+  const match = stripped.match(/(?:^|[\s])([.?@]?[a-zA-Z_][\w.-]*)=(?:["']?)$/);
 
   if (!match) return null;
 
@@ -109,7 +107,7 @@ function detectAttribute(htmlStr: string): AttrInfo | null {
     name = fullName.slice(1);
   }
 
-  const attrStart = stripped.lastIndexOf(fullName + '=');
+  const attrStart = stripped.lastIndexOf(`${fullName}=`);
   const before = stripped.slice(0, attrStart).trimEnd();
 
   return { name, type, before };
@@ -124,11 +122,7 @@ function hydrate(cached: CachedTemplate, values: unknown[]): DocumentFragment {
   const fragment = tpl.content.cloneNode(true) as DocumentFragment;
 
   // --- Process content markers (comment nodes) ---
-  const walker = document.createTreeWalker(
-    fragment,
-    NodeFilter.SHOW_COMMENT,
-    null
-  );
+  const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_COMMENT, null);
 
   const markers: { node: Comment; index: number }[] = [];
   let node: Node | null;

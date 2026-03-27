@@ -210,13 +210,13 @@ function unmountContext(ctx: ComponentContext): void {
 // ---------------------------------------------------------------------------
 
 export function notifyBeforeUpdate(ctx: ComponentContext | null): void {
-  if (ctx && ctx._isMounted && !ctx._isDestroyed) {
+  if (ctx?._isMounted && !ctx._isDestroyed) {
     ctx._run(ctx.beforeUpdate);
   }
 }
 
 export function notifyUpdate(ctx: ComponentContext | null): void {
-  if (ctx && ctx._isMounted && !ctx._isDestroyed) {
+  if (ctx?._isMounted && !ctx._isDestroyed) {
     ctx._run(ctx.updated);
   }
 }

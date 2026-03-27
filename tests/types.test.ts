@@ -16,32 +16,30 @@ describe('slot types', () => {
 // ---------------------------------------------------------------------------
 // 1. No slots — simple component
 // ---------------------------------------------------------------------------
-const Tag = component<{ label: string }>((props) => {
-  return html`<span>${props.label}</span>`;
+const Tag = component<{ label: string }>(({ label }) => {
+  return html`<span>${label}</span>`;
 });
 
 Tag({ label: 'hi' }); // ✅
 
 // ---------------------------------------------------------------------------
-// 2. Default slot, no exposed props (IN only)
+// 2. Destructured props + default slot (IN)
 // ---------------------------------------------------------------------------
-const Card = component<{ title: string }, { default: void }>((props) => {
-  const body = slot();
-  return html`<div><h2>${props.title}</h2>${body()}</div>`;
+const Card = component<{ title: string }, { default: void }>(({ title }, { default: body }) => {
+  return html`<div><h2>${title}</h2>${body()}</div>`;
 });
 
-Card({ title: 'Hi' }, html`<p>Body</p>`); // ✅ static content
-Card({ title: 'Hi' }); // ✅ optional
-Card({ title: 'Hi' }, 'text'); // ✅ string
+Card({ title: 'Hi' }, html`<p>Body</p>`); // ✅
+Card({ title: 'Hi' }); // ✅
+Card({ title: 'Hi' }, 'text'); // ✅
 
 // ---------------------------------------------------------------------------
-// 3. Default slot with exposed props (OUT)
+// 3. Scoped slot (OUT) — destructured
 // ---------------------------------------------------------------------------
 const Form = component<{ action: string }, { default: { isValid: boolean; submit: () => void } }>(
-  (props) => {
+  ({ action }, { default: body }) => {
     const isValid = true;
     const submit = () => {};
-    const body = slot<{ isValid: boolean; submit: () => void }>();
     return html`<form>${body({ isValid, submit })}</form>`;
   },
 );
@@ -51,12 +49,11 @@ Form({ action: '/save' }, ({ isValid, submit }) => {
 }); // ✅
 
 // ---------------------------------------------------------------------------
-// 4. Default slot with two-way binding (BOTH)
+// 4. Two-way binding (BOTH) — destructured
 // ---------------------------------------------------------------------------
 const Search = component<Record<string, never>, { default: { query: StateAccessor<string> } }>(
-  (props) => {
+  (_props, { default: body }) => {
     const query = state('');
-    const body = slot<{ query: StateAccessor<string> }>();
     return html`<div><input bind:value=${query} />${body({ query })}</div>`;
   },
 );
@@ -69,7 +66,7 @@ Search({}, ({ query }) => {
 }); // ✅
 
 // ---------------------------------------------------------------------------
-// 5. Named typed slots
+// 5. Named typed slots — destructured
 // ---------------------------------------------------------------------------
 interface User {
   name: string;
@@ -78,10 +75,7 @@ interface User {
 const Layout = component<
   Record<string, never>,
   { header: { user: User }; default: void; footer: void }
->((props) => {
-  const header = slot<{ user: User }>('header');
-  const body = slot();
-  const footer = slot('footer');
+>((_props, { header, default: body, footer }) => {
   return html`
     <header>${header({ user: { name: 'Alice' } })}</header>
     <main>${body()}</main>

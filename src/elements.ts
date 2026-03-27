@@ -4,19 +4,23 @@ import { watch } from './signals.js';
 // ---------------------------------------------------------------------------
 // Slot type system
 //
-// Slots are declared in the component's second generic parameter:
-//   component<Props, Slots>
+// Slots are declared as the second generic on component<Props, Slots>.
+// Each key is a slot name, value is the type of exposed props.
+// void = no exposed props (IN only — static content).
 //
-// S = { slotName: ExposedPropsType }
-//   - void means no exposed props (IN only — static content)
-//   - object means scoped slot with exposed props (OUT / BOTH)
-//
-// Example:
 //   component<
 //     { title: string },
 //     { header: void; default: { validate: () => boolean } }
-//   >
+//   >(({ title }, { header, default: body }) => { ... })
 // ---------------------------------------------------------------------------
+
+/** Typed accessor — call it to render the slot content */
+export type SlotAccessor<E = void> = E extends void
+  ? () => Node | null
+  : (exposed: E) => Node | null;
+
+/** Map of typed slot accessors, built from the Slots generic */
+type SlotAccessors<S> = { [K in keyof S]: SlotAccessor<S[K]> };
 
 /** What the consumer provides for a single slot */
 type SlotInput<E> = E extends void
@@ -27,49 +31,32 @@ type SlotInput<E> = E extends void
 type SlotInputMap<S> = { [K in keyof S]?: SlotInput<S[K]> };
 
 /** What component() returns — the callable factory */
-type ComponentFactory<P, S> =
-  // Single default slot with void = accept plain content or nothing
-  keyof S extends 'default'
+type ComponentFactory<P, S> = keyof S extends never
+  ? (props: P) => Node | DocumentFragment
+  : keyof S extends 'default'
     ? S extends { default: void }
       ? (props: P, children?: SlotInput<void>) => Node | DocumentFragment
       : (props: P, children?: SlotInput<S[keyof S]> | SlotInputMap<S>) => Node | DocumentFragment
     : (props: P, children?: SlotInputMap<S>) => Node | DocumentFragment;
 
-/** Typed accessor returned by slot() inside a component */
-export type SlotAccessor<E = void> = E extends void
-  ? () => Node | null
-  : (exposed: E) => Node | null;
-
 // ---------------------------------------------------------------------------
-// slot(name?) — context-aware, strongly typed slot primitive
-//
-//   const Card = component<
-//     { title: string },
-//     { header: void; default: { validate: () => boolean } }
-//   >((props) => {
-//     const header = slot<void>('header');
-//     const body = slot<{ validate: () => boolean }>();
-//     return html`...${header()}...${body({ validate })}...`;
-//   });
+// Internal: build SlotAccessors from children
 // ---------------------------------------------------------------------------
 
-export function slot<E = void>(name?: string): SlotAccessor<E> {
-  const ctx = getCurrentContext();
-  if (!ctx) {
-    throw new Error('slot() must be called inside a component');
-  }
+function buildSlotAccessors(children: unknown): Record<string, SlotAccessor<any>> {
+  const accessors: Record<string, SlotAccessor<any>> = {};
 
-  const slotName = name ?? 'default';
-  const children = ctx._slotContent;
+  return new Proxy(accessors, {
+    get(_target, prop: string) {
+      if (typeof prop !== 'string') return undefined;
 
-  return ((exposed?: unknown): Node | null => {
-    return resolveFromContent(children, slotName, exposed);
-  }) as SlotAccessor<E>;
+      // Return a slot accessor function
+      return (exposed?: unknown): Node | null => {
+        return resolveFromContent(children, prop, exposed);
+      };
+    },
+  });
 }
-
-// ---------------------------------------------------------------------------
-// Internal resolution
-// ---------------------------------------------------------------------------
 
 function resolveFromContent(children: unknown, name: string, exposed: unknown): Node | null {
   if (children == null) return null;
@@ -105,44 +92,51 @@ function resolveSlot(content: unknown, exposed: unknown): Node | null {
 }
 
 // ---------------------------------------------------------------------------
-// component<Props, Slots>(renderFn) — define a typed component
-//
-//   // No slots:
-//   const Tag = component<{ label: string }>((props) => html`<span>${props.label}</span>`);
-//
-//   // Default slot, no exposed props (IN):
-//   const Card = component<{ title: string }, { default: void }>((props) => {
-//     const body = slot();
-//     return html`<div>${body()}</div>`;
-//   });
-//   Card({ title: 'Hi' }, html`<p>Body</p>`)
-//
-//   // Scoped slot (OUT):
-//   const Form = component<{}, { default: { isValid: boolean } }>((props) => {
-//     const body = slot<{ isValid: boolean }>();
-//     return html`<form>${body({ isValid: true })}</form>`;
-//   });
-//   Form({}, ({ isValid }) => html`<button ?disabled=${!isValid}>Save</button>`)
-//
-//   // Named typed slots:
-//   const Layout = component<{}, {
-//     header: { user: User };
-//     default: void;
-//     footer: void;
-//   }>((props) => {
-//     const header = slot<{ user: User }>('header');
-//     const body = slot();
-//     const footer = slot('footer');
-//     return html`...`;
-//   });
+// slot(name?) — context-aware slot primitive (still works standalone)
 // ---------------------------------------------------------------------------
 
-type RenderFn<P> = (props: P) => Node | DocumentFragment;
+export function slot<E = void>(name?: string): SlotAccessor<E> {
+  const ctx = getCurrentContext();
+  if (!ctx) {
+    throw new Error('slot() must be called inside a component');
+  }
+
+  const slotName = name ?? 'default';
+  const children = ctx._slotContent;
+
+  return ((exposed?: unknown): Node | null => {
+    return resolveFromContent(children, slotName, exposed);
+  }) as SlotAccessor<E>;
+}
+
+// ---------------------------------------------------------------------------
+// component<Props, Slots>(renderFn) — define a typed component
+//
+//   // Destructured props + slots:
+//   const Card = component<
+//     { title: string },
+//     { header: void; default: { validate: () => boolean } }
+//   >(({ title }, { header, default: body }) => {
+//     return html`
+//       <h2>${title}</h2>
+//       ${header()}
+//       ${body({ validate: isValid })}
+//     `;
+//   });
+//
+//   // Consumer:
+//   Card({ title: 'Hi' }, {
+//     header: html`<h1>Title</h1>`,
+//     default: ({ validate }) => html`<button>Save</button>`,
+//   })
+// ---------------------------------------------------------------------------
+
+type RenderFn<P, S> = (props: P, slots: SlotAccessors<S>) => Node | DocumentFragment;
 
 export function component<
   P extends Record<string, unknown> = Record<string, never>,
   S extends Record<string, unknown> = Record<string, never>,
->(renderFn: RenderFn<P>): ComponentFactory<P, S> {
+>(renderFn: RenderFn<P, S>): ComponentFactory<P, S> {
   return ((props: P, children?: unknown) => {
     const ctx = new ComponentContext();
     const parentCtx = getCurrentContext();
@@ -155,9 +149,11 @@ export function component<
 
     pushContext(ctx);
 
+    const slots = buildSlotAccessors(children) as SlotAccessors<S>;
+
     let result: Node | DocumentFragment;
     try {
-      result = renderFn(props);
+      result = renderFn(props, slots);
     } catch (err) {
       popContext();
       ctx._handleError(err);
@@ -210,7 +206,7 @@ export function teleport(
 }
 
 // ---------------------------------------------------------------------------
-// reactiveTeleport(target, viewFn) — reactive version, re-renders on change
+// reactiveTeleport(target, viewFn) — reactive version
 // ---------------------------------------------------------------------------
 
 export function reactiveTeleport(

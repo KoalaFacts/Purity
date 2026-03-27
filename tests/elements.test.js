@@ -8,8 +8,8 @@ const tick = () => new Promise((r) => queueMicrotask(r));
 
 describe('component()', () => {
   it('creates a reusable component with props', () => {
-    const Greeting = component((props) => {
-      return html`<p>Hello, ${props.name}!</p>`;
+    const Greeting = component(({ name }) => {
+      return html`<p>Hello, ${name}!</p>`;
     });
 
     const container = document.createElement('div');
@@ -20,12 +20,10 @@ describe('component()', () => {
 
   it('supports lifecycle hooks', async () => {
     const mounted = vi.fn();
-    const destroyed = vi.fn();
 
-    const Widget = component((props) => {
+    const Widget = component(({ text }) => {
       onMount(mounted);
-      onDestroy(destroyed);
-      return html`<span>${props.text}</span>`;
+      return html`<span>${text}</span>`;
     });
 
     const container = document.createElement('div');
@@ -36,11 +34,10 @@ describe('component()', () => {
   });
 });
 
-describe('slot()', () => {
+describe('slots (destructured)', () => {
   it('renders default slot with static content', () => {
-    const Card = component((props) => {
-      const body = slot();
-      return html`<div class="card"><h2>${props.title}</h2>${body()}</div>`;
+    const Card = component(({ title }, { default: body }) => {
+      return html`<div class="card"><h2>${title}</h2>${body()}</div>`;
     });
 
     const container = document.createElement('div');
@@ -51,11 +48,7 @@ describe('slot()', () => {
   });
 
   it('renders named slots', () => {
-    const Layout = component(() => {
-      const header = slot('header');
-      const body = slot();
-      const footer = slot('footer');
-
+    const Layout = component((_props, { header, default: body, footer }) => {
       return html`
         <header>${header()}</header>
         <main>${body()}</main>
@@ -81,9 +74,7 @@ describe('slot()', () => {
   });
 
   it('returns null for missing named slot', () => {
-    const Box = component(() => {
-      const header = slot('header');
-      const body = slot();
+    const Box = component((_props, { header, default: body }) => {
       return html`<div>${header()}${body()}</div>`;
     });
 
@@ -94,8 +85,7 @@ describe('slot()', () => {
   });
 
   it('supports string slot content', () => {
-    const Tag = component(() => {
-      const body = slot();
+    const Tag = component((_props, { default: body }) => {
       return html`<span>${body()}</span>`;
     });
 
@@ -106,9 +96,8 @@ describe('slot()', () => {
   });
 
   it('OUT: component exposes data through slot', () => {
-    const DataProvider = component(() => {
+    const DataProvider = component((_props, { default: body }) => {
       const data = { message: 'from child', count: 42 };
-      const body = slot();
       return html`<div>${body(data)}</div>`;
     });
 
@@ -121,9 +110,8 @@ describe('slot()', () => {
   });
 
   it('BOTH: component exposes state accessor, parent reads and writes', () => {
-    const SearchBox = component(() => {
+    const SearchBox = component((_props, { default: body }) => {
       const query = state('');
-      const body = slot();
       return html`<div>
         <input class="search" bind:value=${query} />
         ${body({ query })}
@@ -146,14 +134,12 @@ describe('slot()', () => {
   });
 
   it('named scoped slots with exposed props', () => {
-    const Table = component(() => {
+    const Table = component((_props, { header, row }) => {
       const cols = ['Name', 'Age'];
       const rows = [
         { name: 'Alice', age: 30 },
         { name: 'Bob', age: 25 },
       ];
-      const header = slot('header');
-      const row = slot('row');
       return html`<table>
         <thead>${header({ cols })}</thead>
         <tbody>${rows.map((r) => row({ row: r }))}</tbody>
@@ -178,8 +164,7 @@ describe('slot()', () => {
   });
 
   it('slot render fn receives undefined when no exposed props', () => {
-    const Wrapper = component(() => {
-      const body = slot();
+    const Wrapper = component((_props, { default: body }) => {
       return html`<div>${body()}</div>`;
     });
 
@@ -192,6 +177,20 @@ describe('slot()', () => {
     );
 
     expect(container.textContent).toContain('no props');
+  });
+});
+
+describe('slot() standalone', () => {
+  it('still works as context-aware primitive', () => {
+    const Card = component(({ title }) => {
+      const body = slot();
+      return html`<div><h2>${title}</h2>${body()}</div>`;
+    });
+
+    const container = document.createElement('div');
+    container.appendChild(html`${Card({ title: 'Hi' }, html`<p>Works</p>`)}`);
+
+    expect(container.querySelector('p').textContent).toBe('Works');
   });
 
   it('throws when called outside a component', () => {
@@ -243,12 +242,11 @@ describe('teleport()', () => {
 
   it('works inside a component with slot', async () => {
     const target = document.createElement('div');
-    target.id = 'modal-target';
+    target.id = 'modal-target-2';
     document.body.appendChild(target);
 
-    const Modal = component(() => {
-      const content = slot();
-      teleport('#modal-target', () => content());
+    const Modal = component((_props, { default: content }) => {
+      teleport('#modal-target-2', () => content());
       return html`<!--modal-->`;
     });
 

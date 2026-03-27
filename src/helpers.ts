@@ -1,16 +1,31 @@
 import { effect } from './signals.js';
 
 // ---------------------------------------------------------------------------
-// show(conditionFn, viewFn, elseFn?) — conditional rendering
+// match(sourceFn, cases, fallback?) — reactive pattern matching
+//
+//   match(() => status(), {
+//     loading: () => html`<p>Loading...</p>`,
+//     error:   () => html`<p>Error!</p>`,
+//     success: () => html`<p>Done</p>`,
+//   })
+//
+//   // boolean shorthand (if/else)
+//   match(() => loggedIn(), {
+//     true:  () => html`<p>Welcome</p>`,
+//     false: () => html`<p>Login</p>`,
+//   })
 // ---------------------------------------------------------------------------
 
-export function show(
-  conditionFn: () => boolean,
-  viewFn: () => Node | DocumentFragment | string,
-  elseFn?: () => Node | DocumentFragment | string
+type MatchView = () => Node | DocumentFragment | string;
+type MatchCases<T extends string | number | boolean> = Partial<Record<`${T}`, MatchView>>;
+
+export function match<T extends string | number | boolean>(
+  sourceFn: () => T,
+  cases: MatchCases<T>,
+  fallback?: MatchView
 ): DocumentFragment {
-  const startMarker = document.createComment('show-start');
-  const endMarker = document.createComment('show-end');
+  const startMarker = document.createComment('match-start');
+  const endMarker = document.createComment('match-end');
 
   const fragment = document.createDocumentFragment();
   fragment.appendChild(startMarker);
@@ -19,7 +34,7 @@ export function show(
   let currentNodes: Node[] = [];
 
   effect(() => {
-    const shouldShow = conditionFn();
+    const value = sourceFn();
 
     for (const node of currentNodes) {
       if (node.parentNode) {
@@ -31,32 +46,45 @@ export function show(
     const parent = endMarker.parentNode;
     if (!parent) return;
 
-    let content: Node | DocumentFragment | string | null = null;
-    if (shouldShow) {
-      content = typeof viewFn === 'function' ? viewFn() : null;
+    const key = String(value) as `${T}`;
+    const viewFn = cases[key] ?? fallback;
+
+    if (!viewFn) return;
+
+    let content: Node | DocumentFragment | string = viewFn();
+
+    if (content instanceof DocumentFragment) {
+      currentNodes = Array.from(content.childNodes);
+    } else if (content instanceof Node) {
+      currentNodes = [content];
     } else {
-      content = typeof elseFn === 'function' ? elseFn() : null;
+      const textNode = document.createTextNode(String(content));
+      currentNodes = [textNode];
+      content = textNode;
     }
 
-    if (content != null) {
-      if (content instanceof DocumentFragment) {
-        currentNodes = Array.from(content.childNodes);
-      } else if (content instanceof Node) {
-        currentNodes = [content];
-      } else {
-        const textNode = document.createTextNode(String(content));
-        currentNodes = [textNode];
-        content = textNode;
-      }
-
-      parent.insertBefore(
-        content instanceof Node ? content : document.createTextNode(String(content)),
-        endMarker
-      );
-    }
+    parent.insertBefore(
+      content instanceof Node ? content : document.createTextNode(String(content)),
+      endMarker
+    );
   });
 
   return fragment;
+}
+
+// Keep show as an alias for boolean match
+export function show(
+  conditionFn: () => boolean,
+  viewFn: MatchView,
+  elseFn?: MatchView
+): DocumentFragment {
+  return match(
+    (() => String(conditionFn())) as () => 'true' | 'false',
+    {
+      true: viewFn,
+      ...(elseFn ? { false: elseFn } : {}),
+    }
+  );
 }
 
 // ---------------------------------------------------------------------------

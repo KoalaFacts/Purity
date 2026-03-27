@@ -1,15 +1,173 @@
 import { describe, it, expect } from 'vitest';
 import { state } from '../src/signals.ts';
-import { show, each } from '../src/helpers.ts';
+import { match, show, each } from '../src/helpers.ts';
 
-describe('show', () => {
+const tick = () => new Promise((r) => queueMicrotask(r));
+
+describe('match', () => {
+  it('renders the matching case', async () => {
+    const status = state('loading');
+    const fragment = match(() => status(), {
+      loading: () => {
+        const el = document.createElement('p');
+        el.className = 'loading';
+        el.textContent = 'Loading...';
+        return el;
+      },
+      success: () => {
+        const el = document.createElement('p');
+        el.className = 'success';
+        return el;
+      },
+      error: () => {
+        const el = document.createElement('p');
+        el.className = 'error';
+        return el;
+      },
+    });
+
+    const container = document.createElement('div');
+    container.appendChild(fragment);
+
+    await tick();
+    expect(container.querySelector('.loading')).not.toBeNull();
+    expect(container.querySelector('.success')).toBeNull();
+  });
+
+  it('switches content when value changes', async () => {
+    const status = state('loading');
+    const fragment = match(() => status(), {
+      loading: () => {
+        const el = document.createElement('p');
+        el.className = 'loading';
+        return el;
+      },
+      success: () => {
+        const el = document.createElement('p');
+        el.className = 'success';
+        return el;
+      },
+    });
+
+    const container = document.createElement('div');
+    container.appendChild(fragment);
+
+    await tick();
+    expect(container.querySelector('.loading')).not.toBeNull();
+
+    status('success');
+    await tick();
+    expect(container.querySelector('.loading')).toBeNull();
+    expect(container.querySelector('.success')).not.toBeNull();
+  });
+
+  it('renders fallback for unmatched cases', async () => {
+    const status = state('unknown');
+    const fragment = match(
+      () => status(),
+      {
+        loading: () => {
+          const el = document.createElement('p');
+          el.className = 'loading';
+          return el;
+        },
+      },
+      () => {
+        const el = document.createElement('p');
+        el.className = 'fallback';
+        el.textContent = 'Unknown state';
+        return el;
+      }
+    );
+
+    const container = document.createElement('div');
+    container.appendChild(fragment);
+
+    await tick();
+    expect(container.querySelector('.loading')).toBeNull();
+    expect(container.querySelector('.fallback')).not.toBeNull();
+  });
+
+  it('renders nothing when no match and no fallback', async () => {
+    const status = state('unknown');
+    const fragment = match(() => status(), {
+      loading: () => {
+        const el = document.createElement('p');
+        el.className = 'loading';
+        return el;
+      },
+    });
+
+    const container = document.createElement('div');
+    container.appendChild(fragment);
+
+    await tick();
+    expect(container.querySelector('.loading')).toBeNull();
+  });
+
+  it('works with number values', async () => {
+    const code = state(200);
+    const fragment = match(() => code(), {
+      200: () => {
+        const el = document.createElement('p');
+        el.className = 'ok';
+        return el;
+      },
+      404: () => {
+        const el = document.createElement('p');
+        el.className = 'not-found';
+        return el;
+      },
+    });
+
+    const container = document.createElement('div');
+    container.appendChild(fragment);
+
+    await tick();
+    expect(container.querySelector('.ok')).not.toBeNull();
+
+    code(404);
+    await tick();
+    expect(container.querySelector('.ok')).toBeNull();
+    expect(container.querySelector('.not-found')).not.toBeNull();
+  });
+
+  it('works with boolean values (if/else)', async () => {
+    const loggedIn = state(false);
+    const fragment = match(() => loggedIn(), {
+      true: () => {
+        const el = document.createElement('p');
+        el.className = 'welcome';
+        return el;
+      },
+      false: () => {
+        const el = document.createElement('p');
+        el.className = 'login';
+        return el;
+      },
+    });
+
+    const container = document.createElement('div');
+    container.appendChild(fragment);
+
+    await tick();
+    expect(container.querySelector('.login')).not.toBeNull();
+    expect(container.querySelector('.welcome')).toBeNull();
+
+    loggedIn(true);
+    await tick();
+    expect(container.querySelector('.login')).toBeNull();
+    expect(container.querySelector('.welcome')).not.toBeNull();
+  });
+});
+
+describe('show (alias)', () => {
   it('renders view when condition is true', async () => {
     const visible = state(true);
     const fragment = show(
       () => visible(),
       () => {
         const el = document.createElement('p');
-        el.textContent = 'visible';
         el.className = 'show-target';
         return el;
       }
@@ -18,53 +176,7 @@ describe('show', () => {
     const container = document.createElement('div');
     container.appendChild(fragment);
 
-    await new Promise((r) => queueMicrotask(r));
-    expect(container.querySelector('.show-target')).not.toBeNull();
-    expect(container.querySelector('.show-target').textContent).toBe('visible');
-  });
-
-  it('renders nothing when condition is false', async () => {
-    const visible = state(false);
-    const fragment = show(
-      () => visible(),
-      () => {
-        const el = document.createElement('p');
-        el.className = 'show-target';
-        return el;
-      }
-    );
-
-    const container = document.createElement('div');
-    container.appendChild(fragment);
-
-    await new Promise((r) => queueMicrotask(r));
-    expect(container.querySelector('.show-target')).toBeNull();
-  });
-
-  it('toggles content when condition changes', async () => {
-    const visible = state(true);
-    const fragment = show(
-      () => visible(),
-      () => {
-        const el = document.createElement('p');
-        el.className = 'show-target';
-        el.textContent = 'yes';
-        return el;
-      }
-    );
-
-    const container = document.createElement('div');
-    container.appendChild(fragment);
-
-    await new Promise((r) => queueMicrotask(r));
-    expect(container.querySelector('.show-target')).not.toBeNull();
-
-    visible(false);
-    await new Promise((r) => queueMicrotask(r));
-    expect(container.querySelector('.show-target')).toBeNull();
-
-    visible(true);
-    await new Promise((r) => queueMicrotask(r));
+    await tick();
     expect(container.querySelector('.show-target')).not.toBeNull();
   });
 
@@ -87,7 +199,7 @@ describe('show', () => {
     const container = document.createElement('div');
     container.appendChild(fragment);
 
-    await new Promise((r) => queueMicrotask(r));
+    await tick();
     expect(container.querySelector('.yes')).toBeNull();
     expect(container.querySelector('.no')).not.toBeNull();
   });
@@ -108,7 +220,7 @@ describe('each', () => {
     const container = document.createElement('ul');
     container.appendChild(fragment);
 
-    await new Promise((r) => queueMicrotask(r));
+    await tick();
     const lis = container.querySelectorAll('li');
     expect(lis.length).toBe(3);
     expect(lis[0].textContent).toBe('A');
@@ -130,11 +242,11 @@ describe('each', () => {
     const container = document.createElement('ul');
     container.appendChild(fragment);
 
-    await new Promise((r) => queueMicrotask(r));
+    await tick();
     expect(container.querySelectorAll('li').length).toBe(2);
 
     items(['A', 'B', 'C', 'D']);
-    await new Promise((r) => queueMicrotask(r));
+    await tick();
     const lis = container.querySelectorAll('li');
     expect(lis.length).toBe(4);
     expect(lis[3].textContent).toBe('D');
@@ -154,11 +266,11 @@ describe('each', () => {
     const container = document.createElement('ul');
     container.appendChild(fragment);
 
-    await new Promise((r) => queueMicrotask(r));
+    await tick();
     expect(container.querySelectorAll('li').length).toBe(3);
 
     items(['A']);
-    await new Promise((r) => queueMicrotask(r));
+    await tick();
     const lis = container.querySelectorAll('li');
     expect(lis.length).toBe(1);
     expect(lis[0].textContent).toBe('A');
@@ -178,7 +290,7 @@ describe('each', () => {
     const container = document.createElement('ul');
     container.appendChild(fragment);
 
-    await new Promise((r) => queueMicrotask(r));
+    await tick();
     expect(container.querySelectorAll('li').length).toBe(0);
   });
 });

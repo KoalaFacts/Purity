@@ -17,9 +17,8 @@ export {
   onMount,
   onUpdate,
 } from './component.js';
-export type { Ref } from './composables.js';
-// Composables
-export { useRef, useStore } from './composables.js';
+// Store
+export { store } from './composables.js';
 export type { SlotAccessor } from './elements.js';
 // Components, slots, teleport
 export { component, slot, teleport } from './elements.js';

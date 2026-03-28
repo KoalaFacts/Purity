@@ -1,66 +1,8 @@
-# Purity Framework — Copilot Instructions
+# Purity Monorepo — Copilot Instructions
 
-Purity is a minimal web framework built on native TC39 Signals. No virtual DOM.
+Minimal web framework. Monorepo with npm workspaces.
 
-## API (17 functions)
-```ts
-state(init)              // reactive state: count(), count(5), count(v => v+1)
-compute(fn)              // derived: compute(() => count() * 2)
-watch(fn)                // auto-track effect
-watch(source, cb)        // explicit: watch(count, (val, old) => {})
-batch(fn)                // batch writes, single flush
-html`<div>...</div>`     // JIT compiled template → DOM nodes
-css`.box { color: red }` // scoped styles (Shadow DOM in components)
-component('p-tag', fn)   // custom element with Shadow DOM
-slot(name?)              // content projection inside component
-teleport(target, fn)     // render elsewhere in DOM
-mount(fn, el)            // mount to DOM
-onMount(fn)              // after DOM insertion
-onDestroy(fn)            // on unmount
-onDispose(fn)            // register cleanup
-onError(fn)              // error handler
-match(fn, cases)         // pattern matching
-when(fn, then, else?)    // conditional
-each(fn, map, key?)      // list rendering
-```
-
-## Template Syntax
-```
-${() => signal()}     reactive text
-@click=${handler}     event
-:prop=${value}        one-way binding
-::prop=${signal}      two-way binding
-?attr=${bool}         boolean attribute
-.prop=${value}        DOM property
-```
-
-## Component Pattern
-```ts
-component('p-card', ({ title }, { default: body }) => {
-  css`.card { padding: 1rem; }`;
-  return html`<div class="card"><h2>${title}</h2>${body()}</div>`;
-});
-```
-
-## Key Rules
-- Always use `() => signal()` for reactive text in templates (not `signal()`)
-- Use `::` for two-way binding (not `bind:`)
-- Events are callback props, no emit system
-- `onDispose()` for cleanup — register watch/effect dispose functions
-- `state(v => v+1)` for updater pattern (not `state(state()+1)`)
-- Custom element tags must contain a hyphen (`p-card`, not `card`)
-- `css` inside components uses Shadow DOM (no class scoping needed)
-
-## Structure
-```
-packages/
-  core/          @purity/core          — framework
-  vite-plugin/   @purity/vite-plugin   — AOT template compilation
-  cli/           @purity/cli           — project scaffolding
-```
-
-## Testing
-```ts
-const tick = () => new Promise(r => queueMicrotask(r));
-// Always await tick() after signal writes before asserting DOM
-```
+See package-level docs:
+- [packages/core/.github/copilot-instructions.md](../packages/core/.github/copilot-instructions.md)
+- [packages/vite-plugin/.github/copilot-instructions.md](../packages/vite-plugin/.github/copilot-instructions.md)
+- [packages/cli/.github/copilot-instructions.md](../packages/cli/.github/copilot-instructions.md)

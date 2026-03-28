@@ -1,4 +1,4 @@
-import { getCurrentContext } from './component.js';
+import { getCurrentContext } from '@purity/core';
 
 // ---------------------------------------------------------------------------
 // provide(key, value) / inject(key, fallback?) — dependency injection

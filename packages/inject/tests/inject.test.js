@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { html } from '../src/compiler/compile.ts';
-import { mount } from '../src/component.ts';
-import { inject, provide } from '../src/inject.ts';
-import { state } from '../src/signals.ts';
+import { html } from '../../core/src/compiler/compile.ts';
+import { mount } from '../../core/src/component.ts';
+import { state } from '../../core/src/signals.ts';
+import { inject, provide } from '../src/index.ts';
 
 describe('provide/inject', () => {
   it('provides and injects a value', () => {

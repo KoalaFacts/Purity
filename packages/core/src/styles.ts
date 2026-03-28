@@ -50,7 +50,7 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
     // Auto-register disposal in component context
     const ctx = getCurrentContext();
     if (ctx) {
-      ctx._addDisposer(() => {
+      (ctx.disposers ??= []).push(() => {
         dispose();
         styleEl.remove();
       });
@@ -60,7 +60,7 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
     // Register style removal on unmount for static styles too
     const ctx = getCurrentContext();
     if (ctx) {
-      ctx._addDisposer(() => styleEl.remove());
+      (ctx.disposers ??= []).push(() => styleEl.remove());
     }
   }
 

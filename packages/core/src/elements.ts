@@ -1,6 +1,19 @@
 import { ComponentContext, getCurrentContext, popContext, pushContext } from './component.js';
 import { watch } from './signals.js';
 
+// Run callbacks safely
+function runCallbacks(arr: (() => void)[] | null, ctx?: ComponentContext): void {
+  if (!arr) return;
+  for (let i = 0; i < arr.length; i++) {
+    try {
+      arr[i]();
+    } catch (err) {
+      if (ctx) ctx._handleError(err);
+      else console.error('[Purity] Error:', err);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Slot types
 // ---------------------------------------------------------------------------
@@ -229,7 +242,7 @@ export function component<
         const parentCtx = getCurrentContext();
         if (parentCtx) {
           ctx.parent = parentCtx;
-          parentCtx.children.push(ctx);
+          (parentCtx.children ??= []).push(ctx);
         }
         this._ctx = ctx;
 
@@ -243,28 +256,24 @@ export function component<
           ctx.nodes = [result];
         }
 
-        ctx._run(ctx.beforeMount);
         ctx._isMounted = true;
         this._mounted = true;
 
-        queueMicrotask(() => ctx._run(ctx.mounted));
+        queueMicrotask(() => runCallbacks(ctx.mounted, ctx));
       }
 
       disconnectedCallback() {
         if (this._ctx) {
-          this._ctx._run(this._ctx.beforeDestroy);
-          for (let i = 0; i < this._ctx.disposers.length; i++) {
-            try {
-              this._ctx.disposers[i]();
-            } catch (err) {
-              console.error('[Purity] Error during disposal:', err);
+          if (this._ctx.disposers) {
+            for (let i = 0; i < this._ctx.disposers.length; i++) {
+              try { this._ctx.disposers[i](); } catch (e) { console.error('[Purity]', e); }
             }
+            this._ctx.disposers = null;
           }
-          this._ctx.disposers.length = 0;
-          this._ctx.children.length = 0;
+          this._ctx.children = null;
           this._ctx._isDestroyed = true;
           this._ctx._isMounted = false;
-          this._ctx._run(this._ctx.destroyed);
+          runCallbacks(this._ctx.destroyed, this._ctx);
         }
       }
     }
@@ -278,7 +287,7 @@ export function component<
     const parentCtx = getCurrentContext();
     if (parentCtx) {
       ctx.parent = parentCtx;
-      parentCtx.children.push(ctx);
+      (parentCtx.children ??= []).push(ctx);
     }
 
     ctx._slotContent = children;
@@ -319,9 +328,8 @@ export function component<
         ctx.nodes = [result];
       }
 
-      ctx._run(ctx.beforeMount);
       ctx._isMounted = true;
-      queueMicrotask(() => ctx._run(ctx.mounted));
+      queueMicrotask(() => runCallbacks(ctx.mounted, ctx));
 
       return result;
     }
@@ -335,9 +343,8 @@ export function component<
       ctx.nodes = [result];
     }
 
-    ctx._run(ctx.beforeMount);
     ctx._isMounted = true;
-    queueMicrotask(() => ctx._run(ctx.mounted));
+    queueMicrotask(() => runCallbacks(ctx.mounted, ctx));
 
     return result;
   };
@@ -390,7 +397,7 @@ export function teleport(
   // Auto-register dispose in current component context
   const ctx = getCurrentContext();
   if (ctx) {
-    ctx._addDisposer(() => {
+    (ctx.disposers ??= []).push(() => {
       if (dispose) dispose();
       for (let i = 0; i < currentNodes.length; i++) {
         const node = currentNodes[i];

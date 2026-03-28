@@ -1,57 +1,37 @@
 // ---------------------------------------------------------------------------
-// Component context & lifecycle hooks
+// Component context & lifecycle — minimal, like Solid
+//
+// Only 3 hooks: onMount, onDestroy, onDispose
+// Error handling via onError (bubbles up to parent)
 // ---------------------------------------------------------------------------
 
-export type LifecycleCallback = () => void;
-export type ErrorCallback = (err: unknown) => void;
 export type ComponentFn = () => Node | DocumentFragment;
 
 export interface MountResult {
   unmount: () => void;
-  context: ComponentContext;
 }
 
 // ---------------------------------------------------------------------------
-// ComponentContext
+// ComponentContext — lean
 // ---------------------------------------------------------------------------
 
 export class ComponentContext {
-  beforeMount: LifecycleCallback[] = [];
-  mounted: LifecycleCallback[] = [];
-  beforeUpdate: LifecycleCallback[] = [];
-  updated: LifecycleCallback[] = [];
-  beforeDestroy: LifecycleCallback[] = [];
-  destroyed: LifecycleCallback[] = [];
-  errorHandlers: ErrorCallback[] = [];
-  disposers: (() => void)[] = [];
+  mounted: (() => void)[] | null = null;
+  destroyed: (() => void)[] | null = null;
+  errorHandlers: ((err: unknown) => void)[] | null = null;
+  disposers: (() => void)[] | null = null;
   nodes: Node[] | null = null;
   parent: ComponentContext | null = null;
-  children: ComponentContext[] = [];
+  children: ComponentContext[] | null = null;
   _isMounted = false;
   _isDestroyed = false;
   _slotContent: unknown = undefined;
 
-  _run(callbacks: ((...args: any[]) => void)[], ...args: unknown[]): void {
-    if (this.errorHandlers.length > 0 || this.parent) {
-      for (let i = 0; i < callbacks.length; i++) {
-        try {
-          callbacks[i](...args);
-        } catch (err) {
-          this._handleError(err);
-        }
-      }
-    } else {
-      for (let i = 0; i < callbacks.length; i++) {
-        callbacks[i](...args);
-      }
-    }
-  }
-
   _handleError(err: unknown): void {
-    if (this.errorHandlers.length > 0) {
-      for (const handler of this.errorHandlers) {
+    if (this.errorHandlers) {
+      for (let i = 0; i < this.errorHandlers.length; i++) {
         try {
-          handler(err);
+          this.errorHandlers[i](err);
         } catch (e) {
           console.error('[Purity] Error in onError handler:', e);
         }
@@ -61,11 +41,6 @@ export class ComponentContext {
     } else {
       throw err;
     }
-  }
-
-  /** Register a dispose function — auto-called on unmount */
-  _addDisposer(dispose: () => void): void {
-    this.disposers.push(dispose);
   }
 }
 
@@ -88,55 +63,27 @@ export function popContext(): ComponentContext | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// onDispose(fn) — register cleanup that runs on component unmount
-//
-// Use this to auto-register watch/effect dispose functions:
-//   const stop = watch(signal, callback);
-//   onDispose(stop);
+// Lifecycle hooks — only 3 + error
 // ---------------------------------------------------------------------------
+
+export function onMount(fn: () => void): void {
+  const ctx = getCurrentContext();
+  if (ctx) (ctx.mounted ??= []).push(fn);
+}
+
+export function onDestroy(fn: () => void): void {
+  const ctx = getCurrentContext();
+  if (ctx) (ctx.destroyed ??= []).push(fn);
+}
 
 export function onDispose(fn: () => void): void {
   const ctx = getCurrentContext();
-  if (ctx) ctx._addDisposer(fn);
+  if (ctx) (ctx.disposers ??= []).push(fn);
 }
 
-// ---------------------------------------------------------------------------
-// Lifecycle hook registration
-// ---------------------------------------------------------------------------
-
-export function onBeforeMount(fn: LifecycleCallback): void {
+export function onError(fn: (err: unknown) => void): void {
   const ctx = getCurrentContext();
-  if (ctx) ctx.beforeMount.push(fn);
-}
-
-export function onMount(fn: LifecycleCallback): void {
-  const ctx = getCurrentContext();
-  if (ctx) ctx.mounted.push(fn);
-}
-
-export function onBeforeUpdate(fn: LifecycleCallback): void {
-  const ctx = getCurrentContext();
-  if (ctx) ctx.beforeUpdate.push(fn);
-}
-
-export function onUpdate(fn: LifecycleCallback): void {
-  const ctx = getCurrentContext();
-  if (ctx) ctx.updated.push(fn);
-}
-
-export function onBeforeDestroy(fn: LifecycleCallback): void {
-  const ctx = getCurrentContext();
-  if (ctx) ctx.beforeDestroy.push(fn);
-}
-
-export function onDestroy(fn: LifecycleCallback): void {
-  const ctx = getCurrentContext();
-  if (ctx) ctx.destroyed.push(fn);
-}
-
-export function onError(fn: ErrorCallback): void {
-  const ctx = getCurrentContext();
-  if (ctx) ctx.errorHandlers.push(fn);
+  if (ctx) (ctx.errorHandlers ??= []).push(fn);
 }
 
 // ---------------------------------------------------------------------------
@@ -148,7 +95,7 @@ export function mount(component: ComponentFn, container: Element): MountResult {
   const parentCtx = getCurrentContext();
   if (parentCtx) {
     ctx.parent = parentCtx;
-    parentCtx.children.push(ctx);
+    (parentCtx.children ??= []).push(ctx);
   }
 
   pushContext(ctx);
@@ -159,7 +106,7 @@ export function mount(component: ComponentFn, container: Element): MountResult {
   } catch (err) {
     popContext();
     ctx._handleError(err);
-    return { unmount: () => {}, context: ctx };
+    return { unmount: () => {} };
   }
 
   popContext();
@@ -168,11 +115,7 @@ export function mount(component: ComponentFn, container: Element): MountResult {
     ctx.nodes = Array.from(fragment.childNodes);
   } else if (fragment instanceof Node) {
     ctx.nodes = [fragment];
-  } else {
-    ctx.nodes = [];
   }
-
-  ctx._run(ctx.beforeMount);
 
   if (container && fragment) {
     container.appendChild(fragment);
@@ -180,32 +123,37 @@ export function mount(component: ComponentFn, container: Element): MountResult {
 
   ctx._isMounted = true;
 
-  queueMicrotask(() => {
-    ctx._run(ctx.mounted);
-  });
+  if (ctx.mounted) {
+    queueMicrotask(() => {
+      for (let i = 0; i < ctx.mounted!.length; i++) {
+        try {
+          ctx.mounted![i]();
+        } catch (err) {
+          ctx._handleError(err);
+        }
+      }
+    });
+  }
 
-  return {
-    unmount: () => unmountContext(ctx),
-    context: ctx,
-  };
+  return { unmount: () => unmountContext(ctx) };
 }
 
 // ---------------------------------------------------------------------------
-// unmountContext — tear down component and all children
+// unmountContext
 // ---------------------------------------------------------------------------
 
 function unmountContext(ctx: ComponentContext): void {
   if (ctx._isDestroyed) return;
 
-  ctx._run(ctx.beforeDestroy);
-
-  // Unmount children
-  for (let i = ctx.children.length - 1; i >= 0; i--) {
-    unmountContext(ctx.children[i]);
+  // Unmount children first
+  if (ctx.children) {
+    for (let i = ctx.children.length - 1; i >= 0; i--) {
+      unmountContext(ctx.children[i]);
+    }
+    ctx.children = null;
   }
-  ctx.children.length = 0; // Clear children array — prevents memory leak
 
-  // Remove DOM nodes
+  // Remove DOM
   if (ctx.nodes) {
     for (let i = 0; i < ctx.nodes.length; i++) {
       const node = ctx.nodes[i];
@@ -214,23 +162,35 @@ function unmountContext(ctx: ComponentContext): void {
     ctx.nodes = null;
   }
 
-  // Dispose all effects — log errors instead of silencing
-  for (let i = 0; i < ctx.disposers.length; i++) {
-    try {
-      ctx.disposers[i]();
-    } catch (err) {
-      console.error('[Purity] Error during disposal:', err);
+  // Run disposers
+  if (ctx.disposers) {
+    for (let i = 0; i < ctx.disposers.length; i++) {
+      try {
+        ctx.disposers[i]();
+      } catch (err) {
+        console.error('[Purity] Error during disposal:', err);
+      }
     }
+    ctx.disposers = null;
   }
-  ctx.disposers.length = 0;
 
   ctx._isDestroyed = true;
   ctx._isMounted = false;
 
-  ctx._run(ctx.destroyed);
+  // Run destroy callbacks
+  if (ctx.destroyed) {
+    for (let i = 0; i < ctx.destroyed.length; i++) {
+      try {
+        ctx.destroyed[i]();
+      } catch (err) {
+        console.error('[Purity] Error in onDestroy:', err);
+      }
+    }
+    ctx.destroyed = null;
+  }
 
-  // Remove from parent's children list
-  if (ctx.parent) {
+  // Remove from parent
+  if (ctx.parent?.children) {
     const idx = ctx.parent.children.indexOf(ctx);
     if (idx !== -1) ctx.parent.children.splice(idx, 1);
   }

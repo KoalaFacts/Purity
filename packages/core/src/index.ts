@@ -1,6 +1,5 @@
 // ---------------------------------------------------------------------------
-// Purity Core — a minimal, lightweight, super performant web framework
-//                built on native signals.
+// Purity Core — minimal, fast, signal-driven web framework
 // ---------------------------------------------------------------------------
 
 // Reactive primitives
@@ -14,25 +13,13 @@ export { html } from './compiler/compile.js';
 export { component, slot, teleport } from './elements.js';
 export type { SlotAccessor } from './elements.js';
 
-// Lifecycle hooks
-export {
-  mount,
-  onBeforeMount,
-  onMount,
-  onBeforeUpdate,
-  onUpdate,
-  onBeforeDestroy,
-  onDestroy,
-  onDispose,
-  onError,
-} from './component.js';
+// Lifecycle (3 hooks + error)
+export { mount, onMount, onDestroy, onDispose, onError } from './component.js';
+export { getCurrentContext, pushContext, popContext, ComponentContext } from './component.js';
 export type { ComponentFn, MountResult } from './component.js';
 
 // Control flow
 export { match, when, each } from './helpers.js';
-
-// Dependency injection
-export { provide, inject } from './inject.js';
 
 // Scoped styles
 export { css } from './styles.js';

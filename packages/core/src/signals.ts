@@ -57,6 +57,7 @@ export interface ComputedAccessor<T> {
 /** Cleanup function returned by watch(). Call to stop watching. */
 export type Dispose = () => void;
 
+/** @internal */
 export interface EffectHandle {
   _computed: Signal.Computed<void>;
   _dispose(): void;

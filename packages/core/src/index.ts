@@ -7,15 +7,11 @@ export { html } from './compiler/compile.js';
 export type { ComponentFn, MountResult } from './component.js';
 // Lifecycle (3 hooks + error)
 export {
-  ComponentContext,
-  getCurrentContext,
   mount,
   onDestroy,
   onDispose,
   onError,
   onMount,
-  popContext,
-  pushContext,
 } from './component.js';
 export type { SlotAccessor } from './elements.js';
 // Components, slots, teleport

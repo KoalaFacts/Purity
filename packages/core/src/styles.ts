@@ -2,53 +2,75 @@ import { getCurrentContext } from './component.js';
 import { watch } from './signals.js';
 
 // ---------------------------------------------------------------------------
-// css`` — scoped styles, reactive by default
+// css`` — scoped styles
 //
-// Static values are set once. Functions are reactive — style updates
-// automatically when signals change.
+// Inside a component: uses Shadow DOM adoptedStyleSheets (native scoping)
+// Outside a component: falls back to <style> injection with class scoping
 //
-//   // Static
-//   const scope = css`.title { color: red; }`;
+// Reactive by default — functions in interpolations auto-update.
 //
-//   // Reactive
-//   const scope = css`.box { background: ${() => color()}; }`;
-//
-//   html`<div class=${scope}>...</div>`;
+//   component('p-card', (props) => {
+//     css`.title { color: ${() => props.color}; }`;  // reactive, scoped
+//     return html`<h2 class="title">Hello</h2>`;
+//   });
 // ---------------------------------------------------------------------------
 
-let scopeCounter = 0;
-
 export function css(strings: TemplateStringsArray, ...values: unknown[]): string {
+  const ctx = getCurrentContext();
+  const shadowRoot = ctx ? (ctx as any)._shadowRoot as ShadowRoot | undefined : undefined;
+  const hasReactive = values.some((v) => typeof v === 'function');
+
+  const buildCss = (): string => {
+    let raw = '';
+    for (let i = 0; i < strings.length; i++) {
+      raw += strings[i];
+      if (i < values.length) {
+        const val = values[i];
+        raw += String(typeof val === 'function' ? (val as () => unknown)() : (val ?? ''));
+      }
+    }
+    return raw;
+  };
+
+  // Shadow DOM path — native scoping, no regex, no class names
+  if (shadowRoot) {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(buildCss());
+
+    shadowRoot.adoptedStyleSheets = [...shadowRoot.adoptedStyleSheets, sheet];
+
+    if (hasReactive) {
+      let prevCss = '';
+      const dispose = watch(() => {
+        const newCss = buildCss();
+        if (newCss !== prevCss) {
+          prevCss = newCss;
+          sheet.replaceSync(newCss);
+        }
+      });
+      // Auto-dispose on unmount
+      if (ctx) (ctx.disposers ??= []).push(dispose);
+    }
+
+    // No scope class needed — Shadow DOM scopes it
+    return '';
+  }
+
+  // Fallback path — <style> injection with class scoping (no Shadow DOM)
   const scopeClass = `p-${scopeCounter++}`;
   const styleEl = document.createElement('style');
   styleEl.setAttribute('data-purity-scope', scopeClass);
   document.head.appendChild(styleEl);
 
-  const hasReactive = values.some((v) => typeof v === 'function');
-
-  const buildCss = () => {
-    let rawCss = '';
-    for (let i = 0; i < strings.length; i++) {
-      rawCss += strings[i];
-      if (i < values.length) {
-        const val = values[i];
-        rawCss += String(typeof val === 'function' ? (val as () => unknown)() : (val ?? ''));
-      }
-    }
-    return scopeSelectors(rawCss, `.${scopeClass}`);
-  };
-
   if (hasReactive) {
     let prevCss = '';
     const dispose = watch(() => {
-      const newCss = buildCss();
+      const newCss = scopeSelectors(buildCss(), `.${scopeClass}`);
       if (newCss !== prevCss) {
         prevCss = newCss;
         styleEl.textContent = newCss;
       }
     });
-    // Auto-register disposal in component context
-    const ctx = getCurrentContext();
     if (ctx) {
       (ctx.disposers ??= []).push(() => {
         dispose();
@@ -56,9 +78,7 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
       });
     }
   } else {
-    styleEl.textContent = buildCss();
-    // Register style removal on unmount for static styles too
-    const ctx = getCurrentContext();
+    styleEl.textContent = scopeSelectors(buildCss(), `.${scopeClass}`);
     if (ctx) {
       (ctx.disposers ??= []).push(() => styleEl.remove());
     }
@@ -67,10 +87,9 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
   return scopeClass;
 }
 
-// ---------------------------------------------------------------------------
-// scopeSelectors — prefix each CSS selector with a scope class
-// ---------------------------------------------------------------------------
+let scopeCounter = 0;
 
+// Fallback regex scoping — only used when no Shadow DOM
 function scopeSelectors(cssText: string, scope: string): string {
   return cssText.replace(/([^{}]+)\{/g, (_match, selectorGroup: string) => {
     const selectors = selectorGroup.split(',').map((s) => {

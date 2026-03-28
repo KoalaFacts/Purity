@@ -207,16 +207,21 @@ export function component<
       _ctx: ComponentContext | null = null;
       _props: Record<string, unknown> = {};
       _mounted = false;
+      _shadow: ShadowRoot;
+
+      constructor() {
+        super();
+        this._shadow = this.attachShadow({ mode: 'open' });
+      }
 
       connectedCallback() {
-        // Collect props set via :prop bindings (stored as JS properties)
         const props = { ...this._props } as P;
 
-        // Collect event handlers set via @event (stored as __purity_event_*)
+        // Collect event handlers
         const eventProps: Record<string, unknown> = {};
         for (const key of Object.keys(this)) {
           if (key.startsWith('__purity_event_')) {
-            const eventName = key.slice('__purity_event_'.length);
+            const eventName = key.slice(15); // '__purity_event_'.length
             eventProps[`on${eventName.charAt(0).toUpperCase()}${eventName.slice(1)}`] = (
               this as any
             )[key];
@@ -229,7 +234,6 @@ export function component<
         const registry = createRegistry();
         const slotAccessors = createAccessors(registry);
 
-        // Light DOM → default slot
         if (this.childNodes.length > 0) {
           const frag = document.createDocumentFragment();
           while (this.firstChild) {
@@ -244,14 +248,17 @@ export function component<
           ctx.parent = parentCtx;
           (parentCtx.children ??= []).push(ctx);
         }
+        // Store shadow root on context so css() can find it
+        (ctx as any)._shadowRoot = this._shadow;
         this._ctx = ctx;
 
         const { result } = runRender(render, allProps, slotAccessors, ctx);
 
-        this.appendChild(result);
+        // Render into shadow DOM
+        this._shadow.appendChild(result);
 
         if (result instanceof DocumentFragment) {
-          ctx.nodes = Array.from(this.childNodes);
+          ctx.nodes = Array.from(this._shadow.childNodes);
         } else {
           ctx.nodes = [result];
         }

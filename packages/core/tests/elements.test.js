@@ -57,7 +57,7 @@ describe('component() with tag name', () => {
     await tick();
 
     // Custom element should have rendered
-    expect(el.querySelector('.card')).not.toBeNull();
+    expect(el.shadowRoot.querySelector('.card')).not.toBeNull();
 
     document.body.removeChild(container);
   });

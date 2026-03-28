@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { state } from '../src/signals.ts';
-import { css, rcss } from '../src/styles.ts';
+import { css } from '../src/styles.ts';
+
+const tick = () => new Promise((r) => queueMicrotask(r));
 
 describe('css', () => {
   it('returns a unique scope class', () => {
@@ -43,24 +45,22 @@ describe('css', () => {
     expect(styleEl.textContent).toContain(`.${scope} h2`);
   });
 
-  it('supports interpolated values', () => {
+  it('supports static interpolated values', () => {
     const color = 'tomato';
     const scope = css`.box { color: ${color}; }`;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl.textContent).toContain('tomato');
   });
-});
 
-describe('rcss', () => {
-  it('creates reactive styles', async () => {
+  it('supports reactive interpolated values', async () => {
     const color = state('red');
-    const scope = rcss`.box { color: ${() => color()}; }`;
+    const scope = css`.box { color: ${() => color()}; }`;
 
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl.textContent).toContain('red');
 
     color('blue');
-    await new Promise((r) => queueMicrotask(r));
+    await tick();
     expect(styleEl.textContent).toContain('blue');
   });
 });

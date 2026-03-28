@@ -34,4 +34,4 @@ export type { ComputedAccessor, Dispose, StateAccessor } from './signals.js';
 export { batch, compute, Signal, state, watch } from './signals.js';
 
 // Scoped styles
-export { css, rcss } from './styles.js';
+export { css } from './styles.js';

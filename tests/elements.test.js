@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { mount, onDestroy, onMount } from '../src/component.ts';
-import { component, reactiveTeleport, slot, teleport } from '../src/elements.ts';
+import { component, slot, teleport } from '../src/elements.ts';
 import { html } from '../src/render.ts';
 import { compute, state } from '../src/signals.ts';
 
@@ -242,8 +242,8 @@ describe('teleport()', () => {
   });
 });
 
-describe('reactiveTeleport()', () => {
-  it('updates teleported content reactively', async () => {
+describe('teleport() reactive', () => {
+  it('updates teleported content when signals change', async () => {
     const target = document.createElement('div');
     target.id = `rtp-${tagCounter++}`;
     document.body.appendChild(target);
@@ -251,7 +251,7 @@ describe('reactiveTeleport()', () => {
     const visible = state(true);
     const container = document.createElement('div');
     container.appendChild(
-      html`${reactiveTeleport(`#${target.id}`, () =>
+      html`${teleport(`#${target.id}`, () =>
         visible() ? html`<p class="modal">Visible</p>` : null,
       )}`,
     );

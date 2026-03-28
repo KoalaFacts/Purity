@@ -331,33 +331,15 @@ export function component<
 }
 
 // ---------------------------------------------------------------------------
-// teleport
+// teleport(target, viewFn) — render content to a different DOM location
+//
+// Reactive by default — re-renders when signals in viewFn change.
+//
+//   teleport('#modal-root', () => html`<div>Always here</div>`)
+//   teleport('#overlay', () => visible() ? html`<div>Modal</div>` : null)
 // ---------------------------------------------------------------------------
 
 export function teleport(
-  target: string | Element,
-  viewFn?: () => Node | DocumentFragment | null,
-): Comment {
-  const anchor = document.createComment('teleport');
-  queueMicrotask(() => {
-    const container = typeof target === 'string' ? document.querySelector(target) : target;
-    if (!container) {
-      console.warn(`teleport: target "${String(target)}" not found`);
-      return;
-    }
-    if (viewFn) {
-      const content = viewFn();
-      if (content) container.appendChild(content);
-    }
-  });
-  return anchor;
-}
-
-// ---------------------------------------------------------------------------
-// reactiveTeleport
-// ---------------------------------------------------------------------------
-
-export function reactiveTeleport(
   target: string | Element,
   viewFn: () => Node | DocumentFragment | null,
 ): Comment {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { each, match } from '../src/helpers.ts';
+import { each, match } from '../src/control.ts';
 import { state } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));

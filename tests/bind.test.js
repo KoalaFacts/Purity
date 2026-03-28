@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { html } from '../src/render.ts';
+import { html } from '../src/compiler/compile.ts';
 import { state } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
-describe('bind: two-way binding', () => {
+describe(':: two-way binding', () => {
   it('binds input value to state', async () => {
     const text = state('hello');
-    const fragment = html`<input type="text" bind:value=${text} />`;
+    const fragment = html`<input type="text" ::value=${text} />`;
 
     const container = document.createElement('div');
     container.appendChild(fragment);
@@ -24,7 +24,7 @@ describe('bind: two-way binding', () => {
 
   it('binds input events back to state', async () => {
     const text = state('hello');
-    const fragment = html`<input type="text" bind:value=${text} />`;
+    const fragment = html`<input type="text" ::value=${text} />`;
 
     const container = document.createElement('div');
     container.appendChild(fragment);
@@ -41,7 +41,7 @@ describe('bind: two-way binding', () => {
 
   it('binds checkbox checked to state', async () => {
     const checked = state(false);
-    const fragment = html`<input type="checkbox" bind:checked=${checked} />`;
+    const fragment = html`<input type="checkbox" ::checked=${checked} />`;
 
     const container = document.createElement('div');
     container.appendChild(fragment);
@@ -64,7 +64,7 @@ describe('bind: two-way binding', () => {
   it('binds select value to state', async () => {
     const selected = state('b');
     const fragment = html`
-      <select bind:value=${selected}>
+      <select ::value=${selected}>
         <option value="a">A</option>
         <option value="b">B</option>
         <option value="c">C</option>

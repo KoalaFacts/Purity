@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { html } from '../src/compiler/compile.ts';
 import { mount } from '../src/component.ts';
 import { inject, provide } from '../src/inject.ts';
-import { html } from '../src/render.ts';
 import { state } from '../src/signals.ts';
 
 describe('provide/inject', () => {

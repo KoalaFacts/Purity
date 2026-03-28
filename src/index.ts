@@ -3,6 +3,8 @@
 //           built on native signals.
 // ---------------------------------------------------------------------------
 
+// Tagged template rendering
+export { html } from './compiler/compile.js';
 export type { ComponentFn, ErrorCallback, LifecycleCallback, MountResult } from './component.js';
 // Component system & lifecycle hooks
 export {
@@ -27,8 +29,6 @@ export { component, slot, teleport } from './elements.js';
 export { each, match, when } from './helpers.js';
 // Dependency injection
 export { inject, provide } from './inject.js';
-// Tagged template rendering
-export { html } from './render.js';
 export type { ComputedAccessor, Dispose, EffectHandle, StateAccessor } from './signals.js';
 // Reactive primitives
 export { batch, compute, Signal, state, watch } from './signals.js';

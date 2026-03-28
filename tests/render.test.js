@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { html } from '../src/render.ts';
+import { html } from '../src/compiler/compile.ts';
 import { state } from '../src/signals.ts';
 
 describe('html tagged template', () => {

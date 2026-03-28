@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { html } from '../src/compiler/compile.ts';
 import { mount, onDestroy, onMount } from '../src/component.ts';
 import { component, slot, teleport } from '../src/elements.ts';
-import { html } from '../src/render.ts';
 import { compute, state } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));

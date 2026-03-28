@@ -130,15 +130,25 @@ function genElement(c: CodegenContext, node: ElementNode): string {
   const v = nextVar(c, 'e');
   emit(c, `const ${v} = document.createElement('${node.tag}');`);
 
-  // Attributes
+  // Non-bind attributes first
+  const bindAttrs: typeof node.attributes = [];
   for (const attr of node.attributes) {
-    genAttribute(c, v, attr);
+    if (attr.kind === 'bind') {
+      bindAttrs.push(attr);
+    } else {
+      genAttribute(c, v, attr);
+    }
   }
 
   // Children
   for (const child of node.children) {
     const childVar = genNode(c, child);
     emit(c, `${v}.appendChild(${childVar});`);
+  }
+
+  // Bind attributes after children (needed for select::value)
+  for (const attr of bindAttrs) {
+    genAttribute(c, v, attr);
   }
 
   return v;
@@ -161,19 +171,36 @@ function genExpression(c: CodegenContext, node: ExpressionNode): string {
   const v = nextVar(c, 'x');
   const valExpr = `__values[${node.index}]`;
 
-  // Content expression — could be static value, function (reactive), or Node
-  emit(c, `const ${v} = document.createTextNode('');`);
+  // Content expression — could be static value, function (reactive), Node, or Array
+  // Use a helper that returns the correct node type directly
   emit(c, `const ${v}_val = ${valExpr};`);
+  emit(c, `let ${v};`);
   emit(c, `if (typeof ${v}_val === 'function') {`);
+  emit(c, `  ${v} = document.createTextNode('');`);
   emit(c, `  __watch(() => {`);
   emit(c, `    const _r = ${v}_val();`);
-  emit(c, `    if (_r instanceof Node) { ${v}.replaceWith(_r); }`);
-  emit(c, `    else { ${v}.data = _r == null ? '' : String(_r); }`);
+  emit(c, `    if (_r instanceof Node) { ${v}.replaceWith(_r); ${v} = _r; }`);
+  emit(
+    c,
+    `    else { if (${v}.nodeType !== 3) { const _t = document.createTextNode(''); ${v}.replaceWith(_t); ${v} = _t; } ${v}.data = _r == null ? '' : String(_r); }`,
+  );
   emit(c, `  });`);
+  emit(c, `} else if (${v}_val instanceof DocumentFragment) {`);
+  // DocumentFragment: wrap in a span to keep a single reference
+  emit(c, `  ${v} = document.createDocumentFragment();`);
+  emit(c, `  while (${v}_val.firstChild) ${v}.appendChild(${v}_val.firstChild);`);
   emit(c, `} else if (${v}_val instanceof Node) {`);
-  emit(c, `  ${v}.replaceWith(${v}_val);`);
-  emit(c, `} else if (${v}_val != null && ${v}_val !== false) {`);
-  emit(c, `  ${v}.data = String(${v}_val);`);
+  emit(c, `  ${v} = ${v}_val;`);
+  emit(c, `} else if (Array.isArray(${v}_val)) {`);
+  emit(c, `  ${v} = document.createDocumentFragment();`);
+  emit(
+    c,
+    `  for (const _item of ${v}_val) ${v}.appendChild(_item instanceof Node ? _item : document.createTextNode(String(_item)));`,
+  );
+  emit(c, `} else if (${v}_val == null || ${v}_val === false) {`);
+  emit(c, `  ${v} = document.createTextNode('');`);
+  emit(c, `} else {`);
+  emit(c, `  ${v} = document.createTextNode(String(${v}_val));`);
   emit(c, `}`);
 
   return v;

@@ -298,21 +298,24 @@ class Parser {
     const startPos = this.pos;
     const firstChar = s.charCodeAt(this.pos);
 
-    // Detect prefix: @event, ?bool, .prop, :reactive, bind:name
+    // Detect prefix: @event, ?bool, .prop, ::two-way, :one-way
     let prefix = '';
-    if (firstChar === AT || firstChar === QMARK || firstChar === DOT || firstChar === COLON) {
+    if (firstChar === AT || firstChar === QMARK || firstChar === DOT) {
       prefix = s[this.pos];
       this.advance();
+    } else if (firstChar === COLON) {
+      // Check for :: (two-way) vs : (one-way)
+      if (this.pos + 1 < s.length && s.charCodeAt(this.pos + 1) === COLON) {
+        prefix = '::';
+        this.pos += 2;
+      } else {
+        prefix = ':';
+        this.advance();
+      }
     }
 
     // Read attribute name
-    let name = this.readName();
-
-    // Handle bind: prefix — readName may have consumed 'bind:value' as one token
-    if (!prefix && name.startsWith('bind:')) {
-      prefix = 'bind:';
-      name = name.slice(5);
-    }
+    const name = this.readName();
 
     // Check for = (value assignment)
     this.skipWhitespace();
@@ -382,7 +385,7 @@ class Parser {
         return { kind: 'prop', name, index };
       case ':':
         return { kind: 'reactive-prop', name, index };
-      case 'bind:':
+      case '::':
         return { kind: 'bind', name, index };
       default:
         return { kind: 'dynamic', name, index };

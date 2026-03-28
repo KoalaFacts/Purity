@@ -69,8 +69,8 @@ describe('parser', () => {
     expect(el.attributes[0]).toEqual({ kind: 'reactive-prop', name: 'title', index: 0 });
   });
 
-  it('parses bind:name attribute', () => {
-    const ast = parse(['<input bind:value=', ' />']);
+  it('parses :: two-way binding attribute', () => {
+    const ast = parse(['<input ::value=', ' />']);
     const input = ast.children[0];
     expect(input.attributes[0]).toEqual({ kind: 'bind', name: 'value', index: 0 });
   });

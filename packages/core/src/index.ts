@@ -23,6 +23,7 @@ export {
   onUpdate,
   onBeforeDestroy,
   onDestroy,
+  onDispose,
   onError,
 } from './component.js';
 export type { ComponentFn, MountResult } from './component.js';

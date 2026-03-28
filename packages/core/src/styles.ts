@@ -1,3 +1,4 @@
+import { getCurrentContext } from './component.js';
 import { watch } from './signals.js';
 
 // ---------------------------------------------------------------------------
@@ -39,15 +40,28 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
 
   if (hasReactive) {
     let prevCss = '';
-    watch(() => {
+    const dispose = watch(() => {
       const newCss = buildCss();
       if (newCss !== prevCss) {
         prevCss = newCss;
         styleEl.textContent = newCss;
       }
     });
+    // Auto-register disposal in component context
+    const ctx = getCurrentContext();
+    if (ctx) {
+      ctx._addDisposer(() => {
+        dispose();
+        styleEl.remove();
+      });
+    }
   } else {
     styleEl.textContent = buildCss();
+    // Register style removal on unmount for static styles too
+    const ctx = getCurrentContext();
+    if (ctx) {
+      ctx._addDisposer(() => styleEl.remove());
+    }
   }
 
   return scopeClass;

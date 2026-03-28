@@ -29,11 +29,10 @@ export class ComponentContext {
   children: ComponentContext[] = [];
   _isMounted = false;
   _isDestroyed = false;
-  _slotContent: unknown = undefined; // raw children passed to component
+  _slotContent: unknown = undefined;
 
   _run(callbacks: ((...args: any[]) => void)[], ...args: unknown[]): void {
     if (this.errorHandlers.length > 0 || this.parent) {
-      // Slow path: wrap in try/catch for error boundaries
       for (let i = 0; i < callbacks.length; i++) {
         try {
           callbacks[i](...args);
@@ -42,7 +41,6 @@ export class ComponentContext {
         }
       }
     } else {
-      // Fast path: no error handlers, skip try/catch overhead
       for (let i = 0; i < callbacks.length; i++) {
         callbacks[i](...args);
       }
@@ -55,7 +53,7 @@ export class ComponentContext {
         try {
           handler(err);
         } catch (e) {
-          console.error('Error in onError handler:', e);
+          console.error('[Purity] Error in onError handler:', e);
         }
       }
     } else if (this.parent) {
@@ -63,6 +61,11 @@ export class ComponentContext {
     } else {
       throw err;
     }
+  }
+
+  /** Register a dispose function — auto-called on unmount */
+  _addDisposer(dispose: () => void): void {
+    this.disposers.push(dispose);
   }
 }
 
@@ -82,6 +85,19 @@ export function pushContext(ctx: ComponentContext): void {
 
 export function popContext(): ComponentContext | undefined {
   return contextStack.pop();
+}
+
+// ---------------------------------------------------------------------------
+// onDispose(fn) — register cleanup that runs on component unmount
+//
+// Use this to auto-register watch/effect dispose functions:
+//   const stop = watch(signal, callback);
+//   onDispose(stop);
+// ---------------------------------------------------------------------------
+
+export function onDispose(fn: () => void): void {
+  const ctx = getCurrentContext();
+  if (ctx) ctx._addDisposer(fn);
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +191,7 @@ export function mount(component: ComponentFn, container: Element): MountResult {
 }
 
 // ---------------------------------------------------------------------------
-// unmountContext
+// unmountContext — tear down component and all children
 // ---------------------------------------------------------------------------
 
 function unmountContext(ctx: ComponentContext): void {
@@ -183,31 +199,37 @@ function unmountContext(ctx: ComponentContext): void {
 
   ctx._run(ctx.beforeDestroy);
 
-  for (const child of ctx.children) {
-    unmountContext(child);
+  // Unmount children
+  for (let i = ctx.children.length - 1; i >= 0; i--) {
+    unmountContext(ctx.children[i]);
   }
+  ctx.children.length = 0; // Clear children array — prevents memory leak
 
+  // Remove DOM nodes
   if (ctx.nodes) {
-    for (const node of ctx.nodes) {
-      if (node.parentNode) {
-        node.parentNode.removeChild(node);
-      }
+    for (let i = 0; i < ctx.nodes.length; i++) {
+      const node = ctx.nodes[i];
+      if (node.parentNode) node.parentNode.removeChild(node);
     }
+    ctx.nodes = null;
   }
 
-  for (const dispose of ctx.disposers) {
+  // Dispose all effects — log errors instead of silencing
+  for (let i = 0; i < ctx.disposers.length; i++) {
     try {
-      dispose();
+      ctx.disposers[i]();
     } catch (err) {
-      ctx._handleError(err);
+      console.error('[Purity] Error during disposal:', err);
     }
   }
+  ctx.disposers.length = 0;
 
   ctx._isDestroyed = true;
   ctx._isMounted = false;
 
   ctx._run(ctx.destroyed);
 
+  // Remove from parent's children list
   if (ctx.parent) {
     const idx = ctx.parent.children.indexOf(ctx);
     if (idx !== -1) ctx.parent.children.splice(idx, 1);

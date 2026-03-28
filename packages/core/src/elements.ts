@@ -253,11 +253,15 @@ export function component<
       disconnectedCallback() {
         if (this._ctx) {
           this._ctx._run(this._ctx.beforeDestroy);
-          for (const dispose of this._ctx.disposers) {
+          for (let i = 0; i < this._ctx.disposers.length; i++) {
             try {
-              dispose();
-            } catch {}
+              this._ctx.disposers[i]();
+            } catch (err) {
+              console.error('[Purity] Error during disposal:', err);
+            }
           }
+          this._ctx.disposers.length = 0;
+          this._ctx.children.length = 0;
           this._ctx._isDestroyed = true;
           this._ctx._isMounted = false;
           this._ctx._run(this._ctx.destroyed);
@@ -354,6 +358,8 @@ export function teleport(
 ): Comment {
   const anchor = document.createComment('teleport');
   let currentNodes: Node[] = [];
+  let dispose: (() => void) | null = null;
+
   queueMicrotask(() => {
     const container = typeof target === 'string' ? document.querySelector(target) : target;
     if (!container) {
@@ -363,8 +369,9 @@ export function teleport(
       );
       return;
     }
-    watch(() => {
-      for (const node of currentNodes) {
+    dispose = watch(() => {
+      for (let i = 0; i < currentNodes.length; i++) {
+        const node = currentNodes[i];
         if (node.parentNode) node.parentNode.removeChild(node);
       }
       currentNodes = [];
@@ -379,5 +386,19 @@ export function teleport(
       }
     });
   });
+
+  // Auto-register dispose in current component context
+  const ctx = getCurrentContext();
+  if (ctx) {
+    ctx._addDisposer(() => {
+      if (dispose) dispose();
+      for (let i = 0; i < currentNodes.length; i++) {
+        const node = currentNodes[i];
+        if (node.parentNode) node.parentNode.removeChild(node);
+      }
+      currentNodes = [];
+    });
+  }
+
   return anchor;
 }

@@ -1,0 +1,30 @@
+{
+  "name": "@purity/core",
+  "version": "0.1.0",
+  "description": "Purity — a minimal, lightweight, super performant web framework using native signals",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./compiler": {
+      "types": "./dist/compiler/index.d.ts",
+      "import": "./dist/compiler/index.js"
+    }
+  },
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "rollup -c",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "signal-polyfill": "^0.2.2"
+  },
+  "license": "MIT"
+}

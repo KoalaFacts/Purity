@@ -1,45 +1,14 @@
 {
-  "name": "purity",
+  "name": "purity-monorepo",
   "version": "0.1.0",
-  "description": "A minimal, lightweight, super performant web framework using native signals",
-  "type": "module",
-  "main": "dist/purity.cjs",
-  "module": "dist/purity.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/purity.js",
-      "require": "./dist/purity.cjs"
-    },
-    "./compiler": {
-      "types": "./dist/compiler/index.d.ts",
-      "import": "./dist/compiler/index.js"
-    }
-  },
-  "files": [
-    "dist",
-    "src"
-  ],
+  "private": true,
+  "workspaces": ["packages/*"],
   "scripts": {
-    "build": "rollup -c",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "dev": "vite examples",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome check --write ."
-  },
-  "keywords": [
-    "signals",
-    "reactive",
-    "framework",
-    "lightweight",
-    "no-virtual-dom"
-  ],
-  "license": "MIT",
-  "dependencies": {
-    "signal-polyfill": "^0.2.2"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",

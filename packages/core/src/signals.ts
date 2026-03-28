@@ -107,6 +107,9 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
 
 let _currentEffect: EffectHandle | null = null;
 
+const MAX_EFFECT_DEPTH = 100;
+let effectDepth = 0;
+
 function _effect(fn: () => undefined | Dispose): Dispose {
   let cleanup: undefined | Dispose;
   let disposed = false;
@@ -119,12 +122,22 @@ function _effect(fn: () => undefined | Dispose): Dispose {
 
     if (disposed) return;
 
+    // Re-entrancy guard — prevent infinite loops
+    if (++effectDepth > MAX_EFFECT_DEPTH) {
+      effectDepth = 0;
+      throw new Error(
+        '[Purity] Maximum effect depth exceeded. ' +
+          'A watch/effect callback is likely modifying the signal it depends on.',
+      );
+    }
+
     const prevEffect = _currentEffect;
     _currentEffect = effectHandle;
     try {
       cleanup = fn();
     } finally {
       _currentEffect = prevEffect;
+      effectDepth--;
     }
   });
 

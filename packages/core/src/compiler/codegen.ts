@@ -126,8 +126,17 @@ function genNode(c: CodegenContext, node: ASTNode): string {
   }
 }
 
+// Validate that a name is safe for code generation (no injection)
+const SAFE_NAME = /^[a-zA-Z_][\w.-]*$/;
+function assertSafeName(name: string, kind: string): void {
+  if (!SAFE_NAME.test(name)) {
+    throw new Error(`[Purity] Invalid ${kind} name: "${name}"`);
+  }
+}
+
 function genElement(c: CodegenContext, node: ElementNode): string {
   const v = nextVar(c, 'e');
+  assertSafeName(node.tag, 'tag');
   emit(c, `const ${v} = document.createElement('${node.tag}');`);
 
   // Non-bind attributes first
@@ -227,6 +236,8 @@ function genFragment(c: CodegenContext, node: FragmentNode): string {
 // ---------------------------------------------------------------------------
 
 function genAttribute(c: CodegenContext, elVar: string, attr: AttributeNode): void {
+  assertSafeName(attr.name, 'attribute');
+
   switch (attr.kind) {
     case 'static': {
       // Use direct property for known fast-path attributes

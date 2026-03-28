@@ -108,12 +108,14 @@ export function each<T>(
     const len = list.length;
     const prevLen = prevKeys.length;
 
+    // Default key: use item identity, not index — index keys break on reorder
+    const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
+
     // Fast path: quick key scan before allocating
     if (len === prevLen) {
       let same = true;
       for (let i = 0; i < len; i++) {
-        const key = keyFn ? keyFn(list[i], i) : i;
-        if (prevKeys[i] !== key) { same = false; break; }
+        if (prevKeys[i] !== getKey(list[i], i)) { same = false; break; }
       }
       if (same) return;
     }
@@ -123,7 +125,7 @@ export function each<T>(
 
     for (let i = 0; i < len; i++) {
       const item = list[i];
-      const key = keyFn ? keyFn(item, i) : i;
+      const key = getKey(item, i);
       newKeys[i] = key;
 
       if (keyToEntry.has(key)) {

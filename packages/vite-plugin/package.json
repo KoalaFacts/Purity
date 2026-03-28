@@ -1,0 +1,21 @@
+{
+  "name": "@purity/vite-plugin",
+  "version": "0.1.0",
+  "description": "Vite plugin for AOT template compilation in Purity",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts"
+    }
+  },
+  "files": ["src"],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@purity/core": "*"
+  },
+  "license": "MIT"
+}

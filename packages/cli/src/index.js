@@ -14,15 +14,16 @@ if (existsSync(projectDir)) {
   process.exit(1);
 }
 
-// Detect if running from monorepo — resolve @purity/core locally
+// Detect if running from monorepo
 const coreDir = resolve(__dirname, '../../core');
+const pluginDir = resolve(__dirname, '../../vite-plugin');
 const isLocal = existsSync(resolve(coreDir, 'src/index.ts'));
-const coreDep = isLocal
-  ? `file:${coreDir}`
-  : '^0.1.0';
+
+const coreDep = isLocal ? `file:${coreDir}` : '^0.1.0';
+const pluginDep = isLocal ? `file:${pluginDir}` : '^0.1.0';
 
 console.log(`\n  Creating ${projectName}...`);
-if (isLocal) console.log(`  Using local @purity/core from ${coreDir}`);
+if (isLocal) console.log('  Using local packages from monorepo');
 console.log('');
 
 mkdirSync(projectDir, { recursive: true });
@@ -46,6 +47,7 @@ writeFileSync(
         '@purity/core': coreDep,
       },
       devDependencies: {
+        '@purity/vite-plugin': pluginDep,
         vite: '^8.0.0',
         typescript: '^6.0.0',
       },
@@ -55,23 +57,26 @@ writeFileSync(
   ) + '\n',
 );
 
-// vite.config.ts — resolve @purity/core source directly when local
-if (isLocal) {
-  const coreSrcPath = resolve(coreDir, 'src/index.ts');
-  writeFileSync(
-    resolve(projectDir, 'vite.config.ts'),
-    `import { defineConfig } from 'vite';
+// vite.config.ts — always generated, includes purity plugin
+const coreSrcPath = resolve(coreDir, 'src/index.ts');
+const pluginImport = isLocal
+  ? `import { purity } from '${resolve(pluginDir, 'src/index.ts')}';`
+  : `import { purity } from '@purity/vite-plugin';`;
+
+const aliasBlock = isLocal
+  ? `\n  resolve: {\n    alias: {\n      '@purity/core': '${coreSrcPath}',\n    },\n  },`
+  : '';
+
+writeFileSync(
+  resolve(projectDir, 'vite.config.ts'),
+  `${pluginImport}
+import { defineConfig } from 'vite';
 
 export default defineConfig({
-  resolve: {
-    alias: {
-      '@purity/core': '${coreSrcPath}',
-    },
-  },
+  plugins: [purity()],${aliasBlock}
 });
 `,
-  );
-}
+);
 
 // tsconfig.json
 writeFileSync(

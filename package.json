@@ -12,10 +12,6 @@
       "import": "./dist/purity.js",
       "require": "./dist/purity.cjs"
     },
-    "./vite": {
-      "types": "./dist/vite.d.ts",
-      "import": "./dist/vite.js"
-    },
     "./compiler": {
       "types": "./dist/compiler/index.d.ts",
       "import": "./dist/compiler/index.js"

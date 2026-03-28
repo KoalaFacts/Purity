@@ -23,14 +23,19 @@ function createRegistry(): SlotRegistry {
 }
 
 function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<any>> {
+  const cache = new Map<string, SlotAccessor<any>>();
   return new Proxy({} as Record<string, SlotAccessor<any>>, {
     get(_target, prop: string) {
       if (typeof prop !== 'string') return undefined;
-      registry.accessorNames.add(prop);
-      return (_exposed?: unknown): Node | null => {
-        const content = registry.filled.get(prop);
-        return resolveContent(content);
-      };
+      let accessor = cache.get(prop);
+      if (!accessor) {
+        registry.accessorNames.add(prop);
+        accessor = ((_exposed?: unknown): Node | null => {
+          return resolveContent(registry.filled.get(prop));
+        }) as SlotAccessor<any>;
+        cache.set(prop, accessor);
+      }
+      return accessor;
     },
   });
 }

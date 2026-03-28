@@ -78,8 +78,13 @@ export function rcss(strings: TemplateStringsArray, ...values: unknown[]): strin
   };
 
   if (hasReactive) {
+    let prevCss = '';
     watch(() => {
-      styleEl.textContent = buildCss();
+      const newCss = buildCss();
+      if (newCss !== prevCss) {
+        prevCss = newCss;
+        styleEl.textContent = newCss;
+      }
     });
   } else {
     styleEl.textContent = buildCss();

@@ -24,31 +24,33 @@ interface AttrInfo {
 }
 
 // ---------------------------------------------------------------------------
-// Template cache
+// Template cache + constants
 // ---------------------------------------------------------------------------
 
 const templateCache = new WeakMap<TemplateStringsArray, CachedTemplate>();
-
 const MARKER = 'purity-';
-const ATTR_MARKER = `__purity_`;
+const MARKER_LEN = MARKER.length;
+const ATTR_MARKER = '__purity_';
+
+// Pre-compiled regex — avoids re-compilation on every detectAttribute call
+const ATTR_RE = /(?:^|[\s])([.?@:]?[a-zA-Z_][\w.:-]*)=["']?$/;
 
 // ---------------------------------------------------------------------------
-// html`` — tagged template literal that returns real DOM nodes
+// html``
 // ---------------------------------------------------------------------------
 
 export function html(strings: TemplateStringsArray, ...values: unknown[]): DocumentFragment {
   let cached = templateCache.get(strings);
-
   if (!cached) {
     cached = buildTemplate(strings);
     templateCache.set(strings, cached);
   }
-
   return hydrate(cached, values);
 }
 
 // ---------------------------------------------------------------------------
-// buildTemplate
+// buildTemplate — parse static parts into <template> with markers
+// Perf: regex is pre-compiled, only the tail of htmlStr is tested
 // ---------------------------------------------------------------------------
 
 function buildTemplate(strings: TemplateStringsArray): CachedTemplate {
@@ -62,13 +64,8 @@ function buildTemplate(strings: TemplateStringsArray): CachedTemplate {
       const attrInfo = detectAttribute(htmlStr);
 
       if (attrInfo) {
-        const markerAttr = `${ATTR_MARKER}${i}`;
-        attrBindings.push({
-          index: i,
-          name: attrInfo.name,
-          type: attrInfo.type,
-        });
-        htmlStr = `${attrInfo.before} ${markerAttr}=""`;
+        attrBindings.push({ index: i, name: attrInfo.name, type: attrInfo.type });
+        htmlStr = `${attrInfo.before} ${ATTR_MARKER}${i}=""`;
       } else {
         htmlStr += `<!--${MARKER}${i}-->`;
       }
@@ -77,82 +74,114 @@ function buildTemplate(strings: TemplateStringsArray): CachedTemplate {
 
   const tpl = document.createElement('template');
   tpl.innerHTML = htmlStr;
-
   return { tpl, attrBindings };
 }
 
 // ---------------------------------------------------------------------------
-// detectAttribute
+// detectAttribute — check if current position is inside an attribute
+// Perf: uses pre-compiled regex, only tests the trimmed tail
 // ---------------------------------------------------------------------------
 
 function detectAttribute(htmlStr: string): AttrInfo | null {
-  const stripped = htmlStr.trimEnd();
-
-  const match = stripped.match(/(?:^|[\s])([.?@:]?[a-zA-Z_][\w.:-]*)=(?:["']?)$/);
+  // Only check the last ~100 chars — attribute names are short
+  const tail = htmlStr.length > 100 ? htmlStr.slice(-100) : htmlStr;
+  const stripped = tail.trimEnd();
+  const match = ATTR_RE.exec(stripped);
 
   if (!match) return null;
 
   const fullName = match[1];
   let type: AttrType = 'attr';
   let name = fullName;
+  const ch = fullName.charCodeAt(0);
 
-  if (fullName.startsWith('@')) {
+  // Fast prefix dispatch by char code
+  if (ch === 64) {
+    // '@'
     type = 'event';
     name = fullName.slice(1);
-  } else if (fullName.startsWith('?')) {
+  } else if (ch === 63) {
+    // '?'
     type = 'bool';
     name = fullName.slice(1);
-  } else if (fullName.startsWith('.')) {
+  } else if (ch === 46) {
+    // '.'
     type = 'prop';
     name = fullName.slice(1);
-  } else if (fullName.startsWith('bind:')) {
-    type = 'bind';
-    name = fullName.slice(5);
-  } else if (fullName.startsWith(':')) {
+  } else if (ch === 58) {
+    // ':'
     type = 'reactive-prop';
     name = fullName.slice(1);
+  } else if (fullName.charCodeAt(0) === 98 && fullName.startsWith('bind:')) {
+    // 'b' + 'ind:'
+    type = 'bind';
+    name = fullName.slice(5);
   }
 
-  const attrStart = stripped.lastIndexOf(`${fullName}=`);
-  const before = stripped.slice(0, attrStart).trimEnd();
+  // Compute 'before' from the full htmlStr, not the tail
+  const attrStart = htmlStr.trimEnd().lastIndexOf(`${fullName}=`);
+  const before = htmlStr.slice(0, attrStart).trimEnd();
 
   return { name, type, before };
 }
 
 // ---------------------------------------------------------------------------
-// hydrate
+// hydrate — clone template, process markers and bindings in minimal passes
 // ---------------------------------------------------------------------------
 
 function hydrate(cached: CachedTemplate, values: unknown[]): DocumentFragment {
   const { tpl, attrBindings } = cached;
   const fragment = tpl.content.cloneNode(true) as DocumentFragment;
 
-  // --- Process content markers (comment nodes) ---
-  const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_COMMENT, null);
+  // --- Single TreeWalker pass for comment markers + attribute elements ---
+  if (attrBindings.length > 0 || true) {
+    // Process comments directly during walk — no intermediate array
+    const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_COMMENT, null);
+    // Collect markers first (can't modify DOM during walk)
+    let node: Node | null;
+    let markerCount = 0;
+    // Use a flat array [node, index, node, index, ...] to avoid object allocation
+    const markerNodes: (Comment | number)[] = [];
 
-  const markers: { node: Comment; index: number }[] = [];
-  let node: Node | null;
-  while ((node = walker.nextNode())) {
-    const text = (node as Comment).textContent ?? '';
-    if (text.startsWith(MARKER)) {
-      const index = parseInt(text.slice(MARKER.length), 10);
-      markers.push({ node: node as Comment, index });
+    while ((node = walker.nextNode())) {
+      const text = (node as Comment).textContent ?? '';
+      if (text.charCodeAt(0) === 112 && text.startsWith(MARKER)) {
+        // 'p' = first char of 'purity-'
+        markerNodes.push(node as Comment, parseInt(text.slice(MARKER_LEN), 10));
+        markerCount++;
+      }
+    }
+
+    for (let i = 0; i < markerCount; i++) {
+      const marker = markerNodes[i * 2] as Comment;
+      const index = markerNodes[i * 2 + 1] as number;
+      processContentValue(marker, values[index]);
     }
   }
 
-  for (const { node: marker, index } of markers) {
-    processContentValue(marker, values[index]);
-  }
+  // --- Process attribute bindings via querySelectorAll in one call ---
+  if (attrBindings.length > 0) {
+    // Build a single selector for all bindings
+    const selector = attrBindings.map((b) => `[${ATTR_MARKER}${b.index}]`).join(',');
+    const elements = fragment.querySelectorAll(selector);
 
-  // --- Process attribute bindings ---
-  for (const binding of attrBindings) {
-    const markerAttr = `${ATTR_MARKER}${binding.index}`;
-    const el = fragment.querySelector(`[${markerAttr}]`);
+    // Build a map of marker attr → binding for O(1) lookup
+    const bindingMap = new Map<string, AttrBinding>();
+    for (const b of attrBindings) {
+      bindingMap.set(`${ATTR_MARKER}${b.index}`, b);
+    }
 
-    if (!el) continue;
-
-    el.removeAttribute(markerAttr);
-    processAttributeValue(el as HTMLElement, binding, values[binding.index]);
+    for (const el of elements) {
+      // Find which binding this element matches
+      for (const [attr, binding] of bindingMap) {
+        if (el.hasAttribute(attr)) {
+          el.removeAttribute(attr);
+          processAttributeValue(el as HTMLElement, binding, values[binding.index]);
+          bindingMap.delete(attr); // Each marker is unique, remove after match
+          break;
+        }
+      }
+    }
   }
 
   return fragment;
@@ -173,7 +202,6 @@ function processContentValue(marker: Comment, value: unknown): void {
   if (typeof value === 'function') {
     const textNode = document.createTextNode('');
     parent.replaceChild(textNode, marker);
-
     watch(() => {
       const result = (value as () => unknown)();
       if (result instanceof Node) {
@@ -192,19 +220,15 @@ function processContentValue(marker: Comment, value: unknown): void {
 
   if (Array.isArray(value)) {
     const frag = document.createDocumentFragment();
-    for (const item of value) {
-      if (item instanceof Node) {
-        frag.appendChild(item);
-      } else {
-        frag.appendChild(document.createTextNode(String(item)));
-      }
+    for (let i = 0; i < value.length; i++) {
+      const item = value[i];
+      frag.appendChild(item instanceof Node ? item : document.createTextNode(String(item)));
     }
     parent.replaceChild(frag, marker);
     return;
   }
 
-  const textNode = document.createTextNode(String(value));
-  parent.replaceChild(textNode, marker);
+  parent.replaceChild(document.createTextNode(String(value)), marker);
 }
 
 // ---------------------------------------------------------------------------
@@ -216,10 +240,7 @@ function processAttributeValue(el: HTMLElement, binding: AttrBinding, value: unk
 
   if (type === 'event') {
     if (typeof value === 'function') {
-      // Standard DOM event listener
       el.addEventListener(name, value as EventListener);
-      // Also store as property for custom element prop resolution
-      // e.g. @saved → __purity_event_saved, component reads it as onSaved
       (el as any)[`__purity_event_${name}`] = value;
     }
     return;
@@ -234,29 +255,20 @@ function processAttributeValue(el: HTMLElement, binding: AttrBinding, value: unk
           el.removeAttribute(name);
         }
       });
+    } else if (value) {
+      el.setAttribute(name, '');
     } else {
-      if (value) {
-        el.setAttribute(name, '');
-      } else {
-        el.removeAttribute(name);
-      }
+      el.removeAttribute(name);
     }
     return;
   }
 
   if (type === 'bind') {
-    // Two-way binding: bind:value=${signal} or bind:checked=${signal}
-    // The value must be a StateAccessor (callable getter/setter)
     if (typeof value === 'function') {
       const accessor = value as any;
-
-      // Determine the event and property for this binding
-      const propName =
-        name === 'group' ? ((el as HTMLInputElement).type === 'radio' ? 'checked' : 'value') : name;
       const eventName = name === 'checked' || name === 'group' ? 'change' : 'input';
 
       if (name === 'group') {
-        // Radio/checkbox group binding
         const inputEl = el as HTMLInputElement;
         if (inputEl.type === 'radio') {
           watch(() => {
@@ -266,31 +278,26 @@ function processAttributeValue(el: HTMLElement, binding: AttrBinding, value: unk
             if (inputEl.checked) accessor(inputEl.value);
           });
         } else {
-          // Checkbox group — accessor holds an array
           watch(() => {
-            const arr = accessor() as unknown[];
-            inputEl.checked = arr.includes(inputEl.value);
+            inputEl.checked = (accessor() as unknown[]).includes(inputEl.value);
           });
           el.addEventListener('change', () => {
             const arr = [...(accessor() as unknown[])];
+            const idx = arr.indexOf(inputEl.value);
             if (inputEl.checked) {
-              if (!arr.includes(inputEl.value)) arr.push(inputEl.value);
-            } else {
-              const idx = arr.indexOf(inputEl.value);
-              if (idx !== -1) arr.splice(idx, 1);
+              if (idx === -1) arr.push(inputEl.value);
+            } else if (idx !== -1) {
+              arr.splice(idx, 1);
             }
             accessor(arr);
           });
         }
       } else {
-        // Standard property binding (value, checked, etc.)
         watch(() => {
           (el as any)[name] = accessor();
         });
-
         el.addEventListener(eventName, () => {
-          const prop = name === 'checked' ? (el as HTMLInputElement).checked : (el as any)[name];
-          accessor(prop);
+          accessor(name === 'checked' ? (el as HTMLInputElement).checked : (el as any)[name]);
         });
       }
     }
@@ -298,12 +305,7 @@ function processAttributeValue(el: HTMLElement, binding: AttrBinding, value: unk
   }
 
   if (type === 'reactive-prop') {
-    // :propName=${value} — set as JS property, reactive if function
-    // Works on native elements AND custom elements
-    // Store in _props for custom element connectedCallback
-    if ((el as any)._props) {
-      (el as any)._props[name] = value;
-    }
+    if ((el as any)._props) (el as any)._props[name] = value;
     if (typeof value === 'function') {
       watch(() => {
         const v = (value as () => unknown)();
@@ -337,11 +339,9 @@ function processAttributeValue(el: HTMLElement, binding: AttrBinding, value: unk
         el.setAttribute(name, String(v));
       }
     });
+  } else if (value == null || value === false) {
+    el.removeAttribute(name);
   } else {
-    if (value == null || value === false) {
-      el.removeAttribute(name);
-    } else {
-      el.setAttribute(name, String(value));
-    }
+    el.setAttribute(name, String(value));
   }
 }

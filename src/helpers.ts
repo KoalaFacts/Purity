@@ -114,6 +114,8 @@ export function each<T>(
   fragment.appendChild(endMarker);
 
   let keyToEntry = new Map<unknown, EachEntry>();
+  // Reusable arrays — avoid allocating per watch cycle
+  let prevKeys: unknown[] = [];
 
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
@@ -123,13 +125,17 @@ export function each<T>(
     const parent = endMarker.parentNode;
     if (!parent) return;
 
-    const newKeys: unknown[] = [];
+    const len = list.length;
+    const newKeys: unknown[] = new Array(len);
     const newEntries = new Map<unknown, EachEntry>();
+    let changed = len !== prevKeys.length;
 
-    for (let i = 0; i < list.length; i++) {
+    // Build new key → entry map
+    for (let i = 0; i < len; i++) {
       const item = list[i];
       const key = keyFn ? keyFn(item, i) : i;
-      newKeys.push(key);
+      newKeys[i] = key;
+      if (!changed && prevKeys[i] !== key) changed = true;
 
       if (keyToEntry.has(key)) {
         newEntries.set(key, keyToEntry.get(key)!);
@@ -142,14 +148,17 @@ export function each<T>(
         } else if (content instanceof Node) {
           nodes = [content];
         } else {
-          const text = document.createTextNode(String(content ?? ''));
-          nodes = [text];
+          nodes = [document.createTextNode(String(content ?? ''))];
         }
 
         newEntries.set(key, { nodes });
       }
     }
 
+    // Skip DOM work if keys haven't changed
+    if (!changed) return;
+
+    // Remove entries no longer in list
     for (const [key, entry] of keyToEntry) {
       if (!newEntries.has(key)) {
         for (const node of entry.nodes) {
@@ -159,17 +168,21 @@ export function each<T>(
       }
     }
 
+    // Insert/reorder — work backwards from endMarker
     let nextSibling: Node = endMarker;
-
-    for (let i = newKeys.length - 1; i >= 0; i--) {
-      const key = newKeys[i];
-      const entry = newEntries.get(key)!;
+    for (let i = len - 1; i >= 0; i--) {
+      const entry = newEntries.get(newKeys[i])!;
       const nodes = entry.nodes;
-
       const firstNode = nodes[0];
+
       if (firstNode && firstNode.nextSibling !== nextSibling && firstNode !== nextSibling) {
-        for (const node of nodes) {
-          parent.insertBefore(node, nextSibling);
+        // Batch: if entry has multiple nodes, use a fragment
+        if (nodes.length > 1) {
+          const frag = document.createDocumentFragment();
+          for (const node of nodes) frag.appendChild(node);
+          parent.insertBefore(frag, nextSibling);
+        } else {
+          parent.insertBefore(firstNode, nextSibling);
         }
       }
 
@@ -177,6 +190,7 @@ export function each<T>(
     }
 
     keyToEntry = newEntries;
+    prevKeys = newKeys;
   });
 
   return fragment;

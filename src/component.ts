@@ -205,19 +205,3 @@ function unmountContext(ctx: ComponentContext): void {
     if (idx !== -1) ctx.parent.children.splice(idx, 1);
   }
 }
-
-// ---------------------------------------------------------------------------
-// notifyBeforeUpdate / notifyUpdate
-// ---------------------------------------------------------------------------
-
-export function notifyBeforeUpdate(ctx: ComponentContext | null): void {
-  if (ctx?._isMounted && !ctx._isDestroyed) {
-    ctx._run(ctx.beforeUpdate);
-  }
-}
-
-export function notifyUpdate(ctx: ComponentContext | null): void {
-  if (ctx?._isMounted && !ctx._isDestroyed) {
-    ctx._run(ctx.updated);
-  }
-}

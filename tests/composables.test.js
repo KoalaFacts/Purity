@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { useMemo, useRef, useStore } from '../src/composables.ts';
+import { useRef, useStore } from '../src/composables.ts';
 import { compute, state } from '../src/signals.ts';
 
 describe('useStore', () => {
@@ -12,7 +12,7 @@ describe('useStore', () => {
 
     const a = useCounter();
     const b = useCounter();
-    expect(a).toBe(b); // same instance
+    expect(a).toBe(b);
   });
 
   it('store state is shared', () => {
@@ -53,15 +53,5 @@ describe('useRef', () => {
   it('holds null by default for DOM refs', () => {
     const ref = useRef(null);
     expect(ref.current).toBeNull();
-  });
-});
-
-describe('useMemo', () => {
-  it('is an alias for compute', () => {
-    const count = state(5);
-    const doubled = useMemo(() => count() * 2);
-    expect(doubled()).toBe(10);
-    count(10);
-    expect(doubled()).toBe(20);
   });
 });

@@ -67,7 +67,11 @@ function resolveContent(content: unknown): Node | null {
 
 export function slot<E = void>(name?: string): SlotAccessor<E> {
   const ctx = getCurrentContext();
-  if (!ctx) throw new Error('slot() must be called inside a component');
+  if (!ctx)
+    throw new Error(
+      'slot() must be called inside a component() render function.\n' +
+        '  Example: component("my-el", (props, { default: body }) => body())',
+    );
 
   const slotName = name ?? 'default';
   const children = ctx._slotContent;
@@ -353,7 +357,10 @@ export function teleport(
   queueMicrotask(() => {
     const container = typeof target === 'string' ? document.querySelector(target) : target;
     if (!container) {
-      console.warn(`teleport: target "${String(target)}" not found`);
+      console.error(
+        `[Purity] teleport: target "${String(target)}" not found in the DOM.\n` +
+          '  Make sure the target element exists before teleport runs.',
+      );
       return;
     }
     watch(() => {

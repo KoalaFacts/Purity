@@ -3,13 +3,11 @@
 //           built on native signals.
 // ---------------------------------------------------------------------------
 
-// Tagged template rendering
+// Template rendering (JIT compiled)
 export { html } from './compiler/compile.js';
-export type { ComponentFn, ErrorCallback, LifecycleCallback, MountResult } from './component.js';
-// Component system & lifecycle hooks
+export type { ComponentFn, MountResult } from './component.js';
+// Lifecycle hooks
 export {
-  ComponentContext,
-  getCurrentContext,
   mount,
   onBeforeDestroy,
   onBeforeMount,
@@ -21,16 +19,19 @@ export {
 } from './component.js';
 export type { Ref } from './composables.js';
 // Composables
-export { useMemo, useRef, useStore, useWatch } from './composables.js';
+export { useRef, useStore } from './composables.js';
 export type { SlotAccessor } from './elements.js';
-// Component, slots, teleport
+// Components, slots, teleport
 export { component, slot, teleport } from './elements.js';
-// Template helpers
+
+// Control flow
 export { each, match, when } from './helpers.js';
+
 // Dependency injection
 export { inject, provide } from './inject.js';
-export type { ComputedAccessor, Dispose, EffectHandle, StateAccessor } from './signals.js';
+export type { ComputedAccessor, Dispose, StateAccessor } from './signals.js';
 // Reactive primitives
 export { batch, compute, Signal, state, watch } from './signals.js';
+
 // Scoped styles
 export { css, rcss } from './styles.js';

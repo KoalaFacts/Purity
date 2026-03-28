@@ -231,14 +231,14 @@ describe('teleport()', () => {
     document.body.removeChild(target);
   });
 
-  it('warns when target not found', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('errors when target not found', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const container = document.createElement('div');
     container.appendChild(html`${teleport('#nonexistent-xyz', () => html`<p>Lost</p>`)}`);
 
     await tick();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('not found'));
-    warn.mockRestore();
+    expect(err).toHaveBeenCalledWith(expect.stringContaining('not found'));
+    err.mockRestore();
   });
 });
 

@@ -102,10 +102,6 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
 
 let _currentEffect: EffectHandle | null = null;
 
-export function getCurrentEffect(): EffectHandle | null {
-  return _currentEffect;
-}
-
 function _effect(fn: () => undefined | Dispose): Dispose {
   let cleanup: undefined | Dispose;
   let disposed = false;

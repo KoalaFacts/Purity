@@ -2,13 +2,6 @@ import { getCurrentContext } from './component.js';
 
 // ---------------------------------------------------------------------------
 // provide(key, value) / inject(key, fallback?) — dependency injection
-//
-// Parent provides:
-//   provide('theme', state('dark'));
-//
-// Child injects:
-//   const theme = inject<StateAccessor<string>>('theme');
-//   theme()  // 'dark'
 // ---------------------------------------------------------------------------
 
 const providerMap = new WeakMap<object, Map<string | symbol, unknown>>();
@@ -16,7 +9,10 @@ const providerMap = new WeakMap<object, Map<string | symbol, unknown>>();
 export function provide<T>(key: string | symbol, value: T): void {
   const ctx = getCurrentContext();
   if (!ctx) {
-    throw new Error('provide() must be called inside a component');
+    throw new Error(
+      'provide() must be called inside a component() render function.\n' +
+        '  Example: component("my-el", () => { provide("theme", state("dark")); ... })',
+    );
   }
 
   let map = providerMap.get(ctx);
@@ -32,10 +28,12 @@ export function inject<T>(key: string | symbol, fallback: T): T;
 export function inject<T>(key: string | symbol, fallback?: T): T {
   const ctx = getCurrentContext();
   if (!ctx) {
-    throw new Error('inject() must be called inside a component');
+    throw new Error(
+      'inject() must be called inside a component() render function.\n' +
+        '  Example: component("my-el", () => { const theme = inject("theme"); ... })',
+    );
   }
 
-  // Walk up the context tree to find the provider
   let current: object | null = ctx;
   while (current) {
     const map = providerMap.get(current);
@@ -45,10 +43,12 @@ export function inject<T>(key: string | symbol, fallback?: T): T {
     current = (current as any).parent;
   }
 
-  // Not found — use fallback or throw
   if (arguments.length >= 2) {
     return fallback as T;
   }
 
-  throw new Error(`inject(): key "${String(key)}" not provided`);
+  throw new Error(
+    `inject(): key "${String(key)}" not found.\n` +
+      '  Did you forget to call provide() in a parent component?',
+  );
 }

@@ -90,7 +90,7 @@ describe('provide/inject', () => {
     }
 
     const container = document.createElement('div');
-    expect(() => mount(App, container)).toThrow('not provided');
+    expect(() => mount(App, container)).toThrow('not found');
   });
 
   it('supports symbol keys', () => {

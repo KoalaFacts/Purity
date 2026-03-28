@@ -1,18 +1,20 @@
-import type { ComputedAccessor, Dispose, StateAccessor } from './signals.js';
-import { compute, state, watch } from './signals.js';
+// ---------------------------------------------------------------------------
+// Composables — reusable logic patterns
+// ---------------------------------------------------------------------------
+
+import type { ComputedAccessor, StateAccessor } from './signals.js';
+import { compute } from './signals.js';
 
 // ---------------------------------------------------------------------------
-// useStore(setup) — define a composable store
+// useStore(setup) — singleton store factory
 //
 //   const useTodos = useStore(() => {
 //     const todos = state<Todo[]>([]);
 //     const add = (text: string) => todos(v => [...v, { text, done: false }]);
-//     const remaining = compute(() => todos().filter(t => !t.done).length);
-//     return { todos, add, remaining };
+//     return { todos, add };
 //   });
 //
-//   // In a component:
-//   const { todos, add, remaining } = useTodos();
+//   const { todos, add } = useTodos(); // same instance everywhere
 // ---------------------------------------------------------------------------
 
 export function useStore<T extends Record<string, unknown>>(setup: () => T): () => T {
@@ -24,14 +26,6 @@ export function useStore<T extends Record<string, unknown>>(setup: () => T): () 
     return instance;
   };
 }
-
-// ---------------------------------------------------------------------------
-// useMemo(fn) — memoize a value, recompute only when deps change
-//
-//   const expensive = useMemo(() => heavyCalc(count()));
-// ---------------------------------------------------------------------------
-
-export const useMemo = compute;
 
 // ---------------------------------------------------------------------------
 // useRef(initial) — mutable ref that doesn't trigger reactivity
@@ -48,11 +42,5 @@ export function useRef<T>(initial: T): Ref<T> {
   return { current: initial };
 }
 
-// ---------------------------------------------------------------------------
-// useWatch — alias for watch, consistent with use* convention
-// ---------------------------------------------------------------------------
-
-export const useWatch = watch;
-
 // Re-export types for convenience
-export type { ComputedAccessor, Dispose, StateAccessor };
+export type { ComputedAccessor, StateAccessor };

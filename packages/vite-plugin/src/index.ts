@@ -9,8 +9,8 @@
 //   export default defineConfig({ plugins: [purity()] });
 // ---------------------------------------------------------------------------
 
-import { parse } from '../../core/src/compiler/parser.js';
-import { generate } from '../../core/src/compiler/codegen.js';
+import { parse } from '@purity/core/compiler';
+import { generate } from '@purity/core/compiler';
 
 interface PurityPluginOptions {
   include?: string[];

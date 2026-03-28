@@ -1,11 +1,18 @@
 {
   "name": "@purity/cli",
   "version": "0.1.0",
-  "description": "Purity CLI — scaffold and manage Purity projects",
+  "description": "Scaffold a new Purity project",
   "type": "module",
   "bin": {
     "purity": "./src/index.js"
   },
   "files": ["src"],
+  "keywords": ["purity", "cli", "scaffold", "create"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KoalaFacts/Purity",
+    "directory": "packages/cli"
+  },
+  "author": "KoalaFacts",
   "license": "MIT"
 }

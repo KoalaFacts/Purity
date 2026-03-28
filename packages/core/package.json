@@ -1,7 +1,7 @@
 {
   "name": "@purity/core",
   "version": "0.1.0",
-  "description": "Purity — a minimal, lightweight, super performant web framework using native signals",
+  "description": "Minimal, lightweight, super performant web framework using native signals",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -17,14 +17,20 @@
       "import": "./dist/compiler/index.js"
     }
   },
-  "files": ["dist", "src"],
+  "files": ["dist"],
   "scripts": {
     "build": "rollup -c",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run"
   },
+  "keywords": ["signals", "reactive", "framework", "web-components", "no-virtual-dom", "lightweight"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KoalaFacts/Purity",
+    "directory": "packages/core"
+  },
+  "author": "KoalaFacts",
+  "license": "MIT",
   "dependencies": {
     "signal-polyfill": "^0.2.2"
-  },
-  "license": "MIT"
+  }
 }

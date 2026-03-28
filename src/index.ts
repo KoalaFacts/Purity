@@ -26,9 +26,6 @@ export { component, slot, teleport } from './elements.js';
 export { each, match, when } from './helpers.js';
 // Dependency injection
 export { inject, provide } from './inject.js';
-export type { RouteParams, RouterInstance } from './router.js';
-// Router
-export { link, route, router } from './router.js';
 export type { ComputedAccessor, Dispose, StateAccessor } from './signals.js';
 // Reactive primitives
 export { batch, compute, Signal, state, watch } from './signals.js';

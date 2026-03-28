@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve, basename } from 'node:path';
-import { execSync } from 'node:child_process';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const projectName = args[0] || 'my-purity-app';
 const projectDir = resolve(process.cwd(), projectName);
@@ -13,7 +14,16 @@ if (existsSync(projectDir)) {
   process.exit(1);
 }
 
-console.log(`\n  Creating ${projectName}...\n`);
+// Detect if running from monorepo — resolve @purity/core locally
+const coreDir = resolve(__dirname, '../../core');
+const isLocal = existsSync(resolve(coreDir, 'src/index.ts'));
+const coreDep = isLocal
+  ? `file:${coreDir}`
+  : '^0.1.0';
+
+console.log(`\n  Creating ${projectName}...`);
+if (isLocal) console.log(`  Using local @purity/core from ${coreDir}`);
+console.log('');
 
 mkdirSync(projectDir, { recursive: true });
 mkdirSync(resolve(projectDir, 'src'));
@@ -33,7 +43,7 @@ writeFileSync(
         preview: 'vite preview',
       },
       dependencies: {
-        '@purity/core': '^0.1.0',
+        '@purity/core': coreDep,
       },
       devDependencies: {
         vite: '^8.0.0',
@@ -44,6 +54,24 @@ writeFileSync(
     2,
   ) + '\n',
 );
+
+// vite.config.ts — resolve @purity/core source directly when local
+if (isLocal) {
+  const coreSrcPath = resolve(coreDir, 'src/index.ts');
+  writeFileSync(
+    resolve(projectDir, 'vite.config.ts'),
+    `import { defineConfig } from 'vite';
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      '@purity/core': '${coreSrcPath}',
+    },
+  },
+});
+`,
+  );
+}
 
 // tsconfig.json
 writeFileSync(

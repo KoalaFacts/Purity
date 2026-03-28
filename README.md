@@ -1,198 +1,165 @@
 # Purity
 
-A minimal, lightweight, super performant JavaScript web framework built on [native signals](https://github.com/tc39/proposal-signals).
+A minimal, lightweight, super performant web framework built on native signals.
 
-- **Tiny** — small API surface, small bundle
-- **Fast** — fine-grained reactivity, no virtual DOM
-- **Zero build step** — tagged template literals work directly in the browser
-- **Native signals** — built on the TC39 Signals proposal via [`signal-polyfill`](https://github.com/nicolo-ribaudo/signal-polyfill)
+- **17 functions** — that's the entire API
+- **6 kB gzipped** — with AOT compilation
+- **No virtual DOM** — signals drive DOM updates directly
+- **Native signals** — built on [TC39 Signals proposal](https://github.com/tc39/proposal-signals)
+- **Custom Elements** — components are web standards
+- **Shadow DOM** — scoped styles, zero runtime CSS cost
+- **One dependency** — `signal-polyfill`
 
 ## Quick Start
 
-```html
-<script type="module">
-  import { state, computed, html, mount, onMount } from 'purity';
+```bash
+npx @purity/cli my-app
+cd my-app
+npm install
+npm run dev
+```
 
-  function App() {
-    const count = state(0);
-    const doubled = computed(() => count() * 2);
+## Example
 
-    onMount(() => console.log('App mounted!'));
+```ts
+import { state, compute, html, css, component, mount } from '@purity/core';
 
-    return html`
-      <div>
-        <h1>Count: ${() => count()}</h1>
-        <p>Doubled: ${() => doubled()}</p>
-        <button @click=${() => count(count() + 1)}>+1</button>
-      </div>
-    `;
-  }
+component('p-counter', () => {
+  const count = state(0);
+  const doubled = compute(() => count() * 2);
 
-  mount(App, document.getElementById('app'));
-</script>
+  css`
+    .counter { text-align: center; padding: 2rem; }
+    button { padding: 0.5rem 1rem; margin: 0.25rem; }
+  `;
+
+  return html`
+    <div class="counter">
+      <p>Count: ${() => count()} (doubled: ${() => doubled()})</p>
+      <button @click=${() => count(v => v + 1)}>+1</button>
+      <button @click=${() => count(v => v - 1)}>-1</button>
+      <button @click=${() => count(0)}>Reset</button>
+    </div>
+  `;
+});
+
+mount(() => html`<p-counter></p-counter>`, document.getElementById('app')!);
 ```
 
 ## API
 
-### Reactive Primitives
+### Reactive
 
-#### `state(initialValue)`
-
-Creates a reactive state accessor. Call with no args to read, call with a value to write.
-
-```js
-const count = state(0);
-count();      // read → 0
-count(5);     // write → sets to 5
-count.peek(); // read without tracking dependencies
+```ts
+const count = state(0);                     // read: count(), write: count(5), update: count(v => v+1)
+const doubled = compute(() => count() * 2); // derived value
+watch(() => console.log(count()));          // auto-tracking effect
+watch(count, (val, old) => {});             // explicit source watcher
+batch(() => { a(1); b(2); });              // batch writes, single flush
 ```
 
-#### `computed(fn)`
+### Templates
 
-Creates a read-only derived value that auto-tracks dependencies.
-
-```js
-const doubled = computed(() => count() * 2);
-doubled(); // read → 10
-```
-
-#### `effect(fn)`
-
-Creates an auto-tracking side effect. Returns a dispose function. If `fn` returns a function, it's called as cleanup before the next re-run.
-
-```js
-const stop = effect(() => {
-  console.log('Count is:', count());
-  return () => console.log('cleanup');
-});
-stop(); // dispose the effect
-```
-
-#### `batch(fn)`
-
-Batches multiple state updates into a single flush.
-
-```js
-batch(() => {
-  count(1);
-  name('Alice');
-  // effects run once after batch completes
-});
-```
-
-### Template Rendering
-
-#### `` html`...` ``
-
-Tagged template literal that returns real DOM nodes (DocumentFragment).
-
-```js
-// Static content
-html`<p>Hello World</p>`
-
-// Reactive text
-html`<p>${() => count()}</p>`
-
-// Event handling
-html`<button @click=${() => count(count() + 1)}>Click</button>`
-
-// Reactive attributes
-html`<div class=${() => isActive() ? 'active' : ''}>...</div>`
-
-// Boolean attributes
-html`<input ?disabled=${() => isLoading()} />`
-
-// Property binding
-html`<input .value=${() => text()} />`
-```
-
-### Component System
-
-#### `mount(component, container)`
-
-Mounts a component function into a DOM container. Returns `{ unmount }`.
-
-```js
-function App() {
-  return html`<h1>Hello</h1>`;
-}
-
-const { unmount } = mount(App, document.getElementById('app'));
-unmount(); // tear down
-```
-
-### Lifecycle Hooks
-
-All hooks are called inside a component function body.
-
-| Hook | When it fires |
-|------|---------------|
-| `onBeforeMount(fn)` | Before component DOM is inserted |
-| `onMount(fn)` | After component DOM is in the document |
-| `onBeforeUpdate(fn)` | Before a reactive DOM update |
-| `onUpdate(fn)` | After a reactive DOM update |
-| `onBeforeDestroy(fn)` | Before component teardown begins |
-| `onDestroy(fn)` | After component is removed from DOM |
-| `onError(fn)` | When an error occurs in the component |
-
-```js
-function Timer() {
-  const elapsed = state(0);
-
-  onMount(() => {
-    const id = setInterval(() => elapsed(elapsed() + 1), 1000);
-    onDestroy(() => clearInterval(id));
-  });
-
-  return html`<p>Elapsed: ${() => elapsed()}s</p>`;
-}
-```
-
-### Template Helpers
-
-#### `show(conditionFn, viewFn, elseFn?)`
-
-Conditional rendering.
-
-```js
+```ts
 html`
-  ${show(
-    () => isLoggedIn(),
-    () => html`<p>Welcome back!</p>`,
-    () => html`<p>Please log in.</p>`
-  )}
+  <div class=${() => active() ? 'on' : 'off'}>
+    <p>${() => count()}</p>
+    <input ::value=${text} />
+    <button @click=${save} ?disabled=${() => !valid()}>Save</button>
+  </div>
 `
 ```
 
-#### `each(listAccessor, mapFn, keyFn?)`
+| Syntax | Meaning |
+|--------|---------|
+| `${() => signal()}` | Reactive text |
+| `@event=${fn}` | Event listener |
+| `:prop=${val}` | One-way prop binding |
+| `::prop=${signal}` | Two-way binding |
+| `?attr=${bool}` | Boolean attribute |
+| `.prop=${val}` | DOM property |
 
-List rendering with optional key function for efficient reconciliation.
+### Components
 
-```js
-const todos = state([
-  { id: 1, text: 'Learn Purity' },
-  { id: 2, text: 'Build something' },
-]);
-
-html`
-  <ul>
-    ${each(
-      () => todos(),
-      (todo) => html`<li>${todo.text}</li>`,
-      (todo) => todo.id
-    )}
-  </ul>
-`
+```ts
+component('p-card', ({ title }, { default: body }) => {
+  css`.card { padding: 1rem; border-radius: 8px; }`;
+  return html`<div class="card"><h2>${title}</h2>${body()}</div>`;
+});
 ```
 
-## Development
+### Scoped Slots
 
-```bash
-npm install          # install dependencies
-npm test             # run tests
-npm run build        # build for distribution
-npm run dev          # start dev server with examples
+```ts
+component('p-form', (_props, { default: body }) => {
+  const isValid = compute(() => true);
+  return {
+    view: html`<form>${body({ validate: isValid })}</form>`,
+    expose: { validate: isValid },
+  };
+});
+
+// Consumer receives exposed data
+Form({}, ({ validate }) => html`
+  <button ?disabled=${() => !validate()}>Save</button>
+`)
 ```
+
+### Control Flow
+
+```ts
+when(() => loggedIn(), () => html`<p>Welcome</p>`, () => html`<p>Login</p>`)
+
+match(() => status(), {
+  loading: () => html`<p>Loading...</p>`,
+  error:   () => html`<p>Error!</p>`,
+  success: () => html`<p>Done</p>`,
+})
+
+each(() => items(), (item) => html`<li>${item.name}</li>`, (item) => item.id)
+```
+
+### Lifecycle
+
+```ts
+onMount(() => {
+  const id = setInterval(() => count(v => v + 1), 1000);
+  onDispose(() => clearInterval(id));
+});
+onDestroy(() => console.log('goodbye'));
+onError((err) => console.error(err));
+```
+
+### Styles
+
+```ts
+css`.title { color: red; }`;                              // static
+css`.box { background: ${() => dark() ? '#333' : '#fff'}; }`;  // reactive
+```
+
+### Teleport
+
+```ts
+teleport('#modal-root', () =>
+  visible() ? html`<div class="modal">Hello</div>` : null
+)
+```
+
+## Packages
+
+| Package | Description |
+|---------|-------------|
+| [`@purity/core`](./packages/core) | The framework — 17 functions |
+| [`@purity/vite-plugin`](./packages/vite-plugin) | AOT template compilation |
+| [`@purity/cli`](./packages/cli) | Project scaffolding |
+
+## How It Works
+
+1. **Signals** — `state()` and `compute()` wrap TC39 Signal primitives for fine-grained reactivity
+2. **Templates** — `html` tagged literals are JIT compiled: parsed into AST, codegen produces direct `document.createElement` calls, cached via WeakMap
+3. **Fine-grained updates** — `watch()` tracks dependencies automatically, updates only the exact DOM nodes that changed
+4. **Custom Elements** — `component()` registers a Web Component with Shadow DOM for style encapsulation
+5. **AOT** — `@purity/vite-plugin` compiles templates at build time, eliminating the parser from the production bundle
 
 ## License
 

@@ -1,0 +1,11 @@
+{
+  "name": "@purity/cli",
+  "version": "0.1.0",
+  "description": "Purity CLI — scaffold and manage Purity projects",
+  "type": "module",
+  "bin": {
+    "purity": "./src/index.js"
+  },
+  "files": ["src"],
+  "license": "MIT"
+}

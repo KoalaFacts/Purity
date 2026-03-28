@@ -16,6 +16,46 @@ type CompiledFn = (
 
 const compiledCache = new WeakMap<TemplateStringsArray, CompiledFn>();
 
+/**
+ * Tagged template literal for creating DOM. JIT compiled on first use, then cached.
+ *
+ * Supports all binding types:
+ * - `${value}` — static text/node
+ * - `${() => signal()}` — reactive text (auto-updates)
+ * - `@event=${handler}` — event listener
+ * - `:prop=${value}` — one-way prop binding
+ * - `::prop=${signal}` — two-way binding (input, checkbox, select)
+ * - `?attr=${bool}` — boolean attribute
+ * - `.prop=${value}` — DOM property
+ *
+ * @example
+ * ```ts
+ * // Static:
+ * html`<p>Hello World</p>`
+ *
+ * // Reactive text:
+ * html`<p>Count: ${() => count()}</p>`
+ *
+ * // Events + binding:
+ * html`
+ *   <input ::value=${text} placeholder="Type here" />
+ *   <button @click=${() => count(v => v + 1)} ?disabled=${() => !valid()}>
+ *     Save
+ *   </button>
+ * `
+ *
+ * // Nesting:
+ * html`<div>${html`<span>Nested</span>`}</div>`
+ *
+ * // Lists and conditionals:
+ * html`
+ *   ${when(() => ok(), () => html`<p>Yes</p>`)}
+ *   ${each(() => items(), (item) => html`<li>${item}</li>`)}
+ * `
+ * ```
+ *
+ * @returns DOM Node or DocumentFragment.
+ */
 export function html(strings: TemplateStringsArray, ...values: unknown[]): DocumentFragment | Node {
   let compiled = compiledCache.get(strings);
 

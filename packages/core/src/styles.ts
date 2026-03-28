@@ -15,9 +15,36 @@ import { watch } from './signals.js';
 //   });
 // ---------------------------------------------------------------------------
 
+/**
+ * Scoped CSS styles. Inside a component, uses Shadow DOM `adoptedStyleSheets`
+ * for native scoping. Outside, injects a `<style>` tag with class-based scoping.
+ *
+ * Supports reactive values — functions in interpolations auto-update the styles.
+ *
+ * @example
+ * ```ts
+ * // Static styles:
+ * css`.title { color: red; font-size: 1.5rem; }`;
+ *
+ * // Reactive styles (auto-update when signal changes):
+ * css`.box { background: ${() => dark() ? '#333' : '#fff'}; }`;
+ *
+ * // Inside a component (recommended — Shadow DOM scopes automatically):
+ * component('p-card', () => {
+ *   css`
+ *     :host { display: block; }
+ *     .card { padding: 1rem; border-radius: 8px; }
+ *     .title { color: #6c5ce7; }
+ *   `;
+ *   return html`<div class="card"><h2 class="title">Hello</h2></div>`;
+ * });
+ * ```
+ *
+ * @returns Scope class name (when used outside a component). Empty string inside components.
+ */
 export function css(strings: TemplateStringsArray, ...values: unknown[]): string {
   const ctx = getCurrentContext();
-  const shadowRoot = ctx ? (ctx as any)._shadowRoot as ShadowRoot | undefined : undefined;
+  const shadowRoot = ctx ? ((ctx as any)._shadowRoot as ShadowRoot | undefined) : undefined;
   const hasReactive = values.some((v) => typeof v === 'function');
 
   const buildCss = (): string => {

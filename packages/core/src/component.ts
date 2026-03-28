@@ -66,21 +66,82 @@ export function popContext(): ComponentContext | undefined {
 // Lifecycle hooks — only 3 + error
 // ---------------------------------------------------------------------------
 
+/**
+ * Register a callback that runs after the component is inserted into the DOM.
+ * Runs as a microtask — DOM is guaranteed to be ready.
+ *
+ * @example
+ * ```ts
+ * component('p-widget', () => {
+ *   onMount(() => {
+ *     console.log('DOM is ready');
+ *     const el = document.querySelector('.my-el');
+ *     // safe to query DOM here
+ *   });
+ *   return html`<div class="my-el">Hello</div>`;
+ * });
+ * ```
+ */
 export function onMount(fn: () => void): void {
   const ctx = getCurrentContext();
   if (ctx) (ctx.mounted ??= []).push(fn);
 }
 
+/**
+ * Register a callback that runs when the component is unmounted.
+ *
+ * @example
+ * ```ts
+ * component('p-timer', () => {
+ *   onDestroy(() => console.log('component removed'));
+ *   return html`<p>Hello</p>`;
+ * });
+ * ```
+ */
 export function onDestroy(fn: () => void): void {
   const ctx = getCurrentContext();
   if (ctx) (ctx.destroyed ??= []).push(fn);
 }
 
+/**
+ * Register a cleanup function that auto-runs on component unmount.
+ * Use this to dispose of watch/effect subscriptions.
+ *
+ * @example
+ * ```ts
+ * component('p-live', () => {
+ *   const stop = watch(data, (val) => updateChart(val));
+ *   onDispose(stop);  // auto-cleanup when component unmounts
+ *
+ *   onMount(() => {
+ *     const id = setInterval(() => poll(), 5000);
+ *     onDispose(() => clearInterval(id));  // also works inside onMount
+ *   });
+ *
+ *   return html`<div>Live data</div>`;
+ * });
+ * ```
+ */
 export function onDispose(fn: () => void): void {
   const ctx = getCurrentContext();
   if (ctx) (ctx.disposers ??= []).push(fn);
 }
 
+/**
+ * Register an error handler. Catches errors from render and lifecycle hooks.
+ * Errors bubble up to parent components if not handled.
+ *
+ * @example
+ * ```ts
+ * component('p-safe', () => {
+ *   onError((err) => {
+ *     console.error('caught:', err);
+ *     // could show fallback UI
+ *   });
+ *   return html`<p-risky-child></p-risky-child>`;
+ * });
+ * ```
+ */
 export function onError(fn: (err: unknown) => void): void {
   const ctx = getCurrentContext();
   if (ctx) (ctx.errorHandlers ??= []).push(fn);
@@ -90,6 +151,22 @@ export function onError(fn: (err: unknown) => void): void {
 // mount(component, container)
 // ---------------------------------------------------------------------------
 
+/**
+ * Mount a component into a DOM container.
+ *
+ * @example
+ * ```ts
+ * const { unmount } = mount(
+ *   () => html`<p-app></p-app>`,
+ *   document.getElementById('app')!
+ * );
+ *
+ * // Later — tear down the component:
+ * unmount();
+ * ```
+ *
+ * @returns Object with `unmount()` to remove the component.
+ */
 export function mount(component: ComponentFn, container: Element): MountResult {
   const ctx = new ComponentContext();
   const parentCtx = getCurrentContext();

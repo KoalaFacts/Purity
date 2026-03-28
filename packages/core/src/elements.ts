@@ -78,6 +78,28 @@ function resolveContent(content: unknown): Node | null {
 // slot(name?) — standalone context-aware primitive
 // ---------------------------------------------------------------------------
 
+/**
+ * Access a slot inside a component. Must be called inside a `component()` render function.
+ *
+ * @example
+ * ```ts
+ * // Default slot (IN — static content):
+ * component('p-card', ({ title }, { default: body }) => {
+ *   return html`<div><h2>${title}</h2>${body()}</div>`;
+ * });
+ * Card({ title: 'Hi' }, html`<p>Content</p>`)
+ *
+ * // Named slot:
+ * const header = slot('header');
+ * const footer = slot('footer');
+ *
+ * // Scoped slot (OUT — expose data to consumer):
+ * const body = slot<{ validate: () => boolean }>();
+ * body({ validate: isValid })  // consumer receives { validate }
+ * ```
+ *
+ * @param name Slot name. Defaults to `'default'`.
+ */
 export function slot<E = void>(name?: string): SlotAccessor<E> {
   const ctx = getCurrentContext();
   if (!ctx)
@@ -189,6 +211,38 @@ function runRender<P, S>(
 // Registry of component render functions by tag name
 const componentRegistry = new Map<string, RenderFn<any, any>>();
 
+/**
+ * Define a component as a Custom Element with Shadow DOM.
+ *
+ * @param tagName Valid custom element name (must contain a hyphen, e.g. `'p-card'`).
+ * @param renderFn Render function receiving `(props, slots)`. Returns DOM or `{ view, expose }`.
+ *
+ * @example
+ * ```ts
+ * // Simple component:
+ * component('p-greeting', ({ name }) => {
+ *   return html`<p>Hello, ${name}!</p>`;
+ * });
+ *
+ * // With slots and styles:
+ * component('p-card', ({ title }, { default: body }) => {
+ *   css`.card { padding: 1rem; }`;
+ *   return html`<div class="card"><h2>${title}</h2>${body()}</div>`;
+ * });
+ *
+ * // Expose data to slot consumer:
+ * component('p-form', (_props, { default: body }) => {
+ *   const isValid = compute(() => true);
+ *   return {
+ *     view: html`<form>${body({ validate: isValid })}</form>`,
+ *     expose: { validate: isValid },
+ *   };
+ * });
+ *
+ * // In templates:
+ * html`<p-card :title=${'Hello'}><p>Body</p></p-card>`
+ * ```
+ */
 export function component<
   P extends Record<string, unknown> = Record<string, never>,
   S extends Record<string, unknown> = Record<string, never>,
@@ -273,7 +327,11 @@ export function component<
         if (this._ctx) {
           if (this._ctx.disposers) {
             for (let i = 0; i < this._ctx.disposers.length; i++) {
-              try { this._ctx.disposers[i](); } catch (e) { console.error('[Purity]', e); }
+              try {
+                this._ctx.disposers[i]();
+              } catch (e) {
+                console.error('[Purity]', e);
+              }
             }
             this._ctx.disposers = null;
           }
@@ -366,6 +424,31 @@ export function component<
 //   teleport('#overlay', () => visible() ? html`<div>Modal</div>` : null)
 // ---------------------------------------------------------------------------
 
+/**
+ * Render content to a different DOM location. Reactive by default —
+ * re-renders when signals in the view function change.
+ *
+ * @param target CSS selector string or DOM Element to render into.
+ * @param viewFn Function returning DOM content (or null to show nothing).
+ *
+ * @example
+ * ```ts
+ * // Static teleport:
+ * teleport('#modal-root', () => html`<div class="modal">Hello</div>`)
+ *
+ * // Reactive — show/hide based on signal:
+ * teleport('#overlay', () =>
+ *   visible() ? html`<div class="modal">Open</div>` : null
+ * )
+ *
+ * // Inside a component — auto-disposed on unmount:
+ * component('p-modal', () => {
+ *   const content = slot();
+ *   teleport('#modal-root', () => content());
+ *   return html`<!--modal-->`;
+ * });
+ * ```
+ */
 export function teleport(
   target: string | Element,
   viewFn: () => Node | DocumentFragment | null,

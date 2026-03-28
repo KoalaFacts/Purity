@@ -111,12 +111,23 @@ describe('performance', () => {
       let cCount = 0;
       let dCount = 0;
 
-      const b = compute(() => { bCount++; return source() + 1; });
-      const c = compute(() => { cCount++; return source() * 2; });
-      const d = compute(() => { dCount++; return b() + c(); });
+      const b = compute(() => {
+        bCount++;
+        return source() + 1;
+      });
+      const c = compute(() => {
+        cCount++;
+        return source() * 2;
+      });
+      const d = compute(() => {
+        dCount++;
+        return b() + c();
+      });
 
       d();
-      bCount = 0; cCount = 0; dCount = 0;
+      bCount = 0;
+      cCount = 0;
+      dCount = 0;
 
       source(5);
       expect(d()).toBe(16);
@@ -132,7 +143,10 @@ describe('performance', () => {
       let count = 0;
 
       for (let i = 0; i < 1000; i++) {
-        watch(() => { source(); count++; });
+        watch(() => {
+          source();
+          count++;
+        });
       }
       count = 0;
 
@@ -149,7 +163,10 @@ describe('performance', () => {
       const source = state(0);
       let runs = 0;
 
-      watch(() => { source(); runs++; });
+      watch(() => {
+        source();
+        runs++;
+      });
       runs = 0;
 
       const start = performance.now();
@@ -168,10 +185,15 @@ describe('performance', () => {
       for (let i = 0; i < 100; i++) signals.push(state(0));
 
       let runs = 0;
-      watch(() => { for (const s of signals) s(); runs++; });
+      watch(() => {
+        for (const s of signals) s();
+        runs++;
+      });
       runs = 0;
 
-      batch(() => { for (let i = 0; i < 10_000; i++) signals[i % 100](i); });
+      batch(() => {
+        for (let i = 0; i < 10_000; i++) signals[i % 100](i);
+      });
       await tick();
       expect(runs).toBe(1);
     });
@@ -182,7 +204,11 @@ describe('performance', () => {
       const source = state(0);
       const disposers = [];
       for (let i = 0; i < 10_000; i++) {
-        disposers.push(watch(() => { source(); }));
+        disposers.push(
+          watch(() => {
+            source();
+          }),
+        );
       }
 
       const start = performance.now();

@@ -2,24 +2,29 @@
 // Purity Core — minimal, fast, signal-driven web framework
 // ---------------------------------------------------------------------------
 
-// Reactive primitives
-export { state, compute, watch, batch, Signal } from './signals.js';
-export type { StateAccessor, ComputedAccessor, Dispose } from './signals.js';
-
 // Template rendering (JIT compiled)
 export { html } from './compiler/compile.js';
-
+export type { ComponentFn, MountResult } from './component.js';
+// Lifecycle (3 hooks + error)
+export {
+  ComponentContext,
+  getCurrentContext,
+  mount,
+  onDestroy,
+  onDispose,
+  onError,
+  onMount,
+  popContext,
+  pushContext,
+} from './component.js';
+export type { SlotAccessor } from './elements.js';
 // Components, slots, teleport
 export { component, slot, teleport } from './elements.js';
-export type { SlotAccessor } from './elements.js';
-
-// Lifecycle (3 hooks + error)
-export { mount, onMount, onDestroy, onDispose, onError } from './component.js';
-export { getCurrentContext, pushContext, popContext, ComponentContext } from './component.js';
-export type { ComponentFn, MountResult } from './component.js';
-
 // Control flow
-export { match, when, each } from './helpers.js';
+export { each, match, when } from './helpers.js';
+export type { ComputedAccessor, Dispose, StateAccessor } from './signals.js';
+// Reactive primitives
+export { batch, compute, Signal, state, watch } from './signals.js';
 
 // Scoped styles
 export { css } from './styles.js';

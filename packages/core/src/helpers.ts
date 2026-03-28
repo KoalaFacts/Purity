@@ -7,6 +7,35 @@ import { watch } from './signals.js';
 type MatchView = () => Node | DocumentFragment | string;
 type MatchCases<T extends string | number | boolean> = Partial<Record<`${T}`, MatchView>>;
 
+/**
+ * Reactive pattern matching. Renders different content based on a signal value.
+ *
+ * @example
+ * ```ts
+ * // String matching:
+ * match(() => status(), {
+ *   loading: () => html`<p>Loading...</p>`,
+ *   error:   () => html`<p>Error!</p>`,
+ *   success: () => html`<p>Done</p>`,
+ * })
+ *
+ * // Number matching:
+ * match(() => code(), {
+ *   200: () => html`<p>OK</p>`,
+ *   404: () => html`<p>Not found</p>`,
+ * }, () => html`<p>Unknown</p>`)  // fallback
+ *
+ * // Boolean (if/else) — consider using when() instead:
+ * match(() => loggedIn(), {
+ *   true:  () => html`<p>Welcome</p>`,
+ *   false: () => html`<p>Login</p>`,
+ * })
+ * ```
+ *
+ * @param sourceFn Reactive function returning the value to match.
+ * @param cases Map of value → view function.
+ * @param fallback Optional fallback view when no case matches.
+ */
 export function match<T extends string | number | boolean>(
   sourceFn: () => T,
   cases: MatchCases<T>,
@@ -64,6 +93,25 @@ export function match<T extends string | number | boolean>(
 // when(conditionFn, thenFn, elseFn?) — boolean conditional rendering
 // ---------------------------------------------------------------------------
 
+/**
+ * Conditional rendering. Shorthand for boolean `match()`.
+ *
+ * @example
+ * ```ts
+ * // If/else:
+ * when(() => loggedIn(),
+ *   () => html`<p>Welcome back!</p>`,
+ *   () => html`<p>Please login</p>`
+ * )
+ *
+ * // If only (no else):
+ * when(() => showBanner(), () => html`<div class="banner">New!</div>`)
+ * ```
+ *
+ * @param conditionFn Reactive function returning boolean.
+ * @param thenFn View to render when true.
+ * @param elseFn Optional view to render when false.
+ */
 export function when(
   conditionFn: () => boolean,
   thenFn: MatchView,
@@ -84,6 +132,29 @@ interface EachEntry {
   dispose?: () => void;
 }
 
+/**
+ * Reactive list rendering. Efficiently diffs by key and only updates changed items.
+ *
+ * @example
+ * ```ts
+ * // Basic list:
+ * each(() => items(), (item) => html`<li>${item.name}</li>`)
+ *
+ * // With key function (recommended for reorderable lists):
+ * each(
+ *   () => todos(),
+ *   (todo) => html`<li>${todo.text}</li>`,
+ *   (todo) => todo.id  // key for efficient diffing
+ * )
+ *
+ * // Static list (no signal):
+ * each(['A', 'B', 'C'], (item) => html`<li>${item}</li>`)
+ * ```
+ *
+ * @param listAccessor Reactive function returning array, or a static array.
+ * @param mapFn Function that renders each item.
+ * @param keyFn Optional key function for efficient reconciliation. Defaults to item identity.
+ */
 export function each<T>(
   listAccessor: (() => T[]) | T[],
   mapFn: (item: T, index: number) => Node | DocumentFragment | string,
@@ -115,7 +186,10 @@ export function each<T>(
     if (len === prevLen) {
       let same = true;
       for (let i = 0; i < len; i++) {
-        if (prevKeys[i] !== getKey(list[i], i)) { same = false; break; }
+        if (prevKeys[i] !== getKey(list[i], i)) {
+          same = false;
+          break;
+        }
       }
       if (same) return;
     }

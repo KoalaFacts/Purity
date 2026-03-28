@@ -54,7 +54,9 @@ describe('lifecycle hooks', () => {
     let disposed = false;
 
     const { unmount } = mount(() => {
-      onDispose(() => { disposed = true; });
+      onDispose(() => {
+        disposed = true;
+      });
       return html`<p>Test</p>`;
     }, container);
 

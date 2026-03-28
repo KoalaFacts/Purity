@@ -4,23 +4,57 @@ import { Signal } from 'signal-polyfill';
 // Public types
 // ---------------------------------------------------------------------------
 
+/**
+ * Reactive state accessor. Call to read, call with value to write.
+ *
+ * @example
+ * ```ts
+ * const count = state(0);
+ * count()          // read → 0
+ * count(5)         // write → 5
+ * count(v => v+1)  // update → 6
+ * count.peek()     // read without tracking
+ * ```
+ */
 export interface StateAccessor<T> {
+  /** Read the current value (tracked by watch/compute). */
   (): T;
+  /** Set a new value. */
   (value: T): T;
+  /** Update via callback — receives current value, returns new value. */
   (updater: (current: T) => T): T;
+  /** Read the current value (tracked). */
   get(): T;
+  /** Set a new value. */
   set(value: T): void;
+  /** Read without tracking — won't trigger watch/compute. */
   peek(): T;
+  /** Internal: the underlying Signal.State instance. */
   readonly _signal: Signal.State<T>;
 }
 
+/**
+ * Reactive computed accessor. Read-only derived value.
+ *
+ * @example
+ * ```ts
+ * const doubled = compute(() => count() * 2);
+ * doubled()      // read derived value
+ * doubled.peek() // read without tracking
+ * ```
+ */
 export interface ComputedAccessor<T> {
+  /** Read the derived value (tracked). */
   (): T;
+  /** Read the derived value (tracked). */
   get(): T;
+  /** Read without tracking. */
   peek(): T;
+  /** Internal: the underlying Signal.Computed instance. */
   readonly _signal: Signal.Computed<T>;
 }
 
+/** Cleanup function returned by watch(). Call to stop watching. */
 export type Dispose = () => void;
 
 export interface EffectHandle {
@@ -59,6 +93,23 @@ function flush(): void {
 // state(initialValue)
 // ---------------------------------------------------------------------------
 
+/**
+ * Create reactive state. Returns an accessor function.
+ *
+ * @example
+ * ```ts
+ * const count = state(0);
+ * count()              // read → 0
+ * count(5)             // write → 5
+ * count(v => v + 1)    // update with callback → 6
+ *
+ * // In templates — wrap in arrow for reactivity:
+ * html`<p>${() => count()}</p>`
+ *
+ * // Two-way binding on inputs:
+ * html`<input ::value=${count} />`
+ * ```
+ */
 export function state<T>(initial: T): StateAccessor<T> {
   const s = new Signal.State<T>(initial);
   // Cache peek closure once, not per call
@@ -88,6 +139,21 @@ export function state<T>(initial: T): StateAccessor<T> {
 // compute(fn)
 // ---------------------------------------------------------------------------
 
+/**
+ * Create a computed (derived) value. Re-evaluates when dependencies change.
+ *
+ * @example
+ * ```ts
+ * const count = state(0);
+ * const doubled = compute(() => count() * 2);
+ * doubled()  // → 0
+ * count(5);
+ * doubled()  // → 10
+ *
+ * // In templates:
+ * html`<p>${() => doubled()}</p>`
+ * ```
+ */
 export function compute<T>(fn: () => T): ComputedAccessor<T> {
   const c = new Signal.Computed<T>(fn);
   const peekFn = () => Signal.subtle.untrack(() => c.get());
@@ -171,13 +237,44 @@ type InferSources<S extends readonly WatchSource<any>[]> = {
   [K in keyof S]: InferSource<S[K]>;
 };
 
+/**
+ * Watch reactive values and run side effects.
+ *
+ * **Auto-track** — runs immediately, re-runs when any accessed signal changes:
+ * ```ts
+ * watch(() => console.log(count()));
+ * ```
+ *
+ * **Explicit source** — runs callback when source changes (skips initial):
+ * ```ts
+ * watch(count, (newVal, oldVal) => {
+ *   console.log(`changed from ${oldVal} to ${newVal}`);
+ * });
+ * ```
+ *
+ * **Multiple sources** — watches a tuple of signals:
+ * ```ts
+ * watch([count, name], ([c, n], [oldC, oldN]) => {
+ *   console.log(c, n);
+ * });
+ * ```
+ *
+ * **Cleanup** — return a function from the callback to clean up before re-run:
+ * ```ts
+ * const stop = watch(() => {
+ *   const id = setInterval(() => tick(), 1000);
+ *   return () => clearInterval(id);  // cleanup
+ * });
+ * stop(); // dispose the watcher
+ * ```
+ *
+ * @returns Dispose function — call to stop watching.
+ */
 export function watch(fn: () => undefined | Dispose): Dispose;
-
 export function watch<T>(
   source: WatchSource<T>,
   cb: (value: T, oldValue: T) => undefined | Dispose,
 ): Dispose;
-
 export function watch<const S extends readonly WatchSource<any>[]>(
   sources: [...S],
   cb: (values: InferSources<S>, oldValues: InferSources<S>) => undefined | Dispose,
@@ -229,6 +326,19 @@ export function watch(
 // batch(fn)
 // ---------------------------------------------------------------------------
 
+/**
+ * Batch multiple signal writes into a single flush. Effects only run once after the batch.
+ *
+ * @example
+ * ```ts
+ * batch(() => {
+ *   firstName('Jane');
+ *   lastName('Doe');
+ *   age(30);
+ * });
+ * // Effects that depend on these signals fire once, not three times.
+ * ```
+ */
 export function batch(fn: () => void): void {
   const wasPending = pending;
   pending = true;

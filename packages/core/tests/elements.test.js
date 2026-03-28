@@ -178,16 +178,7 @@ describe(':prop binding', () => {
 });
 
 describe('@event on components', () => {
-  it('stores event handler as property', () => {
-    const handler = vi.fn();
-    const div = document.createElement('div');
-    div.appendChild(html`<button @click=${handler}>Test</button>`);
-
-    const btn = div.querySelector('button');
-    expect(btn.__purity_event_click).toBe(handler);
-  });
-
-  it('addEventListener still works', () => {
+  it('addEventListener works', () => {
     const handler = vi.fn();
     const div = document.createElement('div');
     div.appendChild(html`<button @click=${handler}>Test</button>`);

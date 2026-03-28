@@ -125,7 +125,7 @@ describe('codegen', () => {
   it('generates code for static attributes', () => {
     const ast = parse(['<div class="box"></div>']);
     const code = generate(ast);
-    expect(code).toContain("setAttribute('class'");
+    expect(code).toContain('className');
     expect(code).toContain('"box"');
   });
 

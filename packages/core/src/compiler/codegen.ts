@@ -228,13 +228,17 @@ function genFragment(c: CodegenContext, node: FragmentNode): string {
 
 function genAttribute(c: CodegenContext, elVar: string, attr: AttributeNode): void {
   switch (attr.kind) {
-    case 'static':
-      if (attr.value) {
-        emit(c, `${elVar}.setAttribute('${attr.name}', ${JSON.stringify(attr.value)});`);
+    case 'static': {
+      // Use direct property for known fast-path attributes
+      const n = attr.name;
+      if (n === 'id' || n === 'className' || n === 'class') {
+        const prop = n === 'class' ? 'className' : n;
+        emit(c, `${elVar}.${prop} = ${JSON.stringify(attr.value)};`);
       } else {
-        emit(c, `${elVar}.setAttribute('${attr.name}', '');`);
+        emit(c, `${elVar}.setAttribute('${n}', ${JSON.stringify(attr.value || '')});`);
       }
       break;
+    }
 
     case 'dynamic': {
       const val = `__values[${attr.index}]`;
@@ -252,7 +256,6 @@ function genAttribute(c: CodegenContext, elVar: string, attr: AttributeNode): vo
 
     case 'event':
       emit(c, `${elVar}.addEventListener('${attr.name}', __values[${attr.index}]);`);
-      emit(c, `${elVar}.__purity_event_${attr.name} = __values[${attr.index}];`);
       break;
 
     case 'bool': {

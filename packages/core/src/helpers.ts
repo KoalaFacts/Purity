@@ -2,18 +2,6 @@ import { watch } from './signals.js';
 
 // ---------------------------------------------------------------------------
 // match(sourceFn, cases, fallback?) — reactive pattern matching
-//
-//   match(() => status(), {
-//     loading: () => html`<p>Loading...</p>`,
-//     error:   () => html`<p>Error!</p>`,
-//     success: () => html`<p>Done</p>`,
-//   })
-//
-//   // boolean shorthand (if/else)
-//   match(() => loggedIn(), {
-//     true:  () => html`<p>Welcome</p>`,
-//     false: () => html`<p>Login</p>`,
-//   })
 // ---------------------------------------------------------------------------
 
 type MatchView = () => Node | DocumentFragment | string;
@@ -24,49 +12,49 @@ export function match<T extends string | number | boolean>(
   cases: MatchCases<T>,
   fallback?: MatchView,
 ): DocumentFragment {
-  const startMarker = document.createComment('match-start');
-  const endMarker = document.createComment('match-end');
+  // Single anchor marker (no unused startMarker)
+  const endMarker = document.createComment('m');
 
   const fragment = document.createDocumentFragment();
-  fragment.appendChild(startMarker);
   fragment.appendChild(endMarker);
 
   let currentNodes: Node[] = [];
+  let prevKey: string | undefined;
 
   watch(() => {
     const value = sourceFn();
+    const key = String(value) as `${T}`;
 
-    for (const node of currentNodes) {
-      if (node.parentNode) {
-        node.parentNode.removeChild(node);
-      }
+    // Skip if same key
+    if (key === prevKey) return;
+    prevKey = key;
+
+    // Remove current nodes
+    for (let i = 0; i < currentNodes.length; i++) {
+      const node = currentNodes[i];
+      if (node.parentNode) node.parentNode.removeChild(node);
     }
     currentNodes = [];
 
     const parent = endMarker.parentNode;
     if (!parent) return;
 
-    const key = String(value) as `${T}`;
     const viewFn = cases[key] ?? fallback;
-
     if (!viewFn) return;
 
-    let content: Node | DocumentFragment | string = viewFn();
+    const content = viewFn();
 
     if (content instanceof DocumentFragment) {
       currentNodes = Array.from(content.childNodes);
+      parent.insertBefore(content, endMarker);
     } else if (content instanceof Node) {
       currentNodes = [content];
+      parent.insertBefore(content, endMarker);
     } else {
       const textNode = document.createTextNode(String(content));
       currentNodes = [textNode];
-      content = textNode;
+      parent.insertBefore(textNode, endMarker);
     }
-
-    parent.insertBefore(
-      content instanceof Node ? content : document.createTextNode(String(content)),
-      endMarker,
-    );
   });
 
   return fragment;
@@ -74,11 +62,6 @@ export function match<T extends string | number | boolean>(
 
 // ---------------------------------------------------------------------------
 // when(conditionFn, thenFn, elseFn?) — boolean conditional rendering
-//
-//   when(() => loggedIn(),
-//     () => html`<p>Welcome</p>`,
-//     () => html`<p>Login</p>`
-//   )
 // ---------------------------------------------------------------------------
 
 export function when(
@@ -106,15 +89,12 @@ export function each<T>(
   mapFn: (item: T, index: number) => Node | DocumentFragment | string,
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment {
-  const startMarker = document.createComment('each-start');
-  const endMarker = document.createComment('each-end');
+  const endMarker = document.createComment('e');
 
   const fragment = document.createDocumentFragment();
-  fragment.appendChild(startMarker);
   fragment.appendChild(endMarker);
 
   let keyToEntry = new Map<unknown, EachEntry>();
-  // Reusable arrays — avoid allocating per watch cycle
   let prevKeys: unknown[] = [];
 
   const getList =
@@ -126,16 +106,25 @@ export function each<T>(
     if (!parent) return;
 
     const len = list.length;
+    const prevLen = prevKeys.length;
+
+    // Fast path: quick key scan before allocating
+    if (len === prevLen) {
+      let same = true;
+      for (let i = 0; i < len; i++) {
+        const key = keyFn ? keyFn(list[i], i) : i;
+        if (prevKeys[i] !== key) { same = false; break; }
+      }
+      if (same) return;
+    }
+
     const newKeys: unknown[] = new Array(len);
     const newEntries = new Map<unknown, EachEntry>();
-    let changed = len !== prevKeys.length;
 
-    // Build new key → entry map
     for (let i = 0; i < len; i++) {
       const item = list[i];
       const key = keyFn ? keyFn(item, i) : i;
       newKeys[i] = key;
-      if (!changed && prevKeys[i] !== key) changed = true;
 
       if (keyToEntry.has(key)) {
         newEntries.set(key, keyToEntry.get(key)!);
@@ -155,16 +144,21 @@ export function each<T>(
       }
     }
 
-    // Skip DOM work if keys haven't changed
-    if (!changed) return;
-
-    // Remove entries no longer in list
-    for (const [key, entry] of keyToEntry) {
-      if (!newEntries.has(key)) {
-        for (const node of entry.nodes) {
-          if (node.parentNode) node.parentNode.removeChild(node);
+    // Remove entries no longer in list — use Set diff for speed
+    if (prevLen > 0) {
+      const newKeySet = new Set(newKeys);
+      for (let i = 0; i < prevLen; i++) {
+        const key = prevKeys[i];
+        if (!newKeySet.has(key)) {
+          const entry = keyToEntry.get(key);
+          if (entry) {
+            for (let j = 0; j < entry.nodes.length; j++) {
+              const node = entry.nodes[j];
+              if (node.parentNode) node.parentNode.removeChild(node);
+            }
+            if (entry.dispose) entry.dispose();
+          }
         }
-        if (entry.dispose) entry.dispose();
       }
     }
 
@@ -176,10 +170,9 @@ export function each<T>(
       const firstNode = nodes[0];
 
       if (firstNode && firstNode.nextSibling !== nextSibling && firstNode !== nextSibling) {
-        // Batch: if entry has multiple nodes, use a fragment
         if (nodes.length > 1) {
           const frag = document.createDocumentFragment();
-          for (const node of nodes) frag.appendChild(node);
+          for (let j = 0; j < nodes.length; j++) frag.appendChild(nodes[j]);
           parent.insertBefore(frag, nextSibling);
         } else {
           parent.insertBefore(firstNode, nextSibling);

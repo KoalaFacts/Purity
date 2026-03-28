@@ -1,12 +1,8 @@
 // ---------------------------------------------------------------------------
-// Purity Compiler — Compiled html`` tag
+// Purity Compiler — JIT compiled html`` tag
 //
-// Replaces the runtime html`` with a version that:
-// 1. On first call: parses template → AST → generates optimized JS → compiles
-// 2. On subsequent calls: runs the cached compiled function directly
-//
-// This eliminates: regex parsing, TreeWalker, marker comments, querySelector
-// at the cost of one-time compilation per unique template.
+// First call: parse → AST → codegen → new Function() → cached
+// Subsequent calls: run cached function directly. Zero overhead.
 // ---------------------------------------------------------------------------
 
 import { watch } from '../signals.js';
@@ -26,18 +22,10 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Docum
   if (!compiled) {
     const ast = parse(strings);
     const code = generate(ast);
-
-    // Compile the generated code into a function
     // biome-ignore lint: eval is intentional for compiled template performance
-    compiled = new Function('return ' + code)() as CompiledFn;
+    compiled = new Function(`return ${code}`)() as CompiledFn;
     compiledCache.set(strings, compiled);
   }
 
-  const result = compiled(values, watch);
-
-  // Ensure we always return a DocumentFragment for consistency
-  if (result instanceof DocumentFragment) return result;
-  const frag = document.createDocumentFragment();
-  frag.appendChild(result);
-  return frag;
+  return compiled(values, watch);
 }

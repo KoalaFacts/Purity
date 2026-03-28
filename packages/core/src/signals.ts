@@ -29,36 +29,40 @@ export interface EffectHandle {
 }
 
 // ---------------------------------------------------------------------------
-// Effect scheduler — batches microtask flushes so multiple signal writes
-// within the same tick only trigger one round of effect re-evaluation.
+// Effect scheduler — single microtask per tick, no redundant scheduling
 // ---------------------------------------------------------------------------
 
 let pending = false;
+let microtaskScheduled = false;
 
 const watcher = new Signal.subtle.Watcher(() => {
-  if (!pending) {
-    pending = true;
+  pending = true;
+  if (!microtaskScheduled) {
+    microtaskScheduled = true;
     queueMicrotask(flush);
   }
 });
 
 function flush(): void {
+  microtaskScheduled = false;
   pending = false;
 
   const dirty = watcher.getPending();
   watcher.watch(...dirty);
 
-  for (const computed of dirty) {
-    computed.get();
+  for (let i = 0; i < dirty.length; i++) {
+    dirty[i].get();
   }
 }
 
 // ---------------------------------------------------------------------------
-// state(initialValue) — reactive read/write accessor
+// state(initialValue)
 // ---------------------------------------------------------------------------
 
 export function state<T>(initial: T): StateAccessor<T> {
   const s = new Signal.State<T>(initial);
+  // Cache peek closure once, not per call
+  const peekFn = () => Signal.subtle.untrack(() => s.get());
 
   const accessor = ((...args: [T | ((current: T) => T)] | []): T => {
     if (args.length === 0) return s.get();
@@ -74,30 +78,31 @@ export function state<T>(initial: T): StateAccessor<T> {
 
   (accessor as any).get = () => s.get();
   (accessor as any).set = (v: T) => s.set(v);
-  (accessor as any).peek = () => Signal.subtle.untrack(() => s.get());
+  (accessor as any).peek = peekFn;
   (accessor as any)._signal = s;
 
   return accessor;
 }
 
 // ---------------------------------------------------------------------------
-// compute(fn) — reactive read-only derived value
+// compute(fn)
 // ---------------------------------------------------------------------------
 
 export function compute<T>(fn: () => T): ComputedAccessor<T> {
   const c = new Signal.Computed<T>(fn);
+  const peekFn = () => Signal.subtle.untrack(() => c.get());
 
-  const accessor = ((): T => c.get()) as ComputedAccessor<T>;
+  const accessor = (() => c.get()) as ComputedAccessor<T>;
 
   (accessor as any).get = () => c.get();
-  (accessor as any).peek = () => Signal.subtle.untrack(() => c.get());
+  (accessor as any).peek = peekFn;
   (accessor as any)._signal = c;
 
   return accessor;
 }
 
 // ---------------------------------------------------------------------------
-// Internal effect runner (used by both watch overloads)
+// Internal effect runner
 // ---------------------------------------------------------------------------
 
 let _currentEffect: EffectHandle | null = null;
@@ -143,32 +148,23 @@ function _effect(fn: () => undefined | Dispose): Dispose {
 
 // ---------------------------------------------------------------------------
 // watch — unified reactive watcher
-//
-//   watch(() => console.log(count()))              // auto-track
-//   watch(count, (val, old) => { ... })            // explicit source
-//   watch([a, b], ([va, vb], [oa, ob]) => { ... }) // multiple sources
 // ---------------------------------------------------------------------------
 
 export type WatchSource<T> = StateAccessor<T> | ComputedAccessor<T> | (() => T);
 
-// Infer T from a WatchSource<T>
 type InferSource<S> = S extends WatchSource<infer T> ? T : never;
 
-// Map a tuple of WatchSources to a tuple of their value types
 type InferSources<S extends readonly WatchSource<any>[]> = {
   [K in keyof S]: InferSource<S[K]>;
 };
 
-// Overload: auto-tracking effect
 export function watch(fn: () => undefined | Dispose): Dispose;
 
-// Overload: single source
 export function watch<T>(
   source: WatchSource<T>,
   cb: (value: T, oldValue: T) => undefined | Dispose,
 ): Dispose;
 
-// Overload: multiple sources (tuple inference)
 export function watch<const S extends readonly WatchSource<any>[]>(
   sources: [...S],
   cb: (values: InferSources<S>, oldValues: InferSources<S>) => undefined | Dispose,
@@ -178,38 +174,46 @@ export function watch(
   sourceOrFn: WatchSource<any> | WatchSource<any>[] | (() => undefined | Dispose),
   cb?: (value: any, oldValue: any) => undefined | Dispose,
 ): Dispose {
-  // Auto-track overload: watch(() => { ... })
   if (!cb) {
     return _effect(sourceOrFn as () => undefined | Dispose);
   }
 
-  // Explicit source overload
   const isArray = Array.isArray(sourceOrFn);
   const sources: WatchSource<any>[] = isArray ? sourceOrFn : [sourceOrFn as WatchSource<any>];
+  const len = sources.length;
 
-  const read = (): any[] => sources.map((s) => s());
+  // Pre-allocate arrays — reuse across cycles, no .map()
+  let oldValues = new Array(len);
+  let newValues = new Array(len);
+  for (let i = 0; i < len; i++) oldValues[i] = sources[i]();
 
-  let oldValues = read();
   let first = true;
 
   return _effect(() => {
-    const newValues = read();
+    for (let i = 0; i < len; i++) newValues[i] = sources[i]();
 
     if (first) {
       first = false;
+      // Swap refs
+      const tmp = oldValues;
       oldValues = newValues;
+      newValues = tmp;
       return;
     }
 
     const result = isArray ? cb(newValues, oldValues) : cb(newValues[0], oldValues[0]);
 
+    // Swap refs instead of allocating
+    const tmp = oldValues;
     oldValues = newValues;
+    newValues = tmp;
+
     return result;
   });
 }
 
 // ---------------------------------------------------------------------------
-// batch(fn) — batch multiple state updates into a single flush
+// batch(fn)
 // ---------------------------------------------------------------------------
 
 export function batch(fn: () => void): void {
@@ -219,7 +223,8 @@ export function batch(fn: () => void): void {
     fn();
   } finally {
     pending = wasPending;
-    if (!wasPending) {
+    if (!wasPending && !microtaskScheduled) {
+      microtaskScheduled = true;
       queueMicrotask(flush);
     }
   }

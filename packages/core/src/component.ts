@@ -32,11 +32,19 @@ export class ComponentContext {
   _slotContent: unknown = undefined; // raw children passed to component
 
   _run(callbacks: ((...args: any[]) => void)[], ...args: unknown[]): void {
-    for (const fn of callbacks) {
-      try {
-        fn(...args);
-      } catch (err) {
-        this._handleError(err);
+    if (this.errorHandlers.length > 0 || this.parent) {
+      // Slow path: wrap in try/catch for error boundaries
+      for (let i = 0; i < callbacks.length; i++) {
+        try {
+          callbacks[i](...args);
+        } catch (err) {
+          this._handleError(err);
+        }
+      }
+    } else {
+      // Fast path: no error handlers, skip try/catch overhead
+      for (let i = 0; i < callbacks.length; i++) {
+        callbacks[i](...args);
       }
     }
   }

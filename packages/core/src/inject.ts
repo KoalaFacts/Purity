@@ -5,6 +5,7 @@ import { getCurrentContext } from './component.js';
 // ---------------------------------------------------------------------------
 
 const providerMap = new WeakMap<object, Map<string | symbol, unknown>>();
+const injectCache = new WeakMap<object, Map<string | symbol, unknown>>();
 
 export function provide<T>(key: string | symbol, value: T): void {
   const ctx = getCurrentContext();
@@ -34,11 +35,23 @@ export function inject<T>(key: string | symbol, fallback?: T): T {
     );
   }
 
+  // Check cache first — avoid repeated tree walks
+  let cache = injectCache.get(ctx);
+  if (cache?.has(key)) {
+    return cache.get(key) as T;
+  }
+
   let current: object | null = ctx;
   while (current) {
     const map = providerMap.get(current);
     if (map?.has(key)) {
-      return map.get(key) as T;
+      const value = map.get(key) as T;
+      if (!cache) {
+        cache = new Map();
+        injectCache.set(ctx, cache);
+      }
+      cache.set(key, value);
+      return value;
     }
     current = (current as any).parent;
   }

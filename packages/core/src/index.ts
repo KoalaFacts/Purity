@@ -20,7 +20,7 @@ export { component, slot, teleport } from './elements.js';
 export { each, match, when } from './control.js';
 export type { ComputedAccessor, Dispose, StateAccessor } from './signals.js';
 // Reactive primitives
-export { batch, compute, Signal, state, watch } from './signals.js';
+export { batch, compute, state, watch } from './signals.js';
 
 // Scoped styles
 export { css } from './styles.js';

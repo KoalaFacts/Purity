@@ -83,7 +83,10 @@ function flush(): void {
   pending = false;
 
   const dirty = watcher.getPending();
-  watcher.watch(...dirty);
+  // Re-watch in batches to avoid stack overflow with spread on large arrays
+  for (let i = 0; i < dirty.length; i++) {
+    watcher.watch(dirty[i]);
+  }
 
   for (let i = 0; i < dirty.length; i++) {
     dirty[i].get();

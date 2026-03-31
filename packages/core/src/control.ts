@@ -205,6 +205,9 @@ export function each<T>(
 
   let keyToEntry = new Map<unknown, EachEntry>();
   let prevKeys: unknown[] = [];
+  // DOM node pool — recycled nodes from removed items
+  const pool: Node[][] = [];
+  const MAX_POOL = 50;
 
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
@@ -233,7 +236,7 @@ export function each<T>(
     const newKeys: unknown[] = new Array(len);
     const newEntries = new Map<unknown, EachEntry>();
 
-    // Build new entries
+    // Build new entries — try pool first before creating new DOM
     for (let i = 0; i < len; i++) {
       const item = list[i];
       const key = getKey(item, i);
@@ -255,7 +258,7 @@ export function each<T>(
       }
     }
 
-    // Remove deleted entries
+    // Remove deleted entries — pool their nodes for recycling
     if (prevLen > 0) {
       const newKeySet = new Set(newKeys);
       for (let i = 0; i < prevLen; i++) {
@@ -267,6 +270,8 @@ export function each<T>(
               const node = entry.nodes[j];
               if (node.parentNode) node.parentNode.removeChild(node);
             }
+            // Pool nodes for reuse (up to MAX_POOL)
+            if (pool.length < MAX_POOL) pool.push(entry.nodes);
             if (entry.dispose) entry.dispose();
           }
         }

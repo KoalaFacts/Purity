@@ -108,25 +108,27 @@ describe('parser', () => {
 });
 
 describe('codegen', () => {
-  it('generates code for a simple element', () => {
+  it('generates template-cloning code for static element', () => {
     const ast = parse(['<div></div>']);
     const code = generate(ast);
-    expect(code).toContain("createElement('div')");
-    expect(code).toContain('return');
+    // Static templates use innerHTML + cloneNode
+    expect(code).toContain('template');
+    expect(code).toContain('cloneNode');
+    expect(code).toContain('<div></div>');
   });
 
-  it('generates code for text content', () => {
+  it('generates code with text content in HTML', () => {
     const ast = parse(['<p>Hello</p>']);
     const code = generate(ast);
-    expect(code).toContain('createTextNode');
-    expect(code).toContain('Hello');
+    expect(code).toContain('<p>Hello</p>');
+    expect(code).toContain('cloneNode');
   });
 
-  it('generates code for static attributes', () => {
+  it('generates code with static attributes in HTML', () => {
     const ast = parse(['<div class="box"></div>']);
     const code = generate(ast);
-    expect(code).toContain('className');
-    expect(code).toContain('"box"');
+    expect(code).toContain('class=');
+    expect(code).toContain('box');
   });
 
   it('generates code for event binding', () => {
@@ -138,7 +140,7 @@ describe('codegen', () => {
   it('generates code for expressions', () => {
     const ast = parse(['<p>', '</p>']);
     const code = generate(ast);
-    expect(code).toContain('__values[0]');
+    expect(code).toContain('_v[0]');
   });
 });
 

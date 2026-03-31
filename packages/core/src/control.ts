@@ -143,8 +143,6 @@ function lis(arr: number[]): number[] {
   const tails: number[] = [0];
   // predecessor[i] = index of previous element in LIS ending at i
   const predecessor: number[] = new Array(len);
-  // indices[i] = index in arr of tails[i]
-  const indices: number[] = [0];
 
   for (let i = 1; i < len; i++) {
     const val = arr[i];
@@ -152,7 +150,6 @@ function lis(arr: number[]): number[] {
     if (val > arr[tails[tails.length - 1]]) {
       predecessor[i] = tails[tails.length - 1];
       tails.push(i);
-      indices.push(i);
       continue;
     }
 
@@ -168,7 +165,6 @@ function lis(arr: number[]): number[] {
     if (val < arr[tails[lo]]) {
       if (lo > 0) predecessor[i] = tails[lo - 1];
       tails[lo] = i;
-      indices[lo] = i;
     }
   }
 
@@ -267,8 +263,9 @@ export function each<T>(
       const key = getKey(item, i);
       newKeys[i] = key;
 
-      if (keyToEntry.has(key)) {
-        const entry = keyToEntry.get(key)!;
+      const _existing = keyToEntry.get(key);
+      if (_existing) {
+        const entry = _existing;
         if (entry.data) entry.data(item);
         newEntries.set(key, entry);
       } else {
@@ -533,8 +530,9 @@ export function list<T>(
       const key = getKey(item, i);
       newKeys[i] = key;
 
-      if (keyToEntry.has(key)) {
-        const entry = keyToEntry.get(key)!;
+      const _existing = keyToEntry.get(key);
+      if (_existing) {
+        const entry = _existing;
         updateEntry(entry, item, i);
         newEntries.set(key, entry);
       } else {

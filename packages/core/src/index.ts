@@ -14,7 +14,7 @@ export {
   onMount,
 } from './component.js';
 // Control flow
-export { each, match, when } from './control.js';
+export { each, list, match, when } from './control.js';
 export type { SlotAccessor } from './elements.js';
 // Components, slots, teleport
 export { component, slot, teleport } from './elements.js';

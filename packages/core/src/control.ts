@@ -383,3 +383,221 @@ export function each<T>(
 
   return fragment;
 }
+
+// ---------------------------------------------------------------------------
+// list() — fastest possible list rendering
+//
+// Separates template from data. Zero per-item function call overhead
+// for DOM creation. ONE tight loop with direct createElement.
+//
+//   // Simple: tag + text
+//   list('li', () => items(), (item) => item.text, (item) => item.id)
+//
+//   // With attributes:
+//   list('li', () => items(), {
+//     text: (item) => item.name,
+//     class: (item) => item.done ? 'done' : '',
+//     '@click': (item) => () => toggle(item.id),
+//     key: (item) => item.id,
+//   })
+// ---------------------------------------------------------------------------
+
+interface ListOptions<T> {
+  text?: (item: T, index: number) => string;
+  class?: (item: T, index: number) => string;
+  style?: (item: T, index: number) => string;
+  attrs?: Record<string, (item: T, index: number) => string>;
+  events?: Record<string, (item: T, index: number) => (e: Event) => void>;
+  key?: (item: T, index: number) => unknown;
+}
+
+type ListTextFn<T> = (item: T, index: number) => string;
+
+interface ListEntry {
+  node: Element;
+  textNode: Text | null;
+}
+
+/**
+ * High-performance list rendering. Separates template from data for
+ * zero per-item overhead. Uses direct createElement in a tight loop.
+ *
+ * @example
+ * ```ts
+ * // Simple — tag + text accessor:
+ * list('li', () => todos(), (t) => t.text, (t) => t.id)
+ *
+ * // With options:
+ * list('div', () => users(), {
+ *   text: (u) => u.name,
+ *   class: (u) => u.active ? 'active' : '',
+ *   key: (u) => u.id,
+ * })
+ * ```
+ */
+export function list<T>(
+  tag: string,
+  listAccessor: (() => T[]) | T[],
+  textOrOptions: ListTextFn<T> | ListOptions<T>,
+  keyFnOrNothing?: (item: T, index: number) => unknown,
+): DocumentFragment {
+  const endMarker = document.createComment('l');
+  const fragment = document.createDocumentFragment();
+  fragment.appendChild(endMarker);
+
+  // Normalize options
+  let getText: ListTextFn<T> | undefined;
+  let getClass: ((item: T, index: number) => string) | undefined;
+  let getStyle: ((item: T, index: number) => string) | undefined;
+  let getAttrs: Record<string, (item: T, index: number) => string> | undefined;
+  let getEvents: Record<string, (item: T, index: number) => (e: Event) => void> | undefined;
+  let getKey: (item: T, index: number) => unknown;
+
+  if (typeof textOrOptions === 'function') {
+    getText = textOrOptions;
+    getKey = keyFnOrNothing ?? ((item: T) => item as unknown);
+  } else {
+    getText = textOrOptions.text;
+    getClass = textOrOptions.class;
+    getStyle = textOrOptions.style;
+    getAttrs = textOrOptions.attrs;
+    getEvents = textOrOptions.events;
+    getKey = textOrOptions.key ?? ((item: T) => item as unknown);
+  }
+
+  let keyToEntry = new Map<unknown, ListEntry>();
+  let prevKeys: unknown[] = [];
+
+  const getList =
+    typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
+
+  // Create a single element — the tightest possible code
+  const createEntry = (item: T, index: number): ListEntry => {
+    const el = document.createElement(tag);
+    let textNode: Text | null = null;
+
+    if (getText) {
+      textNode = document.createTextNode(getText(item, index));
+      el.appendChild(textNode);
+    }
+    if (getClass) (el as HTMLElement).className = getClass(item, index);
+    if (getStyle) (el as HTMLElement).style.cssText = getStyle(item, index);
+    if (getAttrs) {
+      for (const [k, fn] of Object.entries(getAttrs)) el.setAttribute(k, fn(item, index));
+    }
+    if (getEvents) {
+      for (const [k, fn] of Object.entries(getEvents)) el.addEventListener(k, fn(item, index));
+    }
+
+    return { node: el, textNode };
+  };
+
+  // Update an existing element in place — zero DOM creation
+  const updateEntry = (entry: ListEntry, item: T, index: number): void => {
+    if (getText && entry.textNode) entry.textNode.data = getText(item, index);
+    if (getClass) (entry.node as HTMLElement).className = getClass(item, index);
+    if (getStyle) (entry.node as HTMLElement).style.cssText = getStyle(item, index);
+    if (getAttrs) {
+      for (const [k, fn] of Object.entries(getAttrs)) entry.node.setAttribute(k, fn(item, index));
+    }
+  };
+
+  watch(() => {
+    const list = getList() || [];
+    const parent = endMarker.parentNode;
+    if (!parent) return;
+
+    const len = list.length;
+    const prevLen = prevKeys.length;
+
+    // Fast path: same keys — update in place
+    if (len === prevLen) {
+      let same = true;
+      for (let i = 0; i < len; i++) {
+        if (prevKeys[i] !== getKey(list[i], i)) { same = false; break; }
+      }
+      if (same) {
+        for (let i = 0; i < len; i++) {
+          updateEntry(keyToEntry.get(prevKeys[i])!, list[i], i);
+        }
+        return;
+      }
+    }
+
+    const newKeys: unknown[] = new Array(len);
+    const newEntries = new Map<unknown, ListEntry>();
+
+    // Tight creation loop — NO function call overhead per item
+    for (let i = 0; i < len; i++) {
+      const item = list[i];
+      const key = getKey(item, i);
+      newKeys[i] = key;
+
+      if (keyToEntry.has(key)) {
+        const entry = keyToEntry.get(key)!;
+        updateEntry(entry, item, i);
+        newEntries.set(key, entry);
+      } else {
+        newEntries.set(key, createEntry(item, i));
+      }
+    }
+
+    // Remove deleted
+    if (prevLen > 0) {
+      const newKeySet = new Set(newKeys);
+      for (let i = 0; i < prevLen; i++) {
+        if (!newKeySet.has(prevKeys[i])) {
+          const entry = keyToEntry.get(prevKeys[i]);
+          if (entry?.node.parentNode) entry.node.parentNode.removeChild(entry.node);
+        }
+      }
+    }
+
+    // Reorder — append-only fast path or LIS
+    if (prevLen > 0 && len > 0) {
+      let isAppend = len > prevLen;
+      if (isAppend) {
+        for (let i = 0; i < prevLen; i++) {
+          if (prevKeys[i] !== newKeys[i]) { isAppend = false; break; }
+        }
+      }
+
+      if (isAppend) {
+        const frag = document.createDocumentFragment();
+        for (let i = prevLen; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
+        parent.insertBefore(frag, endMarker);
+      } else {
+        // LIS reorder
+        const oldKeyIndex = new Map<unknown, number>();
+        for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
+
+        const sources: number[] = [];
+        const srcMap: number[] = new Array(len).fill(-1);
+        for (let i = 0; i < len; i++) {
+          const oi = oldKeyIndex.get(newKeys[i]);
+          if (oi !== undefined) { sources.push(oi); srcMap[i] = sources.length - 1; }
+        }
+
+        const stableSet = new Set(lis(sources));
+        let next: Node = endMarker;
+        for (let i = len - 1; i >= 0; i--) {
+          const entry = newEntries.get(newKeys[i])!;
+          if (srcMap[i] === -1 || !stableSet.has(srcMap[i])) {
+            parent.insertBefore(entry.node, next);
+          }
+          next = entry.node;
+        }
+      }
+    } else {
+      // All new — batch insert
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
+      parent.insertBefore(frag, endMarker);
+    }
+
+    keyToEntry = newEntries;
+    prevKeys = newKeys;
+  });
+
+  return fragment;
+}

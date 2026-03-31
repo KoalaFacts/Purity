@@ -46,6 +46,20 @@ mount(() => html`<p-counter></p-counter>`, document.getElementById('app')!);
 
 See each package README for full API documentation.
 
+## How It Compares
+
+| | Purity | SolidJS | Svelte 5 | Vue Vapor |
+|--|--------|---------|----------|-----------|
+| **Approach** | TC39 Signals + compiled templates | Custom signals + compiled JSX | Runes + full compiler | Proxy reactivity + compiler |
+| **Virtual DOM** | No | No | No | No |
+| **Bundle (gz)** | 6 kB | 7 kB | 2 kB + generated | 16 kB (beta) |
+| **Signal read** | ~10ns | ~30ns | ~5ns (compiled) | ~50-100ns |
+| **List diff** | LIS O(n log n) | LIS O(n log n) | LIS O(n log n) | LIS O(n log n) |
+| **Custom Elements** | Native | Optional | Optional | Optional |
+| **Shadow DOM** | Built-in | No | No | No |
+| **Two-way binding** | `::prop` | Manual | `bind:` | `v-model` |
+| **Dependencies** | 1 | 0 | 0 | 0 |
+
 ## License
 
 MIT

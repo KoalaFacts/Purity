@@ -9,13 +9,42 @@
 //   export default defineConfig({ plugins: [purity()] });
 // ---------------------------------------------------------------------------
 
-import { parse } from '@purity/core/compiler';
-import { generate } from '@purity/core/compiler';
+import { generate, parse } from '@purity/core/compiler';
 
-interface PurityPluginOptions {
+/**
+ * Configuration options for the Purity Vite plugin.
+ */
+export interface PurityPluginOptions {
+  /**
+   * File extensions to process for `html` tagged template compilation.
+   * @default ['.ts', '.js', '.tsx', '.jsx']
+   */
   include?: string[];
 }
 
+/**
+ * Vite plugin for ahead-of-time (AOT) compilation of Purity `html` tagged templates.
+ *
+ * Transforms `html\`...\`` expressions at build time into direct `document.createElement`
+ * calls, eliminating the runtime parser. The output is CSP-safe and tree-shakeable.
+ *
+ * The plugin skips framework internals (`@purity/` and `packages/core/`) — only user
+ * source code is compiled.
+ *
+ * @param options - Optional configuration.
+ * @returns A Vite plugin object with `enforce: 'pre'` (runs before other transforms).
+ *
+ * @example
+ * ```ts
+ * // vite.config.ts
+ * import { purity } from '@purity/vite-plugin';
+ * import { defineConfig } from 'vite';
+ *
+ * export default defineConfig({
+ *   plugins: [purity()],
+ * });
+ * ```
+ */
 export function purity(options?: PurityPluginOptions) {
   const extensions = options?.include ?? ['.ts', '.js', '.tsx', '.jsx'];
 
@@ -26,7 +55,12 @@ export function purity(options?: PurityPluginOptions) {
     transform(code: string, id: string) {
       if (!extensions.some((ext) => id.endsWith(ext))) return null;
       // Skip framework internals — only compile user code
-      if (id.includes('@purity/') || id.includes('packages/core/') || id.includes('packages/vite-plugin/')) return null;
+      if (
+        id.includes('@purity/') ||
+        id.includes('packages/core/') ||
+        id.includes('packages/vite-plugin/')
+      )
+        return null;
       if (!code.includes('html`')) return null;
 
       const result = compileTemplates(code, id);
@@ -90,8 +124,7 @@ function compileTemplates(source: string, _id: string): CompileResult {
       const fnBody = generate(ast);
 
       // Replace html`...` with inline IIFE
-      const compiled =
-        `((${fnBody})([${exprSources.join(', ')}], __purity_w__))`;
+      const compiled = `((${fnBody})([${exprSources.join(', ')}], __purity_w__))`;
 
       parts.push(compiled);
       changed = true;
@@ -123,7 +156,7 @@ function compileTemplates(source: string, _id: string): CompileResult {
   // Remove html import since templates are pre-compiled
   finalCode = finalCode.replace(
     /import\s*\{([^}]*)\}\s*from\s*['"]@purity\/core['"]\s*;?/g,
-    (match, imports) => {
+    (_match, imports) => {
       const cleaned = imports
         .split(',')
         .map((s: string) => s.trim())
@@ -186,10 +219,7 @@ function extractTemplateLiteral(source: string, backtickPos: number): ExtractedT
   return null;
 }
 
-function extractExpression(
-  source: string,
-  start: number,
-): { source: string; end: number } | null {
+function extractExpression(source: string, start: number): { source: string; end: number } | null {
   let depth = 1;
   let pos = start;
   let inString: number | null = null;

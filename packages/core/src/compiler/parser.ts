@@ -295,7 +295,7 @@ class Parser {
 
   private parseAttribute(): AttributeNode {
     const s = this.current();
-    const startPos = this.pos;
+    const _startPos = this.pos;
     const firstChar = s.charCodeAt(this.pos);
 
     // Detect prefix: @event, ?bool, .prop, ::two-way, :one-way

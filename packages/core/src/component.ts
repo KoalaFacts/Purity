@@ -5,8 +5,28 @@
 // Error handling via onError (bubbles up to parent)
 // ---------------------------------------------------------------------------
 
+/**
+ * A zero-argument function that returns a DOM subtree.
+ * Passed to {@link mount} to render an application root.
+ *
+ * @example
+ * ```ts
+ * const App: ComponentFn = () => html`<p-counter></p-counter>`;
+ * mount(App, document.getElementById('app')!);
+ * ```
+ */
 export type ComponentFn = () => Node | DocumentFragment;
 
+/**
+ * Handle returned by {@link mount} to tear down a mounted component tree.
+ *
+ * @example
+ * ```ts
+ * const { unmount } = mount(App, el);
+ * // later…
+ * unmount(); // removes DOM nodes, runs onDestroy callbacks, disposes watchers
+ * ```
+ */
 export interface MountResult {
   unmount: () => void;
 }

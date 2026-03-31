@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { batch, compute, state, watch } from '../src/signals.ts';
 import { html } from '../src/compiler/compile.ts';
 import { each, match, when } from '../src/control.ts';
+import { batch, compute, state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
@@ -40,7 +40,9 @@ describe('1. signal creation', () => {
     const elapsed = bench('create 10k state', () => {
       for (let i = 0; i < 10_000; i++) state(i);
     });
-    console.log(`    → ${(elapsed / 10_000 * 1000).toFixed(1)}μs/signal | Solid: ~3-5μs | Vue ref: ~5-10μs`);
+    console.log(
+      `    → ${((elapsed / 10_000) * 1000).toFixed(1)}μs/signal | Solid: ~3-5μs | Vue ref: ~5-10μs`,
+    );
   });
 
   it('create 10k computed', () => {
@@ -51,7 +53,9 @@ describe('1. signal creation', () => {
     const elapsed = bench('create 10k computed', () => {
       for (let i = 0; i < 10_000; i++) compute(() => s() + i);
     });
-    console.log(`    → ${(elapsed / 10_000 * 1000).toFixed(1)}μs/computed | Solid: ~5-10μs | Vue: ~10-20μs`);
+    console.log(
+      `    → ${((elapsed / 10_000) * 1000).toFixed(1)}μs/computed | Solid: ~5-10μs | Vue: ~10-20μs`,
+    );
   });
 });
 
@@ -71,7 +75,9 @@ describe('2. signal read/write throughput', () => {
       for (let i = 0; i < 1_000_000; i++) sum += s();
     });
     expect(sum).toBe(42_000_000);
-    console.log(`    → ${(elapsed / 1_000_000 * 1e6).toFixed(0)}ns/read | Solid: ~30ns | Vue: ~50-100ns | Svelte: ~5-10ns`);
+    console.log(
+      `    → ${((elapsed / 1_000_000) * 1e6).toFixed(0)}ns/read | Solid: ~30ns | Vue: ~50-100ns | Svelte: ~5-10ns`,
+    );
   });
 
   it('write 1M times (no watchers)', () => {
@@ -82,7 +88,9 @@ describe('2. signal read/write throughput', () => {
     const elapsed = bench('1M writes', () => {
       for (let i = 0; i < 1_000_000; i++) s(i);
     });
-    console.log(`    → ${(elapsed / 1_000_000 * 1e6).toFixed(0)}ns/write | Solid: ~50ns | Vue: ~100-200ns | Svelte: ~10-20ns`);
+    console.log(
+      `    → ${((elapsed / 1_000_000) * 1e6).toFixed(0)}ns/write | Solid: ~50ns | Vue: ~100-200ns | Svelte: ~10-20ns`,
+    );
   });
 
   it('updater function 1M times', () => {
@@ -91,7 +99,7 @@ describe('2. signal read/write throughput', () => {
     const elapsed = bench('1M updaters', () => {
       for (let i = 0; i < 1_000_000; i++) s((v: number) => v + 1);
     });
-    console.log(`    → ${(elapsed / 1_000_000 * 1e6).toFixed(0)}ns/update`);
+    console.log(`    → ${((elapsed / 1_000_000) * 1e6).toFixed(0)}ns/update`);
   });
 });
 
@@ -110,10 +118,14 @@ describe('3. computed propagation', () => {
       const prev = tip;
       tip = compute(() => prev() + 1);
     }
-    const elapsed = bench('1000-deep chain', () => {
-      source(source() + 1);
-      tip();
-    }, 100);
+    const _elapsed = bench(
+      '1000-deep chain',
+      () => {
+        source(source() + 1);
+        tip();
+      },
+      100,
+    );
     console.log(`    → Solid: ~0.05-0.1ms | Vue: ~0.2-0.5ms | Vue Vapor: ~0.1-0.2ms`);
   });
 
@@ -122,10 +134,14 @@ describe('3. computed propagation', () => {
     const source = state(0);
     const deps: any[] = [];
     for (let i = 0; i < 1000; i++) deps.push(compute(() => source() + i));
-    const elapsed = bench('1→1000 fan-out', () => {
-      source(source() + 1);
-      for (let i = 0; i < 1000; i++) deps[i]();
-    }, 100);
+    const _elapsed = bench(
+      '1→1000 fan-out',
+      () => {
+        source(source() + 1);
+        for (let i = 0; i < 1000; i++) deps[i]();
+      },
+      100,
+    );
     console.log(`    → Solid: ~0.1-0.15ms | Vue: ~0.3-0.5ms`);
   });
 
@@ -138,17 +154,25 @@ describe('3. computed propagation', () => {
     const b = compute(() => a() * 2);
     const c = compute(() => a() * 3);
     let evals = 0;
-    const d = compute(() => { evals++; return b() + c(); });
-    d(); evals = 0;
+    const d = compute(() => {
+      evals++;
+      return b() + c();
+    });
+    d();
+    evals = 0;
 
-    a(2); d();
+    a(2);
+    d();
     expect(evals).toBe(1);
 
     evals = 0;
     const elapsed = bench('diamond 1000 updates', () => {
-      for (let i = 0; i < 1000; i++) { a(i); d(); }
+      for (let i = 0; i < 1000; i++) {
+        a(i);
+        d();
+      }
     });
-    console.log(`    → ${(elapsed / 1000 * 1000).toFixed(1)}μs/update — all frameworks: ~1μs`);
+    console.log(`    → ${((elapsed / 1000) * 1000).toFixed(1)}μs/update — all frameworks: ~1μs`);
   });
 });
 
@@ -162,7 +186,12 @@ describe('4. effects / watchers', () => {
     const s = state(0);
     const elapsed = bench('create+dispose 1k', () => {
       const d: any[] = [];
-      for (let i = 0; i < 1000; i++) d.push(watch(() => { s(); }));
+      for (let i = 0; i < 1000; i++)
+        d.push(
+          watch(() => {
+            s();
+          }),
+        );
       for (let i = 0; i < 1000; i++) d[i]();
     });
     console.log(`    → ${(elapsed / 1000).toFixed(3)}ms/effect | Solid: ~5-10μs | Vue: ~20μs`);
@@ -172,7 +201,11 @@ describe('4. effects / watchers', () => {
     // Solid: <0.1ms | Vue: ~0.2-0.5ms
     const s = state(0);
     let runs = 0;
-    for (let i = 0; i < 100; i++) watch(() => { s(); runs++; });
+    for (let i = 0; i < 100; i++)
+      watch(() => {
+        s();
+        runs++;
+      });
 
     await benchAsync('100 watchers react', async () => {
       runs = 0;
@@ -188,11 +221,16 @@ describe('4. effects / watchers', () => {
     const signals: any[] = [];
     for (let i = 0; i < 100; i++) signals.push(state(0));
     let runs = 0;
-    watch(() => { for (const s of signals) s(); runs++; });
+    watch(() => {
+      for (const s of signals) s();
+      runs++;
+    });
 
     await benchAsync('batch 1000 writes', async () => {
       runs = 0;
-      batch(() => { for (let i = 0; i < 1000; i++) signals[i % 100](i); });
+      batch(() => {
+        for (let i = 0; i < 1000; i++) signals[i % 100](i);
+      });
       await tick();
     });
     expect(runs).toBe(1);
@@ -211,7 +249,9 @@ describe('5. template rendering', () => {
     const elapsed = bench('1k simple elements', () => {
       for (let i = 0; i < 1000; i++) html`<div>Hello ${String(i)}</div>`;
     });
-    console.log(`    → ${(elapsed / 1000).toFixed(3)}ms/el | Solid: ~0.01-0.02 | Svelte: ~0.005-0.01`);
+    console.log(
+      `    → ${(elapsed / 1000).toFixed(3)}ms/el | Solid: ~0.01-0.02 | Svelte: ~0.005-0.01`,
+    );
   });
 
   it('100 with reactive + event bindings', () => {
@@ -219,7 +259,7 @@ describe('5. template rendering', () => {
     const fn = () => {};
     const elapsed = bench('100 reactive+event templates', () => {
       for (let i = 0; i < 100; i++) {
-        html`<div class=${() => count() > 5 ? 'active' : ''}>
+        html`<div class=${() => (count() > 5 ? 'active' : '')}>
           <p>${() => count()}</p>
           <button @click=${fn} ?disabled=${() => false}>Go</button>
         </div>`;
@@ -229,10 +269,14 @@ describe('5. template rendering', () => {
   });
 
   it('nested 10 levels deep', () => {
-    bench('10-level nesting', () => {
-      let node: any = html`<span>leaf</span>`;
-      for (let i = 0; i < 10; i++) node = html`<div>${node}</div>`;
-    }, 100);
+    bench(
+      '10-level nesting',
+      () => {
+        let node: any = html`<span>leaf</span>`;
+        for (let i = 0; i < 10; i++) node = html`<div>${node}</div>`;
+      },
+      100,
+    );
   });
 });
 
@@ -244,8 +288,12 @@ describe('6. list rendering', () => {
   it('initial render 1000 keyed items', () => {
     // Solid <For>: ~5-15ms | Svelte: ~8-12ms | Vue Vapor: ~10-15ms
     const items = Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` }));
-    const elapsed = bench('each() 1000 keyed items', () => {
-      each(() => items, (item) => html`<li>${item.text}</li>`, (item) => item.id);
+    const _elapsed = bench('each() 1000 keyed items', () => {
+      each(
+        () => items,
+        (item) => html`<li>${item.text}</li>`,
+        (item) => item.id,
+      );
     });
     console.log(`    → Solid: ~5-15ms | Svelte: ~8-12ms | Vue Vapor: ~10-15ms`);
   });
@@ -253,7 +301,11 @@ describe('6. list rendering', () => {
   it('initial render 5000 keyed items', () => {
     const items = Array.from({ length: 5000 }, (_, i) => ({ id: i, text: `Item ${i}` }));
     const elapsed = bench('each() 5000 keyed items', () => {
-      each(() => items, (item) => html`<li>${item.text}</li>`, (item) => item.id);
+      each(
+        () => items,
+        (item) => html`<li>${item.text}</li>`,
+        (item) => item.id,
+      );
     });
     console.log(`    → ${(elapsed / 5).toFixed(1)}ms per 1000 items`);
   });
@@ -264,11 +316,15 @@ describe('6. list rendering', () => {
     const items = state(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` })));
     const container = document.createElement('div');
     container.appendChild(
-      each(() => items(), (item) => html`<li>${item.text}</li>`, (item) => item.id),
+      each(
+        () => items(),
+        (item) => html`<li>${item.text}</li>`,
+        (item) => item.id,
+      ),
     );
     await tick();
 
-    const elapsed = await benchAsync('each() UPDATE 1000 items in place', async () => {
+    const _elapsed = await benchAsync('each() UPDATE 1000 items in place', async () => {
       items(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Updated ${i}` })));
       await tick();
     });
@@ -280,11 +336,15 @@ describe('6. list rendering', () => {
     const items = state(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` })));
     const container = document.createElement('div');
     container.appendChild(
-      each(() => items(), (item) => html`<li>${item.text}</li>`, (item) => item.id),
+      each(
+        () => items(),
+        (item) => html`<li>${item.text}</li>`,
+        (item) => item.id,
+      ),
     );
     await tick();
 
-    const elapsed = await benchAsync('each() SWAP first/last of 1000', async () => {
+    const _elapsed = await benchAsync('each() SWAP first/last of 1000', async () => {
       const arr = [...items()];
       const tmp = arr[0];
       arr[0] = arr[999];
@@ -299,11 +359,15 @@ describe('6. list rendering', () => {
     const items = state(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` })));
     const container = document.createElement('div');
     container.appendChild(
-      each(() => items(), (item) => html`<li>${item.text}</li>`, (item) => item.id),
+      each(
+        () => items(),
+        (item) => html`<li>${item.text}</li>`,
+        (item) => item.id,
+      ),
     );
     await tick();
 
-    const elapsed = await benchAsync('each() APPEND 100 to 1000', async () => {
+    const _elapsed = await benchAsync('each() APPEND 100 to 1000', async () => {
       const added = Array.from({ length: 100 }, (_, i) => ({ id: 1000 + i, text: `New ${i}` }));
       items([...items(), ...added]);
       await tick();
@@ -314,11 +378,15 @@ describe('6. list rendering', () => {
     const items = state(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` })));
     const container = document.createElement('div');
     container.appendChild(
-      each(() => items(), (item) => html`<li>${item.text}</li>`, (item) => item.id),
+      each(
+        () => items(),
+        (item) => html`<li>${item.text}</li>`,
+        (item) => item.id,
+      ),
     );
     await tick();
 
-    const elapsed = await benchAsync('each() REMOVE all 1000', async () => {
+    const _elapsed = await benchAsync('each() REMOVE all 1000', async () => {
       items([]);
       await tick();
     });
@@ -345,7 +413,11 @@ describe('7. conditional rendering', () => {
   it('when() create', () => {
     const visible = state(true);
     bench('when() create', () => {
-      when(() => visible(), () => html`<p>Yes</p>`, () => html`<p>No</p>`);
+      when(
+        () => visible(),
+        () => html`<p>Yes</p>`,
+        () => html`<p>No</p>`,
+      );
     });
   });
 });

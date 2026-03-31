@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { generate } from '../src/compiler/codegen.ts';
 import { html } from '../src/compiler/compile.ts';
 import { parse } from '../src/compiler/parser.ts';
-import { state, watch } from '../src/signals.ts';
+import { state } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 

@@ -1,10 +1,6 @@
-#!/usr/bin/env node
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const projectName = args[0] || 'my-purity-app';
 const projectDir = resolve(process.cwd(), projectName);
@@ -15,8 +11,8 @@ if (existsSync(projectDir)) {
 }
 
 // Detect if running from monorepo
-const coreDir = resolve(__dirname, '../../core');
-const pluginDir = resolve(__dirname, '../../vite-plugin');
+const coreDir = resolve(import.meta.dirname, '../../core');
+const pluginDir = resolve(import.meta.dirname, '../../vite-plugin');
 const isLocal = existsSync(resolve(coreDir, 'src/index.ts'));
 
 const coreDep = isLocal ? `file:${coreDir}` : '^0.1.0';
@@ -32,7 +28,7 @@ mkdirSync(resolve(projectDir, 'src'));
 // package.json
 writeFileSync(
   resolve(projectDir, 'package.json'),
-  JSON.stringify(
+  `${JSON.stringify(
     {
       name: projectName,
       version: '0.0.1',
@@ -54,7 +50,7 @@ writeFileSync(
     },
     null,
     2,
-  ) + '\n',
+  )}\n`,
 );
 
 // vite.config.ts — always generated, includes purity plugin
@@ -81,7 +77,7 @@ export default defineConfig({
 // tsconfig.json
 writeFileSync(
   resolve(projectDir, 'tsconfig.json'),
-  JSON.stringify(
+  `${JSON.stringify(
     {
       compilerOptions: {
         target: 'ES2022',
@@ -95,7 +91,7 @@ writeFileSync(
     },
     null,
     2,
-  ) + '\n',
+  )}\n`,
 );
 
 // index.html

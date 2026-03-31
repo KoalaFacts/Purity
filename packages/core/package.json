@@ -17,12 +17,21 @@
       "import": "./dist/compiler/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "vite build && tsc --emitDeclarationOnly",
     "test": "vitest run"
   },
-  "keywords": ["signals", "reactive", "framework", "web-components", "no-virtual-dom", "lightweight"],
+  "keywords": [
+    "signals",
+    "reactive",
+    "framework",
+    "web-components",
+    "no-virtual-dom",
+    "lightweight"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/KoalaFacts/Purity",

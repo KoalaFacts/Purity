@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { state } from '../src/signals.ts';
+import { describe, expect, it } from 'vitest';
 import { html } from '../src/compiler/compile.ts';
 import { each, list } from '../src/control.ts';
+import { state } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
@@ -12,7 +12,12 @@ describe('list() correctness', () => {
   it('renders 1000 items', () => {
     const container = document.createElement('div');
     container.appendChild(
-      list('li', () => items1k, (item) => item.text, (item) => item.id),
+      list(
+        'li',
+        () => items1k,
+        (item) => item.text,
+        (item) => item.id,
+      ),
     );
     expect(container.querySelectorAll('li').length).toBe(1000);
     expect(container.querySelector('li')!.textContent).toBe('Item 0');
@@ -22,7 +27,12 @@ describe('list() correctness', () => {
     const items = state(items1k);
     const container = document.createElement('div');
     container.appendChild(
-      list('li', () => items(), (item) => item.text, (item) => item.id),
+      list(
+        'li',
+        () => items(),
+        (item) => item.text,
+        (item) => item.id,
+      ),
     );
     await tick();
 
@@ -36,7 +46,12 @@ describe('list() correctness', () => {
     const items = state(items1k.slice(0, 5));
     const container = document.createElement('div');
     container.appendChild(
-      list('li', () => items(), (item) => item.text, (item) => item.id),
+      list(
+        'li',
+        () => items(),
+        (item) => item.text,
+        (item) => item.id,
+      ),
     );
     await tick();
     expect(container.querySelectorAll('li').length).toBe(5);
@@ -50,7 +65,12 @@ describe('list() correctness', () => {
     const items = state(items1k.slice(0, 5));
     const container = document.createElement('div');
     container.appendChild(
-      list('li', () => items(), (item) => item.text, (item) => item.id),
+      list(
+        'li',
+        () => items(),
+        (item) => item.text,
+        (item) => item.id,
+      ),
     );
     await tick();
 
@@ -78,14 +98,28 @@ describe('list() vs each() benchmark', () => {
   it('INITIAL 1000: list() vs each()', () => {
     // Warmup
     html`<li>${'x'}</li>`;
-    list('li', () => [{ id: 0, text: 'x' }], (i) => i.text, (i) => i.id);
+    list(
+      'li',
+      () => [{ id: 0, text: 'x' }],
+      (i) => i.text,
+      (i) => i.id,
+    );
 
     let start = performance.now();
-    list('li', () => items1k, (item) => item.text, (item) => item.id);
+    list(
+      'li',
+      () => items1k,
+      (item) => item.text,
+      (item) => item.id,
+    );
     const listTime = performance.now() - start;
 
     start = performance.now();
-    each(() => items1k, (item) => html`<li>${item.text}</li>`, (item) => item.id);
+    each(
+      () => items1k,
+      (item) => html`<li>${item.text}</li>`,
+      (item) => item.id,
+    );
     const eachTime = performance.now() - start;
 
     console.log(`  list() 1000:  ${listTime.toFixed(2)}ms`);
@@ -95,11 +129,20 @@ describe('list() vs each() benchmark', () => {
 
   it('INITIAL 5000: list() vs each()', () => {
     let start = performance.now();
-    list('li', () => items5k, (item) => item.text, (item) => item.id);
+    list(
+      'li',
+      () => items5k,
+      (item) => item.text,
+      (item) => item.id,
+    );
     const listTime = performance.now() - start;
 
     start = performance.now();
-    each(() => items5k, (item) => html`<li>${item.text}</li>`, (item) => item.id);
+    each(
+      () => items5k,
+      (item) => html`<li>${item.text}</li>`,
+      (item) => item.id,
+    );
     const eachTime = performance.now() - start;
 
     console.log(`  list() 5000:  ${listTime.toFixed(2)}ms`);
@@ -112,10 +155,23 @@ describe('list() vs each() benchmark', () => {
     const eachItems = state(items1k);
 
     const c1 = document.createElement('div');
-    c1.appendChild(list('li', () => listItems(), (i) => i.text, (i) => i.id));
+    c1.appendChild(
+      list(
+        'li',
+        () => listItems(),
+        (i) => i.text,
+        (i) => i.id,
+      ),
+    );
 
     const c2 = document.createElement('div');
-    c2.appendChild(each(() => eachItems(), (i) => html`<li>${i.text}</li>`, (i) => i.id));
+    c2.appendChild(
+      each(
+        () => eachItems(),
+        (i) => html`<li>${i.text}</li>`,
+        (i) => i.id,
+      ),
+    );
 
     await tick();
 

@@ -18,6 +18,26 @@ function runCallbacks(arr: (() => void)[] | null, ctx?: ComponentContext): void 
 // Slot types
 // ---------------------------------------------------------------------------
 
+/**
+ * Accessor function returned by {@link slot} to project child content into a component.
+ *
+ * - **Default slot** (`SlotAccessor<void>`): call with no arguments to render projected children.
+ * - **Scoped slot** (`SlotAccessor<E>`): call with an exposed-data object `E` that the
+ *   parent's slot template can consume.
+ *
+ * @typeParam E - The shape of data exposed to the parent. `void` for non-scoped slots.
+ *
+ * @example
+ * ```ts
+ * // Default slot — render projected children
+ * const body = slot();        // SlotAccessor<void>
+ * return html`<div>${body()}</div>`;
+ *
+ * // Scoped slot — expose data to the parent
+ * const row = slot<{ item: Item }>('row');  // SlotAccessor<{ item: Item }>
+ * return html`<li>${row({ item })}</li>`;
+ * ```
+ */
 export type SlotAccessor<E = void> = E extends void
   ? () => Node | null
   : (exposed: E) => Node | null;

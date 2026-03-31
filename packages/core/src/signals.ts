@@ -91,13 +91,18 @@ function flush(): void {
     unwatchScheduled = false;
   }
 
-  const dirty = watcher.getPending();
-  const len = dirty.length;
+  // Deduplicate — the polyfill's Watcher.watch() appends to producerNode
+  // without resetting nextProducerIndex, so getPending() returns duplicates.
+  // Without dedup, the flush loop doubles producerNode every cycle (2^N growth).
+  const raw = watcher.getPending();
+  const seen = new Set<Signal.Computed<void>>();
+  for (let i = 0; i < raw.length; i++) {
+    seen.add(raw[i]);
+  }
 
-  // Single loop: re-watch + evaluate in one pass (reduces overhead)
-  for (let i = 0; i < len; i++) {
-    watcher.watch(dirty[i]);
-    dirty[i].get();
+  for (const s of seen) {
+    watcher.watch(s);
+    s.get();
   }
 }
 

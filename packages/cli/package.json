@@ -4,10 +4,20 @@
   "description": "Scaffold a new Purity project",
   "type": "module",
   "bin": {
-    "purity": "./src/index.js"
+    "purity": "./dist/index.js"
   },
-  "files": ["src"],
-  "keywords": ["purity", "cli", "scaffold", "create"],
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build"
+  },
+  "keywords": [
+    "purity",
+    "cli",
+    "scaffold",
+    "create"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/KoalaFacts/Purity",

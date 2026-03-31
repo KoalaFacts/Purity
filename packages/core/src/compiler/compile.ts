@@ -62,7 +62,6 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Docum
   if (!compiled) {
     const ast = parse(strings);
     const code = generate(ast);
-    // biome-ignore lint: eval is intentional for compiled template performance
     compiled = new Function(`return ${code}`)() as CompiledFn;
     compiledCache.set(strings, compiled);
   }
@@ -76,20 +75,16 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Docum
  *
  * @internal
  */
-export function getCompiledFactory(
-  strings: TemplateStringsArray,
-): CompiledFn {
+export function getCompiledFactory(strings: TemplateStringsArray): CompiledFn {
   let compiled = compiledCache.get(strings);
   if (!compiled) {
     const ast = parse(strings);
     const code = generate(ast);
-    // biome-ignore lint: eval is intentional
     compiled = new Function(`return ${code}`)() as CompiledFn;
     compiledCache.set(strings, compiled);
   }
   return compiled;
 }
-
 
 /** @internal */
 export { watch as _watch } from '../signals.js';

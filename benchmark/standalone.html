@@ -25,15 +25,15 @@
   <h1>Purity Benchmark</h1>
   <p class="sub">All operations use Purity state() + watch() — real framework test</p>
   <div class="ctrls">
-    <button onclick="benchOp('create 1k',()=>run(1000))">Create 1,000</button>
-    <button onclick="benchOp('create 10k',()=>run(10000))">Create 10,000</button>
-    <button onclick="benchOp('append 1k',add)">Append 1,000</button>
-    <button onclick="benchOp('update 10th',update)">Update 10th</button>
-    <button onclick="benchOp('swap',swapRows)">Swap</button>
-    <button onclick="benchOp('select',()=>selectedId(items()[Math.floor(items().length/2)]?.id||1))">Select</button>
-    <button onclick="benchOp('remove 1',()=>{const d=items();if(d.length)removeRow(d[0].id)})">Remove 1</button>
-    <button onclick="benchOp('clear',clearAll)" class="d">Clear</button>
-    <button onclick="runAll()">Run All</button>
+    <button type="button" onclick="benchOp('create 1k',()=>run(1000))">Create 1,000</button>
+    <button type="button" onclick="benchOp('create 10k',()=>run(10000))">Create 10,000</button>
+    <button type="button" onclick="benchOp('append 1k',add)">Append 1,000</button>
+    <button type="button" onclick="benchOp('update 10th',update)">Update 10th</button>
+    <button type="button" onclick="benchOp('swap',swapRows)">Swap</button>
+    <button type="button" onclick="benchOp('select',()=>selectedId(items()[Math.floor(items().length/2)]?.id||1))">Select</button>
+    <button type="button" onclick="benchOp('remove 1',()=>{const d=items();if(d.length)removeRow(d[0].id)})">Remove 1</button>
+    <button type="button" onclick="benchOp('clear',clearAll)" class="d">Clear</button>
+    <button type="button" onclick="runAll()">Run All</button>
   </div>
   <div id="res">Click "Run All" to benchmark.</div>
   <table><tbody id="tbody"></tbody></table>
@@ -73,10 +73,10 @@
     // Actions
     window.run=n=>{rowMap.clear();items(mkData(n));selectedId(0);};
     window.add=()=>items(d=>d.concat(mkData(1000)));
-    window.update=()=>items(d=>{const c=d.slice();for(let i=0;i<c.length;i+=10)c[i]={...c[i],label:c[i].label+' !!!'};return c;});
+    window.update=()=>items(d=>{const c=d.slice();for(let i=0;i<c.length;i+=10)c[i]={...c[i],label:`${c[i].label} !!!`};return c;});
     window.clearAll=()=>{rowMap.clear();items([]);selectedId(0);};
     window.swapRows=()=>items(d=>{if(d.length>998){const c=d.slice();const t=c[1];c[1]=c[998];c[998]=t;return c;}return d;});
-    window.removeRow=id=>{const r=rowMap.get(id);if(r&&r.tr.parentNode)r.tr.parentNode.removeChild(r.tr);rowMap.delete(id);items(d=>d.filter(x=>x.id!==id));};
+    window.removeRow=id=>{const r=rowMap.get(id);if(r?.tr.parentNode)r.tr.parentNode.removeChild(r.tr);rowMap.delete(id);items(d=>d.filter(x=>x.id!==id));};
 
     // Keyed reconciliation via watch()
     const tbody=document.getElementById('tbody');
@@ -94,7 +94,7 @@
       // Remove old
       for(let i=0;i<prevIds.length;i++){
         const id=prevIds[i];
-        if(!active.has(id)){const r=rowMap.get(id);if(r&&r.tr.parentNode)r.tr.parentNode.removeChild(r.tr);rowMap.delete(id);}
+        if(!active.has(id)){const r=rowMap.get(id);if(r?.tr.parentNode)r.tr.parentNode.removeChild(r.tr);rowMap.delete(id);}
       }
 
       // Check if order changed

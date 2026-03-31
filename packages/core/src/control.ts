@@ -1,5 +1,5 @@
-import { state, watch } from './signals.js';
 import type { StateAccessor } from './signals.js';
+import { watch } from './signals.js';
 
 // ---------------------------------------------------------------------------
 // match(sourceFn, cases, fallback?) — reactive pattern matching
@@ -56,7 +56,10 @@ export function match<T extends string | number | boolean>(
     }
 
     const viewFn = cases[key as `${T}`] ?? fallback;
-    if (!viewFn) { currentNodes = []; return; }
+    if (!viewFn) {
+      currentNodes = [];
+      return;
+    }
 
     const content = viewFn();
     if (content instanceof DocumentFragment) {
@@ -243,7 +246,10 @@ export function each<T>(
     if (len === prevLen) {
       let same = true;
       for (let i = 0; i < len; i++) {
-        if (prevKeys[i] !== getKey(list[i], i)) { same = false; break; }
+        if (prevKeys[i] !== getKey(list[i], i)) {
+          same = false;
+          break;
+        }
       }
       if (same) {
         // Keys match — update data signals in place (zero DOM creation)
@@ -306,7 +312,10 @@ export function each<T>(
       let isAppend = len > prevLen;
       if (isAppend) {
         for (let i = 0; i < prevLen; i++) {
-          if (prevKeys[i] !== newKeys[i]) { isAppend = false; break; }
+          if (prevKeys[i] !== newKeys[i]) {
+            isAppend = false;
+            break;
+          }
         }
       }
 
@@ -319,41 +328,41 @@ export function each<T>(
         }
         parent.insertBefore(frag, endMarker);
       } else {
-      // Full LIS-based reorder
-      const oldKeyIndex = new Map<unknown, number>();
-      for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
+        // Full LIS-based reorder
+        const oldKeyIndex = new Map<unknown, number>();
+        for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
 
-      const sources: number[] = [];
-      const newIndexToSource: number[] = new Array(len).fill(-1);
+        const sources: number[] = [];
+        const newIndexToSource: number[] = new Array(len).fill(-1);
 
-      for (let i = 0; i < len; i++) {
-        const oldIdx = oldKeyIndex.get(newKeys[i]);
-        if (oldIdx !== undefined) {
-          sources.push(oldIdx);
-          newIndexToSource[i] = sources.length - 1;
-        }
-      }
-
-      const lisIndices = new Set(lis(sources));
-
-      let nextSibling: Node = endMarker;
-      for (let i = len - 1; i >= 0; i--) {
-        const entry = newEntries.get(newKeys[i])!;
-        const firstNode = entry.nodes[0];
-        const sourceIdx = newIndexToSource[i];
-
-        if (sourceIdx === -1 || !lisIndices.has(sourceIdx)) {
-          if (entry.nodes.length > 1) {
-            const frag = document.createDocumentFragment();
-            for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
-            parent.insertBefore(frag, nextSibling);
-          } else if (firstNode) {
-            parent.insertBefore(firstNode, nextSibling);
+        for (let i = 0; i < len; i++) {
+          const oldIdx = oldKeyIndex.get(newKeys[i]);
+          if (oldIdx !== undefined) {
+            sources.push(oldIdx);
+            newIndexToSource[i] = sources.length - 1;
           }
         }
 
-        nextSibling = entry.nodes[0] || nextSibling;
-      }
+        const lisIndices = new Set(lis(sources));
+
+        let nextSibling: Node = endMarker;
+        for (let i = len - 1; i >= 0; i--) {
+          const entry = newEntries.get(newKeys[i])!;
+          const firstNode = entry.nodes[0];
+          const sourceIdx = newIndexToSource[i];
+
+          if (sourceIdx === -1 || !lisIndices.has(sourceIdx)) {
+            if (entry.nodes.length > 1) {
+              const frag = document.createDocumentFragment();
+              for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
+              parent.insertBefore(frag, nextSibling);
+            } else if (firstNode) {
+              parent.insertBefore(firstNode, nextSibling);
+            }
+          }
+
+          nextSibling = entry.nodes[0] || nextSibling;
+        }
       } // close isAppend else
     } else {
       // All new — insert in order
@@ -511,7 +520,10 @@ export function list<T>(
     if (len === prevLen) {
       let same = true;
       for (let i = 0; i < len; i++) {
-        if (prevKeys[i] !== getKey(list[i], i)) { same = false; break; }
+        if (prevKeys[i] !== getKey(list[i], i)) {
+          same = false;
+          break;
+        }
       }
       if (same) {
         for (let i = 0; i < len; i++) {
@@ -556,7 +568,10 @@ export function list<T>(
       let isAppend = len > prevLen;
       if (isAppend) {
         for (let i = 0; i < prevLen; i++) {
-          if (prevKeys[i] !== newKeys[i]) { isAppend = false; break; }
+          if (prevKeys[i] !== newKeys[i]) {
+            isAppend = false;
+            break;
+          }
         }
       }
 
@@ -573,7 +588,10 @@ export function list<T>(
         const srcMap: number[] = new Array(len).fill(-1);
         for (let i = 0; i < len; i++) {
           const oi = oldKeyIndex.get(newKeys[i]);
-          if (oi !== undefined) { sources.push(oi); srcMap[i] = sources.length - 1; }
+          if (oi !== undefined) {
+            sources.push(oi);
+            srcMap[i] = sources.length - 1;
+          }
         }
 
         const stableSet = new Set(lis(sources));

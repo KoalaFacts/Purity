@@ -3,8 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { StateAccessor } from '../src/index.ts';
-import { component, html, slot, state } from '../src/index.ts';
+import { component, html } from '../src/index.ts';
 
 describe('slot types', () => {
   it('compiles with correct types', () => {
@@ -19,7 +18,7 @@ const Tag = component<{ label: string }>('p-type-tag', ({ label }) => {
 Tag({ label: 'hi' });
 
 // 2. Default slot (IN)
-const Card = component<{ title: string }, { default: void }>(
+const Card = component<{ title: string }, { default: undefined }>(
   'p-type-card',
   ({ title }, { default: body }) => {
     return html`<div><h2>${title}</h2>${body()}</div>`;
@@ -28,9 +27,9 @@ const Card = component<{ title: string }, { default: void }>(
 Card({ title: 'Hi' }, html`<p>Body</p>`);
 
 // 3. Scoped slot (OUT)
-const Form = component<{ action: string }, { default: { isValid: boolean } }>(
+const _Form = component<{ action: string }, { default: { isValid: boolean } }>(
   'p-type-form',
-  ({ action }, { default: body }) => {
+  ({ action: _action }, { default: body }) => {
     return html`<form>${body({ isValid: true })}</form>`;
   },
 );
@@ -40,9 +39,9 @@ interface User {
   name: string;
 }
 
-const Layout = component<
+const _Layout = component<
   Record<string, never>,
-  { header: { user: User }; default: void; footer: void }
+  { header: { user: User }; default: undefined; footer: undefined }
 >('p-type-layout', (_props, { header, default: body, footer }) => {
   return html`
       <header>${header({ user: { name: 'Alice' } })}</header>

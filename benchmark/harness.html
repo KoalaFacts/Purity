@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Purity Bench Harness</title></head>
+<body>
+  <table><tbody id="tbody"></tbody></table>
+  <script type="module">
+    import { state, watch } from '../packages/core/src/index.ts';
+
+    function tick() { return new Promise(r => queueMicrotask(r)); }
+    async function flush() { await tick(); document.body.offsetHeight; }
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    const WARMUP = 2, ITERATIONS = 7, DISCARD = 1;
+
+    function calcStats(times) {
+      const sorted = [...times].sort((a, b) => a - b);
+      const trimmed = sorted.slice(0, sorted.length - DISCARD);
+      const n = trimmed.length;
+      const mean = trimmed.reduce((a, b) => a + b, 0) / n;
+      const median = n % 2 === 0 ? (trimmed[n/2-1]+trimmed[n/2])/2 : trimmed[Math.floor(n/2)];
+      const variance = trimmed.reduce((a, b) => a + (b - mean) ** 2, 0) / n;
+      return { mean, median, stddev: Math.sqrt(variance), min: trimmed[0], max: trimmed[n-1], n };
+    }
+
+    async function bench(setup, run, teardown) {
+      for (let i = 0; i < WARMUP; i++) {
+        if (setup) setup(); await flush();
+        run(); await flush();
+        if (teardown) teardown(); await flush();
+        await sleep(20);
+      }
+      const times = [];
+      for (let i = 0; i < ITERATIONS; i++) {
+        if (setup) setup(); await flush(); await sleep(5);
+        const t0 = performance.now();
+        run();
+        await flush();
+        times.push(performance.now() - t0);
+        if (teardown) teardown(); await flush();
+        await sleep(20);
+      }
+      return calcStats(times);
+    }
+
+    const adj=['pretty','large','big','small','tall','short','long','handsome','plain','quaint','clean','elegant','easy','angry','crazy','helpful','mushy','odd','unsightly','adorable','important','inexpensive','cheap','expensive','fancy'];
+    const col=['red','yellow','blue','green','pink','brown','purple','brown','white','black','orange'];
+    const nou=['table','chair','house','bbq','desk','car','pony','cookie','sandwich','burger','pizza','mouse','keyboard'];
+    let nid = 1;
+    const rnd = m => (Math.random()*m)|0;
+    const mkLabel = () => adj[rnd(adj.length)] + ' ' + col[rnd(col.length)] + ' ' + nou[rnd(nou.length)];
+    function mkData(n) { const d = new Array(n); for (let i=0;i<n;i++) d[i]={id:nid++,label:mkLabel()}; return d; }
+
+    const data = state([]);
+    const sel = state(0);
+    const rowMap = new Map();
+    const tbody = document.getElementById('tbody');
+    let prevIds = [];
+
+    function getOrCreate(item) {
+      let r = rowMap.get(item.id);
+      if (r) { if(r.l!==item.label){r.ln.data=item.label;r.l=item.label;} return r; }
+      const tr=document.createElement('tr');
+      const t1=document.createElement('td');t1.textContent=item.id;
+      const t2=document.createElement('td');const a=document.createElement('a');a.className='lbl';
+      const ln=document.createTextNode(item.label);a.appendChild(ln);t2.appendChild(a);
+      const t3=document.createElement('td');const a2=document.createElement('a');a2.className='remove';a2.textContent='x';t3.appendChild(a2);
+      const t4=document.createElement('td');
+      tr.appendChild(t1);tr.appendChild(t2);tr.appendChild(t3);tr.appendChild(t4);
+      r={tr,ln,l:item.label};rowMap.set(item.id,r);return r;
+    }
+
+    watch(() => {
+      const list = data(), s = sel();
+      if (!Array.isArray(list)) {
+        console.error('BUG: data() returned non-array:', typeof list, list);
+        return;
+      }
+      const len = list.length;
+      const newIds = new Array(len), active = new Set();
+      for (let i = 0; i < len; i++) {
+        const it = list[i]; newIds[i] = it.id; active.add(it.id);
+        const r = getOrCreate(it); r.tr.className = it.id === s ? 'danger' : '';
+      }
+      for (let i = 0; i < prevIds.length; i++) {
+        const id = prevIds[i];
+        if (!active.has(id)) {
+          const r = rowMap.get(id);
+          if (r) { if (r.tr.parentNode) r.tr.parentNode.removeChild(r.tr); rowMap.delete(id); }
+        }
+      }
+      let same = len === prevIds.length;
+      if (same) for (let i = 0; i < len; i++) if (prevIds[i] !== newIds[i]) { same = false; break; }
+      if (same) { prevIds = newIds; return; }
+      let isAppend = len > prevIds.length;
+      if (isAppend) for (let i = 0; i < prevIds.length; i++) if (prevIds[i] !== newIds[i]) { isAppend = false; break; }
+      if (isAppend && prevIds.length > 0) {
+        const f = document.createDocumentFragment();
+        for (let i = prevIds.length; i < len; i++) f.appendChild(rowMap.get(newIds[i]).tr);
+        tbody.appendChild(f);
+      } else {
+        const f = document.createDocumentFragment();
+        for (let i = 0; i < len; i++) f.appendChild(rowMap.get(newIds[i]).tr);
+        while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+        tbody.appendChild(f);
+      }
+      prevIds = newIds;
+    });
+
+    const ops = {
+      create1k:   () => { data(mkData(1000)); sel(0); },
+      create10k:  () => { data(mkData(10000)); sel(0); },
+      append1k:   () => data(d => d.concat(mkData(1000))),
+      update10th: () => data(d => { const c=d.slice(); for(let i=0;i<c.length;i+=10)c[i]={...c[i],label:c[i].label+' !!!'}; return c; }),
+      selectRow:  () => { const d=data(); if(d.length>0)sel(d[Math.floor(d.length/2)].id); },
+      swapRows:   () => data(d => { if(d.length>998){const c=d.slice();const t=c[1];c[1]=c[998];c[998]=t;return c;} return d; }),
+      removeRow:  () => { const d=data(); if(d.length>0){const id=d[0].id;data(dd=>dd.filter(x=>x.id!==id));} },
+      clearAll:   () => { data([]); sel(0); },
+    };
+    const clear    = () => { nid = 1; data([]); sel(0); };
+    const create1k = () => { nid = 1; data(mkData(1000)); sel(0); };
+
+    // Expose for orchestrator — NO auto-run
+    window.__ready = true;
+    window.__bench = bench;
+    window.__ops = ops;
+    window.__clear = clear;
+    window.__create1k = create1k;
+  </script>
+</body>
+</html>

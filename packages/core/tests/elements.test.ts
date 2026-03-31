@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { html } from '../src/compiler/compile.ts';
-import { mount, onDestroy, onMount } from '../src/component.ts';
+import { mount, onMount } from '../src/component.ts';
 import { component, slot, teleport } from '../src/elements.ts';
 import { compute, state } from '../src/signals.ts';
 

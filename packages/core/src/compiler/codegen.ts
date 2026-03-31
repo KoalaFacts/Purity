@@ -8,14 +8,7 @@
 // Dynamic: innerHTML with markers + cloneNode + positional path navigation
 // ---------------------------------------------------------------------------
 
-import type {
-  ASTNode,
-  AttributeNode,
-  ElementNode,
-  ExpressionNode,
-  FragmentNode,
-  TextNode,
-} from './ast.js';
+import type { ASTNode, AttributeNode, FragmentNode } from './ast.js';
 
 const SAFE_NAME = /^[a-zA-Z_][\w.-]*$/;
 function assertSafeName(name: string, kind: string): void {
@@ -23,8 +16,20 @@ function assertSafeName(name: string, kind: string): void {
 }
 
 const VOID = new Set([
-  'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
-  'link', 'meta', 'param', 'source', 'track', 'wbr',
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
 ]);
 
 // ---------------------------------------------------------------------------
@@ -56,7 +61,7 @@ export function generate(ast: FragmentNode): string {
   if (!hasDynamic(ast)) {
     const html = buildStaticHtml(ast);
     if (!html.trim()) return 'function(){return document.createDocumentFragment();}';
-    return `(function(){var _t=document.createElement('template');_t.innerHTML=${JSON.stringify(html)};return function(){return _t.content.cloneNode(true);};})()`
+    return `(function(){var _t=document.createElement('template');_t.innerHTML=${JSON.stringify(html)};return function(){return _t.content.cloneNode(true);};})()`;
   }
 
   // Fast path: simple template (1 element with only text/expression children)
@@ -145,23 +150,35 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
         lines.push(`_e.addEventListener('${a.name}',${val});`);
         break;
       case 'dynamic':
-        lines.push(`if(typeof ${val}==='function')_w(function(){var v=${val}();if(v==null||v===false)_e.removeAttribute('${a.name}');else _e.setAttribute('${a.name}',String(v));});else if(${val}!=null&&${val}!==false)_e.setAttribute('${a.name}',String(${val}));`);
+        lines.push(
+          `if(typeof ${val}==='function')_w(function(){var v=${val}();if(v==null||v===false)_e.removeAttribute('${a.name}');else _e.setAttribute('${a.name}',String(v));});else if(${val}!=null&&${val}!==false)_e.setAttribute('${a.name}',String(${val}));`,
+        );
         break;
       case 'bool':
-        lines.push(`if(typeof ${val}==='function')_w(function(){if(${val}())_e.setAttribute('${a.name}','');else _e.removeAttribute('${a.name}');});else if(${val})_e.setAttribute('${a.name}','');`);
+        lines.push(
+          `if(typeof ${val}==='function')_w(function(){if(${val}())_e.setAttribute('${a.name}','');else _e.removeAttribute('${a.name}');});else if(${val})_e.setAttribute('${a.name}','');`,
+        );
         break;
       case 'prop':
-        lines.push(`if(typeof ${val}==='function')_w(function(){_e.${a.name}=${val}();});else _e.${a.name}=${val};`);
+        lines.push(
+          `if(typeof ${val}==='function')_w(function(){_e.${a.name}=${val}();});else _e.${a.name}=${val};`,
+        );
         break;
       case 'reactive-prop':
-        lines.push(`if(typeof ${val}==='function')_w(function(){_e['${a.name}']=${val}();});else _e['${a.name}']=${val};`);
+        lines.push(
+          `if(typeof ${val}==='function')_w(function(){_e['${a.name}']=${val}();});else _e['${a.name}']=${val};`,
+        );
         break;
       case 'bind': {
         const evt = a.name === 'checked' || a.name === 'group' ? 'change' : 'input';
         if (a.name === 'group') {
-          lines.push(`if(typeof ${val}==='function'){if(_e.type==='radio'){_w(function(){_e.checked=${val}()===_e.value;});_e.addEventListener('change',function(){if(_e.checked)${val}(_e.value);});}else{_w(function(){_e.checked=${val}().includes(_e.value);});_e.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(_e.value);if(_e.checked){if(i===-1)a.push(_e.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`);
+          lines.push(
+            `if(typeof ${val}==='function'){if(_e.type==='radio'){_w(function(){_e.checked=${val}()===_e.value;});_e.addEventListener('change',function(){if(_e.checked)${val}(_e.value);});}else{_w(function(){_e.checked=${val}().includes(_e.value);});_e.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(_e.value);if(_e.checked){if(i===-1)a.push(_e.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
+          );
         } else {
-          lines.push(`if(typeof ${val}==='function'){_w(function(){_e['${a.name}']=${val}();});_e.addEventListener('${evt}',function(){${val}(${a.name === 'checked' ? '_e.checked' : `_e['${a.name}']`});});}`);
+          lines.push(
+            `if(typeof ${val}==='function'){_w(function(){_e['${a.name}']=${val}();});_e.addEventListener('${evt}',function(){${val}(${a.name === 'checked' ? '_e.checked' : `_e['${a.name}']`});});}`,
+          );
         }
         break;
       }
@@ -211,8 +228,10 @@ function hasDynamic(node: ASTNode): boolean {
 
 function buildStaticHtml(node: ASTNode): string {
   switch (node.type) {
-    case 'text': return node.value;
-    case 'comment': return `<!--${node.value}-->`;
+    case 'text':
+      return node.value;
+    case 'comment':
+      return `<!--${node.value}-->`;
     case 'element': {
       assertSafeName(node.tag, 'tag');
       let s = `<${node.tag}`;
@@ -224,8 +243,10 @@ function buildStaticHtml(node: ASTNode): string {
       for (const ch of node.children) s += buildStaticHtml(ch);
       return `${s}</${node.tag}>`;
     }
-    case 'fragment': return node.children.map(buildStaticHtml).join('');
-    default: return '';
+    case 'fragment':
+      return node.children.map(buildStaticHtml).join('');
+    default:
+      return '';
   }
 }
 
@@ -272,9 +293,10 @@ function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[])
 
       // Children: first child gets path + [0 (firstChild)], siblings get [1 (nextSibling)]
       for (let i = 0; i < node.children.length; i++) {
-        const childPath = i === 0
-          ? [...currentPath, 0 as PathStep] // firstChild
-          : [...currentPath, 1 as PathStep]; // nextSibling (from previous)
+        const _childPath =
+          i === 0
+            ? [...currentPath, 0 as PathStep] // firstChild
+            : [...currentPath, 1 as PathStep]; // nextSibling (from previous)
 
         // For siblings after first, we need to track relative to previous sibling
         // Actually, we track from the PARENT: firstChild then nextSibling chain

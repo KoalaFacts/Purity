@@ -1,11 +1,12 @@
 // ---------------------------------------------------------------------------
 // Purity Compiler — Code Generator
 //
-// Two strategies:
-// 1. Static templates: innerHTML + cloneNode (fastest for no-binding templates)
-// 2. Dynamic templates: direct createElement/createTextNode (no TreeWalker overhead)
+// ALL templates use cloneNode — one C++ call creates the entire DOM tree.
 //
-// Tighter output than before — minimal variable names, fewer lines.
+// Static: innerHTML + cloneNode(true) — zero JS per render
+// Dynamic: innerHTML with markers + cloneNode(true) + walk markers to bind
+//
+// This matches Solid/Lit: clone is 5-10x faster than N createElement calls.
 // ---------------------------------------------------------------------------
 
 import type {
@@ -28,45 +29,41 @@ const VOID = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
-
-interface Ctx {
-  code: string[];
-  n: number; // variable counter
-}
-
-function ctx(): Ctx { return { code: [], n: 0 }; }
-function v(c: Ctx, p: string): string { return `_${p}${c.n++}`; }
-function out(c: Ctx, s: string): void { c.code.push(s); }
-
-// ---------------------------------------------------------------------------
-// generate(ast) — entry point
+// generate(ast) — ALWAYS cloneNode, even for dynamic templates
 // ---------------------------------------------------------------------------
 
 export function generate(ast: FragmentNode): string {
   if (!hasDynamic(ast)) {
-    // Pure static — cloneNode approach (template created once in closure)
-    const html = staticHtml(ast);
+    const html = buildHtml(ast, null);
     if (!html.trim()) return 'function(){return document.createDocumentFragment();}';
-    return `(function(){var _t=document.createElement('template');_t.innerHTML=${JSON.stringify(html)};return function(){return _t.content.cloneNode(true);};})()`
+    return [
+      '(function(){',
+      `var _t=document.createElement('template');`,
+      `_t.innerHTML=${JSON.stringify(html)};`,
+      'return function(){return _t.content.cloneNode(true);};',
+      '})()',
+    ].join('');
   }
 
-  // Dynamic — direct DOM creation (no innerHTML overhead)
-  const c = ctx();
-  if (ast.children.length === 1) {
-    const r = genNode(c, ast.children[0]);
-    out(c, `return ${r};`);
-  } else {
-    const f = v(c, 'f');
-    out(c, `var ${f}=document.createDocumentFragment();`);
-    for (const child of ast.children) {
-      out(c, `${f}.appendChild(${genNode(c, child)});`);
-    }
-    out(c, `return ${f};`);
-  }
+  // Dynamic: build HTML with comment markers + data-p attrs
+  // Template created ONCE in outer closure, cloned per call
+  const markers: MarkerBinding[] = [];
+  const html = buildHtml(ast, markers);
 
-  return `function(_v,_w){${c.code.join('')}}`;
+  // Generate binding code that walks the cloned DOM
+  const bindCode = genBindings(markers);
+
+  return [
+    '(function(){',
+    `var _t=document.createElement('template');`,
+    `_t.innerHTML=${JSON.stringify(html)};`,
+    'return function(_v,_w){',
+    'var _r=_t.content.cloneNode(true);',
+    bindCode,
+    'return _r;',
+    '};',
+    '})()',
+  ].join('');
 }
 
 export function generateModule(ast: FragmentNode): string {
@@ -74,7 +71,25 @@ export function generateModule(ast: FragmentNode): string {
 }
 
 // ---------------------------------------------------------------------------
-// Static check
+// Types for marker-based binding
+// ---------------------------------------------------------------------------
+
+interface MarkerBinding {
+  type: 'expr';
+  marker: string; // comment marker name
+  index: number;  // expression index
+}
+
+interface AttrMarkerBinding {
+  type: 'attr';
+  markerId: number;
+  attrs: AttributeNode[];
+}
+
+type Binding = MarkerBinding | AttrMarkerBinding;
+
+// ---------------------------------------------------------------------------
+// hasDynamic
 // ---------------------------------------------------------------------------
 
 function hasDynamic(node: ASTNode): boolean {
@@ -88,130 +103,165 @@ function hasDynamic(node: ASTNode): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Static HTML builder (for cloneNode path)
+// buildHtml — build HTML string, inserting markers for dynamic parts
+// If markers is null, build pure static HTML.
 // ---------------------------------------------------------------------------
 
-function staticHtml(node: ASTNode): string {
+let markerCounter = 0;
+
+function buildHtml(node: ASTNode, markers: Binding[] | null): string {
   switch (node.type) {
-    case 'text': return node.value;
-    case 'comment': return `<!--${node.value}-->`;
+    case 'text':
+      return node.value;
+
+    case 'comment':
+      return `<!--${node.value}-->`;
+
+    case 'expression': {
+      if (!markers) return '';
+      const marker = `p${markerCounter++}`;
+      markers.push({ type: 'expr', marker, index: node.index });
+      return `<!--${marker}-->`;
+    }
+
     case 'element': {
       assertSafeName(node.tag, 'tag');
       let s = `<${node.tag}`;
+
+      const dynamicAttrs: AttributeNode[] = [];
+
       for (const a of node.attributes) {
-        if (a.kind === 'static') s += a.value ? ` ${a.name}="${a.value}"` : ` ${a.name}`;
+        if (a.kind === 'static') {
+          s += a.value ? ` ${a.name}="${a.value}"` : ` ${a.name}`;
+        } else {
+          dynamicAttrs.push(a);
+        }
       }
+
+      if (dynamicAttrs.length > 0 && markers) {
+        const id = markerCounter++;
+        s += ` data-p="${id}"`;
+        markers.push({ type: 'attr', markerId: id, attrs: dynamicAttrs });
+      }
+
       if (VOID.has(node.tag)) return `${s}/>`;
       s += '>';
-      for (const ch of node.children) s += staticHtml(ch);
+      for (const ch of node.children) s += buildHtml(ch, markers);
       return `${s}</${node.tag}>`;
     }
-    case 'fragment': return node.children.map(staticHtml).join('');
-    default: return '';
+
+    case 'fragment':
+      return node.children.map((ch) => buildHtml(ch, markers)).join('');
+
+    default:
+      return '';
   }
 }
 
 // ---------------------------------------------------------------------------
-// Dynamic DOM node generators — tighter output, shorter var names
+// genBindings — generate JS code to wire up dynamic parts on a clone
+// Uses querySelector for attr bindings, TreeWalker for comment markers
 // ---------------------------------------------------------------------------
 
-function genNode(c: Ctx, node: ASTNode): string {
-  switch (node.type) {
-    case 'element': return genEl(c, node);
-    case 'text': return genTxt(c, node);
-    case 'expression': return genExpr(c, node);
-    case 'comment': { const x = v(c, 'c'); out(c, `var ${x}=document.createComment(${JSON.stringify(node.value)});`); return x; }
-    case 'fragment': { const x = v(c, 'f'); out(c, `var ${x}=document.createDocumentFragment();`); for (const ch of node.children) out(c, `${x}.appendChild(${genNode(c, ch)});`); return x; }
-  }
-}
+function genBindings(markers: Binding[]): string {
+  const lines: string[] = [];
 
-function genEl(c: Ctx, node: ElementNode): string {
-  assertSafeName(node.tag, 'tag');
-  const e = v(c, 'e');
-  out(c, `var ${e}=document.createElement('${node.tag}');`);
+  // Collect all expression markers (need TreeWalker)
+  const exprMarkers = markers.filter((m) => m.type === 'expr') as MarkerBinding[];
+  const attrMarkers = markers.filter((m) => m.type === 'attr') as AttrMarkerBinding[];
 
-  // Static attrs inline, collect bind attrs for after children
-  const bindAttrs: AttributeNode[] = [];
-  for (const a of node.attributes) {
-    if (a.kind === 'bind') { bindAttrs.push(a); continue; }
-    genAttr(c, e, a);
-  }
-
-  for (const ch of node.children) out(c, `${e}.appendChild(${genNode(c, ch)});`);
-  for (const a of bindAttrs) genAttr(c, e, a);
-
-  return e;
-}
-
-function genTxt(c: Ctx, node: TextNode): string {
-  const t = v(c, 't');
-  out(c, `var ${t}=document.createTextNode(${JSON.stringify(node.value)});`);
-  return t;
-}
-
-function genExpr(c: Ctx, node: ExpressionNode): string {
-  const x = v(c, 'x');
-  const val = `_v[${node.index}]`;
-
-  out(c, `var ${x}=${val},${x}n;`);
-  out(c, `if(typeof ${x}==='function'){${x}n=document.createTextNode('');_w(function(){var r=${x}();if(r instanceof Node){${x}n.replaceWith(r);${x}n=r;}else{if(${x}n.nodeType!==3){var t=document.createTextNode('');${x}n.replaceWith(t);${x}n=t;}${x}n.data=r==null?'':String(r);}});}`);
-  out(c, `else if(${x} instanceof DocumentFragment)${x}n=${x};`);
-  out(c, `else if(${x} instanceof Node)${x}n=${x};`);
-  out(c, `else if(Array.isArray(${x})){${x}n=document.createDocumentFragment();for(var _i=0;_i<${x}.length;_i++)${x}n.appendChild(${x}[_i] instanceof Node?${x}[_i]:document.createTextNode(String(${x}[_i])));}`);
-  out(c, `else ${x}n=document.createTextNode(${x}==null||${x}===false?'':String(${x}));`);
-
-  return `${x}n`;
-}
-
-// ---------------------------------------------------------------------------
-// Attribute generators — tight output
-// ---------------------------------------------------------------------------
-
-function genAttr(c: Ctx, el: string, attr: AttributeNode): void {
-  if (attr.kind === 'static') {
-    const n = attr.name;
-    if (n === 'id' || n === 'class') {
-      out(c, `${el}.${n === 'class' ? 'className' : n}=${JSON.stringify(attr.value)};`);
-    } else {
-      out(c, `${el}.setAttribute('${n}',${JSON.stringify(attr.value || '')});`);
+  // Expression markers: collect all comments first, then process
+  // (replaceWith invalidates TreeWalker position — must not modify during walk)
+  if (exprMarkers.length > 0) {
+    lines.push('var _w2=document.createTreeWalker(_r,128,null),_cm,_cms=[];');
+    lines.push('while(_cm=_w2.nextNode())_cms.push(_cm);');
+    lines.push('for(var _ci=0;_ci<_cms.length;_ci++){var _c=_cms[_ci];');
+    lines.push('switch(_c.data){');
+    for (const m of exprMarkers) {
+      lines.push(`case ${JSON.stringify(m.marker)}:{`);
+      lines.push(genExprBinding(m));
+      lines.push('break;}');
     }
-    return;
+    lines.push('}}');
   }
+
+  // Attribute markers: querySelector for each
+  for (const m of attrMarkers) {
+    const el = `_e${m.markerId}`;
+    lines.push(`var ${el}=_r.querySelector('[data-p="${m.markerId}"]');${el}.removeAttribute('data-p');`);
+    for (const attr of m.attrs) {
+      lines.push(genAttrBinding(el, attr));
+    }
+  }
+
+  return lines.join('');
+}
+
+// ---------------------------------------------------------------------------
+// Expression binding — replace comment with dynamic content
+// ---------------------------------------------------------------------------
+
+let bindVarCounter = 0;
+
+function genExprBinding(m: MarkerBinding): string {
+  const val = `_v[${m.index}]`;
+  const id = bindVarCounter++;
+  const xv = `_xv${id}`;
+  const tn = `_tn${id}`;
+
+  const lines: string[] = [];
+  lines.push(`var ${xv}=${val};`);
+  lines.push(`if(typeof ${xv}==='function'){`);
+  lines.push(`var ${tn}=document.createTextNode('');_c.replaceWith(${tn});`);
+  lines.push(`_w(function(){var r=${xv}();if(r instanceof Node){${tn}.replaceWith(r);${tn}=r;}else{if(${tn}.nodeType!==3){var t=document.createTextNode('');${tn}.replaceWith(t);${tn}=t;}${tn}.data=r==null?'':String(r);}});`);
+  lines.push(`}else if(${xv} instanceof DocumentFragment||${xv} instanceof Node){_c.replaceWith(${xv});}`);
+  lines.push(`else if(Array.isArray(${xv})){var _f${id}=document.createDocumentFragment();for(var _i${id}=0;_i${id}<${xv}.length;_i${id}++)_f${id}.appendChild(${xv}[_i${id}] instanceof Node?${xv}[_i${id}]:document.createTextNode(String(${xv}[_i${id}])));_c.replaceWith(_f${id});}`);
+  lines.push(`else{_c.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`);
+
+  return lines.join('');
+}
+
+// ---------------------------------------------------------------------------
+// Attribute binding
+// ---------------------------------------------------------------------------
+
+function genAttrBinding(el: string, attr: AttributeNode): string {
+  if (attr.kind === 'static') return '';
+  assertSafeName(attr.name, 'attribute');
 
   const val = `_v[${attr.index}]`;
 
   switch (attr.kind) {
     case 'event':
-      out(c, `${el}.addEventListener('${attr.name}',${val});`);
-      break;
+      return `${el}.addEventListener('${attr.name}',${val});`;
 
     case 'dynamic':
-      out(c, `if(typeof ${val}==='function')_w(function(){var v=${val}();if(v==null||v===false)${el}.removeAttribute('${attr.name}');else ${el}.setAttribute('${attr.name}',String(v));});`);
-      out(c, `else if(${val}!=null&&${val}!==false)${el}.setAttribute('${attr.name}',String(${val}));`);
-      break;
+      return `if(typeof ${val}==='function')_w(function(){var v=${val}();if(v==null||v===false)${el}.removeAttribute('${attr.name}');else ${el}.setAttribute('${attr.name}',String(v));});else if(${val}!=null&&${val}!==false)${el}.setAttribute('${attr.name}',String(${val}));`;
 
     case 'bool':
-      out(c, `if(typeof ${val}==='function')_w(function(){if(${val}())${el}.setAttribute('${attr.name}','');else ${el}.removeAttribute('${attr.name}');});`);
-      out(c, `else if(${val})${el}.setAttribute('${attr.name}','');`);
-      break;
+      return `if(typeof ${val}==='function')_w(function(){if(${val}())${el}.setAttribute('${attr.name}','');else ${el}.removeAttribute('${attr.name}');});else if(${val})${el}.setAttribute('${attr.name}','');`;
 
-    case 'prop':
-      out(c, `if(typeof ${val}==='function')_w(function(){${el}.${attr.name}=${val}();});else ${el}.${attr.name}=${val};`);
-      break;
+    case 'prop': {
+      const n = attr.name;
+      return `if(typeof ${val}==='function')_w(function(){${el}.${n}=${val}();});else ${el}.${n}=${val};`;
+    }
 
     case 'reactive-prop':
-      out(c, `if(typeof ${val}==='function')_w(function(){${el}['${attr.name}']=${val}();});else ${el}['${attr.name}']=${val};`);
-      break;
+      return `if(typeof ${val}==='function')_w(function(){${el}['${attr.name}']=${val}();});else ${el}['${attr.name}']=${val};`;
 
     case 'bind': {
       const evt = attr.name === 'checked' || attr.name === 'group' ? 'change' : 'input';
       if (attr.name === 'group') {
-        out(c, `if(typeof ${val}==='function'){if(${el}.type==='radio'){_w(function(){${el}.checked=${val}()===${el}.value;});${el}.addEventListener('change',function(){if(${el}.checked)${val}(${el}.value);});}`);
-        out(c, `else{_w(function(){${el}.checked=${val}().includes(${el}.value);});${el}.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(${el}.value);if(${el}.checked){if(i===-1)a.push(${el}.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`);
-      } else {
-        out(c, `if(typeof ${val}==='function'){_w(function(){${el}['${attr.name}']=${val}();});${el}.addEventListener('${evt}',function(){${val}(${attr.name === 'checked' ? `${el}.checked` : `${el}['${attr.name}']`});});}`);
+        return [
+          `if(typeof ${val}==='function'){`,
+          `if(${el}.type==='radio'){_w(function(){${el}.checked=${val}()===${el}.value;});${el}.addEventListener('change',function(){if(${el}.checked)${val}(${el}.value);});}`,
+          `else{_w(function(){${el}.checked=${val}().includes(${el}.value);});${el}.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(${el}.value);if(${el}.checked){if(i===-1)a.push(${el}.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
+        ].join('');
       }
-      break;
+      return `if(typeof ${val}==='function'){_w(function(){${el}['${attr.name}']=${val}();});${el}.addEventListener('${evt}',function(){${val}(${attr.name === 'checked' ? `${el}.checked` : `${el}['${attr.name}']`});});}`;
     }
+
+    default:
+      return '';
   }
 }

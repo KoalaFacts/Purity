@@ -69,6 +69,8 @@ function createConsumerBag(registry: SlotRegistry): Record<string, ConsumerSlot>
 
 function resolveContent(content: unknown): Node | null {
   if (content == null) return null;
+  // Clone DocumentFragments — they empty on appendChild, breaks multi-pass rendering
+  if (content instanceof DocumentFragment) return content.cloneNode(true) as DocumentFragment;
   if (content instanceof Node) return content;
   if (typeof content === 'string') return document.createTextNode(content);
   return null;

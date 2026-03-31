@@ -15,7 +15,7 @@
   },
   "files": ["dist"],
   "scripts": {
-    "build": "rollup -c",
+    "build": "vite build && tsc --emitDeclarationOnly",
     "test": "vitest run"
   },
   "keywords": ["purity", "vite", "plugin", "aot", "compiler"],

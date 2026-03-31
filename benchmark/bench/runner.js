@@ -36,6 +36,23 @@ function formatStats(s) {
 }
 
 // ---------------------------------------------------------------------------
+// Microtask + layout flush
+//
+// Purity effects are microtask-scheduled (queueMicrotask in the Watcher).
+// We must await a microtask to let watch() callbacks fire, THEN force a
+// synchronous layout so the browser actually paints the DOM changes.
+// ---------------------------------------------------------------------------
+
+function tick() {
+  return new Promise(r => queueMicrotask(r));
+}
+
+async function flushAndLayout() {
+  await tick();            // let Purity watch() effects run
+  document.body.offsetHeight; // force synchronous layout/reflow
+}
+
+// ---------------------------------------------------------------------------
 // Benchmark harness
 // ---------------------------------------------------------------------------
 
@@ -45,35 +62,33 @@ async function benchmarkOp(name, setup, run, teardown) {
   // Warmup
   for (let i = 0; i < WARMUP; i++) {
     if (setup) setup();
-    forceLayout();
+    await flushAndLayout();
     run();
-    forceLayout();
+    await flushAndLayout();
     if (teardown) teardown();
+    await flushAndLayout();
     await sleep(50);
   }
 
   // Measured iterations
   for (let i = 0; i < ITERATIONS; i++) {
     if (setup) setup();
-    forceLayout();
+    await flushAndLayout();
     await sleep(10);
 
     const start = performance.now();
     run();
-    forceLayout();
+    await flushAndLayout();   // includes microtask flush + layout
     const elapsed = performance.now() - start;
 
     times.push(elapsed);
     if (teardown) teardown();
+    await flushAndLayout();
     await sleep(50);
   }
 
   const s = stats(times);
   return { name, stats: s, raw: times };
-}
-
-function forceLayout() {
-  document.body.offsetHeight;
 }
 
 function sleep(ms) {
@@ -88,4 +103,5 @@ window.WARMUP = WARMUP;
 window.ITERATIONS = ITERATIONS;
 window.benchmarkOp = benchmarkOp;
 window.formatStats = formatStats;
+window.flushAndLayout = flushAndLayout;
 window.sleep = sleep;

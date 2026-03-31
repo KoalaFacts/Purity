@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Purity Benchmark — Standalone</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; padding: 1rem; background: #f5f5f5; }
+    h1 { color: #6c5ce7; margin-bottom: 1rem; }
+    .controls { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+    button { padding: 0.5rem 1rem; border: none; border-radius: 6px; background: #6c5ce7; color: white; cursor: pointer; font-size: 0.9rem; }
+    button:hover { background: #5a4bd1; }
+    button.danger { background: #e17055; }
+    #results { background: white; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; font-family: monospace; white-space: pre-wrap; line-height: 1.6; min-height: 200px; }
+    table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
+    td { padding: 0.4rem 0.8rem; border-bottom: 1px solid #eee; }
+    tr.danger td { background: #ffe0d6; }
+    .remove { cursor: pointer; color: #e17055; }
+    .lbl { cursor: pointer; color: #333; text-decoration: none; }
+    .lbl:hover { text-decoration: underline; }
+    .col-md-1 { width: 8%; }
+    .col-md-4 { width: 40%; }
+    .col-md-6 { width: 44%; }
+  </style>
+</head>
+<body>
+  <h1>Purity Benchmark</h1>
+
+  <div class="controls">
+    <button onclick="bench('create1k', () => run(1000))">Create 1,000</button>
+    <button onclick="bench('create10k', () => run(10000))">Create 10,000</button>
+    <button onclick="bench('append1k', add)">Append 1,000</button>
+    <button onclick="bench('update10th', update)">Update every 10th</button>
+    <button onclick="bench('swap', swapRows)">Swap Rows</button>
+    <button onclick="bench('clear', clear)" class="danger">Clear</button>
+    <button onclick="runAll()">Run All Benchmarks</button>
+  </div>
+
+  <div id="results">Click a button or "Run All Benchmarks" to start.</div>
+
+  <table>
+    <tbody id="tbody"></tbody>
+  </table>
+
+  <script>
+    // === Benchmark Harness ===
+    const resultsEl = document.getElementById('results');
+    const allResults = {};
+
+    function bench(name, fn) {
+      // Force layout before measuring
+      document.body.offsetHeight;
+
+      const start = performance.now();
+      fn();
+      // Force layout after to include paint cost
+      document.body.offsetHeight;
+      const elapsed = performance.now() - start;
+
+      allResults[name] = elapsed;
+      log(`${name}: ${elapsed.toFixed(2)}ms`);
+      return elapsed;
+    }
+
+    function log(msg) {
+      resultsEl.textContent += msg + '\n';
+    }
+
+    async function runAll() {
+      resultsEl.textContent = 'Running benchmarks...\n\n';
+
+      // Create 1000
+      bench('create 1,000 rows', () => run(1000));
+      await sleep(100);
+
+      // Update every 10th
+      bench('update every 10th (×5)', () => {
+        for (let i = 0; i < 5; i++) update();
+      });
+      await sleep(100);
+
+      // Swap rows
+      bench('swap rows (×5)', () => {
+        for (let i = 0; i < 5; i++) swapRows();
+      });
+      await sleep(100);
+
+      // Select row
+      bench('select row', () => select(data[0]?.id || 1));
+      await sleep(100);
+
+      // Delete row
+      bench('delete row', () => remove(data[0]?.id || 1));
+      await sleep(100);
+
+      // Clear
+      bench('clear 1,000', clear);
+      await sleep(100);
+
+      // Create 10000
+      bench('create 10,000 rows', () => run(10000));
+      await sleep(100);
+
+      // Clear 10000
+      bench('clear 10,000', clear);
+      await sleep(100);
+
+      // Create 1000 again for append test
+      run(1000);
+      await sleep(100);
+      bench('append 1,000 to 1,000', add);
+      await sleep(100);
+
+      // Clear
+      bench('final clear', clear);
+
+      log('\n=== Summary ===');
+      for (const [k, v] of Object.entries(allResults)) {
+        log(`  ${k.padEnd(30)} ${v.toFixed(2)}ms`);
+      }
+
+      log('\n=== Comparison Reference ===');
+      log('  Solid (typical):');
+      log('    create 1,000:    ~20-50ms');
+      log('    update 10th:     ~10-30ms');
+      log('    swap:            ~5-15ms');
+      log('    clear:           ~5-20ms');
+      log('    create 10,000:   ~200-500ms');
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // === Application Code (same as Main.js) ===
+
+    const adjectives = ['pretty','large','big','small','tall','short','long','handsome','plain','quaint','clean','elegant','easy','angry','crazy','helpful','mushy','odd','unsightly','adorable','important','inexpensive','cheap','expensive','fancy'];
+    const colours = ['red','yellow','blue','green','pink','brown','purple','brown','white','black','orange'];
+    const nouns = ['table','chair','house','bbq','desk','car','pony','cookie','sandwich','burger','pizza','mouse','keyboard'];
+
+    let nextId = 1;
+    const random = (max) => (Math.random() * max) | 0;
+    const buildLabel = () => `${adjectives[random(adjectives.length)]} ${colours[random(colours.length)]} ${nouns[random(nouns.length)]}`;
+
+    function buildData(count) {
+      const d = new Array(count);
+      for (let i = 0; i < count; i++) d[i] = { id: nextId++, label: buildLabel() };
+      return d;
+    }
+
+    let data = [];
+    let selectedId = 0;
+    const tbody = document.getElementById('tbody');
+    const rowPool = [];
+
+    function createRow(item) {
+      if (rowPool.length > 0) {
+        const row = rowPool.pop();
+        row.id = item.id;
+        row._label.data = item.label;
+        row._td1.textContent = item.id;
+        row.className = selectedId === item.id ? 'danger' : '';
+        return row;
+      }
+      const tr = document.createElement('tr');
+      tr.id = item.id;
+      const td1 = document.createElement('td'); td1.className = 'col-md-1'; td1.textContent = item.id;
+      const td2 = document.createElement('td'); td2.className = 'col-md-4';
+      const a = document.createElement('a'); a.className = 'lbl';
+      const label = document.createTextNode(item.label);
+      a.appendChild(label); td2.appendChild(a);
+      const td3 = document.createElement('td'); td3.className = 'col-md-1';
+      const a2 = document.createElement('a'); a2.className = 'remove';
+      const span = document.createElement('span'); span.className = 'remove glyphicon glyphicon-remove'; span.setAttribute('aria-hidden','true');
+      a2.appendChild(span); td3.appendChild(a2);
+      const td4 = document.createElement('td'); td4.className = 'col-md-6';
+      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
+      tr._label = label; tr._a = a; tr._td1 = td1;
+      return tr;
+    }
+
+    function poolRow(tr) { tr.className = ''; if (rowPool.length < 500) rowPool.push(tr); }
+
+    function run(count) {
+      data = buildData(count); selectedId = 0;
+      while (tbody.firstChild) { poolRow(tbody.firstChild); tbody.removeChild(tbody.firstChild); }
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < data.length; i++) frag.appendChild(createRow(data[i]));
+      tbody.appendChild(frag);
+    }
+
+    function add() {
+      const nd = buildData(1000); data = data.concat(nd);
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < nd.length; i++) frag.appendChild(createRow(nd[i]));
+      tbody.appendChild(frag);
+    }
+
+    function update() {
+      for (let i = 0; i < data.length; i += 10) {
+        data[i].label += ' !!!';
+        const tr = tbody.childNodes[i]; if (tr) tr._label.data = data[i].label;
+      }
+    }
+
+    function clear() {
+      data = []; selectedId = 0;
+      while (tbody.firstChild) { poolRow(tbody.firstChild); tbody.removeChild(tbody.firstChild); }
+    }
+
+    function swapRows() {
+      if (data.length > 998) {
+        const tmp = data[1]; data[1] = data[998]; data[998] = tmp;
+        tbody.insertBefore(tbody.childNodes[998], tbody.childNodes[1]);
+        tbody.insertBefore(tbody.childNodes[2], tbody.childNodes[999]);
+      }
+    }
+
+    function remove(id) {
+      const idx = data.findIndex(d => d.id === id);
+      if (idx !== -1) { data.splice(idx, 1); const tr = tbody.childNodes[idx]; if (tr) { tbody.removeChild(tr); poolRow(tr); } }
+    }
+
+    function select(id) {
+      if (selectedId > 0) { const p = document.getElementById(selectedId); if (p) p.className = ''; }
+      selectedId = id;
+      const r = document.getElementById(id); if (r) r.className = 'danger';
+    }
+
+    tbody.addEventListener('click', (e) => {
+      const a = e.target.closest('a'); if (!a) return; e.preventDefault();
+      if (a.classList.contains('lbl')) select(+a.closest('tr').id);
+      else if (a.classList.contains('remove')) remove(+a.closest('tr').id);
+    });
+  </script>
+</body>
+</html>

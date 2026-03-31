@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Purity Benchmark Suite</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,sans-serif;padding:1.5rem;background:#f5f5f5;max-width:1200px;margin:0 auto}
+    h1{color:#6c5ce7;margin-bottom:.25rem}
+    .sub{color:#888;margin-bottom:1.5rem;font-size:.85rem}
+    button{padding:.6rem 1.2rem;border:none;border-radius:6px;background:#6c5ce7;color:white;cursor:pointer;font-size:1rem;margin-bottom:1rem}
+    button:hover{background:#5a4bd1}
+    button:disabled{background:#ccc;cursor:not-allowed}
+    #status{background:white;border-radius:8px;padding:1rem;margin-bottom:1rem;font-family:monospace;font-size:.85rem;white-space:pre-wrap;line-height:1.5;min-height:100px}
+    table.results{width:100%;border-collapse:collapse;background:white;border-radius:8px;overflow:hidden;margin-bottom:1rem}
+    table.results th{background:#6c5ce7;color:white;padding:.6rem;text-align:left;font-size:.85rem}
+    table.results td{padding:.5rem .6rem;border-bottom:1px solid #eee;font-size:.85rem;font-family:monospace}
+    table.results tr:hover td{background:#f8f8ff}
+    .good{color:#27ae60;font-weight:bold}
+    .ok{color:#f39c12}
+    .slow{color:#e74c3c}
+    #app{display:none}
+    table.bench-data{width:100%;border-collapse:collapse}
+    table.bench-data td{padding:.2rem .4rem;border-bottom:1px solid #eee;font-size:.8rem}
+    tr.danger td{background:#ffe0d6}
+    .remove{cursor:pointer;color:#e17055}
+    .lbl{cursor:pointer;color:#333;text-decoration:none}
+    .config{background:white;border-radius:8px;padding:1rem;margin-bottom:1rem;font-size:.85rem}
+    .config label{margin-right:1rem}
+  </style>
+</head>
+<body>
+  <h1>Purity Benchmark Suite</h1>
+  <p class="sub">Proper benchmark: warmup + multiple iterations + statistical analysis. All operations use Purity state() + watch().</p>
+
+  <div class="config">
+    <label>Warmup: <strong id="warmup-val">3</strong></label>
+    <label>Iterations: <strong id="iter-val">10</strong></label>
+    <label>Discard worst: <strong>2</strong></label>
+  </div>
+
+  <button id="run-btn" onclick="runFullSuite()">Run Full Benchmark Suite</button>
+
+  <div id="status">Ready. Click "Run Full Benchmark Suite" to start.</div>
+
+  <table class="results" id="results-table" style="display:none">
+    <thead>
+      <tr>
+        <th>Operation</th>
+        <th>Median</th>
+        <th>Mean</th>
+        <th>σ (stddev)</th>
+        <th>Min</th>
+        <th>Max</th>
+      </tr>
+    </thead>
+    <tbody id="results-body"></tbody>
+  </table>
+
+  <!-- Hidden app area for DOM operations -->
+  <div id="app">
+    <table class="bench-data"><tbody id="tbody"></tbody></table>
+  </div>
+
+  <script src="bench/runner.js"></script>
+  <script type="module">
+    import { state, watch } from '../packages/core/src/index.ts';
+
+    // === Data generation ===
+    const adj=['pretty','large','big','small','tall','short','long','handsome','plain','quaint','clean','elegant','easy','angry','crazy','helpful','mushy','odd','unsightly','adorable','important','inexpensive','cheap','expensive','fancy'];
+    const col=['red','yellow','blue','green','pink','brown','purple','brown','white','black','orange'];
+    const nou=['table','chair','house','bbq','desk','car','pony','cookie','sandwich','burger','pizza','mouse','keyboard'];
+    let nid=1;
+    const rnd=m=>(Math.random()*m)|0;
+    const mkLabel=()=>`${adj[rnd(adj.length)]} ${col[rnd(col.length)]} ${nou[rnd(nou.length)]}`;
+    const mkData=n=>{const d=new Array(n);for(let i=0;i<n;i++)d[i]={id:nid++,label:mkLabel()};return d;};
+
+    // === Purity signals ===
+    const data = state([]);
+    const sel = state(0);
+
+    // === Row cache (keyed) ===
+    const rowMap = new Map();
+    function getOrCreate(item) {
+      let r = rowMap.get(item.id);
+      if (r) { if(r.l!==item.label){r.ln.data=item.label;r.l=item.label;} return r; }
+      const tr=document.createElement('tr');
+      const t1=document.createElement('td');t1.textContent=item.id;
+      const t2=document.createElement('td');const a=document.createElement('a');a.className='lbl';
+      const ln=document.createTextNode(item.label);a.appendChild(ln);t2.appendChild(a);
+      const t3=document.createElement('td');const a2=document.createElement('a');a2.className='remove';a2.textContent='×';t3.appendChild(a2);
+      const t4=document.createElement('td');
+      tr.appendChild(t1);tr.appendChild(t2);tr.appendChild(t3);tr.appendChild(t4);
+      r={tr,ln,l:item.label};rowMap.set(item.id,r);return r;
+    }
+
+    // === Render via Purity watch ===
+    const tbody=document.getElementById('tbody');
+    let prevIds=[];
+
+    watch(()=>{
+      const list=data(), s=sel(), len=list.length;
+      const newIds=new Array(len), active=new Set();
+      for(let i=0;i<len;i++){
+        const it=list[i];newIds[i]=it.id;active.add(it.id);
+        const r=getOrCreate(it);r.tr.className=it.id===s?'danger':'';
+      }
+      for(let i=0;i<prevIds.length;i++){
+        const id=prevIds[i];
+        if(!active.has(id)){const r=rowMap.get(id);if(r&&r.tr.parentNode)r.tr.parentNode.removeChild(r.tr);rowMap.delete(id);}
+      }
+      let same=len===prevIds.length;
+      if(same)for(let i=0;i<len;i++)if(prevIds[i]!==newIds[i]){same=false;break;}
+      if(same){prevIds=newIds;return;}
+      let app=len>prevIds.length;
+      if(app)for(let i=0;i<prevIds.length;i++)if(prevIds[i]!==newIds[i]){app=false;break;}
+      if(app&&prevIds.length>0){
+        const f=document.createDocumentFragment();
+        for(let i=prevIds.length;i<len;i++)f.appendChild(rowMap.get(newIds[i]).tr);
+        tbody.appendChild(f);
+      } else {
+        const f=document.createDocumentFragment();
+        for(let i=0;i<len;i++)f.appendChild(rowMap.get(newIds[i]).tr);
+        while(tbody.firstChild)tbody.removeChild(tbody.firstChild);
+        tbody.appendChild(f);
+      }
+      prevIds=newIds;
+    });
+
+    // Event delegation
+    tbody.addEventListener('click',e=>{
+      const a=e.target.closest('a');if(!a)return;e.preventDefault();
+      const id=+a.closest('tr').id;
+      if(a.classList.contains('lbl'))sel(id);
+      else if(a.classList.contains('remove')){
+        const r=rowMap.get(id);if(r&&r.tr.parentNode)r.tr.parentNode.removeChild(r.tr);
+        rowMap.delete(id);data(d=>d.filter(x=>x.id!==id));
+      }
+    });
+
+    // === Operations ===
+    const ops = {
+      create1k: () => { rowMap.clear(); data(mkData(1000)); sel(0); },
+      create10k: () => { rowMap.clear(); data(mkData(10000)); sel(0); },
+      append1k: () => data(d => d.concat(mkData(1000))),
+      update10th: () => data(d => {
+        const c=d.slice();
+        for(let i=0;i<c.length;i+=10)c[i]={...c[i],label:c[i].label+' !!!'};
+        return c;
+      }),
+      selectRow: () => { const d=data(); if(d.length>0) sel(d[Math.floor(d.length/2)].id); },
+      swapRows: () => data(d => {
+        if(d.length>998){const c=d.slice();const t=c[1];c[1]=c[998];c[998]=t;return c;}
+        return d;
+      }),
+      removeRow: () => {
+        const d=data();
+        if(d.length>0){
+          const id=d[0].id;
+          const r=rowMap.get(id);if(r&&r.tr.parentNode)r.tr.parentNode.removeChild(r.tr);
+          rowMap.delete(id);data(dd=>dd.filter(x=>x.id!==id));
+        }
+      },
+      clearAll: () => { rowMap.clear(); data([]); sel(0); },
+    };
+
+    const clear = () => { rowMap.clear(); data([]); sel(0); };
+    const create1k = () => { rowMap.clear(); nid=1; data(mkData(1000)); sel(0); };
+
+    // === Full Suite ===
+    const statusEl = document.getElementById('status');
+    const resultsTable = document.getElementById('results-table');
+    const resultsBody = document.getElementById('results-body');
+    const runBtn = document.getElementById('run-btn');
+
+    function log(msg) { statusEl.textContent += msg + '\n'; statusEl.scrollTop = statusEl.scrollHeight; }
+
+    function addResult(name, s) {
+      const tr = document.createElement('tr');
+      const rating = s.median < 50 ? 'good' : s.median < 200 ? 'ok' : 'slow';
+      tr.innerHTML = `
+        <td>${name}</td>
+        <td class="${rating}">${s.median.toFixed(1)}ms</td>
+        <td>${s.mean.toFixed(1)}ms</td>
+        <td>${s.stddev.toFixed(1)}ms</td>
+        <td>${s.min.toFixed(1)}ms</td>
+        <td>${s.max.toFixed(1)}ms</td>
+      `;
+      resultsBody.appendChild(tr);
+    }
+
+    window.runFullSuite = async () => {
+      runBtn.disabled = true;
+      statusEl.textContent = '';
+      resultsBody.innerHTML = '';
+      resultsTable.style.display = 'table';
+      document.getElementById('app').style.display = 'block';
+
+      log(`Purity Benchmark Suite`);
+      log(`Warmup: ${WARMUP} | Iterations: ${ITERATIONS} | Discard worst: 2`);
+      log(`──────────────────────────────────────────────\n`);
+
+      const suite = [
+        ['Create 1,000 rows', clear, ops.create1k, null],
+        ['Replace 1,000 rows', () => { clear(); create1k(); }, ops.create1k, null],
+        ['Update every 10th row', create1k, ops.update10th, clear],
+        ['Select row', create1k, ops.selectRow, clear],
+        ['Swap rows', create1k, ops.swapRows, clear],
+        ['Remove row', create1k, ops.removeRow, clear],
+        ['Clear 1,000 rows', create1k, ops.clearAll, null],
+        ['Create 10,000 rows', clear, ops.create10k, null],
+        ['Clear 10,000 rows', null, ops.clearAll, null],
+        ['Append 1,000 rows', create1k, ops.append1k, clear],
+      ];
+
+      for (const [name, setup, run, teardown] of suite) {
+        log(`Running: ${name}...`);
+        const result = await benchmarkOp(name, setup, run, teardown);
+        log(`  → ${formatStats(result.stats)}`);
+        addResult(name, result.stats);
+      }
+
+      log(`\n──────────────────────────────────────────────`);
+      log(`Done! All operations used Purity state() + watch().`);
+      log(`Keyed reconciliation with row cache.`);
+
+      runBtn.disabled = false;
+    };
+  </script>
+</body>
+</html>

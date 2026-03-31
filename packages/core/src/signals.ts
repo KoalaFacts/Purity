@@ -82,14 +82,38 @@ function flush(): void {
   microtaskScheduled = false;
   pending = false;
 
+  // Batch unwatch — process all pending unwatches before flushing
+  if (pendingUnwatch.length > 0) {
+    for (let i = 0; i < pendingUnwatch.length; i++) {
+      watcher.unwatch(pendingUnwatch[i]);
+    }
+    pendingUnwatch.length = 0;
+    unwatchScheduled = false;
+  }
+
   const dirty = watcher.getPending();
-  // Re-watch in batches to avoid stack overflow with spread on large arrays
   for (let i = 0; i < dirty.length; i++) {
     watcher.watch(dirty[i]);
   }
 
   for (let i = 0; i < dirty.length; i++) {
     dirty[i].get();
+  }
+}
+
+// Batched unwatch — collects unwatches and processes them in one flush
+const pendingUnwatch: Signal.Computed<void>[] = [];
+let unwatchScheduled = false;
+
+function scheduleUnwatch(): void {
+  if (!unwatchScheduled) {
+    unwatchScheduled = true;
+    // If a flush is already scheduled, unwatches will be processed there
+    // Otherwise schedule our own microtask
+    if (!microtaskScheduled) {
+      microtaskScheduled = true;
+      queueMicrotask(flush);
+    }
   }
 }
 
@@ -214,8 +238,10 @@ function _effect(fn: () => undefined | Dispose): Dispose {
   const effectHandle: EffectHandle = {
     _computed: c,
     _dispose() {
+      if (disposed) return;
       disposed = true;
-      watcher.unwatch(c);
+      pendingUnwatch.push(c);
+      scheduleUnwatch();
       if (typeof cleanup === 'function') {
         cleanup();
         cleanup = undefined;

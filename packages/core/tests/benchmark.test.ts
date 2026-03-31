@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { state, compute, watch, batch } from '../src/signals.ts';
+import { describe, expect, it } from 'vitest';
 import { html } from '../src/compiler/compile.ts';
 import { each, match, when } from '../src/control.ts';
+import { batch, compute, state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
@@ -72,20 +72,28 @@ describe('benchmark: signals (vs Solid/Preact)', () => {
       const prev = tip;
       tip = compute(() => prev() + 1);
     }
-    bench('1000-deep computed propagation', () => {
-      source(source() + 1);
-      tip();
-    }, 100);
+    bench(
+      '1000-deep computed propagation',
+      () => {
+        source(source() + 1);
+        tip();
+      },
+      100,
+    );
   });
 
   it('wide fan-out (1 signal → 1000 computed)', () => {
     const source = state(0);
     const deps: any[] = [];
     for (let i = 0; i < 1000; i++) deps.push(compute(() => source() + i));
-    bench('1→1000 fan-out read', () => {
-      source(source() + 1);
-      for (let i = 0; i < 1000; i++) deps[i]();
-    }, 100);
+    bench(
+      '1→1000 fan-out read',
+      () => {
+        source(source() + 1);
+        for (let i = 0; i < 1000; i++) deps[i]();
+      },
+      100,
+    );
   });
 
   it('diamond dependency (no glitch)', () => {
@@ -93,7 +101,10 @@ describe('benchmark: signals (vs Solid/Preact)', () => {
     const b = compute(() => a() * 2);
     const c = compute(() => a() * 3);
     let evals = 0;
-    const d = compute(() => { evals++; return b() + c(); });
+    const d = compute(() => {
+      evals++;
+      return b() + c();
+    });
     d(); // initial
 
     evals = 0;
@@ -121,7 +132,11 @@ describe('benchmark: effects (vs Solid/Preact)', () => {
     await benchAsync('create+dispose 1k effects', async () => {
       const disposers: any[] = [];
       for (let i = 0; i < 1000; i++) {
-        disposers.push(watch(() => { s(); }));
+        disposers.push(
+          watch(() => {
+            s();
+          }),
+        );
       }
       for (const d of disposers) d();
     });
@@ -130,7 +145,11 @@ describe('benchmark: effects (vs Solid/Preact)', () => {
   it('1 source → 100 watchers react', async () => {
     const s = state(0);
     let runs = 0;
-    for (let i = 0; i < 100; i++) watch(() => { s(); runs++; });
+    for (let i = 0; i < 100; i++)
+      watch(() => {
+        s();
+        runs++;
+      });
     runs = 0;
 
     await benchAsync('100 watchers react', async () => {
@@ -145,7 +164,10 @@ describe('benchmark: effects (vs Solid/Preact)', () => {
     const signals: any[] = [];
     for (let i = 0; i < 100; i++) signals.push(state(0));
     let runs = 0;
-    watch(() => { for (const s of signals) s(); runs++; });
+    watch(() => {
+      for (const s of signals) s();
+      runs++;
+    });
     runs = 0;
 
     await benchAsync('batch 1000 writes', async () => {
@@ -174,7 +196,7 @@ describe('benchmark: templates (vs Lit/Solid)', () => {
     const count = state(0);
     bench('100 reactive templates', () => {
       for (let i = 0; i < 100; i++) {
-        html`<div class=${() => count() > 5 ? 'active' : ''}><p>${() => count()}</p></div>`;
+        html`<div class=${() => (count() > 5 ? 'active' : '')}><p>${() => count()}</p></div>`;
       }
     });
   });
@@ -189,12 +211,16 @@ describe('benchmark: templates (vs Lit/Solid)', () => {
   });
 
   it('render deep nesting (10 levels)', () => {
-    bench('10-level nested templates', () => {
-      let node: any = html`<span>leaf</span>`;
-      for (let i = 0; i < 10; i++) {
-        node = html`<div>${node}</div>`;
-      }
-    }, 100);
+    bench(
+      '10-level nested templates',
+      () => {
+        let node: any = html`<span>leaf</span>`;
+        for (let i = 0; i < 10; i++) {
+          node = html`<div>${node}</div>`;
+        }
+      },
+      100,
+    );
   });
 });
 
@@ -206,7 +232,11 @@ describe('benchmark: control flow (vs Solid For/Show)', () => {
   it('each() render 1000 items', () => {
     const items = state(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` })));
     bench('each() 1000 items', () => {
-      each(() => items(), (item) => html`<li>${item.text}</li>`, (item) => item.id);
+      each(
+        () => items(),
+        (item) => html`<li>${item.text}</li>`,
+        (item) => item.id,
+      );
     });
   });
 
@@ -234,7 +264,11 @@ describe('benchmark: control flow (vs Solid For/Show)', () => {
     const visible = state(true);
     const container = document.createElement('div');
     container.appendChild(
-      when(() => visible(), () => html`<p>Visible</p>`, () => html`<p>Hidden</p>`),
+      when(
+        () => visible(),
+        () => html`<p>Visible</p>`,
+        () => html`<p>Hidden</p>`,
+      ),
     );
 
     await benchAsync('when() 10 toggles', async () => {

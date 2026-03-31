@@ -69,3 +69,26 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Docum
 
   return compiled(values, watch);
 }
+
+/**
+ * Get the compiled factory for a template — used by each() to bypass
+ * mapFn overhead for subsequent items. Clone + bind directly.
+ *
+ * @internal
+ */
+export function getCompiledFactory(
+  strings: TemplateStringsArray,
+): CompiledFn {
+  let compiled = compiledCache.get(strings);
+  if (!compiled) {
+    const ast = parse(strings);
+    const code = generate(ast);
+    // biome-ignore lint: eval is intentional
+    compiled = new Function(`return ${code}`)() as CompiledFn;
+    compiledCache.set(strings, compiled);
+  }
+  return compiled;
+}
+
+/** @internal */
+export { watch as _watch } from '../signals.js';

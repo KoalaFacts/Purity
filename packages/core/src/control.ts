@@ -187,7 +187,7 @@ function lis(arr: number[]): number[] {
 
 interface EachEntry {
   nodes: Node[];
-  data: StateAccessor<any>; // signal holding item data — update triggers in-place DOM mutation
+  data: StateAccessor<any> | null; // lazily created — only when item is reused
   dispose?: () => void;
 }
 
@@ -244,7 +244,7 @@ export function each<T>(
         // Keys match — update data signals in place (zero DOM creation)
         for (let i = 0; i < len; i++) {
           const entry = keyToEntry.get(prevKeys[i]);
-          if (entry) entry.data(list[i]);
+          if (entry?.data) entry.data(list[i]);
         }
         return;
       }
@@ -260,12 +260,14 @@ export function each<T>(
 
       if (keyToEntry.has(key)) {
         const entry = keyToEntry.get(key)!;
-        entry.data(item); // Update signal — DOM mutates in place
+        // Lazy signal creation — only when item is reused
+        if (entry.data) {
+          entry.data(item);
+        }
         newEntries.set(key, entry);
       } else {
-        // New item — create DOM
+        // New item — create DOM, NO signal allocation
         const content = mapFn(item, i);
-        const itemSignal = state(item);
         let nodes: Node[];
         if (content instanceof DocumentFragment) {
           nodes = Array.from(content.childNodes);
@@ -274,7 +276,7 @@ export function each<T>(
         } else {
           nodes = [document.createTextNode(String(content ?? ''))];
         }
-        newEntries.set(key, { nodes, data: itemSignal });
+        newEntries.set(key, { nodes, data: null });
       }
     }
 

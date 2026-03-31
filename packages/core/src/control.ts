@@ -1,4 +1,5 @@
-import { watch } from './signals.js';
+import { state, watch } from './signals.js';
+import type { StateAccessor } from './signals.js';
 
 // ---------------------------------------------------------------------------
 // match(sourceFn, cases, fallback?) — reactive pattern matching
@@ -174,19 +175,34 @@ function lis(arr: number[]): number[] {
 }
 
 // ---------------------------------------------------------------------------
-// each(listAccessor, mapFn, keyFn?) — list rendering with LIS-based diffing
+// each(listAccessor, mapFn, keyFn?) — list rendering
+//
+// Two modes:
+// 1. Keyed (keyFn provided): LIS-based reorder + in-place signal update
+//    Each entry owns a state signal. On update, signal value changes →
+//    existing DOM mutates in place. Zero DOM creation for existing keys.
+//
+// 2. Unkeyed (no keyFn): item identity as key, same algorithm
 // ---------------------------------------------------------------------------
 
 interface EachEntry {
   nodes: Node[];
+  data: StateAccessor<any>; // signal holding item data — update triggers in-place DOM mutation
   dispose?: () => void;
 }
 
 /**
- * Reactive list rendering. Uses LIS algorithm for minimal DOM moves.
+ * Reactive list rendering. Reuses DOM via per-item signals + LIS reorder.
+ *
+ * When the list changes:
+ * - Existing items: signal updated → DOM mutates in place (zero creation)
+ * - New items: DOM created once
+ * - Removed items: DOM detached
+ * - Reordered items: minimal DOM moves via LIS
  *
  * @example
  * ```ts
+ * // mapFn receives a reactive accessor — use () => item() for reactive text
  * each(
  *   () => todos(),
  *   (todo) => html`<li>${todo.text}</li>`,
@@ -205,9 +221,6 @@ export function each<T>(
 
   let keyToEntry = new Map<unknown, EachEntry>();
   let prevKeys: unknown[] = [];
-  // DOM node pool — recycled nodes from removed items
-  const pool: Node[][] = [];
-  const MAX_POOL = 50;
 
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
@@ -221,31 +234,38 @@ export function each<T>(
     const prevLen = prevKeys.length;
     const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
 
-    // Fast path: quick key scan
+    // Fast path: same keys in same order — just update data signals
     if (len === prevLen) {
       let same = true;
       for (let i = 0; i < len; i++) {
-        if (prevKeys[i] !== getKey(list[i], i)) {
-          same = false;
-          break;
-        }
+        if (prevKeys[i] !== getKey(list[i], i)) { same = false; break; }
       }
-      if (same) return;
+      if (same) {
+        // Keys match — update data signals in place (zero DOM creation)
+        for (let i = 0; i < len; i++) {
+          const entry = keyToEntry.get(prevKeys[i]);
+          if (entry) entry.data(list[i]);
+        }
+        return;
+      }
     }
 
     const newKeys: unknown[] = new Array(len);
     const newEntries = new Map<unknown, EachEntry>();
 
-    // Build new entries — try pool first before creating new DOM
     for (let i = 0; i < len; i++) {
       const item = list[i];
       const key = getKey(item, i);
       newKeys[i] = key;
 
       if (keyToEntry.has(key)) {
-        newEntries.set(key, keyToEntry.get(key)!);
+        const entry = keyToEntry.get(key)!;
+        entry.data(item); // Update signal — DOM mutates in place
+        newEntries.set(key, entry);
       } else {
+        // New item — create DOM
         const content = mapFn(item, i);
+        const itemSignal = state(item);
         let nodes: Node[];
         if (content instanceof DocumentFragment) {
           nodes = Array.from(content.childNodes);
@@ -254,11 +274,11 @@ export function each<T>(
         } else {
           nodes = [document.createTextNode(String(content ?? ''))];
         }
-        newEntries.set(key, { nodes });
+        newEntries.set(key, { nodes, data: itemSignal });
       }
     }
 
-    // Remove deleted entries — pool their nodes for recycling
+    // Remove deleted entries
     if (prevLen > 0) {
       const newKeySet = new Set(newKeys);
       for (let i = 0; i < prevLen; i++) {
@@ -270,8 +290,6 @@ export function each<T>(
               const node = entry.nodes[j];
               if (node.parentNode) node.parentNode.removeChild(node);
             }
-            // Pool nodes for reuse (up to MAX_POOL)
-            if (pool.length < MAX_POOL) pool.push(entry.nodes);
             if (entry.dispose) entry.dispose();
           }
         }
@@ -280,11 +298,9 @@ export function each<T>(
 
     // --- LIS-based reorder: minimal DOM moves ---
     if (prevLen > 0 && len > 0) {
-      // Map old keys to their positions
       const oldKeyIndex = new Map<unknown, number>();
       for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
 
-      // Build array of old indices for items that existed before
       const sources: number[] = [];
       const newIndexToSource: number[] = new Array(len).fill(-1);
 
@@ -296,18 +312,14 @@ export function each<T>(
         }
       }
 
-      // Find LIS — these items don't need to move
       const lisIndices = new Set(lis(sources));
 
-      // Items NOT in LIS need to be moved/inserted
       let nextSibling: Node = endMarker;
-
       for (let i = len - 1; i >= 0; i--) {
         const entry = newEntries.get(newKeys[i])!;
         const firstNode = entry.nodes[0];
         const sourceIdx = newIndexToSource[i];
 
-        // If item is new or not in LIS, it needs to be (re)inserted
         if (sourceIdx === -1 || !lisIndices.has(sourceIdx)) {
           if (entry.nodes.length > 1) {
             const frag = document.createDocumentFragment();
@@ -321,7 +333,7 @@ export function each<T>(
         nextSibling = entry.nodes[0] || nextSibling;
       }
     } else {
-      // Simple case: no previous items or all new
+      // All new — insert in order
       let nextSibling: Node = endMarker;
       for (let i = len - 1; i >= 0; i--) {
         const entry = newEntries.get(newKeys[i])!;

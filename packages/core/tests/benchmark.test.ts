@@ -257,6 +257,72 @@ describe('6. list rendering', () => {
     });
     console.log(`    → ${(elapsed / 5).toFixed(1)}ms per 1000 items`);
   });
+
+  it('UPDATE 1000 items in place (same keys, new data)', async () => {
+    // THIS is where in-place mutation shines — zero DOM creation
+    // Solid <For>: ~1-3ms | Svelte: ~2-5ms | Vue Vapor: ~3-8ms
+    const items = state(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` })));
+    const container = document.createElement('div');
+    container.appendChild(
+      each(() => items(), (item) => html`<li>${item.text}</li>`, (item) => item.id),
+    );
+    await tick();
+
+    const elapsed = await benchAsync('each() UPDATE 1000 items in place', async () => {
+      items(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Updated ${i}` })));
+      await tick();
+    });
+    console.log(`    → Solid: ~1-3ms | Svelte: ~2-5ms | Vue Vapor: ~3-8ms`);
+  });
+
+  it('SWAP first and last of 1000 items', async () => {
+    // Tests LIS reorder — only 2 DOM moves needed
+    const items = state(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` })));
+    const container = document.createElement('div');
+    container.appendChild(
+      each(() => items(), (item) => html`<li>${item.text}</li>`, (item) => item.id),
+    );
+    await tick();
+
+    const elapsed = await benchAsync('each() SWAP first/last of 1000', async () => {
+      const arr = [...items()];
+      const tmp = arr[0];
+      arr[0] = arr[999];
+      arr[999] = tmp;
+      items(arr);
+      await tick();
+    });
+    console.log(`    → Should be ~0.1-1ms (only 2 DOM moves via LIS)`);
+  });
+
+  it('APPEND 100 items to 1000', async () => {
+    const items = state(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` })));
+    const container = document.createElement('div');
+    container.appendChild(
+      each(() => items(), (item) => html`<li>${item.text}</li>`, (item) => item.id),
+    );
+    await tick();
+
+    const elapsed = await benchAsync('each() APPEND 100 to 1000', async () => {
+      const added = Array.from({ length: 100 }, (_, i) => ({ id: 1000 + i, text: `New ${i}` }));
+      items([...items(), ...added]);
+      await tick();
+    });
+  });
+
+  it('REMOVE all 1000 items', async () => {
+    const items = state(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` })));
+    const container = document.createElement('div');
+    container.appendChild(
+      each(() => items(), (item) => html`<li>${item.text}</li>`, (item) => item.id),
+    );
+    await tick();
+
+    const elapsed = await benchAsync('each() REMOVE all 1000', async () => {
+      items([]);
+      await tick();
+    });
+  });
 });
 
 // ============================================================================

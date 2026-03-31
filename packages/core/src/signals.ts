@@ -82,7 +82,7 @@ function flush(): void {
   microtaskScheduled = false;
   pending = false;
 
-  // Batch unwatch — process all pending unwatches before flushing
+  // Batch unwatch
   if (pendingUnwatch.length > 0) {
     for (let i = 0; i < pendingUnwatch.length; i++) {
       watcher.unwatch(pendingUnwatch[i]);
@@ -92,11 +92,11 @@ function flush(): void {
   }
 
   const dirty = watcher.getPending();
-  for (let i = 0; i < dirty.length; i++) {
-    watcher.watch(dirty[i]);
-  }
+  const len = dirty.length;
 
-  for (let i = 0; i < dirty.length; i++) {
+  // Single loop: re-watch + evaluate in one pass (reduces overhead)
+  for (let i = 0; i < len; i++) {
+    watcher.watch(dirty[i]);
     dirty[i].get();
   }
 }
@@ -140,23 +140,24 @@ function scheduleUnwatch(): void {
  */
 export function state<T>(initial: T): StateAccessor<T> {
   const s = new Signal.State<T>(initial);
-  // Cache peek closure once, not per call
-  const peekFn = () => Signal.subtle.untrack(() => s.get());
+  const sGet = s.get.bind(s);
+  const sSet = s.set.bind(s);
+  const peekFn = () => Signal.subtle.untrack(sGet);
 
   const accessor = ((...args: [T | ((current: T) => T)] | []): T => {
-    if (args.length === 0) return s.get();
+    if (args.length === 0) return sGet();
     const value = args[0];
     if (typeof value === 'function') {
-      const next = (value as (current: T) => T)(s.get());
-      s.set(next);
+      const next = (value as (current: T) => T)(sGet());
+      sSet(next);
       return next;
     }
-    s.set(value as T);
+    sSet(value as T);
     return value as T;
   }) as StateAccessor<T>;
 
-  (accessor as any).get = () => s.get();
-  (accessor as any).set = (v: T) => s.set(v);
+  (accessor as any).get = sGet;
+  (accessor as any).set = sSet;
   (accessor as any).peek = peekFn;
   (accessor as any)._signal = s;
 
@@ -184,11 +185,13 @@ export function state<T>(initial: T): StateAccessor<T> {
  */
 export function compute<T>(fn: () => T): ComputedAccessor<T> {
   const c = new Signal.Computed<T>(fn);
-  const peekFn = () => Signal.subtle.untrack(() => c.get());
+  // Bind get directly — avoids extra closure wrapper in hot path
+  const get = c.get.bind(c);
+  const peekFn = () => Signal.subtle.untrack(get);
 
-  const accessor = (() => c.get()) as ComputedAccessor<T>;
+  const accessor = get as unknown as ComputedAccessor<T>;
 
-  (accessor as any).get = () => c.get();
+  (accessor as any).get = get;
   (accessor as any).peek = peekFn;
   (accessor as any)._signal = c;
 

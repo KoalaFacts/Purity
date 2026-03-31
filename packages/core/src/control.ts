@@ -33,51 +33,32 @@ export function match<T extends string | number | boolean>(
 
   let currentNodes: Node[] = [];
   let prevKey: string | undefined;
-
-  // DOM cache per case key — avoids recreating on toggle
   const cache = new Map<string, Node[]>();
 
-  watch(() => {
-    const value = sourceFn();
-    const key = String(value) as `${T}`;
-
-    if (key === prevKey) return;
-
-    const parent = endMarker.parentNode;
-    if (!parent) return;
-
-    // Detach current nodes (don't destroy — cache them)
+  // Render helper — used for both initial + reactive updates
+  const renderKey = (key: string, parent: Node) => {
+    // Detach current
     for (let i = 0; i < currentNodes.length; i++) {
       const node = currentNodes[i];
       if (node.parentNode) node.parentNode.removeChild(node);
     }
-
-    // Cache previous nodes
     if (prevKey !== undefined && currentNodes.length > 0) {
       cache.set(prevKey, currentNodes);
     }
-
     prevKey = key;
 
-    // Check cache first
+    // Check cache
     const cached = cache.get(key);
     if (cached) {
       currentNodes = cached;
-      for (let i = 0; i < cached.length; i++) {
-        parent.insertBefore(cached[i], endMarker);
-      }
+      for (let i = 0; i < cached.length; i++) parent.insertBefore(cached[i], endMarker);
       return;
     }
 
-    // Create new DOM
-    const viewFn = cases[key] ?? fallback;
-    if (!viewFn) {
-      currentNodes = [];
-      return;
-    }
+    const viewFn = cases[key as `${T}`] ?? fallback;
+    if (!viewFn) { currentNodes = []; return; }
 
     const content = viewFn();
-
     if (content instanceof DocumentFragment) {
       currentNodes = Array.from(content.childNodes);
       parent.insertBefore(content, endMarker);
@@ -89,6 +70,34 @@ export function match<T extends string | number | boolean>(
       currentNodes = [textNode];
       parent.insertBefore(textNode, endMarker);
     }
+  };
+
+  // Initial render — synchronous, no watch overhead
+  const initKey = String(sourceFn()) as `${T}`;
+  const initView = cases[initKey] ?? fallback;
+  if (initView) {
+    prevKey = initKey;
+    const content = initView();
+    if (content instanceof DocumentFragment) {
+      currentNodes = Array.from(content.childNodes);
+      fragment.insertBefore(content, endMarker);
+    } else if (content instanceof Node) {
+      currentNodes = [content];
+      fragment.insertBefore(content, endMarker);
+    } else {
+      const textNode = document.createTextNode(String(content));
+      currentNodes = [textNode];
+      fragment.insertBefore(textNode, endMarker);
+    }
+  }
+
+  // Reactive updates — watch for changes
+  watch(() => {
+    const key = String(sourceFn()) as `${T}`;
+    if (key === prevKey) return;
+    const parent = endMarker.parentNode;
+    if (!parent) return;
+    renderKey(key, parent);
   });
 
   return fragment;
@@ -294,8 +303,26 @@ export function each<T>(
       }
     }
 
-    // --- LIS-based reorder: minimal DOM moves ---
+    // --- Reorder: detect append-only fast path, else LIS ---
     if (prevLen > 0 && len > 0) {
+      // Fast path: all old keys at start in same order = pure append
+      let isAppend = len > prevLen;
+      if (isAppend) {
+        for (let i = 0; i < prevLen; i++) {
+          if (prevKeys[i] !== newKeys[i]) { isAppend = false; break; }
+        }
+      }
+
+      if (isAppend) {
+        // Pure append — just insert new items before endMarker, no LIS
+        const frag = document.createDocumentFragment();
+        for (let i = prevLen; i < len; i++) {
+          const entry = newEntries.get(newKeys[i])!;
+          for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
+        }
+        parent.insertBefore(frag, endMarker);
+      } else {
+      // Full LIS-based reorder
       const oldKeyIndex = new Map<unknown, number>();
       for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
 
@@ -330,6 +357,7 @@ export function each<T>(
 
         nextSibling = entry.nodes[0] || nextSibling;
       }
+      } // close isAppend else
     } else {
       // All new — insert in order
       let nextSibling: Node = endMarker;

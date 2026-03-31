@@ -67,6 +67,13 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Docum
     compiledCache.set(strings, compiled);
   }
 
+  // Capture mode — record for each()'s fast path
+  if (captureMode) {
+    capturedStrings = strings;
+    capturedFactory = compiled;
+    captureMode = false; // only capture first html call
+  }
+
   return compiled(values, watch);
 }
 
@@ -88,6 +95,34 @@ export function getCompiledFactory(
     compiledCache.set(strings, compiled);
   }
   return compiled;
+}
+
+/**
+ * Capture mode — when enabled, html() records the TemplateStringsArray
+ * and compiled factory for use by each()'s fast path.
+ * @internal
+ */
+let captureMode = false;
+let capturedStrings: TemplateStringsArray | null = null;
+let capturedFactory: CompiledFn | null = null;
+
+/** @internal Enable capture mode — next html() call records its template */
+export function startCapture(): void {
+  captureMode = true;
+  capturedStrings = null;
+  capturedFactory = null;
+}
+
+/** @internal Get captured template + factory, disable capture mode */
+export function endCapture(): { strings: TemplateStringsArray; factory: CompiledFn } | null {
+  captureMode = false;
+  if (capturedStrings && capturedFactory) {
+    const result = { strings: capturedStrings, factory: capturedFactory };
+    capturedStrings = null;
+    capturedFactory = null;
+    return result;
+  }
+  return null;
 }
 
 /** @internal */

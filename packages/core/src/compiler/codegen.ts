@@ -59,7 +59,14 @@ export function generate(ast: FragmentNode): string {
     return `(function(){var _t=document.createElement('template');_t.innerHTML=${JSON.stringify(html)};return function(){return _t.content.cloneNode(true);};})()`
   }
 
-  // Collect slots with positional paths
+  // Fast path: simple template (1 element with only text/expression children)
+  // Use direct createElement — faster than cloneNode for small templates
+  const simple = isSimpleTemplate(ast);
+  if (simple) {
+    return genSimpleTemplate(simple);
+  }
+
+  // Complex template — cloneNode + positional paths
   const slots: Slot[] = [];
   const html = buildDynamicHtml(ast, slots, []);
 
@@ -80,6 +87,108 @@ export function generate(ast: FragmentNode): string {
 
 export function generateModule(ast: FragmentNode): string {
   return `export default ${generate(ast)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Simple template detection — single element with text/expression children
+// e.g. <li>${text}</li>, <span>${a} ${b}</span>, <div class=${cls}>${x}</div>
+// ---------------------------------------------------------------------------
+
+interface SimpleTemplate {
+  tag: string;
+  staticAttrs: { name: string; value: string }[];
+  dynamicAttrs: { kind: string; name: string; index: number }[];
+  children: ASTNode[]; // text + expression nodes only
+}
+
+function isSimpleTemplate(ast: FragmentNode): SimpleTemplate | null {
+  if (ast.children.length !== 1) return null;
+  const root = ast.children[0];
+  if (root.type !== 'element') return null;
+
+  // Check children are only text/expression (no nested elements)
+  for (const ch of root.children) {
+    if (ch.type !== 'text' && ch.type !== 'expression') return null;
+  }
+
+  const staticAttrs: SimpleTemplate['staticAttrs'] = [];
+  const dynamicAttrs: SimpleTemplate['dynamicAttrs'] = [];
+  for (const a of root.attributes) {
+    if (a.kind === 'static') staticAttrs.push({ name: a.name, value: a.value });
+    else dynamicAttrs.push({ kind: a.kind, name: a.name, index: a.index });
+  }
+
+  return { tag: root.tag, staticAttrs, dynamicAttrs, children: root.children };
+}
+
+function genSimpleTemplate(tpl: SimpleTemplate): string {
+  assertSafeName(tpl.tag, 'tag');
+  const lines: string[] = [];
+
+  lines.push(`var _e=document.createElement('${tpl.tag}');`);
+
+  // Static attributes
+  for (const a of tpl.staticAttrs) {
+    if (a.name === 'id' || a.name === 'class') {
+      lines.push(`_e.${a.name === 'class' ? 'className' : a.name}=${JSON.stringify(a.value)};`);
+    } else {
+      lines.push(`_e.setAttribute('${a.name}',${JSON.stringify(a.value || '')});`);
+    }
+  }
+
+  // Dynamic attributes
+  for (const a of tpl.dynamicAttrs) {
+    assertSafeName(a.name, 'attribute');
+    const val = `_v[${a.index}]`;
+    switch (a.kind) {
+      case 'event':
+        lines.push(`_e.addEventListener('${a.name}',${val});`);
+        break;
+      case 'dynamic':
+        lines.push(`if(typeof ${val}==='function')_w(function(){var v=${val}();if(v==null||v===false)_e.removeAttribute('${a.name}');else _e.setAttribute('${a.name}',String(v));});else if(${val}!=null&&${val}!==false)_e.setAttribute('${a.name}',String(${val}));`);
+        break;
+      case 'bool':
+        lines.push(`if(typeof ${val}==='function')_w(function(){if(${val}())_e.setAttribute('${a.name}','');else _e.removeAttribute('${a.name}');});else if(${val})_e.setAttribute('${a.name}','');`);
+        break;
+      case 'prop':
+        lines.push(`if(typeof ${val}==='function')_w(function(){_e.${a.name}=${val}();});else _e.${a.name}=${val};`);
+        break;
+      case 'reactive-prop':
+        lines.push(`if(typeof ${val}==='function')_w(function(){_e['${a.name}']=${val}();});else _e['${a.name}']=${val};`);
+        break;
+      case 'bind': {
+        const evt = a.name === 'checked' || a.name === 'group' ? 'change' : 'input';
+        if (a.name === 'group') {
+          lines.push(`if(typeof ${val}==='function'){if(_e.type==='radio'){_w(function(){_e.checked=${val}()===_e.value;});_e.addEventListener('change',function(){if(_e.checked)${val}(_e.value);});}else{_w(function(){_e.checked=${val}().includes(_e.value);});_e.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(_e.value);if(_e.checked){if(i===-1)a.push(_e.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`);
+        } else {
+          lines.push(`if(typeof ${val}==='function'){_w(function(){_e['${a.name}']=${val}();});_e.addEventListener('${evt}',function(){${val}(${a.name === 'checked' ? '_e.checked' : `_e['${a.name}']`});});}`);
+        }
+        break;
+      }
+    }
+  }
+
+  // Children — text nodes + expressions, appended directly
+  for (const ch of tpl.children) {
+    if (ch.type === 'text') {
+      if (ch.value.trim() || tpl.children.length === 1) {
+        lines.push(`_e.appendChild(document.createTextNode(${JSON.stringify(ch.value)}));`);
+      }
+    } else if (ch.type === 'expression') {
+      const val = `_v[${ch.index}]`;
+      const id = bindVarCounter++;
+      lines.push(
+        `var _x${id}=${val};`,
+        `if(typeof _x${id}==='function'){var _t${id}=document.createTextNode('');_e.appendChild(_t${id});_w(function(){var r=_x${id}();if(r instanceof Node){_t${id}.replaceWith(r);_t${id}=r;}else{if(_t${id}.nodeType!==3){var t=document.createTextNode('');_t${id}.replaceWith(t);_t${id}=t;}_t${id}.data=r==null?'':String(r);}});}`,
+        `else if(_x${id} instanceof Node)_e.appendChild(_x${id});`,
+        `else if(Array.isArray(_x${id})){for(var _ai${id}=0;_ai${id}<_x${id}.length;_ai${id}++)_e.appendChild(_x${id}[_ai${id}] instanceof Node?_x${id}[_ai${id}]:document.createTextNode(String(_x${id}[_ai${id}])));}`,
+        `else _e.appendChild(document.createTextNode(_x${id}==null||_x${id}===false?'':String(_x${id})));`,
+      );
+    }
+  }
+
+  lines.push('return _e;');
+  return `function(_v,_w){${lines.join('')}}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -260,13 +260,9 @@ export function each<T>(
 
       if (keyToEntry.has(key)) {
         const entry = keyToEntry.get(key)!;
-        // Lazy signal creation — only when item is reused
-        if (entry.data) {
-          entry.data(item);
-        }
+        if (entry.data) entry.data(item);
         newEntries.set(key, entry);
       } else {
-        // New item — create DOM, NO signal allocation
         const content = mapFn(item, i);
         let nodes: Node[];
         if (content instanceof DocumentFragment) {

@@ -1,12 +1,11 @@
 // ---------------------------------------------------------------------------
 // Purity Compiler — Code Generator
 //
-// ALL templates use cloneNode — one C++ call creates the entire DOM tree.
+// ALL templates use cloneNode. Dynamic parts use positional paths
+// (firstChild/nextSibling) instead of TreeWalker — zero search overhead.
 //
 // Static: innerHTML + cloneNode(true) — zero JS per render
-// Dynamic: innerHTML with markers + cloneNode(true) + walk markers to bind
-//
-// This matches Solid/Lit: clone is 5-10x faster than N createElement calls.
+// Dynamic: innerHTML with markers + cloneNode + positional path navigation
 // ---------------------------------------------------------------------------
 
 import type {
@@ -29,29 +28,42 @@ const VOID = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
-// generate(ast) — ALWAYS cloneNode, even for dynamic templates
+// Positional path: encode the DOM position of each dynamic part
+// as a series of firstChild (0) and nextSibling (1) steps from root
+// ---------------------------------------------------------------------------
+
+type PathStep = 0 | 1; // 0 = firstChild, 1 = nextSibling
+
+interface ExprSlot {
+  type: 'expr';
+  index: number;
+  path: PathStep[];
+}
+
+interface AttrSlot {
+  type: 'attr';
+  attrs: AttributeNode[];
+  path: PathStep[];
+}
+
+type Slot = ExprSlot | AttrSlot;
+
+// ---------------------------------------------------------------------------
+// generate(ast)
 // ---------------------------------------------------------------------------
 
 export function generate(ast: FragmentNode): string {
   if (!hasDynamic(ast)) {
-    const html = buildHtml(ast, null);
+    const html = buildStaticHtml(ast);
     if (!html.trim()) return 'function(){return document.createDocumentFragment();}';
-    return [
-      '(function(){',
-      `var _t=document.createElement('template');`,
-      `_t.innerHTML=${JSON.stringify(html)};`,
-      'return function(){return _t.content.cloneNode(true);};',
-      '})()',
-    ].join('');
+    return `(function(){var _t=document.createElement('template');_t.innerHTML=${JSON.stringify(html)};return function(){return _t.content.cloneNode(true);};})()`
   }
 
-  // Dynamic: build HTML with comment markers + data-p attrs
-  // Template created ONCE in outer closure, cloned per call
-  const markers: MarkerBinding[] = [];
-  const html = buildHtml(ast, markers);
+  // Collect slots with positional paths
+  const slots: Slot[] = [];
+  const html = buildDynamicHtml(ast, slots, []);
 
-  // Generate binding code that walks the cloned DOM
-  const bindCode = genBindings(markers);
+  const bindCode = genPositionalBindings(slots);
 
   return [
     '(function(){',
@@ -71,24 +83,6 @@ export function generateModule(ast: FragmentNode): string {
 }
 
 // ---------------------------------------------------------------------------
-// Types for marker-based binding
-// ---------------------------------------------------------------------------
-
-interface MarkerBinding {
-  type: 'expr';
-  marker: string; // comment marker name
-  index: number;  // expression index
-}
-
-interface AttrMarkerBinding {
-  type: 'attr';
-  markerId: number;
-  attrs: AttributeNode[];
-}
-
-type Binding = MarkerBinding | AttrMarkerBinding;
-
-// ---------------------------------------------------------------------------
 // hasDynamic
 // ---------------------------------------------------------------------------
 
@@ -103,13 +97,37 @@ function hasDynamic(node: ASTNode): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// buildHtml — build HTML string, inserting markers for dynamic parts
-// If markers is null, build pure static HTML.
+// buildStaticHtml (no markers)
 // ---------------------------------------------------------------------------
 
-let markerCounter = 0;
+function buildStaticHtml(node: ASTNode): string {
+  switch (node.type) {
+    case 'text': return node.value;
+    case 'comment': return `<!--${node.value}-->`;
+    case 'element': {
+      assertSafeName(node.tag, 'tag');
+      let s = `<${node.tag}`;
+      for (const a of node.attributes) {
+        if (a.kind === 'static') s += a.value ? ` ${a.name}="${a.value}"` : ` ${a.name}`;
+      }
+      if (VOID.has(node.tag)) return `${s}/>`;
+      s += '>';
+      for (const ch of node.children) s += buildStaticHtml(ch);
+      return `${s}</${node.tag}>`;
+    }
+    case 'fragment': return node.children.map(buildStaticHtml).join('');
+    default: return '';
+  }
+}
 
-function buildHtml(node: ASTNode, markers: Binding[] | null): string {
+// ---------------------------------------------------------------------------
+// buildDynamicHtml — build HTML + record positional paths for each slot
+//
+// currentPath tracks the position of the current node relative to root.
+// Each child increments via nextSibling, entering a child uses firstChild.
+// ---------------------------------------------------------------------------
+
+function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[]): string {
   switch (node.type) {
     case 'text':
       return node.value;
@@ -118,10 +136,9 @@ function buildHtml(node: ASTNode, markers: Binding[] | null): string {
       return `<!--${node.value}-->`;
 
     case 'expression': {
-      if (!markers) return '';
-      const marker = `p${markerCounter++}`;
-      markers.push({ type: 'expr', marker, index: node.index });
-      return `<!--${marker}-->`;
+      // Insert a comment placeholder — record its path
+      slots.push({ type: 'expr', index: node.index, path: [...currentPath] });
+      return '<!---->';
     }
 
     case 'element': {
@@ -129,7 +146,6 @@ function buildHtml(node: ASTNode, markers: Binding[] | null): string {
       let s = `<${node.tag}`;
 
       const dynamicAttrs: AttributeNode[] = [];
-
       for (const a of node.attributes) {
         if (a.kind === 'static') {
           s += a.value ? ` ${a.name}="${a.value}"` : ` ${a.name}`;
@@ -138,59 +154,77 @@ function buildHtml(node: ASTNode, markers: Binding[] | null): string {
         }
       }
 
-      if (dynamicAttrs.length > 0 && markers) {
-        const id = markerCounter++;
-        s += ` data-p="${id}"`;
-        markers.push({ type: 'attr', markerId: id, attrs: dynamicAttrs });
+      if (dynamicAttrs.length > 0) {
+        slots.push({ type: 'attr', attrs: dynamicAttrs, path: [...currentPath] });
       }
 
       if (VOID.has(node.tag)) return `${s}/>`;
       s += '>';
-      for (const ch of node.children) s += buildHtml(ch, markers);
+
+      // Children: first child gets path + [0 (firstChild)], siblings get [1 (nextSibling)]
+      for (let i = 0; i < node.children.length; i++) {
+        const childPath = i === 0
+          ? [...currentPath, 0 as PathStep] // firstChild
+          : [...currentPath, 1 as PathStep]; // nextSibling (from previous)
+
+        // For siblings after first, we need to track relative to previous sibling
+        // Actually, we track from the PARENT: firstChild then nextSibling chain
+        s += buildDynamicHtml(node.children[i], slots, childPathFromParent(currentPath, i));
+      }
+
       return `${s}</${node.tag}>`;
     }
 
-    case 'fragment':
-      return node.children.map((ch) => buildHtml(ch, markers)).join('');
+    case 'fragment': {
+      let s = '';
+      for (let i = 0; i < node.children.length; i++) {
+        s += buildDynamicHtml(node.children[i], slots, childPathFromParent(currentPath, i));
+      }
+      return s;
+    }
 
     default:
       return '';
   }
 }
 
+// Path to the i-th child of a parent: firstChild + (i-1) nextSiblings
+function childPathFromParent(parentPath: PathStep[], childIndex: number): PathStep[] {
+  const path = [...parentPath, 0 as PathStep]; // firstChild
+  for (let i = 0; i < childIndex; i++) {
+    path.push(1 as PathStep); // nextSibling for each step
+  }
+  return path;
+}
+
 // ---------------------------------------------------------------------------
-// genBindings — generate JS code to wire up dynamic parts on a clone
-// Uses querySelector for attr bindings, TreeWalker for comment markers
+// genPositionalBindings — navigate to each slot via firstChild/nextSibling
+// No TreeWalker, no querySelector, no switch/case — just direct path walk
 // ---------------------------------------------------------------------------
 
-function genBindings(markers: Binding[]): string {
+let bindVarCounter = 0;
+
+function genPositionalBindings(slots: Slot[]): string {
   const lines: string[] = [];
 
-  // Collect all expression markers (need TreeWalker)
-  const exprMarkers = markers.filter((m) => m.type === 'expr') as MarkerBinding[];
-  const attrMarkers = markers.filter((m) => m.type === 'attr') as AttrMarkerBinding[];
+  for (const slot of slots) {
+    const nodeVar = `_n${bindVarCounter++}`;
 
-  // Expression markers: collect all comments first, then process
-  // (replaceWith invalidates TreeWalker position — must not modify during walk)
-  if (exprMarkers.length > 0) {
-    lines.push('var _w2=document.createTreeWalker(_r,128,null),_cm,_cms=[];');
-    lines.push('while(_cm=_w2.nextNode())_cms.push(_cm);');
-    lines.push('for(var _ci=0;_ci<_cms.length;_ci++){var _c=_cms[_ci];');
-    lines.push('switch(_c.data){');
-    for (const m of exprMarkers) {
-      lines.push(`case ${JSON.stringify(m.marker)}:{`);
-      lines.push(genExprBinding(m));
-      lines.push('break;}');
+    // Generate path navigation: _r.firstChild.nextSibling.firstChild...
+    let nav = '_r';
+    for (const step of slot.path) {
+      nav += step === 0 ? '.firstChild' : '.nextSibling';
     }
-    lines.push('}}');
-  }
+    lines.push(`var ${nodeVar}=${nav};`);
 
-  // Attribute markers: querySelector for each
-  for (const m of attrMarkers) {
-    const el = `_e${m.markerId}`;
-    lines.push(`var ${el}=_r.querySelector('[data-p="${m.markerId}"]');${el}.removeAttribute('data-p');`);
-    for (const attr of m.attrs) {
-      lines.push(genAttrBinding(el, attr));
+    if (slot.type === 'expr') {
+      lines.push(genExprBinding(nodeVar, slot.index));
+    } else {
+      for (const attr of slot.attrs) {
+        if (attr.kind !== 'static') {
+          lines.push(genAttrBinding(nodeVar, attr));
+        }
+      }
     }
   }
 
@@ -198,27 +232,24 @@ function genBindings(markers: Binding[]): string {
 }
 
 // ---------------------------------------------------------------------------
-// Expression binding — replace comment with dynamic content
+// Expression binding — replace comment placeholder with dynamic content
 // ---------------------------------------------------------------------------
 
-let bindVarCounter = 0;
-
-function genExprBinding(m: MarkerBinding): string {
-  const val = `_v[${m.index}]`;
+function genExprBinding(commentVar: string, index: number): string {
   const id = bindVarCounter++;
   const xv = `_xv${id}`;
   const tn = `_tn${id}`;
+  const val = `_v[${index}]`;
 
-  const lines: string[] = [];
-  lines.push(`var ${xv}=${val};`);
-  lines.push(`if(typeof ${xv}==='function'){`);
-  lines.push(`var ${tn}=document.createTextNode('');_c.replaceWith(${tn});`);
-  lines.push(`_w(function(){var r=${xv}();if(r instanceof Node){${tn}.replaceWith(r);${tn}=r;}else{if(${tn}.nodeType!==3){var t=document.createTextNode('');${tn}.replaceWith(t);${tn}=t;}${tn}.data=r==null?'':String(r);}});`);
-  lines.push(`}else if(${xv} instanceof DocumentFragment||${xv} instanceof Node){_c.replaceWith(${xv});}`);
-  lines.push(`else if(Array.isArray(${xv})){var _f${id}=document.createDocumentFragment();for(var _i${id}=0;_i${id}<${xv}.length;_i${id}++)_f${id}.appendChild(${xv}[_i${id}] instanceof Node?${xv}[_i${id}]:document.createTextNode(String(${xv}[_i${id}])));_c.replaceWith(_f${id});}`);
-  lines.push(`else{_c.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`);
-
-  return lines.join('');
+  return [
+    `var ${xv}=${val};`,
+    `if(typeof ${xv}==='function'){`,
+    `var ${tn}=document.createTextNode('');${commentVar}.replaceWith(${tn});`,
+    `_w(function(){var r=${xv}();if(r instanceof Node){${tn}.replaceWith(r);${tn}=r;}else{if(${tn}.nodeType!==3){var t=document.createTextNode('');${tn}.replaceWith(t);${tn}=t;}${tn}.data=r==null?'':String(r);}});`,
+    `}else if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${commentVar}.replaceWith(${xv});}`,
+    `else if(Array.isArray(${xv})){var _f${id}=document.createDocumentFragment();for(var _i${id}=0;_i${id}<${xv}.length;_i${id}++)_f${id}.appendChild(${xv}[_i${id}] instanceof Node?${xv}[_i${id}]:document.createTextNode(String(${xv}[_i${id}])));${commentVar}.replaceWith(_f${id});}`,
+    `else{${commentVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
+  ].join('');
 }
 
 // ---------------------------------------------------------------------------

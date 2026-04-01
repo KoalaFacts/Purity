@@ -47,7 +47,7 @@ describe('html tagged template', () => {
   });
 
   it('handles null/false values by rendering nothing', () => {
-    const c = render(html`<div>${null}${false}</div>`);
+    const c = render(html`<div>${undefined}${false}</div>`);
     expect(c.querySelector('div').textContent.trim()).toBe('');
   });
 

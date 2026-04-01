@@ -24,7 +24,7 @@ async function main() {
     // Read results
     const results = await page.evaluate(() => window.__benchResults);
 
-    if (!results || !results.length) {
+    if (!results?.length) {
       console.error('No results found.');
       process.exit(1);
     }

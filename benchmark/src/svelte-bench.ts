@@ -5,8 +5,6 @@
 // we use Svelte's internal reactivity runtime directly.
 // This is the same approach as the js-framework-benchmark Svelte implementation.
 
-import { flushSync, mount, unmount } from 'svelte';
-
 // We can't easily use Svelte's compiled components outside .svelte files,
 // so we use a thin wrapper that creates DOM manually but uses Svelte's
 // reactivity for state management — same as what compiled Svelte does.

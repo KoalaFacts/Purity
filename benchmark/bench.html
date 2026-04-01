@@ -62,7 +62,7 @@
     const resultsBody = document.getElementById('results-body');
     const runBtn = document.getElementById('run-btn');
 
-    function log(msg) { statusEl.textContent += msg + '\n'; }
+    function log(msg) { statusEl.textContent += `${msg}\n`; }
 
     function addResult(name, p, so, sv) {
       const tr = document.createElement('tr');

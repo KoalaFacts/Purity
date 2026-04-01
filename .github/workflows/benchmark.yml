@@ -1,0 +1,141 @@
+name: Benchmark — Purity vs Solid vs Svelte
+
+# Manually triggered from the Actions tab.
+# Runs headless Chromium benchmark comparing Purity against SolidJS and Svelte.
+# Results published to GitHub Pages at https://koalafacts.github.io/Purity/
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: 'Measured iterations per operation (default: 10)'
+        required: false
+        default: '10'
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  benchmark:
+    name: Run benchmark in headless Chromium
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: 📦 Install root dependencies
+        run: npm ci
+
+      - name: 📦 Install benchmark dependencies
+        # Includes solid-js, svelte, @sveltejs/vite-plugin-svelte, playwright
+        run: cd benchmark && npm ci
+
+      - name: 🌐 Install Playwright Chromium
+        # Downloads headless Chromium for automated browser benchmarking
+        run: npx playwright install chromium
+
+      - name: 🏗️ Build benchmark (AOT compiles Purity templates)
+        # Vite build with @purity/vite-plugin transforms html`` → direct DOM calls
+        run: cd benchmark && npx vite build
+
+      - name: 🚀 Start production preview server
+        # Serves the built benchmark on port 4173
+        run: cd benchmark && npx vite preview --port 4173 &
+
+      - name: ⏳ Wait for server to be ready
+        run: sleep 3
+
+      - name: 📊 Run benchmark (Purity vs Solid vs Svelte)
+        # Opens bench.html?auto in headless Chromium
+        # Each operation: 3 warmup + 10 measured iterations, discard 2 worst
+        # Outputs markdown table with median/mean/stddev per framework
+        run: |
+          cd benchmark
+          node --import tsx run-bench.ts | tee benchmark-results.txt
+
+      - name: 💾 Save results to history (last 3 runs)
+        # Commits timestamped results file to benchmark/history/
+        # Automatically prunes files beyond the 3 most recent
+        run: |
+          mkdir -p benchmark/history
+          DATE=$(date +%Y-%m-%d-%H%M%S)
+          cp benchmark/benchmark-results.txt "benchmark/history/${DATE}.txt"
+
+      - name: 🌍 Generate GitHub Pages site
+        # Builds an HTML page showing latest results + history
+        run: |
+          mkdir -p gh-pages
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+          const dir = 'benchmark/history';
+          const files = fs.existsSync(dir)
+            ? fs.readdirSync(dir).filter(f => f.endsWith('.txt')).sort().reverse().slice(0, 3)
+            : [];
+          if (fs.existsSync(dir)) {
+            const all = fs.readdirSync(dir).filter(f => f.endsWith('.txt')).sort().reverse();
+            for (let i = 3; i < all.length; i++) fs.unlinkSync(path.join(dir, all[i]));
+          }
+          const current = fs.readFileSync('benchmark/benchmark-results.txt', 'utf8');
+          let runs = '';
+          for (const f of files) {
+            const content = fs.readFileSync(path.join(dir, f), 'utf8');
+            const date = f.replace('.txt', '');
+            runs += '<details><summary>' + date + '</summary><pre>' + content + '</pre></details>\n';
+          }
+          const html = \`<!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset=\"UTF-8\">
+            <title>Purity Benchmarks</title>
+            <style>
+              body{font-family:system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;background:#f5f5f5}
+              h1{color:#6c5ce7}
+              h2{margin-top:2rem;color:#333}
+              pre{background:white;padding:1rem;border-radius:8px;overflow-x:auto;font-size:.85rem;line-height:1.5}
+              details{margin:.5rem 0}
+              summary{cursor:pointer;padding:.5rem;background:white;border-radius:4px;font-family:monospace;font-size:.85rem}
+              .current{background:white;border-radius:8px;padding:1.5rem;margin:1rem 0;border-left:4px solid #6c5ce7}
+            </style>
+          </head>
+          <body>
+            <h1>Purity Benchmarks</h1>
+            <p>Purity vs Solid vs Svelte — automated results from headless Chromium.</p>
+            <h2>Latest Run</h2>
+            <div class=\"current\"><pre>\${current}</pre></div>
+            <h2>Previous Runs</h2>
+            \${runs || '<p>No previous runs.</p>'}
+            <p style=\"margin-top:2rem;color:#888;font-size:.85rem\">
+              Trigger a new run: <a href=\"https://github.com/KoalaFacts/Purity/actions\">Actions tab → Benchmark</a>
+            </p>
+          </body>
+          </html>\`;
+          fs.writeFileSync('gh-pages/index.html', html);
+          "
+
+      - name: 📤 Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: gh-pages
+
+      - name: 🌐 Deploy to GitHub Pages
+        # Publishes to https://koalafacts.github.io/Purity/
+        uses: actions/deploy-pages@v4
+
+      - name: 📝 Commit history to repository
+        # Saves results file so future runs can show trends
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add benchmark/history/
+          git commit -m "bench: record results $(date +%Y-%m-%d)" || true
+          git push || true

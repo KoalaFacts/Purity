@@ -1,0 +1,41 @@
+{
+  "name": "@purity/vite-plugin",
+  "version": "0.1.0",
+  "description": "Vite plugin for AOT template compilation in Purity",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "purity",
+    "vite",
+    "plugin",
+    "aot",
+    "compiler"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KoalaFacts/Purity",
+    "directory": "packages/vite-plugin"
+  },
+  "author": "KoalaFacts",
+  "license": "MIT",
+  "peerDependencies": {
+    "@purity/core": "^0.1.0",
+    "vite": ">=6.0.0"
+  }
+}

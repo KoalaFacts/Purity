@@ -5,6 +5,11 @@ import { purity } from '../packages/vite-plugin/src/index.ts';
 
 export default defineConfig({
   plugins: [purity(), svelte({ compilerOptions: { runes: true } })],
+  resolve: {
+    alias: {
+      '@purity/core': resolve(import.meta.dirname, '../packages/core/src/index.ts'),
+    },
+  },
   build: {
     outDir: 'dist',
     rolldownOptions: {

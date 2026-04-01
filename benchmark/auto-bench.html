@@ -9,7 +9,7 @@
     if (window.__benchRunning) throw new Error('duplicate');
     window.__benchRunning = true;
 
-    import { state, watch } from '../packages/core/src/index.ts';
+    import { each, state, watch } from '../packages/core/src/index.ts';
 
     const WARMUP = 2, ITERATIONS = 7, DISCARD = 1;
     const out = document.getElementById('output');
@@ -62,84 +62,53 @@
     // Signals
     const data = state([]);
     const sel = state(0);
-    const rowMap = new Map();
+
+    // Render via Purity each() — keyed reconciliation built in
     const tbody = document.getElementById('tbody');
-    let prevIds = [];
+    const rows = new Map();
 
-    function getOrCreate(item) {
-      let r = rowMap.get(item.id);
-      if (r) { if(r.l!==item.label){r.ln.data=item.label;r.l=item.label;} return r; }
-      const tr=document.createElement('tr');
-      const t1=document.createElement('td');t1.textContent=item.id;
-      const t2=document.createElement('td');const a=document.createElement('a');a.className='lbl';
-      const ln=document.createTextNode(item.label);a.appendChild(ln);t2.appendChild(a);
-      const t3=document.createElement('td');const a2=document.createElement('a');a2.className='remove';a2.textContent='\u00d7';t3.appendChild(a2);
-      const t4=document.createElement('td');
-      tr.appendChild(t1);tr.appendChild(t2);tr.appendChild(t3);tr.appendChild(t4);
-      r={tr,ln,l:item.label};rowMap.set(item.id,r);return r;
-    }
+    const fragment = each(
+      () => data(),
+      (item) => {
+        const tr = document.createElement('tr');
+        const t1 = document.createElement('td'); t1.textContent = item.id;
+        const t2 = document.createElement('td');
+        const a = document.createElement('a'); a.className = 'lbl';
+        const ln = document.createTextNode(item.label); a.appendChild(ln); t2.appendChild(a);
+        const t3 = document.createElement('td');
+        const a2 = document.createElement('a'); a2.className = 'remove'; a2.textContent = '\u00d7'; t3.appendChild(a2);
+        const t4 = document.createElement('td');
+        tr.appendChild(t1); tr.appendChild(t2); tr.appendChild(t3); tr.appendChild(t4);
+        rows.set(item.id, { tr, ln, label: item.label });
+        return tr;
+      },
+      (item) => item.id,
+    );
+    tbody.appendChild(fragment);
 
-    watch(() => {
-      const list = data(), s = sel();
-      if (!Array.isArray(list)) { console.error('data() is not array:', typeof list, list); return; }
-      const len = list.length;
-      const newIds = new Array(len), active = new Set();
-
-      for (let i = 0; i < len; i++) {
-        const it = list[i];
-        newIds[i] = it.id;
-        active.add(it.id);
-        const r = getOrCreate(it);
-        r.tr.className = it.id === s ? 'danger' : '';
+    // In-place label updates
+    watch(data, (list) => {
+      for (let i = 0; i < list.length; i++) {
+        const item = list[i];
+        const row = rows.get(item.id);
+        if (row && row.label !== item.label) { row.ln.data = item.label; row.label = item.label; }
       }
-
-      // Remove stale rows from DOM and rowMap
-      for (let i = 0; i < prevIds.length; i++) {
-        const id = prevIds[i];
-        if (!active.has(id)) {
-          const r = rowMap.get(id);
-          if (r) {
-            if (r.tr.parentNode) r.tr.parentNode.removeChild(r.tr);
-            rowMap.delete(id);
-          }
-        }
-      }
-
-      // Check if order unchanged — skip DOM work
-      let same = len === prevIds.length;
-      if (same) {
-        for (let i = 0; i < len; i++) if (prevIds[i] !== newIds[i]) { same = false; break; }
-      }
-      if (same) { prevIds = newIds; return; }
-
-      // Check pure append
-      let isAppend = len > prevIds.length;
-      if (isAppend) {
-        for (let i = 0; i < prevIds.length; i++) if (prevIds[i] !== newIds[i]) { isAppend = false; break; }
-      }
-
-      if (isAppend && prevIds.length > 0) {
-        const f = document.createDocumentFragment();
-        for (let i = prevIds.length; i < len; i++) f.appendChild(rowMap.get(newIds[i]).tr);
-        tbody.appendChild(f);
-      } else {
-        // Full rebuild
-        const f = document.createDocumentFragment();
-        for (let i = 0; i < len; i++) f.appendChild(rowMap.get(newIds[i]).tr);
-        while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
-        tbody.appendChild(f);
-      }
-      prevIds = newIds;
     });
 
-    // Ops — NO rowMap.clear() here! The watch manages the cache.
+    // Selection highlighting
+    watch(sel, (id, oldId) => {
+      if (oldId) { const r = rows.get(oldId); if (r) r.tr.className = ''; }
+      if (id)    { const r = rows.get(id);    if (r) r.tr.className = 'danger'; }
+    });
+
+    // Ops
     const ops = {
       create1k:   () => { data(mkData(1000)); sel(0); },
       create10k:  () => { data(mkData(10000)); sel(0); },
       append1k:   () => data(d => d.concat(mkData(1000))),
       update10th: () => data(d => {
         const c = d.slice();
-        for (let i = 0; i < c.length; i += 10) c[i] = { ...c[i], label: c[i].label + ' !!!' };
+        for (let i = 0; i < c.length; i += 10) c[i] = { ...c[i], label: `${c[i].label} !!!` };
         return c;
       }),
       selectRow: () => { const d = data(); if (d.length > 0) sel(d[Math.floor(d.length / 2)].id); },

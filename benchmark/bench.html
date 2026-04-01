@@ -63,7 +63,7 @@
   </div>
 
   <script type="module">
-    import { state, watch } from '../packages/core/src/index.ts';
+    import { each, state, watch } from '../packages/core/src/index.ts';
 
     // ── Config ──────────────────────────────────────────────────────────
 
@@ -216,119 +216,60 @@
     /** @type {import('@purity/core').Signal<number>} Currently selected row id (0 = none). */
     const sel = state(0);
 
-    // ── Keyed Row Cache ────────────────────────────────────────────────
-    //
-    // Maps item.id → { tr, ln (label text node), l (current label) }.
-    // Reuses existing DOM nodes when the same id reappears, only updating
-    // the text content if the label changed. This is the "keyed" part of
-    // keyed reconciliation — rows maintain identity across updates.
-
-    /** @type {Map<number, { tr: HTMLTableRowElement, ln: Text, l: string }>} */
-    const rowMap = new Map();
-
-    /**
-     * Returns a cached row for the given item, creating one if needed.
-     * If the row exists but the label changed, updates the text node in-place.
-     * @param {{ id: number, label: string }} item
-     * @returns {{ tr: HTMLTableRowElement, ln: Text, l: string }}
-     */
-    function getOrCreate(item) {
-      let r = rowMap.get(item.id);
-      if (r) {
-        if (r.l !== item.label) { r.ln.data = item.label; r.l = item.label; }
-        return r;
-      }
-      const tr = document.createElement('tr');
-      const t1 = document.createElement('td'); t1.textContent = item.id;
-      const t2 = document.createElement('td');
-      const a = document.createElement('a'); a.className = 'lbl';
-      const ln = document.createTextNode(item.label); a.appendChild(ln); t2.appendChild(a);
-      const t3 = document.createElement('td');
-      const a2 = document.createElement('a'); a2.className = 'remove'; a2.textContent = '\u00d7'; t3.appendChild(a2);
-      const t4 = document.createElement('td');
-      tr.appendChild(t1); tr.appendChild(t2); tr.appendChild(t3); tr.appendChild(t4);
-      r = { tr, ln, l: item.label };
-      rowMap.set(item.id, r);
-      return r;
-    }
-
-    // ── Keyed Reconciliation via Purity watch() ────────────────────────
-    //
-    // This is the core rendering loop. When data() or sel() change, watch()
-    // fires and we:
-    //   1. Build new id list + update/create rows
-    //   2. Remove rows no longer in the data set
-    //   3. Detect if DOM order changed — skip moves if unchanged
-    //   4. Detect pure append — only insert new nodes
-    //   5. Otherwise, full rebuild via DocumentFragment
+    // ── Render via Purity each() — keyed reconciliation built in ─────
 
     const tbody = document.getElementById('tbody');
-    /** @type {number[]} Previous frame's id order for diffing. */
-    let prevIds = [];
+    const rows = new Map();
 
-    watch(() => {
-      const list = data(), s = sel(), len = list.length;
-      const newIds = new Array(len), active = new Set();
+    const fragment = each(
+      () => data(),
+      (item) => {
+        const tr = document.createElement('tr');
+        const t1 = document.createElement('td'); t1.textContent = item.id;
+        const t2 = document.createElement('td');
+        const a = document.createElement('a'); a.className = 'lbl';
+        const ln = document.createTextNode(item.label); a.appendChild(ln); t2.appendChild(a);
+        const t3 = document.createElement('td');
+        const a2 = document.createElement('a'); a2.className = 'remove'; a2.textContent = '\u00d7'; t3.appendChild(a2);
+        const t4 = document.createElement('td');
+        tr.appendChild(t1); tr.appendChild(t2); tr.appendChild(t3); tr.appendChild(t4);
+        rows.set(item.id, { tr, ln, label: item.label });
+        return tr;
+      },
+      (item) => item.id,
+    );
+    tbody.appendChild(fragment);
 
-      // Phase 1: Update/create rows, build active id set
-      for (let i = 0; i < len; i++) {
-        const it = list[i]; newIds[i] = it.id; active.add(it.id);
-        const r = getOrCreate(it); r.tr.className = it.id === s ? 'danger' : '';
-      }
-
-      // Phase 2: Remove stale rows
-      for (let i = 0; i < prevIds.length; i++) {
-        const id = prevIds[i];
-        if (!active.has(id)) {
-          const r = rowMap.get(id);
-          if (r?.tr.parentNode) r.tr.parentNode.removeChild(r.tr);
-          rowMap.delete(id);
+    // In-place label updates
+    watch(data, (list) => {
+      for (let i = 0; i < list.length; i++) {
+        const item = list[i];
+        const row = rows.get(item.id);
+        if (row && row.label !== item.label) {
+          row.ln.data = item.label;
+          row.label = item.label;
         }
       }
-
-      // Phase 3: Check if order is unchanged (skip DOM moves)
-      let same = len === prevIds.length;
-      if (same) for (let i = 0; i < len; i++) if (prevIds[i] !== newIds[i]) { same = false; break; }
-      if (same) { prevIds = newIds; return; }
-
-      // Phase 4: Detect pure append (existing rows unchanged, new rows at end)
-      let isAppend = len > prevIds.length;
-      if (isAppend) for (let i = 0; i < prevIds.length; i++) if (prevIds[i] !== newIds[i]) { isAppend = false; break; }
-      if (isAppend && prevIds.length > 0) {
-        const f = document.createDocumentFragment();
-        for (let i = prevIds.length; i < len; i++) f.appendChild(rowMap.get(newIds[i]).tr);
-        tbody.appendChild(f);
-      } else {
-        // Phase 5: Full rebuild — clear tbody and re-insert in order
-        const f = document.createDocumentFragment();
-        for (let i = 0; i < len; i++) f.appendChild(rowMap.get(newIds[i]).tr);
-        while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
-        tbody.appendChild(f);
-      }
-      prevIds = newIds;
     });
 
-    // ── Event Delegation ───────────────────────────────────────────────
-    //
-    // Single listener on tbody handles both row selection (click .lbl)
-    // and row removal (click .remove) via event delegation.
+    // Selection highlighting
+    watch(sel, (id, oldId) => {
+      if (oldId) { const r = rows.get(oldId); if (r) r.tr.className = ''; }
+      if (id)    { const r = rows.get(id);    if (r) r.tr.className = 'danger'; }
+    });
 
+    // Event delegation
     tbody.addEventListener('click', e => {
       const a = e.target.closest('a'); if (!a) return; e.preventDefault();
       const id = +a.closest('tr').firstChild.textContent;
       if (a.classList.contains('lbl')) sel(id);
       else if (a.classList.contains('remove')) {
-        const r = rowMap.get(id); if (r?.tr.parentNode) r.tr.parentNode.removeChild(r.tr);
-        rowMap.delete(id); data(d => d.filter(x => x.id !== id));
+        rows.delete(id);
+        data(d => d.filter(x => x.id !== id));
       }
     });
 
-    // ── Benchmark Operations ───────────────────────────────────────────
-    //
-    // Each operation maps to a js-framework-benchmark test case.
-    // All mutations go through Purity state() — no direct DOM manipulation.
-
-    /** @type {Record<string, Function>} Named benchmark operations. */
+    // ── Benchmark Operations ─────────────────────────────────────────
     const ops = {
       /** Create 1,000 fresh rows (replaces existing). */
       create1k:   () => { data(mkData(1000)); sel(0); },
@@ -354,8 +295,8 @@
         const d = data();
         if (d.length > 0) {
           const id = d[0].id;
-          const r = rowMap.get(id); if (r?.tr.parentNode) r.tr.parentNode.removeChild(r.tr);
-          rowMap.delete(id); data(dd => dd.filter(x => x.id !== id));
+          rows.delete(id);
+          data(dd => dd.filter(x => x.id !== id));
         }
       },
       /** Clear all rows. */

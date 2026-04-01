@@ -116,9 +116,18 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
 
 let scopeCounter = 0;
 
-// Fallback regex scoping — only used when no Shadow DOM
+// Fallback scoping — only used when no Shadow DOM
+// Uses split-based parsing instead of regex to avoid polynomial backtracking
 function scopeSelectors(cssText: string, scope: string): string {
-  return cssText.replace(/([^{}]+)\{/g, (_match, selectorGroup: string) => {
+  let result = '';
+  let i = 0;
+  while (i < cssText.length) {
+    const openBrace = cssText.indexOf('{', i);
+    if (openBrace === -1) {
+      result += cssText.slice(i);
+      break;
+    }
+    const selectorGroup = cssText.slice(i, openBrace);
     const selectors = selectorGroup.split(',').map((s) => {
       const trimmed = s.trim();
       if (!trimmed) return s;
@@ -126,6 +135,18 @@ function scopeSelectors(cssText: string, scope: string): string {
       if (trimmed.startsWith(scope)) return `${trimmed} `;
       return `${scope} ${trimmed}`;
     });
-    return `${selectors.join(', ')}{`;
-  });
+    result += `${selectors.join(', ')}{`;
+    // Find matching close brace (skip nested braces)
+    let depth = 1;
+    let j = openBrace + 1;
+    while (j < cssText.length && depth > 0) {
+      if (cssText[j] === '{') depth++;
+      else if (cssText[j] === '}') depth--;
+      if (depth > 0) result += cssText[j];
+      j++;
+    }
+    result += '}';
+    i = j;
+  }
+  return result;
 }

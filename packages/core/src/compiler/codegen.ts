@@ -10,6 +10,18 @@
 
 import type { ASTNode, AttributeNode, FragmentNode } from './ast.js';
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeAttr(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 const SAFE_NAME = /^[a-zA-Z_][\w.-]*$/;
 function assertSafeName(name: string, kind: string): void {
   if (!SAFE_NAME.test(name)) throw new Error(`[Purity] Invalid ${kind} name: "${name}"`);
@@ -229,14 +241,15 @@ function hasDynamic(node: ASTNode): boolean {
 function buildStaticHtml(node: ASTNode): string {
   switch (node.type) {
     case 'text':
-      return node.value;
+      return escapeHtml(node.value);
     case 'comment':
-      return `<!--${node.value}-->`;
+      return `<!--${node.value.replace(/-->/g, '--&gt;')}-->`;
     case 'element': {
       assertSafeName(node.tag, 'tag');
       let s = `<${node.tag}`;
       for (const a of node.attributes) {
-        if (a.kind === 'static') s += a.value ? ` ${a.name}="${a.value}"` : ` ${a.name}`;
+        if (a.kind === 'static')
+          s += a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
       }
       if (VOID.has(node.tag)) return `${s}/>`;
       s += '>';
@@ -260,10 +273,10 @@ function buildStaticHtml(node: ASTNode): string {
 function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[]): string {
   switch (node.type) {
     case 'text':
-      return node.value;
+      return escapeHtml(node.value);
 
     case 'comment':
-      return `<!--${node.value}-->`;
+      return `<!--${node.value.replace(/-->/g, '--&gt;')}-->`;
 
     case 'expression': {
       // Insert a comment placeholder — record its path
@@ -278,7 +291,7 @@ function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[])
       const dynamicAttrs: AttributeNode[] = [];
       for (const a of node.attributes) {
         if (a.kind === 'static') {
-          s += a.value ? ` ${a.name}="${a.value}"` : ` ${a.name}`;
+          s += a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
         } else {
           dynamicAttrs.push(a);
         }

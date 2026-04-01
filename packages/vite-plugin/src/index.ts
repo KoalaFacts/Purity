@@ -154,8 +154,9 @@ function compileTemplates(source: string, _id: string): CompileResult {
   }
 
   // Remove html import since templates are pre-compiled
+  // Use [ \t\n] instead of \s to avoid polynomial backtracking on uncontrolled data
   finalCode = finalCode.replace(
-    /import\s*\{([^}]*)\}\s*from\s*['"]@purity\/core['"]\s*;?/g,
+    /import[ \t\n]*\{([^}]*)\}[ \t\n]*from[ \t\n]*['"]@purity\/core['"][ \t\n]*;?/g,
     (_match, imports) => {
       const cleaned = imports
         .split(',')

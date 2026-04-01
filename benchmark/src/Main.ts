@@ -266,14 +266,42 @@ watch(() => {
       frag.appendChild(rowMap.get(newIds[i])!.tr);
     }
     tbody.appendChild(frag);
-  } else {
-    // Full rebuild — clear and re-insert in order
-    const frag = document.createDocumentFragment();
-    for (let i = 0; i < len; i++) {
-      frag.appendChild(rowMap.get(newIds[i])!.tr);
-    }
+  } else if (len === 0) {
+    // Clear
     while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
-    tbody.appendChild(frag);
+  } else {
+    // Detect swap — exactly 2 positions differ
+    let swapCount = 0;
+    let swapA = -1;
+    let swapB = -1;
+    if (len === prevLen) {
+      for (let i = 0; i < len; i++) {
+        if (prevIds[i] !== newIds[i]) {
+          if (swapCount === 0) swapA = i;
+          else if (swapCount === 1) swapB = i;
+          swapCount++;
+          if (swapCount > 2) break;
+        }
+      }
+    }
+
+    if (swapCount === 2) {
+      // Swap — only move 2 DOM nodes
+      const rowA = rowMap.get(newIds[swapA])!.tr;
+      const rowB = rowMap.get(newIds[swapB])!.tr;
+      const refA = rowA.nextSibling;
+      tbody.insertBefore(rowB, rowA);
+      if (refA) tbody.insertBefore(rowA, refA);
+      else tbody.appendChild(rowA);
+    } else {
+      // Full rebuild — clear and re-insert in order
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < len; i++) {
+        frag.appendChild(rowMap.get(newIds[i])!.tr);
+      }
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+      tbody.appendChild(frag);
+    }
   }
 
   prevIds = newIds;
@@ -289,7 +317,15 @@ tbody.addEventListener('click', (e) => {
   e.preventDefault();
   const id = +a.closest('tr')!.id;
   if (a.classList.contains('lbl')) {
+    // Direct DOM toggle — no full watch cycle needed
+    const oldSel = selectedId();
+    if (oldSel > 0) {
+      const oldRow = rowMap.get(oldSel);
+      if (oldRow) oldRow.tr.className = '';
+    }
     selectedId(id);
+    const newRow = rowMap.get(id);
+    if (newRow) newRow.tr.className = 'danger';
   } else if (a.classList.contains('remove')) {
     const row = rowMap.get(id);
     if (row?.tr.parentNode) row.tr.parentNode.removeChild(row.tr);

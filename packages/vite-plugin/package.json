@@ -34,10 +34,8 @@
   },
   "author": "KoalaFacts",
   "license": "MIT",
-  "dependencies": {
-    "@purity/core": "^0.1.0"
-  },
   "peerDependencies": {
+    "@purity/core": "^0.1.0",
     "vite": ">=6.0.0"
   }
 }

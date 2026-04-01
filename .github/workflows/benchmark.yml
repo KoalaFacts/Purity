@@ -1,0 +1,61 @@
+name: Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: 'Number of iterations per operation'
+        required: false
+        default: '10'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install benchmark dependencies
+        run: cd benchmark && npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+
+      - name: Build benchmark (AOT compile Purity templates)
+        run: cd benchmark && npx vite build
+
+      - name: Start preview server
+        run: cd benchmark && npx vite preview --port 4173 &
+
+      - name: Wait for server
+        run: sleep 3
+
+      - name: Run benchmark (headless Chromium)
+        run: |
+          cd benchmark
+          node --import tsx run-bench.ts | tee benchmark-results.txt
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark/benchmark-results.txt
+
+      - name: Post results as comment
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "## Benchmark Results" > /tmp/comment.md
+          echo "" >> /tmp/comment.md
+          echo '```' >> /tmp/comment.md
+          cat benchmark/benchmark-results.txt >> /tmp/comment.md
+          echo '```' >> /tmp/comment.md
+          echo "" >> /tmp/comment.md
+          echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> /tmp/comment.md
+          cat /tmp/comment.md

@@ -9,7 +9,7 @@
 //   export default defineConfig({ plugins: [purity()] });
 // ---------------------------------------------------------------------------
 
-import { generate, parse } from '@purity/core/compiler';
+import { generate, parse } from '../../core/src/compiler/index.ts';
 
 /**
  * Configuration options for the Purity Vite plugin.

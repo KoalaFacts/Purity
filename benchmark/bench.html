@@ -16,385 +16,101 @@
     table.results{width:100%;border-collapse:collapse;background:white;border-radius:8px;overflow:hidden;margin-bottom:1rem}
     table.results th{background:#6c5ce7;color:white;padding:.6rem;text-align:left;font-size:.85rem}
     table.results td{padding:.5rem .6rem;border-bottom:1px solid #eee;font-size:.85rem;font-family:monospace}
-    table.results tr:hover td{background:#f8f8ff}
     .good{color:#27ae60;font-weight:bold}
     .ok{color:#f39c12}
     .slow{color:#e74c3c}
     table.bench-data{width:100%;border-collapse:collapse}
     table.bench-data td{padding:.2rem .4rem;border-bottom:1px solid #eee;font-size:.8rem}
     tr.danger td{background:#ffe0d6}
-    .remove{cursor:pointer;color:#e17055}
-    .lbl{cursor:pointer;color:#333;text-decoration:none}
-    .config{background:white;border-radius:8px;padding:1rem;margin-bottom:1rem;font-size:.85rem}
-    .config label{margin-right:1rem}
   </style>
 </head>
 <body>
   <h1>Purity Benchmark Suite</h1>
-  <p class="sub">Warmup + multiple iterations + statistical analysis. All operations use Purity state() + watch().</p>
-
-  <div class="config">
-    <label>Warmup: <strong>3</strong></label>
-    <label>Iterations: <strong>10</strong></label>
-    <label>Discard worst: <strong>2</strong></label>
-  </div>
+  <p class="sub">Warmup: 3 | Iterations: 10 | Discard worst: 2. Uses Purity state() + watch() + each().</p>
 
   <button type="button" id="run-btn">Run Full Benchmark Suite</button>
 
-  <div id="status">Ready. Click the button or add ?auto to the URL to auto-run.</div>
+  <div id="status">Ready. Click to start, or add ?auto to URL for headless mode.</div>
 
   <table class="results" id="results-table" style="display:none">
-    <thead>
-      <tr>
-        <th>Operation</th>
-        <th>Median</th>
-        <th>Mean</th>
-        <th>σ (stddev)</th>
-        <th>Min</th>
-        <th>Max</th>
-      </tr>
-    </thead>
+    <thead><tr><th>Operation</th><th>Median</th><th>Mean</th><th>σ</th><th>Min</th><th>Max</th></tr></thead>
     <tbody id="results-body"></tbody>
   </table>
 
-  <!-- App area for DOM operations -->
-  <div id="app">
-    <table class="bench-data"><tbody id="tbody"></tbody></table>
-  </div>
+  <div id="app"><table class="bench-data"><tbody id="tbody"></tbody></table></div>
 
   <script type="module">
-    import { each, state, watch } from '../packages/core/src/index.ts';
+    import { createApp } from './src/app.ts';
+    import { benchmarkOp, formatStats, flush, sleep } from './src/runner.ts';
 
-    // ── Config ──────────────────────────────────────────────────────────
-
-    /** Number of warmup rounds before measured iterations begin. */
-    const WARMUP = 3;
-    /** Number of timed iterations per benchmark operation. */
-    const ITERATIONS = 10;
-    /** Number of worst (slowest) results to discard from each run. */
-    const DISCARD_WORST = 2;
-
-    // ── Microtask + Layout Flush ────────────────────────────────────────
-    //
-    // Purity effects are microtask-scheduled via queueMicrotask. To get
-    // accurate timings we must:
-    //   1. Await a microtask so watch() callbacks fire
-    //   2. Read offsetHeight to force synchronous layout/reflow
-    //
-    // Without this, the browser batches DOM work and timings only capture
-    // the signal write, not the resulting DOM mutations.
-
-    /** Resolves on the next microtask, letting Purity watch() effects fire. */
-    function tick() { return new Promise(r => queueMicrotask(r)); }
-
-    /** Flushes pending Purity effects and forces a synchronous browser layout. */
-    async function flush() {
-      await tick();
-      document.body.offsetHeight;
-    }
-
-    /**
-     * Suspends execution for the given duration.
-     * Yields to the browser between iterations for GC/paint (reduces variance).
-     * @param {number} ms - Duration in milliseconds.
-     */
-    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-    // ── Statistics ──────────────────────────────────────────────────────
-
-    /**
-     * Computes descriptive statistics from raw timings.
-     *
-     * Sorts ascending, trims the {@link DISCARD_WORST} slowest outliers,
-     * then calculates mean, median, stddev, min, and max.
-     *
-     * @param {number[]} times - Raw `performance.now()` durations in ms.
-     * @returns {{ mean: number, median: number, stddev: number, min: number, max: number, n: number }}
-     */
-    function calcStats(times) {
-      const sorted = [...times].sort((a, b) => a - b);
-      const trimmed = sorted.slice(0, sorted.length - DISCARD_WORST);
-      const n = trimmed.length;
-      const mean = trimmed.reduce((a, b) => a + b, 0) / n;
-      const median = n % 2 === 0
-        ? (trimmed[n / 2 - 1] + trimmed[n / 2]) / 2
-        : trimmed[Math.floor(n / 2)];
-      const variance = trimmed.reduce((a, b) => a + (b - mean) ** 2, 0) / n;
-      const stddev = Math.sqrt(variance);
-      return { mean, median, stddev, min: trimmed[0], max: trimmed[n - 1], n };
-    }
-
-    /**
-     * Formats statistics into a human-readable one-liner.
-     * @param {{ median: number, mean: number, stddev: number, min: number, max: number, n: number }} s
-     * @returns {string} e.g. `"12.3ms (mean: 13.1, σ: 1.2, min: 10.4, max: 16.0, n=8)"`
-     */
-    function fmtStats(s) {
-      return `${s.median.toFixed(1)}ms (mean: ${s.mean.toFixed(1)}, \u03c3: ${s.stddev.toFixed(1)}, min: ${s.min.toFixed(1)}, max: ${s.max.toFixed(1)}, n=${s.n})`;
-    }
-
-    // ── Benchmark Harness ──────────────────────────────────────────────
-
-    /**
-     * Benchmarks a single DOM operation with warmup, measurement, and teardown.
-     *
-     * Flow per iteration:
-     * 1. `setup()` — prepare state (e.g. create 1k rows)
-     * 2. `flush()` — let Purity effects settle + force layout
-     * 3. `sleep()` — yield to browser (reduces GC noise)
-     * 4. **`run()`** — the timed operation
-     * 5. `flush()` — force DOM update + layout
-     * 6. `teardown()` — clean up
-     *
-     * @param {string} name - Display name (e.g. `"Create 1,000 rows"`).
-     * @param {Function|null} setup - Optional state preparation before each iteration.
-     * @param {Function} run - The operation to measure.
-     * @param {Function|null} teardown - Optional cleanup after each iteration.
-     * @returns {Promise<{ name: string, stats: object, raw: number[] }>}
-     */
-    async function benchmarkOp(name, setup, run, teardown) {
-      const times = [];
-
-      // Warmup — let the JIT compiler optimize hot paths
-      for (let i = 0; i < WARMUP; i++) {
-        if (setup) setup();
-        await flush();
-        run();
-        await flush();
-        if (teardown) teardown();
-        await flush();
-        await sleep(30);
-      }
-
-      // Measured iterations
-      for (let i = 0; i < ITERATIONS; i++) {
-        if (setup) setup();
-        await flush();
-        await sleep(5);
-
-        const t0 = performance.now();
-        run();
-        await flush();
-        times.push(performance.now() - t0);
-
-        if (teardown) teardown();
-        await flush();
-        await sleep(30);
-      }
-
-      return { name, stats: calcStats(times), raw: times };
-    }
-
-    // ── Data Generation ────────────────────────────────────────────────
-    //
-    // Mirrors the js-framework-benchmark data model: each row has a
-    // unique numeric id and a random three-word label.
-
-    const adj=['pretty','large','big','small','tall','short','long','handsome','plain','quaint','clean','elegant','easy','angry','crazy','helpful','mushy','odd','unsightly','adorable','important','inexpensive','cheap','expensive','fancy'];
-    const col=['red','yellow','blue','green','pink','brown','purple','brown','white','black','orange'];
-    const nou=['table','chair','house','bbq','desk','car','pony','cookie','sandwich','burger','pizza','mouse','keyboard'];
-    let nid = 1;
-    /** @param {number} m - Upper bound (exclusive). */
-    const rnd = m => (Math.random() * m) | 0;
-    const mkLabel = () => `${adj[rnd(adj.length)]} ${col[rnd(col.length)]} ${nou[rnd(nou.length)]}`;
-
-    /**
-     * Generates an array of row data objects with sequential ids.
-     * @param {number} n - Number of rows to generate.
-     * @returns {{ id: number, label: string }[]}
-     */
-    function mkData(n) {
-      const d = new Array(n);
-      for (let i = 0; i < n; i++) d[i] = { id: nid++, label: mkLabel() };
-      return d;
-    }
-
-    // ── Purity Reactive State ──────────────────────────────────────────
-
-    /** @type {import('@purity/core').Signal<{ id: number, label: string }[]>} */
-    const data = state([]);
-    /** @type {import('@purity/core').Signal<number>} Currently selected row id (0 = none). */
-    const sel = state(0);
-
-    // ── Render via Purity each() — keyed reconciliation built in ─────
-
-    const tbody = document.getElementById('tbody');
-    const rows = new Map();
-
-    const fragment = each(
-      () => data(),
-      (item) => {
-        const tr = document.createElement('tr');
-        const t1 = document.createElement('td'); t1.textContent = item.id;
-        const t2 = document.createElement('td');
-        const a = document.createElement('a'); a.className = 'lbl';
-        const ln = document.createTextNode(item.label); a.appendChild(ln); t2.appendChild(a);
-        const t3 = document.createElement('td');
-        const a2 = document.createElement('a'); a2.className = 'remove'; a2.textContent = '\u00d7'; t3.appendChild(a2);
-        const t4 = document.createElement('td');
-        tr.appendChild(t1); tr.appendChild(t2); tr.appendChild(t3); tr.appendChild(t4);
-        rows.set(item.id, { tr, ln, label: item.label });
-        return tr;
-      },
-      (item) => item.id,
-    );
-    tbody.appendChild(fragment);
-
-    // In-place label updates
-    watch(data, (list) => {
-      for (let i = 0; i < list.length; i++) {
-        const item = list[i];
-        const row = rows.get(item.id);
-        if (row && row.label !== item.label) {
-          row.ln.data = item.label;
-          row.label = item.label;
-        }
-      }
-    });
-
-    // Selection highlighting
-    watch(sel, (id, oldId) => {
-      if (oldId) { const r = rows.get(oldId); if (r) r.tr.className = ''; }
-      if (id)    { const r = rows.get(id);    if (r) r.tr.className = 'danger'; }
-    });
-
-    // Event delegation
-    tbody.addEventListener('click', e => {
-      const a = e.target.closest('a'); if (!a) return; e.preventDefault();
-      const id = +a.closest('tr').firstChild.textContent;
-      if (a.classList.contains('lbl')) sel(id);
-      else if (a.classList.contains('remove')) {
-        rows.delete(id);
-        data(d => d.filter(x => x.id !== id));
-      }
-    });
-
-    // ── Benchmark Operations ─────────────────────────────────────────
-    const ops = {
-      /** Create 1,000 fresh rows (replaces existing). */
-      create1k:   () => { data(mkData(1000)); sel(0); },
-      /** Create 10,000 fresh rows (replaces existing). */
-      create10k:  () => { data(mkData(10000)); sel(0); },
-      /** Append 1,000 rows to the existing list. */
-      append1k:   () => data(d => d.concat(mkData(1000))),
-      /** Update the label of every 10th row. */
-      update10th: () => data(d => {
-        const c = d.slice();
-        for (let i = 0; i < c.length; i += 10) c[i] = { ...c[i], label: `${c[i].label} !!!` };
-        return c;
-      }),
-      /** Select the middle row (toggles "danger" CSS class). */
-      selectRow: () => { const d = data(); if (d.length > 0) sel(d[Math.floor(d.length / 2)].id); },
-      /** Swap rows at index 1 and 998. */
-      swapRows:  () => data(d => {
-        if (d.length > 998) { const c = d.slice(); const t = c[1]; c[1] = c[998]; c[998] = t; return c; }
-        return d;
-      }),
-      /** Remove the first row. */
-      removeRow: () => {
-        const d = data();
-        if (d.length > 0) {
-          const id = d[0].id;
-          rows.delete(id);
-          data(dd => dd.filter(x => x.id !== id));
-        }
-      },
-      /** Clear all rows. */
-      clearAll: () => { data([]); sel(0); },
-    };
-
-    /** Resets all state and row cache. Used as setup/teardown in the suite. */
-    const clear    = () => { nid = 1; data([]); sel(0); };
-    /** Creates a fresh 1,000-row dataset. Used as setup in the suite. */
-    const create1k = () => { nid = 1; data(mkData(1000)); sel(0); };
-
-    // ── UI Controls ────────────────────────────────────────────────────
+    const app = createApp(document.getElementById('tbody'));
 
     const statusEl = document.getElementById('status');
     const resultsTable = document.getElementById('results-table');
     const resultsBody = document.getElementById('results-body');
     const runBtn = document.getElementById('run-btn');
 
-    /** Appends a message to the status log and auto-scrolls. */
-    function log(msg) {
-      statusEl.textContent += `${msg}\n`;
-      statusEl.scrollTop = statusEl.scrollHeight;
-    }
+    function log(msg) { statusEl.textContent += msg + '\n'; }
 
-    /**
-     * Adds a result row to the statistics table with color-coded rating.
-     * - Green ("good"): median < 50ms
-     * - Yellow ("ok"): median < 200ms
-     * - Red ("slow"): median >= 200ms
-     *
-     * @param {string} name - Operation name.
-     * @param {{ median: number, mean: number, stddev: number, min: number, max: number }} s - Stats.
-     */
     function addResult(name, s) {
       const tr = document.createElement('tr');
-      const rating = s.median < 50 ? 'good' : s.median < 200 ? 'ok' : 'slow';
-      const td1 = document.createElement('td'); td1.textContent = name;
-      const td2 = document.createElement('td'); td2.textContent = `${s.median.toFixed(1)}ms`; td2.className = rating;
-      const td3 = document.createElement('td'); td3.textContent = `${s.mean.toFixed(1)}ms`;
-      const td4 = document.createElement('td'); td4.textContent = `${s.stddev.toFixed(1)}ms`;
-      const td5 = document.createElement('td'); td5.textContent = `${s.min.toFixed(1)}ms`;
-      const td6 = document.createElement('td'); td6.textContent = `${s.max.toFixed(1)}ms`;
-      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
-      tr.appendChild(td4); tr.appendChild(td5); tr.appendChild(td6);
+      const r = s.median < 20 ? 'good' : s.median < 100 ? 'ok' : 'slow';
+      tr.innerHTML = `<td>${name}</td><td class="${r}">${s.median.toFixed(1)}ms</td><td>${s.mean.toFixed(1)}ms</td><td>${s.stddev.toFixed(1)}ms</td><td>${s.min.toFixed(1)}ms</td><td>${s.max.toFixed(1)}ms</td>`;
       resultsBody.appendChild(tr);
     }
 
-    // ── Suite Runner ───────────────────────────────────────────────────
-    //
-    // Runs all 10 js-framework-benchmark operations sequentially.
-    // Each entry is [name, setup, run, teardown].
-    // Auto-runs when ?auto is in the URL (for CI/headless benchmarks).
+    const clear = () => app.clear();
+    const create1k = () => { app.clear(); app.run(1000); };
 
     async function runFullSuite() {
       runBtn.disabled = true;
       statusEl.textContent = '';
-      while (resultsBody.firstChild) resultsBody.removeChild(resultsBody.firstChild);
+      resultsBody.innerHTML = '';
       resultsTable.style.display = 'table';
-      document.getElementById('app').style.display = 'block';
 
-      log('Purity Benchmark Suite');
-      log(`Warmup: ${WARMUP} | Iterations: ${ITERATIONS} | Discard worst: ${DISCARD_WORST}`);
-      log('\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n');
+      log('Purity Benchmark Suite\n');
 
-      /** @type {[string, Function|null, Function, Function|null][]} */
+      const results = [];
+
       const suite = [
-        ['Create 1,000 rows',      clear,                              ops.create1k,   null  ],
-        ['Replace 1,000 rows',     () => { clear(); create1k(); },     ops.create1k,   null  ],
-        ['Update every 10th row',  create1k,                           ops.update10th, clear ],
-        ['Select row',             create1k,                           ops.selectRow,  clear ],
-        ['Swap rows',              create1k,                           ops.swapRows,   clear ],
-        ['Remove row',             create1k,                           ops.removeRow,  clear ],
-        ['Clear 1,000 rows',       create1k,                           ops.clearAll,   null  ],
-        ['Create 10,000 rows',     clear,                              ops.create10k,  null  ],
-        ['Clear 10,000 rows',      null,                               ops.clearAll,   null  ],
-        ['Append 1,000 rows',      create1k,                           ops.append1k,   clear ],
+        ['Create 1,000 rows',     clear, () => app.run(1000), null],
+        ['Replace 1,000 rows',    create1k, () => app.run(1000), null],
+        ['Update every 10th row', create1k, () => app.update(), clear],
+        ['Select row',            create1k, () => { const d = app.getData(); if (d.length) app.select(d[Math.floor(d.length/2)].id); }, clear],
+        ['Swap rows',             create1k, () => app.swapRows(), clear],
+        ['Remove row',            create1k, () => { const d = app.getData(); if (d.length) app.remove(d[0].id); }, clear],
+        ['Clear 1,000 rows',      create1k, () => app.clear(), null],
+        ['Create 10,000 rows',    clear, () => app.run(10000), null],
+        ['Clear 10,000 rows',     null, () => app.clear(), null],
+        ['Append 1,000 rows',     create1k, () => app.add(), clear],
       ];
 
       for (const [name, setup, run, teardown] of suite) {
         log(`Running: ${name}...`);
-        try {
-          const result = await benchmarkOp(name, setup, run, teardown);
-          log(`  \u2192 ${fmtStats(result.stats)}`);
-          addResult(name, result.stats);
-        } catch (e) {
-          log(`  FAILED: ${e.message}`);
-          console.error(e);
-        }
+        const result = await benchmarkOp(name, setup, run, teardown);
+        log(`  → ${formatStats(result.stats)}`);
+        addResult(name, result.stats);
+        results.push(result);
       }
 
-      log('\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500');
-      log('Done! All operations used Purity state() + watch().');
-      log('Keyed reconciliation with row cache.');
+      log('\n✓ Done. All ops used Purity state() + watch() + each().');
+
+      // Headless mode — expose results for Playwright
+      window.__benchResults = results;
+      const marker = document.createElement('div');
+      marker.id = 'bench-complete';
+      marker.textContent = 'BENCHMARK_COMPLETE';
+      document.body.appendChild(marker);
+
       runBtn.disabled = false;
     }
 
     runBtn.addEventListener('click', runFullSuite);
-    if (location.search.includes('auto')) runFullSuite();
+
+    // Auto-run in headless mode
+    if (location.search.includes('auto')) {
+      runFullSuite();
+    }
   </script>
 </body>
 </html>

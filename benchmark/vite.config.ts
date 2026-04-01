@@ -7,8 +7,7 @@ export default defineConfig({
     rolldownOptions: {
       input: {
         main: resolve(import.meta.dirname, 'index.html'),
-        bench: resolve(import.meta.dirname, 'auto-bench.html'),
-        harness: resolve(import.meta.dirname, 'harness.html'),
+        bench: resolve(import.meta.dirname, 'bench.html'),
       },
     },
   },

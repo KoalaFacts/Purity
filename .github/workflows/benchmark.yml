@@ -63,10 +63,16 @@ jobs:
           const path = require('path');
           const dir = 'benchmark/history';
 
-          // Read all result files
+          // Read last 3 result files only
           const files = fs.existsSync(dir)
-            ? fs.readdirSync(dir).filter(f => f.endsWith('.txt')).sort().reverse()
+            ? fs.readdirSync(dir).filter(f => f.endsWith('.txt')).sort().reverse().slice(0, 3)
             : [];
+
+          // Clean up older files
+          if (fs.existsSync(dir)) {
+            const all = fs.readdirSync(dir).filter(f => f.endsWith('.txt')).sort().reverse();
+            for (let i = 3; i < all.length; i++) fs.unlinkSync(path.join(dir, all[i]));
+          }
 
           // Also include current run
           const current = fs.readFileSync('benchmark/benchmark-results.txt', 'utf8');

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Purity vs Solid vs Vanilla — Benchmark</title>
+  <title>Purity vs Solid vs Svelte — Benchmark</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:system-ui,sans-serif;padding:1.5rem;background:#f5f5f5;max-width:1400px;margin:0 auto}
@@ -20,44 +20,42 @@
     .loser{color:#e74c3c}
     .tie{color:#888}
     .bench-tables{display:none}
-    table.bench-data td{padding:.1rem .3rem;font-size:.7rem}
-    tr.danger td{background:#ffe0d6}
   </style>
 </head>
 <body>
-  <h1>Purity vs Solid vs Vanilla</h1>
-  <p class="sub">Same operations, same DOM, same harness. Warmup: 3 | Iterations: 10 | Discard worst: 2.</p>
+  <h1>Purity vs Solid vs Svelte</h1>
+  <p class="sub">Same 10 operations, same DOM, same harness. Warmup: 3 | Iterations: 10 | Discard worst: 2.</p>
 
   <button type="button" id="run-btn">Run Comparison</button>
 
-  <div id="status">Click to compare Purity (state+watch+each) vs SolidJS (createSignal+createEffect) vs Vanilla (raw DOM).</div>
+  <div id="status">Click to compare. Purity uses AOT-compiled html`` templates.</div>
 
   <table class="results" id="results-table" style="display:none">
     <thead><tr>
       <th>Operation</th>
       <th>Purity</th>
       <th>Solid</th>
-      <th>Vanilla</th>
+      <th>Svelte</th>
       <th>Winner</th>
     </tr></thead>
     <tbody id="results-body"></tbody>
   </table>
 
   <div class="bench-tables">
-    <table class="bench-data"><tbody id="tbody-purity"></tbody></table>
-    <table class="bench-data"><tbody id="tbody-solid"></tbody></table>
-    <table class="bench-data"><tbody id="tbody-vanilla"></tbody></table>
+    <table><tbody id="tbody-purity"></tbody></table>
+    <table><tbody id="tbody-solid"></tbody></table>
+    <table><tbody id="tbody-svelte"></tbody></table>
   </div>
 
   <script type="module">
     import { createApp } from './src/app.ts';
     import { createSolidApp } from './src/solid-bench.ts';
-    import { createVanillaApp } from './src/vanilla.ts';
+    import { createSvelteApp } from './src/svelte-bench.ts';
     import { benchmarkOp, formatStats } from './src/runner.ts';
 
     const purityApp = createApp(document.getElementById('tbody-purity'));
     const solidApp = createSolidApp(document.getElementById('tbody-solid'));
-    const vanillaApp = createVanillaApp(document.getElementById('tbody-vanilla'));
+    const svelteApp = createSvelteApp(document.getElementById('tbody-svelte'));
 
     const statusEl = document.getElementById('status');
     const resultsTable = document.getElementById('results-table');
@@ -66,29 +64,23 @@
 
     function log(msg) { statusEl.textContent += msg + '\n'; }
 
-    function addResult(name, p, s, v) {
+    function addResult(name, p, so, sv) {
       const tr = document.createElement('tr');
-      const vals = [
-        { name: 'Purity', ms: p.median },
-        { name: 'Solid', ms: s.median },
-        { name: 'Vanilla', ms: v.median },
-      ];
-      const best = Math.min(p.median, s.median, v.median);
+      const best = Math.min(p.median, so.median, sv.median);
 
       const fmt = (ms) => {
-        const cls = ms === best ? 'winner' : ms > best * 1.5 ? 'loser' : 'tie';
+        const cls = ms <= best * 1.05 ? 'winner' : ms > best * 1.5 ? 'loser' : 'tie';
         return `<td class="${cls}">${ms.toFixed(1)}ms</td>`;
       };
 
+      const vals = [
+        { name: 'Purity', ms: p.median },
+        { name: 'Solid', ms: so.median },
+        { name: 'Svelte', ms: sv.median },
+      ];
       const winner = vals.reduce((a, b) => a.ms < b.ms ? a : b).name;
 
-      tr.innerHTML = `
-        <td>${name}</td>
-        ${fmt(p.median)}
-        ${fmt(s.median)}
-        ${fmt(v.median)}
-        <td><strong>${winner}</strong></td>
-      `;
+      tr.innerHTML = `<td>${name}</td>${fmt(p.median)}${fmt(so.median)}${fmt(sv.median)}<td><strong>${winner}</strong></td>`;
       resultsBody.appendChild(tr);
     }
 
@@ -115,36 +107,36 @@
       resultsBody.innerHTML = '';
       resultsTable.style.display = 'table';
 
-      log('Purity vs Solid vs Vanilla — Head-to-Head\n');
+      log('Purity vs Solid vs Svelte — Head-to-Head\n');
 
-      const pSuite = makeSuite(purityApp);
-      const sSuite = makeSuite(solidApp);
-      const vSuite = makeSuite(vanillaApp);
+      const pS = makeSuite(purityApp);
+      const soS = makeSuite(solidApp);
+      const svS = makeSuite(svelteApp);
       const results = [];
 
-      for (let i = 0; i < pSuite.length; i++) {
-        const [name] = pSuite[i];
+      for (let i = 0; i < pS.length; i++) {
+        const [name] = pS[i];
         log(`${name}...`);
 
-        const [,vs,vr,vt] = vSuite[i];
-        const v = await benchmarkOp(name, vs, vr, vt);
+        const [,svs,svr,svt] = svS[i];
+        const sv = await benchmarkOp(name, svs, svr, svt);
 
-        const [,ss,sr,st] = sSuite[i];
-        const s = await benchmarkOp(name, ss, sr, st);
+        const [,sos,sor,sot] = soS[i];
+        const so = await benchmarkOp(name, sos, sor, sot);
 
-        const [,ps,pr,pt] = pSuite[i];
+        const [,ps,pr,pt] = pS[i];
         const p = await benchmarkOp(name, ps, pr, pt);
 
-        log(`  Purity: ${p.stats.median.toFixed(1)}ms | Solid: ${s.stats.median.toFixed(1)}ms | Vanilla: ${v.stats.median.toFixed(1)}ms`);
+        log(`  Purity: ${p.stats.median.toFixed(1)}ms | Solid: ${so.stats.median.toFixed(1)}ms | Svelte: ${sv.stats.median.toFixed(1)}ms`);
 
-        addResult(name, p.stats, s.stats, v.stats);
-        results.push({ name, purity: p.stats, solid: s.stats, vanilla: v.stats });
+        addResult(name, p.stats, so.stats, sv.stats);
+        results.push({ name, purity: p.stats, solid: so.stats, svelte: sv.stats });
       }
 
       log('\n✓ Done.');
-      log('Purity = state() + watch() + each()');
+      log('Purity = state() + watch() + each() + html`` (AOT compiled)');
       log('Solid  = createSignal() + createEffect() + batch()');
-      log('Vanilla = raw DOM manipulation');
+      log('Svelte = compiled runtime (manual DOM for fair comparison)');
 
       window.__benchResults = results;
       const marker = document.createElement('div');

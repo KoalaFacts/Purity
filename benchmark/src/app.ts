@@ -1,6 +1,6 @@
 // Shared benchmark app using Purity public APIs: state, watch, each.
 
-import { each, state, watch } from '../../packages/core/src/index.ts';
+import { each, html, state, watch } from '../../packages/core/src/index.ts';
 
 const adjectives = ['pretty','large','big','small','tall','short','long','handsome','plain','quaint','clean','elegant','easy','angry','crazy','helpful','mushy','odd','unsightly','adorable','important','inexpensive','cheap','expensive','fancy'];
 const colours = ['red','yellow','blue','green','pink','brown','purple','brown','white','black','orange'];
@@ -40,38 +40,18 @@ export function createApp(tbody: HTMLElement): AppHandle {
   const fragment = each(
     () => data(),
     (item: RowItem) => {
-      const tr = document.createElement('tr');
+      // html`` template — AOT compiled by @purity/vite-plugin at build time
+      const tr = html`
+        <tr>
+          <td class="col-md-1">${String(item.id)}</td>
+          <td class="col-md-4"><a class="lbl">${item.label}</a></td>
+          <td class="col-md-1"><a class="remove"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
+          <td class="col-md-6"></td>
+        </tr>
+      ` as unknown as HTMLTableRowElement;
 
-      const td1 = document.createElement('td');
-      td1.className = 'col-md-1';
-      td1.textContent = String(item.id);
-
-      const td2 = document.createElement('td');
-      td2.className = 'col-md-4';
-      const a = document.createElement('a');
-      a.className = 'lbl';
-      const labelNode = document.createTextNode(item.label);
-      a.appendChild(labelNode);
-      td2.appendChild(a);
-
-      const td3 = document.createElement('td');
-      td3.className = 'col-md-1';
-      const a2 = document.createElement('a');
-      a2.className = 'remove';
-      const span = document.createElement('span');
-      span.className = 'remove glyphicon glyphicon-remove';
-      span.setAttribute('aria-hidden', 'true');
-      a2.appendChild(span);
-      td3.appendChild(a2);
-
-      const td4 = document.createElement('td');
-      td4.className = 'col-md-6';
-
-      tr.appendChild(td1);
-      tr.appendChild(td2);
-      tr.appendChild(td3);
-      tr.appendChild(td4);
-
+      // Cache label text node for in-place updates
+      const labelNode = tr.querySelector('.lbl')!.firstChild as Text;
       rows.set(item.id, { tr, labelNode, label: item.label });
       return tr;
     },

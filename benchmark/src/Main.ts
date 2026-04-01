@@ -143,7 +143,15 @@ tbody.addEventListener('click', (e) => {
   e.preventDefault();
   const id = +(a.closest('tr')!.firstChild as HTMLElement).textContent!;
   if (a.classList.contains('lbl')) {
+    // Direct DOM toggle — no full watch cycle needed
+    const oldSel = selectedId();
+    if (oldSel > 0) {
+      const oldRow = rowMap.get(oldSel);
+      if (oldRow) oldRow.tr.className = '';
+    }
     selectedId(id);
+    const newRow = rowMap.get(id);
+    if (newRow) newRow.tr.className = 'danger';
   } else if (a.classList.contains('remove')) {
     rows.delete(id);
     data(d => d.filter(item => item.id !== id));

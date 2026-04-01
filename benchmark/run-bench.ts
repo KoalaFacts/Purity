@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Playwright orchestrator — runs bench.html?auto in headless Chromium
-// Usage: npx vite build && npx vite preview & node run-bench.mjs
+// Usage: npx vite build && npx vite preview & npx tsx run-bench.ts
 
 import { chromium } from 'playwright';
 

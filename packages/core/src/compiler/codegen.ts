@@ -243,7 +243,7 @@ function buildStaticHtml(node: ASTNode): string {
     case 'text':
       return escapeHtml(node.value);
     case 'comment':
-      return `<!--${node.value.replace(/-->/g, '--&gt;')}-->`;
+      return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
     case 'element': {
       assertSafeName(node.tag, 'tag');
       let s = `<${node.tag}`;
@@ -276,7 +276,7 @@ function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[])
       return escapeHtml(node.value);
 
     case 'comment':
-      return `<!--${node.value.replace(/-->/g, '--&gt;')}-->`;
+      return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
 
     case 'expression': {
       // Insert a comment placeholder — record its path

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Purity Benchmark Suite</title>
+  <title>Purity vs Solid vs Vanilla — Benchmark</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:system-ui,sans-serif;padding:1.5rem;background:#f5f5f5;max-width:1400px;margin:0 auto}
@@ -12,46 +12,51 @@
     button{padding:.6rem 1.2rem;border:none;border-radius:6px;background:#6c5ce7;color:white;cursor:pointer;font-size:1rem;margin-bottom:1rem;margin-right:.5rem}
     button:hover{background:#5a4bd1}
     button:disabled{background:#ccc;cursor:not-allowed}
-    #status{background:white;border-radius:8px;padding:1rem;margin-bottom:1rem;font-family:monospace;font-size:.85rem;white-space:pre-wrap;line-height:1.5;min-height:100px}
+    #status{background:white;border-radius:8px;padding:1rem;margin-bottom:1rem;font-family:monospace;font-size:.82rem;white-space:pre-wrap;line-height:1.5;min-height:80px}
     table.results{width:100%;border-collapse:collapse;background:white;border-radius:8px;overflow:hidden;margin-bottom:1rem}
-    table.results th{background:#6c5ce7;color:white;padding:.6rem;text-align:left;font-size:.85rem}
-    table.results td{padding:.5rem .6rem;border-bottom:1px solid #eee;font-size:.85rem;font-family:monospace}
-    .good{color:#27ae60;font-weight:bold}
-    .ok{color:#f39c12}
-    .slow{color:#e74c3c}
-    .overhead{font-size:.75rem;color:#888}
-    table.bench-data{width:100%;border-collapse:collapse;display:none}
-    table.bench-data td{padding:.2rem .4rem;border-bottom:1px solid #eee;font-size:.8rem}
+    table.results th{background:#6c5ce7;color:white;padding:.6rem;text-align:left;font-size:.82rem}
+    table.results td{padding:.4rem .6rem;border-bottom:1px solid #eee;font-size:.82rem;font-family:monospace}
+    .winner{color:#27ae60;font-weight:bold}
+    .loser{color:#e74c3c}
+    .tie{color:#888}
+    .bench-tables{display:none}
+    table.bench-data td{padding:.1rem .3rem;font-size:.7rem}
     tr.danger td{background:#ffe0d6}
   </style>
 </head>
 <body>
-  <h1>Purity Benchmark Suite</h1>
-  <p class="sub">Purity vs Vanilla JS — measures exact framework overhead. Warmup: 3 | Iterations: 10 | Discard worst: 2.</p>
+  <h1>Purity vs Solid vs Vanilla</h1>
+  <p class="sub">Same operations, same DOM, same harness. Warmup: 3 | Iterations: 10 | Discard worst: 2.</p>
 
-  <button type="button" id="run-btn">Run Full Comparison</button>
+  <button type="button" id="run-btn">Run Comparison</button>
 
-  <div id="status">Ready. Click to compare Purity (state+watch+each) vs Vanilla JS (raw DOM).</div>
+  <div id="status">Click to compare Purity (state+watch+each) vs SolidJS (createSignal+createEffect) vs Vanilla (raw DOM).</div>
 
   <table class="results" id="results-table" style="display:none">
     <thead><tr>
       <th>Operation</th>
-      <th>Purity (median)</th>
-      <th>Vanilla (median)</th>
-      <th>Overhead</th>
+      <th>Purity</th>
+      <th>Solid</th>
+      <th>Vanilla</th>
+      <th>Winner</th>
     </tr></thead>
     <tbody id="results-body"></tbody>
   </table>
 
-  <table class="bench-data"><tbody id="tbody-purity"></tbody></table>
-  <table class="bench-data"><tbody id="tbody-vanilla"></tbody></table>
+  <div class="bench-tables">
+    <table class="bench-data"><tbody id="tbody-purity"></tbody></table>
+    <table class="bench-data"><tbody id="tbody-solid"></tbody></table>
+    <table class="bench-data"><tbody id="tbody-vanilla"></tbody></table>
+  </div>
 
   <script type="module">
     import { createApp } from './src/app.ts';
+    import { createSolidApp } from './src/solid-bench.ts';
     import { createVanillaApp } from './src/vanilla.ts';
-    import { benchmarkOp, formatStats, flush, sleep } from './src/runner.ts';
+    import { benchmarkOp, formatStats } from './src/runner.ts';
 
     const purityApp = createApp(document.getElementById('tbody-purity'));
+    const solidApp = createSolidApp(document.getElementById('tbody-solid'));
     const vanillaApp = createVanillaApp(document.getElementById('tbody-vanilla'));
 
     const statusEl = document.getElementById('status');
@@ -61,17 +66,28 @@
 
     function log(msg) { statusEl.textContent += msg + '\n'; }
 
-    function addResult(name, purity, vanilla) {
+    function addResult(name, p, s, v) {
       const tr = document.createElement('tr');
-      const overhead = purity.median > 0 && vanilla.median > 0
-        ? ((purity.median / vanilla.median - 1) * 100).toFixed(0)
-        : '—';
-      const overheadClass = Number(overhead) < 20 ? 'good' : Number(overhead) < 100 ? 'ok' : 'slow';
+      const vals = [
+        { name: 'Purity', ms: p.median },
+        { name: 'Solid', ms: s.median },
+        { name: 'Vanilla', ms: v.median },
+      ];
+      const best = Math.min(p.median, s.median, v.median);
+
+      const fmt = (ms) => {
+        const cls = ms === best ? 'winner' : ms > best * 1.5 ? 'loser' : 'tie';
+        return `<td class="${cls}">${ms.toFixed(1)}ms</td>`;
+      };
+
+      const winner = vals.reduce((a, b) => a.ms < b.ms ? a : b).name;
+
       tr.innerHTML = `
         <td>${name}</td>
-        <td>${purity.median.toFixed(1)}ms</td>
-        <td>${vanilla.median.toFixed(1)}ms</td>
-        <td class="${overheadClass}">${overhead === '—' ? '—' : (Number(overhead) > 0 ? `+${overhead}%` : `${overhead}%`)}</td>
+        ${fmt(p.median)}
+        ${fmt(s.median)}
+        ${fmt(v.median)}
+        <td><strong>${winner}</strong></td>
       `;
       resultsBody.appendChild(tr);
     }
@@ -79,11 +95,10 @@
     function makeSuite(app) {
       const clear = () => app.clear();
       const create1k = () => { app.clear(); app.run(1000); };
-
       return [
         ['Create 1,000 rows',     clear, () => app.run(1000), null],
         ['Replace 1,000 rows',    create1k, () => app.run(1000), null],
-        ['Update every 10th row', create1k, () => app.update(), clear],
+        ['Update every 10th',     create1k, () => app.update(), clear],
         ['Select row',            create1k, () => { const d = app.getData(); if (d.length) app.select(d[Math.floor(d.length/2)].id); }, clear],
         ['Swap rows',             create1k, () => app.swapRows(), clear],
         ['Remove row',            create1k, () => { const d = app.getData(); if (d.length) app.remove(d[0].id); }, clear],
@@ -100,36 +115,37 @@
       resultsBody.innerHTML = '';
       resultsTable.style.display = 'table';
 
-      log('Purity vs Vanilla JS — Framework Overhead Comparison\n');
+      log('Purity vs Solid vs Vanilla — Head-to-Head\n');
 
-      const puritySuite = makeSuite(purityApp);
-      const vanillaSuite = makeSuite(vanillaApp);
+      const pSuite = makeSuite(purityApp);
+      const sSuite = makeSuite(solidApp);
+      const vSuite = makeSuite(vanillaApp);
       const results = [];
 
-      for (let i = 0; i < puritySuite.length; i++) {
-        const [name] = puritySuite[i];
-        log(`Running: ${name}...`);
+      for (let i = 0; i < pSuite.length; i++) {
+        const [name] = pSuite[i];
+        log(`${name}...`);
 
-        // Run vanilla first (no microtask overhead)
-        const [, vs, vr, vt] = vanillaSuite[i];
-        const vanilla = await benchmarkOp(`vanilla: ${name}`, vs, vr, vt);
+        const [,vs,vr,vt] = vSuite[i];
+        const v = await benchmarkOp(name, vs, vr, vt);
 
-        // Then Purity
-        const [, ps, pr, pt] = puritySuite[i];
-        const purity = await benchmarkOp(`purity: ${name}`, ps, pr, pt);
+        const [,ss,sr,st] = sSuite[i];
+        const s = await benchmarkOp(name, ss, sr, st);
 
-        log(`  Purity:  ${formatStats(purity.stats)}`);
-        log(`  Vanilla: ${formatStats(vanilla.stats)}`);
-        const oh = ((purity.stats.median / vanilla.stats.median - 1) * 100).toFixed(0);
-        log(`  Overhead: ${Number(oh) > 0 ? '+' : ''}${oh}%\n`);
+        const [,ps,pr,pt] = pSuite[i];
+        const p = await benchmarkOp(name, ps, pr, pt);
 
-        addResult(name, purity.stats, vanilla.stats);
-        results.push({ name, purity: purity.stats, vanilla: vanilla.stats });
+        log(`  Purity: ${p.stats.median.toFixed(1)}ms | Solid: ${s.stats.median.toFixed(1)}ms | Vanilla: ${v.stats.median.toFixed(1)}ms`);
+
+        addResult(name, p.stats, s.stats, v.stats);
+        results.push({ name, purity: p.stats, solid: s.stats, vanilla: v.stats });
       }
 
-      log('✓ Done. Purity = state() + watch() + each(). Vanilla = raw DOM.');
+      log('\n✓ Done.');
+      log('Purity = state() + watch() + each()');
+      log('Solid  = createSignal() + createEffect() + batch()');
+      log('Vanilla = raw DOM manipulation');
 
-      // Headless mode
       window.__benchResults = results;
       const marker = document.createElement('div');
       marker.id = 'bench-complete';
@@ -140,10 +156,7 @@
     }
 
     runBtn.addEventListener('click', runFullSuite);
-
-    if (location.search.includes('auto')) {
-      runFullSuite();
-    }
+    if (location.search.includes('auto')) runFullSuite();
   </script>
 </body>
 </html>

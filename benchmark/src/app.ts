@@ -2,12 +2,71 @@
 
 import { each, html, state, watch } from '../../packages/core/src/index.ts';
 
-const adjectives = ['pretty','large','big','small','tall','short','long','handsome','plain','quaint','clean','elegant','easy','angry','crazy','helpful','mushy','odd','unsightly','adorable','important','inexpensive','cheap','expensive','fancy'];
-const colours = ['red','yellow','blue','green','pink','brown','purple','brown','white','black','orange'];
-const nouns = ['table','chair','house','bbq','desk','car','pony','cookie','sandwich','burger','pizza','mouse','keyboard'];
+const adjectives = [
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
+];
+const colours = [
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'brown',
+  'white',
+  'black',
+  'orange',
+];
+const nouns = [
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
+];
 
-interface RowItem { id: number; label: string }
-interface CachedRow { tr: HTMLTableRowElement; labelNode: Text; label: string }
+interface RowItem {
+  id: number;
+  label: string;
+}
+interface CachedRow {
+  tr: HTMLTableRowElement;
+  labelNode: Text;
+  label: string;
+}
 
 export interface AppHandle {
   run(count: number): void;
@@ -73,8 +132,14 @@ export function createApp(tbody: HTMLElement): AppHandle {
 
   // Selection highlighting
   watch(selectedId, (id, oldId) => {
-    if (oldId) { const r = rows.get(oldId); if (r) r.tr.className = ''; }
-    if (id) { const r = rows.get(id); if (r) r.tr.className = 'danger'; }
+    if (oldId) {
+      const r = rows.get(oldId);
+      if (r) r.tr.className = '';
+    }
+    if (id) {
+      const r = rows.get(id);
+      if (r) r.tr.className = 'danger';
+    }
   });
 
   // Event delegation
@@ -88,29 +153,47 @@ export function createApp(tbody: HTMLElement): AppHandle {
   });
 
   const handle: AppHandle = {
-    run(count) { data(buildData(count)); selectedId(0); },
-    add() { data(d => d.concat(buildData(1000))); },
+    run(count) {
+      data(buildData(count));
+      selectedId(0);
+    },
+    add() {
+      data((d) => d.concat(buildData(1000)));
+    },
     update() {
-      data(d => {
+      data((d) => {
         const c = d.slice();
         for (let i = 0; i < c.length; i += 10) c[i] = { ...c[i], label: `${c[i].label} !!!` };
         return c;
       });
     },
-    select(id) { selectedId(id); },
+    select(id) {
+      selectedId(id);
+    },
     swapRows() {
-      data(d => {
+      data((d) => {
         if (d.length > 998) {
           const c = d.slice();
-          const tmp = c[1]; c[1] = c[998]; c[998] = tmp;
+          const tmp = c[1];
+          c[1] = c[998];
+          c[998] = tmp;
           return c;
         }
         return d;
       });
     },
-    remove(id) { rows.delete(id); data(d => d.filter(item => item.id !== id)); },
-    clear() { rows.clear(); data([]); selectedId(0); },
-    getData() { return data(); },
+    remove(id) {
+      rows.delete(id);
+      data((d) => d.filter((item) => item.id !== id));
+    },
+    clear() {
+      rows.clear();
+      data([]);
+      selectedId(0);
+    },
+    getData() {
+      return data();
+    },
   };
 
   return handle;

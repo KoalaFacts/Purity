@@ -1,4 +1,7 @@
-name: CI
+name: CI — Lint, Test, Build
+
+# Runs automatically on every push to main and every PR.
+# Verifies code quality, type safety, tests, and build integrity.
 
 on:
   push:
@@ -7,36 +10,49 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  ci:
+    name: Lint → Test → Build
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js 22
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: 📦 Install root dependencies
+        # Installs all workspace dependencies from lockfile
         run: npm ci
 
-      - name: Lint
+      - name: 🔍 Lint & format check (Biome)
+        # Checks all files for formatting and lint errors without modifying them
         run: npx biome check .
 
-      - name: Type check (core)
+      - name: 🔷 Type check @purity/core
+        # Verifies TypeScript types compile without errors
         run: cd packages/core && npx tsc --noEmit
 
-      - name: Test core
+      - name: 🧪 Test @purity/core (155 tests)
+        # Runs vitest on the core framework — signals, templates, components, control flow
         run: npm test -w packages/core
 
-      - name: Test vite-plugin
+      - name: 🧪 Test @purity/vite-plugin (12 tests)
+        # Runs vitest on the AOT template compiler plugin
         run: npm test -w packages/vite-plugin
 
-      - name: Build core
+      - name: 🏗️ Build @purity/core
+        # Produces dist/ with ESM, CJS, and .d.ts type declarations
         run: npm run build -w packages/core
 
-      - name: Build vite-plugin
+      - name: 🏗️ Build @purity/vite-plugin
+        # Produces dist/ with the compiled plugin
         run: npm run build -w packages/vite-plugin
 
-      - name: Build benchmark (verifies AOT compilation)
+      - name: 🏗️ Build benchmark (verifies AOT compilation)
+        # Installs benchmark deps and runs vite build — proves the AOT plugin
+        # successfully compiles html`` templates at build time
         run: cd benchmark && npm ci && npx vite build

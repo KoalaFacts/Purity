@@ -1,10 +1,14 @@
-name: Benchmark
+name: Benchmark — Purity vs Solid vs Svelte
+
+# Manually triggered from the Actions tab.
+# Runs headless Chromium benchmark comparing Purity against SolidJS and Svelte.
+# Results published to GitHub Pages at https://koalafacts.github.io/Purity/
 
 on:
   workflow_dispatch:
     inputs:
       iterations:
-        description: 'Number of iterations per operation'
+        description: 'Measured iterations per operation (default: 10)'
         required: false
         default: '10'
 
@@ -15,77 +19,79 @@ permissions:
 
 jobs:
   benchmark:
+    name: Run benchmark in headless Chromium
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js 22
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install root dependencies
+      - name: 📦 Install root dependencies
         run: npm ci
 
-      - name: Install benchmark dependencies
+      - name: 📦 Install benchmark dependencies
+        # Includes solid-js, svelte, @sveltejs/vite-plugin-svelte, playwright
         run: cd benchmark && npm ci
 
-      - name: Install Playwright Chromium
+      - name: 🌐 Install Playwright Chromium
+        # Downloads headless Chromium for automated browser benchmarking
         run: npx playwright install chromium
 
-      - name: Build benchmark (AOT compile Purity templates)
+      - name: 🏗️ Build benchmark (AOT compiles Purity templates)
+        # Vite build with @purity/vite-plugin transforms html`` → direct DOM calls
         run: cd benchmark && npx vite build
 
-      - name: Start preview server
+      - name: 🚀 Start production preview server
+        # Serves the built benchmark on port 4173
         run: cd benchmark && npx vite preview --port 4173 &
 
-      - name: Wait for server
+      - name: ⏳ Wait for server to be ready
         run: sleep 3
 
-      - name: Run benchmark (headless Chromium)
+      - name: 📊 Run benchmark (Purity vs Solid vs Svelte)
+        # Opens bench.html?auto in headless Chromium
+        # Each operation: 3 warmup + 10 measured iterations, discard 2 worst
+        # Outputs markdown table with median/mean/stddev per framework
         run: |
           cd benchmark
           node --import tsx run-bench.ts | tee benchmark-results.txt
 
-      - name: Save results to history
+      - name: 💾 Save results to history (last 3 runs)
+        # Commits timestamped results file to benchmark/history/
+        # Automatically prunes files beyond the 3 most recent
         run: |
           mkdir -p benchmark/history
           DATE=$(date +%Y-%m-%d-%H%M%S)
           cp benchmark/benchmark-results.txt "benchmark/history/${DATE}.txt"
 
-      - name: Generate GitHub Pages site
+      - name: 🌍 Generate GitHub Pages site
+        # Builds an HTML page showing latest results + history
         run: |
           mkdir -p gh-pages
-
-          # Build results page from all history files
           node -e "
           const fs = require('fs');
           const path = require('path');
           const dir = 'benchmark/history';
-
-          // Read last 3 result files only
           const files = fs.existsSync(dir)
             ? fs.readdirSync(dir).filter(f => f.endsWith('.txt')).sort().reverse().slice(0, 3)
             : [];
-
-          // Clean up older files
           if (fs.existsSync(dir)) {
             const all = fs.readdirSync(dir).filter(f => f.endsWith('.txt')).sort().reverse();
             for (let i = 3; i < all.length; i++) fs.unlinkSync(path.join(dir, all[i]));
           }
-
-          // Also include current run
           const current = fs.readFileSync('benchmark/benchmark-results.txt', 'utf8');
-
           let runs = '';
-          if (files.length > 0) {
-            for (const f of files) {
-              const content = fs.readFileSync(path.join(dir, f), 'utf8');
-              const date = f.replace('.txt', '');
-              runs += '<details><summary>' + date + '</summary><pre>' + content + '</pre></details>\n';
-            }
+          for (const f of files) {
+            const content = fs.readFileSync(path.join(dir, f), 'utf8');
+            const date = f.replace('.txt', '');
+            runs += '<details><summary>' + date + '</summary><pre>' + content + '</pre></details>\n';
           }
-
           const html = \`<!DOCTYPE html>
           <html>
           <head>
@@ -103,33 +109,30 @@ jobs:
           </head>
           <body>
             <h1>Purity Benchmarks</h1>
-            <p>Purity vs Solid vs Svelte — automated benchmark results.</p>
-
+            <p>Purity vs Solid vs Svelte — automated results from headless Chromium.</p>
             <h2>Latest Run</h2>
             <div class=\"current\"><pre>\${current}</pre></div>
-
-            <h2>History</h2>
+            <h2>Previous Runs</h2>
             \${runs || '<p>No previous runs.</p>'}
-
             <p style=\"margin-top:2rem;color:#888;font-size:.85rem\">
-              Generated by <a href=\"https://github.com/KoalaFacts/Purity/actions\">GitHub Actions</a>.
-              Trigger a new run from the Actions tab.
+              Trigger a new run: <a href=\"https://github.com/KoalaFacts/Purity/actions\">Actions tab → Benchmark</a>
             </p>
           </body>
           </html>\`;
-
           fs.writeFileSync('gh-pages/index.html', html);
           "
 
-      - name: Deploy to GitHub Pages
+      - name: 📤 Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: gh-pages
 
-      - name: Publish Pages
+      - name: 🌐 Deploy to GitHub Pages
+        # Publishes to https://koalafacts.github.io/Purity/
         uses: actions/deploy-pages@v4
 
-      - name: Commit history to repo
+      - name: 📝 Commit history to repository
+        # Saves results file so future runs can show trends
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

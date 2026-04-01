@@ -25,9 +25,7 @@ export function calcStats(times: number[]): Stats {
   const n = trimmed.length;
   const mean = trimmed.reduce((a, b) => a + b, 0) / n;
   const median =
-    n % 2 === 0
-      ? (trimmed[n / 2 - 1] + trimmed[n / 2]) / 2
-      : trimmed[Math.floor(n / 2)];
+    n % 2 === 0 ? (trimmed[n / 2 - 1] + trimmed[n / 2]) / 2 : trimmed[Math.floor(n / 2)];
   const variance = trimmed.reduce((a, b) => a + (b - mean) ** 2, 0) / n;
   return { mean, median, stddev: Math.sqrt(variance), min: trimmed[0], max: trimmed[n - 1], n };
 }

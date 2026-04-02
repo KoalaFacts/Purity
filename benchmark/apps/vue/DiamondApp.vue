@@ -17,7 +17,7 @@ for (let i = 0; i < 1000; i++) {
   results.push(d);
 }
 
-const _total = computed(() => {
+const total = computed(() => {
   let s = 0;
   for (let i = 0; i < results.length; i++) s += results[i].value;
   return s;

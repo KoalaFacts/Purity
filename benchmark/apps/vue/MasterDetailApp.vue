@@ -97,7 +97,7 @@ function generatePersons(count: number): Person[] {
 const persons = shallowRef<Person[]>([]);
 const selectedId = ref<number | null>(null);
 
-const _selectedPerson = computed(() => {
+const selectedPerson = computed(() => {
   const id = selectedId.value;
   if (id === null) return null;
   return persons.value.find((p) => p.id === id) ?? null;

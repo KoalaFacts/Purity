@@ -14,7 +14,7 @@ for (let i = 0; i < 1000; i++) {
   chain.push(c);
   prev = c;
 }
-const _last = chain[chain.length - 1];
+const last = chain[chain.length - 1];
 
 function setSource(v: number) {
   source.value = v;

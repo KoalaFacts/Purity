@@ -199,6 +199,44 @@ interface EachEntry {
   dispose?: () => void;
 }
 
+// Bulk remove all managed nodes using Range API — O(1) native batch removal
+function bulkClear(
+  _parent: Node,
+  prevKeys: unknown[],
+  keyToEntry: Map<unknown, EachEntry>,
+  endMarker: Node,
+): void {
+  const prevLen = prevKeys.length;
+  if (prevLen === 0) return;
+
+  // Use Range API for batch removal — single native operation
+  const firstEntry = keyToEntry.get(prevKeys[0]);
+  if (firstEntry?.nodes[0]?.parentNode) {
+    const range = document.createRange();
+    range.setStartBefore(firstEntry.nodes[0]);
+    range.setEndBefore(endMarker);
+    range.deleteContents();
+  }
+
+  // Run disposers
+  for (let i = 0; i < prevLen; i++) {
+    const entry = keyToEntry.get(prevKeys[i])!;
+    if (entry.dispose) entry.dispose();
+  }
+}
+
+// Extract nodes from mapFn result — optimized for single-node case
+function extractNodes(content: Node | DocumentFragment | string): Node[] {
+  if (content instanceof DocumentFragment) {
+    // Fast path: single child (common for html`` templates)
+    const fc = content.firstChild;
+    if (fc && !fc.nextSibling) return [fc];
+    return Array.from(content.childNodes);
+  }
+  if (content instanceof Node) return [content];
+  return [document.createTextNode(String(content ?? ''))];
+}
+
 /**
  * Reactive list rendering. Reuses DOM via per-item signals + LIS reorder.
  *
@@ -261,17 +299,10 @@ export function each<T>(
       }
     }
 
-    // Fast path: clear all — skip reconciliation entirely
+    // Fast path: clear all — bulk remove via Range API
     if (len === 0) {
       if (prevLen > 0) {
-        for (let i = 0; i < prevLen; i++) {
-          const entry = keyToEntry.get(prevKeys[i])!;
-          for (let j = 0; j < entry.nodes.length; j++) {
-            const node = entry.nodes[j];
-            if (node.parentNode) node.parentNode.removeChild(node);
-          }
-          if (entry.dispose) entry.dispose();
-        }
+        bulkClear(parent, prevKeys, keyToEntry, endMarker);
         keyToEntry = new Map();
       }
       prevKeys = [];
@@ -294,30 +325,14 @@ export function each<T>(
         newEntries.set(key, entry);
         reuseCount++;
       } else {
-        const content = mapFn(item, i);
-        let nodes: Node[];
-        if (content instanceof DocumentFragment) {
-          nodes = Array.from(content.childNodes);
-        } else if (content instanceof Node) {
-          nodes = [content];
-        } else {
-          nodes = [document.createTextNode(String(content ?? ''))];
-        }
-        newEntries.set(key, { nodes, data: null });
+        newEntries.set(key, { nodes: extractNodes(mapFn(item, i)), data: null });
       }
     }
 
     // Fast path: no reuse — full replace or all new → bulk remove + bulk insert
     if (reuseCount === 0) {
       if (prevLen > 0) {
-        for (let i = 0; i < prevLen; i++) {
-          const entry = keyToEntry.get(prevKeys[i])!;
-          for (let j = 0; j < entry.nodes.length; j++) {
-            const node = entry.nodes[j];
-            if (node.parentNode) node.parentNode.removeChild(node);
-          }
-          if (entry.dispose) entry.dispose();
-        }
+        bulkClear(parent, prevKeys, keyToEntry, endMarker);
       }
       // Batch insert all new via single fragment
       const frag = document.createDocumentFragment();
@@ -402,7 +417,7 @@ export function each<T>(
       }
 
       if (!swapped) {
-        // Full LIS-based reorder
+        // Full LIS-based reorder — batch consecutive insertions
         const oldKeyIndex = new Map<unknown, number>();
         for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
 
@@ -419,23 +434,43 @@ export function each<T>(
 
         const lisIndices = new Set(lis(sources));
 
+        // Reverse pass: batch consecutive non-LIS items into fragments
         let nextSibling: Node = endMarker;
+        let batchFrag: DocumentFragment | null = null;
+        let batchTarget: Node = endMarker;
+
         for (let i = len - 1; i >= 0; i--) {
           const entry = newEntries.get(newKeys[i])!;
           const firstNode = entry.nodes[0];
           const sourceIdx = newIndexToSource[i];
+          const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
 
-          if (sourceIdx === -1 || !lisIndices.has(sourceIdx)) {
+          if (needsMove) {
+            // Flush any pending batch before a stable gap
+            if (!batchFrag) {
+              batchFrag = document.createDocumentFragment();
+              batchTarget = nextSibling;
+            }
+            // Prepend to batch (we're going right-to-left)
             if (entry.nodes.length > 1) {
-              const frag = document.createDocumentFragment();
-              for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
-              parent.insertBefore(frag, nextSibling);
+              for (let j = 0; j < entry.nodes.length; j++) batchFrag.appendChild(entry.nodes[j]);
             } else if (firstNode) {
-              parent.insertBefore(firstNode, nextSibling);
+              batchFrag.appendChild(firstNode);
+            }
+          } else {
+            // Stable item — flush batch if pending
+            if (batchFrag) {
+              parent.insertBefore(batchFrag, batchTarget);
+              batchFrag = null;
             }
           }
 
           nextSibling = entry.nodes[0] || nextSibling;
+        }
+
+        // Flush remaining batch
+        if (batchFrag) {
+          parent.insertBefore(batchFrag, batchTarget);
         }
       }
     }
@@ -590,8 +625,25 @@ export function list<T>(
       }
     }
 
+    // Fast path: clear all — bulk remove via Range
+    if (len === 0) {
+      if (prevLen > 0) {
+        const firstEntry = keyToEntry.get(prevKeys[0]);
+        if (firstEntry?.node.parentNode) {
+          const range = document.createRange();
+          range.setStartBefore(firstEntry.node);
+          range.setEndBefore(endMarker);
+          range.deleteContents();
+        }
+      }
+      keyToEntry = new Map();
+      prevKeys = [];
+      return;
+    }
+
     const newKeys: unknown[] = new Array(len);
     const newEntries = new Map<unknown, ListEntry>();
+    let reuseCount = 0;
 
     // Tight creation loop — NO function call overhead per item
     for (let i = 0; i < len; i++) {
@@ -604,13 +656,33 @@ export function list<T>(
         const entry = _existing;
         updateEntry(entry, item, i);
         newEntries.set(key, entry);
+        reuseCount++;
       } else {
         newEntries.set(key, createEntry(item, i));
       }
     }
 
+    // Fast path: no reuse — bulk remove + bulk insert
+    if (reuseCount === 0) {
+      if (prevLen > 0) {
+        const firstEntry = keyToEntry.get(prevKeys[0]);
+        if (firstEntry?.node.parentNode) {
+          const range = document.createRange();
+          range.setStartBefore(firstEntry.node);
+          range.setEndBefore(endMarker);
+          range.deleteContents();
+        }
+      }
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
+      parent.insertBefore(frag, endMarker);
+      keyToEntry = newEntries;
+      prevKeys = newKeys;
+      return;
+    }
+
     // Remove deleted
-    if (prevLen > 0) {
+    if (reuseCount < prevLen) {
       const newKeySet = new Set(newKeys);
       for (let i = 0; i < prevLen; i++) {
         if (!newKeySet.has(prevKeys[i])) {

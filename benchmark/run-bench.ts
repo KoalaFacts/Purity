@@ -48,6 +48,8 @@ const SCENARIOS: Scenario[] = [
     page: 'index',
     category: 'Rendering',
     ops: [
+      { name: 'Create 10 rows', setup: [{ action: '#clear' }], steps: [{ action: '#run-10' }] },
+      { name: 'Create 100 rows', setup: [{ action: '#clear' }], steps: [{ action: '#run-100' }] },
       { name: 'Create 1,000 rows', setup: [{ action: '#clear' }], steps: [{ action: '#run' }] },
       {
         name: 'Create 10,000 rows',
@@ -58,6 +60,11 @@ const SCENARIOS: Scenario[] = [
         name: 'Append 1,000 rows',
         setup: [{ action: '#clear' }, { action: '#run' }],
         steps: [{ action: '#add' }],
+      },
+      {
+        name: 'Replace 100 rows',
+        setup: [{ action: '#clear' }, { action: '#run-100' }],
+        steps: [{ action: '#run-100' }],
       },
       {
         name: 'Replace 1,000 rows',
@@ -73,6 +80,11 @@ const SCENARIOS: Scenario[] = [
         name: 'Swap rows',
         setup: [{ action: '#clear' }, { action: '#run' }],
         steps: [{ action: '#swaprows' }],
+      },
+      {
+        name: 'Clear 100 rows',
+        setup: [{ action: '#clear' }, { action: '#run-100' }],
+        steps: [{ action: '#clear' }],
       },
       {
         name: 'Clear 1,000 rows',
@@ -204,6 +216,16 @@ const SCENARIOS: Scenario[] = [
     page: 'lifecycle',
     category: 'Components',
     ops: [
+      {
+        name: 'Create 10 components',
+        setup: [{ action: '#destroy-all' }],
+        steps: [{ action: '#create-10' }],
+      },
+      {
+        name: 'Create 100 components',
+        setup: [{ action: '#destroy-all' }],
+        steps: [{ action: '#create-100' }],
+      },
       {
         name: 'Create 1k components',
         setup: [{ action: '#destroy-all' }],

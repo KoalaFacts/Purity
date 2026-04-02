@@ -16,6 +16,8 @@
         <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="update">Update every 10th row</button></div>
         <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="clear">Clear</button></div>
         <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="swaprows">Swap Rows</button></div>
+        <button type="button" id="run-10" style="display:none">Create 10</button>
+        <button type="button" id="run-100" style="display:none">Create 100</button>
       </div></div>
     </div></div>
     <table class="table table-hover table-striped test-data"><tbody id="tbody"></tbody></table>
@@ -30,6 +32,8 @@
     document.getElementById('update').addEventListener('click', () => app.update());
     document.getElementById('clear').addEventListener('click', () => app.clear());
     document.getElementById('swaprows').addEventListener('click', () => app.swapRows());
+    document.getElementById('run-10').addEventListener('click', () => app.run(10));
+    document.getElementById('run-100').addEventListener('click', () => app.run(100));
   </script>
 </body>
 </html>

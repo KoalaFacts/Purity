@@ -31,4 +31,10 @@ export function createLifecycleApp(container: HTMLElement) {
   document.getElementById('replace')!.addEventListener('click', () => {
     handle.replace();
   });
+  document.getElementById('create-10')!.addEventListener('click', () => {
+    handle.create(10);
+  });
+  document.getElementById('create-100')!.addEventListener('click', () => {
+    handle.create(100);
+  });
 }

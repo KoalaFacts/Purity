@@ -37,4 +37,10 @@ export function createLifecycleApp(container: HTMLElement) {
   document.getElementById('replace')!.addEventListener('click', () => {
     cards(buildCards(1000));
   });
+  document.getElementById('create-10')!.addEventListener('click', () => {
+    cards(buildCards(10));
+  });
+  document.getElementById('create-100')!.addEventListener('click', () => {
+    cards(buildCards(100));
+  });
 }

@@ -91,10 +91,20 @@ function flush(): void {
     unwatchScheduled = false;
   }
 
+  const raw = watcher.getPending();
+
+  // Fast path: single pending effect — skip Set allocation
+  if (raw.length === 1) {
+    watcher.watch(raw[0]);
+    raw[0].get();
+    return;
+  }
+
+  if (raw.length === 0) return;
+
   // Deduplicate — the polyfill's Watcher.watch() appends to producerNode
   // without resetting nextProducerIndex, so getPending() returns duplicates.
   // Without dedup, the flush loop doubles producerNode every cycle (2^N growth).
-  const raw = watcher.getPending();
   const seen = new Set<Signal.Computed<void>>();
   for (let i = 0; i < raw.length; i++) {
     seen.add(raw[i]);

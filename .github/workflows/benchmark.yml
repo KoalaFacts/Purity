@@ -26,10 +26,10 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
-      - name: 🟢 Setup Node.js 22
+      - name: 🟢 Setup Node.js 24
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: '24'
           cache: 'npm'
 
       - name: 📦 Install root dependencies
@@ -60,7 +60,7 @@ jobs:
         # Outputs markdown table with median/mean/stddev per framework
         run: |
           cd benchmark
-          node --import tsx run-bench.ts | tee benchmark-results.txt
+          node run-bench.ts | tee benchmark-results.md
 
       - name: 💾 Save results to history (last 3 runs)
         # Commits timestamped results file to benchmark/history/
@@ -68,7 +68,7 @@ jobs:
         run: |
           mkdir -p benchmark/history
           DATE=$(date +%Y-%m-%d-%H%M%S)
-          cp benchmark/benchmark-results.txt "benchmark/history/${DATE}.txt"
+          cp benchmark/benchmark-results.md "benchmark/history/${DATE}.md"
 
       - name: 🌍 Generate GitHub Pages site
         # Builds an HTML page showing latest results + history
@@ -79,17 +79,17 @@ jobs:
           const path = require('path');
           const dir = 'benchmark/history';
           const files = fs.existsSync(dir)
-            ? fs.readdirSync(dir).filter(f => f.endsWith('.txt')).sort().reverse().slice(0, 3)
+            ? fs.readdirSync(dir).filter(f => f.endsWith('.md')).sort().reverse().slice(0, 3)
             : [];
           if (fs.existsSync(dir)) {
-            const all = fs.readdirSync(dir).filter(f => f.endsWith('.txt')).sort().reverse();
+            const all = fs.readdirSync(dir).filter(f => f.endsWith('.md')).sort().reverse();
             for (let i = 3; i < all.length; i++) fs.unlinkSync(path.join(dir, all[i]));
           }
-          const current = fs.readFileSync('benchmark/benchmark-results.txt', 'utf8');
+          const current = fs.readFileSync('benchmark/benchmark-results.md', 'utf8');
           let runs = '';
           for (const f of files) {
             const content = fs.readFileSync(path.join(dir, f), 'utf8');
-            const date = f.replace('.txt', '');
+            const date = f.replace('.md', '');
             runs += '<details><summary>' + date + '</summary><pre>' + content + '</pre></details>\n';
           }
           const html = \`<!DOCTYPE html>

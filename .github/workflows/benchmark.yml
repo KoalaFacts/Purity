@@ -74,7 +74,7 @@ jobs:
         # Builds an HTML page showing latest results + history
         run: |
           mkdir -p gh-pages
-          node benchmark/generate-pages.js
+          node benchmark/generate-pages.ts
 
       - name: 📤 Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

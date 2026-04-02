@@ -5,13 +5,13 @@
 // Subsequent calls: run cached function directly. Zero overhead.
 // ---------------------------------------------------------------------------
 
-import { watch } from '../signals.js';
-import { generate } from './codegen.js';
-import { parse } from './parser.js';
+import { watch } from '../signals.ts';
+import { generate } from './codegen.ts';
+import { parse } from './parser.ts';
 
 type CompiledFn = (
   values: unknown[],
-  watch: typeof import('../signals.js').watch,
+  watch: typeof import('../signals.ts').watch,
 ) => Node | DocumentFragment;
 
 const compiledCache = new WeakMap<TemplateStringsArray, CompiledFn>();
@@ -87,4 +87,4 @@ export function getCompiledFactory(strings: TemplateStringsArray): CompiledFn {
 }
 
 /** @internal */
-export { watch as _watch } from '../signals.js';
+export { watch as _watch } from '../signals.ts';

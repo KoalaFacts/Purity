@@ -1,4 +1,4 @@
-export type * from './ast.js';
-export { generate, generateModule } from './codegen.js';
-export { html } from './compile.js';
-export { parse } from './parser.js';
+export type * from './ast.ts';
+export { generate, generateModule } from './codegen.ts';
+export { html } from './compile.ts';
+export { parse } from './parser.ts';

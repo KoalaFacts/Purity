@@ -8,7 +8,7 @@
 // Dynamic: innerHTML with markers + cloneNode + positional path navigation
 // ---------------------------------------------------------------------------
 
-import type { ASTNode, AttributeNode, FragmentNode } from './ast.js';
+import type { ASTNode, AttributeNode, FragmentNode } from './ast.ts';
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

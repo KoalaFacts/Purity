@@ -36,7 +36,7 @@ jobs:
         run: npm ci
 
       - name: 📦 Install benchmark dependencies
-        # Includes solid-js, svelte, vue, @sveltejs/vite-plugin-svelte, playwright, tsx
+        # Includes solid-js, svelte, vue, @sveltejs/vite-plugin-svelte, playwright
         run: cd benchmark && npm ci
 
       - name: 🌐 Install Playwright Chromium
@@ -60,7 +60,7 @@ jobs:
         # Outputs markdown table with median per framework
         run: |
           cd benchmark
-          ITERATIONS=${{ inputs.iterations || '5' }} npx tsx run-bench.ts | tee benchmark-results.md
+          ITERATIONS=${{ inputs.iterations || '5' }} node run-bench.ts | tee benchmark-results.md
 
       - name: 💾 Save results to history (last 3 runs)
         # Commits timestamped results file to benchmark/history/

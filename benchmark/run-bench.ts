@@ -30,12 +30,18 @@ async function main() {
     }
 
     // Print markdown table
-    console.log('| Operation | Median | Mean | σ | Min | Max |');
-    console.log('|-----------|--------|------|---|-----|-----|');
+    const fmt = (s) => `${s.median.toFixed(1)}ms`;
+    console.log('| Operation | Purity | Solid | Svelte | Winner |');
+    console.log('|-----------|--------|-------|--------|--------|');
     for (const r of results) {
-      const s = r.stats;
+      const vals = [
+        { name: 'Purity', ms: r.purity.median },
+        { name: 'Solid', ms: r.solid.median },
+        { name: 'Svelte', ms: r.svelte.median },
+      ];
+      const winner = vals.reduce((a, b) => a.ms < b.ms ? a : b).name;
       console.log(
-        `| ${r.name} | ${s.median.toFixed(1)}ms | ${s.mean.toFixed(1)}ms | ${s.stddev.toFixed(1)}ms | ${s.min.toFixed(1)}ms | ${s.max.toFixed(1)}ms |`,
+        `| ${r.name} | ${fmt(r.purity)} | ${fmt(r.solid)} | ${fmt(r.svelte)} | **${winner}** |`,
       );
     }
 

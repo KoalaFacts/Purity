@@ -3,7 +3,7 @@ import { html } from '../src/compiler/compile.ts';
 import { state } from '../src/signals.ts';
 
 // Helper: wrap result in a container for querying
-function render(result) {
+function render(result: Node | unknown): HTMLDivElement {
   const container = document.createElement('div');
   container.appendChild(result instanceof Node ? result : document.createTextNode(String(result)));
   return container;
@@ -24,14 +24,18 @@ describe('html tagged template', () => {
 
   it('interpolates static number values', () => {
     const c = render(html`<span>${42}</span>`);
-    expect(c.querySelector('span').textContent).toBe('42');
+    const span = c.querySelector('span');
+    expect(span).not.toBeNull();
+    expect(span!.textContent).toBe('42');
   });
 
   it('inserts DOM nodes directly', () => {
     const child = document.createElement('strong');
     child.textContent = 'bold';
     const c = render(html`<p>Some ${child} text</p>`);
-    expect(c.querySelector('strong').textContent).toBe('bold');
+    const strong = c.querySelector('strong');
+    expect(strong).not.toBeNull();
+    expect(strong!.textContent).toBe('bold');
   });
 
   it('inserts arrays of values', () => {

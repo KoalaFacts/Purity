@@ -479,6 +479,12 @@ async function main() {
     }
   }
 
+  // Caveats
+  console.log('\n### Notes\n');
+  console.log(
+    '- **Svelte computed-chain & diamond:** Svelte 5 `$derived()` is a compile-time rune and cannot be created dynamically. These scenarios use a `$effect` loop instead of 1000 actual reactive dependency nodes. Purity, Solid, and Vue create real reactive graphs for these tests, so Svelte results are not directly comparable.',
+  );
+
   console.log('\n✓ Benchmark complete.');
   await browser.close();
 }

@@ -115,7 +115,7 @@ props.onHandle({
 </script>
 
 {#each data as row (row.id)}
-  <tr class:danger={row.id === selectedId}>
+  <tr class:danger={row.id === _selectedId}>
     <td class="col-md-1">{row.id}</td>
     <td class="col-md-4"><a href="#" class="lbl">{row.label}</a></td>
     <td class="col-md-1"><a href="#" class="remove"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>

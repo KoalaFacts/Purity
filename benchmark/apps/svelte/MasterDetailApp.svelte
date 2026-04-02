@@ -108,11 +108,11 @@ props.onHandle({
     {/each}
   </div>
   <div id="detail-panel" style="flex:1">
-    {#if selectedPerson}
+    {#if _selectedPerson}
       <div class="detail">
-        <h2>{selectedPerson.name}</h2>
-        <p><strong>Email:</strong> {selectedPerson.email}</p>
-        <p><strong>Bio:</strong> {selectedPerson.bio}</p>
+        <h2>{_selectedPerson.name}</h2>
+        <p><strong>Email:</strong> {_selectedPerson.email}</p>
+        <p><strong>Bio:</strong> {_selectedPerson.bio}</p>
       </div>
     {/if}
   </div>

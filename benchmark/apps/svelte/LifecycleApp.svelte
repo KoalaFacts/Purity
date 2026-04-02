@@ -28,6 +28,6 @@ props.onHandle({
 });
 </script>
 
-{#each cards as card (card.id)}
+{#each _cards as card (card.id)}
   <div class="card"><span class="id">{card.id}</span><span class="label">{card.label}</span></div>
 {/each}

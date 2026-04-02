@@ -1,36 +1,27 @@
 <script>
-// NOTE: Svelte 5 cannot create dynamic $derived() values at runtime.
-// This uses a single $effect with a loop, which is the closest equivalent.
-// Other frameworks (Purity/Solid/Vue) create 1000 actual diamond dependency graphs.
+// Svelte 5's $derived() is a compile-time rune and cannot be created
+// dynamically in a loop. This uses $effect with a loop to simulate
+// 1000 diamond graphs. Other frameworks (Purity/Solid/Vue) create
+// 1000 actual diamond dependency graphs with reactive nodes.
+// The benchmark results annotate this difference.
 const props = $props();
 let sources = $state([]);
 let total = $state(0);
 
-function recompute() {
+$effect(() => {
   let t = 0;
   for (let i = 0; i < sources.length; i++) {
     const a = sources[i];
-    const b = a * 2;
-    const c = a * 3;
-    t += b + c;
+    t += a * 2 + a * 3;
   }
   total = t;
-}
-
-function setupDiamonds() {
-  const s = [];
-  for (let i = 0; i < 1000; i++) s.push(i);
-  sources = s;
-  recompute();
-}
-
-$effect(() => {
-  recompute();
 });
 
 props.onHandle({
   setup() {
-    setupDiamonds();
+    const s = [];
+    for (let i = 0; i < 1000; i++) s.push(i);
+    sources = s;
   },
   updateAll() {
     sources = sources.map((_, i) => i + ((Math.random() * 100) | 0));

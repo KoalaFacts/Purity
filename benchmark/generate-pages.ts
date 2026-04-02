@@ -11,7 +11,6 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
-const FRAMEWORKS = ['purity', 'solid', 'svelte', 'vue'];
 const historyDir = 'benchmark/history';
 const resultsFile = 'benchmark/benchmark-results.md';
 const outFile = 'gh-pages/index.html';

@@ -3,14 +3,13 @@
   "version": "0.1.0",
   "description": "Vite plugin for AOT template compilation in Purity",
   "type": "module",
-  "main": "dist/index.cjs",
-  "module": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "src/index.ts",
+  "module": "src/index.ts",
+  "types": "src/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "types": "./src/index.d.ts",
+      "import": "./src/index.ts"
     }
   },
   "files": [

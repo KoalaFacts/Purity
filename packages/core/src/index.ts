@@ -3,8 +3,8 @@
 // ---------------------------------------------------------------------------
 
 // Template rendering (JIT compiled)
-export { html } from './compiler/compile.js';
-export type { ComponentFn, MountResult } from './component.js';
+export { html } from './compiler/compile';
+export type { ComponentFn, MountResult } from './component';
 // Lifecycle (3 hooks + error)
 export {
   mount,
@@ -12,15 +12,15 @@ export {
   onDispose,
   onError,
   onMount,
-} from './component.js';
+} from './component';
 // Control flow
-export { each, list, match, when } from './control.js';
-export type { SlotAccessor } from './elements.js';
+export { each, list, match, when } from './control';
+export type { SlotAccessor } from './elements';
 // Components, slots, teleport
-export { component, slot, teleport } from './elements.js';
-export type { ComputedAccessor, Dispose, StateAccessor } from './signals.js';
+export { component, slot, teleport } from './elements';
+export type { ComputedAccessor, Dispose, StateAccessor } from './signals';
 // Reactive primitives
-export { batch, compute, state, watch } from './signals.js';
+export { batch, compute, state, watch } from './signals';
 
 // Scoped styles
-export { css } from './styles.js';
+export { css } from './styles';

@@ -10,7 +10,7 @@
 // - Minimal allocations — reuses state variables
 // ---------------------------------------------------------------------------
 
-import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from './ast.js';
+import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from './ast.ts';
 
 // Void elements that cannot have children
 const VOID_TAGS = new Set([

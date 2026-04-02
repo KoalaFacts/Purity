@@ -1,5 +1,5 @@
-import { ComponentContext, getCurrentContext, popContext, pushContext } from './component.js';
-import { watch } from './signals.js';
+import { ComponentContext, getCurrentContext, popContext, pushContext } from './component';
+import { watch } from './signals';
 
 // Run callbacks safely
 function runCallbacks(arr: (() => void)[] | null, ctx?: ComponentContext): void {

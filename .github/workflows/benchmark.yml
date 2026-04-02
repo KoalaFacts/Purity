@@ -1,16 +1,16 @@
-name: Benchmark — Purity vs Solid vs Svelte
+name: Benchmark — Purity vs Solid vs Svelte vs Vue
 
 # Manually triggered from the Actions tab.
-# Runs headless Chromium benchmark comparing Purity against SolidJS and Svelte.
+# Runs headless Chromium benchmark comparing Purity against SolidJS, Svelte, and Vue.
 # Results published to GitHub Pages at https://koalafacts.github.io/Purity/
 
 on:
   workflow_dispatch:
     inputs:
       iterations:
-        description: 'Measured iterations per operation (default: 10)'
+        description: 'Measured iterations per operation (default: 5)'
         required: false
-        default: '10'
+        default: '5'
 
 permissions:
   contents: write
@@ -36,7 +36,7 @@ jobs:
         run: npm ci
 
       - name: 📦 Install benchmark dependencies
-        # Includes solid-js, svelte, @sveltejs/vite-plugin-svelte, playwright
+        # Includes solid-js, svelte, vue, @sveltejs/vite-plugin-svelte, playwright, tsx
         run: cd benchmark && npm ci
 
       - name: 🌐 Install Playwright Chromium
@@ -54,13 +54,13 @@ jobs:
       - name: ⏳ Wait for server to be ready
         run: sleep 3
 
-      - name: 📊 Run benchmark (Purity vs Solid vs Svelte)
-        # Opens bench.html?auto in headless Chromium
-        # Each operation: 3 warmup + 10 measured iterations, discard 2 worst
-        # Outputs markdown table with median/mean/stddev per framework
+      - name: 📊 Run benchmark (Purity vs Solid vs Svelte vs Vue)
+        # Playwright drives headless Chromium through each scenario page
+        # Each operation: 3 warmup + N measured iterations, metric: median
+        # Outputs markdown table with median per framework
         run: |
           cd benchmark
-          node run-bench.ts | tee benchmark-results.md
+          ITERATIONS=${{ inputs.iterations || '5' }} npx tsx run-bench.ts | tee benchmark-results.md
 
       - name: 💾 Save results to history (last 3 runs)
         # Commits timestamped results file to benchmark/history/

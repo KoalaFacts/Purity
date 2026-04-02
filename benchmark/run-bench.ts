@@ -10,7 +10,7 @@ import { chromium, type Page } from 'playwright';
 const PORT = process.env.PORT || 4173;
 const BASE = `http://localhost:${PORT}`;
 const WARMUP = 3;
-const ITERATIONS = 5;
+const ITERATIONS = parseInt(process.env.ITERATIONS || '5', 10);
 const FRAMEWORKS = ['purity', 'solid', 'svelte', 'vue'] as const;
 
 // ---------------------------------------------------------------------------

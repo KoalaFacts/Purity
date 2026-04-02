@@ -1,5 +1,5 @@
-import type { StateAccessor } from './signals.ts';
-import { watch } from './signals.ts';
+import type { StateAccessor } from './signals';
+import { watch } from './signals';
 
 // ---------------------------------------------------------------------------
 // match(sourceFn, cases, fallback?) — reactive pattern matching

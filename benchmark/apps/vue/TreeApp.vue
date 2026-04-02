@@ -11,7 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import { shallowRef, computed } from 'vue';
+import { computed, shallowRef } from 'vue';
 
 interface TreeNode {
   id: number;
@@ -64,7 +64,7 @@ function flattenVisible(nodes: TreeNode[], depth: number = 0): FlatNode[] {
 }
 
 function setAllExpanded(nodes: TreeNode[], expanded: boolean): TreeNode[] {
-  return nodes.map(n => ({
+  return nodes.map((n) => ({
     id: n.id,
     label: n.label,
     expanded,
@@ -73,7 +73,7 @@ function setAllExpanded(nodes: TreeNode[], expanded: boolean): TreeNode[] {
 }
 
 function toggleNode(nodes: TreeNode[], targetId: number): TreeNode[] {
-  return nodes.map(n => ({
+  return nodes.map((n) => ({
     id: n.id,
     label: n.label,
     expanded: n.id === targetId ? !n.expanded : n.expanded,
@@ -83,11 +83,15 @@ function toggleNode(nodes: TreeNode[], targetId: number): TreeNode[] {
 
 const treeData = shallowRef<TreeNode[]>(generateTree());
 
-const visible = computed(() => flattenVisible(treeData.value));
+const _visible = computed(() => flattenVisible(treeData.value));
 
 defineExpose({
-  expandAll() { treeData.value = setAllExpanded(treeData.value, true); },
-  collapseAll() { treeData.value = setAllExpanded(treeData.value, false); },
+  expandAll() {
+    treeData.value = setAllExpanded(treeData.value, true);
+  },
+  collapseAll() {
+    treeData.value = setAllExpanded(treeData.value, false);
+  },
   toggleFirst() {
     const first = treeData.value[0];
     if (first) treeData.value = toggleNode(treeData.value, first.id);

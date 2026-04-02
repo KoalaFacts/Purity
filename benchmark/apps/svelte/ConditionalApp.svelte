@@ -1,5 +1,8 @@
 <script lang="ts">
-interface Item { id: number; label: string; }
+interface Item {
+  id: number;
+  label: string;
+}
 
 let nid = 1;
 function buildData(n: number): Item[] {
@@ -10,13 +13,20 @@ function buildData(n: number): Item[] {
 
 const props: { onHandle: (h: any) => void } = $props();
 
-let data: Item[] = $state.raw([]);
+let _data: Item[] = $state.raw([]);
 let visible: boolean = $state(true);
 
 props.onHandle({
-  populate() { data = buildData(1000); visible = true; },
-  toggle() { visible = !visible; },
-  toggle10x() { for (let i = 0; i < 10; i++) visible = !visible; },
+  populate() {
+    _data = buildData(1000);
+    visible = true;
+  },
+  toggle() {
+    visible = !visible;
+  },
+  toggle10x() {
+    for (let i = 0; i < 10; i++) visible = !visible;
+  },
 });
 </script>
 

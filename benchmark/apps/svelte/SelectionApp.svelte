@@ -1,5 +1,9 @@
 <script lang="ts">
-interface SelectItem { id: number; label: string; selected: boolean; }
+interface SelectItem {
+  id: number;
+  label: string;
+  selected: boolean;
+}
 
 const props: {
   onHandle: (h: any) => void;
@@ -9,12 +13,18 @@ const props: {
 } = $props();
 
 let items: SelectItem[] = $state.raw([]);
-let selectedCount = $derived(items.filter(i => i.selected).length);
-let allSelected = $derived(items.length > 0 && items.every(i => i.selected));
+let selectedCount = $derived(items.filter((i) => i.selected).length);
+let allSelected = $derived(items.length > 0 && items.every((i) => i.selected));
 
-$effect(() => { props.countEl.textContent = String(selectedCount); });
-$effect(() => { props.totalEl.textContent = String(items.length); });
-$effect(() => { props.allSelectedEl.textContent = allSelected ? 'Yes' : 'No'; });
+$effect(() => {
+  props.countEl.textContent = String(selectedCount);
+});
+$effect(() => {
+  props.totalEl.textContent = String(items.length);
+});
+$effect(() => {
+  props.allSelectedEl.textContent = allSelected ? 'Yes' : 'No';
+});
 
 function buildItems(): SelectItem[] {
   const arr: SelectItem[] = [];
@@ -25,11 +35,21 @@ function buildItems(): SelectItem[] {
 }
 
 props.onHandle({
-  populate() { items = buildItems(); },
-  selectAll() { items = items.map(i => ({ ...i, selected: true })); },
-  deselectAll() { items = items.map(i => ({ ...i, selected: false })); },
-  toggleAll() { items = items.map(i => ({ ...i, selected: !i.selected })); },
-  toggleEven() { items = items.map(i => i.id % 2 === 0 ? { ...i, selected: !i.selected } : i); },
+  populate() {
+    items = buildItems();
+  },
+  selectAll() {
+    items = items.map((i) => ({ ...i, selected: true }));
+  },
+  deselectAll() {
+    items = items.map((i) => ({ ...i, selected: false }));
+  },
+  toggleAll() {
+    items = items.map((i) => ({ ...i, selected: !i.selected }));
+  },
+  toggleEven() {
+    items = items.map((i) => (i.id % 2 === 0 ? { ...i, selected: !i.selected } : i));
+  },
 });
 </script>
 

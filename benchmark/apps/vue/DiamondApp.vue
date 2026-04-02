@@ -3,7 +3,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, type Ref, type ComputedRef } from 'vue';
+import { type ComputedRef, computed, type Ref, ref } from 'vue';
 
 const sources: Ref<number>[] = [];
 const results: ComputedRef<number>[] = [];
@@ -17,7 +17,7 @@ for (let i = 0; i < 1000; i++) {
   results.push(d);
 }
 
-const total = computed(() => {
+const _total = computed(() => {
   let s = 0;
   for (let i = 0; i < results.length; i++) s += results[i].value;
   return s;
@@ -25,12 +25,12 @@ const total = computed(() => {
 
 function updateAll() {
   for (let i = 0; i < sources.length; i++) {
-    sources[i].value = i + (Math.random() * 100 | 0);
+    sources[i].value = i + ((Math.random() * 100) | 0);
   }
 }
 
 function updateOne() {
-  sources[0].value = Math.random() * 100 | 0;
+  sources[0].value = (Math.random() * 100) | 0;
 }
 
 defineExpose({ updateAll, updateOne });

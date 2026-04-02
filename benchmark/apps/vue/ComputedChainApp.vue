@@ -3,7 +3,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, type Ref, type ComputedRef } from 'vue';
+import { type ComputedRef, computed, type Ref, ref } from 'vue';
 
 const source = ref(0);
 const chain: ComputedRef<number>[] = [];
@@ -14,7 +14,7 @@ for (let i = 0; i < 1000; i++) {
   chain.push(c);
   prev = c;
 }
-const last = chain[chain.length - 1];
+const _last = chain[chain.length - 1];
 
 function setSource(v: number) {
   source.value = v;

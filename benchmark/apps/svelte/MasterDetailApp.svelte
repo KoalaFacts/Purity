@@ -6,9 +6,51 @@ interface Person {
   bio: string;
 }
 
-const FIRST = ['Alice','Bob','Charlie','Diana','Eve','Frank','Grace','Henry','Iris','Jack','Kate','Leo','Mona','Nick','Olivia','Paul','Quinn','Rose','Sam','Tina'];
-const LAST = ['Smith','Johnson','Williams','Brown','Jones','Garcia','Miller','Davis','Rodriguez','Martinez','Hernandez','Lopez','Gonzalez','Wilson','Anderson','Thomas','Taylor','Moore','Jackson','Martin'];
-const DOMAINS = ['example.com','test.org','mail.net','corp.io','dev.co'];
+const FIRST = [
+  'Alice',
+  'Bob',
+  'Charlie',
+  'Diana',
+  'Eve',
+  'Frank',
+  'Grace',
+  'Henry',
+  'Iris',
+  'Jack',
+  'Kate',
+  'Leo',
+  'Mona',
+  'Nick',
+  'Olivia',
+  'Paul',
+  'Quinn',
+  'Rose',
+  'Sam',
+  'Tina',
+];
+const LAST = [
+  'Smith',
+  'Johnson',
+  'Williams',
+  'Brown',
+  'Jones',
+  'Garcia',
+  'Miller',
+  'Davis',
+  'Rodriguez',
+  'Martinez',
+  'Hernandez',
+  'Lopez',
+  'Gonzalez',
+  'Wilson',
+  'Anderson',
+  'Thomas',
+  'Taylor',
+  'Moore',
+  'Jackson',
+  'Martin',
+];
+const DOMAINS = ['example.com', 'test.org', 'mail.net', 'corp.io', 'dev.co'];
 
 function generatePersons(count: number): Person[] {
   const persons: Person[] = [];
@@ -30,15 +72,23 @@ const props: { onHandle: (h: any) => void } = $props();
 
 let persons: Person[] = $state.raw([]);
 let selectedId: number | null = $state(null);
-let selectedPerson: Person | null = $derived(
-  selectedId !== null ? persons.find(p => p.id === selectedId) ?? null : null
+let _selectedPerson: Person | null = $derived(
+  selectedId !== null ? (persons.find((p) => p.id === selectedId) ?? null) : null,
 );
 
 props.onHandle({
-  populate() { persons = generatePersons(100); },
-  selectFirst() { if (persons.length > 0) selectedId = persons[0].id; },
-  selectLast() { if (persons.length > 0) selectedId = persons[persons.length - 1].id; },
-  selectNone() { selectedId = null; },
+  populate() {
+    persons = generatePersons(100);
+  },
+  selectFirst() {
+    if (persons.length > 0) selectedId = persons[0].id;
+  },
+  selectLast() {
+    if (persons.length > 0) selectedId = persons[persons.length - 1].id;
+  },
+  selectNone() {
+    selectedId = null;
+  },
   cycle10() {
     for (let i = 0; i < 10 && i < persons.length; i++) {
       selectedId = persons[i].id;

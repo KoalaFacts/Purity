@@ -1,7 +1,11 @@
-import { For, createSignal, type Accessor, type Setter } from 'solid-js';
+import { type Accessor, createSignal, For, type Setter } from 'solid-js';
 import { render } from 'solid-js/web';
 
-interface Field { id: number; value: Accessor<string>; setValue: Setter<string>; }
+interface Field {
+  id: number;
+  value: Accessor<string>;
+  setValue: Setter<string>;
+}
 
 export function createBindingApp(
   container: HTMLElement,
@@ -53,14 +57,17 @@ export function createBindingApp(
     result.textContent = `Read ${count} fields`;
   });
 
-  render(() => (
-    <For each={fields()}>
-      {(field: Field) => (
-        <div>
-          <label>Field {field.id}:</label>
-          <input value={field.value()} onInput={(e) => field.setValue(e.currentTarget.value)} />
-        </div>
-      )}
-    </For>
-  ), container);
+  render(
+    () => (
+      <For each={fields()}>
+        {(field: Field) => (
+          <div>
+            <label>Field {field.id}:</label>
+            <input value={field.value()} onInput={(e) => field.setValue(e.currentTarget.value)} />
+          </div>
+        )}
+      </For>
+    ),
+    container,
+  );
 }

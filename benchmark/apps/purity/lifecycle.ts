@@ -1,6 +1,9 @@
 import { each, html, state } from '@purity/core';
 
-interface Card { id: number; label: string; }
+interface Card {
+  id: number;
+  label: string;
+}
 
 let nextId = 1;
 function buildCards(n: number): Card[] {
@@ -14,7 +17,8 @@ export function createLifecycleApp(container: HTMLElement) {
 
   const fragment = each(
     () => cards(),
-    (card: Card) => html`
+    (card: Card) =>
+      html`
       <div class="card"><span class="id">${String(card.id)}</span><span class="label">${card.label}</span></div>
     ` as unknown as HTMLElement,
     (card: Card) => card.id,

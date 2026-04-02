@@ -50,7 +50,7 @@ function flattenVisible(nodes: TreeNode[], depth: number = 0): FlatNode[] {
 }
 
 function setAllExpanded(nodes: TreeNode[], expanded: boolean): TreeNode[] {
-  return nodes.map(n => ({
+  return nodes.map((n) => ({
     id: n.id,
     label: n.label,
     expanded,
@@ -59,7 +59,7 @@ function setAllExpanded(nodes: TreeNode[], expanded: boolean): TreeNode[] {
 }
 
 function toggleNode(nodes: TreeNode[], targetId: number): TreeNode[] {
-  return nodes.map(n => ({
+  return nodes.map((n) => ({
     id: n.id,
     label: n.label,
     expanded: n.id === targetId ? !n.expanded : n.expanded,
@@ -70,11 +70,15 @@ function toggleNode(nodes: TreeNode[], targetId: number): TreeNode[] {
 const props: { onHandle: (h: any) => void } = $props();
 
 let treeData: TreeNode[] = $state.raw(generateTree());
-let visible: FlatNode[] = $derived(flattenVisible(treeData));
+let _visible: FlatNode[] = $derived(flattenVisible(treeData));
 
 props.onHandle({
-  expandAll() { treeData = setAllExpanded(treeData, true); },
-  collapseAll() { treeData = setAllExpanded(treeData, false); },
+  expandAll() {
+    treeData = setAllExpanded(treeData, true);
+  },
+  collapseAll() {
+    treeData = setAllExpanded(treeData, false);
+  },
   toggleFirst() {
     const first = treeData[0];
     if (first) treeData = toggleNode(treeData, first.id);

@@ -11,7 +11,7 @@ interface MasterDetailHandle {
 
 export function createMasterDetailApp(
   listPanel: HTMLElement,
-  detailPanel: HTMLElement,
+  _detailPanel: HTMLElement,
   populateBtn: HTMLElement,
   selectFirstBtn: HTMLElement,
   selectLastBtn: HTMLElement,

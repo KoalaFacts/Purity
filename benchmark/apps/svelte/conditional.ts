@@ -13,11 +13,19 @@ export function createConditionalApp(container: HTMLElement) {
   mount(ConditionalApp, {
     target: container,
     props: {
-      onHandle: (h: ConditionalHandle) => { handle = h; },
+      onHandle: (h: ConditionalHandle) => {
+        handle = h;
+      },
     },
   });
 
-  document.getElementById('populate')!.addEventListener('click', () => { handle.populate(); });
-  document.getElementById('toggle')!.addEventListener('click', () => { handle.toggle(); });
-  document.getElementById('toggle-10x')!.addEventListener('click', () => { handle.toggle10x(); });
+  document.getElementById('populate')!.addEventListener('click', () => {
+    handle.populate();
+  });
+  document.getElementById('toggle')!.addEventListener('click', () => {
+    handle.toggle();
+  });
+  document.getElementById('toggle-10x')!.addEventListener('click', () => {
+    handle.toggle10x();
+  });
 }

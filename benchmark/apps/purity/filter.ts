@@ -1,10 +1,65 @@
 import { compute, each, html, state } from '@purity/core';
 
-const A = ['pretty','large','big','small','tall','short','long','handsome','plain','quaint','clean','elegant','easy','angry','crazy','helpful','mushy','odd','unsightly','adorable','important','inexpensive','cheap','expensive','fancy'];
-const C = ['red','yellow','blue','green','pink','brown','purple','brown','white','black','orange'];
-const N = ['table','chair','house','bbq','desk','car','pony','cookie','sandwich','burger','pizza','mouse','keyboard'];
+const A = [
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
+];
+const C = [
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'brown',
+  'white',
+  'black',
+  'orange',
+];
+const N = [
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
+];
 
-interface Item { id: number; label: string; }
+interface Item {
+  id: number;
+  label: string;
+}
 
 let nextId = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
@@ -28,7 +83,7 @@ export function createFilterApp(
   const filtered = compute(() => {
     const q = query().toLowerCase();
     if (!q) return data();
-    return data().filter(item => item.label.toLowerCase().includes(q));
+    return data().filter((item) => item.label.toLowerCase().includes(q));
   });
 
   const fragment = each(

@@ -1,5 +1,8 @@
 <script lang="ts">
-interface Card { id: number; label: string; }
+interface Card {
+  id: number;
+  label: string;
+}
 
 let nid = 1;
 function buildCards(n: number): Card[] {
@@ -10,12 +13,18 @@ function buildCards(n: number): Card[] {
 
 const props: { onHandle: (h: any) => void } = $props();
 
-let cards: Card[] = $state.raw([]);
+let _cards: Card[] = $state.raw([]);
 
 props.onHandle({
-  create(n: number) { cards = buildCards(n); },
-  destroyAll() { cards = []; },
-  replace() { cards = buildCards(1000); },
+  create(n: number) {
+    _cards = buildCards(n);
+  },
+  destroyAll() {
+    _cards = [];
+  },
+  replace() {
+    _cards = buildCards(1000);
+  },
 });
 </script>
 

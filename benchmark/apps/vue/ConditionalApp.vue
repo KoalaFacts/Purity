@@ -10,9 +10,12 @@
 </template>
 
 <script setup lang="ts">
-import { shallowRef, ref } from 'vue';
+import { ref, shallowRef } from 'vue';
 
-interface Item { id: number; label: string; }
+interface Item {
+  id: number;
+  label: string;
+}
 
 let nid = 1;
 function buildData(n: number): Item[] {
@@ -25,8 +28,15 @@ const data = shallowRef<Item[]>([]);
 const visible = ref(true);
 
 defineExpose({
-  populate() { data.value = buildData(1000); visible.value = true; },
-  toggle() { visible.value = !visible.value; },
-  toggle10x() { for (let i = 0; i < 10; i++) visible.value = !visible.value; },
+  populate() {
+    data.value = buildData(1000);
+    visible.value = true;
+  },
+  toggle() {
+    visible.value = !visible.value;
+  },
+  toggle10x() {
+    for (let i = 0; i < 10; i++) visible.value = !visible.value;
+  },
 });
 </script>

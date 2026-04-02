@@ -1,8 +1,24 @@
 import { compute, each, html, state, watch } from '@purity/core';
 
-interface CartItem { id: number; name: string; price: number; qty: number; }
+interface CartItem {
+  id: number;
+  name: string;
+  price: number;
+  qty: number;
+}
 
-const NAMES = ['Widget','Gadget','Doohickey','Thingamajig','Gizmo','Contraption','Apparatus','Device','Implement','Mechanism'];
+const NAMES = [
+  'Widget',
+  'Gadget',
+  'Doohickey',
+  'Thingamajig',
+  'Gizmo',
+  'Contraption',
+  'Apparatus',
+  'Device',
+  'Implement',
+  'Mechanism',
+];
 let nextId = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
 
@@ -28,14 +44,23 @@ export function createCartApp(tbody: HTMLElement) {
   const tax = compute(() => subtotal() * 0.08);
   const total = compute(() => subtotal() + tax());
 
-  watch(() => { document.getElementById('item-count')!.textContent = String(itemCount()); });
-  watch(() => { document.getElementById('subtotal')!.textContent = subtotal().toFixed(2); });
-  watch(() => { document.getElementById('tax')!.textContent = tax().toFixed(2); });
-  watch(() => { document.getElementById('total')!.textContent = total().toFixed(2); });
+  watch(() => {
+    document.getElementById('item-count')!.textContent = String(itemCount());
+  });
+  watch(() => {
+    document.getElementById('subtotal')!.textContent = subtotal().toFixed(2);
+  });
+  watch(() => {
+    document.getElementById('tax')!.textContent = tax().toFixed(2);
+  });
+  watch(() => {
+    document.getElementById('total')!.textContent = total().toFixed(2);
+  });
 
   const fragment = each(
     () => cart(),
-    (item: CartItem) => html`
+    (item: CartItem) =>
+      html`
       <tr>
         <td>${item.name}</td>
         <td>$${String(item.price)}</td>
@@ -57,7 +82,7 @@ export function createCartApp(tbody: HTMLElement) {
     cart([...cart(), ...randomItems(1000)]);
   });
   document.getElementById('increment-all')!.addEventListener('click', () => {
-    cart(cart().map(i => ({ ...i, qty: i.qty + 1 })));
+    cart(cart().map((i) => ({ ...i, qty: i.qty + 1 })));
   });
   document.getElementById('remove-first')!.addEventListener('click', () => {
     cart(cart().slice(1));

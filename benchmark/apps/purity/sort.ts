@@ -1,10 +1,65 @@
 import { compute, each, html, state } from '@purity/core';
 
-const A = ['pretty','large','big','small','tall','short','long','handsome','plain','quaint','clean','elegant','easy','angry','crazy','helpful','mushy','odd','unsightly','adorable','important','inexpensive','cheap','expensive','fancy'];
-const C = ['red','yellow','blue','green','pink','brown','purple','brown','white','black','orange'];
-const N = ['table','chair','house','bbq','desk','car','pony','cookie','sandwich','burger','pizza','mouse','keyboard'];
+const A = [
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
+];
+const C = [
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'brown',
+  'white',
+  'black',
+  'orange',
+];
+const N = [
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
+];
 
-interface Item { id: number; label: string; }
+interface Item {
+  id: number;
+  label: string;
+}
 
 let nextId = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
@@ -64,7 +119,13 @@ export function createSortApp(
     sortMode('none');
   });
 
-  sortIdBtn.addEventListener('click', () => { sortMode('id-asc'); });
-  sortIdDescBtn.addEventListener('click', () => { sortMode('id-desc'); });
-  sortLabelBtn.addEventListener('click', () => { sortMode('label-asc'); });
+  sortIdBtn.addEventListener('click', () => {
+    sortMode('id-asc');
+  });
+  sortIdDescBtn.addEventListener('click', () => {
+    sortMode('id-desc');
+  });
+  sortLabelBtn.addEventListener('click', () => {
+    sortMode('label-asc');
+  });
 }

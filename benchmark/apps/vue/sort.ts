@@ -18,8 +18,16 @@ export function createSortApp(
     e.preventDefault();
   });
 
-  populateBtn.addEventListener('click', () => { vm.populate(); });
-  sortIdBtn.addEventListener('click', () => { vm.sortIdAsc(); });
-  sortIdDescBtn.addEventListener('click', () => { vm.sortIdDesc(); });
-  sortLabelBtn.addEventListener('click', () => { vm.sortLabelAsc(); });
+  populateBtn.addEventListener('click', () => {
+    vm.populate();
+  });
+  sortIdBtn.addEventListener('click', () => {
+    vm.sortIdAsc();
+  });
+  sortIdDescBtn.addEventListener('click', () => {
+    vm.sortIdDesc();
+  });
+  sortLabelBtn.addEventListener('click', () => {
+    vm.sortLabelAsc();
+  });
 }

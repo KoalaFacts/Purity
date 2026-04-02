@@ -8,11 +8,27 @@
 </template>
 
 <script setup lang="ts">
-import { shallowRef, computed, watch } from 'vue';
+import { computed, shallowRef, watch } from 'vue';
 
-interface CartItem { id: number; name: string; price: number; qty: number; }
+interface CartItem {
+  id: number;
+  name: string;
+  price: number;
+  qty: number;
+}
 
-const NAMES = ['Widget','Gadget','Doohickey','Thingamajig','Gizmo','Contraption','Apparatus','Device','Implement','Mechanism'];
+const NAMES = [
+  'Widget',
+  'Gadget',
+  'Doohickey',
+  'Thingamajig',
+  'Gizmo',
+  'Contraption',
+  'Apparatus',
+  'Device',
+  'Implement',
+  'Mechanism',
+];
 let nextId = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
 
@@ -37,15 +53,47 @@ const subtotal = computed(() => cart.value.reduce((s, i) => s + i.price * i.qty,
 const tax = computed(() => subtotal.value * 0.08);
 const total = computed(() => subtotal.value + tax.value);
 
-watch(itemCount, (v) => { document.getElementById('item-count')!.textContent = String(v); }, { flush: 'post' });
-watch(subtotal, (v) => { document.getElementById('subtotal')!.textContent = v.toFixed(2); }, { flush: 'post' });
-watch(tax, (v) => { document.getElementById('tax')!.textContent = v.toFixed(2); }, { flush: 'post' });
-watch(total, (v) => { document.getElementById('total')!.textContent = v.toFixed(2); }, { flush: 'post' });
+watch(
+  itemCount,
+  (v) => {
+    document.getElementById('item-count')!.textContent = String(v);
+  },
+  { flush: 'post' },
+);
+watch(
+  subtotal,
+  (v) => {
+    document.getElementById('subtotal')!.textContent = v.toFixed(2);
+  },
+  { flush: 'post' },
+);
+watch(
+  tax,
+  (v) => {
+    document.getElementById('tax')!.textContent = v.toFixed(2);
+  },
+  { flush: 'post' },
+);
+watch(
+  total,
+  (v) => {
+    document.getElementById('total')!.textContent = v.toFixed(2);
+  },
+  { flush: 'post' },
+);
 
 defineExpose({
-  addItems(n: number) { cart.value = [...cart.value, ...randomItems(n)]; },
-  incrementAll() { cart.value = cart.value.map(i => ({ ...i, qty: i.qty + 1 })); },
-  removeFirst() { cart.value = cart.value.slice(1); },
-  clearCart() { cart.value = []; },
+  addItems(n: number) {
+    cart.value = [...cart.value, ...randomItems(n)];
+  },
+  incrementAll() {
+    cart.value = cart.value.map((i) => ({ ...i, qty: i.qty + 1 }));
+  },
+  removeFirst() {
+    cart.value = cart.value.slice(1);
+  },
+  clearCart() {
+    cart.value = [];
+  },
 });
 </script>

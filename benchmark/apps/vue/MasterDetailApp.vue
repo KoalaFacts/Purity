@@ -23,7 +23,7 @@
 </template>
 
 <script setup lang="ts">
-import { shallowRef, ref, computed } from 'vue';
+import { computed, ref, shallowRef } from 'vue';
 
 interface Person {
   id: number;
@@ -32,9 +32,51 @@ interface Person {
   bio: string;
 }
 
-const FIRST = ['Alice','Bob','Charlie','Diana','Eve','Frank','Grace','Henry','Iris','Jack','Kate','Leo','Mona','Nick','Olivia','Paul','Quinn','Rose','Sam','Tina'];
-const LAST = ['Smith','Johnson','Williams','Brown','Jones','Garcia','Miller','Davis','Rodriguez','Martinez','Hernandez','Lopez','Gonzalez','Wilson','Anderson','Thomas','Taylor','Moore','Jackson','Martin'];
-const DOMAINS = ['example.com','test.org','mail.net','corp.io','dev.co'];
+const FIRST = [
+  'Alice',
+  'Bob',
+  'Charlie',
+  'Diana',
+  'Eve',
+  'Frank',
+  'Grace',
+  'Henry',
+  'Iris',
+  'Jack',
+  'Kate',
+  'Leo',
+  'Mona',
+  'Nick',
+  'Olivia',
+  'Paul',
+  'Quinn',
+  'Rose',
+  'Sam',
+  'Tina',
+];
+const LAST = [
+  'Smith',
+  'Johnson',
+  'Williams',
+  'Brown',
+  'Jones',
+  'Garcia',
+  'Miller',
+  'Davis',
+  'Rodriguez',
+  'Martinez',
+  'Hernandez',
+  'Lopez',
+  'Gonzalez',
+  'Wilson',
+  'Anderson',
+  'Thomas',
+  'Taylor',
+  'Moore',
+  'Jackson',
+  'Martin',
+];
+const DOMAINS = ['example.com', 'test.org', 'mail.net', 'corp.io', 'dev.co'];
 
 function generatePersons(count: number): Person[] {
   const persons: Person[] = [];
@@ -55,17 +97,25 @@ function generatePersons(count: number): Person[] {
 const persons = shallowRef<Person[]>([]);
 const selectedId = ref<number | null>(null);
 
-const selectedPerson = computed(() => {
+const _selectedPerson = computed(() => {
   const id = selectedId.value;
   if (id === null) return null;
-  return persons.value.find(p => p.id === id) ?? null;
+  return persons.value.find((p) => p.id === id) ?? null;
 });
 
 defineExpose({
-  populate() { persons.value = generatePersons(100); },
-  selectFirst() { if (persons.value.length > 0) selectedId.value = persons.value[0].id; },
-  selectLast() { if (persons.value.length > 0) selectedId.value = persons.value[persons.value.length - 1].id; },
-  selectNone() { selectedId.value = null; },
+  populate() {
+    persons.value = generatePersons(100);
+  },
+  selectFirst() {
+    if (persons.value.length > 0) selectedId.value = persons.value[0].id;
+  },
+  selectLast() {
+    if (persons.value.length > 0) selectedId.value = persons.value[persons.value.length - 1].id;
+  },
+  selectNone() {
+    selectedId.value = null;
+  },
   cycle10() {
     for (let i = 0; i < 10 && i < persons.value.length; i++) {
       selectedId.value = persons.value[i].id;

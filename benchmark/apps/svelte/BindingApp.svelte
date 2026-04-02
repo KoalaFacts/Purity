@@ -1,5 +1,8 @@
 <script lang="ts">
-interface Field { id: number; value: string; }
+interface Field {
+  id: number;
+  value: string;
+}
 
 const props: { onHandle: (h: any) => void; result: HTMLElement } = $props();
 
@@ -15,11 +18,11 @@ props.onHandle({
     props.result.textContent = `Created ${count} fields`;
   },
   updateAll() {
-    fields = fields.map(f => ({ ...f, value: `updated-${f.id}` }));
+    fields = fields.map((f) => ({ ...f, value: `updated-${f.id}` }));
     props.result.textContent = `Updated ${fields.length} fields`;
   },
   clearAll() {
-    fields = fields.map(f => ({ ...f, value: '' }));
+    fields = fields.map((f) => ({ ...f, value: '' }));
     props.result.textContent = `Cleared ${fields.length} fields`;
   },
   readAll() {

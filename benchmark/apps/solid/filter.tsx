@@ -1,11 +1,66 @@
-import { For, createMemo, createSignal } from 'solid-js';
+import { createMemo, createSignal, For } from 'solid-js';
 import { render } from 'solid-js/web';
 
-const A = ['pretty','large','big','small','tall','short','long','handsome','plain','quaint','clean','elegant','easy','angry','crazy','helpful','mushy','odd','unsightly','adorable','important','inexpensive','cheap','expensive','fancy'];
-const C = ['red','yellow','blue','green','pink','brown','purple','brown','white','black','orange'];
-const N = ['table','chair','house','bbq','desk','car','pony','cookie','sandwich','burger','pizza','mouse','keyboard'];
+const A = [
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
+];
+const C = [
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'brown',
+  'white',
+  'black',
+  'orange',
+];
+const N = [
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
+];
 
-interface Item { id: number; label: string; }
+interface Item {
+  id: number;
+  label: string;
+}
 
 let nextId = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
@@ -29,7 +84,7 @@ export function createFilterApp(
   const filtered = createMemo(() => {
     const q = query().toLowerCase();
     if (!q) return data();
-    return data().filter(item => item.label.toLowerCase().includes(q));
+    return data().filter((item) => item.label.toLowerCase().includes(q));
   });
 
   // Event delegation
@@ -52,14 +107,19 @@ export function createFilterApp(
     setQuery('');
   });
 
-  render(() => (
-    <For each={filtered()}>
-      {(item: Item) => (
-        <tr>
-          <td class="col-md-1">{item.id}</td>
-          <td class="col-md-4"><a class="lbl">{item.label}</a></td>
-        </tr>
-      )}
-    </For>
-  ), tbody);
+  render(
+    () => (
+      <For each={filtered()}>
+        {(item: Item) => (
+          <tr>
+            <td class="col-md-1">{item.id}</td>
+            <td class="col-md-4">
+              <a class="lbl">{item.label}</a>
+            </td>
+          </tr>
+        )}
+      </For>
+    ),
+    tbody,
+  );
 }

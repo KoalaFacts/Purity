@@ -7,9 +7,51 @@ interface Person {
   bio: string;
 }
 
-const FIRST = ['Alice','Bob','Charlie','Diana','Eve','Frank','Grace','Henry','Iris','Jack','Kate','Leo','Mona','Nick','Olivia','Paul','Quinn','Rose','Sam','Tina'];
-const LAST = ['Smith','Johnson','Williams','Brown','Jones','Garcia','Miller','Davis','Rodriguez','Martinez','Hernandez','Lopez','Gonzalez','Wilson','Anderson','Thomas','Taylor','Moore','Jackson','Martin'];
-const DOMAINS = ['example.com','test.org','mail.net','corp.io','dev.co'];
+const FIRST = [
+  'Alice',
+  'Bob',
+  'Charlie',
+  'Diana',
+  'Eve',
+  'Frank',
+  'Grace',
+  'Henry',
+  'Iris',
+  'Jack',
+  'Kate',
+  'Leo',
+  'Mona',
+  'Nick',
+  'Olivia',
+  'Paul',
+  'Quinn',
+  'Rose',
+  'Sam',
+  'Tina',
+];
+const LAST = [
+  'Smith',
+  'Johnson',
+  'Williams',
+  'Brown',
+  'Jones',
+  'Garcia',
+  'Miller',
+  'Davis',
+  'Rodriguez',
+  'Martinez',
+  'Hernandez',
+  'Lopez',
+  'Gonzalez',
+  'Wilson',
+  'Anderson',
+  'Thomas',
+  'Taylor',
+  'Moore',
+  'Jackson',
+  'Martin',
+];
+const DOMAINS = ['example.com', 'test.org', 'mail.net', 'corp.io', 'dev.co'];
 
 function generatePersons(count: number): Person[] {
   const persons: Person[] = [];
@@ -42,7 +84,7 @@ export function createMasterDetailApp(
   const selectedPerson = compute(() => {
     const id = selectedId();
     if (id === null) return null;
-    return persons().find(p => p.id === id) ?? null;
+    return persons().find((p) => p.id === id) ?? null;
   });
 
   const listFragment = each(

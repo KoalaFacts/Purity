@@ -1,9 +1,64 @@
 <script lang="ts">
-const A = ['pretty','large','big','small','tall','short','long','handsome','plain','quaint','clean','elegant','easy','angry','crazy','helpful','mushy','odd','unsightly','adorable','important','inexpensive','cheap','expensive','fancy'];
-const C = ['red','yellow','blue','green','pink','brown','purple','brown','white','black','orange'];
-const N = ['table','chair','house','bbq','desk','car','pony','cookie','sandwich','burger','pizza','mouse','keyboard'];
+const A = [
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
+];
+const C = [
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'brown',
+  'white',
+  'black',
+  'orange',
+];
+const N = [
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
+];
 
-interface Item { id: number; label: string; }
+interface Item {
+  id: number;
+  label: string;
+}
 
 let nid = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
@@ -21,7 +76,7 @@ const props: { onHandle: (h: any) => void } = $props();
 let data: Item[] = $state.raw([]);
 let sortMode: SortMode = $state('none');
 
-const sorted: Item[] = $derived.by(() => {
+const _sorted: Item[] = $derived.by(() => {
   const s = data.slice();
   if (sortMode === 'id-asc') s.sort((a, b) => a.id - b.id);
   else if (sortMode === 'id-desc') s.sort((a, b) => b.id - a.id);
@@ -30,10 +85,19 @@ const sorted: Item[] = $derived.by(() => {
 });
 
 props.onHandle({
-  populate() { data = buildData(1000); sortMode = 'none'; },
-  sortIdAsc() { sortMode = 'id-asc'; },
-  sortIdDesc() { sortMode = 'id-desc'; },
-  sortLabelAsc() { sortMode = 'label-asc'; },
+  populate() {
+    data = buildData(1000);
+    sortMode = 'none';
+  },
+  sortIdAsc() {
+    sortMode = 'id-asc';
+  },
+  sortIdDesc() {
+    sortMode = 'id-desc';
+  },
+  sortLabelAsc() {
+    sortMode = 'label-asc';
+  },
 });
 </script>
 

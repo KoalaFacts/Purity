@@ -1,7 +1,10 @@
-import { For, createSignal } from 'solid-js';
+import { createSignal, For } from 'solid-js';
 import { render } from 'solid-js/web';
 
-interface Card { id: number; label: string; }
+interface Card {
+  id: number;
+  label: string;
+}
 
 let nextId = 1;
 function buildCards(n: number): Card[] {
@@ -13,13 +16,19 @@ function buildCards(n: number): Card[] {
 export function createLifecycleApp(container: HTMLElement) {
   const [cards, setCards] = createSignal<Card[]>([]);
 
-  render(() => (
-    <For each={cards()}>
-      {(card: Card) => (
-        <div class="card"><span class="id">{card.id}</span><span class="label">{card.label}</span></div>
-      )}
-    </For>
-  ), container);
+  render(
+    () => (
+      <For each={cards()}>
+        {(card: Card) => (
+          <div class="card">
+            <span class="id">{card.id}</span>
+            <span class="label">{card.label}</span>
+          </div>
+        )}
+      </For>
+    ),
+    container,
+  );
 
   document.getElementById('create-1k')!.addEventListener('click', () => {
     setCards(buildCards(1000));

@@ -24,21 +24,27 @@ function setupDiamonds() {
   recompute();
 }
 
-$effect(() => { recompute(); });
+$effect(() => {
+  recompute();
+});
 
 props.onHandle({
-  setup() { setupDiamonds(); },
+  setup() {
+    setupDiamonds();
+  },
   updateAll() {
-    sources = sources.map((_, i) => i + (Math.random() * 100 | 0));
+    sources = sources.map((_, i) => i + ((Math.random() * 100) | 0));
   },
   updateOne() {
     if (sources.length > 0) {
       const c = [...sources];
-      c[0] = Math.random() * 1000 | 0;
+      c[0] = (Math.random() * 1000) | 0;
       sources = c;
     }
   },
-  getResult() { return total; },
+  getResult() {
+    return total;
+  },
 });
 </script>
 

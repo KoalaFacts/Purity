@@ -50,17 +50,17 @@ function flattenVisible(nodes: TreeNode[], depth: number = 0): FlatNode[] {
   return result;
 }
 
-function cloneTree(nodes: TreeNode[]): TreeNode[] {
-  return nodes.map(n => ({
+function _cloneTree(nodes: TreeNode[]): TreeNode[] {
+  return nodes.map((n) => ({
     id: n.id,
     label: n.label,
     expanded: n.expanded,
-    children: cloneTree(n.children),
+    children: _cloneTree(n.children),
   }));
 }
 
 function setAllExpanded(nodes: TreeNode[], expanded: boolean): TreeNode[] {
-  return nodes.map(n => ({
+  return nodes.map((n) => ({
     id: n.id,
     label: n.label,
     expanded,
@@ -69,7 +69,7 @@ function setAllExpanded(nodes: TreeNode[], expanded: boolean): TreeNode[] {
 }
 
 function toggleNode(nodes: TreeNode[], targetId: number): TreeNode[] {
-  return nodes.map(n => ({
+  return nodes.map((n) => ({
     id: n.id,
     label: n.label,
     expanded: n.id === targetId ? !n.expanded : n.expanded,
@@ -89,7 +89,8 @@ export function createTreeApp(
 
   const fragment = each(
     () => visible(),
-    (node: FlatNode) => html`
+    (node: FlatNode) =>
+      html`
       <div class="tree-node" style="padding-left: ${String(node.depth * 20)}px">
         <span class="toggle">${node.hasChildren ? (node.expanded ? '\u25BC' : '\u25B6') : '\u00A0\u00A0'}</span>
         <span class="label">${node.label}</span>

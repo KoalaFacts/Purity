@@ -1,9 +1,64 @@
 <script lang="ts">
-const A = ['pretty','large','big','small','tall','short','long','handsome','plain','quaint','clean','elegant','easy','angry','crazy','helpful','mushy','odd','unsightly','adorable','important','inexpensive','cheap','expensive','fancy'];
-const C = ['red','yellow','blue','green','pink','brown','purple','brown','white','black','orange'];
-const N = ['table','chair','house','bbq','desk','car','pony','cookie','sandwich','burger','pizza','mouse','keyboard'];
+const A = [
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
+];
+const C = [
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'brown',
+  'white',
+  'black',
+  'orange',
+];
+const N = [
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
+];
 
-interface Item { id: number; label: string; }
+interface Item {
+  id: number;
+  label: string;
+}
 
 let nid = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
@@ -19,16 +74,20 @@ const props: { onHandle: (h: any) => void } = $props();
 let data: Item[] = $state.raw([]);
 let query: string = $state('');
 
-const filtered: Item[] = $derived(
-  query
-    ? data.filter(item => item.label.toLowerCase().includes(query.toLowerCase()))
-    : data
+const _filtered: Item[] = $derived(
+  query ? data.filter((item) => item.label.toLowerCase().includes(query.toLowerCase())) : data,
 );
 
 props.onHandle({
-  populate() { data = buildData(10000); },
-  setQuery(q: string) { query = q; },
-  clearSearch() { query = ''; },
+  populate() {
+    data = buildData(10000);
+  },
+  setQuery(q: string) {
+    query = q;
+  },
+  clearSearch() {
+    query = '';
+  },
 });
 </script>
 

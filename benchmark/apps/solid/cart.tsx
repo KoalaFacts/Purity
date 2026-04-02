@@ -1,9 +1,25 @@
-import { For, createEffect, createMemo, createSignal } from 'solid-js';
+import { createEffect, createMemo, createSignal, For } from 'solid-js';
 import { render } from 'solid-js/web';
 
-interface CartItem { id: number; name: string; price: number; qty: number; }
+interface CartItem {
+  id: number;
+  name: string;
+  price: number;
+  qty: number;
+}
 
-const NAMES = ['Widget','Gadget','Doohickey','Thingamajig','Gizmo','Contraption','Apparatus','Device','Implement','Mechanism'];
+const NAMES = [
+  'Widget',
+  'Gadget',
+  'Doohickey',
+  'Thingamajig',
+  'Gizmo',
+  'Contraption',
+  'Apparatus',
+  'Device',
+  'Implement',
+  'Mechanism',
+];
 let nextId = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
 
@@ -30,10 +46,18 @@ export function createCartApp(tbody: HTMLElement) {
   const total = createMemo(() => subtotal() + tax());
 
   render(() => {
-    createEffect(() => { document.getElementById('item-count')!.textContent = String(itemCount()); });
-    createEffect(() => { document.getElementById('subtotal')!.textContent = subtotal().toFixed(2); });
-    createEffect(() => { document.getElementById('tax')!.textContent = tax().toFixed(2); });
-    createEffect(() => { document.getElementById('total')!.textContent = total().toFixed(2); });
+    createEffect(() => {
+      document.getElementById('item-count')!.textContent = String(itemCount());
+    });
+    createEffect(() => {
+      document.getElementById('subtotal')!.textContent = subtotal().toFixed(2);
+    });
+    createEffect(() => {
+      document.getElementById('tax')!.textContent = tax().toFixed(2);
+    });
+    createEffect(() => {
+      document.getElementById('total')!.textContent = total().toFixed(2);
+    });
 
     return (
       <For each={cart()}>
@@ -50,19 +74,19 @@ export function createCartApp(tbody: HTMLElement) {
   }, tbody);
 
   document.getElementById('add-1')!.addEventListener('click', () => {
-    setCart(c => [...c, ...randomItems(1)]);
+    setCart((c) => [...c, ...randomItems(1)]);
   });
   document.getElementById('add-100')!.addEventListener('click', () => {
-    setCart(c => [...c, ...randomItems(100)]);
+    setCart((c) => [...c, ...randomItems(100)]);
   });
   document.getElementById('add-1000')!.addEventListener('click', () => {
-    setCart(c => [...c, ...randomItems(1000)]);
+    setCart((c) => [...c, ...randomItems(1000)]);
   });
   document.getElementById('increment-all')!.addEventListener('click', () => {
-    setCart(c => c.map(i => ({ ...i, qty: i.qty + 1 })));
+    setCart((c) => c.map((i) => ({ ...i, qty: i.qty + 1 })));
   });
   document.getElementById('remove-first')!.addEventListener('click', () => {
-    setCart(c => c.slice(1));
+    setCart((c) => c.slice(1));
   });
   document.getElementById('clear-cart')!.addEventListener('click', () => {
     setCart([]);

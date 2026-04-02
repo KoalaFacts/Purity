@@ -5,7 +5,7 @@
 //
 // Usage: cd benchmark && npm run build-prod && npx vite preview & node --import tsx run-bench.ts
 
-import { type Page, chromium } from 'playwright';
+import { chromium, type Page } from 'playwright';
 
 const PORT = process.env.PORT || 4173;
 const BASE = `http://localhost:${PORT}`;
@@ -48,13 +48,41 @@ const SCENARIOS: Scenario[] = [
     category: 'Rendering',
     ops: [
       { name: 'Create 1,000 rows', setup: [{ action: '#clear' }], steps: [{ action: '#run' }] },
-      { name: 'Create 10,000 rows', setup: [{ action: '#clear' }], steps: [{ action: '#runlots' }] },
-      { name: 'Append 1,000 rows', setup: [{ action: '#clear' }, { action: '#run' }], steps: [{ action: '#add' }] },
-      { name: 'Replace 1,000 rows', setup: [{ action: '#clear' }, { action: '#run' }], steps: [{ action: '#run' }] },
-      { name: 'Update every 10th', setup: [{ action: '#clear' }, { action: '#run' }], steps: [{ action: '#update' }] },
-      { name: 'Swap rows', setup: [{ action: '#clear' }, { action: '#run' }], steps: [{ action: '#swaprows' }] },
-      { name: 'Clear 1,000 rows', setup: [{ action: '#clear' }, { action: '#run' }], steps: [{ action: '#clear' }] },
-      { name: 'Clear 10,000 rows', setup: [{ action: '#clear' }, { action: '#runlots' }], steps: [{ action: '#clear' }] },
+      {
+        name: 'Create 10,000 rows',
+        setup: [{ action: '#clear' }],
+        steps: [{ action: '#runlots' }],
+      },
+      {
+        name: 'Append 1,000 rows',
+        setup: [{ action: '#clear' }, { action: '#run' }],
+        steps: [{ action: '#add' }],
+      },
+      {
+        name: 'Replace 1,000 rows',
+        setup: [{ action: '#clear' }, { action: '#run' }],
+        steps: [{ action: '#run' }],
+      },
+      {
+        name: 'Update every 10th',
+        setup: [{ action: '#clear' }, { action: '#run' }],
+        steps: [{ action: '#update' }],
+      },
+      {
+        name: 'Swap rows',
+        setup: [{ action: '#clear' }, { action: '#run' }],
+        steps: [{ action: '#swaprows' }],
+      },
+      {
+        name: 'Clear 1,000 rows',
+        setup: [{ action: '#clear' }, { action: '#run' }],
+        steps: [{ action: '#clear' }],
+      },
+      {
+        name: 'Clear 10,000 rows',
+        setup: [{ action: '#clear' }, { action: '#runlots' }],
+        steps: [{ action: '#clear' }],
+      },
     ],
   },
   // === Reactivity & Computed ===
@@ -62,34 +90,74 @@ const SCENARIOS: Scenario[] = [
     page: 'filter',
     category: 'Computed',
     ops: [
-      { name: 'Filter 10k (type "e")', setup: [{ action: '#populate' }, { action: '#clear-search' }], steps: [{ action: 'input#search', value: 'e' }] },
-      { name: 'Filter 10k (type "ex")', setup: [{ action: '#populate' }, { action: '#clear-search' }], steps: [{ action: 'input#search', value: 'ex' }] },
-      { name: 'Clear filter', setup: [{ action: '#populate' }, { action: 'input#search', value: 'fancy' }], steps: [{ action: '#clear-search' }] },
+      {
+        name: 'Filter 10k (type "e")',
+        setup: [{ action: '#populate' }, { action: '#clear-search' }],
+        steps: [{ action: 'input#search', value: 'e' }],
+      },
+      {
+        name: 'Filter 10k (type "ex")',
+        setup: [{ action: '#populate' }, { action: '#clear-search' }],
+        steps: [{ action: 'input#search', value: 'ex' }],
+      },
+      {
+        name: 'Clear filter',
+        setup: [{ action: '#populate' }, { action: 'input#search', value: 'fancy' }],
+        steps: [{ action: '#clear-search' }],
+      },
     ],
   },
   {
     page: 'sort',
     category: 'Computed',
     ops: [
-      { name: 'Sort 1k by ID ↑', setup: [{ action: '#populate' }], steps: [{ action: '#sort-id' }] },
-      { name: 'Sort 1k by ID ↓', setup: [{ action: '#populate' }], steps: [{ action: '#sort-id-desc' }] },
-      { name: 'Sort 1k by label', setup: [{ action: '#populate' }], steps: [{ action: '#sort-label' }] },
+      {
+        name: 'Sort 1k by ID ↑',
+        setup: [{ action: '#populate' }],
+        steps: [{ action: '#sort-id' }],
+      },
+      {
+        name: 'Sort 1k by ID ↓',
+        setup: [{ action: '#populate' }],
+        steps: [{ action: '#sort-id-desc' }],
+      },
+      {
+        name: 'Sort 1k by label',
+        setup: [{ action: '#populate' }],
+        steps: [{ action: '#sort-label' }],
+      },
     ],
   },
   {
     page: 'computed-chain',
     category: 'Computed',
     ops: [
-      { name: 'Computed chain (1000 levels)', setup: [{ action: '#setup' }], steps: [{ action: '#update' }] },
-      { name: 'Computed chain 10x', setup: [{ action: '#setup' }], steps: [{ action: '#update-10x' }] },
+      {
+        name: 'Computed chain (1000 levels)',
+        setup: [{ action: '#setup' }],
+        steps: [{ action: '#update' }],
+      },
+      {
+        name: 'Computed chain 10x',
+        setup: [{ action: '#setup' }],
+        steps: [{ action: '#update-10x' }],
+      },
     ],
   },
   {
     page: 'diamond',
     category: 'Computed',
     ops: [
-      { name: 'Diamond (1000) update all', setup: [{ action: '#setup' }], steps: [{ action: '#update-all' }] },
-      { name: 'Diamond (1000) update one', setup: [{ action: '#setup' }], steps: [{ action: '#update-one' }] },
+      {
+        name: 'Diamond (1000) update all',
+        setup: [{ action: '#setup' }],
+        steps: [{ action: '#update-all' }],
+      },
+      {
+        name: 'Diamond (1000) update one',
+        setup: [{ action: '#setup' }],
+        steps: [{ action: '#update-one' }],
+      },
     ],
   },
   // === Component Patterns ===
@@ -97,17 +165,37 @@ const SCENARIOS: Scenario[] = [
     page: 'cart',
     category: 'Components',
     ops: [
-      { name: 'Add 1000 cart items', setup: [{ action: '#clear-cart' }], steps: [{ action: '#add-1000' }] },
-      { name: 'Increment all qty', setup: [{ action: '#clear-cart' }, { action: '#add-1000' }], steps: [{ action: '#increment-all' }] },
-      { name: 'Clear cart (1000)', setup: [{ action: '#clear-cart' }, { action: '#add-1000' }], steps: [{ action: '#clear-cart' }] },
+      {
+        name: 'Add 1000 cart items',
+        setup: [{ action: '#clear-cart' }],
+        steps: [{ action: '#add-1000' }],
+      },
+      {
+        name: 'Increment all qty',
+        setup: [{ action: '#clear-cart' }, { action: '#add-1000' }],
+        steps: [{ action: '#increment-all' }],
+      },
+      {
+        name: 'Clear cart (1000)',
+        setup: [{ action: '#clear-cart' }, { action: '#add-1000' }],
+        steps: [{ action: '#clear-cart' }],
+      },
     ],
   },
   {
     page: 'conditional',
     category: 'Components',
     ops: [
-      { name: 'Toggle 1k section (show)', setup: [{ action: '#populate' }], steps: [{ action: '#toggle' }] },
-      { name: 'Toggle 1k section (hide)', setup: [{ action: '#populate' }, { action: '#toggle' }], steps: [{ action: '#toggle' }] },
+      {
+        name: 'Toggle 1k section (show)',
+        setup: [{ action: '#populate' }],
+        steps: [{ action: '#toggle' }],
+      },
+      {
+        name: 'Toggle 1k section (hide)',
+        setup: [{ action: '#populate' }, { action: '#toggle' }],
+        steps: [{ action: '#toggle' }],
+      },
       { name: 'Toggle 10x', setup: [{ action: '#populate' }], steps: [{ action: '#toggle-10x' }] },
     ],
   },
@@ -115,27 +203,63 @@ const SCENARIOS: Scenario[] = [
     page: 'lifecycle',
     category: 'Components',
     ops: [
-      { name: 'Create 1k components', setup: [{ action: '#destroy-all' }], steps: [{ action: '#create-1k' }] },
-      { name: 'Create 10k components', setup: [{ action: '#destroy-all' }], steps: [{ action: '#create-10k' }] },
-      { name: 'Destroy 1k components', setup: [{ action: '#destroy-all' }, { action: '#create-1k' }], steps: [{ action: '#destroy-all' }] },
-      { name: 'Replace 1k components', setup: [{ action: '#destroy-all' }, { action: '#create-1k' }], steps: [{ action: '#replace' }] },
+      {
+        name: 'Create 1k components',
+        setup: [{ action: '#destroy-all' }],
+        steps: [{ action: '#create-1k' }],
+      },
+      {
+        name: 'Create 10k components',
+        setup: [{ action: '#destroy-all' }],
+        steps: [{ action: '#create-10k' }],
+      },
+      {
+        name: 'Destroy 1k components',
+        setup: [{ action: '#destroy-all' }, { action: '#create-1k' }],
+        steps: [{ action: '#destroy-all' }],
+      },
+      {
+        name: 'Replace 1k components',
+        setup: [{ action: '#destroy-all' }, { action: '#create-1k' }],
+        steps: [{ action: '#replace' }],
+      },
     ],
   },
   {
     page: 'tree',
     category: 'Components',
     ops: [
-      { name: 'Expand all tree nodes', setup: [{ action: '#collapse-all' }], steps: [{ action: '#expand-all' }] },
-      { name: 'Collapse all tree nodes', setup: [{ action: '#expand-all' }], steps: [{ action: '#collapse-all' }] },
+      {
+        name: 'Expand all tree nodes',
+        setup: [{ action: '#collapse-all' }],
+        steps: [{ action: '#expand-all' }],
+      },
+      {
+        name: 'Collapse all tree nodes',
+        setup: [{ action: '#expand-all' }],
+        steps: [{ action: '#collapse-all' }],
+      },
     ],
   },
   {
     page: 'master-detail',
     category: 'Components',
     ops: [
-      { name: 'Select detail (first)', setup: [{ action: '#populate' }, { action: '#select-none' }], steps: [{ action: '#select-first' }] },
-      { name: 'Select detail (last)', setup: [{ action: '#populate' }, { action: '#select-none' }], steps: [{ action: '#select-last' }] },
-      { name: 'Cycle 10 selections', setup: [{ action: '#populate' }], steps: [{ action: '#cycle-10' }] },
+      {
+        name: 'Select detail (first)',
+        setup: [{ action: '#populate' }, { action: '#select-none' }],
+        steps: [{ action: '#select-first' }],
+      },
+      {
+        name: 'Select detail (last)',
+        setup: [{ action: '#populate' }, { action: '#select-none' }],
+        steps: [{ action: '#select-last' }],
+      },
+      {
+        name: 'Cycle 10 selections',
+        setup: [{ action: '#populate' }],
+        steps: [{ action: '#cycle-10' }],
+      },
     ],
   },
   // === User Interaction ===
@@ -144,24 +268,48 @@ const SCENARIOS: Scenario[] = [
     category: 'Interaction',
     ops: [
       { name: 'Create 1000 bound inputs', setup: [], steps: [{ action: '#create-1000' }] },
-      { name: 'Update all 1000 inputs', setup: [{ action: '#create-1000' }], steps: [{ action: '#update-all' }] },
-      { name: 'Clear all 1000 inputs', setup: [{ action: '#create-1000' }], steps: [{ action: '#clear-all' }] },
+      {
+        name: 'Update all 1000 inputs',
+        setup: [{ action: '#create-1000' }],
+        steps: [{ action: '#update-all' }],
+      },
+      {
+        name: 'Clear all 1000 inputs',
+        setup: [{ action: '#create-1000' }],
+        steps: [{ action: '#clear-all' }],
+      },
     ],
   },
   {
     page: 'selection',
     category: 'Interaction',
     ops: [
-      { name: 'Select all (1000)', setup: [{ action: '#populate' }, { action: '#deselect-all' }], steps: [{ action: '#select-all' }] },
-      { name: 'Deselect all (1000)', setup: [{ action: '#populate' }, { action: '#select-all' }], steps: [{ action: '#deselect-all' }] },
-      { name: 'Toggle all (1000)', setup: [{ action: '#populate' }], steps: [{ action: '#toggle-all' }] },
+      {
+        name: 'Select all (1000)',
+        setup: [{ action: '#populate' }, { action: '#deselect-all' }],
+        steps: [{ action: '#select-all' }],
+      },
+      {
+        name: 'Deselect all (1000)',
+        setup: [{ action: '#populate' }, { action: '#select-all' }],
+        steps: [{ action: '#deselect-all' }],
+      },
+      {
+        name: 'Toggle all (1000)',
+        setup: [{ action: '#populate' }],
+        steps: [{ action: '#toggle-all' }],
+      },
     ],
   },
   {
     page: 'ticker',
     category: 'Interaction',
     ops: [
-      { name: 'Stock ticker (500 frames)', setup: [{ action: '#stop' }], steps: [{ action: '#run-500' }] },
+      {
+        name: 'Stock ticker (500 frames)',
+        setup: [{ action: '#stop' }],
+        steps: [{ action: '#run-500' }],
+      },
     ],
   },
 ];
@@ -232,7 +380,9 @@ interface Result {
 async function main() {
   console.log('\nPurity Comprehensive Benchmark');
   console.log(`Frameworks: ${FRAMEWORKS.join(', ')}`);
-  console.log(`Scenarios: ${SCENARIOS.length} pages, ${SCENARIOS.reduce((s, sc) => s + sc.ops.length, 0)} operations`);
+  console.log(
+    `Scenarios: ${SCENARIOS.length} pages, ${SCENARIOS.reduce((s, sc) => s + sc.ops.length, 0)} operations`,
+  );
   console.log(`Warmup: ${WARMUP} | Iterations: ${ITERATIONS}\n`);
 
   const browser = await chromium.launch({ headless: true });
@@ -290,7 +440,7 @@ async function main() {
       );
       const winner = vals.length ? vals.reduce((a, b) => (a.ms < b.ms ? a : b)).fw : '—';
       const line = FRAMEWORKS.map(
-        (fw) => `${fw}: ${fwResults[fw] >= 0 ? fwResults[fw].toFixed(1) + 'ms' : 'ERR'}`,
+        (fw) => `${fw}: ${fwResults[fw] >= 0 ? `${fwResults[fw].toFixed(1)}ms` : 'ERR'}`,
       ).join(' | ');
       console.log(`  ${op.name}: ${line} → ${winner}`);
     }

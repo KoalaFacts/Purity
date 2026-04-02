@@ -1,4 +1,4 @@
-import { createSignal, createMemo, batch, type Accessor, type Setter } from 'solid-js';
+import { type Accessor, batch, createMemo, createSignal, type Setter } from 'solid-js';
 import { render } from 'solid-js/web';
 
 const resultEl = document.getElementById('result')!;
@@ -32,11 +32,11 @@ document.getElementById('setup')!.addEventListener('click', () => {
 document.getElementById('update-all')!.addEventListener('click', () => {
   batch(() => {
     for (let i = 0; i < sources.length; i++) {
-      sources[i](i + (Math.random() * 100 | 0));
+      sources[i](i + ((Math.random() * 100) | 0));
     }
   });
 });
 
 document.getElementById('update-one')!.addEventListener('click', () => {
-  sources[0](Math.random() * 100 | 0);
+  sources[0]((Math.random() * 100) | 0);
 });

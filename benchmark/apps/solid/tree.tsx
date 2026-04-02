@@ -1,4 +1,4 @@
-import { For, createMemo, createSignal } from 'solid-js';
+import { createMemo, createSignal, For } from 'solid-js';
 import { render } from 'solid-js/web';
 
 interface TreeNode {
@@ -52,7 +52,7 @@ function flattenVisible(nodes: TreeNode[], depth: number = 0): FlatNode[] {
 }
 
 function setAllExpanded(nodes: TreeNode[], expanded: boolean): TreeNode[] {
-  return nodes.map(n => ({
+  return nodes.map((n) => ({
     id: n.id,
     label: n.label,
     expanded,
@@ -61,7 +61,7 @@ function setAllExpanded(nodes: TreeNode[], expanded: boolean): TreeNode[] {
 }
 
 function toggleNode(nodes: TreeNode[], targetId: number): TreeNode[] {
-  return nodes.map(n => ({
+  return nodes.map((n) => ({
     id: n.id,
     label: n.label,
     expanded: n.id === targetId ? !n.expanded : n.expanded,
@@ -92,14 +92,19 @@ export function createTreeApp(
     if (first) setTreeData(toggleNode(treeData(), first.id));
   });
 
-  render(() => (
-    <For each={visible()}>
-      {(node: FlatNode) => (
-        <div class="tree-node" style={`padding-left: ${node.depth * 20}px`}>
-          <span class="toggle">{node.hasChildren ? (node.expanded ? '\u25BC' : '\u25B6') : '\u00A0\u00A0'}</span>
-          <span class="label">{node.label}</span>
-        </div>
-      )}
-    </For>
-  ), container);
+  render(
+    () => (
+      <For each={visible()}>
+        {(node: FlatNode) => (
+          <div class="tree-node" style={`padding-left: ${node.depth * 20}px`}>
+            <span class="toggle">
+              {node.hasChildren ? (node.expanded ? '\u25BC' : '\u25B6') : '\u00A0\u00A0'}
+            </span>
+            <span class="label">{node.label}</span>
+          </div>
+        )}
+      </For>
+    ),
+    container,
+  );
 }

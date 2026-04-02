@@ -1,7 +1,23 @@
 <script lang="ts">
-interface CartItem { id: number; name: string; price: number; qty: number; }
+interface CartItem {
+  id: number;
+  name: string;
+  price: number;
+  qty: number;
+}
 
-const NAMES = ['Widget','Gadget','Doohickey','Thingamajig','Gizmo','Contraption','Apparatus','Device','Implement','Mechanism'];
+const NAMES = [
+  'Widget',
+  'Gadget',
+  'Doohickey',
+  'Thingamajig',
+  'Gizmo',
+  'Contraption',
+  'Apparatus',
+  'Device',
+  'Implement',
+  'Mechanism',
+];
 let nextId = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
 
@@ -28,16 +44,32 @@ const subtotal: number = $derived(cart.reduce((s, i) => s + i.price * i.qty, 0))
 const tax: number = $derived(subtotal * 0.08);
 const total: number = $derived(subtotal + tax);
 
-$effect(() => { document.getElementById('item-count')!.textContent = String(itemCount); });
-$effect(() => { document.getElementById('subtotal')!.textContent = subtotal.toFixed(2); });
-$effect(() => { document.getElementById('tax')!.textContent = tax.toFixed(2); });
-$effect(() => { document.getElementById('total')!.textContent = total.toFixed(2); });
+$effect(() => {
+  document.getElementById('item-count')!.textContent = String(itemCount);
+});
+$effect(() => {
+  document.getElementById('subtotal')!.textContent = subtotal.toFixed(2);
+});
+$effect(() => {
+  document.getElementById('tax')!.textContent = tax.toFixed(2);
+});
+$effect(() => {
+  document.getElementById('total')!.textContent = total.toFixed(2);
+});
 
 props.onHandle({
-  addItems(n: number) { cart = [...cart, ...randomItems(n)]; },
-  incrementAll() { cart = cart.map(i => ({ ...i, qty: i.qty + 1 })); },
-  removeFirst() { cart = cart.slice(1); },
-  clearCart() { cart = []; },
+  addItems(n: number) {
+    cart = [...cart, ...randomItems(n)];
+  },
+  incrementAll() {
+    cart = cart.map((i) => ({ ...i, qty: i.qty + 1 }));
+  },
+  removeFirst() {
+    cart = cart.slice(1);
+  },
+  clearCart() {
+    cart = [];
+  },
 });
 </script>
 

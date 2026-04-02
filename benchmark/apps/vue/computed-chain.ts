@@ -14,11 +14,11 @@ document.getElementById('setup')!.addEventListener('click', () => {
 });
 
 document.getElementById('update')!.addEventListener('click', () => {
-  vm.setSource(Math.random() * 100 | 0);
+  vm.setSource((Math.random() * 100) | 0);
 });
 
 document.getElementById('update-10x')!.addEventListener('click', () => {
   for (let i = 0; i < 10; i++) {
-    vm.setSource(Math.random() * 100 | 0);
+    vm.setSource((Math.random() * 100) | 0);
   }
 });

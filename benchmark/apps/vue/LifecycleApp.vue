@@ -8,7 +8,10 @@
 <script setup lang="ts">
 import { shallowRef } from 'vue';
 
-interface Card { id: number; label: string; }
+interface Card {
+  id: number;
+  label: string;
+}
 
 let nid = 1;
 function buildCards(n: number): Card[] {
@@ -20,8 +23,14 @@ function buildCards(n: number): Card[] {
 const cards = shallowRef<Card[]>([]);
 
 defineExpose({
-  create(n: number) { cards.value = buildCards(n); },
-  destroyAll() { cards.value = []; },
-  replace() { cards.value = buildCards(1000); },
+  create(n: number) {
+    cards.value = buildCards(n);
+  },
+  destroyAll() {
+    cards.value = [];
+  },
+  replace() {
+    cards.value = buildCards(1000);
+  },
 });
 </script>

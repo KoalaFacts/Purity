@@ -6,13 +6,68 @@
 </template>
 
 <script setup lang="ts">
-import { shallowRef, ref, computed } from 'vue';
+import { computed, ref, shallowRef } from 'vue';
 
-const A = ['pretty','large','big','small','tall','short','long','handsome','plain','quaint','clean','elegant','easy','angry','crazy','helpful','mushy','odd','unsightly','adorable','important','inexpensive','cheap','expensive','fancy'];
-const C = ['red','yellow','blue','green','pink','brown','purple','brown','white','black','orange'];
-const N = ['table','chair','house','bbq','desk','car','pony','cookie','sandwich','burger','pizza','mouse','keyboard'];
+const A = [
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
+];
+const C = [
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'brown',
+  'white',
+  'black',
+  'orange',
+];
+const N = [
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
+];
 
-interface Item { id: number; label: string; }
+interface Item {
+  id: number;
+  label: string;
+}
 
 let nid = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
@@ -28,7 +83,7 @@ type SortMode = 'none' | 'id-asc' | 'id-desc' | 'label-asc';
 const data = shallowRef<Item[]>([]);
 const sortMode = ref<SortMode>('none');
 
-const sorted = computed(() => {
+const _sorted = computed(() => {
   const s = data.value.slice();
   const mode = sortMode.value;
   if (mode === 'id-asc') s.sort((a, b) => a.id - b.id);
@@ -38,9 +93,18 @@ const sorted = computed(() => {
 });
 
 defineExpose({
-  populate() { data.value = buildData(1000); sortMode.value = 'none'; },
-  sortIdAsc() { sortMode.value = 'id-asc'; },
-  sortIdDesc() { sortMode.value = 'id-desc'; },
-  sortLabelAsc() { sortMode.value = 'label-asc'; },
+  populate() {
+    data.value = buildData(1000);
+    sortMode.value = 'none';
+  },
+  sortIdAsc() {
+    sortMode.value = 'id-asc';
+  },
+  sortIdDesc() {
+    sortMode.value = 'id-desc';
+  },
+  sortLabelAsc() {
+    sortMode.value = 'label-asc';
+  },
 });
 </script>

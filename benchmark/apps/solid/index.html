@@ -22,6 +22,7 @@
   </div></div>
   <script type="module">
     import { createSolidApp } from './app.tsx';
+
     const app = createSolidApp(document.getElementById('tbody'));
     document.getElementById('run').addEventListener('click', () => app.run(1000));
     document.getElementById('runlots').addEventListener('click', () => app.run(10000));

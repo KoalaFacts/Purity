@@ -2,7 +2,10 @@ import { each, html, state } from '@purity/core';
 
 type StateAccessor<T> = ReturnType<typeof state<T>>;
 
-interface FieldEntry { id: number; signal: StateAccessor<string>; }
+interface FieldEntry {
+  id: number;
+  signal: StateAccessor<string>;
+}
 
 export function createBindingApp(
   container: HTMLElement,

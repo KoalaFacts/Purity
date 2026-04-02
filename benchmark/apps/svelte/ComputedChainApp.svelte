@@ -13,10 +13,18 @@ $effect(() => {
 });
 
 props.onHandle({
-  setup() { source = 1; },
-  update() { source = Math.random() * 1000 | 0; },
-  update10x() { for (let i = 0; i < 10; i++) source = Math.random() * 1000 | 0; },
-  getResult() { return finalValue; },
+  setup() {
+    source = 1;
+  },
+  update() {
+    source = (Math.random() * 1000) | 0;
+  },
+  update10x() {
+    for (let i = 0; i < 10; i++) source = (Math.random() * 1000) | 0;
+  },
+  getResult() {
+    return finalValue;
+  },
 });
 </script>
 

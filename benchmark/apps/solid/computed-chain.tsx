@@ -1,4 +1,4 @@
-import { createSignal, createMemo, createEffect, type Accessor } from 'solid-js';
+import { type Accessor, createMemo, createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 
 const resultEl = document.getElementById('result')!;
@@ -26,11 +26,11 @@ document.getElementById('setup')!.addEventListener('click', () => {
 });
 
 document.getElementById('update')!.addEventListener('click', () => {
-  setSource(Math.random() * 100 | 0);
+  setSource((Math.random() * 100) | 0);
 });
 
 document.getElementById('update-10x')!.addEventListener('click', () => {
   for (let i = 0; i < 10; i++) {
-    setSource(Math.random() * 100 | 0);
+    setSource((Math.random() * 100) | 0);
   }
 });

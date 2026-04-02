@@ -1,14 +1,65 @@
-import { For, createSignal } from 'solid-js';
+import { createSignal, For } from 'solid-js';
 import { render } from 'solid-js/web';
 
-interface Stock { id: number; symbol: string; price: number; change: number; volume: number; }
+interface Stock {
+  id: number;
+  symbol: string;
+  price: number;
+  change: number;
+  volume: number;
+}
 
 const SYMBOLS = [
-  'AAPL','GOOG','MSFT','AMZN','META','TSLA','NVDA','JPM','V','JNJ',
-  'WMT','PG','MA','UNH','HD','DIS','BAC','XOM','PFE','KO',
-  'PEP','CSCO','INTC','NFLX','CMCSA','ADBE','CRM','ABT','NKE','MRK',
-  'T','VZ','CVX','WFC','LLY','TMO','AVGO','COST','DHR','ACN',
-  'TXN','MDT','UPS','NEE','HON','PM','QCOM','LOW','UNP','ORCL',
+  'AAPL',
+  'GOOG',
+  'MSFT',
+  'AMZN',
+  'META',
+  'TSLA',
+  'NVDA',
+  'JPM',
+  'V',
+  'JNJ',
+  'WMT',
+  'PG',
+  'MA',
+  'UNH',
+  'HD',
+  'DIS',
+  'BAC',
+  'XOM',
+  'PFE',
+  'KO',
+  'PEP',
+  'CSCO',
+  'INTC',
+  'NFLX',
+  'CMCSA',
+  'ADBE',
+  'CRM',
+  'ABT',
+  'NKE',
+  'MRK',
+  'T',
+  'VZ',
+  'CVX',
+  'WFC',
+  'LLY',
+  'TMO',
+  'AVGO',
+  'COST',
+  'DHR',
+  'ACN',
+  'TXN',
+  'MDT',
+  'UPS',
+  'NEE',
+  'HON',
+  'PM',
+  'QCOM',
+  'LOW',
+  'UNP',
+  'ORCL',
 ];
 
 function makeStocks(): Stock[] {
@@ -84,16 +135,19 @@ export function createTickerApp(
     rafId = requestAnimationFrame(step);
   });
 
-  render(() => (
-    <For each={stocks()}>
-      {(stock: Stock) => (
-        <tr class={stock.change >= 0 ? 'positive' : 'negative'}>
-          <td>{stock.symbol}</td>
-          <td>{stock.price.toFixed(2)}</td>
-          <td>{stock.change.toFixed(2)}%</td>
-          <td>{stock.volume}</td>
-        </tr>
-      )}
-    </For>
-  ), tbody);
+  render(
+    () => (
+      <For each={stocks()}>
+        {(stock: Stock) => (
+          <tr class={stock.change >= 0 ? 'positive' : 'negative'}>
+            <td>{stock.symbol}</td>
+            <td>{stock.price.toFixed(2)}</td>
+            <td>{stock.change.toFixed(2)}%</td>
+            <td>{stock.volume}</td>
+          </tr>
+        )}
+      </For>
+    ),
+    tbody,
+  );
 }

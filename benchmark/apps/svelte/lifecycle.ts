@@ -13,12 +13,22 @@ export function createLifecycleApp(container: HTMLElement) {
   mount(LifecycleApp, {
     target: container,
     props: {
-      onHandle: (h: LifecycleHandle) => { handle = h; },
+      onHandle: (h: LifecycleHandle) => {
+        handle = h;
+      },
     },
   });
 
-  document.getElementById('create-1k')!.addEventListener('click', () => { handle.create(1000); });
-  document.getElementById('create-10k')!.addEventListener('click', () => { handle.create(10000); });
-  document.getElementById('destroy-all')!.addEventListener('click', () => { handle.destroyAll(); });
-  document.getElementById('replace')!.addEventListener('click', () => { handle.replace(); });
+  document.getElementById('create-1k')!.addEventListener('click', () => {
+    handle.create(1000);
+  });
+  document.getElementById('create-10k')!.addEventListener('click', () => {
+    handle.create(10000);
+  });
+  document.getElementById('destroy-all')!.addEventListener('click', () => {
+    handle.destroyAll();
+  });
+  document.getElementById('replace')!.addEventListener('click', () => {
+    handle.replace();
+  });
 }

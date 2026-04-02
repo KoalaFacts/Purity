@@ -1,6 +1,10 @@
 import { compute, each, html, state, watch } from '@purity/core';
 
-interface SelectItem { id: number; label: string; selected: boolean; }
+interface SelectItem {
+  id: number;
+  label: string;
+  selected: boolean;
+}
 
 export function createSelectionApp(
   container: HTMLElement,
@@ -15,12 +19,18 @@ export function createSelectionApp(
 ) {
   const items = state<SelectItem[]>([]);
 
-  const selectedCount = compute(() => items().filter(i => i.selected).length);
-  const allSelected = compute(() => items().length > 0 && items().every(i => i.selected));
+  const selectedCount = compute(() => items().filter((i) => i.selected).length);
+  const allSelected = compute(() => items().length > 0 && items().every((i) => i.selected));
 
-  watch(() => { countEl.textContent = String(selectedCount()); });
-  watch(() => { totalEl.textContent = String(items().length); });
-  watch(() => { allSelectedEl.textContent = allSelected() ? 'Yes' : 'No'; });
+  watch(() => {
+    countEl.textContent = String(selectedCount());
+  });
+  watch(() => {
+    totalEl.textContent = String(items().length);
+  });
+  watch(() => {
+    allSelectedEl.textContent = allSelected() ? 'Yes' : 'No';
+  });
 
   const fragment = each(
     () => items(),
@@ -45,21 +55,23 @@ export function createSelectionApp(
     return arr;
   }
 
-  populateBtn.addEventListener('click', () => { items(buildItems()); });
+  populateBtn.addEventListener('click', () => {
+    items(buildItems());
+  });
 
   selectAllBtn.addEventListener('click', () => {
-    items(items().map(i => ({ ...i, selected: true })));
+    items(items().map((i) => ({ ...i, selected: true })));
   });
 
   deselectAllBtn.addEventListener('click', () => {
-    items(items().map(i => ({ ...i, selected: false })));
+    items(items().map((i) => ({ ...i, selected: false })));
   });
 
   toggleAllBtn.addEventListener('click', () => {
-    items(items().map(i => ({ ...i, selected: !i.selected })));
+    items(items().map((i) => ({ ...i, selected: !i.selected })));
   });
 
   toggleEvenBtn.addEventListener('click', () => {
-    items(items().map(i => i.id % 2 === 0 ? { ...i, selected: !i.selected } : i));
+    items(items().map((i) => (i.id % 2 === 0 ? { ...i, selected: !i.selected } : i)));
   });
 }

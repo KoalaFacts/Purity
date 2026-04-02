@@ -33,8 +33,16 @@ export function createSortApp(
     e.preventDefault();
   });
 
-  populateBtn.addEventListener('click', () => { handle.populate(); });
-  sortIdBtn.addEventListener('click', () => { handle.sortIdAsc(); });
-  sortIdDescBtn.addEventListener('click', () => { handle.sortIdDesc(); });
-  sortLabelBtn.addEventListener('click', () => { handle.sortLabelAsc(); });
+  populateBtn.addEventListener('click', () => {
+    handle.populate();
+  });
+  sortIdBtn.addEventListener('click', () => {
+    handle.sortIdAsc();
+  });
+  sortIdDescBtn.addEventListener('click', () => {
+    handle.sortIdDesc();
+  });
+  sortLabelBtn.addEventListener('click', () => {
+    handle.sortLabelAsc();
+  });
 }

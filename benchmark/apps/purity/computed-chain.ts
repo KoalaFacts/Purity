@@ -1,5 +1,5 @@
-import { state, compute, watch } from '@purity/core';
 import type { ComputedAccessor } from '@purity/core';
+import { compute, state, watch } from '@purity/core';
 
 const result = document.getElementById('result')!;
 
@@ -22,11 +22,11 @@ document.getElementById('setup')!.addEventListener('click', () => {
 });
 
 document.getElementById('update')!.addEventListener('click', () => {
-  source(Math.random() * 100 | 0);
+  source((Math.random() * 100) | 0);
 });
 
 document.getElementById('update-10x')!.addEventListener('click', () => {
   for (let i = 0; i < 10; i++) {
-    source(Math.random() * 100 | 0);
+    source((Math.random() * 100) | 0);
   }
 });

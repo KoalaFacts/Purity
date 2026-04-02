@@ -1,6 +1,9 @@
 import { each, html, state, when } from '@purity/core';
 
-interface Item { id: number; label: string; }
+interface Item {
+  id: number;
+  label: string;
+}
 
 let nextId = 1;
 function buildData(n: number): Item[] {
@@ -16,11 +19,13 @@ export function createConditionalApp(container: HTMLElement) {
   const fragment = when(
     () => visible() && data().length > 0,
     () => {
-      const table = html`<table class="table table-hover table-striped test-data"><tbody></tbody></table>` as unknown as HTMLTableElement;
+      const table =
+        html`<table class="table table-hover table-striped test-data"><tbody></tbody></table>` as unknown as HTMLTableElement;
       const tbody = table.querySelector('tbody')!;
       const rows = each(
         () => data(),
-        (item: Item) => html`
+        (item: Item) =>
+          html`
           <tr>
             <td class="col-md-1">${String(item.id)}</td>
             <td class="col-md-4">${item.label}</td>

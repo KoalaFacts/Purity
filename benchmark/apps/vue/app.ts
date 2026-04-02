@@ -1,6 +1,6 @@
 // Vue benchmark — mounts .vue SFC with v-for template.
 
-import { createApp, nextTick } from 'vue';
+import { createApp } from 'vue';
 import VueBench from './App.vue';
 
 export interface AppHandle {

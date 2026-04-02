@@ -6,13 +6,68 @@
 </template>
 
 <script setup lang="ts">
-import { shallowRef, ref, computed } from 'vue';
+import { computed, ref, shallowRef } from 'vue';
 
-const A = ['pretty','large','big','small','tall','short','long','handsome','plain','quaint','clean','elegant','easy','angry','crazy','helpful','mushy','odd','unsightly','adorable','important','inexpensive','cheap','expensive','fancy'];
-const C = ['red','yellow','blue','green','pink','brown','purple','brown','white','black','orange'];
-const N = ['table','chair','house','bbq','desk','car','pony','cookie','sandwich','burger','pizza','mouse','keyboard'];
+const A = [
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
+];
+const C = [
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'brown',
+  'white',
+  'black',
+  'orange',
+];
+const N = [
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
+];
 
-interface Item { id: number; label: string; }
+interface Item {
+  id: number;
+  label: string;
+}
 
 let nid = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
@@ -26,15 +81,21 @@ function buildData(n: number): Item[] {
 const data = shallowRef<Item[]>([]);
 const query = ref('');
 
-const filtered = computed(() => {
+const _filtered = computed(() => {
   const q = query.value.toLowerCase();
   if (!q) return data.value;
-  return data.value.filter(item => item.label.toLowerCase().includes(q));
+  return data.value.filter((item) => item.label.toLowerCase().includes(q));
 });
 
 defineExpose({
-  populate() { data.value = buildData(10000); },
-  setQuery(q: string) { query.value = q; },
-  clearSearch() { query.value = ''; },
+  populate() {
+    data.value = buildData(10000);
+  },
+  setQuery(q: string) {
+    query.value = q;
+  },
+  clearSearch() {
+    query.value = '';
+  },
 });
 </script>

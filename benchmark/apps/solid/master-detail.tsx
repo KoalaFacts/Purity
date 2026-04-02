@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from 'solid-js';
+import { createMemo, createSignal, For, Show } from 'solid-js';
 import { render } from 'solid-js/web';
 
 interface Person {
@@ -8,9 +8,51 @@ interface Person {
   bio: string;
 }
 
-const FIRST = ['Alice','Bob','Charlie','Diana','Eve','Frank','Grace','Henry','Iris','Jack','Kate','Leo','Mona','Nick','Olivia','Paul','Quinn','Rose','Sam','Tina'];
-const LAST = ['Smith','Johnson','Williams','Brown','Jones','Garcia','Miller','Davis','Rodriguez','Martinez','Hernandez','Lopez','Gonzalez','Wilson','Anderson','Thomas','Taylor','Moore','Jackson','Martin'];
-const DOMAINS = ['example.com','test.org','mail.net','corp.io','dev.co'];
+const FIRST = [
+  'Alice',
+  'Bob',
+  'Charlie',
+  'Diana',
+  'Eve',
+  'Frank',
+  'Grace',
+  'Henry',
+  'Iris',
+  'Jack',
+  'Kate',
+  'Leo',
+  'Mona',
+  'Nick',
+  'Olivia',
+  'Paul',
+  'Quinn',
+  'Rose',
+  'Sam',
+  'Tina',
+];
+const LAST = [
+  'Smith',
+  'Johnson',
+  'Williams',
+  'Brown',
+  'Jones',
+  'Garcia',
+  'Miller',
+  'Davis',
+  'Rodriguez',
+  'Martinez',
+  'Hernandez',
+  'Lopez',
+  'Gonzalez',
+  'Wilson',
+  'Anderson',
+  'Thomas',
+  'Taylor',
+  'Moore',
+  'Jackson',
+  'Martin',
+];
+const DOMAINS = ['example.com', 'test.org', 'mail.net', 'corp.io', 'dev.co'];
 
 function generatePersons(count: number): Person[] {
   const persons: Person[] = [];
@@ -43,7 +85,7 @@ export function createMasterDetailApp(
   const selectedPerson = createMemo(() => {
     const id = selectedId();
     if (id === null) return null;
-    return persons().find(p => p.id === id) ?? null;
+    return persons().find((p) => p.id === id) ?? null;
   });
 
   populateBtn.addEventListener('click', () => {
@@ -71,27 +113,40 @@ export function createMasterDetailApp(
     }
   });
 
-  render(() => (
-    <For each={persons()}>
-      {(person: Person) => (
-        <div class="list-item" style="padding: 4px 8px; cursor: pointer"
-             classList={{ selected: person.id === selectedId() }}
-             onClick={() => setSelectedId(person.id)}>
-          {person.name}
-        </div>
-      )}
-    </For>
-  ), listPanel);
+  render(
+    () => (
+      <For each={persons()}>
+        {(person: Person) => (
+          <div
+            class="list-item"
+            style="padding: 4px 8px; cursor: pointer"
+            classList={{ selected: person.id === selectedId() }}
+            onClick={() => setSelectedId(person.id)}
+          >
+            {person.name}
+          </div>
+        )}
+      </For>
+    ),
+    listPanel,
+  );
 
-  render(() => (
-    <Show when={selectedPerson()}>
-      {(p) => (
-        <div class="detail">
-          <h2>{p().name}</h2>
-          <p><strong>Email:</strong> {p().email}</p>
-          <p><strong>Bio:</strong> {p().bio}</p>
-        </div>
-      )}
-    </Show>
-  ), detailPanel);
+  render(
+    () => (
+      <Show when={selectedPerson()}>
+        {(p) => (
+          <div class="detail">
+            <h2>{p().name}</h2>
+            <p>
+              <strong>Email:</strong> {p().email}
+            </p>
+            <p>
+              <strong>Bio:</strong> {p().bio}
+            </p>
+          </div>
+        )}
+      </Show>
+    ),
+    detailPanel,
+  );
 }

@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 // Generates the GitHub Pages benchmark dashboard from markdown results.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { join } from 'node:path';
 
 const historyDir = 'benchmark/history';
 const resultsFile = 'benchmark/benchmark-results.md';

@@ -8,7 +8,10 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
 
-interface Field { id: number; value: string; }
+interface Field {
+  id: number;
+  value: string;
+}
 
 const props = defineProps<{ result: HTMLElement }>();
 

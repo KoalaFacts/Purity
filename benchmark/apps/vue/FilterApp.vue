@@ -81,7 +81,7 @@ function buildData(n: number): Item[] {
 const data = shallowRef<Item[]>([]);
 const query = ref('');
 
-const _filtered = computed(() => {
+const filtered = computed(() => {
   const q = query.value.toLowerCase();
   if (!q) return data.value;
   return data.value.filter((item) => item.label.toLowerCase().includes(q));

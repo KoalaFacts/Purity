@@ -83,7 +83,7 @@ type SortMode = 'none' | 'id-asc' | 'id-desc' | 'label-asc';
 const data = shallowRef<Item[]>([]);
 const sortMode = ref<SortMode>('none');
 
-const _sorted = computed(() => {
+const sorted = computed(() => {
   const s = data.value.slice();
   const mode = sortMode.value;
   if (mode === 'id-asc') s.sort((a, b) => a.id - b.id);

@@ -17,4 +17,10 @@ export function createLifecycleApp(container: HTMLElement) {
   document.getElementById('replace')!.addEventListener('click', () => {
     vm.replace();
   });
+  document.getElementById('create-10')!.addEventListener('click', () => {
+    vm.create(10);
+  });
+  document.getElementById('create-100')!.addEventListener('click', () => {
+    vm.create(100);
+  });
 }

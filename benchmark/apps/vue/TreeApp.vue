@@ -83,7 +83,7 @@ function toggleNode(nodes: TreeNode[], targetId: number): TreeNode[] {
 
 const treeData = shallowRef<TreeNode[]>(generateTree());
 
-const _visible = computed(() => flattenVisible(treeData.value));
+const visible = computed(() => flattenVisible(treeData.value));
 
 defineExpose({
   expandAll() {

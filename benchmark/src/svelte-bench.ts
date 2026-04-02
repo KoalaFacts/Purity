@@ -232,8 +232,6 @@ export function createSvelteApp(tbody: HTMLElement): AppHandle {
     run(count) {
       data = mkData(count);
       selectedId = 0;
-      rows.clear();
-      prevIds = [];
       render();
     },
     add() {
@@ -263,11 +261,10 @@ export function createSvelteApp(tbody: HTMLElement): AppHandle {
       render();
     },
     clear() {
-      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
       rows.clear();
       data = [];
       selectedId = 0;
-      prevIds = [];
+      render();
     },
     getData() {
       return data;

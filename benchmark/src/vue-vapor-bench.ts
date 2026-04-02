@@ -1,11 +1,12 @@
-// Vue Vapor benchmark — uses @vue/reactivity (shallowRef, effect)
+// Vue Vapor benchmark — uses @vue/reactivity (shallowRef, ReactiveEffect)
 // Same operations, same DOM structure as Purity/Solid/Svelte benchmarks.
 //
 // Vue Vapor compiles templates to direct DOM operations powered by
-// @vue/reactivity. This benchmark uses the same reactivity primitives
+// @vue/reactivity. Effects use a microtask scheduler (matching Vue Vapor's
+// internal queueJob). This benchmark uses the same reactivity primitives
 // with manual DOM creation for a fair apples-to-apples comparison.
 
-import { effect, shallowRef } from '@vue/reactivity';
+import { ReactiveEffect, shallowRef } from '@vue/reactivity';
 
 interface RowItem {
   id: number;
@@ -131,8 +132,12 @@ export function createVueVaporApp(tbody: HTMLElement): AppHandle {
     return row;
   }
 
-  // Reactive reconciliation via @vue/reactivity effect
-  effect(() => {
+  // Reactive reconciliation via @vue/reactivity ReactiveEffect
+  // Uses microtask scheduler to match Vue Vapor's internal queueJob batching.
+  // Without this, effect() fires synchronously on every .value write,
+  // causing double-execution when run() sets data + selectedId.
+  let scheduled = false;
+  const reconcile = () => {
     const list = data.value;
     const sel = selectedId.value;
     const len = list.length;
@@ -217,7 +222,18 @@ export function createVueVaporApp(tbody: HTMLElement): AppHandle {
     }
 
     prevIds = newIds;
+  };
+
+  const re = new ReactiveEffect(reconcile, () => {
+    if (!scheduled) {
+      scheduled = true;
+      queueMicrotask(() => {
+        scheduled = false;
+        re.run();
+      });
+    }
   });
+  re.run(); // initial synchronous run
 
   tbody.addEventListener('click', (e) => {
     const a = (e.target as HTMLElement).closest('a');
@@ -259,11 +275,9 @@ export function createVueVaporApp(tbody: HTMLElement): AppHandle {
       data.value = data.value.filter((x) => x.id !== id);
     },
     clear() {
-      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
       rows.clear();
       data.value = [];
       selectedId.value = 0;
-      prevIds = [];
     },
     getData() {
       return data.value;

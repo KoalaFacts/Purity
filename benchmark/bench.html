@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Purity vs Solid vs Svelte — Benchmark</title>
+  <title>Purity vs Solid vs Svelte vs Vue Vapor — Benchmark</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:system-ui,sans-serif;padding:1.5rem;background:#f5f5f5;max-width:1400px;margin:0 auto}
@@ -23,7 +23,7 @@
   </style>
 </head>
 <body>
-  <h1>Purity vs Solid vs Svelte</h1>
+  <h1>Purity vs Solid vs Svelte vs Vue Vapor</h1>
   <p class="sub">Same 10 operations, same DOM, same harness. Warmup: 3 | Iterations: 10 | Discard worst: 2.</p>
 
   <button type="button" id="run-btn">Run Comparison</button>
@@ -36,6 +36,7 @@
       <th>Purity</th>
       <th>Solid</th>
       <th>Svelte</th>
+      <th>Vue Vapor</th>
       <th>Winner</th>
     </tr></thead>
     <tbody id="results-body"></tbody>
@@ -45,6 +46,7 @@
     <table><tbody id="tbody-purity"></tbody></table>
     <table><tbody id="tbody-solid"></tbody></table>
     <table><tbody id="tbody-svelte"></tbody></table>
+    <table><tbody id="tbody-vue-vapor"></tbody></table>
   </div>
 
   <script type="module">
@@ -52,10 +54,12 @@
     import { benchmarkOp } from './src/runner.ts';
     import { createSolidApp } from './src/solid-bench.ts';
     import { createSvelteApp } from './src/svelte-bench.ts';
+    import { createVueVaporApp } from './src/vue-vapor-bench.ts';
 
     const purityApp = createApp(document.getElementById('tbody-purity'));
     const solidApp = createSolidApp(document.getElementById('tbody-solid'));
     const svelteApp = createSvelteApp(document.getElementById('tbody-svelte'));
+    const vueVaporApp = createVueVaporApp(document.getElementById('tbody-vue-vapor'));
 
     const statusEl = document.getElementById('status');
     const resultsTable = document.getElementById('results-table');
@@ -67,9 +71,9 @@
 
     function log(msg) { statusEl.textContent += `${msg}\n`; }
 
-    function addResult(name, p, so, sv) {
+    function addResult(name, p, so, sv, vv) {
       const tr = document.createElement('tr');
-      const best = Math.min(p.median, so.median, sv.median);
+      const best = Math.min(p.median, so.median, sv.median, vv.median);
 
       const fmt = (ms) => {
         const cls = ms <= best * WINNER_THRESHOLD ? 'winner' : ms > best * LOSER_THRESHOLD ? 'loser' : 'tie';
@@ -80,10 +84,11 @@
         { name: 'Purity', ms: p.median },
         { name: 'Solid', ms: so.median },
         { name: 'Svelte', ms: sv.median },
+        { name: 'Vue Vapor', ms: vv.median },
       ];
       const winner = vals.reduce((a, b) => a.ms < b.ms ? a : b).name;
 
-      tr.innerHTML = `<td>${name}</td>${fmt(p.median)}${fmt(so.median)}${fmt(sv.median)}<td><strong>${winner}</strong></td>`;
+      tr.innerHTML = `<td>${name}</td>${fmt(p.median)}${fmt(so.median)}${fmt(sv.median)}${fmt(vv.median)}<td><strong>${winner}</strong></td>`;
       resultsBody.appendChild(tr);
     }
 
@@ -110,11 +115,12 @@
       resultsBody.innerHTML = '';
       resultsTable.style.display = 'table';
 
-      log('Purity vs Solid vs Svelte — Head-to-Head\n');
+      log('Purity vs Solid vs Svelte vs Vue Vapor — Head-to-Head\n');
 
       const pS = makeSuite(purityApp);
       const soS = makeSuite(solidApp);
       const svS = makeSuite(svelteApp);
+      const vvS = makeSuite(vueVaporApp);
       const results = [];
 
       for (let i = 0; i < pS.length; i++) {
@@ -123,9 +129,10 @@
 
         // Randomize framework execution order to eliminate bias
         const frameworks = [
-          { key: 'purity', suite: pS },
-          { key: 'solid',  suite: soS },
-          { key: 'svelte', suite: svS },
+          { key: 'purity',    suite: pS },
+          { key: 'solid',     suite: soS },
+          { key: 'svelte',    suite: svS },
+          { key: 'vueVapor',  suite: vvS },
         ];
         for (let j = frameworks.length - 1; j > 0; j--) {
           const k = Math.floor(Math.random() * (j + 1));
@@ -137,18 +144,19 @@
           const [, setup, run, teardown] = fw.suite[i];
           stats[fw.key] = await benchmarkOp(name, setup, run, teardown);
         }
-        const p = stats.purity, so = stats.solid, sv = stats.svelte;
+        const p = stats.purity, so = stats.solid, sv = stats.svelte, vv = stats.vueVapor;
 
-        log(`  Purity: ${p.stats.median.toFixed(1)}ms | Solid: ${so.stats.median.toFixed(1)}ms | Svelte: ${sv.stats.median.toFixed(1)}ms`);
+        log(`  Purity: ${p.stats.median.toFixed(1)}ms | Solid: ${so.stats.median.toFixed(1)}ms | Svelte: ${sv.stats.median.toFixed(1)}ms | Vue Vapor: ${vv.stats.median.toFixed(1)}ms`);
 
-        addResult(name, p.stats, so.stats, sv.stats);
-        results.push({ name, purity: p.stats, solid: so.stats, svelte: sv.stats });
+        addResult(name, p.stats, so.stats, sv.stats, vv.stats);
+        results.push({ name, purity: p.stats, solid: so.stats, svelte: sv.stats, vueVapor: vv.stats });
       }
 
       log('\n✓ Done.');
-      log('Purity = state() + watch() + each() + html`` (AOT compiled)');
-      log('Solid  = createSignal() + createEffect() + batch()');
-      log('Svelte = compiled runtime (manual DOM for fair comparison)');
+      log('Purity    = state() + watch() + each() + html`` (AOT compiled)');
+      log('Solid     = createSignal() + createEffect() + batch()');
+      log('Svelte    = compiled runtime (manual DOM for fair comparison)');
+      log('Vue Vapor = @vue/reactivity shallowRef() + effect() (3.6 beta)');
 
       window.__benchResults = results;
       const marker = document.createElement('div');

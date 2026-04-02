@@ -14,6 +14,7 @@
   "dependencies": {
     "@preact/signals-core": "^1.14.1",
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@vue/reactivity": "^3.6.0-beta.9",
     "preact": "^10.29.0",
     "solid-js": "^1.9.12",
     "svelte": "^5.55.1"

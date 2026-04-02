@@ -31,17 +31,18 @@ async function main() {
 
     // Print markdown table
     const fmt = (s) => `${s.median.toFixed(1)}ms`;
-    console.log('| Operation | Purity | Solid | Svelte | Winner |');
-    console.log('|-----------|--------|-------|--------|--------|');
+    console.log('| Operation | Purity | Solid | Svelte | Vue Vapor | Winner |');
+    console.log('|-----------|--------|-------|--------|-----------|--------|');
     for (const r of results) {
       const vals = [
         { name: 'Purity', ms: r.purity.median },
         { name: 'Solid', ms: r.solid.median },
         { name: 'Svelte', ms: r.svelte.median },
+        { name: 'Vue Vapor', ms: r.vueVapor.median },
       ];
       const winner = vals.reduce((a, b) => (a.ms < b.ms ? a : b)).name;
       console.log(
-        `| ${r.name} | ${fmt(r.purity)} | ${fmt(r.solid)} | ${fmt(r.svelte)} | **${winner}** |`,
+        `| ${r.name} | ${fmt(r.purity)} | ${fmt(r.solid)} | ${fmt(r.svelte)} | ${fmt(r.vueVapor)} | **${winner}** |`,
       );
     }
 

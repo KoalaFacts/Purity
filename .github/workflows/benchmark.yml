@@ -26,10 +26,10 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
-      - name: 🟢 Setup Node.js 22
+      - name: 🟢 Setup Node.js 24
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: '24'
           cache: 'npm'
 
       - name: 📦 Install root dependencies
@@ -60,7 +60,7 @@ jobs:
         # Outputs markdown table with median/mean/stddev per framework
         run: |
           cd benchmark
-          node --import tsx run-bench.ts | tee benchmark-results.txt
+          node run-bench.ts | tee benchmark-results.txt
 
       - name: 💾 Save results to history (last 3 runs)
         # Commits timestamped results file to benchmark/history/

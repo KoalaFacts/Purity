@@ -10,7 +10,8 @@ import { chromium, type Page } from 'playwright';
 const PORT = process.env.PORT || 4173;
 const BASE = `http://localhost:${PORT}`;
 const WARMUP = 3;
-const ITERATIONS = parseInt(process.env.ITERATIONS || '5', 10);
+const ITERATIONS = parseInt(process.env.ITERATIONS || '7', 10);
+const DROP_OUTLIERS = 1; // drop N fastest + N slowest before computing median
 const FRAMEWORKS = ['purity', 'solid', 'svelte', 'vue'] as const;
 
 // ---------------------------------------------------------------------------
@@ -362,10 +363,12 @@ async function runSetup(page: Page, steps: Step[]): Promise<void> {
 // Benchmark runner
 // ---------------------------------------------------------------------------
 
-function median(arr: number[]): number {
+function trimmedMedian(arr: number[], drop: number): number {
   const sorted = [...arr].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  // Drop N fastest (front) and N slowest (back)
+  const trimmed = drop > 0 && sorted.length > drop * 2 ? sorted.slice(drop, -drop) : sorted;
+  const mid = Math.floor(trimmed.length / 2);
+  return trimmed.length % 2 === 0 ? (trimmed[mid - 1] + trimmed[mid]) / 2 : trimmed[mid];
 }
 
 interface Result {
@@ -383,7 +386,9 @@ async function main() {
   console.log(
     `Scenarios: ${SCENARIOS.length} pages, ${SCENARIOS.reduce((s, sc) => s + sc.ops.length, 0)} operations`,
   );
-  console.log(`Warmup: ${WARMUP} | Iterations: ${ITERATIONS}\n`);
+  console.log(
+    `Warmup: ${WARMUP} | Iterations: ${ITERATIONS} | Drop: fastest ${DROP_OUTLIERS} + slowest ${DROP_OUTLIERS}\n`,
+  );
 
   const browser = await chromium.launch({ headless: true });
   const allResults: Result[] = [];
@@ -417,7 +422,7 @@ async function main() {
             await page.waitForTimeout(20);
           }
 
-          const med = median(times);
+          const med = trimmedMedian(times, DROP_OUTLIERS);
           fwResults[fw] = med;
           allResults.push({
             scenario: scenario.page,

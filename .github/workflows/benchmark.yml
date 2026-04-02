@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       iterations:
-        description: 'Measured iterations per operation (default: 5)'
+        description: 'Measured iterations per operation (default: 7)'
         required: false
-        default: '5'
+        default: '7'
 
 permissions:
   contents: write
@@ -57,7 +57,7 @@ jobs:
         # Outputs markdown table with median per framework
         run: |
           cd benchmark
-          ITERATIONS=${{ inputs.iterations || '5' }} node run-bench.ts | tee benchmark-results.md
+          ITERATIONS=${{ inputs.iterations || '7' }} node run-bench.ts | tee benchmark-results.md
 
       - name: 💾 Save results to history (last 3 runs)
         # Commits timestamped results file to benchmark/history/

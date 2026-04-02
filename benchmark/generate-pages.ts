@@ -399,7 +399,7 @@ const html = `<!DOCTYPE html>
 
   <footer>
     Trigger a new run: <a href="https://github.com/KoalaFacts/Purity/actions">Actions tab &rarr; Benchmark</a>
-    <div class="methodology">Warmup: 3 iterations &middot; Measured: configurable (default 5) &middot; Metric: median &middot; Framework order randomized per operation</div>
+    <div class="methodology">Warmup: 3 iterations &middot; Measured: 7 (configurable) &middot; Drop: fastest 1 + slowest 1 &middot; Metric: trimmed median &middot; Framework order randomized per operation</div>
   </footer>
 </body>
 </html>`;

@@ -261,8 +261,26 @@ export function each<T>(
       }
     }
 
+    // Fast path: clear all — skip reconciliation entirely
+    if (len === 0) {
+      if (prevLen > 0) {
+        for (let i = 0; i < prevLen; i++) {
+          const entry = keyToEntry.get(prevKeys[i])!;
+          for (let j = 0; j < entry.nodes.length; j++) {
+            const node = entry.nodes[j];
+            if (node.parentNode) node.parentNode.removeChild(node);
+          }
+          if (entry.dispose) entry.dispose();
+        }
+        keyToEntry = new Map();
+      }
+      prevKeys = [];
+      return;
+    }
+
     const newKeys: unknown[] = new Array(len);
     const newEntries = new Map<unknown, EachEntry>();
+    let reuseCount = 0;
 
     for (let i = 0; i < len; i++) {
       const item = list[i];
@@ -274,6 +292,7 @@ export function each<T>(
         const entry = _existing;
         if (entry.data) entry.data(item);
         newEntries.set(key, entry);
+        reuseCount++;
       } else {
         const content = mapFn(item, i);
         let nodes: Node[];
@@ -288,8 +307,32 @@ export function each<T>(
       }
     }
 
+    // Fast path: no reuse — full replace or all new → bulk remove + bulk insert
+    if (reuseCount === 0) {
+      if (prevLen > 0) {
+        for (let i = 0; i < prevLen; i++) {
+          const entry = keyToEntry.get(prevKeys[i])!;
+          for (let j = 0; j < entry.nodes.length; j++) {
+            const node = entry.nodes[j];
+            if (node.parentNode) node.parentNode.removeChild(node);
+          }
+          if (entry.dispose) entry.dispose();
+        }
+      }
+      // Batch insert all new via single fragment
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < len; i++) {
+        const entry = newEntries.get(newKeys[i])!;
+        for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
+      }
+      parent.insertBefore(frag, endMarker);
+      keyToEntry = newEntries;
+      prevKeys = newKeys;
+      return;
+    }
+
     // Remove deleted entries
-    if (prevLen > 0) {
+    if (reuseCount < prevLen) {
       const newKeySet = new Set(newKeys);
       for (let i = 0; i < prevLen; i++) {
         const key = prevKeys[i];
@@ -306,28 +349,59 @@ export function each<T>(
       }
     }
 
-    // --- Reorder: detect append-only fast path, else LIS ---
-    if (prevLen > 0 && len > 0) {
-      // Fast path: all old keys at start in same order = pure append
-      let isAppend = len > prevLen;
-      if (isAppend) {
-        for (let i = 0; i < prevLen; i++) {
+    // --- Reorder: detect append, swap, or full LIS ---
+    // Fast path: all old keys at start in same order = pure append
+    let isAppend = len > prevLen;
+    if (isAppend) {
+      for (let i = 0; i < prevLen; i++) {
+        if (prevKeys[i] !== newKeys[i]) {
+          isAppend = false;
+          break;
+        }
+      }
+    }
+
+    if (isAppend) {
+      // Pure append — just insert new items before endMarker, no LIS
+      const frag = document.createDocumentFragment();
+      for (let i = prevLen; i < len; i++) {
+        const entry = newEntries.get(newKeys[i])!;
+        for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
+      }
+      parent.insertBefore(frag, endMarker);
+    } else {
+      // Fast path: swap — exactly 2 positions differ, same length, all reused
+      let swapped = false;
+      if (len === prevLen && reuseCount === len) {
+        let sc = 0;
+        let sa = -1;
+        let sb = -1;
+        for (let i = 0; i < len; i++) {
           if (prevKeys[i] !== newKeys[i]) {
-            isAppend = false;
-            break;
+            if (sc === 0) sa = i;
+            else if (sc === 1) sb = i;
+            sc++;
+            if (sc > 2) break;
+          }
+        }
+        if (sc === 2 && sa >= 0 && sb >= 0) {
+          const entryA = newEntries.get(newKeys[sa])!;
+          const entryB = newEntries.get(newKeys[sb])!;
+          if (entryA.nodes.length === 1 && entryB.nodes.length === 1) {
+            swapped = true;
+            const nodeA = entryA.nodes[0];
+            const nodeB = entryB.nodes[0];
+            // Correct DOM swap using a temporary marker
+            const marker = document.createComment('');
+            parent.insertBefore(marker, nodeA);
+            parent.insertBefore(nodeA, nodeB);
+            parent.insertBefore(nodeB, marker);
+            parent.removeChild(marker);
           }
         }
       }
 
-      if (isAppend) {
-        // Pure append — just insert new items before endMarker, no LIS
-        const frag = document.createDocumentFragment();
-        for (let i = prevLen; i < len; i++) {
-          const entry = newEntries.get(newKeys[i])!;
-          for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
-        }
-        parent.insertBefore(frag, endMarker);
-      } else {
+      if (!swapped) {
         // Full LIS-based reorder
         const oldKeyIndex = new Map<unknown, number>();
         for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
@@ -363,23 +437,6 @@ export function each<T>(
 
           nextSibling = entry.nodes[0] || nextSibling;
         }
-      } // close isAppend else
-    } else {
-      // All new — insert in order
-      let nextSibling: Node = endMarker;
-      for (let i = len - 1; i >= 0; i--) {
-        const entry = newEntries.get(newKeys[i])!;
-        const firstNode = entry.nodes[0];
-        if (firstNode) {
-          if (entry.nodes.length > 1) {
-            const frag = document.createDocumentFragment();
-            for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
-            parent.insertBefore(frag, nextSibling);
-          } else {
-            parent.insertBefore(firstNode, nextSibling);
-          }
-        }
-        nextSibling = entry.nodes[0] || nextSibling;
       }
     }
 

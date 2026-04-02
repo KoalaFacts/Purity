@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Purity – Shopping Cart</title>
+  <link href="/css/currentStyle.css" rel="stylesheet" />
+</head>
+<body>
+  <div id="main"><div class="container">
+    <div class="jumbotron"><div class="row">
+      <div class="col-md-6"><h1>Purity (Cart)</h1></div>
+      <div class="col-md-6"><div class="row">
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="add-1">Add 1 Item</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="add-100">Add 100 Items</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="add-1000">Add 1000 Items</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="increment-all">+1 All Quantities</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="remove-first">Remove First</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="clear-cart">Clear Cart</button></div>
+      </div></div>
+    </div></div>
+    <div id="stats">
+      <span id="item-count">0</span> items |
+      Subtotal: $<span id="subtotal">0.00</span> |
+      Tax: $<span id="tax">0.00</span> |
+      Total: $<span id="total">0.00</span>
+    </div>
+    <table class="table table-hover table-striped test-data"><tbody id="tbody"></tbody></table>
+  </div></div>
+  <script type="module">
+    import { createCartApp } from './cart.ts';
+
+    createCartApp(document.getElementById('tbody'));
+  </script>
+</body>
+</html>

@@ -26,6 +26,23 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["benchmark/**"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useValidAnchor": "off",
+            "useAnchorContent": "off",
+            "useButtonType": "off",
+            "noLabelWithoutControl": "off",
+            "useKeyWithClickEvents": "off",
+            "useSemanticElements": "off"
+          }
+        }
+      }
+    }
+  ],
   "files": {
     "includes": ["**", "!!**/dist", "!!**/node_modules"]
   }

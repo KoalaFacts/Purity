@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Vue – Stock Ticker</title>
+  <link href="/css/currentStyle.css" rel="stylesheet" />
+</head>
+<body>
+  <div id="main"><div class="container">
+    <div class="jumbotron"><div class="row">
+      <div class="col-md-6"><h1>Vue (Ticker)</h1></div>
+      <div class="col-md-6"><div class="row">
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="start">Start Ticker</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="stop">Stop Ticker</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="run-500">Run 500 Frames</button></div>
+      </div></div>
+    </div></div>
+    <div id="frame-count">Frames: 0</div>
+    <table class="table table-hover table-striped test-data">
+      <thead><tr><th>Symbol</th><th>Price</th><th>Change</th><th>Volume</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div></div>
+  <script type="module">
+    import { createTickerApp } from './ticker.ts';
+
+    createTickerApp(
+      document.getElementById('tbody'),
+      document.getElementById('frame-count'),
+      document.getElementById('start'),
+      document.getElementById('stop'),
+      document.getElementById('run-500'),
+    );
+  </script>
+</body>
+</html>

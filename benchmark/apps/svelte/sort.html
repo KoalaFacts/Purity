@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Svelte – Sort by Column</title>
+  <link href="/css/currentStyle.css" rel="stylesheet" />
+</head>
+<body>
+  <div id="main"><div class="container">
+    <div class="jumbotron"><div class="row">
+      <div class="col-md-6"><h1>Svelte (Sort)</h1></div>
+      <div class="col-md-6"><div class="row">
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="populate">Populate 1k</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="sort-id">Sort by ID ↑</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="sort-id-desc">Sort by ID ↓</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="sort-label">Sort by Label ↑</button></div>
+      </div></div>
+    </div></div>
+    <table class="table table-hover table-striped test-data"><tbody id="tbody"></tbody></table>
+  </div></div>
+  <script type="module">
+    import { createSortApp } from './sort.ts';
+
+    createSortApp(
+      document.getElementById('tbody'),
+      document.getElementById('populate'),
+      document.getElementById('sort-id'),
+      document.getElementById('sort-id-desc'),
+      document.getElementById('sort-label'),
+    );
+  </script>
+</body>
+</html>

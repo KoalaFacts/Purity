@@ -3,7 +3,7 @@ import { html } from '../src/compiler/compile.ts';
 import { state } from '../src/signals.ts';
 
 // Helper: wrap result in a container for querying
-function render(result) {
+function render(result: Node | unknown): HTMLDivElement {
   const container = document.createElement('div');
   container.appendChild(result instanceof Node ? result : document.createTextNode(String(result)));
   return container;

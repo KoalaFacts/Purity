@@ -1,7 +1,9 @@
 <script>
-// NOTE: Svelte 5 cannot create dynamic $derived() chains at runtime.
-// This uses a single $effect with a loop, which is the closest equivalent.
-// Other frameworks (Purity/Solid/Vue) create 1000 actual chained computed objects.
+// Svelte 5's $derived() is a compile-time rune and cannot be created
+// dynamically in a loop. This uses $effect with a loop to simulate
+// a 1000-level chain. Other frameworks (Purity/Solid/Vue) create
+// 1000 actual chained reactive nodes with dependency tracking.
+// The benchmark results annotate this difference.
 const props = $props();
 let source = $state(0);
 let finalValue = $state(0);

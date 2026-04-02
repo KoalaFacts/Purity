@@ -10,7 +10,7 @@ import { chromium, type Page } from 'playwright';
 const PORT = process.env.PORT || 4173;
 const BASE = `http://localhost:${PORT}`;
 const WARMUP = 3;
-const ITERATIONS = 5;
+const ITERATIONS = parseInt(process.env.ITERATIONS || '5', 10);
 const FRAMEWORKS = ['purity', 'solid', 'svelte', 'vue'] as const;
 
 // ---------------------------------------------------------------------------
@@ -478,6 +478,12 @@ async function main() {
       console.log(`| ${cat} | ${op.name} | ${cells.join(' | ')} | **${winner}** |`);
     }
   }
+
+  // Caveats
+  console.log('\n### Notes\n');
+  console.log(
+    '- **Svelte computed-chain & diamond:** Svelte 5 `$derived()` is a compile-time rune and cannot be created dynamically. These scenarios use a `$effect` loop instead of 1000 actual reactive dependency nodes. Purity, Solid, and Vue create real reactive graphs for these tests, so Svelte results are not directly comparable.',
+  );
 
   console.log('\n✓ Benchmark complete.');
   await browser.close();

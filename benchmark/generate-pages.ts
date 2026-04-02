@@ -16,9 +16,21 @@ const resultsFile = 'benchmark/benchmark-results.md';
 const outFile = 'gh-pages/index.html';
 
 // --- Parse markdown results into structured data ---
+// The table format from run-bench.ts is:
+// | Category | Operation | Purity | Solid | Svelte | Vue | Winner |
 function parseResults(md) {
   const lines = md.split('\n').filter((l) => l.startsWith('|'));
   if (lines.length < 3) return []; // header + separator + at least 1 row
+
+  // Detect column count from header
+  const headerCells = lines[0]
+    .split('|')
+    .map((c) => c.trim())
+    .filter(Boolean);
+
+  // Support both old 5-column (no Category, no Vue) and new 7-column format
+  const hasCategory = headerCells.length >= 6;
+
   return lines
     .slice(2)
     .map((line) => {
@@ -26,12 +38,29 @@ function parseResults(md) {
         .split('|')
         .map((c) => c.trim())
         .filter(Boolean);
+
+      if (hasCategory) {
+        // New format: Category | Operation | Purity | Solid | Svelte | Vue | Winner
+        if (cells.length < 7) return null;
+        return {
+          category: cells[0],
+          op: cells[1],
+          purity: parseFloat(cells[2]),
+          solid: parseFloat(cells[3]),
+          svelte: parseFloat(cells[4]),
+          vue: parseFloat(cells[5]),
+          winner: cells[6].replace(/\*/g, ''),
+        };
+      }
+      // Legacy 5-column format: Operation | Purity | Solid | Svelte | Winner
       if (cells.length < 5) return null;
       return {
+        category: '',
         op: cells[0],
         purity: parseFloat(cells[1]),
         solid: parseFloat(cells[2]),
         svelte: parseFloat(cells[3]),
+        vue: NaN,
         winner: cells[4].replace(/\*/g, ''),
       };
     })
@@ -42,7 +71,12 @@ function parseResults(md) {
 function resultsToTable(rows) {
   if (!rows.length) return '<p>No results available.</p>';
 
-  const wins = { Purity: 0, Solid: 0, Svelte: 0 };
+  const hasVue = rows.some((r) => !isNaN(r.vue));
+  const hasCategory = rows.some((r) => r.category);
+  const fws = hasVue ? ['Purity', 'Solid', 'Svelte', 'Vue'] : ['Purity', 'Solid', 'Svelte'];
+
+  const wins = {};
+  for (const fw of fws) wins[fw] = 0;
   for (const r of rows) if (wins[r.winner] !== undefined) wins[r.winner]++;
 
   let html = '<div class="scoreboard">';
@@ -53,12 +87,18 @@ function resultsToTable(rows) {
   html += '</div>';
 
   html += '<table class="results"><thead><tr>';
-  html += '<th>Operation</th><th>Purity</th><th>Solid</th><th>Svelte</th><th>Winner</th>';
+  if (hasCategory) html += '<th>Category</th>';
+  html += '<th>Operation</th>';
+  for (const fw of fws) html += `<th>${fw}</th>`;
+  html += '<th>Winner</th>';
   html += '</tr></thead><tbody>';
 
   for (const r of rows) {
-    const best = Math.min(r.purity, r.solid, r.svelte);
+    const vals = fws.map((fw) => r[fw.toLowerCase()]).filter((v) => !isNaN(v));
+    const best = vals.length ? Math.min(...vals) : 0;
+
     const cell = (ms, fw) => {
+      if (isNaN(ms)) return '<td class="ok">—</td>';
       const isBest = ms === best;
       const isWinner = fw === r.winner;
       const ratio = best > 0 ? ms / best : 1;
@@ -71,10 +111,9 @@ function resultsToTable(rows) {
 
     const winnerCls = r.winner.toLowerCase();
     html += '<tr>';
+    if (hasCategory) html += `<td class="op-name">${r.category}</td>`;
     html += `<td class="op-name">${r.op}</td>`;
-    html += cell(r.purity, 'Purity');
-    html += cell(r.solid, 'Solid');
-    html += cell(r.svelte, 'Svelte');
+    for (const fw of fws) html += cell(r[fw.toLowerCase()], fw);
     html += `<td class="winner-cell ${winnerCls}">${r.winner}</td>`;
     html += '</tr>';
   }
@@ -204,6 +243,7 @@ const html = `<!DOCTYPE html>
     .score-card.purity { border-color: var(--purple-light); background: linear-gradient(135deg, #f8f7ff, white); }
     .score-card.solid  { border-color: #74b9ff; background: linear-gradient(135deg, #f0f8ff, white); }
     .score-card.svelte { border-color: #ff7675; background: linear-gradient(135deg, #fff5f5, white); }
+    .score-card.vue    { border-color: #55efc4; background: linear-gradient(135deg, #f0fff9, white); }
 
     .score-num {
       font-size: 2rem;
@@ -213,6 +253,7 @@ const html = `<!DOCTYPE html>
     .purity .score-num { color: var(--purple); }
     .solid  .score-num { color: #0984e3; }
     .svelte .score-num { color: #d63031; }
+    .vue    .score-num { color: #00b894; }
 
     .score-label {
       font-size: .8rem;
@@ -284,6 +325,7 @@ const html = `<!DOCTYPE html>
     .winner-cell.purity { color: var(--purple); }
     .winner-cell.solid  { color: #0984e3; }
     .winner-cell.svelte { color: #d63031; }
+    .winner-cell.vue    { color: #00b894; }
 
     /* History */
     .history-run {
@@ -342,7 +384,7 @@ const html = `<!DOCTYPE html>
 <body>
   <header>
     <h1>Purity Benchmarks</h1>
-    <p>Purity vs Solid vs Svelte &mdash; automated results from headless Chromium</p>
+    <p>Purity vs Solid vs Svelte vs Vue &mdash; automated results from headless Chromium</p>
   </header>
 
   <div class="section">
@@ -357,7 +399,7 @@ const html = `<!DOCTYPE html>
 
   <footer>
     Trigger a new run: <a href="https://github.com/KoalaFacts/Purity/actions">Actions tab &rarr; Benchmark</a>
-    <div class="methodology">Warmup: 3 iterations &middot; Measured: 10 iterations &middot; Discard worst 2 &middot; Metric: median</div>
+    <div class="methodology">Warmup: 3 iterations &middot; Measured: configurable (default 5) &middot; Metric: median &middot; Framework order randomized per operation</div>
   </footer>
 </body>
 </html>`;

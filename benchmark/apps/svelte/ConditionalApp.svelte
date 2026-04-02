@@ -30,10 +30,10 @@ props.onHandle({
 });
 </script>
 
-{#if visible && data.length > 0}
+{#if visible && _data.length > 0}
   <table class="table table-hover table-striped test-data">
     <tbody>
-      {#each data as item (item.id)}
+      {#each _data as item (item.id)}
         <tr>
           <td class="col-md-1">{item.id}</td>
           <td class="col-md-4">{item.label}</td>

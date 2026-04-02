@@ -56,6 +56,6 @@ jobs:
         run: npm run build -w packages/vite-plugin
 
       - name: 🏗️ Build benchmark (verifies AOT compilation)
-        # Installs benchmark deps and runs vite build — proves the AOT plugin
-        # successfully compiles html`` templates at build time
-        run: cd benchmark && npm ci && npx vite build
+        # Runs vite build — proves the AOT plugin compiles html`` templates.
+        # Benchmark is a workspace member so deps are already installed.
+        run: cd benchmark && npx vite build

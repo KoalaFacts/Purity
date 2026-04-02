@@ -86,7 +86,7 @@ props.onHandle({
 });
 </script>
 
-{#each visible as node (node.id)}
+{#each _visible as node (node.id)}
   <div class="tree-node" style="padding-left: {node.depth * 20}px">
     <span class="toggle">{node.hasChildren ? (node.expanded ? '\u25BC' : '\u25B6') : '\u00A0\u00A0'}</span>
     <span class="label">{node.label}</span>

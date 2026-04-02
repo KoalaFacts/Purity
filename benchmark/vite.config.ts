@@ -1,10 +1,10 @@
 import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { purity } from '@purity/vite-plugin';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite';
 import solid from 'vite-plugin-solid';
-import { purity } from '../packages/vite-plugin/src/index.ts';
 
 // Discover all .html files in each framework's app directory
 const frameworks = ['purity', 'solid', 'svelte', 'vue'];
@@ -25,6 +25,7 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
+      // Resolve to source so the AOT plugin can compile html`` templates
       '@purity/core': resolve(import.meta.dirname, '../packages/core/src/index.ts'),
     },
   },

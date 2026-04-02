@@ -5,7 +5,9 @@
         v-for="person in persons"
         :key="person.id"
         class="list-item"
+        @click="selectedId = person.id"
         style="padding: 4px 8px; cursor: pointer"
+        :class="{ selected: person.id === selectedId }"
       >
         {{ person.name }}
       </div>

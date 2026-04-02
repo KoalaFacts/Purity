@@ -111,23 +111,25 @@ describe('codegen', () => {
   it('generates template-cloning code for static element', () => {
     const ast = parse(['<div></div>']);
     const code = generate(ast);
-    // Static templates use innerHTML + cloneNode
+    // Static templates use DOM API calls + cloneNode (no innerHTML)
     expect(code).toContain('template');
     expect(code).toContain('cloneNode');
-    expect(code).toContain('<div></div>');
+    expect(code).toContain('createElement("div")');
   });
 
   it('generates code with text content in HTML', () => {
     const ast = parse(['<p>Hello</p>']);
     const code = generate(ast);
-    expect(code).toContain('<p>Hello</p>');
+    expect(code).toContain('createElement("p")');
+    expect(code).toContain('createTextNode("Hello")');
     expect(code).toContain('cloneNode');
   });
 
   it('generates code with static attributes in HTML', () => {
     const ast = parse(['<div class="box"></div>']);
     const code = generate(ast);
-    expect(code).toContain('class=');
+    expect(code).toContain('setAttribute');
+    expect(code).toContain('class');
     expect(code).toContain('box');
   });
 

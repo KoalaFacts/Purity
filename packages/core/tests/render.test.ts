@@ -31,7 +31,9 @@ describe('html tagged template', () => {
     const child = document.createElement('strong');
     child.textContent = 'bold';
     const c = render(html`<p>Some ${child} text</p>`);
-    expect(c.querySelector('strong').textContent).toBe('bold');
+    const strong = c.querySelector('strong');
+    expect(strong).not.toBeNull();
+    expect(strong!.textContent).toBe('bold');
   });
 
   it('inserts arrays of values', () => {

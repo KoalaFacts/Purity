@@ -24,7 +24,9 @@ describe('html tagged template', () => {
 
   it('interpolates static number values', () => {
     const c = render(html`<span>${42}</span>`);
-    expect(c.querySelector('span').textContent).toBe('42');
+    const span = c.querySelector('span');
+    expect(span).not.toBeNull();
+    expect(span!.textContent).toBe('42');
   });
 
   it('inserts DOM nodes directly', () => {

@@ -98,7 +98,7 @@ export function createSortApp(
       const tr = html`
         <tr>
           <td class="col-md-1">${String(item.id)}</td>
-          <td class="col-md-4"><a class="lbl">${item.label}</a></td>
+          <td class="col-md-4"><a href="#" class="lbl">${item.label}</a></td>
         </tr>
       ` as unknown as HTMLTableRowElement;
       return tr;

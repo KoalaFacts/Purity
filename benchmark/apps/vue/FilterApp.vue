@@ -1,7 +1,7 @@
 <template>
   <tr v-for="item in filtered" :key="item.id">
     <td class="col-md-1">{{ item.id }}</td>
-    <td class="col-md-4"><a class="lbl">{{ item.label }}</a></td>
+    <td class="col-md-4"><a href="#" class="lbl">{{ item.label }}</a></td>
   </tr>
 </template>
 

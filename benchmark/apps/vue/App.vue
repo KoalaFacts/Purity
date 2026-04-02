@@ -1,8 +1,8 @@
 <template>
   <tr v-for="row in data" :key="row.id" :class="{ danger: row.id === selectedId }">
     <td class="col-md-1">{{ row.id }}</td>
-    <td class="col-md-4"><a class="lbl">{{ row.label }}</a></td>
-    <td class="col-md-1"><a class="remove"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
+    <td class="col-md-4"><a href="#" class="lbl">{{ row.label }}</a></td>
+    <td class="col-md-1"><a href="#" class="remove"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
     <td class="col-md-6"></td>
   </tr>
 </template>

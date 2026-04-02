@@ -104,6 +104,6 @@ props.onHandle({
 {#each sorted as item (item.id)}
   <tr>
     <td class="col-md-1">{item.id}</td>
-    <td class="col-md-4"><a class="lbl">{item.label}</a></td>
+    <td class="col-md-4"><a href="#" class="lbl">{item.label}</a></td>
   </tr>
 {/each}

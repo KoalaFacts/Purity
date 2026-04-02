@@ -156,10 +156,10 @@ export function createSolidApp(tbody: HTMLElement): AppHandle {
           <tr class={row.id === selectedId() ? 'danger' : ''}>
             <td class="col-md-1">{row.id}</td>
             <td class="col-md-4">
-              <a class="lbl">{row.label()}</a>
+              <a href="#" class="lbl">{row.label()}</a>
             </td>
             <td class="col-md-1">
-              <a class="remove">
+              <a href="#" class="remove">
                 <span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span>
               </a>
             </td>

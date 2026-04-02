@@ -39,7 +39,7 @@ async function main() {
         { name: 'Solid', ms: r.solid.median },
         { name: 'Svelte', ms: r.svelte.median },
       ];
-      const winner = vals.reduce((a, b) => a.ms < b.ms ? a : b).name;
+      const winner = vals.reduce((a, b) => (a.ms < b.ms ? a : b)).name;
       console.log(
         `| ${r.name} | ${fmt(r.purity)} | ${fmt(r.solid)} | ${fmt(r.svelte)} | **${winner}** |`,
       );

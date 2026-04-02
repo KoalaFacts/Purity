@@ -66,10 +66,37 @@ interface AttrSlot {
 type Slot = ExprSlot | AttrSlot;
 
 // ---------------------------------------------------------------------------
+// trimFragmentEdges — strip leading/trailing whitespace-only text nodes
+// ---------------------------------------------------------------------------
+
+function trimFragmentEdges(frag: FragmentNode): FragmentNode {
+  const children = frag.children;
+  let start = 0;
+  let end = children.length;
+  while (start < end) {
+    const ch = children[start];
+    if (ch.type === 'text' && ch.value.trim() === '' && ch.value.includes('\n')) start++;
+    else break;
+  }
+  while (end > start) {
+    const ch = children[end - 1];
+    if (ch.type === 'text' && ch.value.trim() === '' && ch.value.includes('\n')) end--;
+    else break;
+  }
+  if (start === 0 && end === children.length) return frag;
+  return { ...frag, children: children.slice(start, end) };
+}
+
+// ---------------------------------------------------------------------------
 // generate(ast)
 // ---------------------------------------------------------------------------
 
 export function generate(ast: FragmentNode): string {
+  // Trim whitespace-only text nodes (containing newlines) from fragment edges.
+  // These are template formatting artifacts (indentation) that add unnecessary
+  // DOM nodes — especially costly in each() where they multiply per item.
+  ast = trimFragmentEdges(ast);
+
   if (!hasDynamic(ast)) {
     const html = buildStaticHtml(ast);
     if (!html.trim()) return 'function(){return document.createDocumentFragment();}';

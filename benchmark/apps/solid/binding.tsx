@@ -62,8 +62,12 @@ export function createBindingApp(
       <For each={fields()}>
         {(field: Field) => (
           <div>
-            <label>Field {field.id}:</label>
-            <input value={field.value()} onInput={(e) => field.setValue(e.currentTarget.value)} />
+            <label for={`field-${field.id}`}>Field {field.id}:</label>
+            <input
+              id={`field-${field.id}`}
+              value={field.value()}
+              onInput={(e) => field.setValue(e.currentTarget.value)}
+            />
           </div>
         )}
       </For>

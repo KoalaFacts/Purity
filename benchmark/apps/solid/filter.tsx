@@ -114,7 +114,9 @@ export function createFilterApp(
           <tr>
             <td class="col-md-1">{item.id}</td>
             <td class="col-md-4">
-              <a href="#" class="lbl">{item.label}</a>
+              <a href="#" class="lbl" aria-label="Item">
+                {item.label}
+              </a>
             </td>
           </tr>
         )}

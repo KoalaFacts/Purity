@@ -118,6 +118,8 @@ export function createMasterDetailApp(
       <For each={persons()}>
         {(person: Person) => (
           <div
+            role="button"
+            tabIndex={0}
             class="list-item"
             style="padding: 4px 8px; cursor: pointer"
             classList={{ selected: person.id === selectedId() }}

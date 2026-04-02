@@ -1,6 +1,6 @@
 import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { purity } from '@purity/vite-plugin';
+import { purity } from '../packages/vite-plugin/src/index.ts';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite';

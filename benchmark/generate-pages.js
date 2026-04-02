@@ -1,106 +1,112 @@
 #!/usr/bin/env node
 // Generates the GitHub Pages benchmark dashboard from markdown results.
 
-const fs = require("fs");
-const path = require("path");
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { join } from 'path';
 
-const historyDir = "benchmark/history";
-const resultsFile = "benchmark/benchmark-results.md";
-const outFile = "gh-pages/index.html";
+const historyDir = 'benchmark/history';
+const resultsFile = 'benchmark/benchmark-results.md';
+const outFile = 'gh-pages/index.html';
 
 // --- Parse markdown results into structured data ---
 function parseResults(md) {
-	const lines = md.split("\n").filter((l) => l.startsWith("|"));
-	if (lines.length < 3) return []; // header + separator + at least 1 row
-	return lines.slice(2).map((line) => {
-		const cells = line
-			.split("|")
-			.map((c) => c.trim())
-			.filter(Boolean);
-		if (cells.length < 5) return null;
-		return {
-			op: cells[0],
-			purity: parseFloat(cells[1]),
-			solid: parseFloat(cells[2]),
-			svelte: parseFloat(cells[3]),
-			winner: cells[4].replace(/\*/g, ""),
-		};
-	}).filter(Boolean);
+  const lines = md.split('\n').filter((l) => l.startsWith('|'));
+  if (lines.length < 3) return []; // header + separator + at least 1 row
+  return lines
+    .slice(2)
+    .map((line) => {
+      const cells = line
+        .split('|')
+        .map((c) => c.trim())
+        .filter(Boolean);
+      if (cells.length < 5) return null;
+      return {
+        op: cells[0],
+        purity: parseFloat(cells[1]),
+        solid: parseFloat(cells[2]),
+        svelte: parseFloat(cells[3]),
+        winner: cells[4].replace(/\*/g, ''),
+      };
+    })
+    .filter(Boolean);
 }
 
 // --- Build HTML table from parsed results ---
 function resultsToTable(rows) {
-	if (!rows.length) return "<p>No results available.</p>";
+  if (!rows.length) return '<p>No results available.</p>';
 
-	const wins = { Purity: 0, Solid: 0, Svelte: 0 };
-	for (const r of rows) if (wins[r.winner] !== undefined) wins[r.winner]++;
+  const wins = { Purity: 0, Solid: 0, Svelte: 0 };
+  for (const r of rows) if (wins[r.winner] !== undefined) wins[r.winner]++;
 
-	let html = '<div class="scoreboard">';
-	for (const [fw, count] of Object.entries(wins)) {
-		const cls = fw.toLowerCase();
-		html += `<div class="score-card ${cls}"><span class="score-num">${count}</span><span class="score-label">${fw}</span></div>`;
-	}
-	html += "</div>";
+  let html = '<div class="scoreboard">';
+  for (const [fw, count] of Object.entries(wins)) {
+    const cls = fw.toLowerCase();
+    html += `<div class="score-card ${cls}"><span class="score-num">${count}</span><span class="score-label">${fw}</span></div>`;
+  }
+  html += '</div>';
 
-	html += '<table class="results"><thead><tr>';
-	html += "<th>Operation</th><th>Purity</th><th>Solid</th><th>Svelte</th><th>Winner</th>";
-	html += "</tr></thead><tbody>";
+  html += '<table class="results"><thead><tr>';
+  html += '<th>Operation</th><th>Purity</th><th>Solid</th><th>Svelte</th><th>Winner</th>';
+  html += '</tr></thead><tbody>';
 
-	for (const r of rows) {
-		const best = Math.min(r.purity, r.solid, r.svelte);
-		const cell = (ms, fw) => {
-			const isBest = ms === best;
-			const isWinner = fw === r.winner;
-			const ratio = best > 0 ? ms / best : 1;
-			let cls = "";
-			if (isBest || isWinner) cls = "best";
-			else if (ratio > 2) cls = "slow";
-			else cls = "ok";
-			return `<td class="${cls}">${ms.toFixed(1)}ms</td>`;
-		};
+  for (const r of rows) {
+    const best = Math.min(r.purity, r.solid, r.svelte);
+    const cell = (ms, fw) => {
+      const isBest = ms === best;
+      const isWinner = fw === r.winner;
+      const ratio = best > 0 ? ms / best : 1;
+      let cls = '';
+      if (isBest || isWinner) cls = 'best';
+      else if (ratio > 2) cls = 'slow';
+      else cls = 'ok';
+      return `<td class="${cls}">${ms.toFixed(1)}ms</td>`;
+    };
 
-		const winnerCls = r.winner.toLowerCase();
-		html += "<tr>";
-		html += `<td class="op-name">${r.op}</td>`;
-		html += cell(r.purity, "Purity");
-		html += cell(r.solid, "Solid");
-		html += cell(r.svelte, "Svelte");
-		html += `<td class="winner-cell ${winnerCls}">${r.winner}</td>`;
-		html += "</tr>";
-	}
+    const winnerCls = r.winner.toLowerCase();
+    html += '<tr>';
+    html += `<td class="op-name">${r.op}</td>`;
+    html += cell(r.purity, 'Purity');
+    html += cell(r.solid, 'Solid');
+    html += cell(r.svelte, 'Svelte');
+    html += `<td class="winner-cell ${winnerCls}">${r.winner}</td>`;
+    html += '</tr>';
+  }
 
-	html += "</tbody></table>";
-	return html;
+  html += '</tbody></table>';
+  return html;
 }
 
 // --- Manage history files ---
-const historyFiles = fs.existsSync(historyDir)
-	? fs.readdirSync(historyDir).filter((f) => f.endsWith(".md")).sort().reverse()
-	: [];
+const historyFiles = existsSync(historyDir)
+  ? readdirSync(historyDir)
+      .filter((f) => f.endsWith('.md'))
+      .sort()
+      .reverse()
+  : [];
 
 // Prune to 3 most recent
 for (let i = 3; i < historyFiles.length; i++) {
-	fs.unlinkSync(path.join(historyDir, historyFiles[i]));
+  unlinkSync(join(historyDir, historyFiles[i]));
 }
 
 const recentFiles = historyFiles.slice(0, 3);
 
 // --- Build current results ---
-const currentMd = fs.readFileSync(resultsFile, "utf8");
+const currentMd = readFileSync(resultsFile, 'utf8');
 const currentRows = parseResults(currentMd);
 const currentTable = resultsToTable(currentRows);
 
 // --- Build previous runs ---
-let previousHtml = "";
+let previousHtml = '';
 for (const f of recentFiles) {
-	const md = fs.readFileSync(path.join(historyDir, f), "utf8");
-	const rows = parseResults(md);
-	const date = f.replace(".md", "");
-	const display = date.replace(
-		/(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})(\d{2})/,
-		"$1-$2-$3 $4:$5:$6",
-	);
-	previousHtml += `<details class="history-run"><summary>${display}</summary>${resultsToTable(rows)}</details>\n`;
+  const md = readFileSync(join(historyDir, f), 'utf8');
+  const rows = parseResults(md);
+  const date = f.replace('.md', '');
+  const display = date.replace(
+    /(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})(\d{2})/,
+    '$1-$2-$3 $4:$5:$6',
+  );
+  previousHtml += `<details class="history-run"><summary>${display}</summary>${resultsToTable(rows)}</details>\n`;
 }
 
 // --- Generate HTML ---
@@ -339,7 +345,7 @@ const html = `<!DOCTYPE html>
 
   <div class="section">
     <h2>Previous Runs</h2>
-    ${previousHtml || "<p style=\"color:var(--gray-600)\">No previous runs yet.</p>"}
+    ${previousHtml || '<p style="color:var(--gray-600)">No previous runs yet.</p>'}
   </div>
 
   <footer>
@@ -349,6 +355,6 @@ const html = `<!DOCTYPE html>
 </body>
 </html>`;
 
-fs.mkdirSync("gh-pages", { recursive: true });
-fs.writeFileSync(outFile, html);
+mkdirSync('gh-pages', { recursive: true });
+writeFileSync(outFile, html);
 console.log(`Generated ${outFile}`);

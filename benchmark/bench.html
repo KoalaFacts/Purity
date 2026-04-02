@@ -91,7 +91,7 @@
         ['Create 1,000 rows',     clear, () => app.run(1000), null],
         ['Replace 1,000 rows',    create1k, () => app.run(1000), null],
         ['Update every 10th',     create1k, () => app.update(), clear],
-        ['Select row',            create1k, () => { const d = app.getData(); if (d.length) app.select(d[Math.floor(d.length/2)].id); }, clear],
+        ['Select row',            create1k, () => { const d = app.getData(); if (d.length) { const middleIndex = Math.floor(d.length / 2); app.select(d[middleIndex].id); } }, clear],
         ['Swap rows',             create1k, () => app.swapRows(), clear],
         ['Remove row',            create1k, () => { const d = app.getData(); if (d.length) app.remove(d[0].id); }, clear],
         ['Clear 1,000 rows',      create1k, () => app.clear(), null],

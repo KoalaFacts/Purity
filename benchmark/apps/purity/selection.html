@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Purity – Bulk Selection</title>
+  <link href="/css/currentStyle.css" rel="stylesheet" />
+</head>
+<body>
+  <div id="main"><div class="container">
+    <div class="jumbotron"><div class="row">
+      <div class="col-md-6"><h1>Purity (Selection)</h1></div>
+      <div class="col-md-6"><div class="row">
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="populate">Populate 1k</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="select-all">Select All</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="deselect-all">Deselect All</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="toggle-all">Toggle All</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="toggle-even">Toggle Even</button></div>
+      </div></div>
+    </div></div>
+    <div id="stats">Selected: <span id="count">0</span> / <span id="total">0</span> | All: <span id="all-selected">No</span></div>
+    <div id="container"></div>
+  </div></div>
+  <script type="module">
+    import { createSelectionApp } from './selection.ts';
+    createSelectionApp(
+      document.getElementById('container'),
+      document.getElementById('count'),
+      document.getElementById('total'),
+      document.getElementById('all-selected'),
+      document.getElementById('populate'),
+      document.getElementById('select-all'),
+      document.getElementById('deselect-all'),
+      document.getElementById('toggle-all'),
+      document.getElementById('toggle-even'),
+    );
+  </script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Purity – Two-Way Binding</title>
+  <link href="/css/currentStyle.css" rel="stylesheet" />
+</head>
+<body>
+  <div id="main"><div class="container">
+    <div class="jumbotron"><div class="row">
+      <div class="col-md-6"><h1>Purity (Binding)</h1></div>
+      <div class="col-md-6"><div class="row">
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="create-100">Create 100 Fields</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="create-1000">Create 1000 Fields</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="update-all">Update All</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="clear-all">Clear All</button></div>
+        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="read-all">Read All</button></div>
+      </div></div>
+    </div></div>
+    <div id="result">—</div>
+    <div id="container"></div>
+  </div></div>
+  <script type="module">
+    import { createBindingApp } from './binding.ts';
+    createBindingApp(
+      document.getElementById('container'),
+      document.getElementById('result'),
+      document.getElementById('create-100'),
+      document.getElementById('create-1000'),
+      document.getElementById('update-all'),
+      document.getElementById('clear-all'),
+      document.getElementById('read-all'),
+    );
+  </script>
+</body>
+</html>

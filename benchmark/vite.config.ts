@@ -1,9 +1,20 @@
+import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite';
 import solid from 'vite-plugin-solid';
 import { purity } from '../packages/vite-plugin/src/index.ts';
+
+// Discover all .html files in each framework's app directory
+const frameworks = ['purity', 'solid', 'svelte', 'vue'];
+const inputs: Record<string, string> = {};
+for (const fw of frameworks) {
+  const dir = resolve(import.meta.dirname, `apps/${fw}`);
+  for (const f of readdirSync(dir).filter((f) => f.endsWith('.html'))) {
+    inputs[`${fw}-${f.replace('.html', '')}`] = resolve(dir, f);
+  }
+}
 
 export default defineConfig({
   plugins: [
@@ -19,13 +30,6 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    rolldownOptions: {
-      input: {
-        purity: resolve(import.meta.dirname, 'apps/purity/index.html'),
-        solid: resolve(import.meta.dirname, 'apps/solid/index.html'),
-        svelte: resolve(import.meta.dirname, 'apps/svelte/index.html'),
-        vue: resolve(import.meta.dirname, 'apps/vue/index.html'),
-      },
-    },
+    rolldownOptions: { input: inputs },
   },
 });

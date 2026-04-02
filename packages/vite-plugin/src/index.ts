@@ -154,20 +154,93 @@ function compileTemplates(source: string, _id: string): CompileResult {
   }
 
   // Remove html import since templates are pre-compiled
-  // Use [ \t\n] instead of \s to avoid polynomial backtracking on uncontrolled data
-  finalCode = finalCode.replace(
-    /import[ \t\n]*\{([^}]*)\}[ \t\n]*from[ \t\n]*['"]@purity\/core['"][ \t\n]*;?/g,
-    (_match, imports) => {
-      const cleaned = imports
-        .split(',')
-        .map((s: string) => s.trim())
-        .filter((s: string) => s && s !== 'html')
-        .join(', ');
-      return cleaned ? `import { ${cleaned} } from '@purity/core';` : '';
-    },
-  );
+  // Use string parsing instead of regex to avoid polynomial backtracking
+  finalCode = removePurityHtmlImport(finalCode);
 
   return { code: finalCode, changed: true };
+}
+
+/**
+ * Parse and rewrite `import { ... } from '@purity/core'` statements,
+ * removing the `html` binding. Uses indexOf-based scanning (no regex)
+ * to avoid ReDoS on untrusted input.
+ */
+function removePurityHtmlImport(code: string): string {
+  let result = '';
+  let pos = 0;
+  while (pos < code.length) {
+    const idx = code.indexOf('import', pos);
+    if (idx === -1) {
+      result += code.slice(pos);
+      break;
+    }
+    // Append everything before this import keyword
+    result += code.slice(pos, idx);
+
+    // Check if this is an import { ... } from '@purity/core'
+    let i = idx + 6; // skip 'import'
+    // skip whitespace
+    while (i < code.length && (code[i] === ' ' || code[i] === '\t' || code[i] === '\n')) i++;
+    if (code[i] !== '{') {
+      // Not a named import — keep as-is and advance past 'import'
+      result += 'import';
+      pos = idx + 6;
+      continue;
+    }
+    const braceStart = i;
+    const braceEnd = code.indexOf('}', braceStart);
+    if (braceEnd === -1) {
+      result += code.slice(idx);
+      break;
+    }
+    let j = braceEnd + 1;
+    // skip whitespace
+    while (j < code.length && (code[j] === ' ' || code[j] === '\t' || code[j] === '\n')) j++;
+    // expect 'from'
+    if (code.slice(j, j + 4) !== 'from') {
+      result += 'import';
+      pos = idx + 6;
+      continue;
+    }
+    j += 4;
+    // skip whitespace
+    while (j < code.length && (code[j] === ' ' || code[j] === '\t' || code[j] === '\n')) j++;
+    const quote = code[j];
+    if (quote !== "'" && quote !== '"') {
+      result += 'import';
+      pos = idx + 6;
+      continue;
+    }
+    const modStart = j + 1;
+    const modEnd = code.indexOf(quote, modStart);
+    if (modEnd === -1) {
+      result += code.slice(idx);
+      break;
+    }
+    const moduleName = code.slice(modStart, modEnd);
+    let end = modEnd + 1;
+    // skip optional trailing whitespace and semicolon
+    while (end < code.length && (code[end] === ' ' || code[end] === '\t' || code[end] === '\n'))
+      end++;
+    if (end < code.length && code[end] === ';') end++;
+
+    if (moduleName !== '@purity/core') {
+      result += code.slice(idx, end);
+      pos = end;
+      continue;
+    }
+
+    // This is a @purity/core import — remove 'html' from the bindings
+    const imports = code.slice(braceStart + 1, braceEnd);
+    const cleaned = imports
+      .split(',')
+      .map((s: string) => s.trim())
+      .filter((s: string) => s && s !== 'html')
+      .join(', ');
+    result += cleaned ? `import { ${cleaned} } from '@purity/core';` : '';
+    pos = end;
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------

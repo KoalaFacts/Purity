@@ -73,7 +73,12 @@ export function generate(ast: FragmentNode): string {
   if (!hasDynamic(ast)) {
     const html = buildStaticHtml(ast);
     if (!html.trim()) return 'function(){return document.createDocumentFragment();}';
-    return `(function(){var _t=document.createElement('template');_t.innerHTML=${JSON.stringify(html)};return function(){return _t.content.cloneNode(true);};})()`;
+    // Generate DOM API calls instead of innerHTML to prevent code injection
+    const stmts: string[] = ["var _t=document.createElement('template');"];
+    const counter = { n: 0 };
+    genStaticDOM(ast, '_t.content', stmts, counter);
+    stmts.push('return function(){return _t.content.cloneNode(true);};');
+    return `(function(){${stmts.join('')}})()`;
   }
 
   // Fast path: simple template (1 element with only text/expression children)
@@ -237,6 +242,59 @@ function hasDynamic(node: ASTNode): boolean {
 // ---------------------------------------------------------------------------
 // buildStaticHtml (no markers)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// genStaticDOM — generate DOM API calls for static templates (no innerHTML)
+// ---------------------------------------------------------------------------
+
+function genStaticDOM(
+  node: ASTNode,
+  parent: string,
+  stmts: string[],
+  counter: { n: number },
+): void {
+  switch (node.type) {
+    case 'text': {
+      const id = `_n${counter.n++}`;
+      stmts.push(
+        `var ${id}=document.createTextNode(${JSON.stringify(node.value)});${parent}.appendChild(${id});`,
+      );
+      break;
+    }
+    case 'comment': {
+      const id = `_n${counter.n++}`;
+      stmts.push(
+        `var ${id}=document.createComment(${JSON.stringify(node.value)});${parent}.appendChild(${id});`,
+      );
+      break;
+    }
+    case 'element': {
+      assertSafeName(node.tag, 'tag');
+      const id = `_n${counter.n++}`;
+      stmts.push(`var ${id}=document.createElement(${JSON.stringify(node.tag)});`);
+      for (const a of node.attributes) {
+        if (a.kind === 'static') {
+          stmts.push(
+            a.value
+              ? `${id}.setAttribute(${JSON.stringify(a.name)},${JSON.stringify(a.value)});`
+              : `${id}.setAttribute(${JSON.stringify(a.name)},'');`,
+          );
+        }
+      }
+      for (const ch of node.children) {
+        genStaticDOM(ch, id, stmts, counter);
+      }
+      stmts.push(`${parent}.appendChild(${id});`);
+      break;
+    }
+    case 'fragment': {
+      for (const ch of node.children) {
+        genStaticDOM(ch, parent, stmts, counter);
+      }
+      break;
+    }
+  }
+}
 
 function buildStaticHtml(node: ASTNode): string {
   switch (node.type) {

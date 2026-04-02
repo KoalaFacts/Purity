@@ -58,7 +58,7 @@ See each package README for full API documentation.
 | **Two-way binding** | `::prop` | Manual | `bind:` | `v-model` |
 | **Dependencies** | 1 | 0 | 0 | 0 |
 
-**Runtime benchmarks** — Purity vs Solid vs Svelte, automated in headless Chromium:
+**Runtime benchmarks** (Solid 1.9 · Svelte 5.55) — automated in headless Chromium:
 [koalafacts.github.io/Purity](https://koalafacts.github.io/Purity/)
 
 ## License

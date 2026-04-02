@@ -1,7 +1,7 @@
 // Svelte 5 benchmark — wrapper that mounts the .svelte component.
 
 import { mount } from 'svelte';
-import SvelteBench from './SvelteBench.svelte';
+import SvelteBench from './App.svelte';
 
 export interface AppHandle {
   run(count: number): void;

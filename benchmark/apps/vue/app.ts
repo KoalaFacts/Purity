@@ -1,7 +1,7 @@
-// Vue benchmark — wrapper that mounts the .vue SFC component.
+// Vue benchmark — mounts .vue SFC with v-for template.
 
-import { createApp } from 'vue';
-import VueBench from './VueBench.vue';
+import { createApp, nextTick } from 'vue';
+import VueBench from './App.vue';
 
 export interface AppHandle {
   run(count: number): void;
@@ -14,9 +14,9 @@ export interface AppHandle {
   getData(): { id: number; label: string }[];
 }
 
-export function createVueVaporApp(tbody: HTMLElement): AppHandle {
-  const app = createApp(VueBench);
-  const vm = app.mount(tbody);
+export function createVueApp(tbody: HTMLElement): AppHandle {
+  const vueApp = createApp(VueBench);
+  const vm = vueApp.mount(tbody) as any;
 
   // Event delegation
   tbody.addEventListener('click', (e) => {
@@ -24,9 +24,9 @@ export function createVueVaporApp(tbody: HTMLElement): AppHandle {
     if (!a) return;
     e.preventDefault();
     const id = +(a.closest('tr')!.firstChild as HTMLElement).textContent!;
-    if (a.classList.contains('lbl')) (vm as any).select(id);
-    else if (a.classList.contains('remove')) (vm as any).remove(id);
+    if (a.classList.contains('lbl')) vm.select(id);
+    else if (a.classList.contains('remove')) vm.remove(id);
   });
 
-  return vm as unknown as AppHandle;
+  return vm as AppHandle;
 }

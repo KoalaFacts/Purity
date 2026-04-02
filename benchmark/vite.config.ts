@@ -21,8 +21,10 @@ export default defineConfig({
     outDir: 'dist',
     rolldownOptions: {
       input: {
-        main: resolve(import.meta.dirname, 'index.html'),
-        bench: resolve(import.meta.dirname, 'bench.html'),
+        purity: resolve(import.meta.dirname, 'apps/purity/index.html'),
+        solid: resolve(import.meta.dirname, 'apps/solid/index.html'),
+        svelte: resolve(import.meta.dirname, 'apps/svelte/index.html'),
+        vue: resolve(import.meta.dirname, 'apps/vue/index.html'),
       },
     },
   },

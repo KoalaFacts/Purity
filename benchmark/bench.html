@@ -62,6 +62,9 @@
     const resultsBody = document.getElementById('results-body');
     const runBtn = document.getElementById('run-btn');
 
+    const WINNER_THRESHOLD = 1.05; // within 5% of best time
+    const LOSER_THRESHOLD = 1.5;   // more than 50% slower than best
+
     function log(msg) { statusEl.textContent += `${msg}\n`; }
 
     function addResult(name, p, so, sv) {
@@ -69,7 +72,7 @@
       const best = Math.min(p.median, so.median, sv.median);
 
       const fmt = (ms) => {
-        const cls = ms <= best * 1.05 ? 'winner' : ms > best * 1.5 ? 'loser' : 'tie';
+        const cls = ms <= best * WINNER_THRESHOLD ? 'winner' : ms > best * LOSER_THRESHOLD ? 'loser' : 'tie';
         return `<td class="${cls}">${ms.toFixed(1)}ms</td>`;
       };
 

@@ -1,20 +1,34 @@
 import { mount } from 'svelte';
 import DiamondApp from './DiamondApp.svelte';
 
+interface DiamondHandle {
+  setup(): void;
+  updateAll(): void;
+  updateOne(): void;
+  getResult(): number;
+}
+
 const resultEl = document.getElementById('result')!;
 
-let app: Record<string, any>;
+let handle!: DiamondHandle;
+
+mount(DiamondApp, {
+  target: resultEl,
+  props: {
+    onHandle: (h: DiamondHandle) => {
+      handle = h;
+    },
+  },
+});
 
 document.getElementById('setup')!.addEventListener('click', () => {
-  resultEl.textContent = '';
-  app = mount(DiamondApp, { target: resultEl });
-  app.setup();
+  handle.setup();
 });
 
 document.getElementById('update-all')!.addEventListener('click', () => {
-  app.updateAll();
+  handle.updateAll();
 });
 
 document.getElementById('update-one')!.addEventListener('click', () => {
-  app.updateOne();
+  handle.updateOne();
 });

@@ -4,10 +4,12 @@ import { render } from 'solid-js/web';
 const resultEl = document.getElementById('result')!;
 
 let setSource: (v: number) => void;
+let dispose: (() => void) | null = null;
 
 document.getElementById('setup')!.addEventListener('click', () => {
+  if (dispose) dispose();
   resultEl.textContent = '';
-  render(() => {
+  dispose = render(() => {
     const [source, _setSource] = createSignal(0);
     setSource = _setSource;
     const chain: Accessor<number>[] = [];

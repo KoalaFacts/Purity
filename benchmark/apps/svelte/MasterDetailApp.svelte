@@ -50,7 +50,9 @@ props.onHandle({
 <div style="display:flex">
   <div id="list-panel" style="flex:1">
     {#each persons as person (person.id)}
-      <div class="list-item" style="padding: 4px 8px; cursor: pointer">
+      <div class="list-item" style="padding: 4px 8px; cursor: pointer"
+           class:selected={person.id === selectedId}
+           onclick={() => selectedId = person.id}>
         {person.name}
       </div>
     {/each}

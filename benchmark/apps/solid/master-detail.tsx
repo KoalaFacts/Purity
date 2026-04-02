@@ -74,7 +74,9 @@ export function createMasterDetailApp(
   render(() => (
     <For each={persons()}>
       {(person: Person) => (
-        <div class="list-item" style="padding: 4px 8px; cursor: pointer">
+        <div class="list-item" style="padding: 4px 8px; cursor: pointer"
+             classList={{ selected: person.id === selectedId() }}
+             onClick={() => setSelectedId(person.id)}>
           {person.name}
         </div>
       )}

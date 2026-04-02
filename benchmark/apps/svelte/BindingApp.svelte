@@ -15,15 +15,11 @@ props.onHandle({
     props.result.textContent = `Created ${count} fields`;
   },
   updateAll() {
-    for (let i = 0; i < fields.length; i++) {
-      fields[i].value = `updated-${fields[i].id}`;
-    }
+    fields = fields.map(f => ({ ...f, value: `updated-${f.id}` }));
     props.result.textContent = `Updated ${fields.length} fields`;
   },
   clearAll() {
-    for (let i = 0; i < fields.length; i++) {
-      fields[i].value = '';
-    }
+    fields = fields.map(f => ({ ...f, value: '' }));
     props.result.textContent = `Cleared ${fields.length} fields`;
   },
   readAll() {

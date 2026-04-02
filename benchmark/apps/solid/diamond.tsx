@@ -4,10 +4,12 @@ import { render } from 'solid-js/web';
 const resultEl = document.getElementById('result')!;
 
 let sources: Setter<number>[];
+let dispose: (() => void) | null = null;
 
 document.getElementById('setup')!.addEventListener('click', () => {
+  if (dispose) dispose();
   resultEl.textContent = '';
-  render(() => {
+  dispose = render(() => {
     sources = [];
     const results: Accessor<number>[] = [];
     for (let i = 0; i < 1000; i++) {

@@ -374,7 +374,11 @@ async function runSetup(page: Page, steps: Step[]): Promise<void> {
     if (step.action.startsWith('input#')) {
       await page.fill(step.action.replace('input', ''), step.value || '');
     } else {
-      await page.click(step.action);
+      // Use page.evaluate for clicks — works with hidden buttons (display:none)
+      await page.evaluate(
+        (sel) => (document.querySelector(sel) as HTMLElement)?.click(),
+        step.action,
+      );
     }
     await settle(page);
     if (step.delay) await page.waitForTimeout(step.delay);
@@ -433,7 +437,7 @@ async function main() {
         const page = await browser.newPage();
 
         try {
-          await page.goto(url, { waitUntil: 'networkidle', timeout: 10000 });
+          await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
           const times: number[] = [];
 
           for (let i = 0; i < WARMUP + ITERATIONS; i++) {

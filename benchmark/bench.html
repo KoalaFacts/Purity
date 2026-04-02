@@ -92,15 +92,15 @@
       const create1k = () => { app.clear(); app.run(1000); };
       return [
         ['Create 1,000 rows',     clear, () => app.run(1000), null],
+        ['Create 10,000 rows',    clear, () => app.run(10000), null],
+        ['Append 1,000 rows',     create1k, () => app.add(), clear],
         ['Replace 1,000 rows',    create1k, () => app.run(1000), null],
         ['Update every 10th',     create1k, () => app.update(), clear],
         ['Select row',            create1k, () => { const d = app.getData(); if (d.length) { const middleIndex = Math.floor(d.length / 2); app.select(d[middleIndex].id); } }, clear],
         ['Swap rows',             create1k, () => app.swapRows(), clear],
         ['Remove row',            create1k, () => { const d = app.getData(); if (d.length) app.remove(d[0].id); }, clear],
         ['Clear 1,000 rows',      create1k, () => app.clear(), null],
-        ['Create 10,000 rows',    clear, () => app.run(10000), null],
-        ['Clear 10,000 rows',     null, () => app.clear(), null],
-        ['Append 1,000 rows',     create1k, () => app.add(), clear],
+        ['Clear 10,000 rows',     () => { app.clear(); app.run(10000); }, () => app.clear(), null],
       ];
     }
 
@@ -121,14 +121,23 @@
         const [name] = pS[i];
         log(`${name}...`);
 
-        const [,svs,svr,svt] = svS[i];
-        const sv = await benchmarkOp(name, svs, svr, svt);
+        // Randomize framework execution order to eliminate bias
+        const frameworks = [
+          { key: 'purity', suite: pS },
+          { key: 'solid',  suite: soS },
+          { key: 'svelte', suite: svS },
+        ];
+        for (let j = frameworks.length - 1; j > 0; j--) {
+          const k = Math.floor(Math.random() * (j + 1));
+          [frameworks[j], frameworks[k]] = [frameworks[k], frameworks[j]];
+        }
 
-        const [,sos,sor,sot] = soS[i];
-        const so = await benchmarkOp(name, sos, sor, sot);
-
-        const [,ps,pr,pt] = pS[i];
-        const p = await benchmarkOp(name, ps, pr, pt);
+        const stats = {};
+        for (const fw of frameworks) {
+          const [, setup, run, teardown] = fw.suite[i];
+          stats[fw.key] = await benchmarkOp(name, setup, run, teardown);
+        }
+        const p = stats.purity, so = stats.solid, sv = stats.svelte;
 
         log(`  Purity: ${p.stats.median.toFixed(1)}ms | Solid: ${so.stats.median.toFixed(1)}ms | Svelte: ${sv.stats.median.toFixed(1)}ms`);
 

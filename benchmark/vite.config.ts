@@ -26,6 +26,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@purity/core': resolve(import.meta.dirname, '../packages/core/src/index.ts'),
+      // signal-polyfill is a transitive dep of @purity/core; since we alias
+      // core to source, the bundler needs to find signal-polyfill in the
+      // benchmark node_modules (installed via benchmark/package.json).
+      'signal-polyfill': resolve(import.meta.dirname, 'node_modules/signal-polyfill'),
     },
   },
   build: {

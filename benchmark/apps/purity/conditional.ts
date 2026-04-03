@@ -45,15 +45,23 @@ function ButtonBar() {
       <div class="col-md-6"><h1>Purity (Conditional)</h1></div>
       <div class="col-md-6"><div class="row">
         <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="populate" @click=${() => { data(buildData(1000)); visible(true); }}>Populate 1k</button>
+          <button type="button" class="btn btn-primary btn-block" id="populate" @click=${() => {
+            data(buildData(1000));
+            visible(true);
+          }}>Populate 1k</button>
         </div>
         <div class="col-sm-6 smallpad">
           <button type="button" class="btn btn-primary btn-block" id="toggle" @click=${() => visible(!visible())}>Toggle Visibility</button>
         </div>
         <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="toggle-10x" @click=${() => { for (let i = 0; i < 10; i++) visible(!visible()); }}>Toggle 10x</button>
+          <button type="button" class="btn btn-primary btn-block" id="toggle-10x" @click=${() => {
+            for (let i = 0; i < 10; i++) visible(!visible());
+          }}>Toggle 10x</button>
         </div>
-        ${hBtn('populate-100', 'Populate 100', () => { data(buildData(100)); visible(true); })}
+        ${hBtn('populate-100', 'Populate 100', () => {
+          data(buildData(100));
+          visible(true);
+        })}
       </div></div>
     </div></div>
   `;

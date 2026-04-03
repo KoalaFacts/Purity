@@ -156,7 +156,11 @@ function SpeedTable(rows: SpeedRow[]) {
       <th>Winner</th>
     </tr></thead>
     <tbody>
-      ${each(rows, (r) => speedRow(r), (r) => r.op)}
+      ${each(
+        rows,
+        (r) => speedRow(r),
+        (r) => r.op,
+      )}
     </tbody>
   </table>`;
 }
@@ -171,7 +175,9 @@ function memCell(val: number, best: number, isRetained: boolean) {
 function memRow(r: MemRow) {
   const usedVals = FWS.map((fw) => getMemUsed(r, fw)).filter((v) => v != null && !Number.isNaN(v));
   const bestUsed = usedVals.length ? Math.min(...usedVals) : 0;
-  const retVals = FWS.map((fw) => getMemRetained(r, fw)).filter((v) => v != null && !Number.isNaN(v));
+  const retVals = FWS.map((fw) => getMemRetained(r, fw)).filter(
+    (v) => v != null && !Number.isNaN(v),
+  );
   const bestRet = retVals.length ? Math.min(...retVals.map((v) => Math.abs(v))) : 0;
 
   const usedCells = FWS.map((fw) => memCell(getMemUsed(r, fw), bestUsed, false));
@@ -228,7 +234,11 @@ function MemoryTable(rows: MemRow[]) {
         <tr>${fwHeaders}${fwHeaders2}</tr>
       </thead>
       <tbody>
-        ${each(rows, (r) => memRow(r), (r) => r.op)}
+        ${each(
+          rows,
+          (r) => memRow(r),
+          (r) => r.op,
+        )}
       </tbody>
     </table>
   </div>`;

@@ -17,6 +17,7 @@ for (const fw of frameworks) {
 }
 
 export default defineConfig({
+  base: '/Purity/',
   plugins: [
     purity(),
     svelte({ compilerOptions: { runes: true } }),

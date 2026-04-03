@@ -1,71 +1,17 @@
 <script lang="ts">
-interface Stock {
-  id: number;
-  symbol: string;
-  price: number;
-  change: number;
-  volume: number;
-}
+interface Stock { id: number; symbol: string; price: number; change: number; volume: number; }
 
 const SYMBOLS = [
-  'AAPL',
-  'GOOG',
-  'MSFT',
-  'AMZN',
-  'META',
-  'TSLA',
-  'NVDA',
-  'JPM',
-  'V',
-  'JNJ',
-  'WMT',
-  'PG',
-  'MA',
-  'UNH',
-  'HD',
-  'DIS',
-  'BAC',
-  'XOM',
-  'PFE',
-  'KO',
-  'PEP',
-  'CSCO',
-  'INTC',
-  'NFLX',
-  'CMCSA',
-  'ADBE',
-  'CRM',
-  'ABT',
-  'NKE',
-  'MRK',
-  'T',
-  'VZ',
-  'CVX',
-  'WFC',
-  'LLY',
-  'TMO',
-  'AVGO',
-  'COST',
-  'DHR',
-  'ACN',
-  'TXN',
-  'MDT',
-  'UPS',
-  'NEE',
-  'HON',
-  'PM',
-  'QCOM',
-  'LOW',
-  'UNP',
-  'ORCL',
+  'AAPL', 'GOOG', 'MSFT', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'V', 'JNJ',
+  'WMT', 'PG', 'MA', 'UNH', 'HD', 'DIS', 'BAC', 'XOM', 'PFE', 'KO',
+  'PEP', 'CSCO', 'INTC', 'NFLX', 'CMCSA', 'ADBE', 'CRM', 'ABT', 'NKE', 'MRK',
+  'T', 'VZ', 'CVX', 'WFC', 'LLY', 'TMO', 'AVGO', 'COST', 'DHR', 'ACN',
+  'TXN', 'MDT', 'UPS', 'NEE', 'HON', 'PM', 'QCOM', 'LOW', 'UNP', 'ORCL',
 ];
 
 function makeStocks(): Stock[] {
   return SYMBOLS.map((symbol, i) => ({
-    id: i,
-    symbol,
-    price: 50 + Math.random() * 450,
-    change: 0,
+    id: i, symbol, price: 50 + Math.random() * 450, change: 0,
     volume: (Math.random() * 10_000_000) | 0,
   }));
 }
@@ -84,56 +30,64 @@ function updateRandom(stocks: Stock[]): Stock[] {
   return next;
 }
 
-const props: { onHandle: (h: any) => void; frameCountEl: HTMLElement } = $props();
-
 let stocks: Stock[] = $state.raw(makeStocks());
 let rafId = 0;
 let frames = 0;
+let frameText: string = $state('Frames: 0');
 
 function tick() {
   stocks = updateRandom(stocks);
   frames++;
-  props.frameCountEl.textContent = `Frames: ${frames}`;
+  frameText = `Frames: ${frames}`;
   rafId = requestAnimationFrame(tick);
 }
 
-props.onHandle({
-  start() {
-    if (rafId) return;
-    rafId = requestAnimationFrame(tick);
-  },
-  stop() {
-    cancelAnimationFrame(rafId);
-    rafId = 0;
-  },
-  run500() {
-    cancelAnimationFrame(rafId);
-    rafId = 0;
-    frames = 0;
-    const t0 = performance.now();
-    let count = 0;
+function start() { if (rafId) return; rafId = requestAnimationFrame(tick); }
 
-    function step() {
-      stocks = updateRandom(stocks);
-      count++;
-      if (count < 500) {
-        rafId = requestAnimationFrame(step);
-      } else {
-        rafId = 0;
-        const elapsed = performance.now() - t0;
-        props.frameCountEl.textContent = `Frames: 500 | ${elapsed.toFixed(1)}ms`;
-      }
+function stop() { cancelAnimationFrame(rafId); rafId = 0; }
+
+function run500() {
+  cancelAnimationFrame(rafId);
+  rafId = 0;
+  frames = 0;
+  const t0 = performance.now();
+  let count = 0;
+  function step() {
+    stocks = updateRandom(stocks);
+    count++;
+    if (count < 500) {
+      rafId = requestAnimationFrame(step);
+    } else {
+      rafId = 0;
+      const elapsed = performance.now() - t0;
+      frameText = `Frames: 500 | ${elapsed.toFixed(1)}ms`;
     }
-    rafId = requestAnimationFrame(step);
-  },
-});
+  }
+  rafId = requestAnimationFrame(step);
+}
 </script>
 
-{#each stocks as stock (stock.id)}
-  <tr class={stock.change >= 0 ? 'positive' : 'negative'}>
-    <td>{stock.symbol}</td>
-    <td>{stock.price.toFixed(2)}</td>
-    <td>{stock.change.toFixed(2)}%</td>
-    <td>{stock.volume}</td>
-  </tr>
-{/each}
+<div id="main"><div class="container">
+  <div class="jumbotron"><div class="row">
+    <div class="col-md-6"><h1>Svelte (Ticker)</h1></div>
+    <div class="col-md-6"><div class="row">
+      <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="start" onclick={start}>Start Ticker</button></div>
+      <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="stop" onclick={stop}>Stop Ticker</button></div>
+      <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="run-500" onclick={run500}>Run 500 Frames</button></div>
+    </div></div>
+  </div></div>
+  <div id="frame-count">{frameText}</div>
+  <table class="table table-hover table-striped test-data">
+    <thead><tr><th>Symbol</th><th>Price</th><th>Change</th><th>Volume</th></tr></thead>
+    <tbody>
+      {#each stocks as stock (stock.id)}
+        <tr class={stock.change >= 0 ? 'positive' : 'negative'}>
+          <td>{stock.symbol}</td>
+          <td>{stock.price.toFixed(2)}</td>
+          <td>{stock.change.toFixed(2)}%</td>
+          <td>{stock.volume}</td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+</div></div>

@@ -4,7 +4,6 @@
 // a 1000-level chain. Other frameworks (Purity/Solid/Vue) create
 // 1000 actual chained reactive nodes with dependency tracking.
 // The benchmark results annotate this difference.
-const props = $props();
 let source = $state(0);
 let finalValue = $state(0);
 
@@ -14,20 +13,13 @@ $effect(() => {
   finalValue = v;
 });
 
-props.onHandle({
-  setup() {
-    source = 1;
-  },
-  update() {
-    source = (Math.random() * 1000) | 0;
-  },
-  update10x() {
-    for (let i = 0; i < 10; i++) source = (Math.random() * 1000) | 0;
-  },
-  getResult() {
-    return finalValue;
-  },
-});
+function setup() { source = 1; }
+function update() { source = (Math.random() * 1000) | 0; }
+function update10x() { for (let i = 0; i < 10; i++) source = (Math.random() * 1000) | 0; }
 </script>
 
+<h1>Svelte — Computed Chain (1000 levels)</h1>
+<button type="button" id="setup" onclick={setup}>Setup Chain (1000 levels)</button>
+<button type="button" id="update" onclick={update}>Update Source</button>
+<button type="button" id="update-10x" onclick={update10x}>Update 10x</button>
 <div id="result">{finalValue}</div>

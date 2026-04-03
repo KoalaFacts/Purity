@@ -1,66 +1,13 @@
 <script lang="ts">
-// Svelte 5 benchmark — uses {#each} with keys and $state runes.
-
 const A = [
-  'pretty',
-  'large',
-  'big',
-  'small',
-  'tall',
-  'short',
-  'long',
-  'handsome',
-  'plain',
-  'quaint',
-  'clean',
-  'elegant',
-  'easy',
-  'angry',
-  'crazy',
-  'helpful',
-  'mushy',
-  'odd',
-  'unsightly',
-  'adorable',
-  'important',
-  'inexpensive',
-  'cheap',
-  'expensive',
-  'fancy',
+  'pretty', 'large', 'big', 'small', 'tall', 'short', 'long', 'handsome', 'plain', 'quaint',
+  'clean', 'elegant', 'easy', 'angry', 'crazy', 'helpful', 'mushy', 'odd', 'unsightly',
+  'adorable', 'important', 'inexpensive', 'cheap', 'expensive', 'fancy',
 ];
-const C = [
-  'red',
-  'yellow',
-  'blue',
-  'green',
-  'pink',
-  'brown',
-  'purple',
-  'brown',
-  'white',
-  'black',
-  'orange',
-];
-const N = [
-  'table',
-  'chair',
-  'house',
-  'bbq',
-  'desk',
-  'car',
-  'pony',
-  'cookie',
-  'sandwich',
-  'burger',
-  'pizza',
-  'mouse',
-  'keyboard',
-];
+const C = ['red', 'yellow', 'blue', 'green', 'pink', 'brown', 'purple', 'brown', 'white', 'black', 'orange'];
+const N = ['table', 'chair', 'house', 'bbq', 'desk', 'car', 'pony', 'cookie', 'sandwich', 'burger', 'pizza', 'mouse', 'keyboard'];
 
-interface RowItem {
-  id: number;
-  label: string;
-}
+interface RowItem { id: number; label: string; }
 
 let nid = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
@@ -71,54 +18,64 @@ function mkData(n: number): RowItem[] {
   return d;
 }
 
-const props: { onHandle: (h: any) => void } = $props();
-
 let data: RowItem[] = $state.raw([]);
-let _selectedId: number = $state(0);
+let selectedId: number = $state(0);
 
-props.onHandle({
-  run(count: number) {
-    data = mkData(count);
-    _selectedId = 0;
-  },
-  add(count: number = 1000) {
-    data = data.concat(mkData(count));
-  },
-  update() {
+function run(count: number) { data = mkData(count); selectedId = 0; }
+function add(count: number = 1000) { data = data.concat(mkData(count)); }
+function update() {
+  const c = data.slice();
+  for (let i = 0; i < c.length; i += 10) c[i] = { ...c[i], label: `${c[i].label} !!!` };
+  data = c;
+}
+function select(id: number) { selectedId = id; }
+function swapRows() {
+  if (data.length > 998) {
     const c = data.slice();
-    for (let i = 0; i < c.length; i += 10) c[i] = { ...c[i], label: `${c[i].label} !!!` };
+    const t = c[1]; c[1] = c[998]; c[998] = t;
     data = c;
-  },
-  select(id: number) {
-    _selectedId = id;
-  },
-  swapRows() {
-    if (data.length > 998) {
-      const c = data.slice();
-      const t = c[1];
-      c[1] = c[998];
-      c[998] = t;
-      data = c;
-    }
-  },
-  remove(id: number) {
-    data = data.filter((x) => x.id !== id);
-  },
-  clear() {
-    data = [];
-    _selectedId = 0;
-  },
-  getData() {
-    return data;
-  },
-});
+  }
+}
+function remove(id: number) { data = data.filter((x) => x.id !== id); }
+function clear() { data = []; selectedId = 0; }
+
+function handleClick(e: MouseEvent) {
+  const a = (e.target as HTMLElement).closest('a');
+  if (!a) return;
+  e.preventDefault();
+  const id = +(a.closest('tr')!.firstChild as HTMLElement).textContent!;
+  if (a.classList.contains('lbl')) select(id);
+  else if (a.classList.contains('remove')) remove(id);
+}
 </script>
 
-{#each data as row (row.id)}
-  <tr class:danger={row.id === _selectedId}>
-    <td class="col-md-1">{row.id}</td>
-    <td class="col-md-4"><a href="#" class="lbl">{row.label}</a></td>
-    <td class="col-md-1"><a href="#" class="remove"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
-    <td class="col-md-6"></td>
-  </tr>
-{/each}
+<div id="main"><div class="container">
+  <div class="jumbotron"><div class="row">
+    <div class="col-md-6"><h1>Svelte</h1></div>
+    <div class="col-md-6"><div class="row">
+      <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="run" onclick={() => run(1000)}>Create 1,000 rows</button></div>
+      <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="runlots" onclick={() => run(10000)}>Create 10,000 rows</button></div>
+      <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="add" onclick={() => add()}>Append 1,000 rows</button></div>
+      <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="update" onclick={update}>Update every 10th row</button></div>
+      <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="clear" onclick={clear}>Clear</button></div>
+      <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="swaprows" onclick={swapRows}>Swap Rows</button></div>
+      <button type="button" id="run-10" style="display:none" onclick={() => run(10)}>Create 10</button>
+      <button type="button" id="run-100" style="display:none" onclick={() => run(100)}>Create 100</button>
+      <button type="button" id="add-10" style="display:none" onclick={() => add(10)}>Append 10</button>
+      <button type="button" id="add-100" style="display:none" onclick={() => add(100)}>Append 100</button>
+      <button type="button" id="add-10k" style="display:none" onclick={() => add(10000)}>Append 10000</button>
+    </div></div>
+  </div></div>
+  <table class="table table-hover table-striped test-data">
+    <tbody onclick={handleClick}>
+      {#each data as row (row.id)}
+        <tr class:danger={row.id === selectedId}>
+          <td class="col-md-1">{row.id}</td>
+          <td class="col-md-4"><a href="#" class="lbl">{row.label}</a></td>
+          <td class="col-md-1"><a href="#" class="remove"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
+          <td class="col-md-6"></td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+</div></div>

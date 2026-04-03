@@ -1,15 +1,22 @@
+// Computed chain benchmark — idiomatic Solid version.
+// Uses: createSignal, createMemo, JSX onClick. Zero vanilla JS for UI wiring.
+
 import { type Accessor, createMemo, createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 
-const resultEl = document.getElementById('result')!;
+// ---------------------------------------------------------------------------
+// Module-level state for chain setup/teardown
+// ---------------------------------------------------------------------------
 
-let setSource: (v: number) => void;
-let dispose: (() => void) | null = null;
+let setSource: (v: number) => void = () => {};
+let disposeChain: (() => void) | null = null;
 
-document.getElementById('setup')!.addEventListener('click', () => {
-  if (dispose) dispose();
-  resultEl.textContent = '';
-  dispose = render(() => {
+const resultContainer = document.getElementById('result')!;
+
+function setupChain() {
+  if (disposeChain) disposeChain();
+  resultContainer.textContent = '';
+  disposeChain = render(() => {
     const [source, _setSource] = createSignal(0);
     setSource = _setSource;
     const chain: Accessor<number>[] = [];
@@ -22,15 +29,22 @@ document.getElementById('setup')!.addEventListener('click', () => {
     }
     const last = chain[chain.length - 1];
     return <span>{last()}</span>;
-  }, resultEl);
-});
+  }, resultContainer);
+}
 
-document.getElementById('update')!.addEventListener('click', () => {
-  setSource((Math.random() * 100) | 0);
-});
+// ---------------------------------------------------------------------------
+// App component
+// ---------------------------------------------------------------------------
 
-document.getElementById('update-10x')!.addEventListener('click', () => {
-  for (let i = 0; i < 10; i++) {
-    setSource((Math.random() * 100) | 0);
-  }
-});
+function App() {
+  return (
+    <>
+      <h1>Solid — Computed Chain (1000 levels)</h1>
+      <button type="button" id="setup" onClick={setupChain}>Setup Chain (1000 levels)</button>
+      <button type="button" id="update" onClick={() => setSource((Math.random() * 100) | 0)}>Update Source</button>
+      <button type="button" id="update-10x" onClick={() => { for (let i = 0; i < 10; i++) setSource((Math.random() * 100) | 0); }}>Update 10x</button>
+    </>
+  );
+}
+
+render(App, document.getElementById('app')!);

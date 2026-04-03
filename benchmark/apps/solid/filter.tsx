@@ -1,60 +1,26 @@
+// Filter benchmark — idiomatic Solid version.
+// Uses: createSignal, createMemo, For, JSX onClick/onInput. Zero vanilla JS for UI wiring.
+
 import { createMemo, createSignal, For } from 'solid-js';
 import { render } from 'solid-js/web';
 
+// ---------------------------------------------------------------------------
+// Data generation
+// ---------------------------------------------------------------------------
+
 const A = [
-  'pretty',
-  'large',
-  'big',
-  'small',
-  'tall',
-  'short',
-  'long',
-  'handsome',
-  'plain',
-  'quaint',
-  'clean',
-  'elegant',
-  'easy',
-  'angry',
-  'crazy',
-  'helpful',
-  'mushy',
-  'odd',
-  'unsightly',
-  'adorable',
-  'important',
-  'inexpensive',
-  'cheap',
-  'expensive',
-  'fancy',
+  'pretty', 'large', 'big', 'small', 'tall', 'short', 'long', 'handsome',
+  'plain', 'quaint', 'clean', 'elegant', 'easy', 'angry', 'crazy',
+  'helpful', 'mushy', 'odd', 'unsightly', 'adorable', 'important',
+  'inexpensive', 'cheap', 'expensive', 'fancy',
 ];
 const C = [
-  'red',
-  'yellow',
-  'blue',
-  'green',
-  'pink',
-  'brown',
-  'purple',
-  'brown',
-  'white',
-  'black',
-  'orange',
+  'red', 'yellow', 'blue', 'green', 'pink', 'brown', 'purple', 'brown',
+  'white', 'black', 'orange',
 ];
 const N = [
-  'table',
-  'chair',
-  'house',
-  'bbq',
-  'desk',
-  'car',
-  'pony',
-  'cookie',
-  'sandwich',
-  'burger',
-  'pizza',
-  'mouse',
-  'keyboard',
+  'table', 'chair', 'house', 'bbq', 'desk', 'car', 'pony', 'cookie',
+  'sandwich', 'burger', 'pizza', 'mouse', 'keyboard',
 ];
 
 interface Item {
@@ -72,62 +38,86 @@ function buildData(count: number): Item[] {
   return d;
 }
 
-export function createFilterApp(
-  tbody: HTMLElement,
-  searchInput: HTMLInputElement,
-  populateBtn: HTMLElement,
-  clearSearchBtn: HTMLElement,
-  populate1kBtn: HTMLElement,
-  populate10Btn: HTMLElement,
-  populate100Btn: HTMLElement,
-) {
-  const [data, setData] = createSignal<Item[]>([]);
-  const [query, setQuery] = createSignal('');
+// ---------------------------------------------------------------------------
+// Module-level signals
+// ---------------------------------------------------------------------------
 
-  const filtered = createMemo(() => {
-    const q = query().toLowerCase();
-    if (!q) return data();
-    return data().filter((item) => item.label.toLowerCase().includes(q));
-  });
+const [data, setData] = createSignal<Item[]>([]);
+const [query, setQuery] = createSignal('');
 
-  // Event delegation
-  tbody.addEventListener('click', (e) => {
-    const a = (e.target as HTMLElement).closest('a');
-    if (!a) return;
-    e.preventDefault();
-  });
+const filtered = createMemo(() => {
+  const q = query().toLowerCase();
+  if (!q) return data();
+  return data().filter((item) => item.label.toLowerCase().includes(q));
+});
 
-  populateBtn.addEventListener('click', () => {
-    setData(buildData(10000));
-  });
-  populate1kBtn.addEventListener('click', () => {
-    setData(buildData(1000));
-  });
+// ---------------------------------------------------------------------------
+// Hidden benchmark button helper
+// ---------------------------------------------------------------------------
 
-  searchInput.addEventListener('input', () => {
-    setQuery(searchInput.value);
-  });
-
-  clearSearchBtn.addEventListener('click', () => {
-    searchInput.value = '';
-    setQuery('');
-  });
-
-  render(
-    () => (
-      <For each={filtered()}>
-        {(item: Item) => (
-          <tr>
-            <td class="col-md-1">{item.id}</td>
-            <td class="col-md-4">
-              <a href="#" class="lbl" aria-label="Item">
-                {item.label}
-              </a>
-            </td>
-          </tr>
-        )}
-      </For>
-    ),
-    tbody,
+function HBtn(props: { id: string; onClick: () => void; children: any }) {
+  return (
+    <button type="button" id={props.id} style={{ display: 'none' }} onClick={props.onClick}>
+      {props.children}
+    </button>
   );
 }
+
+// ---------------------------------------------------------------------------
+// App component
+// ---------------------------------------------------------------------------
+
+function App() {
+  return (
+    <div class="jumbotron">
+      <div class="row">
+        <div class="col-md-6"><h1>Solid (Filter)</h1></div>
+        <div class="col-md-6">
+          <div class="row">
+            <div class="col-sm-6 smallpad">
+              <input
+                type="text"
+                id="search"
+                placeholder="Search..."
+                class="form-control"
+                value={query()}
+                onInput={(e) => setQuery(e.currentTarget.value)}
+              />
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button type="button" class="btn btn-primary btn-block" id="populate" onClick={() => setData(buildData(10000))}>Populate 10k</button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button type="button" class="btn btn-primary btn-block" id="clear-search" onClick={() => setQuery('')}>Clear Search</button>
+            </div>
+            <HBtn id="populate-10" onClick={() => setData(buildData(10))}>Populate 10</HBtn>
+            <HBtn id="populate-100" onClick={() => setData(buildData(100))}>Populate 100</HBtn>
+            <HBtn id="populate-1k" onClick={() => setData(buildData(1000))}>Populate 1k</HBtn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Row rendering — rendered into tbody via separate render call
+// ---------------------------------------------------------------------------
+
+render(
+  () => (
+    <For each={filtered()}>
+      {(item: Item) => (
+        <tr>
+          <td class="col-md-1">{item.id}</td>
+          <td class="col-md-4">
+            <a href="#" class="lbl" aria-label="Item">{item.label}</a>
+          </td>
+        </tr>
+      )}
+    </For>
+  ),
+  document.getElementById('tbody')!,
+);
+
+render(App, document.getElementById('app')!);

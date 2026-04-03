@@ -1,5 +1,12 @@
+// Master-detail benchmark — idiomatic Solid version.
+// Uses: createSignal, createMemo, For, Show, JSX onClick. Zero vanilla JS for UI wiring.
+
 import { createMemo, createSignal, For, Show } from 'solid-js';
 import { render } from 'solid-js/web';
+
+// ---------------------------------------------------------------------------
+// Data generation
+// ---------------------------------------------------------------------------
 
 interface Person {
   id: number;
@@ -9,48 +16,14 @@ interface Person {
 }
 
 const FIRST = [
-  'Alice',
-  'Bob',
-  'Charlie',
-  'Diana',
-  'Eve',
-  'Frank',
-  'Grace',
-  'Henry',
-  'Iris',
-  'Jack',
-  'Kate',
-  'Leo',
-  'Mona',
-  'Nick',
-  'Olivia',
-  'Paul',
-  'Quinn',
-  'Rose',
-  'Sam',
-  'Tina',
+  'Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Henry',
+  'Iris', 'Jack', 'Kate', 'Leo', 'Mona', 'Nick', 'Olivia', 'Paul',
+  'Quinn', 'Rose', 'Sam', 'Tina',
 ];
 const LAST = [
-  'Smith',
-  'Johnson',
-  'Williams',
-  'Brown',
-  'Jones',
-  'Garcia',
-  'Miller',
-  'Davis',
-  'Rodriguez',
-  'Martinez',
-  'Hernandez',
-  'Lopez',
-  'Gonzalez',
-  'Wilson',
-  'Anderson',
-  'Thomas',
-  'Taylor',
-  'Moore',
-  'Jackson',
-  'Martin',
+  'Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller',
+  'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez',
+  'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin',
 ];
 const DOMAINS = ['example.com', 'test.org', 'mail.net', 'corp.io', 'dev.co'];
 
@@ -70,85 +43,102 @@ function generatePersons(count: number): Person[] {
   return persons;
 }
 
-export function createMasterDetailApp(
-  listPanel: HTMLElement,
-  detailPanel: HTMLElement,
-  populateBtn: HTMLElement,
-  selectFirstBtn: HTMLElement,
-  selectLastBtn: HTMLElement,
-  selectNoneBtn: HTMLElement,
-  cycle10Btn: HTMLElement,
-) {
-  const [persons, setPersons] = createSignal<Person[]>([]);
-  const [selectedId, setSelectedId] = createSignal<number | null>(null);
+// ---------------------------------------------------------------------------
+// Module-level signals
+// ---------------------------------------------------------------------------
 
-  const selectedPerson = createMemo(() => {
-    const id = selectedId();
-    if (id === null) return null;
-    return persons().find((p) => p.id === id) ?? null;
-  });
+const [persons, setPersons] = createSignal<Person[]>([]);
+const [selectedId, setSelectedId] = createSignal<number | null>(null);
 
-  populateBtn.addEventListener('click', () => {
-    setPersons(generatePersons(100));
-  });
+const selectedPerson = createMemo(() => {
+  const id = selectedId();
+  if (id === null) return null;
+  return persons().find((p) => p.id === id) ?? null;
+});
 
-  selectFirstBtn.addEventListener('click', () => {
-    const list = persons();
-    if (list.length > 0) setSelectedId(list[0].id);
-  });
+// ---------------------------------------------------------------------------
+// App component
+// ---------------------------------------------------------------------------
 
-  selectLastBtn.addEventListener('click', () => {
-    const list = persons();
-    if (list.length > 0) setSelectedId(list[list.length - 1].id);
-  });
-
-  selectNoneBtn.addEventListener('click', () => {
-    setSelectedId(null);
-  });
-
-  cycle10Btn.addEventListener('click', () => {
-    const list = persons();
-    for (let i = 0; i < 10 && i < list.length; i++) {
-      setSelectedId(list[i].id);
-    }
-  });
-
-  render(
-    () => (
-      <For each={persons()}>
-        {(person: Person) => (
-          <div
-            role="button"
-            tabIndex={0}
-            class="list-item"
-            style="padding: 4px 8px; cursor: pointer"
-            classList={{ selected: person.id === selectedId() }}
-            onClick={() => setSelectedId(person.id)}
-          >
-            {person.name}
+function App() {
+  return (
+    <>
+      <div class="jumbotron">
+        <div class="row">
+          <div class="col-md-6"><h1>Solid (Master-Detail)</h1></div>
+          <div class="col-md-6">
+            <div class="row">
+              <div class="col-sm-6 smallpad">
+                <button type="button" class="btn btn-primary btn-block" id="populate" onClick={() => setPersons(generatePersons(100))}>Load 100 Persons</button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="select-first"
+                  onClick={() => { const list = persons(); if (list.length > 0) setSelectedId(list[0].id); }}
+                >
+                  Select First
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="select-last"
+                  onClick={() => { const list = persons(); if (list.length > 0) setSelectedId(list[list.length - 1].id); }}
+                >
+                  Select Last
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button type="button" class="btn btn-primary btn-block" id="select-none" onClick={() => setSelectedId(null)}>Deselect</button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="cycle-10"
+                  onClick={() => { const list = persons(); for (let i = 0; i < 10 && i < list.length; i++) setSelectedId(list[i].id); }}
+                >
+                  Cycle 10
+                </button>
+              </div>
+            </div>
           </div>
-        )}
-      </For>
-    ),
-    listPanel,
-  );
-
-  render(
-    () => (
-      <Show when={selectedPerson()}>
-        {(p) => (
-          <div class="detail">
-            <h2>{p().name}</h2>
-            <p>
-              <strong>Email:</strong> {p().email}
-            </p>
-            <p>
-              <strong>Bio:</strong> {p().bio}
-            </p>
-          </div>
-        )}
-      </Show>
-    ),
-    detailPanel,
+        </div>
+      </div>
+      <div style={{ display: 'flex' }}>
+        <div id="list-panel" style={{ flex: '1' }}>
+          <For each={persons()}>
+            {(person: Person) => (
+              <div
+                role="button"
+                tabIndex={0}
+                class="list-item"
+                style={{ padding: '4px 8px', cursor: 'pointer' }}
+                classList={{ selected: person.id === selectedId() }}
+                onClick={() => setSelectedId(person.id)}
+              >
+                {person.name}
+              </div>
+            )}
+          </For>
+        </div>
+        <div id="detail-panel" style={{ flex: '1' }}>
+          <Show when={selectedPerson()}>
+            {(p) => (
+              <div class="detail">
+                <h2>{p().name}</h2>
+                <p><strong>Email:</strong> {p().email}</p>
+                <p><strong>Bio:</strong> {p().bio}</p>
+              </div>
+            )}
+          </Show>
+        </div>
+      </div>
+    </>
   );
 }
+
+render(App, document.getElementById('app')!);

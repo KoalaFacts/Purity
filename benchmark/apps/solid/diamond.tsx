@@ -1,15 +1,22 @@
+// Diamond dependency benchmark — idiomatic Solid version.
+// Uses: createSignal, createMemo, batch, JSX onClick. Zero vanilla JS for UI wiring.
+
 import { type Accessor, batch, createMemo, createSignal, type Setter } from 'solid-js';
 import { render } from 'solid-js/web';
 
-const resultEl = document.getElementById('result')!;
+// ---------------------------------------------------------------------------
+// Module-level state for diamond setup/teardown
+// ---------------------------------------------------------------------------
 
-let sources: Setter<number>[];
-let dispose: (() => void) | null = null;
+let sources: Setter<number>[] = [];
+let disposeGraph: (() => void) | null = null;
 
-document.getElementById('setup')!.addEventListener('click', () => {
-  if (dispose) dispose();
-  resultEl.textContent = '';
-  dispose = render(() => {
+const resultContainer = document.getElementById('result')!;
+
+function setupDiamonds() {
+  if (disposeGraph) disposeGraph();
+  resultContainer.textContent = '';
+  disposeGraph = render(() => {
     sources = [];
     const results: Accessor<number>[] = [];
     for (let i = 0; i < 1000; i++) {
@@ -26,17 +33,34 @@ document.getElementById('setup')!.addEventListener('click', () => {
       return s;
     });
     return <span>{total()}</span>;
-  }, resultEl);
-});
+  }, resultContainer);
+}
 
-document.getElementById('update-all')!.addEventListener('click', () => {
-  batch(() => {
-    for (let i = 0; i < sources.length; i++) {
-      sources[i](i + ((Math.random() * 100) | 0));
-    }
-  });
-});
+// ---------------------------------------------------------------------------
+// App component
+// ---------------------------------------------------------------------------
 
-document.getElementById('update-one')!.addEventListener('click', () => {
-  sources[0]((Math.random() * 100) | 0);
-});
+function App() {
+  return (
+    <>
+      <h1>Solid — Diamond Dependency (1000 patterns)</h1>
+      <button type="button" id="setup" onClick={setupDiamonds}>Setup 1000 Diamonds</button>
+      <button
+        type="button"
+        id="update-all"
+        onClick={() => {
+          batch(() => {
+            for (let i = 0; i < sources.length; i++) {
+              sources[i](i + ((Math.random() * 100) | 0));
+            }
+          });
+        }}
+      >
+        Update All Sources
+      </button>
+      <button type="button" id="update-one" onClick={() => { if (sources.length) sources[0]((Math.random() * 100) | 0); }}>Update One Source</button>
+    </>
+  );
+}
+
+render(App, document.getElementById('app')!);

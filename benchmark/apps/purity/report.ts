@@ -437,7 +437,7 @@ function applyGlobalStyles() {
 function CategorySection(group: { category: string; rows: SpeedRow[] }) {
   const catWins = countWins(group.rows);
   const icon = categoryIcons[group.category] || '';
-  const sectionId = 'cat-' + group.category.toLowerCase();
+  const sectionId = `cat-${group.category.toLowerCase()}`;
   const opCount = String(group.rows.length);
   return html`<div class="cat-section" id="${sectionId}">
     <h3 class="cat-heading">${icon} ${group.category} <span class="cat-count">${opCount} ops</span></h3>
@@ -447,12 +447,12 @@ function CategorySection(group: { category: string; rows: SpeedRow[] }) {
 }
 
 function CatPill(label: string, icon: string, activeCategory: any) {
-  const pillClass = compute(() => 'cat-pill' + (activeCategory() === label ? ' active' : ''));
+  const pillClass = compute(() => `cat-pill${activeCategory() === label ? ' active' : ''}`);
   return html`<span :class=${pillClass} @click=${() => activeCategory(label)}>${icon} ${label}</span>`;
 }
 
 function AllPill(activeCategory: any) {
-  const pillClass = compute(() => 'cat-pill' + (activeCategory() === null ? ' active' : ''));
+  const pillClass = compute(() => `cat-pill${activeCategory() === null ? ' active' : ''}`);
   return html`<span :class=${pillClass} @click=${() => activeCategory(null)}>All</span>`;
 }
 

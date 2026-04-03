@@ -147,7 +147,7 @@ const fragment = each(
   () => visible(),
   (node: FlatNode) =>
     html`
-      <div class="tree-node" :style=${'padding-left: ' + String(node.depth * 20) + 'px'}>
+      <div class="tree-node" :style=${`padding-left: ${String(node.depth * 20)}px`}>
         <span class="toggle">${node.hasChildren ? (node.expanded ? '\u25BC' : '\u25B6') : '\u00A0\u00A0'}</span>
         <span class="label">${node.label}</span>
       </div>

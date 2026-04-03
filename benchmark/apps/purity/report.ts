@@ -50,6 +50,10 @@ const data: BenchData = dataEl
 
 const FWS = ['Purity', 'Solid', 'Svelte', 'Vue'];
 
+// Unicode chars as JS strings — avoids AOT compiler literal-escaping issues
+const CHARS = { dash: '\u2014', lq: '\u201C', rq: '\u201D', arrow: '\u2192', dot: '\u00B7' };
+const ICONS = { memory: '\uD83D\uDCBE', rendering: '\uD83C\uDFD7', zap: '\u26A1', puzzle: '\uD83E\uDDE9', point: '\uD83D\uDC46' };
+
 function getSpeedMs(r: SpeedRow, fw: string): number {
   return (r as any)[fw.toLowerCase()] as number;
 }
@@ -92,10 +96,10 @@ function groupByCategory(rows: SpeedRow[]): { category: string; rows: SpeedRow[]
 }
 
 const categoryIcons: Record<string, string> = {
-  Rendering: '\u{1F3D7}',
-  Computed: '\u26A1',
-  Components: '\u{1F9E9}',
-  Interaction: '\u{1F446}',
+  Rendering: ICONS.rendering,
+  Computed: ICONS.zap,
+  Components: ICONS.puzzle,
+  Interaction: ICONS.point,
 };
 
 // ---------------------------------------------------------------------------
@@ -126,50 +130,66 @@ function MiniScoreboard(wins: Record<string, number>) {
   </div>`;
 }
 
-function speedCell(ms: number, best: number, winner: string, fw: string) {
-  if (ms == null || Number.isNaN(ms)) return html`<td class="ok">\u2014</td>`;
-  const isBest = ms === best || fw === winner;
-  const ratio = best > 0 ? ms / best : 1;
-  const cls = isBest ? 'best' : ratio > 2 ? 'slow' : 'ok';
-  return html`<td :class=${cls}>${ms.toFixed(1)}ms</td>`;
-}
-
+// Table rows built with DOM API because HTML spec strips comment placeholders
+// from <tr> context. This is a known Purity compiler limitation.
 function speedRow(r: SpeedRow) {
   const vals = FWS.map((fw) => getSpeedMs(r, fw)).filter((v) => v != null && !Number.isNaN(v));
   const best = vals.length ? Math.min(...vals) : 0;
-  const cells = FWS.map((fw) => speedCell(getSpeedMs(r, fw), best, r.winner, fw));
-  const winnerCls = `winner-cell ${r.winner.toLowerCase()}`;
+  const tr = document.createElement('tr');
 
-  return html`<tr>
-    <td class="op-name">${r.op}</td>
-    ${cells}
-    <td :class=${winnerCls}>${r.winner}</td>
-  </tr>`;
+  const opTd = document.createElement('td');
+  opTd.className = 'op-name';
+  opTd.textContent = r.op;
+  tr.appendChild(opTd);
+
+  for (const fw of FWS) {
+    const ms = getSpeedMs(r, fw);
+    const td = document.createElement('td');
+    if (ms == null || Number.isNaN(ms)) {
+      td.className = 'ok';
+      td.textContent = '\u2014';
+    } else {
+      const isBest = ms === best || fw === r.winner;
+      const ratio = best > 0 ? ms / best : 1;
+      td.className = isBest ? 'best' : ratio > 2 ? 'slow' : 'ok';
+      td.textContent = `${ms.toFixed(1)}ms`;
+    }
+    tr.appendChild(td);
+  }
+
+  const winTd = document.createElement('td');
+  winTd.className = `winner-cell ${r.winner.toLowerCase()}`;
+  winTd.textContent = r.winner;
+  tr.appendChild(winTd);
+  return tr;
 }
 
 function SpeedTable(rows: SpeedRow[]) {
-  const headers = FWS.map((fw) => html`<th>${fw}</th>`);
-  return html`<table class="results">
-    <thead><tr>
-      <th>Operation</th>
-      ${headers}
-      <th>Winner</th>
-    </tr></thead>
-    <tbody>
-      ${each(
-        rows,
-        (r) => speedRow(r),
-        (r) => r.op,
-      )}
-    </tbody>
-  </table>`;
+  const table = document.createElement('table');
+  table.className = 'results';
+  const thead = table.createTHead();
+  const hRow = thead.insertRow();
+  const addTh = (text: string) => { const th = document.createElement('th'); th.textContent = text; hRow.appendChild(th); };
+  addTh('Operation');
+  for (const fw of FWS) addTh(fw);
+  addTh('Winner');
+  const tbody = document.createElement('tbody');
+  table.appendChild(tbody);
+  tbody.appendChild(each(rows, (r) => speedRow(r), (r) => r.op));
+  return table;
 }
 
-function memCell(val: number, best: number, isRetained: boolean) {
-  if (val == null || Number.isNaN(val)) return html`<td class="ok">\u2014</td>`;
-  const cmp = isRetained ? Math.abs(val) : val;
-  const cls = cmp === best ? 'best' : cmp > best * 2 ? 'slow' : 'ok';
-  return html`<td :class=${cls}>${val.toFixed(1)}MB</td>`;
+function addMemTd(tr: HTMLTableRowElement, val: number, best: number, isRetained: boolean) {
+  const td = document.createElement('td');
+  if (val == null || Number.isNaN(val)) {
+    td.className = 'ok';
+    td.textContent = '\u2014';
+  } else {
+    const cmp = isRetained ? Math.abs(val) : val;
+    td.className = cmp === best ? 'best' : cmp > best * 2 ? 'slow' : 'ok';
+    td.textContent = `${val.toFixed(1)}MB`;
+  }
+  tr.appendChild(td);
 }
 
 function memRow(r: MemRow) {
@@ -180,16 +200,18 @@ function memRow(r: MemRow) {
   );
   const bestRet = retVals.length ? Math.min(...retVals.map((v) => Math.abs(v))) : 0;
 
-  const usedCells = FWS.map((fw) => memCell(getMemUsed(r, fw), bestUsed, false));
-  const retCells = FWS.map((fw) => memCell(getMemRetained(r, fw), bestRet, true));
-  const winnerCls = `winner-cell ${r.bestCleanup.toLowerCase()}`;
-
-  return html`<tr>
-    <td class="op-name">${r.op}</td>
-    ${usedCells}
-    ${retCells}
-    <td :class=${winnerCls}>${r.bestCleanup}</td>
-  </tr>`;
+  const tr = document.createElement('tr');
+  const opTd = document.createElement('td');
+  opTd.className = 'op-name';
+  opTd.textContent = r.op;
+  tr.appendChild(opTd);
+  for (const fw of FWS) addMemTd(tr, getMemUsed(r, fw), bestUsed, false);
+  for (const fw of FWS) addMemTd(tr, getMemRetained(r, fw), bestRet, true);
+  const winTd = document.createElement('td');
+  winTd.className = `winner-cell ${r.bestCleanup.toLowerCase()}`;
+  winTd.textContent = r.bestCleanup;
+  tr.appendChild(winTd);
+  return tr;
 }
 
 function MemoryTable(rows: MemRow[]) {
@@ -209,8 +231,27 @@ function MemoryTable(rows: MemRow[]) {
     if (cleanupWins[r.bestCleanup] !== undefined) cleanupWins[r.bestCleanup]++;
   }
 
-  const fwHeaders = FWS.map((fw) => html`<th>${fw}</th>`);
-  const fwHeaders2 = FWS.map((fw) => html`<th>${fw}</th>`);
+  // Build memory table header with DOM API (table-context limitation)
+  const table = document.createElement('table');
+  table.className = 'results';
+  const thead = table.createTHead();
+  const row1 = thead.insertRow();
+  const addTh = (row: HTMLTableRowElement, text: string, attrs?: Record<string, string>) => {
+    const th = document.createElement('th');
+    th.textContent = text;
+    if (attrs) for (const [k, v] of Object.entries(attrs)) th.setAttribute(k, v);
+    row.appendChild(th);
+  };
+  addTh(row1, 'Operation', { rowspan: '2' });
+  addTh(row1, 'Heap Used (after create)', { colspan: '4' });
+  addTh(row1, 'Heap Retained (after destroy)', { colspan: '4' });
+  addTh(row1, 'Best Cleanup', { rowspan: '2' });
+  const row2 = thead.insertRow();
+  for (const fw of FWS) addTh(row2, fw);
+  for (const fw of FWS) addTh(row2, fw);
+  const tbody = document.createElement('tbody');
+  table.appendChild(tbody);
+  tbody.appendChild(each(rows, (r) => memRow(r), (r) => r.op));
 
   return html`<div>
     <div class="mem-scores">
@@ -223,24 +264,7 @@ function MemoryTable(rows: MemRow[]) {
         ${MiniScoreboard(cleanupWins)}
       </div>
     </div>
-    <table class="results">
-      <thead>
-        <tr>
-          <th rowspan="2">Operation</th>
-          <th colspan="4">Heap Used (after create)</th>
-          <th colspan="4">Heap Retained (after destroy)</th>
-          <th rowspan="2">Best Cleanup</th>
-        </tr>
-        <tr>${fwHeaders}${fwHeaders2}</tr>
-      </thead>
-      <tbody>
-        ${each(
-          rows,
-          (r) => memRow(r),
-          (r) => r.op,
-        )}
-      </tbody>
-    </table>
+    ${table}
   </div>`;
 }
 
@@ -430,9 +454,9 @@ function HistoryMemory(rows: MemRow[]) {
 function MemorySection() {
   if (!data.memory.length) return document.createDocumentFragment();
   return html`<div class="section" id="cat-memory">
-    <h2>\u{1F4BE} Memory</h2>
+    <h2>${ICONS.memory} Memory</h2>
     <p class="mem-note">Heap delta measured via <code>performance.memory</code> with forced GC.
-      \u201CUsed\u201D = heap after create. \u201CRetained\u201D = heap after destroy (closer to 0 = better cleanup).</p>
+      ${CHARS.lq}Used${CHARS.rq} = heap after create. ${CHARS.lq}Retained${CHARS.rq} = heap after destroy (closer to 0 = better cleanup).</p>
     ${MemoryTable(data.memory)}
   </div>`;
 }
@@ -470,7 +494,7 @@ function App() {
   return html`
     <header>
       <h1>Purity Benchmarks</h1>
-      <p>Purity vs Solid vs Svelte vs Vue \u2014 automated results from headless Chromium</p>
+      <p>Purity vs Solid vs Svelte vs Vue ${CHARS.dash} automated results from headless Chromium</p>
     </header>
 
     <div class="section">
@@ -491,9 +515,9 @@ function App() {
     ${PreviousRunsSection()}
 
     <footer>
-      Trigger a new run: <a href="https://github.com/KoalaFacts/Purity/actions">Actions tab \u2192 Benchmark</a>
-      <div class="methodology">Warmup: 3 iterations \u00B7 Measured: 7 (configurable) \u00B7 Drop: fastest 1 + slowest 1 \u00B7 Metric: trimmed median \u00B7 Framework order randomized per operation</div>
-      <div class="methodology" style="margin-top:.3rem">Built with <a href="https://github.com/KoalaFacts/Purity">Purity</a> \u2014 17 functions, 6 kB gzipped</div>
+      Trigger a new run: <a href="https://github.com/KoalaFacts/Purity/actions">Actions tab ${CHARS.arrow} Benchmark</a>
+      <div class="methodology">Warmup: 3 iterations ${CHARS.dot} Measured: 7 (configurable) ${CHARS.dot} Drop: fastest 1 + slowest 1 ${CHARS.dot} Metric: trimmed median ${CHARS.dot} Framework order randomized per operation</div>
+      <div class="methodology" style="margin-top:.3rem">Built with <a href="https://github.com/KoalaFacts/Purity">Purity</a> ${CHARS.dash} 17 functions, 6 kB gzipped</div>
     </footer>
   `;
 }

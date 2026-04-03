@@ -1,35 +1,44 @@
 <script setup lang="ts">
 import { type ComputedRef, computed, type Ref, ref } from 'vue';
 
-const sources: Ref<number>[] = [];
-const results: ComputedRef<number>[] = [];
-
-for (let i = 0; i < 1000; i++) {
-  const a = ref(i);
-  const b = computed(() => a.value * 2);
-  const c = computed(() => a.value * 3);
-  const d = computed(() => b.value + c.value);
-  sources.push(a);
-  results.push(d);
-}
+const sources = ref<Ref<number>[]>([]);
+const results = ref<ComputedRef<number>[]>([]);
 
 const total = computed(() => {
   let s = 0;
-  for (let i = 0; i < results.length; i++) s += results[i].value;
+  const r = results.value;
+  for (let i = 0; i < r.length; i++) s += r[i].value;
   return s;
 });
 
-function setup() {
-  for (let i = 0; i < sources.length; i++) sources[i].value = i;
+function setup(count = 1000) {
+  const src: Ref<number>[] = [];
+  const res: ComputedRef<number>[] = [];
+  for (let i = 0; i < count; i++) {
+    const a = ref(i);
+    const b = computed(() => a.value * 2);
+    const c = computed(() => a.value * 3);
+    const d = computed(() => b.value + c.value);
+    src.push(a);
+    res.push(d);
+  }
+  sources.value = src;
+  results.value = res;
 }
 function updateAll() {
-  for (let i = 0; i < sources.length; i++) {
-    sources[i].value = i + ((Math.random() * 100) | 0);
+  const src = sources.value;
+  for (let i = 0; i < src.length; i++) {
+    src[i].value = i + ((Math.random() * 100) | 0);
   }
 }
 function updateOne() {
-  sources[0].value = (Math.random() * 100) | 0;
+  const src = sources.value;
+  if (src.length > 0) src[0].value = (Math.random() * 100) | 0;
 }
+
+setup(1000);
+
+defineExpose({ setup });
 </script>
 
 <template>

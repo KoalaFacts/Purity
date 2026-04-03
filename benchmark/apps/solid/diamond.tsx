@@ -13,13 +13,13 @@ let disposeGraph: (() => void) | null = null;
 
 const resultContainer = document.getElementById('result')!;
 
-function setupDiamonds() {
+function setupDiamond(count: number) {
   if (disposeGraph) disposeGraph();
   resultContainer.textContent = '';
   disposeGraph = render(() => {
     sources = [];
     const results: Accessor<number>[] = [];
-    for (let i = 0; i < 1000; i++) {
+    for (let i = 0; i < count; i++) {
       const [a, setA] = createSignal(i);
       const b = createMemo(() => a() * 2);
       const c = createMemo(() => a() * 3);
@@ -44,7 +44,7 @@ function App() {
   return (
     <>
       <h1>Solid — Diamond Dependency (1000 patterns)</h1>
-      <button type="button" id="setup" onClick={setupDiamonds}>
+      <button type="button" id="setup" onClick={() => setupDiamond(1000)}>
         Setup 1000 Diamonds
       </button>
       <button
@@ -74,3 +74,8 @@ function App() {
 }
 
 render(App, document.getElementById('app')!);
+
+// Hidden button handlers for benchmark permutations
+document.getElementById('setup-10')?.addEventListener('click', () => setupDiamond(10));
+document.getElementById('setup-100')?.addEventListener('click', () => setupDiamond(100));
+document.getElementById('setup-10k')?.addEventListener('click', () => setupDiamond(10000));

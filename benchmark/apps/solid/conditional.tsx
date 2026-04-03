@@ -101,3 +101,12 @@ function App() {
 }
 
 render(App, document.getElementById('app')!);
+
+// Hidden button handlers for benchmark permutations
+function populate(n: number) {
+  setData(buildData(n));
+  setVisible(true);
+}
+document.getElementById('populate-10')?.addEventListener('click', () => populate(10));
+document.getElementById('populate-100')?.addEventListener('click', () => populate(100));
+document.getElementById('populate-10k')?.addEventListener('click', () => populate(10000));

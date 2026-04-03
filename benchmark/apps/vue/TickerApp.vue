@@ -108,7 +108,7 @@ function stop() {
   rafId = 0;
 }
 
-function run500() {
+function runFrames(target: number) {
   cancelAnimationFrame(rafId);
   rafId = 0;
   frames = 0;
@@ -118,16 +118,22 @@ function run500() {
   function step() {
     stocks.value = updateRandom(stocks.value);
     count++;
-    if (count < 500) {
+    if (count < target) {
       rafId = requestAnimationFrame(step);
     } else {
       rafId = 0;
       const elapsed = performance.now() - t0;
-      frameCount.value = `Frames: 500 | ${elapsed.toFixed(1)}ms`;
+      frameCount.value = `Frames: ${target} | ${elapsed.toFixed(1)}ms`;
     }
   }
   rafId = requestAnimationFrame(step);
 }
+
+function run500() {
+  runFrames(500);
+}
+
+defineExpose({ runFrames });
 </script>
 
 <template>

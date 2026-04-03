@@ -16,9 +16,9 @@ $effect(() => {
   total = t;
 });
 
-function setup() {
+export function setup(count = 1000) {
   const s = [];
-  for (let i = 0; i < 1000; i++) s.push(i);
+  for (let i = 0; i < count; i++) s.push(i);
   sources = s;
 }
 

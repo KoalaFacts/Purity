@@ -58,8 +58,16 @@ function ButtonBar() {
             for (let i = 0; i < 10; i++) visible(!visible());
           }}>Toggle 10x</button>
         </div>
+        ${hBtn('populate-10', 'Populate 10', () => {
+          data(buildData(10));
+          visible(true);
+        })}
         ${hBtn('populate-100', 'Populate 100', () => {
           data(buildData(100));
+          visible(true);
+        })}
+        ${hBtn('populate-10k', 'Populate 10k', () => {
+          data(buildData(10000));
           visible(true);
         })}
       </div></div>

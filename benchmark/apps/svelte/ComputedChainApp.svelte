@@ -9,13 +9,18 @@ let finalValue = $state(0);
 
 $effect(() => {
   let v = source;
-  for (let i = 0; i < 1000; i++) v = v * 2 + 1;
+  for (let i = 0; i < chainLevels; i++) v = v * 2 + 1;
   finalValue = v;
 });
 
-function setup() {
+export function setup(levels = 1000) {
   source = 1;
+  // Update the loop iteration count dynamically
+  chainLevels = levels;
 }
+
+let chainLevels = $state(1000);
+
 function update() {
   source = (Math.random() * 1000) | 0;
 }

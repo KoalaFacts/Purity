@@ -263,14 +263,24 @@ const SCENARIOS: Scenario[] = [
     category: 'Computed',
     ops: [
       {
-        name: 'Computed chain (1000 levels)',
+        name: 'Computed chain (10 levels)',
+        setup: [{ action: '#setup-10' }],
+        steps: [{ action: '#update' }],
+      },
+      {
+        name: 'Computed chain (100 levels)',
+        setup: [{ action: '#setup-100' }],
+        steps: [{ action: '#update' }],
+      },
+      {
+        name: 'Computed chain (1,000 levels)',
         setup: [{ action: '#setup' }],
         steps: [{ action: '#update' }],
       },
       {
-        name: 'Computed chain 10x',
-        setup: [{ action: '#setup' }],
-        steps: [{ action: '#update-10x' }],
+        name: 'Computed chain (10,000 levels)',
+        setup: [{ action: '#setup-10k' }],
+        steps: [{ action: '#update' }],
       },
     ],
   },
@@ -279,14 +289,24 @@ const SCENARIOS: Scenario[] = [
     category: 'Computed',
     ops: [
       {
-        name: 'Diamond (1000) update all',
+        name: 'Diamond (10) update all',
+        setup: [{ action: '#setup-10' }],
+        steps: [{ action: '#update-all' }],
+      },
+      {
+        name: 'Diamond (100) update all',
+        setup: [{ action: '#setup-100' }],
+        steps: [{ action: '#update-all' }],
+      },
+      {
+        name: 'Diamond (1,000) update all',
         setup: [{ action: '#setup' }],
         steps: [{ action: '#update-all' }],
       },
       {
-        name: 'Diamond (1000) update one',
-        setup: [{ action: '#setup' }],
-        steps: [{ action: '#update-one' }],
+        name: 'Diamond (10,000) update all',
+        setup: [{ action: '#setup-10k' }],
+        steps: [{ action: '#update-all' }],
       },
     ],
   },
@@ -365,8 +385,23 @@ const SCENARIOS: Scenario[] = [
     category: 'Components',
     ops: [
       {
+        name: 'Toggle 10 section (show)',
+        setup: [{ action: '#populate-10' }],
+        steps: [{ action: '#toggle' }],
+      },
+      {
+        name: 'Toggle 100 section (show)',
+        setup: [{ action: '#populate-100' }],
+        steps: [{ action: '#toggle' }],
+      },
+      {
         name: 'Toggle 1k section (show)',
         setup: [{ action: '#populate' }],
+        steps: [{ action: '#toggle' }],
+      },
+      {
+        name: 'Toggle 10k section (show)',
+        setup: [{ action: '#populate-10k' }],
         steps: [{ action: '#toggle' }],
       },
       {
@@ -611,9 +646,29 @@ const SCENARIOS: Scenario[] = [
     category: 'Interaction',
     ops: [
       {
+        name: 'Stock ticker (10 frames)',
+        setup: [{ action: '#stop' }],
+        steps: [{ action: '#run-10' }],
+      },
+      {
+        name: 'Stock ticker (100 frames)',
+        setup: [{ action: '#stop' }],
+        steps: [{ action: '#run-100' }],
+      },
+      {
         name: 'Stock ticker (500 frames)',
         setup: [{ action: '#stop' }],
         steps: [{ action: '#run-500' }],
+      },
+      {
+        name: 'Stock ticker (1,000 frames)',
+        setup: [{ action: '#stop' }],
+        steps: [{ action: '#run-1000' }],
+      },
+      {
+        name: 'Stock ticker (10,000 frames)',
+        setup: [{ action: '#stop' }],
+        steps: [{ action: '#run-10000' }],
       },
     ],
   },

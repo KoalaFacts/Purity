@@ -1,17 +1,71 @@
 <script lang="ts">
-interface Stock { id: number; symbol: string; price: number; change: number; volume: number; }
+interface Stock {
+  id: number;
+  symbol: string;
+  price: number;
+  change: number;
+  volume: number;
+}
 
 const SYMBOLS = [
-  'AAPL', 'GOOG', 'MSFT', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'V', 'JNJ',
-  'WMT', 'PG', 'MA', 'UNH', 'HD', 'DIS', 'BAC', 'XOM', 'PFE', 'KO',
-  'PEP', 'CSCO', 'INTC', 'NFLX', 'CMCSA', 'ADBE', 'CRM', 'ABT', 'NKE', 'MRK',
-  'T', 'VZ', 'CVX', 'WFC', 'LLY', 'TMO', 'AVGO', 'COST', 'DHR', 'ACN',
-  'TXN', 'MDT', 'UPS', 'NEE', 'HON', 'PM', 'QCOM', 'LOW', 'UNP', 'ORCL',
+  'AAPL',
+  'GOOG',
+  'MSFT',
+  'AMZN',
+  'META',
+  'TSLA',
+  'NVDA',
+  'JPM',
+  'V',
+  'JNJ',
+  'WMT',
+  'PG',
+  'MA',
+  'UNH',
+  'HD',
+  'DIS',
+  'BAC',
+  'XOM',
+  'PFE',
+  'KO',
+  'PEP',
+  'CSCO',
+  'INTC',
+  'NFLX',
+  'CMCSA',
+  'ADBE',
+  'CRM',
+  'ABT',
+  'NKE',
+  'MRK',
+  'T',
+  'VZ',
+  'CVX',
+  'WFC',
+  'LLY',
+  'TMO',
+  'AVGO',
+  'COST',
+  'DHR',
+  'ACN',
+  'TXN',
+  'MDT',
+  'UPS',
+  'NEE',
+  'HON',
+  'PM',
+  'QCOM',
+  'LOW',
+  'UNP',
+  'ORCL',
 ];
 
 function makeStocks(): Stock[] {
   return SYMBOLS.map((symbol, i) => ({
-    id: i, symbol, price: 50 + Math.random() * 450, change: 0,
+    id: i,
+    symbol,
+    price: 50 + Math.random() * 450,
+    change: 0,
     volume: (Math.random() * 10_000_000) | 0,
   }));
 }
@@ -42,9 +96,15 @@ function tick() {
   rafId = requestAnimationFrame(tick);
 }
 
-function start() { if (rafId) return; rafId = requestAnimationFrame(tick); }
+function start() {
+  if (rafId) return;
+  rafId = requestAnimationFrame(tick);
+}
 
-function stop() { cancelAnimationFrame(rafId); rafId = 0; }
+function stop() {
+  cancelAnimationFrame(rafId);
+  rafId = 0;
+}
 
 function run500() {
   cancelAnimationFrame(rafId);

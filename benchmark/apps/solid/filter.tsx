@@ -9,18 +9,59 @@ import { render } from 'solid-js/web';
 // ---------------------------------------------------------------------------
 
 const A = [
-  'pretty', 'large', 'big', 'small', 'tall', 'short', 'long', 'handsome',
-  'plain', 'quaint', 'clean', 'elegant', 'easy', 'angry', 'crazy',
-  'helpful', 'mushy', 'odd', 'unsightly', 'adorable', 'important',
-  'inexpensive', 'cheap', 'expensive', 'fancy',
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
 ];
 const C = [
-  'red', 'yellow', 'blue', 'green', 'pink', 'brown', 'purple', 'brown',
-  'white', 'black', 'orange',
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'brown',
+  'white',
+  'black',
+  'orange',
 ];
 const N = [
-  'table', 'chair', 'house', 'bbq', 'desk', 'car', 'pony', 'cookie',
-  'sandwich', 'burger', 'pizza', 'mouse', 'keyboard',
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
 ];
 
 interface Item {
@@ -71,7 +112,9 @@ function App() {
   return (
     <div class="jumbotron">
       <div class="row">
-        <div class="col-md-6"><h1>Solid (Filter)</h1></div>
+        <div class="col-md-6">
+          <h1>Solid (Filter)</h1>
+        </div>
         <div class="col-md-6">
           <div class="row">
             <div class="col-sm-6 smallpad">
@@ -85,14 +128,34 @@ function App() {
               />
             </div>
             <div class="col-sm-6 smallpad">
-              <button type="button" class="btn btn-primary btn-block" id="populate" onClick={() => setData(buildData(10000))}>Populate 10k</button>
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="populate"
+                onClick={() => setData(buildData(10000))}
+              >
+                Populate 10k
+              </button>
             </div>
             <div class="col-sm-6 smallpad">
-              <button type="button" class="btn btn-primary btn-block" id="clear-search" onClick={() => setQuery('')}>Clear Search</button>
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="clear-search"
+                onClick={() => setQuery('')}
+              >
+                Clear Search
+              </button>
             </div>
-            <HBtn id="populate-10" onClick={() => setData(buildData(10))}>Populate 10</HBtn>
-            <HBtn id="populate-100" onClick={() => setData(buildData(100))}>Populate 100</HBtn>
-            <HBtn id="populate-1k" onClick={() => setData(buildData(1000))}>Populate 1k</HBtn>
+            <HBtn id="populate-10" onClick={() => setData(buildData(10))}>
+              Populate 10
+            </HBtn>
+            <HBtn id="populate-100" onClick={() => setData(buildData(100))}>
+              Populate 100
+            </HBtn>
+            <HBtn id="populate-1k" onClick={() => setData(buildData(1000))}>
+              Populate 1k
+            </HBtn>
           </div>
         </div>
       </div>
@@ -111,7 +174,9 @@ render(
         <tr>
           <td class="col-md-1">{item.id}</td>
           <td class="col-md-4">
-            <a href="#" class="lbl" aria-label="Item">{item.label}</a>
+            <a href="#" class="lbl" aria-label="Item">
+              {item.label}
+            </a>
           </td>
         </tr>
       )}

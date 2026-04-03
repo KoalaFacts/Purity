@@ -1,5 +1,8 @@
 <script lang="ts">
-interface Item { id: number; label: string; }
+interface Item {
+  id: number;
+  label: string;
+}
 
 let nid = 1;
 function buildData(n: number): Item[] {
@@ -11,9 +14,16 @@ function buildData(n: number): Item[] {
 let data: Item[] = $state.raw([]);
 let visible: boolean = $state(true);
 
-function populate() { data = buildData(1000); visible = true; }
-function toggle() { visible = !visible; }
-function toggle10x() { for (let i = 0; i < 10; i++) visible = !visible; }
+function populate() {
+  data = buildData(1000);
+  visible = true;
+}
+function toggle() {
+  visible = !visible;
+}
+function toggle10x() {
+  for (let i = 0; i < 10; i++) visible = !visible;
+}
 </script>
 
 <div id="main"><div class="container">

@@ -1,13 +1,64 @@
 <script lang="ts">
 const A = [
-  'pretty', 'large', 'big', 'small', 'tall', 'short', 'long', 'handsome', 'plain', 'quaint',
-  'clean', 'elegant', 'easy', 'angry', 'crazy', 'helpful', 'mushy', 'odd', 'unsightly',
-  'adorable', 'important', 'inexpensive', 'cheap', 'expensive', 'fancy',
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
 ];
-const C = ['red', 'yellow', 'blue', 'green', 'pink', 'brown', 'purple', 'brown', 'white', 'black', 'orange'];
-const N = ['table', 'chair', 'house', 'bbq', 'desk', 'car', 'pony', 'cookie', 'sandwich', 'burger', 'pizza', 'mouse', 'keyboard'];
+const C = [
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'brown',
+  'white',
+  'black',
+  'orange',
+];
+const N = [
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
+];
 
-interface Item { id: number; label: string; }
+interface Item {
+  id: number;
+  label: string;
+}
 
 let nid = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
@@ -31,10 +82,19 @@ const sorted: Item[] = $derived.by(() => {
   return s;
 });
 
-function populate(n: number = 1000) { data = buildData(n); sortMode = 'none'; }
-function sortIdAsc() { sortMode = 'id-asc'; }
-function sortIdDesc() { sortMode = 'id-desc'; }
-function sortLabelAsc() { sortMode = 'label-asc'; }
+function populate(n: number = 1000) {
+  data = buildData(n);
+  sortMode = 'none';
+}
+function sortIdAsc() {
+  sortMode = 'id-asc';
+}
+function sortIdDesc() {
+  sortMode = 'id-desc';
+}
+function sortLabelAsc() {
+  sortMode = 'label-asc';
+}
 </script>
 
 <div id="main"><div class="container">

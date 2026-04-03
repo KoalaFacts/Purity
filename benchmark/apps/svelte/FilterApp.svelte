@@ -1,13 +1,64 @@
 <script lang="ts">
 const A = [
-  'pretty', 'large', 'big', 'small', 'tall', 'short', 'long', 'handsome', 'plain', 'quaint',
-  'clean', 'elegant', 'easy', 'angry', 'crazy', 'helpful', 'mushy', 'odd', 'unsightly',
-  'adorable', 'important', 'inexpensive', 'cheap', 'expensive', 'fancy',
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
 ];
-const C = ['red', 'yellow', 'blue', 'green', 'pink', 'brown', 'purple', 'brown', 'white', 'black', 'orange'];
-const N = ['table', 'chair', 'house', 'bbq', 'desk', 'car', 'pony', 'cookie', 'sandwich', 'burger', 'pizza', 'mouse', 'keyboard'];
+const C = [
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'brown',
+  'white',
+  'black',
+  'orange',
+];
+const N = [
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
+];
 
-interface Item { id: number; label: string; }
+interface Item {
+  id: number;
+  label: string;
+}
 
 let nid = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
@@ -25,8 +76,12 @@ const filtered: Item[] = $derived(
   query ? data.filter((item) => item.label.toLowerCase().includes(query.toLowerCase())) : data,
 );
 
-function populate(n: number = 10000) { data = buildData(n); }
-function clearSearch() { query = ''; }
+function populate(n: number = 10000) {
+  data = buildData(n);
+}
+function clearSearch() {
+  query = '';
+}
 
 function onInput(e: Event) {
   query = (e.target as HTMLInputElement).value;

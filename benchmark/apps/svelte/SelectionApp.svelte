@@ -1,5 +1,9 @@
 <script lang="ts">
-interface SelectItem { id: number; label: string; selected: boolean; }
+interface SelectItem {
+  id: number;
+  label: string;
+  selected: boolean;
+}
 
 let items: SelectItem[] = $state.raw([]);
 const selectedCount = $derived(items.filter((i) => i.selected).length);
@@ -11,11 +15,21 @@ function buildItems(n: number): SelectItem[] {
   return arr;
 }
 
-function populate(n: number = 1000) { items = buildItems(n); }
-function selectAll() { items = items.map((i) => ({ ...i, selected: true })); }
-function deselectAll() { items = items.map((i) => ({ ...i, selected: false })); }
-function toggleAll() { items = items.map((i) => ({ ...i, selected: !i.selected })); }
-function toggleEven() { items = items.map((i) => (i.id % 2 === 0 ? { ...i, selected: !i.selected } : i)); }
+function populate(n: number = 1000) {
+  items = buildItems(n);
+}
+function selectAll() {
+  items = items.map((i) => ({ ...i, selected: true }));
+}
+function deselectAll() {
+  items = items.map((i) => ({ ...i, selected: false }));
+}
+function toggleAll() {
+  items = items.map((i) => ({ ...i, selected: !i.selected }));
+}
+function toggleEven() {
+  items = items.map((i) => (i.id % 2 === 0 ? { ...i, selected: !i.selected } : i));
+}
 </script>
 
 <div id="main"><div class="container">

@@ -1,5 +1,8 @@
 <script lang="ts">
-interface Card { id: number; label: string; }
+interface Card {
+  id: number;
+  label: string;
+}
 
 let nid = 1;
 function buildCards(n: number): Card[] {
@@ -10,9 +13,15 @@ function buildCards(n: number): Card[] {
 
 let cards: Card[] = $state.raw([]);
 
-function create(n: number) { cards = buildCards(n); }
-function destroyAll() { cards = []; }
-function replace(n: number = 1000) { cards = buildCards(n); }
+function create(n: number) {
+  cards = buildCards(n);
+}
+function destroyAll() {
+  cards = [];
+}
+function replace(n: number = 1000) {
+  cards = buildCards(n);
+}
 </script>
 
 <div id="main"><div class="container">

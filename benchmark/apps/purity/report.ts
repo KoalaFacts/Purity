@@ -52,7 +52,13 @@ const FWS = ['Purity', 'Solid', 'Svelte', 'Vue'];
 
 // Unicode chars as JS strings — avoids AOT compiler literal-escaping issues
 const CHARS = { dash: '\u2014', lq: '\u201C', rq: '\u201D', arrow: '\u2192', dot: '\u00B7' };
-const ICONS = { memory: '\uD83D\uDCBE', rendering: '\uD83C\uDFD7', zap: '\u26A1', puzzle: '\uD83E\uDDE9', point: '\uD83D\uDC46' };
+const ICONS = {
+  memory: '\uD83D\uDCBE',
+  rendering: '\uD83C\uDFD7',
+  zap: '\u26A1',
+  puzzle: '\uD83E\uDDE9',
+  point: '\uD83D\uDC46',
+};
 
 function getSpeedMs(r: SpeedRow, fw: string): number {
   return (r as any)[fw.toLowerCase()] as number;
@@ -169,13 +175,23 @@ function SpeedTable(rows: SpeedRow[]) {
   table.className = 'results';
   const thead = table.createTHead();
   const hRow = thead.insertRow();
-  const addTh = (text: string) => { const th = document.createElement('th'); th.textContent = text; hRow.appendChild(th); };
+  const addTh = (text: string) => {
+    const th = document.createElement('th');
+    th.textContent = text;
+    hRow.appendChild(th);
+  };
   addTh('Operation');
   for (const fw of FWS) addTh(fw);
   addTh('Winner');
   const tbody = document.createElement('tbody');
   table.appendChild(tbody);
-  tbody.appendChild(each(rows, (r) => speedRow(r), (r) => r.op));
+  tbody.appendChild(
+    each(
+      rows,
+      (r) => speedRow(r),
+      (r) => r.op,
+    ),
+  );
   return table;
 }
 
@@ -251,7 +267,13 @@ function MemoryTable(rows: MemRow[]) {
   for (const fw of FWS) addTh(row2, fw);
   const tbody = document.createElement('tbody');
   table.appendChild(tbody);
-  tbody.appendChild(each(rows, (r) => memRow(r), (r) => r.op));
+  tbody.appendChild(
+    each(
+      rows,
+      (r) => memRow(r),
+      (r) => r.op,
+    ),
+  );
 
   return html`<div>
     <div class="mem-scores">

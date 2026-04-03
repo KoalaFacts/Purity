@@ -47,26 +47,66 @@ function App() {
     <>
       <div class="jumbotron">
         <div class="row">
-          <div class="col-md-6"><h1>Solid (Lifecycle)</h1></div>
+          <div class="col-md-6">
+            <h1>Solid (Lifecycle)</h1>
+          </div>
           <div class="col-md-6">
             <div class="row">
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="create-1k" onClick={() => setCards(buildCards(1000))}>Create 1k</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="create-1k"
+                  onClick={() => setCards(buildCards(1000))}
+                >
+                  Create 1k
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="create-10k" onClick={() => setCards(buildCards(10000))}>Create 10k</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="create-10k"
+                  onClick={() => setCards(buildCards(10000))}
+                >
+                  Create 10k
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="destroy-all" onClick={() => setCards([])}>Destroy All</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="destroy-all"
+                  onClick={() => setCards([])}
+                >
+                  Destroy All
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="replace" onClick={() => setCards(buildCards(1000))}>Replace 1k</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="replace"
+                  onClick={() => setCards(buildCards(1000))}
+                >
+                  Replace 1k
+                </button>
               </div>
-              <HBtn id="create-10" onClick={() => setCards(buildCards(10))}>Create 10</HBtn>
-              <HBtn id="create-100" onClick={() => setCards(buildCards(100))}>Create 100</HBtn>
-              <HBtn id="replace-10" onClick={() => setCards(buildCards(10))}>Replace 10</HBtn>
-              <HBtn id="replace-100" onClick={() => setCards(buildCards(100))}>Replace 100</HBtn>
-              <HBtn id="replace-10k" onClick={() => setCards(buildCards(10000))}>Replace 10,000</HBtn>
+              <HBtn id="create-10" onClick={() => setCards(buildCards(10))}>
+                Create 10
+              </HBtn>
+              <HBtn id="create-100" onClick={() => setCards(buildCards(100))}>
+                Create 100
+              </HBtn>
+              <HBtn id="replace-10" onClick={() => setCards(buildCards(10))}>
+                Replace 10
+              </HBtn>
+              <HBtn id="replace-100" onClick={() => setCards(buildCards(100))}>
+                Replace 100
+              </HBtn>
+              <HBtn id="replace-10k" onClick={() => setCards(buildCards(10000))}>
+                Replace 10,000
+              </HBtn>
             </div>
           </div>
         </div>

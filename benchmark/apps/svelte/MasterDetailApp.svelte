@@ -1,8 +1,55 @@
 <script lang="ts">
-interface Person { id: number; name: string; email: string; bio: string; }
+interface Person {
+  id: number;
+  name: string;
+  email: string;
+  bio: string;
+}
 
-const FIRST = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Henry', 'Iris', 'Jack', 'Kate', 'Leo', 'Mona', 'Nick', 'Olivia', 'Paul', 'Quinn', 'Rose', 'Sam', 'Tina'];
-const LAST = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez', 'Wilson', 'Anderson', 'Thomas', 'Taylor', 'Moore', 'Jackson', 'Martin'];
+const FIRST = [
+  'Alice',
+  'Bob',
+  'Charlie',
+  'Diana',
+  'Eve',
+  'Frank',
+  'Grace',
+  'Henry',
+  'Iris',
+  'Jack',
+  'Kate',
+  'Leo',
+  'Mona',
+  'Nick',
+  'Olivia',
+  'Paul',
+  'Quinn',
+  'Rose',
+  'Sam',
+  'Tina',
+];
+const LAST = [
+  'Smith',
+  'Johnson',
+  'Williams',
+  'Brown',
+  'Jones',
+  'Garcia',
+  'Miller',
+  'Davis',
+  'Rodriguez',
+  'Martinez',
+  'Hernandez',
+  'Lopez',
+  'Gonzalez',
+  'Wilson',
+  'Anderson',
+  'Thomas',
+  'Taylor',
+  'Moore',
+  'Jackson',
+  'Martin',
+];
 const DOMAINS = ['example.com', 'test.org', 'mail.net', 'corp.io', 'dev.co'];
 
 function generatePersons(count: number): Person[] {
@@ -27,11 +74,21 @@ const selectedPerson: Person | null = $derived(
   selectedId !== null ? (persons.find((p) => p.id === selectedId) ?? null) : null,
 );
 
-function populate() { persons = generatePersons(100); }
-function selectFirst() { if (persons.length > 0) selectedId = persons[0].id; }
-function selectLast() { if (persons.length > 0) selectedId = persons[persons.length - 1].id; }
-function selectNone() { selectedId = null; }
-function cycle10() { for (let i = 0; i < 10 && i < persons.length; i++) selectedId = persons[i].id; }
+function populate() {
+  persons = generatePersons(100);
+}
+function selectFirst() {
+  if (persons.length > 0) selectedId = persons[0].id;
+}
+function selectLast() {
+  if (persons.length > 0) selectedId = persons[persons.length - 1].id;
+}
+function selectNone() {
+  selectedId = null;
+}
+function cycle10() {
+  for (let i = 0; i < 10 && i < persons.length; i++) selectedId = persons[i].id;
+}
 </script>
 
 <div id="main"><div class="container">

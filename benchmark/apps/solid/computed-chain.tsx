@@ -40,9 +40,21 @@ function App() {
   return (
     <>
       <h1>Solid — Computed Chain (1000 levels)</h1>
-      <button type="button" id="setup" onClick={setupChain}>Setup Chain (1000 levels)</button>
-      <button type="button" id="update" onClick={() => setSource((Math.random() * 100) | 0)}>Update Source</button>
-      <button type="button" id="update-10x" onClick={() => { for (let i = 0; i < 10; i++) setSource((Math.random() * 100) | 0); }}>Update 10x</button>
+      <button type="button" id="setup" onClick={setupChain}>
+        Setup Chain (1000 levels)
+      </button>
+      <button type="button" id="update" onClick={() => setSource((Math.random() * 100) | 0)}>
+        Update Source
+      </button>
+      <button
+        type="button"
+        id="update-10x"
+        onClick={() => {
+          for (let i = 0; i < 10; i++) setSource((Math.random() * 100) | 0);
+        }}
+      >
+        Update 10x
+      </button>
     </>
   );
 }

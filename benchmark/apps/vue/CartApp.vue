@@ -9,8 +9,16 @@ interface CartItem {
 }
 
 const NAMES = [
-  'Widget', 'Gadget', 'Doohickey', 'Thingamajig', 'Gizmo',
-  'Contraption', 'Apparatus', 'Device', 'Implement', 'Mechanism',
+  'Widget',
+  'Gadget',
+  'Doohickey',
+  'Thingamajig',
+  'Gizmo',
+  'Contraption',
+  'Apparatus',
+  'Device',
+  'Implement',
+  'Mechanism',
 ];
 let nextId = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;

@@ -1,5 +1,8 @@
 <script lang="ts">
-interface Field { id: number; value: string; }
+interface Field {
+  id: number;
+  value: string;
+}
 
 let fields: Field[] = $state([]);
 let result: string = $state('—');
@@ -23,7 +26,10 @@ function clearAll() {
 
 function readAll() {
   let count = 0;
-  for (let i = 0; i < fields.length; i++) { void fields[i].value; count++; }
+  for (let i = 0; i < fields.length; i++) {
+    void fields[i].value;
+    count++;
+  }
   result = `Read ${count} fields`;
 }
 </script>

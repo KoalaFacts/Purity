@@ -1,12 +1,29 @@
 <script lang="ts">
-interface CartItem { id: number; name: string; price: number; qty: number; }
+interface CartItem {
+  id: number;
+  name: string;
+  price: number;
+  qty: number;
+}
 
-const NAMES = ['Widget', 'Gadget', 'Doohickey', 'Thingamajig', 'Gizmo', 'Contraption', 'Apparatus', 'Device', 'Implement', 'Mechanism'];
+const NAMES = [
+  'Widget',
+  'Gadget',
+  'Doohickey',
+  'Thingamajig',
+  'Gizmo',
+  'Contraption',
+  'Apparatus',
+  'Device',
+  'Implement',
+  'Mechanism',
+];
 let nextId = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
 
 const catalog: { name: string; price: number }[] = [];
-for (let i = 0; i < 100; i++) catalog.push({ name: `${NAMES[rnd(NAMES.length)]}-${i}`, price: rnd(100) + 1 });
+for (let i = 0; i < 100; i++)
+  catalog.push({ name: `${NAMES[rnd(NAMES.length)]}-${i}`, price: rnd(100) + 1 });
 
 function randomItems(n: number): CartItem[] {
   const items: CartItem[] = [];
@@ -24,10 +41,18 @@ const subtotal = $derived(cart.reduce((s, i) => s + i.price * i.qty, 0));
 const tax = $derived(subtotal * 0.08);
 const total = $derived(subtotal + tax);
 
-function addItems(n: number) { cart = [...cart, ...randomItems(n)]; }
-function incrementAll() { cart = cart.map((i) => ({ ...i, qty: i.qty + 1 })); }
-function removeFirst() { cart = cart.slice(1); }
-function clearCart() { cart = []; }
+function addItems(n: number) {
+  cart = [...cart, ...randomItems(n)];
+}
+function incrementAll() {
+  cart = cart.map((i) => ({ ...i, qty: i.qty + 1 }));
+}
+function removeFirst() {
+  cart = cart.slice(1);
+}
+function clearCart() {
+  cart = [];
+}
 </script>
 
 <div id="main"><div class="container">

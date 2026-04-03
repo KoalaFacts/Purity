@@ -17,11 +17,56 @@ interface Stock {
 }
 
 const SYMBOLS = [
-  'AAPL', 'GOOG', 'MSFT', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'V', 'JNJ',
-  'WMT', 'PG', 'MA', 'UNH', 'HD', 'DIS', 'BAC', 'XOM', 'PFE', 'KO',
-  'PEP', 'CSCO', 'INTC', 'NFLX', 'CMCSA', 'ADBE', 'CRM', 'ABT', 'NKE', 'MRK',
-  'T', 'VZ', 'CVX', 'WFC', 'LLY', 'TMO', 'AVGO', 'COST', 'DHR', 'ACN',
-  'TXN', 'MDT', 'UPS', 'NEE', 'HON', 'PM', 'QCOM', 'LOW', 'UNP', 'ORCL',
+  'AAPL',
+  'GOOG',
+  'MSFT',
+  'AMZN',
+  'META',
+  'TSLA',
+  'NVDA',
+  'JPM',
+  'V',
+  'JNJ',
+  'WMT',
+  'PG',
+  'MA',
+  'UNH',
+  'HD',
+  'DIS',
+  'BAC',
+  'XOM',
+  'PFE',
+  'KO',
+  'PEP',
+  'CSCO',
+  'INTC',
+  'NFLX',
+  'CMCSA',
+  'ADBE',
+  'CRM',
+  'ABT',
+  'NKE',
+  'MRK',
+  'T',
+  'VZ',
+  'CVX',
+  'WFC',
+  'LLY',
+  'TMO',
+  'AVGO',
+  'COST',
+  'DHR',
+  'ACN',
+  'TXN',
+  'MDT',
+  'UPS',
+  'NEE',
+  'HON',
+  'PM',
+  'QCOM',
+  'LOW',
+  'UNP',
+  'ORCL',
 ];
 
 function makeStocks(): Stock[] {
@@ -104,17 +149,40 @@ function App() {
     <>
       <div class="jumbotron">
         <div class="row">
-          <div class="col-md-6"><h1>Solid (Ticker)</h1></div>
+          <div class="col-md-6">
+            <h1>Solid (Ticker)</h1>
+          </div>
           <div class="col-md-6">
             <div class="row">
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="start" onClick={startTicker}>Start Ticker</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="start"
+                  onClick={startTicker}
+                >
+                  Start Ticker
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="stop" onClick={stopTicker}>Stop Ticker</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="stop"
+                  onClick={stopTicker}
+                >
+                  Stop Ticker
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="run-500" onClick={run500}>Run 500 Frames</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="run-500"
+                  onClick={run500}
+                >
+                  Run 500 Frames
+                </button>
               </div>
             </div>
           </div>
@@ -122,7 +190,14 @@ function App() {
       </div>
       <div id="frame-count">{frameLabel()}</div>
       <table class="table table-hover table-striped test-data">
-        <thead><tr><th>Symbol</th><th>Price</th><th>Change</th><th>Volume</th></tr></thead>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Price</th>
+            <th>Change</th>
+            <th>Volume</th>
+          </tr>
+        </thead>
         <tbody id="tbody">
           <For each={stocks()}>
             {(stock: Stock) => (

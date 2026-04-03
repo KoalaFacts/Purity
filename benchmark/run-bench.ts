@@ -53,30 +53,106 @@ const SCENARIOS: Scenario[] = [
       { name: 'Create 10 rows', setup: [{ action: '#clear' }], steps: [{ action: '#run-10' }] },
       { name: 'Create 100 rows', setup: [{ action: '#clear' }], steps: [{ action: '#run-100' }] },
       { name: 'Create 1,000 rows', setup: [{ action: '#clear' }], steps: [{ action: '#run' }] },
-      { name: 'Create 10,000 rows', setup: [{ action: '#clear' }], steps: [{ action: '#runlots' }] },
+      {
+        name: 'Create 10,000 rows',
+        setup: [{ action: '#clear' }],
+        steps: [{ action: '#runlots' }],
+      },
       // Append
-      { name: 'Append 10 rows', setup: [{ action: '#clear' }, { action: '#run-10' }], steps: [{ action: '#add-10' }] },
-      { name: 'Append 100 rows', setup: [{ action: '#clear' }, { action: '#run-100' }], steps: [{ action: '#add-100' }] },
-      { name: 'Append 1,000 rows', setup: [{ action: '#clear' }, { action: '#run' }], steps: [{ action: '#add' }] },
-      { name: 'Append 10,000 rows', setup: [{ action: '#clear' }, { action: '#runlots' }], steps: [{ action: '#add-10k' }] },
+      {
+        name: 'Append 10 rows',
+        setup: [{ action: '#clear' }, { action: '#run-10' }],
+        steps: [{ action: '#add-10' }],
+      },
+      {
+        name: 'Append 100 rows',
+        setup: [{ action: '#clear' }, { action: '#run-100' }],
+        steps: [{ action: '#add-100' }],
+      },
+      {
+        name: 'Append 1,000 rows',
+        setup: [{ action: '#clear' }, { action: '#run' }],
+        steps: [{ action: '#add' }],
+      },
+      {
+        name: 'Append 10,000 rows',
+        setup: [{ action: '#clear' }, { action: '#runlots' }],
+        steps: [{ action: '#add-10k' }],
+      },
       // Replace
-      { name: 'Replace 10 rows', setup: [{ action: '#clear' }, { action: '#run-10' }], steps: [{ action: '#run-10' }] },
-      { name: 'Replace 100 rows', setup: [{ action: '#clear' }, { action: '#run-100' }], steps: [{ action: '#run-100' }] },
-      { name: 'Replace 1,000 rows', setup: [{ action: '#clear' }, { action: '#run' }], steps: [{ action: '#run' }] },
-      { name: 'Replace 10,000 rows', setup: [{ action: '#clear' }, { action: '#runlots' }], steps: [{ action: '#runlots' }] },
+      {
+        name: 'Replace 10 rows',
+        setup: [{ action: '#clear' }, { action: '#run-10' }],
+        steps: [{ action: '#run-10' }],
+      },
+      {
+        name: 'Replace 100 rows',
+        setup: [{ action: '#clear' }, { action: '#run-100' }],
+        steps: [{ action: '#run-100' }],
+      },
+      {
+        name: 'Replace 1,000 rows',
+        setup: [{ action: '#clear' }, { action: '#run' }],
+        steps: [{ action: '#run' }],
+      },
+      {
+        name: 'Replace 10,000 rows',
+        setup: [{ action: '#clear' }, { action: '#runlots' }],
+        steps: [{ action: '#runlots' }],
+      },
       // Update every 10th
-      { name: 'Update every 10th (10)', setup: [{ action: '#clear' }, { action: '#run-10' }], steps: [{ action: '#update' }] },
-      { name: 'Update every 10th (100)', setup: [{ action: '#clear' }, { action: '#run-100' }], steps: [{ action: '#update' }] },
-      { name: 'Update every 10th (1k)', setup: [{ action: '#clear' }, { action: '#run' }], steps: [{ action: '#update' }] },
-      { name: 'Update every 10th (10k)', setup: [{ action: '#clear' }, { action: '#runlots' }], steps: [{ action: '#update' }] },
+      {
+        name: 'Update every 10th (10)',
+        setup: [{ action: '#clear' }, { action: '#run-10' }],
+        steps: [{ action: '#update' }],
+      },
+      {
+        name: 'Update every 10th (100)',
+        setup: [{ action: '#clear' }, { action: '#run-100' }],
+        steps: [{ action: '#update' }],
+      },
+      {
+        name: 'Update every 10th (1k)',
+        setup: [{ action: '#clear' }, { action: '#run' }],
+        steps: [{ action: '#update' }],
+      },
+      {
+        name: 'Update every 10th (10k)',
+        setup: [{ action: '#clear' }, { action: '#runlots' }],
+        steps: [{ action: '#update' }],
+      },
       // Swap
-      { name: 'Swap rows (1k)', setup: [{ action: '#clear' }, { action: '#run' }], steps: [{ action: '#swaprows' }] },
-      { name: 'Swap rows (10k)', setup: [{ action: '#clear' }, { action: '#runlots' }], steps: [{ action: '#swaprows' }] },
+      {
+        name: 'Swap rows (1k)',
+        setup: [{ action: '#clear' }, { action: '#run' }],
+        steps: [{ action: '#swaprows' }],
+      },
+      {
+        name: 'Swap rows (10k)',
+        setup: [{ action: '#clear' }, { action: '#runlots' }],
+        steps: [{ action: '#swaprows' }],
+      },
       // Clear
-      { name: 'Clear 10 rows', setup: [{ action: '#clear' }, { action: '#run-10' }], steps: [{ action: '#clear' }] },
-      { name: 'Clear 100 rows', setup: [{ action: '#clear' }, { action: '#run-100' }], steps: [{ action: '#clear' }] },
-      { name: 'Clear 1,000 rows', setup: [{ action: '#clear' }, { action: '#run' }], steps: [{ action: '#clear' }] },
-      { name: 'Clear 10,000 rows', setup: [{ action: '#clear' }, { action: '#runlots' }], steps: [{ action: '#clear' }] },
+      {
+        name: 'Clear 10 rows',
+        setup: [{ action: '#clear' }, { action: '#run-10' }],
+        steps: [{ action: '#clear' }],
+      },
+      {
+        name: 'Clear 100 rows',
+        setup: [{ action: '#clear' }, { action: '#run-100' }],
+        steps: [{ action: '#clear' }],
+      },
+      {
+        name: 'Clear 1,000 rows',
+        setup: [{ action: '#clear' }, { action: '#run' }],
+        steps: [{ action: '#clear' }],
+      },
+      {
+        name: 'Clear 10,000 rows',
+        setup: [{ action: '#clear' }, { action: '#runlots' }],
+        steps: [{ action: '#clear' }],
+      },
     ],
   },
   // === Computed ===
@@ -85,15 +161,47 @@ const SCENARIOS: Scenario[] = [
     category: 'Computed',
     ops: [
       // Filter: 10, 100, 1k, 10k
-      { name: 'Filter 10 (type "e")', setup: [{ action: '#populate-10' }, { action: '#clear-search' }], steps: [{ action: 'input#search', value: 'e' }] },
-      { name: 'Filter 100 (type "e")', setup: [{ action: '#populate-100' }, { action: '#clear-search' }], steps: [{ action: 'input#search', value: 'e' }] },
-      { name: 'Filter 1k (type "e")', setup: [{ action: '#populate-1k' }, { action: '#clear-search' }], steps: [{ action: 'input#search', value: 'e' }] },
-      { name: 'Filter 10k (type "e")', setup: [{ action: '#populate' }, { action: '#clear-search' }], steps: [{ action: 'input#search', value: 'e' }] },
+      {
+        name: 'Filter 10 (type "e")',
+        setup: [{ action: '#populate-10' }, { action: '#clear-search' }],
+        steps: [{ action: 'input#search', value: 'e' }],
+      },
+      {
+        name: 'Filter 100 (type "e")',
+        setup: [{ action: '#populate-100' }, { action: '#clear-search' }],
+        steps: [{ action: 'input#search', value: 'e' }],
+      },
+      {
+        name: 'Filter 1k (type "e")',
+        setup: [{ action: '#populate-1k' }, { action: '#clear-search' }],
+        steps: [{ action: 'input#search', value: 'e' }],
+      },
+      {
+        name: 'Filter 10k (type "e")',
+        setup: [{ action: '#populate' }, { action: '#clear-search' }],
+        steps: [{ action: 'input#search', value: 'e' }],
+      },
       // Clear filter: 10, 100, 1k, 10k
-      { name: 'Clear filter (10)', setup: [{ action: '#populate-10' }, { action: 'input#search', value: 'fancy' }], steps: [{ action: '#clear-search' }] },
-      { name: 'Clear filter (100)', setup: [{ action: '#populate-100' }, { action: 'input#search', value: 'fancy' }], steps: [{ action: '#clear-search' }] },
-      { name: 'Clear filter (1k)', setup: [{ action: '#populate-1k' }, { action: 'input#search', value: 'fancy' }], steps: [{ action: '#clear-search' }] },
-      { name: 'Clear filter (10k)', setup: [{ action: '#populate' }, { action: 'input#search', value: 'fancy' }], steps: [{ action: '#clear-search' }] },
+      {
+        name: 'Clear filter (10)',
+        setup: [{ action: '#populate-10' }, { action: 'input#search', value: 'fancy' }],
+        steps: [{ action: '#clear-search' }],
+      },
+      {
+        name: 'Clear filter (100)',
+        setup: [{ action: '#populate-100' }, { action: 'input#search', value: 'fancy' }],
+        steps: [{ action: '#clear-search' }],
+      },
+      {
+        name: 'Clear filter (1k)',
+        setup: [{ action: '#populate-1k' }, { action: 'input#search', value: 'fancy' }],
+        steps: [{ action: '#clear-search' }],
+      },
+      {
+        name: 'Clear filter (10k)',
+        setup: [{ action: '#populate' }, { action: 'input#search', value: 'fancy' }],
+        steps: [{ action: '#clear-search' }],
+      },
     ],
   },
   {
@@ -101,33 +209,85 @@ const SCENARIOS: Scenario[] = [
     category: 'Computed',
     ops: [
       // Sort by ID ↑: 100, 1k, 10k (10 is trivial for sort)
-      { name: 'Sort 100 by ID ↑', setup: [{ action: '#populate-100' }], steps: [{ action: '#sort-id' }] },
-      { name: 'Sort 1k by ID ↑', setup: [{ action: '#populate' }], steps: [{ action: '#sort-id' }] },
-      { name: 'Sort 10k by ID ↑', setup: [{ action: '#populate-10k' }], steps: [{ action: '#sort-id' }] },
+      {
+        name: 'Sort 100 by ID ↑',
+        setup: [{ action: '#populate-100' }],
+        steps: [{ action: '#sort-id' }],
+      },
+      {
+        name: 'Sort 1k by ID ↑',
+        setup: [{ action: '#populate' }],
+        steps: [{ action: '#sort-id' }],
+      },
+      {
+        name: 'Sort 10k by ID ↑',
+        setup: [{ action: '#populate-10k' }],
+        steps: [{ action: '#sort-id' }],
+      },
       // Sort by ID ↓
-      { name: 'Sort 100 by ID ↓', setup: [{ action: '#populate-100' }], steps: [{ action: '#sort-id-desc' }] },
-      { name: 'Sort 1k by ID ↓', setup: [{ action: '#populate' }], steps: [{ action: '#sort-id-desc' }] },
-      { name: 'Sort 10k by ID ↓', setup: [{ action: '#populate-10k' }], steps: [{ action: '#sort-id-desc' }] },
+      {
+        name: 'Sort 100 by ID ↓',
+        setup: [{ action: '#populate-100' }],
+        steps: [{ action: '#sort-id-desc' }],
+      },
+      {
+        name: 'Sort 1k by ID ↓',
+        setup: [{ action: '#populate' }],
+        steps: [{ action: '#sort-id-desc' }],
+      },
+      {
+        name: 'Sort 10k by ID ↓',
+        setup: [{ action: '#populate-10k' }],
+        steps: [{ action: '#sort-id-desc' }],
+      },
       // Sort by label
-      { name: 'Sort 100 by label', setup: [{ action: '#populate-100' }], steps: [{ action: '#sort-label' }] },
-      { name: 'Sort 1k by label', setup: [{ action: '#populate' }], steps: [{ action: '#sort-label' }] },
-      { name: 'Sort 10k by label', setup: [{ action: '#populate-10k' }], steps: [{ action: '#sort-label' }] },
+      {
+        name: 'Sort 100 by label',
+        setup: [{ action: '#populate-100' }],
+        steps: [{ action: '#sort-label' }],
+      },
+      {
+        name: 'Sort 1k by label',
+        setup: [{ action: '#populate' }],
+        steps: [{ action: '#sort-label' }],
+      },
+      {
+        name: 'Sort 10k by label',
+        setup: [{ action: '#populate-10k' }],
+        steps: [{ action: '#sort-label' }],
+      },
     ],
   },
   {
     page: 'computed-chain',
     category: 'Computed',
     ops: [
-      { name: 'Computed chain (1000 levels)', setup: [{ action: '#setup' }], steps: [{ action: '#update' }] },
-      { name: 'Computed chain 10x', setup: [{ action: '#setup' }], steps: [{ action: '#update-10x' }] },
+      {
+        name: 'Computed chain (1000 levels)',
+        setup: [{ action: '#setup' }],
+        steps: [{ action: '#update' }],
+      },
+      {
+        name: 'Computed chain 10x',
+        setup: [{ action: '#setup' }],
+        steps: [{ action: '#update-10x' }],
+      },
     ],
   },
   {
     page: 'diamond',
     category: 'Computed',
     ops: [
-      { name: 'Diamond (1000) update all', setup: [{ action: '#setup' }], steps: [{ action: '#update-all' }] },
-      { name: 'Diamond (1000) update one', setup: [{ action: '#setup' }], steps: [{ action: '#update-one' }] },
+      {
+        name: 'Diamond (1000) update all',
+        setup: [{ action: '#setup' }],
+        steps: [{ action: '#update-all' }],
+      },
+      {
+        name: 'Diamond (1000) update one',
+        setup: [{ action: '#setup' }],
+        steps: [{ action: '#update-one' }],
+      },
     ],
   },
   // === Components ===
@@ -136,28 +296,84 @@ const SCENARIOS: Scenario[] = [
     category: 'Components',
     ops: [
       // Add: 10, 100, 1k, 10k
-      { name: 'Add 10 cart items', setup: [{ action: '#clear-cart' }], steps: [{ action: '#add-10' }] },
-      { name: 'Add 100 cart items', setup: [{ action: '#clear-cart' }], steps: [{ action: '#add-100' }] },
-      { name: 'Add 1,000 cart items', setup: [{ action: '#clear-cart' }], steps: [{ action: '#add-1000' }] },
-      { name: 'Add 10,000 cart items', setup: [{ action: '#clear-cart' }], steps: [{ action: '#add-10k' }] },
+      {
+        name: 'Add 10 cart items',
+        setup: [{ action: '#clear-cart' }],
+        steps: [{ action: '#add-10' }],
+      },
+      {
+        name: 'Add 100 cart items',
+        setup: [{ action: '#clear-cart' }],
+        steps: [{ action: '#add-100' }],
+      },
+      {
+        name: 'Add 1,000 cart items',
+        setup: [{ action: '#clear-cart' }],
+        steps: [{ action: '#add-1000' }],
+      },
+      {
+        name: 'Add 10,000 cart items',
+        setup: [{ action: '#clear-cart' }],
+        steps: [{ action: '#add-10k' }],
+      },
       // Increment all: 10, 100, 1k, 10k
-      { name: 'Increment all (10)', setup: [{ action: '#clear-cart' }, { action: '#add-10' }], steps: [{ action: '#increment-all' }] },
-      { name: 'Increment all (100)', setup: [{ action: '#clear-cart' }, { action: '#add-100' }], steps: [{ action: '#increment-all' }] },
-      { name: 'Increment all (1k)', setup: [{ action: '#clear-cart' }, { action: '#add-1000' }], steps: [{ action: '#increment-all' }] },
-      { name: 'Increment all (10k)', setup: [{ action: '#clear-cart' }, { action: '#add-10k' }], steps: [{ action: '#increment-all' }] },
+      {
+        name: 'Increment all (10)',
+        setup: [{ action: '#clear-cart' }, { action: '#add-10' }],
+        steps: [{ action: '#increment-all' }],
+      },
+      {
+        name: 'Increment all (100)',
+        setup: [{ action: '#clear-cart' }, { action: '#add-100' }],
+        steps: [{ action: '#increment-all' }],
+      },
+      {
+        name: 'Increment all (1k)',
+        setup: [{ action: '#clear-cart' }, { action: '#add-1000' }],
+        steps: [{ action: '#increment-all' }],
+      },
+      {
+        name: 'Increment all (10k)',
+        setup: [{ action: '#clear-cart' }, { action: '#add-10k' }],
+        steps: [{ action: '#increment-all' }],
+      },
       // Clear: 10, 100, 1k, 10k
-      { name: 'Clear cart (10)', setup: [{ action: '#clear-cart' }, { action: '#add-10' }], steps: [{ action: '#clear-cart' }] },
-      { name: 'Clear cart (100)', setup: [{ action: '#clear-cart' }, { action: '#add-100' }], steps: [{ action: '#clear-cart' }] },
-      { name: 'Clear cart (1k)', setup: [{ action: '#clear-cart' }, { action: '#add-1000' }], steps: [{ action: '#clear-cart' }] },
-      { name: 'Clear cart (10k)', setup: [{ action: '#clear-cart' }, { action: '#add-10k' }], steps: [{ action: '#clear-cart' }] },
+      {
+        name: 'Clear cart (10)',
+        setup: [{ action: '#clear-cart' }, { action: '#add-10' }],
+        steps: [{ action: '#clear-cart' }],
+      },
+      {
+        name: 'Clear cart (100)',
+        setup: [{ action: '#clear-cart' }, { action: '#add-100' }],
+        steps: [{ action: '#clear-cart' }],
+      },
+      {
+        name: 'Clear cart (1k)',
+        setup: [{ action: '#clear-cart' }, { action: '#add-1000' }],
+        steps: [{ action: '#clear-cart' }],
+      },
+      {
+        name: 'Clear cart (10k)',
+        setup: [{ action: '#clear-cart' }, { action: '#add-10k' }],
+        steps: [{ action: '#clear-cart' }],
+      },
     ],
   },
   {
     page: 'conditional',
     category: 'Components',
     ops: [
-      { name: 'Toggle 1k section (show)', setup: [{ action: '#populate' }], steps: [{ action: '#toggle' }] },
-      { name: 'Toggle 1k section (hide)', setup: [{ action: '#populate' }, { action: '#toggle' }], steps: [{ action: '#toggle' }] },
+      {
+        name: 'Toggle 1k section (show)',
+        setup: [{ action: '#populate' }],
+        steps: [{ action: '#toggle' }],
+      },
+      {
+        name: 'Toggle 1k section (hide)',
+        setup: [{ action: '#populate' }, { action: '#toggle' }],
+        steps: [{ action: '#toggle' }],
+      },
       { name: 'Toggle 10x', setup: [{ action: '#populate' }], steps: [{ action: '#toggle-10x' }] },
     ],
   },
@@ -166,37 +382,105 @@ const SCENARIOS: Scenario[] = [
     category: 'Components',
     ops: [
       // Create: 10, 100, 1k, 10k
-      { name: 'Create 10 components', setup: [{ action: '#destroy-all' }], steps: [{ action: '#create-10' }] },
-      { name: 'Create 100 components', setup: [{ action: '#destroy-all' }], steps: [{ action: '#create-100' }] },
-      { name: 'Create 1k components', setup: [{ action: '#destroy-all' }], steps: [{ action: '#create-1k' }] },
-      { name: 'Create 10k components', setup: [{ action: '#destroy-all' }], steps: [{ action: '#create-10k' }] },
+      {
+        name: 'Create 10 components',
+        setup: [{ action: '#destroy-all' }],
+        steps: [{ action: '#create-10' }],
+      },
+      {
+        name: 'Create 100 components',
+        setup: [{ action: '#destroy-all' }],
+        steps: [{ action: '#create-100' }],
+      },
+      {
+        name: 'Create 1k components',
+        setup: [{ action: '#destroy-all' }],
+        steps: [{ action: '#create-1k' }],
+      },
+      {
+        name: 'Create 10k components',
+        setup: [{ action: '#destroy-all' }],
+        steps: [{ action: '#create-10k' }],
+      },
       // Destroy: 10, 100, 1k, 10k
-      { name: 'Destroy 10 components', setup: [{ action: '#destroy-all' }, { action: '#create-10' }], steps: [{ action: '#destroy-all' }] },
-      { name: 'Destroy 100 components', setup: [{ action: '#destroy-all' }, { action: '#create-100' }], steps: [{ action: '#destroy-all' }] },
-      { name: 'Destroy 1k components', setup: [{ action: '#destroy-all' }, { action: '#create-1k' }], steps: [{ action: '#destroy-all' }] },
-      { name: 'Destroy 10k components', setup: [{ action: '#destroy-all' }, { action: '#create-10k' }], steps: [{ action: '#destroy-all' }] },
+      {
+        name: 'Destroy 10 components',
+        setup: [{ action: '#destroy-all' }, { action: '#create-10' }],
+        steps: [{ action: '#destroy-all' }],
+      },
+      {
+        name: 'Destroy 100 components',
+        setup: [{ action: '#destroy-all' }, { action: '#create-100' }],
+        steps: [{ action: '#destroy-all' }],
+      },
+      {
+        name: 'Destroy 1k components',
+        setup: [{ action: '#destroy-all' }, { action: '#create-1k' }],
+        steps: [{ action: '#destroy-all' }],
+      },
+      {
+        name: 'Destroy 10k components',
+        setup: [{ action: '#destroy-all' }, { action: '#create-10k' }],
+        steps: [{ action: '#destroy-all' }],
+      },
       // Replace: 10, 100, 1k, 10k
-      { name: 'Replace 10 components', setup: [{ action: '#destroy-all' }, { action: '#create-10' }], steps: [{ action: '#replace-10' }] },
-      { name: 'Replace 100 components', setup: [{ action: '#destroy-all' }, { action: '#create-100' }], steps: [{ action: '#replace-100' }] },
-      { name: 'Replace 1k components', setup: [{ action: '#destroy-all' }, { action: '#create-1k' }], steps: [{ action: '#replace' }] },
-      { name: 'Replace 10k components', setup: [{ action: '#destroy-all' }, { action: '#create-10k' }], steps: [{ action: '#replace-10k' }] },
+      {
+        name: 'Replace 10 components',
+        setup: [{ action: '#destroy-all' }, { action: '#create-10' }],
+        steps: [{ action: '#replace-10' }],
+      },
+      {
+        name: 'Replace 100 components',
+        setup: [{ action: '#destroy-all' }, { action: '#create-100' }],
+        steps: [{ action: '#replace-100' }],
+      },
+      {
+        name: 'Replace 1k components',
+        setup: [{ action: '#destroy-all' }, { action: '#create-1k' }],
+        steps: [{ action: '#replace' }],
+      },
+      {
+        name: 'Replace 10k components',
+        setup: [{ action: '#destroy-all' }, { action: '#create-10k' }],
+        steps: [{ action: '#replace-10k' }],
+      },
     ],
   },
   {
     page: 'tree',
     category: 'Components',
     ops: [
-      { name: 'Expand all tree nodes', setup: [{ action: '#collapse-all' }], steps: [{ action: '#expand-all' }] },
-      { name: 'Collapse all tree nodes', setup: [{ action: '#expand-all' }], steps: [{ action: '#collapse-all' }] },
+      {
+        name: 'Expand all tree nodes',
+        setup: [{ action: '#collapse-all' }],
+        steps: [{ action: '#expand-all' }],
+      },
+      {
+        name: 'Collapse all tree nodes',
+        setup: [{ action: '#expand-all' }],
+        steps: [{ action: '#collapse-all' }],
+      },
     ],
   },
   {
     page: 'master-detail',
     category: 'Components',
     ops: [
-      { name: 'Select detail (first)', setup: [{ action: '#populate' }, { action: '#select-none' }], steps: [{ action: '#select-first' }] },
-      { name: 'Select detail (last)', setup: [{ action: '#populate' }, { action: '#select-none' }], steps: [{ action: '#select-last' }] },
-      { name: 'Cycle 10 selections', setup: [{ action: '#populate' }], steps: [{ action: '#cycle-10' }] },
+      {
+        name: 'Select detail (first)',
+        setup: [{ action: '#populate' }, { action: '#select-none' }],
+        steps: [{ action: '#select-first' }],
+      },
+      {
+        name: 'Select detail (last)',
+        setup: [{ action: '#populate' }, { action: '#select-none' }],
+        steps: [{ action: '#select-last' }],
+      },
+      {
+        name: 'Cycle 10 selections',
+        setup: [{ action: '#populate' }],
+        steps: [{ action: '#cycle-10' }],
+      },
     ],
   },
   // === Interaction ===
@@ -210,15 +494,47 @@ const SCENARIOS: Scenario[] = [
       { name: 'Create 1,000 bound inputs', setup: [], steps: [{ action: '#create-1000' }] },
       { name: 'Create 10,000 bound inputs', setup: [], steps: [{ action: '#create-10k' }] },
       // Update: 10, 100, 1k, 10k
-      { name: 'Update all (10)', setup: [{ action: '#create-10' }], steps: [{ action: '#update-all' }] },
-      { name: 'Update all (100)', setup: [{ action: '#create-100' }], steps: [{ action: '#update-all' }] },
-      { name: 'Update all (1k)', setup: [{ action: '#create-1000' }], steps: [{ action: '#update-all' }] },
-      { name: 'Update all (10k)', setup: [{ action: '#create-10k' }], steps: [{ action: '#update-all' }] },
+      {
+        name: 'Update all (10)',
+        setup: [{ action: '#create-10' }],
+        steps: [{ action: '#update-all' }],
+      },
+      {
+        name: 'Update all (100)',
+        setup: [{ action: '#create-100' }],
+        steps: [{ action: '#update-all' }],
+      },
+      {
+        name: 'Update all (1k)',
+        setup: [{ action: '#create-1000' }],
+        steps: [{ action: '#update-all' }],
+      },
+      {
+        name: 'Update all (10k)',
+        setup: [{ action: '#create-10k' }],
+        steps: [{ action: '#update-all' }],
+      },
       // Clear: 10, 100, 1k, 10k
-      { name: 'Clear all (10)', setup: [{ action: '#create-10' }], steps: [{ action: '#clear-all' }] },
-      { name: 'Clear all (100)', setup: [{ action: '#create-100' }], steps: [{ action: '#clear-all' }] },
-      { name: 'Clear all (1k)', setup: [{ action: '#create-1000' }], steps: [{ action: '#clear-all' }] },
-      { name: 'Clear all (10k)', setup: [{ action: '#create-10k' }], steps: [{ action: '#clear-all' }] },
+      {
+        name: 'Clear all (10)',
+        setup: [{ action: '#create-10' }],
+        steps: [{ action: '#clear-all' }],
+      },
+      {
+        name: 'Clear all (100)',
+        setup: [{ action: '#create-100' }],
+        steps: [{ action: '#clear-all' }],
+      },
+      {
+        name: 'Clear all (1k)',
+        setup: [{ action: '#create-1000' }],
+        steps: [{ action: '#clear-all' }],
+      },
+      {
+        name: 'Clear all (10k)',
+        setup: [{ action: '#create-10k' }],
+        steps: [{ action: '#clear-all' }],
+      },
     ],
   },
   {
@@ -226,27 +542,79 @@ const SCENARIOS: Scenario[] = [
     category: 'Interaction',
     ops: [
       // Select all: 10, 100, 1k, 10k
-      { name: 'Select all (10)', setup: [{ action: '#populate-10' }, { action: '#deselect-all' }], steps: [{ action: '#select-all' }] },
-      { name: 'Select all (100)', setup: [{ action: '#populate-100' }, { action: '#deselect-all' }], steps: [{ action: '#select-all' }] },
-      { name: 'Select all (1k)', setup: [{ action: '#populate' }, { action: '#deselect-all' }], steps: [{ action: '#select-all' }] },
-      { name: 'Select all (10k)', setup: [{ action: '#populate-10k' }, { action: '#deselect-all' }], steps: [{ action: '#select-all' }] },
+      {
+        name: 'Select all (10)',
+        setup: [{ action: '#populate-10' }, { action: '#deselect-all' }],
+        steps: [{ action: '#select-all' }],
+      },
+      {
+        name: 'Select all (100)',
+        setup: [{ action: '#populate-100' }, { action: '#deselect-all' }],
+        steps: [{ action: '#select-all' }],
+      },
+      {
+        name: 'Select all (1k)',
+        setup: [{ action: '#populate' }, { action: '#deselect-all' }],
+        steps: [{ action: '#select-all' }],
+      },
+      {
+        name: 'Select all (10k)',
+        setup: [{ action: '#populate-10k' }, { action: '#deselect-all' }],
+        steps: [{ action: '#select-all' }],
+      },
       // Deselect all: 10, 100, 1k, 10k
-      { name: 'Deselect all (10)', setup: [{ action: '#populate-10' }, { action: '#select-all' }], steps: [{ action: '#deselect-all' }] },
-      { name: 'Deselect all (100)', setup: [{ action: '#populate-100' }, { action: '#select-all' }], steps: [{ action: '#deselect-all' }] },
-      { name: 'Deselect all (1k)', setup: [{ action: '#populate' }, { action: '#select-all' }], steps: [{ action: '#deselect-all' }] },
-      { name: 'Deselect all (10k)', setup: [{ action: '#populate-10k' }, { action: '#select-all' }], steps: [{ action: '#deselect-all' }] },
+      {
+        name: 'Deselect all (10)',
+        setup: [{ action: '#populate-10' }, { action: '#select-all' }],
+        steps: [{ action: '#deselect-all' }],
+      },
+      {
+        name: 'Deselect all (100)',
+        setup: [{ action: '#populate-100' }, { action: '#select-all' }],
+        steps: [{ action: '#deselect-all' }],
+      },
+      {
+        name: 'Deselect all (1k)',
+        setup: [{ action: '#populate' }, { action: '#select-all' }],
+        steps: [{ action: '#deselect-all' }],
+      },
+      {
+        name: 'Deselect all (10k)',
+        setup: [{ action: '#populate-10k' }, { action: '#select-all' }],
+        steps: [{ action: '#deselect-all' }],
+      },
       // Toggle all: 10, 100, 1k, 10k
-      { name: 'Toggle all (10)', setup: [{ action: '#populate-10' }], steps: [{ action: '#toggle-all' }] },
-      { name: 'Toggle all (100)', setup: [{ action: '#populate-100' }], steps: [{ action: '#toggle-all' }] },
-      { name: 'Toggle all (1k)', setup: [{ action: '#populate' }], steps: [{ action: '#toggle-all' }] },
-      { name: 'Toggle all (10k)', setup: [{ action: '#populate-10k' }], steps: [{ action: '#toggle-all' }] },
+      {
+        name: 'Toggle all (10)',
+        setup: [{ action: '#populate-10' }],
+        steps: [{ action: '#toggle-all' }],
+      },
+      {
+        name: 'Toggle all (100)',
+        setup: [{ action: '#populate-100' }],
+        steps: [{ action: '#toggle-all' }],
+      },
+      {
+        name: 'Toggle all (1k)',
+        setup: [{ action: '#populate' }],
+        steps: [{ action: '#toggle-all' }],
+      },
+      {
+        name: 'Toggle all (10k)',
+        setup: [{ action: '#populate-10k' }],
+        steps: [{ action: '#toggle-all' }],
+      },
     ],
   },
   {
     page: 'ticker',
     category: 'Interaction',
     ops: [
-      { name: 'Stock ticker (500 frames)', setup: [{ action: '#stop' }], steps: [{ action: '#run-500' }] },
+      {
+        name: 'Stock ticker (500 frames)',
+        setup: [{ action: '#stop' }],
+        steps: [{ action: '#run-500' }],
+      },
     ],
   },
 ];

@@ -2,12 +2,60 @@
 import { computed, ref, shallowRef } from 'vue';
 
 const A = [
-  'pretty', 'large', 'big', 'small', 'tall', 'short', 'long', 'handsome', 'plain', 'quaint',
-  'clean', 'elegant', 'easy', 'angry', 'crazy', 'helpful', 'mushy', 'odd', 'unsightly',
-  'adorable', 'important', 'inexpensive', 'cheap', 'expensive', 'fancy',
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
 ];
-const C = ['red', 'yellow', 'blue', 'green', 'pink', 'brown', 'purple', 'brown', 'white', 'black', 'orange'];
-const N = ['table', 'chair', 'house', 'bbq', 'desk', 'car', 'pony', 'cookie', 'sandwich', 'burger', 'pizza', 'mouse', 'keyboard'];
+const C = [
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'brown',
+  'white',
+  'black',
+  'orange',
+];
+const N = [
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
+];
 
 interface Item {
   id: number;
@@ -41,9 +89,15 @@ function populate(n = 1000) {
   data.value = buildData(n);
   sortMode.value = 'none';
 }
-function sortIdAsc() { sortMode.value = 'id-asc'; }
-function sortIdDesc() { sortMode.value = 'id-desc'; }
-function sortLabelAsc() { sortMode.value = 'label-asc'; }
+function sortIdAsc() {
+  sortMode.value = 'id-asc';
+}
+function sortIdDesc() {
+  sortMode.value = 'id-desc';
+}
+function sortLabelAsc() {
+  sortMode.value = 'label-asc';
+}
 </script>
 
 <template>

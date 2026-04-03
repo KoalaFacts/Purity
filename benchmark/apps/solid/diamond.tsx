@@ -44,7 +44,9 @@ function App() {
   return (
     <>
       <h1>Solid — Diamond Dependency (1000 patterns)</h1>
-      <button type="button" id="setup" onClick={setupDiamonds}>Setup 1000 Diamonds</button>
+      <button type="button" id="setup" onClick={setupDiamonds}>
+        Setup 1000 Diamonds
+      </button>
       <button
         type="button"
         id="update-all"
@@ -58,7 +60,15 @@ function App() {
       >
         Update All Sources
       </button>
-      <button type="button" id="update-one" onClick={() => { if (sources.length) sources[0]((Math.random() * 100) | 0); }}>Update One Source</button>
+      <button
+        type="button"
+        id="update-one"
+        onClick={() => {
+          if (sources.length) sources[0]((Math.random() * 100) | 0);
+        }}
+      >
+        Update One Source
+      </button>
     </>
   );
 }

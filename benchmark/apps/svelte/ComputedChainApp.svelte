@@ -13,9 +13,15 @@ $effect(() => {
   finalValue = v;
 });
 
-function setup() { source = 1; }
-function update() { source = (Math.random() * 1000) | 0; }
-function update10x() { for (let i = 0; i < 10; i++) source = (Math.random() * 1000) | 0; }
+function setup() {
+  source = 1;
+}
+function update() {
+  source = (Math.random() * 1000) | 0;
+}
+function update10x() {
+  for (let i = 0; i < 10; i++) source = (Math.random() * 1000) | 0;
+}
 </script>
 
 <h1>Svelte — Computed Chain (1000 levels)</h1>

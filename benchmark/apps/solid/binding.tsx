@@ -78,26 +78,67 @@ function App() {
     <>
       <div class="jumbotron">
         <div class="row">
-          <div class="col-md-6"><h1>Solid (Binding)</h1></div>
+          <div class="col-md-6">
+            <h1>Solid (Binding)</h1>
+          </div>
           <div class="col-md-6">
             <div class="row">
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="create-100" onClick={() => createFields(100)}>Create 100 Fields</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="create-100"
+                  onClick={() => createFields(100)}
+                >
+                  Create 100 Fields
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="create-1000" onClick={() => createFields(1000)}>Create 1000 Fields</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="create-1000"
+                  onClick={() => createFields(1000)}
+                >
+                  Create 1000 Fields
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="update-all" onClick={updateAll}>Update All</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="update-all"
+                  onClick={updateAll}
+                >
+                  Update All
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="clear-all" onClick={clearAll}>Clear All</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="clear-all"
+                  onClick={clearAll}
+                >
+                  Clear All
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="read-all" onClick={readAll}>Read All</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="read-all"
+                  onClick={readAll}
+                >
+                  Read All
+                </button>
               </div>
-              <HBtn id="create-10" onClick={() => createFields(10)}>Create 10 Fields</HBtn>
-              <HBtn id="create-10k" onClick={() => createFields(10000)}>Create 10,000 Fields</HBtn>
+              <HBtn id="create-10" onClick={() => createFields(10)}>
+                Create 10 Fields
+              </HBtn>
+              <HBtn id="create-10k" onClick={() => createFields(10000)}>
+                Create 10,000 Fields
+              </HBtn>
             </div>
           </div>
         </div>

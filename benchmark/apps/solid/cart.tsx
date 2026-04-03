@@ -16,8 +16,16 @@ interface CartItem {
 }
 
 const NAMES = [
-  'Widget', 'Gadget', 'Doohickey', 'Thingamajig', 'Gizmo',
-  'Contraption', 'Apparatus', 'Device', 'Implement', 'Mechanism',
+  'Widget',
+  'Gadget',
+  'Doohickey',
+  'Thingamajig',
+  'Gizmo',
+  'Contraption',
+  'Apparatus',
+  'Device',
+  'Implement',
+  'Mechanism',
 ];
 let nextId = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
@@ -68,38 +76,86 @@ function App() {
     <>
       <div class="jumbotron">
         <div class="row">
-          <div class="col-md-6"><h1>Solid (Cart)</h1></div>
+          <div class="col-md-6">
+            <h1>Solid (Cart)</h1>
+          </div>
           <div class="col-md-6">
             <div class="row">
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="add-1" onClick={() => setCart((c) => [...c, ...randomItems(1)])}>Add 1 Item</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="add-1"
+                  onClick={() => setCart((c) => [...c, ...randomItems(1)])}
+                >
+                  Add 1 Item
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="add-100" onClick={() => setCart((c) => [...c, ...randomItems(100)])}>Add 100 Items</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="add-100"
+                  onClick={() => setCart((c) => [...c, ...randomItems(100)])}
+                >
+                  Add 100 Items
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="add-1000" onClick={() => setCart((c) => [...c, ...randomItems(1000)])}>Add 1000 Items</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="add-1000"
+                  onClick={() => setCart((c) => [...c, ...randomItems(1000)])}
+                >
+                  Add 1000 Items
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="increment-all" onClick={() => setCart((c) => c.map((i) => ({ ...i, qty: i.qty + 1 })))}>+1 All Quantities</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="increment-all"
+                  onClick={() => setCart((c) => c.map((i) => ({ ...i, qty: i.qty + 1 })))}
+                >
+                  +1 All Quantities
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="remove-first" onClick={() => setCart((c) => c.slice(1))}>Remove First</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="remove-first"
+                  onClick={() => setCart((c) => c.slice(1))}
+                >
+                  Remove First
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="clear-cart" onClick={() => setCart([])}>Clear Cart</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="clear-cart"
+                  onClick={() => setCart([])}
+                >
+                  Clear Cart
+                </button>
               </div>
-              <HBtn id="add-10" onClick={() => setCart((c) => [...c, ...randomItems(10)])}>Add 10 Items</HBtn>
-              <HBtn id="add-10k" onClick={() => setCart((c) => [...c, ...randomItems(10000)])}>Add 10,000 Items</HBtn>
+              <HBtn id="add-10" onClick={() => setCart((c) => [...c, ...randomItems(10)])}>
+                Add 10 Items
+              </HBtn>
+              <HBtn id="add-10k" onClick={() => setCart((c) => [...c, ...randomItems(10000)])}>
+                Add 10,000 Items
+              </HBtn>
             </div>
           </div>
         </div>
       </div>
       <div id="stats">
-        <span id="item-count">{itemCount()}</span> items |
-        Subtotal: $<span id="subtotal">{subtotal().toFixed(2)}</span> |
-        Tax: $<span id="tax">{tax().toFixed(2)}</span> |
-        Total: $<span id="total">{total().toFixed(2)}</span>
+        <span id="item-count">{itemCount()}</span> items | Subtotal: $
+        <span id="subtotal">{subtotal().toFixed(2)}</span> | Tax: $
+        <span id="tax">{tax().toFixed(2)}</span> | Total: $
+        <span id="total">{total().toFixed(2)}</span>
       </div>
       <table class="table table-hover table-striped test-data">
         <tbody id="tbody">

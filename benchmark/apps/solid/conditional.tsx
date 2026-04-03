@@ -36,7 +36,9 @@ function App() {
     <>
       <div class="jumbotron">
         <div class="row">
-          <div class="col-md-6"><h1>Solid (Conditional)</h1></div>
+          <div class="col-md-6">
+            <h1>Solid (Conditional)</h1>
+          </div>
           <div class="col-md-6">
             <div class="row">
               <div class="col-sm-6 smallpad">
@@ -44,16 +46,35 @@ function App() {
                   type="button"
                   class="btn btn-primary btn-block"
                   id="populate"
-                  onClick={() => { setData(buildData(1000)); setVisible(true); }}
+                  onClick={() => {
+                    setData(buildData(1000));
+                    setVisible(true);
+                  }}
                 >
                   Populate 1k
                 </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="toggle" onClick={() => setVisible((v) => !v)}>Toggle Visibility</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="toggle"
+                  onClick={() => setVisible((v) => !v)}
+                >
+                  Toggle Visibility
+                </button>
               </div>
               <div class="col-sm-6 smallpad">
-                <button type="button" class="btn btn-primary btn-block" id="toggle-10x" onClick={() => { for (let i = 0; i < 10; i++) setVisible((v) => !v); }}>Toggle 10x</button>
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="toggle-10x"
+                  onClick={() => {
+                    for (let i = 0; i < 10; i++) setVisible((v) => !v);
+                  }}
+                >
+                  Toggle 10x
+                </button>
               </div>
             </div>
           </div>

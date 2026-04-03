@@ -1,13 +1,64 @@
 <script lang="ts">
 const A = [
-  'pretty', 'large', 'big', 'small', 'tall', 'short', 'long', 'handsome', 'plain', 'quaint',
-  'clean', 'elegant', 'easy', 'angry', 'crazy', 'helpful', 'mushy', 'odd', 'unsightly',
-  'adorable', 'important', 'inexpensive', 'cheap', 'expensive', 'fancy',
+  'pretty',
+  'large',
+  'big',
+  'small',
+  'tall',
+  'short',
+  'long',
+  'handsome',
+  'plain',
+  'quaint',
+  'clean',
+  'elegant',
+  'easy',
+  'angry',
+  'crazy',
+  'helpful',
+  'mushy',
+  'odd',
+  'unsightly',
+  'adorable',
+  'important',
+  'inexpensive',
+  'cheap',
+  'expensive',
+  'fancy',
 ];
-const C = ['red', 'yellow', 'blue', 'green', 'pink', 'brown', 'purple', 'brown', 'white', 'black', 'orange'];
-const N = ['table', 'chair', 'house', 'bbq', 'desk', 'car', 'pony', 'cookie', 'sandwich', 'burger', 'pizza', 'mouse', 'keyboard'];
+const C = [
+  'red',
+  'yellow',
+  'blue',
+  'green',
+  'pink',
+  'brown',
+  'purple',
+  'brown',
+  'white',
+  'black',
+  'orange',
+];
+const N = [
+  'table',
+  'chair',
+  'house',
+  'bbq',
+  'desk',
+  'car',
+  'pony',
+  'cookie',
+  'sandwich',
+  'burger',
+  'pizza',
+  'mouse',
+  'keyboard',
+];
 
-interface RowItem { id: number; label: string; }
+interface RowItem {
+  id: number;
+  label: string;
+}
 
 let nid = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
@@ -21,23 +72,37 @@ function mkData(n: number): RowItem[] {
 let data: RowItem[] = $state.raw([]);
 let selectedId: number = $state(0);
 
-function run(count: number) { data = mkData(count); selectedId = 0; }
-function add(count: number = 1000) { data = data.concat(mkData(count)); }
+function run(count: number) {
+  data = mkData(count);
+  selectedId = 0;
+}
+function add(count: number = 1000) {
+  data = data.concat(mkData(count));
+}
 function update() {
   const c = data.slice();
   for (let i = 0; i < c.length; i += 10) c[i] = { ...c[i], label: `${c[i].label} !!!` };
   data = c;
 }
-function select(id: number) { selectedId = id; }
+function select(id: number) {
+  selectedId = id;
+}
 function swapRows() {
   if (data.length > 998) {
     const c = data.slice();
-    const t = c[1]; c[1] = c[998]; c[998] = t;
+    const t = c[1];
+    c[1] = c[998];
+    c[998] = t;
     data = c;
   }
 }
-function remove(id: number) { data = data.filter((x) => x.id !== id); }
-function clear() { data = []; selectedId = 0; }
+function remove(id: number) {
+  data = data.filter((x) => x.id !== id);
+}
+function clear() {
+  data = [];
+  selectedId = 0;
+}
 
 function handleClick(e: MouseEvent) {
   const a = (e.target as HTMLElement).closest('a');

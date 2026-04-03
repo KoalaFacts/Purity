@@ -13,7 +13,7 @@ let disposeChain: (() => void) | null = null;
 
 const resultContainer = document.getElementById('result')!;
 
-function setupChain() {
+function setupChain(levels: number) {
   if (disposeChain) disposeChain();
   resultContainer.textContent = '';
   disposeChain = render(() => {
@@ -21,7 +21,7 @@ function setupChain() {
     setSource = _setSource;
     const chain: Accessor<number>[] = [];
     let prev: Accessor<number> = source;
-    for (let i = 0; i < 1000; i++) {
+    for (let i = 0; i < levels; i++) {
       const p = prev;
       const c = createMemo(() => p() * 2 + 1);
       chain.push(c);
@@ -40,7 +40,7 @@ function App() {
   return (
     <>
       <h1>Solid — Computed Chain (1000 levels)</h1>
-      <button type="button" id="setup" onClick={setupChain}>
+      <button type="button" id="setup" onClick={() => setupChain(1000)}>
         Setup Chain (1000 levels)
       </button>
       <button type="button" id="update" onClick={() => setSource((Math.random() * 100) | 0)}>
@@ -60,3 +60,8 @@ function App() {
 }
 
 render(App, document.getElementById('app')!);
+
+// Hidden button handlers for benchmark permutations
+document.getElementById('setup-10')?.addEventListener('click', () => setupChain(10));
+document.getElementById('setup-100')?.addEventListener('click', () => setupChain(100));
+document.getElementById('setup-10k')?.addEventListener('click', () => setupChain(10000));

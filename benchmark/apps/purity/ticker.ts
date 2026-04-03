@@ -120,7 +120,7 @@ function stopTicker() {
   rafId = 0;
 }
 
-function run500() {
+function runFrames(total: number) {
   cancelAnimationFrame(rafId);
   rafId = 0;
   let count = 0;
@@ -129,15 +129,19 @@ function run500() {
   function step() {
     stocks(updateRandom(stocks()));
     count++;
-    if (count < 500) {
+    if (count < total) {
       rafId = requestAnimationFrame(step);
     } else {
       rafId = 0;
       const elapsed = performance.now() - t0;
-      frameMsg(`Frames: 500 | ${elapsed.toFixed(1)}ms`);
+      frameMsg(`Frames: ${total} | ${elapsed.toFixed(1)}ms`);
     }
   }
   rafId = requestAnimationFrame(step);
+}
+
+function run500() {
+  runFrames(500);
 }
 
 // ---------------------------------------------------------------------------
@@ -162,7 +166,11 @@ function ButtonBar() {
         <div class="col-sm-6 smallpad">
           <button type="button" class="btn btn-primary btn-block" id="run-500" @click=${run500}>Run 500 Frames</button>
         </div>
+        ${hBtn('run-10', 'Run 10', () => runFrames(10))}
+        ${hBtn('run-100', 'Run 100', () => runFrames(100))}
         ${hBtn('run-500-hidden', 'Run 500', run500)}
+        ${hBtn('run-1000', 'Run 1000', () => runFrames(1000))}
+        ${hBtn('run-10000', 'Run 10000', () => runFrames(10000))}
       </div></div>
     </div></div>
   `;

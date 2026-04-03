@@ -18,11 +18,11 @@ const isSetup = state(false);
 // Actions
 // ---------------------------------------------------------------------------
 
-function setup() {
+function setup(levels = 1000) {
   source = state(0);
   chain = [];
   let prev: () => number = source;
-  for (let i = 0; i < 1000; i++) {
+  for (let i = 0; i < levels; i++) {
     const p = prev;
     const c = compute(() => p() * 2 + 1);
     chain.push(c);
@@ -68,7 +68,10 @@ function ButtonBar() {
         <div class="col-sm-6 smallpad">
           <button type="button" class="btn btn-primary btn-block" id="update-10x" @click=${updateSource10x}>Update 10x</button>
         </div>
-        ${hBtn('setup-chain', 'Setup', setup)}
+        ${hBtn('setup-10', 'Setup 10', () => setup(10))}
+        ${hBtn('setup-100', 'Setup 100', () => setup(100))}
+        ${hBtn('setup-chain', 'Setup 1000', () => setup(1000))}
+        ${hBtn('setup-10k', 'Setup 10k', () => setup(10000))}
       </div></div>
     </div></div>
   `;

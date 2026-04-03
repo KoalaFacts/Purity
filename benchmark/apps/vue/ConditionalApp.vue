@@ -16,10 +16,12 @@ function buildData(n: number): Item[] {
 const data = shallowRef<Item[]>([]);
 const visible = ref(true);
 
-function populate() {
-  data.value = buildData(1000);
+function populate(count = 1000) {
+  data.value = buildData(count);
   visible.value = true;
 }
+
+defineExpose({ populate });
 function toggle() {
   visible.value = !visible.value;
 }

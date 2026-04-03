@@ -14,8 +14,8 @@ function buildData(n: number): Item[] {
 let data: Item[] = $state.raw([]);
 let visible: boolean = $state(true);
 
-function populate() {
-  data = buildData(1000);
+export function populate(count = 1000) {
+  data = buildData(count);
   visible = true;
 }
 function toggle() {

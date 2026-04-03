@@ -119,7 +119,7 @@ function stopTicker() {
   rafId = 0;
 }
 
-function run500() {
+function runFrames(total: number) {
   cancelAnimationFrame(rafId);
   rafId = 0;
   frames = 0;
@@ -129,15 +129,19 @@ function run500() {
   function step() {
     setStocks(updateRandom(stocks()));
     count++;
-    if (count < 500) {
+    if (count < total) {
       rafId = requestAnimationFrame(step);
     } else {
       rafId = 0;
       const elapsed = performance.now() - t0;
-      setFrameLabel(`Frames: 500 | ${elapsed.toFixed(1)}ms`);
+      setFrameLabel(`Frames: ${total} | ${elapsed.toFixed(1)}ms`);
     }
   }
   rafId = requestAnimationFrame(step);
+}
+
+function run500() {
+  runFrames(500);
 }
 
 // ---------------------------------------------------------------------------
@@ -216,3 +220,9 @@ function App() {
 }
 
 render(App, document.getElementById('app')!);
+
+// Hidden button handlers for benchmark permutations
+document.getElementById('run-10')?.addEventListener('click', () => runFrames(10));
+document.getElementById('run-100')?.addEventListener('click', () => runFrames(100));
+document.getElementById('run-1000')?.addEventListener('click', () => runFrames(1000));
+document.getElementById('run-10000')?.addEventListener('click', () => runFrames(10000));

@@ -16,10 +16,10 @@ const result = state('—');
 // Actions
 // ---------------------------------------------------------------------------
 
-function setup() {
+function setup(count = 1000) {
   sources = [];
   const results: (() => number)[] = [];
-  for (let i = 0; i < 1000; i++) {
+  for (let i = 0; i < count; i++) {
     const a = state(i);
     const b = compute(() => a() * 2);
     const c = compute(() => a() * 3);
@@ -71,7 +71,10 @@ function ButtonBar() {
         <div class="col-sm-6 smallpad">
           <button type="button" class="btn btn-primary btn-block" id="update-one" @click=${updateOne}>Update One Source</button>
         </div>
-        ${hBtn('setup-diamonds', 'Setup', setup)}
+        ${hBtn('setup-10', 'Setup 10', () => setup(10))}
+        ${hBtn('setup-100', 'Setup 100', () => setup(100))}
+        ${hBtn('setup-diamonds', 'Setup 1000', () => setup(1000))}
+        ${hBtn('setup-10k', 'Setup 10k', () => setup(10000))}
       </div></div>
     </div></div>
   `;

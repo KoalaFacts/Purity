@@ -1,7 +1,3 @@
-<template>
-  <span>{{ total }}</span>
-</template>
-
 <script setup lang="ts">
 import { type ComputedRef, computed, type Ref, ref } from 'vue';
 
@@ -23,15 +19,23 @@ const total = computed(() => {
   return s;
 });
 
+function setup() {
+  for (let i = 0; i < sources.length; i++) sources[i].value = i;
+}
 function updateAll() {
   for (let i = 0; i < sources.length; i++) {
     sources[i].value = i + ((Math.random() * 100) | 0);
   }
 }
-
 function updateOne() {
   sources[0].value = (Math.random() * 100) | 0;
 }
-
-defineExpose({ updateAll, updateOne });
 </script>
+
+<template>
+  <h1>Vue — Diamond Dependency (1000 patterns)</h1>
+  <button type="button" id="setup" @click="setup()">Setup 1000 Diamonds</button>
+  <button type="button" id="update-all" @click="updateAll()">Update All Sources</button>
+  <button type="button" id="update-one" @click="updateOne()">Update One Source</button>
+  <div id="result">{{ total }}</div>
+</template>

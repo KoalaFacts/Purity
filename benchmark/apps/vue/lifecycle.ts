@@ -1,32 +1,4 @@
 import { createApp } from 'vue';
 import LifecycleApp from './LifecycleApp.vue';
 
-export function createLifecycleApp(container: HTMLElement) {
-  const vueApp = createApp(LifecycleApp);
-  const vm = vueApp.mount(container) as any;
-
-  document.getElementById('create-1k')!.addEventListener('click', () => {
-    vm.create(1000);
-  });
-  document.getElementById('create-10k')!.addEventListener('click', () => {
-    vm.create(10000);
-  });
-  document.getElementById('destroy-all')!.addEventListener('click', () => {
-    vm.destroyAll();
-  });
-  document.getElementById('replace')!.addEventListener('click', () => {
-    vm.replace();
-  });
-  document.getElementById('create-10')!.addEventListener('click', () => {
-    vm.create(10);
-  });
-  document.getElementById('create-100')!.addEventListener('click', () => {
-    vm.create(100);
-  });
-  document.getElementById('replace-100')!.addEventListener('click', () => {
-    vm.replace(100);
-  });
-  document.getElementById('replace-10k')!.addEventListener('click', () => {
-    vm.replace(10000);
-  });
-}
+createApp(LifecycleApp).mount('#app');

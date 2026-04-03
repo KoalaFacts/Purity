@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       iterations:
-        description: 'Measured iterations per operation (default: 7)'
+        description: 'Measured iterations per operation (default: 5)'
         required: false
-        default: '7'
+        default: '5'
 
 permissions:
   contents: write
@@ -21,72 +21,69 @@ jobs:
   benchmark:
     name: Run benchmark in headless Chromium
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: 🟢 Setup Node.js 24
+      - name: Setup Node.js 24
         uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'npm'
 
-      - name: 📦 Install all dependencies
-        # Benchmark is a workspace member — one npm ci installs everything
+      - name: Install all dependencies
         run: npm ci
 
-      - name: 🌐 Install Playwright Chromium
-        # Downloads headless Chromium for automated browser benchmarking
+      - name: Install Playwright Chromium
         run: npx playwright install chromium
 
-      - name: 🏗️ Build benchmark (AOT compiles Purity templates)
+      - name: Build core + vite-plugin
+        run: |
+          cd packages/core && npx vite build
+          cd ../vite-plugin && npx vite build
+
+      - name: Build benchmark (AOT compiles Purity templates)
         # Vite build with @purity/vite-plugin transforms html`` → direct DOM calls
+        # Also builds the Purity report app for GitHub Pages
         run: cd benchmark && npx vite build
 
-      - name: 🚀 Start production preview server
-        # Serves the built benchmark on port 4173
+      - name: Start production preview server
         run: cd benchmark && npx vite preview --port 4173 &
 
-      - name: ⏳ Wait for server to be ready
+      - name: Wait for server to be ready
         run: sleep 3
 
-      - name: 📊 Run benchmark (Purity vs Solid vs Svelte vs Vue)
+      - name: Run benchmark (100 scenarios × 4 frameworks)
         # Playwright drives headless Chromium through each scenario page
         # Each operation: 3 warmup + N measured iterations, metric: median
-        # Outputs markdown table with median per framework
         run: |
           cd benchmark
-          ITERATIONS=${{ inputs.iterations || '7' }} node run-bench.ts | tee benchmark-results.md
+          ITERATIONS=${{ inputs.iterations || '5' }} MEM_ITERATIONS=2 npx tsx run-bench.ts | tee benchmark-results.md
 
-      - name: 💾 Save results to history (last 3 runs)
-        # Commits timestamped results file to benchmark/history/
-        # Automatically prunes files beyond the 3 most recent
+      - name: Save results to history (last 3 runs)
         run: |
           mkdir -p benchmark/history
           DATE=$(date +%Y-%m-%d-%H%M%S)
           cp benchmark/benchmark-results.md "benchmark/history/${DATE}.md"
 
-      - name: 🌍 Generate GitHub Pages site
-        # Builds an HTML page showing latest results + history
-        run: |
-          mkdir -p gh-pages
-          node benchmark/generate-pages.ts
+      - name: Generate GitHub Pages site (Purity report app)
+        # Injects benchmark JSON into the Vite-built Purity report app
+        run: npx tsx benchmark/generate-pages.ts
 
-      - name: 📤 Upload Pages artifact
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: gh-pages
 
-      - name: 🌐 Deploy to GitHub Pages
-        # Publishes to https://koalafacts.github.io/Purity/
+      - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
 
-      - name: 📝 Commit history to repository
-        # Saves results file so future runs can show trends
+      - name: Commit history to repository
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add benchmark/history/
+          git add benchmark/history/ benchmark/benchmark-results.md
           git commit -m "bench: record results $(date +%Y-%m-%d)" || true
           git push || true

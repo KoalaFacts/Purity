@@ -2,7 +2,7 @@ import { mount } from 'svelte';
 import ComputedChainApp from './ComputedChainApp.svelte';
 
 const handle = mount(ComputedChainApp, { target: document.getElementById('app')! }) as {
-	setup(levels?: number): void;
+  setup(levels?: number): void;
 };
 
 document.getElementById('setup-10')?.addEventListener('click', () => handle.setup(10));

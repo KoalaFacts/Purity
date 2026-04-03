@@ -2,7 +2,7 @@ import { mount } from 'svelte';
 import TickerApp from './TickerApp.svelte';
 
 const handle = mount(TickerApp, { target: document.getElementById('app')! }) as {
-	runFrames(count: number): void;
+  runFrames(count: number): void;
 };
 
 document.getElementById('run-10')?.addEventListener('click', () => handle.runFrames(10));

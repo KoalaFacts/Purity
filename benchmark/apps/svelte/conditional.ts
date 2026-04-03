@@ -2,7 +2,7 @@ import { mount } from 'svelte';
 import ConditionalApp from './ConditionalApp.svelte';
 
 const handle = mount(ConditionalApp, { target: document.getElementById('app')! }) as {
-	populate(count?: number): void;
+  populate(count?: number): void;
 };
 
 document.getElementById('populate-10')?.addEventListener('click', () => handle.populate(10));

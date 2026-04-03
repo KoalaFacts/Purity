@@ -2,7 +2,7 @@ import { mount } from 'svelte';
 import DiamondApp from './DiamondApp.svelte';
 
 const handle = mount(DiamondApp, { target: document.getElementById('app')! }) as {
-	setup(count?: number): void;
+  setup(count?: number): void;
 };
 
 document.getElementById('setup-10')?.addEventListener('click', () => handle.setup(10));

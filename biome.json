@@ -31,6 +31,9 @@
       "includes": ["benchmark/**"],
       "linter": {
         "rules": {
+          "correctness": {
+            "noUnusedVariables": "off"
+          },
           "a11y": {
             "useValidAnchor": "off",
             "useAnchorContent": "off",
@@ -44,6 +47,6 @@
     }
   ],
   "files": {
-    "includes": ["**", "!!**/dist", "!!**/node_modules"]
+    "includes": ["**", "!!**/dist", "!!**/node_modules", "!!gh-pages"]
   }
 }

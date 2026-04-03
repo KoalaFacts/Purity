@@ -1,4 +1,11 @@
-import { compute, each, html, state, watch } from '@purity/core';
+// Shopping cart benchmark — Purity idiomatic version.
+// Uses: state, compute, each, html, mount. Zero vanilla JS for UI wiring.
+
+import { compute, each, html, mount, state } from '@purity/core';
+
+// ---------------------------------------------------------------------------
+// Data
+// ---------------------------------------------------------------------------
 
 interface CartItem {
   id: number;
@@ -36,31 +43,104 @@ function randomItems(n: number): CartItem[] {
   return items;
 }
 
-export function createCartApp(tbody: HTMLElement) {
-  const cart = state<CartItem[]>([]);
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
 
-  const itemCount = compute(() => cart().reduce((s, i) => s + i.qty, 0));
-  const subtotal = compute(() => cart().reduce((s, i) => s + i.price * i.qty, 0));
-  const tax = compute(() => subtotal() * 0.08);
-  const total = compute(() => subtotal() + tax());
+const cart = state<CartItem[]>([]);
 
-  watch(() => {
-    document.getElementById('item-count')!.textContent = String(itemCount());
-  });
-  watch(() => {
-    document.getElementById('subtotal')!.textContent = subtotal().toFixed(2);
-  });
-  watch(() => {
-    document.getElementById('tax')!.textContent = tax().toFixed(2);
-  });
-  watch(() => {
-    document.getElementById('total')!.textContent = total().toFixed(2);
-  });
+// ---------------------------------------------------------------------------
+// Computed
+// ---------------------------------------------------------------------------
 
-  const fragment = each(
-    () => cart(),
-    (item: CartItem) =>
-      html`
+const itemCount = compute(() => cart().reduce((s, i) => s + i.qty, 0));
+const subtotal = compute(() => cart().reduce((s, i) => s + i.price * i.qty, 0));
+const tax = compute(() => subtotal() * 0.08);
+const total = compute(() => subtotal() + tax());
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+
+function addItems(n: number) {
+  cart([...cart(), ...randomItems(n)]);
+}
+
+function incrementAll() {
+  cart(cart().map((i) => ({ ...i, qty: i.qty + 1 })));
+}
+
+function removeFirst() {
+  cart(cart().slice(1));
+}
+
+function clearCart() {
+  cart([]);
+}
+
+// ---------------------------------------------------------------------------
+// Button bar component
+// ---------------------------------------------------------------------------
+
+function hBtn(id: string, label: string, handler: () => void) {
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+}
+
+function ButtonBar() {
+  return html`
+    <div class="jumbotron"><div class="row">
+      <div class="col-md-6"><h1>Purity (Cart)</h1></div>
+      <div class="col-md-6"><div class="row">
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="add-1" @click=${() => addItems(1)}>Add 1 Item</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="add-100" @click=${() => addItems(100)}>Add 100 Items</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="add-1000" @click=${() => addItems(1000)}>Add 1000 Items</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="increment-all" @click=${incrementAll}>+1 All Quantities</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="remove-first" @click=${removeFirst}>Remove First</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="clear-cart" @click=${clearCart}>Clear Cart</button>
+        </div>
+        ${hBtn('add-10', 'Add 10', () => addItems(10))}
+        ${hBtn('add-10k', 'Add 10k', () => addItems(10000))}
+      </div></div>
+    </div></div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Stats display
+// ---------------------------------------------------------------------------
+
+function Stats() {
+  return html`
+    <div id="stats">
+      <span id="item-count">${() => String(itemCount())}</span> items |
+      Subtotal: $<span id="subtotal">${() => subtotal().toFixed(2)}</span> |
+      Tax: $<span id="tax">${() => tax().toFixed(2)}</span> |
+      Total: $<span id="total">${() => total().toFixed(2)}</span>
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Row rendering
+// ---------------------------------------------------------------------------
+
+const tbody = document.getElementById('tbody')!;
+
+const fragment = each(
+  () => cart(),
+  (item: CartItem) =>
+    html`
       <tr>
         <td>${item.name}</td>
         <td>$${String(item.price)}</td>
@@ -68,26 +148,13 @@ export function createCartApp(tbody: HTMLElement) {
         <td>$${String(item.price * item.qty)}</td>
       </tr>
     ` as unknown as HTMLTableRowElement,
-    (item: CartItem) => item.id,
-  );
-  tbody.appendChild(fragment);
+  (item: CartItem) => item.id,
+);
+tbody.appendChild(fragment);
 
-  document.getElementById('add-1')!.addEventListener('click', () => {
-    cart([...cart(), ...randomItems(1)]);
-  });
-  document.getElementById('add-100')!.addEventListener('click', () => {
-    cart([...cart(), ...randomItems(100)]);
-  });
-  document.getElementById('add-1000')!.addEventListener('click', () => {
-    cart([...cart(), ...randomItems(1000)]);
-  });
-  document.getElementById('increment-all')!.addEventListener('click', () => {
-    cart(cart().map((i) => ({ ...i, qty: i.qty + 1 })));
-  });
-  document.getElementById('remove-first')!.addEventListener('click', () => {
-    cart(cart().slice(1));
-  });
-  document.getElementById('clear-cart')!.addEventListener('click', () => {
-    cart([]);
-  });
-}
+// ---------------------------------------------------------------------------
+// Mount
+// ---------------------------------------------------------------------------
+
+mount(ButtonBar, document.getElementById('app')!);
+mount(Stats, document.getElementById('stats-container')!);

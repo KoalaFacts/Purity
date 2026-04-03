@@ -7,6 +7,7 @@ export function createSortApp(
   sortIdBtn: HTMLElement,
   sortIdDescBtn: HTMLElement,
   sortLabelBtn: HTMLElement,
+  populate10kBtn: HTMLElement,
 ) {
   const vueApp = createApp(SortApp);
   const vm = vueApp.mount(tbody) as any;
@@ -29,5 +30,8 @@ export function createSortApp(
   });
   sortLabelBtn.addEventListener('click', () => {
     vm.sortLabelAsc();
+  });
+  populate10kBtn.addEventListener('click', () => {
+    vm.populate(10000);
   });
 }

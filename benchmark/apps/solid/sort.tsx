@@ -80,6 +80,7 @@ export function createSortApp(
   sortIdBtn: HTMLElement,
   sortIdDescBtn: HTMLElement,
   sortLabelBtn: HTMLElement,
+  populate10kBtn: HTMLElement,
 ) {
   const [data, setData] = createSignal<Item[]>([]);
   const [sortMode, setSortMode] = createSignal<SortMode>('none');
@@ -102,6 +103,10 @@ export function createSortApp(
 
   populateBtn.addEventListener('click', () => {
     setData(buildData(1000));
+    setSortMode('none');
+  });
+  populate10kBtn.addEventListener('click', () => {
+    setData(buildData(10000));
     setSortMode('none');
   });
 

@@ -2,7 +2,7 @@ import { mount } from 'svelte';
 import SortApp from './SortApp.svelte';
 
 interface SortHandle {
-  populate(): void;
+  populate(n?: number): void;
   sortIdAsc(): void;
   sortIdDesc(): void;
   sortLabelAsc(): void;
@@ -14,6 +14,7 @@ export function createSortApp(
   sortIdBtn: HTMLElement,
   sortIdDescBtn: HTMLElement,
   sortLabelBtn: HTMLElement,
+  populate10kBtn: HTMLElement,
 ) {
   let handle!: SortHandle;
 
@@ -35,6 +36,9 @@ export function createSortApp(
 
   populateBtn.addEventListener('click', () => {
     handle.populate();
+  });
+  populate10kBtn.addEventListener('click', () => {
+    handle.populate(10000);
   });
   sortIdBtn.addEventListener('click', () => {
     handle.sortIdAsc();

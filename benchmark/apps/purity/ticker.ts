@@ -1,4 +1,11 @@
-import { each, html, state } from '@purity/core';
+// Stock ticker benchmark — Purity idiomatic version.
+// Uses: state, each, html, mount. Zero vanilla JS for UI wiring.
+
+import { each, html, mount, state } from '@purity/core';
+
+// ---------------------------------------------------------------------------
+// Data
+// ---------------------------------------------------------------------------
 
 interface Stock {
   id: number;
@@ -85,69 +92,116 @@ function updateRandom(stocks: Stock[]): Stock[] {
   return next;
 }
 
-export function createTickerApp(
-  tbody: HTMLElement,
-  frameCountEl: HTMLElement,
-  startBtn: HTMLElement,
-  stopBtn: HTMLElement,
-  run500Btn: HTMLElement,
-) {
-  const stocks = state<Stock[]>(makeStocks());
-  let rafId = 0;
-  let frames = 0;
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
 
-  const fragment = each(
-    () => stocks(),
-    (stock: Stock) => {
-      const tr = html`
-        <tr class="${stock.change >= 0 ? 'positive' : 'negative'}">
-          <td>${stock.symbol}</td>
-          <td>${stock.price.toFixed(2)}</td>
-          <td>${stock.change.toFixed(2)}%</td>
-          <td>${String(stock.volume)}</td>
-        </tr>
-      ` as unknown as HTMLTableRowElement;
-      return tr;
-    },
-    (stock: Stock) => stock.id,
-  );
-  tbody.appendChild(fragment);
+const stocks = state<Stock[]>(makeStocks());
+const frameMsg = state('Frames: 0');
 
-  function tick() {
-    stocks(updateRandom(stocks()));
-    frames++;
-    frameCountEl.textContent = `Frames: ${frames}`;
-    rafId = requestAnimationFrame(tick);
-  }
+let rafId = 0;
 
-  startBtn.addEventListener('click', () => {
-    if (rafId) return;
-    rafId = requestAnimationFrame(tick);
-  });
+// ---------------------------------------------------------------------------
+// Ticker loop
+// ---------------------------------------------------------------------------
 
-  stopBtn.addEventListener('click', () => {
-    cancelAnimationFrame(rafId);
-    rafId = 0;
-  });
-
-  run500Btn.addEventListener('click', () => {
-    cancelAnimationFrame(rafId);
-    rafId = 0;
-    frames = 0;
-    const t0 = performance.now();
-    let count = 0;
-
-    function step() {
-      stocks(updateRandom(stocks()));
-      count++;
-      if (count < 500) {
-        rafId = requestAnimationFrame(step);
-      } else {
-        rafId = 0;
-        const elapsed = performance.now() - t0;
-        frameCountEl.textContent = `Frames: 500 | ${elapsed.toFixed(1)}ms`;
-      }
-    }
-    rafId = requestAnimationFrame(step);
-  });
+function tick() {
+  stocks(updateRandom(stocks()));
+  rafId = requestAnimationFrame(tick);
 }
+
+function startTicker() {
+  if (rafId) return;
+  rafId = requestAnimationFrame(tick);
+}
+
+function stopTicker() {
+  cancelAnimationFrame(rafId);
+  rafId = 0;
+}
+
+function run500() {
+  cancelAnimationFrame(rafId);
+  rafId = 0;
+  let count = 0;
+  const t0 = performance.now();
+
+  function step() {
+    stocks(updateRandom(stocks()));
+    count++;
+    if (count < 500) {
+      rafId = requestAnimationFrame(step);
+    } else {
+      rafId = 0;
+      const elapsed = performance.now() - t0;
+      frameMsg(`Frames: 500 | ${elapsed.toFixed(1)}ms`);
+    }
+  }
+  rafId = requestAnimationFrame(step);
+}
+
+// ---------------------------------------------------------------------------
+// Button bar component
+// ---------------------------------------------------------------------------
+
+function hBtn(id: string, label: string, handler: () => void) {
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+}
+
+function ButtonBar() {
+  return html`
+    <div class="jumbotron"><div class="row">
+      <div class="col-md-6"><h1>Purity (Ticker)</h1></div>
+      <div class="col-md-6"><div class="row">
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="start" @click=${startTicker}>Start Ticker</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="stop" @click=${stopTicker}>Stop Ticker</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="run-500" @click=${run500}>Run 500 Frames</button>
+        </div>
+        ${hBtn('run-500-hidden', 'Run 500', run500)}
+      </div></div>
+    </div></div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Frame counter display
+// ---------------------------------------------------------------------------
+
+function FrameCount() {
+  return html`<div id="frame-count">${() => frameMsg()}</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Row rendering
+// ---------------------------------------------------------------------------
+
+const tbody = document.getElementById('tbody')!;
+
+const fragment = each(
+  () => stocks(),
+  (stock: Stock) => {
+    const tr = html`
+      <tr :class=${stock.change >= 0 ? 'positive' : 'negative'}>
+        <td>${stock.symbol}</td>
+        <td>${stock.price.toFixed(2)}</td>
+        <td>${stock.change.toFixed(2)}%</td>
+        <td>${String(stock.volume)}</td>
+      </tr>
+    ` as unknown as HTMLTableRowElement;
+    return tr;
+  },
+  (stock: Stock) => stock.id,
+);
+tbody.appendChild(fragment);
+
+// ---------------------------------------------------------------------------
+// Mount
+// ---------------------------------------------------------------------------
+
+mount(ButtonBar, document.getElementById('app')!);
+mount(FrameCount, document.getElementById('frame-count-container')!);

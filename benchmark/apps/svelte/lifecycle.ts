@@ -4,7 +4,7 @@ import LifecycleApp from './LifecycleApp.svelte';
 interface LifecycleHandle {
   create(n: number): void;
   destroyAll(): void;
-  replace(): void;
+  replace(n?: number): void;
 }
 
 export function createLifecycleApp(container: HTMLElement) {
@@ -36,5 +36,11 @@ export function createLifecycleApp(container: HTMLElement) {
   });
   document.getElementById('create-100')!.addEventListener('click', () => {
     handle.create(100);
+  });
+  document.getElementById('replace-100')!.addEventListener('click', () => {
+    handle.replace(100);
+  });
+  document.getElementById('replace-10k')!.addEventListener('click', () => {
+    handle.replace(10000);
   });
 }

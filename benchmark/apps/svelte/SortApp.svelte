@@ -85,8 +85,8 @@ const _sorted: Item[] = $derived.by(() => {
 });
 
 props.onHandle({
-  populate() {
-    data = buildData(1000);
+  populate(n: number = 1000) {
+    data = buildData(n);
     sortMode = 'none';
   },
   sortIdAsc() {

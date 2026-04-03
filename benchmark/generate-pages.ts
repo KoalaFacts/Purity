@@ -1,7 +1,12 @@
 #!/usr/bin/env node
-// Generates the GitHub Pages benchmark dashboard from markdown results.
+// Generates the GitHub Pages benchmark dashboard.
+//
+// 1. Parses benchmark-results.md + history/ into JSON
+// 2. Injects the JSON into the Vite-built Purity report app
+// 3. Outputs gh-pages/index.html
 
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -13,37 +18,44 @@ import { join } from 'node:path';
 
 const historyDir = 'benchmark/history';
 const resultsFile = 'benchmark/benchmark-results.md';
-const outFile = 'gh-pages/index.html';
+const distDir = 'benchmark/dist';
+const outDir = 'gh-pages';
 
-// --- Parse markdown results into structured data ---
-// The table format from run-bench.ts is:
-// | Category | Operation | Purity | Solid | Svelte | Vue | Winner |
-function parseResults(md) {
-  const lines = md.split('\n').filter((l) => l.startsWith('|'));
-  if (lines.length < 3) return []; // header + separator + at least 1 row
+// ---------------------------------------------------------------------------
+// Parse speed results: | Category | Operation | Purity | Solid | Svelte | Vue | Winner |
+// ---------------------------------------------------------------------------
 
-  // Detect column count from header
+function parseSpeedResults(md: string) {
+  // Only parse the ## Full Results section (stop at ## Memory Results)
+  const fullIdx = md.indexOf('## Full Results');
+  if (fullIdx === -1) return [];
+  let section = md.slice(fullIdx);
+  const memIdx = section.indexOf('## Memory Results');
+  if (memIdx !== -1) section = section.slice(0, memIdx);
+
+  const lines = section.split('\n').filter((l) => l.startsWith('|'));
+  if (lines.length < 3) return [];
+
   const headerCells = lines[0]
     .split('|')
     .map((c) => c.trim())
     .filter(Boolean);
-
-  // Support both old 5-column (no Category, no Vue) and new 7-column format
   const hasCategory = headerCells.length >= 6;
 
+  let lastCategory = '';
   return lines
     .slice(2)
     .map((line) => {
-      const cells = line
-        .split('|')
-        .map((c) => c.trim())
-        .filter(Boolean);
+      // Split by | and drop leading/trailing empty entries (from | at start/end)
+      const raw = line.split('|').map((c) => c.trim());
+      const cells = raw.slice(1, raw.length - 1); // drop first/last empty strings
 
       if (hasCategory) {
-        // New format: Category | Operation | Purity | Solid | Svelte | Vue | Winner
         if (cells.length < 7) return null;
+        const cat = cells[0] || lastCategory;
+        if (cells[0]) lastCategory = cells[0];
         return {
-          category: cells[0],
+          category: cat,
           op: cells[1],
           purity: parseFloat(cells[2]),
           solid: parseFloat(cells[3]),
@@ -52,7 +64,6 @@ function parseResults(md) {
           winner: cells[6].replace(/\*/g, ''),
         };
       }
-      // Legacy 5-column format: Operation | Purity | Solid | Svelte | Winner
       if (cells.length < 5) return null;
       return {
         category: '',
@@ -67,83 +78,15 @@ function parseResults(md) {
     .filter(Boolean);
 }
 
-// --- Build HTML table from parsed results ---
-function resultsToTable(rows) {
-  if (!rows.length) return '<p>No results available.</p>';
+// ---------------------------------------------------------------------------
+// Parse memory results
+// ---------------------------------------------------------------------------
 
-  const hasVue = rows.some((r) => !isNaN(r.vue));
-  const hasCategory = rows.some((r) => r.category);
-  const fws = hasVue ? ['Purity', 'Solid', 'Svelte', 'Vue'] : ['Purity', 'Solid', 'Svelte'];
-
-  const wins = {};
-  for (const fw of fws) wins[fw] = 0;
-  for (const r of rows) if (wins[r.winner] !== undefined) wins[r.winner]++;
-
-  let html = '<div class="scoreboard">';
-  for (const [fw, count] of Object.entries(wins)) {
-    const cls = fw.toLowerCase();
-    html += `<div class="score-card ${cls}"><span class="score-num">${count}</span><span class="score-label">${fw}</span></div>`;
-  }
-  html += '</div>';
-
-  html += '<table class="results"><thead><tr>';
-  if (hasCategory) html += '<th>Category</th>';
-  html += '<th>Operation</th>';
-  for (const fw of fws) html += `<th>${fw}</th>`;
-  html += '<th>Winner</th>';
-  html += '</tr></thead><tbody>';
-
-  for (const r of rows) {
-    const vals = fws.map((fw) => r[fw.toLowerCase()]).filter((v) => !isNaN(v));
-    const best = vals.length ? Math.min(...vals) : 0;
-
-    const cell = (ms, fw) => {
-      if (isNaN(ms)) return '<td class="ok">—</td>';
-      const isBest = ms === best;
-      const isWinner = fw === r.winner;
-      const ratio = best > 0 ? ms / best : 1;
-      let cls = '';
-      if (isBest || isWinner) cls = 'best';
-      else if (ratio > 2) cls = 'slow';
-      else cls = 'ok';
-      return `<td class="${cls}">${ms.toFixed(1)}ms</td>`;
-    };
-
-    const winnerCls = r.winner.toLowerCase();
-    html += '<tr>';
-    if (hasCategory) html += `<td class="op-name">${r.category}</td>`;
-    html += `<td class="op-name">${r.op}</td>`;
-    for (const fw of fws) html += cell(r[fw.toLowerCase()], fw);
-    html += `<td class="winner-cell ${winnerCls}">${r.winner}</td>`;
-    html += '</tr>';
-  }
-
-  html += '</tbody></table>';
-  return html;
-}
-
-// --- Manage history files ---
-const historyFiles = existsSync(historyDir)
-  ? readdirSync(historyDir)
-      .filter((f) => f.endsWith('.md'))
-      .sort()
-      .reverse()
-  : [];
-
-// Prune to 3 most recent
-for (let i = 3; i < historyFiles.length; i++) {
-  unlinkSync(join(historyDir, historyFiles[i]));
-}
-
-const recentFiles = historyFiles.slice(0, 3);
-
-// --- Parse memory results ---
-function parseMemoryResults(md) {
-  // Find the ## Memory Results section
+function parseMemoryResults(md: string) {
   const memIdx = md.indexOf('## Memory Results');
   if (memIdx === -1) return [];
-  const memSection = md.slice(memIdx);
-  const lines = memSection.split('\n').filter((l) => l.startsWith('|'));
+  const section = md.slice(memIdx);
+  const lines = section.split('\n').filter((l) => l.startsWith('|'));
   if (lines.length < 3) return [];
 
   return lines
@@ -153,7 +96,6 @@ function parseMemoryResults(md) {
         .split('|')
         .map((c) => c.trim())
         .filter(Boolean);
-      // Operation | Purity (used) | Solid (used) | Svelte (used) | Vue (used) | Purity (retained) | Solid (retained) | Svelte (retained) | Vue (retained) | Best Cleanup
       if (cells.length < 10) return null;
       return {
         op: cells[0],
@@ -171,343 +113,69 @@ function parseMemoryResults(md) {
     .filter(Boolean);
 }
 
-function memoryToTable(rows) {
-  if (!rows.length) return '';
-  const fws = ['Purity', 'Solid', 'Svelte', 'Vue'];
+// ---------------------------------------------------------------------------
+// Manage history
+// ---------------------------------------------------------------------------
 
-  let html = '<table class="results"><thead><tr>';
-  html += '<th rowspan="2">Operation</th>';
-  html += '<th colspan="4">Heap Used (after create)</th>';
-  html += '<th colspan="4">Heap Retained (after destroy)</th>';
-  html += '<th rowspan="2">Best Cleanup</th>';
-  html += '</tr><tr>';
-  for (const fw of fws) html += `<th>${fw}</th>`;
-  for (const fw of fws) html += `<th>${fw}</th>`;
-  html += '</tr></thead><tbody>';
+const historyFiles = existsSync(historyDir)
+  ? readdirSync(historyDir)
+      .filter((f) => f.endsWith('.md'))
+      .sort()
+      .reverse()
+  : [];
 
-  for (const r of rows) {
-    // Best used = lowest creation overhead
-    const usedVals = [r.purityUsed, r.solidUsed, r.svelteUsed, r.vueUsed].filter(
-      (v) => !Number.isNaN(v),
-    );
-    const bestUsed = usedVals.length ? Math.min(...usedVals) : 0;
-    // Best retained = closest to 0 (cleanest cleanup)
-    const retVals = [r.purityRetained, r.solidRetained, r.svelteRetained, r.vueRetained].filter(
-      (v) => !Number.isNaN(v),
-    );
-    const bestRet = retVals.length ? Math.min(...retVals.map((v) => Math.abs(v))) : 0;
-
-    const memCell = (val, best, isRetained) => {
-      if (Number.isNaN(val)) return '<td class="ok">&mdash;</td>';
-      const cmp = isRetained ? Math.abs(val) : val;
-      const isBest = cmp === best;
-      const cls = isBest ? 'best' : cmp > best * 2 ? 'slow' : 'ok';
-      return `<td class="${cls}">${val.toFixed(1)}MB</td>`;
-    };
-
-    const cleanupCls = r.bestCleanup.toLowerCase();
-    html += '<tr>';
-    html += `<td class="op-name">${r.op}</td>`;
-    html += memCell(r.purityUsed, bestUsed, false);
-    html += memCell(r.solidUsed, bestUsed, false);
-    html += memCell(r.svelteUsed, bestUsed, false);
-    html += memCell(r.vueUsed, bestUsed, false);
-    html += memCell(r.purityRetained, bestRet, true);
-    html += memCell(r.solidRetained, bestRet, true);
-    html += memCell(r.svelteRetained, bestRet, true);
-    html += memCell(r.vueRetained, bestRet, true);
-    html += `<td class="winner-cell ${cleanupCls}">${r.bestCleanup}</td>`;
-    html += '</tr>';
-  }
-
-  html += '</tbody></table>';
-  return html;
+// Prune to 3 most recent
+for (let i = 3; i < historyFiles.length; i++) {
+  unlinkSync(join(historyDir, historyFiles[i]));
 }
 
-// --- Build current results ---
+const recentFiles = historyFiles.slice(0, 3);
+
+// ---------------------------------------------------------------------------
+// Build data payload
+// ---------------------------------------------------------------------------
+
 const currentMd = readFileSync(resultsFile, 'utf8');
-const currentRows = parseResults(currentMd);
-const currentTable = resultsToTable(currentRows);
-const currentMemRows = parseMemoryResults(currentMd);
-const currentMemTable = memoryToTable(currentMemRows);
+const benchData = {
+  speed: parseSpeedResults(currentMd),
+  memory: parseMemoryResults(currentMd),
+  history: recentFiles.map((f) => {
+    const md = readFileSync(join(historyDir, f), 'utf8');
+    const date = f
+      .replace('.md', '')
+      .replace(/(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})(\d{2})/, '$1-$2-$3 $4:$5:$6');
+    return {
+      date,
+      speed: parseSpeedResults(md),
+      memory: parseMemoryResults(md),
+    };
+  }),
+};
 
-// --- Build previous runs ---
-let previousHtml = '';
-for (const f of recentFiles) {
-  const md = readFileSync(join(historyDir, f), 'utf8');
-  const rows = parseResults(md);
-  const memRows = parseMemoryResults(md);
-  const date = f.replace('.md', '');
-  const display = date.replace(
-    /(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})(\d{2})/,
-    '$1-$2-$3 $4:$5:$6',
-  );
-  const memHtml = memoryToTable(memRows);
-  const memSection = memHtml
-    ? `<h3 style="margin-top:1rem;font-size:.95rem">Memory</h3>${memHtml}`
-    : '';
-  previousHtml += `<details class="history-run"><summary>${display}</summary>${resultsToTable(rows)}${memSection}</details>\n`;
+// ---------------------------------------------------------------------------
+// Inject data into built report page
+// ---------------------------------------------------------------------------
+
+const reportHtml = readFileSync(join(distDir, 'apps/purity/report.html'), 'utf8');
+
+// Replace the placeholder JSON in the <script id="bench-data"> tag
+const injected = reportHtml.replace(
+  /(<script id="bench-data" type="application\/json">)([\s\S]*?)(<\/script>)/,
+  `$1${JSON.stringify(benchData)}$3`,
+);
+
+mkdirSync(outDir, { recursive: true });
+writeFileSync(join(outDir, 'index.html'), injected);
+
+// Copy assets
+const assetsDir = join(distDir, 'assets');
+if (existsSync(assetsDir)) {
+  mkdirSync(join(outDir, 'assets'), { recursive: true });
+  for (const f of readdirSync(assetsDir)) {
+    cpSync(join(assetsDir, f), join(outDir, 'assets', f));
+  }
 }
 
-// --- Generate HTML ---
-const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Purity Benchmarks</title>
-  <style>
-    :root {
-      --purple: #6c5ce7;
-      --purple-light: #a29bfe;
-      --green: #00b894;
-      --green-bg: #e6f9f3;
-      --red: #d63031;
-      --red-bg: #fde8e8;
-      --orange: #e17055;
-      --gray-50: #f8f9fa;
-      --gray-100: #f1f3f5;
-      --gray-200: #e9ecef;
-      --gray-400: #ced4da;
-      --gray-600: #868e96;
-      --gray-800: #343a40;
-      --gray-900: #212529;
-      --radius: 10px;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      max-width: 960px;
-      margin: 0 auto;
-      padding: 2.5rem 1.5rem;
-      background: var(--gray-50);
-      color: var(--gray-900);
-      line-height: 1.5;
-    }
-
-    header {
-      text-align: center;
-      margin-bottom: 2.5rem;
-    }
-
-    h1 {
-      font-size: 2rem;
-      font-weight: 800;
-      color: var(--purple);
-      letter-spacing: -0.02em;
-    }
-
-    header p {
-      color: var(--gray-600);
-      margin-top: .4rem;
-      font-size: .95rem;
-    }
-
-    h2 {
-      font-size: 1.15rem;
-      font-weight: 700;
-      color: var(--gray-800);
-      margin-bottom: 1rem;
-    }
-
-    .section { margin-bottom: 2.5rem; }
-
-    /* Scoreboard */
-    .scoreboard {
-      display: flex;
-      gap: .75rem;
-      margin-bottom: 1.25rem;
-    }
-
-    .score-card {
-      flex: 1;
-      background: white;
-      border-radius: var(--radius);
-      padding: 1rem;
-      text-align: center;
-      box-shadow: 0 1px 3px rgba(0,0,0,.06);
-      border: 2px solid var(--gray-200);
-      display: flex;
-      flex-direction: column;
-      gap: .2rem;
-    }
-
-    .score-card.purity { border-color: var(--purple-light); background: linear-gradient(135deg, #f8f7ff, white); }
-    .score-card.solid  { border-color: #74b9ff; background: linear-gradient(135deg, #f0f8ff, white); }
-    .score-card.svelte { border-color: #ff7675; background: linear-gradient(135deg, #fff5f5, white); }
-    .score-card.vue    { border-color: #55efc4; background: linear-gradient(135deg, #f0fff9, white); }
-
-    .score-num {
-      font-size: 2rem;
-      font-weight: 800;
-      line-height: 1;
-    }
-    .purity .score-num { color: var(--purple); }
-    .solid  .score-num { color: #0984e3; }
-    .svelte .score-num { color: #d63031; }
-    .vue    .score-num { color: #00b894; }
-
-    .score-label {
-      font-size: .8rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .06em;
-      color: var(--gray-600);
-    }
-
-    /* Results table */
-    .results {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 0;
-      background: white;
-      border-radius: var(--radius);
-      overflow: hidden;
-      box-shadow: 0 1px 3px rgba(0,0,0,.06);
-    }
-
-    .results th {
-      background: var(--gray-800);
-      color: white;
-      padding: .65rem .85rem;
-      text-align: left;
-      font-size: .78rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-    }
-
-    .results th:first-child { border-radius: var(--radius) 0 0 0; }
-    .results th:last-child  { border-radius: 0 var(--radius) 0 0; }
-
-    .results td {
-      padding: .55rem .85rem;
-      border-bottom: 1px solid var(--gray-100);
-      font-size: .88rem;
-    }
-
-    .results tbody tr:last-child td { border-bottom: none; }
-    .results tbody tr:hover { background: var(--gray-50); }
-
-    .op-name {
-      font-weight: 600;
-      color: var(--gray-800);
-    }
-
-    .results td.best {
-      color: var(--green);
-      font-weight: 700;
-      background: var(--green-bg);
-      font-variant-numeric: tabular-nums;
-    }
-
-    .results td.ok {
-      color: var(--gray-600);
-      font-variant-numeric: tabular-nums;
-    }
-
-    .results td.slow {
-      color: var(--red);
-      font-variant-numeric: tabular-nums;
-    }
-
-    .winner-cell {
-      font-weight: 700;
-    }
-    .winner-cell.purity { color: var(--purple); }
-    .winner-cell.solid  { color: #0984e3; }
-    .winner-cell.svelte { color: #d63031; }
-    .winner-cell.vue    { color: #00b894; }
-
-    /* History */
-    .history-run {
-      margin-bottom: .5rem;
-    }
-
-    .history-run summary {
-      cursor: pointer;
-      padding: .65rem 1rem;
-      background: white;
-      border-radius: var(--radius);
-      font-size: .88rem;
-      font-weight: 500;
-      color: var(--gray-800);
-      box-shadow: 0 1px 3px rgba(0,0,0,.06);
-      list-style: none;
-      display: flex;
-      align-items: center;
-      gap: .5rem;
-      transition: background .15s;
-    }
-
-    .history-run summary:hover { background: var(--gray-100); }
-
-    .history-run summary::before {
-      content: '\\25B6';
-      font-size: .65rem;
-      color: var(--gray-400);
-      transition: transform .15s;
-    }
-
-    .history-run[open] summary::before { transform: rotate(90deg); }
-
-    .history-run .scoreboard { margin-top: 1rem; }
-    .history-run .results { margin-bottom: .5rem; }
-
-    /* Footer */
-    footer {
-      text-align: center;
-      padding-top: 1.5rem;
-      border-top: 1px solid var(--gray-200);
-      color: var(--gray-600);
-      font-size: .82rem;
-    }
-
-    footer a { color: var(--purple); text-decoration: none; }
-    footer a:hover { text-decoration: underline; }
-
-    .methodology {
-      margin-top: .75rem;
-      font-size: .78rem;
-      color: var(--gray-400);
-    }
-  </style>
-</head>
-<body>
-  <header>
-    <h1>Purity Benchmarks</h1>
-    <p>Purity vs Solid vs Svelte vs Vue &mdash; automated results from headless Chromium</p>
-  </header>
-
-  <div class="section">
-    <h2>Latest Run</h2>
-    ${currentTable}
-  </div>
-
-  ${
-    currentMemTable
-      ? `<div class="section">
-    <h2>Memory</h2>
-    <p style="color:var(--gray-600);font-size:.85rem;margin-bottom:1rem">Heap delta measured via <code>performance.memory</code> with forced GC. &ldquo;Used&rdquo; = heap after create. &ldquo;Retained&rdquo; = heap after destroy (closer to 0 = better cleanup).</p>
-    ${currentMemTable}
-  </div>`
-      : ''
-  }
-
-  <div class="section">
-    <h2>Previous Runs</h2>
-    ${previousHtml || '<p style="color:var(--gray-600)">No previous runs yet.</p>'}
-  </div>
-
-  <footer>
-    Trigger a new run: <a href="https://github.com/KoalaFacts/Purity/actions">Actions tab &rarr; Benchmark</a>
-    <div class="methodology">Warmup: 3 iterations &middot; Measured: 7 (configurable) &middot; Drop: fastest 1 + slowest 1 &middot; Metric: trimmed median &middot; Framework order randomized per operation</div>
-  </footer>
-</body>
-</html>`;
-
-mkdirSync('gh-pages', { recursive: true });
-writeFileSync(outFile, html);
-console.log(`Generated ${outFile}`);
+console.log(
+  `Generated ${outDir}/index.html (${benchData.speed.length} speed ops, ${benchData.memory.length} memory ops, ${benchData.history.length} history runs)`,
+);

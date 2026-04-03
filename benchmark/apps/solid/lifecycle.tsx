@@ -48,4 +48,10 @@ export function createLifecycleApp(container: HTMLElement) {
   document.getElementById('create-100')!.addEventListener('click', () => {
     setCards(buildCards(100));
   });
+  document.getElementById('replace-100')!.addEventListener('click', () => {
+    setCards(buildCards(100));
+  });
+  document.getElementById('replace-10k')!.addEventListener('click', () => {
+    setCards(buildCards(10000));
+  });
 }

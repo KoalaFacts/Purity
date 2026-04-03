@@ -93,8 +93,8 @@ const sorted = computed(() => {
 });
 
 defineExpose({
-  populate() {
-    data.value = buildData(1000);
+  populate(n = 1000) {
+    data.value = buildData(n);
     sortMode.value = 'none';
   },
   sortIdAsc() {

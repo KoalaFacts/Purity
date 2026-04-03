@@ -5,7 +5,7 @@ import VueBench from './App.vue';
 
 export interface AppHandle {
   run(count: number): void;
-  add(): void;
+  add(count?: number): void;
   update(): void;
   select(id: number): void;
   swapRows(): void;

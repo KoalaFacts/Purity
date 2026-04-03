@@ -80,6 +80,62 @@ interface CompileResult {
   changed: boolean;
 }
 
+/**
+ * Compile html`` templates inside expression sources only (no import rewriting).
+ * Used for recursive compilation of nested templates inside ${...} expressions.
+ */
+function compileNestedTemplates(source: string): string {
+  const parts: string[] = [];
+  let pos = 0;
+  let changed = false;
+
+  while (pos < source.length) {
+    const idx = source.indexOf('html`', pos);
+    if (idx === -1) {
+      parts.push(source.slice(pos));
+      break;
+    }
+
+    if (idx > 0) {
+      const before = source.charCodeAt(idx - 1);
+      if (
+        (before >= 65 && before <= 90) ||
+        (before >= 97 && before <= 122) ||
+        (before >= 48 && before <= 57) ||
+        before === 95
+      ) {
+        parts.push(source.slice(pos, idx + 5));
+        pos = idx + 5;
+        continue;
+      }
+    }
+
+    parts.push(source.slice(pos, idx));
+    const extracted = extractTemplateLiteral(source, idx + 4);
+    if (!extracted) {
+      parts.push('html`');
+      pos = idx + 5;
+      continue;
+    }
+
+    try {
+      const { strings, exprSources } = extracted;
+      const ast = parse(strings);
+      const fnBody = generate(ast);
+      const compiledExprs = exprSources.map((expr) =>
+        expr.includes('html`') ? compileNestedTemplates(expr) : expr,
+      );
+      parts.push(`((${fnBody})([${compiledExprs.join(', ')}], __purity_w__))`);
+      changed = true;
+    } catch {
+      parts.push(source.slice(idx, extracted.end));
+    }
+    pos = extracted.end;
+  }
+
+  return changed ? parts.join('') : source;
+}
+
 function compileTemplates(source: string, _id: string): CompileResult {
   const parts: string[] = [];
   let changed = false;
@@ -123,8 +179,16 @@ function compileTemplates(source: string, _id: string): CompileResult {
       const ast = parse(strings);
       const fnBody = generate(ast);
 
+      // Recursively compile any nested html`` templates inside expressions
+      const compiledExprs = exprSources.map((expr) => {
+        if (expr.includes('html`')) {
+          return compileNestedTemplates(expr);
+        }
+        return expr;
+      });
+
       // Replace html`...` with inline IIFE
-      const compiled = `((${fnBody})([${exprSources.join(', ')}], __purity_w__))`;
+      const compiled = `((${fnBody})([${compiledExprs.join(', ')}], __purity_w__))`;
 
       parts.push(compiled);
       changed = true;
@@ -322,6 +386,16 @@ function extractExpression(source: string, start: number): { source: string; end
       if (ch === 36 && pos + 1 < source.length && source.charCodeAt(pos + 1) === 123) {
         depth++;
         pos += 2;
+        continue;
+      }
+      // Track closing braces inside nested template expressions:
+      // ${...} inside a template literal increments depth, so } must decrement it
+      if (ch === 125) {
+        depth--;
+        if (depth === 0) {
+          return { source: source.slice(start, pos), end: pos + 1 };
+        }
+        pos++;
         continue;
       }
       if (ch === 92) {

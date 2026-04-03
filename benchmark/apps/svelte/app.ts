@@ -5,7 +5,7 @@ import SvelteBench from './App.svelte';
 
 export interface AppHandle {
   run(count: number): void;
-  add(): void;
+  add(count?: number): void;
   update(): void;
   select(id: number): void;
   swapRows(): void;

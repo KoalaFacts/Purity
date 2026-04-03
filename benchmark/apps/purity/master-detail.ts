@@ -1,4 +1,11 @@
-import { compute, each, html, state, when } from '@purity/core';
+// Master-detail benchmark — Purity idiomatic version.
+// Uses: state, compute, each, html, mount, when. Zero vanilla JS for UI wiring.
+
+import { compute, each, html, mount, state, when } from '@purity/core';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 interface Person {
   id: number;
@@ -6,6 +13,10 @@ interface Person {
   email: string;
   bio: string;
 }
+
+// ---------------------------------------------------------------------------
+// Data generation
+// ---------------------------------------------------------------------------
 
 const FIRST = [
   'Alice',
@@ -69,75 +80,127 @@ function generatePersons(count: number): Person[] {
   return persons;
 }
 
-export function createMasterDetailApp(
-  listPanel: HTMLElement,
-  detailPanel: HTMLElement,
-  populateBtn: HTMLElement,
-  selectFirstBtn: HTMLElement,
-  selectLastBtn: HTMLElement,
-  selectNoneBtn: HTMLElement,
-  cycle10Btn: HTMLElement,
-) {
-  const persons = state<Person[]>([]);
-  const selectedId = state<number | null>(null);
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
 
-  const selectedPerson = compute(() => {
-    const id = selectedId();
-    if (id === null) return null;
-    return persons().find((p) => p.id === id) ?? null;
-  });
+const persons = state<Person[]>([]);
+const selectedId = state<number | null>(null);
 
-  const listFragment = each(
-    () => persons(),
-    (person: Person) => {
-      const div = html`
-        <div class="list-item" style="padding: 4px 8px; cursor: pointer">
-          ${person.name}
-        </div>
-      ` as unknown as HTMLElement;
-      return div;
-    },
-    (person: Person) => person.id,
-  );
-  listPanel.appendChild(listFragment);
+// ---------------------------------------------------------------------------
+// Computed
+// ---------------------------------------------------------------------------
 
-  const detailFragment = when(
-    () => !!selectedPerson(),
-    () => {
-      const p = selectedPerson()!;
-      return html`
-        <div class="detail">
-          <h2>${p.name}</h2>
-          <p><strong>Email:</strong> ${p.email}</p>
-          <p><strong>Bio:</strong> ${p.bio}</p>
-        </div>
-      ` as unknown as HTMLElement;
-    },
-  );
-  detailPanel.appendChild(detailFragment);
+const selectedPerson = compute(() => {
+  const id = selectedId();
+  if (id === null) return null;
+  return persons().find((p) => p.id === id) ?? null;
+});
 
-  populateBtn.addEventListener('click', () => {
-    persons(generatePersons(100));
-  });
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
 
-  selectFirstBtn.addEventListener('click', () => {
-    const list = persons();
-    if (list.length > 0) selectedId(list[0].id);
-  });
-
-  selectLastBtn.addEventListener('click', () => {
-    const list = persons();
-    if (list.length > 0) selectedId(list[list.length - 1].id);
-  });
-
-  selectNoneBtn.addEventListener('click', () => {
-    selectedId(null);
-  });
-
-  cycle10Btn.addEventListener('click', () => {
-    const list = persons();
-    for (let i = 0; i < 10 && i < list.length; i++) {
-      selectedId(list[i].id);
-    }
-  });
+function populate() {
+  persons(generatePersons(100));
 }
+
+function selectFirst() {
+  const list = persons();
+  if (list.length > 0) selectedId(list[0].id);
+}
+
+function selectLast() {
+  const list = persons();
+  if (list.length > 0) selectedId(list[list.length - 1].id);
+}
+
+function selectNone() {
+  selectedId(null);
+}
+
+function cycle10() {
+  const list = persons();
+  for (let i = 0; i < 10 && i < list.length; i++) {
+    selectedId(list[i].id);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Button bar component
+// ---------------------------------------------------------------------------
+
+function hBtn(id: string, label: string, handler: () => void) {
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+}
+
+function ButtonBar() {
+  return html`
+    <div class="jumbotron"><div class="row">
+      <div class="col-md-6"><h1>Purity (Master-Detail)</h1></div>
+      <div class="col-md-6"><div class="row">
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="populate" @click=${populate}>Load 100 Persons</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="select-first" @click=${selectFirst}>Select First</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="select-last" @click=${selectLast}>Select Last</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="select-none" @click=${selectNone}>Deselect</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="cycle-10" @click=${cycle10}>Cycle 10</button>
+        </div>
+        ${hBtn('populate-hidden', 'Populate', populate)}
+      </div></div>
+    </div></div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// List panel rendering
+// ---------------------------------------------------------------------------
+
+const listPanel = document.getElementById('list-panel')!;
+
+const listFragment = each(
+  () => persons(),
+  (person: Person) =>
+    html`
+      <div class="list-item" style="padding: 4px 8px; cursor: pointer">
+        ${person.name}
+      </div>
+    ` as unknown as HTMLElement,
+  (person: Person) => person.id,
+);
+listPanel.appendChild(listFragment);
+
+// ---------------------------------------------------------------------------
+// Detail panel — reactive via when()
+// ---------------------------------------------------------------------------
+
+const detailPanel = document.getElementById('detail-panel')!;
+
+const detailFragment = when(
+  () => !!selectedPerson(),
+  () => {
+    const p = selectedPerson()!;
+    return html`
+      <div class="detail">
+        <h2>${p.name}</h2>
+        <p><strong>Email:</strong> ${p.email}</p>
+        <p><strong>Bio:</strong> ${p.bio}</p>
+      </div>
+    ` as unknown as HTMLElement;
+  },
+);
+detailPanel.appendChild(detailFragment);
+
+// ---------------------------------------------------------------------------
+// Mount
+// ---------------------------------------------------------------------------
+
+mount(ButtonBar, document.getElementById('app')!);

@@ -81,8 +81,8 @@ props.onHandle({
     data = mkData(count);
     _selectedId = 0;
   },
-  add() {
-    data = data.concat(mkData(1000));
+  add(count: number = 1000) {
+    data = data.concat(mkData(count));
   },
   update() {
     const c = data.slice();

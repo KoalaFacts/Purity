@@ -6,6 +6,7 @@ export function createFilterApp(
   searchInput: HTMLInputElement,
   populateBtn: HTMLElement,
   clearSearchBtn: HTMLElement,
+  populate1kBtn: HTMLElement,
 ) {
   const vueApp = createApp(FilterApp);
   const vm = vueApp.mount(tbody) as any;
@@ -28,5 +29,8 @@ export function createFilterApp(
   clearSearchBtn.addEventListener('click', () => {
     searchInput.value = '';
     vm.clearSearch();
+  });
+  populate1kBtn.addEventListener('click', () => {
+    vm.populate(1000);
   });
 }

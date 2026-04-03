@@ -1,4 +1,11 @@
-import { compute, each, html, state } from '@purity/core';
+// Filter benchmark — Purity idiomatic version.
+// Uses: state, compute, each, html, mount. Zero vanilla JS for UI wiring.
+
+import { compute, each, html, mount, state } from '@purity/core';
+
+// ---------------------------------------------------------------------------
+// Data generation
+// ---------------------------------------------------------------------------
 
 const A = [
   'pretty',
@@ -71,53 +78,93 @@ function buildData(count: number): Item[] {
   return d;
 }
 
-export function createFilterApp(
-  tbody: HTMLElement,
-  searchInput: HTMLInputElement,
-  populateBtn: HTMLElement,
-  clearSearchBtn: HTMLElement,
-) {
-  const data = state<Item[]>([]);
-  const query = state('');
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
 
-  const filtered = compute(() => {
-    const q = query().toLowerCase();
-    if (!q) return data();
-    return data().filter((item) => item.label.toLowerCase().includes(q));
-  });
+const data = state<Item[]>([]);
+const query = state('');
 
-  const fragment = each(
-    () => filtered(),
-    (item: Item) => {
-      const tr = html`
-        <tr>
-          <td class="col-md-1">${String(item.id)}</td>
-          <td class="col-md-4"><a href="#" class="lbl">${item.label}</a></td>
-        </tr>
-      ` as unknown as HTMLTableRowElement;
-      return tr;
-    },
-    (item: Item) => item.id,
-  );
-  tbody.appendChild(fragment);
+// ---------------------------------------------------------------------------
+// Computed
+// ---------------------------------------------------------------------------
 
-  // Event delegation
-  tbody.addEventListener('click', (e) => {
-    const a = (e.target as HTMLElement).closest('a');
-    if (!a) return;
-    e.preventDefault();
-  });
+const filtered = compute(() => {
+  const q = query().toLowerCase();
+  if (!q) return data();
+  return data().filter((item) => item.label.toLowerCase().includes(q));
+});
 
-  populateBtn.addEventListener('click', () => {
-    data(buildData(10000));
-  });
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
 
-  searchInput.addEventListener('input', () => {
-    query(searchInput.value);
-  });
-
-  clearSearchBtn.addEventListener('click', () => {
-    searchInput.value = '';
-    query('');
-  });
+function populate(count: number) {
+  data(buildData(count));
 }
+
+function clearSearch() {
+  query('');
+}
+
+// ---------------------------------------------------------------------------
+// Button bar component
+// ---------------------------------------------------------------------------
+
+function hBtn(id: string, label: string, handler: () => void) {
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+}
+
+function ButtonBar() {
+  return html`
+    <div class="jumbotron"><div class="row">
+      <div class="col-md-6"><h1>Purity (Filter)</h1></div>
+      <div class="col-md-6"><div class="row">
+        <div class="col-sm-6 smallpad">
+          <input type="text" id="search" placeholder="Search..." class="form-control" ::value=${query} />
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="populate" @click=${() => populate(10000)}>Populate 10k</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="clear-search" @click=${clearSearch}>Clear Search</button>
+        </div>
+        ${hBtn('populate-10', 'Populate 10', () => populate(10))}
+        ${hBtn('populate-100', 'Populate 100', () => populate(100))}
+        ${hBtn('populate-1k', 'Populate 1k', () => populate(1000))}
+      </div></div>
+    </div></div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Row rendering
+// ---------------------------------------------------------------------------
+
+const tbody = document.getElementById('tbody')!;
+
+const fragment = each(
+  () => filtered(),
+  (item: Item) =>
+    html`
+      <tr>
+        <td class="col-md-1">${String(item.id)}</td>
+        <td class="col-md-4"><a href="#" class="lbl">${item.label}</a></td>
+      </tr>
+    ` as unknown as HTMLTableRowElement,
+  (item: Item) => item.id,
+);
+tbody.appendChild(fragment);
+
+// Event delegation — prevents default on label clicks
+tbody.addEventListener('click', (e) => {
+  const a = (e.target as HTMLElement).closest('a');
+  if (!a) return;
+  e.preventDefault();
+});
+
+// ---------------------------------------------------------------------------
+// Mount
+// ---------------------------------------------------------------------------
+
+mount(ButtonBar, document.getElementById('app')!);

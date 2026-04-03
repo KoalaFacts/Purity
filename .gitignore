@@ -24,3 +24,6 @@ vite.config.ts.timestamp-*
 
 # Playwright MCP
 .playwright-mcp/
+
+# GitHub Actions
+gh-pages/

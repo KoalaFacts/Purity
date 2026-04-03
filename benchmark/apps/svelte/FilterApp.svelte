@@ -79,8 +79,8 @@ const _filtered: Item[] = $derived(
 );
 
 props.onHandle({
-  populate() {
-    data = buildData(10000);
+  populate(n: number = 10000) {
+    data = buildData(n);
   },
   setQuery(q: string) {
     query = q;

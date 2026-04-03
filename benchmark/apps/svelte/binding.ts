@@ -16,6 +16,7 @@ export function createBindingApp(
   updateAllBtn: HTMLElement,
   clearAllBtn: HTMLElement,
   readAllBtn: HTMLElement,
+  create10kBtn: HTMLElement,
 ) {
   let handle!: BindingHandle;
 
@@ -34,4 +35,5 @@ export function createBindingApp(
   updateAllBtn.addEventListener('click', () => handle.updateAll());
   clearAllBtn.addEventListener('click', () => handle.clearAll());
   readAllBtn.addEventListener('click', () => handle.readAll());
+  create10kBtn.addEventListener('click', () => handle.createFields(10000));
 }

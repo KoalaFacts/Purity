@@ -88,8 +88,8 @@ const filtered = computed(() => {
 });
 
 defineExpose({
-  populate() {
-    data.value = buildData(10000);
+  populate(n = 10000) {
+    data.value = buildData(n);
   },
   setQuery(q: string) {
     query.value = q;

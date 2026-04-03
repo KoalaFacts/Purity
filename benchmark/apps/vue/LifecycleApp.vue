@@ -29,8 +29,8 @@ defineExpose({
   destroyAll() {
     cards.value = [];
   },
-  replace() {
-    cards.value = buildCards(1000);
+  replace(n = 1000) {
+    cards.value = buildCards(n);
   },
 });
 </script>

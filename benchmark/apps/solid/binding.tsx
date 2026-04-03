@@ -15,6 +15,7 @@ export function createBindingApp(
   updateAllBtn: HTMLElement,
   clearAllBtn: HTMLElement,
   readAllBtn: HTMLElement,
+  create10kBtn: HTMLElement,
 ) {
   const [fields, setFields] = createSignal<Field[]>([]);
 
@@ -30,6 +31,7 @@ export function createBindingApp(
 
   create100Btn.addEventListener('click', () => createFields(100));
   create1000Btn.addEventListener('click', () => createFields(1000));
+  create10kBtn.addEventListener('click', () => createFields(10000));
 
   updateAllBtn.addEventListener('click', () => {
     const current = fields();

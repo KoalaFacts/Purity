@@ -34,16 +34,16 @@ watchEffect(() => {
   props.allSelectedEl.textContent = allSelected.value ? 'Yes' : 'No';
 });
 
-function buildItems(): SelectItem[] {
+function buildItems(n: number): SelectItem[] {
   const arr: SelectItem[] = [];
-  for (let i = 0; i < 1000; i++) {
+  for (let i = 0; i < n; i++) {
     arr.push({ id: i + 1, label: `Item ${i + 1}`, selected: false });
   }
   return arr;
 }
 
-function populate() {
-  items.value = buildItems();
+function populate(n = 1000) {
+  items.value = buildItems(n);
 }
 function selectAll() {
   items.value = items.value.map((i) => ({ ...i, selected: true }));

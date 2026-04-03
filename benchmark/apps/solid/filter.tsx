@@ -77,6 +77,9 @@ export function createFilterApp(
   searchInput: HTMLInputElement,
   populateBtn: HTMLElement,
   clearSearchBtn: HTMLElement,
+  populate1kBtn: HTMLElement,
+  populate10Btn: HTMLElement,
+  populate100Btn: HTMLElement,
 ) {
   const [data, setData] = createSignal<Item[]>([]);
   const [query, setQuery] = createSignal('');
@@ -96,6 +99,9 @@ export function createFilterApp(
 
   populateBtn.addEventListener('click', () => {
     setData(buildData(10000));
+  });
+  populate1kBtn.addEventListener('click', () => {
+    setData(buildData(1000));
   });
 
   searchInput.addEventListener('input', () => {

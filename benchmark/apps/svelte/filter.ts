@@ -2,7 +2,7 @@ import { mount } from 'svelte';
 import FilterApp from './FilterApp.svelte';
 
 interface FilterHandle {
-  populate(): void;
+  populate(n?: number): void;
   setQuery(q: string): void;
   clearSearch(): void;
 }
@@ -12,6 +12,7 @@ export function createFilterApp(
   searchInput: HTMLInputElement,
   populateBtn: HTMLElement,
   clearSearchBtn: HTMLElement,
+  populate1kBtn: HTMLElement,
 ) {
   let handle!: FilterHandle;
 
@@ -33,6 +34,10 @@ export function createFilterApp(
 
   populateBtn.addEventListener('click', () => {
     handle.populate();
+  });
+
+  populate1kBtn.addEventListener('click', () => {
+    handle.populate(1000);
   });
 
   searchInput.addEventListener('input', () => {

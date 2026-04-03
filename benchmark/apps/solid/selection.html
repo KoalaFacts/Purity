@@ -15,6 +15,8 @@
         <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="deselect-all">Deselect All</button></div>
         <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="toggle-all">Toggle All</button></div>
         <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="toggle-even">Toggle Even</button></div>
+        <button type="button" id="populate-100" style="display:none">Populate 100</button>
+        <button type="button" id="populate-10k" style="display:none">Populate 10k</button>
       </div></div>
     </div></div>
     <div id="stats">Selected: <span id="count">0</span> / <span id="total">0</span> | All: <span id="all-selected">No</span></div>
@@ -33,6 +35,8 @@
       document.getElementById('deselect-all'),
       document.getElementById('toggle-all'),
       document.getElementById('toggle-even'),
+      document.getElementById('populate-100'),
+      document.getElementById('populate-10k'),
     );
   </script>
 </body>

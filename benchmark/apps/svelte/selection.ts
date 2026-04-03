@@ -2,7 +2,7 @@ import { mount } from 'svelte';
 import SelectionApp from './SelectionApp.svelte';
 
 interface SelectionHandle {
-  populate(): void;
+  populate(n?: number): void;
   selectAll(): void;
   deselectAll(): void;
   toggleAll(): void;
@@ -19,6 +19,8 @@ export function createSelectionApp(
   deselectAllBtn: HTMLElement,
   toggleAllBtn: HTMLElement,
   toggleEvenBtn: HTMLElement,
+  populate100Btn: HTMLElement,
+  populate10kBtn: HTMLElement,
 ) {
   let handle!: SelectionHandle;
 
@@ -39,4 +41,6 @@ export function createSelectionApp(
   deselectAllBtn.addEventListener('click', () => handle.deselectAll());
   toggleAllBtn.addEventListener('click', () => handle.toggleAll());
   toggleEvenBtn.addEventListener('click', () => handle.toggleEven());
+  populate100Btn.addEventListener('click', () => handle.populate(100));
+  populate10kBtn.addEventListener('click', () => handle.populate(10000));
 }

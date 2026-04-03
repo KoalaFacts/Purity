@@ -81,7 +81,7 @@ function mkData(n: number): Row[] {
 
 export interface AppHandle {
   run(count: number): void;
-  add(): void;
+  add(count?: number): void;
   update(): void;
   select(id: number): void;
   swapRows(): void;
@@ -101,8 +101,8 @@ export function createSolidApp(tbody: HTMLElement): AppHandle {
         setSelectedId(0);
       });
     },
-    add() {
-      setData((d) => d.concat(mkData(1000)));
+    add(count = 1000) {
+      setData((d) => d.concat(mkData(count)));
     },
     update() {
       const d = data();

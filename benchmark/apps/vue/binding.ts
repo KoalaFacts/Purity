@@ -9,6 +9,7 @@ export function createBindingApp(
   updateAllBtn: HTMLElement,
   clearAllBtn: HTMLElement,
   readAllBtn: HTMLElement,
+  create10kBtn: HTMLElement,
 ) {
   const vueApp = createApp(BindingApp, { result });
   const vm = vueApp.mount(container) as any;
@@ -18,4 +19,5 @@ export function createBindingApp(
   updateAllBtn.addEventListener('click', () => vm.updateAll());
   clearAllBtn.addEventListener('click', () => vm.clearAll());
   readAllBtn.addEventListener('click', () => vm.readAll());
+  create10kBtn.addEventListener('click', () => vm.createFields(10000));
 }

@@ -82,4 +82,47 @@ describe('@purity/vite-plugin', () => {
     expect(custom.transform('html`<div></div>`', 'app.vue')).not.toBeNull();
     expect(custom.transform('html`<div></div>`', 'app.ts')).toBeNull();
   });
+
+  // --- Nested template expression tests (bug fix) ---
+
+  it('handles nested html template inside expression', () => {
+    const code = `import { html } from '@purity/core';\nconst el = html\`<div>\${ok ? html\`<span>yes</span>\` : ""}</div>\`;`;
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+    expect(result.code).toContain('createElement');
+    expect(result.code).not.toContain('html`');
+  });
+
+  it('handles each() with nested html template in mapFn', () => {
+    const code = `import { html, each } from '@purity/core';\nconst el = html\`<ul>\${each(items, (item) => html\`<li>\${item.name}</li>\`, (item) => item.id)}</ul>\`;`;
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+    expect(result.code).toContain('createElement');
+  });
+
+  it('handles deeply nested templates (3 levels)', () => {
+    const code = `import { html } from '@purity/core';\nconst el = html\`<div>\${show ? html\`<ul>\${items.map(i => html\`<li>\${i}</li>\`)}</ul>\` : ""}</div>\`;`;
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+    expect(result.code).toContain('createElement');
+  });
+
+  it('handles ternary with string literals in expression', () => {
+    const code = `import { html } from '@purity/core';\nconst el = html\`<span class="pill\${() => x() ? ' active' : ''}">\${label}</span>\`;`;
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+    expect(result.code).toContain('pill');
+  });
+
+  it('handles object literal inside expression', () => {
+    const code = `import { html } from '@purity/core';\nconst el = html\`<div>\${{ key: 'val' }}</div>\`;`;
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+  });
+
+  it('handles arrow function with block body in expression', () => {
+    const code = `import { html } from '@purity/core';\nconst el = html\`<div>\${() => { const x = 1; return x; }}</div>\`;`;
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+  });
 });

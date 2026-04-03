@@ -26,17 +26,17 @@ $effect(() => {
   props.allSelectedEl.textContent = allSelected ? 'Yes' : 'No';
 });
 
-function buildItems(): SelectItem[] {
+function buildItems(n: number): SelectItem[] {
   const arr: SelectItem[] = [];
-  for (let i = 0; i < 1000; i++) {
+  for (let i = 0; i < n; i++) {
     arr.push({ id: i + 1, label: `Item ${i + 1}`, selected: false });
   }
   return arr;
 }
 
 props.onHandle({
-  populate() {
-    items = buildItems();
+  populate(n: number = 1000) {
+    items = buildItems(n);
   },
   selectAll() {
     items = items.map((i) => ({ ...i, selected: true }));

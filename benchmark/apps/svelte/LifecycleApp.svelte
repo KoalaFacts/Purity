@@ -22,8 +22,8 @@ props.onHandle({
   destroyAll() {
     _cards = [];
   },
-  replace() {
-    _cards = buildCards(1000);
+  replace(n: number = 1000) {
+    _cards = buildCards(n);
   },
 });
 </script>

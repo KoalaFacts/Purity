@@ -1,4 +1,11 @@
-import { compute, each, html, state } from '@purity/core';
+// Sort benchmark — Purity idiomatic version.
+// Uses: state, compute, each, html, mount. Zero vanilla JS for UI wiring.
+
+import { compute, each, html, mount, state } from '@purity/core';
+
+// ---------------------------------------------------------------------------
+// Data generation
+// ---------------------------------------------------------------------------
 
 const A = [
   'pretty',
@@ -71,61 +78,97 @@ function buildData(count: number): Item[] {
   return d;
 }
 
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
 type SortMode = 'none' | 'id-asc' | 'id-desc' | 'label-asc';
 
-export function createSortApp(
-  tbody: HTMLElement,
-  populateBtn: HTMLElement,
-  sortIdBtn: HTMLElement,
-  sortIdDescBtn: HTMLElement,
-  sortLabelBtn: HTMLElement,
-) {
-  const data = state<Item[]>([]);
-  const sortMode = state<SortMode>('none');
+const data = state<Item[]>([]);
+const sortMode = state<SortMode>('none');
 
-  const sorted = compute(() => {
-    const s = data().slice();
-    const mode = sortMode();
-    if (mode === 'id-asc') s.sort((a, b) => a.id - b.id);
-    else if (mode === 'id-desc') s.sort((a, b) => b.id - a.id);
-    else if (mode === 'label-asc') s.sort((a, b) => a.label.localeCompare(b.label));
-    return s;
-  });
+// ---------------------------------------------------------------------------
+// Computed
+// ---------------------------------------------------------------------------
 
-  const fragment = each(
-    () => sorted(),
-    (item: Item) => {
-      const tr = html`
-        <tr>
-          <td class="col-md-1">${String(item.id)}</td>
-          <td class="col-md-4"><a href="#" class="lbl">${item.label}</a></td>
-        </tr>
-      ` as unknown as HTMLTableRowElement;
-      return tr;
-    },
-    (item: Item) => item.id,
-  );
-  tbody.appendChild(fragment);
+const sorted = compute(() => {
+  const s = data().slice();
+  const mode = sortMode();
+  if (mode === 'id-asc') s.sort((a, b) => a.id - b.id);
+  else if (mode === 'id-desc') s.sort((a, b) => b.id - a.id);
+  else if (mode === 'label-asc') s.sort((a, b) => a.label.localeCompare(b.label));
+  return s;
+});
 
-  // Event delegation
-  tbody.addEventListener('click', (e) => {
-    const a = (e.target as HTMLElement).closest('a');
-    if (!a) return;
-    e.preventDefault();
-  });
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
 
-  populateBtn.addEventListener('click', () => {
-    data(buildData(1000));
-    sortMode('none');
-  });
-
-  sortIdBtn.addEventListener('click', () => {
-    sortMode('id-asc');
-  });
-  sortIdDescBtn.addEventListener('click', () => {
-    sortMode('id-desc');
-  });
-  sortLabelBtn.addEventListener('click', () => {
-    sortMode('label-asc');
-  });
+function populate(count: number) {
+  data(buildData(count));
+  sortMode('none');
 }
+
+// ---------------------------------------------------------------------------
+// Button bar component
+// ---------------------------------------------------------------------------
+
+function hBtn(id: string, label: string, handler: () => void) {
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+}
+
+function ButtonBar() {
+  return html`
+    <div class="jumbotron"><div class="row">
+      <div class="col-md-6"><h1>Purity (Sort)</h1></div>
+      <div class="col-md-6"><div class="row">
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="populate" @click=${() => populate(1000)}>Populate 1k</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="sort-id" @click=${() => sortMode('id-asc')}>Sort by ID &#x2191;</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="sort-id-desc" @click=${() => sortMode('id-desc')}>Sort by ID &#x2193;</button>
+        </div>
+        <div class="col-sm-6 smallpad">
+          <button type="button" class="btn btn-primary btn-block" id="sort-label" @click=${() => sortMode('label-asc')}>Sort by Label &#x2191;</button>
+        </div>
+        ${hBtn('populate-100', 'Populate 100', () => populate(100))}
+        ${hBtn('populate-10k', 'Populate 10k', () => populate(10000))}
+      </div></div>
+    </div></div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Row rendering
+// ---------------------------------------------------------------------------
+
+const tbody = document.getElementById('tbody')!;
+
+const fragment = each(
+  () => sorted(),
+  (item: Item) =>
+    html`
+      <tr>
+        <td class="col-md-1">${String(item.id)}</td>
+        <td class="col-md-4"><a href="#" class="lbl">${item.label}</a></td>
+      </tr>
+    ` as unknown as HTMLTableRowElement,
+  (item: Item) => item.id,
+);
+tbody.appendChild(fragment);
+
+// Event delegation — prevents default on label clicks
+tbody.addEventListener('click', (e) => {
+  const a = (e.target as HTMLElement).closest('a');
+  if (!a) return;
+  e.preventDefault();
+});
+
+// ---------------------------------------------------------------------------
+// Mount
+// ---------------------------------------------------------------------------
+
+mount(ButtonBar, document.getElementById('app')!);

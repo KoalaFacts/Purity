@@ -17,6 +17,8 @@ export function createSelectionApp(
   deselectAllBtn: HTMLElement,
   toggleAllBtn: HTMLElement,
   toggleEvenBtn: HTMLElement,
+  populate100Btn: HTMLElement,
+  populate10kBtn: HTMLElement,
 ) {
   const [items, setItems] = createSignal<SelectItem[]>([]);
 
@@ -33,16 +35,22 @@ export function createSelectionApp(
     allSelectedEl.textContent = allSelected() ? 'Yes' : 'No';
   });
 
-  function buildItems(): SelectItem[] {
+  function buildItems(count: number): SelectItem[] {
     const arr: SelectItem[] = [];
-    for (let i = 0; i < 1000; i++) {
+    for (let i = 0; i < count; i++) {
       arr.push({ id: i + 1, label: `Item ${i + 1}`, selected: false });
     }
     return arr;
   }
 
   populateBtn.addEventListener('click', () => {
-    setItems(buildItems());
+    setItems(buildItems(1000));
+  });
+  populate100Btn.addEventListener('click', () => {
+    setItems(buildItems(100));
+  });
+  populate10kBtn.addEventListener('click', () => {
+    setItems(buildItems(10000));
   });
 
   selectAllBtn.addEventListener('click', () => {

@@ -88,8 +88,8 @@ defineExpose({
     data.value = mkData(count);
     selectedId.value = 0;
   },
-  add() {
-    data.value = data.value.concat(mkData(1000));
+  add(count = 1000) {
+    data.value = data.value.concat(mkData(count));
   },
   update() {
     const c = data.value.slice();

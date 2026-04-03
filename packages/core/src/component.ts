@@ -222,13 +222,15 @@ export function mount(component: ComponentFn, container: Element): MountResult {
 
   if (ctx.mounted) {
     queueMicrotask(() => {
-      for (let i = 0; i < ctx.mounted!.length; i++) {
+      if (!ctx.mounted) return;
+      for (let i = 0; i < ctx.mounted.length; i++) {
         try {
-          ctx.mounted![i]();
+          ctx.mounted[i]();
         } catch (err) {
           ctx._handleError(err);
         }
       }
+      ctx.mounted = null;
     });
   }
 
@@ -291,4 +293,10 @@ function unmountContext(ctx: ComponentContext): void {
     const idx = ctx.parent.children.indexOf(ctx);
     if (idx !== -1) ctx.parent.children.splice(idx, 1);
   }
+
+  // Release remaining references for GC
+  ctx.mounted = null;
+  ctx.errorHandlers = null;
+  ctx.parent = null;
+  ctx._slotContent = undefined;
 }

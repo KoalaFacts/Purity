@@ -470,14 +470,18 @@ function genExprBinding(commentVar: string, index: number): string {
   const tn = `_tn${id}`;
   const val = `_v[${index}]`;
 
+  // Check order optimized: primitives first (hot path in each/list loops),
+  // then functions (reactive), then DOM nodes, then arrays.
   return [
     `var ${xv}=${val};`,
+    `if(typeof ${xv}==='object'||typeof ${xv}==='function'){`,
     `if(typeof ${xv}==='function'){`,
     `var ${tn}=document.createTextNode('');${commentVar}.replaceWith(${tn});`,
     `_w(function(){var r=${xv}();if(r instanceof Node){${tn}.replaceWith(r);${tn}=r;}else{if(${tn}.nodeType!==3){var t=document.createTextNode('');${tn}.replaceWith(t);${tn}=t;}${tn}.data=r==null?'':String(r);}});`,
     `}else if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${commentVar}.replaceWith(${xv});}`,
     `else if(Array.isArray(${xv})){var _f${id}=document.createDocumentFragment();for(var _i${id}=0;_i${id}<${xv}.length;_i${id}++)_f${id}.appendChild(${xv}[_i${id}] instanceof Node?${xv}[_i${id}]:document.createTextNode(String(${xv}[_i${id}])));${commentVar}.replaceWith(_f${id});}`,
     `else{${commentVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
+    `}else{${commentVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
   ].join('');
 }
 

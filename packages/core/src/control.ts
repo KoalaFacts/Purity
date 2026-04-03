@@ -1,3 +1,4 @@
+import { getCurrentContext } from './component';
 import type { StateAccessor } from './signals';
 import { watch } from './signals';
 
@@ -95,13 +96,23 @@ export function match<T extends string | number | boolean>(
   }
 
   // Reactive updates — watch for changes
-  watch(() => {
+  const dispose = watch(() => {
     const key = String(sourceFn()) as `${T}`;
     if (key === prevKey) return;
     const parent = endMarker.parentNode;
     if (!parent) return;
     renderKey(key, parent);
   });
+
+  // Auto-dispose watcher + clear cached DOM on component unmount
+  const ctx = getCurrentContext();
+  if (ctx) {
+    (ctx.disposers ??= []).push(() => {
+      dispose();
+      cache.clear();
+      currentNodes = [];
+    });
+  }
 
   return fragment;
 }
@@ -271,7 +282,7 @@ export function each<T>(
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
 
-  watch(() => {
+  const dispose = watch(() => {
     const list = getList() || [];
     const parent = endMarker.parentNode;
     if (!parent) return;
@@ -309,6 +320,35 @@ export function each<T>(
       return;
     }
 
+    // Fast path: all new items (first render or full replace with new keys)
+    // Single pass — create + append + build map in one loop
+    if (prevLen === 0) {
+      const newKeys2: unknown[] = new Array(len);
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < len; i++) {
+        const item = list[i];
+        newKeys2[i] = getKey(item, i);
+        const content = mapFn(item, i);
+        let nodes: Node[];
+        if (content instanceof DocumentFragment) {
+          const fc = content.firstChild;
+          nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
+          frag.appendChild(content);
+        } else if (content instanceof Node) {
+          nodes = [content];
+          frag.appendChild(content);
+        } else {
+          const tn = document.createTextNode(String(content ?? ''));
+          nodes = [tn];
+          frag.appendChild(tn);
+        }
+        keyToEntry.set(newKeys2[i], { nodes, data: null });
+      }
+      parent.insertBefore(frag, endMarker);
+      prevKeys = newKeys2;
+      return;
+    }
+
     const newKeys: unknown[] = new Array(len);
     const newEntries = new Map<unknown, EachEntry>();
     let reuseCount = 0;
@@ -329,12 +369,9 @@ export function each<T>(
       }
     }
 
-    // Fast path: no reuse — full replace or all new → bulk remove + bulk insert
+    // Fast path: no reuse — full replace → bulk remove + single-pass bulk insert
     if (reuseCount === 0) {
-      if (prevLen > 0) {
-        bulkClear(parent, prevKeys, keyToEntry, endMarker);
-      }
-      // Batch insert all new via single fragment
+      bulkClear(parent, prevKeys, keyToEntry, endMarker);
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) {
         const entry = newEntries.get(newKeys[i])!;
@@ -417,7 +454,7 @@ export function each<T>(
       }
 
       if (!swapped) {
-        // Full LIS-based reorder — batch consecutive insertions
+        // Full LIS-based reorder
         const oldKeyIndex = new Map<unknown, number>();
         for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
 
@@ -434,9 +471,9 @@ export function each<T>(
 
         const lisIndices = new Set(lis(sources));
 
-        // Reverse pass: batch consecutive non-LIS items into fragments
+        // Reverse pass: collect batch in array, flush in correct order
         let nextSibling: Node = endMarker;
-        let batchFrag: DocumentFragment | null = null;
+        let batch: Node[] | null = null;
         let batchTarget: Node = endMarker;
 
         for (let i = len - 1; i >= 0; i--) {
@@ -446,22 +483,18 @@ export function each<T>(
           const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
 
           if (needsMove) {
-            // Flush any pending batch before a stable gap
-            if (!batchFrag) {
-              batchFrag = document.createDocumentFragment();
+            if (!batch) {
+              batch = [];
               batchTarget = nextSibling;
             }
-            // Prepend to batch (we're going right-to-left)
-            if (entry.nodes.length > 1) {
-              for (let j = 0; j < entry.nodes.length; j++) batchFrag.appendChild(entry.nodes[j]);
-            } else if (firstNode) {
-              batchFrag.appendChild(firstNode);
-            }
+            batch.push(firstNode);
           } else {
             // Stable item — flush batch if pending
-            if (batchFrag) {
-              parent.insertBefore(batchFrag, batchTarget);
-              batchFrag = null;
+            if (batch) {
+              const frag = document.createDocumentFragment();
+              for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
+              parent.insertBefore(frag, batchTarget);
+              batch = null;
             }
           }
 
@@ -469,8 +502,10 @@ export function each<T>(
         }
 
         // Flush remaining batch
-        if (batchFrag) {
-          parent.insertBefore(batchFrag, batchTarget);
+        if (batch) {
+          const frag = document.createDocumentFragment();
+          for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
+          parent.insertBefore(frag, batchTarget);
         }
       }
     }
@@ -478,6 +513,19 @@ export function each<T>(
     keyToEntry = newEntries;
     prevKeys = newKeys;
   });
+
+  // Auto-dispose watcher + clean up entries on component unmount
+  const ctx = getCurrentContext();
+  if (ctx) {
+    (ctx.disposers ??= []).push(() => {
+      dispose();
+      for (const entry of keyToEntry.values()) {
+        if (entry.dispose) entry.dispose();
+      }
+      keyToEntry.clear();
+      prevKeys = [];
+    });
+  }
 
   return fragment;
 }
@@ -600,7 +648,7 @@ export function list<T>(
     }
   };
 
-  watch(() => {
+  const dispose = watch(() => {
     const list = getList() || [];
     const parent = endMarker.parentNode;
     if (!parent) return;
@@ -638,6 +686,22 @@ export function list<T>(
       }
       keyToEntry = new Map();
       prevKeys = [];
+      return;
+    }
+
+    // Fast path: all new (first render) — single pass, no Map lookups
+    if (prevLen === 0) {
+      const newKeys2: unknown[] = new Array(len);
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < len; i++) {
+        const item = list[i];
+        newKeys2[i] = getKey(item, i);
+        const entry = createEntry(item, i);
+        keyToEntry.set(newKeys2[i], entry);
+        frag.appendChild(entry.node);
+      }
+      parent.insertBefore(frag, endMarker);
+      prevKeys = newKeys2;
       return;
     }
 
@@ -743,6 +807,16 @@ export function list<T>(
     keyToEntry = newEntries;
     prevKeys = newKeys;
   });
+
+  // Auto-dispose watcher + clean up entries on component unmount
+  const ctx = getCurrentContext();
+  if (ctx) {
+    (ctx.disposers ??= []).push(() => {
+      dispose();
+      keyToEntry.clear();
+      prevKeys = [];
+    });
+  }
 
   return fragment;
 }

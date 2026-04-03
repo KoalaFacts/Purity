@@ -11,6 +11,7 @@ const PORT = process.env.PORT || 4173;
 const BASE = `http://localhost:${PORT}`;
 const WARMUP = 3;
 const ITERATIONS = parseInt(process.env.ITERATIONS || '7', 10);
+const MEM_ITERATIONS = parseInt(process.env.MEM_ITERATIONS || '3', 10);
 const DROP_OUTLIERS = 1; // drop N fastest + N slowest before computing median
 const FRAMEWORKS = ['purity', 'solid', 'svelte', 'vue'] as const;
 
@@ -338,6 +339,71 @@ const SCENARIOS: Scenario[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Memory scenario definitions
+// ---------------------------------------------------------------------------
+
+interface MemoryScenario {
+  /** Scenario page name (without .html) */
+  page: string;
+  /** Human-readable category */
+  category: string;
+  /** Memory operations to benchmark */
+  ops: {
+    name: string;
+    /** Steps to create/populate (measured: heap after) */
+    create: Step[];
+    /** Steps to tear down (measured: heap after — should return near baseline) */
+    destroy: Step[];
+  }[];
+}
+
+const MEMORY_SCENARIOS: MemoryScenario[] = [
+  {
+    page: 'index',
+    category: 'Memory',
+    ops: [
+      {
+        name: 'Create 1k rows',
+        create: [{ action: '#run' }],
+        destroy: [{ action: '#clear' }],
+      },
+      {
+        name: 'Create 10k rows',
+        create: [{ action: '#runlots' }],
+        destroy: [{ action: '#clear' }],
+      },
+    ],
+  },
+  {
+    page: 'lifecycle',
+    category: 'Memory',
+    ops: [
+      {
+        name: 'Create 1k components',
+        create: [{ action: '#create-1k' }],
+        destroy: [{ action: '#destroy-all' }],
+      },
+      {
+        name: 'Create 10k components',
+        create: [{ action: '#create-10k' }],
+        destroy: [{ action: '#destroy-all' }],
+      },
+    ],
+  },
+  {
+    page: 'filter',
+    category: 'Memory',
+    ops: [
+      {
+        name: 'Populate 10k filtered',
+        create: [{ action: '#populate' }],
+        destroy: [{ action: '#clear-search' }],
+      },
+    ],
+  },
+];
+
+// ---------------------------------------------------------------------------
 // Measurement helpers
 // ---------------------------------------------------------------------------
 
@@ -385,6 +451,16 @@ async function runSetup(page: Page, steps: Step[]): Promise<void> {
   }
 }
 
+async function getHeapKB(page: Page): Promise<number> {
+  // Force GC if available, then measure heap
+  const kb = await page.evaluate(() => {
+    if (typeof (globalThis as any).gc === 'function') (globalThis as any).gc();
+    const mem = (performance as any).memory;
+    return mem ? mem.usedJSHeapSize / 1024 : -1;
+  });
+  return kb;
+}
+
 // ---------------------------------------------------------------------------
 // Benchmark runner
 // ---------------------------------------------------------------------------
@@ -406,6 +482,16 @@ interface Result {
   raw: number[];
 }
 
+interface MemoryResult {
+  category: string;
+  op: string;
+  framework: string;
+  /** Median heap usage after create (KB) */
+  createKB: number;
+  /** Median heap retained after destroy (KB) — lower = better cleanup */
+  retainedKB: number;
+}
+
 async function main() {
   console.log('\nPurity Comprehensive Benchmark');
   console.log(`Frameworks: ${FRAMEWORKS.join(', ')}`);
@@ -416,8 +502,12 @@ async function main() {
     `Warmup: ${WARMUP} | Iterations: ${ITERATIONS} | Drop: fastest ${DROP_OUTLIERS} + slowest ${DROP_OUTLIERS}\n`,
   );
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--js-flags=--expose-gc', '--enable-precise-memory-info'],
+  });
   const allResults: Result[] = [];
+  const memoryResults: MemoryResult[] = [];
 
   for (const scenario of SCENARIOS) {
     console.log(`\n=== ${scenario.category}: ${scenario.page} ===`);
@@ -478,6 +568,75 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------------
+  // Memory benchmarks
+  // ---------------------------------------------------------------------------
+  console.log('\n\n=== Memory Benchmarks ===');
+  console.log(`Iterations: ${MEM_ITERATIONS}\n`);
+
+  for (const scenario of MEMORY_SCENARIOS) {
+    for (const op of scenario.ops) {
+      const fwResults: Record<string, { createKB: number; retainedKB: number }> = {};
+
+      for (const fw of FRAMEWORKS) {
+        const url = `${BASE}/apps/${fw}/${scenario.page}.html`;
+        const page = await browser.newPage();
+
+        try {
+          await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+          const createSamples: number[] = [];
+          const retainedSamples: number[] = [];
+
+          for (let i = 0; i < MEM_ITERATIONS; i++) {
+            // Ensure clean state
+            await runSetup(page, op.destroy);
+            await settle(page);
+            const baseline = await getHeapKB(page);
+
+            // Create
+            await runSetup(page, op.create);
+            await settle(page);
+            const afterCreate = await getHeapKB(page);
+
+            // Destroy
+            await runSetup(page, op.destroy);
+            await settle(page);
+            const afterDestroy = await getHeapKB(page);
+
+            if (baseline >= 0) {
+              createSamples.push(afterCreate - baseline);
+              retainedSamples.push(afterDestroy - baseline);
+            }
+          }
+
+          const medCreate = createSamples.length > 0 ? trimmedMedian(createSamples, 0) : -1;
+          const medRetained = retainedSamples.length > 0 ? trimmedMedian(retainedSamples, 0) : -1;
+
+          fwResults[fw] = { createKB: medCreate, retainedKB: medRetained };
+          memoryResults.push({
+            category: scenario.category,
+            op: op.name,
+            framework: fw,
+            createKB: medCreate,
+            retainedKB: medRetained,
+          });
+        } catch (err: any) {
+          fwResults[fw] = { createKB: -1, retainedKB: -1 };
+          console.error(`  [${fw}] ${op.name}: ERROR — ${err.message}`);
+        } finally {
+          await page.close();
+        }
+      }
+
+      const line = FRAMEWORKS.map((fw) => {
+        const r = fwResults[fw];
+        if (!r || r.createKB < 0) return `${fw}: ERR`;
+        return `${fw}: +${(r.createKB / 1024).toFixed(1)}MB / retained ${(r.retainedKB / 1024).toFixed(1)}MB`;
+      }).join(' | ');
+      console.log(`  ${op.name}: ${line}`);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Print final markdown table
   // ---------------------------------------------------------------------------
   console.log('\n\n## Full Results\n');
@@ -510,10 +669,51 @@ async function main() {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Print memory results table
+  // ---------------------------------------------------------------------------
+  if (memoryResults.length > 0) {
+    console.log('\n\n## Memory Results\n');
+    const memHdr = [
+      'Operation',
+      ...FRAMEWORKS.map((f) => `${f.charAt(0).toUpperCase() + f.slice(1)} (used)`),
+      ...FRAMEWORKS.map((f) => `${f.charAt(0).toUpperCase() + f.slice(1)} (retained)`),
+      'Best Cleanup',
+    ];
+    console.log(`| ${memHdr.join(' | ')} |`);
+    console.log(`|${memHdr.map(() => '---').join('|')}|`);
+
+    const memOps = [...new Set(memoryResults.map((r) => r.op))];
+    for (const op of memOps) {
+      const usedCells = FRAMEWORKS.map((fw) => {
+        const r = memoryResults.find((x) => x.op === op && x.framework === fw);
+        return r && r.createKB >= 0 ? `${(r.createKB / 1024).toFixed(1)}MB` : 'ERR';
+      });
+      const retainedCells = FRAMEWORKS.map((fw) => {
+        const r = memoryResults.find((x) => x.op === op && x.framework === fw);
+        return r && r.retainedKB >= 0 ? `${(r.retainedKB / 1024).toFixed(1)}MB` : 'ERR';
+      });
+      const retainedVals = FRAMEWORKS.map((fw) => {
+        const r = memoryResults.find((x) => x.op === op && x.framework === fw);
+        return { fw: fw.charAt(0).toUpperCase() + fw.slice(1), kb: r?.retainedKB ?? -1 };
+      }).filter((v) => v.kb >= 0);
+      const bestCleanup = retainedVals.length
+        ? retainedVals.reduce((a, b) => (Math.abs(a.kb) < Math.abs(b.kb) ? a : b)).fw
+        : '—';
+
+      console.log(
+        `| ${op} | ${usedCells.join(' | ')} | ${retainedCells.join(' | ')} | **${bestCleanup}** |`,
+      );
+    }
+  }
+
   // Caveats
   console.log('\n### Notes\n');
   console.log(
     '- **Svelte computed-chain & diamond:** Svelte 5 `$derived()` is a compile-time rune and cannot be created dynamically. These scenarios use a `$effect` loop instead of 1000 actual reactive dependency nodes. Purity, Solid, and Vue create real reactive graphs for these tests, so Svelte results are not directly comparable.',
+  );
+  console.log(
+    '- **Memory results:** Heap usage measured via `performance.memory.usedJSHeapSize` with forced GC. "Used" = heap delta after creation. "Retained" = heap delta after destroy — indicates memory not released (closer to 0 = better cleanup).',
   );
 
   console.log('\n✓ Benchmark complete.');

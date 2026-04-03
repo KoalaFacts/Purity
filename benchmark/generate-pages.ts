@@ -137,22 +137,116 @@ for (let i = 3; i < historyFiles.length; i++) {
 
 const recentFiles = historyFiles.slice(0, 3);
 
+// --- Parse memory results ---
+function parseMemoryResults(md) {
+  // Find the ## Memory Results section
+  const memIdx = md.indexOf('## Memory Results');
+  if (memIdx === -1) return [];
+  const memSection = md.slice(memIdx);
+  const lines = memSection.split('\n').filter((l) => l.startsWith('|'));
+  if (lines.length < 3) return [];
+
+  return lines
+    .slice(2)
+    .map((line) => {
+      const cells = line
+        .split('|')
+        .map((c) => c.trim())
+        .filter(Boolean);
+      // Operation | Purity (used) | Solid (used) | Svelte (used) | Vue (used) | Purity (retained) | Solid (retained) | Svelte (retained) | Vue (retained) | Best Cleanup
+      if (cells.length < 10) return null;
+      return {
+        op: cells[0],
+        purityUsed: parseFloat(cells[1]),
+        solidUsed: parseFloat(cells[2]),
+        svelteUsed: parseFloat(cells[3]),
+        vueUsed: parseFloat(cells[4]),
+        purityRetained: parseFloat(cells[5]),
+        solidRetained: parseFloat(cells[6]),
+        svelteRetained: parseFloat(cells[7]),
+        vueRetained: parseFloat(cells[8]),
+        bestCleanup: cells[9].replace(/\*/g, ''),
+      };
+    })
+    .filter(Boolean);
+}
+
+function memoryToTable(rows) {
+  if (!rows.length) return '';
+  const fws = ['Purity', 'Solid', 'Svelte', 'Vue'];
+
+  let html = '<table class="results"><thead><tr>';
+  html += '<th rowspan="2">Operation</th>';
+  html += '<th colspan="4">Heap Used (after create)</th>';
+  html += '<th colspan="4">Heap Retained (after destroy)</th>';
+  html += '<th rowspan="2">Best Cleanup</th>';
+  html += '</tr><tr>';
+  for (const fw of fws) html += `<th>${fw}</th>`;
+  for (const fw of fws) html += `<th>${fw}</th>`;
+  html += '</tr></thead><tbody>';
+
+  for (const r of rows) {
+    // Best used = lowest creation overhead
+    const usedVals = [r.purityUsed, r.solidUsed, r.svelteUsed, r.vueUsed].filter(
+      (v) => !Number.isNaN(v),
+    );
+    const bestUsed = usedVals.length ? Math.min(...usedVals) : 0;
+    // Best retained = closest to 0 (cleanest cleanup)
+    const retVals = [r.purityRetained, r.solidRetained, r.svelteRetained, r.vueRetained].filter(
+      (v) => !Number.isNaN(v),
+    );
+    const bestRet = retVals.length ? Math.min(...retVals.map((v) => Math.abs(v))) : 0;
+
+    const memCell = (val, best, isRetained) => {
+      if (Number.isNaN(val)) return '<td class="ok">&mdash;</td>';
+      const cmp = isRetained ? Math.abs(val) : val;
+      const isBest = cmp === best;
+      const cls = isBest ? 'best' : cmp > best * 2 ? 'slow' : 'ok';
+      return `<td class="${cls}">${val.toFixed(1)}MB</td>`;
+    };
+
+    const cleanupCls = r.bestCleanup.toLowerCase();
+    html += '<tr>';
+    html += `<td class="op-name">${r.op}</td>`;
+    html += memCell(r.purityUsed, bestUsed, false);
+    html += memCell(r.solidUsed, bestUsed, false);
+    html += memCell(r.svelteUsed, bestUsed, false);
+    html += memCell(r.vueUsed, bestUsed, false);
+    html += memCell(r.purityRetained, bestRet, true);
+    html += memCell(r.solidRetained, bestRet, true);
+    html += memCell(r.svelteRetained, bestRet, true);
+    html += memCell(r.vueRetained, bestRet, true);
+    html += `<td class="winner-cell ${cleanupCls}">${r.bestCleanup}</td>`;
+    html += '</tr>';
+  }
+
+  html += '</tbody></table>';
+  return html;
+}
+
 // --- Build current results ---
 const currentMd = readFileSync(resultsFile, 'utf8');
 const currentRows = parseResults(currentMd);
 const currentTable = resultsToTable(currentRows);
+const currentMemRows = parseMemoryResults(currentMd);
+const currentMemTable = memoryToTable(currentMemRows);
 
 // --- Build previous runs ---
 let previousHtml = '';
 for (const f of recentFiles) {
   const md = readFileSync(join(historyDir, f), 'utf8');
   const rows = parseResults(md);
+  const memRows = parseMemoryResults(md);
   const date = f.replace('.md', '');
   const display = date.replace(
     /(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})(\d{2})/,
     '$1-$2-$3 $4:$5:$6',
   );
-  previousHtml += `<details class="history-run"><summary>${display}</summary>${resultsToTable(rows)}</details>\n`;
+  const memHtml = memoryToTable(memRows);
+  const memSection = memHtml
+    ? `<h3 style="margin-top:1rem;font-size:.95rem">Memory</h3>${memHtml}`
+    : '';
+  previousHtml += `<details class="history-run"><summary>${display}</summary>${resultsToTable(rows)}${memSection}</details>\n`;
 }
 
 // --- Generate HTML ---
@@ -391,6 +485,16 @@ const html = `<!DOCTYPE html>
     <h2>Latest Run</h2>
     ${currentTable}
   </div>
+
+  ${
+    currentMemTable
+      ? `<div class="section">
+    <h2>Memory</h2>
+    <p style="color:var(--gray-600);font-size:.85rem;margin-bottom:1rem">Heap delta measured via <code>performance.memory</code> with forced GC. &ldquo;Used&rdquo; = heap after create. &ldquo;Retained&rdquo; = heap after destroy (closer to 0 = better cleanup).</p>
+    ${currentMemTable}
+  </div>`
+      : ''
+  }
 
   <div class="section">
     <h2>Previous Runs</h2>

@@ -192,7 +192,10 @@ function SpeedTable(rows: SpeedRow[]) {
       (r) => r.op,
     ),
   );
-  return table;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'table-scroll';
+  wrapper.appendChild(table);
+  return wrapper;
 }
 
 function addMemTd(tr: HTMLTableRowElement, val: number, best: number, isRetained: boolean) {
@@ -275,6 +278,10 @@ function MemoryTable(rows: MemRow[]) {
     ),
   );
 
+  const tableWrapper = document.createElement('div');
+  tableWrapper.className = 'table-scroll';
+  tableWrapper.appendChild(table);
+
   return html`<div>
     <div class="mem-scores">
       <div class="mem-score-group">
@@ -286,7 +293,7 @@ function MemoryTable(rows: MemRow[]) {
         ${MiniScoreboard(cleanupWins)}
       </div>
     </div>
-    ${table}
+    ${tableWrapper}
   </div>`;
 }
 
@@ -425,6 +432,77 @@ function applyGlobalStyles() {
     .methodology { margin-top: .75rem; font-size: .78rem; color: var(--gray-400); }
     .mem-note { color: var(--gray-600); font-size: .85rem; margin-bottom: 1rem; }
     .mem-note code { background: var(--gray-100); padding: .1rem .3rem; border-radius: 3px; font-size: .8rem; }
+
+    /* Table scroll wrapper — added by JS for responsive tables */
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    /* Large tablets / small laptops (≤ 900px) */
+    @media (max-width: 900px) {
+      body { padding: 2rem 1rem; }
+      h1 { font-size: 1.75rem; }
+
+      .results th { padding: .55rem .65rem; font-size: .72rem; }
+      .results td { padding: .5rem .65rem; font-size: .84rem; }
+    }
+
+    /* Tablets (≤ 768px) */
+    @media (max-width: 768px) {
+      body { padding: 1.5rem 1rem; }
+      h1 { font-size: 1.6rem; }
+      header p { font-size: .88rem; }
+      h2 { font-size: 1.05rem; }
+
+      .scoreboard { gap: .5rem; }
+      .score-card { padding: .8rem .5rem; }
+      .score-num { font-size: 1.75rem; }
+
+      .results { min-width: 580px; }
+      .results th { padding: .5rem .55rem; font-size: .7rem; }
+      .results td { padding: .45rem .55rem; font-size: .82rem; }
+
+      .mem-scores { gap: 1rem; }
+      .methodology { font-size: .72rem; }
+    }
+
+    /* Small phones (≤ 480px) */
+    @media (max-width: 480px) {
+      body { padding: 1rem .5rem; }
+      h1 { font-size: 1.3rem; }
+      header p { font-size: .78rem; }
+      h2 { font-size: .95rem; }
+      .section { margin-bottom: 1.75rem; }
+
+      /* Scoreboard: 2x2 grid */
+      .scoreboard { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+      .score-card { padding: .6rem .4rem; }
+      .score-num { font-size: 1.3rem; }
+      .score-label { font-size: .65rem; }
+
+      /* Tables: tighter cells */
+      .results { min-width: 520px; }
+      .results th { padding: .4rem .4rem; font-size: .65rem; }
+      .results td { padding: .35rem .4rem; font-size: .75rem; }
+
+      /* Category pills */
+      .cat-nav { gap: .25rem; }
+      .cat-pill { padding: .25rem .5rem; font-size: .68rem; }
+
+      /* Category sections */
+      .cat-heading { font-size: .92rem; }
+      .cat-count { font-size: .65rem; }
+      .cat-score { font-size: .65rem; padding: .15rem .4rem; }
+
+      /* Memory scores stack */
+      .mem-scores { flex-direction: column; gap: .6rem; }
+      .mem-note { font-size: .78rem; }
+
+      /* History */
+      .history-run summary { padding: .45rem .6rem; font-size: .78rem; }
+
+      /* Footer */
+      footer { font-size: .72rem; padding-top: 1rem; }
+      .methodology { font-size: .65rem; }
+    }
   `;
   document.head.appendChild(style);
 }

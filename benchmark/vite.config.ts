@@ -16,8 +16,9 @@ for (const fw of frameworks) {
   }
 }
 
-export default defineConfig({
-  base: '/Purity/',
+export default defineConfig(({ command }) => ({
+  // Only apply base path for production builds (GitHub Pages); dev server uses '/'
+  base: command === 'build' ? '/Purity/' : '/',
   plugins: [
     purity(),
     svelte({ compilerOptions: { runes: true } }),
@@ -34,4 +35,4 @@ export default defineConfig({
     outDir: 'dist',
     rolldownOptions: { input: inputs },
   },
-});
+}));

@@ -2,21 +2,15 @@
 
 ## Supported Versions
 
-The following table lists which released versions currently receive security
-updates and which are no longer supported.
-
 | Version | Supported          |
 | ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| 0.1.x   | :white_check_mark: |
 
 ## Reporting a Vulnerability
 
-If you believe you have found a security vulnerability, please report it by
-emailing **security@example.com** with a detailed description of the issue,
-including:
+If you believe you have found a security vulnerability, please report it
+through [GitHub Security Advisories](https://github.com/KoalaFacts/Purity/security/advisories/new)
+with a detailed description of the issue, including:
 
 - A clear explanation of the vulnerability.
 - Steps to reproduce (proof-of-concept if possible).

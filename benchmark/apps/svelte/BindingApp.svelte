@@ -51,8 +51,7 @@ function readAll() {
   <div id="container">
     {#each fields as field (field.id)}
       <div>
-        <label>Field {field.id}:</label>
-        <input bind:value={field.value} />
+        <label>Field {field.id}: <input bind:value={field.value} /></label>
       </div>
     {/each}
   </div>

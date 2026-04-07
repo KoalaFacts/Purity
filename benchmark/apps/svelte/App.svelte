@@ -132,12 +132,15 @@ function handleClick(e: MouseEvent) {
     </div></div>
   </div></div>
   <table class="table table-hover table-striped test-data">
-    <tbody onclick={handleClick}>
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <tbody onclick={handleClick} onkeydown={(e) => { if (e.key === 'Enter') handleClick(e as unknown as MouseEvent); }}>
       {#each data as row (row.id)}
         <tr class:danger={row.id === selectedId}>
           <td class="col-md-1">{row.id}</td>
+          <!-- svelte-ignore a11y_invalid_attribute -->
           <td class="col-md-4"><a href="#" class="lbl">{row.label}</a></td>
-          <td class="col-md-1"><a href="#" class="remove"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
+          <!-- svelte-ignore a11y_invalid_attribute -->
+          <td class="col-md-1"><a href="#" class="remove" aria-label="Remove"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
           <td class="col-md-6"></td>
         </tr>
       {/each}

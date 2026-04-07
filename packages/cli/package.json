@@ -1,5 +1,5 @@
 {
-  "name": "@purity/cli",
+  "name": "@purityjs/cli",
   "version": "0.1.0",
   "description": "Scaffold a new Purity project",
   "type": "module",
@@ -24,5 +24,6 @@
     "directory": "packages/cli"
   },
   "author": "KoalaFacts",
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": { "access": "public" }
 }

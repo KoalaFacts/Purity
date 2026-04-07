@@ -13,8 +13,8 @@
     "vite": "^8.0.5"
   },
   "dependencies": {
-    "@purity/core": "*",
-    "@purity/vite-plugin": "*",
+    "@purityjs/core": "*",
+    "@purityjs/vite-plugin": "*",
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@vitejs/plugin-vue": "^6.0.5",
     "solid-js": "^1.9.12",

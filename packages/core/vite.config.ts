@@ -8,8 +8,7 @@ export default defineConfig({
         'compiler/index': 'src/compiler/index.ts',
       },
       formats: ['es', 'cjs'],
-      fileName: (format, entryName) =>
-        format === 'es' ? `${entryName}.js` : `${entryName}.cjs`,
+      fileName: (format, entryName) => (format === 'es' ? `${entryName}.js` : `${entryName}.cjs`),
     },
     rolldownOptions: {
       external: ['signal-polyfill'],

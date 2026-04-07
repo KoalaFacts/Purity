@@ -19,10 +19,10 @@ jobs:
 
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: 🟢 Setup Node.js 24
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version: '24'
           cache: 'npm'
@@ -30,6 +30,13 @@ jobs:
       - name: 📦 Install root dependencies
         # Installs all workspace dependencies from lockfile
         run: npm ci
+
+      - name: 🔐 Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: 🔐 Verify package provenance (non-blocking)
+        # npm attestation API can be flaky; log results but don't gate CI
+        run: npm audit signatures || true
 
       - name: 🔍 Lint & format check (Biome)
         # Checks all files for formatting and lint errors without modifying them

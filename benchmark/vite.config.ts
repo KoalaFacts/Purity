@@ -34,4 +34,4 @@ export default defineConfig({
     outDir: 'dist',
     rolldownOptions: { input: inputs },
   },
-}));
+});

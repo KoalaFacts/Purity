@@ -25,5 +25,8 @@ vite.config.ts.timestamp-*
 # Playwright MCP
 .playwright-mcp/
 
+# Superpowers (local plans/specs)
+**/superpowers/
+
 # GitHub Actions
 gh-pages/

@@ -8,7 +8,7 @@
 import { chromium, type Page } from 'playwright';
 
 const PORT = process.env.PORT || 4173;
-const BASE = `http://localhost:${PORT}`;
+const BASE = `http://localhost:${PORT}/Purity`;
 const WARMUP = 3;
 const ITERATIONS = parseInt(process.env.ITERATIONS || '7', 10);
 const MEM_ITERATIONS = parseInt(process.env.MEM_ITERATIONS || '3', 10);

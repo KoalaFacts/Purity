@@ -5,12 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build-prod": "vite build",
+    "build": "vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
     "playwright": "^1.59.1",
-    "vite": "^8.0.3"
+    "vite": "^8.0.5"
   },
   "dependencies": {
     "@purity/core": "*",
@@ -19,7 +19,7 @@
     "@vitejs/plugin-vue": "^6.0.5",
     "solid-js": "^1.9.12",
     "svelte": "^5.55.1",
-    "vite-plugin-solid": "^2.11.11",
+    "vite-plugin-solid": "^2.11.12",
     "vue": "^3.6.0-beta.9"
   }
 }

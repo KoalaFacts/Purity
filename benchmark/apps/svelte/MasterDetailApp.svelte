@@ -103,11 +103,15 @@ function cycle10() {
     </div></div>
   </div></div>
   <div style="display:flex">
-    <div id="list-panel" style="flex:1">
+    <div id="list-panel" style="flex:1" role="listbox">
       {#each persons as person (person.id)}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="list-item" style="padding: 4px 8px; cursor: pointer"
              class:selected={person.id === selectedId}
-             onclick={() => selectedId = person.id}>
+             role="option" aria-selected={person.id === selectedId}
+             tabindex="0"
+             onclick={() => selectedId = person.id}
+             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') selectedId = person.id; }}>
           {person.name}
         </div>
       {/each}

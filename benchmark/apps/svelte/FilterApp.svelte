@@ -105,7 +105,7 @@ function onInput(e: Event) {
       {#each filtered as item (item.id)}
         <tr>
           <td class="col-md-1">{item.id}</td>
-          <td class="col-md-4"><a href="#" class="lbl">{item.label}</a></td>
+          <td class="col-md-4"><span class="lbl">{item.label}</span></td>
         </tr>
       {/each}
     </tbody>

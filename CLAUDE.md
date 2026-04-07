@@ -6,9 +6,9 @@ Minimal web framework built on native TC39 Signals. 17 functions. 6 kB gzipped.
 
 | Package | Path | Docs |
 |---------|------|------|
-| `@purity/core` | `packages/core/` | [CLAUDE.md](./packages/core/CLAUDE.md) |
-| `@purity/vite-plugin` | `packages/vite-plugin/` | [CLAUDE.md](./packages/vite-plugin/CLAUDE.md) |
-| `@purity/cli` | `packages/cli/` | [CLAUDE.md](./packages/cli/CLAUDE.md) |
+| `@purityjs/core` | `packages/core/` | [CLAUDE.md](./packages/core/CLAUDE.md) |
+| `@purityjs/vite-plugin` | `packages/vite-plugin/` | [CLAUDE.md](./packages/vite-plugin/CLAUDE.md) |
+| `@purityjs/cli` | `packages/cli/` | [CLAUDE.md](./packages/cli/CLAUDE.md) |
 
 ## Commands
 ```bash

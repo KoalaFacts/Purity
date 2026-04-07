@@ -1,10 +1,10 @@
-# @purity/cli
+# @purityjs/cli
 
 Project scaffolding CLI for Purity.
 
 ## Usage
 ```bash
-npx @purity/cli my-app
+npx @purityjs/cli my-app
 ```
 
 ## File Layout
@@ -14,7 +14,7 @@ src/
 ```
 
 ## What It Generates
-- package.json (deps: @purity/core, devDeps: @purity/vite-plugin, vite, typescript)
+- package.json (deps: @purityjs/core, devDeps: @purityjs/vite-plugin, vite, typescript)
 - vite.config.ts (with purity() plugin)
 - tsconfig.json
 - index.html
@@ -23,8 +23,8 @@ src/
 
 ## Local Development Detection
 When run from the monorepo, auto-detects and:
-- Uses `file:` dependency for @purity/core
-- Uses `file:` dependency for @purity/vite-plugin
+- Uses `file:` dependency for @purityjs/core
+- Uses `file:` dependency for @purityjs/vite-plugin
 - Generates vite.config.ts with resolve aliases to local source
 
 ## Key Variables

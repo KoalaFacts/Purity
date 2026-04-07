@@ -1,8 +1,8 @@
 // Computed chain benchmark — Purity idiomatic version.
 // Uses: state, compute, html, mount. Zero vanilla JS for UI wiring.
 
-import type { ComputedAccessor } from '@purity/core';
-import { compute, html, mount, state, watch } from '@purity/core';
+import type { ComputedAccessor } from '@purityjs/core';
+import { compute, html, mount, state, watch } from '@purityjs/core';
 
 // ---------------------------------------------------------------------------
 // State

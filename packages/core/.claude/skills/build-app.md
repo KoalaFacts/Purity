@@ -4,7 +4,7 @@ When asked to build an app or page using Purity:
 
 ## Project Setup
 ```bash
-npx @purity/cli my-app
+npx @purityjs/cli my-app
 cd my-app
 npm install
 npm run dev
@@ -22,7 +22,7 @@ src/
 ## Entry Point Pattern
 ```ts
 // src/main.ts
-import { mount, html } from '@purity/core';
+import { mount, html } from '@purityjs/core';
 import './components/app.ts';
 
 mount(() => html`<p-app></p-app>`, document.getElementById('app')!);
@@ -31,7 +31,7 @@ mount(() => html`<p-app></p-app>`, document.getElementById('app')!);
 ## Component Pattern
 ```ts
 // src/components/app.ts
-import { state, compute, html, css, component, onMount, each, when } from '@purity/core';
+import { state, compute, html, css, component, onMount, each, when } from '@purityjs/core';
 
 component('p-app', () => {
   const items = state([]);
@@ -55,7 +55,7 @@ component('p-app', () => {
 ## Composable Pattern (shared logic)
 ```ts
 // src/composables/useFetch.ts
-import { state, onMount } from '@purity/core';
+import { state, onMount } from '@purityjs/core';
 
 export function useFetch<T>(url: string) {
   const data = state<T | null>(null);
@@ -127,5 +127,5 @@ each(() => items(),
 Parent → Child:    :prop=${value}
 Child → Parent:    @event=${callback}  (callback props)
 Two-way:           ::prop=${signal}
-Deep tree:         Use @purity/inject (provide/inject) if needed
+Deep tree:         Use @purityjs/inject (provide/inject) if needed
 ```

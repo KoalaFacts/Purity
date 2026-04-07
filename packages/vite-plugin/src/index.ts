@@ -1,15 +1,15 @@
 // ---------------------------------------------------------------------------
-// @purity/vite-plugin — AOT template compilation
+// @purityjs/vite-plugin — AOT template compilation
 //
 // Transforms html`...` at build time into direct DOM creation code.
 // No runtime parser, no new Function(), CSP-safe.
 //
 // Usage:
-//   import { purity } from '@purity/vite-plugin';
+//   import { purity } from '@purityjs/vite-plugin';
 //   export default defineConfig({ plugins: [purity()] });
 // ---------------------------------------------------------------------------
 
-import { generate, parse } from '@purity/core/compiler';
+import { generate, parse } from '@purityjs/core/compiler';
 
 /**
  * Configuration options for the Purity Vite plugin.
@@ -28,7 +28,7 @@ export interface PurityPluginOptions {
  * Transforms `html\`...\`` expressions at build time into direct `document.createElement`
  * calls, eliminating the runtime parser. The output is CSP-safe and tree-shakeable.
  *
- * The plugin skips framework internals (`@purity/` and `packages/core/`) — only user
+ * The plugin skips framework internals (`@purityjs/` and `packages/core/`) — only user
  * source code is compiled.
  *
  * @param options - Optional configuration.
@@ -37,7 +37,7 @@ export interface PurityPluginOptions {
  * @example
  * ```ts
  * // vite.config.ts
- * import { purity } from '@purity/vite-plugin';
+ * import { purity } from '@purityjs/vite-plugin';
  * import { defineConfig } from 'vite';
  *
  * export default defineConfig({
@@ -56,7 +56,7 @@ export function purity(options?: PurityPluginOptions) {
       if (!extensions.some((ext) => id.endsWith(ext))) return null;
       // Skip framework internals — only compile user code
       if (
-        id.includes('@purity/') ||
+        id.includes('@purityjs/') ||
         id.includes('packages/core/') ||
         id.includes('packages/vite-plugin/')
       )
@@ -209,7 +209,7 @@ function compileTemplates(source: string, _id: string): CompileResult {
     return { code: finalCode, changed: true };
   }
 
-  const watchImport = `import { watch as __purity_w__ } from '@purity/core';\n`;
+  const watchImport = `import { watch as __purity_w__ } from '@purityjs/core';\n`;
   const insertAt = findLastImportEnd(finalCode);
   if (insertAt !== -1) {
     finalCode = `${finalCode.slice(0, insertAt)}${watchImport}${finalCode.slice(insertAt)}`;
@@ -225,7 +225,7 @@ function compileTemplates(source: string, _id: string): CompileResult {
 }
 
 /**
- * Parse and rewrite `import { ... } from '@purity/core'` statements,
+ * Parse and rewrite `import { ... } from '@purityjs/core'` statements,
  * removing the `html` binding. Uses indexOf-based scanning (no regex)
  * to avoid ReDoS on untrusted input.
  */
@@ -241,7 +241,7 @@ function removePurityHtmlImport(code: string): string {
     // Append everything before this import keyword
     result += code.slice(pos, idx);
 
-    // Check if this is an import { ... } from '@purity/core'
+    // Check if this is an import { ... } from '@purityjs/core'
     let i = idx + 6; // skip 'import'
     // skip whitespace
     while (i < code.length && (code[i] === ' ' || code[i] === '\t' || code[i] === '\n')) i++;
@@ -288,20 +288,20 @@ function removePurityHtmlImport(code: string): string {
       end++;
     if (end < code.length && code[end] === ';') end++;
 
-    if (moduleName !== '@purity/core') {
+    if (moduleName !== '@purityjs/core') {
       result += code.slice(idx, end);
       pos = end;
       continue;
     }
 
-    // This is a @purity/core import — remove 'html' from the bindings
+    // This is a @purityjs/core import — remove 'html' from the bindings
     const imports = code.slice(braceStart + 1, braceEnd);
     const cleaned = imports
       .split(',')
       .map((s: string) => s.trim())
       .filter((s: string) => s && s !== 'html')
       .join(', ');
-    result += cleaned ? `import { ${cleaned} } from '@purity/core';` : '';
+    result += cleaned ? `import { ${cleaned} } from '@purityjs/core';` : '';
     pos = end;
   }
   return result;

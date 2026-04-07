@@ -99,7 +99,7 @@ export function createApp(tbody: HTMLElement): AppHandle {
   const fragment = each(
     () => data(),
     (item: RowItem) => {
-      // html`` template — AOT compiled by @purity/vite-plugin at build time
+      // html`` template — AOT compiled by @purityjs/vite-plugin at build time
       const tr = html`
         <tr>
           <td class="col-md-1">${String(item.id)}</td>

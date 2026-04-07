@@ -1,4 +1,4 @@
-# @purity/vite-plugin
+# @purityjs/vite-plugin
 
 AOT template compilation for Purity. Compiles `html` tagged templates at build time into direct DOM creation code.
 
@@ -14,14 +14,14 @@ AOT template compilation for Purity. Compiles `html` tagged templates at build t
 ## Install
 
 ```bash
-npm install -D @purity/vite-plugin
+npm install -D @purityjs/vite-plugin
 ```
 
 ## Setup
 
 ```ts
 // vite.config.ts
-import { purity } from '@purity/vite-plugin';
+import { purity } from '@purityjs/vite-plugin';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
@@ -61,8 +61,8 @@ purity({
 
 1. Finds `html` tagged template literals in your source
 2. Extracts template strings and expression positions
-3. Parses into AST using `@purity/core`'s parser
-4. Generates optimized JS using `@purity/core`'s codegen
+3. Parses into AST using `@purityjs/core`'s parser
+4. Generates optimized JS using `@purityjs/core`'s codegen
 5. Replaces the `html`...`` call with the compiled output
 6. Removes `html` from imports (dead code eliminated)
 7. Adds `watch` import alias for reactive bindings

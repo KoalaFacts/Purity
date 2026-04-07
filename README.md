@@ -10,7 +10,7 @@ A minimal, lightweight, super performant web framework built on native signals.
 ## Quick Start
 
 ```bash
-npx @purity/cli my-app
+npx @purityjs/cli my-app
 cd my-app
 npm install
 npm run dev
@@ -20,14 +20,14 @@ npm run dev
 
 | Package | Description | Docs |
 |---------|-------------|------|
-| [`@purity/core`](./packages/core) | The framework — 17 functions | [README](./packages/core/README.md) |
-| [`@purity/vite-plugin`](./packages/vite-plugin) | AOT template compilation | [README](./packages/vite-plugin/README.md) |
-| [`@purity/cli`](./packages/cli) | Project scaffolding | [README](./packages/cli/README.md) |
+| [`@purityjs/core`](./packages/core) | The framework — 17 functions | [README](./packages/core/README.md) |
+| [`@purityjs/vite-plugin`](./packages/vite-plugin) | AOT template compilation | [README](./packages/vite-plugin/README.md) |
+| [`@purityjs/cli`](./packages/cli) | Project scaffolding | [README](./packages/cli/README.md) |
 
 ## At a Glance
 
 ```ts
-import { state, compute, html, css, component, mount } from '@purity/core';
+import { state, compute, html, css, component, mount } from '@purityjs/core';
 
 component('p-counter', () => {
   const count = state(0);

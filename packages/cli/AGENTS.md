@@ -1,17 +1,17 @@
-# @purity/cli — AI Agent Context
+# @purityjs/cli — AI Agent Context
 
 Scaffolding CLI for Purity projects.
 
 ## Usage
 ```bash
-npx @purity/cli my-app
+npx @purityjs/cli my-app
 cd my-app && npm install && npm run dev
 ```
 
 ## Generates
 ```
 my-app/
-  package.json        @purity/core + @purity/vite-plugin + vite + typescript
+  package.json        @purityjs/core + @purityjs/vite-plugin + vite + typescript
   vite.config.ts      purity() plugin pre-configured
   tsconfig.json       ES2022, strict, bundler resolution
   index.html          entry with #app div

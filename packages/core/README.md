@@ -1,11 +1,11 @@
-# @purity/core
+# @purityjs/core
 
 The core Purity framework. 17 functions. 6 kB gzipped. No virtual DOM.
 
 ## Install
 
 ```bash
-npm install @purity/core
+npm install @purityjs/core
 ```
 
 ## API
@@ -13,7 +13,7 @@ npm install @purity/core
 ### Reactive Primitives
 
 ```ts
-import { state, compute, watch, batch } from '@purity/core';
+import { state, compute, watch, batch } from '@purityjs/core';
 
 const count = state(0);
 count()              // read → 0
@@ -35,7 +35,7 @@ batch(() => { a(1); b(2); });               // single flush
 JIT compiled: `html` tagged literals → parse → AST → codegen → cached DOM factory.
 
 ```ts
-import { html } from '@purity/core';
+import { html } from '@purityjs/core';
 
 html`
   <div class=${() => active() ? 'on' : 'off'}>
@@ -61,7 +61,7 @@ html`
 Custom Elements with Shadow DOM. Registered globally by tag name.
 
 ```ts
-import { component, slot, onMount, onDestroy, onDispose } from '@purity/core';
+import { component, slot, onMount, onDestroy, onDispose } from '@purityjs/core';
 
 component('p-card', ({ title }, { default: body, header }) => {
   css`.card { padding: 1rem; }`;
@@ -108,7 +108,7 @@ css`.box { background: ${() => dark() ? '#333' : '#fff'}; }`;
 ### Control Flow
 
 ```ts
-import { match, when, each } from '@purity/core';
+import { match, when, each } from '@purityjs/core';
 
 when(() => ok(), () => html`<p>Yes</p>`, () => html`<p>No</p>`)
 
@@ -124,7 +124,7 @@ each(() => items(), (item) => html`<li>${item.name}</li>`, (item) => item.id)
 ### Teleport
 
 ```ts
-import { teleport } from '@purity/core';
+import { teleport } from '@purityjs/core';
 
 teleport('#modal-root', () =>
   visible() ? html`<div class="modal">Open</div>` : null
@@ -143,7 +143,7 @@ onError(fn)      // error boundary
 ### Mount
 
 ```ts
-import { mount } from '@purity/core';
+import { mount } from '@purityjs/core';
 
 const { unmount } = mount(
   () => html`<p-app></p-app>`,

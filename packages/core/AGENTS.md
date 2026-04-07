@@ -13,9 +13,9 @@ A minimal, lightweight, super performant web framework built on native TC39 Sign
 
 ## Monorepo
 ```
-packages/core/          @purity/core          — the framework
-packages/vite-plugin/   @purity/vite-plugin   — AOT compilation
-packages/cli/           @purity/cli           — project scaffolding
+packages/core/          @purityjs/core          — the framework
+packages/vite-plugin/   @purityjs/vite-plugin   — AOT compilation
+packages/cli/           @purityjs/cli           — project scaffolding
 ```
 
 ## Core API
@@ -26,7 +26,7 @@ import {
   component, slot, teleport,           // components
   mount, onMount, onDestroy, onDispose, onError, // lifecycle
   match, when, each,                   // control flow
-} from '@purity/core';
+} from '@purityjs/core';
 ```
 
 ## Reactive Primitives
@@ -112,7 +112,7 @@ function useCounter(initial = 0) {
 
 ## Commands
 ```bash
-npx @purity/cli my-app          # scaffold
+npx @purityjs/cli my-app          # scaffold
 npm run dev                      # dev server (vite)
 npm run build                    # production build (AOT)
 npm test --workspaces            # run all tests

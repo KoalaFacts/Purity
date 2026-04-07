@@ -1,4 +1,4 @@
-# @purity/core
+# @purityjs/core
 
 Purity core framework — 17 functions, no virtual DOM, native TC39 Signals.
 

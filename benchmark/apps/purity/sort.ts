@@ -1,7 +1,7 @@
 // Sort benchmark — Purity idiomatic version.
 // Uses: state, compute, each, html, mount. Zero vanilla JS for UI wiring.
 
-import { compute, each, html, mount, state } from '@purity/core';
+import { compute, each, html, mount, state } from '@purityjs/core';
 
 // ---------------------------------------------------------------------------
 // Data generation

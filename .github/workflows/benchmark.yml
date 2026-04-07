@@ -45,7 +45,7 @@ jobs:
           cd ../vite-plugin && npx vite build
 
       - name: Build benchmark (AOT compiles Purity templates)
-        # Vite build with @purity/vite-plugin transforms html`` → direct DOM calls
+        # Vite build with @purityjs/vite-plugin transforms html`` → direct DOM calls
         # Also builds the Purity report app for GitHub Pages
         run: cd benchmark && npx vite build
 

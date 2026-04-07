@@ -83,7 +83,7 @@ v-model                  → ::prop
 v-bind:prop              → :prop
 @event                   → @event (same!)
 <slot>                   → slot()
-provide/inject           → @purity/inject
+provide/inject           → @purityjs/inject
 ```
 
 ### Svelte 5 → Purity

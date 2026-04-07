@@ -1,13 +1,13 @@
-# @purity/vite-plugin — Gemini Context
+# @purityjs/vite-plugin — Gemini Context
 
 Vite plugin for AOT template compilation. Transforms `html` tagged templates at build time.
 
 ## Install & Setup
 ```bash
-npm install -D @purity/vite-plugin
+npm install -D @purityjs/vite-plugin
 ```
 ```ts
-import { purity } from '@purity/vite-plugin';
+import { purity } from '@purityjs/vite-plugin';
 export default defineConfig({ plugins: [purity()] });
 ```
 

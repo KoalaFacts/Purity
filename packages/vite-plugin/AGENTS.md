@@ -1,11 +1,11 @@
-# @purity/vite-plugin — AI Agent Context
+# @purityjs/vite-plugin — AI Agent Context
 
 AOT template compiler for Purity. Vite plugin.
 
 ## Setup
 ```ts
 // vite.config.ts
-import { purity } from '@purity/vite-plugin';
+import { purity } from '@purityjs/vite-plugin';
 export default defineConfig({ plugins: [purity()] });
 ```
 
@@ -28,6 +28,6 @@ purity({ include: ['.ts', '.js', '.tsx', '.jsx'] })
 ```
 
 ## Important
-- Only transforms user code, skips @purity/core internals
+- Only transforms user code, skips @purityjs/core internals
 - Removes `html` from imports after compilation
 - Auto-injects `watch as __purity_w__` import

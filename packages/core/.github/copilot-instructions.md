@@ -54,9 +54,9 @@ component('p-card', ({ title }, { default: body }) => {
 ## Structure
 ```
 packages/
-  core/          @purity/core          — framework
-  vite-plugin/   @purity/vite-plugin   — AOT template compilation
-  cli/           @purity/cli           — project scaffolding
+  core/          @purityjs/core          — framework
+  vite-plugin/   @purityjs/vite-plugin   — AOT template compilation
+  cli/           @purityjs/cli           — project scaffolding
 ```
 
 ## Testing

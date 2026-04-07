@@ -42,23 +42,23 @@ jobs:
         # Checks all files for formatting and lint errors without modifying them
         run: npx biome check .
 
-      - name: 🔷 Type check @purity/core
+      - name: 🔷 Type check @purityjs/core
         # Verifies TypeScript types compile without errors
         run: cd packages/core && npx tsc --noEmit
 
-      - name: 🧪 Test @purity/core (155 tests)
+      - name: 🧪 Test @purityjs/core (155 tests)
         # Runs vitest on the core framework — signals, templates, components, control flow
         run: npm test -w packages/core
 
-      - name: 🧪 Test @purity/vite-plugin (12 tests)
+      - name: 🧪 Test @purityjs/vite-plugin (12 tests)
         # Runs vitest on the AOT template compiler plugin
         run: npm test -w packages/vite-plugin
 
-      - name: 🏗️ Build @purity/core
+      - name: 🏗️ Build @purityjs/core
         # Produces dist/ with ESM, CJS, and .d.ts type declarations
         run: npm run build -w packages/core
 
-      - name: 🏗️ Build @purity/vite-plugin
+      - name: 🏗️ Build @purityjs/vite-plugin
         # Produces dist/ with the compiled plugin
         run: npm run build -w packages/vite-plugin
 

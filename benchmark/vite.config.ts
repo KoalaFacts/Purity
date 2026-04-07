@@ -1,6 +1,6 @@
 import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { purity } from '@purity/vite-plugin';
+import { purity } from '@purityjs/vite-plugin';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite';
@@ -27,7 +27,7 @@ export default defineConfig({
   resolve: {
     alias: {
       // Resolve to source so the AOT plugin can compile html`` templates
-      '@purity/core': resolve(import.meta.dirname, '../packages/core/src/index.ts'),
+      '@purityjs/core': resolve(import.meta.dirname, '../packages/core/src/index.ts'),
     },
   },
   build: {

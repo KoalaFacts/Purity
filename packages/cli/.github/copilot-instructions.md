@@ -1,4 +1,4 @@
-# @purity/cli — Copilot Instructions
+# @purityjs/cli — Copilot Instructions
 
 Scaffolding CLI. Entry: `src/index.js`. Pure Node.js, no dependencies.
 

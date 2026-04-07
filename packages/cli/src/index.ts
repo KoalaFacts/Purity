@@ -40,10 +40,10 @@ writeFileSync(
         preview: 'vite preview',
       },
       dependencies: {
-        '@purity/core': coreDep,
+        '@purityjs/core': coreDep,
       },
       devDependencies: {
-        '@purity/vite-plugin': pluginDep,
+        '@purityjs/vite-plugin': pluginDep,
         vite: '^8.0.0',
         typescript: '^6.0.0',
       },
@@ -57,10 +57,10 @@ writeFileSync(
 const coreSrcPath = resolve(coreDir, 'src/index.ts');
 const pluginImport = isLocal
   ? `import { purity } from '${resolve(pluginDir, 'src/index.ts')}';`
-  : `import { purity } from '@purity/vite-plugin';`;
+  : `import { purity } from '@purityjs/vite-plugin';`;
 
 const aliasBlock = isLocal
-  ? `\n  resolve: {\n    alias: {\n      '@purity/core': '${coreSrcPath}',\n    },\n  },`
+  ? `\n  resolve: {\n    alias: {\n      '@purityjs/core': '${coreSrcPath}',\n    },\n  },`
   : '';
 
 writeFileSync(
@@ -115,7 +115,7 @@ writeFileSync(
 // src/main.ts
 writeFileSync(
   resolve(projectDir, 'src/main.ts'),
-  `import { state, compute, html, css, component, mount, onMount } from '@purity/core';
+  `import { state, compute, html, css, component, mount, onMount } from '@purityjs/core';
 
 // Define a component
 component('p-counter', () => {

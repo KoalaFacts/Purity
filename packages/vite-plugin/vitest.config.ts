@@ -7,8 +7,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@purity/core/compiler': resolve(import.meta.dirname, '../core/src/compiler/index.ts'),
-      '@purity/core': resolve(import.meta.dirname, '../core/src/index.ts'),
+      '@purityjs/core/compiler': resolve(import.meta.dirname, '../core/src/compiler/index.ts'),
+      '@purityjs/core': resolve(import.meta.dirname, '../core/src/index.ts'),
     },
   },
 });

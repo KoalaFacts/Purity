@@ -1,7 +1,7 @@
 // Row rendering benchmark — Purity idiomatic version.
 // Uses: state, watch, each, html, mount. Zero vanilla JS for UI wiring.
 
-import { each, html, mount, state, watch } from '@purity/core';
+import { each, html, mount, state, watch } from '@purityjs/core';
 
 // ---------------------------------------------------------------------------
 // Data generation

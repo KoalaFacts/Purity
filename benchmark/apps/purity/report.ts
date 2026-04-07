@@ -1,4 +1,4 @@
-import { compute, each, html, mount, state } from '@purity/core';
+import { compute, each, html, mount, state } from '@purityjs/core';
 
 // ---------------------------------------------------------------------------
 // Data types

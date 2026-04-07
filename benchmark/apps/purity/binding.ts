@@ -1,7 +1,7 @@
 // Two-way binding benchmark — Purity idiomatic version.
 // Uses: state, each, html, mount. Zero vanilla JS for UI wiring.
 
-import { each, html, mount, state } from '@purity/core';
+import { each, html, mount, state } from '@purityjs/core';
 
 // ---------------------------------------------------------------------------
 // Types

@@ -5,7 +5,7 @@ Purity is a minimal web framework. 17 functions. 6 kB gzipped. Native TC39 Signa
 
 ## Setup
 ```bash
-npx @purity/cli my-app && cd my-app && npm install && npm run dev
+npx @purityjs/cli my-app && cd my-app && npm install && npm run dev
 ```
 
 ## Full API
@@ -62,7 +62,7 @@ mount(() => html`<p-app></p-app>`, document.getElementById('app'));
 
 ## Component Example
 ```ts
-import { state, compute, html, css, component, mount, onMount, each, when } from '@purity/core';
+import { state, compute, html, css, component, mount, onMount, each, when } from '@purityjs/core';
 
 component('p-todo', () => {
   const todos = state([]);
@@ -100,8 +100,8 @@ mount(() => html`<p-todo></p-todo>`, document.getElementById('app'));
 ```
 
 ## Packages
-- `@purity/core` — framework (17 functions)
-- `@purity/vite-plugin` — AOT template compilation (dev dependency)
-- `@purity/cli` — project scaffolding
+- `@purityjs/core` — framework (17 functions)
+- `@purityjs/vite-plugin` — AOT template compilation (dev dependency)
+- `@purityjs/cli` — project scaffolding
 
 ## One dependency: `signal-polyfill` (TC39 Signals reference implementation)

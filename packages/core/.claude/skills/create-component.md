@@ -13,7 +13,7 @@ When asked to create a component, follow this pattern:
 ## Template
 
 ```ts
-import { state, compute, html, css, component, onMount, onDestroy, onDispose } from '@purity/core';
+import { state, compute, html, css, component, onMount, onDestroy, onDispose } from '@purityjs/core';
 
 component('p-{name}', ({/* props */}, {/* slots */}) => {
   // Reactive state

@@ -40,7 +40,9 @@
   },
   "author": "KoalaFacts",
   "license": "MIT",
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "signal-polyfill": "^0.2.2"
   }

@@ -8,7 +8,7 @@ export default defineConfig({
       fileName: (format) => (format === 'es' ? 'index.js' : 'index.cjs'),
     },
     rolldownOptions: {
-      external: [/^@purity\//],
+      external: [/^@purityjs\//],
       output: {
         exports: 'named',
       },

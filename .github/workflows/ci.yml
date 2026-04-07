@@ -34,8 +34,9 @@ jobs:
       - name: 🔐 Audit dependencies
         run: npm audit --audit-level=high
 
-      - name: 🔐 Verify package provenance
-        run: npm audit signatures
+      - name: 🔐 Verify package provenance (non-blocking)
+        # npm attestation API can be flaky; log results but don't gate CI
+        run: npm audit signatures || true
 
       - name: 🔍 Lint & format check (Biome)
         # Checks all files for formatting and lint errors without modifying them

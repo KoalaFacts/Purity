@@ -5,10 +5,10 @@ Scaffold a new Purity project in seconds.
 ## Usage
 
 ```bash
-npx @purityjs/cli my-app
+vp dlx @purityjs/cli my-app
 cd my-app
-npm install
-npm run dev
+vp install
+vp dev
 ```
 
 ## What It Generates
@@ -18,7 +18,7 @@ my-app/
   index.html          — entry HTML
   package.json        — dependencies + scripts
   tsconfig.json       — TypeScript config
-  vite.config.ts      — Vite + @purityjs/vite-plugin
+  vite.config.ts      — Vite+ + @purityjs/vite-plugin
   .gitignore
   src/
     main.ts           — counter component example
@@ -27,8 +27,8 @@ my-app/
 ### Generated vite.config.ts
 
 ```ts
-import { purity } from '@purityjs/vite-plugin';
-import { defineConfig } from 'vite';
+import { purity } from "@purityjs/vite-plugin";
+import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   plugins: [purity()],
@@ -41,15 +41,16 @@ A working counter component demonstrating `state`, `compute`, `html`, `css`, `co
 
 ## Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start Vite dev server |
-| `npm run build` | Production build with AOT |
-| `npm run preview` | Preview production build |
+| Command      | Description                  |
+| ------------ | ---------------------------- |
+| `vp dev`     | Start the Vite+ dev server   |
+| `vp build`   | Production build with AOT    |
+| `vp preview` | Preview the production build |
 
 ## Local Development
 
 When run from the Purity monorepo, the CLI automatically:
+
 - Links `@purityjs/core` to the local source
 - Links `@purityjs/vite-plugin` to the local source
 - Generates a `vite.config.ts` with resolve aliases

@@ -4,25 +4,25 @@ AOT template compilation for Purity. Compiles `html` tagged templates at build t
 
 ## Why
 
-| | Without plugin | With plugin |
-|--|---------------|-------------|
-| **Bundle** | 8.13 kB gzip | **6.02 kB gzip** |
-| **First render** | JIT compile + cache | Pre-compiled, instant |
-| **CSP** | Needs `unsafe-eval` | **CSP-safe** |
-| **Runtime parser** | Shipped to browser | **Eliminated** |
+|                    | Without plugin      | With plugin           |
+| ------------------ | ------------------- | --------------------- |
+| **Bundle**         | 8.13 kB gzip        | **6.02 kB gzip**      |
+| **First render**   | JIT compile + cache | Pre-compiled, instant |
+| **CSP**            | Needs `unsafe-eval` | **CSP-safe**          |
+| **Runtime parser** | Shipped to browser  | **Eliminated**        |
 
 ## Install
 
 ```bash
-npm install -D @purityjs/vite-plugin
+vp add -D @purityjs/vite-plugin vite-plus vite@npm:@voidzero-dev/vite-plus-core@latest
 ```
 
 ## Setup
 
 ```ts
 // vite.config.ts
-import { purity } from '@purityjs/vite-plugin';
-import { defineConfig } from 'vite';
+import { purity } from "@purityjs/vite-plugin";
+import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   plugins: [purity()],
@@ -34,16 +34,20 @@ That's it. No other config needed.
 ## What It Does
 
 Your code:
+
 ```ts
-html`<div @click=${handler}>${() => count()}</div>`
+html`<div @click=${handler}>${() => count()}</div>`;
 ```
 
 Compiled output:
+
 ```js
-const _e0 = document.createElement('div');
-_e0.addEventListener('click', handler);
-const _x0 = document.createTextNode('');
-__watch(() => { _x0.data = String(count()); });
+const _e0 = document.createElement("div");
+_e0.addEventListener("click", handler);
+const _x0 = document.createTextNode("");
+__watch(() => {
+  _x0.data = String(count());
+});
 _e0.appendChild(_x0);
 ```
 
@@ -53,8 +57,8 @@ No runtime parsing. No `new Function()`. Direct DOM calls.
 
 ```ts
 purity({
-  include: ['.ts', '.js', '.tsx', '.jsx'],  // file extensions to transform (default)
-})
+  include: [".ts", ".js", ".tsx", ".jsx"], // file extensions to transform (default)
+});
 ```
 
 ## How It Works

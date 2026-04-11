@@ -1,8 +1,8 @@
 // Recursive tree benchmark — idiomatic Solid version.
 // Uses: createSignal, createMemo, For, JSX onClick. Zero vanilla JS for UI wiring.
 
-import { createMemo, createSignal, For } from 'solid-js';
-import { render } from 'solid-js/web';
+import { createMemo, createSignal, For } from "solid-js";
+import { render } from "solid-js/web";
 
 // ---------------------------------------------------------------------------
 // Types and tree generation
@@ -137,9 +137,9 @@ function App() {
       <div id="container">
         <For each={visible()}>
           {(node: FlatNode) => (
-            <div class="tree-node" style={{ 'padding-left': `${node.depth * 20}px` }}>
+            <div class="tree-node" style={{ "padding-left": `${node.depth * 20}px` }}>
               <span class="toggle">
-                {node.hasChildren ? (node.expanded ? '\u25BC' : '\u25B6') : '\u00A0\u00A0'}
+                {node.hasChildren ? (node.expanded ? "\u25BC" : "\u25B6") : "\u00A0\u00A0"}
               </span>
               <span class="label">{node.label}</span>
             </div>
@@ -150,4 +150,4 @@ function App() {
   );
 }
 
-render(App, document.getElementById('app')!);
+render(App, document.getElementById("app")!);

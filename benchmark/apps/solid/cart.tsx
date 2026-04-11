@@ -1,8 +1,8 @@
 // Shopping cart benchmark — idiomatic Solid version.
 // Uses: createSignal, createMemo, For, JSX onClick. Zero vanilla JS for UI wiring.
 
-import { createMemo, createSignal, For } from 'solid-js';
-import { render } from 'solid-js/web';
+import { createMemo, createSignal, For } from "solid-js";
+import { render } from "solid-js/web";
 
 // ---------------------------------------------------------------------------
 // Data generation
@@ -16,16 +16,16 @@ interface CartItem {
 }
 
 const NAMES = [
-  'Widget',
-  'Gadget',
-  'Doohickey',
-  'Thingamajig',
-  'Gizmo',
-  'Contraption',
-  'Apparatus',
-  'Device',
-  'Implement',
-  'Mechanism',
+  "Widget",
+  "Gadget",
+  "Doohickey",
+  "Thingamajig",
+  "Gizmo",
+  "Contraption",
+  "Apparatus",
+  "Device",
+  "Implement",
+  "Mechanism",
 ];
 let nextId = 1;
 const rnd = (m: number) => (Math.random() * m) | 0;
@@ -61,7 +61,7 @@ const total = createMemo(() => subtotal() + tax());
 
 function HBtn(props: { id: string; onClick: () => void; children: any }) {
   return (
-    <button type="button" id={props.id} style={{ display: 'none' }} onClick={props.onClick}>
+    <button type="button" id={props.id} style={{ display: "none" }} onClick={props.onClick}>
       {props.children}
     </button>
   );
@@ -175,4 +175,4 @@ function App() {
   );
 }
 
-render(App, document.getElementById('app')!);
+render(App, document.getElementById("app")!);

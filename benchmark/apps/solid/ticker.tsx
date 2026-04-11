@@ -1,8 +1,8 @@
 // Stock ticker benchmark — idiomatic Solid version.
 // Uses: createSignal, For, JSX onClick. Zero vanilla JS for UI wiring.
 
-import { createSignal, For } from 'solid-js';
-import { render } from 'solid-js/web';
+import { createSignal, For } from "solid-js";
+import { render } from "solid-js/web";
 
 // ---------------------------------------------------------------------------
 // Data generation
@@ -17,56 +17,56 @@ interface Stock {
 }
 
 const SYMBOLS = [
-  'AAPL',
-  'GOOG',
-  'MSFT',
-  'AMZN',
-  'META',
-  'TSLA',
-  'NVDA',
-  'JPM',
-  'V',
-  'JNJ',
-  'WMT',
-  'PG',
-  'MA',
-  'UNH',
-  'HD',
-  'DIS',
-  'BAC',
-  'XOM',
-  'PFE',
-  'KO',
-  'PEP',
-  'CSCO',
-  'INTC',
-  'NFLX',
-  'CMCSA',
-  'ADBE',
-  'CRM',
-  'ABT',
-  'NKE',
-  'MRK',
-  'T',
-  'VZ',
-  'CVX',
-  'WFC',
-  'LLY',
-  'TMO',
-  'AVGO',
-  'COST',
-  'DHR',
-  'ACN',
-  'TXN',
-  'MDT',
-  'UPS',
-  'NEE',
-  'HON',
-  'PM',
-  'QCOM',
-  'LOW',
-  'UNP',
-  'ORCL',
+  "AAPL",
+  "GOOG",
+  "MSFT",
+  "AMZN",
+  "META",
+  "TSLA",
+  "NVDA",
+  "JPM",
+  "V",
+  "JNJ",
+  "WMT",
+  "PG",
+  "MA",
+  "UNH",
+  "HD",
+  "DIS",
+  "BAC",
+  "XOM",
+  "PFE",
+  "KO",
+  "PEP",
+  "CSCO",
+  "INTC",
+  "NFLX",
+  "CMCSA",
+  "ADBE",
+  "CRM",
+  "ABT",
+  "NKE",
+  "MRK",
+  "T",
+  "VZ",
+  "CVX",
+  "WFC",
+  "LLY",
+  "TMO",
+  "AVGO",
+  "COST",
+  "DHR",
+  "ACN",
+  "TXN",
+  "MDT",
+  "UPS",
+  "NEE",
+  "HON",
+  "PM",
+  "QCOM",
+  "LOW",
+  "UNP",
+  "ORCL",
 ];
 
 function makeStocks(): Stock[] {
@@ -98,7 +98,7 @@ function updateRandom(stocks: Stock[]): Stock[] {
 // ---------------------------------------------------------------------------
 
 const [stocks, setStocks] = createSignal<Stock[]>(makeStocks());
-const [frameLabel, setFrameLabel] = createSignal('Frames: 0');
+const [frameLabel, setFrameLabel] = createSignal("Frames: 0");
 let rafId = 0;
 let frames = 0;
 
@@ -205,7 +205,7 @@ function App() {
         <tbody id="tbody">
           <For each={stocks()}>
             {(stock: Stock) => (
-              <tr class={stock.change >= 0 ? 'positive' : 'negative'}>
+              <tr class={stock.change >= 0 ? "positive" : "negative"}>
                 <td>{stock.symbol}</td>
                 <td>{stock.price.toFixed(2)}</td>
                 <td>{stock.change.toFixed(2)}%</td>
@@ -219,10 +219,10 @@ function App() {
   );
 }
 
-render(App, document.getElementById('app')!);
+render(App, document.getElementById("app")!);
 
 // Hidden button handlers for benchmark permutations
-document.getElementById('run-10')?.addEventListener('click', () => runFrames(10));
-document.getElementById('run-100')?.addEventListener('click', () => runFrames(100));
-document.getElementById('run-1000')?.addEventListener('click', () => runFrames(1000));
-document.getElementById('run-10000')?.addEventListener('click', () => runFrames(10000));
+document.getElementById("run-10")?.addEventListener("click", () => runFrames(10));
+document.getElementById("run-100")?.addEventListener("click", () => runFrames(100));
+document.getElementById("run-1000")?.addEventListener("click", () => runFrames(1000));
+document.getElementById("run-10000")?.addEventListener("click", () => runFrames(10000));

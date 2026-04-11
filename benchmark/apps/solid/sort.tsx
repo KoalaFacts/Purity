@@ -1,67 +1,67 @@
 // Sort benchmark — idiomatic Solid version.
 // Uses: createSignal, createMemo, For, JSX onClick. Zero vanilla JS for UI wiring.
 
-import { createMemo, createSignal, For } from 'solid-js';
-import { render } from 'solid-js/web';
+import { createMemo, createSignal, For } from "solid-js";
+import { render } from "solid-js/web";
 
 // ---------------------------------------------------------------------------
 // Data generation
 // ---------------------------------------------------------------------------
 
 const A = [
-  'pretty',
-  'large',
-  'big',
-  'small',
-  'tall',
-  'short',
-  'long',
-  'handsome',
-  'plain',
-  'quaint',
-  'clean',
-  'elegant',
-  'easy',
-  'angry',
-  'crazy',
-  'helpful',
-  'mushy',
-  'odd',
-  'unsightly',
-  'adorable',
-  'important',
-  'inexpensive',
-  'cheap',
-  'expensive',
-  'fancy',
+  "pretty",
+  "large",
+  "big",
+  "small",
+  "tall",
+  "short",
+  "long",
+  "handsome",
+  "plain",
+  "quaint",
+  "clean",
+  "elegant",
+  "easy",
+  "angry",
+  "crazy",
+  "helpful",
+  "mushy",
+  "odd",
+  "unsightly",
+  "adorable",
+  "important",
+  "inexpensive",
+  "cheap",
+  "expensive",
+  "fancy",
 ];
 const C = [
-  'red',
-  'yellow',
-  'blue',
-  'green',
-  'pink',
-  'brown',
-  'purple',
-  'brown',
-  'white',
-  'black',
-  'orange',
+  "red",
+  "yellow",
+  "blue",
+  "green",
+  "pink",
+  "brown",
+  "purple",
+  "brown",
+  "white",
+  "black",
+  "orange",
 ];
 const N = [
-  'table',
-  'chair',
-  'house',
-  'bbq',
-  'desk',
-  'car',
-  'pony',
-  'cookie',
-  'sandwich',
-  'burger',
-  'pizza',
-  'mouse',
-  'keyboard',
+  "table",
+  "chair",
+  "house",
+  "bbq",
+  "desk",
+  "car",
+  "pony",
+  "cookie",
+  "sandwich",
+  "burger",
+  "pizza",
+  "mouse",
+  "keyboard",
 ];
 
 interface Item {
@@ -83,17 +83,17 @@ function buildData(count: number): Item[] {
 // Module-level signals
 // ---------------------------------------------------------------------------
 
-type SortMode = 'none' | 'id-asc' | 'id-desc' | 'label-asc';
+type SortMode = "none" | "id-asc" | "id-desc" | "label-asc";
 
 const [data, setData] = createSignal<Item[]>([]);
-const [sortMode, setSortMode] = createSignal<SortMode>('none');
+const [sortMode, setSortMode] = createSignal<SortMode>("none");
 
 const sorted = createMemo(() => {
   const s = data().slice();
   const mode = sortMode();
-  if (mode === 'id-asc') s.sort((a, b) => a.id - b.id);
-  else if (mode === 'id-desc') s.sort((a, b) => b.id - a.id);
-  else if (mode === 'label-asc') s.sort((a, b) => a.label.localeCompare(b.label));
+  if (mode === "id-asc") s.sort((a, b) => a.id - b.id);
+  else if (mode === "id-desc") s.sort((a, b) => b.id - a.id);
+  else if (mode === "label-asc") s.sort((a, b) => a.label.localeCompare(b.label));
   return s;
 });
 
@@ -103,7 +103,7 @@ const sorted = createMemo(() => {
 
 function HBtn(props: { id: string; onClick: () => void; children: any }) {
   return (
-    <button type="button" id={props.id} style={{ display: 'none' }} onClick={props.onClick}>
+    <button type="button" id={props.id} style={{ display: "none" }} onClick={props.onClick}>
       {props.children}
     </button>
   );
@@ -115,7 +115,7 @@ function HBtn(props: { id: string; onClick: () => void; children: any }) {
 
 function populate(n: number) {
   setData(buildData(n));
-  setSortMode('none');
+  setSortMode("none");
 }
 
 function App() {
@@ -142,7 +142,7 @@ function App() {
                 type="button"
                 class="btn btn-primary btn-block"
                 id="sort-id"
-                onClick={() => setSortMode('id-asc')}
+                onClick={() => setSortMode("id-asc")}
               >
                 Sort by ID ↑
               </button>
@@ -152,7 +152,7 @@ function App() {
                 type="button"
                 class="btn btn-primary btn-block"
                 id="sort-id-desc"
-                onClick={() => setSortMode('id-desc')}
+                onClick={() => setSortMode("id-desc")}
               >
                 Sort by ID ↓
               </button>
@@ -162,7 +162,7 @@ function App() {
                 type="button"
                 class="btn btn-primary btn-block"
                 id="sort-label"
-                onClick={() => setSortMode('label-asc')}
+                onClick={() => setSortMode("label-asc")}
               >
                 Sort by Label ↑
               </button>
@@ -199,7 +199,7 @@ render(
       )}
     </For>
   ),
-  document.getElementById('tbody')!,
+  document.getElementById("tbody")!,
 );
 
-render(App, document.getElementById('app')!);
+render(App, document.getElementById("app")!);

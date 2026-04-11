@@ -1,14 +1,14 @@
-import { describe, expect, it } from 'vitest';
-import { batch, compute, state, watch } from '../src/signals.ts';
+import { describe, expect, it } from "vite-plus/test";
+import { batch, compute, state, watch, type StateAccessor } from "../src/signals.ts";
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 // Generous thresholds — perf tests verify O(n) behavior, not absolute speed.
 // Actual timings are logged for manual review.
 
-describe('performance', () => {
-  describe('signal creation', () => {
-    it('creates 100k state signals', () => {
+describe("performance", () => {
+  describe("signal creation", () => {
+    it("creates 100k state signals", () => {
       const start = performance.now();
       const signals = [];
       for (let i = 0; i < 100_000; i++) {
@@ -19,7 +19,7 @@ describe('performance', () => {
       expect(elapsed).toBeLessThan(2000);
     });
 
-    it('creates 100k computed signals', () => {
+    it("creates 100k computed signals", () => {
       const source = state(0);
       const start = performance.now();
       const signals = [];
@@ -32,8 +32,8 @@ describe('performance', () => {
     });
   });
 
-  describe('signal reads/writes', () => {
-    it('performs 1M reads', () => {
+  describe("signal reads/writes", () => {
+    it("performs 1M reads", () => {
       const s = state(42);
       const start = performance.now();
       let sum = 0;
@@ -46,7 +46,7 @@ describe('performance', () => {
       expect(sum).toBe(42_000_000);
     });
 
-    it('performs 1M writes', () => {
+    it("performs 1M writes", () => {
       const s = state(0);
       const start = performance.now();
       for (let i = 0; i < 1_000_000; i++) {
@@ -58,7 +58,7 @@ describe('performance', () => {
       expect(s()).toBe(999_999);
     });
 
-    it('performs 1M updater calls', () => {
+    it("performs 1M updater calls", () => {
       const s = state(0);
       const start = performance.now();
       for (let i = 0; i < 1_000_000; i++) {
@@ -71,10 +71,10 @@ describe('performance', () => {
     });
   });
 
-  describe('computed propagation', () => {
-    it('propagates through 1000-deep chain', () => {
+  describe("computed propagation", () => {
+    it("propagates through 1000-deep chain", () => {
       const source = state(0);
-      let current = source;
+      let current: () => number = source;
       for (let i = 0; i < 1000; i++) {
         const prev = current;
         current = compute(() => prev() + 1);
@@ -89,7 +89,7 @@ describe('performance', () => {
       expect(elapsed).toBeLessThan(500);
     });
 
-    it('fan-out: 1 source → 10k dependents', () => {
+    it("fan-out: 1 source → 10k dependents", () => {
       const source = state(0);
       const deps = [];
       for (let i = 0; i < 10_000; i++) {
@@ -105,7 +105,7 @@ describe('performance', () => {
       expect(elapsed).toBeLessThan(500);
     });
 
-    it('diamond: no double computation', () => {
+    it("diamond: no double computation", () => {
       const source = state(0);
       let bCount = 0;
       let cCount = 0;
@@ -137,8 +137,8 @@ describe('performance', () => {
     });
   });
 
-  describe('watch throughput', () => {
-    it('1k effects react to single change', async () => {
+  describe("watch throughput", () => {
+    it("1k effects react to single change", async () => {
       const source = state(0);
       let count = 0;
 
@@ -159,7 +159,7 @@ describe('performance', () => {
       expect(elapsed).toBeLessThan(1000);
     });
 
-    it('10k rapid writes batched', async () => {
+    it("10k rapid writes batched", async () => {
       const source = state(0);
       let runs = 0;
 
@@ -179,9 +179,9 @@ describe('performance', () => {
     });
   });
 
-  describe('batch', () => {
-    it('10k writes triggers effect once', async () => {
-      const signals = [];
+  describe("batch", () => {
+    it("10k writes triggers effect once", async () => {
+      const signals: StateAccessor<number>[] = [];
       for (let i = 0; i < 100; i++) signals.push(state(0));
 
       let runs = 0;
@@ -199,8 +199,8 @@ describe('performance', () => {
     });
   });
 
-  describe('disposal', () => {
-    it('disposes 10k effects', () => {
+  describe("disposal", () => {
+    it("disposes 10k effects", () => {
       const source = state(0);
       const disposers = [];
       for (let i = 0; i < 10_000; i++) {

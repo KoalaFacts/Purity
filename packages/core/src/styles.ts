@@ -1,5 +1,5 @@
-import { getCurrentContext } from './component';
-import { watch } from './signals';
+import { getCurrentContext } from "./component";
+import { watch } from "./signals";
 
 // ---------------------------------------------------------------------------
 // css`` — scoped styles
@@ -45,15 +45,15 @@ import { watch } from './signals';
 export function css(strings: TemplateStringsArray, ...values: unknown[]): string {
   const ctx = getCurrentContext();
   const shadowRoot = ctx ? ((ctx as any)._shadowRoot as ShadowRoot | undefined) : undefined;
-  const hasReactive = values.some((v) => typeof v === 'function');
+  const hasReactive = values.some((v) => typeof v === "function");
 
   const buildCss = (): string => {
-    let raw = '';
+    let raw = "";
     for (let i = 0; i < strings.length; i++) {
       raw += strings[i];
       if (i < values.length) {
         const val = values[i];
-        raw += String(typeof val === 'function' ? (val as () => unknown)() : (val ?? ''));
+        raw += String(typeof val === "function" ? (val as () => unknown)() : (val ?? ""));
       }
     }
     return raw;
@@ -67,7 +67,7 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
     shadowRoot.adoptedStyleSheets = [...shadowRoot.adoptedStyleSheets, sheet];
 
     if (hasReactive) {
-      let prevCss = '';
+      let prevCss = "";
       const dispose = watch(() => {
         const newCss = buildCss();
         if (newCss !== prevCss) {
@@ -80,17 +80,17 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
     }
 
     // No scope class needed — Shadow DOM scopes it
-    return '';
+    return "";
   }
 
   // Fallback path — <style> injection with class scoping (no Shadow DOM)
   const scopeClass = `p-${scopeCounter++}`;
-  const styleEl = document.createElement('style');
-  styleEl.setAttribute('data-purity-scope', scopeClass);
+  const styleEl = document.createElement("style");
+  styleEl.setAttribute("data-purity-scope", scopeClass);
   document.head.appendChild(styleEl);
 
   if (hasReactive) {
-    let prevCss = '';
+    let prevCss = "";
     const dispose = watch(() => {
       const newCss = scopeSelectors(buildCss(), `.${scopeClass}`);
       if (newCss !== prevCss) {
@@ -119,33 +119,33 @@ let scopeCounter = 0;
 // Fallback scoping — only used when no Shadow DOM
 // Uses split-based parsing instead of regex to avoid polynomial backtracking
 function scopeSelectors(cssText: string, scope: string): string {
-  let result = '';
+  let result = "";
   let i = 0;
   while (i < cssText.length) {
-    const openBrace = cssText.indexOf('{', i);
+    const openBrace = cssText.indexOf("{", i);
     if (openBrace === -1) {
       result += cssText.slice(i);
       break;
     }
     const selectorGroup = cssText.slice(i, openBrace);
-    const selectors = selectorGroup.split(',').map((s) => {
+    const selectors = selectorGroup.split(",").map((s) => {
       const trimmed = s.trim();
       if (!trimmed) return s;
-      if (trimmed === ':host') return `${scope} `;
+      if (trimmed === ":host") return `${scope} `;
       if (trimmed.startsWith(scope)) return `${trimmed} `;
       return `${scope} ${trimmed}`;
     });
-    result += `${selectors.join(', ')}{`;
+    result += `${selectors.join(", ")}{`;
     // Find matching close brace (skip nested braces)
     let depth = 1;
     let j = openBrace + 1;
     while (j < cssText.length && depth > 0) {
-      if (cssText[j] === '{') depth++;
-      else if (cssText[j] === '}') depth--;
+      if (cssText[j] === "{") depth++;
+      else if (cssText[j] === "}") depth--;
       if (depth > 0) result += cssText[j];
       j++;
     }
-    result += '}';
+    result += "}";
     i = j;
   }
   return result;

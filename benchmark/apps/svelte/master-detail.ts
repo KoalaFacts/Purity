@@ -1,4 +1,4 @@
-import { mount } from 'svelte';
-import MasterDetailApp from './MasterDetailApp.svelte';
+import { mount } from "svelte";
+import MasterDetailApp from "./MasterDetailApp.svelte";
 
-mount(MasterDetailApp, { target: document.getElementById('app')! });
+mount(MasterDetailApp, { target: document.getElementById("app")! });

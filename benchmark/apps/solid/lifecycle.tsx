@@ -1,8 +1,8 @@
 // Lifecycle benchmark — idiomatic Solid version.
 // Uses: createSignal, For, JSX onClick. Zero vanilla JS for UI wiring.
 
-import { createSignal, For } from 'solid-js';
-import { render } from 'solid-js/web';
+import { createSignal, For } from "solid-js";
+import { render } from "solid-js/web";
 
 // ---------------------------------------------------------------------------
 // Types and data generation
@@ -32,7 +32,7 @@ const [cards, setCards] = createSignal<Card[]>([]);
 
 function HBtn(props: { id: string; onClick: () => void; children: any }) {
   return (
-    <button type="button" id={props.id} style={{ display: 'none' }} onClick={props.onClick}>
+    <button type="button" id={props.id} style={{ display: "none" }} onClick={props.onClick}>
       {props.children}
     </button>
   );
@@ -125,4 +125,4 @@ function App() {
   );
 }
 
-render(App, document.getElementById('app')!);
+render(App, document.getElementById("app")!);

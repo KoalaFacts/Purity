@@ -1,4 +1,4 @@
-import { createApp } from 'vue';
-import LifecycleApp from './LifecycleApp.vue';
+import { createApp } from "vue";
+import LifecycleApp from "./LifecycleApp.vue";
 
-createApp(LifecycleApp).mount('#app');
+createApp(LifecycleApp).mount("#app");

@@ -1,61 +1,61 @@
 // Shared benchmark app using Purity public APIs: state, watch, each.
 
-import { each, html, state, watch } from '../../packages/core/src/index.ts';
+import { each, html, state, watch } from "../../packages/core/src/index.ts";
 
 const adjectives = [
-  'pretty',
-  'large',
-  'big',
-  'small',
-  'tall',
-  'short',
-  'long',
-  'handsome',
-  'plain',
-  'quaint',
-  'clean',
-  'elegant',
-  'easy',
-  'angry',
-  'crazy',
-  'helpful',
-  'mushy',
-  'odd',
-  'unsightly',
-  'adorable',
-  'important',
-  'inexpensive',
-  'cheap',
-  'expensive',
-  'fancy',
+  "pretty",
+  "large",
+  "big",
+  "small",
+  "tall",
+  "short",
+  "long",
+  "handsome",
+  "plain",
+  "quaint",
+  "clean",
+  "elegant",
+  "easy",
+  "angry",
+  "crazy",
+  "helpful",
+  "mushy",
+  "odd",
+  "unsightly",
+  "adorable",
+  "important",
+  "inexpensive",
+  "cheap",
+  "expensive",
+  "fancy",
 ];
 const colours = [
-  'red',
-  'yellow',
-  'blue',
-  'green',
-  'pink',
-  'brown',
-  'purple',
-  'brown',
-  'white',
-  'black',
-  'orange',
+  "red",
+  "yellow",
+  "blue",
+  "green",
+  "pink",
+  "brown",
+  "purple",
+  "brown",
+  "white",
+  "black",
+  "orange",
 ];
 const nouns = [
-  'table',
-  'chair',
-  'house',
-  'bbq',
-  'desk',
-  'car',
-  'pony',
-  'cookie',
-  'sandwich',
-  'burger',
-  'pizza',
-  'mouse',
-  'keyboard',
+  "table",
+  "chair",
+  "house",
+  "bbq",
+  "desk",
+  "car",
+  "pony",
+  "cookie",
+  "sandwich",
+  "burger",
+  "pizza",
+  "mouse",
+  "keyboard",
 ];
 
 interface RowItem {
@@ -104,13 +104,17 @@ export function createApp(tbody: HTMLElement): AppHandle {
         <tr>
           <td class="col-md-1">${String(item.id)}</td>
           <td class="col-md-4"><a class="lbl">${item.label}</a></td>
-          <td class="col-md-1"><a class="remove"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
+          <td class="col-md-1">
+            <a class="remove"
+              ><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span
+            ></a>
+          </td>
           <td class="col-md-6"></td>
         </tr>
       ` as unknown as HTMLTableRowElement;
 
       // Cache label text node for in-place updates
-      const labelNode = tr.querySelector('.lbl')!.firstChild as Text;
+      const labelNode = tr.querySelector(".lbl")!.firstChild as Text;
       rows.set(item.id, { tr, labelNode, label: item.label });
       return tr;
     },
@@ -134,22 +138,22 @@ export function createApp(tbody: HTMLElement): AppHandle {
   watch(selectedId, (id, oldId) => {
     if (oldId) {
       const r = rows.get(oldId);
-      if (r) r.tr.className = '';
+      if (r) r.tr.className = "";
     }
     if (id) {
       const r = rows.get(id);
-      if (r) r.tr.className = 'danger';
+      if (r) r.tr.className = "danger";
     }
   });
 
   // Event delegation
-  tbody.addEventListener('click', (e) => {
-    const a = (e.target as HTMLElement).closest('a');
+  tbody.addEventListener("click", (e) => {
+    const a = (e.target as HTMLElement).closest("a");
     if (!a) return;
     e.preventDefault();
-    const id = +(a.closest('tr')!.firstChild as HTMLElement).textContent!;
-    if (a.classList.contains('lbl')) handle.select(id);
-    else if (a.classList.contains('remove')) handle.remove(id);
+    const id = +(a.closest("tr")!.firstChild as HTMLElement).textContent!;
+    if (a.classList.contains("lbl")) handle.select(id);
+    else if (a.classList.contains("remove")) handle.remove(id);
   });
 
   const handle: AppHandle = {

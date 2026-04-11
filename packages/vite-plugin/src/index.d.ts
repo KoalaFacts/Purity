@@ -4,7 +4,7 @@ export interface PurityPluginOptions {
 
 export function purity(options?: PurityPluginOptions): {
   name: string;
-  enforce: 'pre';
+  enforce: "pre";
   transform(code: string, id: string): { code: string; map: null } | null;
 };
 

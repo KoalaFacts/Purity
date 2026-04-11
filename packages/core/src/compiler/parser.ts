@@ -10,24 +10,24 @@
 // - Minimal allocations — reuses state variables
 // ---------------------------------------------------------------------------
 
-import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from './ast.ts';
+import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from "./ast.ts";
 
 // Void elements that cannot have children
 const VOID_TAGS = new Set([
-  'area',
-  'base',
-  'br',
-  'col',
-  'embed',
-  'hr',
-  'img',
-  'input',
-  'link',
-  'meta',
-  'param',
-  'source',
-  'track',
-  'wbr',
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
 ]);
 
 // Char codes for fast comparison
@@ -149,7 +149,7 @@ class Parser {
 
   parse(): FragmentNode {
     const children = this.parseChildren();
-    return { type: 'fragment', children };
+    return { type: "fragment", children };
   }
 
   private parseChildren(): ASTNode[] {
@@ -158,7 +158,7 @@ class Parser {
     while (!this.atEnd()) {
       if (this.atExprBoundary()) {
         // Expression in content position
-        children.push({ type: 'expression', index: this.consumeExpr() });
+        children.push({ type: "expression", index: this.consumeExpr() });
         continue;
       }
 
@@ -203,7 +203,7 @@ class Parser {
       this.pos++;
     }
     const value = s.slice(start, this.pos);
-    return { type: 'text', value };
+    return { type: "text", value };
   }
 
   private parseComment(): ASTNode {
@@ -212,13 +212,13 @@ class Parser {
     const s = this.current();
     const start = this.pos;
     // Find -->
-    const endIdx = s.indexOf('-->', this.pos);
+    const endIdx = s.indexOf("-->", this.pos);
     if (endIdx === -1) {
       this.pos = s.length;
-      return { type: 'comment', value: s.slice(start) };
+      return { type: "comment", value: s.slice(start) };
     }
     this.pos = endIdx + 3;
-    return { type: 'comment', value: s.slice(start, endIdx) };
+    return { type: "comment", value: s.slice(start, endIdx) };
   }
 
   private parseElement(): ElementNode {
@@ -252,7 +252,7 @@ class Parser {
       this.consumeClosingTag(tag);
     }
 
-    return { type: 'element', tag, attributes, children, isVoid };
+    return { type: "element", tag, attributes, children, isVoid };
   }
 
   private consumeClosingTag(_tag: string): void {
@@ -299,17 +299,17 @@ class Parser {
     const firstChar = s.charCodeAt(this.pos);
 
     // Detect prefix: @event, ?bool, .prop, ::two-way, :one-way
-    let prefix = '';
+    let prefix = "";
     if (firstChar === AT || firstChar === QMARK || firstChar === DOT) {
       prefix = s[this.pos];
       this.advance();
     } else if (firstChar === COLON) {
       // Check for :: (two-way) vs : (one-way)
       if (this.pos + 1 < s.length && s.charCodeAt(this.pos + 1) === COLON) {
-        prefix = '::';
+        prefix = "::";
         this.pos += 2;
       } else {
-        prefix = ':';
+        prefix = ":";
         this.advance();
       }
     }
@@ -322,7 +322,7 @@ class Parser {
 
     if (this.atEnd() || this.atExprBoundary() || this.peek() !== EQ) {
       // Boolean attribute with no value: <input disabled>
-      return { kind: 'static', name, value: '' };
+      return { kind: "static", name, value: "" };
     }
 
     // Skip =
@@ -372,23 +372,23 @@ class Parser {
       value = s.slice(start, this.pos);
     }
 
-    return { kind: 'static', name, value };
+    return { kind: "static", name, value };
   }
 
   private classifyDynamicAttr(prefix: string, name: string, index: number): AttributeNode {
     switch (prefix) {
-      case '@':
-        return { kind: 'event', name, index };
-      case '?':
-        return { kind: 'bool', name, index };
-      case '.':
-        return { kind: 'prop', name, index };
-      case ':':
-        return { kind: 'reactive-prop', name, index };
-      case '::':
-        return { kind: 'bind', name, index };
+      case "@":
+        return { kind: "event", name, index };
+      case "?":
+        return { kind: "bool", name, index };
+      case ".":
+        return { kind: "prop", name, index };
+      case ":":
+        return { kind: "reactive-prop", name, index };
+      case "::":
+        return { kind: "bind", name, index };
       default:
-        return { kind: 'dynamic', name, index };
+        return { kind: "dynamic", name, index };
     }
   }
 }

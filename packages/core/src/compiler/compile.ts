@@ -5,13 +5,13 @@
 // Subsequent calls: run cached function directly. Zero overhead.
 // ---------------------------------------------------------------------------
 
-import { watch } from '../signals.ts';
-import { generate } from './codegen.ts';
-import { parse } from './parser.ts';
+import { watch } from "../signals.ts";
+import { generate } from "./codegen.ts";
+import { parse } from "./parser.ts";
 
 type CompiledFn = (
   values: unknown[],
-  watch: typeof import('../signals.ts').watch,
+  watch: typeof import("../signals.ts").watch,
 ) => Node | DocumentFragment;
 
 const compiledCache = new WeakMap<TemplateStringsArray, CompiledFn>();
@@ -62,6 +62,7 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Docum
   if (!compiled) {
     const ast = parse(strings);
     const code = generate(ast);
+    // eslint-disable-next-line no-implied-eval -- JIT template compiler: new Function is the core mechanism
     compiled = new Function(`return ${code}`)() as CompiledFn;
     compiledCache.set(strings, compiled);
   }
@@ -80,6 +81,7 @@ export function getCompiledFactory(strings: TemplateStringsArray): CompiledFn {
   if (!compiled) {
     const ast = parse(strings);
     const code = generate(ast);
+    // eslint-disable-next-line no-implied-eval -- JIT template compiler
     compiled = new Function(`return ${code}`)() as CompiledFn;
     compiledCache.set(strings, compiled);
   }
@@ -87,4 +89,4 @@ export function getCompiledFactory(strings: TemplateStringsArray): CompiledFn {
 }
 
 /** @internal */
-export { watch as _watch } from '../signals.ts';
+export { watch as _watch } from "../signals.ts";

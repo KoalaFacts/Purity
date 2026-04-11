@@ -8,12 +8,12 @@
 export type ASTNode = ElementNode | TextNode | ExpressionNode | CommentNode | FragmentNode;
 
 export interface FragmentNode {
-  type: 'fragment';
+  type: "fragment";
   children: ASTNode[];
 }
 
 export interface ElementNode {
-  type: 'element';
+  type: "element";
   tag: string;
   attributes: AttributeNode[];
   children: ASTNode[];
@@ -21,17 +21,17 @@ export interface ElementNode {
 }
 
 export interface TextNode {
-  type: 'text';
+  type: "text";
   value: string;
 }
 
 export interface ExpressionNode {
-  type: 'expression';
+  type: "expression";
   index: number; // index into the values array
 }
 
 export interface CommentNode {
-  type: 'comment';
+  type: "comment";
   value: string;
 }
 
@@ -53,36 +53,36 @@ interface BaseAttribute {
 }
 
 export interface StaticAttribute extends BaseAttribute {
-  kind: 'static';
+  kind: "static";
   value: string;
 }
 
 export interface DynamicAttribute extends BaseAttribute {
-  kind: 'dynamic';
+  kind: "dynamic";
   index: number; // expression index
 }
 
 export interface EventAttribute extends BaseAttribute {
-  kind: 'event';
+  kind: "event";
   index: number;
 }
 
 export interface BoolAttribute extends BaseAttribute {
-  kind: 'bool';
+  kind: "bool";
   index: number;
 }
 
 export interface BindAttribute extends BaseAttribute {
-  kind: 'bind';
+  kind: "bind";
   index: number;
 }
 
 export interface PropAttribute extends BaseAttribute {
-  kind: 'prop';
+  kind: "prop";
   index: number;
 }
 
 export interface ReactivePropAttribute extends BaseAttribute {
-  kind: 'reactive-prop';
+  kind: "reactive-prop";
   index: number;
 }

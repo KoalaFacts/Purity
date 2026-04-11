@@ -13,13 +13,13 @@ import {
   readFileSync,
   unlinkSync,
   writeFileSync,
-} from 'node:fs';
-import { join } from 'node:path';
+} from "node:fs";
+import { join } from "node:path";
 
-const historyDir = 'benchmark/history';
-const resultsFile = 'benchmark/benchmark-results.md';
-const distDir = 'benchmark/dist';
-const outDir = 'gh-pages';
+const historyDir = "benchmark/history";
+const resultsFile = "benchmark/benchmark-results.md";
+const distDir = "benchmark/dist";
+const outDir = "gh-pages";
 
 // ---------------------------------------------------------------------------
 // Parse speed results: | Category | Operation | Purity | Solid | Svelte | Vue | Winner |
@@ -27,27 +27,27 @@ const outDir = 'gh-pages';
 
 function parseSpeedResults(md: string) {
   // Only parse the ## Full Results section (stop at ## Memory Results)
-  const fullIdx = md.indexOf('## Full Results');
+  const fullIdx = md.indexOf("## Full Results");
   if (fullIdx === -1) return [];
   let section = md.slice(fullIdx);
-  const memIdx = section.indexOf('## Memory Results');
+  const memIdx = section.indexOf("## Memory Results");
   if (memIdx !== -1) section = section.slice(0, memIdx);
 
-  const lines = section.split('\n').filter((l) => l.startsWith('|'));
+  const lines = section.split("\n").filter((l) => l.startsWith("|"));
   if (lines.length < 3) return [];
 
   const headerCells = lines[0]
-    .split('|')
+    .split("|")
     .map((c) => c.trim())
     .filter(Boolean);
   const hasCategory = headerCells.length >= 6;
 
-  let lastCategory = '';
+  let lastCategory = "";
   return lines
     .slice(2)
     .map((line) => {
       // Split by | and drop leading/trailing empty entries (from | at start/end)
-      const raw = line.split('|').map((c) => c.trim());
+      const raw = line.split("|").map((c) => c.trim());
       const cells = raw.slice(1, raw.length - 1); // drop first/last empty strings
 
       if (hasCategory) {
@@ -61,18 +61,18 @@ function parseSpeedResults(md: string) {
           solid: parseFloat(cells[3]),
           svelte: parseFloat(cells[4]),
           vue: parseFloat(cells[5]),
-          winner: cells[6].replace(/\*/g, ''),
+          winner: cells[6].replace(/\*/g, ""),
         };
       }
       if (cells.length < 5) return null;
       return {
-        category: '',
+        category: "",
         op: cells[0],
         purity: parseFloat(cells[1]),
         solid: parseFloat(cells[2]),
         svelte: parseFloat(cells[3]),
         vue: NaN,
-        winner: cells[4].replace(/\*/g, ''),
+        winner: cells[4].replace(/\*/g, ""),
       };
     })
     .filter(Boolean);
@@ -83,17 +83,17 @@ function parseSpeedResults(md: string) {
 // ---------------------------------------------------------------------------
 
 function parseMemoryResults(md: string) {
-  const memIdx = md.indexOf('## Memory Results');
+  const memIdx = md.indexOf("## Memory Results");
   if (memIdx === -1) return [];
   const section = md.slice(memIdx);
-  const lines = section.split('\n').filter((l) => l.startsWith('|'));
+  const lines = section.split("\n").filter((l) => l.startsWith("|"));
   if (lines.length < 3) return [];
 
   return lines
     .slice(2)
     .map((line) => {
       const cells = line
-        .split('|')
+        .split("|")
         .map((c) => c.trim())
         .filter(Boolean);
       if (cells.length < 10) return null;
@@ -107,7 +107,7 @@ function parseMemoryResults(md: string) {
         solidRetained: parseFloat(cells[6]),
         svelteRetained: parseFloat(cells[7]),
         vueRetained: parseFloat(cells[8]),
-        bestCleanup: cells[9].replace(/\*/g, ''),
+        bestCleanup: cells[9].replace(/\*/g, ""),
       };
     })
     .filter(Boolean);
@@ -119,7 +119,7 @@ function parseMemoryResults(md: string) {
 
 const historyFiles = existsSync(historyDir)
   ? readdirSync(historyDir)
-      .filter((f) => f.endsWith('.md'))
+      .filter((f) => f.endsWith(".md"))
       .sort()
       .reverse()
   : [];
@@ -135,15 +135,15 @@ const recentFiles = historyFiles.slice(0, 3);
 // Build data payload
 // ---------------------------------------------------------------------------
 
-const currentMd = readFileSync(resultsFile, 'utf8');
+const currentMd = readFileSync(resultsFile, "utf8");
 const benchData = {
   speed: parseSpeedResults(currentMd),
   memory: parseMemoryResults(currentMd),
   history: recentFiles.map((f) => {
-    const md = readFileSync(join(historyDir, f), 'utf8');
+    const md = readFileSync(join(historyDir, f), "utf8");
     const date = f
-      .replace('.md', '')
-      .replace(/(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})(\d{2})/, '$1-$2-$3 $4:$5:$6');
+      .replace(".md", "")
+      .replace(/(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})(\d{2})/, "$1-$2-$3 $4:$5:$6");
     return {
       date,
       speed: parseSpeedResults(md),
@@ -156,7 +156,7 @@ const benchData = {
 // Inject data into built report page
 // ---------------------------------------------------------------------------
 
-const reportHtml = readFileSync(join(distDir, 'apps/purity/report.html'), 'utf8');
+const reportHtml = readFileSync(join(distDir, "apps/purity/report.html"), "utf8");
 
 // Replace the placeholder JSON in the <script id="bench-data"> tag
 const injected = reportHtml.replace(
@@ -165,14 +165,14 @@ const injected = reportHtml.replace(
 );
 
 mkdirSync(outDir, { recursive: true });
-writeFileSync(join(outDir, 'index.html'), injected);
+writeFileSync(join(outDir, "index.html"), injected);
 
 // Copy assets
-const assetsDir = join(distDir, 'assets');
+const assetsDir = join(distDir, "assets");
 if (existsSync(assetsDir)) {
-  mkdirSync(join(outDir, 'assets'), { recursive: true });
+  mkdirSync(join(outDir, "assets"), { recursive: true });
   for (const f of readdirSync(assetsDir)) {
-    cpSync(join(assetsDir, f), join(outDir, 'assets', f));
+    cpSync(join(assetsDir, f), join(outDir, "assets", f));
   }
 }
 

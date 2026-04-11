@@ -1,8 +1,8 @@
 // Conditional rendering benchmark — idiomatic Solid version.
 // Uses: createSignal, For, Show, JSX onClick. Zero vanilla JS for UI wiring.
 
-import { createSignal, For, Show } from 'solid-js';
-import { render } from 'solid-js/web';
+import { createSignal, For, Show } from "solid-js";
+import { render } from "solid-js/web";
 
 // ---------------------------------------------------------------------------
 // Types and data generation
@@ -100,13 +100,13 @@ function App() {
   );
 }
 
-render(App, document.getElementById('app')!);
+render(App, document.getElementById("app")!);
 
 // Hidden button handlers for benchmark permutations
 function populate(n: number) {
   setData(buildData(n));
   setVisible(true);
 }
-document.getElementById('populate-10')?.addEventListener('click', () => populate(10));
-document.getElementById('populate-100')?.addEventListener('click', () => populate(100));
-document.getElementById('populate-10k')?.addEventListener('click', () => populate(10000));
+document.getElementById("populate-10")?.addEventListener("click", () => populate(10));
+document.getElementById("populate-100")?.addEventListener("click", () => populate(100));
+document.getElementById("populate-10k")?.addEventListener("click", () => populate(10000));

@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       iterations:
-        description: 'Measured iterations per operation (default: 5)'
+        description: "Measured iterations per operation (default: 5)"
         required: false
-        default: '5'
+        default: "5"
 
 permissions:
   contents: write
@@ -27,30 +27,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Setup Node.js 24
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@237a7eda494c3466dcb53e9f067142b9218d64a1 # v1
         with:
-          node-version: '24'
-          cache: 'npm'
-
-      - name: Install all dependencies
-        run: npm ci
+          node-version: "24"
+          cache: true
 
       - name: Install Playwright Chromium
-        run: npx playwright install chromium
+        run: vp exec playwright install chromium
 
       - name: Build core + vite-plugin
         run: |
-          cd packages/core && npx vite build
-          cd ../vite-plugin && npx vite build
+          cd packages/core && vp build
+          cd ../vite-plugin && vp build
 
       - name: Build benchmark (AOT compiles Purity templates)
         # Vite build with @purityjs/vite-plugin transforms html`` → direct DOM calls
         # Also builds the Purity report app for GitHub Pages
-        run: cd benchmark && npx vite build
+        run: cd benchmark && vp build
 
       - name: Start production preview server
-        run: cd benchmark && npx vite preview --port 4173 &
+        run: cd benchmark && vp preview --port 4173 &
 
       - name: Wait for server to be ready
         run: sleep 3
@@ -60,7 +57,7 @@ jobs:
         # Each operation: 3 warmup + N measured iterations, metric: median
         run: |
           cd benchmark
-          ITERATIONS=${{ inputs.iterations || '5' }} MEM_ITERATIONS=2 npx tsx run-bench.ts | tee benchmark-results.md
+          ITERATIONS=${{ inputs.iterations || '5' }} MEM_ITERATIONS=2 vp exec tsx run-bench.ts | tee benchmark-results.md
 
       - name: Save results to history (last 3 runs)
         run: |
@@ -70,7 +67,7 @@ jobs:
 
       - name: Generate GitHub Pages site (Purity report app)
         # Injects benchmark JSON into the Vite-built Purity report app
-        run: npx tsx benchmark/generate-pages.ts
+        run: vp exec tsx benchmark/generate-pages.ts
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0

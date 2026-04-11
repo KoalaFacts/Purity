@@ -1,8 +1,8 @@
 // Master-detail benchmark — idiomatic Solid version.
 // Uses: createSignal, createMemo, For, Show, JSX onClick. Zero vanilla JS for UI wiring.
 
-import { createMemo, createSignal, For, Show } from 'solid-js';
-import { render } from 'solid-js/web';
+import { createMemo, createSignal, For, Show } from "solid-js";
+import { render } from "solid-js/web";
 
 // ---------------------------------------------------------------------------
 // Data generation
@@ -16,50 +16,50 @@ interface Person {
 }
 
 const FIRST = [
-  'Alice',
-  'Bob',
-  'Charlie',
-  'Diana',
-  'Eve',
-  'Frank',
-  'Grace',
-  'Henry',
-  'Iris',
-  'Jack',
-  'Kate',
-  'Leo',
-  'Mona',
-  'Nick',
-  'Olivia',
-  'Paul',
-  'Quinn',
-  'Rose',
-  'Sam',
-  'Tina',
+  "Alice",
+  "Bob",
+  "Charlie",
+  "Diana",
+  "Eve",
+  "Frank",
+  "Grace",
+  "Henry",
+  "Iris",
+  "Jack",
+  "Kate",
+  "Leo",
+  "Mona",
+  "Nick",
+  "Olivia",
+  "Paul",
+  "Quinn",
+  "Rose",
+  "Sam",
+  "Tina",
 ];
 const LAST = [
-  'Smith',
-  'Johnson',
-  'Williams',
-  'Brown',
-  'Jones',
-  'Garcia',
-  'Miller',
-  'Davis',
-  'Rodriguez',
-  'Martinez',
-  'Hernandez',
-  'Lopez',
-  'Gonzalez',
-  'Wilson',
-  'Anderson',
-  'Thomas',
-  'Taylor',
-  'Moore',
-  'Jackson',
-  'Martin',
+  "Smith",
+  "Johnson",
+  "Williams",
+  "Brown",
+  "Jones",
+  "Garcia",
+  "Miller",
+  "Davis",
+  "Rodriguez",
+  "Martinez",
+  "Hernandez",
+  "Lopez",
+  "Gonzalez",
+  "Wilson",
+  "Anderson",
+  "Thomas",
+  "Taylor",
+  "Moore",
+  "Jackson",
+  "Martin",
 ];
-const DOMAINS = ['example.com', 'test.org', 'mail.net', 'corp.io', 'dev.co'];
+const DOMAINS = ["example.com", "test.org", "mail.net", "corp.io", "dev.co"];
 
 function generatePersons(count: number): Person[] {
   const persons: Person[] = [];
@@ -167,15 +167,15 @@ function App() {
           </div>
         </div>
       </div>
-      <div style={{ display: 'flex' }}>
-        <div id="list-panel" style={{ flex: '1' }}>
+      <div style={{ display: "flex" }}>
+        <div id="list-panel" style={{ flex: "1" }}>
           <For each={persons()}>
             {(person: Person) => (
               <div
                 role="button"
                 tabIndex={0}
                 class="list-item"
-                style={{ padding: '4px 8px', cursor: 'pointer' }}
+                style={{ padding: "4px 8px", cursor: "pointer" }}
                 classList={{ selected: person.id === selectedId() }}
                 onClick={() => setSelectedId(person.id)}
               >
@@ -184,7 +184,7 @@ function App() {
             )}
           </For>
         </div>
-        <div id="detail-panel" style={{ flex: '1' }}>
+        <div id="detail-panel" style={{ flex: "1" }}>
           <Show when={selectedPerson()}>
             {(p) => (
               <div class="detail">
@@ -204,4 +204,4 @@ function App() {
   );
 }
 
-render(App, document.getElementById('app')!);
+render(App, document.getElementById("app")!);

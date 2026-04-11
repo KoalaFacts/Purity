@@ -1,6 +1,6 @@
-import { getCurrentContext } from './component';
-import type { StateAccessor } from './signals';
-import { watch } from './signals';
+import { getCurrentContext } from "./component";
+import type { StateAccessor } from "./signals";
+import { watch } from "./signals";
 
 // ---------------------------------------------------------------------------
 // match(sourceFn, cases, fallback?) — reactive pattern matching
@@ -28,7 +28,7 @@ export function match<T extends string | number | boolean>(
   cases: MatchCases<T>,
   fallback?: MatchView,
 ): DocumentFragment {
-  const endMarker = document.createComment('m');
+  const endMarker = document.createComment("m");
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
@@ -138,7 +138,7 @@ export function when(
   thenFn: MatchView,
   elseFn?: MatchView,
 ): DocumentFragment {
-  return match((() => String(conditionFn())) as () => 'true' | 'false', {
+  return match((() => String(conditionFn())) as () => "true" | "false", {
     true: thenFn,
     ...(elseFn ? { false: elseFn } : {}),
   });
@@ -156,7 +156,7 @@ function lis(arr: number[]): number[] {
   // tails[i] = smallest tail element for increasing subsequence of length i+1
   const tails: number[] = [0];
   // predecessor[i] = index of previous element in LIS ending at i
-  const predecessor: number[] = new Array(len);
+  const predecessor: number[] = new Array<number>(len);
 
   for (let i = 1; i < len; i++) {
     const val = arr[i];
@@ -183,7 +183,7 @@ function lis(arr: number[]): number[] {
   }
 
   // Reconstruct LIS
-  const result: number[] = new Array(tails.length);
+  const result: number[] = new Array<number>(tails.length);
   let k = tails[tails.length - 1];
   for (let i = result.length - 1; i >= 0; i--) {
     result[i] = k;
@@ -245,7 +245,7 @@ function extractNodes(content: Node | DocumentFragment | string): Node[] {
     return Array.from(content.childNodes);
   }
   if (content instanceof Node) return [content];
-  return [document.createTextNode(String(content ?? ''))];
+  return [document.createTextNode(String(content ?? ""))];
 }
 
 /**
@@ -272,7 +272,7 @@ export function each<T>(
   mapFn: (item: T, index: number) => Node | DocumentFragment | string,
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment {
-  const endMarker = document.createComment('e');
+  const endMarker = document.createComment("e");
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
@@ -280,7 +280,7 @@ export function each<T>(
   let prevKeys: unknown[] = [];
 
   const getList =
-    typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
+    typeof listAccessor === "function" ? (listAccessor as () => T[]) : () => listAccessor;
 
   const dispose = watch(() => {
     const list = getList() || [];
@@ -323,7 +323,7 @@ export function each<T>(
     // Fast path: all new items (first render or full replace with new keys)
     // Single pass — create + append + build map in one loop
     if (prevLen === 0) {
-      const newKeys2: unknown[] = new Array(len);
+      const newKeys2: unknown[] = new Array<unknown>(len);
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) {
         const item = list[i];
@@ -338,7 +338,7 @@ export function each<T>(
           nodes = [content];
           frag.appendChild(content);
         } else {
-          const tn = document.createTextNode(String(content ?? ''));
+          const tn = document.createTextNode(String(content ?? ""));
           nodes = [tn];
           frag.appendChild(tn);
         }
@@ -349,7 +349,7 @@ export function each<T>(
       return;
     }
 
-    const newKeys: unknown[] = new Array(len);
+    const newKeys: unknown[] = new Array<unknown>(len);
     const newEntries = new Map<unknown, EachEntry>();
     let reuseCount = 0;
 
@@ -365,7 +365,10 @@ export function each<T>(
         newEntries.set(key, entry);
         reuseCount++;
       } else {
-        newEntries.set(key, { nodes: extractNodes(mapFn(item, i)), data: null });
+        newEntries.set(key, {
+          nodes: extractNodes(mapFn(item, i)),
+          data: null,
+        });
       }
     }
 
@@ -444,7 +447,7 @@ export function each<T>(
             const nodeA = entryA.nodes[0];
             const nodeB = entryB.nodes[0];
             // Correct DOM swap using a temporary marker
-            const marker = document.createComment('');
+            const marker = document.createComment("");
             parent.insertBefore(marker, nodeA);
             parent.insertBefore(nodeA, nodeB);
             parent.insertBefore(nodeB, marker);
@@ -459,7 +462,7 @@ export function each<T>(
         for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
 
         const sources: number[] = [];
-        const newIndexToSource: number[] = new Array(len).fill(-1);
+        const newIndexToSource: number[] = new Array<number>(len).fill(-1);
 
         for (let i = 0; i < len; i++) {
           const oldIdx = oldKeyIndex.get(newKeys[i]);
@@ -587,7 +590,7 @@ export function list<T>(
   textOrOptions: ListTextFn<T> | ListOptions<T>,
   keyFnOrNothing?: (item: T, index: number) => unknown,
 ): DocumentFragment {
-  const endMarker = document.createComment('l');
+  const endMarker = document.createComment("l");
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
@@ -599,7 +602,7 @@ export function list<T>(
   let getEvents: Record<string, (item: T, index: number) => (e: Event) => void> | undefined;
   let getKey: (item: T, index: number) => unknown;
 
-  if (typeof textOrOptions === 'function') {
+  if (typeof textOrOptions === "function") {
     getText = textOrOptions;
     getKey = keyFnOrNothing ?? ((item: T) => item as unknown);
   } else {
@@ -615,7 +618,7 @@ export function list<T>(
   let prevKeys: unknown[] = [];
 
   const getList =
-    typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
+    typeof listAccessor === "function" ? (listAccessor as () => T[]) : () => listAccessor;
 
   // Create a single element — the tightest possible code
   const createEntry = (item: T, index: number): ListEntry => {
@@ -691,7 +694,7 @@ export function list<T>(
 
     // Fast path: all new (first render) — single pass, no Map lookups
     if (prevLen === 0) {
-      const newKeys2: unknown[] = new Array(len);
+      const newKeys2: unknown[] = new Array<unknown>(len);
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) {
         const item = list[i];
@@ -705,7 +708,7 @@ export function list<T>(
       return;
     }
 
-    const newKeys: unknown[] = new Array(len);
+    const newKeys: unknown[] = new Array<unknown>(len);
     const newEntries = new Map<unknown, ListEntry>();
     let reuseCount = 0;
 
@@ -778,7 +781,7 @@ export function list<T>(
         for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
 
         const sources: number[] = [];
-        const srcMap: number[] = new Array(len).fill(-1);
+        const srcMap: number[] = new Array<number>(len).fill(-1);
         for (let i = 0; i < len; i++) {
           const oi = oldKeyIndex.get(newKeys[i]);
           if (oi !== undefined) {

@@ -1,0 +1,44 @@
+{
+  "name": "@purityjs/agent-evals",
+  "version": "0.1.0",
+  "description": "Replay and scoring harness for Purity's self-improving agent control plane",
+  "keywords": [
+    "agent",
+    "evals",
+    "replay",
+    "scoring",
+    "skills"
+  ],
+  "license": "MIT",
+  "author": "KoalaFacts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KoalaFacts/Purity",
+    "directory": "packages/agent-evals"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vp run --filter @purityjs/agent-types build && vp run --filter @purityjs/agent-store build && vp build && vp exec tsc --emitDeclarationOnly",
+    "test": "vp test run"
+  },
+  "dependencies": {
+    "@purityjs/agent-store": "*",
+    "@purityjs/agent-types": "*"
+  }
+}

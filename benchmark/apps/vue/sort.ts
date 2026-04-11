@@ -1,4 +1,4 @@
-import { createApp } from 'vue';
-import SortApp from './SortApp.vue';
+import { createApp } from "vue";
+import SortApp from "./SortApp.vue";
 
-createApp(SortApp).mount('#app');
+createApp(SortApp).mount("#app");

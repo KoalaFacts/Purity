@@ -1,67 +1,67 @@
 // Row rendering benchmark — idiomatic Solid version.
 // Uses: createSignal, For, batch, JSX onClick. Zero vanilla JS for UI wiring.
 
-import { type Accessor, batch, createSignal, For, type Setter } from 'solid-js';
-import { render } from 'solid-js/web';
+import { type Accessor, batch, createSignal, For, type Setter } from "solid-js";
+import { render } from "solid-js/web";
 
 // ---------------------------------------------------------------------------
 // Data generation
 // ---------------------------------------------------------------------------
 
 const A = [
-  'pretty',
-  'large',
-  'big',
-  'small',
-  'tall',
-  'short',
-  'long',
-  'handsome',
-  'plain',
-  'quaint',
-  'clean',
-  'elegant',
-  'easy',
-  'angry',
-  'crazy',
-  'helpful',
-  'mushy',
-  'odd',
-  'unsightly',
-  'adorable',
-  'important',
-  'inexpensive',
-  'cheap',
-  'expensive',
-  'fancy',
+  "pretty",
+  "large",
+  "big",
+  "small",
+  "tall",
+  "short",
+  "long",
+  "handsome",
+  "plain",
+  "quaint",
+  "clean",
+  "elegant",
+  "easy",
+  "angry",
+  "crazy",
+  "helpful",
+  "mushy",
+  "odd",
+  "unsightly",
+  "adorable",
+  "important",
+  "inexpensive",
+  "cheap",
+  "expensive",
+  "fancy",
 ];
 const C = [
-  'red',
-  'yellow',
-  'blue',
-  'green',
-  'pink',
-  'brown',
-  'purple',
-  'brown',
-  'white',
-  'black',
-  'orange',
+  "red",
+  "yellow",
+  "blue",
+  "green",
+  "pink",
+  "brown",
+  "purple",
+  "brown",
+  "white",
+  "black",
+  "orange",
 ];
 const N = [
-  'table',
-  'chair',
-  'house',
-  'bbq',
-  'desk',
-  'car',
-  'pony',
-  'cookie',
-  'sandwich',
-  'burger',
-  'pizza',
-  'mouse',
-  'keyboard',
+  "table",
+  "chair",
+  "house",
+  "bbq",
+  "desk",
+  "car",
+  "pony",
+  "cookie",
+  "sandwich",
+  "burger",
+  "pizza",
+  "mouse",
+  "keyboard",
 ];
 
 let nid = 1;
@@ -142,7 +142,7 @@ function clear() {
 
 function HBtn(props: { id: string; onClick: () => void; children: any }) {
   return (
-    <button type="button" id={props.id} style={{ display: 'none' }} onClick={props.onClick}>
+    <button type="button" id={props.id} style={{ display: "none" }} onClick={props.onClick}>
       {props.children}
     </button>
   );
@@ -153,16 +153,16 @@ function HBtn(props: { id: string; onClick: () => void; children: any }) {
 // ---------------------------------------------------------------------------
 
 function App() {
-  const tbody = document.getElementById('tbody')!;
+  const tbody = document.getElementById("tbody")!;
 
   // Event delegation — one listener for all rows (standard benchmark pattern)
-  tbody.addEventListener('click', (e) => {
-    const a = (e.target as HTMLElement).closest('a');
+  tbody.addEventListener("click", (e) => {
+    const a = (e.target as HTMLElement).closest("a");
     if (!a) return;
     e.preventDefault();
-    const id = +(a.closest('tr')!.firstChild as HTMLElement).textContent!;
-    if (a.classList.contains('lbl')) setSelectedId(id);
-    else if (a.classList.contains('remove')) remove(id);
+    const id = +(a.closest("tr")!.firstChild as HTMLElement).textContent!;
+    if (a.classList.contains("lbl")) setSelectedId(id);
+    else if (a.classList.contains("remove")) remove(id);
   });
 
   return (
@@ -262,7 +262,7 @@ render(
   () => (
     <For each={data()}>
       {(row: Row) => (
-        <tr class={row.id === selectedId() ? 'danger' : ''}>
+        <tr class={row.id === selectedId() ? "danger" : ""}>
           <td class="col-md-1">{row.id}</td>
           <td class="col-md-4">
             <a href="#" class="lbl" aria-label="Select row">
@@ -279,7 +279,7 @@ render(
       )}
     </For>
   ),
-  document.getElementById('tbody')!,
+  document.getElementById("tbody")!,
 );
 
-render(App, document.getElementById('app')!);
+render(App, document.getElementById("app")!);

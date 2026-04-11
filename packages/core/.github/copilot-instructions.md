@@ -2,7 +2,15 @@
 
 Purity is a minimal web framework built on native TC39 Signals. No virtual DOM.
 
+## Tooling
+
+- Use `vp` for workspace tasks and local validation
+- Use `import { defineConfig } from 'vite-plus'` in config files
+- Use `import { describe, expect, it, vi } from 'vite-plus/test'` in tests
+- Prefer `vp test run` and `vp build` over `vp exec vitest` or raw `vite`
+
 ## API (17 functions)
+
 ```ts
 state(init)              // reactive state: count(), count(5), count(v => v+1)
 compute(fn)              // derived: compute(() => count() * 2)
@@ -25,6 +33,7 @@ each(fn, map, key?)      // list rendering
 ```
 
 ## Template Syntax
+
 ```
 ${() => signal()}     reactive text
 @click=${handler}     event
@@ -35,14 +44,23 @@ ${() => signal()}     reactive text
 ```
 
 ## Component Pattern
+
 ```ts
-component('p-card', ({ title }, { default: body }) => {
-  css`.card { padding: 1rem; }`;
-  return html`<div class="card"><h2>${title}</h2>${body()}</div>`;
+component("p-card", ({ title }, { default: body }) => {
+  css`
+    .card {
+      padding: 1rem;
+    }
+  `;
+  return html`<div class="card">
+    <h2>${title}</h2>
+    ${body()}
+  </div>`;
 });
 ```
 
 ## Key Rules
+
 - Always use `() => signal()` for reactive text in templates (not `signal()`)
 - Use `::` for two-way binding (not `bind:`)
 - Events are callback props, no emit system
@@ -52,6 +70,7 @@ component('p-card', ({ title }, { default: body }) => {
 - `css` inside components uses Shadow DOM (no class scoping needed)
 
 ## Structure
+
 ```
 packages/
   core/          @purityjs/core          — framework
@@ -60,7 +79,8 @@ packages/
 ```
 
 ## Testing
+
 ```ts
-const tick = () => new Promise(r => queueMicrotask(r));
+const tick = () => new Promise((r) => queueMicrotask(r));
 // Always await tick() after signal writes before asserting DOM
 ```

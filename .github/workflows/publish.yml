@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Explicit version to publish (e.g. 0.1.0, 0.2.0)'
+        description: "Explicit version to publish (e.g. 0.1.0, 0.2.0)"
         required: true
-        default: '0.1.0'
+        default: "0.1.0"
 
 permissions:
   contents: write
@@ -17,37 +17,35 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-node@v4
+      - uses: voidzero-dev/setup-vp@237a7eda494c3466dcb53e9f067142b9218d64a1 # v1
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
-
-      - run: npm ci
+          cache: true
 
       # Full CI checks before publish
-      - name: Lint
-        run: npx biome check .
+      - name: Check
+        run: vp check
 
       - name: Type-check
-        run: npx tsc --noEmit -p packages/core
+        run: vp exec tsc --noEmit -p packages/core
 
       - name: Test core
-        run: npm test -w packages/core
+        run: vp run --filter @purityjs/core test
 
       - name: Test vite-plugin
-        run: npm test -w packages/vite-plugin
+        run: vp run --filter @purityjs/vite-plugin test
 
       # Build in dependency order
       - name: Build core
-        run: npm run build -w packages/core
+        run: vp run --filter @purityjs/core build
 
       - name: Build vite-plugin
-        run: npm run build -w packages/vite-plugin
+        run: vp run --filter @purityjs/vite-plugin build
 
       - name: Build cli
-        run: npm run build -w packages/cli
+        run: vp run --filter @purityjs/cli build
 
       # Publish in dependency order
       # First publish: set NPM_TOKEN as environment secret on 'production'

@@ -2,30 +2,30 @@
   "name": "@purityjs/cli",
   "version": "0.1.0",
   "description": "Scaffold a new Purity project",
-  "type": "module",
+  "keywords": [
+    "cli",
+    "create",
+    "purity",
+    "scaffold"
+  ],
+  "license": "MIT",
+  "author": "KoalaFacts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KoalaFacts/Purity",
+    "directory": "packages/cli"
+  },
   "bin": {
     "purity": "./dist/index.js"
   },
   "files": [
     "dist"
   ],
-  "scripts": {
-    "build": "vite build"
-  },
-  "keywords": [
-    "purity",
-    "cli",
-    "scaffold",
-    "create"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/KoalaFacts/Purity",
-    "directory": "packages/cli"
-  },
-  "author": "KoalaFacts",
-  "license": "MIT",
+  "type": "module",
   "publishConfig": {
     "access": "public"
+  },
+  "scripts": {
+    "build": "vp build"
   }
 }

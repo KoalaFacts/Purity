@@ -9,7 +9,7 @@
 //   export default defineConfig({ plugins: [purity()] });
 // ---------------------------------------------------------------------------
 
-import { generate, parse } from '@purityjs/core/compiler';
+import { generate, parse } from "@purityjs/core/compiler";
 
 /**
  * Configuration options for the Purity Vite plugin.
@@ -38,7 +38,7 @@ export interface PurityPluginOptions {
  * ```ts
  * // vite.config.ts
  * import { purity } from '@purityjs/vite-plugin';
- * import { defineConfig } from 'vite';
+ * import { defineConfig } from 'vite-plus';
  *
  * export default defineConfig({
  *   plugins: [purity()],
@@ -46,22 +46,22 @@ export interface PurityPluginOptions {
  * ```
  */
 export function purity(options?: PurityPluginOptions) {
-  const extensions = options?.include ?? ['.ts', '.js', '.tsx', '.jsx'];
+  const extensions = options?.include ?? [".ts", ".js", ".tsx", ".jsx"];
 
   return {
-    name: 'purity',
-    enforce: 'pre' as const,
+    name: "purity",
+    enforce: "pre" as const,
 
     transform(code: string, id: string) {
       if (!extensions.some((ext) => id.endsWith(ext))) return null;
       // Skip framework internals — only compile user code
       if (
-        id.includes('@purityjs/') ||
-        id.includes('packages/core/') ||
-        id.includes('packages/vite-plugin/')
+        id.includes("@purityjs/") ||
+        id.includes("packages/core/") ||
+        id.includes("packages/vite-plugin/")
       )
         return null;
-      if (!code.includes('html`')) return null;
+      if (!code.includes("html`")) return null;
 
       const result = compileTemplates(code, id);
       if (!result.changed) return null;
@@ -90,7 +90,7 @@ function compileNestedTemplates(source: string): string {
   let changed = false;
 
   while (pos < source.length) {
-    const idx = source.indexOf('html`', pos);
+    const idx = source.indexOf("html`", pos);
     if (idx === -1) {
       parts.push(source.slice(pos));
       break;
@@ -113,7 +113,7 @@ function compileNestedTemplates(source: string): string {
     parts.push(source.slice(pos, idx));
     const extracted = extractTemplateLiteral(source, idx + 4);
     if (!extracted) {
-      parts.push('html`');
+      parts.push("html`");
       pos = idx + 5;
       continue;
     }
@@ -123,9 +123,9 @@ function compileNestedTemplates(source: string): string {
       const ast = parse(strings);
       const fnBody = generate(ast);
       const compiledExprs = exprSources.map((expr) =>
-        expr.includes('html`') ? compileNestedTemplates(expr) : expr,
+        expr.includes("html`") ? compileNestedTemplates(expr) : expr,
       );
-      parts.push(`((${fnBody})([${compiledExprs.join(', ')}], __purity_w__))`);
+      parts.push(`((${fnBody})([${compiledExprs.join(", ")}], __purity_w__))`);
       changed = true;
     } catch {
       parts.push(source.slice(idx, extracted.end));
@@ -133,7 +133,7 @@ function compileNestedTemplates(source: string): string {
     pos = extracted.end;
   }
 
-  return changed ? parts.join('') : source;
+  return changed ? parts.join("") : source;
 }
 
 function compileTemplates(source: string, _id: string): CompileResult {
@@ -142,7 +142,7 @@ function compileTemplates(source: string, _id: string): CompileResult {
   let pos = 0;
 
   while (pos < source.length) {
-    const idx = source.indexOf('html`', pos);
+    const idx = source.indexOf("html`", pos);
     if (idx === -1) {
       parts.push(source.slice(pos));
       break;
@@ -169,7 +169,7 @@ function compileTemplates(source: string, _id: string): CompileResult {
     const extracted = extractTemplateLiteral(source, templateStart);
 
     if (!extracted) {
-      parts.push('html`');
+      parts.push("html`");
       pos = idx + 5;
       continue;
     }
@@ -181,14 +181,14 @@ function compileTemplates(source: string, _id: string): CompileResult {
 
       // Recursively compile any nested html`` templates inside expressions
       const compiledExprs = exprSources.map((expr) => {
-        if (expr.includes('html`')) {
+        if (expr.includes("html`")) {
           return compileNestedTemplates(expr);
         }
         return expr;
       });
 
       // Replace html`...` with inline IIFE
-      const compiled = `((${fnBody})([${compiledExprs.join(', ')}], __purity_w__))`;
+      const compiled = `((${fnBody})([${compiledExprs.join(", ")}], __purity_w__))`;
 
       parts.push(compiled);
       changed = true;
@@ -202,10 +202,10 @@ function compileTemplates(source: string, _id: string): CompileResult {
 
   if (!changed) return { code: source, changed: false };
 
-  let finalCode = parts.join('');
+  let finalCode = parts.join("");
 
   // Add watch import if not already present
-  if (!finalCode.includes('__purity_w__')) {
+  if (!finalCode.includes("__purity_w__")) {
     return { code: finalCode, changed: true };
   }
 
@@ -230,10 +230,10 @@ function compileTemplates(source: string, _id: string): CompileResult {
  * to avoid ReDoS on untrusted input.
  */
 function removePurityHtmlImport(code: string): string {
-  let result = '';
+  let result = "";
   let pos = 0;
   while (pos < code.length) {
-    const idx = code.indexOf('import', pos);
+    const idx = code.indexOf("import", pos);
     if (idx === -1) {
       result += code.slice(pos);
       break;
@@ -244,34 +244,34 @@ function removePurityHtmlImport(code: string): string {
     // Check if this is an import { ... } from '@purityjs/core'
     let i = idx + 6; // skip 'import'
     // skip whitespace
-    while (i < code.length && (code[i] === ' ' || code[i] === '\t' || code[i] === '\n')) i++;
-    if (code[i] !== '{') {
+    while (i < code.length && (code[i] === " " || code[i] === "\t" || code[i] === "\n")) i++;
+    if (code[i] !== "{") {
       // Not a named import — keep as-is and advance past 'import'
-      result += 'import';
+      result += "import";
       pos = idx + 6;
       continue;
     }
     const braceStart = i;
-    const braceEnd = code.indexOf('}', braceStart);
+    const braceEnd = code.indexOf("}", braceStart);
     if (braceEnd === -1) {
       result += code.slice(idx);
       break;
     }
     let j = braceEnd + 1;
     // skip whitespace
-    while (j < code.length && (code[j] === ' ' || code[j] === '\t' || code[j] === '\n')) j++;
+    while (j < code.length && (code[j] === " " || code[j] === "\t" || code[j] === "\n")) j++;
     // expect 'from'
-    if (code.slice(j, j + 4) !== 'from') {
-      result += 'import';
+    if (code.slice(j, j + 4) !== "from") {
+      result += "import";
       pos = idx + 6;
       continue;
     }
     j += 4;
     // skip whitespace
-    while (j < code.length && (code[j] === ' ' || code[j] === '\t' || code[j] === '\n')) j++;
+    while (j < code.length && (code[j] === " " || code[j] === "\t" || code[j] === "\n")) j++;
     const quote = code[j];
     if (quote !== "'" && quote !== '"') {
-      result += 'import';
+      result += "import";
       pos = idx + 6;
       continue;
     }
@@ -284,11 +284,11 @@ function removePurityHtmlImport(code: string): string {
     const moduleName = code.slice(modStart, modEnd);
     let end = modEnd + 1;
     // skip optional trailing whitespace and semicolon
-    while (end < code.length && (code[end] === ' ' || code[end] === '\t' || code[end] === '\n'))
+    while (end < code.length && (code[end] === " " || code[end] === "\t" || code[end] === "\n"))
       end++;
-    if (end < code.length && code[end] === ';') end++;
+    if (end < code.length && code[end] === ";") end++;
 
-    if (moduleName !== '@purityjs/core') {
+    if (moduleName !== "@purityjs/core") {
       result += code.slice(idx, end);
       pos = end;
       continue;
@@ -297,11 +297,11 @@ function removePurityHtmlImport(code: string): string {
     // This is a @purityjs/core import — remove 'html' from the bindings
     const imports = code.slice(braceStart + 1, braceEnd);
     const cleaned = imports
-      .split(',')
+      .split(",")
       .map((s: string) => s.trim())
-      .filter((s: string) => s && s !== 'html')
-      .join(', ');
-    result += cleaned ? `import { ${cleaned} } from '@purityjs/core';` : '';
+      .filter((s: string) => s && s !== "html")
+      .join(", ");
+    result += cleaned ? `import { ${cleaned} } from '@purityjs/core';` : "";
     pos = end;
   }
   return result;
@@ -321,7 +321,7 @@ function extractTemplateLiteral(source: string, backtickPos: number): ExtractedT
   let pos = backtickPos + 1;
   const strings: string[] = [];
   const exprSources: string[] = [];
-  let current = '';
+  let current = "";
 
   while (pos < source.length) {
     const ch = source.charCodeAt(pos);
@@ -332,14 +332,14 @@ function extractTemplateLiteral(source: string, backtickPos: number): ExtractedT
     }
 
     if (ch === 92) {
-      current += source[pos] + (source[pos + 1] ?? '');
+      current += source[pos] + (source[pos + 1] ?? "");
       pos += 2;
       continue;
     }
 
     if (ch === 36 && pos + 1 < source.length && source.charCodeAt(pos + 1) === 123) {
       strings.push(current);
-      current = '';
+      current = "";
       pos += 2;
 
       const exprResult = extractExpression(source, pos);
@@ -434,13 +434,13 @@ function extractExpression(source: string, start: number): { source: string; end
 }
 
 function findLastImportEnd(code: string): number {
-  const lines = code.split('\n');
+  const lines = code.split("\n");
   let lastEnd = -1;
   let offset = 0;
 
   for (const line of lines) {
     const trimmed = line.trimStart();
-    if (trimmed.startsWith('import ') || trimmed.startsWith('import{')) {
+    if (trimmed.startsWith("import ") || trimmed.startsWith("import{")) {
       lastEnd = offset + line.length + 1;
     }
     offset += line.length + 1;

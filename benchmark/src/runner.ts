@@ -27,7 +27,14 @@ export function calcStats(times: number[]): Stats {
   const median =
     n % 2 === 0 ? (trimmed[n / 2 - 1] + trimmed[n / 2]) / 2 : trimmed[Math.floor(n / 2)];
   const variance = trimmed.reduce((a, b) => a + (b - mean) ** 2, 0) / n;
-  return { mean, median, stddev: Math.sqrt(variance), min: trimmed[0], max: trimmed[n - 1], n };
+  return {
+    mean,
+    median,
+    stddev: Math.sqrt(variance),
+    min: trimmed[0],
+    max: trimmed[n - 1],
+    n,
+  };
 }
 
 export function formatStats(s: Stats): string {
@@ -40,7 +47,7 @@ function tick(): Promise<void> {
 
 export async function flush(): Promise<void> {
   await tick();
-  document.body.offsetHeight;
+  void document.body.offsetHeight;
 }
 
 export function sleep(ms: number): Promise<void> {

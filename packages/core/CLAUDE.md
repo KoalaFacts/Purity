@@ -3,6 +3,7 @@
 Purity core framework — 17 functions, no virtual DOM, native TC39 Signals.
 
 ## API (17 functions)
+
 ```ts
 state(initial)              // read: count(), write: count(5), update: count(v => v+1)
 compute(fn)                 // derived: doubled = compute(() => count() * 2)
@@ -26,6 +27,7 @@ each(listFn, mapFn, keyFn?)  // list rendering
 ```
 
 ## Template Syntax
+
 ```
 ${() => signal()}     reactive text
 @event=${handler}     event listener
@@ -36,6 +38,7 @@ ${() => signal()}     reactive text
 ```
 
 ## File Layout (src/)
+
 ```
 signals.ts          — state, compute, watch, batch
 compiler/
@@ -51,14 +54,17 @@ index.ts            — public API exports
 ```
 
 ## Testing
+
 ```bash
-npx vitest run          # run all tests
+vp test run             # run all tests
 ```
+
 - Use `const tick = () => new Promise(r => queueMicrotask(r))` for async updates
 - jsdom environment
 
 ## Code Style
-- Biome: 2-space indent, single quotes, trailing commas
+
+- Vite+ formatting/linting: 2-space indent, single quotes, trailing commas
 - for-loops with index (not for-of) in hot paths
 - Nullable arrays (null when empty, ??= for lazy init)
 - console.error for errors (never silent catch)

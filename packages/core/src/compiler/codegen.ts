@@ -8,18 +8,18 @@
 // Dynamic: innerHTML with markers + cloneNode + positional path navigation
 // ---------------------------------------------------------------------------
 
-import type { ASTNode, AttributeNode, FragmentNode } from './ast.ts';
+import type { ASTNode, AttributeNode, FragmentNode } from "./ast.ts";
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function escapeAttr(s: string): string {
   return s
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 const SAFE_NAME = /^[a-zA-Z_][\w.-]*$/;
@@ -28,20 +28,20 @@ function assertSafeName(name: string, kind: string): void {
 }
 
 const VOID = new Set([
-  'area',
-  'base',
-  'br',
-  'col',
-  'embed',
-  'hr',
-  'img',
-  'input',
-  'link',
-  'meta',
-  'param',
-  'source',
-  'track',
-  'wbr',
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -52,13 +52,13 @@ const VOID = new Set([
 type PathStep = 0 | 1; // 0 = firstChild, 1 = nextSibling
 
 interface ExprSlot {
-  type: 'expr';
+  type: "expr";
   index: number;
   path: PathStep[];
 }
 
 interface AttrSlot {
-  type: 'attr';
+  type: "attr";
   attrs: AttributeNode[];
   path: PathStep[];
 }
@@ -75,12 +75,12 @@ function trimFragmentEdges(frag: FragmentNode): FragmentNode {
   let end = children.length;
   while (start < end) {
     const ch = children[start];
-    if (ch.type === 'text' && ch.value.trim() === '' && ch.value.includes('\n')) start++;
+    if (ch.type === "text" && ch.value.trim() === "" && ch.value.includes("\n")) start++;
     else break;
   }
   while (end > start) {
     const ch = children[end - 1];
-    if (ch.type === 'text' && ch.value.trim() === '' && ch.value.includes('\n')) end--;
+    if (ch.type === "text" && ch.value.trim() === "" && ch.value.includes("\n")) end--;
     else break;
   }
   if (start === 0 && end === children.length) return frag;
@@ -99,13 +99,13 @@ export function generate(ast: FragmentNode): string {
 
   if (!hasDynamic(ast)) {
     const html = buildStaticHtml(ast);
-    if (!html.trim()) return 'function(){return document.createDocumentFragment();}';
+    if (!html.trim()) return "function(){return document.createDocumentFragment();}";
     // Generate DOM API calls instead of innerHTML to prevent code injection
     const stmts: string[] = ["var _t=document.createElement('template');"];
     const counter = { n: 0 };
-    genStaticDOM(ast, '_t.content', stmts, counter);
-    stmts.push('return function(){return _t.content.cloneNode(true);};');
-    return `(function(){${stmts.join('')}})()`;
+    genStaticDOM(ast, "_t.content", stmts, counter);
+    stmts.push("return function(){return _t.content.cloneNode(true);};");
+    return `(function(){${stmts.join("")}})()`;
   }
 
   // Fast path: simple template (1 element with only text/expression children)
@@ -122,16 +122,16 @@ export function generate(ast: FragmentNode): string {
   const bindCode = genPositionalBindings(slots);
 
   return [
-    '(function(){',
+    "(function(){",
     `var _t=document.createElement('template');`,
     `_t.innerHTML=${JSON.stringify(html)};`,
-    'return function(_v,_w){',
-    'var _r=_t.content.cloneNode(true);',
+    "return function(_v,_w){",
+    "var _r=_t.content.cloneNode(true);",
     bindCode,
-    'return _r;',
-    '};',
-    '})()',
-  ].join('');
+    "return _r;",
+    "};",
+    "})()",
+  ].join("");
 }
 
 export function generateModule(ast: FragmentNode): string {
@@ -153,17 +153,17 @@ interface SimpleTemplate {
 function isSimpleTemplate(ast: FragmentNode): SimpleTemplate | null {
   if (ast.children.length !== 1) return null;
   const root = ast.children[0];
-  if (root.type !== 'element') return null;
+  if (root.type !== "element") return null;
 
   // Check children are only text/expression (no nested elements)
   for (const ch of root.children) {
-    if (ch.type !== 'text' && ch.type !== 'expression') return null;
+    if (ch.type !== "text" && ch.type !== "expression") return null;
   }
 
-  const staticAttrs: SimpleTemplate['staticAttrs'] = [];
-  const dynamicAttrs: SimpleTemplate['dynamicAttrs'] = [];
+  const staticAttrs: SimpleTemplate["staticAttrs"] = [];
+  const dynamicAttrs: SimpleTemplate["dynamicAttrs"] = [];
   for (const a of root.attributes) {
-    if (a.kind === 'static') staticAttrs.push({ name: a.name, value: a.value });
+    if (a.kind === "static") staticAttrs.push({ name: a.name, value: a.value });
     else dynamicAttrs.push({ kind: a.kind, name: a.name, index: a.index });
   }
 
@@ -171,57 +171,57 @@ function isSimpleTemplate(ast: FragmentNode): SimpleTemplate | null {
 }
 
 function genSimpleTemplate(tpl: SimpleTemplate): string {
-  assertSafeName(tpl.tag, 'tag');
+  assertSafeName(tpl.tag, "tag");
   const lines: string[] = [];
 
   lines.push(`var _e=document.createElement('${tpl.tag}');`);
 
   // Static attributes
   for (const a of tpl.staticAttrs) {
-    if (a.name === 'id' || a.name === 'class') {
-      lines.push(`_e.${a.name === 'class' ? 'className' : a.name}=${JSON.stringify(a.value)};`);
+    if (a.name === "id" || a.name === "class") {
+      lines.push(`_e.${a.name === "class" ? "className" : a.name}=${JSON.stringify(a.value)};`);
     } else {
-      lines.push(`_e.setAttribute('${a.name}',${JSON.stringify(a.value || '')});`);
+      lines.push(`_e.setAttribute('${a.name}',${JSON.stringify(a.value || "")});`);
     }
   }
 
   // Dynamic attributes
   for (const a of tpl.dynamicAttrs) {
-    assertSafeName(a.name, 'attribute');
+    assertSafeName(a.name, "attribute");
     const val = `_v[${a.index}]`;
     switch (a.kind) {
-      case 'event':
+      case "event":
         lines.push(`_e.addEventListener('${a.name}',${val});`);
         break;
-      case 'dynamic':
+      case "dynamic":
         lines.push(
           `if(typeof ${val}==='function')_w(function(){var v=${val}();if(v==null||v===false)_e.removeAttribute('${a.name}');else _e.setAttribute('${a.name}',String(v));});else if(${val}!=null&&${val}!==false)_e.setAttribute('${a.name}',String(${val}));`,
         );
         break;
-      case 'bool':
+      case "bool":
         lines.push(
           `if(typeof ${val}==='function')_w(function(){if(${val}())_e.setAttribute('${a.name}','');else _e.removeAttribute('${a.name}');});else if(${val})_e.setAttribute('${a.name}','');`,
         );
         break;
-      case 'prop':
+      case "prop":
         lines.push(
           `if(typeof ${val}==='function')_w(function(){_e.${a.name}=${val}();});else _e.${a.name}=${val};`,
         );
         break;
-      case 'reactive-prop':
+      case "reactive-prop":
         lines.push(
           `if(typeof ${val}==='function')_w(function(){_e['${a.name}']=${val}();});else _e['${a.name}']=${val};`,
         );
         break;
-      case 'bind': {
-        const evt = a.name === 'checked' || a.name === 'group' ? 'change' : 'input';
-        if (a.name === 'group') {
+      case "bind": {
+        const evt = a.name === "checked" || a.name === "group" ? "change" : "input";
+        if (a.name === "group") {
           lines.push(
             `if(typeof ${val}==='function'){if(_e.type==='radio'){_w(function(){_e.checked=${val}()===_e.value;});_e.addEventListener('change',function(){if(_e.checked)${val}(_e.value);});}else{_w(function(){_e.checked=${val}().includes(_e.value);});_e.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(_e.value);if(_e.checked){if(i===-1)a.push(_e.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
           );
         } else {
           lines.push(
-            `if(typeof ${val}==='function'){_w(function(){_e['${a.name}']=${val}();});_e.addEventListener('${evt}',function(){${val}(${a.name === 'checked' ? '_e.checked' : `_e['${a.name}']`});});}`,
+            `if(typeof ${val}==='function'){_w(function(){_e['${a.name}']=${val}();});_e.addEventListener('${evt}',function(){${val}(${a.name === "checked" ? "_e.checked" : `_e['${a.name}']`});});}`,
           );
         }
         break;
@@ -231,11 +231,11 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
 
   // Children — text nodes + expressions, appended directly
   for (const ch of tpl.children) {
-    if (ch.type === 'text') {
+    if (ch.type === "text") {
       if (ch.value.trim() || tpl.children.length === 1) {
         lines.push(`_e.appendChild(document.createTextNode(${JSON.stringify(ch.value)}));`);
       }
-    } else if (ch.type === 'expression') {
+    } else if (ch.type === "expression") {
       const val = `_v[${ch.index}]`;
       const id = bindVarCounter++;
       lines.push(
@@ -248,8 +248,8 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
     }
   }
 
-  lines.push('return _e;');
-  return `function(_v,_w){${lines.join('')}}`;
+  lines.push("return _e;");
+  return `function(_v,_w){${lines.join("")}}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -257,12 +257,12 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
 // ---------------------------------------------------------------------------
 
 function hasDynamic(node: ASTNode): boolean {
-  if (node.type === 'expression') return true;
-  if (node.type === 'element') {
-    if (node.attributes.some((a) => a.kind !== 'static')) return true;
+  if (node.type === "expression") return true;
+  if (node.type === "element") {
+    if (node.attributes.some((a) => a.kind !== "static")) return true;
     return node.children.some(hasDynamic);
   }
-  if (node.type === 'fragment') return node.children.some(hasDynamic);
+  if (node.type === "fragment") return node.children.some(hasDynamic);
   return false;
 }
 
@@ -281,26 +281,26 @@ function genStaticDOM(
   counter: { n: number },
 ): void {
   switch (node.type) {
-    case 'text': {
+    case "text": {
       const id = `_n${counter.n++}`;
       stmts.push(
         `var ${id}=document.createTextNode(${JSON.stringify(node.value)});${parent}.appendChild(${id});`,
       );
       break;
     }
-    case 'comment': {
+    case "comment": {
       const id = `_n${counter.n++}`;
       stmts.push(
         `var ${id}=document.createComment(${JSON.stringify(node.value)});${parent}.appendChild(${id});`,
       );
       break;
     }
-    case 'element': {
-      assertSafeName(node.tag, 'tag');
+    case "element": {
+      assertSafeName(node.tag, "tag");
       const id = `_n${counter.n++}`;
       stmts.push(`var ${id}=document.createElement(${JSON.stringify(node.tag)});`);
       for (const a of node.attributes) {
-        if (a.kind === 'static') {
+        if (a.kind === "static") {
           stmts.push(
             a.value
               ? `${id}.setAttribute(${JSON.stringify(a.name)},${JSON.stringify(a.value)});`
@@ -314,7 +314,7 @@ function genStaticDOM(
       stmts.push(`${parent}.appendChild(${id});`);
       break;
     }
-    case 'fragment': {
+    case "fragment": {
       for (const ch of node.children) {
         genStaticDOM(ch, parent, stmts, counter);
       }
@@ -325,26 +325,26 @@ function genStaticDOM(
 
 function buildStaticHtml(node: ASTNode): string {
   switch (node.type) {
-    case 'text':
+    case "text":
       return escapeHtml(node.value);
-    case 'comment':
-      return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
-    case 'element': {
-      assertSafeName(node.tag, 'tag');
+    case "comment":
+      return `<!--${node.value.replace(/--!?>/g, "--&gt;")}-->`;
+    case "element": {
+      assertSafeName(node.tag, "tag");
       let s = `<${node.tag}`;
       for (const a of node.attributes) {
-        if (a.kind === 'static')
+        if (a.kind === "static")
           s += a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
       }
       if (VOID.has(node.tag)) return `${s}/>`;
-      s += '>';
+      s += ">";
       for (const ch of node.children) s += buildStaticHtml(ch);
       return `${s}</${node.tag}>`;
     }
-    case 'fragment':
-      return node.children.map(buildStaticHtml).join('');
+    case "fragment":
+      return node.children.map(buildStaticHtml).join("");
     default:
-      return '';
+      return "";
   }
 }
 
@@ -357,25 +357,25 @@ function buildStaticHtml(node: ASTNode): string {
 
 function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[]): string {
   switch (node.type) {
-    case 'text':
+    case "text":
       return escapeHtml(node.value);
 
-    case 'comment':
-      return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
+    case "comment":
+      return `<!--${node.value.replace(/--!?>/g, "--&gt;")}-->`;
 
-    case 'expression': {
+    case "expression": {
       // Insert a comment placeholder — record its path
-      slots.push({ type: 'expr', index: node.index, path: [...currentPath] });
-      return '<!---->';
+      slots.push({ type: "expr", index: node.index, path: [...currentPath] });
+      return "<!---->";
     }
 
-    case 'element': {
-      assertSafeName(node.tag, 'tag');
+    case "element": {
+      assertSafeName(node.tag, "tag");
       let s = `<${node.tag}`;
 
       const dynamicAttrs: AttributeNode[] = [];
       for (const a of node.attributes) {
-        if (a.kind === 'static') {
+        if (a.kind === "static") {
           s += a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
         } else {
           dynamicAttrs.push(a);
@@ -383,11 +383,11 @@ function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[])
       }
 
       if (dynamicAttrs.length > 0) {
-        slots.push({ type: 'attr', attrs: dynamicAttrs, path: [...currentPath] });
+        slots.push({ type: "attr", attrs: dynamicAttrs, path: [...currentPath] });
       }
 
       if (VOID.has(node.tag)) return `${s}/>`;
-      s += '>';
+      s += ">";
 
       // Children: first child gets path + [0 (firstChild)], siblings get [1 (nextSibling)]
       for (let i = 0; i < node.children.length; i++) {
@@ -404,8 +404,8 @@ function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[])
       return `${s}</${node.tag}>`;
     }
 
-    case 'fragment': {
-      let s = '';
+    case "fragment": {
+      let s = "";
       for (let i = 0; i < node.children.length; i++) {
         s += buildDynamicHtml(node.children[i], slots, childPathFromParent(currentPath, i));
       }
@@ -413,7 +413,7 @@ function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[])
     }
 
     default:
-      return '';
+      return "";
   }
 }
 
@@ -440,24 +440,24 @@ function genPositionalBindings(slots: Slot[]): string {
     const nodeVar = `_n${bindVarCounter++}`;
 
     // Generate path navigation: _r.firstChild.nextSibling.firstChild...
-    let nav = '_r';
+    let nav = "_r";
     for (const step of slot.path) {
-      nav += step === 0 ? '.firstChild' : '.nextSibling';
+      nav += step === 0 ? ".firstChild" : ".nextSibling";
     }
     lines.push(`var ${nodeVar}=${nav};`);
 
-    if (slot.type === 'expr') {
+    if (slot.type === "expr") {
       lines.push(genExprBinding(nodeVar, slot.index));
     } else {
       for (const attr of slot.attrs) {
-        if (attr.kind !== 'static') {
+        if (attr.kind !== "static") {
           lines.push(genAttrBinding(nodeVar, attr));
         }
       }
     }
   }
 
-  return lines.join('');
+  return lines.join("");
 }
 
 // ---------------------------------------------------------------------------
@@ -482,7 +482,7 @@ function genExprBinding(commentVar: string, index: number): string {
     `else if(Array.isArray(${xv})){var _f${id}=document.createDocumentFragment();for(var _i${id}=0;_i${id}<${xv}.length;_i${id}++)_f${id}.appendChild(${xv}[_i${id}] instanceof Node?${xv}[_i${id}]:document.createTextNode(String(${xv}[_i${id}])));${commentVar}.replaceWith(_f${id});}`,
     `else{${commentVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
     `}else{${commentVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
-  ].join('');
+  ].join("");
 }
 
 // ---------------------------------------------------------------------------
@@ -490,42 +490,42 @@ function genExprBinding(commentVar: string, index: number): string {
 // ---------------------------------------------------------------------------
 
 function genAttrBinding(el: string, attr: AttributeNode): string {
-  if (attr.kind === 'static') return '';
-  assertSafeName(attr.name, 'attribute');
+  if (attr.kind === "static") return "";
+  assertSafeName(attr.name, "attribute");
 
   const val = `_v[${attr.index}]`;
 
   switch (attr.kind) {
-    case 'event':
+    case "event":
       return `${el}.addEventListener('${attr.name}',${val});`;
 
-    case 'dynamic':
+    case "dynamic":
       return `if(typeof ${val}==='function')_w(function(){var v=${val}();if(v==null||v===false)${el}.removeAttribute('${attr.name}');else ${el}.setAttribute('${attr.name}',String(v));});else if(${val}!=null&&${val}!==false)${el}.setAttribute('${attr.name}',String(${val}));`;
 
-    case 'bool':
+    case "bool":
       return `if(typeof ${val}==='function')_w(function(){if(${val}())${el}.setAttribute('${attr.name}','');else ${el}.removeAttribute('${attr.name}');});else if(${val})${el}.setAttribute('${attr.name}','');`;
 
-    case 'prop': {
+    case "prop": {
       const n = attr.name;
       return `if(typeof ${val}==='function')_w(function(){${el}.${n}=${val}();});else ${el}.${n}=${val};`;
     }
 
-    case 'reactive-prop':
+    case "reactive-prop":
       return `if(typeof ${val}==='function')_w(function(){${el}['${attr.name}']=${val}();});else ${el}['${attr.name}']=${val};`;
 
-    case 'bind': {
-      const evt = attr.name === 'checked' || attr.name === 'group' ? 'change' : 'input';
-      if (attr.name === 'group') {
+    case "bind": {
+      const evt = attr.name === "checked" || attr.name === "group" ? "change" : "input";
+      if (attr.name === "group") {
         return [
           `if(typeof ${val}==='function'){`,
           `if(${el}.type==='radio'){_w(function(){${el}.checked=${val}()===${el}.value;});${el}.addEventListener('change',function(){if(${el}.checked)${val}(${el}.value);});}`,
           `else{_w(function(){${el}.checked=${val}().includes(${el}.value);});${el}.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(${el}.value);if(${el}.checked){if(i===-1)a.push(${el}.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
-        ].join('');
+        ].join("");
       }
-      return `if(typeof ${val}==='function'){_w(function(){${el}['${attr.name}']=${val}();});${el}.addEventListener('${evt}',function(){${val}(${attr.name === 'checked' ? `${el}.checked` : `${el}['${attr.name}']`});});}`;
+      return `if(typeof ${val}==='function'){_w(function(){${el}['${attr.name}']=${val}();});${el}.addEventListener('${evt}',function(){${val}(${attr.name === "checked" ? `${el}.checked` : `${el}['${attr.name}']`});});}`;
     }
 
     default:
-      return '';
+      return "";
   }
 }

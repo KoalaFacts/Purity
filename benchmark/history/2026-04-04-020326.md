@@ -1,284 +1,279 @@
-
 Purity Comprehensive Benchmark
 Frameworks: purity, solid, svelte, vue
 Scenarios: 13 pages, 111 operations
 Warmup: 3 | Iterations: 5 | Drop: fastest 1 + slowest 1
 
-
 === Rendering: index ===
-  Create 10 rows: purity: 31.8ms | solid: 32.4ms | svelte: 31.7ms | vue: 31.7ms → vue
-  Create 100 rows: purity: 31.8ms | solid: 31.8ms | svelte: 32.4ms | vue: 31.9ms → solid
-  Create 1,000 rows: purity: 31.8ms | solid: 31.8ms | svelte: 32.0ms | vue: 31.8ms → purity
-  Create 10,000 rows: purity: 31.9ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.0ms → purity
-  Append 10 rows: purity: 32.0ms | solid: 32.1ms | svelte: 31.9ms | vue: 31.9ms → vue
-  Append 100 rows: purity: 32.1ms | solid: 32.1ms | svelte: 32.2ms | vue: 32.1ms → vue
-  Append 1,000 rows: purity: 32.0ms | solid: 32.1ms | svelte: 32.1ms | vue: 32.1ms → purity
-  Append 10,000 rows: purity: 32.0ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.0ms → vue
-  Replace 10 rows: purity: 32.0ms | solid: 31.9ms | svelte: 32.0ms | vue: 32.1ms → solid
-  Replace 100 rows: purity: 32.1ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.1ms → svelte
-  Replace 1,000 rows: purity: 32.0ms | solid: 31.8ms | svelte: 32.0ms | vue: 31.9ms → solid
-  Replace 10,000 rows: purity: 32.0ms | solid: 32.0ms | svelte: 32.0ms | vue: 31.9ms → vue
-  Update every 10th (10): purity: 32.0ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.0ms → vue
-  Update every 10th (100): purity: 32.1ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.3ms → svelte
-  Update every 10th (1k): purity: 32.0ms | solid: 32.1ms | svelte: 31.9ms | vue: 32.0ms → svelte
-  Update every 10th (10k): purity: 32.1ms | solid: 31.9ms | svelte: 32.0ms | vue: 32.1ms → solid
-  Swap rows (1k): purity: 31.9ms | solid: 32.1ms | svelte: 32.0ms | vue: 31.9ms → purity
-  Swap rows (10k): purity: 31.9ms | solid: 31.9ms | svelte: 32.0ms | vue: 32.4ms → purity
-  Clear 10 rows: purity: 32.2ms | solid: 31.9ms | svelte: 31.9ms | vue: 32.0ms → svelte
-  Clear 100 rows: purity: 31.9ms | solid: 31.9ms | svelte: 31.9ms | vue: 31.9ms → vue
-  Clear 1,000 rows: purity: 31.8ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.0ms → purity
-  Clear 10,000 rows: purity: 31.9ms | solid: 31.9ms | svelte: 32.0ms | vue: 31.9ms → purity
+Create 10 rows: purity: 31.8ms | solid: 32.4ms | svelte: 31.7ms | vue: 31.7ms → vue
+Create 100 rows: purity: 31.8ms | solid: 31.8ms | svelte: 32.4ms | vue: 31.9ms → solid
+Create 1,000 rows: purity: 31.8ms | solid: 31.8ms | svelte: 32.0ms | vue: 31.8ms → purity
+Create 10,000 rows: purity: 31.9ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.0ms → purity
+Append 10 rows: purity: 32.0ms | solid: 32.1ms | svelte: 31.9ms | vue: 31.9ms → vue
+Append 100 rows: purity: 32.1ms | solid: 32.1ms | svelte: 32.2ms | vue: 32.1ms → vue
+Append 1,000 rows: purity: 32.0ms | solid: 32.1ms | svelte: 32.1ms | vue: 32.1ms → purity
+Append 10,000 rows: purity: 32.0ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.0ms → vue
+Replace 10 rows: purity: 32.0ms | solid: 31.9ms | svelte: 32.0ms | vue: 32.1ms → solid
+Replace 100 rows: purity: 32.1ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.1ms → svelte
+Replace 1,000 rows: purity: 32.0ms | solid: 31.8ms | svelte: 32.0ms | vue: 31.9ms → solid
+Replace 10,000 rows: purity: 32.0ms | solid: 32.0ms | svelte: 32.0ms | vue: 31.9ms → vue
+Update every 10th (10): purity: 32.0ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.0ms → vue
+Update every 10th (100): purity: 32.1ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.3ms → svelte
+Update every 10th (1k): purity: 32.0ms | solid: 32.1ms | svelte: 31.9ms | vue: 32.0ms → svelte
+Update every 10th (10k): purity: 32.1ms | solid: 31.9ms | svelte: 32.0ms | vue: 32.1ms → solid
+Swap rows (1k): purity: 31.9ms | solid: 32.1ms | svelte: 32.0ms | vue: 31.9ms → purity
+Swap rows (10k): purity: 31.9ms | solid: 31.9ms | svelte: 32.0ms | vue: 32.4ms → purity
+Clear 10 rows: purity: 32.2ms | solid: 31.9ms | svelte: 31.9ms | vue: 32.0ms → svelte
+Clear 100 rows: purity: 31.9ms | solid: 31.9ms | svelte: 31.9ms | vue: 31.9ms → vue
+Clear 1,000 rows: purity: 31.8ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.0ms → purity
+Clear 10,000 rows: purity: 31.9ms | solid: 31.9ms | svelte: 32.0ms | vue: 31.9ms → purity
 
 === Computed: filter ===
-  Filter 10 (type "e"): purity: 32.0ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.1ms → svelte
-  Filter 100 (type "e"): purity: 31.9ms | solid: 31.7ms | svelte: 32.0ms | vue: 31.9ms → solid
-  Filter 1k (type "e"): purity: 32.1ms | solid: 32.0ms | svelte: 32.3ms | vue: 32.0ms → vue
-  Filter 10k (type "e"): purity: 31.8ms | solid: 31.9ms | svelte: 32.0ms | vue: 32.0ms → purity
-  Clear filter (10): purity: ERR | solid: ERR | svelte: ERR | vue: ERR → —
-  Clear filter (100): purity: ERR | solid: ERR | svelte: ERR | vue: ERR → —
-  Clear filter (1k): purity: ERR | solid: ERR | svelte: ERR | vue: ERR → —
-  Clear filter (10k): purity: ERR | solid: ERR | svelte: ERR | vue: ERR → —
+Filter 10 (type "e"): purity: 32.0ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.1ms → svelte
+Filter 100 (type "e"): purity: 31.9ms | solid: 31.7ms | svelte: 32.0ms | vue: 31.9ms → solid
+Filter 1k (type "e"): purity: 32.1ms | solid: 32.0ms | svelte: 32.3ms | vue: 32.0ms → vue
+Filter 10k (type "e"): purity: 31.8ms | solid: 31.9ms | svelte: 32.0ms | vue: 32.0ms → purity
+Clear filter (10): purity: ERR | solid: ERR | svelte: ERR | vue: ERR → —
+Clear filter (100): purity: ERR | solid: ERR | svelte: ERR | vue: ERR → —
+Clear filter (1k): purity: ERR | solid: ERR | svelte: ERR | vue: ERR → —
+Clear filter (10k): purity: ERR | solid: ERR | svelte: ERR | vue: ERR → —
 
 === Computed: sort ===
-  Sort 100 by ID ↑: purity: 32.1ms | solid: 31.9ms | svelte: 32.0ms | vue: 31.9ms → vue
-  Sort 1k by ID ↑: purity: 31.9ms | solid: 31.9ms | svelte: 32.0ms | vue: 31.8ms → vue
-  Sort 10k by ID ↑: purity: 31.7ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.0ms → purity
-  Sort 100 by ID ↓: purity: 32.0ms | solid: 32.0ms | svelte: 31.8ms | vue: 32.0ms → svelte
-  Sort 1k by ID ↓: purity: 32.0ms | solid: 31.9ms | svelte: 32.0ms | vue: 32.0ms → solid
-  Sort 10k by ID ↓: purity: 32.1ms | solid: 31.9ms | svelte: 32.1ms | vue: 32.1ms → solid
-  Sort 100 by label: purity: 32.3ms | solid: 32.2ms | svelte: 32.1ms | vue: 31.9ms → vue
-  Sort 1k by label: purity: 32.2ms | solid: 31.9ms | svelte: 31.9ms | vue: 32.1ms → svelte
-  Sort 10k by label: purity: 32.1ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.0ms → svelte
+Sort 100 by ID ↑: purity: 32.1ms | solid: 31.9ms | svelte: 32.0ms | vue: 31.9ms → vue
+Sort 1k by ID ↑: purity: 31.9ms | solid: 31.9ms | svelte: 32.0ms | vue: 31.8ms → vue
+Sort 10k by ID ↑: purity: 31.7ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.0ms → purity
+Sort 100 by ID ↓: purity: 32.0ms | solid: 32.0ms | svelte: 31.8ms | vue: 32.0ms → svelte
+Sort 1k by ID ↓: purity: 32.0ms | solid: 31.9ms | svelte: 32.0ms | vue: 32.0ms → solid
+Sort 10k by ID ↓: purity: 32.1ms | solid: 31.9ms | svelte: 32.1ms | vue: 32.1ms → solid
+Sort 100 by label: purity: 32.3ms | solid: 32.2ms | svelte: 32.1ms | vue: 31.9ms → vue
+Sort 1k by label: purity: 32.2ms | solid: 31.9ms | svelte: 31.9ms | vue: 32.1ms → svelte
+Sort 10k by label: purity: 32.1ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.0ms → svelte
 
 === Computed: computed-chain ===
-  Computed chain (10 levels): purity: 31.8ms | solid: 31.7ms | svelte: 31.9ms | vue: 32.0ms → solid
-  Computed chain (100 levels): purity: 32.0ms | solid: 31.9ms | svelte: 31.9ms | vue: 32.1ms → svelte
-  Computed chain (1,000 levels): purity: 31.9ms | solid: 32.0ms | svelte: 31.9ms | vue: 31.9ms → purity
-  Computed chain (10,000 levels): purity: 32.0ms | solid: 32.3ms | svelte: 32.0ms | vue: 32.0ms → vue
+Computed chain (10 levels): purity: 31.8ms | solid: 31.7ms | svelte: 31.9ms | vue: 32.0ms → solid
+Computed chain (100 levels): purity: 32.0ms | solid: 31.9ms | svelte: 31.9ms | vue: 32.1ms → svelte
+Computed chain (1,000 levels): purity: 31.9ms | solid: 32.0ms | svelte: 31.9ms | vue: 31.9ms → purity
+Computed chain (10,000 levels): purity: 32.0ms | solid: 32.3ms | svelte: 32.0ms | vue: 32.0ms → vue
 
 === Computed: diamond ===
-  Diamond (10) update all: purity: 32.0ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.0ms → svelte
-  Diamond (100) update all: purity: 32.1ms | solid: 32.0ms | svelte: 32.1ms | vue: 32.0ms → vue
-  Diamond (1,000) update all: purity: 32.0ms | solid: 32.2ms | svelte: 32.1ms | vue: 32.4ms → purity
-  Diamond (10,000) update all: purity: 32.0ms | solid: 31.9ms | svelte: 32.0ms | vue: 32.1ms → solid
+Diamond (10) update all: purity: 32.0ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.0ms → svelte
+Diamond (100) update all: purity: 32.1ms | solid: 32.0ms | svelte: 32.1ms | vue: 32.0ms → vue
+Diamond (1,000) update all: purity: 32.0ms | solid: 32.2ms | svelte: 32.1ms | vue: 32.4ms → purity
+Diamond (10,000) update all: purity: 32.0ms | solid: 31.9ms | svelte: 32.0ms | vue: 32.1ms → solid
 
 === Components: cart ===
-  Add 10 cart items: purity: 31.8ms | solid: 32.0ms | svelte: 32.3ms | vue: 32.3ms → purity
-  Add 100 cart items: purity: 32.2ms | solid: 32.0ms | svelte: 32.2ms | vue: 32.0ms → vue
-  Add 1,000 cart items: purity: 32.0ms | solid: 31.6ms | svelte: 32.0ms | vue: 32.1ms → solid
-  Add 10,000 cart items: purity: 32.2ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.0ms → vue
-  Increment all (10): purity: 31.9ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.4ms → purity
-  Increment all (100): purity: 32.4ms | solid: 31.9ms | svelte: 32.1ms | vue: 31.9ms → vue
-  Increment all (1k): purity: 32.5ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.3ms → svelte
-  Increment all (10k): purity: 32.2ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.4ms → svelte
-  Clear cart (10): purity: 32.1ms | solid: 32.1ms | svelte: 32.5ms | vue: 32.2ms → solid
-  Clear cart (100): purity: 31.8ms | solid: 32.3ms | svelte: 32.3ms | vue: 31.9ms → purity
-  Clear cart (1k): purity: 32.2ms | solid: 32.2ms | svelte: 31.9ms | vue: 31.8ms → vue
-  Clear cart (10k): purity: 32.6ms | solid: 32.6ms | svelte: 32.5ms | vue: 32.3ms → vue
+Add 10 cart items: purity: 31.8ms | solid: 32.0ms | svelte: 32.3ms | vue: 32.3ms → purity
+Add 100 cart items: purity: 32.2ms | solid: 32.0ms | svelte: 32.2ms | vue: 32.0ms → vue
+Add 1,000 cart items: purity: 32.0ms | solid: 31.6ms | svelte: 32.0ms | vue: 32.1ms → solid
+Add 10,000 cart items: purity: 32.2ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.0ms → vue
+Increment all (10): purity: 31.9ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.4ms → purity
+Increment all (100): purity: 32.4ms | solid: 31.9ms | svelte: 32.1ms | vue: 31.9ms → vue
+Increment all (1k): purity: 32.5ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.3ms → svelte
+Increment all (10k): purity: 32.2ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.4ms → svelte
+Clear cart (10): purity: 32.1ms | solid: 32.1ms | svelte: 32.5ms | vue: 32.2ms → solid
+Clear cart (100): purity: 31.8ms | solid: 32.3ms | svelte: 32.3ms | vue: 31.9ms → purity
+Clear cart (1k): purity: 32.2ms | solid: 32.2ms | svelte: 31.9ms | vue: 31.8ms → vue
+Clear cart (10k): purity: 32.6ms | solid: 32.6ms | svelte: 32.5ms | vue: 32.3ms → vue
 
 === Components: conditional ===
-  Toggle 10 section (show): purity: 32.1ms | solid: 32.4ms | svelte: 32.4ms | vue: 32.1ms → vue
-  Toggle 100 section (show): purity: 32.2ms | solid: 32.3ms | svelte: 32.2ms | vue: 32.2ms → vue
-  Toggle 1k section (show): purity: 32.4ms | solid: 32.3ms | svelte: 32.1ms | vue: 32.1ms → vue
-  Toggle 10k section (show): purity: 32.3ms | solid: 32.4ms | svelte: 32.3ms | vue: 32.3ms → purity
-  Toggle 1k section (hide): purity: 32.5ms | solid: 32.4ms | svelte: 32.2ms | vue: 32.4ms → svelte
-  Toggle 10x: purity: 31.8ms | solid: 32.0ms | svelte: 32.4ms | vue: 32.3ms → purity
+Toggle 10 section (show): purity: 32.1ms | solid: 32.4ms | svelte: 32.4ms | vue: 32.1ms → vue
+Toggle 100 section (show): purity: 32.2ms | solid: 32.3ms | svelte: 32.2ms | vue: 32.2ms → vue
+Toggle 1k section (show): purity: 32.4ms | solid: 32.3ms | svelte: 32.1ms | vue: 32.1ms → vue
+Toggle 10k section (show): purity: 32.3ms | solid: 32.4ms | svelte: 32.3ms | vue: 32.3ms → purity
+Toggle 1k section (hide): purity: 32.5ms | solid: 32.4ms | svelte: 32.2ms | vue: 32.4ms → svelte
+Toggle 10x: purity: 31.8ms | solid: 32.0ms | svelte: 32.4ms | vue: 32.3ms → purity
 
 === Components: lifecycle ===
-  Create 10 components: purity: 32.0ms | solid: 32.3ms | svelte: 32.2ms | vue: 32.4ms → purity
-  Create 100 components: purity: 31.8ms | solid: 32.0ms | svelte: 32.3ms | vue: 32.3ms → purity
-  Create 1k components: purity: 32.1ms | solid: 32.4ms | svelte: 32.1ms | vue: 32.4ms → purity
-  Create 10k components: purity: 32.3ms | solid: 32.3ms | svelte: 32.4ms | vue: 32.4ms → solid
-  Destroy 10 components: purity: 32.4ms | solid: 32.3ms | svelte: 32.3ms | vue: 32.3ms → vue
-  Destroy 100 components: purity: 32.1ms | solid: 32.4ms | svelte: 32.4ms | vue: 32.4ms → purity
-  Destroy 1k components: purity: 32.2ms | solid: 32.0ms | svelte: 32.1ms | vue: 32.3ms → solid
-  Destroy 10k components: purity: 32.0ms | solid: 32.1ms | svelte: 31.8ms | vue: 32.0ms → svelte
-  Replace 10 components: purity: 32.0ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.0ms → vue
-  Replace 100 components: purity: 31.9ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.0ms → svelte
-  Replace 1k components: purity: 32.0ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.0ms → vue
-  Replace 10k components: purity: 31.9ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.0ms → purity
+Create 10 components: purity: 32.0ms | solid: 32.3ms | svelte: 32.2ms | vue: 32.4ms → purity
+Create 100 components: purity: 31.8ms | solid: 32.0ms | svelte: 32.3ms | vue: 32.3ms → purity
+Create 1k components: purity: 32.1ms | solid: 32.4ms | svelte: 32.1ms | vue: 32.4ms → purity
+Create 10k components: purity: 32.3ms | solid: 32.3ms | svelte: 32.4ms | vue: 32.4ms → solid
+Destroy 10 components: purity: 32.4ms | solid: 32.3ms | svelte: 32.3ms | vue: 32.3ms → vue
+Destroy 100 components: purity: 32.1ms | solid: 32.4ms | svelte: 32.4ms | vue: 32.4ms → purity
+Destroy 1k components: purity: 32.2ms | solid: 32.0ms | svelte: 32.1ms | vue: 32.3ms → solid
+Destroy 10k components: purity: 32.0ms | solid: 32.1ms | svelte: 31.8ms | vue: 32.0ms → svelte
+Replace 10 components: purity: 32.0ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.0ms → vue
+Replace 100 components: purity: 31.9ms | solid: 32.0ms | svelte: 31.9ms | vue: 32.0ms → svelte
+Replace 1k components: purity: 32.0ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.0ms → vue
+Replace 10k components: purity: 31.9ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.0ms → purity
 
 === Components: tree ===
-  Expand all tree nodes: purity: 31.9ms | solid: 32.3ms | svelte: 32.2ms | vue: 32.0ms → purity
-  Collapse all tree nodes: purity: 32.2ms | solid: 32.1ms | svelte: 32.1ms | vue: 32.2ms → solid
+Expand all tree nodes: purity: 31.9ms | solid: 32.3ms | svelte: 32.2ms | vue: 32.0ms → purity
+Collapse all tree nodes: purity: 32.2ms | solid: 32.1ms | svelte: 32.1ms | vue: 32.2ms → solid
 
 === Components: master-detail ===
-  Select detail (first): purity: 32.3ms | solid: 32.4ms | svelte: 32.1ms | vue: 32.1ms → vue
-  Select detail (last): purity: 32.1ms | solid: 32.2ms | svelte: 32.2ms | vue: 32.1ms → vue
-  Cycle 10 selections: purity: 32.2ms | solid: 32.4ms | svelte: 32.0ms | vue: 32.4ms → svelte
+Select detail (first): purity: 32.3ms | solid: 32.4ms | svelte: 32.1ms | vue: 32.1ms → vue
+Select detail (last): purity: 32.1ms | solid: 32.2ms | svelte: 32.2ms | vue: 32.1ms → vue
+Cycle 10 selections: purity: 32.2ms | solid: 32.4ms | svelte: 32.0ms | vue: 32.4ms → svelte
 
 === Interaction: binding ===
-  Create 10 bound inputs: purity: 32.2ms | solid: 32.4ms | svelte: 32.5ms | vue: 32.6ms → purity
-  Create 100 bound inputs: purity: 32.5ms | solid: 32.4ms | svelte: 32.4ms | vue: 32.4ms → vue
-  Create 1,000 bound inputs: purity: 32.5ms | solid: 32.3ms | svelte: 32.3ms | vue: 32.4ms → svelte
-  Create 10,000 bound inputs: purity: 32.5ms | solid: 32.6ms | svelte: 32.3ms | vue: 32.2ms → vue
-  Update all (10): purity: 32.4ms | solid: 32.3ms | svelte: 32.5ms | vue: 32.3ms → vue
-  Update all (100): purity: 32.2ms | solid: 32.3ms | svelte: 32.1ms | vue: 32.4ms → svelte
-  Update all (1k): purity: 31.9ms | solid: 32.2ms | svelte: 32.2ms | vue: 32.4ms → purity
-  Update all (10k): purity: 32.1ms | solid: 32.1ms | svelte: 32.2ms | vue: 31.9ms → vue
-  Clear all (10): purity: 32.1ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.3ms → svelte
-  Clear all (100): purity: 32.2ms | solid: 32.2ms | svelte: 31.7ms | vue: 32.4ms → svelte
-  Clear all (1k): purity: 32.4ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.1ms → svelte
-  Clear all (10k): purity: 32.2ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.0ms → vue
+Create 10 bound inputs: purity: 32.2ms | solid: 32.4ms | svelte: 32.5ms | vue: 32.6ms → purity
+Create 100 bound inputs: purity: 32.5ms | solid: 32.4ms | svelte: 32.4ms | vue: 32.4ms → vue
+Create 1,000 bound inputs: purity: 32.5ms | solid: 32.3ms | svelte: 32.3ms | vue: 32.4ms → svelte
+Create 10,000 bound inputs: purity: 32.5ms | solid: 32.6ms | svelte: 32.3ms | vue: 32.2ms → vue
+Update all (10): purity: 32.4ms | solid: 32.3ms | svelte: 32.5ms | vue: 32.3ms → vue
+Update all (100): purity: 32.2ms | solid: 32.3ms | svelte: 32.1ms | vue: 32.4ms → svelte
+Update all (1k): purity: 31.9ms | solid: 32.2ms | svelte: 32.2ms | vue: 32.4ms → purity
+Update all (10k): purity: 32.1ms | solid: 32.1ms | svelte: 32.2ms | vue: 31.9ms → vue
+Clear all (10): purity: 32.1ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.3ms → svelte
+Clear all (100): purity: 32.2ms | solid: 32.2ms | svelte: 31.7ms | vue: 32.4ms → svelte
+Clear all (1k): purity: 32.4ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.1ms → svelte
+Clear all (10k): purity: 32.2ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.0ms → vue
 
 === Interaction: selection ===
-  Select all (10): purity: 32.0ms | solid: 32.4ms | svelte: 32.1ms | vue: 32.2ms → purity
-  Select all (100): purity: 32.2ms | solid: 31.9ms | svelte: 31.8ms | vue: 32.3ms → svelte
-  Select all (1k): purity: 32.0ms | solid: 32.0ms | svelte: 32.0ms | vue: 31.9ms → vue
-  Select all (10k): purity: 32.0ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.0ms → vue
-  Deselect all (10): purity: 32.0ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.0ms → vue
-  Deselect all (100): purity: 32.0ms | solid: 32.1ms | svelte: 32.1ms | vue: 31.8ms → vue
-  Deselect all (1k): purity: 32.1ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.0ms → vue
-  Deselect all (10k): purity: 31.9ms | solid: 31.8ms | svelte: 32.1ms | vue: 32.0ms → solid
-  Toggle all (10): purity: 32.3ms | solid: 32.0ms | svelte: 32.0ms | vue: 31.8ms → vue
-  Toggle all (100): purity: 31.9ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.0ms → purity
-  Toggle all (1k): purity: 32.0ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.1ms → svelte
-  Toggle all (10k): purity: 31.5ms | solid: 31.9ms | svelte: 31.9ms | vue: 31.9ms → purity
+Select all (10): purity: 32.0ms | solid: 32.4ms | svelte: 32.1ms | vue: 32.2ms → purity
+Select all (100): purity: 32.2ms | solid: 31.9ms | svelte: 31.8ms | vue: 32.3ms → svelte
+Select all (1k): purity: 32.0ms | solid: 32.0ms | svelte: 32.0ms | vue: 31.9ms → vue
+Select all (10k): purity: 32.0ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.0ms → vue
+Deselect all (10): purity: 32.0ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.0ms → vue
+Deselect all (100): purity: 32.0ms | solid: 32.1ms | svelte: 32.1ms | vue: 31.8ms → vue
+Deselect all (1k): purity: 32.1ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.0ms → vue
+Deselect all (10k): purity: 31.9ms | solid: 31.8ms | svelte: 32.1ms | vue: 32.0ms → solid
+Toggle all (10): purity: 32.3ms | solid: 32.0ms | svelte: 32.0ms | vue: 31.8ms → vue
+Toggle all (100): purity: 31.9ms | solid: 32.0ms | svelte: 32.0ms | vue: 32.0ms → purity
+Toggle all (1k): purity: 32.0ms | solid: 32.1ms | svelte: 32.0ms | vue: 32.1ms → svelte
+Toggle all (10k): purity: 31.5ms | solid: 31.9ms | svelte: 31.9ms | vue: 31.9ms → purity
 
 === Interaction: ticker ===
-  Stock ticker (10 frames): purity: 32.1ms | solid: 32.0ms | svelte: 31.8ms | vue: 32.1ms → svelte
-  Stock ticker (100 frames): purity: 32.0ms | solid: 31.9ms | svelte: 32.0ms | vue: 32.0ms → solid
-  Stock ticker (500 frames): purity: 32.3ms | solid: 32.4ms | svelte: 32.4ms | vue: 32.1ms → vue
-  Stock ticker (1,000 frames): purity: 32.3ms | solid: 32.3ms | svelte: 32.4ms | vue: 32.1ms → vue
-  Stock ticker (10,000 frames): purity: 32.3ms | solid: 32.3ms | svelte: 31.9ms | vue: 32.0ms → svelte
-
+Stock ticker (10 frames): purity: 32.1ms | solid: 32.0ms | svelte: 31.8ms | vue: 32.1ms → svelte
+Stock ticker (100 frames): purity: 32.0ms | solid: 31.9ms | svelte: 32.0ms | vue: 32.0ms → solid
+Stock ticker (500 frames): purity: 32.3ms | solid: 32.4ms | svelte: 32.4ms | vue: 32.1ms → vue
+Stock ticker (1,000 frames): purity: 32.3ms | solid: 32.3ms | svelte: 32.4ms | vue: 32.1ms → vue
+Stock ticker (10,000 frames): purity: 32.3ms | solid: 32.3ms | svelte: 31.9ms | vue: 32.0ms → svelte
 
 === Memory Benchmarks ===
 Iterations: 2
 
-  Create 1k rows: purity: +0.0MB / retained 0.0MB | solid: +0.0MB / retained 0.0MB | svelte: +0.0MB / retained 0.0MB | vue: +0.0MB / retained 0.0MB
-  Create 10k rows: purity: +0.0MB / retained 0.0MB | solid: +0.0MB / retained 0.0MB | svelte: +0.0MB / retained 0.0MB | vue: +0.0MB / retained 0.0MB
-  Create 1k components: purity: +0.0MB / retained 0.0MB | solid: +0.0MB / retained 0.0MB | svelte: +0.0MB / retained 0.0MB | vue: +0.0MB / retained 0.0MB
-  Create 10k components: purity: +0.0MB / retained 0.0MB | solid: +0.0MB / retained 0.0MB | svelte: +0.0MB / retained 0.0MB | vue: +0.0MB / retained 0.0MB
-  Populate 10k filtered: purity: +0.0MB / retained 0.0MB | solid: +0.0MB / retained 0.0MB | svelte: +0.0MB / retained 0.0MB | vue: +0.0MB / retained 0.0MB
-
+Create 1k rows: purity: +0.0MB / retained 0.0MB | solid: +0.0MB / retained 0.0MB | svelte: +0.0MB / retained 0.0MB | vue: +0.0MB / retained 0.0MB
+Create 10k rows: purity: +0.0MB / retained 0.0MB | solid: +0.0MB / retained 0.0MB | svelte: +0.0MB / retained 0.0MB | vue: +0.0MB / retained 0.0MB
+Create 1k components: purity: +0.0MB / retained 0.0MB | solid: +0.0MB / retained 0.0MB | svelte: +0.0MB / retained 0.0MB | vue: +0.0MB / retained 0.0MB
+Create 10k components: purity: +0.0MB / retained 0.0MB | solid: +0.0MB / retained 0.0MB | svelte: +0.0MB / retained 0.0MB | vue: +0.0MB / retained 0.0MB
+Populate 10k filtered: purity: +0.0MB / retained 0.0MB | solid: +0.0MB / retained 0.0MB | svelte: +0.0MB / retained 0.0MB | vue: +0.0MB / retained 0.0MB
 
 ## Full Results
 
-| Category | Operation | Purity | Solid | Svelte | Vue | Winner |
-|---|---|---|---|---|---|---|
-| Rendering | Create 10 rows | 31.8ms | 32.4ms | 31.7ms | 31.7ms | **Vue** |
-|  | Create 100 rows | 31.8ms | 31.8ms | 32.4ms | 31.9ms | **Solid** |
-|  | Create 1,000 rows | 31.8ms | 31.8ms | 32.0ms | 31.8ms | **Purity** |
-|  | Create 10,000 rows | 31.9ms | 32.0ms | 32.0ms | 32.0ms | **Purity** |
-|  | Append 10 rows | 32.0ms | 32.1ms | 31.9ms | 31.9ms | **Vue** |
-|  | Append 100 rows | 32.1ms | 32.1ms | 32.2ms | 32.1ms | **Vue** |
-|  | Append 1,000 rows | 32.0ms | 32.1ms | 32.1ms | 32.1ms | **Purity** |
-|  | Append 10,000 rows | 32.0ms | 32.1ms | 32.0ms | 32.0ms | **Vue** |
-|  | Replace 10 rows | 32.0ms | 31.9ms | 32.0ms | 32.1ms | **Solid** |
-|  | Replace 100 rows | 32.1ms | 32.0ms | 31.9ms | 32.1ms | **Svelte** |
-|  | Replace 1,000 rows | 32.0ms | 31.8ms | 32.0ms | 31.9ms | **Solid** |
-|  | Replace 10,000 rows | 32.0ms | 32.0ms | 32.0ms | 31.9ms | **Vue** |
-|  | Update every 10th (10) | 32.0ms | 32.1ms | 32.0ms | 32.0ms | **Vue** |
-|  | Update every 10th (100) | 32.1ms | 32.0ms | 31.9ms | 32.3ms | **Svelte** |
-|  | Update every 10th (1k) | 32.0ms | 32.1ms | 31.9ms | 32.0ms | **Svelte** |
-|  | Update every 10th (10k) | 32.1ms | 31.9ms | 32.0ms | 32.1ms | **Solid** |
-|  | Swap rows (1k) | 31.9ms | 32.1ms | 32.0ms | 31.9ms | **Purity** |
-|  | Swap rows (10k) | 31.9ms | 31.9ms | 32.0ms | 32.4ms | **Purity** |
-|  | Clear 10 rows | 32.2ms | 31.9ms | 31.9ms | 32.0ms | **Svelte** |
-|  | Clear 100 rows | 31.9ms | 31.9ms | 31.9ms | 31.9ms | **Vue** |
-|  | Clear 1,000 rows | 31.8ms | 32.0ms | 31.9ms | 32.0ms | **Purity** |
-|  | Clear 10,000 rows | 31.9ms | 31.9ms | 32.0ms | 31.9ms | **Purity** |
-| Computed | Filter 10 (type "e") | 32.0ms | 32.0ms | 31.9ms | 32.1ms | **Svelte** |
-|  | Filter 100 (type "e") | 31.9ms | 31.7ms | 32.0ms | 31.9ms | **Solid** |
-|  | Filter 1k (type "e") | 32.1ms | 32.0ms | 32.3ms | 32.0ms | **Vue** |
-|  | Filter 10k (type "e") | 31.8ms | 31.9ms | 32.0ms | 32.0ms | **Purity** |
-|  | Clear filter (10) | ERR | ERR | ERR | ERR | **—** |
-|  | Clear filter (100) | ERR | ERR | ERR | ERR | **—** |
-|  | Clear filter (1k) | ERR | ERR | ERR | ERR | **—** |
-|  | Clear filter (10k) | ERR | ERR | ERR | ERR | **—** |
-|  | Sort 100 by ID ↑ | 32.1ms | 31.9ms | 32.0ms | 31.9ms | **Vue** |
-|  | Sort 1k by ID ↑ | 31.9ms | 31.9ms | 32.0ms | 31.8ms | **Vue** |
-|  | Sort 10k by ID ↑ | 31.7ms | 32.0ms | 31.9ms | 32.0ms | **Purity** |
-|  | Sort 100 by ID ↓ | 32.0ms | 32.0ms | 31.8ms | 32.0ms | **Svelte** |
-|  | Sort 1k by ID ↓ | 32.0ms | 31.9ms | 32.0ms | 32.0ms | **Solid** |
-|  | Sort 10k by ID ↓ | 32.1ms | 31.9ms | 32.1ms | 32.1ms | **Solid** |
-|  | Sort 100 by label | 32.3ms | 32.2ms | 32.1ms | 31.9ms | **Vue** |
-|  | Sort 1k by label | 32.2ms | 31.9ms | 31.9ms | 32.1ms | **Svelte** |
-|  | Sort 10k by label | 32.1ms | 32.0ms | 31.9ms | 32.0ms | **Svelte** |
-|  | Computed chain (10 levels) | 31.8ms | 31.7ms | 31.9ms | 32.0ms | **Solid** |
-|  | Computed chain (100 levels) | 32.0ms | 31.9ms | 31.9ms | 32.1ms | **Svelte** |
-|  | Computed chain (1,000 levels) | 31.9ms | 32.0ms | 31.9ms | 31.9ms | **Purity** |
-|  | Computed chain (10,000 levels) | 32.0ms | 32.3ms | 32.0ms | 32.0ms | **Vue** |
-|  | Diamond (10) update all | 32.0ms | 32.0ms | 31.9ms | 32.0ms | **Svelte** |
-|  | Diamond (100) update all | 32.1ms | 32.0ms | 32.1ms | 32.0ms | **Vue** |
-|  | Diamond (1,000) update all | 32.0ms | 32.2ms | 32.1ms | 32.4ms | **Purity** |
-|  | Diamond (10,000) update all | 32.0ms | 31.9ms | 32.0ms | 32.1ms | **Solid** |
-| Components | Add 10 cart items | 31.8ms | 32.0ms | 32.3ms | 32.3ms | **Purity** |
-|  | Add 100 cart items | 32.2ms | 32.0ms | 32.2ms | 32.0ms | **Vue** |
-|  | Add 1,000 cart items | 32.0ms | 31.6ms | 32.0ms | 32.1ms | **Solid** |
-|  | Add 10,000 cart items | 32.2ms | 32.1ms | 32.0ms | 32.0ms | **Vue** |
-|  | Increment all (10) | 31.9ms | 32.0ms | 32.0ms | 32.4ms | **Purity** |
-|  | Increment all (100) | 32.4ms | 31.9ms | 32.1ms | 31.9ms | **Vue** |
-|  | Increment all (1k) | 32.5ms | 32.0ms | 32.0ms | 32.3ms | **Svelte** |
-|  | Increment all (10k) | 32.2ms | 32.0ms | 32.0ms | 32.4ms | **Svelte** |
-|  | Clear cart (10) | 32.1ms | 32.1ms | 32.5ms | 32.2ms | **Solid** |
-|  | Clear cart (100) | 31.8ms | 32.3ms | 32.3ms | 31.9ms | **Purity** |
-|  | Clear cart (1k) | 32.2ms | 32.2ms | 31.9ms | 31.8ms | **Vue** |
-|  | Clear cart (10k) | 32.6ms | 32.6ms | 32.5ms | 32.3ms | **Vue** |
-|  | Toggle 10 section (show) | 32.1ms | 32.4ms | 32.4ms | 32.1ms | **Vue** |
-|  | Toggle 100 section (show) | 32.2ms | 32.3ms | 32.2ms | 32.2ms | **Vue** |
-|  | Toggle 1k section (show) | 32.4ms | 32.3ms | 32.1ms | 32.1ms | **Vue** |
-|  | Toggle 10k section (show) | 32.3ms | 32.4ms | 32.3ms | 32.3ms | **Purity** |
-|  | Toggle 1k section (hide) | 32.5ms | 32.4ms | 32.2ms | 32.4ms | **Svelte** |
-|  | Toggle 10x | 31.8ms | 32.0ms | 32.4ms | 32.3ms | **Purity** |
-|  | Create 10 components | 32.0ms | 32.3ms | 32.2ms | 32.4ms | **Purity** |
-|  | Create 100 components | 31.8ms | 32.0ms | 32.3ms | 32.3ms | **Purity** |
-|  | Create 1k components | 32.1ms | 32.4ms | 32.1ms | 32.4ms | **Purity** |
-|  | Create 10k components | 32.3ms | 32.3ms | 32.4ms | 32.4ms | **Solid** |
-|  | Destroy 10 components | 32.4ms | 32.3ms | 32.3ms | 32.3ms | **Vue** |
-|  | Destroy 100 components | 32.1ms | 32.4ms | 32.4ms | 32.4ms | **Purity** |
-|  | Destroy 1k components | 32.2ms | 32.0ms | 32.1ms | 32.3ms | **Solid** |
-|  | Destroy 10k components | 32.0ms | 32.1ms | 31.8ms | 32.0ms | **Svelte** |
-|  | Replace 10 components | 32.0ms | 32.0ms | 32.0ms | 32.0ms | **Vue** |
-|  | Replace 100 components | 31.9ms | 32.0ms | 31.9ms | 32.0ms | **Svelte** |
-|  | Replace 1k components | 32.0ms | 32.1ms | 32.0ms | 32.0ms | **Vue** |
-|  | Replace 10k components | 31.9ms | 32.0ms | 32.0ms | 32.0ms | **Purity** |
-|  | Expand all tree nodes | 31.9ms | 32.3ms | 32.2ms | 32.0ms | **Purity** |
-|  | Collapse all tree nodes | 32.2ms | 32.1ms | 32.1ms | 32.2ms | **Solid** |
-|  | Select detail (first) | 32.3ms | 32.4ms | 32.1ms | 32.1ms | **Vue** |
-|  | Select detail (last) | 32.1ms | 32.2ms | 32.2ms | 32.1ms | **Vue** |
-|  | Cycle 10 selections | 32.2ms | 32.4ms | 32.0ms | 32.4ms | **Svelte** |
-| Interaction | Create 10 bound inputs | 32.2ms | 32.4ms | 32.5ms | 32.6ms | **Purity** |
-|  | Create 100 bound inputs | 32.5ms | 32.4ms | 32.4ms | 32.4ms | **Vue** |
-|  | Create 1,000 bound inputs | 32.5ms | 32.3ms | 32.3ms | 32.4ms | **Svelte** |
-|  | Create 10,000 bound inputs | 32.5ms | 32.6ms | 32.3ms | 32.2ms | **Vue** |
-|  | Update all (10) | 32.4ms | 32.3ms | 32.5ms | 32.3ms | **Vue** |
-|  | Update all (100) | 32.2ms | 32.3ms | 32.1ms | 32.4ms | **Svelte** |
-|  | Update all (1k) | 31.9ms | 32.2ms | 32.2ms | 32.4ms | **Purity** |
-|  | Update all (10k) | 32.1ms | 32.1ms | 32.2ms | 31.9ms | **Vue** |
-|  | Clear all (10) | 32.1ms | 32.1ms | 32.0ms | 32.3ms | **Svelte** |
-|  | Clear all (100) | 32.2ms | 32.2ms | 31.7ms | 32.4ms | **Svelte** |
-|  | Clear all (1k) | 32.4ms | 32.0ms | 32.0ms | 32.1ms | **Svelte** |
-|  | Clear all (10k) | 32.2ms | 32.0ms | 32.0ms | 32.0ms | **Vue** |
-|  | Select all (10) | 32.0ms | 32.4ms | 32.1ms | 32.2ms | **Purity** |
-|  | Select all (100) | 32.2ms | 31.9ms | 31.8ms | 32.3ms | **Svelte** |
-|  | Select all (1k) | 32.0ms | 32.0ms | 32.0ms | 31.9ms | **Vue** |
-|  | Select all (10k) | 32.0ms | 32.1ms | 32.0ms | 32.0ms | **Vue** |
-|  | Deselect all (10) | 32.0ms | 32.1ms | 32.0ms | 32.0ms | **Vue** |
-|  | Deselect all (100) | 32.0ms | 32.1ms | 32.1ms | 31.8ms | **Vue** |
-|  | Deselect all (1k) | 32.1ms | 32.0ms | 32.0ms | 32.0ms | **Vue** |
-|  | Deselect all (10k) | 31.9ms | 31.8ms | 32.1ms | 32.0ms | **Solid** |
-|  | Toggle all (10) | 32.3ms | 32.0ms | 32.0ms | 31.8ms | **Vue** |
-|  | Toggle all (100) | 31.9ms | 32.0ms | 32.0ms | 32.0ms | **Purity** |
-|  | Toggle all (1k) | 32.0ms | 32.1ms | 32.0ms | 32.1ms | **Svelte** |
-|  | Toggle all (10k) | 31.5ms | 31.9ms | 31.9ms | 31.9ms | **Purity** |
-|  | Stock ticker (10 frames) | 32.1ms | 32.0ms | 31.8ms | 32.1ms | **Svelte** |
-|  | Stock ticker (100 frames) | 32.0ms | 31.9ms | 32.0ms | 32.0ms | **Solid** |
-|  | Stock ticker (500 frames) | 32.3ms | 32.4ms | 32.4ms | 32.1ms | **Vue** |
-|  | Stock ticker (1,000 frames) | 32.3ms | 32.3ms | 32.4ms | 32.1ms | **Vue** |
-|  | Stock ticker (10,000 frames) | 32.3ms | 32.3ms | 31.9ms | 32.0ms | **Svelte** |
-
+| Category    | Operation                      | Purity | Solid  | Svelte | Vue    | Winner     |
+| ----------- | ------------------------------ | ------ | ------ | ------ | ------ | ---------- |
+| Rendering   | Create 10 rows                 | 31.8ms | 32.4ms | 31.7ms | 31.7ms | **Vue**    |
+|             | Create 100 rows                | 31.8ms | 31.8ms | 32.4ms | 31.9ms | **Solid**  |
+|             | Create 1,000 rows              | 31.8ms | 31.8ms | 32.0ms | 31.8ms | **Purity** |
+|             | Create 10,000 rows             | 31.9ms | 32.0ms | 32.0ms | 32.0ms | **Purity** |
+|             | Append 10 rows                 | 32.0ms | 32.1ms | 31.9ms | 31.9ms | **Vue**    |
+|             | Append 100 rows                | 32.1ms | 32.1ms | 32.2ms | 32.1ms | **Vue**    |
+|             | Append 1,000 rows              | 32.0ms | 32.1ms | 32.1ms | 32.1ms | **Purity** |
+|             | Append 10,000 rows             | 32.0ms | 32.1ms | 32.0ms | 32.0ms | **Vue**    |
+|             | Replace 10 rows                | 32.0ms | 31.9ms | 32.0ms | 32.1ms | **Solid**  |
+|             | Replace 100 rows               | 32.1ms | 32.0ms | 31.9ms | 32.1ms | **Svelte** |
+|             | Replace 1,000 rows             | 32.0ms | 31.8ms | 32.0ms | 31.9ms | **Solid**  |
+|             | Replace 10,000 rows            | 32.0ms | 32.0ms | 32.0ms | 31.9ms | **Vue**    |
+|             | Update every 10th (10)         | 32.0ms | 32.1ms | 32.0ms | 32.0ms | **Vue**    |
+|             | Update every 10th (100)        | 32.1ms | 32.0ms | 31.9ms | 32.3ms | **Svelte** |
+|             | Update every 10th (1k)         | 32.0ms | 32.1ms | 31.9ms | 32.0ms | **Svelte** |
+|             | Update every 10th (10k)        | 32.1ms | 31.9ms | 32.0ms | 32.1ms | **Solid**  |
+|             | Swap rows (1k)                 | 31.9ms | 32.1ms | 32.0ms | 31.9ms | **Purity** |
+|             | Swap rows (10k)                | 31.9ms | 31.9ms | 32.0ms | 32.4ms | **Purity** |
+|             | Clear 10 rows                  | 32.2ms | 31.9ms | 31.9ms | 32.0ms | **Svelte** |
+|             | Clear 100 rows                 | 31.9ms | 31.9ms | 31.9ms | 31.9ms | **Vue**    |
+|             | Clear 1,000 rows               | 31.8ms | 32.0ms | 31.9ms | 32.0ms | **Purity** |
+|             | Clear 10,000 rows              | 31.9ms | 31.9ms | 32.0ms | 31.9ms | **Purity** |
+| Computed    | Filter 10 (type "e")           | 32.0ms | 32.0ms | 31.9ms | 32.1ms | **Svelte** |
+|             | Filter 100 (type "e")          | 31.9ms | 31.7ms | 32.0ms | 31.9ms | **Solid**  |
+|             | Filter 1k (type "e")           | 32.1ms | 32.0ms | 32.3ms | 32.0ms | **Vue**    |
+|             | Filter 10k (type "e")          | 31.8ms | 31.9ms | 32.0ms | 32.0ms | **Purity** |
+|             | Clear filter (10)              | ERR    | ERR    | ERR    | ERR    | **—**      |
+|             | Clear filter (100)             | ERR    | ERR    | ERR    | ERR    | **—**      |
+|             | Clear filter (1k)              | ERR    | ERR    | ERR    | ERR    | **—**      |
+|             | Clear filter (10k)             | ERR    | ERR    | ERR    | ERR    | **—**      |
+|             | Sort 100 by ID ↑               | 32.1ms | 31.9ms | 32.0ms | 31.9ms | **Vue**    |
+|             | Sort 1k by ID ↑                | 31.9ms | 31.9ms | 32.0ms | 31.8ms | **Vue**    |
+|             | Sort 10k by ID ↑               | 31.7ms | 32.0ms | 31.9ms | 32.0ms | **Purity** |
+|             | Sort 100 by ID ↓               | 32.0ms | 32.0ms | 31.8ms | 32.0ms | **Svelte** |
+|             | Sort 1k by ID ↓                | 32.0ms | 31.9ms | 32.0ms | 32.0ms | **Solid**  |
+|             | Sort 10k by ID ↓               | 32.1ms | 31.9ms | 32.1ms | 32.1ms | **Solid**  |
+|             | Sort 100 by label              | 32.3ms | 32.2ms | 32.1ms | 31.9ms | **Vue**    |
+|             | Sort 1k by label               | 32.2ms | 31.9ms | 31.9ms | 32.1ms | **Svelte** |
+|             | Sort 10k by label              | 32.1ms | 32.0ms | 31.9ms | 32.0ms | **Svelte** |
+|             | Computed chain (10 levels)     | 31.8ms | 31.7ms | 31.9ms | 32.0ms | **Solid**  |
+|             | Computed chain (100 levels)    | 32.0ms | 31.9ms | 31.9ms | 32.1ms | **Svelte** |
+|             | Computed chain (1,000 levels)  | 31.9ms | 32.0ms | 31.9ms | 31.9ms | **Purity** |
+|             | Computed chain (10,000 levels) | 32.0ms | 32.3ms | 32.0ms | 32.0ms | **Vue**    |
+|             | Diamond (10) update all        | 32.0ms | 32.0ms | 31.9ms | 32.0ms | **Svelte** |
+|             | Diamond (100) update all       | 32.1ms | 32.0ms | 32.1ms | 32.0ms | **Vue**    |
+|             | Diamond (1,000) update all     | 32.0ms | 32.2ms | 32.1ms | 32.4ms | **Purity** |
+|             | Diamond (10,000) update all    | 32.0ms | 31.9ms | 32.0ms | 32.1ms | **Solid**  |
+| Components  | Add 10 cart items              | 31.8ms | 32.0ms | 32.3ms | 32.3ms | **Purity** |
+|             | Add 100 cart items             | 32.2ms | 32.0ms | 32.2ms | 32.0ms | **Vue**    |
+|             | Add 1,000 cart items           | 32.0ms | 31.6ms | 32.0ms | 32.1ms | **Solid**  |
+|             | Add 10,000 cart items          | 32.2ms | 32.1ms | 32.0ms | 32.0ms | **Vue**    |
+|             | Increment all (10)             | 31.9ms | 32.0ms | 32.0ms | 32.4ms | **Purity** |
+|             | Increment all (100)            | 32.4ms | 31.9ms | 32.1ms | 31.9ms | **Vue**    |
+|             | Increment all (1k)             | 32.5ms | 32.0ms | 32.0ms | 32.3ms | **Svelte** |
+|             | Increment all (10k)            | 32.2ms | 32.0ms | 32.0ms | 32.4ms | **Svelte** |
+|             | Clear cart (10)                | 32.1ms | 32.1ms | 32.5ms | 32.2ms | **Solid**  |
+|             | Clear cart (100)               | 31.8ms | 32.3ms | 32.3ms | 31.9ms | **Purity** |
+|             | Clear cart (1k)                | 32.2ms | 32.2ms | 31.9ms | 31.8ms | **Vue**    |
+|             | Clear cart (10k)               | 32.6ms | 32.6ms | 32.5ms | 32.3ms | **Vue**    |
+|             | Toggle 10 section (show)       | 32.1ms | 32.4ms | 32.4ms | 32.1ms | **Vue**    |
+|             | Toggle 100 section (show)      | 32.2ms | 32.3ms | 32.2ms | 32.2ms | **Vue**    |
+|             | Toggle 1k section (show)       | 32.4ms | 32.3ms | 32.1ms | 32.1ms | **Vue**    |
+|             | Toggle 10k section (show)      | 32.3ms | 32.4ms | 32.3ms | 32.3ms | **Purity** |
+|             | Toggle 1k section (hide)       | 32.5ms | 32.4ms | 32.2ms | 32.4ms | **Svelte** |
+|             | Toggle 10x                     | 31.8ms | 32.0ms | 32.4ms | 32.3ms | **Purity** |
+|             | Create 10 components           | 32.0ms | 32.3ms | 32.2ms | 32.4ms | **Purity** |
+|             | Create 100 components          | 31.8ms | 32.0ms | 32.3ms | 32.3ms | **Purity** |
+|             | Create 1k components           | 32.1ms | 32.4ms | 32.1ms | 32.4ms | **Purity** |
+|             | Create 10k components          | 32.3ms | 32.3ms | 32.4ms | 32.4ms | **Solid**  |
+|             | Destroy 10 components          | 32.4ms | 32.3ms | 32.3ms | 32.3ms | **Vue**    |
+|             | Destroy 100 components         | 32.1ms | 32.4ms | 32.4ms | 32.4ms | **Purity** |
+|             | Destroy 1k components          | 32.2ms | 32.0ms | 32.1ms | 32.3ms | **Solid**  |
+|             | Destroy 10k components         | 32.0ms | 32.1ms | 31.8ms | 32.0ms | **Svelte** |
+|             | Replace 10 components          | 32.0ms | 32.0ms | 32.0ms | 32.0ms | **Vue**    |
+|             | Replace 100 components         | 31.9ms | 32.0ms | 31.9ms | 32.0ms | **Svelte** |
+|             | Replace 1k components          | 32.0ms | 32.1ms | 32.0ms | 32.0ms | **Vue**    |
+|             | Replace 10k components         | 31.9ms | 32.0ms | 32.0ms | 32.0ms | **Purity** |
+|             | Expand all tree nodes          | 31.9ms | 32.3ms | 32.2ms | 32.0ms | **Purity** |
+|             | Collapse all tree nodes        | 32.2ms | 32.1ms | 32.1ms | 32.2ms | **Solid**  |
+|             | Select detail (first)          | 32.3ms | 32.4ms | 32.1ms | 32.1ms | **Vue**    |
+|             | Select detail (last)           | 32.1ms | 32.2ms | 32.2ms | 32.1ms | **Vue**    |
+|             | Cycle 10 selections            | 32.2ms | 32.4ms | 32.0ms | 32.4ms | **Svelte** |
+| Interaction | Create 10 bound inputs         | 32.2ms | 32.4ms | 32.5ms | 32.6ms | **Purity** |
+|             | Create 100 bound inputs        | 32.5ms | 32.4ms | 32.4ms | 32.4ms | **Vue**    |
+|             | Create 1,000 bound inputs      | 32.5ms | 32.3ms | 32.3ms | 32.4ms | **Svelte** |
+|             | Create 10,000 bound inputs     | 32.5ms | 32.6ms | 32.3ms | 32.2ms | **Vue**    |
+|             | Update all (10)                | 32.4ms | 32.3ms | 32.5ms | 32.3ms | **Vue**    |
+|             | Update all (100)               | 32.2ms | 32.3ms | 32.1ms | 32.4ms | **Svelte** |
+|             | Update all (1k)                | 31.9ms | 32.2ms | 32.2ms | 32.4ms | **Purity** |
+|             | Update all (10k)               | 32.1ms | 32.1ms | 32.2ms | 31.9ms | **Vue**    |
+|             | Clear all (10)                 | 32.1ms | 32.1ms | 32.0ms | 32.3ms | **Svelte** |
+|             | Clear all (100)                | 32.2ms | 32.2ms | 31.7ms | 32.4ms | **Svelte** |
+|             | Clear all (1k)                 | 32.4ms | 32.0ms | 32.0ms | 32.1ms | **Svelte** |
+|             | Clear all (10k)                | 32.2ms | 32.0ms | 32.0ms | 32.0ms | **Vue**    |
+|             | Select all (10)                | 32.0ms | 32.4ms | 32.1ms | 32.2ms | **Purity** |
+|             | Select all (100)               | 32.2ms | 31.9ms | 31.8ms | 32.3ms | **Svelte** |
+|             | Select all (1k)                | 32.0ms | 32.0ms | 32.0ms | 31.9ms | **Vue**    |
+|             | Select all (10k)               | 32.0ms | 32.1ms | 32.0ms | 32.0ms | **Vue**    |
+|             | Deselect all (10)              | 32.0ms | 32.1ms | 32.0ms | 32.0ms | **Vue**    |
+|             | Deselect all (100)             | 32.0ms | 32.1ms | 32.1ms | 31.8ms | **Vue**    |
+|             | Deselect all (1k)              | 32.1ms | 32.0ms | 32.0ms | 32.0ms | **Vue**    |
+|             | Deselect all (10k)             | 31.9ms | 31.8ms | 32.1ms | 32.0ms | **Solid**  |
+|             | Toggle all (10)                | 32.3ms | 32.0ms | 32.0ms | 31.8ms | **Vue**    |
+|             | Toggle all (100)               | 31.9ms | 32.0ms | 32.0ms | 32.0ms | **Purity** |
+|             | Toggle all (1k)                | 32.0ms | 32.1ms | 32.0ms | 32.1ms | **Svelte** |
+|             | Toggle all (10k)               | 31.5ms | 31.9ms | 31.9ms | 31.9ms | **Purity** |
+|             | Stock ticker (10 frames)       | 32.1ms | 32.0ms | 31.8ms | 32.1ms | **Svelte** |
+|             | Stock ticker (100 frames)      | 32.0ms | 31.9ms | 32.0ms | 32.0ms | **Solid**  |
+|             | Stock ticker (500 frames)      | 32.3ms | 32.4ms | 32.4ms | 32.1ms | **Vue**    |
+|             | Stock ticker (1,000 frames)    | 32.3ms | 32.3ms | 32.4ms | 32.1ms | **Vue**    |
+|             | Stock ticker (10,000 frames)   | 32.3ms | 32.3ms | 31.9ms | 32.0ms | **Svelte** |
 
 ## Memory Results
 
-| Operation | Purity (used) | Solid (used) | Svelte (used) | Vue (used) | Purity (retained) | Solid (retained) | Svelte (retained) | Vue (retained) | Best Cleanup |
-|---|---|---|---|---|---|---|---|---|---|
-| Create 1k rows | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | **Vue** |
-| Create 10k rows | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | **Solid** |
-| Create 1k components | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | **Vue** |
-| Create 10k components | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | **Vue** |
-| Populate 10k filtered | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | 0.0MB | **Svelte** |
+| Operation             | Purity (used) | Solid (used) | Svelte (used) | Vue (used) | Purity (retained) | Solid (retained) | Svelte (retained) | Vue (retained) | Best Cleanup |
+| --------------------- | ------------- | ------------ | ------------- | ---------- | ----------------- | ---------------- | ----------------- | -------------- | ------------ |
+| Create 1k rows        | 0.0MB         | 0.0MB        | 0.0MB         | 0.0MB      | 0.0MB             | 0.0MB            | 0.0MB             | 0.0MB          | **Vue**      |
+| Create 10k rows       | 0.0MB         | 0.0MB        | 0.0MB         | 0.0MB      | 0.0MB             | 0.0MB            | 0.0MB             | 0.0MB          | **Solid**    |
+| Create 1k components  | 0.0MB         | 0.0MB        | 0.0MB         | 0.0MB      | 0.0MB             | 0.0MB            | 0.0MB             | 0.0MB          | **Vue**      |
+| Create 10k components | 0.0MB         | 0.0MB        | 0.0MB         | 0.0MB      | 0.0MB             | 0.0MB            | 0.0MB             | 0.0MB          | **Vue**      |
+| Populate 10k filtered | 0.0MB         | 0.0MB        | 0.0MB         | 0.0MB      | 0.0MB             | 0.0MB            | 0.0MB             | 0.0MB          | **Svelte**   |
 
 ### Notes
 

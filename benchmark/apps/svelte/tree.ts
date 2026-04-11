@@ -1,4 +1,4 @@
-import { mount } from 'svelte';
-import TreeApp from './TreeApp.svelte';
+import { mount } from "svelte";
+import TreeApp from "./TreeApp.svelte";
 
-mount(TreeApp, { target: document.getElementById('app')! });
+mount(TreeApp, { target: document.getElementById("app")! });

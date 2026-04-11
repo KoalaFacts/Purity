@@ -3,6 +3,7 @@
 When asked to create a component, follow this pattern:
 
 ## Steps
+
 1. Choose a valid custom element tag name (must contain a hyphen, e.g. `p-card`, `p-sidebar`)
 2. Define props as the first generic parameter
 3. Define slot types as the second generic parameter (if slots are needed)
@@ -13,35 +14,54 @@ When asked to create a component, follow this pattern:
 ## Template
 
 ```ts
-import { state, compute, html, css, component, onMount, onDestroy, onDispose } from '@purityjs/core';
+import {
+  state,
+  compute,
+  html,
+  css,
+  component,
+  onMount,
+  onDestroy,
+  onDispose,
+} from "@purityjs/core";
 
-component('p-{name}', ({/* props */}, {/* slots */}) => {
-  // Reactive state
-  const myState = state(initialValue);
-  const derived = compute(() => myState() * 2);
+component(
+  "p-{name}",
+  (
+    {
+      /* props */
+    },
+    {
+      /* slots */
+    },
+  ) => {
+    // Reactive state
+    const myState = state(initialValue);
+    const derived = compute(() => myState() * 2);
 
-  // Scoped styles
-  css`
-    :host { display: block; }
-    .container { /* styles */ }
-  `;
+    // Scoped styles
+    css`
+      :host {
+        display: block;
+      }
+      .container {
+        /* styles */
+      }
+    `;
 
-  // Lifecycle
-  onMount(() => {
-    // DOM is ready
-  });
+    // Lifecycle
+    onMount(() => {
+      // DOM is ready
+    });
 
-  onDestroy(() => {
-    // Cleanup
-  });
+    onDestroy(() => {
+      // Cleanup
+    });
 
-  // Template
-  return html`
-    <div class="container">
-      ${() => myState()}
-    </div>
-  `;
-});
+    // Template
+    return html` <div class="container">${() => myState()}</div> `;
+  },
+);
 ```
 
 ## Slot Patterns
@@ -75,6 +95,7 @@ component('p-form', (_props, { default: body }) => {
 ```
 
 ## Binding Syntax
+
 ```
 :prop=${value}        one-way (parent → child)
 ::prop=${signal}      two-way binding
@@ -83,6 +104,7 @@ component('p-form', (_props, { default: body }) => {
 ```
 
 ## Always
+
 - Use `p-` prefix for tag names
 - Use `css` inside components (Shadow DOM scopes it)
 - Register `onDispose` for any watch/effect cleanup

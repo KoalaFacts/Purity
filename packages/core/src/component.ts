@@ -53,7 +53,7 @@ export class ComponentContext {
         try {
           this.errorHandlers[i](err);
         } catch (e) {
-          console.error('[Purity] Error in onError handler:', e);
+          console.error("[Purity] Error in onError handler:", e);
         }
       }
     } else if (this.parent) {
@@ -267,7 +267,7 @@ function unmountContext(ctx: ComponentContext): void {
       try {
         ctx.disposers[i]();
       } catch (err) {
-        console.error('[Purity] Error during disposal:', err);
+        console.error("[Purity] Error during disposal:", err);
       }
     }
     ctx.disposers = null;
@@ -282,7 +282,7 @@ function unmountContext(ctx: ComponentContext): void {
       try {
         ctx.destroyed[i]();
       } catch (err) {
-        console.error('[Purity] Error in onDestroy:', err);
+        console.error("[Purity] Error in onDestroy:", err);
       }
     }
     ctx.destroyed = null;

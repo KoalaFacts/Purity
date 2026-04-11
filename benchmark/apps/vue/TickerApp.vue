@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef } from 'vue';
+import { ref, shallowRef } from "vue";
 
 interface Stock {
   id: number;
@@ -10,56 +10,56 @@ interface Stock {
 }
 
 const SYMBOLS = [
-  'AAPL',
-  'GOOG',
-  'MSFT',
-  'AMZN',
-  'META',
-  'TSLA',
-  'NVDA',
-  'JPM',
-  'V',
-  'JNJ',
-  'WMT',
-  'PG',
-  'MA',
-  'UNH',
-  'HD',
-  'DIS',
-  'BAC',
-  'XOM',
-  'PFE',
-  'KO',
-  'PEP',
-  'CSCO',
-  'INTC',
-  'NFLX',
-  'CMCSA',
-  'ADBE',
-  'CRM',
-  'ABT',
-  'NKE',
-  'MRK',
-  'T',
-  'VZ',
-  'CVX',
-  'WFC',
-  'LLY',
-  'TMO',
-  'AVGO',
-  'COST',
-  'DHR',
-  'ACN',
-  'TXN',
-  'MDT',
-  'UPS',
-  'NEE',
-  'HON',
-  'PM',
-  'QCOM',
-  'LOW',
-  'UNP',
-  'ORCL',
+  "AAPL",
+  "GOOG",
+  "MSFT",
+  "AMZN",
+  "META",
+  "TSLA",
+  "NVDA",
+  "JPM",
+  "V",
+  "JNJ",
+  "WMT",
+  "PG",
+  "MA",
+  "UNH",
+  "HD",
+  "DIS",
+  "BAC",
+  "XOM",
+  "PFE",
+  "KO",
+  "PEP",
+  "CSCO",
+  "INTC",
+  "NFLX",
+  "CMCSA",
+  "ADBE",
+  "CRM",
+  "ABT",
+  "NKE",
+  "MRK",
+  "T",
+  "VZ",
+  "CVX",
+  "WFC",
+  "LLY",
+  "TMO",
+  "AVGO",
+  "COST",
+  "DHR",
+  "ACN",
+  "TXN",
+  "MDT",
+  "UPS",
+  "NEE",
+  "HON",
+  "PM",
+  "QCOM",
+  "LOW",
+  "UNP",
+  "ORCL",
 ];
 
 function makeStocks(): Stock[] {
@@ -87,7 +87,7 @@ function updateRandom(stocks: Stock[]): Stock[] {
 }
 
 const stocks = shallowRef<Stock[]>(makeStocks());
-const frameCount = ref('Frames: 0');
+const frameCount = ref("Frames: 0");
 let rafId = 0;
 let frames = 0;
 
@@ -137,26 +137,60 @@ defineExpose({ runFrames });
 </script>
 
 <template>
-  <div id="main"><div class="container">
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Vue (Ticker)</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="start" @click="start()">Start Ticker</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="stop" @click="stop()">Stop Ticker</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="run-500" @click="run500()">Run 500 Frames</button></div>
-      </div></div>
-    </div></div>
-    <div id="frame-count">{{ frameCount }}</div>
-    <table class="table table-hover table-striped test-data">
-      <thead><tr><th>Symbol</th><th>Price</th><th>Change</th><th>Volume</th></tr></thead>
-      <tbody>
-        <tr v-for="stock in stocks" :key="stock.id" :class="stock.change >= 0 ? 'positive' : 'negative'">
-          <td>{{ stock.symbol }}</td>
-          <td>{{ stock.price.toFixed(2) }}</td>
-          <td>{{ stock.change.toFixed(2) }}%</td>
-          <td>{{ stock.volume }}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div></div>
+  <div id="main">
+    <div class="container">
+      <div class="jumbotron">
+        <div class="row">
+          <div class="col-md-6"><h1>Vue (Ticker)</h1></div>
+          <div class="col-md-6">
+            <div class="row">
+              <div class="col-sm-6 smallpad">
+                <button type="button" class="btn btn-primary btn-block" id="start" @click="start()">
+                  Start Ticker
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button type="button" class="btn btn-primary btn-block" id="stop" @click="stop()">
+                  Stop Ticker
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="run-500"
+                  @click="run500()"
+                >
+                  Run 500 Frames
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="frame-count">{{ frameCount }}</div>
+      <table class="table table-hover table-striped test-data">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Price</th>
+            <th>Change</th>
+            <th>Volume</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="stock in stocks"
+            :key="stock.id"
+            :class="stock.change >= 0 ? 'positive' : 'negative'"
+          >
+            <td>{{ stock.symbol }}</td>
+            <td>{{ stock.price.toFixed(2) }}</td>
+            <td>{{ stock.change.toFixed(2) }}%</td>
+            <td>{{ stock.volume }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </template>

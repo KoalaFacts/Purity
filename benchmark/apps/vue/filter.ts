@@ -1,4 +1,4 @@
-import { createApp } from 'vue';
-import FilterApp from './FilterApp.vue';
+import { createApp } from "vue";
+import FilterApp from "./FilterApp.vue";
 
-createApp(FilterApp).mount('#app');
+createApp(FilterApp).mount("#app");

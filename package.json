@@ -1,29 +1,37 @@
 {
-  "name": "purity-monorepo",
+  "name": "purity",
   "version": "0.1.0",
   "private": true,
   "workspaces": [
     "packages/*",
+    "apps/*",
     "benchmark"
   ],
+  "type": "module",
   "scripts": {
-    "build": "npm run build --workspaces",
-    "test": "npm run test --workspaces",
-    "format": "biome format --write .",
-    "lint": "biome lint .",
-    "lint:fix": "biome lint --write .",
-    "check": "biome check --write ."
-  },
-  "engines": {
-    "node": ">=24"
+    "build": "vp run --filter @purityjs/agent-types build && vp run --filter @purityjs/agent-store build && vp run --filter @purityjs/agent-evals build && vp run --filter @purityjs/core build && vp run --filter @purityjs/vite-plugin build && vp run --filter @purityjs/cli build && vp run --filter purity-benchmark build",
+    "test": "vp run -r test",
+    "format": "vp fmt . --write",
+    "lint": "vp lint .",
+    "lint:fix": "vp lint . --fix",
+    "check": "vp check --fix",
+    "prepare": "vp config"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.10",
     "@types/node": "25.5.2",
     "jsdom": "^29.0.2",
     "playwright": "^1.59.1",
     "typescript": "^6.0.2",
-    "vite": "^8.0.5",
-    "vitest": "^4.1.2"
-  }
+    "vite": "npm:@voidzero-dev/vite-plus-core@latest",
+    "vite-plus": "0.1.16",
+    "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
+  },
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@latest",
+    "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "npm@11.12.1"
 }

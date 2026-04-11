@@ -1,8 +1,8 @@
 // Selection benchmark — idiomatic Solid version.
 // Uses: createSignal, createMemo, For, JSX onClick. Zero vanilla JS for UI wiring.
 
-import { createMemo, createSignal, For } from 'solid-js';
-import { render } from 'solid-js/web';
+import { createMemo, createSignal, For } from "solid-js";
+import { render } from "solid-js/web";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,7 +39,7 @@ function buildItems(count: number): SelectItem[] {
 
 function HBtn(props: { id: string; onClick: () => void; children: any }) {
   return (
-    <button type="button" id={props.id} style={{ display: 'none' }} onClick={props.onClick}>
+    <button type="button" id={props.id} style={{ display: "none" }} onClick={props.onClick}>
       {props.children}
     </button>
   );
@@ -127,9 +127,9 @@ function App() {
         </div>
       </div>
       <div id="stats">
-        Selected: <span id="count">{selectedCount()}</span> /{' '}
-        <span id="total">{items().length}</span> | All:{' '}
-        <span id="all-selected">{allSelected() ? 'Yes' : 'No'}</span>
+        Selected: <span id="count">{selectedCount()}</span> /{" "}
+        <span id="total">{items().length}</span> | All:{" "}
+        <span id="all-selected">{allSelected() ? "Yes" : "No"}</span>
       </div>
       <div id="container">
         <For each={items()}>
@@ -145,4 +145,4 @@ function App() {
   );
 }
 
-render(App, document.getElementById('app')!);
+render(App, document.getElementById("app")!);

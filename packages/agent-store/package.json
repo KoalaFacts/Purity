@@ -1,0 +1,42 @@
+{
+  "name": "@purityjs/agent-store",
+  "version": "0.1.0",
+  "description": "SQLite persistence layer for Purity's self-improving agent control plane",
+  "keywords": [
+    "agent",
+    "memory",
+    "skills",
+    "storage"
+  ],
+  "license": "MIT",
+  "author": "KoalaFacts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KoalaFacts/Purity",
+    "directory": "packages/agent-store"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vp run --filter @purityjs/agent-types build && vp build && vp exec tsc --emitDeclarationOnly",
+    "test": "vp test run"
+  },
+  "dependencies": {
+    "@purityjs/agent-types": "^0.1.0"
+  }
+}

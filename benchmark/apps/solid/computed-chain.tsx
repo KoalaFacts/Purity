@@ -1,8 +1,8 @@
 // Computed chain benchmark — idiomatic Solid version.
 // Uses: createSignal, createMemo, JSX onClick. Zero vanilla JS for UI wiring.
 
-import { type Accessor, createMemo, createSignal } from 'solid-js';
-import { render } from 'solid-js/web';
+import { type Accessor, createMemo, createSignal } from "solid-js";
+import { render } from "solid-js/web";
 
 // ---------------------------------------------------------------------------
 // Module-level state for chain setup/teardown
@@ -11,11 +11,11 @@ import { render } from 'solid-js/web';
 let setSource: (v: number) => void = () => {};
 let disposeChain: (() => void) | null = null;
 
-const resultContainer = document.getElementById('result')!;
+const resultContainer = document.getElementById("result")!;
 
 function setupChain(levels: number) {
   if (disposeChain) disposeChain();
-  resultContainer.textContent = '';
+  resultContainer.textContent = "";
   disposeChain = render(() => {
     const [source, _setSource] = createSignal(0);
     setSource = _setSource;
@@ -59,9 +59,9 @@ function App() {
   );
 }
 
-render(App, document.getElementById('app')!);
+render(App, document.getElementById("app")!);
 
 // Hidden button handlers for benchmark permutations
-document.getElementById('setup-10')?.addEventListener('click', () => setupChain(10));
-document.getElementById('setup-100')?.addEventListener('click', () => setupChain(100));
-document.getElementById('setup-10k')?.addEventListener('click', () => setupChain(10000));
+document.getElementById("setup-10")?.addEventListener("click", () => setupChain(10));
+document.getElementById("setup-100")?.addEventListener("click", () => setupChain(100));
+document.getElementById("setup-10k")?.addEventListener("click", () => setupChain(10000));

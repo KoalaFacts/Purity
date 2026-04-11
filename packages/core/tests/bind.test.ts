@@ -1,51 +1,51 @@
-import { describe, expect, it } from 'vitest';
-import { html } from '../src/compiler/compile.ts';
-import { state } from '../src/signals.ts';
+import { describe, expect, it } from "vite-plus/test";
+import { html } from "../src/compiler/compile.ts";
+import { state } from "../src/signals.ts";
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
-describe(':: two-way binding', () => {
-  it('binds input value to state', async () => {
-    const text = state('hello');
+describe(":: two-way binding", () => {
+  it("binds input value to state", async () => {
+    const text = state("hello");
     const fragment = html`<input type="text" ::value=${text} />`;
 
-    const container = document.createElement('div');
+    const container = document.createElement("div");
     container.appendChild(fragment);
-    const input = container.querySelector('input');
+    const input = container.querySelector("input")!;
 
     await tick();
-    expect(input.value).toBe('hello');
+    expect(input.value).toBe("hello");
 
     // Update state → input updates
-    text('world');
+    text("world");
     await tick();
-    expect(input.value).toBe('world');
+    expect(input.value).toBe("world");
   });
 
-  it('binds input events back to state', async () => {
-    const text = state('hello');
+  it("binds input events back to state", async () => {
+    const text = state("hello");
     const fragment = html`<input type="text" ::value=${text} />`;
 
-    const container = document.createElement('div');
+    const container = document.createElement("div");
     container.appendChild(fragment);
-    const input = container.querySelector('input');
+    const input = container.querySelector("input")!;
 
     await tick();
 
     // Simulate user typing
-    input.value = 'typed';
-    input.dispatchEvent(new Event('input'));
+    input.value = "typed";
+    input.dispatchEvent(new Event("input"));
 
-    expect(text()).toBe('typed');
+    expect(text()).toBe("typed");
   });
 
-  it('binds checkbox checked to state', async () => {
+  it("binds checkbox checked to state", async () => {
     const checked = state(false);
     const fragment = html`<input type="checkbox" ::checked=${checked} />`;
 
-    const container = document.createElement('div');
+    const container = document.createElement("div");
     container.appendChild(fragment);
-    const input = container.querySelector('input');
+    const input = container.querySelector("input")!;
 
     await tick();
     expect(input.checked).toBe(false);
@@ -57,12 +57,12 @@ describe(':: two-way binding', () => {
 
     // Simulate user click
     input.checked = false;
-    input.dispatchEvent(new Event('change'));
+    input.dispatchEvent(new Event("change"));
     expect(checked()).toBe(false);
   });
 
-  it('binds select value to state', async () => {
-    const selected = state('b');
+  it("binds select value to state", async () => {
+    const selected = state("b");
     const fragment = html`
       <select ::value=${selected}>
         <option value="a">A</option>
@@ -71,21 +71,21 @@ describe(':: two-way binding', () => {
       </select>
     `;
 
-    const container = document.createElement('div');
+    const container = document.createElement("div");
     container.appendChild(fragment);
-    const select = container.querySelector('select');
+    const select = container.querySelector("select")!;
 
     await tick();
-    expect(select.value).toBe('b');
+    expect(select.value).toBe("b");
 
     // Update state
-    selected('c');
+    selected("c");
     await tick();
-    expect(select.value).toBe('c');
+    expect(select.value).toBe("c");
 
     // Simulate user change
-    select.value = 'a';
-    select.dispatchEvent(new Event('input'));
-    expect(selected()).toBe('a');
+    select.value = "a";
+    select.dispatchEvent(new Event("input"));
+    expect(selected()).toBe("a");
   });
 });

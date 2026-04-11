@@ -1,66 +1,66 @@
 // Sort benchmark — Purity idiomatic version.
 // Uses: state, compute, each, html, mount. Zero vanilla JS for UI wiring.
 
-import { compute, each, html, mount, state } from '@purityjs/core';
+import { compute, each, html, mount, state } from "@purityjs/core";
 
 // ---------------------------------------------------------------------------
 // Data generation
 // ---------------------------------------------------------------------------
 
 const A = [
-  'pretty',
-  'large',
-  'big',
-  'small',
-  'tall',
-  'short',
-  'long',
-  'handsome',
-  'plain',
-  'quaint',
-  'clean',
-  'elegant',
-  'easy',
-  'angry',
-  'crazy',
-  'helpful',
-  'mushy',
-  'odd',
-  'unsightly',
-  'adorable',
-  'important',
-  'inexpensive',
-  'cheap',
-  'expensive',
-  'fancy',
+  "pretty",
+  "large",
+  "big",
+  "small",
+  "tall",
+  "short",
+  "long",
+  "handsome",
+  "plain",
+  "quaint",
+  "clean",
+  "elegant",
+  "easy",
+  "angry",
+  "crazy",
+  "helpful",
+  "mushy",
+  "odd",
+  "unsightly",
+  "adorable",
+  "important",
+  "inexpensive",
+  "cheap",
+  "expensive",
+  "fancy",
 ];
 const C = [
-  'red',
-  'yellow',
-  'blue',
-  'green',
-  'pink',
-  'brown',
-  'purple',
-  'brown',
-  'white',
-  'black',
-  'orange',
+  "red",
+  "yellow",
+  "blue",
+  "green",
+  "pink",
+  "brown",
+  "purple",
+  "brown",
+  "white",
+  "black",
+  "orange",
 ];
 const N = [
-  'table',
-  'chair',
-  'house',
-  'bbq',
-  'desk',
-  'car',
-  'pony',
-  'cookie',
-  'sandwich',
-  'burger',
-  'pizza',
-  'mouse',
-  'keyboard',
+  "table",
+  "chair",
+  "house",
+  "bbq",
+  "desk",
+  "car",
+  "pony",
+  "cookie",
+  "sandwich",
+  "burger",
+  "pizza",
+  "mouse",
+  "keyboard",
 ];
 
 interface Item {
@@ -82,10 +82,10 @@ function buildData(count: number): Item[] {
 // State
 // ---------------------------------------------------------------------------
 
-type SortMode = 'none' | 'id-asc' | 'id-desc' | 'label-asc';
+type SortMode = "none" | "id-asc" | "id-desc" | "label-asc";
 
 const data = state<Item[]>([]);
-const sortMode = state<SortMode>('none');
+const sortMode = state<SortMode>("none");
 
 // ---------------------------------------------------------------------------
 // Computed
@@ -94,9 +94,9 @@ const sortMode = state<SortMode>('none');
 const sorted = compute(() => {
   const s = data().slice();
   const mode = sortMode();
-  if (mode === 'id-asc') s.sort((a, b) => a.id - b.id);
-  else if (mode === 'id-desc') s.sort((a, b) => b.id - a.id);
-  else if (mode === 'label-asc') s.sort((a, b) => a.label.localeCompare(b.label));
+  if (mode === "id-asc") s.sort((a, b) => a.id - b.id);
+  else if (mode === "id-desc") s.sort((a, b) => b.id - a.id);
+  else if (mode === "label-asc") s.sort((a, b) => a.label.localeCompare(b.label));
   return s;
 });
 
@@ -106,7 +106,7 @@ const sorted = compute(() => {
 
 function populate(count: number) {
   data(buildData(count));
-  sortMode('none');
+  sortMode("none");
 }
 
 // ---------------------------------------------------------------------------
@@ -114,30 +114,64 @@ function populate(count: number) {
 // ---------------------------------------------------------------------------
 
 function hBtn(id: string, label: string, handler: () => void) {
-  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>
+    ${label}
+  </button>`;
 }
 
 function ButtonBar() {
   return html`
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Purity (Sort)</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="populate" @click=${() => populate(1000)}>Populate 1k</button>
+    <div class="jumbotron">
+      <div class="row">
+        <div class="col-md-6"><h1>Purity (Sort)</h1></div>
+        <div class="col-md-6">
+          <div class="row">
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="populate"
+                @click=${() => populate(1000)}
+              >
+                Populate 1k
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="sort-id"
+                @click=${() => sortMode("id-asc")}
+              >
+                Sort by ID &#x2191;
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="sort-id-desc"
+                @click=${() => sortMode("id-desc")}
+              >
+                Sort by ID &#x2193;
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="sort-label"
+                @click=${() => sortMode("label-asc")}
+              >
+                Sort by Label &#x2191;
+              </button>
+            </div>
+            ${hBtn("populate-100", "Populate 100", () => populate(100))}
+            ${hBtn("populate-10k", "Populate 10k", () => populate(10000))}
+          </div>
         </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="sort-id" @click=${() => sortMode('id-asc')}>Sort by ID &#x2191;</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="sort-id-desc" @click=${() => sortMode('id-desc')}>Sort by ID &#x2193;</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="sort-label" @click=${() => sortMode('label-asc')}>Sort by Label &#x2191;</button>
-        </div>
-        ${hBtn('populate-100', 'Populate 100', () => populate(100))}
-        ${hBtn('populate-10k', 'Populate 10k', () => populate(10000))}
-      </div></div>
-    </div></div>
+      </div>
+    </div>
   `;
 }
 
@@ -145,7 +179,7 @@ function ButtonBar() {
 // Row rendering
 // ---------------------------------------------------------------------------
 
-const tbody = document.getElementById('tbody')!;
+const tbody = document.getElementById("tbody")!;
 
 const fragment = each(
   () => sorted(),
@@ -161,8 +195,8 @@ const fragment = each(
 tbody.appendChild(fragment);
 
 // Event delegation — prevents default on label clicks
-tbody.addEventListener('click', (e) => {
-  const a = (e.target as HTMLElement).closest('a');
+tbody.addEventListener("click", (e) => {
+  const a = (e.target as HTMLElement).closest("a");
   if (!a) return;
   e.preventDefault();
 });
@@ -171,4 +205,4 @@ tbody.addEventListener('click', (e) => {
 // Mount
 // ---------------------------------------------------------------------------
 
-mount(ButtonBar, document.getElementById('app')!);
+mount(ButtonBar, document.getElementById("app")!);

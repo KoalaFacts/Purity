@@ -1,4 +1,4 @@
-import { createApp } from 'vue';
-import CartApp from './CartApp.vue';
+import { createApp } from "vue";
+import CartApp from "./CartApp.vue";
 
-createApp(CartApp).mount('#app');
+createApp(CartApp).mount("#app");

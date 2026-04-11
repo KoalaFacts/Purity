@@ -1,4 +1,4 @@
-import { Signal } from 'signal-polyfill';
+import { Signal } from "signal-polyfill";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -162,7 +162,7 @@ export function state<T>(initial: T): StateAccessor<T> {
   const accessor = ((...args: [T | ((current: T) => T)] | []): T => {
     if (args.length === 0) return sGet();
     const value = args[0];
-    if (typeof value === 'function') {
+    if (typeof value === "function") {
       const next = (value as (current: T) => T)(sGet());
       sSet(next);
       return next;
@@ -227,7 +227,7 @@ function _effect(fn: () => undefined | Dispose): Dispose {
   let disposed = false;
 
   const c = new Signal.Computed<void>(() => {
-    if (typeof cleanup === 'function') {
+    if (typeof cleanup === "function") {
       cleanup();
       cleanup = undefined;
     }
@@ -238,8 +238,8 @@ function _effect(fn: () => undefined | Dispose): Dispose {
     if (++effectDepth > MAX_EFFECT_DEPTH) {
       effectDepth = 0;
       throw new Error(
-        '[Purity] Maximum effect depth exceeded. ' +
-          'A watch/effect callback is likely modifying the signal it depends on.',
+        "[Purity] Maximum effect depth exceeded. " +
+          "A watch/effect callback is likely modifying the signal it depends on.",
       );
     }
 
@@ -260,7 +260,7 @@ function _effect(fn: () => undefined | Dispose): Dispose {
       disposed = true;
       pendingUnwatch.push(c);
       scheduleUnwatch();
-      if (typeof cleanup === 'function') {
+      if (typeof cleanup === "function") {
         cleanup();
         cleanup = undefined;
       }

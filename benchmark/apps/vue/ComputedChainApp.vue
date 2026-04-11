@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { type ComputedRef, computed, type Ref, ref } from 'vue';
+import { type ComputedRef, computed, type Ref, ref } from "vue";
 
 const source = ref(0);
 const chain = ref<ComputedRef<number>[]>([]);

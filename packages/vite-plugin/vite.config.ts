@@ -1,16 +1,16 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   build: {
     lib: {
-      entry: 'src/index.ts',
-      formats: ['es', 'cjs'],
-      fileName: (format) => (format === 'es' ? 'index.js' : 'index.cjs'),
+      entry: "src/index.ts",
+      formats: ["es", "cjs"],
+      fileName: (format) => (format === "es" ? "index.js" : "index.cjs"),
     },
     rolldownOptions: {
       external: [/^@purityjs\//],
       output: {
-        exports: 'named',
+        exports: "named",
       },
     },
     sourcemap: true,

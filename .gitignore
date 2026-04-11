@@ -25,6 +25,9 @@ vite.config.ts.timestamp-*
 # Playwright MCP
 .playwright-mcp/
 
+# Agent database (local runtime state)
+.agent/
+
 # Superpowers (local plans/specs)
 **/superpowers/
 **/.superpowers/

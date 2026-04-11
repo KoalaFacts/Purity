@@ -1,4 +1,4 @@
-import { compute, each, html, mount, onMount, state } from '@purityjs/core';
+import { compute, each, html, mount, onMount, state } from "@purityjs/core";
 
 // ---------------------------------------------------------------------------
 // Data types (unchanged — consumed from generate-pages.ts JSON payload)
@@ -43,15 +43,15 @@ interface BenchData {
 // Load embedded JSON
 // ---------------------------------------------------------------------------
 
-const dataEl = document.getElementById('bench-data');
+const dataEl = document.getElementById("bench-data");
 const data: BenchData = dataEl
-  ? JSON.parse(dataEl.textContent || '{}')
+  ? JSON.parse(dataEl.textContent || "{}")
   : { speed: [], memory: [], history: [] };
 
-const FWS = ['Purity', 'Solid', 'Svelte', 'Vue'] as const;
-const FW_KEYS = ['purity', 'solid', 'svelte', 'vue'] as const;
+const FWS = ["Purity", "Solid", "Svelte", "Vue"] as const;
+const FW_KEYS = ["purity", "solid", "svelte", "vue"] as const;
 
-const CHARS = { dash: '\u2014', lq: '\u201C', rq: '\u201D', arrow: '\u2192', dot: '\u00B7' };
+const CHARS = { dash: "\u2014", lq: "\u201C", rq: "\u201D", arrow: "\u2192", dot: "\u00B7" };
 
 // ---------------------------------------------------------------------------
 // Accessors
@@ -83,7 +83,7 @@ function countWins(rows: SpeedRow[]) {
 function groupByCategory(rows: SpeedRow[]): { category: string; rows: SpeedRow[] }[] {
   const groups: { category: string; rows: SpeedRow[] }[] = [];
   const map = new Map<string, SpeedRow[]>();
-  let lastCat = '';
+  let lastCat = "";
   for (const r of rows) {
     if (r.category) lastCat = r.category;
     const cat = r.category || lastCat;
@@ -107,8 +107,8 @@ function fmtMs(ms: number): string {
 // ---------------------------------------------------------------------------
 
 function BarChart(rows: SpeedRow[]): HTMLElement {
-  const chart = document.createElement('div');
-  chart.className = 'chart';
+  const chart = document.createElement("div");
+  chart.className = "chart";
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
@@ -122,40 +122,40 @@ function BarChart(rows: SpeedRow[]): HTMLElement {
     const maxVal = Math.max(...vals.map((v) => v.ms));
     const minVal = Math.min(...vals.map((v) => v.ms));
 
-    const group = document.createElement('div');
-    group.className = 'chart-group';
+    const group = document.createElement("div");
+    group.className = "chart-group";
 
-    const label = document.createElement('div');
-    label.className = 'chart-label';
+    const label = document.createElement("div");
+    label.className = "chart-label";
     label.textContent = r.op;
     group.appendChild(label);
 
-    const tracks = document.createElement('div');
-    tracks.className = 'chart-tracks';
+    const tracks = document.createElement("div");
+    tracks.className = "chart-tracks";
 
     for (let j = 0; j < vals.length; j++) {
       const { fw, key, ms } = vals[j];
       const pct = maxVal > 0 ? (ms / maxVal) * 100 : 0;
       const isBest = ms === minVal;
 
-      const row = document.createElement('div');
-      row.className = `chart-bar ${key}${isBest ? ' is-best' : ''}`;
+      const row = document.createElement("div");
+      row.className = `chart-bar ${key}${isBest ? " is-best" : ""}`;
 
-      const fwLabel = document.createElement('span');
-      fwLabel.className = 'chart-fw';
+      const fwLabel = document.createElement("span");
+      fwLabel.className = "chart-fw";
       fwLabel.textContent = fw.slice(0, 2);
 
-      const track = document.createElement('div');
-      track.className = 'chart-track';
+      const track = document.createElement("div");
+      track.className = "chart-track";
 
-      const fill = document.createElement('div');
-      fill.className = 'chart-fill';
+      const fill = document.createElement("div");
+      fill.className = "chart-fill";
       fill.style.width = `${Math.max(pct, 3)}%`;
 
       track.appendChild(fill);
 
-      const val = document.createElement('span');
-      val.className = 'chart-ms';
+      const val = document.createElement("span");
+      val.className = "chart-ms";
       val.textContent = fmtMs(ms);
 
       row.appendChild(fwLabel);
@@ -178,33 +178,33 @@ function BarChart(rows: SpeedRow[]): HTMLElement {
 function speedRow(r: SpeedRow): HTMLTableRowElement {
   const vals = FWS.map((fw) => getSpeedMs(r, fw)).filter((v) => v != null && !Number.isNaN(v));
   const best = vals.length ? Math.min(...vals) : 0;
-  const tr = document.createElement('tr');
+  const tr = document.createElement("tr");
 
-  const opTd = document.createElement('td');
-  opTd.className = 'cell-op';
+  const opTd = document.createElement("td");
+  opTd.className = "cell-op";
   opTd.textContent = r.op;
   tr.appendChild(opTd);
 
   for (const fw of FWS) {
     const ms = getSpeedMs(r, fw);
-    const td = document.createElement('td');
-    td.className = 'cell-num';
+    const td = document.createElement("td");
+    td.className = "cell-num";
     if (ms == null || Number.isNaN(ms)) {
-      td.classList.add('is-na');
+      td.classList.add("is-na");
       td.textContent = CHARS.dash;
     } else {
       const isBest = ms === best || fw === r.winner;
       const ratio = best > 0 ? ms / best : 1;
-      if (isBest) td.classList.add('is-best');
-      else if (ratio > 2) td.classList.add('is-slow');
+      if (isBest) td.classList.add("is-best");
+      else if (ratio > 2) td.classList.add("is-slow");
       td.textContent = fmtMs(ms);
     }
     tr.appendChild(td);
   }
 
-  const winTd = document.createElement('td');
-  winTd.className = 'cell-winner';
-  const badge = document.createElement('span');
+  const winTd = document.createElement("td");
+  winTd.className = "cell-winner";
+  const badge = document.createElement("span");
   badge.className = `winner-badge ${r.winner.toLowerCase()}`;
   badge.textContent = r.winner;
   winTd.appendChild(badge);
@@ -213,19 +213,19 @@ function speedRow(r: SpeedRow): HTMLTableRowElement {
 }
 
 function SpeedTable(rows: SpeedRow[]): HTMLElement {
-  const table = document.createElement('table');
-  table.className = 'data-table';
+  const table = document.createElement("table");
+  table.className = "data-table";
   const thead = table.createTHead();
   const hRow = thead.insertRow();
-  const headers = ['Operation', ...FWS, 'Winner'];
+  const headers = ["Operation", ...FWS, "Winner"];
   for (let i = 0; i < headers.length; i++) {
-    const th = document.createElement('th');
+    const th = document.createElement("th");
     th.textContent = headers[i];
-    if (i > 0 && i < 5) th.className = 'th-num';
-    if (i === 5) th.className = 'th-winner';
+    if (i > 0 && i < 5) th.className = "th-num";
+    if (i === 5) th.className = "th-winner";
     hRow.appendChild(th);
   }
-  const tbody = document.createElement('tbody');
+  const tbody = document.createElement("tbody");
   table.appendChild(tbody);
   tbody.appendChild(
     each(
@@ -234,8 +234,8 @@ function SpeedTable(rows: SpeedRow[]): HTMLElement {
       (r) => r.op,
     ),
   );
-  const wrapper = document.createElement('div');
-  wrapper.className = 'table-wrap';
+  const wrapper = document.createElement("div");
+  wrapper.className = "table-wrap";
   wrapper.appendChild(table);
   return wrapper;
 }
@@ -245,15 +245,15 @@ function SpeedTable(rows: SpeedRow[]): HTMLElement {
 // ---------------------------------------------------------------------------
 
 function addMemTd(tr: HTMLTableRowElement, val: number, best: number, isRetained: boolean) {
-  const td = document.createElement('td');
-  td.className = 'cell-num';
+  const td = document.createElement("td");
+  td.className = "cell-num";
   if (val == null || Number.isNaN(val)) {
-    td.classList.add('is-na');
+    td.classList.add("is-na");
     td.textContent = CHARS.dash;
   } else {
     const cmp = isRetained ? Math.abs(val) : val;
-    if (cmp === best) td.classList.add('is-best');
-    else if (cmp > best * 2) td.classList.add('is-slow');
+    if (cmp === best) td.classList.add("is-best");
+    else if (cmp > best * 2) td.classList.add("is-slow");
     td.textContent = `${val.toFixed(1)}MB`;
   }
   tr.appendChild(td);
@@ -267,16 +267,16 @@ function memRow(r: MemRow): HTMLTableRowElement {
   );
   const bestRet = retVals.length ? Math.min(...retVals.map((v) => Math.abs(v))) : 0;
 
-  const tr = document.createElement('tr');
-  const opTd = document.createElement('td');
-  opTd.className = 'cell-op';
+  const tr = document.createElement("tr");
+  const opTd = document.createElement("td");
+  opTd.className = "cell-op";
   opTd.textContent = r.op;
   tr.appendChild(opTd);
   for (const fw of FWS) addMemTd(tr, getMemUsed(r, fw), bestUsed, false);
   for (const fw of FWS) addMemTd(tr, getMemRetained(r, fw), bestRet, true);
-  const winTd = document.createElement('td');
-  winTd.className = 'cell-winner';
-  const badge = document.createElement('span');
+  const winTd = document.createElement("td");
+  winTd.className = "cell-winner";
+  const badge = document.createElement("span");
   badge.className = `winner-badge ${r.bestCleanup.toLowerCase()}`;
   badge.textContent = r.bestCleanup;
   winTd.appendChild(badge);
@@ -286,30 +286,30 @@ function memRow(r: MemRow): HTMLTableRowElement {
 
 function MemoryTable(rows: MemRow[]): HTMLElement {
   if (!rows.length) {
-    const p = document.createElement('p');
-    p.className = 'empty-msg';
-    p.textContent = 'No memory data available.';
+    const p = document.createElement("p");
+    p.className = "empty-msg";
+    p.textContent = "No memory data available.";
     return p;
   }
 
-  const table = document.createElement('table');
-  table.className = 'data-table';
+  const table = document.createElement("table");
+  table.className = "data-table";
   const thead = table.createTHead();
   const row1 = thead.insertRow();
   const addTh = (row: HTMLTableRowElement, text: string, attrs?: Record<string, string>) => {
-    const th = document.createElement('th');
+    const th = document.createElement("th");
     th.textContent = text;
     if (attrs) for (const [k, v] of Object.entries(attrs)) th.setAttribute(k, v);
     row.appendChild(th);
   };
-  addTh(row1, 'Operation', { rowspan: '2' });
-  addTh(row1, 'Heap Used (after create)', { colspan: '4', class: 'th-group' });
-  addTh(row1, 'Heap Retained (after destroy)', { colspan: '4', class: 'th-group' });
-  addTh(row1, 'Best Cleanup', { rowspan: '2' });
+  addTh(row1, "Operation", { rowspan: "2" });
+  addTh(row1, "Heap Used (after create)", { colspan: "4", class: "th-group" });
+  addTh(row1, "Heap Retained (after destroy)", { colspan: "4", class: "th-group" });
+  addTh(row1, "Best Cleanup", { rowspan: "2" });
   const row2 = thead.insertRow();
-  for (const fw of FWS) addTh(row2, fw, { class: 'th-num' });
-  for (const fw of FWS) addTh(row2, fw, { class: 'th-num' });
-  const tbody = document.createElement('tbody');
+  for (const fw of FWS) addTh(row2, fw, { class: "th-num" });
+  for (const fw of FWS) addTh(row2, fw, { class: "th-num" });
+  const tbody = document.createElement("tbody");
   table.appendChild(tbody);
   tbody.appendChild(
     each(
@@ -318,8 +318,8 @@ function MemoryTable(rows: MemRow[]): HTMLElement {
       (r) => r.op,
     ),
   );
-  const wrapper = document.createElement('div');
-  wrapper.className = 'table-wrap';
+  const wrapper = document.createElement("div");
+  wrapper.className = "table-wrap";
   wrapper.appendChild(table);
   return wrapper;
 }
@@ -340,16 +340,14 @@ function ScoreCard(fw: string, count: number) {
 }
 
 function Scoreboard(wins: Record<string, number>) {
-  return html`<div class="scoreboard">
-    ${FWS.map((fw) => ScoreCard(fw, wins[fw] || 0))}
-  </div>`;
+  return html`<div class="scoreboard">${FWS.map((fw) => ScoreCard(fw, wins[fw] || 0))}</div>`;
 }
 
 function MiniScoreboard(wins: Record<string, number>) {
   return html`<div class="mini-scores">
     ${FWS.map((fw) => {
       const count = wins[fw] || 0;
-      const cls = `mini-score ${fw.toLowerCase()}${count > 0 ? ' has-wins' : ''}`;
+      const cls = `mini-score ${fw.toLowerCase()}${count > 0 ? " has-wins" : ""}`;
       return html`<span :class=${cls}>${fw} ${String(count)}</span>`;
     })}
   </div>`;
@@ -370,8 +368,7 @@ function CategorySection(group: { category: string; rows: SpeedRow[] }) {
       <h2 class="cat-title">${group.category}</h2>
       <span class="cat-badge">${opCount} tests</span>
     </div>
-    ${MiniScoreboard(catWins)}
-    ${chart}
+    ${MiniScoreboard(catWins)} ${chart}
     <details class="table-toggle">
       <summary>View detailed table</summary>
       ${SpeedTable(group.rows)}
@@ -415,8 +412,10 @@ function MemorySection() {
         ${MiniScoreboard(cleanupWins)}
       </div>
     </div>
-    <p class="mem-note">Heap delta via <code>performance.memory</code> with forced GC.
-      ${CHARS.lq}Used${CHARS.rq} = after create, ${CHARS.lq}Retained${CHARS.rq} = after destroy (closer to 0 = better).</p>
+    <p class="mem-note">
+      Heap delta via <code>performance.memory</code> with forced GC. ${CHARS.lq}Used${CHARS.rq} =
+      after create, ${CHARS.lq}Retained${CHARS.rq} = after destroy (closer to 0 = better).
+    </p>
     ${MemoryTable(data.memory)}
   </section>`;
 }
@@ -427,13 +426,14 @@ function MemorySection() {
 
 function HistorySection(run: HistoryRun) {
   const wins = countWins(run.speed);
-  const winSummary = FWS.map((fw) => `${fw} ${wins[fw] || 0}`).join('  ');
+  const winSummary = FWS.map((fw) => `${fw} ${wins[fw] || 0}`).join("  ");
   return html`<details class="history-item">
-    <summary><span class="history-date">${run.date}</span><span class="history-wins">${winSummary}</span></summary>
+    <summary>
+      <span class="history-date">${run.date}</span><span class="history-wins">${winSummary}</span>
+    </summary>
     <div class="history-body">
-      ${Scoreboard(wins)}
-      ${SpeedTable(run.speed)}
-      ${run.memory.length ? MemoryTable(run.memory) : ''}
+      ${Scoreboard(wins)} ${SpeedTable(run.speed)}
+      ${run.memory.length ? MemoryTable(run.memory) : ""}
     </div>
   </details>`;
 }
@@ -461,11 +461,11 @@ function setupScrollSpy(activePill: (val: string | null) => void) {
       for (let i = 0; i < entries.length; i++) {
         if (entries[i].isIntersecting) {
           const id = entries[i].target.id;
-          activePill(id === 'section-history' ? null : id.replace('cat-', ''));
+          activePill(id === "section-history" ? null : id.replace("cat-", ""));
         }
       }
     },
-    { rootMargin: '-72px 0px -65% 0px' },
+    { rootMargin: "-72px 0px -65% 0px" },
   );
 
   for (let i = 0; i < sections.length; i++) observer.observe(sections[i]);
@@ -473,7 +473,7 @@ function setupScrollSpy(activePill: (val: string | null) => void) {
 
 function scrollTo(id: string) {
   const el = document.getElementById(id);
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // ---------------------------------------------------------------------------
@@ -481,7 +481,7 @@ function scrollTo(id: string) {
 // ---------------------------------------------------------------------------
 
 function applyGlobalStyles() {
-  const style = document.createElement('style');
+  const style = document.createElement("style");
   style.textContent = `
     @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
@@ -788,14 +788,14 @@ function App() {
   const activeNav = state<string | null>(null);
 
   const categories = groups.map((g) => g.category.toLowerCase());
-  if (data.memory.length) categories.push('memory');
+  if (data.memory.length) categories.push("memory");
 
   onMount(() => {
     setupScrollSpy((val) => activeNav(val));
   });
 
   function navPillClass(id: string | null) {
-    return compute(() => `nav-pill${activeNav() === id ? ' active' : ''}`);
+    return compute(() => `nav-pill${activeNav() === id ? " active" : ""}`);
   }
 
   return html`
@@ -809,25 +809,44 @@ function App() {
 
     <nav class="sticky-nav">
       <div class="nav-pills">
-        <button :class=${navPillClass(null)} @click=${() => scrollTo(`cat-${categories[0]}`)}>All</button>
+        <button :class=${navPillClass(null)} @click=${() => scrollTo(`cat-${categories[0]}`)}>
+          All
+        </button>
         ${groups.map(
           (g) =>
-            html`<button :class=${navPillClass(g.category.toLowerCase())}
-              @click=${() => scrollTo(`cat-${g.category.toLowerCase()}`)}>${g.category}</button>`,
+            html`<button
+              :class=${navPillClass(g.category.toLowerCase())}
+              @click=${() => scrollTo(`cat-${g.category.toLowerCase()}`)}
+            >
+              ${g.category}
+            </button>`,
         )}
-        ${data.memory.length ? html`<button :class=${navPillClass('memory')} @click=${() => scrollTo('cat-memory')}>Memory</button>` : ''}
+        ${data.memory.length
+          ? html`<button :class=${navPillClass("memory")} @click=${() => scrollTo("cat-memory")}>
+              Memory
+            </button>`
+          : ""}
       </div>
     </nav>
 
     <div class="page">
-      ${groups.map((g) => CategorySection(g))}
-      ${MemorySection()}
-      ${PreviousRunsSection()}
+      ${groups.map((g) => CategorySection(g))} ${MemorySection()} ${PreviousRunsSection()}
 
       <footer class="site-footer">
-        <div class="footer-actions">Run a new benchmark: <a href="https://github.com/KoalaFacts/Purity/actions">Actions ${CHARS.arrow} Benchmark</a></div>
-        <div class="footer-method">Warmup 3 ${CHARS.dot} Measured 7 ${CHARS.dot} Drop fastest 1 + slowest 1 ${CHARS.dot} Metric: trimmed median ${CHARS.dot} Framework order randomized</div>
-        <div class="footer-brand">Built with <a href="https://github.com/KoalaFacts/Purity">Purity</a> ${CHARS.dash} 17 functions, 6 kB gzipped</div>
+        <div class="footer-actions">
+          Run a new benchmark:
+          <a href="https://github.com/KoalaFacts/Purity/actions"
+            >Actions ${CHARS.arrow} Benchmark</a
+          >
+        </div>
+        <div class="footer-method">
+          Warmup 3 ${CHARS.dot} Measured 7 ${CHARS.dot} Drop fastest 1 + slowest 1 ${CHARS.dot}
+          Metric: trimmed median ${CHARS.dot} Framework order randomized
+        </div>
+        <div class="footer-brand">
+          Built with <a href="https://github.com/KoalaFacts/Purity">Purity</a> ${CHARS.dash} 17
+          functions, 6 kB gzipped
+        </div>
       </footer>
     </div>
   `;
@@ -837,4 +856,4 @@ function App() {
 // Mount
 // ---------------------------------------------------------------------------
 
-mount(App, document.getElementById('app')!);
+mount(App, document.getElementById("app")!);

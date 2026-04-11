@@ -1,67 +1,67 @@
 // Filter benchmark — idiomatic Solid version.
 // Uses: createSignal, createMemo, For, JSX onClick/onInput. Zero vanilla JS for UI wiring.
 
-import { createMemo, createSignal, For } from 'solid-js';
-import { render } from 'solid-js/web';
+import { createMemo, createSignal, For } from "solid-js";
+import { render } from "solid-js/web";
 
 // ---------------------------------------------------------------------------
 // Data generation
 // ---------------------------------------------------------------------------
 
 const A = [
-  'pretty',
-  'large',
-  'big',
-  'small',
-  'tall',
-  'short',
-  'long',
-  'handsome',
-  'plain',
-  'quaint',
-  'clean',
-  'elegant',
-  'easy',
-  'angry',
-  'crazy',
-  'helpful',
-  'mushy',
-  'odd',
-  'unsightly',
-  'adorable',
-  'important',
-  'inexpensive',
-  'cheap',
-  'expensive',
-  'fancy',
+  "pretty",
+  "large",
+  "big",
+  "small",
+  "tall",
+  "short",
+  "long",
+  "handsome",
+  "plain",
+  "quaint",
+  "clean",
+  "elegant",
+  "easy",
+  "angry",
+  "crazy",
+  "helpful",
+  "mushy",
+  "odd",
+  "unsightly",
+  "adorable",
+  "important",
+  "inexpensive",
+  "cheap",
+  "expensive",
+  "fancy",
 ];
 const C = [
-  'red',
-  'yellow',
-  'blue',
-  'green',
-  'pink',
-  'brown',
-  'purple',
-  'brown',
-  'white',
-  'black',
-  'orange',
+  "red",
+  "yellow",
+  "blue",
+  "green",
+  "pink",
+  "brown",
+  "purple",
+  "brown",
+  "white",
+  "black",
+  "orange",
 ];
 const N = [
-  'table',
-  'chair',
-  'house',
-  'bbq',
-  'desk',
-  'car',
-  'pony',
-  'cookie',
-  'sandwich',
-  'burger',
-  'pizza',
-  'mouse',
-  'keyboard',
+  "table",
+  "chair",
+  "house",
+  "bbq",
+  "desk",
+  "car",
+  "pony",
+  "cookie",
+  "sandwich",
+  "burger",
+  "pizza",
+  "mouse",
+  "keyboard",
 ];
 
 interface Item {
@@ -84,7 +84,7 @@ function buildData(count: number): Item[] {
 // ---------------------------------------------------------------------------
 
 const [data, setData] = createSignal<Item[]>([]);
-const [query, setQuery] = createSignal('');
+const [query, setQuery] = createSignal("");
 
 const filtered = createMemo(() => {
   const q = query().toLowerCase();
@@ -98,7 +98,7 @@ const filtered = createMemo(() => {
 
 function HBtn(props: { id: string; onClick: () => void; children: any }) {
   return (
-    <button type="button" id={props.id} style={{ display: 'none' }} onClick={props.onClick}>
+    <button type="button" id={props.id} style={{ display: "none" }} onClick={props.onClick}>
       {props.children}
     </button>
   );
@@ -142,7 +142,7 @@ function App() {
                 type="button"
                 class="btn btn-primary btn-block"
                 id="clear-search"
-                onClick={() => setQuery('')}
+                onClick={() => setQuery("")}
               >
                 Clear Search
               </button>
@@ -182,7 +182,7 @@ render(
       )}
     </For>
   ),
-  document.getElementById('tbody')!,
+  document.getElementById("tbody")!,
 );
 
-render(App, document.getElementById('app')!);
+render(App, document.getElementById("app")!);

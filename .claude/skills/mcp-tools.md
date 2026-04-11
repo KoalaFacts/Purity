@@ -6,7 +6,9 @@ These tools would allow AI agents to scaffold, analyze, and modify Purity projec
 ## Planned MCP Tools
 
 ### purity.scaffold
+
 Create a new Purity project or component.
+
 ```json
 {
   "name": "purity.scaffold",
@@ -21,7 +23,9 @@ Create a new Purity project or component.
 ```
 
 ### purity.analyze
+
 Analyze a Purity component for issues.
+
 ```json
 {
   "name": "purity.analyze",
@@ -33,7 +37,9 @@ Analyze a Purity component for issues.
 ```
 
 ### purity.compile
+
 Preview what the AOT compiler outputs for a template.
+
 ```json
 {
   "name": "purity.compile",
@@ -45,7 +51,9 @@ Preview what the AOT compiler outputs for a template.
 ```
 
 ### purity.migrate
+
 Migrate code from another framework to Purity.
+
 ```json
 {
   "name": "purity.migrate",
@@ -60,6 +68,7 @@ Migrate code from another framework to Purity.
 ## Migration Mappings
 
 ### React → Purity
+
 ```
 useState(init)           → state(init)
 useMemo(fn, deps)        → compute(fn)
@@ -72,6 +81,7 @@ onClick={fn}             → @click=${fn}
 ```
 
 ### Vue 3 → Purity
+
 ```
 ref(init)                → state(init)
 computed(fn)             → compute(fn)
@@ -87,6 +97,7 @@ provide/inject           → @purityjs/inject
 ```
 
 ### Svelte 5 → Purity
+
 ```
 $state(init)             → state(init)
 $derived(expr)           → compute(() => expr)

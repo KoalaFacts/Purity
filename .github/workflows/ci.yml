@@ -1,4 +1,4 @@
-name: CI — Lint, Test, Build
+name: CI — Check, Test, Build
 
 # Runs automatically on every push to main and every PR.
 # Verifies code quality, type safety, tests, and build integrity.
@@ -14,55 +14,50 @@ permissions:
 
 jobs:
   ci:
-    name: Lint → Test → Build
+    name: Check → Test → Build
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: 🟢 Setup Node.js 24
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@237a7eda494c3466dcb53e9f067142b9218d64a1 # v1
         with:
-          node-version: '24'
-          cache: 'npm'
+          node-version: "24"
+          cache: true
 
-      - name: 📦 Install root dependencies
-        # Installs all workspace dependencies from lockfile
-        run: npm ci
-
-      - name: 🔐 Audit dependencies
+      - name: Audit dependencies
         run: npm audit --audit-level=high
 
-      - name: 🔐 Verify package provenance (non-blocking)
+      - name: Verify package provenance (non-blocking)
         # npm attestation API can be flaky; log results but don't gate CI
         run: npm audit signatures || true
 
-      - name: 🔍 Lint & format check (Biome)
-        # Checks all files for formatting and lint errors without modifying them
-        run: npx biome check .
+      - name: Check formatting, lint, and types
+        run: vp check
 
-      - name: 🔷 Type check @purityjs/core
+      - name: Type check @purityjs/core
         # Verifies TypeScript types compile without errors
-        run: cd packages/core && npx tsc --noEmit
+        run: cd packages/core && vp exec tsc --noEmit
 
-      - name: 🧪 Test @purityjs/core (155 tests)
+      - name: Test @purityjs/core
         # Runs vitest on the core framework — signals, templates, components, control flow
-        run: npm test -w packages/core
+        run: vp run --filter @purityjs/core test
 
-      - name: 🧪 Test @purityjs/vite-plugin (12 tests)
+      - name: Test @purityjs/vite-plugin
         # Runs vitest on the AOT template compiler plugin
-        run: npm test -w packages/vite-plugin
+        run: vp run --filter @purityjs/vite-plugin test
 
-      - name: 🏗️ Build @purityjs/core
+      - name: Build @purityjs/core
         # Produces dist/ with ESM, CJS, and .d.ts type declarations
-        run: npm run build -w packages/core
+        run: vp run --filter @purityjs/core build
 
-      - name: 🏗️ Build @purityjs/vite-plugin
+      - name: Build @purityjs/vite-plugin
         # Produces dist/ with the compiled plugin
-        run: npm run build -w packages/vite-plugin
+        run: vp run --filter @purityjs/vite-plugin build
 
-      - name: 🏗️ Build benchmark (verifies AOT compilation)
+      - name: Build benchmark
         # Runs vite build — proves the AOT plugin compiles html`` templates.
         # Benchmark is a workspace member so deps are already installed.
-        run: cd benchmark && npx vite build
+        run: cd benchmark && vp build

@@ -1,5 +1,5 @@
-import { ComponentContext, getCurrentContext, popContext, pushContext } from './component';
-import { watch } from './signals';
+import { ComponentContext, getCurrentContext, popContext, pushContext } from "./component";
+import { watch } from "./signals";
 
 // Run callbacks safely
 function runCallbacks(arr: (() => void)[] | null, ctx?: ComponentContext): void {
@@ -9,7 +9,7 @@ function runCallbacks(arr: (() => void)[] | null, ctx?: ComponentContext): void 
       arr[i]();
     } catch (err) {
       if (ctx) ctx._handleError(err);
-      else console.error('[Purity] Error:', err);
+      else console.error("[Purity] Error:", err);
     }
   }
 }
@@ -59,7 +59,7 @@ function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<an
   const cache = new Map<string, SlotAccessor<any>>();
   return new Proxy({} as Record<string, SlotAccessor<any>>, {
     get(_target, prop: string) {
-      if (typeof prop !== 'string') return undefined;
+      if (typeof prop !== "string") return undefined;
       let accessor = cache.get(prop);
       if (!accessor) {
         registry.accessorNames.add(prop);
@@ -77,7 +77,7 @@ type ConsumerSlot = (content?: Node | DocumentFragment | string | null) => Node 
 
 function createConsumerBag(registry: SlotRegistry): Record<string, ConsumerSlot> {
   const bag: Record<string, ConsumerSlot> = {};
-  const names = new Set([...registry.accessorNames, 'default']);
+  const names = new Set([...registry.accessorNames, "default"]);
   for (const name of names) {
     bag[name] = (content?: Node | DocumentFragment | string | null): Node | null => {
       registry.filled.set(name, content ?? null);
@@ -92,7 +92,7 @@ function resolveContent(content: unknown): Node | null {
   // Clone DocumentFragments — they empty on appendChild, breaks multi-pass rendering
   if (content instanceof DocumentFragment) return content.cloneNode(true) as DocumentFragment;
   if (content instanceof Node) return content;
-  if (typeof content === 'string') return document.createTextNode(content);
+  if (typeof content === "string") return document.createTextNode(content);
   return null;
 }
 
@@ -126,11 +126,11 @@ export function slot<E = void>(name?: string): SlotAccessor<E> {
   const ctx = getCurrentContext();
   if (!ctx)
     throw new Error(
-      'slot() must be called inside a component() render function.\n' +
+      "slot() must be called inside a component() render function.\n" +
         '  Example: component("my-el", (props, { default: body }) => body())',
     );
 
-  const slotName = name ?? 'default';
+  const slotName = name ?? "default";
   const children = ctx._slotContent;
 
   return ((_exposed?: unknown): Node | null => {
@@ -142,25 +142,25 @@ function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node
   if (children == null) return null;
 
   if (
-    typeof children === 'object' &&
+    typeof children === "object" &&
     !(children instanceof Node) &&
-    typeof children !== 'function'
+    typeof children !== "function"
   ) {
     const s = (children as Record<string, unknown>)[name];
-    if (typeof s === 'function') {
+    if (typeof s === "function") {
       const r = (s as (...a: any[]) => unknown)(exposed);
       if (r instanceof Node) return r as Node;
-      if (typeof r === 'string') return document.createTextNode(r);
+      if (typeof r === "string") return document.createTextNode(r);
       return null;
     }
     return resolveContent(s);
   }
 
-  if (name !== 'default') return null;
-  if (typeof children === 'function') {
+  if (name !== "default") return null;
+  if (typeof children === "function") {
     const r = (children as (...a: any[]) => unknown)(exposed);
     if (r instanceof Node) return r as Node;
-    if (typeof r === 'string') return document.createTextNode(r);
+    if (typeof r === "string") return document.createTextNode(r);
     return null;
   }
   return resolveContent(children);
@@ -201,7 +201,7 @@ function runRender<P, S>(
   }
 
   let result: Node | DocumentFragment;
-  if (output && typeof output === 'object' && 'view' in output) {
+  if (output && typeof output === "object" && "view" in output) {
     const ro = output as RenderOutput;
     result = ro.view;
     exposed = ro.expose ?? {};
@@ -266,8 +266,8 @@ const componentRegistry = new Map<string, RenderFn<any, any>>();
  * ```
  */
 export function component<
-  P extends Record<string, unknown> = Record<string, never>,
-  S extends Record<string, unknown> = Record<string, never>,
+  P extends Record<string, unknown> = Record<string, unknown>,
+  S extends Record<string, unknown> = Record<string, void>,
 >(
   tagName: string,
   renderFn: RenderFn<P, S>,
@@ -276,7 +276,7 @@ export function component<
   componentRegistry.set(tagName, renderFn);
 
   // Register as Custom Element
-  if (typeof customElements !== 'undefined' && !customElements.get(tagName)) {
+  if (typeof customElements !== "undefined" && !customElements.get(tagName)) {
     const render = renderFn;
 
     class PurityElement extends HTMLElement {
@@ -287,7 +287,7 @@ export function component<
 
       constructor() {
         super();
-        this._shadow = this.attachShadow({ mode: 'open' });
+        this._shadow = this.attachShadow({ mode: "open" });
       }
 
       connectedCallback() {
@@ -296,7 +296,7 @@ export function component<
         // Collect event handlers
         const eventProps: Record<string, unknown> = {};
         for (const key of Object.keys(this)) {
-          if (key.startsWith('__purity_event_')) {
+          if (key.startsWith("__purity_event_")) {
             const eventName = key.slice(15); // '__purity_event_'.length
             eventProps[`on${eventName.charAt(0).toUpperCase()}${eventName.slice(1)}`] = (
               this as any
@@ -315,7 +315,7 @@ export function component<
           while (this.firstChild) {
             frag.appendChild(this.firstChild);
           }
-          registry.filled.set('default', frag);
+          registry.filled.set("default", frag);
         }
 
         const ctx = new ComponentContext();
@@ -352,7 +352,7 @@ export function component<
               try {
                 this._ctx.disposers[i]();
               } catch (e) {
-                console.error('[Purity]', e);
+                console.error("[Purity]", e);
               }
             }
             this._ctx.disposers = null;
@@ -382,17 +382,17 @@ export function component<
     const slotAccessors = createAccessors(registry);
 
     // Pre-fill registry for non-callback children
-    if (children != null && typeof children !== 'function') {
-      if (children instanceof Node || typeof children === 'string') {
-        registry.filled.set('default', children);
-      } else if (typeof children === 'object') {
+    if (children != null && typeof children !== "function") {
+      if (children instanceof Node || typeof children === "string") {
+        registry.filled.set("default", children);
+      } else if (typeof children === "object") {
         for (const [k, v] of Object.entries(children as Record<string, unknown>)) {
           registry.filled.set(k, v);
         }
       }
     }
 
-    if (typeof children === 'function') {
+    if (typeof children === "function") {
       // Pass 1: discover slots + collect exposed data
       const { exposed } = runRender(renderFn, props, slotAccessors, ctx);
 
@@ -401,9 +401,9 @@ export function component<
       const consumerResult = children(bag);
 
       if (consumerResult instanceof Node) {
-        registry.filled.set('default', consumerResult);
-      } else if (typeof consumerResult === 'string') {
-        registry.filled.set('default', consumerResult);
+        registry.filled.set("default", consumerResult);
+      } else if (typeof consumerResult === "string") {
+        registry.filled.set("default", consumerResult);
       }
 
       // Pass 2: re-render with filled slots
@@ -475,16 +475,17 @@ export function teleport(
   target: string | Element,
   viewFn: () => Node | DocumentFragment | null,
 ): Comment {
-  const anchor = document.createComment('teleport');
+  const anchor = document.createComment("teleport");
   let currentNodes: Node[] = [];
   let dispose: (() => void) | null = null;
 
   queueMicrotask(() => {
-    const container = typeof target === 'string' ? document.querySelector(target) : target;
+    const container = typeof target === "string" ? document.querySelector(target) : target;
     if (!container) {
       console.error(
+        // eslint-disable-next-line no-base-to-string -- target is string | Element, String() is safe
         `[Purity] teleport: target "${String(target)}" not found in the DOM.\n` +
-          '  Make sure the target element exists before teleport runs.',
+          "  Make sure the target element exists before teleport runs.",
       );
       return;
     }

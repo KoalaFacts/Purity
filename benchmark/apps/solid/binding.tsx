@@ -1,8 +1,8 @@
 // Two-way binding benchmark — idiomatic Solid version.
 // Uses: createSignal, For, JSX value+onInput. Zero vanilla JS for UI wiring.
 
-import { type Accessor, createSignal, For, type Setter } from 'solid-js';
-import { render } from 'solid-js/web';
+import { type Accessor, createSignal, For, type Setter } from "solid-js";
+import { render } from "solid-js/web";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -19,7 +19,7 @@ interface Field {
 // ---------------------------------------------------------------------------
 
 const [fields, setFields] = createSignal<Field[]>([]);
-const [result, setResult] = createSignal('—');
+const [result, setResult] = createSignal("—");
 
 // ---------------------------------------------------------------------------
 // Actions
@@ -28,7 +28,7 @@ const [result, setResult] = createSignal('—');
 function createFields(count: number) {
   const arr: Field[] = [];
   for (let i = 0; i < count; i++) {
-    const [value, setValue] = createSignal('');
+    const [value, setValue] = createSignal("");
     arr.push({ id: i + 1, value, setValue });
   }
   setFields(arr);
@@ -46,7 +46,7 @@ function updateAll() {
 function clearAll() {
   const current = fields();
   for (let i = 0; i < current.length; i++) {
-    current[i].setValue('');
+    current[i].setValue("");
   }
   setResult(`Cleared ${current.length} fields`);
 }
@@ -63,7 +63,7 @@ function readAll() {
 
 function HBtn(props: { id: string; onClick: () => void; children: any }) {
   return (
-    <button type="button" id={props.id} style={{ display: 'none' }} onClick={props.onClick}>
+    <button type="button" id={props.id} style={{ display: "none" }} onClick={props.onClick}>
       {props.children}
     </button>
   );
@@ -162,4 +162,4 @@ function App() {
   );
 }
 
-render(App, document.getElementById('app')!);
+render(App, document.getElementById("app")!);

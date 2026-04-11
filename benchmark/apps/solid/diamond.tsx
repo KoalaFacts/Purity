@@ -1,8 +1,8 @@
 // Diamond dependency benchmark — idiomatic Solid version.
 // Uses: createSignal, createMemo, batch, JSX onClick. Zero vanilla JS for UI wiring.
 
-import { type Accessor, batch, createMemo, createSignal, type Setter } from 'solid-js';
-import { render } from 'solid-js/web';
+import { type Accessor, batch, createMemo, createSignal, type Setter } from "solid-js";
+import { render } from "solid-js/web";
 
 // ---------------------------------------------------------------------------
 // Module-level state for diamond setup/teardown
@@ -11,11 +11,11 @@ import { render } from 'solid-js/web';
 let sources: Setter<number>[] = [];
 let disposeGraph: (() => void) | null = null;
 
-const resultContainer = document.getElementById('result')!;
+const resultContainer = document.getElementById("result")!;
 
 function setupDiamond(count: number) {
   if (disposeGraph) disposeGraph();
-  resultContainer.textContent = '';
+  resultContainer.textContent = "";
   disposeGraph = render(() => {
     sources = [];
     const results: Accessor<number>[] = [];
@@ -73,9 +73,9 @@ function App() {
   );
 }
 
-render(App, document.getElementById('app')!);
+render(App, document.getElementById("app")!);
 
 // Hidden button handlers for benchmark permutations
-document.getElementById('setup-10')?.addEventListener('click', () => setupDiamond(10));
-document.getElementById('setup-100')?.addEventListener('click', () => setupDiamond(100));
-document.getElementById('setup-10k')?.addEventListener('click', () => setupDiamond(10000));
+document.getElementById("setup-10")?.addEventListener("click", () => setupDiamond(10));
+document.getElementById("setup-100")?.addEventListener("click", () => setupDiamond(100));
+document.getElementById("setup-10k")?.addEventListener("click", () => setupDiamond(10000));

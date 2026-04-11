@@ -1,66 +1,66 @@
 // Row rendering benchmark — Purity idiomatic version.
 // Uses: state, watch, each, html, mount. Zero vanilla JS for UI wiring.
 
-import { each, html, mount, state, watch } from '@purityjs/core';
+import { each, html, mount, state, watch } from "@purityjs/core";
 
 // ---------------------------------------------------------------------------
 // Data generation
 // ---------------------------------------------------------------------------
 
 const adjectives = [
-  'pretty',
-  'large',
-  'big',
-  'small',
-  'tall',
-  'short',
-  'long',
-  'handsome',
-  'plain',
-  'quaint',
-  'clean',
-  'elegant',
-  'easy',
-  'angry',
-  'crazy',
-  'helpful',
-  'mushy',
-  'odd',
-  'unsightly',
-  'adorable',
-  'important',
-  'inexpensive',
-  'cheap',
-  'expensive',
-  'fancy',
+  "pretty",
+  "large",
+  "big",
+  "small",
+  "tall",
+  "short",
+  "long",
+  "handsome",
+  "plain",
+  "quaint",
+  "clean",
+  "elegant",
+  "easy",
+  "angry",
+  "crazy",
+  "helpful",
+  "mushy",
+  "odd",
+  "unsightly",
+  "adorable",
+  "important",
+  "inexpensive",
+  "cheap",
+  "expensive",
+  "fancy",
 ];
 const colours = [
-  'red',
-  'yellow',
-  'blue',
-  'green',
-  'pink',
-  'brown',
-  'purple',
-  'brown',
-  'white',
-  'black',
-  'orange',
+  "red",
+  "yellow",
+  "blue",
+  "green",
+  "pink",
+  "brown",
+  "purple",
+  "brown",
+  "white",
+  "black",
+  "orange",
 ];
 const nouns = [
-  'table',
-  'chair',
-  'house',
-  'bbq',
-  'desk',
-  'car',
-  'pony',
-  'cookie',
-  'sandwich',
-  'burger',
-  'pizza',
-  'mouse',
-  'keyboard',
+  "table",
+  "chair",
+  "house",
+  "bbq",
+  "desk",
+  "car",
+  "pony",
+  "cookie",
+  "sandwich",
+  "burger",
+  "pizza",
+  "mouse",
+  "keyboard",
 ];
 
 interface Row {
@@ -146,42 +146,79 @@ function remove(id: number) {
 // ---------------------------------------------------------------------------
 
 function hBtn(id: string, label: string, handler: () => void) {
-  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>
+    ${label}
+  </button>`;
 }
 
 function ButtonBar() {
   return html`
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Purity</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="run" @click=${() => run(1000)}>Create 1,000 rows</button>
+    <div class="jumbotron">
+      <div class="row">
+        <div class="col-md-6"><h1>Purity</h1></div>
+        <div class="col-md-6">
+          <div class="row">
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="run"
+                @click=${() => run(1000)}
+              >
+                Create 1,000 rows
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="runlots"
+                @click=${() => run(10000)}
+              >
+                Create 10,000 rows
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="add"
+                @click=${() => add(1000)}
+              >
+                Append 1,000 rows
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button type="button" class="btn btn-primary btn-block" id="update" @click=${update}>
+                Update every 10th row
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button type="button" class="btn btn-primary btn-block" id="clear" @click=${clear}>
+                Clear
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="swaprows"
+                @click=${swapRows}
+              >
+                Swap Rows
+              </button>
+            </div>
+            ${hBtn("run-10", "Create 10", () => run(10))}
+            ${hBtn("run-100", "Create 100", () => run(100))}
+            ${hBtn("run-1k", "Create 1k", () => run(1000))}
+            ${hBtn("run-10k", "Create 10k", () => run(10000))}
+            ${hBtn("add-10", "Add 10", () => add(10))} ${hBtn("add-100", "Add 100", () => add(100))}
+            ${hBtn("add-1k", "Add 1k", () => add(1000))}
+            ${hBtn("add-10k", "Add 10k", () => add(10000))}
+          </div>
         </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="runlots" @click=${() => run(10000)}>Create 10,000 rows</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="add" @click=${() => add(1000)}>Append 1,000 rows</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="update" @click=${update}>Update every 10th row</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="clear" @click=${clear}>Clear</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="swaprows" @click=${swapRows}>Swap Rows</button>
-        </div>
-        ${hBtn('run-10', 'Create 10', () => run(10))}
-        ${hBtn('run-100', 'Create 100', () => run(100))}
-        ${hBtn('run-1k', 'Create 1k', () => run(1000))}
-        ${hBtn('run-10k', 'Create 10k', () => run(10000))}
-        ${hBtn('add-10', 'Add 10', () => add(10))}
-        ${hBtn('add-100', 'Add 100', () => add(100))}
-        ${hBtn('add-1k', 'Add 1k', () => add(1000))}
-        ${hBtn('add-10k', 'Add 10k', () => add(10000))}
-      </div></div>
-    </div></div>
+      </div>
+    </div>
   `;
 }
 
@@ -191,7 +228,7 @@ function ButtonBar() {
 
 const rows = new Map<number, CachedRow>();
 
-const tbody = document.getElementById('tbody')!;
+const tbody = document.getElementById("tbody")!;
 
 // Keyed list via each() — LIS reconciliation
 const fragment = each(
@@ -201,12 +238,16 @@ const fragment = each(
       <tr>
         <td class="col-md-1">${String(item.id)}</td>
         <td class="col-md-4"><a href="#" class="lbl">${item.label}</a></td>
-        <td class="col-md-1"><a href="#" class="remove"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
+        <td class="col-md-1">
+          <a href="#" class="remove"
+            ><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span
+          ></a>
+        </td>
         <td class="col-md-6"></td>
       </tr>
     ` as unknown as HTMLTableRowElement;
 
-    const labelNode = tr.querySelector('.lbl')!.firstChild as Text;
+    const labelNode = tr.querySelector(".lbl")!.firstChild as Text;
     rows.set(item.id, { tr, labelNode, label: item.label });
     return tr;
   },
@@ -230,26 +271,26 @@ watch(data, (list) => {
 watch(selectedId, (id, oldId) => {
   if (oldId) {
     const r = rows.get(oldId);
-    if (r) r.tr.className = '';
+    if (r) r.tr.className = "";
   }
   if (id) {
     const r = rows.get(id);
-    if (r) r.tr.className = 'danger';
+    if (r) r.tr.className = "danger";
   }
 });
 
 // Event delegation — one listener for all rows (standard benchmark pattern)
-tbody.addEventListener('click', (e) => {
-  const a = (e.target as HTMLElement).closest('a');
+tbody.addEventListener("click", (e) => {
+  const a = (e.target as HTMLElement).closest("a");
   if (!a) return;
   e.preventDefault();
-  const id = +(a.closest('tr')!.firstChild as HTMLElement).textContent!;
-  if (a.classList.contains('lbl')) select(id);
-  else if (a.classList.contains('remove')) remove(id);
+  const id = +(a.closest("tr")!.firstChild as HTMLElement).textContent!;
+  if (a.classList.contains("lbl")) select(id);
+  else if (a.classList.contains("remove")) remove(id);
 });
 
 // ---------------------------------------------------------------------------
 // Mount
 // ---------------------------------------------------------------------------
 
-mount(ButtonBar, document.getElementById('app')!);
+mount(ButtonBar, document.getElementById("app")!);

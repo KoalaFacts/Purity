@@ -1,7 +1,7 @@
 // Stock ticker benchmark — Purity idiomatic version.
 // Uses: state, each, html, mount. Zero vanilla JS for UI wiring.
 
-import { each, html, mount, state } from '@purityjs/core';
+import { each, html, mount, state } from "@purityjs/core";
 
 // ---------------------------------------------------------------------------
 // Data
@@ -16,56 +16,56 @@ interface Stock {
 }
 
 const SYMBOLS = [
-  'AAPL',
-  'GOOG',
-  'MSFT',
-  'AMZN',
-  'META',
-  'TSLA',
-  'NVDA',
-  'JPM',
-  'V',
-  'JNJ',
-  'WMT',
-  'PG',
-  'MA',
-  'UNH',
-  'HD',
-  'DIS',
-  'BAC',
-  'XOM',
-  'PFE',
-  'KO',
-  'PEP',
-  'CSCO',
-  'INTC',
-  'NFLX',
-  'CMCSA',
-  'ADBE',
-  'CRM',
-  'ABT',
-  'NKE',
-  'MRK',
-  'T',
-  'VZ',
-  'CVX',
-  'WFC',
-  'LLY',
-  'TMO',
-  'AVGO',
-  'COST',
-  'DHR',
-  'ACN',
-  'TXN',
-  'MDT',
-  'UPS',
-  'NEE',
-  'HON',
-  'PM',
-  'QCOM',
-  'LOW',
-  'UNP',
-  'ORCL',
+  "AAPL",
+  "GOOG",
+  "MSFT",
+  "AMZN",
+  "META",
+  "TSLA",
+  "NVDA",
+  "JPM",
+  "V",
+  "JNJ",
+  "WMT",
+  "PG",
+  "MA",
+  "UNH",
+  "HD",
+  "DIS",
+  "BAC",
+  "XOM",
+  "PFE",
+  "KO",
+  "PEP",
+  "CSCO",
+  "INTC",
+  "NFLX",
+  "CMCSA",
+  "ADBE",
+  "CRM",
+  "ABT",
+  "NKE",
+  "MRK",
+  "T",
+  "VZ",
+  "CVX",
+  "WFC",
+  "LLY",
+  "TMO",
+  "AVGO",
+  "COST",
+  "DHR",
+  "ACN",
+  "TXN",
+  "MDT",
+  "UPS",
+  "NEE",
+  "HON",
+  "PM",
+  "QCOM",
+  "LOW",
+  "UNP",
+  "ORCL",
 ];
 
 function makeStocks(): Stock[] {
@@ -97,7 +97,7 @@ function updateRandom(stocks: Stock[]): Stock[] {
 // ---------------------------------------------------------------------------
 
 const stocks = state<Stock[]>(makeStocks());
-const frameMsg = state('Frames: 0');
+const frameMsg = state("Frames: 0");
 
 let rafId = 0;
 
@@ -149,30 +149,52 @@ function run500() {
 // ---------------------------------------------------------------------------
 
 function hBtn(id: string, label: string, handler: () => void) {
-  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>
+    ${label}
+  </button>`;
 }
 
 function ButtonBar() {
   return html`
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Purity (Ticker)</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="start" @click=${startTicker}>Start Ticker</button>
+    <div class="jumbotron">
+      <div class="row">
+        <div class="col-md-6"><h1>Purity (Ticker)</h1></div>
+        <div class="col-md-6">
+          <div class="row">
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="start"
+                @click=${startTicker}
+              >
+                Start Ticker
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="stop"
+                @click=${stopTicker}
+              >
+                Stop Ticker
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button type="button" class="btn btn-primary btn-block" id="run-500" @click=${run500}>
+                Run 500 Frames
+              </button>
+            </div>
+            ${hBtn("run-10", "Run 10", () => runFrames(10))}
+            ${hBtn("run-100", "Run 100", () => runFrames(100))}
+            ${hBtn("run-500-hidden", "Run 500", run500)}
+            ${hBtn("run-1000", "Run 1000", () => runFrames(1000))}
+            ${hBtn("run-10000", "Run 10000", () => runFrames(10000))}
+          </div>
         </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="stop" @click=${stopTicker}>Stop Ticker</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="run-500" @click=${run500}>Run 500 Frames</button>
-        </div>
-        ${hBtn('run-10', 'Run 10', () => runFrames(10))}
-        ${hBtn('run-100', 'Run 100', () => runFrames(100))}
-        ${hBtn('run-500-hidden', 'Run 500', run500)}
-        ${hBtn('run-1000', 'Run 1000', () => runFrames(1000))}
-        ${hBtn('run-10000', 'Run 10000', () => runFrames(10000))}
-      </div></div>
-    </div></div>
+      </div>
+    </div>
   `;
 }
 
@@ -188,13 +210,13 @@ function FrameCount() {
 // Row rendering
 // ---------------------------------------------------------------------------
 
-const tbody = document.getElementById('tbody')!;
+const tbody = document.getElementById("tbody")!;
 
 const fragment = each(
   () => stocks(),
   (stock: Stock) => {
     const tr = html`
-      <tr :class=${stock.change >= 0 ? 'positive' : 'negative'}>
+      <tr :class=${stock.change >= 0 ? "positive" : "negative"}>
         <td>${stock.symbol}</td>
         <td>${stock.price.toFixed(2)}</td>
         <td>${stock.change.toFixed(2)}%</td>
@@ -211,5 +233,5 @@ tbody.appendChild(fragment);
 // Mount
 // ---------------------------------------------------------------------------
 
-mount(ButtonBar, document.getElementById('app')!);
-mount(FrameCount, document.getElementById('frame-count-container')!);
+mount(ButtonBar, document.getElementById("app")!);
+mount(FrameCount, document.getElementById("frame-count-container")!);

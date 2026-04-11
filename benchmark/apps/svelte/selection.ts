@@ -1,4 +1,4 @@
-import { mount } from 'svelte';
-import SelectionApp from './SelectionApp.svelte';
+import { mount } from "svelte";
+import SelectionApp from "./SelectionApp.svelte";
 
-mount(SelectionApp, { target: document.getElementById('app')! });
+mount(SelectionApp, { target: document.getElementById("app")! });

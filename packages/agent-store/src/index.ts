@@ -6,6 +6,11 @@ export {
 export { generateReviewDigest } from "./digest";
 export { extractCandidatesForTask } from "./extract";
 export {
+  demoteSkillsByFeedback,
+  summarizeAllActiveSkillFeedback,
+  summarizeSkillFeedback,
+} from "./feedback";
+export {
   archiveInactiveSkills,
   compactOldTasks,
   deduplicateMemories,
@@ -23,6 +28,11 @@ export type {
   ReviewDigest,
 } from "./digest";
 export type { PostTaskExtractionOptions, PostTaskExtractionResult } from "./extract";
+export type {
+  FeedbackDemotionOptions,
+  FeedbackDemotionResult,
+  SkillFeedbackSummary,
+} from "./feedback";
 export type {
   ArchiveInactiveSkillsOptions,
   ArchiveInactiveSkillsResult,

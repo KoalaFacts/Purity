@@ -8,6 +8,7 @@ import { status } from "../src/commands/status";
 import { retrieve } from "../src/commands/retrieve";
 import { loop } from "../src/commands/loop";
 import { createEvalCase } from "../src/commands/create-eval-case";
+import { feedback } from "../src/commands/feedback";
 
 describe("control-plane commands", () => {
   let store: AgentStore | undefined;
@@ -218,5 +219,120 @@ describe("control-plane commands", () => {
     expect(output).toContain("Eval case created:");
     expect(output).toContain("Dataset:  ds_eval");
     expect(output).toContain("Task:     task_smoke");
+  });
+
+  it("feedback summary runs on empty store", async () => {
+    store = new AgentStore();
+
+    await feedback(store, ["summary"]);
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("No active skill versions");
+  });
+
+  it("feedback summary shows stats for active skills with invocations", async () => {
+    store = new AgentStore();
+    store.putSession({
+      id: "sess_fb",
+      projectId: "proj_fb",
+      startedAt: "2026-04-11T10:00:00.000Z",
+      createdAt: "2026-04-11T10:00:00.000Z",
+    });
+    store.putTask({
+      id: "task_fb",
+      sessionId: "sess_fb",
+      title: "fb task",
+      prompt: "test",
+      status: "completed",
+      success: true,
+      createdAt: "2026-04-11T10:00:00.000Z",
+    });
+    store.putSkill({
+      id: "skill_fb",
+      name: "test skill",
+      description: "test",
+      domain: "test",
+      status: "active",
+      createdAt: "2026-04-11T10:00:00.000Z",
+    });
+    store.putSkillVersion({
+      id: "sv_fb",
+      skillId: "skill_fb",
+      version: 1,
+      bodyMarkdown: "# test",
+      status: "active",
+      createdAt: "2026-04-11T10:00:01.000Z",
+    });
+    store.putSkillInvocation({
+      id: "inv_fb_1",
+      skillVersionId: "sv_fb",
+      taskId: "task_fb",
+      usedAt: "2026-04-11T10:01:00.000Z",
+      outcome: "success",
+      userAccepted: true,
+      rollbackRequired: false,
+    });
+
+    await feedback(store, ["summary"]);
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Skill Invocation Feedback");
+    expect(output).toContain("sv_fb");
+    expect(output).toContain("invocations=1");
+    expect(output).toContain("acceptance=100%");
+  });
+
+  it("feedback demote demotes poorly-performing skills", async () => {
+    store = new AgentStore();
+    store.putSession({
+      id: "sess_dem",
+      projectId: "proj_dem",
+      startedAt: "2026-04-11T10:00:00.000Z",
+      createdAt: "2026-04-11T10:00:00.000Z",
+    });
+    store.putSkill({
+      id: "skill_dem",
+      name: "bad skill",
+      description: "test",
+      domain: "test",
+      status: "active",
+      createdAt: "2026-04-11T10:00:00.000Z",
+    });
+    store.putSkillVersion({
+      id: "sv_dem",
+      skillId: "skill_dem",
+      version: 1,
+      bodyMarkdown: "# bad",
+      status: "active",
+      createdAt: "2026-04-11T10:00:01.000Z",
+    });
+    // 4 rejected invocations = 0% acceptance
+    for (let i = 0; i < 4; i++) {
+      store.putTask({
+        id: `task_dem_${i}`,
+        sessionId: "sess_dem",
+        title: `dem task ${i}`,
+        prompt: "test",
+        status: "completed",
+        success: true,
+        createdAt: "2026-04-11T10:00:00.000Z",
+      });
+      store.putSkillInvocation({
+        id: `inv_dem_${i}`,
+        skillVersionId: "sv_dem",
+        taskId: `task_dem_${i}`,
+        usedAt: "2026-04-11T10:01:00.000Z",
+        outcome: "failure",
+        userAccepted: false,
+        rollbackRequired: false,
+      });
+    }
+
+    await feedback(store, ["demote", "--min-invocations", "3"]);
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Demoted 1");
+    expect(output).toContain("sv_dem");
+    expect(store.getSkillVersion("sv_dem")?.status).toBe("demoted");
   });
 });

@@ -10,6 +10,7 @@ import { retrieve } from "./commands/retrieve";
 import { loop } from "./commands/loop";
 import { createEvalCase } from "./commands/create-eval-case";
 import { status } from "./commands/status";
+import { feedback } from "./commands/feedback";
 
 const COMMANDS: Record<string, (store: AgentStore, args: string[]) => Promise<void>> = {
   extract,
@@ -22,6 +23,7 @@ const COMMANDS: Record<string, (store: AgentStore, args: string[]) => Promise<vo
   loop,
   "create-eval-case": createEvalCase,
   status,
+  feedback,
 };
 
 function printUsage(): void {
@@ -38,6 +40,7 @@ function printUsage(): void {
   console.log("  loop      <taskId> [--dataset <id>] Run extract→review→evaluate");
   console.log("  create-eval-case <taskId> --dataset <id> Create eval case from task");
   console.log("  status                      Show store summary");
+  console.log("  feedback  [summary|demote]   Skill invocation feedback & demotion");
   console.log();
   console.log("Options:");
   console.log("  --db <path>  Path to agent.db (default: .agent/agent.db)");

@@ -12,6 +12,8 @@ import { createEvalCase } from "./commands/create-eval-case";
 import { status } from "./commands/status";
 import { feedback } from "./commands/feedback";
 import { antipattern } from "./commands/antipattern";
+import { profile } from "./commands/profile";
+import { maintain } from "./commands/maintain";
 
 const COMMANDS: Record<string, (store: AgentStore, args: string[]) => Promise<void>> = {
   extract,
@@ -26,6 +28,8 @@ const COMMANDS: Record<string, (store: AgentStore, args: string[]) => Promise<vo
   status,
   feedback,
   antipattern,
+  profile,
+  maintain,
 };
 
 function printUsage(): void {
@@ -44,6 +48,8 @@ function printUsage(): void {
   console.log("  status                      Show store summary");
   console.log("  feedback  [summary|demote]   Skill invocation feedback & demotion");
   console.log("  antipattern [extract|list]  Extract/list failure anti-patterns");
+  console.log("  profile    [observe-task|observe-session|pending|show] User profile");
+  console.log("  maintain   [run [--force] [--job=<name>] | status]  Scheduled maintenance");
   console.log();
   console.log("Options:");
   console.log("  --db <path>  Path to agent.db (default: .agent/agent.db)");

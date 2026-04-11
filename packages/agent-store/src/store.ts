@@ -818,6 +818,25 @@ export class AgentStore {
     };
   }
 
+  getMetadata(key: string): string | undefined {
+    const row = this.db.prepare("SELECT value FROM agent_metadata WHERE key = ?").get(key) as
+      | Row
+      | undefined;
+    return row ? String(row.value) : undefined;
+  }
+
+  setMetadata(key: string, value: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO agent_metadata (key, value, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           value = excluded.value,
+           updated_at = excluded.updated_at`,
+      )
+      .run(key, value, nowIso());
+  }
+
   retrieve(context: RetrievalContext): RetrievalResult {
     const query = context.query.trim().toLowerCase();
     const memoryRows = this.db

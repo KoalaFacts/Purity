@@ -515,9 +515,9 @@ describe("@purityjs/agent-store", () => {
     expect(summaries[0]).toContain("oxlint");
   });
 
-  it("returns schema version 2 after migration", () => {
+  it("returns schema version 3 after migration", () => {
     store = new AgentStore();
-    expect(getAgentStoreSchemaVersion(store.db)).toBe(2);
+    expect(getAgentStoreSchemaVersion(store.db)).toBe(3);
   });
 
   it("lists skills by status", () => {

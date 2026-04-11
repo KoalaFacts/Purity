@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-export const AGENT_STORE_SCHEMA_VERSION = 2;
+export const AGENT_STORE_SCHEMA_VERSION = 3;
 
 const SCHEMA_V1_SQL = `
 CREATE TABLE IF NOT EXISTS sessions (
@@ -155,6 +155,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS task_search USING fts5(
 );
 `;
 
+const SCHEMA_V3_SQL = `
+CREATE TABLE IF NOT EXISTS agent_metadata (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`;
+
 function populateTaskSearch(db: DatabaseSync): void {
   const tasks = db
     .prepare(
@@ -214,6 +222,10 @@ export function migrateAgentStore(db: DatabaseSync): void {
   if (version < 2) {
     db.exec(SCHEMA_V2_SQL);
     populateTaskSearch(db);
+  }
+
+  if (version < 3) {
+    db.exec(SCHEMA_V3_SQL);
   }
 
   db.exec(`PRAGMA user_version = ${AGENT_STORE_SCHEMA_VERSION};`);

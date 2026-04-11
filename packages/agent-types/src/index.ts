@@ -158,3 +158,12 @@ export interface RetrievalResult {
 
 /** A memory record that captures a negative lesson from a failed task. */
 export type AntiPatternNote = MemoryRecord & { kind: "anti_pattern" };
+
+/** A single observed preference extracted from task events. */
+export interface ProfileObservation {
+  key: string;
+  value: JsonValue;
+  count: number;
+  firstSeen: string;
+  lastSeen: string;
+}

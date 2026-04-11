@@ -10,6 +10,8 @@ import { loop } from "../src/commands/loop";
 import { createEvalCase } from "../src/commands/create-eval-case";
 import { feedback } from "../src/commands/feedback";
 import { antipattern } from "../src/commands/antipattern";
+import { profile } from "../src/commands/profile";
+import { maintain } from "../src/commands/maintain";
 
 describe("control-plane commands", () => {
   let store: AgentStore | undefined;
@@ -378,5 +380,134 @@ describe("control-plane commands", () => {
 
     const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
     expect(output).toContain("No anti-patterns");
+  });
+
+  it("profile observe-task observes language from file edits", async () => {
+    store = new AgentStore();
+    store.putSession({
+      id: "sess_prof",
+      projectId: "proj_prof",
+      userId: "user_prof",
+      startedAt: "2026-04-11T10:00:00.000Z",
+      createdAt: "2026-04-11T10:00:00.000Z",
+    });
+    store.putTask({
+      id: "task_prof",
+      sessionId: "sess_prof",
+      title: "Edit files",
+      prompt: "edit some ts files",
+      status: "completed",
+      success: true,
+      createdAt: "2026-04-11T10:00:01.000Z",
+      completedAt: "2026-04-11T10:00:10.000Z",
+    });
+    store.appendTaskEvent({
+      id: "evt_prof_1",
+      taskId: "task_prof",
+      seq: 1,
+      type: "file_edit",
+      payload: { path: "src/index.ts" },
+      createdAt: "2026-04-11T10:00:02.000Z",
+    });
+
+    await profile(store, ["observe-task", "user_prof", "task_prof"]);
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Observed 1 preference");
+    expect(output).toContain("preferredLanguage");
+  });
+
+  it("profile pending shows pending observations", async () => {
+    store = new AgentStore();
+    store.putSession({
+      id: "sess_pend",
+      projectId: "proj_pend",
+      userId: "user_pend",
+      startedAt: "2026-04-11T10:00:00.000Z",
+      createdAt: "2026-04-11T10:00:00.000Z",
+    });
+    store.putTask({
+      id: "task_pend",
+      sessionId: "sess_pend",
+      title: "Work",
+      prompt: "work",
+      status: "completed",
+      success: true,
+      createdAt: "2026-04-11T10:00:01.000Z",
+      completedAt: "2026-04-11T10:00:10.000Z",
+    });
+    store.appendTaskEvent({
+      id: "evt_pend_1",
+      taskId: "task_pend",
+      seq: 1,
+      type: "tool_call",
+      payload: { tool: "grep_search" },
+      createdAt: "2026-04-11T10:00:02.000Z",
+    });
+
+    // First observe, then check pending
+    const { observeProfileFromTask } = await import("@purityjs/agent-store");
+    observeProfileFromTask(store, "user_pend", "task_pend");
+
+    await profile(store, ["pending", "user_pend"]);
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Pending observations");
+    expect(output).toContain("preferredTools");
+  });
+
+  it("profile show displays empty when no profile exists", async () => {
+    store = new AgentStore();
+
+    await profile(store, ["show", "ghost_user"]);
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("No profile");
+  });
+
+  it("maintain run executes all due jobs on first run", async () => {
+    store = new AgentStore();
+    store.putSession({
+      id: "sess_maint",
+      projectId: "proj_maint",
+      startedAt: "2026-04-11T09:00:00.000Z",
+      createdAt: "2026-04-11T09:00:00.000Z",
+    });
+
+    await maintain(store, ["run"]);
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Scheduled Maintenance");
+    expect(output).toContain("Ran: 3");
+  });
+
+  it("maintain status shows schedule info", async () => {
+    store = new AgentStore();
+
+    await maintain(store, ["status"]);
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Scheduled Maintenance Status");
+    expect(output).toContain("weekly_prune");
+    expect(output).toContain("monthly_digest");
+    expect(output).toContain("feedback_demote");
+    expect(output).toContain("never");
+  });
+
+  it("maintain run --force reruns all jobs", async () => {
+    store = new AgentStore();
+    store.putSession({
+      id: "sess_maint2",
+      projectId: "proj_maint",
+      startedAt: "2026-04-11T09:00:00.000Z",
+      createdAt: "2026-04-11T09:00:00.000Z",
+    });
+
+    await maintain(store, ["run"]);
+    logSpy.mockClear();
+    await maintain(store, ["run", "--force"]);
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Ran: 3");
   });
 });

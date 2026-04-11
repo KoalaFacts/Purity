@@ -12,6 +12,11 @@ export {
   summarizeSkillFeedback,
 } from "./feedback";
 export {
+  getPendingObservations,
+  observeProfileFromSession,
+  observeProfileFromTask,
+} from "./profile";
+export {
   archiveInactiveSkills,
   compactOldTasks,
   deduplicateMemories,
@@ -19,6 +24,7 @@ export {
   pruneStore,
 } from "./prune";
 export { reviewCandidateMemory, reviewCandidateSkillVersion, reviewCandidates } from "./review";
+export { getLastRunTimestamp, runScheduledMaintenance, DEFAULT_JOB_CONFIGS } from "./schedule";
 export { AgentStore, openAgentStore } from "./store";
 export type {
   DigestOptions,
@@ -58,3 +64,11 @@ export type {
 } from "./review";
 export type { AgentStoreOptions } from "./store";
 export type { AntiPatternExtractionOptions, AntiPatternExtractionResult } from "./antipattern";
+export type { PendingObservation, ProfileUpdateOptions, ProfileUpdateResult } from "./profile";
+export type {
+  JobRunResult,
+  ScheduledJobConfig,
+  ScheduledJobName,
+  ScheduledMaintenanceOptions,
+  ScheduledMaintenanceResult,
+} from "./schedule";

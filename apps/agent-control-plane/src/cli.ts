@@ -11,6 +11,7 @@ import { loop } from "./commands/loop";
 import { createEvalCase } from "./commands/create-eval-case";
 import { status } from "./commands/status";
 import { feedback } from "./commands/feedback";
+import { antipattern } from "./commands/antipattern";
 
 const COMMANDS: Record<string, (store: AgentStore, args: string[]) => Promise<void>> = {
   extract,
@@ -24,6 +25,7 @@ const COMMANDS: Record<string, (store: AgentStore, args: string[]) => Promise<vo
   "create-eval-case": createEvalCase,
   status,
   feedback,
+  antipattern,
 };
 
 function printUsage(): void {
@@ -41,6 +43,7 @@ function printUsage(): void {
   console.log("  create-eval-case <taskId> --dataset <id> Create eval case from task");
   console.log("  status                      Show store summary");
   console.log("  feedback  [summary|demote]   Skill invocation feedback & demotion");
+  console.log("  antipattern [extract|list]  Extract/list failure anti-patterns");
   console.log();
   console.log("Options:");
   console.log("  --db <path>  Path to agent.db (default: .agent/agent.db)");

@@ -9,6 +9,7 @@ import { retrieve } from "../src/commands/retrieve";
 import { loop } from "../src/commands/loop";
 import { createEvalCase } from "../src/commands/create-eval-case";
 import { feedback } from "../src/commands/feedback";
+import { antipattern } from "../src/commands/antipattern";
 
 describe("control-plane commands", () => {
   let store: AgentStore | undefined;
@@ -334,5 +335,48 @@ describe("control-plane commands", () => {
     expect(output).toContain("Demoted 1");
     expect(output).toContain("sv_dem");
     expect(store.getSkillVersion("sv_dem")?.status).toBe("demoted");
+  });
+
+  it("antipattern extract extracts from a failed task", async () => {
+    store = new AgentStore();
+    store.putSession({
+      id: "sess_ap",
+      projectId: "proj_ap",
+      startedAt: "2026-04-11T10:00:00.000Z",
+      createdAt: "2026-04-11T10:00:00.000Z",
+    });
+    store.putTask({
+      id: "task_ap",
+      sessionId: "sess_ap",
+      title: "Broken deploy",
+      prompt: "deploy to staging",
+      status: "completed",
+      success: false,
+      outcomeSummary: "Deploy failed due to missing env vars.",
+      createdAt: "2026-04-11T10:00:01.000Z",
+      completedAt: "2026-04-11T10:00:10.000Z",
+    });
+    store.appendTaskEvent({
+      id: "evt_ap_1",
+      taskId: "task_ap",
+      seq: 1,
+      type: "error",
+      payload: { message: "ENV_SECRET not set" },
+      createdAt: "2026-04-11T10:00:05.000Z",
+    });
+
+    await antipattern(store, ["extract", "task_ap"]);
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("Extracted 1 anti-pattern");
+    expect(output).toContain("Avoid: Broken deploy");
+  });
+
+  it("antipattern list runs on empty store", async () => {
+    store = new AgentStore();
+    await antipattern(store, ["list"]);
+
+    const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
+    expect(output).toContain("No anti-patterns");
   });
 });

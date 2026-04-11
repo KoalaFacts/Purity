@@ -155,3 +155,6 @@ export interface RetrievalResult {
   skills: SkillVersionRecord[];
   summaries: string[];
 }
+
+/** A memory record that captures a negative lesson from a failed task. */
+export type AntiPatternNote = MemoryRecord & { kind: "anti_pattern" };

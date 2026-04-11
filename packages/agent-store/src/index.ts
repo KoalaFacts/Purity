@@ -3,6 +3,7 @@ export {
   getAgentStoreSchemaVersion,
   migrateAgentStore,
 } from "./schema";
+export { extractAntiPatternsForTask, listAntiPatterns } from "./antipattern";
 export { generateReviewDigest } from "./digest";
 export { extractCandidatesForTask } from "./extract";
 export {
@@ -56,3 +57,4 @@ export type {
   SkillPromotionResult,
 } from "./review";
 export type { AgentStoreOptions } from "./store";
+export type { AntiPatternExtractionOptions, AntiPatternExtractionResult } from "./antipattern";

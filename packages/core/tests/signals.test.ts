@@ -283,3 +283,102 @@ describe('watch re-entrancy guard', () => {
     expect(true).toBe(true);
   });
 });
+
+describe('watch dispose + cleanup', () => {
+  it('runs cleanup function on dispose', async () => {
+    const a = state(0);
+    let cleanedUp = false;
+    const dispose = watch(() => {
+      a();
+      return () => {
+        cleanedUp = true;
+      };
+    });
+    expect(cleanedUp).toBe(false);
+    dispose();
+    expect(cleanedUp).toBe(true);
+  });
+
+  it('dispose is idempotent', () => {
+    const a = state(0);
+    const dispose = watch(() => a());
+    dispose();
+    expect(() => dispose()).not.toThrow();
+  });
+
+  it('does not re-run after dispose', async () => {
+    const a = state(0);
+    const fn = vi.fn(() => {
+      a();
+    });
+    const dispose = watch(fn);
+    expect(fn).toHaveBeenCalledTimes(1);
+    dispose();
+    a(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('signal write produces same value', () => {
+  it('does not re-run watch when value is unchanged', async () => {
+    const a = state(1);
+    const fn = vi.fn(() => a());
+    watch(fn);
+    expect(fn).toHaveBeenCalledTimes(1);
+
+    a(1); // same value
+    await new Promise((r) => queueMicrotask(r));
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispose during pending flush coalesces with that flush', async () => {
+    // Write to signal first → schedules microtask. Then dispose immediately.
+    // scheduleUnwatch sees microtaskScheduled=true and skips re-scheduling.
+    const a = state(0);
+    const fn = vi.fn(() => a());
+    const dispose = watch(fn);
+    a(1);
+    dispose();
+    await new Promise((r) => queueMicrotask(r));
+    // No additional invocation after dispose
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('batch — nested', () => {
+  it('coalesces updates across nested batches', async () => {
+    const a = state(0);
+    const fn = vi.fn(() => a());
+    watch(fn);
+    expect(fn).toHaveBeenCalledTimes(1);
+
+    batch(() => {
+      a(1);
+      batch(() => {
+        a(2);
+        a(3);
+      });
+      a(4);
+    });
+    await new Promise((r) => queueMicrotask(r));
+    // Single re-run regardless of nesting
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(a()).toBe(4);
+  });
+
+  it('flushes after batch when microtask already scheduled', async () => {
+    const a = state(0);
+    const b = state(0);
+    const seen: number[] = [];
+    watch(() => {
+      seen.push(a() + b());
+    });
+    a(1);
+    batch(() => {
+      b(2);
+    });
+    await new Promise((r) => queueMicrotask(r));
+    expect(seen[seen.length - 1]).toBe(3);
+  });
+});

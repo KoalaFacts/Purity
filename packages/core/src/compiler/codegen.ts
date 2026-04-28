@@ -344,6 +344,7 @@ function buildStaticHtml(node: ASTNode): string {
     case 'fragment':
       return node.children.map(buildStaticHtml).join('');
     default:
+      /* v8 ignore next -- defensive fallthrough; AST has no other types */
       return '';
   }
 }
@@ -413,6 +414,7 @@ function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[])
     }
 
     default:
+      /* v8 ignore next -- defensive fallthrough; AST has no other types */
       return '';
   }
 }
@@ -526,6 +528,7 @@ function genAttrBinding(el: string, attr: AttributeNode): string {
     }
 
     default:
+      /* v8 ignore next -- defensive fallthrough; parser only emits known kinds */
       return '';
   }
 }

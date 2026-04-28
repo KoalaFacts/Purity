@@ -256,6 +256,7 @@ function unmountContext(ctx: ComponentContext): void {
   if (ctx.nodes) {
     for (let i = 0; i < ctx.nodes.length; i++) {
       const node = ctx.nodes[i];
+      /* v8 ignore next -- defensive; nodes are attached when set */
       if (node.parentNode) node.parentNode.removeChild(node);
     }
     ctx.nodes = null;

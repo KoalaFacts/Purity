@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { html } from '../src/compiler/compile.ts';
+import { mount } from '../src/component.ts';
+import { component } from '../src/elements.ts';
 import { state } from '../src/signals.ts';
 import { css } from '../src/styles.ts';
+
+let cTagCounter = 0;
+const ctag = (base: string) => `p-css-${base}-${cTagCounter++}`;
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
@@ -104,5 +110,132 @@ describe('css', () => {
     sel('.b');
     await tick();
     expect(styleEl.textContent).toContain(`.${scope} .b`);
+  });
+
+  it('handles escaped quote in CSS string literal', async () => {
+    const v = state('A');
+    const scope = css`.x::before { content: "say \\"${() => v()}\\""; }`;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl.textContent).toContain('say');
+    v('B');
+    await tick();
+    expect(styleEl.textContent).toContain('B');
+  });
+
+  it('handles unterminated /* */ comment in template', () => {
+    const scope = css`/* comment without close .x { color: red; }`;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl).not.toBeNull();
+  });
+
+  it('handles static interpolation with non-string value', () => {
+    const scope = css`.x { padding: ${10}px; }`;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl!.textContent).toContain('10px');
+  });
+
+  it('handles null interpolation by emitting empty', () => {
+    const scope = css`.x { color: ${null}; }`;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl).not.toBeNull();
+  });
+
+  it('removes <style> on mount() unmount with reactive css', async () => {
+    const color = state('red');
+    const container = document.createElement('div');
+    let scope = '';
+    const { unmount } = mount(() => {
+      scope = css`.theme { color: ${() => color()}; }`;
+      return html`<p class="theme">x</p>`;
+    }, container);
+    await tick();
+    expect(document.querySelector(`style[data-purity-scope="${scope}"]`)).not.toBeNull();
+
+    unmount();
+    expect(document.querySelector(`style[data-purity-scope="${scope}"]`)).toBeNull();
+  });
+
+  it('removes <style> on mount() unmount with static css', () => {
+    const container = document.createElement('div');
+    let scope = '';
+    const { unmount } = mount(() => {
+      scope = css`.theme-static { color: red; }`;
+      return html`<p class="theme-static">x</p>`;
+    }, container);
+    expect(document.querySelector(`style[data-purity-scope="${scope}"]`)).not.toBeNull();
+
+    unmount();
+    expect(document.querySelector(`style[data-purity-scope="${scope}"]`)).toBeNull();
+  });
+
+  it('handles well-formed /* */ comment in reactive template', async () => {
+    const c = state('red');
+    const scope = css`/* leading comment */ .x { color: ${() => c()}; }`;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl!.textContent).toContain('red');
+    c('blue');
+    await tick();
+    expect(styleEl!.textContent).toContain('blue');
+  });
+
+  it('handles null/undefined static values in reactive template', () => {
+    const c = state('red');
+    const scope = css`.x { color: ${() => c()}; padding: ${null}px; margin: ${undefined}; }`;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl!.textContent).toContain('color: red');
+  });
+
+  it('mixes reactive + static interpolations in one rule', async () => {
+    const c = state('red');
+    const scope = css`.x { color: ${() => c()}; padding: ${10}px; }`;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl!.textContent).toContain('color: red');
+    expect(styleEl!.textContent).toContain('padding: 10px');
+
+    c('blue');
+    await tick();
+    expect(styleEl!.textContent).toContain('color: blue');
+    expect(styleEl!.textContent).toContain('padding: 10px');
+  });
+
+  it('skips DOM update when reactive value resolves to same string', async () => {
+    const c = state('red');
+    const scope = css`.x { color: ${() => c()}; }`;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    const before = styleEl!.textContent;
+    // Same value — newCss === prevCss branch
+    c('red');
+    await tick();
+    expect(styleEl!.textContent).toBe(before);
+  });
+
+  it('handles reactive values inside @media (depth>1, scopeSelectors body walk)', async () => {
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const c = state('red');
+    const scope = css`
+      @media (min-width: 1px) {
+        .x { color: ${() => c()}; }
+      }
+    `;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl!.textContent).toContain('red');
+
+    c('blue');
+    await tick();
+    expect(styleEl!.textContent).toContain('blue');
+    warn.mockRestore();
+  });
+
+  it('falls back when reactive template has unterminated comment before placeholder', async () => {
+    const v = state('1');
+    // Strings: ["/* never closes ", ""] — placeholder is in selector position after
+    // /* with no */, so allPlaceholdersInBodies walks past the unterminated comment
+    // and concludes depth <= 0 at the placeholder gap (fallback).
+    const scope = css`/* unterminated ${() => v()}`;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl).not.toBeNull();
+    v('2');
+    await tick();
+    expect(styleEl!.textContent).toContain('2');
   });
 });

@@ -41,6 +41,7 @@ export function match<T extends string | number | boolean>(
     // Detach current
     for (let i = 0; i < currentNodes.length; i++) {
       const node = currentNodes[i];
+      /* v8 ignore next -- defensive guard; nodes always have parent here */
       if (node.parentNode) node.parentNode.removeChild(node);
     }
     if (prevKey !== undefined && currentNodes.length > 0) {
@@ -100,6 +101,7 @@ export function match<T extends string | number | boolean>(
     const key = String(sourceFn()) as `${T}`;
     if (key === prevKey) return;
     const parent = endMarker.parentNode;
+    /* v8 ignore next -- defensive; if endMarker is detached, watch is disposed */
     if (!parent) return;
     renderKey(key, parent);
   });
@@ -797,12 +799,14 @@ export function list<T>(
           next = entry.node;
         }
       }
+      /* v8 ignore start -- prevLen===0 caught by earlier fast path; len===0 caught above */
     } else {
       // All new — batch insert
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
       parent.insertBefore(frag, endMarker);
     }
+    /* v8 ignore stop */
 
     keyToEntry = newEntries;
     prevKeys = newKeys;

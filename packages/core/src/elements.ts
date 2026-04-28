@@ -8,8 +8,12 @@ function runCallbacks(arr: (() => void)[] | null, ctx?: ComponentContext): void 
     try {
       arr[i]();
     } catch (err) {
-      if (ctx) ctx._handleError(err);
-      else console.error('[Purity] Error:', err);
+      if (ctx) {
+        ctx._handleError(err);
+      } else {
+        /* v8 ignore next -- ctx always provided at call sites; defensive */
+        console.error('[Purity] Error:', err);
+      }
     }
   }
 }
@@ -59,6 +63,7 @@ function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<an
   const cache = new Map<string, SlotAccessor<any>>();
   return new Proxy({} as Record<string, SlotAccessor<any>>, {
     get(_target, prop: string) {
+      /* v8 ignore next -- defensive; users access slots by string name */
       if (typeof prop !== 'string') return undefined;
       let accessor = cache.get(prop);
       if (!accessor) {

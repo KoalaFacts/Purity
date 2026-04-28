@@ -63,4 +63,46 @@ describe('css', () => {
     await tick();
     expect(styleEl.textContent).toContain('blue');
   });
+
+  it('keeps multiple selectors scoped across reactive updates', async () => {
+    const m = state('0');
+    const scope = css`h1, h2 { margin: ${() => m()}; }`;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+
+    expect(styleEl.textContent).toContain(`.${scope} h1`);
+    expect(styleEl.textContent).toContain(`.${scope} h2`);
+
+    m('1rem');
+    await tick();
+    expect(styleEl.textContent).toContain('1rem');
+    expect(styleEl.textContent).toContain(`.${scope} h1`);
+    expect(styleEl.textContent).toContain(`.${scope} h2`);
+  });
+
+  it('handles multiple reactive values in one rule', async () => {
+    const fg = state('black');
+    const bg = state('white');
+    const scope = css`.x { color: ${() => fg()}; background: ${() => bg()}; }`;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+
+    expect(styleEl.textContent).toContain('color: black');
+    expect(styleEl.textContent).toContain('background: white');
+
+    fg('red');
+    bg('blue');
+    await tick();
+    expect(styleEl.textContent).toContain('color: red');
+    expect(styleEl.textContent).toContain('background: blue');
+  });
+
+  it('falls back to per-update scoping when a value is in selector position', async () => {
+    const sel = state('.a');
+    const scope = css`${() => sel()} { color: red; }`;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl.textContent).toContain(`.${scope} .a`);
+
+    sel('.b');
+    await tick();
+    expect(styleEl.textContent).toContain(`.${scope} .b`);
+  });
 });

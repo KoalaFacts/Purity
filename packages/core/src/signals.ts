@@ -126,7 +126,6 @@ function flush(): void {
     return;
   }
 
-  // Larger batches: Set-based dedupe.
   const seen = new Set<Signal.Computed<void>>();
   for (let i = 0; i < raw.length; i++) {
     seen.add(raw[i]);

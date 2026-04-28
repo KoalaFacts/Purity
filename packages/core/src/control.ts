@@ -436,14 +436,15 @@ export function each<T>(
       }
       parent.insertBefore(frag, endMarker);
     } else if (isPrepend) {
-      // Pure prepend — insert new items before the first existing entry, no LIS
+      // Pure prepend — insert new items before the first existing entry, no LIS.
+      // Suffix-match implies every prevKey is preserved, so the deletion loop
+      // above was a no-op and all old entry nodes are still attached.
       const newCount = len - prevLen;
       const frag = document.createDocumentFragment();
       for (let i = 0; i < newCount; i++) {
         const entry = newEntries.get(newKeys[i])!;
         for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
       }
-      // The first preserved entry is at newKeys[newCount] (== prevKeys[0])
       const firstExisting = newEntries.get(newKeys[newCount])!.nodes[0];
       parent.insertBefore(frag, firstExisting);
     } else {
@@ -809,6 +810,7 @@ export function list<T>(
         for (let i = prevLen; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
         parent.insertBefore(frag, endMarker);
       } else if (isPrepend) {
+        // Pure prepend — see each() for the reuseCount-equals-prevLen invariant.
         const newCount = len - prevLen;
         const frag = document.createDocumentFragment();
         for (let i = 0; i < newCount; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);

@@ -137,6 +137,14 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
 
 let scopeCounter = 0;
 
+const CC_QUOTE = 34; // "
+const CC_APOS = 39; // '
+const CC_STAR = 42; // *
+const CC_SLASH = 47; // /
+const CC_BACKSLASH = 92; // \
+const CC_OPEN_BRACE = 123; // {
+const CC_CLOSE_BRACE = 125; // }
+
 // Returns true when every interpolation gap in the template is inside a
 // `{...}` rule body. When false, an interpolated value could change selector
 // parsing (e.g. by introducing a comma), so we must re-scope on every update.
@@ -151,19 +159,19 @@ function allPlaceholdersInBodies(strings: ReadonlyArray<string>): boolean {
     for (let j = 0; j < s.length; j++) {
       const c = s.charCodeAt(j);
       if (inString) {
-        if (c === 92) {
+        if (c === CC_BACKSLASH) {
           j++;
           continue;
         }
         if (c === inString) inString = 0;
         continue;
       }
-      if (c === 34 || c === 39) inString = c;
-      else if (c === 47 && j + 1 < s.length && s.charCodeAt(j + 1) === 42) {
+      if (c === CC_QUOTE || c === CC_APOS) inString = c;
+      else if (c === CC_SLASH && j + 1 < s.length && s.charCodeAt(j + 1) === CC_STAR) {
         const end = s.indexOf('*/', j + 2);
         j = end === -1 ? s.length : end + 1;
-      } else if (c === 123) depth++;
-      else if (c === 125) depth--;
+      } else if (c === CC_OPEN_BRACE) depth++;
+      else if (c === CC_CLOSE_BRACE) depth--;
     }
     if (i < strings.length - 1 && depth <= 0) return false;
   }
@@ -178,8 +186,10 @@ function allPlaceholdersInBodies(strings: ReadonlyArray<string>): boolean {
 function precomputeScopedChunks(strings: ReadonlyArray<string>, scope: string): string[] | null {
   /* v8 ignore next -- defensive; caller guards via allPlaceholdersInBodies + hasReactive */
   if (strings.length === 1) return [scopeSelectors(strings[0], scope)];
-  const PH_OPEN = '';
-  const PH_CLOSE = '';
+  // SOH (\u0001) / STX (\u0002) — control chars never present in valid CSS,
+  // so they survive scopeSelectors() unchanged and split cleanly afterward.
+  const PH_OPEN = '\u0001';
+  const PH_CLOSE = '\u0002';
   let synthetic = strings[0];
   for (let i = 1; i < strings.length; i++) {
     synthetic += `${PH_OPEN}${i - 1}${PH_CLOSE}${strings[i]}`;

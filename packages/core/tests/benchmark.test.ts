@@ -235,6 +235,42 @@ describe('4. effects / watchers', () => {
     });
     expect(runs).toBe(1);
   });
+
+  it('flush throughput — 2-4 effect batches (small fast path)', async () => {
+    // Exercises the linear-scan dedupe path in flush(). Three independent
+    // watchers all reading distinct signals; one batch update fires all three.
+    const a = state(0);
+    const b = state(0);
+    const c = state(0);
+    let runs = 0;
+    watch(() => {
+      a();
+      runs++;
+    });
+    watch(() => {
+      b();
+      runs++;
+    });
+    watch(() => {
+      c();
+      runs++;
+    });
+    await tick();
+
+    const elapsed = await benchAsync('3-effect flush x1000', async () => {
+      runs = 0;
+      for (let i = 0; i < 1000; i++) {
+        batch(() => {
+          a(i);
+          b(i);
+          c(i);
+        });
+        await tick();
+      }
+    });
+    expect(runs).toBeGreaterThanOrEqual(3000);
+    console.log(`    → ${(elapsed / 1000).toFixed(3)}ms/flush (3 effects, no Set)`);
+  });
 });
 
 // ============================================================================

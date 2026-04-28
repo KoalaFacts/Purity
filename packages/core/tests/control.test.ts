@@ -472,10 +472,72 @@ describe('match — extra coverage', () => {
     expect(c.querySelectorAll('span').length).toBe(4);
   });
 
-  it('insertion at start with longer length falls through to LIS', async () => {
-    // prev = [A, B, C] (prevLen=3); new = [X, A, B, C] (len=4)
-    // len > prevLen so the append-detection loop is entered, but newKeys[0]
-    // doesn't match prevKeys[0], breaking out (each() lines 410-411).
+  it('prepends a single new item (each() prepend fast path)', async () => {
+    const items = state([
+      { id: 'A', t: 'A' },
+      { id: 'B', t: 'B' },
+    ]);
+    const fragment = each(
+      () => items(),
+      (item) => {
+        const li = document.createElement('li');
+        li.textContent = item.t;
+        return li;
+      },
+      (item) => item.id,
+    );
+    const c = document.createElement('ul');
+    c.appendChild(fragment);
+    await tick();
+    const beforeA = c.querySelectorAll('li')[0];
+
+    items([
+      { id: 'X', t: 'X' },
+      { id: 'A', t: 'A' },
+      { id: 'B', t: 'B' },
+    ]);
+    await tick();
+    const lis = c.querySelectorAll('li');
+    expect([...lis].map((l) => l.textContent)).toEqual(['X', 'A', 'B']);
+    // Existing nodes preserved (no recreate)
+    expect(lis[1]).toBe(beforeA);
+  });
+
+  it('prepends multiple new items (each() prepend fast path)', async () => {
+    const items = state([
+      { id: 'C', t: 'C' },
+      { id: 'D', t: 'D' },
+    ]);
+    const fragment = each(
+      () => items(),
+      (item) => {
+        const li = document.createElement('li');
+        li.textContent = item.t;
+        return li;
+      },
+      (item) => item.id,
+    );
+    const c = document.createElement('ul');
+    c.appendChild(fragment);
+    await tick();
+    const beforeC = c.querySelectorAll('li')[0];
+
+    items([
+      { id: 'A', t: 'A' },
+      { id: 'B', t: 'B' },
+      { id: 'C', t: 'C' },
+      { id: 'D', t: 'D' },
+    ]);
+    await tick();
+    const lis = c.querySelectorAll('li');
+    expect([...lis].map((l) => l.textContent)).toEqual(['A', 'B', 'C', 'D']);
+    expect(lis[2]).toBe(beforeC);
+  });
+
+  it('interleaved insertion falls through to LIS (neither append nor prepend)', async () => {
+    // prev = [A, B, C] (prevLen=3); new = [X, A, Y, B, C] (len=5)
+    // Length grew, but neither prefix (append) nor suffix (prepend) match —
+    // forces a full LIS reorder.
     const items = state([
       { id: 'A', t: 'A' },
       { id: 'B', t: 'B' },
@@ -497,11 +559,18 @@ describe('match — extra coverage', () => {
     items([
       { id: 'X', t: 'X' },
       { id: 'A', t: 'A' },
+      { id: 'Y', t: 'Y' },
       { id: 'B', t: 'B' },
       { id: 'C', t: 'C' },
     ]);
     await tick();
-    expect([...c.querySelectorAll('li')].map((l) => l.textContent)).toEqual(['X', 'A', 'B', 'C']);
+    expect([...c.querySelectorAll('li')].map((l) => l.textContent)).toEqual([
+      'X',
+      'A',
+      'Y',
+      'B',
+      'C',
+    ]);
   });
 
   it('LIS reorder with stable middle item flushes batch (each)', async () => {

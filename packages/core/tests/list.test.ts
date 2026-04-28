@@ -267,8 +267,36 @@ describe('list() correctness', () => {
     expect(c.querySelectorAll('li').length).toBe(4);
   });
 
-  it('insertion at start with longer length falls through to LIS (list)', async () => {
-    // prev=[A,B,C], new=[X,A,B,C] — exercises list() lines 765-766
+  it('list() prepends new items via prepend fast path', async () => {
+    const items = state([
+      { id: 'C', text: 'C' },
+      { id: 'D', text: 'D' },
+    ]);
+    const c = document.createElement('div');
+    c.appendChild(
+      list('li', () => items(), {
+        text: (i) => i.text,
+        key: (i) => i.id,
+      }),
+    );
+    await tick();
+    const beforeC = c.querySelectorAll('li')[0];
+
+    items([
+      { id: 'A', text: 'A' },
+      { id: 'B', text: 'B' },
+      { id: 'C', text: 'C' },
+      { id: 'D', text: 'D' },
+    ]);
+    await tick();
+    const lis = c.querySelectorAll('li');
+    expect([...lis].map((l) => l.textContent)).toEqual(['A', 'B', 'C', 'D']);
+    // Existing C node preserved
+    expect(lis[2]).toBe(beforeC);
+  });
+
+  it('list() interleaved insertion falls through to LIS', async () => {
+    // prev=[A,B,C], new=[X,A,Y,B,C] — neither append nor prepend matches.
     const items = state([
       { id: 'A', text: 'A' },
       { id: 'B', text: 'B' },
@@ -286,11 +314,18 @@ describe('list() correctness', () => {
     items([
       { id: 'X', text: 'X' },
       { id: 'A', text: 'A' },
+      { id: 'Y', text: 'Y' },
       { id: 'B', text: 'B' },
       { id: 'C', text: 'C' },
     ]);
     await tick();
-    expect([...c.querySelectorAll('li')].map((l) => l.textContent)).toEqual(['X', 'A', 'B', 'C']);
+    expect([...c.querySelectorAll('li')].map((l) => l.textContent)).toEqual([
+      'X',
+      'A',
+      'Y',
+      'B',
+      'C',
+    ]);
   });
 
   it('disposes when wrapped in mount', async () => {

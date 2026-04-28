@@ -374,6 +374,33 @@ describe('6. list rendering', () => {
     });
   });
 
+  it('PREPEND 100 items to 1000 (chat/feed pattern)', async () => {
+    // Tests the prepend fast path — should match append cost (no LIS).
+    const items = state(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` })));
+    const container = document.createElement('div');
+    container.appendChild(
+      each(
+        () => items(),
+        (item) => html`<li>${item.text}</li>`,
+        (item) => item.id,
+      ),
+    );
+    await tick();
+
+    let prependCounter = 0;
+    const _elapsed = await benchAsync('each() PREPEND 100 to 1000', async () => {
+      const base = -1 - prependCounter * 100;
+      prependCounter++;
+      const added = Array.from({ length: 100 }, (_, i) => ({
+        id: base - i,
+        text: `Prep ${i}`,
+      }));
+      items([...added, ...items()]);
+      await tick();
+    });
+    console.log(`    → Should be similar to APPEND (single fragment insert, no LIS)`);
+  });
+
   it('REMOVE all 1000 items', async () => {
     const items = state(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` })));
     const container = document.createElement('div');

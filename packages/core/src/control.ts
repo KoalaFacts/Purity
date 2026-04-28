@@ -403,13 +403,25 @@ export function each<T>(
       }
     }
 
-    // --- Reorder: detect append, swap, or full LIS ---
+    // --- Reorder: detect append, prepend, swap, or full LIS ---
     // Fast path: all old keys at start in same order = pure append
     let isAppend = len > prevLen;
     if (isAppend) {
       for (let i = 0; i < prevLen; i++) {
         if (prevKeys[i] !== newKeys[i]) {
           isAppend = false;
+          break;
+        }
+      }
+    }
+
+    // Fast path: all old keys at end in same order = pure prepend
+    let isPrepend = !isAppend && len > prevLen;
+    if (isPrepend) {
+      const offset = len - prevLen;
+      for (let i = 0; i < prevLen; i++) {
+        if (prevKeys[i] !== newKeys[i + offset]) {
+          isPrepend = false;
           break;
         }
       }
@@ -423,6 +435,17 @@ export function each<T>(
         for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
       }
       parent.insertBefore(frag, endMarker);
+    } else if (isPrepend) {
+      // Pure prepend — insert new items before the first existing entry, no LIS
+      const newCount = len - prevLen;
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < newCount; i++) {
+        const entry = newEntries.get(newKeys[i])!;
+        for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
+      }
+      // The first preserved entry is at newKeys[newCount] (== prevKeys[0])
+      const firstExisting = newEntries.get(newKeys[newCount])!.nodes[0];
+      parent.insertBefore(frag, firstExisting);
     } else {
       // Fast path: swap — exactly 2 positions differ, same length, all reused
       let swapped = false;
@@ -758,7 +781,7 @@ export function list<T>(
       }
     }
 
-    // Reorder — append-only fast path or LIS
+    // Reorder — append-only / prepend-only fast paths or LIS
     if (prevLen > 0 && len > 0) {
       let isAppend = len > prevLen;
       if (isAppend) {
@@ -770,10 +793,27 @@ export function list<T>(
         }
       }
 
+      let isPrepend = !isAppend && len > prevLen;
+      if (isPrepend) {
+        const offset = len - prevLen;
+        for (let i = 0; i < prevLen; i++) {
+          if (prevKeys[i] !== newKeys[i + offset]) {
+            isPrepend = false;
+            break;
+          }
+        }
+      }
+
       if (isAppend) {
         const frag = document.createDocumentFragment();
         for (let i = prevLen; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
         parent.insertBefore(frag, endMarker);
+      } else if (isPrepend) {
+        const newCount = len - prevLen;
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < newCount; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
+        const firstExisting = newEntries.get(newKeys[newCount])!.node;
+        parent.insertBefore(frag, firstExisting);
       } else {
         // LIS reorder
         const oldKeyIndex = new Map<unknown, number>();

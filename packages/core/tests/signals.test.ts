@@ -382,3 +382,221 @@ describe('batch — nested', () => {
     expect(seen[seen.length - 1]).toBe(3);
   });
 });
+
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
+
+// ---------------------------------------------------------------------------
+// Algorithm semantics — properties of the push-pull graph that the public
+// API tests don't exercise directly. Each one targets a specific contract
+// of the new node implementation (status propagation, source diffing,
+// cleanup ordering, etc.).
+// ---------------------------------------------------------------------------
+
+describe('reactivity semantics', () => {
+  it('diamond — effect fires once even when two branches both update', async () => {
+    // a → b ↘
+    //         e
+    // a → c ↗
+    // Writing `a` invalidates b and c; e should pull both updates and run
+    // exactly once, not once per branch.
+    const a = state(1);
+    const b = compute(() => a() * 2);
+    const c = compute(() => a() * 3);
+    let runs = 0;
+    let lastSum = 0;
+    watch(() => {
+      runs++;
+      lastSum = b() + c();
+    });
+    expect(runs).toBe(1);
+    expect(lastSum).toBe(5);
+
+    a(2);
+    await tick();
+    expect(runs).toBe(2);
+    expect(lastSum).toBe(10);
+  });
+
+  it('CHECK→CLEAN — chain where intermediate value is unchanged skips downstream re-run', async () => {
+    // a → b (always 0) → c → effect.
+    // When we write a, b is invalidated (CHECK), but on re-eval its value
+    // doesn't change, so c stays CLEAN and the effect should NOT re-fire.
+    const a = state(1);
+    const b = compute(() => a() * 0); // always 0 regardless of a
+    const c = compute(() => b() + 100);
+    let runs = 0;
+    watch(() => {
+      runs++;
+      c();
+    });
+    expect(runs).toBe(1);
+
+    a(5);
+    await tick();
+    // a moved → b checked → b's value didn't move → c didn't move → effect didn't fire.
+    expect(runs).toBe(1);
+
+    // Now actually move b's output by changing the formula's effect.
+    a(0);
+    await tick();
+    expect(runs).toBe(1); // still 0 from b's perspective
+  });
+
+  it('dynamic deps — switching reads unsubscribes from the old source', async () => {
+    const cond = state(true);
+    const a = state('A');
+    const b = state('B');
+    const seen: string[] = [];
+
+    watch(() => {
+      seen.push(cond() ? a() : b());
+    });
+    expect(seen).toEqual(['A']);
+
+    // Flip to read b. After this run, the effect should NOT subscribe to a.
+    cond(false);
+    await tick();
+    expect(seen).toEqual(['A', 'B']);
+
+    // Touch a — should be ignored, the effect dropped its subscription.
+    a('A2');
+    await tick();
+    expect(seen).toEqual(['A', 'B']);
+
+    // Touch b — should re-fire.
+    b('B2');
+    await tick();
+    expect(seen).toEqual(['A', 'B', 'B2']);
+  });
+
+  it('peek inside an effect does not subscribe', async () => {
+    const a = state(0);
+    const b = state(100);
+    let runs = 0;
+    watch(() => {
+      runs++;
+      a(); // tracked
+      b.peek(); // NOT tracked
+    });
+    expect(runs).toBe(1);
+
+    b(200);
+    await tick();
+    expect(runs).toBe(1); // peek didn't subscribe
+
+    a(1);
+    await tick();
+    expect(runs).toBe(2); // a is still tracked
+  });
+
+  it('cleanup runs before the next fn re-run, in order', async () => {
+    const a = state(0);
+    const order: string[] = [];
+    watch(() => {
+      const v = a();
+      order.push(`run(${v})`);
+      return () => order.push(`cleanup(${v})`);
+    });
+    expect(order).toEqual(['run(0)']);
+
+    a(1);
+    await tick();
+    expect(order).toEqual(['run(0)', 'cleanup(0)', 'run(1)']);
+
+    a(2);
+    await tick();
+    expect(order).toEqual(['run(0)', 'cleanup(0)', 'run(1)', 'cleanup(1)', 'run(2)']);
+  });
+
+  it('cleanup fires once on dispose, even after the latest re-run', async () => {
+    const a = state(0);
+    const cleanups: number[] = [];
+    const dispose = watch(() => {
+      const v = a();
+      return () => cleanups.push(v);
+    });
+    a(1);
+    await tick();
+    // After the second run, cleanup(0) ran; we are now holding cleanup(1).
+    expect(cleanups).toEqual([0]);
+
+    dispose();
+    expect(cleanups).toEqual([0, 1]);
+
+    // No further cleanups, ever.
+    dispose();
+    expect(cleanups).toEqual([0, 1]);
+  });
+
+  it('lazy evaluation — compute does not run until first read', () => {
+    let evals = 0;
+    const a = state(10);
+    const c = compute(() => {
+      evals++;
+      return a() * 2;
+    });
+    expect(evals).toBe(0); // pure compute is lazy
+    expect(c()).toBe(20);
+    expect(evals).toBe(1);
+    expect(c()).toBe(20); // cached, no re-eval
+    expect(evals).toBe(1);
+  });
+
+  it('write same value to a state — observers do not run', async () => {
+    const a = state({ x: 1 });
+    let runs = 0;
+    watch(() => {
+      runs++;
+      a();
+    });
+    expect(runs).toBe(1);
+
+    // Object.is says these are NOT the same (reference inequality), so
+    // observers re-run.
+    a({ x: 1 });
+    await tick();
+    expect(runs).toBe(2);
+
+    // Same reference — no re-run.
+    const ref = a();
+    a(ref);
+    await tick();
+    expect(runs).toBe(2);
+  });
+
+  it('1000-deep computed chain propagates correctly', () => {
+    // Pure-compute DAG must not trip the effect-depth guard.
+    const head = state(0);
+    let prev: () => number = () => head();
+    for (let i = 0; i < 1000; i++) {
+      const p = prev;
+      prev = compute(() => p() + 1);
+    }
+    expect(prev()).toBe(1000);
+    head(5);
+    expect(prev()).toBe(1005);
+  });
+
+  it('effect synchronously writing its own dep does not loop', async () => {
+    // Push-pull semantics: the effect is currently running, so its status
+    // is being driven by the run itself. A synchronous self-write enqueues
+    // the effect, but the run finishes by flipping status to CLEAN — the
+    // queued entry is skipped on the next flush iteration. End state: the
+    // effect ran once, the new state value is visible.
+    const a = state(0);
+    let runs = 0;
+    let observedValueAfterWrite = -1;
+    watch(() => {
+      runs++;
+      const v = a();
+      if (v === 0) {
+        a(42); // synchronous self-write
+        observedValueAfterWrite = a.peek();
+      }
+    });
+    await tick();
+    expect(runs).toBe(1); // exactly one run, no infinite loop
+    expect(observedValueAfterWrite).toBe(42); // write took effect synchronously
+    expect(a()).toBe(42);
+  });
+});

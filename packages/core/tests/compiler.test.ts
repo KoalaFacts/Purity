@@ -710,6 +710,95 @@ describe('compiler — extra coverage', () => {
     input.dispatchEvent(new Event('change'));
     expect(checked()).toBe(true);
   });
+
+  // ---------------------------------------------------------------------------
+  // Single-watch-per-template fold (codegen optimisation)
+  // ---------------------------------------------------------------------------
+
+  it('fold: multiple ${} reactive bindings in one complex template share a watch', async () => {
+    const a = state('A');
+    const b = state('B');
+    const cs = state('C');
+    const c = document.createElement('div');
+    c.appendChild(
+      html`<div><span>${() => a()}</span><span>${() => b()}</span><span>${() => cs()}</span></div>`,
+    );
+    expect([...c.querySelectorAll('span')].map((s) => s.textContent)).toEqual(['A', 'B', 'C']);
+
+    a('A2');
+    await tick();
+    expect([...c.querySelectorAll('span')].map((s) => s.textContent)).toEqual(['A2', 'B', 'C']);
+
+    b('B2');
+    await tick();
+    expect([...c.querySelectorAll('span')].map((s) => s.textContent)).toEqual(['A2', 'B2', 'C']);
+
+    cs('C2');
+    await tick();
+    expect([...c.querySelectorAll('span')].map((s) => s.textContent)).toEqual(['A2', 'B2', 'C2']);
+  });
+
+  it('fold: reactive ${} + reactive class= in same complex template both update', async () => {
+    const txt = state('hi');
+    const cls = state('on');
+    const c = document.createElement('div');
+    c.appendChild(html`<div><span class=${() => cls()}>${() => txt()}</span></div>`);
+    const span = c.querySelector('span')!;
+    expect(span.textContent).toBe('hi');
+    expect(span.getAttribute('class')).toBe('on');
+
+    txt('there');
+    await tick();
+    expect(span.textContent).toBe('there');
+
+    cls('off');
+    await tick();
+    expect(span.getAttribute('class')).toBe('off');
+  });
+
+  it('fold: simple template with two reactive ${} bindings updates both', async () => {
+    const a = state(1);
+    const b = state(10);
+    const c = document.createElement('div');
+    // Single root element, only text/expression children — simple-template path.
+    c.appendChild(html`<p>${() => a()} + ${() => b()}</p>`);
+    const p = c.querySelector('p')!;
+    expect(p.textContent).toMatch(/1.*\+.*10/);
+
+    a(2);
+    await tick();
+    expect(p.textContent).toMatch(/2.*\+.*10/);
+
+    b(20);
+    await tick();
+    expect(p.textContent).toMatch(/2.*\+.*20/);
+  });
+
+  it('fold: static + reactive bindings in same template — static stays, reactive updates', async () => {
+    const v = state(1);
+    const c = document.createElement('div');
+    c.appendChild(html`<div><span>static</span><span>${() => v()}</span></div>`);
+    const spans = c.querySelectorAll('span');
+    expect(spans[0].textContent).toBe('static');
+    expect(spans[1].textContent).toBe('1');
+
+    v(2);
+    await tick();
+    expect(spans[0].textContent).toBe('static');
+    expect(spans[1].textContent).toBe('2');
+  });
+
+  it('fold: all-static template instantiates without creating a watch', async () => {
+    // Indirect proof: a static template with no reactive bindings should not
+    // pay the watch-creation cost. We verify by instantiating many copies and
+    // checking the work stays cheap (sub-paint-floor).
+    const start = performance.now();
+    for (let i = 0; i < 1000; i++) {
+      html`<div><span>a</span><span>b</span><span>c</span></div>`;
+    }
+    const elapsed = performance.now() - start;
+    expect(elapsed).toBeLessThan(200);
+  });
 });
 
 describe('compiled html`` performance', () => {

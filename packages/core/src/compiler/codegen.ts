@@ -172,55 +172,74 @@ function isSimpleTemplate(ast: FragmentNode): SimpleTemplate | null {
 
 function genSimpleTemplate(tpl: SimpleTemplate): string {
   assertSafeName(tpl.tag, 'tag');
-  const lines: string[] = [];
+  const setupParts: string[] = [];
+  const reactiveParts: string[] = [];
 
-  lines.push(`var _e=document.createElement('${tpl.tag}');`);
+  setupParts.push(`var _e=document.createElement('${tpl.tag}');`);
 
   // Static attributes
   for (const a of tpl.staticAttrs) {
     if (a.name === 'id' || a.name === 'class') {
-      lines.push(`_e.${a.name === 'class' ? 'className' : a.name}=${JSON.stringify(a.value)};`);
+      setupParts.push(
+        `_e.${a.name === 'class' ? 'className' : a.name}=${JSON.stringify(a.value)};`,
+      );
     } else {
-      lines.push(`_e.setAttribute('${a.name}',${JSON.stringify(a.value || '')});`);
+      setupParts.push(`_e.setAttribute('${a.name}',${JSON.stringify(a.value || '')});`);
     }
   }
 
-  // Dynamic attributes
+  // Dynamic attributes — folded into the shared watch where possible
   for (const a of tpl.dynamicAttrs) {
     assertSafeName(a.name, 'attribute');
+    const id = bindVarCounter++;
+    const av = `_av${id}`;
+    const fl = `_af${id}`;
     const val = `_v[${a.index}]`;
     switch (a.kind) {
       case 'event':
-        lines.push(`_e.addEventListener('${a.name}',${val});`);
+        setupParts.push(`_e.addEventListener('${a.name}',${val});`);
         break;
       case 'dynamic':
-        lines.push(
-          `if(typeof ${val}==='function')_w(function(){var v=${val}();if(v==null||v===false)_e.removeAttribute('${a.name}');else _e.setAttribute('${a.name}',String(v));});else if(${val}!=null&&${val}!==false)_e.setAttribute('${a.name}',String(${val}));`,
+        setupParts.push(
+          `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
+          `if(!${fl}&&${av}!=null&&${av}!==false)_e.setAttribute('${a.name}',String(${av}));`,
+        );
+        reactiveParts.push(
+          `if(${fl}){var v${id}=${av}();if(v${id}==null||v${id}===false)_e.removeAttribute('${a.name}');else _e.setAttribute('${a.name}',String(v${id}));}`,
         );
         break;
       case 'bool':
-        lines.push(
-          `if(typeof ${val}==='function')_w(function(){if(${val}())_e.setAttribute('${a.name}','');else _e.removeAttribute('${a.name}');});else if(${val})_e.setAttribute('${a.name}','');`,
+        setupParts.push(
+          `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
+          `if(!${fl}&&${av})_e.setAttribute('${a.name}','');`,
+        );
+        reactiveParts.push(
+          `if(${fl}){if(${av}())_e.setAttribute('${a.name}','');else _e.removeAttribute('${a.name}');}`,
         );
         break;
       case 'prop':
-        lines.push(
-          `if(typeof ${val}==='function')_w(function(){_e.${a.name}=${val}();});else _e.${a.name}=${val};`,
+        setupParts.push(
+          `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
+          `if(!${fl})_e.${a.name}=${av};`,
         );
+        reactiveParts.push(`if(${fl})_e.${a.name}=${av}();`);
         break;
       case 'reactive-prop':
-        lines.push(
-          `if(typeof ${val}==='function')_w(function(){_e['${a.name}']=${val}();});else _e['${a.name}']=${val};`,
+        setupParts.push(
+          `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
+          `if(!${fl})_e['${a.name}']=${av};`,
         );
+        reactiveParts.push(`if(${fl})_e['${a.name}']=${av}();`);
         break;
       case 'bind': {
+        // Bind keeps its own watch (asymmetric: signal -> el and listener -> signal).
         const evt = a.name === 'checked' || a.name === 'group' ? 'change' : 'input';
         if (a.name === 'group') {
-          lines.push(
+          setupParts.push(
             `if(typeof ${val}==='function'){if(_e.type==='radio'){_w(function(){_e.checked=${val}()===_e.value;});_e.addEventListener('change',function(){if(_e.checked)${val}(_e.value);});}else{_w(function(){_e.checked=${val}().includes(_e.value);});_e.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(_e.value);if(_e.checked){if(i===-1)a.push(_e.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
           );
         } else {
-          lines.push(
+          setupParts.push(
             `if(typeof ${val}==='function'){_w(function(){_e['${a.name}']=${val}();});_e.addEventListener('${evt}',function(){${val}(${a.name === 'checked' ? '_e.checked' : `_e['${a.name}']`});});}`,
           );
         }
@@ -233,23 +252,33 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
   for (const ch of tpl.children) {
     if (ch.type === 'text') {
       if (ch.value.trim() || tpl.children.length === 1) {
-        lines.push(`_e.appendChild(document.createTextNode(${JSON.stringify(ch.value)}));`);
+        setupParts.push(`_e.appendChild(document.createTextNode(${JSON.stringify(ch.value)}));`);
       }
     } else if (ch.type === 'expression') {
       const val = `_v[${ch.index}]`;
       const id = bindVarCounter++;
-      lines.push(
-        `var _x${id}=${val};`,
-        `if(typeof _x${id}==='function'){var _t${id}=document.createTextNode('');_e.appendChild(_t${id});_w(function(){var r=_x${id}();if(r instanceof Node){_t${id}.replaceWith(r);_t${id}=r;}else{if(_t${id}.nodeType!==3){var t=document.createTextNode('');_t${id}.replaceWith(t);_t${id}=t;}_t${id}.data=r==null?'':String(r);}});}`,
-        `else if(_x${id} instanceof Node)_e.appendChild(_x${id});`,
-        `else if(Array.isArray(_x${id})){for(var _ai${id}=0;_ai${id}<_x${id}.length;_ai${id}++)_e.appendChild(_x${id}[_ai${id}] instanceof Node?_x${id}[_ai${id}]:document.createTextNode(String(_x${id}[_ai${id}])));}`,
-        `else _e.appendChild(document.createTextNode(_x${id}==null||_x${id}===false?'':String(_x${id})));`,
+      const xv = `_x${id}`;
+      const tn = `_t${id}`;
+      const fl = `_xf${id}`;
+      setupParts.push(
+        `var ${xv}=${val};var ${fl}=typeof ${xv}==='function';var ${tn};`,
+        `if(${fl}){${tn}=document.createTextNode('');_e.appendChild(${tn});}`,
+        `else if(${xv} instanceof Node)_e.appendChild(${xv});`,
+        `else if(Array.isArray(${xv})){for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++)_e.appendChild(${xv}[_ai${id}] instanceof Node?${xv}[_ai${id}]:document.createTextNode(String(${xv}[_ai${id}])));}`,
+        `else _e.appendChild(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));`,
+      );
+      reactiveParts.push(
+        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=r${id}==null?'':String(r${id});}}`,
       );
     }
   }
 
-  lines.push('return _e;');
-  return `function(_v,_w){${lines.join('')}}`;
+  let body = setupParts.join('');
+  if (reactiveParts.length > 0) {
+    body += `_w(function(){${reactiveParts.join('')}});`;
+  }
+  body += 'return _e;';
+  return `function(_v,_w){${body}}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -430,13 +459,30 @@ function childPathFromParent(parentPath: PathStep[], childIndex: number): PathSt
 
 // ---------------------------------------------------------------------------
 // genPositionalBindings — navigate to each slot via firstChild/nextSibling
-// No TreeWalker, no querySelector, no switch/case — just direct path walk
+// No TreeWalker, no querySelector, no switch/case — just direct path walk.
+//
+// Reactive bindings within the same template instance are folded into a
+// single _w() call. With N reactive bindings (typical row template: 3-5),
+// this collapses N Signal.Computed allocations + N watcher.watch()
+// registrations into one. A typical 10k-row table goes from ~50k watches to
+// ~10k watches at instantiation time.
+//
+// Tradeoff: when a downstream signal changes, the body of the shared watch
+// re-runs all reactive lines (gated by per-line `_f*` booleans frozen at
+// setup), so unchanged bindings still execute their assignment. Text-node
+// writes are ~50ns; this overhead is dwarfed by the watch-creation savings.
 // ---------------------------------------------------------------------------
 
 let bindVarCounter = 0;
 
+interface BindingParts {
+  setup: string; // synchronous code: typeof checks, text-node creation, static assignments
+  reactive: string; // body for the shared watch — guarded by per-binding _f* flags
+}
+
 function genPositionalBindings(slots: Slot[]): string {
-  const lines: string[] = [];
+  const setupParts: string[] = [];
+  const reactiveParts: string[] = [];
 
   for (const slot of slots) {
     const nodeVar = `_n${bindVarCounter++}`;
@@ -446,89 +492,161 @@ function genPositionalBindings(slots: Slot[]): string {
     for (const step of slot.path) {
       nav += step === 0 ? '.firstChild' : '.nextSibling';
     }
-    lines.push(`var ${nodeVar}=${nav};`);
+    setupParts.push(`var ${nodeVar}=${nav};`);
 
     if (slot.type === 'expr') {
-      lines.push(genExprBinding(nodeVar, slot.index));
+      const { setup, reactive } = genExprBinding(nodeVar, slot.index);
+      setupParts.push(setup);
+      if (reactive) reactiveParts.push(reactive);
     } else {
       for (const attr of slot.attrs) {
         if (attr.kind !== 'static') {
-          lines.push(genAttrBinding(nodeVar, attr));
+          const { setup, reactive } = genAttrBinding(nodeVar, attr);
+          setupParts.push(setup);
+          if (reactive) reactiveParts.push(reactive);
         }
       }
     }
   }
 
-  return lines.join('');
+  let result = setupParts.join('');
+  if (reactiveParts.length > 0) {
+    result += `_w(function(){${reactiveParts.join('')}});`;
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
 // Expression binding — replace comment placeholder with dynamic content
+// Returns { setup, reactive }: setup runs once at instantiation; reactive is
+// the body fragment to splice into the shared watch (gated by `_f*`).
 // ---------------------------------------------------------------------------
 
-function genExprBinding(commentVar: string, index: number): string {
+function genExprBinding(commentVar: string, index: number): BindingParts {
   const id = bindVarCounter++;
   const xv = `_xv${id}`;
   const tn = `_tn${id}`;
+  const fl = `_f${id}`;
   const val = `_v[${index}]`;
 
-  // Check order optimized: primitives first (hot path in each/list loops),
-  // then functions (reactive), then DOM nodes, then arrays.
-  return [
+  const setup = [
     `var ${xv}=${val};`,
-    `if(typeof ${xv}==='object'||typeof ${xv}==='function'){`,
-    `if(typeof ${xv}==='function'){`,
-    `var ${tn}=document.createTextNode('');${commentVar}.replaceWith(${tn});`,
-    `_w(function(){var r=${xv}();if(r instanceof Node){${tn}.replaceWith(r);${tn}=r;}else{if(${tn}.nodeType!==3){var t=document.createTextNode('');${tn}.replaceWith(t);${tn}=t;}${tn}.data=r==null?'':String(r);}});`,
-    `}else if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${commentVar}.replaceWith(${xv});}`,
-    `else if(Array.isArray(${xv})){var _f${id}=document.createDocumentFragment();for(var _i${id}=0;_i${id}<${xv}.length;_i${id}++)_f${id}.appendChild(${xv}[_i${id}] instanceof Node?${xv}[_i${id}]:document.createTextNode(String(${xv}[_i${id}])));${commentVar}.replaceWith(_f${id});}`,
+    `var ${fl}=typeof ${xv}==='function';`,
+    `var ${tn};`,
+    `if(${fl}){`,
+    `${tn}=document.createTextNode('');${commentVar}.replaceWith(${tn});`,
+    `}else if(typeof ${xv}==='object'){`,
+    `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${commentVar}.replaceWith(${xv});}`,
+    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++)_af${id}.appendChild(${xv}[_ai${id}] instanceof Node?${xv}[_ai${id}]:document.createTextNode(String(${xv}[_ai${id}])));${commentVar}.replaceWith(_af${id});}`,
     `else{${commentVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
     `}else{${commentVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
   ].join('');
+
+  const reactive = [
+    `if(${fl}){`,
+    `var r${id}=${xv}();`,
+    `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
+    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=r${id}==null?'':String(r${id});}`,
+    `}`,
+  ].join('');
+
+  return { setup, reactive };
 }
 
 // ---------------------------------------------------------------------------
-// Attribute binding
+// Attribute binding (complex template path).
+// Returns { setup, reactive }: same fold contract as genExprBinding.
 // ---------------------------------------------------------------------------
 
-function genAttrBinding(el: string, attr: AttributeNode): string {
-  if (attr.kind === 'static') return '';
+function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
+  if (attr.kind === 'static') return { setup: '', reactive: '' };
   assertSafeName(attr.name, 'attribute');
 
+  const id = bindVarCounter++;
+  const av = `_av${id}`;
+  const fl = `_af${id}`;
   const val = `_v[${attr.index}]`;
 
   switch (attr.kind) {
     case 'event':
-      return `${el}.addEventListener('${attr.name}',${val});`;
+      return { setup: `${el}.addEventListener('${attr.name}',${val});`, reactive: '' };
 
-    case 'dynamic':
-      return `if(typeof ${val}==='function')_w(function(){var v=${val}();if(v==null||v===false)${el}.removeAttribute('${attr.name}');else ${el}.setAttribute('${attr.name}',String(v));});else if(${val}!=null&&${val}!==false)${el}.setAttribute('${attr.name}',String(${val}));`;
+    case 'dynamic': {
+      const setup = [
+        `var ${av}=${val};`,
+        `var ${fl}=typeof ${av}==='function';`,
+        `if(!${fl}&&${av}!=null&&${av}!==false)${el}.setAttribute('${attr.name}',String(${av}));`,
+      ].join('');
+      const reactive = [
+        `if(${fl}){`,
+        `var v${id}=${av}();`,
+        `if(v${id}==null||v${id}===false)${el}.removeAttribute('${attr.name}');`,
+        `else ${el}.setAttribute('${attr.name}',String(v${id}));`,
+        `}`,
+      ].join('');
+      return { setup, reactive };
+    }
 
-    case 'bool':
-      return `if(typeof ${val}==='function')_w(function(){if(${val}())${el}.setAttribute('${attr.name}','');else ${el}.removeAttribute('${attr.name}');});else if(${val})${el}.setAttribute('${attr.name}','');`;
+    case 'bool': {
+      const setup = [
+        `var ${av}=${val};`,
+        `var ${fl}=typeof ${av}==='function';`,
+        `if(!${fl}&&${av})${el}.setAttribute('${attr.name}','');`,
+      ].join('');
+      const reactive = [
+        `if(${fl}){`,
+        `if(${av}())${el}.setAttribute('${attr.name}','');`,
+        `else ${el}.removeAttribute('${attr.name}');`,
+        `}`,
+      ].join('');
+      return { setup, reactive };
+    }
 
     case 'prop': {
       const n = attr.name;
-      return `if(typeof ${val}==='function')_w(function(){${el}.${n}=${val}();});else ${el}.${n}=${val};`;
+      const setup = [
+        `var ${av}=${val};`,
+        `var ${fl}=typeof ${av}==='function';`,
+        `if(!${fl})${el}.${n}=${av};`,
+      ].join('');
+      const reactive = `if(${fl})${el}.${n}=${av}();`;
+      return { setup, reactive };
     }
 
-    case 'reactive-prop':
-      return `if(typeof ${val}==='function')_w(function(){${el}['${attr.name}']=${val}();});else ${el}['${attr.name}']=${val};`;
+    case 'reactive-prop': {
+      const setup = [
+        `var ${av}=${val};`,
+        `var ${fl}=typeof ${av}==='function';`,
+        `if(!${fl})${el}['${attr.name}']=${av};`,
+      ].join('');
+      const reactive = `if(${fl})${el}['${attr.name}']=${av}();`;
+      return { setup, reactive };
+    }
 
     case 'bind': {
+      // Bind keeps its own watch — its reactive read is asymmetric (signal ->
+      // element) AND it installs an event listener that writes the signal.
+      // The setup includes both. Folding doesn't help here because the
+      // listener is per-input.
       const evt = attr.name === 'checked' || attr.name === 'group' ? 'change' : 'input';
       if (attr.name === 'group') {
-        return [
-          `if(typeof ${val}==='function'){`,
-          `if(${el}.type==='radio'){_w(function(){${el}.checked=${val}()===${el}.value;});${el}.addEventListener('change',function(){if(${el}.checked)${val}(${el}.value);});}`,
-          `else{_w(function(){${el}.checked=${val}().includes(${el}.value);});${el}.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(${el}.value);if(${el}.checked){if(i===-1)a.push(${el}.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
-        ].join('');
+        return {
+          setup: [
+            `if(typeof ${val}==='function'){`,
+            `if(${el}.type==='radio'){_w(function(){${el}.checked=${val}()===${el}.value;});${el}.addEventListener('change',function(){if(${el}.checked)${val}(${el}.value);});}`,
+            `else{_w(function(){${el}.checked=${val}().includes(${el}.value);});${el}.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(${el}.value);if(${el}.checked){if(i===-1)a.push(${el}.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
+          ].join(''),
+          reactive: '',
+        };
       }
-      return `if(typeof ${val}==='function'){_w(function(){${el}['${attr.name}']=${val}();});${el}.addEventListener('${evt}',function(){${val}(${attr.name === 'checked' ? `${el}.checked` : `${el}['${attr.name}']`});});}`;
+      return {
+        setup: `if(typeof ${val}==='function'){_w(function(){${el}['${attr.name}']=${val}();});${el}.addEventListener('${evt}',function(){${val}(${attr.name === 'checked' ? `${el}.checked` : `${el}['${attr.name}']`});});}`,
+        reactive: '',
+      };
     }
 
     default:
       /* v8 ignore next -- defensive fallthrough; parser only emits known kinds */
-      return '';
+      return { setup: '', reactive: '' };
   }
 }

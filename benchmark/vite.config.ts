@@ -36,6 +36,11 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    // Sourcemaps so tools/analyze.ts can map minified frames in the
+    // .cpuprofile back to source files. Set PROFILE_MINIFY=0 to also
+    // disable minification when you need to read raw identifier names.
+    sourcemap: true,
+    minify: process.env.PROFILE_MINIFY === '0' ? false : 'esbuild',
     rolldownOptions: { input: inputs },
   },
 });

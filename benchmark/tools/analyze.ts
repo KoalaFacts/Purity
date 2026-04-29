@@ -3,14 +3,54 @@
 //
 // Usage: node tools/analyze.ts /tmp/profiles/<dir> [topN]
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { SourceMapConsumer } from 'source-map-js';
 
 const dir = process.argv[2];
 const topN = +(process.argv[3] || 25);
 if (!dir) {
   console.error('Usage: node tools/analyze.ts <profile-dir> [topN]');
   process.exit(1);
+}
+
+// Source-map demangler: given a profile callFrame's url + line/col, return
+// the original symbol name. We resolve URLs like
+// `http://localhost:4173/Purity/assets/foo-XYZ.js` against the bench's
+// `dist/assets/` so we can read `foo-XYZ.js.map` from disk.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const DIST_ASSETS = join(__dirname, '..', 'dist', 'assets');
+const consumerCache = new Map<string, SourceMapConsumer | null>();
+function getConsumer(url: string): SourceMapConsumer | null {
+  if (consumerCache.has(url)) return consumerCache.get(url) ?? null;
+  let consumer: SourceMapConsumer | null = null;
+  // Pull the basename (e.g. `src-D8vC1-sD.js`) and look for `.map` next to it.
+  const m = url.match(/\/assets\/([^/?#]+\.js)(?:[?#]|$)/);
+  if (m) {
+    const mapPath = join(DIST_ASSETS, `${m[1]}.map`);
+    if (existsSync(mapPath)) {
+      try {
+        const raw = JSON.parse(readFileSync(mapPath, 'utf-8'));
+        consumer = new SourceMapConsumer(raw);
+      } catch {
+        consumer = null;
+      }
+    }
+  }
+  consumerCache.set(url, consumer);
+  return consumer;
+}
+
+function demangle(url: string, line: number, column: number, fallback: string): { name: string; source: string } {
+  const consumer = getConsumer(url);
+  if (!consumer) return { name: fallback, source: url };
+  // Profiler line/col are zero-based; source-map expects line one-based.
+  const orig = consumer.originalPositionFor({ line: line + 1, column });
+  return {
+    name: orig.name || fallback,
+    source: orig.source || url,
+  };
 }
 
 interface CallFrame {
@@ -89,10 +129,15 @@ interface FoldEntry {
 const folded = new Map<string, FoldEntry>();
 for (const n of profile.nodes) {
   const f = n.callFrame;
-  const key = `${f.functionName || '(anon)'}|${f.url || ''}|${f.lineNumber}`;
+  const minified = f.functionName || '(anon)';
+  const { name, source } =
+    f.url && (f.lineNumber >= 0 || f.columnNumber >= 0)
+      ? demangle(f.url, f.lineNumber, f.columnNumber, minified)
+      : { name: minified, source: f.url || '' };
+  const key = `${name}|${source}|${f.lineNumber}`;
   const e: FoldEntry = folded.get(key) || {
-    name: f.functionName || '(anon)',
-    url: f.url || '',
+    name,
+    url: source,
     line: f.lineNumber,
     self: 0,
     total: 0,

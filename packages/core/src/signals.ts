@@ -1,4 +1,5 @@
 import { Signal } from 'signal-polyfill';
+import { getCurrentContext } from './component';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -267,7 +268,7 @@ function _effect(fn: () => undefined | Dispose): Dispose {
   watcher.watch(c);
   c.get();
 
-  return () => {
+  const dispose = () => {
     if (disposed) return;
     disposed = true;
     pendingUnwatch.push(c);
@@ -278,6 +279,16 @@ function _effect(fn: () => undefined | Dispose): Dispose {
       cl();
     }
   };
+
+  // Auto-register with the current component/render context so reactive
+  // bindings created inside a template (or inside an each() entry, a
+  // component, etc.) are torn down when that scope unmounts. Without this,
+  // the polyfill's Watcher keeps the Computed alive forever — a real leak
+  // for churning lists.
+  const ctx = getCurrentContext();
+  if (ctx) (ctx.disposers ??= []).push(dispose);
+
+  return dispose;
 }
 
 // ---------------------------------------------------------------------------

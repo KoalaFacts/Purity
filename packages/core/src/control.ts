@@ -1,4 +1,4 @@
-import { getCurrentContext } from './component';
+import { ComponentContext, getCurrentContext, popContext, pushContext } from './component';
 import type { StateAccessor } from './signals';
 import { state, watch } from './signals';
 
@@ -212,7 +212,44 @@ interface EachEntry<T = unknown> {
   // on key reuse with new data, we set this signal and any reactive bindings
   // inside the template re-fire — zero DOM creation.
   data: StateAccessor<T>;
-  dispose?: () => void;
+  // Per-entry context. Reactive bindings created inside mapFn auto-register
+  // their dispose here (via watch() -> getCurrentContext()). Walked when the
+  // entry is removed to release the polyfill's Watcher references.
+  ctx: ComponentContext;
+}
+
+// Run mapFn under a fresh per-entry context so reactive bindings (and any
+// onDispose() the user adds) attach to the entry, not the outer scope.
+function runEntryMapFn<T>(
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  data: StateAccessor<T>,
+  index: number,
+  parentCtx: ComponentContext | null,
+): { entry: EachEntry<T>; content: Node | DocumentFragment | string } {
+  const ctx = new ComponentContext();
+  if (parentCtx) ctx.parent = parentCtx;
+  pushContext(ctx);
+  let content: Node | DocumentFragment | string;
+  try {
+    content = mapFn(data, index);
+  } finally {
+    popContext();
+  }
+  // nodes is filled in by the caller (it knows which extraction strategy applies)
+  return { entry: { nodes: [], data, ctx }, content };
+}
+
+function disposeEntry(entry: EachEntry): void {
+  const disposers = entry.ctx.disposers;
+  if (!disposers) return;
+  for (let i = 0; i < disposers.length; i++) {
+    try {
+      disposers[i]();
+    } catch (e) {
+      console.error('[Purity] Error during each() entry dispose:', e);
+    }
+  }
+  entry.ctx.disposers = null;
 }
 
 // Bulk remove all managed nodes using Range API — O(1) native batch removal
@@ -234,10 +271,10 @@ function bulkClear<T>(
     range.deleteContents();
   }
 
-  // Run disposers
+  // Dispose per-entry watch handles so the polyfill's Watcher releases them
   for (let i = 0; i < prevLen; i++) {
-    const entry = keyToEntry.get(prevKeys[i])!;
-    if (entry.dispose) entry.dispose();
+    const entry = keyToEntry.get(prevKeys[i]);
+    if (entry) disposeEntry(entry);
   }
 }
 
@@ -330,6 +367,8 @@ export function each<T>(
 
     // Fast path: all new items (first render or full replace with new keys)
     // Single pass — create + append + build map in one loop
+    const ownerCtx = getCurrentContext();
+
     if (prevLen === 0) {
       const newKeys2: unknown[] = new Array(len);
       const frag = document.createDocumentFragment();
@@ -337,21 +376,20 @@ export function each<T>(
         const item = list[i];
         newKeys2[i] = getKey(item, i);
         const data = state(item);
-        const content = mapFn(data, i);
-        let nodes: Node[];
+        const { entry, content } = runEntryMapFn(mapFn, data, i, ownerCtx);
         if (content instanceof DocumentFragment) {
           const fc = content.firstChild;
-          nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
+          entry.nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
           frag.appendChild(content);
         } else if (content instanceof Node) {
-          nodes = [content];
+          entry.nodes = [content];
           frag.appendChild(content);
         } else {
           const tn = document.createTextNode(String(content ?? ''));
-          nodes = [tn];
+          entry.nodes = [tn];
           frag.appendChild(tn);
         }
-        keyToEntry.set(newKeys2[i], { nodes, data });
+        keyToEntry.set(newKeys2[i], entry);
       }
       parent.insertBefore(frag, endMarker);
       prevKeys = newKeys2;
@@ -374,7 +412,9 @@ export function each<T>(
         reuseCount++;
       } else {
         const data = state(item);
-        newEntries.set(key, { nodes: extractNodes(mapFn(data, i)), data });
+        const { entry, content } = runEntryMapFn(mapFn, data, i, ownerCtx);
+        entry.nodes = extractNodes(content);
+        newEntries.set(key, entry);
       }
     }
 
@@ -404,7 +444,7 @@ export function each<T>(
               const node = entry.nodes[j];
               if (node.parentNode) node.parentNode.removeChild(node);
             }
-            if (entry.dispose) entry.dispose();
+            disposeEntry(entry);
           }
         }
       }
@@ -552,9 +592,7 @@ export function each<T>(
   if (ctx) {
     (ctx.disposers ??= []).push(() => {
       dispose();
-      for (const entry of keyToEntry.values()) {
-        if (entry.dispose) entry.dispose();
-      }
+      for (const entry of keyToEntry.values()) disposeEntry(entry);
       keyToEntry.clear();
       prevKeys = [];
     });

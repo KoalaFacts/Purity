@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { html } from '../src/compiler/compile.ts';
-import { mount } from '../src/component.ts';
+import { mount, onDispose } from '../src/component.ts';
 import { each, match } from '../src/control.ts';
-import { state } from '../src/signals.ts';
+import { state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
@@ -928,5 +928,102 @@ describe('each — no keyFn (item identity)', () => {
     items(['a', 'b', 'd']);
     await tick();
     expect([...c.querySelectorAll('li')].map((l) => l.textContent)).toEqual(['a', 'b', 'd']);
+  });
+});
+
+describe('each — entry disposer registration (leak regression)', () => {
+  it('runs onDispose() registered inside mapFn when entry is removed', async () => {
+    const items = state([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    const disposed: number[] = [];
+    const c = document.createElement('ul');
+    c.appendChild(
+      each(
+        () => items(),
+        (item: () => { id: number }) => {
+          const li = document.createElement('li');
+          li.textContent = String(item().id);
+          // onDispose registers with the current ComponentContext. After the
+          // each() entry-context fix, that context is the per-entry one, so
+          // this fires when the entry is removed (not when the outer scope
+          // unmounts).
+          const id = item().id;
+          onDispose(() => disposed.push(id));
+          return li;
+        },
+        (item: { id: number }) => item.id,
+      ),
+    );
+    await tick();
+    expect(disposed).toEqual([]);
+
+    items([{ id: 1 }, { id: 3 }]);
+    await tick();
+    expect(disposed).toEqual([2]);
+
+    items([{ id: 1 }]);
+    await tick();
+    expect(disposed.sort()).toEqual([2, 3]);
+  });
+
+  it('disposes all entries on bulk clear (full -> empty)', async () => {
+    let disposeCount = 0;
+    const items = state(Array.from({ length: 25 }, (_, i) => ({ id: i })));
+    const c = document.createElement('ul');
+    c.appendChild(
+      each(
+        () => items(),
+        (item: () => { id: number }) => {
+          const li = document.createElement('li');
+          li.textContent = String(item().id);
+          onDispose(() => disposeCount++);
+          return li;
+        },
+        (item: { id: number }) => item.id,
+      ),
+    );
+    await tick();
+    expect(disposeCount).toBe(0);
+
+    items([]);
+    await tick();
+    expect(disposeCount).toBe(25);
+  });
+
+  it('reactive watch handles inside the entry are unwatched on removal', async () => {
+    // Indirect proof: count how many times a reactive binding's body runs
+    // for an item AFTER it has been removed from the list. With the leak,
+    // the entry's watch stays registered with the global watcher and re-runs
+    // on subsequent flushes; with the fix, it is unwatched and never re-runs.
+    const items = state([{ id: 1 }, { id: 2 }]);
+    const externalSig = state(0);
+    const runs: number[] = []; // ids of items whose binding ran
+    const c = document.createElement('ul');
+    c.appendChild(
+      each(
+        () => items(),
+        (item: () => { id: number }) => {
+          const li = document.createElement('li');
+          watch(() => {
+            externalSig();
+            runs.push(item().id);
+          });
+          return li;
+        },
+        (item: { id: number }) => item.id,
+      ),
+    );
+    await tick();
+    expect(runs.sort()).toEqual([1, 2]);
+    runs.length = 0;
+
+    // Remove item 2
+    items([{ id: 1 }]);
+    await tick();
+    runs.length = 0;
+
+    // Pulse externalSig — only item 1's binding should re-run
+    externalSig(1);
+    await tick();
+    expect(runs).toEqual([1]);
   });
 });

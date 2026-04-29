@@ -22,7 +22,13 @@ function escapeAttr(s: string): string {
     .replace(/>/g, '&gt;');
 }
 
-const SAFE_NAME = /^[a-zA-Z_][\w.-]*$/;
+// Tag and attribute names from the parsed AST are spliced into generated JS
+// (property accessors, addEventListener / setAttribute string args). The
+// regex disallows anything that could escape an identifier or string literal
+// — no dots, brackets, quotes, whitespace, or control chars — so spliced
+// names cannot inject code. Names are also passed through JSON.stringify at
+// every emission site, so the safety is layered.
+const SAFE_NAME = /^[a-zA-Z_][\w-]*$/;
 function assertSafeName(name: string, kind: string): void {
   if (!SAFE_NAME.test(name)) throw new Error(`[Purity] Invalid ${kind} name: "${name}"`);
 }
@@ -210,16 +216,17 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
   const setupParts: string[] = [];
   const reactiveParts: string[] = [];
 
-  setupParts.push(`var _e=document.createElement('${tpl.tag}');`);
+  setupParts.push(`var _e=document.createElement(${JSON.stringify(tpl.tag)});`);
 
   // Static attributes
   for (const a of tpl.staticAttrs) {
     if (a.name === 'id' || a.name === 'class') {
-      setupParts.push(
-        `_e.${a.name === 'class' ? 'className' : a.name}=${JSON.stringify(a.value)};`,
-      );
+      const prop = a.name === 'class' ? 'className' : 'id';
+      setupParts.push(`_e.${prop}=${JSON.stringify(a.value)};`);
     } else {
-      setupParts.push(`_e.setAttribute('${a.name}',${JSON.stringify(a.value || '')});`);
+      setupParts.push(
+        `_e.setAttribute(${JSON.stringify(a.name)},${JSON.stringify(a.value || '')});`,
+      );
     }
   }
 
@@ -230,52 +237,55 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
     const av = `_av${id}`;
     const fl = `_af${id}`;
     const val = `_v[${a.index}]`;
+    const qname = JSON.stringify(a.name);
     switch (a.kind) {
       case 'event':
-        setupParts.push(`_e.addEventListener('${a.name}',${val});`);
+        setupParts.push(`_e.addEventListener(${qname},${val});`);
         break;
       case 'dynamic':
         setupParts.push(
           `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
-          `if(!${fl}&&${av}!=null&&${av}!==false)_e.setAttribute('${a.name}',String(${av}));`,
+          `if(!${fl}&&${av}!=null&&${av}!==false)_e.setAttribute(${qname},String(${av}));`,
         );
         reactiveParts.push(
-          `if(${fl}){var v${id}=${av}();if(v${id}==null||v${id}===false)_e.removeAttribute('${a.name}');else _e.setAttribute('${a.name}',String(v${id}));}`,
+          `if(${fl}){var v${id}=${av}();if(v${id}==null||v${id}===false)_e.removeAttribute(${qname});else _e.setAttribute(${qname},String(v${id}));}`,
         );
         break;
       case 'bool':
         setupParts.push(
           `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
-          `if(!${fl}&&${av})_e.setAttribute('${a.name}','');`,
+          `if(!${fl}&&${av})_e.setAttribute(${qname},'');`,
         );
         reactiveParts.push(
-          `if(${fl}){if(${av}())_e.setAttribute('${a.name}','');else _e.removeAttribute('${a.name}');}`,
+          `if(${fl}){if(${av}())_e.setAttribute(${qname},'');else _e.removeAttribute(${qname});}`,
         );
         break;
       case 'prop':
         setupParts.push(
           `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
-          `if(!${fl})_e.${a.name}=${av};`,
+          `if(!${fl})_e[${qname}]=${av};`,
         );
-        reactiveParts.push(`if(${fl})_e.${a.name}=${av}();`);
+        reactiveParts.push(`if(${fl})_e[${qname}]=${av}();`);
         break;
       case 'reactive-prop':
         setupParts.push(
           `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
-          `if(!${fl})_e['${a.name}']=${av};`,
+          `if(!${fl})_e[${qname}]=${av};`,
         );
-        reactiveParts.push(`if(${fl})_e['${a.name}']=${av}();`);
+        reactiveParts.push(`if(${fl})_e[${qname}]=${av}();`);
         break;
       case 'bind': {
         // Bind keeps its own watch (asymmetric: signal -> el and listener -> signal).
         const evt = a.name === 'checked' || a.name === 'group' ? 'change' : 'input';
+        const qevt = JSON.stringify(evt);
         if (a.name === 'group') {
           setupParts.push(
             `if(typeof ${val}==='function'){if(_e.type==='radio'){_w(function(){_e.checked=${val}()===_e.value;});_e.addEventListener('change',function(){if(_e.checked)${val}(_e.value);});}else{_w(function(){_e.checked=${val}().includes(_e.value);});_e.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(_e.value);if(_e.checked){if(i===-1)a.push(_e.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
           );
         } else {
+          const readSrc = a.name === 'checked' ? '_e.checked' : `_e[${qname}]`;
           setupParts.push(
-            `if(typeof ${val}==='function'){_w(function(){_e['${a.name}']=${val}();});_e.addEventListener('${evt}',function(){${val}(${a.name === 'checked' ? '_e.checked' : `_e['${a.name}']`});});}`,
+            `if(typeof ${val}==='function'){_w(function(){_e[${qname}]=${val}();});_e.addEventListener(${qevt},function(){${val}(${readSrc});});}`,
           );
         }
         break;
@@ -644,22 +654,23 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
   const av = `_av${id}`;
   const fl = `_af${id}`;
   const val = `_v[${attr.index}]`;
+  const qname = JSON.stringify(attr.name);
 
   switch (attr.kind) {
     case 'event':
-      return { setup: `${el}.addEventListener('${attr.name}',${val});`, reactive: '' };
+      return { setup: `${el}.addEventListener(${qname},${val});`, reactive: '' };
 
     case 'dynamic': {
       const setup = [
         `var ${av}=${val};`,
         `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl}&&${av}!=null&&${av}!==false)${el}.setAttribute('${attr.name}',String(${av}));`,
+        `if(!${fl}&&${av}!=null&&${av}!==false)${el}.setAttribute(${qname},String(${av}));`,
       ].join('');
       const reactive = [
         `if(${fl}){`,
         `var v${id}=${av}();`,
-        `if(v${id}==null||v${id}===false)${el}.removeAttribute('${attr.name}');`,
-        `else ${el}.setAttribute('${attr.name}',String(v${id}));`,
+        `if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});`,
+        `else ${el}.setAttribute(${qname},String(v${id}));`,
         `}`,
       ].join('');
       return { setup, reactive };
@@ -669,25 +680,24 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
       const setup = [
         `var ${av}=${val};`,
         `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl}&&${av})${el}.setAttribute('${attr.name}','');`,
+        `if(!${fl}&&${av})${el}.setAttribute(${qname},'');`,
       ].join('');
       const reactive = [
         `if(${fl}){`,
-        `if(${av}())${el}.setAttribute('${attr.name}','');`,
-        `else ${el}.removeAttribute('${attr.name}');`,
+        `if(${av}())${el}.setAttribute(${qname},'');`,
+        `else ${el}.removeAttribute(${qname});`,
         `}`,
       ].join('');
       return { setup, reactive };
     }
 
     case 'prop': {
-      const n = attr.name;
       const setup = [
         `var ${av}=${val};`,
         `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl})${el}.${n}=${av};`,
+        `if(!${fl})${el}[${qname}]=${av};`,
       ].join('');
-      const reactive = `if(${fl})${el}.${n}=${av}();`;
+      const reactive = `if(${fl})${el}[${qname}]=${av}();`;
       return { setup, reactive };
     }
 
@@ -695,9 +705,9 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
       const setup = [
         `var ${av}=${val};`,
         `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl})${el}['${attr.name}']=${av};`,
+        `if(!${fl})${el}[${qname}]=${av};`,
       ].join('');
-      const reactive = `if(${fl})${el}['${attr.name}']=${av}();`;
+      const reactive = `if(${fl})${el}[${qname}]=${av}();`;
       return { setup, reactive };
     }
 
@@ -707,6 +717,7 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
       // The setup includes both. Folding doesn't help here because the
       // listener is per-input.
       const evt = attr.name === 'checked' || attr.name === 'group' ? 'change' : 'input';
+      const qevt = JSON.stringify(evt);
       if (attr.name === 'group') {
         return {
           setup: [
@@ -717,8 +728,9 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
           reactive: '',
         };
       }
+      const readSrc = attr.name === 'checked' ? `${el}.checked` : `${el}[${qname}]`;
       return {
-        setup: `if(typeof ${val}==='function'){_w(function(){${el}['${attr.name}']=${val}();});${el}.addEventListener('${evt}',function(){${val}(${attr.name === 'checked' ? `${el}.checked` : `${el}['${attr.name}']`});});}`,
+        setup: `if(typeof ${val}==='function'){_w(function(){${el}[${qname}]=${val}();});${el}.addEventListener(${qevt},function(){${val}(${readSrc});});}`,
         reactive: '',
       };
     }

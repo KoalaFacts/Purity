@@ -65,10 +65,6 @@ const pendingEffects: ComputedNode[] = [];
 const MAX_EFFECT_DEPTH = 100;
 let effectDepth = 0;
 
-function isComputed(node: AnyNode): node is ComputedNode {
-  return node.fn !== null;
-}
-
 // ---------------------------------------------------------------------------
 // read / write / track
 // ---------------------------------------------------------------------------
@@ -289,20 +285,6 @@ function runComputed(node: ComputedNode): void {
         if (obs[i].status === STATUS_CHECK) obs[i].status = STATUS_DIRTY;
       }
     }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// untrack
-// ---------------------------------------------------------------------------
-
-function untrack<T>(fn: () => T): T {
-  const prev = activeListener;
-  activeListener = null;
-  try {
-    return fn();
-  } finally {
-    activeListener = prev;
   }
 }
 

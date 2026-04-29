@@ -1,313 +1,274 @@
-# How Modern Frameworks Optimize
+# Closing the gap — research
 
-Research notes on the techniques used by today's mainstream and
-high-performance frameworks (React, Solid, Svelte 5, Vue 3 / Vapor, Qwik,
-Million.js, Preact Signals, Marko, Inferno) to make UI updates fast. Compiled
-April 2026.
+Notes from the head-to-head benchmark (`benchmark/run-bench.ts`) comparing
+Purity 0.1 against Solid 1.9, Svelte 5.55, and Vue 3.6β. We have the
+honest numbers now. This document is the plan to close the gaps that
+matter, in priority order.
 
-The goal is to map each technique to the framework that best exemplifies it,
-note the cost it eliminates, and call out which ideas are already present in
-Purity's design vs. which could inform future work.
-
----
-
-## 1. Compile-time templates → cloned DOM nodes
-
-**Frameworks:** Solid.js, Vue Vapor, Svelte, Marko, Purity (already).
-
-**Idea:** At build time, parse JSX/template strings into a static HTML
-skeleton plus a small "edits list" of where dynamic values plug in. At
-runtime, the skeleton is parsed once into a `<template>` element, and each
-render `cloneNode(true)`s it and binds the dynamic slots.
-
-**Why it's fast:**
-- `template.content.cloneNode(true)` is the fastest way to mint a DOM tree —
-  the parser ran once, ever.
-- Static attributes/text never participate in any diff or update path.
-- The "edits" can target nodes by positional path, no `querySelector` and no
-  `TreeWalker`.
-
-**In Solid:** the JSX compiler "extracts static HTML into cloned template
-nodes and wraps dynamic expressions in fine-grained subscriptions" ([Solid
-docs](https://docs.solidjs.com/advanced-concepts/fine-grained-reactivity)).
-
-**In Vue Vapor:** "the Vue-Vapor compiler analyzes components during the
-build, optimizing reactivity, conditional render paths, loops and event
-handlers by hard-wiring them into DOM manipulations" ([BLUESHOE](https://www.blueshoe.io/blog/vue-vapor-performance-without-virtual-dom/)).
-
-**In Purity today:** This is exactly what `packages/core/src/compiler/`
-already does — `parser.ts` builds an AST, `codegen.ts` emits a function that
-clones a template and runs positional binders, and `compile.ts` caches per
-`TemplateStringsArray` via `WeakMap`.
+**TL;DR:** the dominant cost is **watch() creation** at ~5μs per call. A
+keyed list with 10k rows × 5 reactive bindings = 50k watches = **~250ms
+of pure setup overhead**, which is most of the gap to Solid/Svelte. Three
+attack vectors close most of this, ranked by leverage.
 
 ---
 
-## 2. Fine-grained reactivity (signals, no component re-execution)
+## What the bench measured
 
-**Frameworks:** Solid.js, Preact Signals, Vue 3 (refs), Svelte 5 (runes),
-Qwik (signals), Angular (v17+ signals), Purity (TC39 Signals).
+After fixing the broken render and dropping the unfair vanilla-DOM
+hand-tuning that was masking it, Purity's honest numbers (medians,
+3 timed iterations after 3 warmups, double-rAF paint timing in headless
+Chromium):
 
-**Idea:** Replace "re-run the whole component on state change" with a
-dependency graph: each binding subscribes only to the signals it reads, and
-only those bindings re-execute when those signals change.
+| Workload | Purity | Solid | Svelte | Vue |
+|---|---|---|---|---|
+| Create 10k rows | **598** | 519 | 509 | 525 |
+| Append 10k rows | **1417** | 526 | 517 | 590 |
+| Replace 10k rows | **715** | 512 | 512 | 569 |
+| Add 10k cart items | **513** | 401 | 339 | 286 |
+| Create 10k components | **182** | 129 | 142 | 162 |
+| Update every 10th (10k) | 157 | 127 | **125** | 145 |
+| Sort 10k by ID ↓ | 253 | 251 | 4591¹ | 255 |
+| Update all 10k bound inputs | **32** | 199 | 192 | 211 |
+| Toggle/Select/Deselect all 10k | **62-69** | 134-145 | **47-53** | 49-53 |
 
-**Why it's fast:**
-- Update cost scales with the number of *changed bindings*, not the size of
-  the component tree.
-- No reconciliation. No keyed-children diff at the component level.
-- "Components run once as factory functions to set up a reactive graph,
-  then never re-execute" ([Solid
-  docs](https://docs.solidjs.com/concepts/intro-to-reactivity)).
+¹ Svelte regression on this op only.
 
-**Lazy / pull-based computeds.** In Svelte 5, "the `$derived` rune is *lazy*
-— it doesn't calculate the value until something actually needs to read it"
-([Svelte blog](https://svelte.dev/blog/runes)). Vue 3.4+, Preact Signals,
-and signal-polyfill all do this via version counters: a computed only
-recomputes if a transitive source has actually changed.
+**Wins** are real: granular per-row signal updates (`update`, `toggle`,
+`select`) where the per-row signal architecture (Path B) shines — Purity
+ties or beats Solid by 2× on these.
 
-**Push-pull hybrid.** Most modern signal libraries push *invalidations* eagerly
-(mark dirty) but pull *values* lazily (only recompute on read). This avoids
-recomputing hidden / off-screen branches.
+**Losses** cluster on bulk creation/replacement at 10k scale where the
+gap is 17–80%. Memory tells the same story: Purity uses ~3× the heap of
+Solid/Svelte during creation (28MB vs 9MB for 10k rows). The leak is now
+fixed (`57f796f`); the **structural** cost remains.
 
-**Diamond-dependency stability.** A → B, A → C, B and C → D should re-run D
-once, not twice. Implemented via topological scheduling (Solid, Preact
-Signals) or version vectors (Vue 3.4+, signal-polyfill).
+## Where the cost actually lives
 
-**In Purity today:** uses `signal-polyfill` (TC39 reference impl) which
-gives push-pull, lazy computeds, and version-counter diamond resolution out
-of the box. The work in `packages/core/src/signals.ts` is mostly scheduling
-glue around the polyfill.
+Per-op probe in jsdom (10k iterations each, on this branch's source):
 
----
+```
+Signal.State allocation:                      0.1μs/op
+state() (Signal.State + bind + accessor):     0.2μs/op
+Signal.Computed allocation:                   0.2μs/op
+compute() (Signal.Computed + bind + accessor): 1.3μs/op
+watch() create + dispose:                     4.9μs/op   ← the killer
+signal read:                                 ~0.05μs/op
+signal write (no watchers):                   0.2μs/op
+```
 
-## 3. Compiler-driven auto-memoization
+The polyfill's `Signal.Computed` itself is cheap (0.2μs). What costs is
+`watch()` — wrapping a fn into a Computed, registering with the
+`Signal.subtle.Watcher`, and running once. Each reactive `${() => ...}`
+in a template = one watch.
 
-**Framework:** React Compiler (1.0 shipped late 2025).
+**Per 10k-row render with 5 reactive bindings per row:**
 
-**Idea:** Static analysis of every JSX subtree and hook in a component to
-determine which props/values are *actually* used to produce which JSX nodes,
-then auto-insert `useMemo`/`memo`-equivalent caching at exactly the right
-granularity.
+| Cost | Calculation | ms |
+|---|---|---|
+| Per-item state() (Path B) | 10k × 0.2μs | 2 |
+| Per-binding watch() create + run | 50k × ~3μs | **~150** |
+| watcher.watch() registrations | 50k × ~0.5μs | **~25** |
+| DOM creation | (varies, dominates total) | ~300-400 |
+| **Total signal-machinery overhead** |  | **~175ms** |
 
-**Why it's fast:**
-- "By default, it targets granular memoization at the prop level rather than
-  entire component trees. Instead of wrapping every component with
-  `React.memo`, the compiler injects checks around individual props,
-  skipping subtrees whose inputs haven't changed" ([Pockit
-  blog](https://pockit.tools/blog/react-compiler-automatic-memoization-performance-guide/)).
-- "The compiler memoizes each JSX element independently rather than
-  memoizing the component as a whole."
-- Real-world impact: Meta reports "up to 12% faster loads and 2.5× quicker
-  interactions" ([InfoQ](https://www.infoq.com/news/2025/12/react-compiler-meta/));
-  Sanity Studio reported "20–30% overall reduction in render time and
-  latency."
+The 175ms is exactly the gap to Svelte (89–200ms across these workloads).
+Closing it means cutting the watch() cost.
 
-**Why frameworks with fine-grained reactivity don't need this:** in Solid /
-Svelte / Vue Vapor / Purity, the compiler/runtime already updates exactly
-the bindings that read changed signals — there's no subtree to memoize
-because there's no subtree re-execution.
+For comparison — Solid's `createSignal` is a 4-field object with a bound
+closure. Polyfill's `Signal.Computed` is `Object.create(COMPUTED_NODE)`
+with **16 inherited fields** plus per-instance `value`, `error`, `equal`,
+`computation`, `wrapper` — roughly 350-400 bytes per instance vs Solid's
+~150-200. That's the 2× memory ratio we see in benchmark heap snapshots.
 
----
+## Three attack vectors, ranked
 
-## 4. Block / static-analysis VDOM
+### 1. Single-watch-per-template-instance — biggest leverage
 
-**Framework:** Million.js (and the original blockdom).
+**The ask.** Today, the codegen emits one `_w(function(){...})` call per
+reactive `${...}` in a template. A 5-field row creates 5 Computeds per
+row × 10k rows = 50k Computeds.
 
-**Idea:** Keep a virtual DOM, but compile each component into a "block": a
-static skeleton plus an *edit map* listing only the dynamic positions. Diffs
-walk the edit map (size = number of dynamic holes), not the rendered tree.
+A row template's bindings overwhelmingly read the **same per-item
+signal**. They invalidate together. There's no benefit from independent
+dependency tracking — they all want to re-run when `item()` changes.
 
-**Why it's fast:**
-- "The virtual DOM is analyzed to extract dynamic parts of the tree into an
-  Edit Map… once a difference is determined, the DOM can be directly
-  updated" ([Million.js docs](https://old.million.dev/blog/virtual-dom)).
-- Million claims it "turns React reconciliation from O(n) to O(1)" relative
-  to the static portion of the tree — i.e. static content is free at diff
-  time.
-- A useful framing for codebases that *can't* abandon the VDOM (large React
-  apps).
+**The fix.** Emit one `_w(function(){...})` per template instance whose
+body updates **all** the reactive bindings:
 
-**Conceptually adjacent to:** Solid's compiler-extracted templates and
-Inferno's `createVNode` flags. The common idea is "tell the runtime which
-parts can possibly change, so it never looks at the rest."
+```js
+// before — N watches per row
+_w(() => { td0.firstChild.data = String(item().id) });
+_w(() => { td1.firstChild.data = item().label });
+_w(() => { td2.firstChild.data = String(item().qty) });
 
----
+// after — one watch per row
+_w(() => {
+  const v = item();
+  td0.firstChild.data = String(v.id);
+  td1.firstChild.data = v.label;
+  td2.firstChild.data = String(v.qty);
+});
+```
 
-## 5. Resumability (skip hydration entirely)
+**Tradeoff.** When any one of `id`/`label`/`qty` changes, all three
+update — even the ones whose value didn't change. For row templates this
+is irrelevant (they all change together, or none do). Text-node assignment
+is ~50ns per binding so worst-case cost is negligible.
 
-**Framework:** Qwik.
+**Where it doesn't apply.** Templates where bindings track *different*
+upstream signals (e.g. `${a()}` and `${b()}` in the same template, where
+`a` and `b` are independent module-level signals). Detect at compile
+time: if two bindings' AST source overlaps in identifiers they read,
+fold them; if disjoint, keep separate.
 
-**Idea:** Don't re-execute the component tree on the client to "hydrate"
-event listeners and reactivity graphs. Instead, serialize all of that state
-into the HTML on the server and *resume* execution only when the user
-interacts.
+**Implementation.**
+- Codegen change in `packages/core/src/compiler/codegen.ts` —
+  `genPositionalBindings` already collects all reactive slots; instead of
+  emitting one `_w` per slot, accumulate the body of all of them into one
+  `_w`.
+- Static analysis: scan the expression sources of each `${}` for shared
+  identifier reads. If they share at least one (e.g. `item`), fold.
+- If split needed, emit two separate watches.
 
-**Why it's fast:**
-- "Hydration is when an application is downloaded and executed twice, once
-  as HTML and again as JavaScript… [it] must execute before the app becomes
-  interactive" ([Builder.io](https://www.builder.io/blog/resumability-vs-hydration)).
-- "By serializing the component boundaries, event listeners, and
-  reactivity graph, a resumable framework can continue executing where the
-  server left off" ([Qwik
-  docs](https://qwik.dev/docs/concepts/resumable/)).
-- "A button is interactive before any code execution with resumability."
-- "Qwik allows any component to be resumed without the parent component
-  code being present" — letting you fetch only the JS for the component the
-  user is interacting with.
+**Estimated gain.** With 5 bindings per row collapsed to 1 watch:
+- watch() cost: 50k × 3μs → 10k × 3μs = saves **120ms** on Create 10k.
+- Memory: 50k Computeds × 350 bytes → 10k = saves **14MB**.
 
-**Cost paid:** non-trivial serialization format and a build-time
-chunker/optimizer that splits the app into per-listener bundles.
+Closes most of the gap to Svelte on the bulk-creation workloads. Doesn't
+hurt the per-row update workloads where Purity already wins.
 
----
+**Effort.** Compiler-only change in `codegen.ts`. ~1–2 days plus
+careful tests around the binding-folding heuristic. Risk: medium —
+correctness of the binding-grouping analysis matters.
 
-## 6. Server-aware compilation (don't ship reactivity to SSR)
+### 2. Hand-tuned signal implementation — replaces polyfill
 
-**Framework:** Svelte 5.
+**The ask.** Replace `signal-polyfill` with a Solid-shaped 4-field
+signal + minimal effect runner. The polyfill is generic and pays
+fields/methods we never use (`equal.call(node.wrapper, ...)`,
+`producerRecomputeValue`, `consumerOnSignalRead`, `liveConsumerNode`,
+`producerLastReadVersion`, etc.).
 
-**Idea:** Reactivity primitives are only useful where the value can change.
-On the server, output is a one-shot string — the whole signal apparatus is
-dead weight.
+**The fix.** A ~300-400 line module under `packages/core/src/reactivity/`:
 
-**Implementation:** "When compiling in server-side rendering mode, the
-compiler can ditch the signals altogether, since on the server they're
-nothing but overhead" ([Svelte blog](https://svelte.dev/blog/runes)). Svelte
-also strips the `$state` wrapper entirely if a value is never written:
-"Runes are not dumb wrappers — if a value is effectively a constant, the
-wrapper gets erased" ([PkgPulse](https://www.pkgpulse.com/blog/svelte-5-runes-complete-guide-2026)).
+```ts
+interface State<T> { value: T; observers: Effect[] | null; equals?: (a:T,b:T)=>boolean }
+interface Effect { fn: () => void; sources: State<any>[]; clean: () => void; }
 
-**Generalization:** the same compiler can emit different runtimes for
-different targets (SSR, hydration, CSR-only, edge). Svelte and Vue Vapor
-both ship multiple per-mode outputs from one source.
+let listener: Effect | null = null;
 
----
+function read<T>(s: State<T>): T {
+  if (listener && !listener.sources.includes(s)) {
+    listener.sources.push(s);
+    (s.observers ??= []).push(listener);
+  }
+  return s.value;
+}
+function write<T>(s: State<T>, v: T): void {
+  if (s.equals ? s.equals(s.value, v) : Object.is(s.value, v)) return;
+  s.value = v;
+  if (s.observers) schedule(s.observers);
+}
+function effect(fn: () => void): () => void {
+  const e: Effect = { fn, sources: [], clean: noop };
+  const prev = listener; listener = e;
+  try { fn(); } finally { listener = prev; }
+  return () => unsubscribe(e);
+}
+```
 
-## 7. Keyed-list reorder via Longest Increasing Subsequence
+Plus a microtask flush, dirty-bit dedupe, and a `compute` that's a
+read-cached effect. No `Symbol(SIGNAL)` indirection, no wrapper objects,
+no introspection API surface, no consumer/producer dual-direction
+tracking we don't use.
 
-**Frameworks:** Inferno, Vue 3, Svelte, Purity (already).
+**Tradeoff.** We lose the future "drop-in TC39 Signal API" — but we can
+keep the public Purity API (`state`, `compute`, `watch`) identical and
+swap the implementation underneath. Migration to native Signals later is
+still possible because the public API doesn't expose polyfill internals.
 
-**Idea:** When the keyed children of a list re-order, you want to perform
-the **minimum** number of DOM moves. The set of nodes that *don't* need to
-move is the longest increasing subsequence of new-position indices indexed
-by old positions; everything else must move.
+**Estimated gain.** Per-op: about 2× on the signal hot path (Solid's
+numbers from public benchmarks). For 10k-row rendering: state allocation
+2ms → 1ms (negligible), watch creation 150ms → ~75ms — saves another
+**~75ms** on top of #1. Memory drops further (~150 bytes per Computed
+instead of 350).
 
-**Cost:** O(n log n) for LIS, but the move count is provably minimal.
-Allocations are a few small arrays per list update.
+**Effort.** ~3–5 days including tests + benchmarks for diamond,
+fan-out, dynamic dependency, transition-to-clean, glitch-freedom. Risk:
+medium-high. Reactivity correctness is hard; the polyfill is battle-
+tested. Mitigation: keep polyfill behind a build flag for one minor
+release while the new impl proves out.
 
-**In Purity today:** implemented in `packages/core/src/control.ts:458-509`,
-with a fast path for append-only updates at `control.ts:406-424`.
+### 3. AOT-compile bindings to direct DOM mutations — Svelte/Vapor approach
 
----
+**The ask.** Skip the `watch()` wrapper entirely for compile-time-known
+bindings. Vue Vapor and Svelte 5 do this: at build time they know the
+shape of the DOM and which signals each text node depends on, so they
+emit `signal.onChange((v) => textNode.data = v)` directly.
 
-## 8. Batched, microtask-scheduled effect flush
+**The fix.** In the Vite plugin (`packages/vite-plugin/src/index.ts`),
+when compiling `<td>${() => item().label}</td>`:
 
-**Frameworks:** Vue 3, Solid (createRoot/batch), Preact Signals, Purity.
+```js
+// Today (after codegen):
+_w(() => { textNode.data = String(item().label); });
 
-**Idea:** A signal write doesn't run effects synchronously; it just marks
-them dirty. A microtask scheduled at the first dirty mark drains the queue
-once. This deduplicates updates from a burst of synchronous writes (e.g.
-inside an event handler) into a single DOM update.
+// AOT-compiled direct subscription:
+__purity_subscribe__(itemSignal, (v) => textNode.data = String(v.label));
+```
 
-**In Purity today:** see `packages/core/src/signals.ts:73-117` (`watcher` →
-`flush` via `queueMicrotask`) and the explicit `batch()` API.
+`__purity_subscribe__` is a primitive on our hand-tuned signal (#2)
+that takes `(signal, callback)` and pushes `callback` into the signal's
+observers list. **No `Effect` object, no listener dance, just
+`signal.observers.push(cb)`.**
 
----
+**Tradeoff.** Only works when the compiler can statically identify the
+upstream signal — i.e. for templates inside `each()` (where item is the
+known signal) and for top-level reactive scopes where the signal is a
+named binding. Doesn't work for arbitrary `${() => fn(a(), b())}` —
+falls back to `_w()`.
 
-## 9. Concurrent rendering and time-slicing
+**Combined with #1 + #2.** With single-watch-per-row + hand-tuned signals
++ direct subscription for static cases:
+- Per row: 1 subscribe call, no Effect alloc, ~0.5μs setup
+- 10k rows: 5ms total signal-machinery overhead
+- Closes the gap to Svelte completely; possibly beats it.
 
-**Framework:** React 18+ (concurrent mode).
+**Effort.** ~3–4 days. Requires #2 (we can't direct-subscribe on the
+polyfill — its `Signal.subtle.Watcher` requires a Computed wrapper).
 
-**Idea:** Treat rendering as cooperative work. The scheduler can pause a
-long render at component boundaries, yield to the browser, and resume —
-keeping the main thread responsive. Updates have priority levels
-(`startTransition`, `useDeferredValue`).
+## Other ideas considered, parked
 
-**Trade-off:** requires render to be pure and replayable. Doesn't combine
-naturally with fine-grained reactivity, where there's no "render pass" to
-pause — instead Solid/Svelte/Vue handle responsiveness by keeping individual
-updates O(changed bindings) rather than by yielding mid-render.
-
----
-
-## 10. Islands and streaming SSR
-
-**Frameworks:** Astro (islands), Marko (streaming + resumable), Solid Start,
-Next.js (RSC + streaming).
-
-**Islands** ship JavaScript only for the interactive components on a page,
-not the whole tree. Static parts are HTML-only and never hydrate.
-
-**Streaming SSR** writes HTML to the response as soon as each component
-resolves, rather than buffering the whole page. The browser starts
-parsing/painting before the server is done. Combined with Suspense
-boundaries this also defers slow data-dependent regions without blocking
-the shell.
-
----
-
-## 11. Avoiding allocations on the hot path
-
-A grab-bag that shows up across all of the above:
-
-- **Pre-bound methods.** Cache `signal.get.bind(signal)` once per signal so
-  every read is one function call, not a property lookup + bind. Solid does
-  this; Purity does this at `packages/core/src/signals.ts:158-159`.
-- **DOM Range / DocumentFragment** for batch insertion and removal of
-  contiguous nodes. Used by every framework that supports list rendering.
-  Purity uses both in `packages/core/src/control.ts:214-237`.
-- **Charcode comparisons over string methods** in the parser hot path —
-  avoids regex allocation and `.charAt` boxing. Purity does this in
-  `packages/core/src/compiler/parser.ts`.
-- **WeakMap caches keyed by template strings array.** Stable identity per
-  callsite, GC'd when the module is. Purity in
-  `packages/core/src/compiler/compile.ts:17-70`; Lit and Solid use the same
-  pattern.
-- **Skip data structures for tiny n.** Linear scan over a 4-element array
-  beats a `Set`. Many runtimes special-case n ≤ 1 or n ≤ 4 in their
-  scheduler.
-
----
-
-## How Purity stacks up
-
-| Technique | Purity status |
+| Idea | Why parked |
 |---|---|
-| Compile-time cloned templates | ✓ (`compiler/codegen.ts`, `compile.ts`) |
-| Fine-grained signal reactivity | ✓ (TC39 `signal-polyfill`) |
-| Lazy / version-counter computeds | ✓ (inherited from polyfill) |
-| Microtask-batched flush + `batch()` | ✓ (`signals.ts:73-117`) |
-| LIS keyed-list reorder + append fast path | ✓ (`control.ts:406-509`) |
-| WeakMap-cached compiled templates | ✓ (`compile.ts:17-70`) |
-| Charcode parser, no regex on hot path | ✓ (`compiler/parser.ts`) |
-| Scoped CSS via Shadow DOM (+ regex-free fallback) | ✓ (`styles.ts`) |
-| Compiler-driven auto-memoization (React Compiler-style) | N/A — fine-grained reactivity makes it unnecessary |
-| Block VDOM (Million.js) | N/A — no VDOM |
-| Resumability (Qwik) | ✗ — not currently a goal |
-| Server-mode signal stripping (Svelte) | ✗ — could inform a future SSR build target |
-| Concurrent rendering (React) | N/A — fine-grained model handles responsiveness differently |
-| Islands / streaming SSR | ✗ — depends on a future SSR story |
+| **Signal pooling** (recycle State/Computed) | The polyfill's State has internal version counters and observer lists; resetting is comparable in cost to allocation. Only worth it on the hand-tuned impl. |
+| **Avoid per-row state() wrapper** (Path B opt-out) | Would silently break correctness for the in-place update path that motivated Path B. |
+| **`flush()` micro-optimization** (small-batch dedupe etc.) | Already done in B3. ~9% on raw effect throughput; further gains here are sub-1ms in real workloads. |
+| **WASM signal primitives** | Cross-boundary call overhead exceeds the savings. |
+| **Concurrent rendering / time-slicing** | Architectural mismatch — Purity is fine-grained, not VDOM. |
 
-The patterns Purity already uses match the consensus across Solid, Svelte 5,
-and Vue Vapor. The two ideas worth flagging for future exploration if Purity
-ever adds an SSR story: **server-mode signal stripping** (compile out the
-reactivity layer when emitting HTML) and **resumability-style listener
-serialization** (skip a hydration pass entirely).
+## Suggested order of attack
 
----
+1. **Ship #1 first** (single-watch-per-template). Compiler-only,
+   no API change, ~80% of the gain. Effort: 1–2 days.
+2. **Validate #1 closes most of the gap** with a re-run of the
+   head-to-head bench. If it does (likely lands within 5–10% of Svelte
+   on bulk creation), stop and ship.
+3. **Decide on #2** (replace polyfill) based on whether the residual gap
+   matters for the use case Purity targets. Cost is real (3–5 days +
+   risk); benefit is real but smaller after #1.
+4. **#3 (AOT direct-subscribe) is gated on #2** and only relevant if
+   we want to compete with Svelte on the *very* tight workloads.
 
-## Sources
+## Where this won't matter
 
-- [React — Introducing the React Compiler](https://react.dev/learn/react-compiler/introduction)
-- [React Compiler 1.0 — InfoQ](https://www.infoq.com/news/2025/12/react-compiler-meta/)
-- [React Compiler Deep Dive — Pockit](https://pockit.tools/blog/react-compiler-automatic-memoization-performance-guide/)
-- [Vue 3.6 Vapor Mode — Jeff Bruchado](https://jeffbruchado.com.br/en/blog/vue-36-vapor-mode-performance-revolution-2026)
-- [Vue Vapor — BLUESHOE](https://www.blueshoe.io/blog/vue-vapor-performance-without-virtual-dom/)
-- [vuejs/vue-vapor — GitHub](https://github.com/vuejs/vue-vapor)
-- [Reactivity in Depth — Vue.js docs](https://vuejs.org/guide/extras/reactivity-in-depth)
-- [Introducing Runes — Svelte blog](https://svelte.dev/blog/runes)
-- [Svelte 5 Runes guide — PkgPulse](https://www.pkgpulse.com/blog/svelte-5-runes-complete-guide-2026)
-- [Fine-grained reactivity — Solid Docs](https://docs.solidjs.com/advanced-concepts/fine-grained-reactivity)
-- [Intro to reactivity — Solid Docs](https://docs.solidjs.com/concepts/intro-to-reactivity)
-- [Resumable concept — Qwik docs](https://qwik.dev/docs/concepts/resumable/)
-- [Resumability vs Hydration — Builder.io](https://www.builder.io/blog/resumability-vs-hydration)
-- [Virtual DOM: Back in Block — Million.js](https://old.million.dev/blog/virtual-dom)
-- [Million.js paper (arXiv 2202.08409)](https://arxiv.org/pdf/2202.08409)
+Purity already wins on per-row update workloads (Path B's per-item
+signal). It already ties on small/medium workloads (paint-floor noise).
+It already has a 6kB gzipped bundle vs Vue's 33kB and Solid's 7kB. The
+gap to close is specifically: **bulk creation/replacement at 10k+ rows**,
+which is the row-rendering benchmark that frameworks compete on.
+
+For real apps with hundreds (not tens of thousands) of rows, current
+Purity is already competitive. These optimizations are about benchmarks
+and the kind of large list/table apps that make framework choice
+decisions.

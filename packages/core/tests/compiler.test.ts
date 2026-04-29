@@ -646,6 +646,36 @@ describe('compiler — extra coverage', () => {
     expect(c.querySelector('p')!.textContent).toMatch(/X.*Y/);
   });
 
+  it('strips indentation text nodes between sibling elements', () => {
+    // A multi-line template carries indentation as text nodes when handed
+    // to innerHTML. They are pure formatting and should be condensed away
+    // so each() doesn't multiply 5-10 throwaway text nodes per row.
+    const frag = html`
+      <ul>
+        <li>a</li>
+        <li>b</li>
+        <li>c</li>
+      </ul>
+    `;
+    const c = document.createElement('div');
+    c.appendChild(frag);
+    const ul = c.querySelector('ul')!;
+    // Should contain only the three <li> elements — no whitespace text nodes.
+    expect(ul.childNodes.length).toBe(3);
+    for (let i = 0; i < ul.childNodes.length; i++) {
+      expect(ul.childNodes[i].nodeType).toBe(Node.ELEMENT_NODE);
+    }
+  });
+
+  it('preserves single-space text between expressions (no newline)', () => {
+    // Whitespace WITHOUT a newline is treated as deliberate (e.g. "${a} ${b}"
+    // renders "X Y", not "XY") and must survive the condense pass.
+    const frag = html`<p>${'X'} ${'Y'}</p>`;
+    const c = document.createElement('div');
+    c.appendChild(frag);
+    expect(c.querySelector('p')!.textContent).toBe('X Y');
+  });
+
   it('renders complex template with empty-value static attribute', () => {
     const v = state(true);
     const frag = html`<div><input data-flag ?disabled=${() => v()} /></div>`;

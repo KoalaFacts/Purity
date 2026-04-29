@@ -66,25 +66,47 @@ interface AttrSlot {
 type Slot = ExprSlot | AttrSlot;
 
 // ---------------------------------------------------------------------------
-// trimFragmentEdges — strip leading/trailing whitespace-only text nodes
+// condenseWhitespace — strip whitespace-only text nodes containing a newline
+// from anywhere in the tree. These are template formatting artifacts (the
+// indentation between sibling tags) that the HTML parser would turn into
+// real text nodes when we hand the markup to innerHTML — adding ~5 nodes
+// per row in a typical table template (50k extra DOM nodes for 10k rows).
+//
+// Conservative: we only strip text nodes that (a) trim to empty AND (b)
+// contain a newline. A single space without a newline (e.g. `${a} ${b}`)
+// is treated as deliberate whitespace and preserved.
+//
+// Inline-context caveat: between adjacent inline elements written across
+// lines (e.g. `<span>a</span>\n<span>b</span>`), removing the indentation
+// text removes the rendered space too. Authors who need the space must
+// write the elements on one line or use `&nbsp;`. This matches Vue's
+// default `whitespace: 'condense'` behavior and Svelte's compiler.
 // ---------------------------------------------------------------------------
 
-function trimFragmentEdges(frag: FragmentNode): FragmentNode {
-  const children = frag.children;
-  let start = 0;
-  let end = children.length;
-  while (start < end) {
-    const ch = children[start];
-    if (ch.type === 'text' && ch.value.trim() === '' && ch.value.includes('\n')) start++;
-    else break;
+const PRESERVE_WS_TAGS = new Set(['pre', 'textarea', 'script', 'style']);
+
+function isIndentation(n: ASTNode): boolean {
+  return n.type === 'text' && n.value.trim() === '' && n.value.includes('\n');
+}
+
+function condenseWhitespace(node: ASTNode): ASTNode {
+  if (node.type === 'fragment' || node.type === 'element') {
+    if (node.type === 'element' && PRESERVE_WS_TAGS.has(node.tag)) return node;
+    let changed = false;
+    const next: ASTNode[] = [];
+    for (const ch of node.children) {
+      if (isIndentation(ch)) {
+        changed = true;
+        continue;
+      }
+      const recursed = condenseWhitespace(ch);
+      if (recursed !== ch) changed = true;
+      next.push(recursed);
+    }
+    if (!changed) return node;
+    return { ...node, children: next } as ASTNode;
   }
-  while (end > start) {
-    const ch = children[end - 1];
-    if (ch.type === 'text' && ch.value.trim() === '' && ch.value.includes('\n')) end--;
-    else break;
-  }
-  if (start === 0 && end === children.length) return frag;
-  return { ...frag, children: children.slice(start, end) };
+  return node;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,10 +114,11 @@ function trimFragmentEdges(frag: FragmentNode): FragmentNode {
 // ---------------------------------------------------------------------------
 
 export function generate(ast: FragmentNode): string {
-  // Trim whitespace-only text nodes (containing newlines) from fragment edges.
-  // These are template formatting artifacts (indentation) that add unnecessary
-  // DOM nodes — especially costly in each() where they multiply per item.
-  ast = trimFragmentEdges(ast);
+  // Strip pure-indentation text nodes from the entire tree (not just edges).
+  // Indentation between sibling tags becomes real text nodes after innerHTML,
+  // multiplying per-item DOM cost in each() — a row template with whitespace
+  // between 5 sibling tags adds 5 text nodes per row.
+  ast = condenseWhitespace(ast) as FragmentNode;
 
   if (!hasDynamic(ast)) {
     const html = buildStaticHtml(ast);
@@ -248,10 +271,12 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
     }
   }
 
-  // Children — text nodes + expressions, appended directly
+  // Children — text nodes + expressions, appended directly.
+  // condenseWhitespace already dropped pure-indentation text nodes; anything
+  // remaining (content text, single-space separators) is intentional.
   for (const ch of tpl.children) {
     if (ch.type === 'text') {
-      if (ch.value.trim() || tpl.children.length === 1) {
+      if (ch.value !== '') {
         setupParts.push(`_e.appendChild(document.createTextNode(${JSON.stringify(ch.value)}));`);
       }
     } else if (ch.type === 'expression') {

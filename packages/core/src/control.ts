@@ -216,10 +216,10 @@ interface EachEntry<T = unknown> {
 }
 
 // Bulk remove all managed nodes using Range API — O(1) native batch removal
-function bulkClear(
+function bulkClear<T>(
   _parent: Node,
   prevKeys: unknown[],
-  keyToEntry: Map<unknown, EachEntry<unknown>>,
+  keyToEntry: Map<unknown, EachEntry<T>>,
   endMarker: Node,
 ): void {
   const prevLen = prevKeys.length;

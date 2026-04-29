@@ -340,8 +340,6 @@ export interface StateAccessor<T> {
   set(value: T): void;
   /** Read without tracking — won't trigger watch/compute. */
   peek(): T;
-  /** Internal: the underlying state node. Stable across the accessor's lifetime. */
-  readonly _node: StateNode<T>;
 }
 
 /**
@@ -361,8 +359,6 @@ export interface ComputedAccessor<T> {
   get(): T;
   /** Read without tracking. */
   peek(): T;
-  /** Internal: the underlying computed node. */
-  readonly _node: ComputedNode;
 }
 
 /** Cleanup function returned by watch(). Call to stop watching. */
@@ -418,7 +414,6 @@ export function state<T>(initial: T): StateAccessor<T> {
     writeState(node, v, defaultEquals);
   };
   (accessor as unknown as { peek: () => T }).peek = () => node.value;
-  (accessor as unknown as { _node: StateNode<T> })._node = node;
 
   return accessor;
 }
@@ -459,7 +454,6 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
   const accessor = (() => readNode<T>(node)) as ComputedAccessor<T>;
   (accessor as unknown as { get: () => T }).get = () => readNode<T>(node);
   (accessor as unknown as { peek: () => T }).peek = () => peekNode<T>(node);
-  (accessor as unknown as { _node: ComputedNode })._node = node;
 
   return accessor;
 }

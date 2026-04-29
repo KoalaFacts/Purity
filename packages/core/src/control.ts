@@ -1,4 +1,4 @@
-import { ComponentContext, getCurrentContext, popContext, pushContext } from './component.ts';
+import { type Scope, getCurrentContext, popContext, pushContext } from './component.ts';
 import type { StateAccessor } from './signals.ts';
 import { state, watch } from './signals.ts';
 
@@ -212,22 +212,26 @@ interface EachEntry<T = unknown> {
   // on key reuse with new data, we set this signal and any reactive bindings
   // inside the template re-fire — zero DOM creation.
   data: StateAccessor<T>;
-  // Per-entry context. Reactive bindings created inside mapFn auto-register
+  // Per-entry scope. Reactive bindings created inside mapFn auto-register
   // their dispose here (via watch() -> getCurrentContext()). Walked when the
-  // entry is removed to release the polyfill's Watcher references.
-  ctx: ComponentContext;
+  // entry is removed to release the watcher references. We use a lean
+  // 1-field { disposers } shape rather than a full ComponentContext — row
+  // entries don't participate in mount/destroy/error lifecycle, and the
+  // per-row alloc cost adds up: 10k rows × ~80 bytes class instance vs
+  // ~24 bytes plain object trims about a megabyte of heap on Create 10k.
+  ctx: Scope;
 }
 
-// Run mapFn under a fresh per-entry context so reactive bindings (and any
-// onDispose() the user adds) attach to the entry, not the outer scope.
+// Run mapFn under a fresh per-entry scope so reactive bindings register
+// their dispose with the entry, not the outer scope. The scope object is
+// intentionally minimal — `disposers` is the only slot anything reads.
 function runEntryMapFn<T>(
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
   data: StateAccessor<T>,
   index: number,
-  parentCtx: ComponentContext | null,
+  _parentCtx: Scope | null,
 ): { entry: EachEntry<T>; content: Node | DocumentFragment | string } {
-  const ctx = new ComponentContext();
-  if (parentCtx) ctx.parent = parentCtx;
+  const ctx: Scope = { disposers: null };
   pushContext(ctx);
   let content: Node | DocumentFragment | string;
   try {
@@ -235,7 +239,6 @@ function runEntryMapFn<T>(
   } finally {
     popContext();
   }
-  // nodes is filled in by the caller (it knows which extraction strategy applies)
   return { entry: { nodes: [], data, ctx }, content };
 }
 

@@ -129,7 +129,7 @@ function resolveContent(content: unknown): Node | null {
  */
 export function slot<E = void>(name?: string): SlotAccessor<E> {
   const ctx = getCurrentContext();
-  if (!ctx)
+  if (!(ctx instanceof ComponentContext))
     throw new Error(
       'slot() must be called inside a component() render function.\n' +
         '  Example: component("my-el", (props, { default: body }) => body())',
@@ -324,8 +324,12 @@ export function component<
         }
 
         const ctx = new ComponentContext();
+        // The current scope might be a lean each() scope (just disposers) or
+        // a full ComponentContext from a parent component. Only chain into
+        // the parent when it's a real component — that's the only case where
+        // child/parent linking is meaningful for error bubbling.
         const parentCtx = getCurrentContext();
-        if (parentCtx) {
+        if (parentCtx instanceof ComponentContext) {
           ctx.parent = parentCtx;
           (parentCtx.children ??= []).push(ctx);
         }
@@ -377,7 +381,7 @@ export function component<
   return (props: P, children?: any) => {
     const ctx = new ComponentContext();
     const parentCtx = getCurrentContext();
-    if (parentCtx) {
+    if (parentCtx instanceof ComponentContext) {
       ctx.parent = parentCtx;
       (parentCtx.children ??= []).push(ctx);
     }

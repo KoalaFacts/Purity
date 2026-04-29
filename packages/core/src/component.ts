@@ -35,7 +35,22 @@ export interface MountResult {
 // ComponentContext — lean
 // ---------------------------------------------------------------------------
 
-export class ComponentContext {
+// ---------------------------------------------------------------------------
+// Scope — minimal contract used by the dispose-registration path.
+//
+// signals.ts and styles.ts only ever reach into a context to push a cleanup
+// onto `disposers`. each() entries don't need the full ComponentContext
+// shape (mount/destroy/error handlers, parent linking, etc.) — just a
+// `disposers` slot. By typing the context stack as Scope rather than the
+// full class, we let runEntryMapFn push a 1-field plain object per row
+// instead of allocating a 10-field class instance for the same purpose.
+// ---------------------------------------------------------------------------
+
+export interface Scope {
+  disposers: (() => void)[] | null;
+}
+
+export class ComponentContext implements Scope {
   mounted: (() => void)[] | null = null;
   destroyed: (() => void)[] | null = null;
   errorHandlers: ((err: unknown) => void)[] | null = null;
@@ -68,17 +83,17 @@ export class ComponentContext {
 // Context stack
 // ---------------------------------------------------------------------------
 
-const contextStack: ComponentContext[] = [];
+const contextStack: Scope[] = [];
 
-export function getCurrentContext(): ComponentContext | null {
+export function getCurrentContext(): Scope | null {
   return contextStack[contextStack.length - 1] || null;
 }
 
-export function pushContext(ctx: ComponentContext): void {
+export function pushContext(ctx: Scope): void {
   contextStack.push(ctx);
 }
 
-export function popContext(): ComponentContext | undefined {
+export function popContext(): Scope | undefined {
   return contextStack.pop();
 }
 
@@ -104,7 +119,7 @@ export function popContext(): ComponentContext | undefined {
  */
 export function onMount(fn: () => void): void {
   const ctx = getCurrentContext();
-  if (ctx) (ctx.mounted ??= []).push(fn);
+  if (ctx instanceof ComponentContext) (ctx.mounted ??= []).push(fn);
 }
 
 /**
@@ -120,7 +135,7 @@ export function onMount(fn: () => void): void {
  */
 export function onDestroy(fn: () => void): void {
   const ctx = getCurrentContext();
-  if (ctx) (ctx.destroyed ??= []).push(fn);
+  if (ctx instanceof ComponentContext) (ctx.destroyed ??= []).push(fn);
 }
 
 /**
@@ -164,7 +179,7 @@ export function onDispose(fn: () => void): void {
  */
 export function onError(fn: (err: unknown) => void): void {
   const ctx = getCurrentContext();
-  if (ctx) (ctx.errorHandlers ??= []).push(fn);
+  if (ctx instanceof ComponentContext) (ctx.errorHandlers ??= []).push(fn);
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +205,7 @@ export function onError(fn: (err: unknown) => void): void {
 export function mount(component: ComponentFn, container: Element): MountResult {
   const ctx = new ComponentContext();
   const parentCtx = getCurrentContext();
-  if (parentCtx) {
+  if (parentCtx instanceof ComponentContext) {
     ctx.parent = parentCtx;
     (parentCtx.children ??= []).push(ctx);
   }

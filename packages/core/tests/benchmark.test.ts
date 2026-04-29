@@ -290,6 +290,35 @@ describe('5. template rendering', () => {
     );
   });
 
+  it('1k complex elements — runtime html() vs hoisted (AOT-equivalent)', () => {
+    // Runtime path: html`` does WeakMap.get for the cached compiled fn, then invokes.
+    const runtimeElapsed = bench('1k complex via runtime html()', () => {
+      for (let i = 0; i < 1000; i++) html`<div><span>Hello ${String(i)}</span></div>`;
+    });
+
+    // AOT-equivalent: hoisted compiled fn invoked directly (what the Vite
+    // plugin produces after the template-hoisting fix).
+    const tplFactory = (() => {
+      const _t = document.createElement('template');
+      _t.innerHTML = '<div><span>Hello <!----></span></div>';
+      return (_v: unknown[]) => {
+        const _r = _t.content.cloneNode(true) as DocumentFragment;
+        const _n0 = _r.firstChild!.firstChild!.firstChild!;
+        (_n0 as Comment).replaceWith(document.createTextNode(_v[0] as string));
+        return _r;
+      };
+    })();
+    const aotElapsed = bench('1k complex via hoisted (AOT-equivalent)', () => {
+      for (let i = 0; i < 1000; i++) tplFactory([String(i)]);
+    });
+
+    console.log(
+      `    → runtime: ${(runtimeElapsed / 1000).toFixed(3)}ms/el | AOT: ${(aotElapsed / 1000).toFixed(3)}ms/el`,
+    );
+    // AOT should be no slower than runtime path (runtime adds WeakMap.get + indirection)
+    expect(aotElapsed).toBeLessThan(runtimeElapsed * 1.5);
+  });
+
   it('100 with reactive + event bindings', () => {
     const count = state(0);
     const fn = () => {};

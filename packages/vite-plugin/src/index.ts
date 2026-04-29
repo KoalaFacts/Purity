@@ -80,11 +80,16 @@ interface CompileResult {
   changed: boolean;
 }
 
+interface CompileContext {
+  hoists: string[];
+  nextTplId: number;
+}
+
 /**
  * Compile html`` templates inside expression sources only (no import rewriting).
  * Used for recursive compilation of nested templates inside ${...} expressions.
  */
-function compileNestedTemplates(source: string): string {
+function compileNestedTemplates(source: string, ctx: CompileContext): string {
   const parts: string[] = [];
   let pos = 0;
   let changed = false;
@@ -122,10 +127,12 @@ function compileNestedTemplates(source: string): string {
       const { strings, exprSources } = extracted;
       const ast = parse(strings);
       const fnBody = generate(ast);
+      const tplVar = `__purity_tpl_${ctx.nextTplId++}`;
+      ctx.hoists.push(`const ${tplVar} = ${fnBody};`);
       const compiledExprs = exprSources.map((expr) =>
-        expr.includes('html`') ? compileNestedTemplates(expr) : expr,
+        expr.includes('html`') ? compileNestedTemplates(expr, ctx) : expr,
       );
-      parts.push(`((${fnBody})([${compiledExprs.join(', ')}], __purity_w__))`);
+      parts.push(`${tplVar}([${compiledExprs.join(', ')}], __purity_w__)`);
       changed = true;
     } catch {
       parts.push(source.slice(idx, extracted.end));
@@ -137,6 +144,7 @@ function compileNestedTemplates(source: string): string {
 }
 
 function compileTemplates(source: string, _id: string): CompileResult {
+  const ctx: CompileContext = { hoists: [], nextTplId: 0 };
   const parts: string[] = [];
   let changed = false;
   let pos = 0;
@@ -179,18 +187,21 @@ function compileTemplates(source: string, _id: string): CompileResult {
       const ast = parse(strings);
       const fnBody = generate(ast);
 
+      // Hoist the compiled-template factory to module scope so the IIFE
+      // (and its document.createElement('template') / innerHTML parse) only
+      // runs once per file — not per call from inside a loop or arrow fn.
+      const tplVar = `__purity_tpl_${ctx.nextTplId++}`;
+      ctx.hoists.push(`const ${tplVar} = ${fnBody};`);
+
       // Recursively compile any nested html`` templates inside expressions
       const compiledExprs = exprSources.map((expr) => {
         if (expr.includes('html`')) {
-          return compileNestedTemplates(expr);
+          return compileNestedTemplates(expr, ctx);
         }
         return expr;
       });
 
-      // Replace html`...` with inline IIFE
-      const compiled = `((${fnBody})([${compiledExprs.join(', ')}], __purity_w__))`;
-
-      parts.push(compiled);
+      parts.push(`${tplVar}([${compiledExprs.join(', ')}], __purity_w__)`);
       changed = true;
     } catch {
       // Compilation failed — leave original
@@ -204,17 +215,15 @@ function compileTemplates(source: string, _id: string): CompileResult {
 
   let finalCode = parts.join('');
 
-  // Add watch import if not already present
-  if (!finalCode.includes('__purity_w__')) {
-    return { code: finalCode, changed: true };
-  }
-
+  // Inject watch import + hoists at module top, after existing imports.
   const watchImport = `import { watch as __purity_w__ } from '@purityjs/core';\n`;
+  /* v8 ignore next -- `changed === true` implies at least one successful try-block, which pushes to ctx.hoists */
+  const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
   const insertAt = findLastImportEnd(finalCode);
   if (insertAt !== -1) {
-    finalCode = `${finalCode.slice(0, insertAt)}${watchImport}${finalCode.slice(insertAt)}`;
+    finalCode = `${finalCode.slice(0, insertAt)}${watchImport}${hoistsBlock}${finalCode.slice(insertAt)}`;
   } else {
-    finalCode = watchImport + finalCode;
+    finalCode = watchImport + hoistsBlock + finalCode;
   }
 
   // Remove html import since templates are pre-compiled

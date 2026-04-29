@@ -239,7 +239,7 @@ function runEntryMapFn<T>(
   return { entry: { nodes: [], data, ctx }, content };
 }
 
-function disposeEntry(entry: EachEntry): void {
+function disposeEntry<T>(entry: EachEntry<T>): void {
   const disposers = entry.ctx.disposers;
   if (!disposers) return;
   for (let i = 0; i < disposers.length; i++) {
@@ -252,29 +252,30 @@ function disposeEntry(entry: EachEntry): void {
   entry.ctx.disposers = null;
 }
 
-// Bulk remove all managed nodes using Range API — O(1) native batch removal
+// Detach all managed nodes from the parent and release their reactive scopes.
 function bulkClear<T>(
   _parent: Node,
   prevKeys: unknown[],
   keyToEntry: Map<unknown, EachEntry<T>>,
-  endMarker: Node,
+  _endMarker: Node,
 ): void {
   const prevLen = prevKeys.length;
   if (prevLen === 0) return;
 
-  // Use Range API for batch removal — single native operation
-  const firstEntry = keyToEntry.get(prevKeys[0]);
-  if (firstEntry?.nodes[0]?.parentNode) {
-    const range = document.createRange();
-    range.setStartBefore(firstEntry.nodes[0]);
-    range.setEndBefore(endMarker);
-    range.deleteContents();
-  }
-
-  // Dispose per-entry watch handles so the polyfill's Watcher releases them
+  // Detach + dispose each entry. We walk per-entry nodes rather than calling
+  // Range.deleteContents because jsdom's Range is O(N^2) on long sibling
+  // lists; the per-node loop is O(N) and roughly the same speed in real
+  // browsers (the parent is the same for every removeChild).
   for (let i = 0; i < prevLen; i++) {
     const entry = keyToEntry.get(prevKeys[i]);
-    if (entry) disposeEntry(entry);
+    if (!entry) continue;
+    const nodes = entry.nodes;
+    for (let j = 0; j < nodes.length; j++) {
+      const node = nodes[j];
+      const p = node.parentNode;
+      if (p) p.removeChild(node);
+    }
+    disposeEntry(entry);
   }
 }
 
@@ -744,16 +745,12 @@ export function list<T>(
       }
     }
 
-    // Fast path: clear all — bulk remove via Range
+    // Fast path: clear all — per-node detach (matches each())
     if (len === 0) {
-      if (prevLen > 0) {
-        const firstEntry = keyToEntry.get(prevKeys[0]);
-        if (firstEntry?.node.parentNode) {
-          const range = document.createRange();
-          range.setStartBefore(firstEntry.node);
-          range.setEndBefore(endMarker);
-          range.deleteContents();
-        }
+      for (let i = 0; i < prevLen; i++) {
+        const entry = keyToEntry.get(prevKeys[i]);
+        const p = entry?.node.parentNode;
+        if (entry && p) p.removeChild(entry.node);
       }
       keyToEntry = new Map();
       prevKeys = [];
@@ -799,14 +796,10 @@ export function list<T>(
 
     // Fast path: no reuse — bulk remove + bulk insert
     if (reuseCount === 0) {
-      if (prevLen > 0) {
-        const firstEntry = keyToEntry.get(prevKeys[0]);
-        if (firstEntry?.node.parentNode) {
-          const range = document.createRange();
-          range.setStartBefore(firstEntry.node);
-          range.setEndBefore(endMarker);
-          range.deleteContents();
-        }
+      for (let i = 0; i < prevLen; i++) {
+        const entry = keyToEntry.get(prevKeys[i]);
+        const p = entry?.node.parentNode;
+        if (entry && p) p.removeChild(entry.node);
       }
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);

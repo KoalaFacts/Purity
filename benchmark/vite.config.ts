@@ -25,10 +25,19 @@ export default defineConfig({
     vue(),
   ],
   resolve: {
-    alias: {
-      // Resolve to source so the AOT plugin can compile html`` templates
-      '@purityjs/core': resolve(import.meta.dirname, '../packages/core/src/index.ts'),
-    },
+    // Array form so the more-specific subpath alias is tried first; both
+    // @purityjs/core and @purityjs/core/compiler point at source so codegen
+    // changes don't require `npm run build -w packages/core` between iterations.
+    alias: [
+      {
+        find: '@purityjs/core/compiler',
+        replacement: resolve(import.meta.dirname, '../packages/core/src/compiler/index.ts'),
+      },
+      {
+        find: '@purityjs/core',
+        replacement: resolve(import.meta.dirname, '../packages/core/src/index.ts'),
+      },
+    ],
   },
   build: {
     outDir: 'dist',

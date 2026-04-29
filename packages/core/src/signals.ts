@@ -57,12 +57,6 @@ export interface ComputedAccessor<T> {
 /** Cleanup function returned by watch(). Call to stop watching. */
 export type Dispose = () => void;
 
-/** @internal */
-export interface EffectHandle {
-  _computed: Signal.Computed<void>;
-  _dispose(): void;
-}
-
 // ---------------------------------------------------------------------------
 // Effect scheduler — single microtask per tick, no redundant scheduling
 // ---------------------------------------------------------------------------
@@ -238,8 +232,6 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
 // Internal effect runner
 // ---------------------------------------------------------------------------
 
-let _currentEffect: EffectHandle | null = null;
-
 const MAX_EFFECT_DEPTH = 100;
 let effectDepth = 0;
 
@@ -249,8 +241,9 @@ function _effect(fn: () => undefined | Dispose): Dispose {
 
   const c = new Signal.Computed<void>(() => {
     if (typeof cleanup === 'function') {
-      cleanup();
+      const cl = cleanup;
       cleanup = undefined;
+      cl();
     }
 
     if (disposed) return;
@@ -264,34 +257,27 @@ function _effect(fn: () => undefined | Dispose): Dispose {
       );
     }
 
-    const prevEffect = _currentEffect;
-    _currentEffect = effectHandle;
     try {
       cleanup = fn();
     } finally {
-      _currentEffect = prevEffect;
       effectDepth--;
     }
   });
 
-  const effectHandle: EffectHandle = {
-    _computed: c,
-    _dispose() {
-      if (disposed) return;
-      disposed = true;
-      pendingUnwatch.push(c);
-      scheduleUnwatch();
-      if (typeof cleanup === 'function') {
-        cleanup();
-        cleanup = undefined;
-      }
-    },
-  };
-
   watcher.watch(c);
   c.get();
 
-  return () => effectHandle._dispose();
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    pendingUnwatch.push(c);
+    scheduleUnwatch();
+    if (typeof cleanup === 'function') {
+      const cl = cleanup;
+      cleanup = undefined;
+      cl();
+    }
+  };
 }
 
 // ---------------------------------------------------------------------------

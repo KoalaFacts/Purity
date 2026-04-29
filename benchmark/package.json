@@ -10,16 +10,17 @@
   },
   "devDependencies": {
     "playwright": "^1.59.1",
-    "vite": "^8.0.5"
+    "tsx": "^4.20.6",
+    "vite": "^8.0.10"
   },
   "dependencies": {
     "@purityjs/core": "*",
     "@purityjs/vite-plugin": "*",
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
-    "@vitejs/plugin-vue": "^6.0.5",
+    "@vitejs/plugin-vue": "^6.0.6",
     "solid-js": "^1.9.12",
-    "svelte": "^5.55.1",
+    "svelte": "^5.55.5",
     "vite-plugin-solid": "^2.11.12",
-    "vue": "^3.6.0-beta.9"
+    "vue": "^3.6.0-beta.10"
   }
 }

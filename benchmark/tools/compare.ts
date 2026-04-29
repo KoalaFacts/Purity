@@ -82,7 +82,7 @@ const NATIVE = new Set([
 const results: Partial<Record<Framework, Result>> = {};
 for (const fw of FRAMEWORKS) {
   process.stdout.write(`profiling ${fw}/${scenario}... `);
-  const r = spawnSync('node', [join(__dirname, 'profile.ts'), fw, scenario], {
+  const r = spawnSync('node', ['--conditions=development', join(__dirname, 'profile.ts'), fw, scenario], {
     encoding: 'utf-8',
   });
   if (r.status !== 0) {

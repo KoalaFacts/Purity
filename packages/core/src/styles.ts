@@ -1,5 +1,5 @@
-import { getCurrentContext } from './component';
-import { watch } from './signals';
+import { getCurrentContext } from './component.ts';
+import { watch } from './signals.ts';
 
 // ---------------------------------------------------------------------------
 // css`` — scoped styles

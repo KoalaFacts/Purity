@@ -4,12 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "profile": "node tools/profile.ts",
+    "dev": "NODE_OPTIONS='--conditions=development' vite",
+    "build": "NODE_OPTIONS='--conditions=development' vite build",
+    "preview": "NODE_OPTIONS='--conditions=development' vite preview",
+    "profile": "node --conditions=development tools/profile.ts",
     "analyze": "node tools/analyze.ts",
-    "compare": "node tools/compare.ts"
+    "compare": "node --conditions=development tools/compare.ts"
   },
   "devDependencies": {
     "playwright": "^1.59.1",

@@ -1,6 +1,6 @@
-import { ComponentContext, getCurrentContext, popContext, pushContext } from './component';
-import type { StateAccessor } from './signals';
-import { state, watch } from './signals';
+import { ComponentContext, getCurrentContext, popContext, pushContext } from './component.ts';
+import type { StateAccessor } from './signals.ts';
+import { state, watch } from './signals.ts';
 
 // ---------------------------------------------------------------------------
 // match(sourceFn, cases, fallback?) — reactive pattern matching

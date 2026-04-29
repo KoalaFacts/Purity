@@ -10,9 +10,15 @@ The vite preview must be running on port 4173:
 
 ```bash
 cd benchmark
-npm run build
-npx vite preview --port 4173 &
+npm run build       # uses development condition → no rebuild of @purityjs/core needed
+npm run preview &   # likewise
 ```
+
+`npm run build` and `npm run preview` set `NODE_OPTIONS='--conditions=development'`,
+which makes Node resolve `@purityjs/core/compiler` to the package's source via
+the `"development"` conditional export (see `packages/core/package.json`). This
+means edits to `packages/core/src/compiler/codegen.ts` flow through one bench
+build — you do not need to `npm run build -w @purityjs/core` first.
 
 ## Single-framework profile
 

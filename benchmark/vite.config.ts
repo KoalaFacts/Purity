@@ -25,19 +25,14 @@ export default defineConfig({
     vue(),
   ],
   resolve: {
-    // Array form so the more-specific subpath alias is tried first; both
-    // @purityjs/core and @purityjs/core/compiler point at source so codegen
-    // changes don't require `npm run build -w packages/core` between iterations.
-    alias: [
-      {
-        find: '@purityjs/core/compiler',
-        replacement: resolve(import.meta.dirname, '../packages/core/src/compiler/index.ts'),
-      },
-      {
-        find: '@purityjs/core',
-        replacement: resolve(import.meta.dirname, '../packages/core/src/index.ts'),
-      },
-    ],
+    // App-side imports of @purityjs/core go to source so we don't need to
+    // rebuild packages/core between iterations. The compiler subpath is
+    // handled by the package's "development" conditional export (see
+    // packages/core/package.json) — both bench and the AOT plugin pick it
+    // up because we run scripts with `node --conditions=development`.
+    alias: {
+      '@purityjs/core': resolve(import.meta.dirname, '../packages/core/src/index.ts'),
+    },
   },
   build: {
     outDir: 'dist',

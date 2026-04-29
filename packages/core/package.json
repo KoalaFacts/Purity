@@ -13,13 +13,15 @@
       "require": "./dist/index.cjs"
     },
     "./compiler": {
+      "development": "./src/compiler/index.ts",
       "types": "./dist/compiler/index.d.ts",
       "import": "./dist/compiler/index.js",
       "require": "./dist/compiler/index.cjs"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "scripts": {
     "build": "vite build && tsc --emitDeclarationOnly",

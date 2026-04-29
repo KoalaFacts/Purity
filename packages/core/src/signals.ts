@@ -1,5 +1,5 @@
 import { Signal } from 'signal-polyfill';
-import { getCurrentContext } from './component';
+import { getCurrentContext } from './component.ts';
 
 // ---------------------------------------------------------------------------
 // Public types

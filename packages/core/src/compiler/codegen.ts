@@ -55,6 +55,11 @@ interface ExprSlot {
   type: 'expr';
   index: number;
   path: PathStep[];
+  // True when the placeholder at `path` is a Text node (the EXPR_PLACEHOLDER
+  // optimization). False when it is a Comment node — needed when the
+  // expression has a text or expression sibling, since the HTML parser
+  // would coalesce adjacent text nodes and break path navigation.
+  textPlaceholder: boolean;
 }
 
 interface AttrSlot {
@@ -88,6 +93,13 @@ const PRESERVE_WS_TAGS = new Set(['pre', 'textarea', 'script', 'style']);
 function isIndentation(n: ASTNode): boolean {
   return n.type === 'text' && n.value.trim() === '' && n.value.includes('\n');
 }
+
+// U+200B ZERO WIDTH SPACE — used as the inline placeholder character for
+// reactive `${...}` expressions. The HTML parser turns it into a single Text
+// node so we can navigate to it positionally and either keep it (reactive
+// text) or replaceWith it (Node / Array values) without an extra
+// createTextNode + replaceWith pair.
+const EXPR_PLACEHOLDER = '​';
 
 function condenseWhitespace(node: ASTNode): ASTNode {
   if (node.type === 'fragment' || node.type === 'element') {
@@ -410,7 +422,15 @@ function buildStaticHtml(node: ASTNode): string {
 // Each child increments via nextSibling, entering a child uses firstChild.
 // ---------------------------------------------------------------------------
 
-function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[]): string {
+// useTextPlaceholder is decided by the parent (element/fragment) based on the
+// expression's siblings. False forces a `<!---->` comment so the HTML parser
+// won't merge an adjacent text node into the placeholder.
+function buildDynamicHtml(
+  node: ASTNode,
+  slots: Slot[],
+  currentPath: PathStep[],
+  useTextPlaceholder: boolean = true,
+): string {
   switch (node.type) {
     case 'text':
       return escapeHtml(node.value);
@@ -419,9 +439,13 @@ function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[])
       return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
 
     case 'expression': {
-      // Insert a comment placeholder — record its path
-      slots.push({ type: 'expr', index: node.index, path: [...currentPath] });
-      return '<!---->';
+      slots.push({
+        type: 'expr',
+        index: node.index,
+        path: [...currentPath],
+        textPlaceholder: useTextPlaceholder,
+      });
+      return useTextPlaceholder ? EXPR_PLACEHOLDER : '<!---->';
     }
 
     case 'element': {
@@ -443,34 +467,38 @@ function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[])
 
       if (VOID.has(node.tag)) return `${s}/>`;
       s += '>';
-
-      // Children: first child gets path + [0 (firstChild)], siblings get [1 (nextSibling)]
-      for (let i = 0; i < node.children.length; i++) {
-        const _childPath =
-          i === 0
-            ? [...currentPath, 0 as PathStep] // firstChild
-            : [...currentPath, 1 as PathStep]; // nextSibling (from previous)
-
-        // For siblings after first, we need to track relative to previous sibling
-        // Actually, we track from the PARENT: firstChild then nextSibling chain
-        s += buildDynamicHtml(node.children[i], slots, childPathFromParent(currentPath, i));
-      }
-
+      s += emitChildrenHtml(node.children, slots, currentPath);
       return `${s}</${node.tag}>`;
     }
 
-    case 'fragment': {
-      let s = '';
-      for (let i = 0; i < node.children.length; i++) {
-        s += buildDynamicHtml(node.children[i], slots, childPathFromParent(currentPath, i));
-      }
-      return s;
-    }
+    case 'fragment':
+      return emitChildrenHtml(node.children, slots, currentPath);
 
     default:
       /* v8 ignore next -- defensive fallthrough; AST has no other types */
       return '';
   }
+}
+
+// Emit children of an element or fragment, deciding per-child whether an
+// expression can use the cheap text-node placeholder. An expression that
+// touches a text or expression sibling must use a comment placeholder so the
+// DOM parser doesn't coalesce adjacent text nodes and shift our path
+// navigation.
+function emitChildrenHtml(children: ASTNode[], slots: Slot[], currentPath: PathStep[]): string {
+  let s = '';
+  for (let i = 0; i < children.length; i++) {
+    const ch = children[i];
+    let useTextPlaceholder = true;
+    if (ch.type === 'expression') {
+      const prev = children[i - 1];
+      const next = children[i + 1];
+      if (prev && (prev.type === 'text' || prev.type === 'expression')) useTextPlaceholder = false;
+      if (next && (next.type === 'text' || next.type === 'expression')) useTextPlaceholder = false;
+    }
+    s += buildDynamicHtml(ch, slots, childPathFromParent(currentPath, i), useTextPlaceholder);
+  }
+  return s;
 }
 
 // Path to the i-th child of a parent: firstChild + (i-1) nextSiblings
@@ -520,7 +548,7 @@ function genPositionalBindings(slots: Slot[]): string {
     setupParts.push(`var ${nodeVar}=${nav};`);
 
     if (slot.type === 'expr') {
-      const { setup, reactive } = genExprBinding(nodeVar, slot.index);
+      const { setup, reactive } = genExprBinding(nodeVar, slot.index, slot.textPlaceholder);
       setupParts.push(setup);
       if (reactive) reactiveParts.push(reactive);
     } else {
@@ -542,30 +570,55 @@ function genPositionalBindings(slots: Slot[]): string {
 }
 
 // ---------------------------------------------------------------------------
-// Expression binding — replace comment placeholder with dynamic content
-// Returns { setup, reactive }: setup runs once at instantiation; reactive is
-// the body fragment to splice into the shared watch (gated by `_f*`).
+// Expression binding — substitute the placeholder with dynamic content.
+//
+// When `textPlaceholder` is true the slot is already a Text node (the
+// EXPR_PLACEHOLDER zero-width space) so the reactive-text case can keep it
+// in place and just write .data — saves a createTextNode + replaceWith per
+// expression vs the comment-placeholder path. When false (expression has a
+// text/expression sibling that would coalesce in the parser), we keep the
+// old comment-placeholder behavior.
 // ---------------------------------------------------------------------------
 
-function genExprBinding(commentVar: string, index: number): BindingParts {
+function genExprBinding(slotVar: string, index: number, textPlaceholder: boolean): BindingParts {
   const id = bindVarCounter++;
   const xv = `_xv${id}`;
   const tn = `_tn${id}`;
   const fl = `_f${id}`;
   const val = `_v[${index}]`;
 
-  const setup = [
-    `var ${xv}=${val};`,
-    `var ${fl}=typeof ${xv}==='function';`,
-    `var ${tn};`,
-    `if(${fl}){`,
-    `${tn}=document.createTextNode('');${commentVar}.replaceWith(${tn});`,
-    `}else if(typeof ${xv}==='object'){`,
-    `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${commentVar}.replaceWith(${xv});}`,
-    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++)_af${id}.appendChild(${xv}[_ai${id}] instanceof Node?${xv}[_ai${id}]:document.createTextNode(String(${xv}[_ai${id}])));${commentVar}.replaceWith(_af${id});}`,
-    `else{${commentVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
-    `}else{${commentVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
-  ].join('');
+  let setup: string;
+  if (textPlaceholder) {
+    // Slot is a Text node already. Reactive case: keep it, watch writes .data.
+    // Static cases: write .data in place, or replaceWith for Node / Array.
+    setup = [
+      `var ${xv}=${val};`,
+      `var ${fl}=typeof ${xv}==='function';`,
+      `var ${tn}=${slotVar};`,
+      `if(!${fl}){`,
+      `if(typeof ${xv}==='object'){`,
+      `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});${tn}=${xv};}`,
+      `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++)_af${id}.appendChild(${xv}[_ai${id}] instanceof Node?${xv}[_ai${id}]:document.createTextNode(String(${xv}[_ai${id}])));${slotVar}.replaceWith(_af${id});}`,
+      `else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
+      `}else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
+      `}`,
+    ].join('');
+  } else {
+    // Slot is a Comment placeholder. Replace with a fresh text node up front
+    // so the reactive watch can mutate `.data` directly afterwards.
+    setup = [
+      `var ${xv}=${val};`,
+      `var ${fl}=typeof ${xv}==='function';`,
+      `var ${tn};`,
+      `if(${fl}){`,
+      `${tn}=document.createTextNode('');${slotVar}.replaceWith(${tn});`,
+      `}else if(typeof ${xv}==='object'){`,
+      `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});}`,
+      `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++)_af${id}.appendChild(${xv}[_ai${id}] instanceof Node?${xv}[_ai${id}]:document.createTextNode(String(${xv}[_ai${id}])));${slotVar}.replaceWith(_af${id});}`,
+      `else{${slotVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
+      `}else{${slotVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
+    ].join('');
+  }
 
   const reactive = [
     `if(${fl}){`,

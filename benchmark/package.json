@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "profile": "node tools/profile.ts",
+    "analyze": "node tools/analyze.ts",
+    "compare": "node tools/compare.ts"
   },
   "devDependencies": {
     "playwright": "^1.59.1",

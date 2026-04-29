@@ -375,7 +375,7 @@ describe('list() vs each() benchmark', () => {
     start = performance.now();
     each(
       () => items1k,
-      (item) => html`<li>${item.text}</li>`,
+      (item) => html`<li>${item().text}</li>`,
       (item) => item.id,
     );
     const eachTime = performance.now() - start;
@@ -398,7 +398,7 @@ describe('list() vs each() benchmark', () => {
     start = performance.now();
     each(
       () => items5k,
-      (item) => html`<li>${item.text}</li>`,
+      (item) => html`<li>${item().text}</li>`,
       (item) => item.id,
     );
     const eachTime = performance.now() - start;

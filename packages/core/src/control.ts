@@ -1,6 +1,6 @@
 import { getCurrentContext } from './component';
 import type { StateAccessor } from './signals';
-import { watch } from './signals';
+import { state, watch } from './signals';
 
 // ---------------------------------------------------------------------------
 // match(sourceFn, cases, fallback?) — reactive pattern matching
@@ -206,9 +206,12 @@ function lis(arr: number[]): number[] {
 // 2. Unkeyed (no keyFn): item identity as key, same algorithm
 // ---------------------------------------------------------------------------
 
-interface EachEntry {
+interface EachEntry<T = unknown> {
   nodes: Node[];
-  data: StateAccessor<any> | null; // lazily created — only when item is reused
+  // Per-item state signal. mapFn receives `() => data()` as the item accessor;
+  // on key reuse with new data, we set this signal and any reactive bindings
+  // inside the template re-fire — zero DOM creation.
+  data: StateAccessor<T>;
   dispose?: () => void;
 }
 
@@ -216,7 +219,7 @@ interface EachEntry {
 function bulkClear(
   _parent: Node,
   prevKeys: unknown[],
-  keyToEntry: Map<unknown, EachEntry>,
+  keyToEntry: Map<unknown, EachEntry<unknown>>,
   endMarker: Node,
 ): void {
   const prevLen = prevKeys.length;
@@ -259,26 +262,29 @@ function extractNodes(content: Node | DocumentFragment | string): Node[] {
  * - Removed items: DOM detached
  * - Reordered items: minimal DOM moves via LIS
  *
+ * `mapFn` receives `item` as a **reactive accessor** — call `item()` to read.
+ * Wrap reads in `${() => item().field}` so the binding re-fires when the
+ * underlying data changes for the same key.
+ *
  * @example
  * ```ts
- * // mapFn receives a reactive accessor — use () => item() for reactive text
  * each(
  *   () => todos(),
- *   (todo) => html`<li>${todo.text}</li>`,
- *   (todo) => todo.id
+ *   (todo) => html`<li>${() => todo().text}</li>`,
+ *   (todo) => todo.id,
  * )
  * ```
  */
 export function each<T>(
   listAccessor: (() => T[]) | T[],
-  mapFn: (item: T, index: number) => Node | DocumentFragment | string,
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment {
   const endMarker = document.createComment('e');
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
-  let keyToEntry = new Map<unknown, EachEntry>();
+  let keyToEntry = new Map<unknown, EachEntry<T>>();
   let prevKeys: unknown[] = [];
 
   const getList =
@@ -305,8 +311,8 @@ export function each<T>(
       if (same) {
         // Keys match — update data signals in place (zero DOM creation)
         for (let i = 0; i < len; i++) {
-          const entry = keyToEntry.get(prevKeys[i]);
-          if (entry?.data) entry.data(list[i]);
+          const entry = keyToEntry.get(prevKeys[i])!;
+          entry.data(list[i]);
         }
         return;
       }
@@ -330,7 +336,8 @@ export function each<T>(
       for (let i = 0; i < len; i++) {
         const item = list[i];
         newKeys2[i] = getKey(item, i);
-        const content = mapFn(item, i);
+        const data = state(item);
+        const content = mapFn(data, i);
         let nodes: Node[];
         if (content instanceof DocumentFragment) {
           const fc = content.firstChild;
@@ -344,7 +351,7 @@ export function each<T>(
           nodes = [tn];
           frag.appendChild(tn);
         }
-        keyToEntry.set(newKeys2[i], { nodes, data: null });
+        keyToEntry.set(newKeys2[i], { nodes, data });
       }
       parent.insertBefore(frag, endMarker);
       prevKeys = newKeys2;
@@ -352,7 +359,7 @@ export function each<T>(
     }
 
     const newKeys: unknown[] = new Array(len);
-    const newEntries = new Map<unknown, EachEntry>();
+    const newEntries = new Map<unknown, EachEntry<T>>();
     let reuseCount = 0;
 
     for (let i = 0; i < len; i++) {
@@ -360,14 +367,14 @@ export function each<T>(
       const key = getKey(item, i);
       newKeys[i] = key;
 
-      const _existing = keyToEntry.get(key);
+      const _existing = keyToEntry.get(key) as EachEntry<T> | undefined;
       if (_existing) {
-        const entry = _existing;
-        if (entry.data) entry.data(item);
-        newEntries.set(key, entry);
+        _existing.data(item);
+        newEntries.set(key, _existing);
         reuseCount++;
       } else {
-        newEntries.set(key, { nodes: extractNodes(mapFn(item, i)), data: null });
+        const data = state(item);
+        newEntries.set(key, { nodes: extractNodes(mapFn(data, i)), data });
       }
     }
 

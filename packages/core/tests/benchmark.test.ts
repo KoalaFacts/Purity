@@ -327,7 +327,7 @@ describe('6. list rendering', () => {
     const _elapsed = bench('each() 1000 keyed items', () => {
       each(
         () => items,
-        (item) => html`<li>${item.text}</li>`,
+        (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
       );
     });
@@ -339,7 +339,7 @@ describe('6. list rendering', () => {
     const elapsed = bench('each() 5000 keyed items', () => {
       each(
         () => items,
-        (item) => html`<li>${item.text}</li>`,
+        (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
       );
     });
@@ -354,7 +354,7 @@ describe('6. list rendering', () => {
     container.appendChild(
       each(
         () => items(),
-        (item) => html`<li>${item.text}</li>`,
+        (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
       ),
     );
@@ -374,7 +374,7 @@ describe('6. list rendering', () => {
     container.appendChild(
       each(
         () => items(),
-        (item) => html`<li>${item.text}</li>`,
+        (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
       ),
     );
@@ -397,7 +397,7 @@ describe('6. list rendering', () => {
     container.appendChild(
       each(
         () => items(),
-        (item) => html`<li>${item.text}</li>`,
+        (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
       ),
     );
@@ -417,7 +417,7 @@ describe('6. list rendering', () => {
     container.appendChild(
       each(
         () => items(),
-        (item) => html`<li>${item.text}</li>`,
+        (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
       ),
     );
@@ -443,7 +443,7 @@ describe('6. list rendering', () => {
     container.appendChild(
       each(
         () => items(),
-        (item) => html`<li>${item.text}</li>`,
+        (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
       ),
     );

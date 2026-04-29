@@ -170,7 +170,7 @@ describe('each', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item;
+        li.textContent = item();
         return li;
       },
     );
@@ -192,7 +192,7 @@ describe('each', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item;
+        li.textContent = item();
         return li;
       },
     );
@@ -216,7 +216,7 @@ describe('each', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item;
+        li.textContent = item();
         return li;
       },
     );
@@ -240,7 +240,7 @@ describe('each', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item;
+        li.textContent = item();
         return li;
       },
     );
@@ -258,7 +258,7 @@ describe('each', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item;
+        li.textContent = item();
         return li;
       },
       (item) => item,
@@ -279,7 +279,7 @@ describe('each', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item;
+        li.textContent = item();
         return li;
       },
       (item) => item,
@@ -307,7 +307,7 @@ describe('each', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item.t;
+        li.textContent = item().t;
         return li;
       },
       (item) => item.id,
@@ -333,7 +333,7 @@ describe('each', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item.t;
+        li.textContent = item().t;
         return li;
       },
       (item) => item.id,
@@ -351,11 +351,41 @@ describe('each', () => {
     expect(container.querySelector('li')).toBe(firstLi);
   });
 
+  it('updates rendered content when keys match but item data differs', async () => {
+    const items = state([
+      { id: 1, text: 'A' },
+      { id: 2, text: 'B' },
+    ]);
+    const c = document.createElement('ul');
+    c.appendChild(
+      each(
+        () => items(),
+        (item) => html`<li>${() => item().text}</li>`,
+        (item) => item.id,
+      ),
+    );
+    await tick();
+    const firstLi = c.querySelector('li');
+    expect([...c.querySelectorAll('li')].map((l) => l.textContent)).toEqual(['A', 'B']);
+
+    items([
+      { id: 1, text: 'A-updated' },
+      { id: 2, text: 'B-updated' },
+    ]);
+    await tick();
+    expect([...c.querySelectorAll('li')].map((l) => l.textContent)).toEqual([
+      'A-updated',
+      'B-updated',
+    ]);
+    // DOM identity preserved — same nodes, just signal updates
+    expect(c.querySelector('li')).toBe(firstLi);
+  });
+
   it('accepts non-Node mapFn returns (string)', async () => {
     const items = state(['x', 'y']);
     const fragment = each(
       () => items(),
-      (item) => item,
+      (item) => item(),
     );
     const container = document.createElement('div');
     container.appendChild(fragment);
@@ -367,7 +397,7 @@ describe('each', () => {
     const items = state(['x', 'y']);
     const fragment = each(
       () => items(),
-      (item) => html`<span>${item}</span>`,
+      (item) => html`<span>${item()}</span>`,
       (item) => item,
     );
     const container = document.createElement('div');
@@ -385,7 +415,7 @@ describe('each', () => {
           () => items(),
           (item) => {
             const li = document.createElement('li');
-            li.textContent = item;
+            li.textContent = item();
             return li;
           },
           (item) => item,
@@ -439,7 +469,7 @@ describe('match — extra coverage', () => {
       () => items(),
       (item) => {
         const el = document.createElement('span');
-        el.textContent = item;
+        el.textContent = item();
         return el;
       },
       (item) => item,
@@ -457,9 +487,9 @@ describe('match — extra coverage', () => {
       (item) => {
         const frag = document.createDocumentFragment();
         const el1 = document.createElement('span');
-        el1.textContent = item;
+        el1.textContent = item();
         const el2 = document.createElement('span');
-        el2.textContent = `${item}!`;
+        el2.textContent = `${item()}!`;
         frag.appendChild(el1);
         frag.appendChild(el2);
         return frag;
@@ -481,7 +511,7 @@ describe('match — extra coverage', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item.t;
+        li.textContent = item().t;
         return li;
       },
       (item) => item.id,
@@ -512,7 +542,7 @@ describe('match — extra coverage', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item.t;
+        li.textContent = item().t;
         return li;
       },
       (item) => item.id,
@@ -547,7 +577,7 @@ describe('match — extra coverage', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item.t;
+        li.textContent = item().t;
         return li;
       },
       (item) => item.id,
@@ -588,7 +618,7 @@ describe('match — extra coverage', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item.t;
+        li.textContent = item().t;
         return li;
       },
       (item) => item.id,
@@ -623,7 +653,7 @@ describe('match — extra coverage', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item.t;
+        li.textContent = item().t;
         return li;
       },
       (item) => item.id,
@@ -790,9 +820,9 @@ describe('each — extractNodes paths via update', () => {
       (item) => {
         const f = document.createDocumentFragment();
         const e1 = document.createElement('span');
-        e1.textContent = `${item}1`;
+        e1.textContent = `${item()}1`;
         const e2 = document.createElement('span');
-        e2.textContent = `${item}2`;
+        e2.textContent = `${item()}2`;
         f.appendChild(e1);
         f.appendChild(e2);
         return f;
@@ -817,7 +847,7 @@ describe('each — extractNodes paths via update', () => {
       () => items(),
       (item) => {
         const el = document.createElement('span');
-        el.textContent = item;
+        el.textContent = item();
         return el;
       },
       (item) => item,
@@ -835,7 +865,7 @@ describe('each — extractNodes paths via update', () => {
     const items = state(['A']);
     const fragment = each(
       () => items(),
-      (item) => item,
+      (item) => item(),
       (item) => item,
     );
     const c = document.createElement('div');
@@ -855,7 +885,7 @@ describe('each — LIS binary search exercise', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item.t;
+        li.textContent = item().t;
         return li;
       },
       (item) => item.id,
@@ -886,7 +916,7 @@ describe('each — no keyFn (item identity)', () => {
       () => items(),
       (item) => {
         const li = document.createElement('li');
-        li.textContent = item;
+        li.textContent = item();
         return li;
       },
     );

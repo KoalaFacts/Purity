@@ -44,8 +44,5 @@
   "license": "MIT",
   "publishConfig": {
     "access": "public"
-  },
-  "dependencies": {
-    "signal-polyfill": "^0.2.2"
   }
 }

@@ -50,6 +50,21 @@ DOM deltas, and the top-N hot functions by self time.
 node tools/compare.ts <scenario>
 ```
 
+## Functional sanity check
+
+```bash
+npm run sanity
+# or: node --conditions=development tools/sanity.ts
+```
+
+Loads each Purity bench app, exercises the typical interactions (create /
+append / replace / update / select / remove / two-way bind / conditional
+toggle / cart increment) and asserts the **rendered output is correct** —
+not just that the node counts are right. Catches regressions that a
+benchmark can't see: a template where every row renders `undefined` still
+counts the right number of `<tr>`s. Run after any change that touches
+the reactivity, codegen, or `each()` paths.
+
 Profiles all four frameworks back-to-back and prints a Markdown table.
 
 ## Caveats

@@ -1,5 +1,10 @@
 # Purity
 
+[![npm version](https://img.shields.io/npm/v/@purityjs/core.svg?label=%40purityjs%2Fcore)](https://www.npmjs.com/package/@purityjs/core)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/@purityjs/core?label=gzipped)](https://bundlephobia.com/package/@purityjs/core)
+[![license](https://img.shields.io/npm/l/@purityjs/core.svg)](./LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/KoalaFacts/Purity?style=social)](https://github.com/KoalaFacts/Purity)
+
 A minimal, lightweight, super performant web framework built on native signals.
 
 - **17 functions** — that's the entire API

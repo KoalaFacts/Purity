@@ -45,6 +45,9 @@ interface ComputedNode {
   sources: AnyNode[] | null;
   /** Snapshot of each source's `version` as observed during the last fn() run. */
   sourceVersions: number[] | null;
+  /** For each source, this consumer's index in source.observers. Lets removeObserver
+   *  do O(1) swap-and-pop instead of an indexOf scan over a possibly-huge list. */
+  observerSlots: number[] | null;
   observers: ComputedNode[] | null;
   /** Function returned from a watch fn body; runs before next re-run and on dispose. */
   cleanup: (() => void) | null;
@@ -114,36 +117,66 @@ function track(producer: AnyNode): void {
       return;
     }
     // Slot occupied by a different producer — swap.
-    removeObserver(cur, consumer);
+    removeObserver(cur, consumer, idx);
     sources[idx] = producer;
     consumer.sourceVersions![idx] = producer.version;
-    addObserver(producer, consumer);
+    addObserver(producer, consumer, idx);
   } else {
     // Append fresh slot.
     if (sources === null) {
       consumer.sources = [producer];
       consumer.sourceVersions = [producer.version];
+      consumer.observerSlots = [0]; // overwritten by addObserver below
     } else {
       sources.push(producer);
       consumer.sourceVersions!.push(producer.version);
+      consumer.observerSlots!.push(0);
     }
-    addObserver(producer, consumer);
+    addObserver(producer, consumer, idx);
   }
   activeSourceIdx = idx + 1;
 }
 
-function addObserver(producer: AnyNode, consumer: ComputedNode): void {
-  if (producer.observers === null) producer.observers = [consumer];
-  else producer.observers.push(consumer);
+function addObserver(producer: AnyNode, consumer: ComputedNode, sourceSlot: number): void {
+  const obs = producer.observers;
+  let pos: number;
+  if (obs === null) {
+    producer.observers = [consumer];
+    pos = 0;
+  } else {
+    pos = obs.length;
+    obs.push(consumer);
+  }
+  consumer.observerSlots![sourceSlot] = pos;
 }
 
-function removeObserver(producer: AnyNode, consumer: ComputedNode): void {
+// `sourceSlot` is the consumer's position in its own sources[] for this producer.
+// Knowing it lets us look up the consumer's slot in producer.observers in O(1)
+// instead of scanning the (possibly thousands-long) observers list.
+//
+// Watchers may legitimately read the same signal twice in one fn body (e.g.
+// `${() => item().a * item().b}`), in which case sources[] contains the same
+// producer at multiple indices and producer.observers[] contains the consumer
+// multiple times. We disambiguate the moved consumer's source slot by matching
+// on (producer identity, currently-stored observer index) — that pair is
+// unique within a single consumer.
+function removeObserver(producer: AnyNode, consumer: ComputedNode, sourceSlot: number): void {
   const obs = producer.observers;
   if (obs === null) return;
-  const i = obs.indexOf(consumer);
-  if (i < 0) return;
+  const slot = consumer.observerSlots![sourceSlot];
   const last = obs.length - 1;
-  if (i !== last) obs[i] = obs[last];
+  if (slot !== last) {
+    const moved = obs[last];
+    obs[slot] = moved;
+    const ms = moved.sources!;
+    const mslots = moved.observerSlots!;
+    for (let k = 0; k < ms.length; k++) {
+      if (ms[k] === producer && mslots[k] === last) {
+        mslots[k] = slot;
+        break;
+      }
+    }
+  }
   obs.pop();
   if (obs.length === 0) producer.observers = null;
 }
@@ -254,10 +287,11 @@ function runComputed(node: ComputedNode): void {
     const sources = node.sources;
     if (sources !== null && sources.length > consumed) {
       for (let i = consumed; i < sources.length; i++) {
-        removeObserver(sources[i], node);
+        removeObserver(sources[i], node, i);
       }
       sources.length = consumed;
       node.sourceVersions!.length = consumed;
+      node.observerSlots!.length = consumed;
     }
     activeListener = prevListener;
     activeSourceIdx = prevIdx;
@@ -446,6 +480,7 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
     status: STATUS_DIRTY,
     sources: null,
     sourceVersions: null,
+    observerSlots: null,
     observers: null,
     cleanup: null,
     isEffect: false,
@@ -471,6 +506,7 @@ function _effect(fn: () => undefined | Dispose): Dispose {
     status: STATUS_DIRTY,
     sources: null,
     sourceVersions: null,
+    observerSlots: null,
     observers: null,
     cleanup: null,
     isEffect: true,
@@ -497,9 +533,10 @@ function _effect(fn: () => undefined | Dispose): Dispose {
     // Disconnect from each producer's observer list.
     const sources = node.sources;
     if (sources !== null) {
-      for (let i = 0; i < sources.length; i++) removeObserver(sources[i], node);
+      for (let i = 0; i < sources.length; i++) removeObserver(sources[i], node, i);
       node.sources = null;
       node.sourceVersions = null;
+      node.observerSlots = null;
     }
   };
 

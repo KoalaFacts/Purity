@@ -1,5 +1,9 @@
 # @purityjs/cli
 
+[![npm version](https://img.shields.io/npm/v/@purityjs/cli.svg)](https://www.npmjs.com/package/@purityjs/cli)
+[![npm downloads](https://img.shields.io/npm/dm/@purityjs/cli.svg)](https://www.npmjs.com/package/@purityjs/cli)
+[![license](https://img.shields.io/npm/l/@purityjs/cli.svg)](../../LICENSE)
+
 Scaffold a new Purity project in seconds.
 
 ## Usage

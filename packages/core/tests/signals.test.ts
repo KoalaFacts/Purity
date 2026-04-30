@@ -604,3 +604,60 @@ describe('reactivity semantics', () => {
     expect(a()).toBe(42);
   });
 });
+
+describe('observer cleanup', () => {
+  const tick = () => new Promise((r) => queueMicrotask(r));
+
+  it('handles a watcher reading the same signal twice in one fn', async () => {
+    // Reproduces the cart-row pattern: html`${() => item().a * item().b}`
+    // dereferences the same signal twice in a single fn body. We must keep
+    // the producer<->consumer links coherent through dispose so the watcher
+    // doesn't leak observers after teardown.
+    const a = state(2);
+    const b = state(3);
+    const item = state({ a: 2, b: 3 });
+    let runs = 0;
+    const dispose = watch(() => {
+      // Read item twice in the same fn — each read is a separate track() call.
+      runs++;
+      return item().a * item().b + a() + b();
+    });
+    expect(runs).toBe(1);
+    a(10);
+    await tick();
+    expect(runs).toBe(2);
+    item({ a: 4, b: 5 });
+    await tick();
+    expect(runs).toBe(3);
+    dispose();
+    // After dispose, writes must not trigger the watcher again.
+    a(99);
+    item({ a: 7, b: 8 });
+    await tick();
+    expect(runs).toBe(3);
+  });
+
+  it('cleans up many observers on a shared signal in O(N) time', async () => {
+    // Regression for the indexOf-based removeObserver O(N²) blow-up. Disposing
+    // 5k watchers that share one signal must stay well under a second.
+    const shared = state(0);
+    const disposers: Array<() => void> = [];
+    for (let i = 0; i < 5000; i++) {
+      const item = state(i);
+      disposers.push(
+        watch(() => {
+          shared();
+          item();
+        }),
+      );
+    }
+    const t0 = performance.now();
+    for (let i = 0; i < disposers.length; i++) disposers[i]();
+    const elapsed = performance.now() - t0;
+    expect(elapsed).toBeLessThan(500);
+    // Writing to shared after all watchers disposed must not throw or fire.
+    shared(1);
+    await tick();
+    // No assertions on runs — the watchers should be fully detached.
+  });
+});

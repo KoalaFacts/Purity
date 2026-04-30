@@ -73,13 +73,15 @@ const container = document.getElementById('container')!;
 
 const fragment = each(
   () => cards(),
-  (card: Card) =>
-    html`
+  (card: () => Card) => {
+    const c = card();
+    return html`
       <div class="card">
-        <span class="id">${String(card.id)}</span>
-        <span class="label">${card.label}</span>
+        <span class="id">${String(c.id)}</span>
+        <span class="label">${c.label}</span>
       </div>
-    ` as unknown as HTMLElement,
+    ` as unknown as HTMLElement;
+  },
   (card: Card) => card.id,
 );
 container.appendChild(fragment);

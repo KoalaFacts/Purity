@@ -168,12 +168,14 @@ const listPanel = document.getElementById('list-panel')!;
 
 const listFragment = each(
   () => persons(),
-  (person: Person) =>
-    html`
+  (person: () => Person) => {
+    const p = person();
+    return html`
       <div class="list-item" style="padding: 4px 8px; cursor: pointer">
-        ${person.name}
+        ${p.name}
       </div>
-    ` as unknown as HTMLElement,
+    ` as unknown as HTMLElement;
+  },
   (person: Person) => person.id,
 );
 listPanel.appendChild(listFragment);

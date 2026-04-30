@@ -235,6 +235,42 @@ describe('4. effects / watchers', () => {
     });
     expect(runs).toBe(1);
   });
+
+  it('flush throughput — 2-4 effect batches (small fast path)', async () => {
+    // Exercises the linear-scan dedupe path in flush(). Three independent
+    // watchers all reading distinct signals; one batch update fires all three.
+    const a = state(0);
+    const b = state(0);
+    const c = state(0);
+    let runs = 0;
+    watch(() => {
+      a();
+      runs++;
+    });
+    watch(() => {
+      b();
+      runs++;
+    });
+    watch(() => {
+      c();
+      runs++;
+    });
+    await tick();
+
+    const elapsed = await benchAsync('3-effect flush x1000', async () => {
+      runs = 0;
+      for (let i = 0; i < 1000; i++) {
+        batch(() => {
+          a(i);
+          b(i);
+          c(i);
+        });
+        await tick();
+      }
+    });
+    expect(runs).toBeGreaterThanOrEqual(3000);
+    console.log(`    → ${(elapsed / 1000).toFixed(3)}ms/flush (3 effects, no Set)`);
+  });
 });
 
 // ============================================================================
@@ -252,6 +288,35 @@ describe('5. template rendering', () => {
     console.log(
       `    → ${(elapsed / 1000).toFixed(3)}ms/el | Solid: ~0.01-0.02 | Svelte: ~0.005-0.01`,
     );
+  });
+
+  it('1k complex elements — runtime html() vs hoisted (AOT-equivalent)', () => {
+    // Runtime path: html`` does WeakMap.get for the cached compiled fn, then invokes.
+    const runtimeElapsed = bench('1k complex via runtime html()', () => {
+      for (let i = 0; i < 1000; i++) html`<div><span>Hello ${String(i)}</span></div>`;
+    });
+
+    // AOT-equivalent: hoisted compiled fn invoked directly (what the Vite
+    // plugin produces after the template-hoisting fix).
+    const tplFactory = (() => {
+      const _t = document.createElement('template');
+      _t.innerHTML = '<div><span>Hello <!----></span></div>';
+      return (_v: unknown[]) => {
+        const _r = _t.content.cloneNode(true) as DocumentFragment;
+        const _n0 = _r.firstChild!.firstChild!.firstChild!;
+        (_n0 as Comment).replaceWith(document.createTextNode(_v[0] as string));
+        return _r;
+      };
+    })();
+    const aotElapsed = bench('1k complex via hoisted (AOT-equivalent)', () => {
+      for (let i = 0; i < 1000; i++) tplFactory([String(i)]);
+    });
+
+    console.log(
+      `    → runtime: ${(runtimeElapsed / 1000).toFixed(3)}ms/el | AOT: ${(aotElapsed / 1000).toFixed(3)}ms/el`,
+    );
+    // AOT should be no slower than runtime path (runtime adds WeakMap.get + indirection)
+    expect(aotElapsed).toBeLessThan(runtimeElapsed * 1.5);
   });
 
   it('100 with reactive + event bindings', () => {
@@ -291,7 +356,7 @@ describe('6. list rendering', () => {
     const _elapsed = bench('each() 1000 keyed items', () => {
       each(
         () => items,
-        (item) => html`<li>${item.text}</li>`,
+        (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
       );
     });
@@ -303,7 +368,7 @@ describe('6. list rendering', () => {
     const elapsed = bench('each() 5000 keyed items', () => {
       each(
         () => items,
-        (item) => html`<li>${item.text}</li>`,
+        (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
       );
     });
@@ -318,7 +383,7 @@ describe('6. list rendering', () => {
     container.appendChild(
       each(
         () => items(),
-        (item) => html`<li>${item.text}</li>`,
+        (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
       ),
     );
@@ -338,7 +403,7 @@ describe('6. list rendering', () => {
     container.appendChild(
       each(
         () => items(),
-        (item) => html`<li>${item.text}</li>`,
+        (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
       ),
     );
@@ -361,7 +426,7 @@ describe('6. list rendering', () => {
     container.appendChild(
       each(
         () => items(),
-        (item) => html`<li>${item.text}</li>`,
+        (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
       ),
     );
@@ -374,13 +439,40 @@ describe('6. list rendering', () => {
     });
   });
 
+  it('PREPEND 100 items to 1000 (chat/feed pattern)', async () => {
+    // Tests the prepend fast path — should match append cost (no LIS).
+    const items = state(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` })));
+    const container = document.createElement('div');
+    container.appendChild(
+      each(
+        () => items(),
+        (item) => html`<li>${item().text}</li>`,
+        (item) => item.id,
+      ),
+    );
+    await tick();
+
+    let prependCounter = 0;
+    const _elapsed = await benchAsync('each() PREPEND 100 to 1000', async () => {
+      const base = -1 - prependCounter * 100;
+      prependCounter++;
+      const added = Array.from({ length: 100 }, (_, i) => ({
+        id: base - i,
+        text: `Prep ${i}`,
+      }));
+      items([...added, ...items()]);
+      await tick();
+    });
+    console.log(`    → Should be similar to APPEND (single fragment insert, no LIS)`);
+  });
+
   it('REMOVE all 1000 items', async () => {
     const items = state(Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` })));
     const container = document.createElement('div');
     container.appendChild(
       each(
         () => items(),
-        (item) => html`<li>${item.text}</li>`,
+        (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
       ),
     );
@@ -480,8 +572,10 @@ describe('summary', () => {
   │ ** Svelte effects/computeds are compile-time constructs                 │
   │                                                                          │
   │ Purity strengths: signal read/write speed, bundle size, web standards   │
-  │ Purity weakness: list rendering (more overhead per item than Solid)     │
-  │ Note: signal-polyfill is JS — native C++ signals will close all gaps    │
+  │ Purity status: tied with Solid on keyed-list 10k workloads after the    │
+  │ hand-tuned reactivity replacement; ahead by 3-7x on per-row updates     │
+  │ (bound inputs, cart increment, select/toggle all). See PERFORMANCE.md   │
+  │ for the full results.                                                   │
   └──────────────────────────────────────────────────────────────────────────┘
 `);
     expect(true).toBe(true);

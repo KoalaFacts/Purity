@@ -101,13 +101,15 @@ const container = document.getElementById('container')!;
 
 const fragment = each(
   () => fields(),
-  (field: FieldEntry) =>
-    html`
+  (field: () => FieldEntry) => {
+    const f = field();
+    return html`
       <div>
-        <label>Field ${String(field.id)}:</label>
-        <input ::value=${field.signal} />
+        <label>Field ${String(f.id)}:</label>
+        <input ::value=${f.signal} />
       </div>
-    ` as unknown as HTMLElement,
+    ` as unknown as HTMLElement;
+  },
   (field: FieldEntry) => field.id,
 );
 container.appendChild(fragment);

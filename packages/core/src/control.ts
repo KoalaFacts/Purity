@@ -1,6 +1,6 @@
-import { getCurrentContext } from './component';
-import type { StateAccessor } from './signals';
-import { watch } from './signals';
+import { getCurrentContext, popContext, pushContext, type Scope } from './component.ts';
+import type { StateAccessor } from './signals.ts';
+import { state, watch } from './signals.ts';
 
 // ---------------------------------------------------------------------------
 // match(sourceFn, cases, fallback?) — reactive pattern matching
@@ -41,6 +41,7 @@ export function match<T extends string | number | boolean>(
     // Detach current
     for (let i = 0; i < currentNodes.length; i++) {
       const node = currentNodes[i];
+      /* v8 ignore next -- defensive guard; nodes always have parent here */
       if (node.parentNode) node.parentNode.removeChild(node);
     }
     if (prevKey !== undefined && currentNodes.length > 0) {
@@ -100,6 +101,7 @@ export function match<T extends string | number | boolean>(
     const key = String(sourceFn()) as `${T}`;
     if (key === prevKey) return;
     const parent = endMarker.parentNode;
+    /* v8 ignore next -- defensive; if endMarker is detached, watch is disposed */
     if (!parent) return;
     renderKey(key, parent);
   });
@@ -204,35 +206,79 @@ function lis(arr: number[]): number[] {
 // 2. Unkeyed (no keyFn): item identity as key, same algorithm
 // ---------------------------------------------------------------------------
 
-interface EachEntry {
+interface EachEntry<T = unknown> {
   nodes: Node[];
-  data: StateAccessor<any> | null; // lazily created — only when item is reused
-  dispose?: () => void;
+  // Per-item state signal. mapFn receives `() => data()` as the item accessor;
+  // on key reuse with new data, we set this signal and any reactive bindings
+  // inside the template re-fire — zero DOM creation.
+  data: StateAccessor<T>;
+  // Per-entry scope. Reactive bindings created inside mapFn auto-register
+  // their dispose here (via watch() -> getCurrentContext()). Walked when the
+  // entry is removed to release the watcher references. We use a lean
+  // 1-field { disposers } shape rather than a full ComponentContext — row
+  // entries don't participate in mount/destroy/error lifecycle, and the
+  // per-row alloc cost adds up: 10k rows × ~80 bytes class instance vs
+  // ~24 bytes plain object trims about a megabyte of heap on Create 10k.
+  ctx: Scope;
 }
 
-// Bulk remove all managed nodes using Range API — O(1) native batch removal
-function bulkClear(
+// Run mapFn under a fresh per-entry scope so reactive bindings register
+// their dispose with the entry, not the outer scope. The scope object is
+// intentionally minimal — `disposers` is the only slot anything reads.
+function runEntryMapFn<T>(
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  data: StateAccessor<T>,
+  index: number,
+  _parentCtx: Scope | null,
+): { entry: EachEntry<T>; content: Node | DocumentFragment | string } {
+  const ctx: Scope = { disposers: null };
+  pushContext(ctx);
+  let content: Node | DocumentFragment | string;
+  try {
+    content = mapFn(data, index);
+  } finally {
+    popContext();
+  }
+  return { entry: { nodes: [], data, ctx }, content };
+}
+
+function disposeEntry<T>(entry: EachEntry<T>): void {
+  const disposers = entry.ctx.disposers;
+  if (!disposers) return;
+  for (let i = 0; i < disposers.length; i++) {
+    try {
+      disposers[i]();
+    } catch (e) {
+      console.error('[Purity] Error during each() entry dispose:', e);
+    }
+  }
+  entry.ctx.disposers = null;
+}
+
+// Detach all managed nodes from the parent and release their reactive scopes.
+function bulkClear<T>(
   _parent: Node,
   prevKeys: unknown[],
-  keyToEntry: Map<unknown, EachEntry>,
-  endMarker: Node,
+  keyToEntry: Map<unknown, EachEntry<T>>,
+  _endMarker: Node,
 ): void {
   const prevLen = prevKeys.length;
   if (prevLen === 0) return;
 
-  // Use Range API for batch removal — single native operation
-  const firstEntry = keyToEntry.get(prevKeys[0]);
-  if (firstEntry?.nodes[0]?.parentNode) {
-    const range = document.createRange();
-    range.setStartBefore(firstEntry.nodes[0]);
-    range.setEndBefore(endMarker);
-    range.deleteContents();
-  }
-
-  // Run disposers
+  // Detach + dispose each entry. We walk per-entry nodes rather than calling
+  // Range.deleteContents because jsdom's Range is O(N^2) on long sibling
+  // lists; the per-node loop is O(N) and roughly the same speed in real
+  // browsers (the parent is the same for every removeChild).
   for (let i = 0; i < prevLen; i++) {
-    const entry = keyToEntry.get(prevKeys[i])!;
-    if (entry.dispose) entry.dispose();
+    const entry = keyToEntry.get(prevKeys[i]);
+    if (!entry) continue;
+    const nodes = entry.nodes;
+    for (let j = 0; j < nodes.length; j++) {
+      const node = nodes[j];
+      const p = node.parentNode;
+      if (p) p.removeChild(node);
+    }
+    disposeEntry(entry);
   }
 }
 
@@ -257,26 +303,29 @@ function extractNodes(content: Node | DocumentFragment | string): Node[] {
  * - Removed items: DOM detached
  * - Reordered items: minimal DOM moves via LIS
  *
+ * `mapFn` receives `item` as a **reactive accessor** — call `item()` to read.
+ * Wrap reads in `${() => item().field}` so the binding re-fires when the
+ * underlying data changes for the same key.
+ *
  * @example
  * ```ts
- * // mapFn receives a reactive accessor — use () => item() for reactive text
  * each(
  *   () => todos(),
- *   (todo) => html`<li>${todo.text}</li>`,
- *   (todo) => todo.id
+ *   (todo) => html`<li>${() => todo().text}</li>`,
+ *   (todo) => todo.id,
  * )
  * ```
  */
 export function each<T>(
   listAccessor: (() => T[]) | T[],
-  mapFn: (item: T, index: number) => Node | DocumentFragment | string,
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment {
   const endMarker = document.createComment('e');
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
-  let keyToEntry = new Map<unknown, EachEntry>();
+  let keyToEntry = new Map<unknown, EachEntry<T>>();
   let prevKeys: unknown[] = [];
 
   const getList =
@@ -303,8 +352,8 @@ export function each<T>(
       if (same) {
         // Keys match — update data signals in place (zero DOM creation)
         for (let i = 0; i < len; i++) {
-          const entry = keyToEntry.get(prevKeys[i]);
-          if (entry?.data) entry.data(list[i]);
+          const entry = keyToEntry.get(prevKeys[i])!;
+          entry.data(list[i]);
         }
         return;
       }
@@ -322,27 +371,29 @@ export function each<T>(
 
     // Fast path: all new items (first render or full replace with new keys)
     // Single pass — create + append + build map in one loop
+    const ownerCtx = getCurrentContext();
+
     if (prevLen === 0) {
       const newKeys2: unknown[] = new Array(len);
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) {
         const item = list[i];
         newKeys2[i] = getKey(item, i);
-        const content = mapFn(item, i);
-        let nodes: Node[];
+        const data = state(item);
+        const { entry, content } = runEntryMapFn(mapFn, data, i, ownerCtx);
         if (content instanceof DocumentFragment) {
           const fc = content.firstChild;
-          nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
+          entry.nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
           frag.appendChild(content);
         } else if (content instanceof Node) {
-          nodes = [content];
+          entry.nodes = [content];
           frag.appendChild(content);
         } else {
           const tn = document.createTextNode(String(content ?? ''));
-          nodes = [tn];
+          entry.nodes = [tn];
           frag.appendChild(tn);
         }
-        keyToEntry.set(newKeys2[i], { nodes, data: null });
+        keyToEntry.set(newKeys2[i], entry);
       }
       parent.insertBefore(frag, endMarker);
       prevKeys = newKeys2;
@@ -350,7 +401,7 @@ export function each<T>(
     }
 
     const newKeys: unknown[] = new Array(len);
-    const newEntries = new Map<unknown, EachEntry>();
+    const newEntries = new Map<unknown, EachEntry<T>>();
     let reuseCount = 0;
 
     for (let i = 0; i < len; i++) {
@@ -358,14 +409,16 @@ export function each<T>(
       const key = getKey(item, i);
       newKeys[i] = key;
 
-      const _existing = keyToEntry.get(key);
+      const _existing = keyToEntry.get(key) as EachEntry<T> | undefined;
       if (_existing) {
-        const entry = _existing;
-        if (entry.data) entry.data(item);
-        newEntries.set(key, entry);
+        _existing.data(item);
+        newEntries.set(key, _existing);
         reuseCount++;
       } else {
-        newEntries.set(key, { nodes: extractNodes(mapFn(item, i)), data: null });
+        const data = state(item);
+        const { entry, content } = runEntryMapFn(mapFn, data, i, ownerCtx);
+        entry.nodes = extractNodes(content);
+        newEntries.set(key, entry);
       }
     }
 
@@ -395,19 +448,31 @@ export function each<T>(
               const node = entry.nodes[j];
               if (node.parentNode) node.parentNode.removeChild(node);
             }
-            if (entry.dispose) entry.dispose();
+            disposeEntry(entry);
           }
         }
       }
     }
 
-    // --- Reorder: detect append, swap, or full LIS ---
+    // --- Reorder: detect append, prepend, swap, or full LIS ---
     // Fast path: all old keys at start in same order = pure append
     let isAppend = len > prevLen;
     if (isAppend) {
       for (let i = 0; i < prevLen; i++) {
         if (prevKeys[i] !== newKeys[i]) {
           isAppend = false;
+          break;
+        }
+      }
+    }
+
+    // Fast path: all old keys at end in same order = pure prepend
+    let isPrepend = !isAppend && len > prevLen;
+    if (isPrepend) {
+      const offset = len - prevLen;
+      for (let i = 0; i < prevLen; i++) {
+        if (prevKeys[i] !== newKeys[i + offset]) {
+          isPrepend = false;
           break;
         }
       }
@@ -421,6 +486,18 @@ export function each<T>(
         for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
       }
       parent.insertBefore(frag, endMarker);
+    } else if (isPrepend) {
+      // Pure prepend — insert new items before the first existing entry, no LIS.
+      // Suffix-match implies every prevKey is preserved, so the deletion loop
+      // above was a no-op and all old entry nodes are still attached.
+      const newCount = len - prevLen;
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < newCount; i++) {
+        const entry = newEntries.get(newKeys[i])!;
+        for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
+      }
+      const firstExisting = newEntries.get(newKeys[newCount])!.nodes[0];
+      parent.insertBefore(frag, firstExisting);
     } else {
       // Fast path: swap — exactly 2 positions differ, same length, all reused
       let swapped = false;
@@ -519,9 +596,7 @@ export function each<T>(
   if (ctx) {
     (ctx.disposers ??= []).push(() => {
       dispose();
-      for (const entry of keyToEntry.values()) {
-        if (entry.dispose) entry.dispose();
-      }
+      for (const entry of keyToEntry.values()) disposeEntry(entry);
       keyToEntry.clear();
       prevKeys = [];
     });
@@ -673,16 +748,12 @@ export function list<T>(
       }
     }
 
-    // Fast path: clear all — bulk remove via Range
+    // Fast path: clear all — per-node detach (matches each())
     if (len === 0) {
-      if (prevLen > 0) {
-        const firstEntry = keyToEntry.get(prevKeys[0]);
-        if (firstEntry?.node.parentNode) {
-          const range = document.createRange();
-          range.setStartBefore(firstEntry.node);
-          range.setEndBefore(endMarker);
-          range.deleteContents();
-        }
+      for (let i = 0; i < prevLen; i++) {
+        const entry = keyToEntry.get(prevKeys[i]);
+        const p = entry?.node.parentNode;
+        if (entry && p) p.removeChild(entry.node);
       }
       keyToEntry = new Map();
       prevKeys = [];
@@ -728,14 +799,10 @@ export function list<T>(
 
     // Fast path: no reuse — bulk remove + bulk insert
     if (reuseCount === 0) {
-      if (prevLen > 0) {
-        const firstEntry = keyToEntry.get(prevKeys[0]);
-        if (firstEntry?.node.parentNode) {
-          const range = document.createRange();
-          range.setStartBefore(firstEntry.node);
-          range.setEndBefore(endMarker);
-          range.deleteContents();
-        }
+      for (let i = 0; i < prevLen; i++) {
+        const entry = keyToEntry.get(prevKeys[i]);
+        const p = entry?.node.parentNode;
+        if (entry && p) p.removeChild(entry.node);
       }
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
@@ -756,7 +823,7 @@ export function list<T>(
       }
     }
 
-    // Reorder — append-only fast path or LIS
+    // Reorder — append-only / prepend-only fast paths or LIS
     if (prevLen > 0 && len > 0) {
       let isAppend = len > prevLen;
       if (isAppend) {
@@ -768,10 +835,28 @@ export function list<T>(
         }
       }
 
+      let isPrepend = !isAppend && len > prevLen;
+      if (isPrepend) {
+        const offset = len - prevLen;
+        for (let i = 0; i < prevLen; i++) {
+          if (prevKeys[i] !== newKeys[i + offset]) {
+            isPrepend = false;
+            break;
+          }
+        }
+      }
+
       if (isAppend) {
         const frag = document.createDocumentFragment();
         for (let i = prevLen; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
         parent.insertBefore(frag, endMarker);
+      } else if (isPrepend) {
+        // Pure prepend — see each() for the reuseCount-equals-prevLen invariant.
+        const newCount = len - prevLen;
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < newCount; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
+        const firstExisting = newEntries.get(newKeys[newCount])!.node;
+        parent.insertBefore(frag, firstExisting);
       } else {
         // LIS reorder
         const oldKeyIndex = new Map<unknown, number>();
@@ -797,12 +882,14 @@ export function list<T>(
           next = entry.node;
         }
       }
+      /* v8 ignore start -- prevLen===0 caught by earlier fast path; len===0 caught above */
     } else {
       // All new — batch insert
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
       parent.insertBefore(frag, endMarker);
     }
+    /* v8 ignore stop */
 
     keyToEntry = newEntries;
     prevKeys = newKeys;

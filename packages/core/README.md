@@ -42,7 +42,7 @@ html`
     <p>${() => count()}</p>
     <input ::value=${text} />
     <button @click=${save} ?disabled=${() => !valid()}>Save</button>
-    <ul>${each(() => items(), (item) => html`<li>${item}</li>`)}</ul>
+    <ul>${each(() => items(), (item) => html`<li>${() => item()}</li>`)}</ul>
   </div>
 `
 ```
@@ -118,7 +118,7 @@ match(() => status(), {
   success: () => html`<p>Done</p>`,
 })
 
-each(() => items(), (item) => html`<li>${item.name}</li>`, (item) => item.id)
+each(() => items(), (item) => html`<li>${() => item().name}</li>`, (item) => item.id)
 ```
 
 ### Teleport

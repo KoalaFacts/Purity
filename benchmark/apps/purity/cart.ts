@@ -139,13 +139,13 @@ const tbody = document.getElementById('tbody')!;
 
 const fragment = each(
   () => cart(),
-  (item: CartItem) =>
+  (item: () => CartItem) =>
     html`
       <tr>
-        <td>${item.name}</td>
-        <td>$${String(item.price)}</td>
-        <td>${String(item.qty)}</td>
-        <td>$${String(item.price * item.qty)}</td>
+        <td>${() => item().name}</td>
+        <td>$${() => String(item().price)}</td>
+        <td>${() => String(item().qty)}</td>
+        <td>$${() => String(item().price * item().qty)}</td>
       </tr>
     ` as unknown as HTMLTableRowElement,
   (item: CartItem) => item.id,

@@ -10,9 +10,6 @@ export default defineConfig({
       formats: ['es', 'cjs'],
       fileName: (format, entryName) => (format === 'es' ? `${entryName}.js` : `${entryName}.cjs`),
     },
-    rolldownOptions: {
-      external: ['signal-polyfill'],
-    },
     sourcemap: true,
   },
 });

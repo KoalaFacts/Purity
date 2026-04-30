@@ -25,13 +25,22 @@ export default defineConfig({
     vue(),
   ],
   resolve: {
+    // App-side imports of @purityjs/core go to source so we don't need to
+    // rebuild packages/core between iterations. The compiler subpath is
+    // handled by the package's "development" conditional export (see
+    // packages/core/package.json) — both bench and the AOT plugin pick it
+    // up because we run scripts with `node --conditions=development`.
     alias: {
-      // Resolve to source so the AOT plugin can compile html`` templates
       '@purityjs/core': resolve(import.meta.dirname, '../packages/core/src/index.ts'),
     },
   },
   build: {
     outDir: 'dist',
+    // Sourcemaps so tools/analyze.ts can map minified frames in the
+    // .cpuprofile back to source files. Set PROFILE_MINIFY=0 to also
+    // disable minification when you need to read raw identifier names.
+    sourcemap: true,
+    minify: process.env.PROFILE_MINIFY === '0' ? false : 'esbuild',
     rolldownOptions: { input: inputs },
   },
 });

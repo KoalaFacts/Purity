@@ -1,7 +1,10 @@
 // Row rendering benchmark — Purity idiomatic version.
-// Uses: state, watch, each, html, mount. Zero vanilla JS for UI wiring.
+// Uses: state, each, html, mount. Reactive `${() => item().X}` bindings drive
+// per-row updates via the framework's per-item signal (Path B). No hand-rolled
+// caches or DOM mutation outside the reactive system — same shape as Solid's
+// idiomatic <For> + per-row signal pattern.
 
-import { each, html, mount, state, watch } from '@purityjs/core';
+import { each, html, mount, state } from '@purityjs/core';
 
 // ---------------------------------------------------------------------------
 // Data generation
@@ -68,12 +71,6 @@ interface Row {
   label: string;
 }
 
-interface CachedRow {
-  tr: HTMLTableRowElement;
-  labelNode: Text;
-  label: string;
-}
-
 let nextId = 1;
 const random = (max: number) => (Math.random() * max) | 0;
 const buildLabel = () =>
@@ -114,7 +111,6 @@ function update() {
 }
 
 function clear() {
-  rows.clear();
   data([]);
   selectedId(0);
 }
@@ -137,7 +133,6 @@ function select(id: number) {
 }
 
 function remove(id: number) {
-  rows.delete(id);
   data((d) => d.filter((item) => item.id !== id));
 }
 
@@ -189,54 +184,26 @@ function ButtonBar() {
 // Row rendering
 // ---------------------------------------------------------------------------
 
-const rows = new Map<number, CachedRow>();
-
 const tbody = document.getElementById('tbody')!;
 
-// Keyed list via each() — LIS reconciliation
+// Keyed list via each() — LIS reconciliation + per-item signal updates.
+// `${() => item().X}` bindings re-run whenever the item signal fires (key
+// reuse with new data) — no DOM rebuild for label/class changes.
 const fragment = each(
   () => data(),
-  (item: Row) => {
-    const tr = html`
-      <tr>
-        <td class="col-md-1">${String(item.id)}</td>
-        <td class="col-md-4"><a href="#" class="lbl">${item.label}</a></td>
+  (item: () => Row) => {
+    return html`
+      <tr class=${() => (selectedId() === item().id ? 'danger' : '')}>
+        <td class="col-md-1">${() => String(item().id)}</td>
+        <td class="col-md-4"><a href="#" class="lbl">${() => item().label}</a></td>
         <td class="col-md-1"><a href="#" class="remove"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
         <td class="col-md-6"></td>
       </tr>
     ` as unknown as HTMLTableRowElement;
-
-    const labelNode = tr.querySelector('.lbl')!.firstChild as Text;
-    rows.set(item.id, { tr, labelNode, label: item.label });
-    return tr;
   },
   (item: Row) => item.id,
 );
 tbody.appendChild(fragment);
-
-// In-place label updates — avoids DOM churn for partial updates
-watch(data, (list) => {
-  for (let i = 0; i < list.length; i++) {
-    const item = list[i];
-    const row = rows.get(item.id);
-    if (row && row.label !== item.label) {
-      row.labelNode.data = item.label;
-      row.label = item.label;
-    }
-  }
-});
-
-// Selection highlighting
-watch(selectedId, (id, oldId) => {
-  if (oldId) {
-    const r = rows.get(oldId);
-    if (r) r.tr.className = '';
-  }
-  if (id) {
-    const r = rows.get(id);
-    if (r) r.tr.className = 'danger';
-  }
-});
 
 // Event delegation — one listener for all rows (standard benchmark pattern)
 tbody.addEventListener('click', (e) => {

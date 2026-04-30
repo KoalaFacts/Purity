@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { html } from '../src/compiler/compile.ts';
 import { mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
 
@@ -94,5 +94,145 @@ describe('lifecycle hooks', () => {
 
     unmount();
     expect(order).toEqual(['mounted', 'destroyed']);
+  });
+
+  it('catches errors thrown in onMount via onError', async () => {
+    const container = document.createElement('div');
+    const errors: string[] = [];
+
+    mount(() => {
+      onError((err: Error) => errors.push(err.message));
+      onMount(() => {
+        throw new Error('mount-fail');
+      });
+      return html`<p>x</p>`;
+    }, container);
+
+    await new Promise((r) => queueMicrotask(r));
+    expect(errors).toEqual(['mount-fail']);
+  });
+
+  it('logs onDestroy errors without throwing', () => {
+    const container = document.createElement('div');
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { unmount } = mount(() => {
+      onDestroy(() => {
+        throw new Error('destroy-fail');
+      });
+      return html`<p>x</p>`;
+    }, container);
+
+    expect(() => unmount()).not.toThrow();
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it('bubbles errors to parent onError handler', () => {
+    const container = document.createElement('div');
+    const errors: string[] = [];
+
+    mount(() => {
+      onError((err: Error) => errors.push(`parent:${err.message}`));
+      mount(() => {
+        throw new Error('child-fail');
+      }, document.createElement('div'));
+      return html`<p>x</p>`;
+    }, container);
+
+    expect(errors).toEqual(['parent:child-fail']);
+  });
+
+  it('rethrows errors with no handler installed', () => {
+    expect(() =>
+      mount(() => {
+        throw new Error('uncaught');
+      }, document.createElement('div')),
+    ).toThrow('uncaught');
+  });
+
+  it('logs error in onError handler itself', () => {
+    const container = document.createElement('div');
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    mount(() => {
+      onError(() => {
+        throw new Error('handler-bad');
+      });
+      throw new Error('original');
+    }, container);
+
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it('logs disposer errors during unmountContext disposal', () => {
+    const container = document.createElement('div');
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { unmount } = mount(() => {
+      onDispose(() => {
+        throw new Error('disposer-bad');
+      });
+      return html`<p>x</p>`;
+    }, container);
+
+    unmount();
+    expect(err).toHaveBeenCalledWith(expect.stringContaining('disposal'), expect.any(Error));
+    err.mockRestore();
+  });
+
+  it('onMount/onDestroy/onDispose/onError outside a component are no-ops', () => {
+    expect(() => {
+      onMount(() => {});
+      onDestroy(() => {});
+      onDispose(() => {});
+      onError(() => {});
+    }).not.toThrow();
+  });
+
+  it('mount() handles a render returning a single Node (not fragment)', () => {
+    const container = document.createElement('div');
+    const { unmount } = mount(() => {
+      const el = document.createElement('p');
+      el.className = 'mn-single';
+      el.textContent = 'hi';
+      return el;
+    }, container);
+    expect(container.querySelector('.mn-single')).not.toBeNull();
+    unmount();
+    expect(container.querySelector('.mn-single')).toBeNull();
+  });
+
+  it('double-unmount is a no-op (re-entry guard)', () => {
+    const container = document.createElement('div');
+    const calls: string[] = [];
+    const { unmount } = mount(() => {
+      onDestroy(() => calls.push('d'));
+      return html`<p>x</p>`;
+    }, container);
+    unmount();
+    expect(calls).toEqual(['d']);
+    // Second unmount: ctx._isDestroyed is true, returns early
+    expect(() => unmount()).not.toThrow();
+    expect(calls).toEqual(['d']);
+  });
+
+  it('runs nested mount under existing context (parent.children)', () => {
+    const outer = document.createElement('div');
+    const inner = document.createElement('div');
+    let outerUnmount: (() => void) | null = null;
+    const innerOrder: string[] = [];
+
+    outerUnmount = mount(() => {
+      mount(() => {
+        onDestroy(() => innerOrder.push('inner-destroyed'));
+        return html`<p>inner</p>`;
+      }, inner);
+      return html`<p>outer</p>`;
+    }, outer).unmount;
+
+    outerUnmount();
+    expect(innerOrder).toEqual(['inner-destroyed']);
   });
 });

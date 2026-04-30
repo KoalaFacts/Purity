@@ -117,11 +117,11 @@ const container = document.getElementById('container')!;
 
 const fragment = each(
   () => items(),
-  (item: SelectItem) =>
+  (item: () => SelectItem) =>
     html`
       <div>
-        <input type="checkbox" ?checked=${item.selected} />
-        ${item.label}
+        <input type="checkbox" ?checked=${() => item().selected} />
+        ${() => item().label}
       </div>
     ` as unknown as HTMLElement,
   (item: SelectItem) => item.id,

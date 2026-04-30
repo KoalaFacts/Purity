@@ -50,7 +50,7 @@ const compiledCache = new WeakMap<TemplateStringsArray, CompiledFn>();
  * // Lists and conditionals:
  * html`
  *   ${when(() => ok(), () => html`<p>Yes</p>`)}
- *   ${each(() => items(), (item) => html`<li>${item}</li>`)}
+ *   ${each(() => items(), (item) => html`<li>${() => item()}</li>`)}
  * `
  * ```
  *

@@ -89,13 +89,15 @@ const fragment = when(
     const tbody = table.querySelector('tbody')!;
     const rows = each(
       () => data(),
-      (item: Item) =>
-        html`
+      (item: () => Item) => {
+        const r = item();
+        return html`
           <tr>
-            <td class="col-md-1">${String(item.id)}</td>
-            <td class="col-md-4">${item.label}</td>
+            <td class="col-md-1">${String(r.id)}</td>
+            <td class="col-md-4">${r.label}</td>
           </tr>
-        ` as unknown as HTMLTableRowElement,
+        ` as unknown as HTMLTableRowElement;
+      },
       (item: Item) => item.id,
     );
     tbody.appendChild(rows);

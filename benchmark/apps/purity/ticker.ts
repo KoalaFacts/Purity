@@ -192,17 +192,15 @@ const tbody = document.getElementById('tbody')!;
 
 const fragment = each(
   () => stocks(),
-  (stock: Stock) => {
-    const tr = html`
-      <tr :class=${stock.change >= 0 ? 'positive' : 'negative'}>
-        <td>${stock.symbol}</td>
-        <td>${stock.price.toFixed(2)}</td>
-        <td>${stock.change.toFixed(2)}%</td>
-        <td>${String(stock.volume)}</td>
+  (stock: () => Stock) =>
+    html`
+      <tr class=${() => (stock().change >= 0 ? 'positive' : 'negative')}>
+        <td>${() => stock().symbol}</td>
+        <td>${() => stock().price.toFixed(2)}</td>
+        <td>${() => `${stock().change.toFixed(2)}%`}</td>
+        <td>${() => String(stock().volume)}</td>
       </tr>
-    ` as unknown as HTMLTableRowElement;
-    return tr;
-  },
+    ` as unknown as HTMLTableRowElement,
   (stock: Stock) => stock.id,
 );
 tbody.appendChild(fragment);

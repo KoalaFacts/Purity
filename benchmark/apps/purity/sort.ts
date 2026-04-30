@@ -149,13 +149,15 @@ const tbody = document.getElementById('tbody')!;
 
 const fragment = each(
   () => sorted(),
-  (item: Item) =>
-    html`
+  (item: () => Item) => {
+    const r = item();
+    return html`
       <tr>
-        <td class="col-md-1">${String(item.id)}</td>
-        <td class="col-md-4"><a href="#" class="lbl">${item.label}</a></td>
+        <td class="col-md-1">${String(r.id)}</td>
+        <td class="col-md-4"><a href="#" class="lbl">${r.label}</a></td>
       </tr>
-    ` as unknown as HTMLTableRowElement,
+    ` as unknown as HTMLTableRowElement;
+  },
   (item: Item) => item.id,
 );
 tbody.appendChild(fragment);

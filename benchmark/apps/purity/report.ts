@@ -188,7 +188,7 @@ function SpeedTable(rows: SpeedRow[]) {
   tbody.appendChild(
     each(
       rows,
-      (r) => speedRow(r),
+      (r: () => (typeof rows)[number]) => speedRow(r()),
       (r) => r.op,
     ),
   );
@@ -273,7 +273,7 @@ function MemoryTable(rows: MemRow[]) {
   tbody.appendChild(
     each(
       rows,
-      (r) => memRow(r),
+      (r: () => (typeof rows)[number]) => memRow(r()),
       (r) => r.op,
     ),
   );
@@ -606,7 +606,7 @@ function App() {
       </div>
       ${each(
         () => visibleGroups(),
-        (g) => CategorySection(g),
+        (g: () => ReturnType<typeof visibleGroups>[number]) => CategorySection(g()),
         (g) => g.category,
       )}
     </div>

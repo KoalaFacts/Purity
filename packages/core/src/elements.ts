@@ -1,5 +1,5 @@
-import { ComponentContext, getCurrentContext, popContext, pushContext } from './component';
-import { watch } from './signals';
+import { ComponentContext, getCurrentContext, popContext, pushContext } from './component.ts';
+import { watch } from './signals.ts';
 
 // Run callbacks safely
 function runCallbacks(arr: (() => void)[] | null, ctx?: ComponentContext): void {
@@ -8,8 +8,12 @@ function runCallbacks(arr: (() => void)[] | null, ctx?: ComponentContext): void 
     try {
       arr[i]();
     } catch (err) {
-      if (ctx) ctx._handleError(err);
-      else console.error('[Purity] Error:', err);
+      if (ctx) {
+        ctx._handleError(err);
+      } else {
+        /* v8 ignore next -- ctx always provided at call sites; defensive */
+        console.error('[Purity] Error:', err);
+      }
     }
   }
 }
@@ -59,6 +63,7 @@ function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<an
   const cache = new Map<string, SlotAccessor<any>>();
   return new Proxy({} as Record<string, SlotAccessor<any>>, {
     get(_target, prop: string) {
+      /* v8 ignore next -- defensive; users access slots by string name */
       if (typeof prop !== 'string') return undefined;
       let accessor = cache.get(prop);
       if (!accessor) {
@@ -124,7 +129,7 @@ function resolveContent(content: unknown): Node | null {
  */
 export function slot<E = void>(name?: string): SlotAccessor<E> {
   const ctx = getCurrentContext();
-  if (!ctx)
+  if (!(ctx instanceof ComponentContext))
     throw new Error(
       'slot() must be called inside a component() render function.\n' +
         '  Example: component("my-el", (props, { default: body }) => body())',
@@ -319,8 +324,12 @@ export function component<
         }
 
         const ctx = new ComponentContext();
+        // The current scope might be a lean each() scope (just disposers) or
+        // a full ComponentContext from a parent component. Only chain into
+        // the parent when it's a real component — that's the only case where
+        // child/parent linking is meaningful for error bubbling.
         const parentCtx = getCurrentContext();
-        if (parentCtx) {
+        if (parentCtx instanceof ComponentContext) {
           ctx.parent = parentCtx;
           (parentCtx.children ??= []).push(ctx);
         }
@@ -372,7 +381,7 @@ export function component<
   return (props: P, children?: any) => {
     const ctx = new ComponentContext();
     const parentCtx = getCurrentContext();
-    if (parentCtx) {
+    if (parentCtx instanceof ComponentContext) {
       ctx.parent = parentCtx;
       (parentCtx.children ??= []).push(ctx);
     }

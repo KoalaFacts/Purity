@@ -22,7 +22,7 @@ onDispose(fn)                // register cleanup
 onError(fn)                  // error boundary
 match(sourceFn, cases)       // pattern matching
 when(condFn, thenFn, elseFn?) // boolean conditional
-each(listFn, mapFn, keyFn?)  // list rendering
+each(listFn, mapFn, keyFn?)  // list rendering — mapFn receives item as accessor: (item: () => T, i: number)
 ```
 
 ## Template Syntax

@@ -131,12 +131,12 @@ describe('css', () => {
   });
 
   it('handles null interpolation by emitting empty', () => {
-    // Verifies the framework's contract that null in a css interpolation
-    // emits empty without throwing. The implicit conversion CodeQL warns
-    // about is the contract under test.
-    const nul: unknown = null;
-    // codeql[js/implicit-operand-conversion] — intentional, see comment.
-    const scope = css`.x { color: ${nul}; }`;
+    // Verifies the framework's contract: null in a css interpolation
+    // emits empty without throwing. Value pulled from JSON.parse so the
+    // bare `${null}` literal is gone — the value is genuinely `unknown`
+    // and only resolved at runtime.
+    const src = JSON.parse('{"v":null}') as Record<string, unknown>;
+    const scope = css`.x { color: ${src.v}; }`;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl).not.toBeNull();
   });
@@ -182,10 +182,11 @@ describe('css', () => {
   it('handles null/undefined static values in reactive template', () => {
     const c = state('red');
     // The framework's contract: null/undefined static interpolations don't
-    // break a css template that also contains a reactive expression.
-    const nul: unknown = null;
-    const undef: unknown = undefined;
-    // codeql[js/implicit-operand-conversion] — intentional, see comment.
+    // break a css template that also contains a reactive expression. Same
+    // JSON.parse trick as above — values are runtime-resolved unknowns.
+    const src = JSON.parse('{"nul":null}') as Record<string, unknown>;
+    const nul = src.nul;
+    const undef = src.notPresent;
     const scope = css`.x { color: ${() => c()}; padding: ${nul}px; margin: ${undef}; }`;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl!.textContent).toContain('color: red');

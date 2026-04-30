@@ -1,126 +1,77 @@
-name: Publish
-
-# Publishes @purityjs/* packages to BOTH registries:
-#   1. npmjs.org           — authenticated via secrets.NPM_TOKEN
-#   2. GitHub Packages     — authenticated via secrets.GITHUB_TOKEN (no PAT)
-#
-# GitHub Packages auth follows the recommended upgrade path:
-# https://docs.github.com/en/packages/managing-github-packages-using-github-actions-workflows/publishing-and-installing-a-package-with-github-actions#upgrading-a-workflow-that-accesses-a-registry-using-a-personal-access-token
-#
-# NOTE: GitHub Packages npm registry requires the package scope to match the
-# repository owner (case-insensitive). Owner here is `KoalaFacts`, so packages
-# named `@purityjs/*` will 403 against npm.pkg.github.com until they are either
-# renamed to `@koalafacts/*` or the repo is moved under a `purityjs` org.
+name: Publish to npm
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Explicit version to tag after publish (e.g. 0.1.0)'
+        description: 'Explicit version to publish (e.g. 0.1.0, 0.2.0)'
         required: true
         default: '0.1.0'
-  release:
-    types: [created]
 
 permissions:
-  contents: write    # push the git tag on workflow_dispatch
-  packages: write    # publish to GitHub Packages
-  id-token: write    # npm provenance / trusted publishing
+  contents: write
+  id-token: write
 
 jobs:
   publish:
-    name: Verify → Build → Publish (npm + GitHub Packages)
     runs-on: ubuntu-latest
     environment: production
-
     steps:
-      - name: 📥 Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: 🟢 Setup Node.js (registry → npmjs.org)
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
-          node-version: '24'
-          cache: 'npm'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: 24
+          registry-url: https://registry.npmjs.org
 
-      - name: 📦 Install dependencies
-        run: npm ci
+      - run: npm ci
 
-      # Quality gates — same checks as CI, run again before publishing.
-      - name: 🔍 Format check (Oxfmt — Vite+)
+      # Full CI checks before publish
+      - name: Format check (Oxfmt — Vite+)
         run: npx oxfmt --check .
 
-      - name: 🔍 Lint (Oxlint — Vite+)
+      - name: Lint (Oxlint — Vite+)
         run: npx oxlint
 
-      - name: 🔷 Type-check @purityjs/core
+      - name: Type-check
         run: npx tsc --noEmit -p packages/core
 
-      - name: 🧪 Test @purityjs/core
+      - name: Test core
         run: npm test -w packages/core
 
-      - name: 🧪 Test @purityjs/vite-plugin
+      - name: Test vite-plugin
         run: npm test -w packages/vite-plugin
 
-      # Build in dependency order.
-      - name: 🏗️ Build @purityjs/core
+      # Build in dependency order
+      - name: Build core
         run: npm run build -w packages/core
 
-      - name: 🏗️ Build @purityjs/vite-plugin
+      - name: Build vite-plugin
         run: npm run build -w packages/vite-plugin
 
-      - name: 🏗️ Build @purityjs/cli
+      - name: Build cli
         run: npm run build -w packages/cli
 
-      # ─────────────────────────────────────────────────────────────
-      # Publish to npmjs.org
-      # First publish: set NPM_TOKEN as environment secret on 'production'.
-      # After trusted publishing is configured: drop NODE_AUTH_TOKEN here.
-      # ─────────────────────────────────────────────────────────────
-      - name: 🚀 Publish @purityjs/core → npmjs.org
+      # Publish in dependency order
+      # First publish: set NPM_TOKEN as environment secret on 'production'
+      # After trusted publishing is configured: remove all NODE_AUTH_TOKEN env lines
+      - name: Publish core
         run: npm publish -w packages/core
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: 🚀 Publish @purityjs/vite-plugin → npmjs.org
+      - name: Publish vite-plugin
         run: npm publish -w packages/vite-plugin
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: 🚀 Publish @purityjs/cli → npmjs.org
+      - name: Publish cli
         run: npm publish -w packages/cli
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # ─────────────────────────────────────────────────────────────
-      # Publish to GitHub Packages
-      # Re-run setup-node to rewrite .npmrc with the GHCR registry.
-      # ─────────────────────────────────────────────────────────────
-      - name: 🟢 Setup Node.js (registry → GitHub Packages)
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
-        with:
-          node-version: '24'
-          registry-url: 'https://npm.pkg.github.com'
-
-      - name: 🚀 Publish @purityjs/core → GitHub Packages
-        run: npm publish -w packages/core
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 🚀 Publish @purityjs/vite-plugin → GitHub Packages
-        run: npm publish -w packages/vite-plugin
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 🚀 Publish @purityjs/cli → GitHub Packages
-        run: npm publish -w packages/cli
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Tag the release (only when triggered manually — release events already have a tag).
-      - name: 🏷️ Create git tag
-        if: github.event_name == 'workflow_dispatch'
+      # Tag the release
+      - name: Create git tag
         run: |
           git tag v${{ github.event.inputs.version }}
           git push origin v${{ github.event.inputs.version }}

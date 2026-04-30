@@ -185,6 +185,7 @@ export function generate(ast: FragmentNode): string {
   const html = buildDynamicHtml(ast, slots, []);
 
   const bindCode = genPositionalBindings(slots);
+  const templatePrep = genTemplateCommentToTextConversion(slots);
 
   // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
   // `html` was built by buildDynamicHtml which JSON.stringify's all values
@@ -194,6 +195,7 @@ export function generate(ast: FragmentNode): string {
     '(function(){',
     `var _t=document.createElement('template');`,
     `_t.innerHTML=${JSON.stringify(html)};`,
+    templatePrep,
     'return function(_v,_w){',
     'var _r=_t.content.cloneNode(true);',
     bindCode,
@@ -201,6 +203,28 @@ export function generate(ast: FragmentNode): string {
     '};',
     '})()',
   ].join('');
+}
+
+// One-time template prep: convert each comment placeholder (used for
+// expression slots that have a text/expression sibling, where the parser
+// would coalesce) into an empty Text node inside `_t.content`. After this,
+// every reactive expression slot — text-placeholder OR comment-placeholder
+// — is a Text node when cloned, so the per-row binding code never has to
+// createTextNode + replaceWith. For a 10k-row table with two such slots
+// per row, that's 40k DOM ops eliminated (the cost paid is two replaceWith
+// calls once at module-init time).
+function genTemplateCommentToTextConversion(slots: Slot[]): string {
+  const stmts: string[] = [];
+  for (const slot of slots) {
+    if (slot.type !== 'expr' || slot.textPlaceholder) continue;
+    const id = bindVarCounter++;
+    let nav = '_t.content';
+    for (const step of slot.path) nav += step === 0 ? '.firstChild' : '.nextSibling';
+    stmts.push(
+      `var _cs${id}=${nav};_cs${id}.parentNode.replaceChild(document.createTextNode(''),_cs${id});`,
+    );
+  }
+  return stmts.join('');
 }
 
 export function generateModule(ast: FragmentNode): string {
@@ -626,45 +650,32 @@ function genPositionalBindings(slots: Slot[]): string {
 // old comment-placeholder behavior.
 // ---------------------------------------------------------------------------
 
-function genExprBinding(slotVar: string, index: number, textPlaceholder: boolean): BindingParts {
+function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolean): BindingParts {
+  // The slot is always a Text node by the time the per-row factory runs:
+  // - textPlaceholder=true: ZWSP text node stamped directly in the HTML.
+  // - textPlaceholder=false: was a comment in the HTML, but converted to a
+  //   Text node once at module init by genTemplateCommentToTextConversion.
+  // So the setup is the same in both cases: function values keep the text
+  // node and let the reactive watch write .data; Node/Array values do a
+  // single replaceWith.
   const id = bindVarCounter++;
   const xv = `_xv${id}`;
   const tn = `_tn${id}`;
   const fl = `_f${id}`;
   const val = `_v[${index}]`;
 
-  let setup: string;
-  if (textPlaceholder) {
-    // Slot is a Text node already. Reactive case: keep it, watch writes .data.
-    // Static cases: write .data in place, or replaceWith for Node / Array.
-    setup = [
-      `var ${xv}=${val};`,
-      `var ${fl}=typeof ${xv}==='function';`,
-      `var ${tn}=${slotVar};`,
-      `if(!${fl}){`,
-      `if(typeof ${xv}==='object'){`,
-      `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});${tn}=${xv};}`,
-      `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++)_af${id}.appendChild(${xv}[_ai${id}] instanceof Node?${xv}[_ai${id}]:document.createTextNode(String(${xv}[_ai${id}])));${slotVar}.replaceWith(_af${id});}`,
-      `else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
-      `}else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
-      `}`,
-    ].join('');
-  } else {
-    // Slot is a Comment placeholder. Replace with a fresh text node up front
-    // so the reactive watch can mutate `.data` directly afterwards.
-    setup = [
-      `var ${xv}=${val};`,
-      `var ${fl}=typeof ${xv}==='function';`,
-      `var ${tn};`,
-      `if(${fl}){`,
-      `${tn}=document.createTextNode('');${slotVar}.replaceWith(${tn});`,
-      `}else if(typeof ${xv}==='object'){`,
-      `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});}`,
-      `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++)_af${id}.appendChild(${xv}[_ai${id}] instanceof Node?${xv}[_ai${id}]:document.createTextNode(String(${xv}[_ai${id}])));${slotVar}.replaceWith(_af${id});}`,
-      `else{${slotVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
-      `}else{${slotVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
-    ].join('');
-  }
+  const setup = [
+    `var ${xv}=${val};`,
+    `var ${fl}=typeof ${xv}==='function';`,
+    `var ${tn}=${slotVar};`,
+    `if(!${fl}){`,
+    `if(typeof ${xv}==='object'){`,
+    `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});${tn}=${xv};}`,
+    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++)_af${id}.appendChild(${xv}[_ai${id}] instanceof Node?${xv}[_ai${id}]:document.createTextNode(String(${xv}[_ai${id}])));${slotVar}.replaceWith(_af${id});}`,
+    `else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
+    `}else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
+    `}`,
+  ].join('');
 
   const reactive = [
     `if(${fl}){`,

@@ -3,6 +3,7 @@
 When asked to build an app or page using Purity:
 
 ## Project Setup
+
 ```bash
 npx @purityjs/cli my-app
 cd my-app
@@ -11,6 +12,7 @@ npm run dev
 ```
 
 ## App Structure
+
 ```
 src/
   main.ts          — entry point, mount root component
@@ -20,6 +22,7 @@ src/
 ```
 
 ## Entry Point Pattern
+
 ```ts
 // src/main.ts
 import { mount, html } from '@purityjs/core';
@@ -29,6 +32,7 @@ mount(() => html`<p-app></p-app>`, document.getElementById('app')!);
 ```
 
 ## Component Pattern
+
 ```ts
 // src/components/app.ts
 import { state, compute, html, css, component, onMount, each, when } from '@purityjs/core';
@@ -38,21 +42,31 @@ component('p-app', () => {
   const count = compute(() => items().length);
 
   css`
-    .app { max-width: 600px; margin: 0 auto; padding: 2rem; }
-    h1 { color: #6c5ce7; }
+    .app {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    h1 {
+      color: #6c5ce7;
+    }
   `;
 
   return html`
     <div class="app">
       <h1>My App</h1>
       <p>${() => count()} items</p>
-      ${each(() => items(), (item) => html`<p-item :data=${item}></p-item>`)}
+      ${each(
+        () => items(),
+        (item) => html`<p-item :data=${item}></p-item>`,
+      )}
     </div>
   `;
 });
 ```
 
 ## Composable Pattern (shared logic)
+
 ```ts
 // src/composables/useFetch.ts
 import { state, onMount } from '@purityjs/core';
@@ -78,6 +92,7 @@ export function useFetch<T>(url: string) {
 ```
 
 ## Form Pattern
+
 ```ts
 component('p-form', () => {
   const name = state('');
@@ -99,30 +114,35 @@ component('p-form', () => {
 ```
 
 ## Conditional Rendering
+
 ```ts
 // Boolean
-when(() => isLoggedIn(),
+when(
+  () => isLoggedIn(),
   () => html`<p>Welcome</p>`,
-  () => html`<p>Please login</p>`
-)
+  () => html`<p>Please login</p>`,
+);
 
 // Multi-case
 match(() => status(), {
   loading: () => html`<p>Loading...</p>`,
   error: () => html`<p>Error!</p>`,
   success: () => html`<p>Done</p>`,
-})
+});
 ```
 
 ## List Rendering
+
 ```ts
-each(() => items(),
+each(
+  () => items(),
   (item) => html`<li>${item.name}</li>`,
-  (item) => item.id  // key function for efficient diffing
-)
+  (item) => item.id, // key function for efficient diffing
+);
 ```
 
 ## Communication
+
 ```
 Parent → Child:    :prop=${value}
 Child → Parent:    @event=${callback}  (callback props)

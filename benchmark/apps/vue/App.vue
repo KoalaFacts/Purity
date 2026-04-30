@@ -109,32 +109,93 @@ function remove(id: number) {
 </script>
 
 <template>
-  <div id="main"><div class="container">
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Vue</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="run" @click="run(1000)">Create 1,000 rows</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="runlots" @click="run(10000)">Create 10,000 rows</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="add" @click="add()">Append 1,000 rows</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="update" @click="update()">Update every 10th row</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="clear" @click="clear()">Clear</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="swaprows" @click="swapRows()">Swap Rows</button></div>
-        <button type="button" id="run-10" style="display:none" @click="run(10)">Create 10</button>
-        <button type="button" id="run-100" style="display:none" @click="run(100)">Create 100</button>
-        <button type="button" id="add-10" style="display:none" @click="add(10)">Append 10</button>
-        <button type="button" id="add-100" style="display:none" @click="add(100)">Append 100</button>
-        <button type="button" id="add-10k" style="display:none" @click="add(10000)">Append 10000</button>
-      </div></div>
-    </div></div>
-    <table class="table table-hover table-striped test-data">
-      <tbody>
-        <tr v-for="row in data" :key="row.id" :class="{ danger: row.id === selectedId }">
-          <td class="col-md-1">{{ row.id }}</td>
-          <td class="col-md-4"><a href="#" class="lbl" @click.prevent="select(row.id)">{{ row.label }}</a></td>
-          <td class="col-md-1"><a href="#" class="remove" @click.prevent="remove(row.id)"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
-          <td class="col-md-6"></td>
-        </tr>
-      </tbody>
-    </table>
-  </div></div>
+  <div id="main">
+    <div class="container">
+      <div class="jumbotron">
+        <div class="row">
+          <div class="col-md-6"><h1>Vue</h1></div>
+          <div class="col-md-6">
+            <div class="row">
+              <div class="col-sm-6 smallpad">
+                <button type="button" class="btn btn-primary btn-block" id="run" @click="run(1000)">
+                  Create 1,000 rows
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="runlots"
+                  @click="run(10000)"
+                >
+                  Create 10,000 rows
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button type="button" class="btn btn-primary btn-block" id="add" @click="add()">
+                  Append 1,000 rows
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="update"
+                  @click="update()"
+                >
+                  Update every 10th row
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button type="button" class="btn btn-primary btn-block" id="clear" @click="clear()">
+                  Clear
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="swaprows"
+                  @click="swapRows()"
+                >
+                  Swap Rows
+                </button>
+              </div>
+              <button type="button" id="run-10" style="display: none" @click="run(10)">
+                Create 10
+              </button>
+              <button type="button" id="run-100" style="display: none" @click="run(100)">
+                Create 100
+              </button>
+              <button type="button" id="add-10" style="display: none" @click="add(10)">
+                Append 10
+              </button>
+              <button type="button" id="add-100" style="display: none" @click="add(100)">
+                Append 100
+              </button>
+              <button type="button" id="add-10k" style="display: none" @click="add(10000)">
+                Append 10000
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <table class="table table-hover table-striped test-data">
+        <tbody>
+          <tr v-for="row in data" :key="row.id" :class="{ danger: row.id === selectedId }">
+            <td class="col-md-1">{{ row.id }}</td>
+            <td class="col-md-4">
+              <a href="#" class="lbl" @click.prevent="select(row.id)">{{ row.label }}</a>
+            </td>
+            <td class="col-md-1">
+              <a href="#" class="remove" @click.prevent="remove(row.id)"
+                ><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span
+              ></a>
+            </td>
+            <td class="col-md-6"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </template>

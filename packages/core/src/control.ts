@@ -332,11 +332,11 @@ export function each<T>(
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
 
   const dispose = watch(() => {
-    const list = getList() || [];
+    const items = getList() || [];
     const parent = endMarker.parentNode;
     if (!parent) return;
 
-    const len = list.length;
+    const len = items.length;
     const prevLen = prevKeys.length;
     const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
 
@@ -344,7 +344,7 @@ export function each<T>(
     if (len === prevLen) {
       let same = true;
       for (let i = 0; i < len; i++) {
-        if (prevKeys[i] !== getKey(list[i], i)) {
+        if (prevKeys[i] !== getKey(items[i], i)) {
           same = false;
           break;
         }
@@ -353,7 +353,7 @@ export function each<T>(
         // Keys match — update data signals in place (zero DOM creation)
         for (let i = 0; i < len; i++) {
           const entry = keyToEntry.get(prevKeys[i])!;
-          entry.data(list[i]);
+          entry.data(items[i]);
         }
         return;
       }
@@ -377,7 +377,7 @@ export function each<T>(
       const newKeys2: unknown[] = new Array(len);
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) {
-        const item = list[i];
+        const item = items[i];
         newKeys2[i] = getKey(item, i);
         const data = state(item);
         const { entry, content } = runEntryMapFn(mapFn, data, i, ownerCtx);
@@ -405,7 +405,7 @@ export function each<T>(
     let reuseCount = 0;
 
     for (let i = 0; i < len; i++) {
-      const item = list[i];
+      const item = items[i];
       const key = getKey(item, i);
       newKeys[i] = key;
 
@@ -724,25 +724,25 @@ export function list<T>(
   };
 
   const dispose = watch(() => {
-    const list = getList() || [];
+    const items = getList() || [];
     const parent = endMarker.parentNode;
     if (!parent) return;
 
-    const len = list.length;
+    const len = items.length;
     const prevLen = prevKeys.length;
 
     // Fast path: same keys — update in place
     if (len === prevLen) {
       let same = true;
       for (let i = 0; i < len; i++) {
-        if (prevKeys[i] !== getKey(list[i], i)) {
+        if (prevKeys[i] !== getKey(items[i], i)) {
           same = false;
           break;
         }
       }
       if (same) {
         for (let i = 0; i < len; i++) {
-          updateEntry(keyToEntry.get(prevKeys[i])!, list[i], i);
+          updateEntry(keyToEntry.get(prevKeys[i])!, items[i], i);
         }
         return;
       }
@@ -765,7 +765,7 @@ export function list<T>(
       const newKeys2: unknown[] = new Array(len);
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) {
-        const item = list[i];
+        const item = items[i];
         newKeys2[i] = getKey(item, i);
         const entry = createEntry(item, i);
         keyToEntry.set(newKeys2[i], entry);
@@ -782,7 +782,7 @@ export function list<T>(
 
     // Tight creation loop — NO function call overhead per item
     for (let i = 0; i < len; i++) {
-      const item = list[i];
+      const item = items[i];
       const key = getKey(item, i);
       newKeys[i] = key;
 

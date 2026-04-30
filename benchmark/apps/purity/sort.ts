@@ -114,30 +114,64 @@ function populate(count: number) {
 // ---------------------------------------------------------------------------
 
 function hBtn(id: string, label: string, handler: () => void) {
-  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>
+    ${label}
+  </button>`;
 }
 
 function ButtonBar() {
   return html`
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Purity (Sort)</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="populate" @click=${() => populate(1000)}>Populate 1k</button>
+    <div class="jumbotron">
+      <div class="row">
+        <div class="col-md-6"><h1>Purity (Sort)</h1></div>
+        <div class="col-md-6">
+          <div class="row">
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="populate"
+                @click=${() => populate(1000)}
+              >
+                Populate 1k
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="sort-id"
+                @click=${() => sortMode('id-asc')}
+              >
+                Sort by ID &#x2191;
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="sort-id-desc"
+                @click=${() => sortMode('id-desc')}
+              >
+                Sort by ID &#x2193;
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="sort-label"
+                @click=${() => sortMode('label-asc')}
+              >
+                Sort by Label &#x2191;
+              </button>
+            </div>
+            ${hBtn('populate-100', 'Populate 100', () => populate(100))}
+            ${hBtn('populate-10k', 'Populate 10k', () => populate(10000))}
+          </div>
         </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="sort-id" @click=${() => sortMode('id-asc')}>Sort by ID &#x2191;</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="sort-id-desc" @click=${() => sortMode('id-desc')}>Sort by ID &#x2193;</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="sort-label" @click=${() => sortMode('label-asc')}>Sort by Label &#x2191;</button>
-        </div>
-        ${hBtn('populate-100', 'Populate 100', () => populate(100))}
-        ${hBtn('populate-10k', 'Populate 10k', () => populate(10000))}
-      </div></div>
-    </div></div>
+      </div>
+    </div>
   `;
 }
 

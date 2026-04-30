@@ -141,42 +141,79 @@ function remove(id: number) {
 // ---------------------------------------------------------------------------
 
 function hBtn(id: string, label: string, handler: () => void) {
-  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>
+    ${label}
+  </button>`;
 }
 
 function ButtonBar() {
   return html`
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Purity</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="run" @click=${() => run(1000)}>Create 1,000 rows</button>
+    <div class="jumbotron">
+      <div class="row">
+        <div class="col-md-6"><h1>Purity</h1></div>
+        <div class="col-md-6">
+          <div class="row">
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="run"
+                @click=${() => run(1000)}
+              >
+                Create 1,000 rows
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="runlots"
+                @click=${() => run(10000)}
+              >
+                Create 10,000 rows
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="add"
+                @click=${() => add(1000)}
+              >
+                Append 1,000 rows
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button type="button" class="btn btn-primary btn-block" id="update" @click=${update}>
+                Update every 10th row
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button type="button" class="btn btn-primary btn-block" id="clear" @click=${clear}>
+                Clear
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="swaprows"
+                @click=${swapRows}
+              >
+                Swap Rows
+              </button>
+            </div>
+            ${hBtn('run-10', 'Create 10', () => run(10))}
+            ${hBtn('run-100', 'Create 100', () => run(100))}
+            ${hBtn('run-1k', 'Create 1k', () => run(1000))}
+            ${hBtn('run-10k', 'Create 10k', () => run(10000))}
+            ${hBtn('add-10', 'Add 10', () => add(10))} ${hBtn('add-100', 'Add 100', () => add(100))}
+            ${hBtn('add-1k', 'Add 1k', () => add(1000))}
+            ${hBtn('add-10k', 'Add 10k', () => add(10000))}
+          </div>
         </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="runlots" @click=${() => run(10000)}>Create 10,000 rows</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="add" @click=${() => add(1000)}>Append 1,000 rows</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="update" @click=${update}>Update every 10th row</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="clear" @click=${clear}>Clear</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="swaprows" @click=${swapRows}>Swap Rows</button>
-        </div>
-        ${hBtn('run-10', 'Create 10', () => run(10))}
-        ${hBtn('run-100', 'Create 100', () => run(100))}
-        ${hBtn('run-1k', 'Create 1k', () => run(1000))}
-        ${hBtn('run-10k', 'Create 10k', () => run(10000))}
-        ${hBtn('add-10', 'Add 10', () => add(10))}
-        ${hBtn('add-100', 'Add 100', () => add(100))}
-        ${hBtn('add-1k', 'Add 1k', () => add(1000))}
-        ${hBtn('add-10k', 'Add 10k', () => add(10000))}
-      </div></div>
-    </div></div>
+      </div>
+    </div>
   `;
 }
 
@@ -196,7 +233,11 @@ const fragment = each(
       <tr class=${() => (selectedId() === item().id ? 'danger' : '')}>
         <td class="col-md-1">${() => String(item().id)}</td>
         <td class="col-md-4"><a href="#" class="lbl">${() => item().label}</a></td>
-        <td class="col-md-1"><a href="#" class="remove"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
+        <td class="col-md-1">
+          <a href="#" class="remove"
+            ><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span
+          ></a>
+        </td>
         <td class="col-md-6"></td>
       </tr>
     ` as unknown as HTMLTableRowElement;

@@ -22,38 +22,38 @@ Chromium. Final `benchmark/benchmark-results.md` for the full table.
 10k-row workloads (the row-rendering shape that frameworks actually
 compete on):
 
-| Workload          | Purity     | Solid      | Svelte     | Vue        |
-|---                |---         |---         |---         |---         |
-| **Create 10k**    | **661.5**  | 795.7      | 823.6      | 701.5      |
-| Append 10k        | 735.9      | **699.7**  | 839.0      | 1012.8     |
-| Replace 10k       | 710.9      | **693.4**  | 735.9      | 796.8      |
-| Update every 10th | 219.3      | 207.8      | **202.7**  | 217.4      |
-| Swap rows         | **82.8**   | 95.3       | **82.4**   | 98.7       |
-| Clear             | 82.4       | **69.0**   | 75.1       | 71.7       |
-| **Sort 10k by ID↓** | **341.7** | 349.0    | 5982¹      | 347.1      |
+| Workload            | Purity    | Solid     | Svelte    | Vue    |
+| ------------------- | --------- | --------- | --------- | ------ |
+| **Create 10k**      | **661.5** | 795.7     | 823.6     | 701.5  |
+| Append 10k          | 735.9     | **699.7** | 839.0     | 1012.8 |
+| Replace 10k         | 710.9     | **693.4** | 735.9     | 796.8  |
+| Update every 10th   | 219.3     | 207.8     | **202.7** | 217.4  |
+| Swap rows           | **82.8**  | 95.3      | **82.4**  | 98.7   |
+| Clear               | 82.4      | **69.0**  | 75.1      | 71.7   |
+| **Sort 10k by ID↓** | **341.7** | 349.0     | 5982¹     | 347.1  |
 
 ¹ Svelte regression on this op only.
 
 Per-row update workloads (where Purity's per-row signal architecture pays):
 
-| Workload                         | Purity      | Solid       | Δ vs Solid |
-|---                               |---          |---          |---         |
-| Bound input — Create 10k         | **32.1**    | 436.6       | **−93%**   |
-| Bound input — Update all 10k     | **47.1**    | 338.4       | **−86%**   |
-| Bound input — Update all 1k      | **32.0**    | 47.3        | −32%       |
-| Cart Increment all 10k           | **286.5**   | 523.5       | −45%       |
-| Toggle all 10k                   | **62.9**    | 186.5       | **−66%**   |
-| Select all 10k                   | 63.8        | 188.3       | **−66%**   |
-| Deselect all 10k                 | 62.5        | 182.7       | **−66%**   |
+| Workload                     | Purity    | Solid | Δ vs Solid |
+| ---------------------------- | --------- | ----- | ---------- |
+| Bound input — Create 10k     | **32.1**  | 436.6 | **−93%**   |
+| Bound input — Update all 10k | **47.1**  | 338.4 | **−86%**   |
+| Bound input — Update all 1k  | **32.0**  | 47.3  | −32%       |
+| Cart Increment all 10k       | **286.5** | 523.5 | −45%       |
+| Toggle all 10k               | **62.9**  | 186.5 | **−66%**   |
+| Select all 10k               | 63.8      | 188.3 | **−66%**   |
+| Deselect all 10k             | 62.5      | 182.7 | **−66%**   |
 
 Memory (Create 10k rows, retained = heap not released after destroy):
 
-|        | used     | retained                     |
-|---     |---       |---                           |
-| Purity | 11.2 MB  | **0.0 MB**  ← best of the four |
-| Solid  | 9.8 MB   | 0.2 MB                       |
-| Svelte | 9.0 MB   | 0.0 MB                       |
-| Vue    | 19.7 MB  | 0.1 MB                       |
+|        | used    | retained                      |
+| ------ | ------- | ----------------------------- |
+| Purity | 11.2 MB | **0.0 MB** ← best of the four |
+| Solid  | 9.8 MB  | 0.2 MB                        |
+| Svelte | 9.0 MB  | 0.0 MB                        |
+| Vue    | 19.7 MB | 0.1 MB                        |
 
 The wins on the per-row update workloads were initially suspicious —
 "are they real?" was asked twice. They were verified by patching
@@ -87,12 +87,12 @@ meaningful.
 
 Profiler delta on Create 10k:
 
-| metric           | before    | after     |
-|---               |---        |---        |
-| wall             | 1946 ms   | **999 ms** |
-| DOM nodes Δ      | 150,003   | **100,003** |
-| domOps native    | 169.5 ms  | 89.6 ms   |
-| layout duration  | 1022 ms   | 397 ms    |
+| metric          | before   | after       |
+| --------------- | -------- | ----------- |
+| wall            | 1946 ms  | **999 ms**  |
+| DOM nodes Δ     | 150,003  | **100,003** |
+| domOps native   | 169.5 ms | 89.6 ms     |
+| layout duration | 1022 ms  | 397 ms      |
 
 This was the single biggest win on Create — layout cost halved because
 the engine had half as many nodes to lay out.
@@ -103,7 +103,7 @@ The polyfill was structurally costly in two places we couldn't reach:
 its `REACTIVE_NODE` was `Object.create()`'d with ~16 fields and class
 private slots (`__privateAdd` showed up at 5+ ms self in the profile),
 and `Watcher.unwatch` was O(N) per call with `Array.includes`. The
-latter was the *cause* of the 32-second Replace 10k — disposing 10k row
+latter was the _cause_ of the 32-second Replace 10k — disposing 10k row
 Computeds cost ~3.2 s of pure backward-scan work in the polyfill.
 
 Replaced with a hand-tuned graph in `packages/core/src/signals.ts`
@@ -113,7 +113,7 @@ used the polyfill or its types):
 - Plain object nodes — `StateNode` (4 fields) and `ComputedNode` (10
   fields), versioned, no classes. Same hidden class on every alloc.
 - 3-state status (`CLEAN` / `CHECK` / `DIRTY`) with version snapshots
-  on each source. `CHECK → CLEAN` resolves *without re-running fn()*
+  on each source. `CHECK → CLEAN` resolves _without re-running fn()_
   when no upstream actually moved — the glitch-freedom path.
 - Position-indexed source slots: when a Computed re-runs and reads the
   same producer at the same index, we just refresh the version snapshot.
@@ -126,10 +126,10 @@ used the polyfill or its types):
 
 Profiler delta on the worst workload, Replace 10k:
 
-| metric        | polyfill   | new impl   |
-|---            |---         |---         |
-| wall          | 2222 ms    | **997 ms** |
-| jsUser self   | 3264 ms    | **64 ms**  |
+| metric      | polyfill | new impl   |
+| ----------- | -------- | ---------- |
+| wall        | 2222 ms  | **997 ms** |
+| jsUser self | 3264 ms  | **64 ms**  |
 
 Heap delta on Create 10k dropped from 16.81 MB → 11.43 MB. The
 `signal-polyfill` dependency is gone — `@purityjs/core` now ships zero
@@ -146,7 +146,7 @@ collected into a single `_w` whose body assigns each binding (gated by
 per-binding `_f*` boolean flags frozen at setup). Same row template:
 10k `Computed` allocations instead of 50k.
 
-The *trade-off*: when any tracked signal changes, every assignment in
+The _trade-off_: when any tracked signal changes, every assignment in
 the body re-runs — even for bindings that read other signals. In
 practice this is irrelevant because (a) row templates' bindings almost
 all read the same per-row signal, and (b) per-binding text-node writes
@@ -251,13 +251,13 @@ The remaining 5–15% gaps are all real, all small in absolute terms, and
 mostly live in fundamentals (cloneNode-vs-createElement codegen, LIS
 shape) where further chase is multi-hour for tens of milliseconds.
 
-| Workload                | Purity   | Solid    | Δ          | Where time goes                                             |
-|---                      |---       |---       |---         |---                                                          |
-| Sort 10k **by label**   | 419 ms   | 366 ms   | **+14% (53 ms)** | LIS reorder + DOM moves on string-keyed sort. Unknown — only unexplained gap. Worth a profile. |
-| Append 10k              | 736 ms   | 700 ms   | +6% (60 ms) | Per-row state+scope+computed alloc on the 10k new rows.   |
-| Update every 10th 10k   | 219 ms   | 208 ms   | +8% (16 ms) | Path B per-row signal write fan-out. Small, near noise.   |
-| Clear 10k               | 82 ms    | 69 ms    | +16% (13 ms) | Per-node `removeChild` loop. Could try Range API again but it's a jsdom landmine. |
-| DOM ops on Create 10k   | 65 ms    | 40 ms    | +25 ms      | `cloneNode` of innerHTML template — architectural.        |
+| Workload              | Purity | Solid  | Δ                | Where time goes                                                                                |
+| --------------------- | ------ | ------ | ---------------- | ---------------------------------------------------------------------------------------------- |
+| Sort 10k **by label** | 419 ms | 366 ms | **+14% (53 ms)** | LIS reorder + DOM moves on string-keyed sort. Unknown — only unexplained gap. Worth a profile. |
+| Append 10k            | 736 ms | 700 ms | +6% (60 ms)      | Per-row state+scope+computed alloc on the 10k new rows.                                        |
+| Update every 10th 10k | 219 ms | 208 ms | +8% (16 ms)      | Path B per-row signal write fan-out. Small, near noise.                                        |
+| Clear 10k             | 82 ms  | 69 ms  | +16% (13 ms)     | Per-node `removeChild` loop. Could try Range API again but it's a jsdom landmine.              |
+| DOM ops on Create 10k | 65 ms  | 40 ms  | +25 ms           | `cloneNode` of innerHTML template — architectural.                                             |
 
 Sort-by-label is the only **unexplained** gap (Sort by ID is tied at
 342 vs 349). Same workload shape, different key type, 53 ms slower.

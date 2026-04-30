@@ -44,7 +44,10 @@ describe('component() with tag name', () => {
   it('works as custom element in HTML', async () => {
     const name = tag('card');
     component(name, ({ title }, { default: body }) => {
-      return html`<div class="card"><h2>${title}</h2>${body()}</div>`;
+      return html`<div class="card">
+        <h2>${title}</h2>
+        ${body()}
+      </div>`;
     });
 
     const container = document.createElement('div');
@@ -66,7 +69,10 @@ describe('component() with tag name', () => {
 describe('slots — callback syntax', () => {
   it('consumer fills default slot via callback', () => {
     const Card = component(tag('sc1'), ({ title }, { default: body }) => {
-      return html`<div class="card"><h2>${title}</h2>${body()}</div>`;
+      return html`<div class="card">
+        <h2>${title}</h2>
+        ${body()}
+      </div>`;
     });
 
     const container = document.createElement('div');
@@ -124,7 +130,8 @@ describe('slots — callback syntax', () => {
 describe('slots — map syntax', () => {
   it('renders with map-style slots', () => {
     const Layout = component(tag('sm1'), (_props, { header, default: body }) => {
-      return html`<header>${header()}</header><main>${body()}</main>`;
+      return html`<header>${header()}</header>
+        <main>${body()}</main>`;
     });
 
     const container = document.createElement('div');
@@ -193,7 +200,10 @@ describe('slot() standalone', () => {
   it('still works as context-aware primitive', () => {
     const Card = component(tag('ss1'), ({ title }) => {
       const body = slot();
-      return html`<div><h2>${title}</h2>${body()}</div>`;
+      return html`<div>
+        <h2>${title}</h2>
+        ${body()}
+      </div>`;
     });
 
     const container = document.createElement('div');

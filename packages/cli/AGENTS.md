@@ -3,12 +3,14 @@
 Scaffolding CLI for Purity projects.
 
 ## Usage
+
 ```bash
 npx @purityjs/cli my-app
 cd my-app && npm install && npm run dev
 ```
 
 ## Generates
+
 ```
 my-app/
   package.json        @purityjs/core + @purityjs/vite-plugin + vite + typescript
@@ -20,4 +22,5 @@ my-app/
 ```
 
 ## Monorepo Support
+
 Auto-detects local packages and uses file: deps + vite aliases.

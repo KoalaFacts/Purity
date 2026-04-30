@@ -13,7 +13,12 @@ const WARMUP = 3;
 const ITERATIONS = parseInt(process.env.ITERATIONS || '7', 10);
 const MEM_ITERATIONS = parseInt(process.env.MEM_ITERATIONS || '3', 10);
 const DROP_OUTLIERS = 1; // drop N fastest + N slowest before computing median
-const FRAMEWORKS = ['purity', 'solid', 'svelte', 'vue'] as const;
+const FRAMEWORKS = (process.env.FRAMEWORKS?.split(',') ?? [
+  'purity',
+  'solid',
+  'svelte',
+  'vue',
+]) as readonly ('purity' | 'solid' | 'svelte' | 'vue')[];
 
 // ---------------------------------------------------------------------------
 // Scenario definitions
@@ -840,6 +845,7 @@ async function main() {
 
   const browser = await chromium.launch({
     headless: true,
+    executablePath: process.env.CHROMIUM_PATH,
     args: ['--js-flags=--expose-gc', '--enable-precise-memory-info'],
   });
   const allResults: Result[] = [];

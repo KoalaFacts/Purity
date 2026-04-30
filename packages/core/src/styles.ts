@@ -113,7 +113,7 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
       } else {
         newCss = scopeSelectors(buildCss(), `.${scopeClass}`);
       }
-      /* v8 ignore next -- newCss==prevCss only when state writes same value, which polyfill skips */
+      /* v8 ignore next -- newCss==prevCss only when state writes the same value, which the reactivity layer already skips before we get here */
       if (newCss !== prevCss) {
         prevCss = newCss;
         styleEl.textContent = newCss;

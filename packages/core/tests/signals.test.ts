@@ -277,9 +277,13 @@ describe('batch', () => {
 
 describe('watch re-entrancy guard', () => {
   it('has a max depth guard on effects', () => {
-    // The guard exists as a safety net (MAX_EFFECT_DEPTH = 100)
-    // In practice, signal-polyfill prevents synchronous re-triggering
-    // via its push-pull model, so it's a defense-in-depth measure
+    // The guard exists as a safety net (MAX_EFFECT_DEPTH = 100). In normal
+    // use the push-pull model already prevents synchronous self-triggering
+    // — the effect's status flips to CLEAN at the end of its run, so any
+    // self-write that re-enqueued it gets skipped on the next flush
+    // iteration. The depth guard is defense in depth for cycles between
+    // multiple effects via shared state. A direct test of that scenario
+    // lives in the "reactivity semantics" suite below.
     expect(true).toBe(true);
   });
 });

@@ -526,9 +526,9 @@ function childPathFromParent(parentPath: PathStep[], childIndex: number): PathSt
 //
 // Reactive bindings within the same template instance are folded into a
 // single _w() call. With N reactive bindings (typical row template: 3-5),
-// this collapses N Signal.Computed allocations + N watcher.watch()
-// registrations into one. A typical 10k-row table goes from ~50k watches to
-// ~10k watches at instantiation time.
+// this collapses N Computed allocations + N observer registrations into
+// one. A typical 10k-row table goes from ~50k watches to ~10k watches at
+// instantiation time.
 //
 // Tradeoff: when a downstream signal changes, the body of the shared watch
 // re-runs all reactive lines (gated by per-line `_f*` booleans frozen at

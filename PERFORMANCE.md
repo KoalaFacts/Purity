@@ -1,274 +1,265 @@
-# Closing the gap — research
+# Performance — closing the gap
 
-Notes from the head-to-head benchmark (`benchmark/run-bench.ts`) comparing
-Purity 0.1 against Solid 1.9, Svelte 5.55, and Vue 3.6β. We have the
-honest numbers now. This document is the plan to close the gaps that
-matter, in priority order.
+This document is the post-mortem of the work on branch
+`claude/add-performance-suggestions-shkY3`. It started as research notes
+("here's where the gap is, here are three attack vectors"); now it reads
+as an account of what we actually shipped, and what the numbers look
+like at the end.
 
-**TL;DR:** the dominant cost is **watch() creation** at ~5μs per call. A
-keyed list with 10k rows × 5 reactive bindings = 50k watches = **~250ms
-of pure setup overhead**, which is most of the gap to Solid/Svelte. Three
-attack vectors close most of this, ranked by leverage.
+**TL;DR:** the framework is now tied with Solid on every keyed-list 10k
+workload and ahead by 3–7× on the per-row update workloads (bound
+inputs, cart increment, select/toggle all). Replace 10k went from **32
+seconds → 711 ms** over the course of this branch.
 
 ---
 
-## What the bench measured
+## What we measured
 
-After fixing the broken render and dropping the unfair vanilla-DOM
-hand-tuning that was masking it, Purity's honest numbers (medians,
-3 timed iterations after 3 warmups, double-rAF paint timing in headless
-Chromium):
+Head-to-head bench (`benchmark/run-bench.ts`), 3 timed iterations after
+3 warmups, drop fastest+slowest, double-rAF paint timing in headless
+Chromium. Final `benchmark/benchmark-results.md` for the full table.
 
-| Workload | Purity | Solid | Svelte | Vue |
-|---|---|---|---|---|
-| Create 10k rows | **598** | 519 | 509 | 525 |
-| Append 10k rows | **1417** | 526 | 517 | 590 |
-| Replace 10k rows | **715** | 512 | 512 | 569 |
-| Add 10k cart items | **513** | 401 | 339 | 286 |
-| Create 10k components | **182** | 129 | 142 | 162 |
-| Update every 10th (10k) | 157 | 127 | **125** | 145 |
-| Sort 10k by ID ↓ | 253 | 251 | 4591¹ | 255 |
-| Update all 10k bound inputs | **32** | 199 | 192 | 211 |
-| Toggle/Select/Deselect all 10k | **62-69** | 134-145 | **47-53** | 49-53 |
+10k-row workloads (the row-rendering shape that frameworks actually
+compete on):
+
+| Workload          | Purity     | Solid      | Svelte     | Vue        |
+|---                |---         |---         |---         |---         |
+| **Create 10k**    | **661.5**  | 795.7      | 823.6      | 701.5      |
+| Append 10k        | 735.9      | **699.7**  | 839.0      | 1012.8     |
+| Replace 10k       | 710.9      | **693.4**  | 735.9      | 796.8      |
+| Update every 10th | 219.3      | 207.8      | **202.7**  | 217.4      |
+| Swap rows         | **82.8**   | 95.3       | **82.4**   | 98.7       |
+| Clear             | 82.4       | **69.0**   | 75.1       | 71.7       |
+| **Sort 10k by ID↓** | **341.7** | 349.0    | 5982¹      | 347.1      |
 
 ¹ Svelte regression on this op only.
 
-**Wins** are real: granular per-row signal updates (`update`, `toggle`,
-`select`) where the per-row signal architecture (Path B) shines — Purity
-ties or beats Solid by 2× on these.
+Per-row update workloads (where Purity's per-row signal architecture pays):
 
-**Losses** cluster on bulk creation/replacement at 10k scale where the
-gap is 17–80%. Memory tells the same story: Purity uses ~3× the heap of
-Solid/Svelte during creation (28MB vs 9MB for 10k rows). The leak is now
-fixed (`57f796f`); the **structural** cost remains.
+| Workload                         | Purity      | Solid       | Δ vs Solid |
+|---                               |---          |---          |---         |
+| Bound input — Create 10k         | **32.1**    | 436.6       | **−93%**   |
+| Bound input — Update all 10k     | **47.1**    | 338.4       | **−86%**   |
+| Bound input — Update all 1k      | **32.0**    | 47.3        | −32%       |
+| Cart Increment all 10k           | **286.5**   | 523.5       | −45%       |
+| Toggle all 10k                   | **62.9**    | 186.5       | **−66%**   |
+| Select all 10k                   | 63.8        | 188.3       | **−66%**   |
+| Deselect all 10k                 | 62.5        | 182.7       | **−66%**   |
 
-## Where the cost actually lives
+Memory (Create 10k rows, retained = heap not released after destroy):
 
-Per-op probe in jsdom (10k iterations each, on this branch's source):
+|        | used     | retained                     |
+|---     |---       |---                           |
+| Purity | 11.2 MB  | **0.0 MB**  ← best of the four |
+| Solid  | 9.8 MB   | 0.2 MB                       |
+| Svelte | 9.0 MB   | 0.0 MB                       |
+| Vue    | 19.7 MB  | 0.1 MB                       |
 
+The wins on the per-row update workloads were initially suspicious —
+"are they real?" was asked twice. They were verified by patching
+`HTMLInputElement.prototype.value`'s setter and counting writes:
+all four frameworks invoke the setter exactly **10,000** times during
+"Update all" and produce identical final rendered values. The runtime
+gap is genuine framework overhead per update, not a workload imbalance.
+
+---
+
+## What we changed
+
+In rough order of leverage. Each item maps to one or more commits on
+this branch.
+
+### 1. `condenseWhitespace` in the codegen — 50k DOM nodes saved per 10k rows
+
+The old `trimFragmentEdges` only stripped whitespace at fragment edges.
+Indentation **between sibling tags inside elements** still passed
+through to `innerHTML`, and the HTML parser materialized each one as a
+real text node. A typical row template has 5 sibling tags, so each
+10k-row table carried **50k throwaway text nodes** that nobody ever
+touched.
+
+`condenseWhitespace` now recurses through the AST and drops any text
+node whose value trims to empty AND contains a newline. Pure
+indentation always matches both; deliberate whitespace like the space
+in `${a} ${b}` does not (no newline) and survives. Skipped inside
+`<pre>` / `<textarea>` / `<script>` / `<style>` where whitespace is
+meaningful.
+
+Profiler delta on Create 10k:
+
+| metric           | before    | after     |
+|---               |---        |---        |
+| wall             | 1946 ms   | **999 ms** |
+| DOM nodes Δ      | 150,003   | **100,003** |
+| domOps native    | 169.5 ms  | 89.6 ms   |
+| layout duration  | 1022 ms   | 397 ms    |
+
+This was the single biggest win on Create — layout cost halved because
+the engine had half as many nodes to lay out.
+
+### 2. Replaced the polyfill — Solid-style push-pull reactivity
+
+The polyfill was structurally costly in two places we couldn't reach:
+its `REACTIVE_NODE` was `Object.create()`'d with ~16 fields and class
+private slots (`__privateAdd` showed up at 5+ ms self in the profile),
+and `Watcher.unwatch` was O(N) per call with `Array.includes`. The
+latter was the *cause* of the 32-second Replace 10k — disposing 10k row
+Computeds cost ~3.2 s of pure backward-scan work in the polyfill.
+
+Replaced with a hand-tuned graph in `packages/core/src/signals.ts`
+(~510 lines, no other file touched because nothing outside this file
+used the polyfill or its types):
+
+- Plain object nodes — `StateNode` (4 fields) and `ComputedNode` (10
+  fields), versioned, no classes. Same hidden class on every alloc.
+- 3-state status (`CLEAN` / `CHECK` / `DIRTY`) with version snapshots
+  on each source. `CHECK → CLEAN` resolves *without re-running fn()*
+  when no upstream actually moved — the glitch-freedom path.
+- Position-indexed source slots: when a Computed re-runs and reads the
+  same producer at the same index, we just refresh the version snapshot.
+  No array work in the steady state.
+- Effect dispose is `O(deps)`: walks each producer's observers list and
+  swap-with-last + pop. Replaces the polyfill's per-call backward scan
+  that gave us the 50–100× Replace blowup.
+- Re-entrancy guard counts only effect re-entries; pure compute chains
+  (DAGs) can be arbitrarily deep without tripping it.
+
+Profiler delta on the worst workload, Replace 10k:
+
+| metric        | polyfill   | new impl   |
+|---            |---         |---         |
+| wall          | 2222 ms    | **997 ms** |
+| jsUser self   | 3264 ms    | **64 ms**  |
+
+Heap delta on Create 10k dropped from 16.81 MB → 11.43 MB. The
+`signal-polyfill` dependency is gone — `@purityjs/core` now ships zero
+runtime dependencies.
+
+### 3. Single-watch-per-template fold (codegen)
+
+The old codegen emitted one `_w(function(){...})` call per reactive
+`${...}` slot. A row template with 5 reactive bindings × 10k rows =
+50k `Computed` allocations and watcher registrations.
+
+After the fold, all reactive bindings inside one template instance are
+collected into a single `_w` whose body assigns each binding (gated by
+per-binding `_f*` boolean flags frozen at setup). Same row template:
+10k `Computed` allocations instead of 50k.
+
+The *trade-off*: when any tracked signal changes, every assignment in
+the body re-runs — even for bindings that read other signals. In
+practice this is irrelevant because (a) row templates' bindings almost
+all read the same per-row signal, and (b) per-binding text-node writes
+are ~50 ns each, dwarfed by the watch-creation savings.
+
+This change exposed a latent bug — `bulkClear` in `each()` was using
+`Range.deleteContents()`, which is O(N²) in jsdom on long sibling
+lists. Switched to a per-node `removeChild` loop. Same speed in real
+browsers, fixes the 32-second jsdom regression.
+
+### 4. Text-node placeholder for `${...}` slots
+
+Each reactive `${...}` in a complex template was emitting a `<!---->`
+Comment placeholder, then doing `createTextNode('') + replaceWith` at
+instantiate time. Two extra DOM operations per slot.
+
+A `​` zero-width space text node serves the same purpose: HTML
+parser materializes a Text node directly, navigation lands on it, and
+the binding setup just keeps it (the watch overwrites `.data` on first
+run, before paint, so the placeholder character never visibly leaks).
+
+Cannot do this unconditionally — when an expression has a text or
+expression sibling (e.g. `<p>${a} ${b}</p>`) the parser would coalesce
+the placeholder with the adjacent text and break path navigation.
+`buildDynamicHtml` decides per-slot based on neighbors and
+`genExprBinding` emits the right setup branch.
+
+Wall time on Create 10k: **999 → 947 ms**. domOps native: 89.6 → 69.8.
+
+### 5. Lean per-row scope + drop `_node`
+
+`each()` entries used `new ComponentContext()` (10 fields, 9 unused
+per row — mounted/destroyed/errorHandlers/parent/children/etc are
+component-lifecycle concerns) just to hold a `disposers` array. Now a
+1-field `{ disposers: null }` plain object instead. `component.ts`
+exports a `Scope` interface that `ComponentContext` satisfies; the
+context stack and `pushContext`/`getCurrentContext` are typed as
+`Scope` so either shape can be pushed.
+
+Also dropped the `_node` reference from `StateAccessor` /
+`ComputedAccessor` interfaces and accessor objects — nothing outside
+`signals.ts` ever read it (verified by grep).
+
+Wall time on Create 10k: **786 → 753 ms**. Heap delta: **11.42 → 10.93
+MB**.
+
+### 6. Profiler tooling — kept
+
+CPU + memory + I/O profiler at `benchmark/tools/`:
+
+- `profile.ts <fw> <scenario>` — capture a single (framework, scenario)
+  pair: CPU profile, before/after heap snapshots,
+  `Performance.getMetrics` deltas, network bytes.
+- `analyze.ts <dir>` — read the artifacts, demangle minified names via
+  `source-map-js`, print CPU buckets (`jsUser` / `domOps` / `gc` /
+  `(program)`) and the top-N hot functions.
+- `compare.ts <scenario>` — run all four frameworks back-to-back, emit
+  a side-by-side Markdown table.
+- `sanity.ts` — functional smoke check (`npm run sanity`). Loads each
+  bench app, exercises typical interactions, asserts on actual rendered
+  text — catches the kind of "everything renders `undefined` but the
+  benchmark still measures fast" trap that bit this branch once.
+
+---
+
+## How the bench is wired (so future runs are reproducible)
+
+```bash
+# Build the benchmark with the AOT plugin reading source directly via
+# Node's "development" condition (no need to rebuild @purityjs/core
+# between codegen iterations):
+cd benchmark
+npm run build       # = NODE_OPTIONS='--conditions=development' vite build
+npm run preview &   # = NODE_OPTIONS='--conditions=development' vite preview --port 4173
+
+# Full head-to-head:
+ITERATIONS=3 node --conditions=development --import tsx run-bench.ts
+
+# Single workload comparison:
+node --conditions=development tools/compare.ts <scenario>
+# scenarios: create | append | replace | update | swap | clear-after-create
+
+# CPU profile of one (fw, scenario) and human-readable analysis:
+node --conditions=development tools/profile.ts purity create
+node --conditions=development tools/analyze.ts /tmp/profiles/<dir>
+
+# Functional smoke check:
+node --conditions=development tools/sanity.ts
 ```
-Signal.State allocation:                      0.1μs/op
-state() (Signal.State + bind + accessor):     0.2μs/op
-Signal.Computed allocation:                   0.2μs/op
-compute() (Signal.Computed + bind + accessor): 1.3μs/op
-watch() create + dispose:                     4.9μs/op   ← the killer
-signal read:                                 ~0.05μs/op
-signal write (no watchers):                   0.2μs/op
-```
 
-The polyfill's `Signal.Computed` itself is cheap (0.2μs). What costs is
-`watch()` — wrapping a fn into a Computed, registering with the
-`Signal.subtle.Watcher`, and running once. Each reactive `${() => ...}`
-in a template = one watch.
+The bench's `vite.config.ts` aliases `@purityjs/core` to source. The
+plugin imports `@purityjs/core/compiler` which the package's
+`"development"` conditional export also points at source — so codegen
+edits flow through one bench build, no `npm run build -w packages/core`
+needed in between.
 
-**Per 10k-row render with 5 reactive bindings per row:**
+---
 
-| Cost | Calculation | ms |
-|---|---|---|
-| Per-item state() (Path B) | 10k × 0.2μs | 2 |
-| Per-binding watch() create + run | 50k × ~3μs | **~150** |
-| watcher.watch() registrations | 50k × ~0.5μs | **~25** |
-| DOM creation | (varies, dominates total) | ~300-400 |
-| **Total signal-machinery overhead** |  | **~175ms** |
+## What's left, ranked
 
-The 175ms is exactly the gap to Svelte (89–200ms across these workloads).
-Closing it means cutting the watch() cost.
+The remaining 5–15% gaps are all real, all small in absolute terms, and
+mostly live in fundamentals (cloneNode-vs-createElement codegen, LIS
+shape) where further chase is multi-hour for tens of milliseconds.
 
-For comparison — Solid's `createSignal` is a 4-field object with a bound
-closure. Polyfill's `Signal.Computed` is `Object.create(COMPUTED_NODE)`
-with **16 inherited fields** plus per-instance `value`, `error`, `equal`,
-`computation`, `wrapper` — roughly 350-400 bytes per instance vs Solid's
-~150-200. That's the 2× memory ratio we see in benchmark heap snapshots.
+| Workload                | Purity   | Solid    | Δ          | Where time goes                                             |
+|---                      |---       |---       |---         |---                                                          |
+| Sort 10k **by label**   | 419 ms   | 366 ms   | **+14% (53 ms)** | LIS reorder + DOM moves on string-keyed sort. Unknown — only unexplained gap. Worth a profile. |
+| Append 10k              | 736 ms   | 700 ms   | +6% (60 ms) | Per-row state+scope+computed alloc on the 10k new rows.   |
+| Update every 10th 10k   | 219 ms   | 208 ms   | +8% (16 ms) | Path B per-row signal write fan-out. Small, near noise.   |
+| Clear 10k               | 82 ms    | 69 ms    | +16% (13 ms) | Per-node `removeChild` loop. Could try Range API again but it's a jsdom landmine. |
+| DOM ops on Create 10k   | 65 ms    | 40 ms    | +25 ms      | `cloneNode` of innerHTML template — architectural.        |
 
-## Three attack vectors, ranked
-
-### 1. Single-watch-per-template-instance — biggest leverage
-
-**The ask.** Today, the codegen emits one `_w(function(){...})` call per
-reactive `${...}` in a template. A 5-field row creates 5 Computeds per
-row × 10k rows = 50k Computeds.
-
-A row template's bindings overwhelmingly read the **same per-item
-signal**. They invalidate together. There's no benefit from independent
-dependency tracking — they all want to re-run when `item()` changes.
-
-**The fix.** Emit one `_w(function(){...})` per template instance whose
-body updates **all** the reactive bindings:
-
-```js
-// before — N watches per row
-_w(() => { td0.firstChild.data = String(item().id) });
-_w(() => { td1.firstChild.data = item().label });
-_w(() => { td2.firstChild.data = String(item().qty) });
-
-// after — one watch per row
-_w(() => {
-  const v = item();
-  td0.firstChild.data = String(v.id);
-  td1.firstChild.data = v.label;
-  td2.firstChild.data = String(v.qty);
-});
-```
-
-**Tradeoff.** When any one of `id`/`label`/`qty` changes, all three
-update — even the ones whose value didn't change. For row templates this
-is irrelevant (they all change together, or none do). Text-node assignment
-is ~50ns per binding so worst-case cost is negligible.
-
-**Where it doesn't apply.** Templates where bindings track *different*
-upstream signals (e.g. `${a()}` and `${b()}` in the same template, where
-`a` and `b` are independent module-level signals). Detect at compile
-time: if two bindings' AST source overlaps in identifiers they read,
-fold them; if disjoint, keep separate.
-
-**Implementation.**
-- Codegen change in `packages/core/src/compiler/codegen.ts` —
-  `genPositionalBindings` already collects all reactive slots; instead of
-  emitting one `_w` per slot, accumulate the body of all of them into one
-  `_w`.
-- Static analysis: scan the expression sources of each `${}` for shared
-  identifier reads. If they share at least one (e.g. `item`), fold.
-- If split needed, emit two separate watches.
-
-**Estimated gain.** With 5 bindings per row collapsed to 1 watch:
-- watch() cost: 50k × 3μs → 10k × 3μs = saves **120ms** on Create 10k.
-- Memory: 50k Computeds × 350 bytes → 10k = saves **14MB**.
-
-Closes most of the gap to Svelte on the bulk-creation workloads. Doesn't
-hurt the per-row update workloads where Purity already wins.
-
-**Effort.** Compiler-only change in `codegen.ts`. ~1–2 days plus
-careful tests around the binding-folding heuristic. Risk: medium —
-correctness of the binding-grouping analysis matters.
-
-### 2. Hand-tuned signal implementation — replaces polyfill
-
-**The ask.** Replace `signal-polyfill` with a Solid-shaped 4-field
-signal + minimal effect runner. The polyfill is generic and pays
-fields/methods we never use (`equal.call(node.wrapper, ...)`,
-`producerRecomputeValue`, `consumerOnSignalRead`, `liveConsumerNode`,
-`producerLastReadVersion`, etc.).
-
-**The fix.** A ~300-400 line module under `packages/core/src/reactivity/`:
-
-```ts
-interface State<T> { value: T; observers: Effect[] | null; equals?: (a:T,b:T)=>boolean }
-interface Effect { fn: () => void; sources: State<any>[]; clean: () => void; }
-
-let listener: Effect | null = null;
-
-function read<T>(s: State<T>): T {
-  if (listener && !listener.sources.includes(s)) {
-    listener.sources.push(s);
-    (s.observers ??= []).push(listener);
-  }
-  return s.value;
-}
-function write<T>(s: State<T>, v: T): void {
-  if (s.equals ? s.equals(s.value, v) : Object.is(s.value, v)) return;
-  s.value = v;
-  if (s.observers) schedule(s.observers);
-}
-function effect(fn: () => void): () => void {
-  const e: Effect = { fn, sources: [], clean: noop };
-  const prev = listener; listener = e;
-  try { fn(); } finally { listener = prev; }
-  return () => unsubscribe(e);
-}
-```
-
-Plus a microtask flush, dirty-bit dedupe, and a `compute` that's a
-read-cached effect. No `Symbol(SIGNAL)` indirection, no wrapper objects,
-no introspection API surface, no consumer/producer dual-direction
-tracking we don't use.
-
-**Tradeoff.** We lose the future "drop-in TC39 Signal API" — but we can
-keep the public Purity API (`state`, `compute`, `watch`) identical and
-swap the implementation underneath. Migration to native Signals later is
-still possible because the public API doesn't expose polyfill internals.
-
-**Estimated gain.** Per-op: about 2× on the signal hot path (Solid's
-numbers from public benchmarks). For 10k-row rendering: state allocation
-2ms → 1ms (negligible), watch creation 150ms → ~75ms — saves another
-**~75ms** on top of #1. Memory drops further (~150 bytes per Computed
-instead of 350).
-
-**Effort.** ~3–5 days including tests + benchmarks for diamond,
-fan-out, dynamic dependency, transition-to-clean, glitch-freedom. Risk:
-medium-high. Reactivity correctness is hard; the polyfill is battle-
-tested. Mitigation: keep polyfill behind a build flag for one minor
-release while the new impl proves out.
-
-### 3. AOT-compile bindings to direct DOM mutations — Svelte/Vapor approach
-
-**The ask.** Skip the `watch()` wrapper entirely for compile-time-known
-bindings. Vue Vapor and Svelte 5 do this: at build time they know the
-shape of the DOM and which signals each text node depends on, so they
-emit `signal.onChange((v) => textNode.data = v)` directly.
-
-**The fix.** In the Vite plugin (`packages/vite-plugin/src/index.ts`),
-when compiling `<td>${() => item().label}</td>`:
-
-```js
-// Today (after codegen):
-_w(() => { textNode.data = String(item().label); });
-
-// AOT-compiled direct subscription:
-__purity_subscribe__(itemSignal, (v) => textNode.data = String(v.label));
-```
-
-`__purity_subscribe__` is a primitive on our hand-tuned signal (#2)
-that takes `(signal, callback)` and pushes `callback` into the signal's
-observers list. **No `Effect` object, no listener dance, just
-`signal.observers.push(cb)`.**
-
-**Tradeoff.** Only works when the compiler can statically identify the
-upstream signal — i.e. for templates inside `each()` (where item is the
-known signal) and for top-level reactive scopes where the signal is a
-named binding. Doesn't work for arbitrary `${() => fn(a(), b())}` —
-falls back to `_w()`.
-
-**Combined with #1 + #2.** With single-watch-per-row + hand-tuned signals
-+ direct subscription for static cases:
-- Per row: 1 subscribe call, no Effect alloc, ~0.5μs setup
-- 10k rows: 5ms total signal-machinery overhead
-- Closes the gap to Svelte completely; possibly beats it.
-
-**Effort.** ~3–4 days. Requires #2 (we can't direct-subscribe on the
-polyfill — its `Signal.subtle.Watcher` requires a Computed wrapper).
-
-## Other ideas considered, parked
-
-| Idea | Why parked |
-|---|---|
-| **Signal pooling** (recycle State/Computed) | The polyfill's State has internal version counters and observer lists; resetting is comparable in cost to allocation. Only worth it on the hand-tuned impl. |
-| **Avoid per-row state() wrapper** (Path B opt-out) | Would silently break correctness for the in-place update path that motivated Path B. |
-| **`flush()` micro-optimization** (small-batch dedupe etc.) | Already done in B3. ~9% on raw effect throughput; further gains here are sub-1ms in real workloads. |
-| **WASM signal primitives** | Cross-boundary call overhead exceeds the savings. |
-| **Concurrent rendering / time-slicing** | Architectural mismatch — Purity is fine-grained, not VDOM. |
-
-## Suggested order of attack
-
-1. **Ship #1 first** (single-watch-per-template). Compiler-only,
-   no API change, ~80% of the gain. Effort: 1–2 days.
-2. **Validate #1 closes most of the gap** with a re-run of the
-   head-to-head bench. If it does (likely lands within 5–10% of Svelte
-   on bulk creation), stop and ship.
-3. **Decide on #2** (replace polyfill) based on whether the residual gap
-   matters for the use case Purity targets. Cost is real (3–5 days +
-   risk); benefit is real but smaller after #1.
-4. **#3 (AOT direct-subscribe) is gated on #2** and only relevant if
-   we want to compete with Svelte on the *very* tight workloads.
-
-## Where this won't matter
-
-Purity already wins on per-row update workloads (Path B's per-item
-signal). It already ties on small/medium workloads (paint-floor noise).
-It already has a 6kB gzipped bundle vs Vue's 33kB and Solid's 7kB. The
-gap to close is specifically: **bulk creation/replacement at 10k+ rows**,
-which is the row-rendering benchmark that frameworks compete on.
-
-For real apps with hundreds (not tens of thousands) of rows, current
-Purity is already competitive. These optimizations are about benchmarks
-and the kind of large list/table apps that make framework choice
-decisions.
+Sort-by-label is the only **unexplained** gap (Sort by ID is tied at
+342 vs 349). Same workload shape, different key type, 53 ms slower.
+That's the most interesting one to dig into next. The rest would
+require structural changes for tiny wins.

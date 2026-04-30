@@ -4,8 +4,8 @@ import { getCurrentContext } from './component.ts';
 // Reactivity core
 //
 // Push-pull, version-tracked graph. Plain-object nodes (no classes, no
-// private fields) so V8 can inline the shape and we sidestep the polyfill's
-// ~16-field REACTIVE_NODE + __privateAdd allocation cost.
+// private slots) so V8 can inline the shape — every State and Computed is a
+// fixed-shape literal, allocations land on the same hidden class.
 //
 // Status states:
 //   CLEAN  — value is current, all sources consistent
@@ -209,7 +209,8 @@ function updateValue(node: ComputedNode): void {
 }
 
 function runComputed(node: ComputedNode): void {
-  // Cleanup runs before we re-evaluate, mirroring polyfill semantics.
+  // Cleanup runs before fn re-evaluates, so the user's cleanup closure can
+  // still see the values from the run that produced it.
   if (node.cleanup !== null) {
     const c = node.cleanup;
     node.cleanup = null;

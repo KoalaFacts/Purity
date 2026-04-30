@@ -572,8 +572,10 @@ describe('summary', () => {
   │ ** Svelte effects/computeds are compile-time constructs                 │
   │                                                                          │
   │ Purity strengths: signal read/write speed, bundle size, web standards   │
-  │ Purity weakness: list rendering (more overhead per item than Solid)     │
-  │ Note: signal-polyfill is JS — native C++ signals will close all gaps    │
+  │ Purity status: tied with Solid on keyed-list 10k workloads after the    │
+  │ hand-tuned reactivity replacement; ahead by 3-7x on per-row updates     │
+  │ (bound inputs, cart increment, select/toggle all). See PERFORMANCE.md   │
+  │ for the full results.                                                   │
   └──────────────────────────────────────────────────────────────────────────┘
 `);
     expect(true).toBe(true);

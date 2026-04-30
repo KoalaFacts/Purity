@@ -12,8 +12,10 @@ npx @purityjs/cli my-app
 
 ```
 src/
-  index.js    — CLI entry point, scaffolding logic
+  index.ts    — CLI entry point, scaffolding logic (built to dist/index.js by vite)
 ```
+
+`bin.purity` in package.json points at `./dist/index.js`. Zero runtime deps.
 
 ## What It Generates
 

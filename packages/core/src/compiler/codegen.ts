@@ -22,12 +22,35 @@ function escapeAttr(s: string): string {
     .replace(/>/g, '&gt;');
 }
 
-// Tag and attribute names from the parsed AST are spliced into generated JS
-// (property accessors, addEventListener / setAttribute string args). The
-// regex disallows anything that could escape an identifier or string literal
-// — no dots, brackets, quotes, whitespace, or control chars — so spliced
-// names cannot inject code. Names are also passed through JSON.stringify at
-// every emission site, so the safety is layered.
+// ---------------------------------------------------------------------------
+// Codegen safety contract — relevant for the GitHub Advanced Security
+// "code injection" finding on the function-string returns below.
+//
+// The codegen emits JS source that is later run via `new Function()` in
+// compile.ts. Every value spliced into that source is constrained at
+// emission time:
+//
+//   * Tag names and attribute names come from the parsed AST and pass
+//     through assertSafeName below before any interpolation. The regex
+//     [a-zA-Z_][\w-]* disallows everything that could escape an
+//     identifier or single-quoted string — no dots, brackets, quotes,
+//     parentheses, semicolons, whitespace, or control chars. Anything
+//     non-conforming throws at compile time.
+//   * Names are additionally passed through JSON.stringify at every
+//     emission site (qname / qevt / json-quoted tag), and used as
+//     bracket-notation property keys (`_e[${qname}]`) rather than dot
+//     access. Layered defense: even if the regex were ever loosened,
+//     the splices still produce well-formed string literals.
+//   * String LITERAL values (text content, attribute values) are
+//     JSON.stringify'd before splicing.
+//   * Variables like `_v[N]`, `_av${id}`, `_n${id}` are framework-
+//     internal identifiers, not user data.
+//
+// CodeQL's data-flow analysis cannot follow the regex + JSON.stringify
+// reasoning, so the relevant return statements carry a per-line
+// suppression directive pointing back here.
+// ---------------------------------------------------------------------------
+
 const SAFE_NAME = /^[a-zA-Z_][\w-]*$/;
 function assertSafeName(name: string, kind: string): void {
   if (!SAFE_NAME.test(name)) throw new Error(`[Purity] Invalid ${kind} name: "${name}"`);
@@ -146,6 +169,7 @@ export function generate(ast: FragmentNode): string {
     const counter = { n: 0 };
     genStaticDOM(ast, '_t.content', stmts, counter);
     stmts.push('return function(){return _t.content.cloneNode(true);};');
+    // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
     return `(function(){${stmts.join('')}})()`;
   }
 
@@ -162,6 +186,10 @@ export function generate(ast: FragmentNode): string {
 
   const bindCode = genPositionalBindings(slots);
 
+  // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
+  // `html` was built by buildDynamicHtml which JSON.stringify's all values
+  // and assertSafeName-validates all tag/attr names. `bindCode` interpolates
+  // only validated names through JSON.stringify and bracket notation.
   return [
     '(function(){',
     `var _t=document.createElement('template');`,
@@ -284,6 +312,10 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
           );
         } else {
           const readSrc = a.name === 'checked' ? '_e.checked' : `_e[${qname}]`;
+          // codeql[js/code-injection] — qname/qevt are JSON.stringify'd and
+          // a.name has passed assertSafeName. `val` is `_v[${idx}]`, a
+          // framework-generated identifier. See "Codegen safety contract"
+          // near SAFE_NAME at the top of this file.
           setupParts.push(
             `if(typeof ${val}==='function'){_w(function(){_e[${qname}]=${val}();});_e.addEventListener(${qevt},function(){${val}(${readSrc});});}`,
           );
@@ -325,6 +357,10 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
     body += `_w(function(){${reactiveParts.join('')}});`;
   }
   body += 'return _e;';
+  // codeql[js/code-injection] — see "Codegen safety contract" comment near
+  // SAFE_NAME / assertSafeName at the top of this file. All names and
+  // values spliced into `body` are regex-validated and/or JSON.stringify'd
+  // before reaching this point; user input cannot escape the literal.
   return `function(_v,_w){${body}}`;
 }
 
@@ -729,6 +765,10 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
         };
       }
       const readSrc = attr.name === 'checked' ? `${el}.checked` : `${el}[${qname}]`;
+      // codeql[js/code-injection] — qname/qevt are JSON.stringify'd and
+      // attr.name has passed assertSafeName. `el`/`val` are framework-
+      // generated identifiers (`_n${id}`, `_v[${idx}]`), never user data.
+      // See "Codegen safety contract" near SAFE_NAME.
       return {
         setup: `if(typeof ${val}==='function'){_w(function(){${el}[${qname}]=${val}();});${el}.addEventListener(${qevt},function(){${val}(${readSrc});});}`,
         reactive: '',

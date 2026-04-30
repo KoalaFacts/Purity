@@ -389,12 +389,16 @@ describe('compiler — extra coverage', () => {
   });
 
   it('handles null/false expressions', () => {
-    // Hold the nullish/false values in typed locals rather than interpolating
-    // the bare literals — CodeQL flags raw `${null}` / `${undefined}` as
-    // implicit conversions even though that is exactly what we are testing.
+    // The whole point of this test is that `null` / `undefined` / `false`
+    // interpolated into a template render as empty. Holding them in
+    // unknown-typed locals doesn't satisfy CodeQL's data flow because the
+    // values still flow into the template literal. The implicit conversion
+    // IS the contract under test — suppress and document.
     const nul: unknown = null;
     const undef: unknown = undefined;
     const fls: unknown = false;
+    // codeql[js/implicit-operand-conversion] — intentional, the framework's
+    // contract is that nullish/false expressions render as empty text.
     const frag = html`<p>${nul}${fls}${undef}</p>`;
     const c = document.createElement('div');
     c.appendChild(frag);
@@ -582,10 +586,11 @@ describe('compiler — extra coverage', () => {
   });
 
   it('renders complex template with name= dynamic null/false value', () => {
-    // Same shape as the null/false expression test above — hold the value
-    // in a typed local so the conversion is explicit at assignment, not at
-    // interpolation. The runtime still receives the bare nullish value.
+    // Verifies the framework's contract that a null attribute value
+    // removes the attribute. The implicit conversion CodeQL warns about
+    // is the behavior under test.
     const nul: unknown = null;
+    // codeql[js/implicit-operand-conversion] — intentional, see comment.
     const frag = html`<div><a href=${nul}>x</a></div>`;
     const c = document.createElement('div');
     c.appendChild(frag);

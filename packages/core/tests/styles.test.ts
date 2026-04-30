@@ -131,10 +131,11 @@ describe('css', () => {
   });
 
   it('handles null interpolation by emitting empty', () => {
-    // Pass nullish through a typed local — CodeQL flags raw `${null}` in
-    // template literals as an implicit conversion, but we are explicitly
-    // testing that the runtime accepts and renders it as empty.
+    // Verifies the framework's contract that null in a css interpolation
+    // emits empty without throwing. The implicit conversion CodeQL warns
+    // about is the contract under test.
     const nul: unknown = null;
+    // codeql[js/implicit-operand-conversion] — intentional, see comment.
     const scope = css`.x { color: ${nul}; }`;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl).not.toBeNull();
@@ -180,10 +181,11 @@ describe('css', () => {
 
   it('handles null/undefined static values in reactive template', () => {
     const c = state('red');
-    // Hold nullish in typed locals — the runtime should still accept them
-    // even though CodeQL flags raw `${null}` / `${undefined}` literals.
+    // The framework's contract: null/undefined static interpolations don't
+    // break a css template that also contains a reactive expression.
     const nul: unknown = null;
     const undef: unknown = undefined;
+    // codeql[js/implicit-operand-conversion] — intentional, see comment.
     const scope = css`.x { color: ${() => c()}; padding: ${nul}px; margin: ${undef}; }`;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl!.textContent).toContain('color: red');

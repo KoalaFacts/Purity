@@ -12,8 +12,7 @@
   },
   "rules": {
     "typescript/no-explicit-any": "off",
-    "typescript/no-non-null-assertion": "off",
-    "no-cond-assign": "off"
+    "typescript/no-non-null-assertion": "off"
   },
   "ignorePatterns": [
     "**/dist/**",

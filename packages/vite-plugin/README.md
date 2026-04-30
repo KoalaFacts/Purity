@@ -1,5 +1,10 @@
 # @purityjs/vite-plugin
 
+[![npm version](https://img.shields.io/npm/v/@purityjs/vite-plugin.svg)](https://www.npmjs.com/package/@purityjs/vite-plugin)
+[![npm downloads](https://img.shields.io/npm/dm/@purityjs/vite-plugin.svg)](https://www.npmjs.com/package/@purityjs/vite-plugin)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/@purityjs/vite-plugin?label=gzipped)](https://bundlephobia.com/package/@purityjs/vite-plugin)
+[![license](https://img.shields.io/npm/l/@purityjs/vite-plugin.svg)](../../LICENSE)
+
 AOT template compilation for Purity. Compiles `html` tagged templates at build time into direct DOM creation code.
 
 ## Why

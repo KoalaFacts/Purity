@@ -562,8 +562,8 @@ describe('summary', () => {
   │ Purity strengths: signal read/write speed, bundle size, web standards   │
   │ Purity status: tied with Solid on keyed-list 10k workloads after the    │
   │ hand-tuned reactivity replacement; ahead by 3-7x on per-row updates     │
-  │ (bound inputs, cart increment, select/toggle all). See PERFORMANCE.md   │
-  │ for the full results.                                                   │
+  │ (bound inputs, cart increment, select/toggle all). See the benchmarks   │
+  │ at koalafacts.github.io/Purity for the full results.                    │
   └──────────────────────────────────────────────────────────────────────────┘
 `);
     expect(true).toBe(true);

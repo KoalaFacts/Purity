@@ -1,5 +1,10 @@
 # @purityjs/core
 
+[![npm version](https://img.shields.io/npm/v/@purityjs/core.svg)](https://www.npmjs.com/package/@purityjs/core)
+[![npm downloads](https://img.shields.io/npm/dm/@purityjs/core.svg)](https://www.npmjs.com/package/@purityjs/core)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/@purityjs/core?label=gzipped)](https://bundlephobia.com/package/@purityjs/core)
+[![license](https://img.shields.io/npm/l/@purityjs/core.svg)](../../LICENSE)
+
 The core Purity framework. 17 functions. 6 kB gzipped. No virtual DOM.
 
 ## Install

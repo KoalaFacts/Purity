@@ -5,7 +5,8 @@ A minimal, lightweight, super performant web framework built on native signals.
 - **17 functions** — that's the entire API
 - **6 kB gzipped** — with AOT compilation
 - **No virtual DOM** — signals drive DOM updates directly
-- **One dependency** — `signal-polyfill`
+- **CSP-safe** — no `eval`, no `new Function` (with the Vite plugin)
+- **Zero runtime dependencies**
 
 ## Quick Start
 
@@ -60,10 +61,18 @@ See each package README for full API documentation.
 | **Custom Elements** | Native                            | Optional                      | Optional              | Optional                    |
 | **Shadow DOM**      | Built-in                          | No                            | No                    | No                          |
 | **Two-way binding** | `::prop`                          | Manual                        | `bind:`               | `v-model`                   |
-| **Dependencies**    | 1                                 | 0                             | 0                     | 0                           |
+| **Dependencies**    | 0                                 | 0                             | 0                     | 0                           |
 
 **Runtime benchmarks** — automated in headless Chromium across 18 scenarios:
 [koalafacts.github.io/Purity](https://koalafacts.github.io/Purity/)
+
+## Development
+
+```bash
+npm test --workspaces   # all tests
+npm run check           # format check + lint (oxfmt + oxlint)
+npm run check:fix       # auto-fix
+```
 
 ## License
 

@@ -12,7 +12,7 @@ watch(source, cb)           // explicit: watch(count, (val, old) => {})
 watch([a, b], cb)           // multi: watch([a, b], ([va, vb], [oa, ob]) => {})
 batch(fn)                   // batch: batch(() => { a(1); b(2); }) — single flush
 html`<div>...</div>`        // JIT compiled template → DOM nodes
-css`.box { color: red; }`   // scoped styles (Shadow DOM in components, regex fallback outside)
+css`.box { color: red; }`   // scoped styles (Shadow DOM in components, <style> + class scoping outside)
 component('p-tag', renderFn) // custom element with Shadow DOM
 slot<E>(name?)               // context-aware slot accessor
 teleport(target, viewFn)     // render to different DOM location, reactive
@@ -40,18 +40,23 @@ ${() => signal()}     reactive text
 ## File Layout (src/)
 
 ```
-signals.ts          — state, compute, watch, batch
+signals.ts          — state, compute, watch, batch (push-pull graph, no deps)
 compiler/
   ast.ts            — AST node types
   parser.ts         — charcode-based template parser
   codegen.ts        — AST → optimized JS DOM code
   compile.ts        — JIT html`` with WeakMap cache
-component.ts        — ComponentContext, mount, lifecycle
+  index.ts          — re-exports for the @purityjs/core/compiler subpath
+component.ts        — ComponentContext, Scope, mount, lifecycle
 elements.ts         — component(), slot(), teleport(), Custom Element
-helpers.ts          — match(), when(), each()
+control.ts          — match(), when(), each() + LIS reorder
 styles.ts           — css() scoped styles
 index.ts            — public API exports
 ```
+
+The compiler is exposed under the `@purityjs/core/compiler` subpath
+(`packages/core/package.json` `exports`) so `@purityjs/vite-plugin` can
+import it without pulling in runtime code.
 
 ## Testing
 

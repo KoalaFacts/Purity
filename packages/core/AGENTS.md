@@ -11,7 +11,7 @@ A minimal, lightweight, super performant web framework built on native TC39 Sign
 - No virtual DOM — signals drive DOM updates directly
 - Custom Elements with Shadow DOM
 - JIT compiled templates (parse → AST → codegen → cached)
-- One dependency: `signal-polyfill`
+- Zero runtime dependencies (custom push-pull reactivity in `src/signals.ts`)
 
 ## Monorepo
 

@@ -19,6 +19,6 @@ npm run check                  # format check + lint (Vite+: oxfmt + oxlint)
 npm run check:fix              # auto-fix formatting and lint
 ```
 
-## One dependency: `signal-polyfill` (TC39 Signals reference implementation)
+## Zero runtime dependencies (custom push-pull reactivity in `packages/core/src/signals.ts`)
 
 See each package's CLAUDE.md for detailed API, file layout, and skills.

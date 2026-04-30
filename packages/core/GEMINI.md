@@ -134,4 +134,4 @@ mount(() => html`<p-todo></p-todo>`, document.getElementById('app'));
 - `@purityjs/vite-plugin` — AOT template compilation (dev dependency)
 - `@purityjs/cli` — project scaffolding
 
-## One dependency: `signal-polyfill` (TC39 Signals reference implementation)
+## Zero runtime dependencies (custom push-pull reactivity in `src/signals.ts`)

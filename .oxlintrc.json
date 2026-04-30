@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "oxc"],
+  "plugins": ["typescript", "oxc", "vue"],
   "categories": {
     "correctness": "error",
     "suspicious": "warn",
@@ -20,9 +20,7 @@
     "**/node_modules/**",
     "gh-pages/**",
     "benchmark/history/**",
-    "benchmark/results/**",
-    "**/*.vue",
-    "**/*.svelte"
+    "benchmark/results/**"
   ],
   "overrides": [
     {

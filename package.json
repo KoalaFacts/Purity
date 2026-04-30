@@ -11,10 +11,10 @@
     "test": "npm run test --workspaces",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
-    "lint": "oxlint",
-    "lint:fix": "oxlint --fix",
-    "check": "oxfmt --check . && oxlint",
-    "check:fix": "oxfmt . && oxlint --fix"
+    "lint": "oxlint --deny-warnings",
+    "lint:fix": "oxlint --fix --deny-warnings",
+    "check": "oxfmt --check . && oxlint --deny-warnings",
+    "check:fix": "oxfmt . && oxlint --fix --deny-warnings"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

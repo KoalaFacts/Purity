@@ -1,4 +1,4 @@
-import { type Scope, getCurrentContext, popContext, pushContext } from './component.ts';
+import { getCurrentContext, popContext, pushContext, type Scope } from './component.ts';
 import type { StateAccessor } from './signals.ts';
 import { state, watch } from './signals.ts';
 

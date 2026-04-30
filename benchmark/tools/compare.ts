@@ -82,11 +82,15 @@ const NATIVE = new Set([
 const results: Partial<Record<Framework, Result>> = {};
 for (const fw of FRAMEWORKS) {
   process.stdout.write(`profiling ${fw}/${scenario}... `);
-  const r = spawnSync('node', ['--conditions=development', join(__dirname, 'profile.ts'), fw, scenario], {
-    encoding: 'utf-8',
-  });
+  const r = spawnSync(
+    'node',
+    ['--conditions=development', join(__dirname, 'profile.ts'), fw, scenario],
+    {
+      encoding: 'utf-8',
+    },
+  );
   if (r.status !== 0) {
-    console.error('\n' + (r.stderr || r.stdout));
+    console.error(`\n${r.stderr || r.stdout}`);
     continue;
   }
   // Find the most recent dir for this fw+scenario.
@@ -149,7 +153,7 @@ function row(label: string, key: keyof Result, fmt: (v: number) => string = (v) 
     const v = results[fw]?.[key];
     s += `| ${v == null ? '—' : fmt(v as number)} `;
   }
-  return s + '|';
+  return `${s}|`;
 }
 
 console.log(`|  | purity | solid | svelte | vue |`);

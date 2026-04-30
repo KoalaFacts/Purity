@@ -761,6 +761,7 @@ describe('compiler — extra coverage', () => {
   // Single-watch-per-template fold (codegen optimisation)
   // ---------------------------------------------------------------------------
 
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: dollar-curly in the description refers to template syntax under test
   it('fold: multiple ${} reactive bindings in one complex template share a watch', async () => {
     const a = state('A');
     const b = state('B');
@@ -784,6 +785,7 @@ describe('compiler — extra coverage', () => {
     expect([...c.querySelectorAll('span')].map((s) => s.textContent)).toEqual(['A2', 'B2', 'C2']);
   });
 
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: dollar-curly in the description refers to template syntax under test
   it('fold: reactive ${} + reactive class= in same complex template both update', async () => {
     const txt = state('hi');
     const cls = state('on');
@@ -802,6 +804,7 @@ describe('compiler — extra coverage', () => {
     expect(span.getAttribute('class')).toBe('off');
   });
 
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: dollar-curly in the description refers to template syntax under test
   it('fold: simple template with two reactive ${} bindings updates both', async () => {
     const a = state(1);
     const b = state(10);

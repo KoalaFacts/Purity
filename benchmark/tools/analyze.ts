@@ -42,7 +42,12 @@ function getConsumer(url: string): SourceMapConsumer | null {
   return consumer;
 }
 
-function demangle(url: string, line: number, column: number, fallback: string): { name: string; source: string } {
+function demangle(
+  url: string,
+  line: number,
+  column: number,
+  fallback: string,
+): { name: string; source: string } {
   const consumer = getConsumer(url);
   if (!consumer) return { name: fallback, source: url };
   // Profiler line/col are zero-based; source-map expects line one-based.
@@ -183,7 +188,9 @@ for (const e of folded.values()) {
 // ---- output -------------------------------------------------------------
 const totalUs = profile.endTime - profile.startTime;
 console.log(`# ${meta.framework} / ${meta.scenario}`);
-console.log(`# wall: ${meta.captureWallMs}ms (sampled ${(totalUs / 1000).toFixed(0)}ms, ${profile.samples.length} samples)`);
+console.log(
+  `# wall: ${meta.captureWallMs}ms (sampled ${(totalUs / 1000).toFixed(0)}ms, ${profile.samples.length} samples)`,
+);
 console.log(`# tr: ${meta.trCount}`);
 console.log('');
 
@@ -191,7 +198,9 @@ console.log(`## CPU breakdown (self ms)`);
 console.log(`  jsUser            : ${(buckets.jsUser / 1000).toFixed(1)}`);
 console.log(`  domOps (native)   : ${(buckets.domOps / 1000).toFixed(1)}`);
 console.log(`  garbage collector : ${(buckets['(garbage collector)'] / 1000).toFixed(1)}`);
-console.log(`  (program)         : ${(buckets['(program)'] / 1000).toFixed(1)}     (V8 internal: layout/paint/parse)`);
+console.log(
+  `  (program)         : ${(buckets['(program)'] / 1000).toFixed(1)}     (V8 internal: layout/paint/parse)`,
+);
 console.log(`  (idle)            : ${(buckets['(idle)'] / 1000).toFixed(1)}`);
 console.log('');
 
@@ -201,14 +210,20 @@ console.log(`  JS heap used delta : ${(m.jsHeapUsedSize / 1e6).toFixed(2)} MB`);
 console.log(`  JS heap total delta: ${(m.jsHeapTotalSize / 1e6).toFixed(2)} MB`);
 console.log(`  DOM nodes added    : ${m.domNodes}`);
 console.log(`  DOM listeners added: ${m.domListeners}`);
-console.log(`  layout count       : ${m.layoutCount}  (${(m.layoutDuration * 1000).toFixed(1)} ms)`);
-console.log(`  recalc style count : ${m.recalcStyleCount}  (${(m.recalcStyleDuration * 1000).toFixed(1)} ms)`);
+console.log(
+  `  layout count       : ${m.layoutCount}  (${(m.layoutDuration * 1000).toFixed(1)} ms)`,
+);
+console.log(
+  `  recalc style count : ${m.recalcStyleCount}  (${(m.recalcStyleDuration * 1000).toFixed(1)} ms)`,
+);
 console.log(`  script duration    : ${(m.scriptDuration * 1000).toFixed(1)} ms`);
 console.log(`  task duration      : ${(m.taskDuration * 1000).toFixed(1)} ms`);
 console.log('');
 
 console.log(`## Network (from page load through capture)`);
-console.log(`  requests: ${meta.network.requestCount}, bytes received: ${(meta.network.bytesIn / 1024).toFixed(1)} KB`);
+console.log(
+  `  requests: ${meta.network.requestCount}, bytes received: ${(meta.network.bytesIn / 1024).toFixed(1)} KB`,
+);
 console.log('');
 
 console.log(`## Top ${topN} by self time`);

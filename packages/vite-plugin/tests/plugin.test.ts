@@ -253,6 +253,7 @@ describe('@purityjs/vite-plugin', () => {
 
   it('handles template-string inside expression argument', () => {
     const code =
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: this string IS the JS source under transformation
       "import { html } from '@purityjs/core';\nconst el = html`<p>${`hello ${name}`}</p>`;";
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
@@ -276,8 +277,10 @@ describe('@purityjs/vite-plugin', () => {
     expect(result!.code).toContain('abchtml`');
   });
 
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: dollar-curly in the description refers to template syntax under test
   it('skips identifier-prefixed html`` in nested expressions (xhtml`` inside ${...})', () => {
     const code =
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: this string IS the JS source under transformation
       "import { html } from '@purityjs/core';\nconst el = html`<p>${ /* xhtml`fake` */ x}</p>`;";
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
@@ -310,6 +313,7 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('handles escaped backtick inside template-in-expression', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this string IS the JS source under transformation
     const code = "import { html } from '@purityjs/core';\nconst el = html`<p>${`a\\`b`}</p>`;";
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();

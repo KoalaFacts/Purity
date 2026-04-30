@@ -3,7 +3,7 @@
 // Catches the kind of regressions a perf change can cause but a benchmark
 // can't see (e.g. all rows showing "undefined" still counts as 10k <tr>s).
 
-import { chromium, type ConsoleMessage, type Page } from 'playwright';
+import { type ConsoleMessage, chromium, type Page } from 'playwright';
 
 const BASE = 'http://localhost:4173/Purity/apps/purity';
 
@@ -55,7 +55,12 @@ const probes: Probe[] = [
       await clk(page, '#add-10');
       const trCount = await page.locator('tbody tr').count();
       const firstAfterAppend = (await page.locator('tbody tr').first().textContent())?.trim();
-      return { trCount, firstAfterCreate, firstAfterAppend, sameFirstRow: firstAfterCreate === firstAfterAppend };
+      return {
+        trCount,
+        firstAfterCreate,
+        firstAfterAppend,
+        sameFirstRow: firstAfterCreate === firstAfterAppend,
+      };
     },
     expect: [/"trCount":20\b/, /"sameFirstRow":true\b/],
   },
@@ -95,7 +100,8 @@ const probes: Probe[] = [
       await clk(page, '#run-10');
       await page.locator('tbody tr').nth(2).locator('a.lbl').click();
       await page.evaluate(
-        () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
+        () =>
+          new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
       );
       const dangerCount = await page.locator('tbody tr.danger').count();
       const dangerText = (await page.locator('tbody tr.danger').textContent())?.trim();
@@ -109,16 +115,20 @@ const probes: Probe[] = [
     steps: async (page) => {
       await clk(page, '#run-10');
       const before = await page.locator('tbody tr').count();
-      const removedId = (await page.locator('tbody tr').nth(4).locator('td').first().textContent())?.trim();
+      const removedId = (
+        await page.locator('tbody tr').nth(4).locator('td').first().textContent()
+      )?.trim();
       // Dispatch the click through the DOM directly — Playwright's visibility
       // checks fail on the icon-wrapping anchor in headless. The bench's
       // event delegation picks up the click either way.
       await page.evaluate(() => {
-        (document.querySelectorAll('tbody tr')[4]
-          ?.querySelector('a.remove') as HTMLElement | null)?.click();
+        (
+          document.querySelectorAll('tbody tr')[4]?.querySelector('a.remove') as HTMLElement | null
+        )?.click();
       });
       await page.evaluate(
-        () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
+        () =>
+          new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
       );
       const after = await page.locator('tbody tr').count();
       const idsLeft = await page.locator('tbody tr td:first-child').allTextContents();
@@ -136,10 +146,20 @@ const probes: Probe[] = [
       const trCount = await page.locator('tbody tr').count();
       const itemCountBefore = await page.locator('#item-count').textContent();
       const totalBefore = await page.locator('#total').textContent();
-      const firstQtyBefore = await page.locator('tbody tr').first().locator('td').nth(2).textContent();
+      const firstQtyBefore = await page
+        .locator('tbody tr')
+        .first()
+        .locator('td')
+        .nth(2)
+        .textContent();
       await clk(page, '#increment-all');
       const totalAfter = await page.locator('#total').textContent();
-      const firstQtyAfter = await page.locator('tbody tr').first().locator('td').nth(2).textContent();
+      const firstQtyAfter = await page
+        .locator('tbody tr')
+        .first()
+        .locator('td')
+        .nth(2)
+        .textContent();
       return {
         trCount,
         itemCountBefore,
@@ -148,10 +168,16 @@ const probes: Probe[] = [
         firstQtyBefore,
         firstQtyAfter,
         totalIncreased: parseFloat(totalAfter ?? '0') > parseFloat(totalBefore ?? '0'),
-        qtyIncreased: parseInt(firstQtyAfter ?? '0', 10) === parseInt(firstQtyBefore ?? '0', 10) + 1,
+        qtyIncreased:
+          parseInt(firstQtyAfter ?? '0', 10) === parseInt(firstQtyBefore ?? '0', 10) + 1,
       };
     },
-    expect: [/"trCount":3\b/, /"totalIncreased":true\b/, /"qtyIncreased":true\b/, /"itemCountBefore":"3"/],
+    expect: [
+      /"trCount":3\b/,
+      /"totalIncreased":true\b/,
+      /"qtyIncreased":true\b/,
+      /"itemCountBefore":"3"/,
+    ],
   },
   {
     name: 'binding — two-way bind reflects user input',

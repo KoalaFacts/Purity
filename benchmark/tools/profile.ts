@@ -14,9 +14,9 @@
 // Note: in-browser CDP profiling adds ~3x overhead vs raw bench. Use these
 // numbers for RELATIVE comparison between frameworks, not absolute timings.
 
-import { chromium } from 'playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { chromium } from 'playwright';
 
 type Framework = 'purity' | 'solid' | 'svelte' | 'vue';
 type Scenario = {
@@ -66,7 +66,9 @@ const SCENARIOS: Record<string, Scenario> = {
 const fw = process.argv[2] as Framework;
 const scenarioName = process.argv[3];
 if (!FRAMEWORKS.has(fw) || !SCENARIOS[scenarioName]) {
-  console.error('Usage: node tools/profile.ts <purity|solid|svelte|vue> <create|append|replace|update|swap|clear-after-create>');
+  console.error(
+    'Usage: node tools/profile.ts <purity|solid|svelte|vue> <create|append|replace|update|swap|clear-after-create>',
+  );
   process.exit(1);
 }
 const scenario = SCENARIOS[scenarioName];
@@ -196,11 +198,19 @@ timeline.metricsDelta = metricsDelta;
 
 writeFileSync(join(outDir, 'metrics.json'), JSON.stringify(timeline, null, 2));
 
-console.log(`[${fw}/${scenarioName}] wall=${timeline.captureWallMs}ms tr=${trCount} samples=${profile.samples.length}`);
-console.log(`  heap delta: ${(metricsDelta.jsHeapUsedSize / 1e6).toFixed(2)}MB used (+${(metricsDelta.jsHeapTotalSize / 1e6).toFixed(2)}MB total)`);
+console.log(
+  `[${fw}/${scenarioName}] wall=${timeline.captureWallMs}ms tr=${trCount} samples=${profile.samples.length}`,
+);
+console.log(
+  `  heap delta: ${(metricsDelta.jsHeapUsedSize / 1e6).toFixed(2)}MB used (+${(metricsDelta.jsHeapTotalSize / 1e6).toFixed(2)}MB total)`,
+);
 console.log(`  DOM: +${metricsDelta.domNodes} nodes, +${metricsDelta.domListeners} listeners`);
-console.log(`  layout: ${metricsDelta.layoutCount} (${(metricsDelta.layoutDuration * 1000).toFixed(1)}ms), styles: ${metricsDelta.recalcStyleCount} (${(metricsDelta.recalcStyleDuration * 1000).toFixed(1)}ms)`);
-console.log(`  script: ${(metricsDelta.scriptDuration * 1000).toFixed(1)}ms / task: ${(metricsDelta.taskDuration * 1000).toFixed(1)}ms`);
+console.log(
+  `  layout: ${metricsDelta.layoutCount} (${(metricsDelta.layoutDuration * 1000).toFixed(1)}ms), styles: ${metricsDelta.recalcStyleCount} (${(metricsDelta.recalcStyleDuration * 1000).toFixed(1)}ms)`,
+);
+console.log(
+  `  script: ${(metricsDelta.scriptDuration * 1000).toFixed(1)}ms / task: ${(metricsDelta.taskDuration * 1000).toFixed(1)}ms`,
+);
 console.log(`  artifacts: ${outDir}`);
 
 await browser.close();

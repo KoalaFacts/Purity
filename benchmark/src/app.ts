@@ -104,7 +104,11 @@ export function createApp(tbody: HTMLElement): AppHandle {
         <tr>
           <td class="col-md-1">${String(item.id)}</td>
           <td class="col-md-4"><a class="lbl">${item.label}</a></td>
-          <td class="col-md-1"><a class="remove"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
+          <td class="col-md-1">
+            <a class="remove"
+              ><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span
+            ></a>
+          </td>
           <td class="col-md-6"></td>
         </tr>
       ` as unknown as HTMLTableRowElement;

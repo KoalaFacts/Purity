@@ -41,15 +41,16 @@ A working counter component demonstrating `state`, `compute`, `html`, `css`, `co
 
 ## Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start Vite dev server |
-| `npm run build` | Production build with AOT |
-| `npm run preview` | Preview production build |
+| Command           | Description               |
+| ----------------- | ------------------------- |
+| `npm run dev`     | Start Vite dev server     |
+| `npm run build`   | Production build with AOT |
+| `npm run preview` | Preview production build  |
 
 ## Local Development
 
 When run from the Purity monorepo, the CLI automatically:
+
 - Links `@purityjs/core` to the local source
 - Links `@purityjs/vite-plugin` to the local source
 - Generates a `vite.config.ts` with resolve aliases

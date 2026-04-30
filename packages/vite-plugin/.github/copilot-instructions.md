@@ -3,6 +3,7 @@
 AOT compiler for Purity templates. Vite plugin.
 
 ## Key Rules
+
 - Plugin runs in `enforce: 'pre'` phase
 - Only compiles user code — skip files with `@purityjs/` or `packages/core/` in path
 - `html` tagged templates → direct DOM creation code

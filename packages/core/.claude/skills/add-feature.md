@@ -3,6 +3,7 @@
 When asked to add a new feature to the framework:
 
 ## Pre-flight
+
 1. Read CLAUDE.md for current API surface
 2. Check if the feature already exists or overlaps with existing API
 3. Decide: core or separate package?
@@ -10,6 +11,7 @@ When asked to add a new feature to the framework:
    - Package: opinionated or optional (routing, store, DI)
 
 ## Implementation Checklist
+
 1. **Design the API** — what does the developer write?
 2. **Choose the file** — which src file does it belong in?
 3. **Write the code** — follow existing patterns:
@@ -20,10 +22,11 @@ When asked to add a new feature to the framework:
 4. **Export from index.ts** — add to public API
 5. **Write tests** — in packages/core/tests/
 6. **Type-check** — `npx tsc --noEmit`
-7. **Format** — `npx biome check --write .`
+7. **Format & lint** — `npm run check:fix`
 8. **Run all tests** — `npm test --workspaces`
 
 ## Design Principles
+
 - **One function, one job** — no multi-purpose utilities
 - **No aliases** — one name per concept
 - **Functions as props** — events are just callback props, no emit system
@@ -32,6 +35,7 @@ When asked to add a new feature to the framework:
 - **Zero config** — it should just work
 
 ## Performance Rules
+
 - Pre-compile regex as module constants
 - Cache closures (peek, slot accessors)
 - Pre-allocate arrays when size is known
@@ -40,6 +44,7 @@ When asked to add a new feature to the framework:
 - Use charCode comparisons over string methods in hot paths
 
 ## What NOT to add to core
+
 - Routing (opinionated, separate package)
 - State management (userland composable)
 - DI / provide-inject (separate package)

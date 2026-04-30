@@ -6,13 +6,7 @@
 export { html } from './compiler/compile.ts';
 export type { ComponentFn, MountResult } from './component.ts';
 // Lifecycle (3 hooks + error)
-export {
-  mount,
-  onDestroy,
-  onDispose,
-  onError,
-  onMount,
-} from './component.ts';
+export { mount, onDestroy, onDispose, onError, onMount } from './component.ts';
 // Control flow
 export { each, list, match, when } from './control.ts';
 export type { SlotAccessor } from './elements.ts';

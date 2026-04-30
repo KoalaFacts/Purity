@@ -8,8 +8,16 @@ const tick = () => new Promise((r) => queueMicrotask(r));
 
 describe('css', () => {
   it('returns a unique scope class', () => {
-    const scope1 = css`.title { color: red; }`;
-    const scope2 = css`.title { color: blue; }`;
+    const scope1 = css`
+      .title {
+        color: red;
+      }
+    `;
+    const scope2 = css`
+      .title {
+        color: blue;
+      }
+    `;
 
     expect(scope1).toMatch(/^p-\d+$/);
     expect(scope2).toMatch(/^p-\d+$/);
@@ -17,7 +25,11 @@ describe('css', () => {
   });
 
   it('injects a <style> element into head', () => {
-    const scope = css`.box { padding: 1rem; }`;
+    const scope = css`
+      .box {
+        padding: 1rem;
+      }
+    `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl).not.toBeNull();
     expect(styleEl.textContent).toContain(`.${scope} .box`);
@@ -25,8 +37,12 @@ describe('css', () => {
 
   it('scopes selectors with the scope class', () => {
     const scope = css`
-      h1 { font-size: 2rem; }
-      .card { border: 1px solid; }
+      h1 {
+        font-size: 2rem;
+      }
+      .card {
+        border: 1px solid;
+      }
     `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl.textContent).toContain(`.${scope} h1`);
@@ -34,14 +50,23 @@ describe('css', () => {
   });
 
   it('handles :host as the scope element itself', () => {
-    const scope = css`:host { display: block; }`;
+    const scope = css`
+      :host {
+        display: block;
+      }
+    `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl.textContent).toContain(`.${scope} `);
     expect(styleEl.textContent).not.toContain(':host');
   });
 
   it('handles multiple selectors', () => {
-    const scope = css`h1, h2 { margin: 0; }`;
+    const scope = css`
+      h1,
+      h2 {
+        margin: 0;
+      }
+    `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl.textContent).toContain(`.${scope} h1`);
     expect(styleEl.textContent).toContain(`.${scope} h2`);
@@ -49,14 +74,22 @@ describe('css', () => {
 
   it('supports static interpolated values', () => {
     const color = 'tomato';
-    const scope = css`.box { color: ${color}; }`;
+    const scope = css`
+      .box {
+        color: ${color};
+      }
+    `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl.textContent).toContain('tomato');
   });
 
   it('supports reactive interpolated values', async () => {
     const color = state('red');
-    const scope = css`.box { color: ${() => color()}; }`;
+    const scope = css`
+      .box {
+        color: ${() => color()};
+      }
+    `;
 
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl.textContent).toContain('red');
@@ -68,7 +101,12 @@ describe('css', () => {
 
   it('keeps multiple selectors scoped across reactive updates', async () => {
     const m = state('0');
-    const scope = css`h1, h2 { margin: ${() => m()}; }`;
+    const scope = css`
+      h1,
+      h2 {
+        margin: ${() => m()};
+      }
+    `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
 
     expect(styleEl.textContent).toContain(`.${scope} h1`);
@@ -84,7 +122,12 @@ describe('css', () => {
   it('handles multiple reactive values in one rule', async () => {
     const fg = state('black');
     const bg = state('white');
-    const scope = css`.x { color: ${() => fg()}; background: ${() => bg()}; }`;
+    const scope = css`
+      .x {
+        color: ${() => fg()};
+        background: ${() => bg()};
+      }
+    `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
 
     expect(styleEl.textContent).toContain('color: black');
@@ -99,7 +142,11 @@ describe('css', () => {
 
   it('falls back to per-update scoping when a value is in selector position', async () => {
     const sel = state('.a');
-    const scope = css`${() => sel()} { color: red; }`;
+    const scope = css`
+      ${() => sel()} {
+        color: red;
+      }
+    `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl.textContent).toContain(`.${scope} .a`);
 
@@ -110,7 +157,11 @@ describe('css', () => {
 
   it('handles escaped quote in CSS string literal', async () => {
     const v = state('A');
-    const scope = css`.x::before { content: "say \\"${() => v()}\\""; }`;
+    const scope = css`
+      .x::before {
+        content: 'say \\' ${() => v()}\\'';
+      }
+    `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl.textContent).toContain('say');
     v('B');
@@ -125,7 +176,11 @@ describe('css', () => {
   });
 
   it('handles static interpolation with non-string value', () => {
-    const scope = css`.x { padding: ${10}px; }`;
+    const scope = css`
+      .x {
+        padding: ${10}px;
+      }
+    `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl!.textContent).toContain('10px');
   });
@@ -136,7 +191,11 @@ describe('css', () => {
     // bare `${null}` literal is gone — the value is genuinely `unknown`
     // and only resolved at runtime.
     const src = JSON.parse('{"v":null}') as Record<string, unknown>;
-    const scope = css`.x { color: ${src.v}; }`;
+    const scope = css`
+      .x {
+        color: ${src.v};
+      }
+    `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl).not.toBeNull();
   });
@@ -146,7 +205,11 @@ describe('css', () => {
     const container = document.createElement('div');
     let scope = '';
     const { unmount } = mount(() => {
-      scope = css`.theme { color: ${() => color()}; }`;
+      scope = css`
+        .theme {
+          color: ${() => color()};
+        }
+      `;
       return html`<p class="theme">x</p>`;
     }, container);
     await tick();
@@ -160,7 +223,11 @@ describe('css', () => {
     const container = document.createElement('div');
     let scope = '';
     const { unmount } = mount(() => {
-      scope = css`.theme-static { color: red; }`;
+      scope = css`
+        .theme-static {
+          color: red;
+        }
+      `;
       return html`<p class="theme-static">x</p>`;
     }, container);
     expect(document.querySelector(`style[data-purity-scope="${scope}"]`)).not.toBeNull();
@@ -171,7 +238,12 @@ describe('css', () => {
 
   it('handles well-formed /* */ comment in reactive template', async () => {
     const c = state('red');
-    const scope = css`/* leading comment */ .x { color: ${() => c()}; }`;
+    const scope = css`
+      /* leading comment */
+      .x {
+        color: ${() => c()};
+      }
+    `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl!.textContent).toContain('red');
     c('blue');
@@ -187,14 +259,25 @@ describe('css', () => {
     const src = JSON.parse('{"nul":null}') as Record<string, unknown>;
     const nul = src.nul;
     const undef = src.notPresent;
-    const scope = css`.x { color: ${() => c()}; padding: ${nul}px; margin: ${undef}; }`;
+    const scope = css`
+      .x {
+        color: ${() => c()};
+        padding: ${nul}px;
+        margin: ${undef};
+      }
+    `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl!.textContent).toContain('color: red');
   });
 
   it('mixes reactive + static interpolations in one rule', async () => {
     const c = state('red');
-    const scope = css`.x { color: ${() => c()}; padding: ${10}px; }`;
+    const scope = css`
+      .x {
+        color: ${() => c()};
+        padding: ${10}px;
+      }
+    `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl!.textContent).toContain('color: red');
     expect(styleEl!.textContent).toContain('padding: 10px');
@@ -207,7 +290,11 @@ describe('css', () => {
 
   it('skips DOM update when reactive value resolves to same string', async () => {
     const c = state('red');
-    const scope = css`.x { color: ${() => c()}; }`;
+    const scope = css`
+      .x {
+        color: ${() => c()};
+      }
+    `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     const before = styleEl!.textContent;
     // Same value — newCss === prevCss branch
@@ -221,7 +308,9 @@ describe('css', () => {
     const c = state('red');
     const scope = css`
       @media (min-width: 1px) {
-        .x { color: ${() => c()}; }
+        .x {
+          color: ${() => c()};
+        }
       }
     `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);

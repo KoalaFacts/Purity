@@ -118,14 +118,10 @@ describe('3. computed propagation', () => {
       const prev = tip;
       tip = compute(() => prev() + 1);
     }
-    const _elapsed = bench(
-      '1000-deep chain',
-      () => {
-        source(source() + 1);
-        tip();
-      },
-      100,
-    );
+    const _elapsed = bench('1000-deep chain', () => {
+      source(source() + 1);
+      tip();
+    }, 100);
     console.log(`    → Solid: ~0.05-0.1ms | Vue: ~0.2-0.5ms | Vue Vapor: ~0.1-0.2ms`);
   });
 
@@ -134,14 +130,10 @@ describe('3. computed propagation', () => {
     const source = state(0);
     const deps: any[] = [];
     for (let i = 0; i < 1000; i++) deps.push(compute(() => source() + i));
-    const _elapsed = bench(
-      '1→1000 fan-out',
-      () => {
-        source(source() + 1);
-        for (let i = 0; i < 1000; i++) deps[i]();
-      },
-      100,
-    );
+    const _elapsed = bench('1→1000 fan-out', () => {
+      source(source() + 1);
+      for (let i = 0; i < 1000; i++) deps[i]();
+    }, 100);
     console.log(`    → Solid: ~0.1-0.15ms | Vue: ~0.3-0.5ms`);
   });
 
@@ -334,14 +326,10 @@ describe('5. template rendering', () => {
   });
 
   it('nested 10 levels deep', () => {
-    bench(
-      '10-level nesting',
-      () => {
-        let node: any = html`<span>leaf</span>`;
-        for (let i = 0; i < 10; i++) node = html`<div>${node}</div>`;
-      },
-      100,
-    );
+    bench('10-level nesting', () => {
+      let node: any = html`<span>leaf</span>`;
+      for (let i = 0; i < 10; i++) node = html`<div>${node}</div>`;
+    }, 100);
   });
 });
 

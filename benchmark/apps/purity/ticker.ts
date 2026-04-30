@@ -149,30 +149,52 @@ function run500() {
 // ---------------------------------------------------------------------------
 
 function hBtn(id: string, label: string, handler: () => void) {
-  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>
+    ${label}
+  </button>`;
 }
 
 function ButtonBar() {
   return html`
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Purity (Ticker)</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="start" @click=${startTicker}>Start Ticker</button>
+    <div class="jumbotron">
+      <div class="row">
+        <div class="col-md-6"><h1>Purity (Ticker)</h1></div>
+        <div class="col-md-6">
+          <div class="row">
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="start"
+                @click=${startTicker}
+              >
+                Start Ticker
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="stop"
+                @click=${stopTicker}
+              >
+                Stop Ticker
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button type="button" class="btn btn-primary btn-block" id="run-500" @click=${run500}>
+                Run 500 Frames
+              </button>
+            </div>
+            ${hBtn('run-10', 'Run 10', () => runFrames(10))}
+            ${hBtn('run-100', 'Run 100', () => runFrames(100))}
+            ${hBtn('run-500-hidden', 'Run 500', run500)}
+            ${hBtn('run-1000', 'Run 1000', () => runFrames(1000))}
+            ${hBtn('run-10000', 'Run 10000', () => runFrames(10000))}
+          </div>
         </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="stop" @click=${stopTicker}>Stop Ticker</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="run-500" @click=${run500}>Run 500 Frames</button>
-        </div>
-        ${hBtn('run-10', 'Run 10', () => runFrames(10))}
-        ${hBtn('run-100', 'Run 100', () => runFrames(100))}
-        ${hBtn('run-500-hidden', 'Run 500', run500)}
-        ${hBtn('run-1000', 'Run 1000', () => runFrames(1000))}
-        ${hBtn('run-10000', 'Run 10000', () => runFrames(10000))}
-      </div></div>
-    </div></div>
+      </div>
+    </div>
   `;
 }
 

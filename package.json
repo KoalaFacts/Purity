@@ -9,21 +9,23 @@
   "scripts": {
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
-    "format": "biome format --write .",
-    "lint": "biome lint .",
-    "lint:fix": "biome lint --write .",
-    "check": "biome check --write ."
-  },
-  "engines": {
-    "node": ">=24"
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "check": "oxfmt --check . && oxlint",
+    "check:fix": "oxfmt . && oxlint --fix"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.13",
     "@types/node": "^25.6.0",
     "jsdom": "^29.1.0",
     "playwright": "^1.59.1",
     "typescript": "^6.0.3",
     "vite": "^8.0.10",
+    "vite-plus": "^0.1.20",
     "vitest": "^4.1.5"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

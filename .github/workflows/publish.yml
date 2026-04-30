@@ -27,8 +27,11 @@ jobs:
       - run: npm ci
 
       # Full CI checks before publish
-      - name: Lint
-        run: npx biome check .
+      - name: Format check (Oxfmt — Vite+)
+        run: npx oxfmt --check .
+
+      - name: Lint (Oxlint — Vite+)
+        run: npx oxlint
 
       - name: Type-check
         run: npx tsc --noEmit -p packages/core

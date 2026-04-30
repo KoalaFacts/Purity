@@ -180,9 +180,13 @@ describe('compiled html``', () => {
 
   it('handles @event binding', () => {
     let clicked = false;
-    const frag = html`<button @click=${() => {
-      clicked = true;
-    }}>Click</button>`;
+    const frag = html`<button
+      @click=${() => {
+        clicked = true;
+      }}
+    >
+      Click
+    </button>`;
     const container = document.createElement('div');
     container.appendChild(frag);
 
@@ -219,7 +223,10 @@ describe('compiled html``', () => {
   });
 
   it('renders nested elements', () => {
-    const frag = html`<div><h1>Title</h1><p>Body</p></div>`;
+    const frag = html`<div>
+      <h1>Title</h1>
+      <p>Body</p>
+    </div>`;
     const container = document.createElement('div');
     container.appendChild(frag);
 
@@ -228,7 +235,7 @@ describe('compiled html``', () => {
   });
 
   it('renders void elements', () => {
-    const frag = html`<div><br/><input type="text" /></div>`;
+    const frag = html`<div><br /><input type="text" /></div>`;
     const container = document.createElement('div');
     container.appendChild(frag);
 
@@ -365,7 +372,10 @@ describe('compiler — extra coverage', () => {
   });
 
   it('renders comments as static DOM nodes', () => {
-    const frag = html`<div><!-- hello --><p>x</p></div>`;
+    const frag = html`<div>
+      <!-- hello -->
+      <p>x</p>
+    </div>`;
     const c = document.createElement('div');
     c.appendChild(frag);
     const div = c.querySelector('div')!;
@@ -406,15 +416,17 @@ describe('compiler — extra coverage', () => {
 
   it('handles Node-returning reactive expression that swaps to text', async () => {
     const showNode = state(true);
-    const frag = html`<div>${() => {
-      if (showNode()) {
-        const el = document.createElement('span');
-        el.className = 'n';
-        el.textContent = 'node';
-        return el;
-      }
-      return 'plain';
-    }}</div>`;
+    const frag = html`<div>
+      ${() => {
+        if (showNode()) {
+          const el = document.createElement('span');
+          el.className = 'n';
+          el.textContent = 'node';
+          return el;
+        }
+        return 'plain';
+      }}
+    </div>`;
     const c = document.createElement('div');
     c.appendChild(frag);
     expect(c.querySelector('.n')).not.toBeNull();
@@ -496,7 +508,10 @@ describe('compiler — extra coverage', () => {
 
   it('parses dynamic comments inside dynamic templates', () => {
     const v = state('x');
-    const frag = html`<div><!-- static --><p>${() => v()}</p></div>`;
+    const frag = html`<div>
+      <!-- static -->
+      <p>${() => v()}</p>
+    </div>`;
     const c = document.createElement('div');
     c.appendChild(frag);
     expect(c.querySelector('p')!.textContent).toBe('x');

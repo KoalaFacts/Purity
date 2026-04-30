@@ -54,29 +54,51 @@ function updateOne() {
 // ---------------------------------------------------------------------------
 
 function hBtn(id: string, label: string, handler: () => void) {
-  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>
+    ${label}
+  </button>`;
 }
 
 function ButtonBar() {
   return html`
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Purity (Diamond)</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="setup" @click=${setup}>Setup 1000 Diamonds</button>
+    <div class="jumbotron">
+      <div class="row">
+        <div class="col-md-6"><h1>Purity (Diamond)</h1></div>
+        <div class="col-md-6">
+          <div class="row">
+            <div class="col-sm-6 smallpad">
+              <button type="button" class="btn btn-primary btn-block" id="setup" @click=${setup}>
+                Setup 1000 Diamonds
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="update-all"
+                @click=${updateAll}
+              >
+                Update All Sources
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="update-one"
+                @click=${updateOne}
+              >
+                Update One Source
+              </button>
+            </div>
+            ${hBtn('setup-10', 'Setup 10', () => setup(10))}
+            ${hBtn('setup-100', 'Setup 100', () => setup(100))}
+            ${hBtn('setup-diamonds', 'Setup 1000', () => setup(1000))}
+            ${hBtn('setup-10k', 'Setup 10k', () => setup(10000))}
+          </div>
         </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="update-all" @click=${updateAll}>Update All Sources</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="update-one" @click=${updateOne}>Update One Source</button>
-        </div>
-        ${hBtn('setup-10', 'Setup 10', () => setup(10))}
-        ${hBtn('setup-100', 'Setup 100', () => setup(100))}
-        ${hBtn('setup-diamonds', 'Setup 1000', () => setup(1000))}
-        ${hBtn('setup-10k', 'Setup 10k', () => setup(10000))}
-      </div></div>
-    </div></div>
+      </div>
+    </div>
   `;
 }
 

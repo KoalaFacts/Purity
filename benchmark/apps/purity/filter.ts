@@ -112,28 +112,54 @@ function clearSearch() {
 // ---------------------------------------------------------------------------
 
 function hBtn(id: string, label: string, handler: () => void) {
-  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>
+    ${label}
+  </button>`;
 }
 
 function ButtonBar() {
   return html`
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Purity (Filter)</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad">
-          <input type="text" id="search" placeholder="Search..." class="form-control" ::value=${query} />
+    <div class="jumbotron">
+      <div class="row">
+        <div class="col-md-6"><h1>Purity (Filter)</h1></div>
+        <div class="col-md-6">
+          <div class="row">
+            <div class="col-sm-6 smallpad">
+              <input
+                type="text"
+                id="search"
+                placeholder="Search..."
+                class="form-control"
+                ::value=${query}
+              />
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="populate"
+                @click=${() => populate(10000)}
+              >
+                Populate 10k
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="clear-search"
+                @click=${clearSearch}
+              >
+                Clear Search
+              </button>
+            </div>
+            ${hBtn('populate-10', 'Populate 10', () => populate(10))}
+            ${hBtn('populate-100', 'Populate 100', () => populate(100))}
+            ${hBtn('populate-1k', 'Populate 1k', () => populate(1000))}
+          </div>
         </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="populate" @click=${() => populate(10000)}>Populate 10k</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="clear-search" @click=${clearSearch}>Clear Search</button>
-        </div>
-        ${hBtn('populate-10', 'Populate 10', () => populate(10))}
-        ${hBtn('populate-100', 'Populate 100', () => populate(100))}
-        ${hBtn('populate-1k', 'Populate 1k', () => populate(1000))}
-      </div></div>
-    </div></div>
+      </div>
+    </div>
   `;
 }
 

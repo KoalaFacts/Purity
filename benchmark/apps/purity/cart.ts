@@ -83,36 +83,84 @@ function clearCart() {
 // ---------------------------------------------------------------------------
 
 function hBtn(id: string, label: string, handler: () => void) {
-  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>
+    ${label}
+  </button>`;
 }
 
 function ButtonBar() {
   return html`
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Purity (Cart)</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="add-1" @click=${() => addItems(1)}>Add 1 Item</button>
+    <div class="jumbotron">
+      <div class="row">
+        <div class="col-md-6"><h1>Purity (Cart)</h1></div>
+        <div class="col-md-6">
+          <div class="row">
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="add-1"
+                @click=${() => addItems(1)}
+              >
+                Add 1 Item
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="add-100"
+                @click=${() => addItems(100)}
+              >
+                Add 100 Items
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="add-1000"
+                @click=${() => addItems(1000)}
+              >
+                Add 1000 Items
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="increment-all"
+                @click=${incrementAll}
+              >
+                +1 All Quantities
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="remove-first"
+                @click=${removeFirst}
+              >
+                Remove First
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="clear-cart"
+                @click=${clearCart}
+              >
+                Clear Cart
+              </button>
+            </div>
+            ${hBtn('add-10', 'Add 10', () => addItems(10))}
+            ${hBtn('add-10k', 'Add 10k', () => addItems(10000))}
+          </div>
         </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="add-100" @click=${() => addItems(100)}>Add 100 Items</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="add-1000" @click=${() => addItems(1000)}>Add 1000 Items</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="increment-all" @click=${incrementAll}>+1 All Quantities</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="remove-first" @click=${removeFirst}>Remove First</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="clear-cart" @click=${clearCart}>Clear Cart</button>
-        </div>
-        ${hBtn('add-10', 'Add 10', () => addItems(10))}
-        ${hBtn('add-10k', 'Add 10k', () => addItems(10000))}
-      </div></div>
-    </div></div>
+      </div>
+    </div>
   `;
 }
 
@@ -123,10 +171,13 @@ function ButtonBar() {
 function Stats() {
   return html`
     <div id="stats">
-      <span id="item-count">${() => String(itemCount())}</span> items |
-      Subtotal: $<span id="subtotal">${() => subtotal().toFixed(2)}</span> |
-      Tax: $<span id="tax">${() => tax().toFixed(2)}</span> |
-      Total: $<span id="total">${() => total().toFixed(2)}</span>
+      <span id="item-count">${() => String(itemCount())}</span> items | Subtotal: $<span
+        id="subtotal"
+        >${() => subtotal().toFixed(2)}</span
+      >
+      | Tax: $<span id="tax">${() => tax().toFixed(2)}</span> | Total: $<span id="total"
+        >${() => total().toFixed(2)}</span
+      >
     </div>
   `;
 }

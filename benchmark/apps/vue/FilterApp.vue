@@ -92,25 +92,66 @@ function onSearchInput(e: Event) {
 </script>
 
 <template>
-  <div id="main"><div class="container">
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Vue (Filter)</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad"><input type="text" id="search" placeholder="Search..." class="form-control" :value="query" @input="onSearchInput" /></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="populate" @click="populate()">Populate 10k</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="clear-search" @click="clearSearch()">Clear Search</button></div>
-        <button type="button" id="populate-1k" style="display:none" @click="populate(1000)">Populate 1000</button>
-        <button type="button" id="populate-10" style="display:none" @click="populate(10)">Populate 10</button>
-        <button type="button" id="populate-100" style="display:none" @click="populate(100)">Populate 100</button>
-      </div></div>
-    </div></div>
-    <table class="table table-hover table-striped test-data">
-      <tbody>
-        <tr v-for="item in filtered" :key="item.id">
-          <td class="col-md-1">{{ item.id }}</td>
-          <td class="col-md-4"><a href="#" class="lbl">{{ item.label }}</a></td>
-        </tr>
-      </tbody>
-    </table>
-  </div></div>
+  <div id="main">
+    <div class="container">
+      <div class="jumbotron">
+        <div class="row">
+          <div class="col-md-6"><h1>Vue (Filter)</h1></div>
+          <div class="col-md-6">
+            <div class="row">
+              <div class="col-sm-6 smallpad">
+                <input
+                  type="text"
+                  id="search"
+                  placeholder="Search..."
+                  class="form-control"
+                  :value="query"
+                  @input="onSearchInput"
+                />
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="populate"
+                  @click="populate()"
+                >
+                  Populate 10k
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="clear-search"
+                  @click="clearSearch()"
+                >
+                  Clear Search
+                </button>
+              </div>
+              <button type="button" id="populate-1k" style="display: none" @click="populate(1000)">
+                Populate 1000
+              </button>
+              <button type="button" id="populate-10" style="display: none" @click="populate(10)">
+                Populate 10
+              </button>
+              <button type="button" id="populate-100" style="display: none" @click="populate(100)">
+                Populate 100
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <table class="table table-hover table-striped test-data">
+        <tbody>
+          <tr v-for="item in filtered" :key="item.id">
+            <td class="col-md-1">{{ item.id }}</td>
+            <td class="col-md-4">
+              <a href="#" class="lbl">{{ item.label }}</a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </template>

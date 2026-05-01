@@ -224,6 +224,77 @@ describe('compiled html``', () => {
     expect(container.querySelector('p').textContent).toBe('Body');
   });
 
+  it('renders nested expression-only children', async () => {
+    const label = state('A');
+    const frag = html`<div><span>${() => label()}</span><strong>${'B'}</strong></div>`;
+    const container = document.createElement('div');
+    container.appendChild(frag);
+
+    expect(container.querySelector('span').textContent).toBe('A');
+    expect(container.querySelector('strong').textContent).toBe('B');
+
+    label('C');
+    await tick();
+    expect(container.querySelector('span').textContent).toBe('C');
+  });
+
+  it('renders node values in nested expression-only children', () => {
+    const node = document.createElement('em');
+    node.textContent = 'node';
+    const frag = html`<div><span>${node}</span></div>`;
+    const container = document.createElement('div');
+    container.appendChild(frag);
+
+    expect(container.querySelector('span em').textContent).toBe('node');
+  });
+
+  it('omits formatting whitespace inside table rows', () => {
+    const frag = html`
+      <tr>
+        <td>${'A'}</td>
+        <td>${'B'}</td>
+      </tr>
+    `;
+    const tbody = document.createElement('tbody');
+    tbody.appendChild(frag);
+    const row = tbody.querySelector('tr');
+
+    expect(row?.children.length).toBe(2);
+    expect(row?.childNodes.length).toBe(2);
+    expect(row?.textContent).toBe('AB');
+  });
+
+  it('omits formatting whitespace inside structural containers', () => {
+    const frag = html`
+      <div>
+        <span>${'A'}</span>
+        <span>${'B'}</span>
+      </div>
+    `;
+    const container = document.createElement('div');
+    container.appendChild(frag);
+    const div = container.querySelector('div');
+
+    expect(div?.children.length).toBe(2);
+    expect(div?.childNodes.length).toBe(2);
+    expect(div?.textContent).toBe('AB');
+  });
+
+  it('preserves formatting whitespace inside inline text containers', () => {
+    const frag = html`
+      <p>
+        <span>${'A'}</span>
+        <span>${'B'}</span>
+      </p>
+    `;
+    const container = document.createElement('div');
+    container.appendChild(frag);
+    const p = container.querySelector('p');
+
+    expect(p?.children.length).toBe(2);
+    expect(p?.childNodes.length).toBeGreaterThan(2);
+  });
+
   it('renders void elements', () => {
     const frag = html`<div><br/><input type="text" /></div>`;
     const container = document.createElement('div');

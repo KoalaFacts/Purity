@@ -140,6 +140,15 @@ function runFrames(total: number) {
   rafId = requestAnimationFrame(step);
 }
 
+function runFrameBatch(total: number) {
+  cancelAnimationFrame(rafId);
+  rafId = 0;
+  const t0 = performance.now();
+  for (let i = 0; i < total; i++) setStocks(updateRandom(stocks()));
+  const elapsed = performance.now() - t0;
+  setFrameLabel(`Frames: ${total} | ${elapsed.toFixed(1)}ms`);
+}
+
 function run500() {
   runFrames(500);
 }
@@ -188,6 +197,46 @@ function App() {
                   Run 500 Frames
                 </button>
               </div>
+              <button
+                type="button"
+                id="run-10"
+                style={{ display: 'none' }}
+                onClick={() => runFrameBatch(10)}
+              >
+                Run 10
+              </button>
+              <button
+                type="button"
+                id="run-100"
+                style={{ display: 'none' }}
+                onClick={() => runFrameBatch(100)}
+              >
+                Run 100
+              </button>
+              <button
+                type="button"
+                id="run-500-hidden"
+                style={{ display: 'none' }}
+                onClick={() => runFrameBatch(500)}
+              >
+                Run 500
+              </button>
+              <button
+                type="button"
+                id="run-1000"
+                style={{ display: 'none' }}
+                onClick={() => runFrameBatch(1000)}
+              >
+                Run 1000
+              </button>
+              <button
+                type="button"
+                id="run-10000"
+                style={{ display: 'none' }}
+                onClick={() => runFrameBatch(10000)}
+              >
+                Run 10000
+              </button>
             </div>
           </div>
         </div>
@@ -220,9 +269,3 @@ function App() {
 }
 
 render(App, document.getElementById('app')!);
-
-// Hidden button handlers for benchmark permutations
-document.getElementById('run-10')?.addEventListener('click', () => runFrames(10));
-document.getElementById('run-100')?.addEventListener('click', () => runFrames(100));
-document.getElementById('run-1000')?.addEventListener('click', () => runFrames(1000));
-document.getElementById('run-10000')?.addEventListener('click', () => runFrames(10000));

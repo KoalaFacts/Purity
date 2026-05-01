@@ -140,6 +140,15 @@ function runFrames(total: number) {
   rafId = requestAnimationFrame(step);
 }
 
+function runFrameBatch(total: number) {
+  cancelAnimationFrame(rafId);
+  rafId = 0;
+  const t0 = performance.now();
+  for (let i = 0; i < total; i++) stocks(updateRandom(stocks()));
+  const elapsed = performance.now() - t0;
+  frameMsg(`Frames: ${total} | ${elapsed.toFixed(1)}ms`);
+}
+
 function run500() {
   runFrames(500);
 }
@@ -166,11 +175,11 @@ function ButtonBar() {
         <div class="col-sm-6 smallpad">
           <button type="button" class="btn btn-primary btn-block" id="run-500" @click=${run500}>Run 500 Frames</button>
         </div>
-        ${hBtn('run-10', 'Run 10', () => runFrames(10))}
-        ${hBtn('run-100', 'Run 100', () => runFrames(100))}
-        ${hBtn('run-500-hidden', 'Run 500', run500)}
-        ${hBtn('run-1000', 'Run 1000', () => runFrames(1000))}
-        ${hBtn('run-10000', 'Run 10000', () => runFrames(10000))}
+        ${hBtn('run-10', 'Run 10', () => runFrameBatch(10))}
+        ${hBtn('run-100', 'Run 100', () => runFrameBatch(100))}
+        ${hBtn('run-500-hidden', 'Run 500', () => runFrameBatch(500))}
+        ${hBtn('run-1000', 'Run 1000', () => runFrameBatch(1000))}
+        ${hBtn('run-10000', 'Run 10000', () => runFrameBatch(10000))}
       </div></div>
     </div></div>
   `;

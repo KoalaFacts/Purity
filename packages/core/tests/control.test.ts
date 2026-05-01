@@ -232,6 +232,79 @@ describe('each', () => {
     expect(lis[0].textContent).toBe('A');
   });
 
+  it('reuses keyed nodes when shrinking to a stable subsequence', async () => {
+    const items = state([
+      { id: 1, text: 'A' },
+      { id: 2, text: 'B' },
+      { id: 3, text: 'C' },
+      { id: 4, text: 'D' },
+      { id: 5, text: 'E' },
+    ]);
+    const fragment = each(
+      () => items(),
+      (item) => {
+        const li = document.createElement('li');
+        li.textContent = item.text;
+        return li;
+      },
+      (item) => item.id,
+    );
+
+    const container = document.createElement('ul');
+    container.appendChild(fragment);
+
+    await tick();
+    const before = Array.from(container.querySelectorAll('li'));
+
+    items([
+      { id: 1, text: 'A' },
+      { id: 3, text: 'C' },
+      { id: 5, text: 'E' },
+    ]);
+    await tick();
+
+    const after = Array.from(container.querySelectorAll('li'));
+    expect(after.map((node) => node.textContent)).toEqual(['A', 'C', 'E']);
+    expect(after[0]).toBe(before[0]);
+    expect(after[1]).toBe(before[2]);
+    expect(after[2]).toBe(before[4]);
+  });
+
+  it('reuses keyed nodes when expanding a stable subsequence', async () => {
+    const items = state([
+      { id: 1, text: 'A' },
+      { id: 3, text: 'C' },
+    ]);
+    const fragment = each(
+      () => items(),
+      (item) => {
+        const li = document.createElement('li');
+        li.textContent = item.text;
+        return li;
+      },
+      (item) => item.id,
+    );
+
+    const container = document.createElement('ul');
+    container.appendChild(fragment);
+
+    await tick();
+    const before = Array.from(container.querySelectorAll('li'));
+
+    items([
+      { id: 1, text: 'A' },
+      { id: 2, text: 'B' },
+      { id: 3, text: 'C' },
+      { id: 4, text: 'D' },
+    ]);
+    await tick();
+
+    const after = Array.from(container.querySelectorAll('li'));
+    expect(after.map((node) => node.textContent)).toEqual(['A', 'B', 'C', 'D']);
+    expect(after[0]).toBe(before[0]);
+    expect(after[2]).toBe(before[1]);
+  });
+
   it('handles empty list', async () => {
     const items = state([]);
     const fragment = each(

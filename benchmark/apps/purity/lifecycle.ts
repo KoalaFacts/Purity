@@ -71,15 +71,26 @@ function ButtonBar() {
 
 const container = document.getElementById('container')!;
 
+function CardView(card: Card): HTMLDivElement {
+  const div = document.createElement('div');
+  div.className = 'card';
+
+  const id = document.createElement('span');
+  id.className = 'id';
+  id.textContent = String(card.id);
+  div.appendChild(id);
+
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = card.label;
+  div.appendChild(label);
+
+  return div;
+}
+
 const fragment = each(
   () => cards(),
-  (card: Card) =>
-    html`
-      <div class="card">
-        <span class="id">${String(card.id)}</span>
-        <span class="label">${card.label}</span>
-      </div>
-    ` as unknown as HTMLElement,
+  (card: Card) => CardView(card),
   (card: Card) => card.id,
 );
 container.appendChild(fragment);

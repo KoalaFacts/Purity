@@ -121,11 +121,12 @@ function compileNestedTemplates(source: string): string {
     try {
       const { strings, exprSources } = extracted;
       const ast = parse(strings);
-      const fnBody = generate(ast);
+      const fnBody = generate(ast, { valueMode: 'params' });
       const compiledExprs = exprSources.map((expr) =>
         expr.includes('html`') ? compileNestedTemplates(expr) : expr,
       );
-      parts.push(`((${fnBody})([${compiledExprs.join(', ')}], __purity_w__))`);
+      const args = compiledExprs.length > 0 ? `, ${compiledExprs.join(', ')}` : '';
+      parts.push(`((${fnBody})(__purity_w__${args}))`);
       changed = true;
     } catch {
       parts.push(source.slice(idx, extracted.end));
@@ -138,6 +139,7 @@ function compileNestedTemplates(source: string): string {
 
 function compileTemplates(source: string, _id: string): CompileResult {
   const parts: string[] = [];
+  const hoists: string[] = [];
   let changed = false;
   let pos = 0;
 
@@ -177,7 +179,7 @@ function compileTemplates(source: string, _id: string): CompileResult {
     try {
       const { strings, exprSources } = extracted;
       const ast = parse(strings);
-      const fnBody = generate(ast);
+      const fnBody = generate(ast, { valueMode: 'params' });
 
       // Recursively compile any nested html`` templates inside expressions
       const compiledExprs = exprSources.map((expr) => {
@@ -187,8 +189,12 @@ function compileTemplates(source: string, _id: string): CompileResult {
         return expr;
       });
 
-      // Replace html`...` with inline IIFE
-      const compiled = `((${fnBody})([${compiledExprs.join(', ')}], __purity_w__))`;
+      // Hoist the compiled DOM factory so templates inside loops do not
+      // recreate their backing <template> on every iteration.
+      const factory = `__purity_tpl_${hoists.length}`;
+      hoists.push(`const ${factory} = ${fnBody};`);
+      const args = compiledExprs.length > 0 ? `, ${compiledExprs.join(', ')}` : '';
+      const compiled = `${factory}(__purity_w__${args})`;
 
       parts.push(compiled);
       changed = true;
@@ -204,22 +210,27 @@ function compileTemplates(source: string, _id: string): CompileResult {
 
   let finalCode = parts.join('');
 
-  // Add watch import if not already present
-  if (!finalCode.includes('__purity_w__')) {
-    return { code: finalCode, changed: true };
-  }
-
-  const watchImport = `import { watch as __purity_w__ } from '@purityjs/core';\n`;
-  const insertAt = findLastImportEnd(finalCode);
-  if (insertAt !== -1) {
-    finalCode = `${finalCode.slice(0, insertAt)}${watchImport}${finalCode.slice(insertAt)}`;
-  } else {
-    finalCode = watchImport + finalCode;
-  }
-
   // Remove html import since templates are pre-compiled
   // Use string parsing instead of regex to avoid polynomial backtracking
   finalCode = removePurityHtmlImport(finalCode);
+
+  // Add watch import and hoisted factories after the import block.
+  const prelude = [
+    finalCode.includes('__purity_w__')
+      ? `import { watch as __purity_w__ } from '@purityjs/core';`
+      : '',
+    ...hoists,
+  ]
+    .filter(Boolean)
+    .join('\n');
+  if (prelude) {
+    const insertAt = findLastImportEnd(finalCode);
+    const block = `${prelude}\n`;
+    finalCode =
+      insertAt !== -1
+        ? `${finalCode.slice(0, insertAt)}${block}${finalCode.slice(insertAt)}`
+        : block + finalCode;
+  }
 
   return { code: finalCode, changed: true };
 }

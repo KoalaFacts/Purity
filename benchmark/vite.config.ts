@@ -27,6 +27,10 @@ export default defineConfig({
   resolve: {
     alias: {
       // Resolve to source so the AOT plugin can compile html`` templates
+      '@purityjs/core/compiler': resolve(
+        import.meta.dirname,
+        '../packages/core/src/compiler/index.ts',
+      ),
       '@purityjs/core': resolve(import.meta.dirname, '../packages/core/src/index.ts'),
     },
   },

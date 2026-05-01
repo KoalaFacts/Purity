@@ -55,6 +55,7 @@ interface ExprSlot {
   type: 'expr';
   index: number;
   path: PathStep[];
+  placeholder: 'comment' | 'text';
 }
 
 interface AttrSlot {
@@ -64,6 +65,46 @@ interface AttrSlot {
 }
 
 type Slot = ExprSlot | AttrSlot;
+
+const TEXT_EXPR_MARKER = '\uE000';
+
+export interface GenerateOptions {
+  valueMode?: 'array' | 'params';
+}
+
+interface CodegenContext {
+  signature: string;
+  valueRef: (index: number) => string;
+}
+
+function maxExpressionIndex(node: ASTNode, max = -1): number {
+  if (node.type === 'expression') return Math.max(max, node.index);
+  if (node.type === 'element') {
+    for (const attr of node.attributes) {
+      if (attr.kind !== 'static') max = Math.max(max, attr.index);
+    }
+    for (const child of node.children) max = maxExpressionIndex(child, max);
+  } else if (node.type === 'fragment') {
+    for (const child of node.children) max = maxExpressionIndex(child, max);
+  }
+  return max;
+}
+
+function createCodegenContext(ast: FragmentNode, options?: GenerateOptions): CodegenContext {
+  if (options?.valueMode === 'params') {
+    const maxIndex = maxExpressionIndex(ast);
+    const params = ['_w'];
+    for (let i = 0; i <= maxIndex; i++) params.push(`_v${i}`);
+    return {
+      signature: params.join(','),
+      valueRef: (index) => `_v${index}`,
+    };
+  }
+  return {
+    signature: '_v,_w',
+    valueRef: (index) => `_v[${index}]`,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // trimFragmentEdges — strip leading/trailing whitespace-only text nodes
@@ -87,15 +128,75 @@ function trimFragmentEdges(frag: FragmentNode): FragmentNode {
   return { ...frag, children: children.slice(start, end) };
 }
 
+const STRUCTURAL_WHITESPACE_CONTEXT = new Set([
+  'article',
+  'aside',
+  'body',
+  'colgroup',
+  'details',
+  'dialog',
+  'div',
+  'footer',
+  'form',
+  'header',
+  'li',
+  'main',
+  'nav',
+  'ol',
+  'section',
+  'select',
+  'table',
+  'tbody',
+  'tfoot',
+  'thead',
+  'tr',
+  'ul',
+]);
+
+function trimTableWhitespace(node: ASTNode): ASTNode {
+  if (node.type === 'fragment') {
+    let changed = false;
+    const children = node.children.map((child) => {
+      const next = trimTableWhitespace(child);
+      if (next !== child) changed = true;
+      return next;
+    });
+    return changed ? { ...node, children } : node;
+  }
+
+  if (node.type !== 'element') return node;
+
+  const trimChildWhitespace = STRUCTURAL_WHITESPACE_CONTEXT.has(node.tag);
+  let changed = false;
+  const children: ASTNode[] = [];
+  for (const child of node.children) {
+    if (
+      trimChildWhitespace &&
+      child.type === 'text' &&
+      child.value.trim() === '' &&
+      child.value.includes('\n')
+    ) {
+      changed = true;
+      continue;
+    }
+    const next = trimTableWhitespace(child);
+    if (next !== child) changed = true;
+    children.push(next);
+  }
+  return changed ? { ...node, children } : node;
+}
+
 // ---------------------------------------------------------------------------
 // generate(ast)
 // ---------------------------------------------------------------------------
 
-export function generate(ast: FragmentNode): string {
+export function generate(ast: FragmentNode, options?: GenerateOptions): string {
   // Trim whitespace-only text nodes (containing newlines) from fragment edges.
   // These are template formatting artifacts (indentation) that add unnecessary
   // DOM nodes — especially costly in each() where they multiply per item.
   ast = trimFragmentEdges(ast);
+  ast = trimTableWhitespace(ast) as FragmentNode;
+  const ctx = createCodegenContext(ast, options);
 
   if (!hasDynamic(ast)) {
     const html = buildStaticHtml(ast);
@@ -112,20 +213,20 @@ export function generate(ast: FragmentNode): string {
   // Use direct createElement — faster than cloneNode for small templates
   const simple = isSimpleTemplate(ast);
   if (simple) {
-    return genSimpleTemplate(simple);
+    return genSimpleTemplate(simple, ctx);
   }
 
   // Complex template — cloneNode + positional paths
   const slots: Slot[] = [];
   const html = buildDynamicHtml(ast, slots, []);
 
-  const bindCode = genPositionalBindings(slots);
+  const bindCode = genPositionalBindings(slots, ctx);
 
   return [
     '(function(){',
     `var _t=document.createElement('template');`,
     `_t.innerHTML=${JSON.stringify(html)};`,
-    'return function(_v,_w){',
+    `return function(${ctx.signature}){`,
     'var _r=_t.content.cloneNode(true);',
     bindCode,
     'return _r;',
@@ -170,7 +271,7 @@ function isSimpleTemplate(ast: FragmentNode): SimpleTemplate | null {
   return { tag: root.tag, staticAttrs, dynamicAttrs, children: root.children };
 }
 
-function genSimpleTemplate(tpl: SimpleTemplate): string {
+function genSimpleTemplate(tpl: SimpleTemplate, ctx: CodegenContext): string {
   assertSafeName(tpl.tag, 'tag');
   const lines: string[] = [];
 
@@ -188,7 +289,7 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
   // Dynamic attributes
   for (const a of tpl.dynamicAttrs) {
     assertSafeName(a.name, 'attribute');
-    const val = `_v[${a.index}]`;
+    const val = ctx.valueRef(a.index);
     switch (a.kind) {
       case 'event':
         lines.push(`_e.addEventListener('${a.name}',${val});`);
@@ -236,7 +337,7 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
         lines.push(`_e.appendChild(document.createTextNode(${JSON.stringify(ch.value)}));`);
       }
     } else if (ch.type === 'expression') {
-      const val = `_v[${ch.index}]`;
+      const val = ctx.valueRef(ch.index);
       const id = bindVarCounter++;
       lines.push(
         `var _x${id}=${val};`,
@@ -249,7 +350,7 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
   }
 
   lines.push('return _e;');
-  return `function(_v,_w){${lines.join('')}}`;
+  return `function(${ctx.signature}){${lines.join('')}}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -365,7 +466,12 @@ function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[])
 
     case 'expression': {
       // Insert a comment placeholder — record its path
-      slots.push({ type: 'expr', index: node.index, path: [...currentPath] });
+      slots.push({
+        type: 'expr',
+        index: node.index,
+        path: [...currentPath],
+        placeholder: 'comment',
+      });
       return '<!---->';
     }
 
@@ -391,14 +497,19 @@ function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[])
 
       // Children: first child gets path + [0 (firstChild)], siblings get [1 (nextSibling)]
       for (let i = 0; i < node.children.length; i++) {
-        const _childPath =
-          i === 0
-            ? [...currentPath, 0 as PathStep] // firstChild
-            : [...currentPath, 1 as PathStep]; // nextSibling (from previous)
-
-        // For siblings after first, we need to track relative to previous sibling
-        // Actually, we track from the PARENT: firstChild then nextSibling chain
-        s += buildDynamicHtml(node.children[i], slots, childPathFromParent(currentPath, i));
+        const child = node.children[i];
+        const childPath = childPathFromParent(currentPath, i);
+        if (node.children.length === 1 && child.type === 'expression') {
+          slots.push({
+            type: 'expr',
+            index: child.index,
+            path: childPath,
+            placeholder: 'text',
+          });
+          s += TEXT_EXPR_MARKER;
+        } else {
+          s += buildDynamicHtml(child, slots, childPath);
+        }
       }
 
       return `${s}</${node.tag}>`;
@@ -433,7 +544,7 @@ function childPathFromParent(parentPath: PathStep[], childIndex: number): PathSt
 
 let bindVarCounter = 0;
 
-function genPositionalBindings(slots: Slot[]): string {
+function genPositionalBindings(slots: Slot[], ctx: CodegenContext): string {
   const lines: string[] = [];
 
   for (const slot of slots) {
@@ -447,11 +558,11 @@ function genPositionalBindings(slots: Slot[]): string {
     lines.push(`var ${nodeVar}=${nav};`);
 
     if (slot.type === 'expr') {
-      lines.push(genExprBinding(nodeVar, slot.index));
+      lines.push(genExprBinding(nodeVar, slot.index, slot.placeholder, ctx));
     } else {
       for (const attr of slot.attrs) {
         if (attr.kind !== 'static') {
-          lines.push(genAttrBinding(nodeVar, attr));
+          lines.push(genAttrBinding(nodeVar, attr, ctx));
         }
       }
     }
@@ -464,11 +575,30 @@ function genPositionalBindings(slots: Slot[]): string {
 // Expression binding — replace comment placeholder with dynamic content
 // ---------------------------------------------------------------------------
 
-function genExprBinding(commentVar: string, index: number): string {
+function genExprBinding(
+  anchorVar: string,
+  index: number,
+  placeholder: 'comment' | 'text',
+  ctx: CodegenContext,
+): string {
   const id = bindVarCounter++;
   const xv = `_xv${id}`;
   const tn = `_tn${id}`;
-  const val = `_v[${index}]`;
+  const val = ctx.valueRef(index);
+
+  if (placeholder === 'text') {
+    return [
+      `var ${xv}=${val};`,
+      `if(typeof ${xv}==='object'||typeof ${xv}==='function'){`,
+      `if(typeof ${xv}==='function'){`,
+      `var ${tn}=${anchorVar};`,
+      `_w(function(){var r=${xv}();if(r instanceof Node){${tn}.replaceWith(r);${tn}=r;}else{if(${tn}.nodeType!==3){var t=document.createTextNode('');${tn}.replaceWith(t);${tn}=t;}${tn}.data=r==null?'':String(r);}});`,
+      `}else if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${anchorVar}.replaceWith(${xv});}`,
+      `else if(Array.isArray(${xv})){var _f${id}=document.createDocumentFragment();for(var _i${id}=0;_i${id}<${xv}.length;_i${id}++)_f${id}.appendChild(${xv}[_i${id}] instanceof Node?${xv}[_i${id}]:document.createTextNode(String(${xv}[_i${id}])));${anchorVar}.replaceWith(_f${id});}`,
+      `else{${anchorVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
+      `}else{${anchorVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
+    ].join('');
+  }
 
   // Check order optimized: primitives first (hot path in each/list loops),
   // then functions (reactive), then DOM nodes, then arrays.
@@ -476,12 +606,12 @@ function genExprBinding(commentVar: string, index: number): string {
     `var ${xv}=${val};`,
     `if(typeof ${xv}==='object'||typeof ${xv}==='function'){`,
     `if(typeof ${xv}==='function'){`,
-    `var ${tn}=document.createTextNode('');${commentVar}.replaceWith(${tn});`,
+    `var ${tn}=document.createTextNode('');${anchorVar}.replaceWith(${tn});`,
     `_w(function(){var r=${xv}();if(r instanceof Node){${tn}.replaceWith(r);${tn}=r;}else{if(${tn}.nodeType!==3){var t=document.createTextNode('');${tn}.replaceWith(t);${tn}=t;}${tn}.data=r==null?'':String(r);}});`,
-    `}else if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${commentVar}.replaceWith(${xv});}`,
-    `else if(Array.isArray(${xv})){var _f${id}=document.createDocumentFragment();for(var _i${id}=0;_i${id}<${xv}.length;_i${id}++)_f${id}.appendChild(${xv}[_i${id}] instanceof Node?${xv}[_i${id}]:document.createTextNode(String(${xv}[_i${id}])));${commentVar}.replaceWith(_f${id});}`,
-    `else{${commentVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
-    `}else{${commentVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
+    `}else if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${anchorVar}.replaceWith(${xv});}`,
+    `else if(Array.isArray(${xv})){var _f${id}=document.createDocumentFragment();for(var _i${id}=0;_i${id}<${xv}.length;_i${id}++)_f${id}.appendChild(${xv}[_i${id}] instanceof Node?${xv}[_i${id}]:document.createTextNode(String(${xv}[_i${id}])));${anchorVar}.replaceWith(_f${id});}`,
+    `else{${anchorVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
+    `}else{${anchorVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
   ].join('');
 }
 
@@ -489,11 +619,11 @@ function genExprBinding(commentVar: string, index: number): string {
 // Attribute binding
 // ---------------------------------------------------------------------------
 
-function genAttrBinding(el: string, attr: AttributeNode): string {
+function genAttrBinding(el: string, attr: AttributeNode, ctx: CodegenContext): string {
   if (attr.kind === 'static') return '';
   assertSafeName(attr.name, 'attribute');
 
-  const val = `_v[${attr.index}]`;
+  const val = ctx.valueRef(attr.index);
 
   switch (attr.kind) {
     case 'event':

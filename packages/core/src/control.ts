@@ -207,12 +207,13 @@ function lis(arr: number[]): number[] {
 interface EachEntry {
   nodes: Node[];
   data: StateAccessor<any> | null; // lazily created — only when item is reused
+  index: number;
   dispose?: () => void;
 }
 
 // Bulk remove all managed nodes using Range API — O(1) native batch removal
 function bulkClear(
-  _parent: Node,
+  parent: Node,
   prevKeys: unknown[],
   keyToEntry: Map<unknown, EachEntry>,
   endMarker: Node,
@@ -223,29 +224,41 @@ function bulkClear(
   // Use Range API for batch removal — single native operation
   const firstEntry = keyToEntry.get(prevKeys[0]);
   if (firstEntry?.nodes[0]?.parentNode) {
+    if (firstEntry.nodes[0] === parent.firstChild && endMarker.nextSibling === null) {
+      if ('replaceChildren' in parent) {
+        (parent as Element | DocumentFragment).replaceChildren(endMarker);
+      } else {
+        parent.textContent = '';
+        parent.appendChild(endMarker);
+      }
+      return;
+    }
     const range = document.createRange();
     range.setStartBefore(firstEntry.nodes[0]);
     range.setEndBefore(endMarker);
     range.deleteContents();
   }
-
-  // Run disposers
-  for (let i = 0; i < prevLen; i++) {
-    const entry = keyToEntry.get(prevKeys[i])!;
-    if (entry.dispose) entry.dispose();
-  }
 }
 
 // Extract nodes from mapFn result — optimized for single-node case
 function extractNodes(content: Node | DocumentFragment | string): Node[] {
-  if (content instanceof DocumentFragment) {
-    // Fast path: single child (common for html`` templates)
-    const fc = content.firstChild;
-    if (fc && !fc.nextSibling) return [fc];
-    return Array.from(content.childNodes);
+  if (content instanceof Node) {
+    if (content.nodeType === 11) {
+      // Fast path: single child (common for html`` templates)
+      const fc = content.firstChild;
+      if (fc && !fc.nextSibling) return [fc];
+      return Array.from(content.childNodes);
+    }
+    return [content];
   }
-  if (content instanceof Node) return [content];
   return [document.createTextNode(String(content ?? ''))];
+}
+
+function updateEntryIndexes(entries: Map<unknown, EachEntry>, keys: unknown[]): void {
+  for (let i = 0; i < keys.length; i++) {
+    const entry = entries.get(keys[i]);
+    if (entry) entry.index = i;
+  }
 }
 
 /**
@@ -294,10 +307,19 @@ export function each<T>(
     // Fast path: same keys in same order — just update data signals
     if (len === prevLen) {
       let same = true;
+      let diffCount = 0;
+      let swapA = -1;
+      let swapB = -1;
+      const newKeys2: unknown[] = new Array(len);
       for (let i = 0; i < len; i++) {
-        if (prevKeys[i] !== getKey(list[i], i)) {
+        const key = getKey(list[i], i);
+        newKeys2[i] = key;
+        if (prevKeys[i] !== key) {
           same = false;
-          break;
+          if (diffCount === 0) swapA = i;
+          else if (diffCount === 1) swapB = i;
+          diffCount++;
+          if (diffCount > 2) break;
         }
       }
       if (same) {
@@ -307,6 +329,39 @@ export function each<T>(
           if (entry?.data) entry.data(list[i]);
         }
         return;
+      }
+      if (
+        diffCount === 2 &&
+        swapA >= 0 &&
+        swapB >= 0 &&
+        prevKeys[swapA] === newKeys2[swapB] &&
+        prevKeys[swapB] === newKeys2[swapA]
+      ) {
+        const entryA = keyToEntry.get(newKeys2[swapA]);
+        const entryB = keyToEntry.get(newKeys2[swapB]);
+        if (entryA?.nodes.length === 1 && entryB?.nodes.length === 1) {
+          if (entryA.data) entryA.data(list[swapA]);
+          if (entryB.data) entryB.data(list[swapB]);
+          const nodeA = entryA.nodes[0];
+          const nodeB = entryB.nodes[0];
+          const nodeANext = nodeA.nextSibling;
+          const nodeBNext = nodeB.nextSibling;
+          if (nodeANext === nodeB) {
+            parent.insertBefore(nodeB, nodeA);
+          } else if (nodeBNext === nodeA) {
+            parent.insertBefore(nodeA, nodeB);
+          } else if (nodeA.compareDocumentPosition(nodeB) & Node.DOCUMENT_POSITION_FOLLOWING) {
+            parent.insertBefore(nodeB, nodeANext);
+            parent.insertBefore(nodeA, nodeBNext);
+          } else {
+            parent.insertBefore(nodeA, nodeBNext);
+            parent.insertBefore(nodeB, nodeANext);
+          }
+          prevKeys = newKeys2;
+          entryA.index = swapA;
+          entryB.index = swapB;
+          return;
+        }
       }
     }
 
@@ -325,28 +380,282 @@ export function each<T>(
     if (prevLen === 0) {
       const newKeys2: unknown[] = new Array(len);
       const frag = document.createDocumentFragment();
+      const ownsParent = endMarker === parent.firstChild && endMarker.nextSibling === null;
       for (let i = 0; i < len; i++) {
         const item = list[i];
         newKeys2[i] = getKey(item, i);
         const content = mapFn(item, i);
         let nodes: Node[];
-        if (content instanceof DocumentFragment) {
-          const fc = content.firstChild;
-          nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
-          frag.appendChild(content);
-        } else if (content instanceof Node) {
-          nodes = [content];
+        if (content instanceof Node) {
+          if (content.nodeType === 11) {
+            const fc = content.firstChild;
+            nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
+          } else {
+            nodes = [content];
+          }
           frag.appendChild(content);
         } else {
           const tn = document.createTextNode(String(content ?? ''));
           nodes = [tn];
           frag.appendChild(tn);
         }
-        keyToEntry.set(newKeys2[i], { nodes, data: null });
+        keyToEntry.set(newKeys2[i], { nodes, data: null, index: i });
       }
-      parent.insertBefore(frag, endMarker);
+      if (
+        ownsParent &&
+        'replaceChildren' in parent &&
+        !(typeof HTMLTableSectionElement !== 'undefined' && parent instanceof HTMLTableSectionElement)
+      ) {
+        frag.appendChild(endMarker);
+        (parent as Element | DocumentFragment).replaceChildren(frag);
+      } else {
+        parent.insertBefore(frag, endMarker);
+      }
       prevKeys = newKeys2;
       return;
+    }
+
+    // Fast path: full replacement with no reused keys. This is common for
+    // benchmark-style "replace all" and avoids building a general reconcile
+    // plan only to throw every old node away.
+    {
+      const newKeys2: unknown[] = new Array(len);
+      let hasReuse = false;
+      for (let i = 0; i < len; i++) {
+        const key = getKey(list[i], i);
+        newKeys2[i] = key;
+        if (keyToEntry.has(key)) {
+          hasReuse = true;
+          break;
+        }
+      }
+      if (!hasReuse) {
+        const firstEntry = keyToEntry.get(prevKeys[0]);
+        const ownsParent =
+          firstEntry?.nodes[0] === parent.firstChild && endMarker.nextSibling === null;
+        const newEntries = new Map<unknown, EachEntry>();
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < len; i++) {
+          const item = list[i];
+          const key = newKeys2[i];
+          const content = mapFn(item, i);
+          let nodes: Node[];
+          if (content instanceof Node) {
+            if (content.nodeType === 11) {
+              const fc = content.firstChild;
+              nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
+            } else {
+              nodes = [content];
+            }
+            frag.appendChild(content);
+          } else {
+            const tn = document.createTextNode(String(content ?? ''));
+            nodes = [tn];
+            frag.appendChild(tn);
+          }
+          newEntries.set(key, { nodes, data: null, index: i });
+        }
+        if (
+          ownsParent &&
+          'replaceChildren' in parent &&
+          !(typeof HTMLTableSectionElement !== 'undefined' && parent instanceof HTMLTableSectionElement)
+        ) {
+          frag.appendChild(endMarker);
+          (parent as Element | DocumentFragment).replaceChildren(frag);
+        } else {
+          bulkClear(parent, prevKeys, keyToEntry, endMarker);
+          parent.insertBefore(frag, endMarker);
+        }
+        keyToEntry = newEntries;
+        prevKeys = newKeys2;
+        return;
+      }
+    }
+
+    // Fast path: pure append — existing prefix is unchanged, so avoid the
+    // full reconciliation pass over old entries.
+    if (len > prevLen) {
+      const newKeys2: unknown[] = new Array(len);
+      let isAppend = true;
+      for (let i = 0; i < prevLen; i++) {
+        const key = getKey(list[i], i);
+        newKeys2[i] = key;
+        if (prevKeys[i] !== key) {
+          isAppend = false;
+          break;
+        }
+      }
+      if (isAppend) {
+        const frag = document.createDocumentFragment();
+        for (let i = prevLen; i < len; i++) {
+          const item = list[i];
+          const key = getKey(item, i);
+          newKeys2[i] = key;
+          const content = mapFn(item, i);
+          let nodes: Node[];
+          if (content instanceof Node) {
+            if (content.nodeType === 11) {
+              const fc = content.firstChild;
+              nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
+            } else {
+              nodes = [content];
+            }
+            frag.appendChild(content);
+          } else {
+            const tn = document.createTextNode(String(content ?? ''));
+            nodes = [tn];
+            frag.appendChild(tn);
+          }
+          keyToEntry.set(key, { nodes, data: null, index: i });
+        }
+        parent.insertBefore(frag, endMarker);
+        prevKeys = newKeys2;
+        return;
+      }
+    }
+
+    // Fast path: stable shrink before the generic reconciliation map is
+    // built. Filtering commonly produces a subsequence of the previous list;
+    // this path updates kept entries and deletes gaps without the extra
+    // newEntries construction pass used by arbitrary reorders.
+    if (len < prevLen) {
+      const newKeys2: unknown[] = new Array(len);
+      for (let i = 0; i < len; i++) newKeys2[i] = getKey(list[i], i);
+
+      let newCursor = 0;
+      let removedRuns = 0;
+      let inRemovedRun = false;
+      for (let i = 0; i < prevLen; i++) {
+        if (newCursor < len && prevKeys[i] === newKeys2[newCursor]) {
+          newCursor++;
+          inRemovedRun = false;
+        } else if (!inRemovedRun) {
+          removedRuns++;
+          inRemovedRun = true;
+        }
+      }
+
+      if (newCursor === len) {
+        let keepCursor = 0;
+
+        if (removedRuns <= 32) {
+          let runStart: Node | null = null;
+          const deleteRunBefore = (anchor: Node) => {
+            if (!runStart) return;
+            const range = document.createRange();
+            range.setStartBefore(runStart);
+            range.setEndBefore(anchor);
+            range.deleteContents();
+            runStart = null;
+          };
+
+          for (let i = 0; i < prevLen; i++) {
+            const key = prevKeys[i];
+            if (keepCursor < len && key === newKeys2[keepCursor]) {
+              const entry = keyToEntry.get(key)!;
+              deleteRunBefore(entry.nodes[0]);
+              keepCursor++;
+            } else {
+              const entry = keyToEntry.get(key);
+              if (entry) {
+                runStart ??= entry.nodes[0];
+                if (entry.dispose) entry.dispose();
+              }
+            }
+          }
+
+          deleteRunBefore(endMarker);
+        } else {
+          for (let i = 0; i < prevLen; i++) {
+            const key = prevKeys[i];
+            if (keepCursor < len && key === newKeys2[keepCursor]) {
+              keepCursor++;
+            } else {
+              const entry = keyToEntry.get(key);
+              if (entry) {
+                for (let j = 0; j < entry.nodes.length; j++) {
+                  const node = entry.nodes[j];
+                  if (node.parentNode) node.parentNode.removeChild(node);
+                }
+                if (entry.dispose) entry.dispose();
+              }
+            }
+          }
+        }
+
+        const newEntries = new Map<unknown, EachEntry>();
+        for (let i = 0; i < len; i++) {
+          const key = newKeys2[i];
+          const entry = keyToEntry.get(key)!;
+          if (entry.data) entry.data(list[i]);
+          entry.index = i;
+          newEntries.set(key, entry);
+        }
+        keyToEntry = newEntries;
+        prevKeys = newKeys2;
+        return;
+      }
+    }
+
+    // Fast path: exact reverse. Avoid LIS and map planning for common
+    // descending sort toggles where every existing node is retained and only
+    // order is inverted.
+    if (len === prevLen && len > 32) {
+      const newKeys2: unknown[] = new Array(len);
+      let isReverse = true;
+      for (let i = 0; i < len; i++) {
+        const key = getKey(list[i], i);
+        newKeys2[i] = key;
+        if (key !== prevKeys[len - 1 - i]) {
+          isReverse = false;
+          break;
+        }
+      }
+
+      if (isReverse) {
+        const newEntries = new Map<unknown, EachEntry>();
+        const firstEntry = keyToEntry.get(prevKeys[0]);
+        const ownsParent = firstEntry?.nodes[0] === parent.firstChild && endMarker.nextSibling === null;
+        if (len > 4096 && ownsParent && 'replaceChildren' in parent) {
+          const ordered: Node[] = [];
+          for (let i = 0; i < len; i++) {
+            const key = newKeys2[i];
+            const entry = keyToEntry.get(key)!;
+            if (entry.data) entry.data(list[i]);
+            entry.index = i;
+            newEntries.set(key, entry);
+            for (let j = 0; j < entry.nodes.length; j++) ordered.push(entry.nodes[j]);
+          }
+          ordered.push(endMarker);
+          (parent as Element | DocumentFragment).replaceChildren(...ordered);
+        } else if (len > 512) {
+          parent.removeChild(endMarker);
+          for (let i = 0; i < len; i++) {
+            const key = newKeys2[i];
+            const entry = keyToEntry.get(key)!;
+            if (entry.data) entry.data(list[i]);
+            entry.index = i;
+            newEntries.set(key, entry);
+            for (let j = 0; j < entry.nodes.length; j++) parent.appendChild(entry.nodes[j]);
+          }
+          parent.appendChild(endMarker);
+        } else {
+          for (let i = 0; i < len; i++) {
+            const key = newKeys2[i];
+            const entry = keyToEntry.get(key)!;
+            if (entry.data) entry.data(list[i]);
+            entry.index = i;
+            newEntries.set(key, entry);
+            for (let j = 0; j < entry.nodes.length; j++) {
+              parent.insertBefore(entry.nodes[j], endMarker);
+            }
+          }
+        }
+
+        keyToEntry = newEntries;
+        prevKeys = newKeys2;
+        return;
+      }
     }
 
     const newKeys: unknown[] = new Array(len);
@@ -365,22 +674,106 @@ export function each<T>(
         newEntries.set(key, entry);
         reuseCount++;
       } else {
-        newEntries.set(key, { nodes: extractNodes(mapFn(item, i)), data: null });
+        newEntries.set(key, { nodes: extractNodes(mapFn(item, i)), data: null, index: -1 });
       }
     }
 
     // Fast path: no reuse — full replace → bulk remove + single-pass bulk insert
     if (reuseCount === 0) {
-      bulkClear(parent, prevKeys, keyToEntry, endMarker);
+      const firstEntry = keyToEntry.get(prevKeys[0]);
+      const ownsParent = firstEntry?.nodes[0] === parent.firstChild && endMarker.nextSibling === null;
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) {
         const entry = newEntries.get(newKeys[i])!;
         for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
       }
-      parent.insertBefore(frag, endMarker);
+      if (
+        ownsParent &&
+        'replaceChildren' in parent &&
+        !(typeof HTMLTableSectionElement !== 'undefined' && parent instanceof HTMLTableSectionElement)
+      ) {
+        frag.appendChild(endMarker);
+        (parent as Element | DocumentFragment).replaceChildren(frag);
+      } else {
+        bulkClear(parent, prevKeys, keyToEntry, endMarker);
+        parent.insertBefore(frag, endMarker);
+      }
       keyToEntry = newEntries;
       prevKeys = newKeys;
+      updateEntryIndexes(keyToEntry, prevKeys);
       return;
+    }
+
+    // Fast path: stable shrink. The new list is a subsequence of the old
+    // list, with no new keys and no reordered keys. Delete removed runs in
+    // batches instead of removing each old node one by one.
+    if (len < prevLen && reuseCount === len) {
+      let newCursor = 0;
+      let removedRuns = 0;
+      let inRemovedRun = false;
+      for (let i = 0; i < prevLen; i++) {
+        if (newCursor < len && prevKeys[i] === newKeys[newCursor]) {
+          newCursor++;
+          inRemovedRun = false;
+        } else if (!inRemovedRun) {
+          removedRuns++;
+          inRemovedRun = true;
+        }
+      }
+
+      if (newCursor === len) {
+        let keepCursor = 0;
+
+        if (removedRuns <= 32) {
+          let runStart: Node | null = null;
+          const deleteRunBefore = (anchor: Node) => {
+            if (!runStart) return;
+            const range = document.createRange();
+            range.setStartBefore(runStart);
+            range.setEndBefore(anchor);
+            range.deleteContents();
+            runStart = null;
+          };
+
+          for (let i = 0; i < prevLen; i++) {
+            const key = prevKeys[i];
+            if (keepCursor < len && key === newKeys[keepCursor]) {
+              const entry = keyToEntry.get(key)!;
+              deleteRunBefore(entry.nodes[0]);
+              keepCursor++;
+            } else {
+              const entry = keyToEntry.get(key);
+              if (entry) {
+                runStart ??= entry.nodes[0];
+                if (entry.dispose) entry.dispose();
+              }
+            }
+          }
+
+          deleteRunBefore(endMarker);
+        } else {
+          for (let i = 0; i < prevLen; i++) {
+            const key = prevKeys[i];
+            if (keepCursor < len && key === newKeys[keepCursor]) {
+              keepCursor++;
+            } else {
+              const entry = keyToEntry.get(key);
+              if (entry) {
+                for (let j = 0; j < entry.nodes.length; j++) {
+                  const node = entry.nodes[j];
+                  if (node.parentNode) node.parentNode.removeChild(node);
+                }
+                if (entry.dispose) entry.dispose();
+              }
+            }
+          }
+        }
+
+        keyToEntry = newEntries;
+        prevKeys = newKeys;
+        updateEntryIndexes(keyToEntry, prevKeys);
+        return;
+      }
     }
 
     // Remove deleted entries
@@ -422,6 +815,53 @@ export function each<T>(
       }
       parent.insertBefore(frag, endMarker);
     } else {
+      // Fast path: stable expansion. All previous keys remain in the same
+      // relative order, with new items inserted between them. This is common
+      // when clearing a filtered list back to the original full list.
+      if (len > prevLen && reuseCount === prevLen) {
+        let oldCursor = 0;
+        let stableExpansion = true;
+        for (let i = 0; i < len; i++) {
+          const key = newKeys[i];
+          if (keyToEntry.has(key) && key !== prevKeys[oldCursor++]) {
+            stableExpansion = false;
+            break;
+          }
+        }
+
+        if (stableExpansion) {
+          let batch: Node[] | null = null;
+          const flushBatch = (anchor: Node) => {
+            if (!batch) return;
+            if (batch.length === 1) {
+              parent.insertBefore(batch[0], anchor);
+            } else {
+              const frag = document.createDocumentFragment();
+              for (let j = 0; j < batch.length; j++) frag.appendChild(batch[j]);
+              parent.insertBefore(frag, anchor);
+            }
+            batch = null;
+          };
+
+          for (let i = 0; i < len; i++) {
+            const key = newKeys[i];
+            const oldEntry = keyToEntry.get(key);
+            if (oldEntry) {
+              flushBatch(oldEntry.nodes[0]);
+            } else {
+              batch ??= [];
+              const entry = newEntries.get(key)!;
+              for (let j = 0; j < entry.nodes.length; j++) batch.push(entry.nodes[j]);
+            }
+          }
+          flushBatch(endMarker);
+          keyToEntry = newEntries;
+          prevKeys = newKeys;
+          updateEntryIndexes(keyToEntry, prevKeys);
+          return;
+        }
+      }
+
       // Fast path: swap — exactly 2 positions differ, same length, all reused
       let swapped = false;
       if (len === prevLen && reuseCount === len) {
@@ -443,27 +883,70 @@ export function each<T>(
             swapped = true;
             const nodeA = entryA.nodes[0];
             const nodeB = entryB.nodes[0];
-            // Correct DOM swap using a temporary marker
-            const marker = document.createComment('');
-            parent.insertBefore(marker, nodeA);
-            parent.insertBefore(nodeA, nodeB);
-            parent.insertBefore(nodeB, marker);
-            parent.removeChild(marker);
+            const nodeANext = nodeA.nextSibling;
+            const nodeBNext = nodeB.nextSibling;
+            if (nodeANext === nodeB) {
+              parent.insertBefore(nodeB, nodeA);
+            } else if (nodeBNext === nodeA) {
+              parent.insertBefore(nodeA, nodeB);
+            } else if (nodeA.compareDocumentPosition(nodeB) & Node.DOCUMENT_POSITION_FOLLOWING) {
+              parent.insertBefore(nodeB, nodeANext);
+              parent.insertBefore(nodeA, nodeBNext);
+            } else {
+              parent.insertBefore(nodeA, nodeBNext);
+              parent.insertBefore(nodeB, nodeANext);
+            }
+            entryA.index = sa;
+            entryB.index = sb;
           }
         }
       }
 
       if (!swapped) {
         // Full LIS-based reorder
-        const oldKeyIndex = new Map<unknown, number>();
-        for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
+        if (len > 128 && reuseCount === len) {
+          let lastOldIdx = -1;
+          let decreases = 0;
+          let samples = 0;
+          const stride = Math.max(1, len >> 6);
+          for (let i = 0; i < len; i += stride) {
+            const oldIdx = newEntries.get(newKeys[i])!.index;
+            if (oldIdx < lastOldIdx) decreases++;
+            lastOldIdx = oldIdx;
+            samples++;
+          }
+
+          if (decreases * 4 > samples) {
+            if (len > 4096) {
+              parent.removeChild(endMarker);
+              for (let i = 0; i < len; i++) {
+                const entry = newEntries.get(newKeys[i])!;
+                for (let j = 0; j < entry.nodes.length; j++) {
+                  parent.appendChild(entry.nodes[j]);
+                }
+              }
+              parent.appendChild(endMarker);
+            } else {
+              for (let i = 0; i < len; i++) {
+                const entry = newEntries.get(newKeys[i])!;
+                for (let j = 0; j < entry.nodes.length; j++) {
+                  parent.insertBefore(entry.nodes[j], endMarker);
+                }
+              }
+            }
+            keyToEntry = newEntries;
+            prevKeys = newKeys;
+            updateEntryIndexes(keyToEntry, prevKeys);
+            return;
+          }
+        }
 
         const sources: number[] = [];
         const newIndexToSource: number[] = new Array(len).fill(-1);
 
         for (let i = 0; i < len; i++) {
-          const oldIdx = oldKeyIndex.get(newKeys[i]);
-          if (oldIdx !== undefined) {
+          const oldIdx = newEntries.get(newKeys[i])!.index;
+          if (oldIdx >= 0) {
             sources.push(oldIdx);
             newIndexToSource[i] = sources.length - 1;
           }
@@ -471,47 +954,57 @@ export function each<T>(
 
         const lisIndices = new Set(lis(sources));
 
-        // Reverse pass: collect batch in array, flush in correct order
-        let nextSibling: Node = endMarker;
-        let batch: Node[] | null = null;
-        let batchTarget: Node = endMarker;
+        if (len > 128 && lisIndices.size * 2 < len) {
+          const frag = document.createDocumentFragment();
+          for (let i = 0; i < len; i++) {
+            const entry = newEntries.get(newKeys[i])!;
+            for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
+          }
+          parent.insertBefore(frag, endMarker);
+        } else {
+          // Reverse pass: collect batch in array, flush in correct order
+          let nextSibling: Node = endMarker;
+          let batch: Node[] | null = null;
+          let batchTarget: Node = endMarker;
 
-        for (let i = len - 1; i >= 0; i--) {
-          const entry = newEntries.get(newKeys[i])!;
-          const firstNode = entry.nodes[0];
-          const sourceIdx = newIndexToSource[i];
-          const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
+          for (let i = len - 1; i >= 0; i--) {
+            const entry = newEntries.get(newKeys[i])!;
+            const firstNode = entry.nodes[0];
+            const sourceIdx = newIndexToSource[i];
+            const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
 
-          if (needsMove) {
-            if (!batch) {
-              batch = [];
-              batchTarget = nextSibling;
+            if (needsMove) {
+              if (!batch) {
+                batch = [];
+                batchTarget = nextSibling;
+              }
+              batch.push(firstNode);
+            } else {
+              // Stable item — flush batch if pending
+              if (batch) {
+                const frag = document.createDocumentFragment();
+                for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
+                parent.insertBefore(frag, batchTarget);
+                batch = null;
+              }
             }
-            batch.push(firstNode);
-          } else {
-            // Stable item — flush batch if pending
-            if (batch) {
-              const frag = document.createDocumentFragment();
-              for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
-              parent.insertBefore(frag, batchTarget);
-              batch = null;
-            }
+
+            nextSibling = entry.nodes[0] || nextSibling;
           }
 
-          nextSibling = entry.nodes[0] || nextSibling;
-        }
-
-        // Flush remaining batch
-        if (batch) {
-          const frag = document.createDocumentFragment();
-          for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
-          parent.insertBefore(frag, batchTarget);
+          // Flush remaining batch
+          if (batch) {
+            const frag = document.createDocumentFragment();
+            for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
+            parent.insertBefore(frag, batchTarget);
+          }
         }
       }
     }
 
     keyToEntry = newEntries;
     prevKeys = newKeys;
+    updateEntryIndexes(keyToEntry, prevKeys);
   });
 
   // Auto-dispose watcher + clean up entries on component unmount

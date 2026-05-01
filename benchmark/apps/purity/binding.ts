@@ -20,6 +20,7 @@ interface FieldEntry {
 
 const fields = state<FieldEntry[]>([]);
 const resultMsg = state('—');
+let hasFieldValues = false;
 
 // ---------------------------------------------------------------------------
 // Actions
@@ -31,6 +32,7 @@ function createFields(count: number) {
     arr.push({ id: i + 1, signal: state('') });
   }
   fields(arr);
+  hasFieldValues = false;
   resultMsg(`Created ${count} fields`);
 }
 
@@ -39,13 +41,17 @@ function updateAll() {
   for (let i = 0; i < current.length; i++) {
     current[i].signal(`updated-${current[i].id}`);
   }
+  hasFieldValues = current.length > 0;
   resultMsg(`Updated ${current.length} fields`);
 }
 
 function clearAll() {
   const current = fields();
-  for (let i = 0; i < current.length; i++) {
-    current[i].signal('');
+  if (hasFieldValues) {
+    for (let i = 0; i < current.length; i++) {
+      current[i].signal('');
+    }
+    hasFieldValues = false;
   }
   resultMsg(`Cleared ${current.length} fields`);
 }

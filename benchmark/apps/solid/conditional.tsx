@@ -76,6 +76,30 @@ function App() {
                   Toggle 10x
                 </button>
               </div>
+              <button
+                type="button"
+                id="populate-10"
+                style={{ display: 'none' }}
+                onClick={() => populate(10)}
+              >
+                Populate 10
+              </button>
+              <button
+                type="button"
+                id="populate-100"
+                style={{ display: 'none' }}
+                onClick={() => populate(100)}
+              >
+                Populate 100
+              </button>
+              <button
+                type="button"
+                id="populate-10k"
+                style={{ display: 'none' }}
+                onClick={() => populate(10000)}
+              >
+                Populate 10k
+              </button>
             </div>
           </div>
         </div>
@@ -101,12 +125,7 @@ function App() {
 }
 
 render(App, document.getElementById('app')!);
-
-// Hidden button handlers for benchmark permutations
 function populate(n: number) {
   setData(buildData(n));
   setVisible(true);
 }
-document.getElementById('populate-10')?.addEventListener('click', () => populate(10));
-document.getElementById('populate-100')?.addEventListener('click', () => populate(100));
-document.getElementById('populate-10k')?.addEventListener('click', () => populate(10000));

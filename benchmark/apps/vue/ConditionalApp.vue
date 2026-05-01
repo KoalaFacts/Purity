@@ -38,6 +38,9 @@ function toggle10x() {
         <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="populate" @click="populate()">Populate 1k</button></div>
         <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="toggle" @click="toggle()">Toggle Visibility</button></div>
         <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="toggle-10x" @click="toggle10x()">Toggle 10x</button></div>
+        <button type="button" id="populate-10" style="display: none">Populate 10</button>
+        <button type="button" id="populate-100" style="display: none">Populate 100</button>
+        <button type="button" id="populate-10k" style="display: none">Populate 10k</button>
       </div></div>
     </div></div>
     <div id="container">

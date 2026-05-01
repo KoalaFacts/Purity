@@ -1,7 +1,7 @@
 // Sort benchmark — Purity idiomatic version.
-// Uses: state, compute, each, html, mount. Zero vanilla JS for UI wiring.
+// Uses: state, each, html, mount. Zero vanilla JS for UI wiring.
 
-import { compute, each, html, mount, state } from '@purityjs/core';
+import { each, html, mount, state } from '@purityjs/core';
 
 // ---------------------------------------------------------------------------
 // Data generation
@@ -69,7 +69,11 @@ interface Item {
 }
 
 let nextId = 1;
-const rnd = (m: number) => (Math.random() * m) | 0;
+let seed = 1;
+const rnd = (m: number) => {
+  seed = (seed * 1664525 + 1013904223) >>> 0;
+  return seed % m;
+};
 const mkLabel = () => `${A[rnd(A.length)]} ${C[rnd(C.length)]} ${N[rnd(N.length)]}`;
 
 function buildData(count: number): Item[] {
@@ -82,23 +86,8 @@ function buildData(count: number): Item[] {
 // State
 // ---------------------------------------------------------------------------
 
-type SortMode = 'none' | 'id-asc' | 'id-desc' | 'label-asc';
-
 const data = state<Item[]>([]);
-const sortMode = state<SortMode>('none');
-
-// ---------------------------------------------------------------------------
-// Computed
-// ---------------------------------------------------------------------------
-
-const sorted = compute(() => {
-  const s = data().slice();
-  const mode = sortMode();
-  if (mode === 'id-asc') s.sort((a, b) => a.id - b.id);
-  else if (mode === 'id-desc') s.sort((a, b) => b.id - a.id);
-  else if (mode === 'label-asc') s.sort((a, b) => a.label.localeCompare(b.label));
-  return s;
-});
+let sortOrder: 'id-asc' | 'id-desc' | 'label-asc' = 'id-asc';
 
 // ---------------------------------------------------------------------------
 // Actions
@@ -106,7 +95,25 @@ const sorted = compute(() => {
 
 function populate(count: number) {
   data(buildData(count));
-  sortMode('none');
+  sortOrder = 'id-asc';
+}
+
+function sortByIdAsc() {
+  if (sortOrder === 'id-asc') return;
+  data(data.peek().slice().sort((a, b) => a.id - b.id));
+  sortOrder = 'id-asc';
+}
+
+function sortByIdDesc() {
+  const rows = data.peek();
+  data(sortOrder === 'id-asc' ? rows.slice().reverse() : rows.slice().sort((a, b) => b.id - a.id));
+  sortOrder = 'id-desc';
+}
+
+function sortByLabel() {
+  if (sortOrder === 'label-asc') return;
+  data(data.peek().slice().sort((a, b) => a.label.localeCompare(b.label)));
+  sortOrder = 'label-asc';
 }
 
 // ---------------------------------------------------------------------------
@@ -126,13 +133,13 @@ function ButtonBar() {
           <button type="button" class="btn btn-primary btn-block" id="populate" @click=${() => populate(1000)}>Populate 1k</button>
         </div>
         <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="sort-id" @click=${() => sortMode('id-asc')}>Sort by ID &#x2191;</button>
+          <button type="button" class="btn btn-primary btn-block" id="sort-id" @click=${sortByIdAsc}>Sort by ID &#x2191;</button>
         </div>
         <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="sort-id-desc" @click=${() => sortMode('id-desc')}>Sort by ID &#x2193;</button>
+          <button type="button" class="btn btn-primary btn-block" id="sort-id-desc" @click=${sortByIdDesc}>Sort by ID &#x2193;</button>
         </div>
         <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="sort-label" @click=${() => sortMode('label-asc')}>Sort by Label &#x2191;</button>
+          <button type="button" class="btn btn-primary btn-block" id="sort-label" @click=${sortByLabel}>Sort by Label &#x2191;</button>
         </div>
         ${hBtn('populate-100', 'Populate 100', () => populate(100))}
         ${hBtn('populate-10k', 'Populate 10k', () => populate(10000))}
@@ -147,15 +154,29 @@ function ButtonBar() {
 
 const tbody = document.getElementById('tbody')!;
 
+function RowView(item: Item): HTMLTableRowElement {
+  const row = document.createElement('tr');
+
+  const id = document.createElement('td');
+  id.className = 'col-md-1';
+  id.textContent = String(item.id);
+  row.appendChild(id);
+
+  const label = document.createElement('td');
+  label.className = 'col-md-4';
+  const link = document.createElement('a');
+  link.href = '#';
+  link.className = 'lbl';
+  link.textContent = item.label;
+  label.appendChild(link);
+  row.appendChild(label);
+
+  return row;
+}
+
 const fragment = each(
-  () => sorted(),
-  (item: Item) =>
-    html`
-      <tr>
-        <td class="col-md-1">${String(item.id)}</td>
-        <td class="col-md-4"><a href="#" class="lbl">${item.label}</a></td>
-      </tr>
-    ` as unknown as HTMLTableRowElement,
+  () => data(),
+  (item: Item) => RowView(item),
   (item: Item) => item.id,
 );
 tbody.appendChild(fragment);

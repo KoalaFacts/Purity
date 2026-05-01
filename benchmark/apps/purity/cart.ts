@@ -12,6 +12,8 @@ interface CartItem {
   name: string;
   price: number;
   qty: number;
+  qtyNode?: Text;
+  lineNode?: Text;
 }
 
 const NAMES = [
@@ -27,7 +29,11 @@ const NAMES = [
   'Mechanism',
 ];
 let nextId = 1;
-const rnd = (m: number) => (Math.random() * m) | 0;
+let seed = 1;
+const rnd = (m: number) => {
+  seed = (seed * 1664525 + 1013904223) >>> 0;
+  return seed % m;
+};
 
 const catalog: CartItem[] = [];
 for (let i = 0; i < 100; i++) {
@@ -35,10 +41,10 @@ for (let i = 0; i < 100; i++) {
 }
 
 function randomItems(n: number): CartItem[] {
-  const items: CartItem[] = [];
+  const items = new Array<CartItem>(n);
   for (let i = 0; i < n; i++) {
     const c = catalog[rnd(100)];
-    items.push({ id: nextId++, name: c.name, price: c.price, qty: 1 });
+    items[i] = { id: nextId++, name: c.name, price: c.price, qty: 1 };
   }
   return items;
 }
@@ -48,13 +54,13 @@ function randomItems(n: number): CartItem[] {
 // ---------------------------------------------------------------------------
 
 const cart = state<CartItem[]>([]);
+const itemCount = state(0);
+const subtotal = state(0);
 
 // ---------------------------------------------------------------------------
 // Computed
 // ---------------------------------------------------------------------------
 
-const itemCount = compute(() => cart().reduce((s, i) => s + i.qty, 0));
-const subtotal = compute(() => cart().reduce((s, i) => s + i.price * i.qty, 0));
 const tax = compute(() => subtotal() * 0.08);
 const total = compute(() => subtotal() + tax());
 
@@ -63,19 +69,41 @@ const total = compute(() => subtotal() + tax());
 // ---------------------------------------------------------------------------
 
 function addItems(n: number) {
-  cart([...cart(), ...randomItems(n)]);
+  const added = randomItems(n);
+  let addedSubtotal = 0;
+  for (let i = 0; i < added.length; i++) addedSubtotal += added[i].price;
+  cart(cart().concat(added));
+  itemCount(itemCount.peek() + n);
+  subtotal(subtotal.peek() + addedSubtotal);
 }
 
 function incrementAll() {
-  cart(cart().map((i) => ({ ...i, qty: i.qty + 1 })));
+  const items = cart();
+  let addedSubtotal = 0;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    item.qty++;
+    addedSubtotal += item.price;
+    if (item.qtyNode) item.qtyNode.data = String(item.qty);
+    if (item.lineNode) item.lineNode.data = `$${item.price * item.qty}`;
+  }
+  itemCount(itemCount.peek() + items.length);
+  subtotal(subtotal.peek() + addedSubtotal);
 }
 
 function removeFirst() {
-  cart(cart().slice(1));
+  const items = cart();
+  const first = items[0];
+  if (!first) return;
+  cart(items.slice(1));
+  itemCount(itemCount.peek() - first.qty);
+  subtotal(subtotal.peek() - first.price * first.qty);
 }
 
 function clearCart() {
   cart([]);
+  itemCount(0);
+  subtotal(0);
 }
 
 // ---------------------------------------------------------------------------
@@ -137,17 +165,33 @@ function Stats() {
 
 const tbody = document.getElementById('tbody')!;
 
+function CartRow(item: CartItem): HTMLTableRowElement {
+  const tr = document.createElement('tr');
+
+  const name = document.createElement('td');
+  name.textContent = item.name;
+  tr.appendChild(name);
+
+  const price = document.createElement('td');
+  price.textContent = `$${item.price}`;
+  tr.appendChild(price);
+
+  const qty = document.createElement('td');
+  item.qtyNode = document.createTextNode(String(item.qty));
+  qty.appendChild(item.qtyNode);
+  tr.appendChild(qty);
+
+  const line = document.createElement('td');
+  item.lineNode = document.createTextNode(`$${item.price * item.qty}`);
+  line.appendChild(item.lineNode);
+  tr.appendChild(line);
+
+  return tr;
+}
+
 const fragment = each(
   () => cart(),
-  (item: CartItem) =>
-    html`
-      <tr>
-        <td>${item.name}</td>
-        <td>$${String(item.price)}</td>
-        <td>${String(item.qty)}</td>
-        <td>$${String(item.price * item.qty)}</td>
-      </tr>
-    ` as unknown as HTMLTableRowElement,
+  (item: CartItem) => CartRow(item),
   (item: CartItem) => item.id,
 );
 tbody.appendChild(fragment);

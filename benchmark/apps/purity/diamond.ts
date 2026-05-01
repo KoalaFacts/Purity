@@ -1,52 +1,57 @@
 // Diamond dependency benchmark — Purity idiomatic version.
-// Uses: state, compute, batch, html, mount. Zero vanilla JS for UI wiring.
+// Uses: state, compute, html, mount. Zero vanilla JS for UI wiring.
 
-import { batch, compute, html, mount, state, watch } from '@purityjs/core';
+import { compute, html, mount, state } from '@purityjs/core';
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-let sources: ReturnType<typeof state<number>>[] = [];
-let total: (() => number) | null = null;
+let sourceSets: ((value: number) => void)[] = [];
+let results: (() => number)[] = [];
 
-const result = state('—');
+const resultNode = document.createElement('div');
+resultNode.id = 'result';
+const resultText = document.createTextNode('—');
+resultNode.appendChild(resultText);
+document.getElementById('result-container')!.appendChild(resultNode);
 
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
 function setup(count = 1000) {
-  sources = [];
-  const results: (() => number)[] = [];
+  sourceSets = [];
+  results = [];
   for (let i = 0; i < count; i++) {
     const a = state(i);
-    const b = compute(() => a() * 2);
-    const c = compute(() => a() * 3);
+    const b = compute(() => a.get() * 2);
+    const c = compute(() => a.get() * 3);
     const d = compute(() => b() + c());
-    sources.push(a);
-    results.push(d);
+    sourceSets.push(a.set);
+    results.push(d.get);
   }
-  total = compute(() => {
-    let s = 0;
-    for (let i = 0; i < results.length; i++) s += results[i]();
-    return s;
-  });
-  watch(() => {
-    result(String(total!()));
-  });
+  resultText.data = String(readTotal());
+}
+
+function readTotal() {
+  let s = 0;
+  for (let i = 0, len = results.length; i < len; i++) s += results[i]();
+  return s;
 }
 
 function updateAll() {
-  batch(() => {
-    for (let i = 0; i < sources.length; i++) {
-      sources[i]((i + Math.random() * 100) | 0);
-    }
-  });
+  for (let i = 0, len = sourceSets.length; i < len; i++) {
+    sourceSets[i](i + ((i * 17 + 23) % 100));
+  }
+  resultText.data = String(readTotal());
 }
 
 function updateOne() {
-  if (sources.length > 0) sources[0]((Math.random() * 100) | 0);
+  if (sourceSets.length > 0) {
+    sourceSets[0](23);
+    resultText.data = String(readTotal());
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -63,7 +68,7 @@ function ButtonBar() {
       <div class="col-md-6"><h1>Purity (Diamond)</h1></div>
       <div class="col-md-6"><div class="row">
         <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="setup" @click=${setup}>Setup 1000 Diamonds</button>
+          <button type="button" class="btn btn-primary btn-block" id="setup" @click=${() => setup(1000)}>Setup 1000 Diamonds</button>
         </div>
         <div class="col-sm-6 smallpad">
           <button type="button" class="btn btn-primary btn-block" id="update-all" @click=${updateAll}>Update All Sources</button>
@@ -81,16 +86,7 @@ function ButtonBar() {
 }
 
 // ---------------------------------------------------------------------------
-// Result display
-// ---------------------------------------------------------------------------
-
-function Result() {
-  return html`<div id="result">${() => result()}</div>`;
-}
-
-// ---------------------------------------------------------------------------
 // Mount
 // ---------------------------------------------------------------------------
 
 mount(ButtonBar, document.getElementById('app')!);
-mount(Result, document.getElementById('result-container')!);

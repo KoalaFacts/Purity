@@ -159,9 +159,8 @@ export function state<T>(initial: T): StateAccessor<T> {
   const sSet = s.set.bind(s);
   const peekFn = () => Signal.subtle.untrack(sGet);
 
-  const accessor = ((...args: [T | ((current: T) => T)] | []): T => {
-    if (args.length === 0) return sGet();
-    const value = args[0];
+  const accessor = (function (value?: T | ((current: T) => T)): T {
+    if (arguments.length === 0) return sGet();
     if (typeof value === 'function') {
       const next = (value as (current: T) => T)(sGet());
       sSet(next);
@@ -388,17 +387,7 @@ export function watch(
  * ```
  */
 export function batch(fn: () => void): void {
-  const wasPending = pending;
-  pending = true;
-  try {
-    fn();
-  } finally {
-    pending = wasPending;
-    if (!wasPending && !microtaskScheduled) {
-      microtaskScheduled = true;
-      queueMicrotask(flush);
-    }
-  }
+  fn();
 }
 
 export { Signal };

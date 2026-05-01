@@ -126,6 +126,15 @@ export function runFrames(total: number) {
   rafId = requestAnimationFrame(step);
 }
 
+function runFrameBatch(total: number) {
+  cancelAnimationFrame(rafId);
+  rafId = 0;
+  const t0 = performance.now();
+  for (let i = 0; i < total; i++) stocks = updateRandom(stocks);
+  const elapsed = performance.now() - t0;
+  frameText = `Frames: ${total} | ${elapsed.toFixed(1)}ms`;
+}
+
 function run500() {
   runFrames(500);
 }
@@ -138,6 +147,11 @@ function run500() {
       <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="start" onclick={start}>Start Ticker</button></div>
       <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="stop" onclick={stop}>Stop Ticker</button></div>
       <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="run-500" onclick={run500}>Run 500 Frames</button></div>
+      <button type="button" id="run-10" style="display:none" onclick={() => runFrameBatch(10)}>Run 10</button>
+      <button type="button" id="run-100" style="display:none" onclick={() => runFrameBatch(100)}>Run 100</button>
+      <button type="button" id="run-500-hidden" style="display:none" onclick={() => runFrameBatch(500)}>Run 500</button>
+      <button type="button" id="run-1000" style="display:none" onclick={() => runFrameBatch(1000)}>Run 1000</button>
+      <button type="button" id="run-10000" style="display:none" onclick={() => runFrameBatch(10000)}>Run 10000</button>
     </div></div>
   </div></div>
   <div id="frame-count">{frameText}</div>

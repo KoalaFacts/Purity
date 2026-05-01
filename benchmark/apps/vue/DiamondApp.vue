@@ -46,5 +46,9 @@ defineExpose({ setup });
   <button type="button" id="setup" @click="setup()">Setup 1000 Diamonds</button>
   <button type="button" id="update-all" @click="updateAll()">Update All Sources</button>
   <button type="button" id="update-one" @click="updateOne()">Update One Source</button>
+  <button type="button" id="setup-10" style="display: none">Setup 10</button>
+  <button type="button" id="setup-100" style="display: none">Setup 100</button>
+  <button type="button" id="setup-diamonds" style="display: none">Setup 1000</button>
+  <button type="button" id="setup-10k" style="display: none">Setup 10k</button>
   <div id="result">{{ total }}</div>
 </template>

@@ -1,7 +1,7 @@
 // Row rendering benchmark — Purity idiomatic version.
-// Uses: state, watch, each, html, mount. Zero vanilla JS for UI wiring.
+// Uses: state, each, html, mount. Zero vanilla JS for UI wiring.
 
-import { each, html, mount, state, watch } from '@purityjs/core';
+import { each, html, mount, state } from '@purityjs/core';
 
 // ---------------------------------------------------------------------------
 // Data generation
@@ -66,16 +66,16 @@ const nouns = [
 interface Row {
   id: number;
   label: string;
-}
-
-interface CachedRow {
-  tr: HTMLTableRowElement;
-  labelNode: Text;
-  label: string;
+  tr?: HTMLTableRowElement;
+  labelNode?: Text;
 }
 
 let nextId = 1;
-const random = (max: number) => (Math.random() * max) | 0;
+let seed = 1;
+const random = (max: number) => {
+  seed = (seed * 1664525 + 1013904223) >>> 0;
+  return seed % max;
+};
 const buildLabel = () =>
   `${adjectives[random(adjectives.length)]} ${colours[random(colours.length)]} ${nouns[random(nouns.length)]}`;
 
@@ -90,7 +90,7 @@ function buildData(count: number): Row[] {
 // ---------------------------------------------------------------------------
 
 const data = state<Row[]>([]);
-const selectedId = state(0);
+let selectedRow: HTMLTableRowElement | null = null;
 
 // ---------------------------------------------------------------------------
 // Actions
@@ -98,25 +98,30 @@ const selectedId = state(0);
 
 function run(n: number) {
   data(buildData(n));
-  selectedId(0);
+  selectedRow = null;
 }
 
 function add(n: number) {
-  data((d) => d.concat(buildData(n)));
+  const current = data.peek();
+  const added = buildData(n);
+  const next = new Array<Row>(current.length + n);
+  for (let i = 0; i < current.length; i++) next[i] = current[i];
+  for (let i = 0; i < n; i++) next[current.length + i] = added[i];
+  data(next);
 }
 
 function update() {
-  data((d) => {
-    const c = d.slice();
-    for (let i = 0; i < c.length; i += 10) c[i] = { ...c[i], label: `${c[i].label} !!!` };
-    return c;
-  });
+  const d = data();
+  for (let i = 0; i < d.length; i += 10) {
+    const item = d[i];
+    item.label = `${item.label} !!!`;
+    if (item.labelNode) item.labelNode.data = item.label;
+  }
 }
 
 function clear() {
-  rows.clear();
   data([]);
-  selectedId(0);
+  selectedRow = null;
 }
 
 function swapRows() {
@@ -132,12 +137,13 @@ function swapRows() {
   });
 }
 
-function select(id: number) {
-  selectedId(id);
+function select(row: HTMLTableRowElement) {
+  if (selectedRow) selectedRow.className = '';
+  row.className = 'danger';
+  selectedRow = row;
 }
 
 function remove(id: number) {
-  rows.delete(id);
   data((d) => d.filter((item) => item.id !== id));
 }
 
@@ -189,63 +195,66 @@ function ButtonBar() {
 // Row rendering
 // ---------------------------------------------------------------------------
 
-const rows = new Map<number, CachedRow>();
-
 const tbody = document.getElementById('tbody')!;
+
+function RowView(item: Row): HTMLTableRowElement {
+  const row = document.createElement('tr');
+  item.tr = row;
+
+  const id = document.createElement('td');
+  id.className = 'col-md-1';
+  id.textContent = String(item.id);
+  row.appendChild(id);
+
+  const label = document.createElement('td');
+  label.className = 'col-md-4';
+  const labelLink = document.createElement('a');
+  labelLink.href = '#';
+  labelLink.className = 'lbl';
+  item.labelNode = document.createTextNode(item.label);
+  labelLink.appendChild(item.labelNode);
+  label.appendChild(labelLink);
+  row.appendChild(label);
+
+  const removeCell = document.createElement('td');
+  removeCell.className = 'col-md-1';
+  const removeLink = document.createElement('a');
+  removeLink.href = '#';
+  removeLink.className = 'remove';
+  const icon = document.createElement('span');
+  icon.className = 'remove glyphicon glyphicon-remove';
+  icon.setAttribute('aria-hidden', 'true');
+  removeLink.appendChild(icon);
+  removeCell.appendChild(removeLink);
+  row.appendChild(removeCell);
+
+  const filler = document.createElement('td');
+  filler.className = 'col-md-6';
+  row.appendChild(filler);
+
+  return row;
+}
 
 // Keyed list via each() — LIS reconciliation
 const fragment = each(
   () => data(),
-  (item: Row) => {
-    const tr = html`
-      <tr>
-        <td class="col-md-1">${String(item.id)}</td>
-        <td class="col-md-4"><a href="#" class="lbl">${item.label}</a></td>
-        <td class="col-md-1"><a href="#" class="remove"><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>
-        <td class="col-md-6"></td>
-      </tr>
-    ` as unknown as HTMLTableRowElement;
-
-    const labelNode = tr.querySelector('.lbl')!.firstChild as Text;
-    rows.set(item.id, { tr, labelNode, label: item.label });
-    return tr;
-  },
+  (item: Row) => RowView(item),
   (item: Row) => item.id,
 );
 tbody.appendChild(fragment);
-
-// In-place label updates — avoids DOM churn for partial updates
-watch(data, (list) => {
-  for (let i = 0; i < list.length; i++) {
-    const item = list[i];
-    const row = rows.get(item.id);
-    if (row && row.label !== item.label) {
-      row.labelNode.data = item.label;
-      row.label = item.label;
-    }
-  }
-});
-
-// Selection highlighting
-watch(selectedId, (id, oldId) => {
-  if (oldId) {
-    const r = rows.get(oldId);
-    if (r) r.tr.className = '';
-  }
-  if (id) {
-    const r = rows.get(id);
-    if (r) r.tr.className = 'danger';
-  }
-});
 
 // Event delegation — one listener for all rows (standard benchmark pattern)
 tbody.addEventListener('click', (e) => {
   const a = (e.target as HTMLElement).closest('a');
   if (!a) return;
   e.preventDefault();
-  const id = +(a.closest('tr')!.firstChild as HTMLElement).textContent!;
-  if (a.classList.contains('lbl')) select(id);
-  else if (a.classList.contains('remove')) remove(id);
+  const tr = a.closest('tr') as HTMLTableRowElement;
+  if (a.classList.contains('lbl')) {
+    select(tr);
+    return;
+  }
+  if (selectedRow === tr) selectedRow = null;
+  remove(+(tr.firstChild as HTMLElement).textContent!);
 });
 
 // ---------------------------------------------------------------------------

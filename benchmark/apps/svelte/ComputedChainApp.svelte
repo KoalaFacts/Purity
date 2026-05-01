@@ -6,10 +6,11 @@
 // The benchmark results annotate this difference.
 let source = $state(0);
 let finalValue = $state(0);
+const MOD = 1_000_000_007;
 
 $effect(() => {
   let v = source;
-  for (let i = 0; i < chainLevels; i++) v = v * 2 + 1;
+  for (let i = 0; i < chainLevels; i++) v = (v * 2 + 1) % MOD;
   finalValue = v;
 });
 
@@ -30,7 +31,10 @@ function update10x() {
 </script>
 
 <h1>Svelte — Computed Chain (1000 levels)</h1>
-<button type="button" id="setup" onclick={setup}>Setup Chain (1000 levels)</button>
+<button type="button" id="setup" onclick={() => setup(1000)}>Setup Chain (1000 levels)</button>
 <button type="button" id="update" onclick={update}>Update Source</button>
 <button type="button" id="update-10x" onclick={update10x}>Update 10x</button>
+<button type="button" id="setup-10" style="display:none">Setup 10</button>
+<button type="button" id="setup-100" style="display:none">Setup 100</button>
+<button type="button" id="setup-10k" style="display:none">Setup 10k</button>
 <div id="result">{finalValue}</div>

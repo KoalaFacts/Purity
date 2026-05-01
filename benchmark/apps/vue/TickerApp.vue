@@ -129,6 +129,15 @@ function runFrames(target: number) {
   rafId = requestAnimationFrame(step);
 }
 
+function runFrameBatch(target: number) {
+  cancelAnimationFrame(rafId);
+  rafId = 0;
+  const t0 = performance.now();
+  for (let i = 0; i < target; i++) stocks.value = updateRandom(stocks.value);
+  const elapsed = performance.now() - t0;
+  frameCount.value = `Frames: ${target} | ${elapsed.toFixed(1)}ms`;
+}
+
 function run500() {
   runFrames(500);
 }
@@ -144,6 +153,11 @@ defineExpose({ runFrames });
         <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="start" @click="start()">Start Ticker</button></div>
         <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="stop" @click="stop()">Stop Ticker</button></div>
         <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="run-500" @click="run500()">Run 500 Frames</button></div>
+        <button type="button" id="run-10" style="display:none" @click="runFrameBatch(10)">Run 10</button>
+        <button type="button" id="run-100" style="display:none" @click="runFrameBatch(100)">Run 100</button>
+        <button type="button" id="run-500-hidden" style="display:none" @click="runFrameBatch(500)">Run 500</button>
+        <button type="button" id="run-1000" style="display:none" @click="runFrameBatch(1000)">Run 1000</button>
+        <button type="button" id="run-10000" style="display:none" @click="runFrameBatch(10000)">Run 10000</button>
       </div></div>
     </div></div>
     <div id="frame-count">{{ frameCount }}</div>

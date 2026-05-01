@@ -10,6 +10,7 @@ import { render } from 'solid-js/web';
 
 let setSource: (v: number) => void = () => {};
 let disposeChain: (() => void) | null = null;
+const MOD = 1_000_000_007;
 
 const resultContainer = document.getElementById('result')!;
 
@@ -23,7 +24,7 @@ function setupChain(levels: number) {
     let prev: Accessor<number> = source;
     for (let i = 0; i < levels; i++) {
       const p = prev;
-      const c = createMemo(() => p() * 2 + 1);
+      const c = createMemo(() => (p() * 2 + 1) % MOD);
       chain.push(c);
       prev = c;
     }
@@ -55,13 +56,40 @@ function App() {
       >
         Update 10x
       </button>
+      <button
+        type="button"
+        id="setup-10"
+        style={{ display: 'none' }}
+        onClick={() => setupChain(10)}
+      >
+        Setup 10
+      </button>
+      <button
+        type="button"
+        id="setup-100"
+        style={{ display: 'none' }}
+        onClick={() => setupChain(100)}
+      >
+        Setup 100
+      </button>
+      <button
+        type="button"
+        id="setup-chain"
+        style={{ display: 'none' }}
+        onClick={() => setupChain(1000)}
+      >
+        Setup 1000
+      </button>
+      <button
+        type="button"
+        id="setup-10k"
+        style={{ display: 'none' }}
+        onClick={() => setupChain(10000)}
+      >
+        Setup 10k
+      </button>
     </>
   );
 }
 
 render(App, document.getElementById('app')!);
-
-// Hidden button handlers for benchmark permutations
-document.getElementById('setup-10')?.addEventListener('click', () => setupChain(10));
-document.getElementById('setup-100')?.addEventListener('click', () => setupChain(100));
-document.getElementById('setup-10k')?.addEventListener('click', () => setupChain(10000));

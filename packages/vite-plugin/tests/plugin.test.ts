@@ -69,6 +69,18 @@ describe('@purityjs/vite-plugin', () => {
     expect(matches.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('hoists compiled template factories', () => {
+    const code = `import { html } from '@purityjs/core';\nconst row = (item) => html\`<tr><td>\${item.id}</td><td>\${item.label}</td></tr>\`;`;
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+    expect(result.code).toContain('const __purity_tpl_0 = ');
+    expect(result.code).toContain('__purity_tpl_0(__purity_w__, item.id, item.label)');
+    expect(result.code).not.toContain('__purity_tpl_0([item.id, item.label]');
+    expect(result.code.indexOf('const __purity_tpl_0 = ')).toBeLessThan(
+      result.code.indexOf('const row ='),
+    );
+  });
+
   it('preserves non-template code', () => {
     const code = `import { html, state } from '@purityjs/core';\nconst count = state(0);\nconsole.log('hi');\nconst el = html\`<p>Test</p>\`;`;
     const result = plugin.transform(code, 'app.ts');

@@ -43,7 +43,11 @@ describe('html tagged template', () => {
     items[0].textContent = 'A';
     items[1].textContent = 'B';
 
-    const c = render(html`<ul>${items}</ul>`);
+    const c = render(
+      html`<ul>
+        ${items}
+      </ul>`,
+    );
     const lis = c.querySelectorAll('li');
     expect(lis.length).toBe(2);
     expect(lis[0].textContent).toBe('A');

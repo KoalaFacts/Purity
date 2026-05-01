@@ -85,25 +85,60 @@ function toggleFirst() {
 </script>
 
 <template>
-  <div id="main"><div class="container">
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Vue (Tree)</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="expand-all" @click="expandAll()">Expand All</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="collapse-all" @click="collapseAll()">Collapse All</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="toggle-first" @click="toggleFirst()">Toggle First</button></div>
-      </div></div>
-    </div></div>
-    <div id="container">
-      <div
-        v-for="node in visible"
-        :key="node.id"
-        class="tree-node"
-        :style="{ paddingLeft: node.depth * 20 + 'px' }"
-      >
-        <span class="toggle">{{ node.hasChildren ? (node.expanded ? '\u25BC' : '\u25B6') : '\u00A0\u00A0' }}</span>
-        <span class="label">{{ node.label }}</span>
+  <div id="main">
+    <div class="container">
+      <div class="jumbotron">
+        <div class="row">
+          <div class="col-md-6"><h1>Vue (Tree)</h1></div>
+          <div class="col-md-6">
+            <div class="row">
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="expand-all"
+                  @click="expandAll()"
+                >
+                  Expand All
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="collapse-all"
+                  @click="collapseAll()"
+                >
+                  Collapse All
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="toggle-first"
+                  @click="toggleFirst()"
+                >
+                  Toggle First
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="container">
+        <div
+          v-for="node in visible"
+          :key="node.id"
+          class="tree-node"
+          :style="{ paddingLeft: node.depth * 20 + 'px' }"
+        >
+          <span class="toggle">{{
+            node.hasChildren ? (node.expanded ? '\u25BC' : '\u25B6') : '\u00A0\u00A0'
+          }}</span>
+          <span class="label">{{ node.label }}</span>
+        </div>
       </div>
     </div>
-  </div></div>
+  </div>
 </template>

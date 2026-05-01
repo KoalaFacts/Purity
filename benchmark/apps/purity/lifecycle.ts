@@ -35,33 +35,67 @@ const cards = state<Card[]>([]);
 // ---------------------------------------------------------------------------
 
 function hBtn(id: string, label: string, handler: () => void) {
-  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>${label}</button>`;
+  return html`<button type="button" id="${id}" style="display:none" @click=${handler}>
+    ${label}
+  </button>`;
 }
 
 function ButtonBar() {
   return html`
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Purity (Lifecycle)</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="create-1k" @click=${() => cards(buildCards(1000))}>Create 1k</button>
+    <div class="jumbotron">
+      <div class="row">
+        <div class="col-md-6"><h1>Purity (Lifecycle)</h1></div>
+        <div class="col-md-6">
+          <div class="row">
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="create-1k"
+                @click=${() => cards(buildCards(1000))}
+              >
+                Create 1k
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="create-10k"
+                @click=${() => cards(buildCards(10000))}
+              >
+                Create 10k
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="destroy-all"
+                @click=${() => cards([])}
+              >
+                Destroy All
+              </button>
+            </div>
+            <div class="col-sm-6 smallpad">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="replace"
+                @click=${() => cards(buildCards(1000))}
+              >
+                Replace 1k
+              </button>
+            </div>
+            ${hBtn('create-10', 'Create 10', () => cards(buildCards(10)))}
+            ${hBtn('create-100', 'Create 100', () => cards(buildCards(100)))}
+            ${hBtn('replace-10', 'Replace 10', () => cards(buildCards(10)))}
+            ${hBtn('replace-100', 'Replace 100', () => cards(buildCards(100)))}
+            ${hBtn('replace-10k', 'Replace 10k', () => cards(buildCards(10000)))}
+          </div>
         </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="create-10k" @click=${() => cards(buildCards(10000))}>Create 10k</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="destroy-all" @click=${() => cards([])}>Destroy All</button>
-        </div>
-        <div class="col-sm-6 smallpad">
-          <button type="button" class="btn btn-primary btn-block" id="replace" @click=${() => cards(buildCards(1000))}>Replace 1k</button>
-        </div>
-        ${hBtn('create-10', 'Create 10', () => cards(buildCards(10)))}
-        ${hBtn('create-100', 'Create 100', () => cards(buildCards(100)))}
-        ${hBtn('replace-10', 'Replace 10', () => cards(buildCards(10)))}
-        ${hBtn('replace-100', 'Replace 100', () => cards(buildCards(100)))}
-        ${hBtn('replace-10k', 'Replace 10k', () => cards(buildCards(10000)))}
-      </div></div>
-    </div></div>
+      </div>
+    </div>
   `;
 }
 
@@ -71,26 +105,17 @@ function ButtonBar() {
 
 const container = document.getElementById('container')!;
 
-function CardView(card: Card): HTMLDivElement {
-  const div = document.createElement('div');
-  div.className = 'card';
-
-  const id = document.createElement('span');
-  id.className = 'id';
-  id.textContent = String(card.id);
-  div.appendChild(id);
-
-  const label = document.createElement('span');
-  label.className = 'label';
-  label.textContent = card.label;
-  div.appendChild(label);
-
-  return div;
-}
-
 const fragment = each(
   () => cards(),
-  (card: Card) => CardView(card),
+  (card: () => Card) => {
+    const c = card();
+    return html`
+      <div class="card">
+        <span class="id">${String(c.id)}</span>
+        <span class="label">${c.label}</span>
+      </div>
+    ` as unknown as HTMLElement;
+  },
   (card: Card) => card.id,
 );
 container.appendChild(fragment);

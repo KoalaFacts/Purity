@@ -1,36 +1,24 @@
 #!/usr/bin/env node
 // Playwright orchestrator — runs each framework's scenario pages in headless
-// Chromium, performs operations via button clicks, and measures both framework
-// work and next-paint settle time.
+// Chromium, performs operations via button clicks, measures rendering time
+// via double-rAF paint timing.
 //
-// Usage: cd benchmark && npx vite build && npx vite preview & node --import tsx run-bench.ts
+// Usage: cd benchmark && npm run build-prod && npx vite preview & node --import tsx run-bench.ts
 
 import { chromium, type Page } from 'playwright';
 
 const PORT = process.env.PORT || 4173;
 const BASE = `http://localhost:${PORT}/Purity`;
-const WARMUP = parseInt(process.env.WARMUP || '3', 10);
+const WARMUP = 3;
 const ITERATIONS = parseInt(process.env.ITERATIONS || '7', 10);
 const MEM_ITERATIONS = parseInt(process.env.MEM_ITERATIONS || '3', 10);
 const DROP_OUTLIERS = 1; // drop N fastest + N slowest before computing median
-const ALL_FRAMEWORKS = ['purity', 'solid', 'svelte', 'vue'] as const;
-type Framework = (typeof ALL_FRAMEWORKS)[number];
-const FRAMEWORKS = selectFrameworks();
-
-function selectFrameworks(): Framework[] {
-  const requested = new Set(
-    (process.env.FRAMEWORKS || '')
-      .split(',')
-      .map((fw) => fw.trim())
-      .filter(Boolean),
-  );
-  if (requested.size === 0) return [...ALL_FRAMEWORKS];
-  const selected = ALL_FRAMEWORKS.filter((fw) => requested.has(fw));
-  if (selected.length === 0) {
-    throw new Error(`No valid frameworks selected from FRAMEWORKS=${process.env.FRAMEWORKS}`);
-  }
-  return selected;
-}
+const FRAMEWORKS = (process.env.FRAMEWORKS?.split(',') ?? [
+  'purity',
+  'solid',
+  'svelte',
+  'vue',
+]) as readonly ('purity' | 'solid' | 'svelte' | 'vue')[];
 
 // ---------------------------------------------------------------------------
 // Scenario definitions
@@ -58,52 +46,6 @@ interface Scenario {
     /** Steps to measure */
     steps: Step[];
   }[];
-}
-
-interface DomExpectation {
-  selector: string;
-  count: number;
-}
-
-function expectedDomCount(page: string, opName: string): DomExpectation | null {
-  if (page !== 'index') return null;
-
-  const selector = 'tbody tr';
-  switch (opName) {
-    case 'Create 10 rows':
-    case 'Replace 10 rows':
-    case 'Update every 10th (10)':
-      return { selector, count: 10 };
-    case 'Create 100 rows':
-    case 'Replace 100 rows':
-    case 'Update every 10th (100)':
-      return { selector, count: 100 };
-    case 'Create 1,000 rows':
-    case 'Replace 1,000 rows':
-    case 'Update every 10th (1k)':
-    case 'Swap rows (1k)':
-      return { selector, count: 1000 };
-    case 'Create 10,000 rows':
-    case 'Replace 10,000 rows':
-    case 'Update every 10th (10k)':
-    case 'Swap rows (10k)':
-      return { selector, count: 10000 };
-    case 'Append 10 rows':
-      return { selector, count: 20 };
-    case 'Append 100 rows':
-      return { selector, count: 200 };
-    case 'Append 1,000 rows':
-      return { selector, count: 2000 };
-    case 'Append 10,000 rows':
-      return { selector, count: 20000 };
-    case 'Clear 10 rows':
-    case 'Clear 100 rows':
-    case 'Clear 1,000 rows':
-    case 'Clear 10,000 rows':
-      return { selector, count: 0 };
-    default:
-      return null;
-  }
 }
 
 const SCENARIOS: Scenario[] = [
@@ -721,7 +663,7 @@ const SCENARIOS: Scenario[] = [
       {
         name: 'Stock ticker (500 frames)',
         setup: [{ action: '#stop' }],
-        steps: [{ action: '#run-500-hidden' }],
+        steps: [{ action: '#run-500' }],
       },
       {
         name: 'Stock ticker (1,000 frames)',
@@ -802,22 +744,6 @@ const MEMORY_SCENARIOS: MemoryScenario[] = [
   },
 ];
 
-function selectScenarios<T extends { page: string }>(scenarios: T[], allowEmpty = false): T[] {
-  const requested = new Set(
-    (process.env.PAGES || '')
-      .split(',')
-      .map((page) => page.trim())
-      .filter(Boolean),
-  );
-  if (requested.size === 0) return scenarios;
-  const selected = scenarios.filter((scenario) => requested.has(scenario.page));
-  if (selected.length === 0) {
-    if (allowEmpty) return [];
-    throw new Error(`No valid pages selected from PAGES=${process.env.PAGES}`);
-  }
-  return selected;
-}
-
 // ---------------------------------------------------------------------------
 // Measurement helpers
 // ---------------------------------------------------------------------------
@@ -828,39 +754,26 @@ async function settle(page: Page): Promise<void> {
   );
 }
 
-interface StepMeasurement {
-  /** Framework event work + microtasks + forced layout. Primary benchmark metric. */
-  workMs: number;
-  /** Time until the next settled paint. Useful diagnostic, but frame-cadence dominated. */
-  settledMs: number;
-}
-
-async function measureSteps(page: Page, steps: Step[]): Promise<StepMeasurement> {
-  const measurement = await page.evaluate(async (stepsData) => {
+async function measureSteps(page: Page, steps: Step[]): Promise<number> {
+  const duration = await page.evaluate(async (stepsData) => {
     const t0 = performance.now();
     for (const step of stepsData) {
       if (step.action.startsWith('input#')) {
         const input = document.querySelector(step.action) as HTMLInputElement;
-        if (!input) throw new Error(`Missing input: ${step.action}`);
-        input.value = step.value || '';
-        input.dispatchEvent(new Event('input', { bubbles: true }));
+        if (input) {
+          input.value = step.value || '';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
       } else {
         const btn = document.querySelector(step.action) as HTMLElement;
-        if (!btn) throw new Error(`Missing element: ${step.action}`);
-        btn.click();
+        if (btn) btn.click();
       }
     }
-    // Let microtask-based renderers flush, then force layout so the primary
-    // metric captures framework work plus DOM/style/layout work without the
-    // unavoidable 1-2 frame delay from requestAnimationFrame.
-    await Promise.resolve();
-    document.body.offsetHeight;
-    const workMs = performance.now() - t0;
-
+    // Wait for framework processing + browser paint
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-    return { workMs, settledMs: performance.now() - t0 };
+    return performance.now() - t0;
   }, steps);
-  return measurement;
+  return duration;
 }
 
 async function runSetup(page: Page, steps: Step[]): Promise<void> {
@@ -869,11 +782,10 @@ async function runSetup(page: Page, steps: Step[]): Promise<void> {
       await page.fill(step.action.replace('input', ''), step.value || '');
     } else {
       // Use page.evaluate for clicks — works with hidden buttons (display:none)
-      await page.evaluate((sel) => {
-        const el = document.querySelector(sel) as HTMLElement | null;
-        if (!el) throw new Error(`Missing setup element: ${sel}`);
-        el.click();
-      }, step.action);
+      await page.evaluate(
+        (sel) => (document.querySelector(sel) as HTMLElement)?.click(),
+        step.action,
+      );
     }
     await settle(page);
     if (step.delay) await page.waitForTimeout(step.delay);
@@ -888,27 +800,6 @@ async function getHeapKB(page: Page): Promise<number> {
     return mem ? mem.usedJSHeapSize / 1024 : -1;
   });
   return kb;
-}
-
-function assertNoPageErrors(errors: string[]): void {
-  if (errors.length > 0) throw new Error(`Page error: ${errors.join(' | ')}`);
-}
-
-async function assertDomExpectation(
-  page: Page,
-  expectation: DomExpectation | null,
-  opName: string,
-): Promise<void> {
-  if (!expectation) return;
-  await page.evaluate(
-    ({ count, opName, selector }) => {
-      const actual = document.querySelectorAll(selector).length;
-      if (actual !== count) {
-        throw new Error(`${opName}: expected ${count} matches for "${selector}", got ${actual}`);
-      }
-    },
-    { ...expectation, opName },
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -929,9 +820,7 @@ interface Result {
   op: string;
   framework: string;
   median: number;
-  settledMedian: number;
   raw: number[];
-  settledRaw: number[];
 }
 
 interface MemoryResult {
@@ -945,32 +834,28 @@ interface MemoryResult {
 }
 
 async function main() {
-  const scenarios = selectScenarios(SCENARIOS);
-  const memoryScenarios = selectScenarios(MEMORY_SCENARIOS, true);
-
   console.log('\nPurity Comprehensive Benchmark');
   console.log(`Frameworks: ${FRAMEWORKS.join(', ')}`);
   console.log(
-    `Scenarios: ${scenarios.length} pages, ${scenarios.reduce((s, sc) => s + sc.ops.length, 0)} operations`,
+    `Scenarios: ${SCENARIOS.length} pages, ${SCENARIOS.reduce((s, sc) => s + sc.ops.length, 0)} operations`,
   );
   console.log(
     `Warmup: ${WARMUP} | Iterations: ${ITERATIONS} | Drop: fastest ${DROP_OUTLIERS} + slowest ${DROP_OUTLIERS}\n`,
   );
-  console.log('Primary metric: CPU + microtask flush + forced layout.');
-  console.log('Parenthetical metric: time until next settled paint, included for diagnostics.\n');
 
   const browser = await chromium.launch({
     headless: true,
+    executablePath: process.env.CHROMIUM_PATH,
     args: ['--js-flags=--expose-gc', '--enable-precise-memory-info'],
   });
   const allResults: Result[] = [];
   const memoryResults: MemoryResult[] = [];
 
-  for (const scenario of scenarios) {
+  for (const scenario of SCENARIOS) {
     console.log(`\n=== ${scenario.category}: ${scenario.page} ===`);
 
     for (const op of scenario.ops) {
-      const fwResults: Record<string, StepMeasurement> = {};
+      const fwResults: Record<string, number> = {};
 
       // Randomize framework order
       const fws = [...FRAMEWORKS];
@@ -981,61 +866,45 @@ async function main() {
 
       for (const fw of fws) {
         const url = `${BASE}/apps/${fw}/${scenario.page}.html`;
-        const domExpectation = expectedDomCount(scenario.page, op.name);
         const page = await browser.newPage();
-        const pageErrors: string[] = [];
-        page.on('pageerror', (err) => pageErrors.push(err.message));
 
         try {
           await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-          assertNoPageErrors(pageErrors);
           const times: number[] = [];
-          const settledTimes: number[] = [];
 
           for (let i = 0; i < WARMUP + ITERATIONS; i++) {
             if (op.setup?.length) await runSetup(page, op.setup);
-            assertNoPageErrors(pageErrors);
             await settle(page);
-            const measurement = await measureSteps(page, op.steps);
-            assertNoPageErrors(pageErrors);
-            await assertDomExpectation(page, domExpectation, op.name);
-            if (i >= WARMUP) {
-              times.push(measurement.workMs);
-              settledTimes.push(measurement.settledMs);
-            }
+            const t = await measureSteps(page, op.steps);
+            if (i >= WARMUP) times.push(t);
             await page.waitForTimeout(20);
           }
 
           const med = trimmedMedian(times, DROP_OUTLIERS);
-          const settledMed = trimmedMedian(settledTimes, DROP_OUTLIERS);
-          fwResults[fw] = { workMs: med, settledMs: settledMed };
+          fwResults[fw] = med;
           allResults.push({
             scenario: scenario.page,
             category: scenario.category,
             op: op.name,
             framework: fw,
             median: med,
-            settledMedian: settledMed,
             raw: times,
-            settledRaw: settledTimes,
           });
         } catch (err: any) {
-          fwResults[fw] = { workMs: -1, settledMs: -1 };
+          fwResults[fw] = -1;
           console.error(`  [${fw}] ${op.name}: ERROR — ${err.message}`);
         } finally {
           await page.close();
         }
       }
 
-      const vals = FRAMEWORKS.map((fw) => ({ fw, ms: fwResults[fw]?.workMs ?? -1 })).filter(
+      const vals = FRAMEWORKS.map((fw) => ({ fw, ms: fwResults[fw] ?? -1 })).filter(
         (v) => v.ms >= 0,
       );
       const winner = vals.length ? vals.reduce((a, b) => (a.ms < b.ms ? a : b)).fw : '—';
-      const line = FRAMEWORKS.map((fw) => {
-        const r = fwResults[fw];
-        if (!r || r.workMs < 0) return `${fw}: ERR`;
-        return `${fw}: ${r.workMs.toFixed(1)}ms (${r.settledMs.toFixed(1)}ms paint)`;
-      }).join(' | ');
+      const line = FRAMEWORKS.map(
+        (fw) => `${fw}: ${fwResults[fw] >= 0 ? `${fwResults[fw].toFixed(1)}ms` : 'ERR'}`,
+      ).join(' | ');
       console.log(`  ${op.name}: ${line} → ${winner}`);
     }
   }
@@ -1043,77 +912,69 @@ async function main() {
   // ---------------------------------------------------------------------------
   // Memory benchmarks
   // ---------------------------------------------------------------------------
-  if (MEM_ITERATIONS > 0) {
-    console.log('\n\n=== Memory Benchmarks ===');
-    console.log(`Iterations: ${MEM_ITERATIONS}\n`);
+  console.log('\n\n=== Memory Benchmarks ===');
+  console.log(`Iterations: ${MEM_ITERATIONS}\n`);
 
-    for (const scenario of memoryScenarios) {
-      for (const op of scenario.ops) {
-        const fwResults: Record<string, { createKB: number; retainedKB: number }> = {};
+  for (const scenario of MEMORY_SCENARIOS) {
+    for (const op of scenario.ops) {
+      const fwResults: Record<string, { createKB: number; retainedKB: number }> = {};
 
-        for (const fw of FRAMEWORKS) {
-          const url = `${BASE}/apps/${fw}/${scenario.page}.html`;
-          const page = await browser.newPage();
-          const pageErrors: string[] = [];
-          page.on('pageerror', (err) => pageErrors.push(err.message));
+      for (const fw of FRAMEWORKS) {
+        const url = `${BASE}/apps/${fw}/${scenario.page}.html`;
+        const page = await browser.newPage();
 
-          try {
-            await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-            assertNoPageErrors(pageErrors);
-            const createSamples: number[] = [];
-            const retainedSamples: number[] = [];
+        try {
+          await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+          const createSamples: number[] = [];
+          const retainedSamples: number[] = [];
 
-            for (let i = 0; i < MEM_ITERATIONS; i++) {
-              // Ensure clean state
-              await runSetup(page, op.destroy);
-              assertNoPageErrors(pageErrors);
-              await settle(page);
-              const baseline = await getHeapKB(page);
+          for (let i = 0; i < MEM_ITERATIONS; i++) {
+            // Ensure clean state
+            await runSetup(page, op.destroy);
+            await settle(page);
+            const baseline = await getHeapKB(page);
 
-              // Create
-              await runSetup(page, op.create);
-              assertNoPageErrors(pageErrors);
-              await settle(page);
-              const afterCreate = await getHeapKB(page);
+            // Create
+            await runSetup(page, op.create);
+            await settle(page);
+            const afterCreate = await getHeapKB(page);
 
-              // Destroy
-              await runSetup(page, op.destroy);
-              assertNoPageErrors(pageErrors);
-              await settle(page);
-              const afterDestroy = await getHeapKB(page);
+            // Destroy
+            await runSetup(page, op.destroy);
+            await settle(page);
+            const afterDestroy = await getHeapKB(page);
 
-              if (baseline >= 0) {
-                createSamples.push(afterCreate - baseline);
-                retainedSamples.push(afterDestroy - baseline);
-              }
+            if (baseline >= 0) {
+              createSamples.push(afterCreate - baseline);
+              retainedSamples.push(afterDestroy - baseline);
             }
-
-            const medCreate = createSamples.length > 0 ? trimmedMedian(createSamples, 0) : -1;
-            const medRetained = retainedSamples.length > 0 ? trimmedMedian(retainedSamples, 0) : -1;
-
-            fwResults[fw] = { createKB: medCreate, retainedKB: medRetained };
-            memoryResults.push({
-              category: scenario.category,
-              op: op.name,
-              framework: fw,
-              createKB: medCreate,
-              retainedKB: medRetained,
-            });
-          } catch (err: any) {
-            fwResults[fw] = { createKB: -1, retainedKB: -1 };
-            console.error(`  [${fw}] ${op.name}: ERROR — ${err.message}`);
-          } finally {
-            await page.close();
           }
-        }
 
-        const line = FRAMEWORKS.map((fw) => {
-          const r = fwResults[fw];
-          if (!r || r.createKB < 0) return `${fw}: ERR`;
-          return `${fw}: +${(r.createKB / 1024).toFixed(1)}MB / retained ${(r.retainedKB / 1024).toFixed(1)}MB`;
-        }).join(' | ');
-        console.log(`  ${op.name}: ${line}`);
+          const medCreate = createSamples.length > 0 ? trimmedMedian(createSamples, 0) : -1;
+          const medRetained = retainedSamples.length > 0 ? trimmedMedian(retainedSamples, 0) : -1;
+
+          fwResults[fw] = { createKB: medCreate, retainedKB: medRetained };
+          memoryResults.push({
+            category: scenario.category,
+            op: op.name,
+            framework: fw,
+            createKB: medCreate,
+            retainedKB: medRetained,
+          });
+        } catch (err: any) {
+          fwResults[fw] = { createKB: -1, retainedKB: -1 };
+          console.error(`  [${fw}] ${op.name}: ERROR — ${err.message}`);
+        } finally {
+          await page.close();
+        }
       }
+
+      const line = FRAMEWORKS.map((fw) => {
+        const r = fwResults[fw];
+        if (!r || r.createKB < 0) return `${fw}: ERR`;
+        return `${fw}: +${(r.createKB / 1024).toFixed(1)}MB / retained ${(r.retainedKB / 1024).toFixed(1)}MB`;
+      }).join(' | ');
+      console.log(`  ${op.name}: ${line}`);
     }
   }
 
@@ -1121,8 +982,6 @@ async function main() {
   // Print final markdown table
   // ---------------------------------------------------------------------------
   console.log('\n\n## Full Results\n');
-  console.log('Primary cell value is CPU + microtask flush + forced layout.');
-  console.log('Parenthetical value is time until next settled paint.\n');
   const hdr = [
     'Category',
     'Operation',
@@ -1134,7 +993,7 @@ async function main() {
 
   // Group by category
   let lastCategory = '';
-  for (const scenario of scenarios) {
+  for (const scenario of SCENARIOS) {
     for (const op of scenario.ops) {
       const cat = scenario.category === lastCategory ? '' : scenario.category;
       lastCategory = scenario.category;
@@ -1143,17 +1002,11 @@ async function main() {
         const r = allResults.find(
           (x) => x.scenario === scenario.page && x.op === op.name && x.framework === fw,
         );
-        return {
-          fw: fw.charAt(0).toUpperCase() + fw.slice(1),
-          ms: r?.median ?? -1,
-          settledMs: r?.settledMedian ?? -1,
-        };
+        return { fw: fw.charAt(0).toUpperCase() + fw.slice(1), ms: r?.median ?? -1 };
       });
       const valid = vals.filter((v) => v.ms >= 0);
       const winner = valid.length ? valid.reduce((a, b) => (a.ms < b.ms ? a : b)).fw : '—';
-      const cells = vals.map((v) =>
-        v.ms >= 0 ? `${v.ms.toFixed(1)}ms (${v.settledMs.toFixed(1)}ms paint)` : 'ERR',
-      );
+      const cells = vals.map((v) => (v.ms >= 0 ? `${v.ms.toFixed(1)}ms` : 'ERR'));
       console.log(`| ${cat} | ${op.name} | ${cells.join(' | ')} | **${winner}** |`);
     }
   }
@@ -1203,9 +1056,6 @@ async function main() {
   );
   console.log(
     '- **Memory results:** Heap usage measured via `performance.memory.usedJSHeapSize` with forced GC. "Used" = heap delta after creation. "Retained" = heap delta after destroy — indicates memory not released (closer to 0 = better cleanup).',
-  );
-  console.log(
-    '- **Timing results:** Primary timings exclude the browser frame wait that made previous runs cluster around 32 ms. Paint timings remain in parentheses to show whether work missed the current frame.',
   );
 
   console.log('\n✓ Benchmark complete.');

@@ -129,15 +129,6 @@ function runFrames(target: number) {
   rafId = requestAnimationFrame(step);
 }
 
-function runFrameBatch(target: number) {
-  cancelAnimationFrame(rafId);
-  rafId = 0;
-  const t0 = performance.now();
-  for (let i = 0; i < target; i++) stocks.value = updateRandom(stocks.value);
-  const elapsed = performance.now() - t0;
-  frameCount.value = `Frames: ${target} | ${elapsed.toFixed(1)}ms`;
-}
-
 function run500() {
   runFrames(500);
 }
@@ -146,31 +137,60 @@ defineExpose({ runFrames });
 </script>
 
 <template>
-  <div id="main"><div class="container">
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Vue (Ticker)</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="start" @click="start()">Start Ticker</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="stop" @click="stop()">Stop Ticker</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="run-500" @click="run500()">Run 500 Frames</button></div>
-        <button type="button" id="run-10" style="display:none" @click="runFrameBatch(10)">Run 10</button>
-        <button type="button" id="run-100" style="display:none" @click="runFrameBatch(100)">Run 100</button>
-        <button type="button" id="run-500-hidden" style="display:none" @click="runFrameBatch(500)">Run 500</button>
-        <button type="button" id="run-1000" style="display:none" @click="runFrameBatch(1000)">Run 1000</button>
-        <button type="button" id="run-10000" style="display:none" @click="runFrameBatch(10000)">Run 10000</button>
-      </div></div>
-    </div></div>
-    <div id="frame-count">{{ frameCount }}</div>
-    <table class="table table-hover table-striped test-data">
-      <thead><tr><th>Symbol</th><th>Price</th><th>Change</th><th>Volume</th></tr></thead>
-      <tbody>
-        <tr v-for="stock in stocks" :key="stock.id" :class="stock.change >= 0 ? 'positive' : 'negative'">
-          <td>{{ stock.symbol }}</td>
-          <td>{{ stock.price.toFixed(2) }}</td>
-          <td>{{ stock.change.toFixed(2) }}%</td>
-          <td>{{ stock.volume }}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div></div>
+  <div id="main">
+    <div class="container">
+      <div class="jumbotron">
+        <div class="row">
+          <div class="col-md-6"><h1>Vue (Ticker)</h1></div>
+          <div class="col-md-6">
+            <div class="row">
+              <div class="col-sm-6 smallpad">
+                <button type="button" class="btn btn-primary btn-block" id="start" @click="start()">
+                  Start Ticker
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button type="button" class="btn btn-primary btn-block" id="stop" @click="stop()">
+                  Stop Ticker
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="run-500"
+                  @click="run500()"
+                >
+                  Run 500 Frames
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="frame-count">{{ frameCount }}</div>
+      <table class="table table-hover table-striped test-data">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Price</th>
+            <th>Change</th>
+            <th>Volume</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="stock in stocks"
+            :key="stock.id"
+            :class="stock.change >= 0 ? 'positive' : 'negative'"
+          >
+            <td>{{ stock.symbol }}</td>
+            <td>{{ stock.price.toFixed(2) }}</td>
+            <td>{{ stock.change.toFixed(2) }}%</td>
+            <td>{{ stock.volume }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </template>

@@ -21,7 +21,10 @@ Tag({ label: 'hi' });
 const Card = component<{ title: string }, { default: undefined }>(
   'p-type-card',
   ({ title }, { default: body }) => {
-    return html`<div><h2>${title}</h2>${body()}</div>`;
+    return html`<div>
+      <h2>${title}</h2>
+      ${body()}
+    </div>`;
   },
 );
 Card({ title: 'Hi' }, html`<p>Body</p>`);
@@ -44,8 +47,8 @@ const _Layout = component<
   { header: { user: User }; default: undefined; footer: undefined }
 >('p-type-layout', (_props, { header, default: body, footer }) => {
   return html`
-      <header>${header({ user: { name: 'Alice' } })}</header>
-      <main>${body()}</main>
-      <footer>${footer()}</footer>
-    `;
+    <header>${header({ user: { name: 'Alice' } })}</header>
+    <main>${body()}</main>
+    <footer>${footer()}</footer>
+  `;
 });

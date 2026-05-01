@@ -37,26 +37,92 @@ function toggleEven() {
 </script>
 
 <template>
-  <div id="main"><div class="container">
-    <div class="jumbotron"><div class="row">
-      <div class="col-md-6"><h1>Vue (Selection)</h1></div>
-      <div class="col-md-6"><div class="row">
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="populate" @click="populate()">Populate 1k</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="select-all" @click="selectAll()">Select All</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="deselect-all" @click="deselectAll()">Deselect All</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="toggle-all" @click="toggleAll()">Toggle All</button></div>
-        <div class="col-sm-6 smallpad"><button type="button" class="btn btn-primary btn-block" id="toggle-even" @click="toggleEven()">Toggle Even</button></div>
-        <button type="button" id="populate-100" style="display:none" @click="populate(100)">Populate 100</button>
-        <button type="button" id="populate-10k" style="display:none" @click="populate(10000)">Populate 10000</button>
-        <button type="button" id="populate-10" style="display:none" @click="populate(10)">Populate 10</button>
-      </div></div>
-    </div></div>
-    <div id="stats">Selected: <span id="count">{{ selectedCount }}</span> / <span id="total">{{ items.length }}</span> | All: <span id="all-selected">{{ allSelected ? 'Yes' : 'No' }}</span></div>
-    <div id="container">
-      <div v-for="item in items" :key="item.id">
-        <input type="checkbox" :checked="item.selected" />
-        {{ item.label }}
+  <div id="main">
+    <div class="container">
+      <div class="jumbotron">
+        <div class="row">
+          <div class="col-md-6"><h1>Vue (Selection)</h1></div>
+          <div class="col-md-6">
+            <div class="row">
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="populate"
+                  @click="populate()"
+                >
+                  Populate 1k
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="select-all"
+                  @click="selectAll()"
+                >
+                  Select All
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="deselect-all"
+                  @click="deselectAll()"
+                >
+                  Deselect All
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="toggle-all"
+                  @click="toggleAll()"
+                >
+                  Toggle All
+                </button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-block"
+                  id="toggle-even"
+                  @click="toggleEven()"
+                >
+                  Toggle Even
+                </button>
+              </div>
+              <button type="button" id="populate-100" style="display: none" @click="populate(100)">
+                Populate 100
+              </button>
+              <button
+                type="button"
+                id="populate-10k"
+                style="display: none"
+                @click="populate(10000)"
+              >
+                Populate 10000
+              </button>
+              <button type="button" id="populate-10" style="display: none" @click="populate(10)">
+                Populate 10
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="stats">
+        Selected: <span id="count">{{ selectedCount }}</span> /
+        <span id="total">{{ items.length }}</span> | All:
+        <span id="all-selected">{{ allSelected ? 'Yes' : 'No' }}</span>
+      </div>
+      <div id="container">
+        <div v-for="item in items" :key="item.id">
+          <input type="checkbox" :checked="item.selected" />
+          {{ item.label }}
+        </div>
       </div>
     </div>
-  </div></div>
+  </div>
 </template>

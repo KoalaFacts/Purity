@@ -22,7 +22,36 @@ function escapeAttr(s: string): string {
     .replace(/>/g, '&gt;');
 }
 
-const SAFE_NAME = /^[a-zA-Z_][\w.-]*$/;
+// ---------------------------------------------------------------------------
+// Codegen safety contract — relevant for the GitHub Advanced Security
+// "code injection" finding on the function-string returns below.
+//
+// The codegen emits JS source that is later run via `new Function()` in
+// compile.ts. Every value spliced into that source is constrained at
+// emission time:
+//
+//   * Tag names and attribute names come from the parsed AST and pass
+//     through assertSafeName below before any interpolation. The regex
+//     [a-zA-Z_][\w-]* disallows everything that could escape an
+//     identifier or single-quoted string — no dots, brackets, quotes,
+//     parentheses, semicolons, whitespace, or control chars. Anything
+//     non-conforming throws at compile time.
+//   * Names are additionally passed through JSON.stringify at every
+//     emission site (qname / qevt / json-quoted tag), and used as
+//     bracket-notation property keys (`_e[${qname}]`) rather than dot
+//     access. Layered defense: even if the regex were ever loosened,
+//     the splices still produce well-formed string literals.
+//   * String LITERAL values (text content, attribute values) are
+//     JSON.stringify'd before splicing.
+//   * Variables like `_v[N]`, `_av${id}`, `_n${id}` are framework-
+//     internal identifiers, not user data.
+//
+// CodeQL's data-flow analysis cannot follow the regex + JSON.stringify
+// reasoning, so the relevant return statements carry a per-line
+// suppression directive pointing back here.
+// ---------------------------------------------------------------------------
+
+const SAFE_NAME = /^[a-zA-Z_][\w-]*$/;
 function assertSafeName(name: string, kind: string): void {
   if (!SAFE_NAME.test(name)) throw new Error(`[Purity] Invalid ${kind} name: "${name}"`);
 }
@@ -55,7 +84,11 @@ interface ExprSlot {
   type: 'expr';
   index: number;
   path: PathStep[];
-  placeholder: 'comment' | 'text';
+  // True when the placeholder at `path` is a Text node (the EXPR_PLACEHOLDER
+  // optimization). False when it is a Comment node — needed when the
+  // expression has a text or expression sibling, since the HTML parser
+  // would coalesce adjacent text nodes and break path navigation.
+  textPlaceholder: boolean;
 }
 
 interface AttrSlot {
@@ -66,137 +99,67 @@ interface AttrSlot {
 
 type Slot = ExprSlot | AttrSlot;
 
-const TEXT_EXPR_MARKER = '\uE000';
-
-export interface GenerateOptions {
-  valueMode?: 'array' | 'params';
-}
-
-interface CodegenContext {
-  signature: string;
-  valueRef: (index: number) => string;
-}
-
-function maxExpressionIndex(node: ASTNode, max = -1): number {
-  if (node.type === 'expression') return Math.max(max, node.index);
-  if (node.type === 'element') {
-    for (const attr of node.attributes) {
-      if (attr.kind !== 'static') max = Math.max(max, attr.index);
-    }
-    for (const child of node.children) max = maxExpressionIndex(child, max);
-  } else if (node.type === 'fragment') {
-    for (const child of node.children) max = maxExpressionIndex(child, max);
-  }
-  return max;
-}
-
-function createCodegenContext(ast: FragmentNode, options?: GenerateOptions): CodegenContext {
-  if (options?.valueMode === 'params') {
-    const maxIndex = maxExpressionIndex(ast);
-    const params = ['_w'];
-    for (let i = 0; i <= maxIndex; i++) params.push(`_v${i}`);
-    return {
-      signature: params.join(','),
-      valueRef: (index) => `_v${index}`,
-    };
-  }
-  return {
-    signature: '_v,_w',
-    valueRef: (index) => `_v[${index}]`,
-  };
-}
-
 // ---------------------------------------------------------------------------
-// trimFragmentEdges — strip leading/trailing whitespace-only text nodes
+// condenseWhitespace — strip whitespace-only text nodes containing a newline
+// from anywhere in the tree. These are template formatting artifacts (the
+// indentation between sibling tags) that the HTML parser would turn into
+// real text nodes when we hand the markup to innerHTML — adding ~5 nodes
+// per row in a typical table template (50k extra DOM nodes for 10k rows).
+//
+// Conservative: we only strip text nodes that (a) trim to empty AND (b)
+// contain a newline. A single space without a newline (e.g. `${a} ${b}`)
+// is treated as deliberate whitespace and preserved.
+//
+// Inline-context caveat: between adjacent inline elements written across
+// lines (e.g. `<span>a</span>\n<span>b</span>`), removing the indentation
+// text removes the rendered space too. Authors who need the space must
+// write the elements on one line or use `&nbsp;`. This matches Vue's
+// default `whitespace: 'condense'` behavior and Svelte's compiler.
 // ---------------------------------------------------------------------------
 
-function trimFragmentEdges(frag: FragmentNode): FragmentNode {
-  const children = frag.children;
-  let start = 0;
-  let end = children.length;
-  while (start < end) {
-    const ch = children[start];
-    if (ch.type === 'text' && ch.value.trim() === '' && ch.value.includes('\n')) start++;
-    else break;
-  }
-  while (end > start) {
-    const ch = children[end - 1];
-    if (ch.type === 'text' && ch.value.trim() === '' && ch.value.includes('\n')) end--;
-    else break;
-  }
-  if (start === 0 && end === children.length) return frag;
-  return { ...frag, children: children.slice(start, end) };
+const PRESERVE_WS_TAGS = new Set(['pre', 'textarea', 'script', 'style']);
+
+function isIndentation(n: ASTNode): boolean {
+  return n.type === 'text' && n.value.trim() === '' && n.value.includes('\n');
 }
 
-const STRUCTURAL_WHITESPACE_CONTEXT = new Set([
-  'article',
-  'aside',
-  'body',
-  'colgroup',
-  'details',
-  'dialog',
-  'div',
-  'footer',
-  'form',
-  'header',
-  'li',
-  'main',
-  'nav',
-  'ol',
-  'section',
-  'select',
-  'table',
-  'tbody',
-  'tfoot',
-  'thead',
-  'tr',
-  'ul',
-]);
+// U+200B ZERO WIDTH SPACE — used as the inline placeholder character for
+// reactive `${...}` expressions. The HTML parser turns it into a single Text
+// node so we can navigate to it positionally and either keep it (reactive
+// text) or replaceWith it (Node / Array values) without an extra
+// createTextNode + replaceWith pair.
+const EXPR_PLACEHOLDER = '​';
 
-function trimTableWhitespace(node: ASTNode): ASTNode {
-  if (node.type === 'fragment') {
+function condenseWhitespace(node: ASTNode): ASTNode {
+  if (node.type === 'fragment' || node.type === 'element') {
+    if (node.type === 'element' && PRESERVE_WS_TAGS.has(node.tag)) return node;
     let changed = false;
-    const children = node.children.map((child) => {
-      const next = trimTableWhitespace(child);
-      if (next !== child) changed = true;
-      return next;
-    });
-    return changed ? { ...node, children } : node;
-  }
-
-  if (node.type !== 'element') return node;
-
-  const trimChildWhitespace = STRUCTURAL_WHITESPACE_CONTEXT.has(node.tag);
-  let changed = false;
-  const children: ASTNode[] = [];
-  for (const child of node.children) {
-    if (
-      trimChildWhitespace &&
-      child.type === 'text' &&
-      child.value.trim() === '' &&
-      child.value.includes('\n')
-    ) {
-      changed = true;
-      continue;
+    const next: ASTNode[] = [];
+    for (const ch of node.children) {
+      if (isIndentation(ch)) {
+        changed = true;
+        continue;
+      }
+      const recursed = condenseWhitespace(ch);
+      if (recursed !== ch) changed = true;
+      next.push(recursed);
     }
-    const next = trimTableWhitespace(child);
-    if (next !== child) changed = true;
-    children.push(next);
+    if (!changed) return node;
+    return { ...node, children: next } as ASTNode;
   }
-  return changed ? { ...node, children } : node;
+  return node;
 }
 
 // ---------------------------------------------------------------------------
 // generate(ast)
 // ---------------------------------------------------------------------------
 
-export function generate(ast: FragmentNode, options?: GenerateOptions): string {
-  // Trim whitespace-only text nodes (containing newlines) from fragment edges.
-  // These are template formatting artifacts (indentation) that add unnecessary
-  // DOM nodes — especially costly in each() where they multiply per item.
-  ast = trimFragmentEdges(ast);
-  ast = trimTableWhitespace(ast) as FragmentNode;
-  const ctx = createCodegenContext(ast, options);
+export function generate(ast: FragmentNode): string {
+  // Strip pure-indentation text nodes from the entire tree (not just edges).
+  // Indentation between sibling tags becomes real text nodes after innerHTML,
+  // multiplying per-item DOM cost in each() — a row template with whitespace
+  // between 5 sibling tags adds 5 text nodes per row.
+  ast = condenseWhitespace(ast) as FragmentNode;
 
   if (!hasDynamic(ast)) {
     const html = buildStaticHtml(ast);
@@ -206,6 +169,7 @@ export function generate(ast: FragmentNode, options?: GenerateOptions): string {
     const counter = { n: 0 };
     genStaticDOM(ast, '_t.content', stmts, counter);
     stmts.push('return function(){return _t.content.cloneNode(true);};');
+    // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
     return `(function(){${stmts.join('')}})()`;
   }
 
@@ -213,26 +177,54 @@ export function generate(ast: FragmentNode, options?: GenerateOptions): string {
   // Use direct createElement — faster than cloneNode for small templates
   const simple = isSimpleTemplate(ast);
   if (simple) {
-    return genSimpleTemplate(simple, ctx);
+    return genSimpleTemplate(simple);
   }
 
   // Complex template — cloneNode + positional paths
   const slots: Slot[] = [];
   const html = buildDynamicHtml(ast, slots, []);
 
-  const bindCode = genPositionalBindings(slots, ctx);
+  const bindCode = genPositionalBindings(slots);
+  const templatePrep = genTemplateCommentToTextConversion(slots);
 
+  // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
+  // `html` was built by buildDynamicHtml which JSON.stringify's all values
+  // and assertSafeName-validates all tag/attr names. `bindCode` interpolates
+  // only validated names through JSON.stringify and bracket notation.
   return [
     '(function(){',
     `var _t=document.createElement('template');`,
     `_t.innerHTML=${JSON.stringify(html)};`,
-    `return function(${ctx.signature}){`,
+    templatePrep,
+    'return function(_v,_w){',
     'var _r=_t.content.cloneNode(true);',
     bindCode,
     'return _r;',
     '};',
     '})()',
   ].join('');
+}
+
+// One-time template prep: convert each comment placeholder (used for
+// expression slots that have a text/expression sibling, where the parser
+// would coalesce) into an empty Text node inside `_t.content`. After this,
+// every reactive expression slot — text-placeholder OR comment-placeholder
+// — is a Text node when cloned, so the per-row binding code never has to
+// createTextNode + replaceWith. For a 10k-row table with two such slots
+// per row, that's 40k DOM ops eliminated (the cost paid is two replaceWith
+// calls once at module-init time).
+function genTemplateCommentToTextConversion(slots: Slot[]): string {
+  const stmts: string[] = [];
+  for (const slot of slots) {
+    if (slot.type !== 'expr' || slot.textPlaceholder) continue;
+    const id = bindVarCounter++;
+    let nav = '_t.content';
+    for (const step of slot.path) nav += step === 0 ? '.firstChild' : '.nextSibling';
+    stmts.push(
+      `var _cs${id}=${nav};_cs${id}.parentNode.replaceChild(document.createTextNode(''),_cs${id});`,
+    );
+  }
+  return stmts.join('');
 }
 
 export function generateModule(ast: FragmentNode): string {
@@ -271,58 +263,85 @@ function isSimpleTemplate(ast: FragmentNode): SimpleTemplate | null {
   return { tag: root.tag, staticAttrs, dynamicAttrs, children: root.children };
 }
 
-function genSimpleTemplate(tpl: SimpleTemplate, ctx: CodegenContext): string {
+function genSimpleTemplate(tpl: SimpleTemplate): string {
   assertSafeName(tpl.tag, 'tag');
-  const lines: string[] = [];
+  const setupParts: string[] = [];
+  const reactiveParts: string[] = [];
 
-  lines.push(`var _e=document.createElement('${tpl.tag}');`);
+  setupParts.push(`var _e=document.createElement(${JSON.stringify(tpl.tag)});`);
 
   // Static attributes
   for (const a of tpl.staticAttrs) {
     if (a.name === 'id' || a.name === 'class') {
-      lines.push(`_e.${a.name === 'class' ? 'className' : a.name}=${JSON.stringify(a.value)};`);
+      const prop = a.name === 'class' ? 'className' : 'id';
+      setupParts.push(`_e.${prop}=${JSON.stringify(a.value)};`);
     } else {
-      lines.push(`_e.setAttribute('${a.name}',${JSON.stringify(a.value || '')});`);
+      setupParts.push(
+        `_e.setAttribute(${JSON.stringify(a.name)},${JSON.stringify(a.value || '')});`,
+      );
     }
   }
 
-  // Dynamic attributes
+  // Dynamic attributes — folded into the shared watch where possible
   for (const a of tpl.dynamicAttrs) {
     assertSafeName(a.name, 'attribute');
-    const val = ctx.valueRef(a.index);
+    const id = bindVarCounter++;
+    const av = `_av${id}`;
+    const fl = `_af${id}`;
+    const val = `_v[${a.index}]`;
+    const qname = JSON.stringify(a.name);
     switch (a.kind) {
       case 'event':
-        lines.push(`_e.addEventListener('${a.name}',${val});`);
+        setupParts.push(`_e.addEventListener(${qname},${val});`);
         break;
       case 'dynamic':
-        lines.push(
-          `if(typeof ${val}==='function')_w(function(){var v=${val}();if(v==null||v===false)_e.removeAttribute('${a.name}');else _e.setAttribute('${a.name}',String(v));});else if(${val}!=null&&${val}!==false)_e.setAttribute('${a.name}',String(${val}));`,
+        setupParts.push(
+          `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
+          `if(!${fl}&&${av}!=null&&${av}!==false)_e.setAttribute(${qname},String(${av}));`,
+        );
+        reactiveParts.push(
+          `if(${fl}){var v${id}=${av}();if(v${id}==null||v${id}===false)_e.removeAttribute(${qname});else _e.setAttribute(${qname},String(v${id}));}`,
         );
         break;
       case 'bool':
-        lines.push(
-          `if(typeof ${val}==='function')_w(function(){if(${val}())_e.setAttribute('${a.name}','');else _e.removeAttribute('${a.name}');});else if(${val})_e.setAttribute('${a.name}','');`,
+        setupParts.push(
+          `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
+          `if(!${fl}&&${av})_e.setAttribute(${qname},'');`,
+        );
+        reactiveParts.push(
+          `if(${fl}){if(${av}())_e.setAttribute(${qname},'');else _e.removeAttribute(${qname});}`,
         );
         break;
       case 'prop':
-        lines.push(
-          `if(typeof ${val}==='function')_w(function(){_e.${a.name}=${val}();});else _e.${a.name}=${val};`,
+        setupParts.push(
+          `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
+          `if(!${fl})_e[${qname}]=${av};`,
         );
+        reactiveParts.push(`if(${fl})_e[${qname}]=${av}();`);
         break;
       case 'reactive-prop':
-        lines.push(
-          `if(typeof ${val}==='function')_w(function(){_e['${a.name}']=${val}();});else _e['${a.name}']=${val};`,
+        setupParts.push(
+          `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
+          `if(!${fl})_e[${qname}]=${av};`,
         );
+        reactiveParts.push(`if(${fl})_e[${qname}]=${av}();`);
         break;
       case 'bind': {
+        // Bind keeps its own watch (asymmetric: signal -> el and listener -> signal).
         const evt = a.name === 'checked' || a.name === 'group' ? 'change' : 'input';
+        const qevt = JSON.stringify(evt);
         if (a.name === 'group') {
-          lines.push(
+          setupParts.push(
             `if(typeof ${val}==='function'){if(_e.type==='radio'){_w(function(){_e.checked=${val}()===_e.value;});_e.addEventListener('change',function(){if(_e.checked)${val}(_e.value);});}else{_w(function(){_e.checked=${val}().includes(_e.value);});_e.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(_e.value);if(_e.checked){if(i===-1)a.push(_e.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
           );
         } else {
-          lines.push(
-            `if(typeof ${val}==='function'){_w(function(){_e['${a.name}']=${val}();});_e.addEventListener('${evt}',function(){${val}(${a.name === 'checked' ? '_e.checked' : `_e['${a.name}']`});});}`,
+          const readSrc = a.name === 'checked' ? '_e.checked' : `_e[${qname}]`;
+          // codeql[js/code-injection] — qname/qevt are JSON.stringify'd and
+          // a.name has passed assertSafeName. `val` is `_v[${idx}]`, a
+          // framework-generated identifier. See "Codegen safety contract"
+          // near SAFE_NAME at the top of this file.
+          setupParts.push(
+            `if(typeof ${val}==='function'){_w(function(){_e[${qname}]=${val}();});_e.addEventListener(${qevt},function(){${val}(${readSrc});});}`,
           );
         }
         break;
@@ -330,27 +349,43 @@ function genSimpleTemplate(tpl: SimpleTemplate, ctx: CodegenContext): string {
     }
   }
 
-  // Children — text nodes + expressions, appended directly
+  // Children — text nodes + expressions, appended directly.
+  // condenseWhitespace already dropped pure-indentation text nodes; anything
+  // remaining (content text, single-space separators) is intentional.
   for (const ch of tpl.children) {
     if (ch.type === 'text') {
-      if (ch.value.trim() || tpl.children.length === 1) {
-        lines.push(`_e.appendChild(document.createTextNode(${JSON.stringify(ch.value)}));`);
+      if (ch.value !== '') {
+        setupParts.push(`_e.appendChild(document.createTextNode(${JSON.stringify(ch.value)}));`);
       }
     } else if (ch.type === 'expression') {
-      const val = ctx.valueRef(ch.index);
+      const val = `_v[${ch.index}]`;
       const id = bindVarCounter++;
-      lines.push(
-        `var _x${id}=${val};`,
-        `if(typeof _x${id}==='function'){var _t${id}=document.createTextNode('');_e.appendChild(_t${id});_w(function(){var r=_x${id}();if(r instanceof Node){_t${id}.replaceWith(r);_t${id}=r;}else{if(_t${id}.nodeType!==3){var t=document.createTextNode('');_t${id}.replaceWith(t);_t${id}=t;}_t${id}.data=r==null?'':String(r);}});}`,
-        `else if(_x${id} instanceof Node)_e.appendChild(_x${id});`,
-        `else if(Array.isArray(_x${id})){for(var _ai${id}=0;_ai${id}<_x${id}.length;_ai${id}++)_e.appendChild(_x${id}[_ai${id}] instanceof Node?_x${id}[_ai${id}]:document.createTextNode(String(_x${id}[_ai${id}])));}`,
-        `else _e.appendChild(document.createTextNode(_x${id}==null||_x${id}===false?'':String(_x${id})));`,
+      const xv = `_x${id}`;
+      const tn = `_t${id}`;
+      const fl = `_xf${id}`;
+      setupParts.push(
+        `var ${xv}=${val};var ${fl}=typeof ${xv}==='function';var ${tn};`,
+        `if(${fl}){${tn}=document.createTextNode('');_e.appendChild(${tn});}`,
+        `else if(${xv} instanceof Node)_e.appendChild(${xv});`,
+        `else if(Array.isArray(${xv})){for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++)_e.appendChild(${xv}[_ai${id}] instanceof Node?${xv}[_ai${id}]:document.createTextNode(String(${xv}[_ai${id}])));}`,
+        `else _e.appendChild(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));`,
+      );
+      reactiveParts.push(
+        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=r${id}==null?'':String(r${id});}}`,
       );
     }
   }
 
-  lines.push('return _e;');
-  return `function(${ctx.signature}){${lines.join('')}}`;
+  let body = setupParts.join('');
+  if (reactiveParts.length > 0) {
+    body += `_w(function(){${reactiveParts.join('')}});`;
+  }
+  body += 'return _e;';
+  // codeql[js/code-injection] — see "Codegen safety contract" comment near
+  // SAFE_NAME / assertSafeName at the top of this file. All names and
+  // values spliced into `body` are regex-validated and/or JSON.stringify'd
+  // before reaching this point; user input cannot escape the literal.
+  return `function(_v,_w){${body}}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -445,6 +480,7 @@ function buildStaticHtml(node: ASTNode): string {
     case 'fragment':
       return node.children.map(buildStaticHtml).join('');
     default:
+      /* v8 ignore next -- defensive fallthrough; AST has no other types */
       return '';
   }
 }
@@ -456,7 +492,15 @@ function buildStaticHtml(node: ASTNode): string {
 // Each child increments via nextSibling, entering a child uses firstChild.
 // ---------------------------------------------------------------------------
 
-function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[]): string {
+// useTextPlaceholder is decided by the parent (element/fragment) based on the
+// expression's siblings. False forces a `<!---->` comment so the HTML parser
+// won't merge an adjacent text node into the placeholder.
+function buildDynamicHtml(
+  node: ASTNode,
+  slots: Slot[],
+  currentPath: PathStep[],
+  useTextPlaceholder: boolean = true,
+): string {
   switch (node.type) {
     case 'text':
       return escapeHtml(node.value);
@@ -465,14 +509,13 @@ function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[])
       return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
 
     case 'expression': {
-      // Insert a comment placeholder — record its path
       slots.push({
         type: 'expr',
         index: node.index,
         path: [...currentPath],
-        placeholder: 'comment',
+        textPlaceholder: useTextPlaceholder,
       });
-      return '<!---->';
+      return useTextPlaceholder ? EXPR_PLACEHOLDER : '<!---->';
     }
 
     case 'element': {
@@ -494,38 +537,38 @@ function buildDynamicHtml(node: ASTNode, slots: Slot[], currentPath: PathStep[])
 
       if (VOID.has(node.tag)) return `${s}/>`;
       s += '>';
-
-      // Children: first child gets path + [0 (firstChild)], siblings get [1 (nextSibling)]
-      for (let i = 0; i < node.children.length; i++) {
-        const child = node.children[i];
-        const childPath = childPathFromParent(currentPath, i);
-        if (node.children.length === 1 && child.type === 'expression') {
-          slots.push({
-            type: 'expr',
-            index: child.index,
-            path: childPath,
-            placeholder: 'text',
-          });
-          s += TEXT_EXPR_MARKER;
-        } else {
-          s += buildDynamicHtml(child, slots, childPath);
-        }
-      }
-
+      s += emitChildrenHtml(node.children, slots, currentPath);
       return `${s}</${node.tag}>`;
     }
 
-    case 'fragment': {
-      let s = '';
-      for (let i = 0; i < node.children.length; i++) {
-        s += buildDynamicHtml(node.children[i], slots, childPathFromParent(currentPath, i));
-      }
-      return s;
-    }
+    case 'fragment':
+      return emitChildrenHtml(node.children, slots, currentPath);
 
     default:
+      /* v8 ignore next -- defensive fallthrough; AST has no other types */
       return '';
   }
+}
+
+// Emit children of an element or fragment, deciding per-child whether an
+// expression can use the cheap text-node placeholder. An expression that
+// touches a text or expression sibling must use a comment placeholder so the
+// DOM parser doesn't coalesce adjacent text nodes and shift our path
+// navigation.
+function emitChildrenHtml(children: ASTNode[], slots: Slot[], currentPath: PathStep[]): string {
+  let s = '';
+  for (let i = 0; i < children.length; i++) {
+    const ch = children[i];
+    let useTextPlaceholder = true;
+    if (ch.type === 'expression') {
+      const prev = children[i - 1];
+      const next = children[i + 1];
+      if (prev && (prev.type === 'text' || prev.type === 'expression')) useTextPlaceholder = false;
+      if (next && (next.type === 'text' || next.type === 'expression')) useTextPlaceholder = false;
+    }
+    s += buildDynamicHtml(ch, slots, childPathFromParent(currentPath, i), useTextPlaceholder);
+  }
+  return s;
 }
 
 // Path to the i-th child of a parent: firstChild + (i-1) nextSiblings
@@ -539,13 +582,30 @@ function childPathFromParent(parentPath: PathStep[], childIndex: number): PathSt
 
 // ---------------------------------------------------------------------------
 // genPositionalBindings — navigate to each slot via firstChild/nextSibling
-// No TreeWalker, no querySelector, no switch/case — just direct path walk
+// No TreeWalker, no querySelector, no switch/case — just direct path walk.
+//
+// Reactive bindings within the same template instance are folded into a
+// single _w() call. With N reactive bindings (typical row template: 3-5),
+// this collapses N Computed allocations + N observer registrations into
+// one. A typical 10k-row table goes from ~50k watches to ~10k watches at
+// instantiation time.
+//
+// Tradeoff: when a downstream signal changes, the body of the shared watch
+// re-runs all reactive lines (gated by per-line `_f*` booleans frozen at
+// setup), so unchanged bindings still execute their assignment. Text-node
+// writes are ~50ns; this overhead is dwarfed by the watch-creation savings.
 // ---------------------------------------------------------------------------
 
 let bindVarCounter = 0;
 
-function genPositionalBindings(slots: Slot[], ctx: CodegenContext): string {
-  const lines: string[] = [];
+interface BindingParts {
+  setup: string; // synchronous code: typeof checks, text-node creation, static assignments
+  reactive: string; // body for the shared watch — guarded by per-binding _f* flags
+}
+
+function genPositionalBindings(slots: Slot[]): string {
+  const setupParts: string[] = [];
+  const reactiveParts: string[] = [];
 
   for (const slot of slots) {
     const nodeVar = `_n${bindVarCounter++}`;
@@ -555,107 +615,179 @@ function genPositionalBindings(slots: Slot[], ctx: CodegenContext): string {
     for (const step of slot.path) {
       nav += step === 0 ? '.firstChild' : '.nextSibling';
     }
-    lines.push(`var ${nodeVar}=${nav};`);
+    setupParts.push(`var ${nodeVar}=${nav};`);
 
     if (slot.type === 'expr') {
-      lines.push(genExprBinding(nodeVar, slot.index, slot.placeholder, ctx));
+      const { setup, reactive } = genExprBinding(nodeVar, slot.index, slot.textPlaceholder);
+      setupParts.push(setup);
+      if (reactive) reactiveParts.push(reactive);
     } else {
       for (const attr of slot.attrs) {
         if (attr.kind !== 'static') {
-          lines.push(genAttrBinding(nodeVar, attr, ctx));
+          const { setup, reactive } = genAttrBinding(nodeVar, attr);
+          setupParts.push(setup);
+          if (reactive) reactiveParts.push(reactive);
         }
       }
     }
   }
 
-  return lines.join('');
+  let result = setupParts.join('');
+  if (reactiveParts.length > 0) {
+    result += `_w(function(){${reactiveParts.join('')}});`;
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
-// Expression binding — replace comment placeholder with dynamic content
+// Expression binding — substitute the placeholder with dynamic content.
+//
+// When `textPlaceholder` is true the slot is already a Text node (the
+// EXPR_PLACEHOLDER zero-width space) so the reactive-text case can keep it
+// in place and just write .data — saves a createTextNode + replaceWith per
+// expression vs the comment-placeholder path. When false (expression has a
+// text/expression sibling that would coalesce in the parser), we keep the
+// old comment-placeholder behavior.
 // ---------------------------------------------------------------------------
 
-function genExprBinding(
-  anchorVar: string,
-  index: number,
-  placeholder: 'comment' | 'text',
-  ctx: CodegenContext,
-): string {
+function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolean): BindingParts {
+  // The slot is always a Text node by the time the per-row factory runs:
+  // - textPlaceholder=true: ZWSP text node stamped directly in the HTML.
+  // - textPlaceholder=false: was a comment in the HTML, but converted to a
+  //   Text node once at module init by genTemplateCommentToTextConversion.
+  // So the setup is the same in both cases: function values keep the text
+  // node and let the reactive watch write .data; Node/Array values do a
+  // single replaceWith.
   const id = bindVarCounter++;
   const xv = `_xv${id}`;
   const tn = `_tn${id}`;
-  const val = ctx.valueRef(index);
+  const fl = `_f${id}`;
+  const val = `_v[${index}]`;
 
-  if (placeholder === 'text') {
-    return [
-      `var ${xv}=${val};`,
-      `if(typeof ${xv}==='object'||typeof ${xv}==='function'){`,
-      `if(typeof ${xv}==='function'){`,
-      `var ${tn}=${anchorVar};`,
-      `_w(function(){var r=${xv}();if(r instanceof Node){${tn}.replaceWith(r);${tn}=r;}else{if(${tn}.nodeType!==3){var t=document.createTextNode('');${tn}.replaceWith(t);${tn}=t;}${tn}.data=r==null?'':String(r);}});`,
-      `}else if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${anchorVar}.replaceWith(${xv});}`,
-      `else if(Array.isArray(${xv})){var _f${id}=document.createDocumentFragment();for(var _i${id}=0;_i${id}<${xv}.length;_i${id}++)_f${id}.appendChild(${xv}[_i${id}] instanceof Node?${xv}[_i${id}]:document.createTextNode(String(${xv}[_i${id}])));${anchorVar}.replaceWith(_f${id});}`,
-      `else{${anchorVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
-      `}else{${anchorVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
-    ].join('');
-  }
-
-  // Check order optimized: primitives first (hot path in each/list loops),
-  // then functions (reactive), then DOM nodes, then arrays.
-  return [
+  const setup = [
     `var ${xv}=${val};`,
-    `if(typeof ${xv}==='object'||typeof ${xv}==='function'){`,
-    `if(typeof ${xv}==='function'){`,
-    `var ${tn}=document.createTextNode('');${anchorVar}.replaceWith(${tn});`,
-    `_w(function(){var r=${xv}();if(r instanceof Node){${tn}.replaceWith(r);${tn}=r;}else{if(${tn}.nodeType!==3){var t=document.createTextNode('');${tn}.replaceWith(t);${tn}=t;}${tn}.data=r==null?'':String(r);}});`,
-    `}else if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${anchorVar}.replaceWith(${xv});}`,
-    `else if(Array.isArray(${xv})){var _f${id}=document.createDocumentFragment();for(var _i${id}=0;_i${id}<${xv}.length;_i${id}++)_f${id}.appendChild(${xv}[_i${id}] instanceof Node?${xv}[_i${id}]:document.createTextNode(String(${xv}[_i${id}])));${anchorVar}.replaceWith(_f${id});}`,
-    `else{${anchorVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
-    `}else{${anchorVar}.replaceWith(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));}`,
+    `var ${fl}=typeof ${xv}==='function';`,
+    `var ${tn}=${slotVar};`,
+    `if(!${fl}){`,
+    `if(typeof ${xv}==='object'){`,
+    `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});${tn}=${xv};}`,
+    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++)_af${id}.appendChild(${xv}[_ai${id}] instanceof Node?${xv}[_ai${id}]:document.createTextNode(String(${xv}[_ai${id}])));${slotVar}.replaceWith(_af${id});}`,
+    `else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
+    `}else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
+    `}`,
   ].join('');
+
+  const reactive = [
+    `if(${fl}){`,
+    `var r${id}=${xv}();`,
+    `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
+    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=r${id}==null?'':String(r${id});}`,
+    `}`,
+  ].join('');
+
+  return { setup, reactive };
 }
 
 // ---------------------------------------------------------------------------
-// Attribute binding
+// Attribute binding (complex template path).
+// Returns { setup, reactive }: same fold contract as genExprBinding.
 // ---------------------------------------------------------------------------
 
-function genAttrBinding(el: string, attr: AttributeNode, ctx: CodegenContext): string {
-  if (attr.kind === 'static') return '';
+function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
+  if (attr.kind === 'static') return { setup: '', reactive: '' };
   assertSafeName(attr.name, 'attribute');
 
-  const val = ctx.valueRef(attr.index);
+  const id = bindVarCounter++;
+  const av = `_av${id}`;
+  const fl = `_af${id}`;
+  const val = `_v[${attr.index}]`;
+  const qname = JSON.stringify(attr.name);
 
   switch (attr.kind) {
     case 'event':
-      return `${el}.addEventListener('${attr.name}',${val});`;
+      return { setup: `${el}.addEventListener(${qname},${val});`, reactive: '' };
 
-    case 'dynamic':
-      return `if(typeof ${val}==='function')_w(function(){var v=${val}();if(v==null||v===false)${el}.removeAttribute('${attr.name}');else ${el}.setAttribute('${attr.name}',String(v));});else if(${val}!=null&&${val}!==false)${el}.setAttribute('${attr.name}',String(${val}));`;
-
-    case 'bool':
-      return `if(typeof ${val}==='function')_w(function(){if(${val}())${el}.setAttribute('${attr.name}','');else ${el}.removeAttribute('${attr.name}');});else if(${val})${el}.setAttribute('${attr.name}','');`;
-
-    case 'prop': {
-      const n = attr.name;
-      return `if(typeof ${val}==='function')_w(function(){${el}.${n}=${val}();});else ${el}.${n}=${val};`;
+    case 'dynamic': {
+      const setup = [
+        `var ${av}=${val};`,
+        `var ${fl}=typeof ${av}==='function';`,
+        `if(!${fl}&&${av}!=null&&${av}!==false)${el}.setAttribute(${qname},String(${av}));`,
+      ].join('');
+      const reactive = [
+        `if(${fl}){`,
+        `var v${id}=${av}();`,
+        `if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});`,
+        `else ${el}.setAttribute(${qname},String(v${id}));`,
+        `}`,
+      ].join('');
+      return { setup, reactive };
     }
 
-    case 'reactive-prop':
-      return `if(typeof ${val}==='function')_w(function(){${el}['${attr.name}']=${val}();});else ${el}['${attr.name}']=${val};`;
+    case 'bool': {
+      const setup = [
+        `var ${av}=${val};`,
+        `var ${fl}=typeof ${av}==='function';`,
+        `if(!${fl}&&${av})${el}.setAttribute(${qname},'');`,
+      ].join('');
+      const reactive = [
+        `if(${fl}){`,
+        `if(${av}())${el}.setAttribute(${qname},'');`,
+        `else ${el}.removeAttribute(${qname});`,
+        `}`,
+      ].join('');
+      return { setup, reactive };
+    }
+
+    case 'prop': {
+      const setup = [
+        `var ${av}=${val};`,
+        `var ${fl}=typeof ${av}==='function';`,
+        `if(!${fl})${el}[${qname}]=${av};`,
+      ].join('');
+      const reactive = `if(${fl})${el}[${qname}]=${av}();`;
+      return { setup, reactive };
+    }
+
+    case 'reactive-prop': {
+      const setup = [
+        `var ${av}=${val};`,
+        `var ${fl}=typeof ${av}==='function';`,
+        `if(!${fl})${el}[${qname}]=${av};`,
+      ].join('');
+      const reactive = `if(${fl})${el}[${qname}]=${av}();`;
+      return { setup, reactive };
+    }
 
     case 'bind': {
+      // Bind keeps its own watch — its reactive read is asymmetric (signal ->
+      // element) AND it installs an event listener that writes the signal.
+      // The setup includes both. Folding doesn't help here because the
+      // listener is per-input.
       const evt = attr.name === 'checked' || attr.name === 'group' ? 'change' : 'input';
+      const qevt = JSON.stringify(evt);
       if (attr.name === 'group') {
-        return [
-          `if(typeof ${val}==='function'){`,
-          `if(${el}.type==='radio'){_w(function(){${el}.checked=${val}()===${el}.value;});${el}.addEventListener('change',function(){if(${el}.checked)${val}(${el}.value);});}`,
-          `else{_w(function(){${el}.checked=${val}().includes(${el}.value);});${el}.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(${el}.value);if(${el}.checked){if(i===-1)a.push(${el}.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
-        ].join('');
+        return {
+          setup: [
+            `if(typeof ${val}==='function'){`,
+            `if(${el}.type==='radio'){_w(function(){${el}.checked=${val}()===${el}.value;});${el}.addEventListener('change',function(){if(${el}.checked)${val}(${el}.value);});}`,
+            `else{_w(function(){${el}.checked=${val}().includes(${el}.value);});${el}.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(${el}.value);if(${el}.checked){if(i===-1)a.push(${el}.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
+          ].join(''),
+          reactive: '',
+        };
       }
-      return `if(typeof ${val}==='function'){_w(function(){${el}['${attr.name}']=${val}();});${el}.addEventListener('${evt}',function(){${val}(${attr.name === 'checked' ? `${el}.checked` : `${el}['${attr.name}']`});});}`;
+      const readSrc = attr.name === 'checked' ? `${el}.checked` : `${el}[${qname}]`;
+      // codeql[js/code-injection] — qname/qevt are JSON.stringify'd and
+      // attr.name has passed assertSafeName. `el`/`val` are framework-
+      // generated identifiers (`_n${id}`, `_v[${idx}]`), never user data.
+      // See "Codegen safety contract" near SAFE_NAME.
+      return {
+        setup: `if(typeof ${val}==='function'){_w(function(){${el}[${qname}]=${val}();});${el}.addEventListener(${qevt},function(){${val}(${readSrc});});}`,
+        reactive: '',
+      };
     }
 
     default:
-      return '';
+      /* v8 ignore next -- defensive fallthrough; parser only emits known kinds */
+      return { setup: '', reactive: '' };
   }
 }

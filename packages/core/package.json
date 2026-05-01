@@ -2,6 +2,25 @@
   "name": "@purityjs/core",
   "version": "0.1.0",
   "description": "Minimal, lightweight, super performant web framework using native signals",
+  "keywords": [
+    "framework",
+    "lightweight",
+    "no-virtual-dom",
+    "reactive",
+    "signals",
+    "web-components"
+  ],
+  "license": "MIT",
+  "author": "KoalaFacts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KoalaFacts/Purity",
+    "directory": "packages/core"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -13,37 +32,17 @@
       "require": "./dist/index.cjs"
     },
     "./compiler": {
+      "development": "./src/compiler/index.ts",
       "types": "./dist/compiler/index.d.ts",
       "import": "./dist/compiler/index.js",
       "require": "./dist/compiler/index.cjs"
     }
   },
-  "files": [
-    "dist"
-  ],
-  "scripts": {
-    "build": "vite build && tsc --emitDeclarationOnly",
-    "test": "vitest run"
-  },
-  "keywords": [
-    "signals",
-    "reactive",
-    "framework",
-    "web-components",
-    "no-virtual-dom",
-    "lightweight"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/KoalaFacts/Purity",
-    "directory": "packages/core"
-  },
-  "author": "KoalaFacts",
-  "license": "MIT",
   "publishConfig": {
     "access": "public"
   },
-  "dependencies": {
-    "signal-polyfill": "^0.2.2"
+  "scripts": {
+    "build": "vite build && tsc --emitDeclarationOnly",
+    "test": "vitest run"
   }
 }

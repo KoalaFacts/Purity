@@ -27,6 +27,7 @@ vite.config.ts.timestamp-*
 
 # Superpowers (local plans/specs)
 **/superpowers/
+.superpowers/
 
 # GitHub Actions
 gh-pages/

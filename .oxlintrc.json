@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "oxc", "vue"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "off",
+    "style": "off",
+    "pedantic": "off",
+    "restriction": "off",
+    "nursery": "off"
+  },
+  "rules": {
+    "typescript/no-explicit-any": "off",
+    "typescript/no-non-null-assertion": "off"
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/node_modules/**",
+    "gh-pages/**",
+    "benchmark/history/**",
+    "benchmark/results/**"
+  ],
+  "overrides": [
+    {
+      "files": ["benchmark/**"],
+      "rules": {
+        "no-unused-vars": "off",
+        "no-unused-expressions": "off",
+        "no-shadow": "off",
+        "typescript/no-unused-vars": "off"
+      }
+    },
+    {
+      "files": ["**/tests/**", "**/*.test.ts"],
+      "rules": {
+        "no-unused-expressions": "off",
+        "no-shadow": "off",
+        "oxc/erasing-op": "off"
+      }
+    }
+  ]
+}

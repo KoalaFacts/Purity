@@ -3,19 +3,31 @@
 When asked to write tests for Purity components or features:
 
 ## Setup
+
 ```ts
 import { describe, expect, it, vi } from 'vitest';
-import { state, compute, watch, html, component, mount, onMount, onDestroy, onDispose } from '../../core/src/index.ts';
+import {
+  state,
+  compute,
+  watch,
+  html,
+  component,
+  mount,
+  onMount,
+  onDestroy,
+  onDispose,
+} from '../../core/src/index.ts';
 // Or for compiler tests:
 import { parse } from '../../core/src/compiler/parser.ts';
 import { generate } from '../../core/src/compiler/codegen.ts';
 
-const tick = () => new Promise(r => queueMicrotask(r));
+const tick = () => new Promise((r) => queueMicrotask(r));
 ```
 
 ## Patterns
 
 ### Test reactive state
+
 ```ts
 it('state reads and writes', () => {
   const count = state(0);
@@ -26,12 +38,13 @@ it('state reads and writes', () => {
 
 it('updater function', () => {
   const count = state(0);
-  count(v => v + 1);
+  count((v) => v + 1);
   expect(count()).toBe(1);
 });
 ```
 
 ### Test computed
+
 ```ts
 it('derives value', () => {
   const count = state(2);
@@ -43,6 +56,7 @@ it('derives value', () => {
 ```
 
 ### Test watch (async — signals batch via microtask)
+
 ```ts
 it('reacts to changes', async () => {
   const values = [];
@@ -57,6 +71,7 @@ it('reacts to changes', async () => {
 ```
 
 ### Test html rendering
+
 ```ts
 // Helper: wrap result for querying
 function render(result) {
@@ -85,6 +100,7 @@ it('reactive text updates', async () => {
 ```
 
 ### Test component with mount
+
 ```ts
 it('mounts and unmounts', async () => {
   const container = document.createElement('div');
@@ -105,6 +121,7 @@ it('mounts and unmounts', async () => {
 ```
 
 ### Test events
+
 ```ts
 it('handles click', () => {
   const handler = vi.fn();
@@ -115,6 +132,7 @@ it('handles click', () => {
 ```
 
 ### Test two-way binding
+
 ```ts
 it(':: binds both ways', async () => {
   const text = state('hello');
@@ -132,6 +150,7 @@ it(':: binds both ways', async () => {
 ```
 
 ## Rules
+
 - Always `await tick()` after signal writes before checking DOM
 - Use `vi.fn()` for lifecycle/event verification
 - Clean up DOM nodes after tests that append to document.body

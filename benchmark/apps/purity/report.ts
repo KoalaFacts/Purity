@@ -121,9 +121,7 @@ function ScoreCard(fw: string, count: number) {
 }
 
 function Scoreboard(wins: Record<string, number>) {
-  return html`<div class="scoreboard">
-    ${FWS.map((fw) => ScoreCard(fw, wins[fw] || 0))}
-  </div>`;
+  return html`<div class="scoreboard">${FWS.map((fw) => ScoreCard(fw, wins[fw] || 0))}</div>`;
 }
 
 function MiniScoreboard(wins: Record<string, number>) {
@@ -188,7 +186,7 @@ function SpeedTable(rows: SpeedRow[]) {
   tbody.appendChild(
     each(
       rows,
-      (r) => speedRow(r),
+      (r: () => (typeof rows)[number]) => speedRow(r()),
       (r) => r.op,
     ),
   );
@@ -273,7 +271,7 @@ function MemoryTable(rows: MemRow[]) {
   tbody.appendChild(
     each(
       rows,
-      (r) => memRow(r),
+      (r: () => (typeof rows)[number]) => memRow(r()),
       (r) => r.op,
     ),
   );
@@ -518,15 +516,18 @@ function CategorySection(group: { category: string; rows: SpeedRow[] }) {
   const sectionId = `cat-${group.category.toLowerCase()}`;
   const opCount = String(group.rows.length);
   return html`<div class="cat-section" id="${sectionId}">
-    <h3 class="cat-heading">${icon} ${group.category} <span class="cat-count">${opCount} ops</span></h3>
-    ${MiniScoreboard(catWins)}
-    ${SpeedTable(group.rows)}
+    <h3 class="cat-heading">
+      ${icon} ${group.category} <span class="cat-count">${opCount} ops</span>
+    </h3>
+    ${MiniScoreboard(catWins)} ${SpeedTable(group.rows)}
   </div>`;
 }
 
 function CatPill(label: string, icon: string, activeCategory: any) {
   const pillClass = compute(() => `cat-pill${activeCategory() === label ? ' active' : ''}`);
-  return html`<span :class=${pillClass} @click=${() => activeCategory(label)}>${icon} ${label}</span>`;
+  return html`<span :class=${pillClass} @click=${() => activeCategory(label)}
+    >${icon} ${label}</span
+  >`;
 }
 
 function AllPill(activeCategory: any) {
@@ -538,8 +539,7 @@ function HistorySection(run: HistoryRun) {
   const wins = countWins(run.speed);
   return html`<details class="history-run">
     <summary>${run.date}</summary>
-    ${Scoreboard(wins)}
-    ${SpeedTable(run.speed)}
+    ${Scoreboard(wins)} ${SpeedTable(run.speed)}
     ${run.memory.length ? HistoryMemory(run.memory) : ''}
   </details>`;
 }
@@ -555,8 +555,11 @@ function MemorySection() {
   if (!data.memory.length) return document.createDocumentFragment();
   return html`<div class="section" id="cat-memory">
     <h2>${ICONS.memory} Memory</h2>
-    <p class="mem-note">Heap delta measured via <code>performance.memory</code> with forced GC.
-      ${CHARS.lq}Used${CHARS.rq} = heap after create. ${CHARS.lq}Retained${CHARS.rq} = heap after destroy (closer to 0 = better cleanup).</p>
+    <p class="mem-note">
+      Heap delta measured via <code>performance.memory</code> with forced GC.
+      ${CHARS.lq}Used${CHARS.rq} = heap after create. ${CHARS.lq}Retained${CHARS.rq} = heap after
+      destroy (closer to 0 = better cleanup).
+    </p>
     ${MemoryTable(data.memory)}
   </div>`;
 }
@@ -600,24 +603,30 @@ function App() {
     <div class="section">
       <h2>Latest Run</h2>
       ${Scoreboard(totalWins)}
-      <div class="cat-nav">
-        ${AllPill(activeCategory)}
-        ${catPills}
-      </div>
+      <div class="cat-nav">${AllPill(activeCategory)} ${catPills}</div>
       ${each(
         () => visibleGroups(),
-        (g) => CategorySection(g),
+        (g: () => ReturnType<typeof visibleGroups>[number]) => CategorySection(g()),
         (g) => g.category,
       )}
     </div>
 
-    ${MemorySection()}
-    ${PreviousRunsSection()}
+    ${MemorySection()} ${PreviousRunsSection()}
 
     <footer>
-      Trigger a new run: <a href="https://github.com/KoalaFacts/Purity/actions">Actions tab ${CHARS.arrow} Benchmark</a>
-      <div class="methodology">Warmup: 3 iterations ${CHARS.dot} Measured: 7 (configurable) ${CHARS.dot} Drop: fastest 1 + slowest 1 ${CHARS.dot} Metric: trimmed median ${CHARS.dot} Framework order randomized per operation</div>
-      <div class="methodology" style="margin-top:.3rem">Built with <a href="https://github.com/KoalaFacts/Purity">Purity</a> ${CHARS.dash} 17 functions, 6 kB gzipped</div>
+      Trigger a new run:
+      <a href="https://github.com/KoalaFacts/Purity/actions"
+        >Actions tab ${CHARS.arrow} Benchmark</a
+      >
+      <div class="methodology">
+        Warmup: 3 iterations ${CHARS.dot} Measured: 7 (configurable) ${CHARS.dot} Drop: fastest 1 +
+        slowest 1 ${CHARS.dot} Metric: trimmed median ${CHARS.dot} Framework order randomized per
+        operation
+      </div>
+      <div class="methodology" style="margin-top:.3rem">
+        Built with <a href="https://github.com/KoalaFacts/Purity">Purity</a> ${CHARS.dash} 17
+        functions, 6 kB gzipped
+      </div>
     </footer>
   `;
 }

@@ -17,9 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
@@ -27,8 +27,11 @@ jobs:
       - run: npm ci
 
       # Full CI checks before publish
-      - name: Lint
-        run: npx biome check .
+      - name: Format check (Oxfmt — Vite+)
+        run: npx oxfmt --check .
+
+      - name: Lint (Oxlint — Vite+)
+        run: npx oxlint
 
       - name: Type-check
         run: npx tsc --noEmit -p packages/core

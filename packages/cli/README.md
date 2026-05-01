@@ -1,5 +1,9 @@
 # @purityjs/cli
 
+[![npm version](https://img.shields.io/npm/v/@purityjs/cli.svg)](https://www.npmjs.com/package/@purityjs/cli)
+[![npm downloads](https://img.shields.io/npm/dm/@purityjs/cli.svg)](https://www.npmjs.com/package/@purityjs/cli)
+[![license](https://img.shields.io/npm/l/@purityjs/cli.svg)](../../LICENSE)
+
 Scaffold a new Purity project in seconds.
 
 ## Usage
@@ -41,15 +45,16 @@ A working counter component demonstrating `state`, `compute`, `html`, `css`, `co
 
 ## Scripts
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start Vite dev server |
-| `npm run build` | Production build with AOT |
-| `npm run preview` | Preview production build |
+| Command           | Description               |
+| ----------------- | ------------------------- |
+| `npm run dev`     | Start Vite dev server     |
+| `npm run build`   | Production build with AOT |
+| `npm run preview` | Preview production build  |
 
 ## Local Development
 
 When run from the Purity monorepo, the CLI automatically:
+
 - Links `@purityjs/core` to the local source
 - Links `@purityjs/vite-plugin` to the local source
 - Generates a `vite.config.ts` with resolve aliases

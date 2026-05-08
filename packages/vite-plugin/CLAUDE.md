@@ -11,6 +11,8 @@ AOT template compilation for Purity. Transforms `html` tagged templates at build
 - Removes `html` from imports (dead code eliminated)
 - Auto-injects `import { watch as __purity_w__ } from '@purityjs/core'` once per file
 - Skips framework internals (only compiles user code)
+- Emits a hand-rolled v3 source map (line-anchored — each output line maps back to the original line) so stack traces land in user source
+- Reports compile failures as `[purity] file:line:col — ...` warnings via the Vite plugin context (or `console.warn` outside Vite); failed templates are left as-is so the rest of the file still builds
 
 ## File Layout
 
@@ -22,11 +24,12 @@ src/
 ## Key Functions
 
 - `purity(options?)` — Vite plugin factory, returns { name, enforce, transform }
-- `compileTemplates(source, id)` — finds/replaces all html`` in source
+- `compileTemplates(source, id)` — collects `Edit[]` for each html``, hoist insert, and `html` import strip; defers all writes to `applyEdits`
 - `compileNestedTemplates(source, ctx)` — handles `html` inside `${...}` expressions
 - `extractTemplateLiteral(source, pos)` — extracts strings + expression sources
 - `extractExpression(source, start)` — handles nested braces, strings, templates
-- `removePurityHtmlImport(code)` — drops `html` from `@purityjs/core` imports after compilation
+- `findHtmlImportEdits(code)` — emits edits to drop `html` from `@purityjs/core` imports
+- `applyEdits(source, edits, lineStarts, id)` — applies sorted edits and emits the v3 sourcemap (`vlqEncode` for VLQ, `buildLineStarts` / `offsetToLineCol` for position math)
 
 ## Testing
 

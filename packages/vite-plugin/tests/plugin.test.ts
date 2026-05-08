@@ -319,3 +319,158 @@ describe('@purityjs/vite-plugin', () => {
     expect(result).not.toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Source maps
+// ---------------------------------------------------------------------------
+
+const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+function vlqDecodeLine(s: string): number[][] {
+  // Decode one ';'-delimited line of v3 mappings into an array of segments,
+  // where each segment is the array of signed integers from a VLQ run.
+  const segs: number[][] = [];
+  for (const segStr of s.split(',')) {
+    if (!segStr) continue;
+    const seg: number[] = [];
+    let v = 0;
+    let shift = 0;
+    for (let i = 0; i < segStr.length; i++) {
+      const c = BASE64.indexOf(segStr[i]);
+      const cont = c & 0x20;
+      v |= (c & 0x1f) << shift;
+      if (cont) {
+        shift += 5;
+        continue;
+      }
+      const sign = v & 1;
+      const n = v >>> 1;
+      seg.push(sign ? -n : n);
+      v = 0;
+      shift = 0;
+    }
+    segs.push(seg);
+  }
+  return segs;
+}
+
+describe('@purityjs/vite-plugin source maps', () => {
+  const plugin = purity();
+
+  it('returns a v3 source map alongside compiled code', () => {
+    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>Hi</div>\`;`;
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+    expect(result!.map).toBeDefined();
+    const map = result!.map!;
+    expect(map.version).toBe(3);
+    expect(map.sources).toEqual(['app.ts']);
+    expect(map.sourcesContent).toEqual([code]);
+    expect(map.names).toEqual([]);
+    expect(typeof map.mappings).toBe('string');
+    expect(map.mappings.length).toBeGreaterThan(0);
+  });
+
+  it('emits one mapping line per output line', () => {
+    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>Hi</div>\`;`;
+    const result = plugin.transform(code, 'app.ts')!;
+    // Number of ';' separators = number of newlines in compiled output.
+    const newlineCount = (result.code.match(/\n/g) ?? []).length;
+    const semiCount = (result.map!.mappings.match(/;/g) ?? []).length;
+    expect(semiCount).toBe(newlineCount);
+  });
+
+  it('maps compiled-template lines back to the original html`` line', () => {
+    // Original line 1 (0-indexed): `const el = html\`<div>Hi</div>\`;`
+    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>Hi</div>\`;`;
+    const result = plugin.transform(code, 'app.ts')!;
+    // Find the output line that contains the compiled call.
+    const outLines = result.code.split('\n');
+    const compiledLineIdx = outLines.findIndex((l) => l.includes('__purity_tpl_0(['));
+    expect(compiledLineIdx).toBeGreaterThanOrEqual(0);
+
+    // Decode the mapping to verify that line points back to source line 1
+    // (the line where the html`` lives).
+    const lines = result.map!.mappings.split(';');
+    const segs = vlqDecodeLine(lines[compiledLineIdx]);
+    expect(segs.length).toBeGreaterThan(0);
+    // First segment of a line: [genCol, srcIdx, srcLine, srcCol] — but
+    // srcLine/srcCol are *deltas* from the running totals across the whole
+    // mappings string, so re-walk from the top.
+    let srcLine = 0;
+    let srcCol = 0;
+    for (let li = 0; li <= compiledLineIdx; li++) {
+      const ls = vlqDecodeLine(lines[li]);
+      for (const seg of ls) {
+        srcLine += seg[2] ?? 0;
+        srcCol += seg[3] ?? 0;
+      }
+      if (li < compiledLineIdx) {
+        // Reset deltas tracker — segments encode deltas from prev segment
+        // *across* the whole map, but we already walked them. Continue.
+      }
+    }
+    // After consuming through `compiledLineIdx`, srcLine should be the line
+    // of the html`` template (line index 1 in the source).
+    expect(srcLine).toBe(1);
+  });
+
+  it('emits a non-empty mapping when only edits are import rewrites + insertion', () => {
+    const code = `import { html } from '@purityjs/core';\nconst el = html\`<p>x</p>\`;`;
+    const result = plugin.transform(code, 'app.ts')!;
+    expect(result.map!.mappings.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Compile error reporting
+// ---------------------------------------------------------------------------
+
+describe('@purityjs/vite-plugin compile errors', () => {
+  const plugin = purity();
+
+  it('warns with file:line:col when a template fails to compile, leaving source as-is', () => {
+    // `<my:component>` parses but fails the codegen SAFE_NAME check.
+    const code = `import { html } from '@purityjs/core';\nconst el = html\`<my:component>x</my:component>\`;`;
+    const warns: string[] = [];
+    const orig = console.warn;
+    console.warn = (msg: any) => warns.push(String(msg));
+    try {
+      const result = plugin.transform(code, 'app.ts');
+      // No html`` was successfully compiled, so the plugin returns null.
+      expect(result).toBeNull();
+    } finally {
+      console.warn = orig;
+    }
+    expect(warns.length).toBe(1);
+    expect(warns[0]).toContain('app.ts:2:');
+    expect(warns[0]).toContain('failed to compile html``');
+    expect(warns[0]).toContain('Invalid');
+  });
+
+  it('uses plugin context warn() when available', () => {
+    const code = `import { html } from '@purityjs/core';\nconst el = html\`<my:component>x</my:component>\`;\nconst ok = html\`<p>fine</p>\`;`;
+    const ctxWarns: string[] = [];
+    const ctx = { warn: (msg: string) => ctxWarns.push(msg) };
+    const result = plugin.transform.call(ctx, code, 'app.ts');
+    // The valid template still compiles, so the plugin returns a result.
+    expect(result).not.toBeNull();
+    expect(ctxWarns.length).toBe(1);
+    expect(ctxWarns[0]).toContain('app.ts:2:');
+  });
+
+  it('still compiles other templates in the same file when one fails', () => {
+    const code = `import { html } from '@purityjs/core';\nconst bad = html\`<my:component>x</my:component>\`;\nconst ok = html\`<p>good</p>\`;`;
+    const orig = console.warn;
+    console.warn = () => {};
+    try {
+      const result = plugin.transform(code, 'app.ts');
+      expect(result).not.toBeNull();
+      expect(result!.code).toContain('createElement');
+      // The failing template is preserved unchanged in the output.
+      expect(result!.code).toContain('html`<my:component>');
+    } finally {
+      console.warn = orig;
+    }
+  });
+});

@@ -473,4 +473,62 @@ describe('@purityjs/vite-plugin compile errors', () => {
       console.warn = orig;
     }
   });
+
+  it('preserves the `html` import when a top-level template fails', () => {
+    // The failed template stays as runtime html`` and still needs the import.
+    const code = `import { html } from '@purityjs/core';\nconst bad = html\`<my:component>x</my:component>\`;\nconst ok = html\`<p>good</p>\`;`;
+    const orig = console.warn;
+    console.warn = () => {};
+    try {
+      const result = plugin.transform(code, 'app.ts')!;
+      // Both the original `html` import (kept because of the failure) and the
+      // injected watch import should reference @purityjs/core.
+      const purityImports = result.code.match(
+        /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core['"]/g,
+      )!;
+      expect(purityImports.some((s) => /\bhtml\b/.test(s))).toBe(true);
+      expect(purityImports.some((s) => s.includes('__purity_w__'))).toBe(true);
+    } finally {
+      console.warn = orig;
+    }
+  });
+
+  it('preserves the `html` import when a nested template fails', () => {
+    // Outer template compiles, but the inner html`` inside the expression
+    // fails its codegen check and is left as runtime code.
+    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>\${ok ? html\`<my:component/>\` : ""}</div>\`;`;
+    const orig = console.warn;
+    console.warn = () => {};
+    try {
+      const result = plugin.transform(code, 'app.ts')!;
+      // The outer template did compile (at least one createElement call).
+      expect(result.code).toContain('createElement');
+      // The inner failure leaves a runtime html`` in the output…
+      expect(result.code).toContain('html`<my:component/>');
+      // …so the html import must remain.
+      const purityImports = result.code.match(
+        /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core['"]/g,
+      )!;
+      expect(purityImports.some((s) => /\bhtml\b/.test(s))).toBe(true);
+    } finally {
+      console.warn = orig;
+    }
+  });
+
+  it('warning includes both the line and the column of the failing template', () => {
+    // 4-space indent puts the html`` at column 18 (1-based) on line 2.
+    const code = `import { html } from '@purityjs/core';\n    const bad = html\`<my:component/>\`;`;
+    const warns: string[] = [];
+    const orig = console.warn;
+    console.warn = (msg: any) => warns.push(String(msg));
+    try {
+      plugin.transform(code, 'app.ts');
+    } finally {
+      console.warn = orig;
+    }
+    expect(warns.length).toBe(1);
+    // line 2, column where html`` starts.
+    const expectedCol = '    const bad = '.length + 1; // 1-based
+    expect(warns[0]).toContain(`app.ts:2:${expectedCol}`);
+  });
 });

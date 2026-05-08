@@ -24,7 +24,7 @@ src/
 ## Key Functions
 
 - `purity(options?)` — Vite plugin factory, returns { name, enforce, transform }
-- `compileTemplates(source, id)` — collects `Edit[]` for each html``, hoist insert, and `html` import strip; defers all writes to `applyEdits`
+- `compileTemplates(source, id)` — collects `Edit[]` for each html``, hoist insert, and `html`import strip; defers all writes to`applyEdits`
 - `compileNestedTemplates(source, ctx)` — handles `html` inside `${...}` expressions
 - `extractTemplateLiteral(source, pos)` — extracts strings + expression sources
 - `extractExpression(source, start)` — handles nested braces, strings, templates

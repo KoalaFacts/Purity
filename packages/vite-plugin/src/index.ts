@@ -107,6 +107,10 @@ interface CompileResult {
 interface CompileContext {
   hoists: string[];
   nextTplId: number;
+  // Flipped on any compile failure (top-level OR nested). When true, we
+  // must NOT strip the `html` import — the failed template stays in the
+  // output and references it at runtime.
+  failed: boolean;
 }
 
 interface Edit {
@@ -166,6 +170,7 @@ function compileNestedTemplates(source: string, ctx: CompileContext): string {
       parts.push(`${tplVar}([${compiledExprs.join(', ')}], __purity_w__)`);
       changed = true;
     } catch {
+      ctx.failed = true;
       parts.push(source.slice(idx, extracted.end));
     }
     pos = extracted.end;
@@ -175,7 +180,7 @@ function compileNestedTemplates(source: string, ctx: CompileContext): string {
 }
 
 function compileTemplates(source: string, id: string): CompileResult {
-  const ctx: CompileContext = { hoists: [], nextTplId: 0 };
+  const ctx: CompileContext = { hoists: [], nextTplId: 0, failed: false };
   const edits: Edit[] = [];
   const warnings: string[] = [];
   const lineStarts = buildLineStarts(source);
@@ -230,6 +235,7 @@ function compileTemplates(source: string, id: string): CompileResult {
         out: `${tplVar}([${compiledExprs.join(', ')}], __purity_w__)`,
       });
     } catch (err) {
+      ctx.failed = true;
       const { line, column } = offsetToLineCol(lineStarts, idx);
       const msg = err instanceof Error ? err.message : String(err);
       warnings.push(
@@ -254,8 +260,11 @@ function compileTemplates(source: string, id: string): CompileResult {
   const insertPos = insertAt === -1 ? 0 : insertAt;
   edits.push({ start: insertPos, end: insertPos, out: watchImport + hoistsBlock });
 
-  // Removing `html` from `@purityjs/core` import statements.
-  for (const e of findHtmlImportEdits(source)) edits.push(e);
+  // Removing `html` from `@purityjs/core` import statements — but ONLY when
+  // every template compiled. If any failed (top-level or nested), the failed
+  // `html\`\`` is left in the output as runtime code and still needs the
+  // import to resolve.
+  if (!ctx.failed) edits.push(...findHtmlImportEdits(source));
 
   // Sort: by start ASC, then by length ASC (insertions before replacements at
   // the same offset). Stable order for same-start same-length is fine.

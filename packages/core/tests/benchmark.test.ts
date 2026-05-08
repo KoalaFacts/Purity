@@ -307,8 +307,11 @@ describe('5. template rendering', () => {
     console.log(
       `    → runtime: ${(runtimeElapsed / 1000).toFixed(3)}ms/el | AOT: ${(aotElapsed / 1000).toFixed(3)}ms/el`,
     );
-    // AOT should be no slower than runtime path (runtime adds WeakMap.get + indirection)
-    expect(aotElapsed).toBeLessThan(runtimeElapsed * 1.5);
+    // AOT should be no slower than runtime path (runtime adds WeakMap.get + indirection).
+    // Slack 2.5x because shared-CI runners + jsdom + cold-JIT make the
+    // delta noisy; the regression we'd catch (AOT 5–10x slower than
+    // runtime) still trips this comfortably.
+    expect(aotElapsed).toBeLessThan(runtimeElapsed * 2.5);
   });
 
   it('100 with reactive + event bindings', () => {

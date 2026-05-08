@@ -153,9 +153,9 @@ function compileNestedTemplates(source: string, ctx: CompileContext): string {
     parts.push(source.slice(pos, idx));
     const extracted = extractTemplateLiteral(source, idx + 4);
     if (!extracted) {
-      parts.push('html`');
-      pos = idx + 5;
-      continue;
+      // Re-raise to the outer compileTemplates catch — leaving 'html`' in the
+      // expression source would emit invalid JS in the compiled call.
+      throw new Error('unterminated nested html`` template');
     }
 
     try {
@@ -206,6 +206,12 @@ function compileTemplates(source: string, id: string): CompileResult {
 
     const extracted = extractTemplateLiteral(source, idx + 4);
     if (!extracted) {
+      // Unterminated template — preserve the html import so the runtime
+      // tagged-template path still has something to call. Surface as a
+      // warning so the user knows why no AOT happened here.
+      ctx.failed = true;
+      const { line, column } = offsetToLineCol(lineStarts, idx);
+      warnings.push(`[purity] ${id}:${line + 1}:${column + 1} — unterminated html\`\` template`);
       pos = idx + 5;
       continue;
     }

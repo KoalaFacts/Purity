@@ -515,6 +515,65 @@ describe('@purityjs/vite-plugin compile errors', () => {
     }
   });
 
+  it('warns and preserves the `html` import on a top-level unterminated template', () => {
+    // Valid template first so the unterminated one truly has no closing
+    // backtick (otherwise the extractor would consume the next `` ` `` as
+    // a closer). The valid template should still AOT-compile, and the
+    // html import must stay so the unterminated literal still has a
+    // runtime tag to call.
+    const code = `import { html } from '@purityjs/core';\nconst ok = html\`<p>good</p>\`;\nconst bad = html\`<div>broken`;
+    const warns: string[] = [];
+    const orig = console.warn;
+    console.warn = (msg: any) => warns.push(String(msg));
+    try {
+      const result = plugin.transform(code, 'app.ts')!;
+      expect(result).not.toBeNull();
+      // Valid template compiled.
+      expect(result.code).toContain('createElement');
+      // Unterminated template left as runtime html``.
+      expect(result.code).toContain('html`<div>broken');
+      // html import preserved alongside the watch import.
+      const purityImports = result.code.match(
+        /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core['"]/g,
+      )!;
+      expect(purityImports.some((s) => /\bhtml\b/.test(s))).toBe(true);
+      expect(purityImports.some((s) => s.includes('__purity_w__'))).toBe(true);
+      // Warning surfaced with file:line:col.
+      expect(warns.some((w) => w.includes('app.ts:3:') && w.includes('unterminated'))).toBe(true);
+    } finally {
+      console.warn = orig;
+    }
+  });
+
+  it('reports a nested unterminated template via the outer template warning', () => {
+    // Inner html`` is unterminated. Without the fix, the outer template
+    // emits `__purity_tpl_0([html\`<broken], __purity_w__)` which is
+    // invalid JS. With the fix, compileNestedTemplates throws, the outer
+    // catch fires, we warn at the OUTER template's location, and leave
+    // the outer html`` in source as runtime code.
+    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>\${html\`<broken}</div>\`;`;
+    const warns: string[] = [];
+    const orig = console.warn;
+    console.warn = (msg: any) => warns.push(String(msg));
+    try {
+      const result = plugin.transform(code, 'app.ts');
+      // Either null (no edits) or a result with the html`` left intact.
+      // Either way: no crash, a warning, and no `[html\`<broken` invalid JS.
+      if (result) {
+        expect(result.code).not.toContain('([html`<broken');
+        const purityImports = result.code.match(
+          /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core['"]/g,
+        );
+        if (purityImports) {
+          expect(purityImports.some((s) => /\bhtml\b/.test(s))).toBe(true);
+        }
+      }
+      expect(warns.length).toBeGreaterThan(0);
+    } finally {
+      console.warn = orig;
+    }
+  });
+
   it('warning includes both the line and the column of the failing template', () => {
     // 4-space indent puts the html`` at column 18 (1-based) on line 2.
     const code = `import { html } from '@purityjs/core';\n    const bad = html\`<my:component/>\`;`;

@@ -574,6 +574,45 @@ describe('@purityjs/vite-plugin compile errors', () => {
     }
   });
 
+  it('is idempotent — re-transforming compiled output is a fixed point', () => {
+    const code = `import { html } from '@purityjs/core';\nconst el = html\`<p>x</p>\`;`;
+    const first = plugin.transform(code, 'app.ts')!;
+    expect(first).not.toBeNull();
+    // Compiled output has no `html\`\``, so a second transform must skip
+    // (returns null) — proving no double-rewrite of hoists or imports.
+    const second = plugin.transform(first.code, 'app.ts');
+    expect(second).toBeNull();
+  });
+
+  it('handles CRLF line endings without breaking the source map', () => {
+    const code = `import { html } from '@purityjs/core';\r\nconst el = html\`<p>x</p>\`;\r\n`;
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+    expect(result!.code).toContain('createElement');
+    // Mapping count should match output newline count regardless of CRLF.
+    const newlines = (result!.code.match(/\n/g) ?? []).length;
+    const semis = (result!.map!.mappings.match(/;/g) ?? []).length;
+    expect(semis).toBe(newlines);
+  });
+
+  it('handles a file with no trailing newline', () => {
+    const code = `import { html } from '@purityjs/core';\nconst el = html\`<p>x</p>\`;`;
+    expect(code.endsWith('\n')).toBe(false);
+    const result = plugin.transform(code, 'app.ts')!;
+    expect(result).not.toBeNull();
+    expect(result.code).toContain('createElement');
+  });
+
+  it('handles non-ASCII characters in template content', () => {
+    // Emoji takes two UTF-16 code units in JS strings; column math should
+    // still be consistent between source and map.
+    const code = `import { html } from '@purityjs/core';\nconst el = html\`<p>héllo 🌟</p>\`;`;
+    const result = plugin.transform(code, 'app.ts')!;
+    expect(result).not.toBeNull();
+    expect(result.code).toContain('createElement');
+    expect(result.map!.sourcesContent[0]).toBe(code);
+  });
+
   it('warning includes both the line and the column of the failing template', () => {
     // 4-space indent puts the html`` at column 18 (1-based) on line 2.
     const code = `import { html } from '@purityjs/core';\n    const bad = html\`<my:component/>\`;`;

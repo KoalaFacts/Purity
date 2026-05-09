@@ -9,7 +9,7 @@
 //   export default defineConfig({ plugins: [purity()] });
 // ---------------------------------------------------------------------------
 
-import { generate, parse } from '@purityjs/core/compiler';
+import { generate, generateSSR, parse } from '@purityjs/core/compiler';
 
 /**
  * Configuration options for the Purity Vite plugin.
@@ -64,18 +64,19 @@ export function purity(options?: PurityPluginOptions) {
     name: 'purity',
     enforce: 'pre' as const,
 
-    transform(this: any, code: string, id: string) {
+    transform(this: any, code: string, id: string, transformOpts?: { ssr?: boolean }) {
       if (!extensions.some((ext) => id.endsWith(ext))) return null;
       // Skip framework internals — only compile user code
       if (
         id.includes('@purityjs/') ||
         id.includes('packages/core/') ||
-        id.includes('packages/vite-plugin/')
+        id.includes('packages/vite-plugin/') ||
+        id.includes('packages/ssr/')
       )
         return null;
       if (!code.includes('html`')) return null;
 
-      const result = compileTemplates(code, id);
+      const result = compileTemplates(code, id, transformOpts?.ssr === true);
 
       // Surface compile failures: prefer the Rollup/Vite plugin context
       // (yields a proper warning in the dev overlay + build log) and fall
@@ -111,6 +112,10 @@ interface CompileContext {
   // must NOT strip the `html` import — the failed template stays in the
   // output and references it at runtime.
   failed: boolean;
+  // True for the SSR build mode: emit string-builder factories that take
+  // `__purity_h__` (ssrHelpers) instead of DOM-builders that take
+  // `__purity_w__` (the watch fn).
+  ssr: boolean;
 }
 
 interface Edit {
@@ -128,6 +133,11 @@ function compileNestedTemplates(source: string, ctx: CompileContext): string {
   const parts: string[] = [];
   let pos = 0;
   let changed = false;
+  // Pick codegen + runtime call shape based on the build mode. SSR templates
+  // emit string-builder factories `(_v, _h) => SSRHtml`; client templates
+  // emit DOM-builder factories `(_v, _w) => Node`.
+  const genFn = ctx.ssr ? generateSSR : generate;
+  const runtimeArg = ctx.ssr ? '__purity_h__' : '__purity_w__';
 
   while (pos < source.length) {
     const idx = source.indexOf('html`', pos);
@@ -161,13 +171,13 @@ function compileNestedTemplates(source: string, ctx: CompileContext): string {
     try {
       const { strings, exprSources } = extracted;
       const ast = parse(strings);
-      const fnBody = generate(ast);
+      const fnBody = genFn(ast);
       const tplVar = `__purity_tpl_${ctx.nextTplId++}`;
       ctx.hoists.push(`const ${tplVar} = ${fnBody};`);
       const compiledExprs = exprSources.map((expr) =>
         expr.includes('html`') ? compileNestedTemplates(expr, ctx) : expr,
       );
-      parts.push(`${tplVar}([${compiledExprs.join(', ')}], __purity_w__)`);
+      parts.push(`${tplVar}([${compiledExprs.join(', ')}], ${runtimeArg})`);
       changed = true;
     } catch {
       ctx.failed = true;
@@ -179,11 +189,13 @@ function compileNestedTemplates(source: string, ctx: CompileContext): string {
   return changed ? parts.join('') : source;
 }
 
-function compileTemplates(source: string, id: string): CompileResult {
-  const ctx: CompileContext = { hoists: [], nextTplId: 0, failed: false };
+function compileTemplates(source: string, id: string, ssr: boolean): CompileResult {
+  const ctx: CompileContext = { hoists: [], nextTplId: 0, failed: false, ssr };
   const edits: Edit[] = [];
   const warnings: string[] = [];
   const lineStarts = buildLineStarts(source);
+  const genFn = ssr ? generateSSR : generate;
+  const runtimeArg = ssr ? '__purity_h__' : '__purity_w__';
   let pos = 0;
 
   while (pos < source.length) {
@@ -219,7 +231,7 @@ function compileTemplates(source: string, id: string): CompileResult {
     try {
       const { strings, exprSources } = extracted;
       const ast = parse(strings);
-      const fnBody = generate(ast);
+      const fnBody = genFn(ast);
 
       // Hoist the compiled-template factory to module scope so the IIFE
       // (and its document.createElement('template') / innerHTML parse) only
@@ -238,7 +250,7 @@ function compileTemplates(source: string, id: string): CompileResult {
       edits.push({
         start: idx,
         end: extracted.end,
-        out: `${tplVar}([${compiledExprs.join(', ')}], __purity_w__)`,
+        out: `${tplVar}([${compiledExprs.join(', ')}], ${runtimeArg})`,
       });
     } catch (err) {
       ctx.failed = true;
@@ -256,15 +268,17 @@ function compileTemplates(source: string, id: string): CompileResult {
     return { changed: false, code: source, map: null, warnings };
   }
 
-  // Watch import + hoists are inserted at module top, after existing imports.
+  // Runtime import + hoists are inserted at module top, after existing imports.
   // Modeled as a zero-length insertion edit so the source-map builder can
   // track it alongside the html`` replacements.
-  const watchImport = `import { watch as __purity_w__ } from '@purityjs/core';\n`;
+  const runtimeImport = ssr
+    ? `import { ssrHelpers as __purity_h__ } from '@purityjs/core/compiler';\nimport '@purityjs/ssr';\n`
+    : `import { watch as __purity_w__ } from '@purityjs/core';\n`;
   /* v8 ignore next -- edits.length > 0 implies at least one hoist was pushed */
   const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
   const insertAt = findLastImportEnd(source);
   const insertPos = insertAt === -1 ? 0 : insertAt;
-  edits.push({ start: insertPos, end: insertPos, out: watchImport + hoistsBlock });
+  edits.push({ start: insertPos, end: insertPos, out: runtimeImport + hoistsBlock });
 
   // Removing `html` from `@purityjs/core` import statements — but ONLY when
   // every template compiled. If any failed (top-level or nested), the failed
@@ -325,7 +339,11 @@ function findHtmlImportEdits(code: string): Edit[] {
       end++;
     if (end < code.length && code[end] === ';') end++;
 
-    if (moduleName !== '@purityjs/core') {
+    // Strip `html` from imports of either purity entry point — users may have
+    // `import { html } from '@purityjs/core'` (client app source) or
+    // `import { html } from '@purityjs/ssr'` (a pre-existing SSR-only file).
+    // Both are dead after AOT replaces the call sites.
+    if (moduleName !== '@purityjs/core' && moduleName !== '@purityjs/ssr') {
       pos = end;
       continue;
     }
@@ -339,7 +357,7 @@ function findHtmlImportEdits(code: string): Edit[] {
     edits.push({
       start: idx,
       end,
-      out: cleaned ? `import { ${cleaned} } from '@purityjs/core';` : '',
+      out: cleaned ? `import { ${cleaned} } from '${moduleName}';` : '',
     });
     pos = end;
   }

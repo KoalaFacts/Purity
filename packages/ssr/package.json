@@ -1,0 +1,43 @@
+{
+  "name": "@purityjs/ssr",
+  "version": "0.1.0",
+  "description": "Server-side rendering for Purity — renderToString + SSR html`` tag",
+  "keywords": [
+    "declarative-shadow-dom",
+    "hydration",
+    "purity",
+    "server-side-rendering",
+    "ssr"
+  ],
+  "license": "MIT",
+  "author": "KoalaFacts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KoalaFacts/Purity",
+    "directory": "packages/ssr"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vite build && tsc --emitDeclarationOnly",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@purityjs/core": "^0.1.0"
+  }
+}

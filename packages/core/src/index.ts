@@ -5,16 +5,22 @@
 // Template rendering (JIT compiled)
 export { html } from './compiler/compile.ts';
 export type { ComponentFn, MountResult } from './component.ts';
-// Lifecycle (3 hooks + error)
-export { mount, onDestroy, onDispose, onError, onMount } from './component.ts';
+// Lifecycle (3 hooks + error) + hydrate
+export { hydrate, mount, onDestroy, onDispose, onError, onMount } from './component.ts';
 // Control flow
-export { each, list, match, when } from './control.ts';
+export { each, eachSSR, list, listSSR, match, matchSSR, when, whenSSR } from './control.ts';
 export type { DebouncedAccessor } from './debounced.ts';
 // Debounced derived signal
 export { debounced } from './debounced.ts';
 export type { SlotAccessor } from './elements.ts';
 // Components, slots, teleport
-export { component, slot, teleport } from './elements.ts';
+export {
+  _getRegisteredComponent,
+  _renderComponentSSR,
+  component,
+  slot,
+  teleport,
+} from './elements.ts';
 export type {
   LazyResourceAccessor,
   ResourceAccessor,
@@ -25,6 +31,16 @@ export type {
 } from './resource.ts';
 // Async resources (eager + lazy/imperative)
 export { lazyResource, resource } from './resource.ts';
+// SSR coordination (used by @purityjs/ssr; clearly internal — exposed for
+// the package boundary, not for end users)
+export type { SSRRenderContext } from './ssr-context.ts';
+export {
+  clearHydrationCache,
+  getSSRRenderContext,
+  popSSRRenderContext,
+  primeHydrationCache,
+  pushSSRRenderContext,
+} from './ssr-context.ts';
 export type { ComputedAccessor, Dispose, StateAccessor, WatchSource } from './signals.ts';
 // Reactive primitives
 export { batch, compute, state, watch } from './signals.ts';

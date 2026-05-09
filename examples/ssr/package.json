@@ -1,0 +1,21 @@
+{
+  "name": "purity-ssr-demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "NODE_OPTIONS='--conditions=development' node --experimental-strip-types server.ts",
+    "build": "NODE_OPTIONS='--conditions=development' npm run build:client && npm run build:server",
+    "build:client": "NODE_OPTIONS='--conditions=development' vite build --outDir dist/client",
+    "build:server": "NODE_OPTIONS='--conditions=development' vite build --ssr src/entry.server.ts --outDir dist/server",
+    "preview": "NODE_OPTIONS='--conditions=development' NODE_ENV=production node --experimental-strip-types server.ts"
+  },
+  "dependencies": {
+    "@purityjs/core": "*",
+    "@purityjs/ssr": "*",
+    "@purityjs/vite-plugin": "*"
+  },
+  "devDependencies": {
+    "vite": "^8.0.10"
+  }
+}

@@ -20,11 +20,12 @@ accept. Numbered sequentially.
 
 ## Index
 
-| #                              | Title                | Status   |
-| ------------------------------ | -------------------- | -------- |
-| [0001](./0001-ssr-strategy.md) | SSR strategy for 1.0 | Proposed |
-| [0002](./0002-devtools.md)     | Devtools approach    | Proposed |
-| [0003](./0003-path-to-1.0.md)  | Path to 1.0          | Proposed |
+| #                              | Title                              | Status             |
+| ------------------------------ | ---------------------------------- | ------------------ |
+| [0001](./0001-ssr-strategy.md) | SSR strategy for 1.0               | Superseded by 0004 |
+| [0002](./0002-devtools.md)     | Devtools approach                  | Proposed           |
+| [0003](./0003-path-to-1.0.md)  | Path to 1.0                        | Proposed           |
+| [0004](./0004-ssr-mvp.md)      | SSR MVP via Declarative Shadow DOM | Accepted           |
 
 ## Template
 

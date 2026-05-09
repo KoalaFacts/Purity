@@ -791,3 +791,232 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
       return { setup: '', reactive: '' };
   }
 }
+
+// ---------------------------------------------------------------------------
+// generateSSR(ast)
+//
+// Emits a factory `function (_v, _h) { var _o = ''; ...; return _o; }` that
+// walks the same AST as generate() but produces an HTML string instead of DOM
+// nodes. Used by @purityjs/ssr's renderToString.
+//
+// _h is the helpers bundle from ssr-runtime.ts (esc, attr, toHtml, toAttr).
+// Branded `__purity_ssr_html__` results from nested templates and SSR
+// control-flow helpers (eachSSR / whenSSR / matchSSR) concatenate raw via
+// _h.toHtml.
+//
+// Reactive expression slots are wrapped in HYDRATION_OPEN / HYDRATION_CLOSE
+// comment markers so the PR 4 hydrator can locate binding sites without
+// path drift from HTML-parser text coalescing.
+// ---------------------------------------------------------------------------
+
+export function generateSSR(ast: FragmentNode): string {
+  ast = condenseWhitespace(ast) as FragmentNode;
+  const ctx: SSRGenCtx = { parts: [], counter: 0, out: '_o' };
+  // Static-prefix optimization: if the entire tree is static AND contains no
+  // hyphenated tags (which require runtime component dispatch), emit a closure
+  // returning the prebuilt string. Avoids per-call work and skips the _v / _h
+  // arguments entirely.
+  if (!hasDynamic(ast) && !hasCustomElement(ast)) {
+    const html = buildStaticHtml(ast);
+    // `html` is built by buildStaticHtml which assertSafeName-validates
+    // tag/attr names and escapeHtml/escapeAttr-escapes text/attribute literals
+    // from the parser. JSON.stringify wraps the result in a valid JS string
+    // literal — the only interpolated value below. See "Codegen safety
+    // contract" near SAFE_NAME at the top.
+    // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
+    return [
+      '(function(){var _s={__purity_ssr_html__:',
+      JSON.stringify(html),
+      '};return function(){return _s;};})()',
+    ].join('');
+  }
+  buildSSRBody(ast, ctx);
+  // Every part appended to ctx.parts is either (a) a JSON.stringify'd string
+  // literal, (b) a regex-validated identifier, or (c) a framework-internal
+  // variable reference (`_v[N]`, `_av${id}`). See "Codegen safety contract"
+  // near SAFE_NAME at the top.
+  // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
+  return ["function(_v,_h){var _o='';", ctx.parts.join(''), 'return _h.mark(_o);}'].join('');
+}
+
+// True if any element node in the tree has a hyphenated tag. Custom elements
+// with no other dynamic content still need the runtime _h.element dispatch
+// because the component registry only populates at runtime.
+function hasCustomElement(node: ASTNode): boolean {
+  if (node.type === 'element') {
+    if (node.tag.includes('-')) return true;
+    return node.children.some(hasCustomElement);
+  }
+  if (node.type === 'fragment') return node.children.some(hasCustomElement);
+  return false;
+}
+
+export function generateSSRModule(ast: FragmentNode): string {
+  return `export default ${generateSSR(ast)}`;
+}
+
+interface SSRGenCtx {
+  parts: string[]; // JS source fragments that mutate the active output var
+  counter: number; // unique-id counter for emitted local variables
+  out: string; // current output variable name (default '_o', changes for slot capture)
+}
+
+// Append a JS literal that adds a static HTML chunk to the active output var.
+// Coalesces with the previous chunk if it also appends a literal to the same
+// output var, keeping output compact.
+function emitLit(ctx: SSRGenCtx, html: string): void {
+  if (html === '') return;
+  const prefix = `${ctx.out}+=`;
+  const last = ctx.parts[ctx.parts.length - 1];
+  if (last && last.startsWith(prefix) && last.endsWith(';')) {
+    const m = last.match(new RegExp(`^${ctx.out}\\+=("(?:[^"\\\\]|\\\\.)*")\\s*;$`));
+    if (m) {
+      const prev = JSON.parse(m[1]);
+      ctx.parts[ctx.parts.length - 1] = `${prefix}${JSON.stringify(prev + html)};`;
+      return;
+    }
+  }
+  ctx.parts.push(`${prefix}${JSON.stringify(html)};`);
+}
+
+function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
+  switch (node.type) {
+    case 'text':
+      emitLit(ctx, escapeHtml(node.value));
+      return;
+
+    case 'comment':
+      emitLit(ctx, `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`);
+      return;
+
+    case 'expression': {
+      // Reactive slot: wrapped in hydration markers so PR 4 can locate it.
+      // _h.toHtml handles signal-accessor calls, branded HTML, arrays, and
+      // primitive escaping in one place.
+      emitLit(ctx, '<!--[-->');
+      ctx.parts.push(`${ctx.out}+=_h.toHtml(_v[${node.index}]);`);
+      emitLit(ctx, '<!--]-->');
+      return;
+    }
+
+    case 'fragment':
+      for (const ch of node.children) buildSSRBody(ch, ctx);
+      return;
+
+    case 'element': {
+      assertSafeName(node.tag, 'tag');
+      // Hyphenated tags route through _h.element, which dispatches to a
+      // registered component (DSD-wrapped output) or falls back to plain
+      // custom-element markup. PR 3 component SSR hangs off this path.
+      if (node.tag.includes('-')) {
+        emitCustomElement(node, ctx);
+        return;
+      }
+      emitLit(ctx, `<${node.tag}`);
+      for (const a of node.attributes) emitSSRAttr(a, ctx);
+      if (VOID.has(node.tag)) {
+        emitLit(ctx, '/>');
+        return;
+      }
+      emitLit(ctx, '>');
+      for (const ch of node.children) buildSSRBody(ch, ctx);
+      emitLit(ctx, `</${node.tag}>`);
+      return;
+    }
+  }
+}
+
+// Custom-element emission: assemble props from non-event attributes, build the
+// child slot HTML into a separate string, and dispatch through _h.element. The
+// helper registers a renderer hook that @purityjs/ssr installs on import.
+function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx): void {
+  const id = ctx.counter++;
+  const attrsVar = `_attrs${id}`;
+  const slotVar = `_slot${id}`;
+
+  // Build attrs object literal — static + dynamic (events skipped server-side).
+  // Static: literal value. Dynamic/prop/reactive-prop/bind: pass the raw value
+  // (function or scalar); valueToAttr / the host renderer handles it.
+  ctx.parts.push(`var ${attrsVar}={};`);
+  for (const a of node.attributes) {
+    if (a.kind === 'static') {
+      ctx.parts.push(`${attrsVar}[${JSON.stringify(a.name)}]=${JSON.stringify(a.value)};`);
+      continue;
+    }
+    if (a.kind === 'event') continue;
+    assertSafeName(a.name, 'attribute');
+    if (a.kind === 'bool') {
+      // Boolean attribute: store the truthy/falsy raw value; the renderer
+      // calls valueToAttr which collapses null/undefined/false to omitted
+      // and `true` to bare-name form.
+      ctx.parts.push(`${attrsVar}[${JSON.stringify(a.name)}]=_v[${a.index}];`);
+    } else {
+      ctx.parts.push(`${attrsVar}[${JSON.stringify(a.name)}]=_v[${a.index}];`);
+    }
+  }
+
+  // Capture children into a slot string. Temporarily swap the active output
+  // variable so all nested emissions append to slotVar; restore afterward.
+  ctx.parts.push(`var ${slotVar}='';`);
+  const prevOut = ctx.out;
+  ctx.out = slotVar;
+  for (const ch of node.children) buildSSRBody(ch, ctx);
+  ctx.out = prevOut;
+
+  ctx.parts.push(`${ctx.out}+=_h.element(${JSON.stringify(node.tag)},${attrsVar},${slotVar});`);
+}
+
+function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx): void {
+  if (a.kind === 'static') {
+    if (a.value) {
+      emitLit(ctx, ` ${a.name}="${escapeAttr(a.value)}"`);
+    } else {
+      emitLit(ctx, ` ${a.name}`);
+    }
+    return;
+  }
+
+  assertSafeName(a.name, 'attribute');
+  const id = ctx.counter++;
+  const av = `_av${id}`;
+  const val = `_v[${a.index}]`;
+  // Pre-escape the leading space + name once at codegen time. The trailing
+  // `="..."` is appended at runtime so we can omit the attribute when the
+  // value resolves to null/false.
+  const namePrefix = JSON.stringify(` ${a.name}`);
+
+  switch (a.kind) {
+    case 'event':
+      // Server has no listeners — skip entirely. The expression itself is
+      // never evaluated, matching the client behavior of installing it via
+      // addEventListener at hydration time (PR 4).
+      return;
+
+    case 'dynamic':
+    case 'prop':
+    case 'reactive-prop':
+    case 'bind': {
+      // All four read the current value (calling the accessor if it's a
+      // function) and emit it as a quoted attribute. `bind` skips the
+      // listener install — that's a hydration-time concern.
+      ctx.parts.push(
+        `var ${av}=_h.toAttr(${val});`,
+        `if(${av}!==null)_o+=${namePrefix}+(${av}===''?'':'="'+${av}+'"');`,
+      );
+      return;
+    }
+
+    case 'bool': {
+      // Boolean attribute: present (no value) when truthy, absent otherwise.
+      ctx.parts.push(
+        `var ${av}=${val};if(typeof ${av}==='function')${av}=${av}();`,
+        `if(${av})_o+=${namePrefix};`,
+      );
+      return;
+    }
+
+    /* v8 ignore next 2 -- defensive fallthrough; parser only emits known kinds */
+    default:
+      return;
+  }
+}

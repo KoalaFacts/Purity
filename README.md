@@ -14,13 +14,15 @@ A minimal web framework with TC39-Signals-inspired reactivity and templates that
 - **Zero runtime dependencies**
 - **Web Components by design** — `component()` registers a Custom Element with Shadow DOM (see tradeoffs in the package README)
 - **Race-safe async** — first-class `resource()` with built-in cancellation, retry, polling, debouncing, and SWR by default
+- **Server-side rendering** — `renderToString` + `hydrate()` ship with Declarative Shadow DOM and resource-aware SSR via the `@purityjs/ssr` package
 
 > The signals implementation is a custom push-pull graph inspired by the [TC39 Signals proposal](https://github.com/tc39/proposal-signals) (Stage 1). It is _not_ a polyfill or a binding to a native engine API — no engine ships TC39 Signals yet.
 
 ## Quick Start
 
 ```bash
-npx @purityjs/cli my-app
+npx @purityjs/cli my-app          # client-only
+npx @purityjs/cli my-app --ssr    # SSR + hydration
 cd my-app
 npm install
 npm run dev
@@ -28,11 +30,12 @@ npm run dev
 
 ## Packages
 
-| Package                                           | Description                  | Docs                                       |
-| ------------------------------------------------- | ---------------------------- | ------------------------------------------ |
-| [`@purityjs/core`](./packages/core)               | The framework — 21 functions | [README](./packages/core/README.md)        |
-| [`@purityjs/vite-plugin`](./packages/vite-plugin) | AOT template compilation     | [README](./packages/vite-plugin/README.md) |
-| [`@purityjs/cli`](./packages/cli)                 | Project scaffolding          | [README](./packages/cli/README.md)         |
+| Package                                           | Description                                  | Docs                                       |
+| ------------------------------------------------- | -------------------------------------------- | ------------------------------------------ |
+| [`@purityjs/core`](./packages/core)               | The framework — 21 functions                 | [README](./packages/core/README.md)        |
+| [`@purityjs/ssr`](./packages/ssr)                 | `renderToString` + DSD + resource awaiting   | [package](./packages/ssr)                  |
+| [`@purityjs/vite-plugin`](./packages/vite-plugin) | AOT template compilation (client + SSR)      | [README](./packages/vite-plugin/README.md) |
+| [`@purityjs/cli`](./packages/cli)                 | Project scaffolding (`--ssr` flag available) | [README](./packages/cli/README.md)         |
 
 ## At a Glance
 
@@ -98,6 +101,31 @@ Stale requests are aborted automatically when `id` changes or the component
 unmounts. Out-of-order resolutions are dropped via a monotonic run counter.
 Retries honor the abort signal — a dep change cancels mid-backoff.
 
+### Server-side rendering
+
+```ts
+// entry.server.ts
+import { renderToString } from '@purityjs/ssr';
+import { App } from './app.ts';
+
+export const render = (_url: string) => renderToString(App);
+
+// entry.client.ts
+import { hydrate } from '@purityjs/core';
+import { App } from './app.ts';
+
+hydrate(document.getElementById('app')!, App);
+```
+
+The same component code runs on Node and in the browser. Custom elements
+ship as **Declarative Shadow DOM** (`<template shadowrootmode="open">`)
+so the browser parses a real shadow tree before any JS loads. Resources
+created during render are awaited; the resolved values are embedded as a
+JSON payload that `hydrate()` reads to skip the first refetch.
+
+Scaffold with `npx @purityjs/cli my-app --ssr` or see
+[`examples/ssr`](./examples/ssr) for a working setup.
+
 See each package README for full API documentation.
 
 ## How It Compares
@@ -136,11 +164,14 @@ use case in mind for the breaking-change discussions.
 
 Knowing what's missing matters more than what's there. As of `0.1.0`:
 
-- **No SSR / hydration.** Purity is client-rendered only. Full SSR is
-  not currently planned. A static-prerender story is being considered
-  for post-1.0 but is not committed. If you need server-rendered HTML
-  for SEO, social previews, or performance on low-end devices, this
-  framework is not a fit today.
+- **SSR is MVP-quality.** `renderToString` + `hydrate()` ship with
+  Declarative Shadow DOM and resource-aware two-pass rendering, but
+  hydration is currently **lossy**: the SSR DOM is discarded and the
+  component is re-rendered fresh on the client. Matching content
+  produces an invisible flash; mismatches produce a visible jump. The
+  hydration markers (`<!--[--><!--]-->`) are emitted in preparation for
+  a follow-up that preserves the existing DOM. Named / scoped slot SSR
+  and streaming output are not yet implemented.
 - **No router.** Not on the roadmap. Bring your own (the History API
   is straightforward to use directly).
 - **No devtools panel.** Signal-graph inspection happens via

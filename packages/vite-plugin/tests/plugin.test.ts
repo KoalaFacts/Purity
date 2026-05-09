@@ -51,6 +51,24 @@ describe('@purityjs/vite-plugin', () => {
     expect(result.code).toContain("from '@purityjs/core'");
   });
 
+  it('handles multi-line imports without splitting them', () => {
+    const code =
+      "import {\n  html,\n  state,\n  watch,\n} from '@purityjs/core';\n" +
+      "import { foo } from './other.ts';\n" +
+      'const el = html`<p>Test</p>`;';
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+    // The watch import must be inserted AFTER the multi-line import block,
+    // not in the middle of it. Easiest invariant: the rewritten code must
+    // be parseable by re-running the regex for any `import {` open without
+    // an unmatched close before the next `import` keyword.
+    const out = result.code;
+    // The injected line should appear after both original imports.
+    const injected = out.indexOf("import { watch as __purity_w__ } from '@purityjs/core';");
+    expect(injected).toBeGreaterThanOrEqual(0);
+    expect(injected).toBeGreaterThan(out.indexOf("from './other.ts'"));
+  });
+
   it('removes html from imports', () => {
     const code = `import { html, state } from '@purityjs/core';\nconst el = html\`<p>Hi</p>\`;`;
     const result = plugin.transform(code, 'app.ts');

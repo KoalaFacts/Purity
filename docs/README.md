@@ -11,3 +11,7 @@ Long-form guides that don't fit cleanly in a README.
 
 These are pre-1.0 working docs. If something's wrong or missing, please
 open an issue.
+
+## See also
+
+- [Live polling-dashboard demo](https://koalafacts.github.io/Purity/dashboard/) — end-to-end Purity app exercising `resource`, `lazyResource`, `debounced`, retry, polling, and the falsy-source pause pattern. Source under [`examples/dashboard`](../examples/dashboard).

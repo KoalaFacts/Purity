@@ -68,8 +68,17 @@ jobs:
           DATE=$(date +%Y-%m-%d-%H%M%S)
           cp benchmark/benchmark-results.md "benchmark/history/${DATE}.md"
 
-      - name: Generate GitHub Pages site (Purity report app)
-        # Injects benchmark JSON into the Vite-built Purity report app
+      - name: Build dashboard demo
+        # Built before page generation so generate-pages.ts can copy
+        # examples/dashboard/dist → gh-pages/dashboard.
+        run: |
+          npm run build -w packages/core
+          npm run build -w packages/vite-plugin
+          npm run build -w examples/dashboard
+
+      - name: Generate GitHub Pages site (Purity report app + dashboard demo)
+        # Injects benchmark JSON into the Vite-built Purity report app and
+        # copies the dashboard demo build into /dashboard/.
         run: npx tsx benchmark/generate-pages.ts
 
       - name: Upload Pages artifact

@@ -114,9 +114,14 @@ export function resource<T, K>(
     let result: T | Promise<T>;
     loading(true);
     try {
+      // The two overloads union into a callable whose first param TS narrows
+      // to `K & ResourceFetchInfo`; cast at the call site to disambiguate.
       result =
         sourceMemo !== null
-          ? fetcher(key as K, { signal: ac.signal })
+          ? (fetcher as (key: K, info: ResourceFetchInfo) => T | Promise<T>)(
+              key as K,
+              { signal: ac.signal },
+            )
           : (fetcher as (info: ResourceFetchInfo) => T | Promise<T>)({
               signal: ac.signal,
             });

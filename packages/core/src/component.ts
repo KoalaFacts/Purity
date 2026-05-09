@@ -238,12 +238,20 @@ export function mount(component: ComponentFn, container: Element): MountResult {
   if (ctx.mounted) {
     queueMicrotask(() => {
       if (!ctx.mounted) return;
-      for (let i = 0; i < ctx.mounted.length; i++) {
-        try {
-          ctx.mounted[i]();
-        } catch (err) {
-          ctx._handleError(err);
+      // Make the component context active during onMount callbacks so
+      // onDispose() / onError() registered inside them attach to this
+      // component instead of silently no-oping.
+      pushContext(ctx);
+      try {
+        for (let i = 0; i < ctx.mounted.length; i++) {
+          try {
+            ctx.mounted[i]();
+          } catch (err) {
+            ctx._handleError(err);
+          }
         }
+      } finally {
+        popContext();
       }
       ctx.mounted = null;
     });

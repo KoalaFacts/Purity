@@ -2,7 +2,7 @@
 
 ## Overview
 
-Purity is a minimal web framework. 17 functions. 6 kB gzipped. Native TC39 Signals. No virtual DOM.
+Purity is a minimal web framework. 21 functions. ~5.8 kB gzipped. TC39-Signals-inspired reactivity. No virtual DOM.
 
 ## Setup
 
@@ -130,7 +130,7 @@ mount(() => html`<p-todo></p-todo>`, document.getElementById('app'));
 
 ## Packages
 
-- `@purityjs/core` — framework (17 functions)
+- `@purityjs/core` — framework (21 functions)
 - `@purityjs/vite-plugin` — AOT template compilation (dev dependency)
 - `@purityjs/cli` — project scaffolding
 

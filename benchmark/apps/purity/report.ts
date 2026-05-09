@@ -624,8 +624,8 @@ function App() {
         operation
       </div>
       <div class="methodology" style="margin-top:.3rem">
-        Built with <a href="https://github.com/KoalaFacts/Purity">Purity</a> ${CHARS.dash} 17
-        functions, 6 kB gzipped
+        Built with <a href="https://github.com/KoalaFacts/Purity">Purity</a> ${CHARS.dash} 21
+        functions, ~5.8 kB gzipped
       </div>
     </footer>
   `;

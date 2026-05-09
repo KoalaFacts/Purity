@@ -96,6 +96,28 @@ describe('lifecycle hooks', () => {
     expect(order).toEqual(['mounted', 'destroyed']);
   });
 
+  it('registers onDispose called from inside onMount', async () => {
+    const container = document.createElement('div');
+    const log: string[] = [];
+
+    const { unmount } = mount(() => {
+      onMount(() => {
+        log.push('mounted');
+        // onDispose called inside onMount must attach to this component's
+        // disposers — not silently no-op (regression for the missing
+        // pushContext during the onMount queueMicrotask).
+        onDispose(() => log.push('disposed'));
+      });
+      return html`<p>x</p>`;
+    }, container);
+
+    await new Promise((r) => queueMicrotask(r));
+    expect(log).toEqual(['mounted']);
+
+    unmount();
+    expect(log).toEqual(['mounted', 'disposed']);
+  });
+
   it('catches errors thrown in onMount via onError', async () => {
     const container = document.createElement('div');
     const errors: string[] = [];

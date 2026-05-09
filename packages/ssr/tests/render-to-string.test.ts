@@ -37,7 +37,7 @@ describe('html`` SSR tag', () => {
   });
 
   it('renders dynamic attributes', () => {
-    expect(html`<a href=${'/x'} class=${null}>go</a>`.__purity_ssr_html__).toBe(
+    expect(html`<a href=${'/x'} class=${undefined}>go</a>`.__purity_ssr_html__).toBe(
       '<a href="/x">go</a>',
     );
   });

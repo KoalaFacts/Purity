@@ -16,6 +16,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const isProd = process.env.NODE_ENV === 'production';
 const port = Number(process.env.PORT ?? 3000);
 
+// Always log errors server-side; never leak stack traces or unescaped
+// exception text to the client (info disclosure + reflected XSS via the
+// HTML-typed response).
+function sendError(res, err) {
+  console.error(err);
+  res.statusCode = 500;
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.end('Internal Server Error');
+}
+
 async function startDev() {
   const { createServer: createViteServer } = await import('vite');
   const vite = await createViteServer({
@@ -33,9 +43,7 @@ async function startDev() {
       res.end(template.replace('<!--ssr-outlet-->', html));
     } catch (err) {
       vite.ssrFixStacktrace?.(err);
-      console.error(err);
-      res.statusCode = 500;
-      res.end(String(err?.stack ?? err));
+      sendError(res, err);
     }
   };
 
@@ -56,9 +64,7 @@ async function startProd() {
       res.setHeader('Content-Type', 'text/html');
       res.end(template.replace('<!--ssr-outlet-->', html));
     } catch (err) {
-      console.error(err);
-      res.statusCode = 500;
-      res.end(String(err?.stack ?? err));
+      sendError(res, err);
     }
   });
   server.listen(port, () => {

@@ -818,20 +818,25 @@ export function generateSSR(ast: FragmentNode): string {
   // arguments entirely.
   if (!hasDynamic(ast) && !hasCustomElement(ast)) {
     const html = buildStaticHtml(ast);
-    // codeql[js/code-injection] — `html` is built by buildStaticHtml which
-    // assertSafeName-validates tag/attr names and escapeHtml/escapeAttr-escapes
-    // text/attribute literals from the parser. No user expression values are
-    // spliced (hasDynamic returned false). See "Codegen safety contract".
-    return `(function(){var _s={__purity_ssr_html__:${JSON.stringify(html)}};return function(){return _s;};})()`;
+    // `html` is built by buildStaticHtml which assertSafeName-validates
+    // tag/attr names and escapeHtml/escapeAttr-escapes text/attribute literals
+    // from the parser. JSON.stringify wraps the result in a valid JS string
+    // literal — the only interpolated value below. See "Codegen safety
+    // contract" near SAFE_NAME at the top.
+    // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
+    return [
+      '(function(){var _s={__purity_ssr_html__:',
+      JSON.stringify(html),
+      '};return function(){return _s;};})()',
+    ].join('');
   }
   buildSSRBody(ast, ctx);
-  // codeql[js/code-injection] — every part appended to ctx.parts is either
-  // (a) a JSON.stringify'd string literal, (b) a regex-validated identifier,
-  // or (c) a framework-internal variable reference (`_v[N]`, `_av${id}`).
-  // See "Codegen safety contract" comment near SAFE_NAME at the top.
-  // Wrap the assembled string in a branded SSRHtml so callers can splice the
-  // result raw into surrounding templates without re-escaping.
-  return `function(_v,_h){var _o='';${ctx.parts.join('')}return _h.mark(_o);}`;
+  // Every part appended to ctx.parts is either (a) a JSON.stringify'd string
+  // literal, (b) a regex-validated identifier, or (c) a framework-internal
+  // variable reference (`_v[N]`, `_av${id}`). See "Codegen safety contract"
+  // near SAFE_NAME at the top.
+  // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
+  return ["function(_v,_h){var _o='';", ctx.parts.join(''), 'return _h.mark(_o);}'].join('');
 }
 
 // True if any element node in the tree has a hyphenated tag. Custom elements

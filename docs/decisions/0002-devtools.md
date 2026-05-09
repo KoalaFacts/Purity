@@ -35,39 +35,45 @@ Three forces:
 **For 1.0: no devtools.** Document the existing inspection patterns
 (read `version`, `status`, `sources`, `observers` from any node via
 the browser console) in a `docs/debugging.md` page. Ship a small
-`__purity_inspect__` global hook on `window` in dev builds only, so
-the framework's reactive graph is reachable without source-tree
-spelunking.
+`__purity_inspect__` global hook on `globalThis` so the framework's
+reactive graph is reachable without source-tree spelunking.
 
-**Tentative `__purity_inspect__` shape** (final form pinned in the
-implementation PR):
+**Final `__purity_inspect__` shape** (as pinned in the implementation):
 
 ```ts
-type InspectorNode = {
+interface InspectorNode {
   kind: 'state' | 'computed' | 'effect';
   version: number;
-  status: 0 | 1 | 2; // CLEAN | CHECK | DIRTY
+  status?: 'clean' | 'check' | 'dirty'; // present on computed and effect, not state
   value: unknown;
-  sources: InspectorNode[];
+  sources: InspectorNode[]; // empty for state
   observers: InspectorNode[];
-};
+}
 
 declare global {
-  interface Window {
-    __purity_inspect__?: {
-      version: 1; // breaking-change counter for the inspector itself
-      roots(): InspectorNode[]; // every state/computed not GC'd yet
-      findByVersion(v: number): InspectorNode | null;
-    };
-  }
+  // eslint-disable-next-line no-var
+  var __purity_inspect__: {
+    version: 1; // breaking-change counter for the inspector itself
+    nodes(): InspectorNode[]; // every state/computed/effect not GC'd yet
+  };
 }
 ```
 
 The `version: 1` field on the hook itself is the first thing a
 devtools panel checks, so we can evolve the shape later without
-silently breaking older panels. The hook is registered only when
-`process.env.NODE_ENV !== 'production'` (or the dev-condition
-import branch).
+silently breaking older panels. The graph view exposed by `nodes()`
+is a snapshot — each call rebuilds it. Cycles are preserved by
+reference identity within a single call (the same `InspectorNode`
+object appears at both ends of an A→B→A path).
+
+**Always-on, not dev-only.** The original plan was to gate the hook
+on `process.env.NODE_ENV !== 'production'`. In practice Vite's lib
+build substitutes the value at framework-build time, which would
+strip the hook for everyone. Keeping the hook always present costs
+~0.4 kB gzipped of code in the shared chunk and lets users debug
+production deployments. Users who must remove it can do so via
+their bundler's `define` (replace `globalThis.__purity_inspect__`
+with `undefined`) or by stubbing the module post-import.
 
 **Post-1.0 trigger:** revisit when several of the following are
 true. The numbers below are judgment, not derived — adjust when the

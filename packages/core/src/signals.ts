@@ -69,6 +69,27 @@ const MAX_EFFECT_DEPTH = 100;
 let effectDepth = 0;
 
 // ---------------------------------------------------------------------------
+// Inspection registry
+//
+// Powers the `globalThis.__purity_inspect__` hook (see `docs/debugging.md`
+// and ADR-0002). Always present — the cost is small (a WeakRef Set + a few
+// hundred bytes of conversion code, ~0.4 kB gzipped) and keeping it in the
+// production bundle means consumers can debug live apps without rebuilding
+// for development.
+//
+// Apps that strictly need to remove it can do so via their bundler's tree-
+// shake / dead-code-elimination by setting
+// `globalThis.__purity_inspect__ = undefined` after import (or by
+// configuring `define` to false).
+// ---------------------------------------------------------------------------
+
+const trackedNodes: Set<WeakRef<AnyNode>> = new Set();
+
+function trackNode(node: AnyNode): void {
+  trackedNodes.add(new WeakRef(node));
+}
+
+// ---------------------------------------------------------------------------
 // read / write / track
 // ---------------------------------------------------------------------------
 
@@ -429,6 +450,7 @@ export function state<T>(initial: T): StateAccessor<T> {
     version: 0,
     observers: null,
   };
+  trackNode(node);
 
   const accessor = ((...args: [T | ((current: T) => T)] | []): T => {
     if (args.length === 0) return readNode(node);
@@ -486,6 +508,7 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
     isEffect: false,
     disposed: false,
   };
+  trackNode(node);
 
   const accessor = (() => readNode<T>(node)) as ComputedAccessor<T>;
   (accessor as unknown as { get: () => T }).get = () => readNode<T>(node);
@@ -512,6 +535,7 @@ function _effect(fn: () => undefined | Dispose): Dispose {
     isEffect: true,
     disposed: false,
   };
+  trackNode(node);
 
   // Effects run their initial body eagerly (synchronous) — the templates
   // and tests rely on this to set up DOM bindings before the user code
@@ -669,4 +693,84 @@ export function batch(fn: () => void): void {
     batchDepth--;
     if (batchDepth === 0 && pendingEffects.length > 0) scheduleFlush();
   }
+}
+
+// ---------------------------------------------------------------------------
+// __purity_inspect__ — debugging hook on globalThis
+//
+// See `docs/debugging.md` for usage and ADR-0002 for the rationale.
+// ---------------------------------------------------------------------------
+
+type InspectorKind = 'state' | 'computed' | 'effect';
+type InspectorStatus = 'clean' | 'check' | 'dirty';
+
+interface InspectorNode {
+  kind: InspectorKind;
+  version: number;
+  status?: InspectorStatus;
+  value: unknown;
+  sources: InspectorNode[];
+  observers: InspectorNode[];
+}
+
+const INSPECTOR_STATUS_LABELS: readonly InspectorStatus[] = ['clean', 'check', 'dirty'];
+
+function inspectorKindOf(n: AnyNode): InspectorKind {
+  if (n.fn === null) return 'state';
+  return (n as ComputedNode).isEffect ? 'effect' : 'computed';
+}
+
+function toInspectorNode(n: AnyNode, seen: Map<AnyNode, InspectorNode>): InspectorNode {
+  const cached = seen.get(n);
+  if (cached) return cached;
+  const out: InspectorNode = {
+    kind: inspectorKindOf(n),
+    version: n.version,
+    value: n.value,
+    sources: [],
+    observers: [],
+  };
+  if (n.fn !== null) out.status = INSPECTOR_STATUS_LABELS[(n as ComputedNode).status];
+  seen.set(n, out);
+  if (n.fn !== null) {
+    const sources = (n as ComputedNode).sources;
+    if (sources !== null) {
+      for (let i = 0; i < sources.length; i++) {
+        out.sources.push(toInspectorNode(sources[i], seen));
+      }
+    }
+  }
+  if (n.observers !== null) {
+    for (let i = 0; i < n.observers.length; i++) {
+      out.observers.push(toInspectorNode(n.observers[i], seen));
+    }
+  }
+  return out;
+}
+
+function inspectorLiveNodes(): AnyNode[] {
+  const live: AnyNode[] = [];
+  for (const ref of trackedNodes) {
+    const n = ref.deref();
+    if (n) live.push(n);
+    else trackedNodes.delete(ref);
+  }
+  return live;
+}
+
+// Install the hook eagerly at module load. The assignment is a side
+// effect on globalThis that bundlers must preserve. `globalThis` works
+// in workers, sandboxed iframes, jsdom, etc. — falls back to a no-op if
+// somehow absent.
+/* v8 ignore next 2 -- defensive; globalThis exists everywhere we run */
+const inspectorTarget: { __purity_inspect__?: unknown } | null =
+  typeof globalThis !== 'undefined' ? (globalThis as { __purity_inspect__?: unknown }) : null;
+if (inspectorTarget !== null) {
+  inspectorTarget.__purity_inspect__ = {
+    version: 1 as const,
+    nodes(): InspectorNode[] {
+      const seen = new Map<AnyNode, InspectorNode>();
+      return inspectorLiveNodes().map((n) => toInspectorNode(n, seen));
+    },
+  };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { mount, onMount } from '../src/component.ts';
 import { resource } from '../src/resource.ts';
-import { state } from '../src/signals.ts';
+import { compute, state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise<void>((r) => queueMicrotask(() => r()));
 const flushAll = async () => {
@@ -437,5 +437,268 @@ describe('resource — argument parsing', () => {
     );
     await flushAll();
     expect(r()).toBe(6);
+  });
+});
+
+describe('resource — source-side error handling', () => {
+  it('captures a throw from the source function as r.error()', async () => {
+    const id = state(1);
+    const r = resource(
+      () => {
+        if (id() === 2) throw new Error('source-boom');
+        return id();
+      },
+      (k) => Promise.resolve(`u${k}`),
+    );
+
+    await flushAll();
+    expect(r()).toBe('u1');
+
+    id(2);
+    await flushAll();
+    expect((r.error() as Error).message).toBe('source-boom');
+    expect(r.loading()).toBe(false);
+  });
+
+  it('recovers when the source stops throwing', async () => {
+    const id = state(1);
+    const r = resource(
+      () => {
+        if (id() === 2) throw new Error('source-boom');
+        return id();
+      },
+      (k) => Promise.resolve(`u${k}`),
+    );
+
+    id(2);
+    await flushAll();
+    expect(r.error()).toBeInstanceOf(Error);
+
+    id(3);
+    await flushAll();
+    expect(r.error()).toBe(undefined);
+    expect(r()).toBe('u3');
+  });
+});
+
+describe('resource — mutate semantics', () => {
+  it('mutate() while a fetch is in flight invalidates the resolution (no clobber)', async () => {
+    let resolveFetch!: (v: string) => void;
+    const id = state(1);
+    const r = resource(
+      () => id(),
+      () =>
+        new Promise<string>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    await flushAll();
+    expect(r.loading()).toBe(true);
+
+    r.mutate('optimistic');
+    expect(r()).toBe('optimistic');
+    expect(r.loading()).toBe(false);
+
+    resolveFetch('from-server');
+    await flushAll();
+    // Optimistic value must survive — the in-flight fetch was invalidated.
+    expect(r()).toBe('optimistic');
+  });
+
+  it("mutate() aborts the in-flight request's signal", async () => {
+    let captured!: AbortSignal;
+    const r = resource(
+      () => 1 as const,
+      (_, { signal }) => {
+        captured = signal;
+        return new Promise<number>(() => {});
+      },
+    );
+    await flushAll();
+    expect(captured.aborted).toBe(false);
+
+    r.mutate(42);
+    expect(captured.aborted).toBe(true);
+  });
+
+  it('refresh() after mutate() still re-runs the fetcher', async () => {
+    const id = state(1);
+    let calls = 0;
+    const r = resource(
+      () => id(),
+      (k) => {
+        calls++;
+        return Promise.resolve(`u${k}-${calls}`);
+      },
+    );
+    await flushAll();
+    expect(calls).toBe(1);
+
+    r.mutate('manual');
+    expect(r()).toBe('manual');
+
+    r.refresh();
+    await flushAll();
+    expect(calls).toBe(2);
+    expect(r()).toBe('u1-2');
+  });
+});
+
+describe('resource — multi-stage races', () => {
+  it('drops both intermediate runs A and B when C is the latest', async () => {
+    const resolvers: Record<number, (v: string) => void> = {};
+    const id = state(1);
+    const r = resource(
+      () => id(),
+      (k) =>
+        new Promise<string>((resolve) => {
+          resolvers[k] = resolve;
+        }),
+    );
+
+    await flushAll();
+    id(2);
+    await flushAll();
+    id(3);
+    await flushAll();
+
+    // Resolve in reverse order — only the latest should win.
+    resolvers[3]('C');
+    await flushAll();
+    expect(r()).toBe('C');
+
+    resolvers[2]('B');
+    resolvers[1]('A');
+    await flushAll();
+    expect(r()).toBe('C');
+  });
+
+  it("refresh() while a fetch is pending aborts the prior run's signal", async () => {
+    const signals: AbortSignal[] = [];
+    const r = resource(
+      () => 1 as const,
+      (_, { signal }) => {
+        signals.push(signal);
+        return new Promise<number>(() => {});
+      },
+    );
+    await flushAll();
+    expect(signals.length).toBe(1);
+    expect(signals[0].aborted).toBe(false);
+
+    r.refresh();
+    await flushAll();
+    expect(signals.length).toBe(2);
+    expect(signals[0].aborted).toBe(true);
+    expect(signals[1].aborted).toBe(false);
+  });
+});
+
+describe('resource — reactive tracking proof', () => {
+  it('outside watch() re-fires when r.loading() transitions', async () => {
+    const r = resource(() => Promise.resolve('done'));
+    const seen: boolean[] = [];
+    const stop = watch(() => {
+      seen.push(r.loading());
+    });
+
+    await flushAll();
+    stop();
+
+    // Should observe at least one true (initial sync run) followed by false.
+    expect(seen[0]).toBe(true);
+    expect(seen[seen.length - 1]).toBe(false);
+  });
+
+  it('outside compute() re-derives only when r() actually changes', async () => {
+    const id = state(1);
+    const r = resource(
+      () => id(),
+      (k) => Promise.resolve(k * 10),
+    );
+    await flushAll();
+
+    let derives = 0;
+    const view = compute(() => {
+      derives++;
+      return r() ?? 0;
+    });
+
+    expect(view()).toBe(10);
+    expect(derives).toBe(1);
+
+    // Re-running watcher with same value (refresh produces same result)
+    r.refresh();
+    await flushAll();
+    view();
+    // Same value → no re-derive of view.
+    expect(derives).toBe(1);
+
+    id(2);
+    await flushAll();
+    expect(view()).toBe(20);
+    expect(derives).toBe(2);
+  });
+
+  it('outside watch() re-fires when r.error() transitions', async () => {
+    let shouldFail = true;
+    const r = resource(
+      () => 1 as const,
+      () => (shouldFail ? Promise.reject(new Error('x')) : Promise.resolve('ok')),
+    );
+
+    const seen: unknown[] = [];
+    const stop = watch(() => {
+      seen.push(r.error());
+    });
+
+    await flushAll();
+    expect(seen.at(-1)).toBeInstanceOf(Error);
+
+    shouldFail = false;
+    r.refresh();
+    await flushAll();
+    expect(seen.at(-1)).toBe(undefined);
+
+    stop();
+  });
+});
+
+describe('resource — dispose escape hatch', () => {
+  it('dispose() stops further fetches when called outside a component', async () => {
+    const id = state(1);
+    let calls = 0;
+    const r = resource(
+      () => id(),
+      (k) => {
+        calls++;
+        return Promise.resolve(k);
+      },
+    );
+    await flushAll();
+    expect(calls).toBe(1);
+
+    r.dispose();
+
+    id(2);
+    await flushAll();
+    expect(calls).toBe(1);
+  });
+
+  it("dispose() aborts the in-flight request's signal", async () => {
+    let captured!: AbortSignal;
+    const r = resource(
+      () => 1 as const,
+      (_, { signal }) => {
+        captured = signal;
+        return new Promise<number>(() => {});
+      },
+    );
+    await flushAll();
+    expect(captured.aborted).toBe(false);
+
+    r.dispose();
+    expect(captured.aborted).toBe(true);
   });
 });

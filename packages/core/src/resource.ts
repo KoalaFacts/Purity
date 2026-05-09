@@ -12,7 +12,7 @@
 // fresher data.
 // ---------------------------------------------------------------------------
 
-import { batch, compute, state, watch } from './signals.ts';
+import { batch, state, watch } from './signals.ts';
 
 export interface ResourceFetchInfo {
   signal: AbortSignal;
@@ -51,6 +51,12 @@ export interface ResourceAccessor<T> {
   refresh(): void;
   /** Optimistically set the data and clear any error. */
   mutate(next: T | ((current: T | undefined) => T)): void;
+  /**
+   * Stop the underlying watcher and abort any in-flight request. Inside a
+   * component the watcher auto-disposes on unmount; this is the escape hatch
+   * for resources created at module scope or in tests.
+   */
+  dispose(): void;
 }
 
 export interface ResourceOptions<T> {
@@ -75,11 +81,7 @@ export function resource<T, K>(
   maybeOptions?: ResourceOptions<T>,
 ): ResourceAccessor<T> {
   const hasSource = typeof fetcherOrOptions === 'function';
-  // Memoize the source so unrelated upstream changes that produce an equal
-  // value don't trigger spurious refetches.
-  const sourceMemo = hasSource
-    ? compute(sourceOrFetcher as () => K | false | null | undefined)
-    : null;
+  const sourceFn = hasSource ? (sourceOrFetcher as () => K | false | null | undefined) : null;
   const fetcher = hasSource
     ? (fetcherOrOptions as (key: K, info: ResourceFetchInfo) => T | Promise<T>)
     : (sourceOrFetcher as (info: ResourceFetchInfo) => T | Promise<T>);
@@ -92,24 +94,52 @@ export function resource<T, K>(
   const refreshTick = state(0);
 
   let runId = 0;
+  let currentController: AbortController | null = null;
+  // Manual prev-key dedup so an unrelated state read inside the source
+  // function doesn't cause a refetch when the source value is unchanged.
+  // (We can't use compute() here because a throw inside compute escapes the
+  // watch's CHECK→CLEAN dependency walk before our try/catch could see it.)
+  let prevKey: K;
+  let hasPrevKey = false;
+  let forceNext = false;
 
-  watch(() => {
+  const dispose = watch(() => {
     refreshTick();
+    const wantsForce = forceNext;
+    forceNext = false;
 
     let key: K | undefined;
-    if (sourceMemo !== null) {
-      const k = sourceMemo();
-      // The watch cleanup from the previous run has already aborted any
-      // in-flight controller, so we just need to clear loading here.
+    if (sourceFn !== null) {
+      let k: K | false | null | undefined;
+      try {
+        k = sourceFn();
+      } catch (err) {
+        // Surface source-function errors via error() instead of letting them
+        // escape as uncaught microtask exceptions out of the watch flush.
+        batch(() => {
+          error(err);
+          loading(false);
+        });
+        return;
+      }
       if (k === false || k === null || k === undefined) {
+        hasPrevKey = false;
+        currentController = null;
         loading(false);
         return;
       }
+      if (!wantsForce && hasPrevKey && Object.is(prevKey, k)) {
+        // Source value unchanged and not a forced refresh — skip refetch.
+        return;
+      }
+      prevKey = k;
+      hasPrevKey = true;
       key = k;
     }
 
     const myRun = ++runId;
     const ac = new AbortController();
+    currentController = ac;
 
     let result: T | Promise<T>;
     loading(true);
@@ -117,11 +147,10 @@ export function resource<T, K>(
       // The two overloads union into a callable whose first param TS narrows
       // to `K & ResourceFetchInfo`; cast at the call site to disambiguate.
       result =
-        sourceMemo !== null
-          ? (fetcher as (key: K, info: ResourceFetchInfo) => T | Promise<T>)(
-              key as K,
-              { signal: ac.signal },
-            )
+        sourceFn !== null
+          ? (fetcher as (key: K, info: ResourceFetchInfo) => T | Promise<T>)(key as K, {
+              signal: ac.signal,
+            })
           : (fetcher as (info: ResourceFetchInfo) => T | Promise<T>)({
               signal: ac.signal,
             });
@@ -170,9 +199,17 @@ export function resource<T, K>(
   accessor.loading = () => loading();
   accessor.error = () => error();
   accessor.refresh = () => {
+    forceNext = true;
     refreshTick((v) => v + 1);
   };
   accessor.mutate = (next) => {
+    // Invalidate any in-flight fetch so a later resolution can't clobber
+    // the optimistic value, and abort the underlying request if there is one.
+    runId++;
+    if (currentController !== null) {
+      currentController.abort();
+      currentController = null;
+    }
     batch(() => {
       if (typeof next === 'function') {
         data(next as (current: T | undefined) => T);
@@ -181,7 +218,15 @@ export function resource<T, K>(
         data(() => v as T);
       }
       error(undefined);
+      loading(false);
     });
+  };
+  accessor.dispose = () => {
+    if (currentController !== null) {
+      currentController.abort();
+      currentController = null;
+    }
+    dispose();
   };
 
   return accessor;

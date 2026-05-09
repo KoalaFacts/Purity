@@ -628,8 +628,11 @@ function findLastImportEnd(code: string): number {
   let inImport = false;
 
   // Matches the closing line of an import: either `… from '…';` or a
-  // side-effect import that's just `'…';` on its own line.
-  const closesImport = /['"][^'"]*['"]\s*;?\s*$/;
+  // side-effect import that's just `'…';` on its own line. The trailer
+  // is `[\s;]*` (single character class) rather than `\s*;?\s*` so the
+  // engine can't backtrack between adjacent `\s*` groups on long
+  // whitespace runs (CodeQL js/polynomial-redos).
+  const closesImport = /['"][^'"]*['"][\s;]*$/;
 
   for (const line of lines) {
     const trimmed = line.trimStart();

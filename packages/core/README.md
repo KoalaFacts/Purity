@@ -5,7 +5,7 @@
 [![bundle size](https://img.shields.io/bundlephobia/minzip/@purityjs/core?label=gzipped)](https://bundlephobia.com/package/@purityjs/core)
 [![license](https://img.shields.io/npm/l/@purityjs/core.svg)](../../LICENSE)
 
-The core Purity framework. 18 functions. 6 kB gzipped. No virtual DOM.
+The core Purity framework. 20 functions. 6 kB gzipped. No virtual DOM.
 
 ## Install
 
@@ -72,8 +72,10 @@ html`
 | `r.error()`       | The most recent rejection, or `undefined` (tracked).                  |
 | `r.refresh()`     | Re-runs the fetcher with the current deps.                            |
 | `r.mutate(v)`     | Optimistically writes data and clears any error.                      |
+| `r.dispose()`     | Aborts any in-flight request and tears down the watcher.              |
 | Falsy source      | Returning `null` / `undefined` / `false` from the source skips fetch. |
 | `AbortSignal`     | Aborted automatically on dep change or unmount.                       |
+| SWR by default    | `r()` keeps the last successful value during refetch — no flash.      |
 
 Single-arg form (auto-tracked deps inside the fetcher) is also supported:
 
@@ -81,6 +83,56 @@ Single-arg form (auto-tracked deps inside the fetcher) is also supported:
 const todos = resource(({ signal }) =>
   fetch(`/todos?limit=${limit()}`, { signal }).then((r) => r.json()),
 );
+```
+
+#### Options
+
+```ts
+resource(source, fetcher, {
+  initialValue: [], // seed before first fetch
+  retry: 3, // exponential backoff
+  retry: { count: 5, delay: (a) => 1000 * 2 ** a }, // custom backoff
+  pollInterval: 30_000, // auto-refresh every N ms
+});
+```
+
+#### Lazy / imperative — `lazyResource`
+
+For mutations, button-triggered loads, and form submissions. Same accessor
+shape as `resource()`, but does not run on creation. Call `r.fetch(args)` to
+trigger; `r.refresh()` re-runs with the most recent args.
+
+```ts
+import { lazyResource } from '@purityjs/core';
+
+const save = lazyResource((data: { name: string }, { signal }) =>
+  fetch('/save', { method: 'POST', body: JSON.stringify(data), signal }),
+);
+
+html`
+  <button @click=${() => save.fetch({ name: 'Jane' })}>Save</button>
+  ${() => (save.loading() ? html`<p>Saving…</p>` : null)}
+  ${() => (save.error() ? html`<p>Failed</p>` : null)}
+`;
+```
+
+#### Debounced source — `debounced`
+
+A read-only derived signal that mirrors a source after `ms` of quiet. Useful
+for search-as-you-type and other rate-limited inputs.
+
+```ts
+import { state, debounced, resource } from '@purityjs/core';
+
+const search = state('');
+const query = debounced(search, 300);
+
+const results = resource(
+  () => query() || null,
+  (q, { signal }) => fetch(`/search?q=${q}`, { signal }).then((r) => r.json()),
+);
+
+html`<input ::value=${search} placeholder="search…" />`;
 ```
 
 ### Templates

@@ -9,12 +9,21 @@ export type { ComponentFn, MountResult } from './component.ts';
 export { mount, onDestroy, onDispose, onError, onMount } from './component.ts';
 // Control flow
 export { each, list, match, when } from './control.ts';
+// Debounced derived signal
+export { debounced } from './debounced.ts';
 export type { SlotAccessor } from './elements.ts';
 // Components, slots, teleport
 export { component, slot, teleport } from './elements.ts';
-export type { ResourceAccessor, ResourceFetchInfo, ResourceOptions } from './resource.ts';
-// Async resources
-export { resource } from './resource.ts';
+export type {
+  LazyResourceAccessor,
+  ResourceAccessor,
+  ResourceFetchInfo,
+  ResourceOptions,
+  ResourceRetryOptions,
+  RetryDelay,
+} from './resource.ts';
+// Async resources (eager + lazy/imperative)
+export { lazyResource, resource } from './resource.ts';
 export type { ComputedAccessor, Dispose, StateAccessor } from './signals.ts';
 // Reactive primitives
 export { batch, compute, state, watch } from './signals.ts';

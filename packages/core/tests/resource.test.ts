@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mount, onMount } from '../src/component.ts';
-import { resource } from '../src/resource.ts';
+import { debounced } from '../src/debounced.ts';
+import { lazyResource, resource } from '../src/resource.ts';
 import { compute, state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise<void>((r) => queueMicrotask(() => r()));
@@ -784,5 +785,370 @@ describe('resource — round-2 dedup invalidation', () => {
     expect(r.error()).toBe(undefined);
     expect(calls).toBe(2);
     expect(r()).toBe('u1-2');
+  });
+});
+
+describe('resource — retry option', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('retries on rejection and succeeds within the retry budget', async () => {
+    let calls = 0;
+    const r = resource(
+      () => {
+        calls++;
+        if (calls < 3) return Promise.reject(new Error(`attempt-${calls}`));
+        return Promise.resolve('ok');
+      },
+      { retry: { count: 3, delay: () => 10 } },
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(10);
+    expect(calls).toBe(2);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(calls).toBe(3);
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(r()).toBe('ok');
+    expect(r.error()).toBe(undefined);
+    expect(r.loading()).toBe(false);
+  });
+
+  it('exhausts the retry count and surfaces the final error', async () => {
+    let calls = 0;
+    const boom = new Error('always-fails');
+    const r = resource(
+      () => {
+        calls++;
+        return Promise.reject(boom);
+      },
+      { retry: { count: 2, delay: () => 5 } },
+    );
+
+    // Initial + 2 retries = 3 attempts.
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(5);
+    await vi.advanceTimersByTimeAsync(5);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(calls).toBe(3);
+    expect(r.error()).toBe(boom);
+    expect(r.loading()).toBe(false);
+  });
+
+  it('aborts pending retry sleep when deps change mid-backoff', async () => {
+    const id = state(1);
+    const callsByKey: Record<number, number> = {};
+    const r = resource(
+      () => id(),
+      (k) => {
+        callsByKey[k] = (callsByKey[k] ?? 0) + 1;
+        return Promise.reject(new Error(`fail-${k}`));
+      },
+      { retry: { count: 5, delay: () => 1000 } },
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(callsByKey[1]).toBe(1);
+
+    // Mid-backoff for key 1, change deps to key 2 — key 1's retry sleep should abort.
+    id(2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(callsByKey[2]).toBe(1);
+
+    // Advance past the entire retry budget for key 1; it must never retry.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(callsByKey[1]).toBe(1);
+    void r;
+  });
+
+  it('accepts a number shorthand for the retry option', async () => {
+    let calls = 0;
+    const r = resource(
+      () => {
+        calls++;
+        if (calls < 2) return Promise.reject(new Error('once'));
+        return Promise.resolve('ok');
+      },
+      { retry: 1 },
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    // Default backoff for attempt 0 is 200ms.
+    await vi.advanceTimersByTimeAsync(200);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(calls).toBe(2);
+    expect(r()).toBe('ok');
+  });
+
+  it('does not retry on success', async () => {
+    let calls = 0;
+    const r = resource(
+      () => {
+        calls++;
+        return Promise.resolve('first');
+      },
+      { retry: 5 },
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(1);
+    expect(r()).toBe('first');
+  });
+});
+
+describe('resource — pollInterval option', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('re-fetches on the configured interval after each settle', async () => {
+    let calls = 0;
+    const r = resource(() => Promise.resolve(++calls), { pollInterval: 1000 });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(1);
+    expect(r()).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(2);
+    expect(r()).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(3);
+  });
+
+  it('reschedules polling after an error', async () => {
+    let calls = 0;
+    const r = resource(
+      () => {
+        calls++;
+        if (calls === 1) return Promise.reject(new Error('boom'));
+        return Promise.resolve('ok');
+      },
+      { pollInterval: 100 },
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(r.error()).toBeInstanceOf(Error);
+
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(2);
+    expect(r()).toBe('ok');
+    expect(r.error()).toBe(undefined);
+  });
+
+  it('clears the poll timer on dispose', async () => {
+    let calls = 0;
+    const r = resource(() => Promise.resolve(++calls), { pollInterval: 100 });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(1);
+
+    r.dispose();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(calls).toBe(1);
+  });
+
+  it('clears the poll timer on mutate (until next settle)', async () => {
+    let calls = 0;
+    const r = resource(() => Promise.resolve(++calls), { pollInterval: 100 });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(1);
+
+    r.mutate(99);
+    // mutate clears the pending poll timer.
+    await vi.advanceTimersByTimeAsync(100);
+    expect(calls).toBe(1);
+    expect(r()).toBe(99);
+  });
+
+  it('clears the poll timer on manual refresh()', async () => {
+    let calls = 0;
+    const r = resource(() => Promise.resolve(++calls), { pollInterval: 1000 });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(1);
+
+    // Refresh before the poll fires; the previous poll timer is cleared and
+    // the refresh kicks off a new run, which then schedules its own poll.
+    r.refresh();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(2);
+
+    // Only one poll should remain pending — not two.
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(3);
+  });
+});
+
+describe('lazyResource', () => {
+  it('does not fetch on creation', async () => {
+    const fetcher = vi.fn(() => Promise.resolve('x'));
+    const r = lazyResource(fetcher);
+    await tick();
+    await tick();
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(r()).toBe(undefined);
+    expect(r.loading()).toBe(false);
+  });
+
+  it('fetches when r.fetch(args) is called and passes args to the fetcher', async () => {
+    const r = lazyResource((args: { id: number }) => Promise.resolve(`u${args.id}`));
+    r.fetch({ id: 42 });
+    await flushAll();
+    expect(r()).toBe('u42');
+  });
+
+  it('refresh() re-runs with the most recent args', async () => {
+    let calls = 0;
+    const r = lazyResource((args: number) => {
+      calls++;
+      return Promise.resolve(`${args}-${calls}`);
+    });
+
+    r.fetch(7);
+    await flushAll();
+    expect(r()).toBe('7-1');
+
+    r.refresh();
+    await flushAll();
+    expect(r()).toBe('7-2');
+    expect(calls).toBe(2);
+  });
+
+  it('back-to-back fetch() calls with identical args still re-fetch', async () => {
+    let calls = 0;
+    const r = lazyResource((arg: string) => {
+      calls++;
+      return Promise.resolve(`${arg}-${calls}`);
+    });
+
+    r.fetch('same');
+    await flushAll();
+    r.fetch('same');
+    await flushAll();
+    expect(calls).toBe(2);
+    expect(r()).toBe('same-2');
+  });
+
+  it('exposes loading() and error() reactively', async () => {
+    const r = lazyResource(() => Promise.reject(new Error('lazy-fail')));
+    expect(r.loading()).toBe(false);
+
+    // Capture transitions through a reactive watch — the loading=true window
+    // between the watch run and the .then(onRejected) microtask is too brief
+    // to read synchronously after a single tick.
+    const seen: boolean[] = [];
+    const stop = watch(() => {
+      seen.push(r.loading());
+    });
+
+    r.fetch(undefined);
+    await flushAll();
+    stop();
+
+    expect(seen).toContain(true);
+    expect(seen.at(-1)).toBe(false);
+    expect((r.error() as Error).message).toBe('lazy-fail');
+  });
+
+  it('dispose() prevents further fetches', async () => {
+    const fetcher = vi.fn(() => Promise.resolve(1));
+    const r = lazyResource(fetcher);
+    r.dispose();
+    r.fetch(undefined);
+    await flushAll();
+    // The watch is disposed, so the args write does not trigger a re-run.
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe('debounced', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('mirrors the source synchronously on first read', () => {
+    const s = state('hello');
+    const d = debounced(s, 100);
+    expect(d()).toBe('hello');
+  });
+
+  it('delays propagation by the configured ms', async () => {
+    const s = state('a');
+    const d = debounced(s, 100);
+
+    s('b');
+    await vi.advanceTimersByTimeAsync(50);
+    expect(d()).toBe('a');
+
+    await vi.advanceTimersByTimeAsync(50);
+    expect(d()).toBe('b');
+  });
+
+  it('coalesces rapid bursts into a single propagation', async () => {
+    const s = state(0);
+    const d = debounced(s, 100);
+
+    for (let i = 1; i <= 10; i++) {
+      s(i);
+      await vi.advanceTimersByTimeAsync(20);
+    }
+    expect(d()).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(d()).toBe(10);
+  });
+
+  it('feeds cleanly into a resource() source', async () => {
+    const search = state('');
+    const query = debounced(search, 100);
+    let calls = 0;
+    const r = resource(
+      () => query() || null,
+      (q) => {
+        calls++;
+        return Promise.resolve(`results-${q}`);
+      },
+    );
+
+    expect(calls).toBe(0);
+
+    search('hello');
+    await vi.advanceTimersByTimeAsync(50);
+    search('hello world');
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Only the final value triggers the fetch.
+    expect(calls).toBe(1);
+    expect(r()).toBe('results-hello world');
+    r.dispose();
+  });
+
+  it('is read-only (no .set method on the accessor)', () => {
+    const s = state(1);
+    const d = debounced(s, 50);
+    expect((d as unknown as { set?: unknown }).set).toBe(undefined);
   });
 });

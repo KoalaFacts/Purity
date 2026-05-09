@@ -1,6 +1,6 @@
 # Purity Monorepo
 
-Minimal web framework built on native TC39 Signals. 18 functions. 6 kB gzipped.
+Minimal web framework built on native TC39 Signals. 20 functions. 6 kB gzipped.
 
 ## Packages
 

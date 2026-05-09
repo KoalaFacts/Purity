@@ -39,10 +39,42 @@ the browser console) in a `docs/debugging.md` page. Ship a small
 the framework's reactive graph is reachable without source-tree
 spelunking.
 
-**Post-1.0 trigger:** revisit when ≥3 of the following are true:
+**Tentative `__purity_inspect__` shape** (final form pinned in the
+implementation PR):
 
-- An open issue with ≥10 thumbs-ups asking for a panel.
-- A first production user with a non-trivial app (≥1k LOC).
+```ts
+type InspectorNode = {
+  kind: 'state' | 'computed' | 'effect';
+  version: number;
+  status: 0 | 1 | 2; // CLEAN | CHECK | DIRTY
+  value: unknown;
+  sources: InspectorNode[];
+  observers: InspectorNode[];
+};
+
+declare global {
+  interface Window {
+    __purity_inspect__?: {
+      version: 1; // breaking-change counter for the inspector itself
+      roots(): InspectorNode[]; // every state/computed not GC'd yet
+      findByVersion(v: number): InspectorNode | null;
+    };
+  }
+}
+```
+
+The `version: 1` field on the hook itself is the first thing a
+devtools panel checks, so we can evolve the shape later without
+silently breaking older panels. The hook is registered only when
+`process.env.NODE_ENV !== 'production'` (or the dev-condition
+import branch).
+
+**Post-1.0 trigger:** revisit when several of the following are
+true. The numbers below are judgment, not derived — adjust when the
+moment comes:
+
+- An open issue with sustained interest asking for a panel.
+- A first production user with a non-trivial app.
 - A volunteer maintainer for the panel itself.
 - A clear use case the `__purity_inspect__` hook can't address (e.g.
   visual graph layout, time-travel, frame-by-frame timeline).

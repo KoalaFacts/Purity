@@ -44,7 +44,7 @@ already states this; we commit to it formally here.
 mode that renders the initial DOM to HTML once and ships it
 alongside the bundle, then re-renders client-side with no hydration.
 This gives apps SEO and first-paint without the complexity of true
-hydration. Concretely, a Vite plugin that:
+hydration. One plausible implementation is a Vite plugin that:
 
 - Walks `mount()` sites at build time
 - Snapshots the initial light-DOM tree (no Shadow DOM serialization)
@@ -52,10 +52,18 @@ hydration. Concretely, a Vite plugin that:
 - Lets the client bundle re-render on load (the snapshot is a
   visual-only placeholder; the reactive graph rebuilds from scratch)
 
+**Implementation is genuinely TBD.** The above sketch picks one
+approach (AST walk + Vite plugin) but a Node-sandbox approach that
+actually executes `mount()` against a DOM emulator is also viable
+and has different limitations. The 1.x ADR that supersedes this one
+will pin the approach.
+
 **For 2.x and beyond: full SSR + hydration is not committed to.** We
-will revisit only if (a) ≥10 production users request it, (b) the
-Shadow-DOM SSR story matures in browsers, and (c) someone signs up to
-own the implementation through to 1.0 of the SSR layer.
+will revisit only if (a) several production users request it (we'll
+take the number as a judgment call when it happens — there's no
+magic threshold), (b) the Shadow-DOM SSR story matures in browsers,
+and (c) someone signs up to own the implementation through to 1.0
+of the SSR layer.
 
 ## Consequences
 
@@ -89,9 +97,7 @@ own the implementation through to 1.0 of the SSR layer.
 ## Alternatives considered
 
 - **(b) Full SSR + hydration for 1.0.** Rejected on cost: 2–4 months
-  of engineering for a feature with no current paying user. The
-  bundle-size cost would also force an `@purityjs/server` split which
-  fragments the API.
+  of engineering for a feature with no current paying user.
 
 - **(c-now) Static prerender for 1.0.** Tempting (lower cost than full
   SSR, real SEO benefit), but the implementation work pushes 1.0 by
@@ -100,8 +106,5 @@ own the implementation through to 1.0 of the SSR layer.
   goes into the 1.x roadmap.
 
 - **No SSR, ever.** Defensible but closes a door we don't need to
-  close yet. The post-1.0 trigger ("≥10 production users requesting
-  it") keeps the option live without committing engineering today.
-
-- **Defer the decision.** Tempting but actively harmful: every README
-  reader is making this decision for us by clicking away.
+  close yet. The post-1.0 trigger keeps the option live without
+  committing engineering today.

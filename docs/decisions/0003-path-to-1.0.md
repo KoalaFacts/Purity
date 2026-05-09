@@ -30,19 +30,45 @@ reasonable bet for their team.
   Internal modules (`signals.ts`, `compiler/*`, etc.) are not subject
   to semver — refactors within them are patches.
 
+### Deprecation policy
+
+- Deprecating a public export requires: (1) a `@deprecated` JSDoc tag
+  with the replacement and target removal version, (2) a one-time
+  `console.warn` on first use in development builds (gated by
+  `process.env.NODE_ENV !== 'production'` or equivalent), (3) at
+  least one minor release with the warning before the removal major.
+- Adding a new deprecation warning is itself a **minor** release —
+  the existing call sites still work, they just log.
+- Removing a deprecated export is a **major** release.
+
+### Security policy
+
+- **Pre-1.0:** Security fixes are only released against the latest
+  pre-1.0 minor. Earlier `0.x` versions do not get backports.
+- **Post-1.0:** Security fixes are backported to the **current major
+  and the previous major** for 12 months after the previous major's
+  last release, whichever comes first. Older majors do not get
+  backports.
+- Security advisories are published via GitHub Security Advisories
+  and tagged in `CHANGELOG.md`.
+
 ### Browser support matrix
 
-Targets at 1.0:
+Targets at 1.0. **Note:** these baselines are derived from
+source-code review (every public API in `packages/core/src/**` was
+checked for the most-modern feature it requires). They have not yet
+been independently tested in each browser; verifying every cell is
+on the 1.0 checklist below.
 
-| Browser                 | Minimum | Why                                                                                 |
-| ----------------------- | ------- | ----------------------------------------------------------------------------------- |
-| Chrome / Edge           | 100+    | `AbortSignal.addEventListener({ once: true })`, `adoptedStyleSheets`, native ES2022 |
-| Firefox                 | 124+    | Same reasons; lagged Chrome by ~24 months on `adoptedStyleSheets` mutability        |
-| Safari                  | 16.4+   | Custom Elements + Shadow DOM mature, `structuredClone`, ES2022                      |
-| Node (for tooling only) | 24+     | Tooling (`@purityjs/cli`, vite-plugin builds) — runtime is browser-only             |
+| Browser                 | Minimum | Why                                                                                                |
+| ----------------------- | ------- | -------------------------------------------------------------------------------------------------- |
+| Chrome / Edge           | 100+    | `adoptedStyleSheets` (Chrome 73+) + native ES2022 (Chrome 94+); 100 is a clean baseline above both |
+| Firefox                 | 105+    | `adoptedStyleSheets` (Firefox 101+) + native ES2022 (Firefox 105+)                                 |
+| Safari                  | 16.4+   | `adoptedStyleSheets` first shipped — Safari is the gating browser here                             |
+| Node (for tooling only) | 24+     | Tooling (`@purityjs/cli`, vite-plugin builds) — runtime is browser-only                            |
 
-We **do not** target IE, Safari < 16.4, or Chrome < 100. No polyfills
-will be added to the core bundle.
+We **do not** target IE, Safari < 16.4, Firefox < 105, or Chrome < 100.
+No polyfills will be added to the core bundle.
 
 ### "What blocks 1.0" checklist
 
@@ -67,6 +93,9 @@ true before we cut it:
       matches.
 - [ ] `docs/accessibility.md` has been reviewed by someone who has
       shipped a screen-reader-tested production app.
+- [ ] Each cell of the browser support matrix above has been verified
+      against an actual browser of that minimum version (or an
+      explicit decision recorded if any are dropped/relaxed).
 
 ### Communication
 

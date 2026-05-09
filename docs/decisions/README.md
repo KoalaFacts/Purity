@@ -9,6 +9,7 @@ accept. Numbered sequentially.
 - **Status** is one of:
   - **Proposed** — written, open for discussion, not yet committed to.
   - **Accepted** — the project is operating under this decision.
+  - **Rejected** — proposed and discarded; kept for the historical record.
   - **Superseded by NNNN** — replaced by a later ADR.
   - **Deprecated** — abandoned without replacement.
 - ADRs are not specifications; they're snapshots of the reasoning at

@@ -3,11 +3,7 @@ import { mount, onMount } from '../src/component.ts';
 import { debounced } from '../src/debounced.ts';
 import { lazyResource, resource } from '../src/resource.ts';
 import { compute, state, watch } from '../src/signals.ts';
-
-const tick = () => new Promise<void>((r) => queueMicrotask(() => r()));
-const flushAll = async () => {
-  for (let i = 0; i < 5; i++) await tick();
-};
+import { flushAll, tick } from './_helpers.ts';
 
 describe('resource — single-arg fetcher form', () => {
   it('resolves and surfaces data, error, and loading correctly', async () => {

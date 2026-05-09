@@ -5,7 +5,7 @@
 // between samples (requires --expose-gc).
 //
 // Usage:
-//   cd benchmark && node --expose-gc --conditions=development tools/resource-heap.mjs
+//   cd benchmark && node --expose-gc --conditions=development tools/resource-heap.ts
 //
 // Reports retained heap bytes after one cycle (which should be ~0 if the
 // implementation cleans up). Numbers are noisy by ±a few KB because of V8
@@ -13,11 +13,11 @@
 
 import { debounced, lazyResource, resource, state } from '../../packages/core/src/index.ts';
 
-const tick = () => new Promise((r) => queueMicrotask(r));
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const tick = (): Promise<void> => new Promise((r) => queueMicrotask(() => r()));
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 if (typeof global.gc !== 'function') {
-  console.error('Run with: node --expose-gc tools/resource-heap.mjs');
+  console.error('Run with: node --expose-gc tools/resource-heap.ts');
   process.exit(1);
 }
 
@@ -29,8 +29,12 @@ async function settle() {
   global.gc();
 }
 
-async function measureCycle(label, factory, cycles = 1000) {
-  // Warmup
+interface Cycle {
+  r: { dispose: () => void };
+  run: () => Promise<void> | void;
+}
+
+async function measureCycle(label: string, factory: () => Cycle, cycles = 1000): Promise<void> {
   for (let i = 0; i < 50; i++) {
     const c = factory();
     await c.run();
@@ -40,7 +44,7 @@ async function measureCycle(label, factory, cycles = 1000) {
 
   const before = process.memoryUsage().heapUsed;
 
-  const refs = [];
+  const refs: Cycle['r'][] = [];
   for (let i = 0; i < cycles; i++) {
     const c = factory();
     await c.run();
@@ -96,7 +100,7 @@ async function main() {
   });
 
   await measureCycle('lazyResource() construct + fetch + dispose', () => {
-    const r = lazyResource((args) => Promise.resolve(args));
+    const r = lazyResource((args: number) => Promise.resolve(args));
     return {
       r,
       run: async () => {

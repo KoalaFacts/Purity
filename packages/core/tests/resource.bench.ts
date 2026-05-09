@@ -15,8 +15,7 @@ import {
   type ResourceAccessor,
 } from '../src/resource.ts';
 import { state, type StateAccessor, watch } from '../src/signals.ts';
-
-const tick = () => new Promise<void>((r) => queueMicrotask(() => r()));
+import { tick } from './_helpers.ts';
 
 describe('resource — construction', () => {
   bench('construct + initial sync resolve', async () => {

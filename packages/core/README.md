@@ -295,9 +295,8 @@ Run yourself:
 
 ```bash
 npm run bench -w packages/core             # vitest micro-benches
-cd benchmark && \
-  node --expose-gc --conditions=development \
-    --import tsx tools/resource-heap.mjs    # heap diff per cycle
+cd benchmark && node --expose-gc \
+  --conditions=development tools/resource-heap.ts   # heap diff per cycle
 ```
 
 ### Templates

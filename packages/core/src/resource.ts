@@ -15,6 +15,8 @@
 
 import { batch, state, watch } from './signals.ts';
 
+const abortError = () => new DOMException('aborted', 'AbortError');
+
 export interface ResourceFetchInfo {
   signal: AbortSignal;
 }
@@ -109,7 +111,7 @@ function normalizeRetry(retry: ResourceOptions<unknown>['retry']): ResourceRetry
 function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     if (signal.aborted) {
-      reject(new DOMException('aborted', 'AbortError'));
+      reject(abortError());
       return;
     }
     const id = setTimeout(() => {
@@ -118,7 +120,7 @@ function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
     }, ms);
     const onAbort = () => {
       clearTimeout(id);
-      reject(new DOMException('aborted', 'AbortError'));
+      reject(abortError());
     };
     signal.addEventListener('abort', onAbort, { once: true });
   });

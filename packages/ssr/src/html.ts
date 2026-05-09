@@ -10,23 +10,24 @@
 
 import {
   generateSSR,
-  markSSRHtml,
   parse,
   type SSRHelpers,
   ssrHelpers,
   type SSRHtml,
 } from '@purityjs/core/compiler';
 
-type SSRCompiledFn = (values: unknown[], helpers: SSRHelpers) => string;
+type SSRCompiledFn = (values: unknown[], helpers: SSRHelpers) => SSRHtml;
 
 const cache = new WeakMap<TemplateStringsArray, SSRCompiledFn>();
 
 /**
  * Server-side counterpart of `@purityjs/core`'s `html` tag. Returns a
- * branded SSR HTML wrapper instead of a DOM Node.
+ * branded SSR HTML wrapper. The compiled factory itself wraps via
+ * `_h.mark(...)` so this entry point is a thin parse + cache layer.
  *
- * In SSR Vite builds (PR 6) the plugin will alias `@purityjs/core`'s `html`
- * to this module so users keep importing from one place.
+ * In SSR Vite builds (PR 6) the plugin AOT-compiles `html\`\`` calls
+ * directly to the factory output, so this runtime function is only used
+ * in unit tests and SSR-without-Vite scripts.
  */
 export function html(strings: TemplateStringsArray, ...values: unknown[]): SSRHtml {
   let compiled = cache.get(strings);
@@ -36,5 +37,5 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): SSRHt
     compiled = new Function(`return ${code}`)() as SSRCompiledFn;
     cache.set(strings, compiled);
   }
-  return markSSRHtml(compiled(values, ssrHelpers));
+  return compiled(values, ssrHelpers);
 }

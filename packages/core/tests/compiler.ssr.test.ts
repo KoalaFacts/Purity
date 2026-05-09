@@ -10,14 +10,17 @@ import {
 } from '../src/compiler/ssr-runtime.ts';
 import { eachSSR, listSSR, matchSSR, whenSSR } from '../src/control.ts';
 
-type SSRFactory = (values: unknown[], helpers: typeof ssrHelpers) => string;
+type SSRFactory = (
+  values: unknown[],
+  helpers: typeof ssrHelpers,
+) => { __purity_ssr_html__: string };
 
 function compileSSR(strings: TemplateStringsArray | string[], ...values: unknown[]): string {
   const arr = Array.isArray(strings) ? strings : Array.from(strings);
   const ast = parse(arr as unknown as TemplateStringsArray);
   const code = generateSSR(ast);
   const factory = new Function(`return ${code}`)() as SSRFactory;
-  return factory(values, ssrHelpers);
+  return factory(values, ssrHelpers).__purity_ssr_html__;
 }
 
 describe('generateSSR — static templates', () => {

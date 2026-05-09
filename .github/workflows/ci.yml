@@ -70,3 +70,8 @@ jobs:
         # Runs vite build — proves the AOT plugin compiles html`` templates.
         # Benchmark is a workspace member so deps are already installed.
         run: cd benchmark && npx vite build
+
+      - name: 🏗️ Build dashboard demo (smoke check)
+        # Builds the live demo so regressions in examples/dashboard don't
+        # land on main and surface only at next benchmark deploy.
+        run: npm run build -w examples/dashboard

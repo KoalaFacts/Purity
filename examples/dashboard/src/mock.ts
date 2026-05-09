@@ -143,12 +143,14 @@ export function postEvent(
   args: { level: Event['level']; message: string },
   opts: { signal: AbortSignal },
 ): Promise<Event> {
+  const { signal } = opts;
   return new Promise((resolve, reject) => {
-    if (opts.signal.aborted) {
+    if (signal.aborted) {
       reject(new DOMException('aborted', 'AbortError'));
       return;
     }
-    setTimeout(() => {
+    const id = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
       const evt: Event = {
         id: `evt-${state.nextEventId++}`,
         ts: Date.now(),
@@ -158,5 +160,10 @@ export function postEvent(
       state.events.push(evt);
       resolve(evt);
     }, 250);
+    const onAbort = () => {
+      clearTimeout(id);
+      reject(new DOMException('aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }

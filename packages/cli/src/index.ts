@@ -32,11 +32,11 @@ mkdirSync(resolve(projectDir, 'src'));
 // package.json
 const scripts = ssrMode
   ? {
-      dev: 'node server.js',
+      dev: 'node --experimental-strip-types server.ts',
       build: 'npm run build:client && npm run build:server',
       'build:client': 'vite build --outDir dist/client',
       'build:server': 'vite build --ssr src/entry.server.ts --outDir dist/server',
-      preview: 'NODE_ENV=production node server.js',
+      preview: 'NODE_ENV=production node --experimental-strip-types server.ts',
     }
   : {
       dev: 'vite',
@@ -46,6 +46,15 @@ const scripts = ssrMode
 
 const dependencies: Record<string, string> = { '@purityjs/core': coreDep };
 if (ssrMode) dependencies['@purityjs/ssr'] = ssrDep;
+
+const devDependencies: Record<string, string> = {
+  '@purityjs/vite-plugin': pluginDep,
+  vite: '^8.0.0',
+  typescript: '^6.0.0',
+};
+// SSR mode adds `@types/node` for the server.ts boot script. Pinned to a
+// recent major; users can bump as needed.
+if (ssrMode) devDependencies['@types/node'] = '^25.0.0';
 
 writeFileSync(
   resolve(projectDir, 'package.json'),
@@ -57,11 +66,7 @@ writeFileSync(
       type: 'module',
       scripts,
       dependencies,
-      devDependencies: {
-        '@purityjs/vite-plugin': pluginDep,
-        vite: '^8.0.0',
-        typescript: '^6.0.0',
-      },
+      devDependencies,
     },
     null,
     2,
@@ -102,7 +107,9 @@ export default defineConfig({
 `,
 );
 
-// tsconfig.json
+// tsconfig.json — SSR mode adds `node` types (for the server.ts boot script),
+// `allowImportingTsExtensions` (the entry files import `./app.ts`), and
+// includes `server.ts` at the project root.
 writeFileSync(
   resolve(projectDir, 'tsconfig.json'),
   `${JSON.stringify(
@@ -112,10 +119,11 @@ writeFileSync(
         module: 'ESNext',
         moduleResolution: 'bundler',
         lib: ['ES2022', 'DOM', 'DOM.Iterable'],
+        ...(ssrMode ? { types: ['node'], allowImportingTsExtensions: true, noEmit: true } : {}),
         strict: true,
         skipLibCheck: true,
       },
-      include: ['src'],
+      include: ssrMode ? ['src', 'server.ts'] : ['src'],
     },
     null,
     2,
@@ -123,7 +131,7 @@ writeFileSync(
 );
 
 if (ssrMode) {
-  // index.html with <!--ssr-outlet--> marker — server.js replaces this with
+  // index.html with <!--ssr-outlet--> marker — server.ts replaces this with
   // the rendered HTML before sending the response.
   writeFileSync(
     resolve(projectDir, 'index.html'),
@@ -164,7 +172,7 @@ export function App() {
 `,
   );
 
-  // Server entry — exports render(url) consumed by server.js.
+  // Server entry — exports render(url) consumed by server.ts.
   writeFileSync(
     resolve(projectDir, 'src/entry.server.ts'),
     `import { renderToString } from '@purityjs/ssr';
@@ -188,10 +196,15 @@ if (root) hydrate(root, App);
   );
 
   // Minimal Node SSR server — zero deps beyond Node + Vite (dev) or the
-  // pre-built bundles (production).
+  // pre-built bundles (production). Run with `node --experimental-strip-types
+  // server.ts` (Node 22.6+) or just `node server.ts` on Node 23.6+.
   writeFileSync(
-    resolve(projectDir, 'server.js'),
-    `import { createServer } from 'node:http';
+    resolve(projectDir, 'server.ts'),
+    `import {
+  createServer as createHttpServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -200,35 +213,46 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const isProd = process.env.NODE_ENV === 'production';
 const port = Number(process.env.PORT ?? 3000);
 
+// Always log errors server-side; never leak stack traces or unescaped
+// exception text to the client.
+function sendError(res: ServerResponse, err: unknown): void {
+  console.error(err);
+  res.statusCode = 500;
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.end('Internal Server Error');
+}
+
 if (isProd) {
   const template = await readFile(resolve(__dirname, 'dist/client/index.html'), 'utf-8');
-  const { render } = await import(resolve(__dirname, 'dist/server/entry.server.js'));
-  createServer(async (req, res) => {
+  const mod = (await import(resolve(__dirname, 'dist/server/entry.server.js'))) as {
+    render: (url: string) => Promise<string>;
+  };
+  createHttpServer(async (req, res) => {
     try {
-      const html = await render(req.url ?? '/');
+      const html = await mod.render(req.url ?? '/');
       res.setHeader('Content-Type', 'text/html');
       res.end(template.replace('<!--ssr-outlet-->', html));
     } catch (err) {
-      res.statusCode = 500;
-      res.end(String(err?.stack ?? err));
+      sendError(res, err);
     }
   }).listen(port, () => console.log(\`prod server running at http://localhost:\${port}\`));
 } else {
   const { createServer: createViteServer } = await import('vite');
   const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'custom' });
-  createServer((req, res) => {
+  createHttpServer((req: IncomingMessage, res: ServerResponse) => {
     vite.middlewares(req, res, async () => {
       try {
         let template = await readFile(resolve(__dirname, 'index.html'), 'utf-8');
         template = await vite.transformIndexHtml(req.url ?? '/', template);
-        const { render } = await vite.ssrLoadModule('/src/entry.server.ts');
-        const html = await render(req.url ?? '/');
+        const mod = (await vite.ssrLoadModule('/src/entry.server.ts')) as {
+          render: (url: string) => Promise<string>;
+        };
+        const html = await mod.render(req.url ?? '/');
         res.setHeader('Content-Type', 'text/html');
         res.end(template.replace('<!--ssr-outlet-->', html));
       } catch (err) {
-        vite.ssrFixStacktrace?.(err);
-        res.statusCode = 500;
-        res.end(String(err?.stack ?? err));
+        vite.ssrFixStacktrace?.(err as Error);
+        sendError(res, err);
       }
     });
   }).listen(port, () => console.log(\`dev server running at http://localhost:\${port}\`));

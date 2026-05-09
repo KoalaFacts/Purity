@@ -116,6 +116,9 @@ export function resource<T, K>(
       } catch (err) {
         // Surface source-function errors via error() instead of letting them
         // escape as uncaught microtask exceptions out of the watch flush.
+        // Reset the dedup so a later same-key emission re-attempts the fetch
+        // instead of being silently skipped (which would freeze error() set).
+        hasPrevKey = false;
         batch(() => {
           error(err);
           loading(false);
@@ -205,7 +208,11 @@ export function resource<T, K>(
   accessor.mutate = (next) => {
     // Invalidate any in-flight fetch so a later resolution can't clobber
     // the optimistic value, and abort the underlying request if there is one.
+    // Also reset the dedup so the next same-key source emission re-fetches
+    // (mutate() is "optimistic" by contract — users expect server reconciliation
+    // on the next dep change).
     runId++;
+    hasPrevKey = false;
     if (currentController !== null) {
       currentController.abort();
       currentController = null;
@@ -226,6 +233,9 @@ export function resource<T, K>(
       currentController.abort();
       currentController = null;
     }
+    // Drop loading so any UI bound to it doesn't stick on a forever spinner
+    // when the resource is torn down mid-flight.
+    loading(false);
     dispose();
   };
 

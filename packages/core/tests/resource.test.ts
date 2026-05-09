@@ -606,9 +606,10 @@ describe('resource — reactive tracking proof', () => {
     await flushAll();
     stop();
 
-    // Should observe at least one true (initial sync run) followed by false.
+    // Two distinct observations: initial sync (true) and post-resolve (false).
+    expect(seen.length).toBeGreaterThanOrEqual(2);
     expect(seen[0]).toBe(true);
-    expect(seen[seen.length - 1]).toBe(false);
+    expect(seen.at(-1)).toBe(false);
   });
 
   it('outside compute() re-derives only when r() actually changes', async () => {
@@ -654,11 +655,16 @@ describe('resource — reactive tracking proof', () => {
     });
 
     await flushAll();
+    // Initial undefined → Error transition observed.
+    expect(seen.length).toBeGreaterThanOrEqual(2);
     expect(seen.at(-1)).toBeInstanceOf(Error);
 
+    const errLength = seen.length;
     shouldFail = false;
     r.refresh();
     await flushAll();
+    // Error → undefined transition observed (additional entries).
+    expect(seen.length).toBeGreaterThan(errLength);
     expect(seen.at(-1)).toBe(undefined);
 
     stop();
@@ -700,5 +706,83 @@ describe('resource — dispose escape hatch', () => {
 
     r.dispose();
     expect(captured.aborted).toBe(true);
+  });
+
+  it('dispose() clears loading() so UI never sticks on a forever spinner', async () => {
+    const r = resource(() => new Promise<number>(() => {}));
+    await flushAll();
+    expect(r.loading()).toBe(true);
+
+    r.dispose();
+    expect(r.loading()).toBe(false);
+  });
+});
+
+describe('resource — round-2 dedup invalidation', () => {
+  it('mutate() then a same-key source emission still re-fetches (optimistic reconciliation)', async () => {
+    const id = state(1);
+    const unrelated = state(0);
+    let calls = 0;
+    const r = resource(
+      () => {
+        unrelated();
+        return id();
+      },
+      (k) => {
+        calls++;
+        return Promise.resolve(`server-${k}-${calls}`);
+      },
+    );
+    await flushAll();
+    expect(calls).toBe(1);
+    expect(r()).toBe('server-1-1');
+
+    r.mutate('optimistic');
+    expect(r()).toBe('optimistic');
+
+    // An unrelated state change re-runs the watch with the same source value;
+    // because mutate() reset the dedup, this now re-fetches to reconcile.
+    unrelated(1);
+    await flushAll();
+    expect(calls).toBe(2);
+    expect(r()).toBe('server-1-2');
+  });
+
+  it('source-throw recovery to the same key clears error and re-fetches', async () => {
+    const id = state(1);
+    let calls = 0;
+    let throwOnNext = false;
+    const r = resource(
+      () => {
+        if (throwOnNext) throw new Error('source-boom');
+        return id();
+      },
+      (k) => {
+        calls++;
+        return Promise.resolve(`u${k}-${calls}`);
+      },
+    );
+    await flushAll();
+    expect(calls).toBe(1);
+    expect(r()).toBe('u1-1');
+
+    // Trigger source throw without changing the underlying key.
+    throwOnNext = true;
+    id(1);
+    // id(1) is a no-op write (Object.is), so we need to bump via refresh
+    // to force the watch to re-evaluate the source.
+    r.refresh();
+    await flushAll();
+    expect(r.error()).toBeInstanceOf(Error);
+    expect(calls).toBe(1);
+
+    // Source recovers; refresh again. Without the hasPrevKey reset in catch,
+    // the dedup would skip this and error() would stay set.
+    throwOnNext = false;
+    r.refresh();
+    await flushAll();
+    expect(r.error()).toBe(undefined);
+    expect(calls).toBe(2);
+    expect(r()).toBe('u1-2');
   });
 });

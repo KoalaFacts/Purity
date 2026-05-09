@@ -202,6 +202,39 @@ export function onError(fn: (err: unknown) => void): void {
  *
  * @returns Object with `unmount()` to remove the component.
  */
+/**
+ * Hydrate a server-rendered root: replace its children with a freshly rendered
+ * component tree, then attach reactive bindings via the standard `mount()`
+ * path.
+ *
+ * **PR 4 MVP — lossy hydration.** The pre-existing SSR DOM is discarded and
+ * the component is rendered fresh on the client. SSR's main UX benefit (the
+ * browser paints the initial HTML before JS loads) is preserved, but
+ * matching content produces a brief invisible flash and mismatched content
+ * produces a visible jump. A future PR will replace this with
+ * marker-walking hydration that preserves the existing DOM.
+ *
+ * Custom Elements with Declarative Shadow DOM are handled separately: the
+ * `connectedCallback` reuses the parser-attached shadow root and clears its
+ * children before re-rendering, so DSD doesn't break component init.
+ *
+ * @param container Element pre-rendered by `@purityjs/ssr`'s `renderToString`.
+ * @param component The same component function used during SSR.
+ * @returns Object with `unmount()` — same shape as `mount()`.
+ *
+ * @example
+ * ```ts
+ * import { hydrate } from '@purityjs/core';
+ * import { App } from './app.ts';
+ *
+ * hydrate(document.getElementById('app')!, App);
+ * ```
+ */
+export function hydrate(container: Element, component: ComponentFn): MountResult {
+  while (container.firstChild) container.removeChild(container.firstChild);
+  return mount(component, container);
+}
+
 export function mount(component: ComponentFn, container: Element): MountResult {
   const ctx = new ComponentContext();
   const parentCtx = getCurrentContext();

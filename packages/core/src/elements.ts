@@ -397,7 +397,11 @@ export function component<
 
       constructor() {
         super();
-        this._shadow = this.attachShadow({ mode: 'open' });
+        // Reuse a Declarative Shadow DOM root if the parser already attached
+        // one (the SSR-then-hydrate path emits
+        // `<tag><template shadowrootmode="open">…</template></tag>`).
+        // Calling attachShadow a second time would throw, so check first.
+        this._shadow = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
       }
 
       connectedCallback() {
@@ -443,6 +447,15 @@ export function component<
         this._ctx = ctx;
 
         const { result } = runRender(render, allProps, slotAccessors, ctx);
+
+        // PR 4 lossy hydration: when the shadow root already has children
+        // (DSD-parsed SSR content), clear them before appending the freshly
+        // rendered tree. The flash is invisible when SSR and CSR output match;
+        // mismatches produce a visible jump. A future PR can replace this
+        // with marker-walking hydration that preserves the existing DOM.
+        if (this._shadow.firstChild) {
+          while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
+        }
 
         // Render into shadow DOM
         this._shadow.appendChild(result);

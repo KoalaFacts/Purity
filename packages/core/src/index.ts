@@ -5,8 +5,8 @@
 // Template rendering (JIT compiled)
 export { html } from './compiler/compile.ts';
 export type { ComponentFn, MountResult } from './component.ts';
-// Lifecycle (3 hooks + error)
-export { mount, onDestroy, onDispose, onError, onMount } from './component.ts';
+// Lifecycle (3 hooks + error) + hydrate
+export { hydrate, mount, onDestroy, onDispose, onError, onMount } from './component.ts';
 // Control flow
 export { each, eachSSR, list, listSSR, match, matchSSR, when, whenSSR } from './control.ts';
 export type { DebouncedAccessor } from './debounced.ts';

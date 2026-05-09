@@ -515,7 +515,7 @@ describe('8. bundle size comparison', () => {
   ┌─────────────────────────────────────────────┐
   │ Bundle Size (minified + gzipped)             │
   │                                               │
-  │ Purity (core):         ~6 kB gz              │
+  │ Purity (core):         ~5.8 kB gz            │
   │ Purity (core + AOT):   ~4 kB gz (no parser) │
   │ SolidJS:               ~7 kB gz              │
   │ Svelte 5:              ~2 kB runtime         │
@@ -553,11 +553,11 @@ describe('summary', () => {
   │ List 1000 items    │ ~19ms     │ ~5-15ms   │ ~8-12ms   │ ~10-15ms      │
   │ List algorithm     │ LIS       │ LIS       │ LIS       │ LIS           │
   │ Cond. caching      │ ✓ cached  │ ✓ cached  │ ✓ cached  │ ✓ cached      │
-  │ Bundle (gz)        │ 6 kB      │ 7 kB      │ 2 kB+gen  │ 16 kB (beta)  │
+  │ Bundle (gz)        │ 5.8 kB    │ ~7 kB     │ ~2 kB+gen │ ~16 kB (beta) │
   │ Custom Elements    │ Native    │ Optional  │ Optional  │ Optional      │
-  │ Shadow DOM         │ Built-in  │ No        │ No        │ No            │
+  │ Shadow DOM         │ Default   │ Via CE    │ Via CE    │ Via CE        │
   │ Two-way binding    │ :: syntax │ Manual    │ bind:     │ v-model       │
-  │ Dependencies       │ 1         │ 0         │ 0         │ 0             │
+  │ Dependencies       │ 0         │ 0         │ 0         │ 0             │
   │                                                                          │
   │ * Svelte compiles reactivity away — runtime cost is ~0                  │
   │ ** Svelte effects/computeds are compile-time constructs                 │

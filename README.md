@@ -8,7 +8,7 @@
 A minimal, lightweight, super performant web framework built on native signals.
 
 - **20 functions** — that's the entire API
-- **6 kB gzipped** — with AOT compilation
+- **~5.8 kB gzipped** — with AOT compilation
 - **No virtual DOM** — signals drive DOM updates directly
 - **CSP-safe** — no `eval`, no `new Function` (with the Vite plugin)
 - **Zero runtime dependencies**
@@ -104,12 +104,15 @@ See each package README for full API documentation.
 | ------------------- | --------------------------------- | ----------------------------- | --------------------- | --------------------------- |
 | **Approach**        | TC39 Signals + compiled templates | Custom signals + compiled JSX | Runes + full compiler | Proxy reactivity + compiler |
 | **Virtual DOM**     | No                                | No                            | No                    | No                          |
-| **Bundle (gz)**     | 6 kB                              | 7 kB                          | 2 kB + generated      | 16 kB (beta)                |
+| **Bundle (gz)**¹    | 5.8 kB                            | ~7 kB                         | ~2 kB + generated     | ~16 kB (beta)               |
 | **Custom Elements** | Native                            | Optional                      | Optional              | Optional                    |
-| **Shadow DOM**      | Built-in                          | No                            | No                    | No                          |
+| **Shadow DOM**      | Default                           | Via custom elements           | Via custom elements   | Via custom elements         |
 | **Two-way binding** | `::prop`                          | Manual                        | `bind:`               | `v-model`                   |
-| **Async data**      | `resource()` built-in             | `createResource`              | Userland              | Userland                    |
+| **Async data**²     | `resource()` reactive primitive   | `createResource`              | `{#await}` template   | Userland                    |
 | **Dependencies**    | 0                                 | 0                             | 0                     | 0                           |
+
+¹ Purity measured locally with `vite build` on this branch; SolidJS / Svelte / Vue Vapor are each project's published runtime sizes — verify against bundlephobia for your specific imports.
+² "Reactive primitive" means a tracked accessor with `loading`/`error`/`refresh`/`mutate`. Svelte's `{#await}` is a template-level control flow over a promise (no reactive resource handle). Vue Vapor has `<Suspense>` as a coordination boundary but no resource primitive in core.
 
 **Runtime benchmarks** — automated in headless Chromium across 18 scenarios:
 [koalafacts.github.io/Purity](https://koalafacts.github.io/Purity/)

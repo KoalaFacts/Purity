@@ -5,7 +5,7 @@
 [![bundle size](https://img.shields.io/bundlephobia/minzip/@purityjs/core?label=gzipped)](https://bundlephobia.com/package/@purityjs/core)
 [![license](https://img.shields.io/npm/l/@purityjs/core.svg)](../../LICENSE)
 
-The core Purity framework. 20 functions. 6 kB gzipped. No virtual DOM.
+The core Purity framework. 20 functions. ~5.8 kB gzipped. No virtual DOM.
 
 ## Install
 

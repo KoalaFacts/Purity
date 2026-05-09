@@ -1,6 +1,6 @@
 # 0001: SSR strategy for 1.0
 
-**Status:** Proposed
+**Status:** Superseded by [0004](./0004-ssr-mvp.md)
 **Date:** 2026-05-09
 
 ## Context

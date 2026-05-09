@@ -7,11 +7,12 @@
 
 A minimal, lightweight, super performant web framework built on native signals.
 
-- **17 functions** — that's the entire API
+- **18 functions** — that's the entire API
 - **6 kB gzipped** — with AOT compilation
 - **No virtual DOM** — signals drive DOM updates directly
 - **CSP-safe** — no `eval`, no `new Function` (with the Vite plugin)
 - **Zero runtime dependencies**
+- **Race-safe async** — first-class `resource()` with built-in cancellation
 
 ## Quick Start
 
@@ -54,6 +55,28 @@ component('p-counter', () => {
 mount(() => html`<p-counter></p-counter>`, document.getElementById('app')!);
 ```
 
+### Async data, race-safe by default
+
+```ts
+import { state, resource } from '@purityjs/core';
+
+const id = state(1);
+const user = resource(
+  () => id(),
+  (id, { signal }) => fetch(`/u/${id}`, { signal }).then((r) => r.json()),
+);
+
+user(); // current data (tracked)
+user.loading(); // boolean (tracked)
+user.error(); // unknown (tracked)
+user.refresh(); // re-fetch with the same deps
+user.mutate(v); // optimistic update
+```
+
+Stale requests are aborted automatically when `id` changes or the component
+unmounts. Out-of-order resolutions are dropped via a monotonic run counter.
+No userland `AbortController` or `useEffect` cleanup needed.
+
 See each package README for full API documentation.
 
 ## How It Compares
@@ -66,6 +89,7 @@ See each package README for full API documentation.
 | **Custom Elements** | Native                            | Optional                      | Optional              | Optional                    |
 | **Shadow DOM**      | Built-in                          | No                            | No                    | No                          |
 | **Two-way binding** | `::prop`                          | Manual                        | `bind:`               | `v-model`                   |
+| **Async data**      | `resource()` built-in             | `createResource`              | Userland              | Userland                    |
 | **Dependencies**    | 0                                 | 0                             | 0                     | 0                           |
 
 **Runtime benchmarks** — automated in headless Chromium across 18 scenarios:

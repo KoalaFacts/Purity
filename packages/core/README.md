@@ -5,7 +5,7 @@
 [![bundle size](https://img.shields.io/bundlephobia/minzip/@purityjs/core?label=gzipped)](https://bundlephobia.com/package/@purityjs/core)
 [![license](https://img.shields.io/npm/l/@purityjs/core.svg)](../../LICENSE)
 
-The core Purity framework. 17 functions. 6 kB gzipped. No virtual DOM.
+The core Purity framework. 18 functions. 6 kB gzipped. No virtual DOM.
 
 ## Install
 
@@ -36,6 +36,51 @@ batch(() => {
   a(1);
   b(2);
 }); // single flush
+```
+
+### Async Resources
+
+Race-safe async data, built on signals. Each `resource()` exposes reactive
+`data`, `loading`, and `error` accessors and auto-aborts stale requests via a
+fresh `AbortSignal` whenever its dependencies change or its component unmounts.
+No userland controllers, no flag soup, no `useEffect` cleanup dance.
+
+```ts
+import { state, resource, html } from '@purityjs/core';
+
+const userId = state(1);
+
+const user = resource(
+  () => userId(), // re-fetch when this changes
+  (id, { signal }) => fetch(`/u/${id}`, { signal }).then((r) => r.json()),
+  { initialValue: null },
+);
+
+html`
+  ${() => (user.loading() ? html`<p>Loading…</p>` : null)}
+  ${() => (user.error() ? html`<p>${`Error: ${String(user.error())}`}</p>` : null)}
+  ${() => user()?.name}
+
+  <button @click=${() => user.refresh()}>Refresh</button>
+`;
+```
+
+| API               | Effect                                                                |
+| ----------------- | --------------------------------------------------------------------- |
+| `r()` / `r.get()` | Current data (tracked). `undefined` until the first fetch resolves.   |
+| `r.loading()`     | `true` while a fetch is in flight (tracked).                          |
+| `r.error()`       | The most recent rejection, or `undefined` (tracked).                  |
+| `r.refresh()`     | Re-runs the fetcher with the current deps.                            |
+| `r.mutate(v)`     | Optimistically writes data and clears any error.                      |
+| Falsy source      | Returning `null` / `undefined` / `false` from the source skips fetch. |
+| `AbortSignal`     | Aborted automatically on dep change or unmount.                       |
+
+Single-arg form (auto-tracked deps inside the fetcher) is also supported:
+
+```ts
+const todos = resource(({ signal }) =>
+  fetch(`/todos?limit=${limit()}`, { signal }).then((r) => r.json()),
+);
 ```
 
 ### Templates

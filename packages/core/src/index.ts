@@ -12,6 +12,9 @@ export { each, list, match, when } from './control.ts';
 export type { SlotAccessor } from './elements.ts';
 // Components, slots, teleport
 export { component, slot, teleport } from './elements.ts';
+export type { ResourceAccessor, ResourceFetchInfo, ResourceOptions } from './resource.ts';
+// Async resources
+export { resource } from './resource.ts';
 export type { ComputedAccessor, Dispose, StateAccessor } from './signals.ts';
 // Reactive primitives
 export { batch, compute, state, watch } from './signals.ts';

@@ -99,10 +99,17 @@ import it without pulling in runtime code.
 
 ```bash
 npx vitest run          # run all tests
+npm run bench           # run vitest micro-benchmarks (resource.bench.ts)
 ```
 
 - Use `const tick = () => new Promise(r => queueMicrotask(r))` for async updates
 - jsdom environment
+
+## Benchmarks
+
+- `tests/resource.bench.ts` — vitest micro-benchmarks (init / fetch / debounce / mutate / poll cost)
+- `../../benchmark/tools/resource-heap.mjs` — Node `--expose-gc` heap diff per cycle (run with `node --expose-gc --conditions=development --import tsx tools/resource-heap.mjs` from `/benchmark`)
+- See the package README "Performance" section for the latest numbers.
 
 ## Code Style
 

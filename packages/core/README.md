@@ -135,6 +135,167 @@ const results = resource(
 html`<input ::value=${search} placeholder="search…" />`;
 ```
 
+#### End-to-end recipes
+
+**Pagination with SWR** — `r()` keeps the previous page's data visible
+while the next page is fetching, so the list never flashes empty.
+
+```ts
+const page = state(1);
+const items = resource(
+  () => page(),
+  (p, { signal }) => fetch(`/items?page=${p}`, { signal }).then((r) => r.json()),
+);
+
+component('p-paginated', () => {
+  return html`
+    <ul>
+      ${each(
+        () => items() ?? [],
+        (item) => html`<li>${() => item().name}</li>`,
+      )}
+    </ul>
+    <button @click=${() => page((p) => Math.max(1, p - 1))}>Prev</button>
+    <span>${() => page()}</span>
+    <button @click=${() => page((p) => p + 1)}>Next</button>
+    ${() => (items.loading() ? html`<small>updating…</small>` : null)}
+  `;
+});
+```
+
+**Search-as-you-type** — debounce the input, skip fetches on empty
+strings, and let the resource's AbortSignal cancel the in-flight HTTP
+request when a newer keystroke arrives.
+
+```ts
+component('p-search', () => {
+  const term = state('');
+  const query = debounced(term, 300);
+  const results = resource(
+    () => query().trim() || null,
+    (q, { signal }) =>
+      fetch(`/search?q=${encodeURIComponent(q)}`, { signal }).then((r) => r.json()),
+  );
+
+  return html`
+    <input ::value=${term} placeholder="search…" />
+    ${() => (results.loading() ? html`<p>searching…</p>` : null)}
+    <ul>
+      ${each(
+        () => results() ?? [],
+        (hit) => html`<li>${() => hit().title}</li>`,
+      )}
+    </ul>
+  `;
+});
+```
+
+**Optimistic save with rollback** — mutate the local data immediately,
+then call the lazy save resource. If the save errors, restore the
+previous value.
+
+```ts
+component('p-todo-row', ({ todo }) => {
+  const local = state(todo);
+  const save = lazyResource((next: typeof todo, { signal }) =>
+    fetch(`/todos/${next.id}`, {
+      method: 'PUT',
+      body: JSON.stringify(next),
+      signal,
+    }).then((r) => {
+      if (!r.ok) throw new Error('save failed');
+      return r.json();
+    }),
+  );
+
+  const toggle = () => {
+    const prev = local.peek();
+    const next = { ...prev, done: !prev.done };
+    local(next); // optimistic
+    save.fetch(next);
+    watch(save.error, (err) => {
+      if (err) local(prev); // roll back
+    });
+  };
+
+  return html`
+    <label>
+      <input type="checkbox" ?checked=${() => local().done} @change=${toggle} />
+      ${() => local().title} ${() => (save.loading() ? html`<small>saving…</small>` : null)}
+    </label>
+  `;
+});
+```
+
+**Polling dashboard with pause** — `pollInterval` re-fetches every N ms
+after each settle. Pair with a manual `dispose()` to pause.
+
+```ts
+component('p-dashboard', () => {
+  const paused = state(false);
+  const stats = resource(
+    () => (paused() ? null : 'tick'),
+    (_, { signal }) => fetch('/stats', { signal }).then((r) => r.json()),
+    { pollInterval: 5_000, retry: 2 },
+  );
+  return html`
+    <h2>Live stats</h2>
+    <pre>${() => JSON.stringify(stats(), null, 2)}</pre>
+    <button @click=${() => paused((v) => !v)}>${() => (paused() ? 'Resume' : 'Pause')}</button>
+    ${() => (stats.error() ? html`<p>connection lost</p>` : null)}
+  `;
+});
+```
+
+#### Performance
+
+Numbers from the package's vitest bench (`npm run bench -w packages/core`)
+on a 2024 M-class laptop, jsdom environment. Treat as relative — useful
+for tracking regressions, not for cross-framework claims.
+
+| Operation                                 | ops/sec | per op |
+| ----------------------------------------- | ------- | ------ |
+| `resource()` construct + sync resolve     | ~58 k   | ~17 µs |
+| `resource()` construct + async resolve    | ~70 k   | ~14 µs |
+| `resource(source)` source-skip path       | ~464 k  | ~2 µs  |
+| 1 dep change → fetch → resolve            | ~43 k   | ~23 µs |
+| 10 rapid dep changes → 1 winning resolve  | ~44 k   | ~23 µs |
+| 100 reactive watchers on a resolved `r`   | ~14 k   | ~70 µs |
+| `mutate(value)`                           | ~64 k   | ~16 µs |
+| `refresh()` round-trip                    | ~42 k   | ~24 µs |
+| `lazyResource()` construct (no fetch)     | ~389 k  | ~3 µs  |
+| `lazyResource.fetch(args)` → resolve      | ~60 k   | ~17 µs |
+| `debounced()` construct                   | ~706 k  | ~1 µs  |
+| `debounced` 1 source update               | ~300 k  | ~3 µs  |
+| `debounced` 100 rapid updates (coalesced) | ~167 k  | ~6 µs  |
+
+The "10 rapid dep changes" row matches "1 dep change" — the manual
+prev-key dedup collapses bursts to a single fetch.
+
+**Memory (per resource lifecycle, after dispose)** — measured with
+`benchmark/tools/resource-heap.mjs` over 1 000 cycles:
+
+| Cycle                                            | Retained per cycle |
+| ------------------------------------------------ | ------------------ |
+| `resource()` sync resolve + dispose              | ~80 B              |
+| `resource()` async resolve + dispose             | ~85 B              |
+| `resource(source, fetcher)` full fetch + dispose | ~265 B             |
+| `lazyResource()` construct + fetch + dispose     | ~115 B             |
+| `debounced()` construct + 10 updates + flush     | ~30 B              |
+
+These are V8 bookkeeping noise — sub-kilobyte per cycle indicates the
+lifecycle is a closed loop and the controllers, watchers, and state
+nodes are all reclaimed on dispose.
+
+Run yourself:
+
+```bash
+npm run bench -w packages/core             # vitest micro-benches
+cd benchmark && \
+  node --expose-gc --conditions=development \
+    --import tsx tools/resource-heap.mjs    # heap diff per cycle
+```
+
 ### Templates
 
 JIT compiled: `html` tagged literals → parse → AST → codegen → cached DOM factory.

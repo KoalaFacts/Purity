@@ -9,6 +9,7 @@ export type { ComponentFn, MountResult } from './component.ts';
 export { mount, onDestroy, onDispose, onError, onMount } from './component.ts';
 // Control flow
 export { each, list, match, when } from './control.ts';
+export type { DebouncedAccessor } from './debounced.ts';
 // Debounced derived signal
 export { debounced } from './debounced.ts';
 export type { SlotAccessor } from './elements.ts';

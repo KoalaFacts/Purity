@@ -250,27 +250,31 @@ component('p-dashboard', () => {
 #### Performance
 
 Numbers from the package's vitest bench (`npm run bench -w packages/core`)
-on a 2024 M-class laptop, jsdom environment. Treat as relative — useful
-for tracking regressions, not for cross-framework claims.
+on a 2024 M-class laptop, jsdom environment. Construction and disposal
+happen in setup/teardown so the timed region is the steady-state
+operation. Treat as relative — useful for tracking regressions, not for
+cross-framework claims.
 
-| Operation                                 | ops/sec | per op |
-| ----------------------------------------- | ------- | ------ |
-| `resource()` construct + sync resolve     | ~58 k   | ~17 µs |
-| `resource()` construct + async resolve    | ~70 k   | ~14 µs |
-| `resource(source)` source-skip path       | ~464 k  | ~2 µs  |
-| 1 dep change → fetch → resolve            | ~43 k   | ~23 µs |
-| 10 rapid dep changes → 1 winning resolve  | ~44 k   | ~23 µs |
-| 100 reactive watchers on a resolved `r`   | ~14 k   | ~70 µs |
-| `mutate(value)`                           | ~64 k   | ~16 µs |
-| `refresh()` round-trip                    | ~42 k   | ~24 µs |
-| `lazyResource()` construct (no fetch)     | ~389 k  | ~3 µs  |
-| `lazyResource.fetch(args)` → resolve      | ~60 k   | ~17 µs |
-| `debounced()` construct                   | ~706 k  | ~1 µs  |
-| `debounced` 1 source update               | ~300 k  | ~3 µs  |
-| `debounced` 100 rapid updates (coalesced) | ~167 k  | ~6 µs  |
+| Operation                                          | ops/sec | per op  |
+| -------------------------------------------------- | ------- | ------- |
+| `resource()` construct + sync resolve + dispose    | ~55 k   | ~18 µs  |
+| `resource()` construct + async resolve + dispose   | ~64 k   | ~16 µs  |
+| `resource(source)` construct, source-skip, dispose | ~377 k  | ~3 µs   |
+| 1 dep change → fetch → resolve                     | ~113 k  | ~9 µs   |
+| 10 rapid dep changes → 1 winning resolve           | ~113 k  | ~9 µs   |
+| 100 reactive watchers on a resolved `r`            | ~24 k   | ~42 µs  |
+| `mutate(value)` (steady-state)                     | ~6.2 M  | ~160 ns |
+| `refresh()` round-trip                             | ~113 k  | ~9 µs   |
+| `lazyResource()` construct (no fetch) + dispose    | ~234 k  | ~4 µs   |
+| `lazyResource.fetch(args)` → resolve               | ~100 k  | ~10 µs  |
+| `debounced()` construct + dispose                  | ~784 k  | ~1.3 µs |
+| `debounced` 1 source update                        | ~740 k  | ~1.4 µs |
+| `debounced` 100 rapid updates (coalesced)          | ~378 k  | ~2.6 µs |
 
 The "10 rapid dep changes" row matches "1 dep change" — the manual
-prev-key dedup collapses bursts to a single fetch.
+prev-key dedup collapses bursts to a single fetch. `mutate(value)` in
+steady state is essentially `runId++` plus a no-op `batch()` because
+`writeState` short-circuits on `Object.is`.
 
 **Memory (per resource lifecycle, after dispose)** — measured with
 `benchmark/tools/resource-heap.mjs` over 1 000 cycles:
@@ -280,8 +284,8 @@ prev-key dedup collapses bursts to a single fetch.
 | `resource()` sync resolve + dispose              | ~80 B              |
 | `resource()` async resolve + dispose             | ~85 B              |
 | `resource(source, fetcher)` full fetch + dispose | ~265 B             |
-| `lazyResource()` construct + fetch + dispose     | ~115 B             |
-| `debounced()` construct + 10 updates + flush     | ~30 B              |
+| `lazyResource()` construct + fetch + dispose     | ~120 B             |
+| `debounced()` construct + 10 updates + dispose   | ~30 B              |
 
 These are V8 bookkeeping noise — sub-kilobyte per cycle indicates the
 lifecycle is a closed loop and the controllers, watchers, and state

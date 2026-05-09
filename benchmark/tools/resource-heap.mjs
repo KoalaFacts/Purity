@@ -111,7 +111,7 @@ async function main() {
     const s = state(0);
     const d = debounced(s, 1);
     return {
-      r: { dispose: () => {} },
+      r: d,
       run: async () => {
         for (let i = 1; i <= 10; i++) s(i);
         await sleep(5);

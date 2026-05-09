@@ -179,15 +179,12 @@ export function resource<T, K>(
 
   let runId = 0;
   let currentController: AbortController | null = null;
-  // Manual prev-key dedup so an unrelated state read inside the source
-  // function doesn't cause a refetch when the source value is unchanged.
-  // (We can't use compute() here because a throw inside compute escapes the
-  // watch's CHECK→CLEAN dependency walk before our try/catch could see it.)
+  // Manual prev-key dedup. compute() can't be used: a throw inside compute
+  // escapes the watch's CHECK→CLEAN dependency walk before any try/catch
+  // around the read could see it.
   let prevKey: K;
   let hasPrevKey = false;
-  let forceNext = false;
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
-  let disposed = false;
 
   const clearPoll = () => {
     if (pollTimer !== null) {
@@ -196,21 +193,26 @@ export function resource<T, K>(
     }
   };
 
-  const schedulePoll = () => {
+  const cancelInFlight = () => {
     clearPoll();
-    if (pollInterval == null || disposed) return;
+    if (currentController !== null) {
+      currentController.abort();
+      currentController = null;
+    }
+  };
+
+  const schedulePoll = () => {
+    if (pollInterval == null) return;
+    clearPoll();
     pollTimer = setTimeout(() => {
       pollTimer = null;
-      // refresh(): bumps refreshTick so the watch re-runs with forceNext.
-      forceNext = true;
+      hasPrevKey = false;
       refreshTick((v) => v + 1);
     }, pollInterval);
   };
 
   const dispose = watch(() => {
     refreshTick();
-    const wantsForce = forceNext;
-    forceNext = false;
 
     let key: K | undefined;
     if (sourceFn !== null) {
@@ -218,10 +220,6 @@ export function resource<T, K>(
       try {
         k = sourceFn();
       } catch (err) {
-        // Surface source-function errors via error() instead of letting them
-        // escape as uncaught microtask exceptions out of the watch flush.
-        // Reset the dedup so a later same-key emission re-attempts the fetch
-        // instead of being silently skipped (which would freeze error() set).
         hasPrevKey = false;
         clearPoll();
         batch(() => {
@@ -232,15 +230,12 @@ export function resource<T, K>(
       }
       if (k === false || k === null || k === undefined) {
         hasPrevKey = false;
-        currentController = null;
+        if (currentController !== null) currentController = null;
         clearPoll();
         loading(false);
         return;
       }
-      if (!wantsForce && hasPrevKey && Object.is(prevKey, k)) {
-        // Source value unchanged and not a forced refresh — skip refetch.
-        return;
-      }
+      if (hasPrevKey && Object.is(prevKey, k)) return;
       prevKey = k;
       hasPrevKey = true;
       key = k;
@@ -250,6 +245,7 @@ export function resource<T, K>(
     const ac = new AbortController();
     currentController = ac;
     clearPoll();
+    const cleanup = () => ac.abort();
 
     const callFetcher = (): T | Promise<T> =>
       sourceFn !== null
@@ -270,7 +266,7 @@ export function resource<T, K>(
         loading(false);
       });
       schedulePoll();
-      return () => ac.abort();
+      return cleanup;
     }
 
     if (!(result instanceof Promise)) {
@@ -281,7 +277,7 @@ export function resource<T, K>(
         loading(false);
       });
       schedulePoll();
-      return () => ac.abort();
+      return cleanup;
     }
 
     result.then(
@@ -304,32 +300,25 @@ export function resource<T, K>(
       },
     );
 
-    return () => ac.abort();
+    return cleanup;
   });
 
-  const accessor = (() => data()) as ResourceAccessor<T>;
-  accessor.get = () => data();
-  accessor.peek = () => data.peek();
-  accessor.loading = () => loading();
-  accessor.error = () => error();
+  const accessor = data.get as ResourceAccessor<T>;
+  accessor.get = data.get;
+  accessor.peek = data.peek;
+  accessor.loading = loading.get;
+  accessor.error = error.get;
   accessor.refresh = () => {
-    forceNext = true;
+    hasPrevKey = false;
     clearPoll();
     refreshTick((v) => v + 1);
   };
   accessor.mutate = (next) => {
-    // Invalidate any in-flight fetch so a later resolution can't clobber
-    // the optimistic value, and abort the underlying request if there is one.
-    // Also reset the dedup so the next same-key source emission re-fetches
-    // (mutate() is "optimistic" by contract — users expect server reconciliation
-    // on the next dep change).
+    // mutate() is optimistic: invalidate any in-flight fetch and clear the
+    // dedup so the next same-key source emission re-fetches for reconciliation.
     runId++;
     hasPrevKey = false;
-    clearPoll();
-    if (currentController !== null) {
-      currentController.abort();
-      currentController = null;
-    }
+    cancelInFlight();
     batch(() => {
       if (typeof next === 'function') {
         data(next as (current: T | undefined) => T);
@@ -342,14 +331,9 @@ export function resource<T, K>(
     });
   };
   accessor.dispose = () => {
-    disposed = true;
-    clearPoll();
-    if (currentController !== null) {
-      currentController.abort();
-      currentController = null;
-    }
-    // Drop loading so any UI bound to it doesn't stick on a forever spinner
-    // when the resource is torn down mid-flight.
+    cancelInFlight();
+    hasPrevKey = false;
+    // Drop loading so UI bound to it doesn't stick on a forever spinner.
     loading(false);
     dispose();
   };

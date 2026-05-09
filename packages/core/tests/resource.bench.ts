@@ -7,9 +7,14 @@
 // ---------------------------------------------------------------------------
 
 import { bench, describe } from 'vitest';
-import { debounced } from '../src/debounced.ts';
-import { lazyResource, resource } from '../src/resource.ts';
-import { state, watch } from '../src/signals.ts';
+import { debounced, type DebouncedAccessor } from '../src/debounced.ts';
+import {
+  lazyResource,
+  type LazyResourceAccessor,
+  resource,
+  type ResourceAccessor,
+} from '../src/resource.ts';
+import { state, type StateAccessor, watch } from '../src/signals.ts';
 
 const tick = () => new Promise<void>((r) => queueMicrotask(() => r()));
 
@@ -36,69 +41,111 @@ describe('resource — construction', () => {
 });
 
 describe('resource — fetch round-trip', () => {
-  bench('1 dep change → fetch → resolve', async () => {
-    const id = state(0);
-    const r = resource(
-      () => id(),
-      (k) => Promise.resolve(k * 2),
-    );
-    await tick();
-    id(1);
-    await tick();
-    await tick();
-    r.dispose();
-  });
+  let id: StateAccessor<number>;
+  let r: ResourceAccessor<number>;
 
-  bench('10 rapid dep changes → 1 winning resolve', async () => {
-    const id = state(0);
-    const r = resource(
-      () => id(),
-      (k) => Promise.resolve(k * 2),
-    );
-    await tick();
-    for (let i = 1; i <= 10; i++) id(i);
-    await tick();
-    await tick();
-    r.dispose();
-  });
+  bench(
+    '1 dep change → fetch → resolve',
+    async () => {
+      id(id.peek() + 1);
+      await tick();
+      await tick();
+    },
+    {
+      setup: async () => {
+        id = state(0);
+        r = resource(
+          () => id(),
+          (k) => Promise.resolve(k * 2),
+        );
+        await tick();
+      },
+      teardown: () => r.dispose(),
+    },
+  );
+
+  bench(
+    '10 rapid dep changes → 1 winning resolve',
+    async () => {
+      for (let i = 1; i <= 10; i++) id(id.peek() + 1);
+      await tick();
+      await tick();
+    },
+    {
+      setup: async () => {
+        id = state(0);
+        r = resource(
+          () => id(),
+          (k) => Promise.resolve(k * 2),
+        );
+        await tick();
+      },
+      teardown: () => r.dispose(),
+    },
+  );
 });
 
 describe('resource — reactive read overhead', () => {
-  // Simulates 100 consumers in a template subscribing to r.loading() / r() / r.error().
-  bench('100 watchers on a resolved resource', async () => {
-    const r = resource(() => Promise.resolve(42));
-    await tick();
-    const stops: Array<() => void> = [];
-    for (let i = 0; i < 100; i++) {
-      stops.push(
-        watch(() => {
-          r();
-          r.loading();
-          r.error();
-        }),
-      );
-    }
-    for (const s of stops) s();
-    r.dispose();
-  });
+  let r: ResourceAccessor<number>;
+  let stops: Array<() => void> = [];
+
+  bench(
+    '100 watchers on a resolved resource',
+    () => {
+      stops = [];
+      for (let i = 0; i < 100; i++) {
+        stops.push(
+          watch(() => {
+            r();
+            r.loading();
+            r.error();
+          }),
+        );
+      }
+      for (const s of stops) s();
+    },
+    {
+      setup: async () => {
+        r = resource(() => Promise.resolve(42));
+        await tick();
+      },
+      teardown: () => r.dispose(),
+    },
+  );
 });
 
 describe('resource — mutate / refresh', () => {
-  bench('mutate(value)', async () => {
-    const r = resource(() => Promise.resolve(0));
-    await tick();
-    r.mutate(99);
-    r.dispose();
-  });
+  let r: ResourceAccessor<number>;
 
-  bench('refresh() round-trip', async () => {
-    const r = resource(() => Promise.resolve(0));
-    await tick();
-    r.refresh();
-    await tick();
-    await tick();
-    r.dispose();
-  });
+  bench(
+    'mutate(value)',
+    () => {
+      r.mutate(99);
+    },
+    {
+      setup: async () => {
+        r = resource(() => Promise.resolve(0));
+        await tick();
+      },
+      teardown: () => r.dispose(),
+    },
+  );
+
+  bench(
+    'refresh() round-trip',
+    async () => {
+      r.refresh();
+      await tick();
+      await tick();
+    },
+    {
+      setup: async () => {
+        r = resource(() => Promise.resolve(0));
+        await tick();
+      },
+      teardown: () => r.dispose(),
+    },
+  );
 });
 
 describe('lazyResource', () => {
@@ -107,35 +154,62 @@ describe('lazyResource', () => {
     r.dispose();
   });
 
-  bench('fetch(args) → resolve', async () => {
-    const r = lazyResource((args: number) => Promise.resolve(args));
-    r.fetch(1);
-    await tick();
-    await tick();
-    r.dispose();
-  });
+  let r: LazyResourceAccessor<number, number>;
+  bench(
+    'fetch(args) → resolve',
+    async () => {
+      r.fetch(1);
+      await tick();
+      await tick();
+    },
+    {
+      setup: () => {
+        r = lazyResource((args: number) => Promise.resolve(args));
+      },
+      teardown: () => r.dispose(),
+    },
+  );
 });
 
 describe('debounced', () => {
   bench('construct + dispose (no updates)', () => {
     const s = state(0);
     const d = debounced(s, 100);
-    void d();
+    d.dispose();
   });
 
-  bench('1 source update (timer scheduled)', async () => {
-    const s = state(0);
-    const d = debounced(s, 100);
-    s(1);
-    await tick();
-    void d();
-  });
+  let s: StateAccessor<number>;
+  let d: DebouncedAccessor<number>;
 
-  bench('100 rapid source updates (coalesced)', async () => {
-    const s = state(0);
-    const d = debounced(s, 100);
-    for (let i = 1; i <= 100; i++) s(i);
-    await tick();
-    void d();
-  });
+  bench(
+    '1 source update (timer scheduled)',
+    async () => {
+      s(s.peek() + 1);
+      await tick();
+    },
+    {
+      setup: () => {
+        s = state(0);
+        d = debounced(s, 100);
+        void d();
+      },
+      teardown: () => d.dispose(),
+    },
+  );
+
+  bench(
+    '100 rapid source updates (coalesced)',
+    async () => {
+      for (let i = 0; i < 100; i++) s(s.peek() + 1);
+      await tick();
+    },
+    {
+      setup: () => {
+        s = state(0);
+        d = debounced(s, 100);
+        void d();
+      },
+      teardown: () => d.dispose(),
+    },
+  );
 });

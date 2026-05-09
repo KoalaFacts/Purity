@@ -7,6 +7,15 @@
 import { type ComputedAccessor, state, watch } from './signals.ts';
 
 /**
+ * Debounced read-only accessor with an explicit dispose. Inside a component
+ * the underlying watcher auto-disposes on unmount; `dispose()` is the escape
+ * hatch for module-scope or test usage.
+ */
+export interface DebouncedAccessor<T> extends ComputedAccessor<T> {
+  dispose(): void;
+}
+
+/**
  * Debounced read-only accessor. Mirrors `source` after `ms` of no further
  * changes. The initial value is observed synchronously; subsequent updates
  * are delayed.
@@ -20,34 +29,39 @@ import { type ComputedAccessor, state, watch } from './signals.ts';
  * );
  * ```
  */
-export function debounced<T>(source: () => T, ms: number): ComputedAccessor<T> {
-  // Capture initial value outside any tracking context so the debounced
-  // accessor reflects the source synchronously on first read.
-  const initial = source();
-  const out = state<T>(initial);
+export function debounced<T>(source: () => T, ms: number): DebouncedAccessor<T> {
+  // Initial value captured outside any tracking context so first read is sync.
+  const out = state<T>(source());
   let timer: ReturnType<typeof setTimeout> | null = null;
   let firstRun = true;
 
-  watch(() => {
+  const cleanup = () => {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+
+  const stop = watch(() => {
     const v = source();
     if (firstRun) {
       firstRun = false;
-      return () => {
-        if (timer !== null) clearTimeout(timer);
-      };
+      return cleanup;
     }
-    if (timer !== null) clearTimeout(timer);
+    cleanup();
     timer = setTimeout(() => {
       timer = null;
       out(v);
     }, ms);
-    return () => {
-      if (timer !== null) clearTimeout(timer);
-    };
+    return cleanup;
   });
 
-  const accessor = (() => out()) as ComputedAccessor<T>;
-  accessor.get = () => out();
-  accessor.peek = () => out.peek();
+  const accessor = out.get as DebouncedAccessor<T>;
+  accessor.get = out.get;
+  accessor.peek = out.peek;
+  accessor.dispose = () => {
+    cleanup();
+    stop();
+  };
   return accessor;
 }

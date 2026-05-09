@@ -472,6 +472,13 @@ import { mount } from '@purityjs/core';
 const { unmount } = mount(() => html`<p-app></p-app>`, document.getElementById('app')!);
 ```
 
+## Further reading
+
+- [TypeScript guide](../../docs/typescript.md) — inference patterns for `state` / `compute` / `resource`, generic component props, scoped slots, custom `WatchSource`-based helpers
+- [Why Shadow DOM by default](../../docs/shadow-dom-rationale.md) — when the encapsulation pays, when it hurts, escape hatches, Tailwind / global-CSS integration
+- [Accessibility under Shadow DOM](../../docs/accessibility.md) — ARIA across boundaries, focus delegation, screen-reader patterns, a worked `p-tabs` example
+- [Migration cheatsheet](../../docs/migration.md) — side-by-side translations from React / SolidJS / Vue / Svelte to Purity
+
 ## License
 
 MIT

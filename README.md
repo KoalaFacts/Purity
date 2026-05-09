@@ -147,6 +147,15 @@ Knowing what's missing matters more than what's there. As of `0.1.0`:
   (ARIA across boundaries, focus delegation) that we have not yet
   documented or tested at scale.
 
+## Docs
+
+Long-form guides live in [`/docs`](./docs/README.md):
+
+- [TypeScript guide](./docs/typescript.md)
+- [Why Shadow DOM by default](./docs/shadow-dom-rationale.md)
+- [Accessibility under Shadow DOM](./docs/accessibility.md)
+- [Migration cheatsheet](./docs/migration.md) (React / SolidJS / Vue / Svelte → Purity)
+
 ## Development
 
 ```bash

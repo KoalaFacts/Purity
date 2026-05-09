@@ -14,6 +14,7 @@
 // ---------------------------------------------------------------------------
 
 import { batch, state, watch } from './signals.ts';
+import { consumeHydrationValue, getSSRRenderContext } from './ssr-context.ts';
 
 const abortError = () => new DOMException('aborted', 'AbortError');
 
@@ -174,7 +175,18 @@ export function resource<T, K>(
   const retry = normalizeRetry(options.retry);
   const pollInterval = options.pollInterval;
 
-  const data = state<T | undefined>(options.initialValue);
+  // Client-side: if hydrate() primed a cache, consume the next value as the
+  // initial data and skip the FIRST watch-driven fetch. This avoids the brief
+  // loading flash that would otherwise refetch every server-rendered
+  // resource on hydrate. The watch still fires later when source-key deps
+  // change, so reactivity is intact.
+  const hydrationValue = consumeHydrationValue();
+  const hasHydrationValue = hydrationValue !== undefined;
+  let skipFirstFetch = hasHydrationValue;
+
+  const data = state<T | undefined>(
+    hasHydrationValue ? (hydrationValue as T) : options.initialValue,
+  );
   const error = state<unknown>(undefined);
   const loading = state<boolean>(false);
   const refreshTick = state(0);
@@ -213,8 +225,99 @@ export function resource<T, K>(
     }, pollInterval);
   };
 
+  // SSR path: bypass watch entirely. Two-pass render — first pass fires the
+  // fetcher and registers the promise on the active SSRRenderContext; second
+  // pass consumes the resolved value from `ctx.resolvedData`. The watch is
+  // reactive and DOM-bound, neither of which applies on the server.
+  const ssrCtx = getSSRRenderContext();
+  if (ssrCtx) {
+    const idx = ssrCtx.resourceCounter++;
+    if (idx < ssrCtx.resolvedData.length) {
+      // Resolved by a prior pass — populate data + error synchronously.
+      // Errors are tracked separately because each pass allocates fresh
+      // state signals; without this, an error from pass 1 would silently
+      // disappear on pass 2.
+      data(() => ssrCtx.resolvedData[idx] as T);
+      const e = ssrCtx.resolvedErrors[idx];
+      if (e !== undefined) error(e);
+    } else {
+      // First pass for this resource. Resolve the source key, fire the
+      // fetcher, push the promise onto pendingPromises so renderToString
+      // knows to await before re-rendering.
+      let key: K | undefined;
+      let skip = false;
+      if (sourceFn !== null) {
+        try {
+          const k = sourceFn();
+          if (k === false || k === null || k === undefined) skip = true;
+          else key = k;
+        } catch (err) {
+          error(err);
+          skip = true;
+        }
+      }
+      if (!skip) {
+        const ac = new AbortController();
+        const callFetcher = (): T | Promise<T> =>
+          sourceFn !== null
+            ? (fetcher as (key: K, info: ResourceFetchInfo) => T | Promise<T>)(key as K, {
+                signal: ac.signal,
+              })
+            : (fetcher as (info: ResourceFetchInfo) => T | Promise<T>)({
+                signal: ac.signal,
+              });
+        try {
+          const result = retry.count > 0 ? withRetry(callFetcher, ac.signal, retry) : callFetcher();
+          const promise = Promise.resolve(result).then(
+            (value) => {
+              ssrCtx.resolvedData[idx] = value;
+              ssrCtx.resolvedErrors[idx] = undefined;
+              data(() => value);
+            },
+            (err) => {
+              // Record undefined so the slot index doesn't shift in the next
+              // pass; persist the error so pass 2's resource() can re-surface
+              // it through the error() accessor.
+              ssrCtx.resolvedData[idx] = undefined;
+              ssrCtx.resolvedErrors[idx] = err;
+              error(err);
+            },
+          );
+          ssrCtx.pendingPromises.push(promise);
+        } catch (err) {
+          error(err);
+        }
+      }
+    }
+    // Skip the watch-based path entirely — populate the accessor and return.
+    const ssrAccessor = data.get as ResourceAccessor<T>;
+    ssrAccessor.get = data.get;
+    ssrAccessor.peek = data.peek;
+    ssrAccessor.loading = loading.get;
+    ssrAccessor.error = error.get;
+    // refresh / mutate / dispose are no-ops on the server: SSR is one-shot.
+    ssrAccessor.refresh = () => {};
+    ssrAccessor.mutate = () => {};
+    ssrAccessor.dispose = () => {};
+    return ssrAccessor;
+  }
+
   const dispose = watch(() => {
     refreshTick();
+    if (skipFirstFetch) {
+      // Hydration: cached value already in `data`; skip the first fetcher
+      // run. Source-key changes after hydrate continue to fetch normally.
+      skipFirstFetch = false;
+      // Track refreshTick / sourceFn deps so subsequent invalidations re-fire.
+      if (sourceFn !== null) {
+        try {
+          sourceFn();
+        } catch {
+          // Errors during dep tracking are surfaced on the next real run.
+        }
+      }
+      return;
+    }
 
     let key: K | undefined;
     if (sourceFn !== null) {

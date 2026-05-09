@@ -31,6 +31,16 @@ export type {
 } from './resource.ts';
 // Async resources (eager + lazy/imperative)
 export { lazyResource, resource } from './resource.ts';
+// SSR coordination (used by @purityjs/ssr; clearly internal — exposed for
+// the package boundary, not for end users)
+export type { SSRRenderContext } from './ssr-context.ts';
+export {
+  clearHydrationCache,
+  getSSRRenderContext,
+  popSSRRenderContext,
+  primeHydrationCache,
+  pushSSRRenderContext,
+} from './ssr-context.ts';
 export type { ComputedAccessor, Dispose, StateAccessor, WatchSource } from './signals.ts';
 // Reactive primitives
 export { batch, compute, state, watch } from './signals.ts';

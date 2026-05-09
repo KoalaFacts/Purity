@@ -5,6 +5,8 @@
 // Error handling via onError (bubbles up to parent)
 // ---------------------------------------------------------------------------
 
+import { primeHydrationCache } from './ssr-context.ts';
+
 /**
  * A zero-argument function that returns a DOM subtree.
  * Passed to {@link mount} to render an application root.
@@ -231,8 +233,36 @@ export function onError(fn: (err: unknown) => void): void {
  * ```
  */
 export function hydrate(container: Element, component: ComponentFn): MountResult {
+  // Prime the resource cache from the JSON payload renderToString embedded.
+  // Reading the cache before clearing children ensures the script tag (which
+  // is part of the SSR output) is still present when we look for it.
+  primeResourceHydrationCache(container);
   while (container.firstChild) container.removeChild(container.firstChild);
   return mount(component, container);
+}
+
+const RESOURCE_SCRIPT_ID = '__purity_resources__';
+
+function primeResourceHydrationCache(container: Element): void {
+  // The script tag may be inside the container, immediately after it (when
+  // renderToString output is appended whole), or at document scope. Try the
+  // most likely locations in order. Document-scope is the canonical case
+  // because the SSR flow is `document.getElementById('app').outerHTML = ssrOutput`.
+  const doc = container.ownerDocument ?? globalThis.document;
+  /* v8 ignore next 2 -- tests run in jsdom which always has ownerDocument */
+  if (!doc) return;
+  const el =
+    container.querySelector(`script#${RESOURCE_SCRIPT_ID}`) ??
+    doc.getElementById(RESOURCE_SCRIPT_ID);
+  if (!el || el.textContent == null) return;
+  try {
+    const data = JSON.parse(el.textContent) as unknown;
+    if (Array.isArray(data)) primeHydrationCache(data);
+  } catch (err) {
+    console.error('[Purity] Failed to parse hydration cache:', err);
+  }
+  // Remove the script so a subsequent re-mount doesn't re-prime.
+  if (el.parentNode) el.parentNode.removeChild(el);
 }
 
 export function mount(component: ComponentFn, container: Element): MountResult {

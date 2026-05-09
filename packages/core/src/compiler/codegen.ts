@@ -791,3 +791,162 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
       return { setup: '', reactive: '' };
   }
 }
+
+// ---------------------------------------------------------------------------
+// generateSSR(ast)
+//
+// Emits a factory `function (_v, _h) { var _o = ''; ...; return _o; }` that
+// walks the same AST as generate() but produces an HTML string instead of DOM
+// nodes. Used by @purityjs/ssr's renderToString.
+//
+// _h is the helpers bundle from ssr-runtime.ts (esc, attr, toHtml, toAttr).
+// Branded `__purity_ssr_html__` results from nested templates and SSR
+// control-flow helpers (eachSSR / whenSSR / matchSSR) concatenate raw via
+// _h.toHtml.
+//
+// Reactive expression slots are wrapped in HYDRATION_OPEN / HYDRATION_CLOSE
+// comment markers so the PR 4 hydrator can locate binding sites without
+// path drift from HTML-parser text coalescing.
+// ---------------------------------------------------------------------------
+
+export function generateSSR(ast: FragmentNode): string {
+  ast = condenseWhitespace(ast) as FragmentNode;
+  const ctx: SSRGenCtx = { parts: [], counter: 0 };
+  // Single static-prefix optimization: if the entire tree is static, emit a
+  // closure that returns the prebuilt string. Cheaper than rebuilding it on
+  // every call and tree-shake-friendly (no _v / _h references).
+  if (!hasDynamic(ast)) {
+    const html = buildStaticHtml(ast);
+    // codeql[js/code-injection] — `html` is built by buildStaticHtml which
+    // assertSafeName-validates tag/attr names and escapeHtml/escapeAttr-escapes
+    // text/attribute literals from the parser. No user expression values are
+    // spliced (hasDynamic returned false). See "Codegen safety contract".
+    return `(function(){var _s=${JSON.stringify(html)};return function(){return _s;};})()`;
+  }
+  buildSSRBody(ast, ctx);
+  // codeql[js/code-injection] — every part appended to ctx.parts is either
+  // (a) a JSON.stringify'd string literal, (b) a regex-validated identifier,
+  // or (c) a framework-internal variable reference (`_v[N]`, `_av${id}`).
+  // See "Codegen safety contract" comment near SAFE_NAME at the top.
+  return `function(_v,_h){var _o='';${ctx.parts.join('')}return _o;}`;
+}
+
+export function generateSSRModule(ast: FragmentNode): string {
+  return `export default ${generateSSR(ast)}`;
+}
+
+interface SSRGenCtx {
+  parts: string[]; // JS source fragments that mutate _o
+  counter: number; // unique-id counter for emitted local variables
+}
+
+// Append a JS literal that adds a static HTML chunk to _o. Coalesces with the
+// previous chunk if it is also a literal append, keeping output compact.
+function emitLit(ctx: SSRGenCtx, html: string): void {
+  if (html === '') return;
+  const last = ctx.parts[ctx.parts.length - 1];
+  if (last && last.startsWith('_o+=') && last.endsWith(';')) {
+    const m = last.match(/^_o\+=("(?:[^"\\]|\\.)*")\s*;$/);
+    if (m) {
+      const prev = JSON.parse(m[1]);
+      ctx.parts[ctx.parts.length - 1] = `_o+=${JSON.stringify(prev + html)};`;
+      return;
+    }
+  }
+  ctx.parts.push(`_o+=${JSON.stringify(html)};`);
+}
+
+function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
+  switch (node.type) {
+    case 'text':
+      emitLit(ctx, escapeHtml(node.value));
+      return;
+
+    case 'comment':
+      emitLit(ctx, `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`);
+      return;
+
+    case 'expression': {
+      // Reactive slot: wrapped in hydration markers so PR 4 can locate it.
+      // _h.toHtml handles signal-accessor calls, branded HTML, arrays, and
+      // primitive escaping in one place.
+      emitLit(ctx, '<!--[-->');
+      ctx.parts.push(`_o+=_h.toHtml(_v[${node.index}]);`);
+      emitLit(ctx, '<!--]-->');
+      return;
+    }
+
+    case 'fragment':
+      for (const ch of node.children) buildSSRBody(ch, ctx);
+      return;
+
+    case 'element': {
+      assertSafeName(node.tag, 'tag');
+      emitLit(ctx, `<${node.tag}`);
+      for (const a of node.attributes) emitSSRAttr(a, ctx);
+      if (VOID.has(node.tag)) {
+        emitLit(ctx, '/>');
+        return;
+      }
+      emitLit(ctx, '>');
+      for (const ch of node.children) buildSSRBody(ch, ctx);
+      emitLit(ctx, `</${node.tag}>`);
+      return;
+    }
+  }
+}
+
+function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx): void {
+  if (a.kind === 'static') {
+    if (a.value) {
+      emitLit(ctx, ` ${a.name}="${escapeAttr(a.value)}"`);
+    } else {
+      emitLit(ctx, ` ${a.name}`);
+    }
+    return;
+  }
+
+  assertSafeName(a.name, 'attribute');
+  const id = ctx.counter++;
+  const av = `_av${id}`;
+  const val = `_v[${a.index}]`;
+  // Pre-escape the leading space + name once at codegen time. The trailing
+  // `="..."` is appended at runtime so we can omit the attribute when the
+  // value resolves to null/false.
+  const namePrefix = JSON.stringify(` ${a.name}`);
+
+  switch (a.kind) {
+    case 'event':
+      // Server has no listeners — skip entirely. The expression itself is
+      // never evaluated, matching the client behavior of installing it via
+      // addEventListener at hydration time (PR 4).
+      return;
+
+    case 'dynamic':
+    case 'prop':
+    case 'reactive-prop':
+    case 'bind': {
+      // All four read the current value (calling the accessor if it's a
+      // function) and emit it as a quoted attribute. `bind` skips the
+      // listener install — that's a hydration-time concern.
+      ctx.parts.push(
+        `var ${av}=_h.toAttr(${val});`,
+        `if(${av}!==null)_o+=${namePrefix}+(${av}===''?'':'="'+${av}+'"');`,
+      );
+      return;
+    }
+
+    case 'bool': {
+      // Boolean attribute: present (no value) when truthy, absent otherwise.
+      ctx.parts.push(
+        `var ${av}=${val};if(typeof ${av}==='function')${av}=${av}();`,
+        `if(${av})_o+=${namePrefix};`,
+      );
+      return;
+    }
+
+    /* v8 ignore next 2 -- defensive fallthrough; parser only emits known kinds */
+    default:
+      return;
+  }
+}

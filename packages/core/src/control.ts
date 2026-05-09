@@ -1,3 +1,4 @@
+import { markSSRHtml, type SSRHtml, valueToHtml } from './compiler/ssr-runtime.ts';
 import { getCurrentContext, popContext, pushContext, type Scope } from './component.ts';
 import type { StateAccessor } from './signals.ts';
 import { state, watch } from './signals.ts';
@@ -906,4 +907,133 @@ export function list<T>(
   }
 
   return fragment;
+}
+
+// ---------------------------------------------------------------------------
+// SSR variants — return branded HTML strings, no DOM, no watchers.
+//
+// These are pulled in by @purityjs/ssr's renderToString during server render.
+// Each region is bracketed by start + end comment markers so the PR 4
+// hydrator can locate control-flow boundaries on the parsed DOM:
+//
+//   match / when:  <!--m-->...<!--/m-->
+//   each:          <!--e-->...<!--/e-->
+//   list:          <!--l-->...<!--/l-->
+//
+// Accessors are called once. Returns from view/map functions are normalized
+// via valueToHtml — which handles branded SSR HTML, primitives, arrays, and
+// signal accessors transparently.
+// ---------------------------------------------------------------------------
+
+/** SSR variant of {@link match}. Renders the matching case once, returns HTML. */
+export function matchSSR<T extends string | number | boolean>(
+  sourceFn: () => T,
+  cases: Partial<Record<`${T}`, () => unknown>>,
+  fallback?: () => unknown,
+): SSRHtml {
+  const key = String(sourceFn()) as `${T}`;
+  const view = cases[key] ?? fallback;
+  const inner = view ? valueToHtml(view()) : '';
+  return markSSRHtml(`<!--m-->${inner}<!--/m-->`);
+}
+
+/** SSR variant of {@link when}. Picks then/else once, returns HTML. */
+export function whenSSR(
+  conditionFn: () => boolean,
+  thenFn: () => unknown,
+  elseFn?: () => unknown,
+): SSRHtml {
+  const view = conditionFn() ? thenFn : elseFn;
+  const inner = view ? valueToHtml(view()) : '';
+  return markSSRHtml(`<!--m-->${inner}<!--/m-->`);
+}
+
+/** SSR variant of {@link each}. Maps each item once, concatenates HTML. */
+export function eachSSR<T>(
+  listAccessor: (() => T[]) | T[],
+  mapFn: (item: () => T, index: number) => unknown,
+  _keyFn?: (item: T, index: number) => unknown,
+): SSRHtml {
+  const items = (typeof listAccessor === 'function' ? listAccessor() : listAccessor) || [];
+  let inner = '';
+  for (let i = 0; i < items.length; i++) {
+    // Pass a frozen accessor so user code that calls `item()` works the same
+    // shape as the client. No reactivity — the value is captured at render.
+    const value = items[i];
+    const accessor = () => value;
+    inner += valueToHtml(mapFn(accessor, i));
+  }
+  return markSSRHtml(`<!--e-->${inner}<!--/e-->`);
+}
+
+interface ListSSROptions<T> {
+  text?: (item: T, index: number) => string;
+  class?: (item: T, index: number) => string;
+  style?: (item: T, index: number) => string;
+  attrs?: Record<string, (item: T, index: number) => string>;
+  events?: Record<string, (item: T, index: number) => (e: Event) => void>;
+  key?: (item: T, index: number) => unknown;
+}
+
+/** SSR variant of {@link list}. Builds a flat list of single-tag rows as HTML. */
+export function listSSR<T>(
+  tag: string,
+  listAccessor: (() => T[]) | T[],
+  textOrOptions: ((item: T, index: number) => string) | ListSSROptions<T>,
+  _keyFn?: (item: T, index: number) => unknown,
+): SSRHtml {
+  const items = (typeof listAccessor === 'function' ? listAccessor() : listAccessor) || [];
+  let getText: ((item: T, index: number) => string) | undefined;
+  let getClass: ((item: T, index: number) => string) | undefined;
+  let getStyle: ((item: T, index: number) => string) | undefined;
+  let getAttrs: Record<string, (item: T, index: number) => string> | undefined;
+
+  if (typeof textOrOptions === 'function') {
+    getText = textOrOptions;
+  } else {
+    getText = textOrOptions.text;
+    getClass = textOrOptions.class;
+    getStyle = textOrOptions.style;
+    getAttrs = textOrOptions.attrs;
+    // events skipped on the server — listeners attach during client hydration
+  }
+
+  let inner = '';
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    let attrs = '';
+    if (getClass) {
+      const cls = getClass(item, i);
+      if (cls) attrs += ` class="${escapeAttrLocal(cls)}"`;
+    }
+    if (getStyle) {
+      const sty = getStyle(item, i);
+      if (sty) attrs += ` style="${escapeAttrLocal(sty)}"`;
+    }
+    if (getAttrs) {
+      for (const k of Object.keys(getAttrs)) {
+        const v = getAttrs[k](item, i);
+        if (v != null) attrs += ` ${k}="${escapeAttrLocal(v)}"`;
+      }
+    }
+    const text = getText ? escapeHtmlLocal(getText(item, i)) : '';
+    inner += `<${tag}${attrs}>${text}</${tag}>`;
+  }
+  return markSSRHtml(`<!--l-->${inner}<!--/l-->`);
+}
+
+// Local copies — escape helpers from ssr-runtime are imported indirectly via
+// valueToHtml, but listSSR builds attribute markup directly without going
+// through the converter. Inlining keeps control.ts free of cross-file calls
+// in the hot path.
+function escapeHtmlLocal(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeAttrLocal(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }

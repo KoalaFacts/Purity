@@ -1,7 +1,7 @@
 {
   "name": "@purityjs/core",
   "version": "0.1.0",
-  "description": "Minimal, lightweight, super performant web framework using native signals",
+  "description": "Minimal web framework with TC39-Signals-inspired reactivity, no virtual DOM",
   "keywords": [
     "framework",
     "lightweight",

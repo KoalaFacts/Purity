@@ -2,7 +2,7 @@
 
 ## Overview
 
-Purity is a minimal web framework. 17 functions. 6 kB gzipped. Native TC39 Signals. No virtual DOM.
+Purity is a minimal web framework. 17 functions. 6 kB gzipped. TC39-Signals-inspired reactivity. No virtual DOM.
 
 ## Setup
 

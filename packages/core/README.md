@@ -371,6 +371,41 @@ component('p-form', (_props, { default: body }) => {
 Form({}, ({ validate }) => html` <button ?disabled=${() => !validate()}>Save</button> `);
 ```
 
+#### Trade-offs of Custom Elements + Shadow DOM by default
+
+`component()` always registers a Custom Element with Shadow DOM. This is an
+opinionated choice — listing the costs honestly so you can decide:
+
+- **Global CSS / utility frameworks (Tailwind, CSS reset, design tokens).**
+  Styles applied to `document` do not pierce a shadow root. Per-component
+  utility CSS works via [`adoptedStyleSheets`](https://developer.mozilla.org/en-US/docs/Web/API/Document/adoptedStyleSheets)
+  — Tailwind needs explicit injection per shadow root. CSS variables _do_
+  pierce, so design tokens declared on `:root` work normally.
+- **Form libraries / native form participation.** Custom Elements need
+  [`ElementInternals`](https://developer.mozilla.org/en-US/docs/Web/API/ElementInternals)
+  - form-associated declaration to participate in `<form>` submission. Most
+    third-party form libraries (React Hook Form, etc.) won't see your
+    components' values.
+- **Accessibility across shadow boundaries.** `aria-labelledby` /
+  `aria-describedby` cannot reference IDs across a shadow root. Use
+  `aria-label` directly or expose explicit ARIA attributes on the host. We
+  have not yet shipped an a11y guide; this is a real gap.
+- **Third-party DOM queries.** `document.querySelector('.my-class')` from
+  outside a component will not find elements inside its shadow root. Inspect
+  via the host element first.
+- **SSR.** Web Components serialize via [Declarative Shadow DOM](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template/shadowrootmode),
+  but Purity does not yet ship a server renderer. Today `component()` is
+  client-render only.
+- **Platform name collisions.** Custom-element tag names must contain a
+  hyphen, but anything starting with `font-`, `annotation-xml`, etc. is
+  reserved. The convention `p-yourname` keeps you clear.
+
+If these costs outweigh the encapsulation benefit for your app, Purity may
+not be the right fit — most of the framework's other primitives (`state`,
+`compute`, `watch`, `resource`, `debounced`) work fine without
+`component()` if you want to render to plain elements via `mount()` and
+`html` only.
+
 ### Scoped Styles
 
 Shadow DOM handles scoping inside components. Reactive values auto-update.

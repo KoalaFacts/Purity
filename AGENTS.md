@@ -1,6 +1,6 @@
 # Purity Monorepo — AI Agent Context
 
-Minimal web framework. 17 functions. 6 kB gzipped. Native TC39 Signals.
+Minimal web framework. 17 functions. 6 kB gzipped. TC39-Signals-inspired reactivity.
 
 ## Packages
 

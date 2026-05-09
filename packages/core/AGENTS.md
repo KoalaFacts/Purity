@@ -4,7 +4,7 @@ This file provides context for AI coding agents (OpenAI Codex, GPT, Copilot Work
 
 ## What is Purity?
 
-A minimal, lightweight, super performant web framework built on native TC39 Signals.
+A minimal web framework with TC39-Signals-inspired reactivity (the framework's signals.ts is a custom push-pull graph; the TC39 proposal is still Stage 1).
 
 - 6 kB gzipped (with AOT plugin)
 - 17 core functions

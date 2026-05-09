@@ -1,6 +1,6 @@
 # Purity Monorepo
 
-Minimal web framework built on TC39-Signals-inspired reactivity. 20 functions. ~5.8 kB gzipped.
+Minimal web framework built on TC39-Signals-inspired reactivity. 21 functions. ~5.8 kB gzipped.
 
 ## Packages
 

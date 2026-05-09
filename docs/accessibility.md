@@ -59,9 +59,11 @@ component<{ 'aria-label'?: string }>('p-toggle', ({ 'aria-label': ariaLabel }) =
 });
 ```
 
-This pattern is **the most reliable cross-boundary approach** and is
-what Purity examples should default to for any text input, button, or
-disclosure widget.
+In our testing this avoids the ID-scope problem that
+`aria-labelledby="…"` runs into across the boundary. We default to it in
+Purity examples for text inputs, buttons, and disclosure widgets — but
+the framework has not yet been a11y-audited at scale, so treat this as a
+working recommendation, not a guarantee.
 
 ### 3. ID references **inside** a single shadow root
 
@@ -130,7 +132,7 @@ A tabs component is a fair stress test because it requires:
 - Focus management between tab and panel
 
 ```ts
-import { component, state, html, onMount } from '@purityjs/core';
+import { component, state, html, each } from '@purityjs/core';
 
 interface Tab {
   id: string;
@@ -142,39 +144,35 @@ component<{ tabs: Tab[] }, { default: { tabId: string } }>(
   ({ tabs }, { default: panel }) => {
     const active = state(tabs[0]?.id ?? '');
 
-    onMount(() => {
-      // Keyboard navigation across the tablist.
-      const list = (document.querySelector('p-tabs') as HTMLElement).shadowRoot!.querySelector(
-        '[role=tablist]',
-      )!;
-      list.addEventListener('keydown', (e) => {
-        const key = (e as KeyboardEvent).key;
-        if (key !== 'ArrowLeft' && key !== 'ArrowRight') return;
-        e.preventDefault();
-        const ids = tabs.map((t) => t.id);
-        const i = ids.indexOf(active.peek());
-        const next =
-          key === 'ArrowRight' ? (i + 1) % ids.length : (i - 1 + ids.length) % ids.length;
-        active(ids[next]);
-        const btn = list.querySelector(`[data-tab-id="${ids[next]}"]`) as HTMLElement | null;
-        btn?.focus();
-      });
-    });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      const list = e.currentTarget as HTMLElement;
+      const ids = tabs.map((t) => t.id);
+      const i = ids.indexOf(active.peek());
+      const next =
+        e.key === 'ArrowRight' ? (i + 1) % ids.length : (i - 1 + ids.length) % ids.length;
+      active(ids[next]);
+      const btn = list.querySelector(`[data-tab-id="${ids[next]}"]`) as HTMLElement | null;
+      btn?.focus();
+    };
 
     return html`
-      <div role="tablist">
-        ${tabs.map(
+      <div role="tablist" @keydown=${onKey}>
+        ${each(
+          () => tabs,
           (t) => html`
             <button
               role="tab"
-              data-tab-id=${t.id}
-              :aria-selected=${() => (active() === t.id ? 'true' : 'false')}
-              :tabindex=${() => (active() === t.id ? 0 : -1)}
-              @click=${() => active(t.id)}
+              data-tab-id=${() => t().id}
+              :aria-selected=${() => (active() === t().id ? 'true' : 'false')}
+              .tabIndex=${() => (active() === t().id ? 0 : -1)}
+              @click=${() => active(t().id)}
             >
-              ${t.label}
+              ${() => t().label}
             </button>
           `,
+          (t) => t.id,
         )}
       </div>
       <div role="tabpanel" :aria-labelledby=${() => `tab-${active()}`}>
@@ -185,28 +183,26 @@ component<{ tabs: Tab[] }, { default: { tabId: string } }>(
 );
 ```
 
-**What's good about this example:**
+**Why this works across multiple instances:**
 
-- `role="tablist"` / `role="tab"` / `role="tabpanel"` are all _inside_ a
-  single shadow root, so the ARIA tree is consistent.
-- Roving `tabindex` (only the active tab is `tabindex=0`, the rest are
-  `-1`) is the standard ARIA Authoring Practices pattern.
-- Arrow-key navigation in `onMount` after the DOM is wired up.
-- `aria-selected` reactively updates via the `:aria-selected=${...}` prop binding.
+- Keyboard handling uses `@keydown` on the tablist element directly,
+  resolving the listener via `e.currentTarget` — no `document.querySelector`
+  for the host (which would only ever return the first instance).
+- The roving `tabIndex` is set as a real DOM property (`.tabIndex`,
+  camelCase). The `:tabindex=${...}` lowercase form would create an
+  expando and not affect tab order.
+- `each()` keys by `t.id` so reordering or filtering doesn't recreate
+  buttons.
 
-**What's still rough:**
+**Still rough / known caveats:**
 
-- The `aria-labelledby` reference assumes a `tab-${id}` ID inside the
-  shadow tree. If multiple `p-tabs` instances coexist, IDs need to be
-  unique within each shadow root (they are, because each instance is
-  its own scope).
-- No `aria-controls` linking each tab button to its panel — the panel
-  is a single element here, so `aria-labelledby` from the panel back
-  to the active tab is the inverse direction. For multi-panel tabs,
-  add `aria-controls` per tab pointing at its panel ID.
-- This component does not yet use `delegatesFocus`. If you need the host
+- No `aria-controls` linking each tab button to its panel. Single-panel
+  tabs (this example) can use `aria-labelledby` from the panel back to
+  the active tab; for multi-panel layouts, add `aria-controls` per tab
+  pointing at its panel ID.
+- The component does not enable `delegatesFocus`. If you need the host
   itself to be focusable and forward to the active tab, you'd write a
-  manual Custom Element class.
+  manual Custom Element class today (see "Known gaps" below).
 
 ## Known gaps
 

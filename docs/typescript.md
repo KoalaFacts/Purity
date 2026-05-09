@@ -1,7 +1,9 @@
 # TypeScript guide
 
-Purity is fully typed. This guide walks through inference patterns for the
-primitives you'll actually reach for, plus a few common pitfalls.
+Purity ships TypeScript types for its public API. This guide walks through
+the inference patterns you'll actually reach for, plus a few common
+pitfalls (including a small list at the bottom of things the type system
+can't catch).
 
 > All examples assume `"strict": true` in `tsconfig.json`.
 
@@ -82,20 +84,15 @@ a `ComputedAccessor`, or a plain `() => T`.
 import { type WatchSource, compute } from '@purityjs/core';
 
 function caseInsensitive(source: WatchSource<string>) {
-  return compute(() => {
-    const v = typeof source === 'function' ? source() : source.get();
-    return v.toLowerCase();
-  });
+  // StateAccessor, ComputedAccessor, and `() => T` are all callable, so a
+  // single `source()` covers all three.
+  return compute(() => source().toLowerCase());
 }
 
 caseInsensitive(name); // StateAccessor<string>  — works
 caseInsensitive(full); // ComputedAccessor<string> — works
 caseInsensitive(() => 'hi'); // () => string             — works
 ```
-
-In practice, since `StateAccessor` and `ComputedAccessor` are themselves
-callable, you can usually just call `source()` — the union narrowing is
-mostly for users who pass `.get` or `.set` references explicitly.
 
 ## Components
 
@@ -206,7 +203,7 @@ user(); // User | undefined
 user.loading(); // boolean
 user.error(); // unknown
 user.refresh(); // void
-user.mutate({ id: 1, name: 'x' }); // T or (current) => T
+user.mutate({ id: 1, name: 'x' }); // T or (current: T | undefined) => T
 ```
 
 The fetcher's return type drives `T`. With explicit casts on `r.json()`

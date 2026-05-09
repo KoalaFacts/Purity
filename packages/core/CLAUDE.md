@@ -1,8 +1,8 @@
 # @purityjs/core
 
-Purity core framework — 20 functions, no virtual DOM, TC39-Signals-inspired reactivity.
+Purity core framework — 21 functions, no virtual DOM, TC39-Signals-inspired reactivity.
 
-## API (20 functions)
+## API (21 functions)
 
 ```ts
 state(initial)              // read: count(), write: count(5), update: count(v => v+1)
@@ -28,6 +28,7 @@ onError(fn)                  // error boundary
 match(sourceFn, cases)       // pattern matching
 when(condFn, thenFn, elseFn?) // boolean conditional
 each(listFn, mapFn, keyFn?)  // list rendering — mapFn receives item as accessor: (item: () => T, i: number)
+list(tag, listAccessor, textOrOptions, keyFn?) // leaner list of single-tag rows
 ```
 
 ## Async data — `resource`, `lazyResource`, `debounced`

@@ -50,33 +50,21 @@ classes do **not** apply inside a shadow root.
 
 **Workarounds, ranked least to most painful:**
 
-1. **Don't use Tailwind inside `component()`.** Style components via the
-   `css` template; reserve Tailwind for the light-DOM shell that mounts
-   them.
-2. **Inject Tailwind into every shadow root via `adoptedStyleSheets`.**
-   Build once, inject at component-construction time:
-
-   ```ts
-   import tailwindCss from './tailwind.css?raw';
-
-   const TAILWIND = new CSSStyleSheet();
-   TAILWIND.replaceSync(tailwindCss);
-
-   component('p-card', () => {
-     onMount(() => {
-       const root = (document.querySelector('p-card') as HTMLElement).shadowRoot!;
-       root.adoptedStyleSheets = [...root.adoptedStyleSheets, TAILWIND];
-     });
-     // ...
-   });
-   ```
-
-   This costs roughly one stylesheet pointer per component instance (no
-   re-parse — `CSSStyleSheet` is constructable and shared).
-
-3. **Use light DOM components instead.** `mount(componentFn, container)`
-   doesn't create a shadow root. You lose isolation but Tailwind works
-   directly. Tradeoff is yours.
+1. **Don't use Tailwind inside `component()`** (recommended). Style
+   components via the `css` template; reserve Tailwind for the light-DOM
+   shell that mounts them. This is what `component()` is best at.
+2. **Use light-DOM components instead.** `mount(componentFn, container)`
+   does not create a shadow root, so global Tailwind classes apply
+   normally. You lose Shadow-DOM-style scoped CSS, but if Tailwind is
+   the dominant styling story, this is the right tradeoff.
+3. **Inject Tailwind via `adoptedStyleSheets` per shadow root.**
+   Possible in principle (`new CSSStyleSheet()` + `replaceSync` +
+   `root.adoptedStyleSheets = [...]`), but Purity does not yet expose
+   a `host()` accessor inside `component()`, so per-instance injection
+   from the render function is awkward today. The straightforward path
+   is to walk `document.querySelectorAll('p-…')` and inject at module
+   load (plus a `MutationObserver` for dynamically added instances).
+   First-class host access is post-1.0.
 
 ### Form libraries / native form participation
 

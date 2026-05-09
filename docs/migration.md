@@ -82,9 +82,9 @@ Not exhaustive — covers the operations you reach for daily.
 
 ## DOM refs
 
-| Concept     | React                  | SolidJS                  | Vue 3                     | Svelte 5         | Purity                                                                          |
-| ----------- | ---------------------- | ------------------------ | ------------------------- | ---------------- | ------------------------------------------------------------------------------- |
-| Element ref | `useRef()` + `ref={…}` | `let el; <div ref={el}>` | `ref(null)` + `:ref="el"` | `bind:this={el}` | `let el; html\`<div .ref=${(node) => (el = node)}>\``(or query inside`onMount`) |
+| Concept     | React                  | SolidJS                  | Vue 3                     | Svelte 5         | Purity                                                                                                                                               |
+| ----------- | ---------------------- | ------------------------ | ------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Element ref | `useRef()` + `ref={…}` | `let el; <div ref={el}>` | `ref(null)` + `:ref="el"` | `bind:this={el}` | No built-in ref — query inside `onMount` (e.g. `onMount(() => { const el = root.querySelector('.target'); … })`). A first-class ref API is post-1.0. |
 
 ## Templates
 

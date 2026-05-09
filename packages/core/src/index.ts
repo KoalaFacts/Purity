@@ -25,7 +25,7 @@ export type {
 } from './resource.ts';
 // Async resources (eager + lazy/imperative)
 export { lazyResource, resource } from './resource.ts';
-export type { ComputedAccessor, Dispose, StateAccessor } from './signals.ts';
+export type { ComputedAccessor, Dispose, StateAccessor, WatchSource } from './signals.ts';
 // Reactive primitives
 export { batch, compute, state, watch } from './signals.ts';
 

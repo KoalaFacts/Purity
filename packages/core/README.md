@@ -5,7 +5,7 @@
 [![bundle size](https://img.shields.io/bundlephobia/minzip/@purityjs/core?label=gzipped)](https://bundlephobia.com/package/@purityjs/core)
 [![license](https://img.shields.io/npm/l/@purityjs/core.svg)](../../LICENSE)
 
-The core Purity framework. 20 functions. ~5.8 kB gzipped. No virtual DOM.
+The core Purity framework. 21 functions. ~5.8 kB gzipped. No virtual DOM.
 
 ## Install
 
@@ -43,7 +43,8 @@ batch(() => {
 Race-safe async data, built on signals. Each `resource()` exposes reactive
 `data`, `loading`, and `error` accessors and auto-aborts stale requests via a
 fresh `AbortSignal` whenever its dependencies change or its component unmounts.
-No userland controllers, no flag soup, no `useEffect` cleanup dance.
+The fetcher receives an `AbortSignal` that fires on dep change or unmount,
+so callers don't need to wire `AbortController` themselves.
 
 ```ts
 import { state, resource, html } from '@purityjs/core';
@@ -228,7 +229,10 @@ component('p-todo-row', ({ todo }) => {
 ```
 
 **Polling dashboard with pause** — `pollInterval` re-fetches every N ms
-after each settle. Pair with a manual `dispose()` to pause.
+after each settle. Toggle pausing by returning `null` from the source
+(see the example): the falsy-source path stops the polling without
+tearing the resource down. (`r.dispose()` is terminal — for permanent
+teardown, not pause/resume.)
 
 ```ts
 component('p-dashboard', () => {
@@ -388,8 +392,10 @@ opinionated choice — listing the costs honestly so you can decide:
     components' values.
 - **Accessibility across shadow boundaries.** `aria-labelledby` /
   `aria-describedby` cannot reference IDs across a shadow root. Use
-  `aria-label` directly or expose explicit ARIA attributes on the host. We
-  have not yet shipped an a11y guide; this is a real gap.
+  `aria-label` directly or expose explicit ARIA attributes on the host.
+  See [`docs/accessibility.md`](../../docs/accessibility.md) for the
+  patterns we know work; the framework has not yet been a11y-audited at
+  scale.
 - **Third-party DOM queries.** `document.querySelector('.my-class')` from
   outside a component will not find elements inside its shadow root. Inspect
   via the host element first.

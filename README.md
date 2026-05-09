@@ -7,7 +7,7 @@
 
 A minimal web framework with TC39-Signals-inspired reactivity and templates that compile to direct DOM operations.
 
-- **20 functions** — that's the entire API
+- **21 functions** — that's the entire API
 - **~5.8 kB gzipped** — with AOT compilation
 - **No virtual DOM** — signals drive DOM updates directly
 - **CSP-safe** — no `eval`, no `new Function` (with the Vite plugin)
@@ -30,7 +30,7 @@ npm run dev
 
 | Package                                           | Description                  | Docs                                       |
 | ------------------------------------------------- | ---------------------------- | ------------------------------------------ |
-| [`@purityjs/core`](./packages/core)               | The framework — 20 functions | [README](./packages/core/README.md)        |
+| [`@purityjs/core`](./packages/core)               | The framework — 21 functions | [README](./packages/core/README.md)        |
 | [`@purityjs/vite-plugin`](./packages/vite-plugin) | AOT template compilation     | [README](./packages/vite-plugin/README.md) |
 | [`@purityjs/cli`](./packages/cli)                 | Project scaffolding          | [README](./packages/cli/README.md)         |
 
@@ -97,7 +97,6 @@ const results = resource(
 Stale requests are aborted automatically when `id` changes or the component
 unmounts. Out-of-order resolutions are dropped via a monotonic run counter.
 Retries honor the abort signal — a dep change cancels mid-backoff.
-No userland `AbortController`, `useEffect` cleanup, or debounce hook needed.
 
 See each package README for full API documentation.
 
@@ -128,24 +127,26 @@ There is no public versioning policy yet, and we don't know of any production
 users. If you ship Purity to users, please open an issue so we can keep your
 use case in mind for the breaking-change discussions.
 
-## What this framework does NOT do (yet)
+## What this framework does NOT do
 
 Knowing what's missing matters more than what's there. As of `0.1.0`:
 
-- **No SSR / hydration.** Purity is client-rendered only. If you need
-  server-rendered HTML for SEO, social previews, or
-  performance-on-low-end-devices, this framework is not yet a fit. A
-  static-prerender story is on the post-1.0 roadmap; full SSR is not
-  currently planned.
-- **No router.** Bring your own (e.g. `@picocss/router` style or
-  hand-rolled History API).
+- **No SSR / hydration.** Purity is client-rendered only. Full SSR is
+  not currently planned. A static-prerender story is being considered
+  for post-1.0 but is not committed. If you need server-rendered HTML
+  for SEO, social previews, or performance on low-end devices, this
+  framework is not a fit today.
+- **No router.** Not on the roadmap. Bring your own (the History API
+  is straightforward to use directly).
 - **No devtools panel.** Signal-graph inspection happens via
-  `console.log` today. A browser extension is post-1.0.
+  `console.log` today. A browser extension is being considered for
+  post-1.0; not committed.
 - **No production track record.** Pre-1.0; we know of zero production
   deployments. Treat as a serious side-project, not a battle-tested tool.
-- **No accessibility audit.** Shadow DOM defaults have a11y implications
-  (ARIA across boundaries, focus delegation) that we have not yet
-  documented or tested at scale.
+- **No accessibility audit.** Shadow DOM defaults have a11y
+  implications (ARIA across boundaries, focus delegation). See
+  [`docs/accessibility.md`](./docs/accessibility.md) for working
+  patterns; nothing in the framework has been audited at scale.
 
 ## Docs
 

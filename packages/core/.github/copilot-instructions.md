@@ -2,7 +2,7 @@
 
 Purity is a minimal web framework with TC39-Signals-inspired reactivity (custom push-pull graph; the TC39 proposal is still Stage 1). No virtual DOM.
 
-## API (17 functions)
+## API (21 functions)
 
 ```ts
 state(init)              // reactive state: count(), count(5), count(v => v+1)

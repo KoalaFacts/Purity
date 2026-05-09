@@ -480,6 +480,7 @@ const { unmount } = mount(() => html`<p-app></p-app>`, document.getElementById('
 
 ## Further reading
 
+- [Live demo](https://koalafacts.github.io/Purity/dashboard/) — polling dashboard with `resource` (retry + pollInterval), `lazyResource`, `debounced`, mock-data backend. Source: [`examples/dashboard`](../../examples/dashboard).
 - [TypeScript guide](../../docs/typescript.md) — inference patterns for `state` / `compute` / `resource`, generic component props, scoped slots, custom `WatchSource`-based helpers
 - [Why Shadow DOM by default](../../docs/shadow-dom-rationale.md) — when the encapsulation pays, when it hurts, escape hatches, Tailwind / global-CSS integration
 - [Accessibility under Shadow DOM](../../docs/accessibility.md) — ARIA across boundaries, focus delegation, screen-reader patterns, a worked `p-tabs` example

@@ -617,14 +617,28 @@ function extractExpression(source: string, start: number): { source: string; end
 }
 
 function findLastImportEnd(code: string): number {
+  // Track multi-line `import { ... } from '...';` statements: an import line
+  // is followed by zero-or-more continuation lines until one ends with the
+  // quoted source (with or without a trailing semicolon). Inserting in the
+  // middle of a multi-line import would split the import and break parsing
+  // (regression: see plugin.test.ts "handles multi-line imports").
   const lines = code.split('\n');
   let lastEnd = -1;
   let offset = 0;
+  let inImport = false;
+
+  // Matches the closing line of an import: either `… from '…';` or a
+  // side-effect import that's just `'…';` on its own line.
+  const closesImport = /['"][^'"]*['"]\s*;?\s*$/;
 
   for (const line of lines) {
     const trimmed = line.trimStart();
-    if (trimmed.startsWith('import ') || trimmed.startsWith('import{')) {
+    if (!inImport && (trimmed.startsWith('import ') || trimmed.startsWith('import{'))) {
+      inImport = true;
+    }
+    if (inImport && closesImport.test(line)) {
       lastEnd = offset + line.length + 1;
+      inImport = false;
     }
     offset += line.length + 1;
   }

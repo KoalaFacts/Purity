@@ -120,6 +120,11 @@ See each package README for full API documentation.
 **Runtime benchmarks** — automated in headless Chromium across 18 scenarios:
 [koalafacts.github.io/Purity](https://koalafacts.github.io/Purity/)
 
+**Live demo** — a polling dashboard built end-to-end on Purity (state,
+compute, resource with retry+pollInterval, lazyResource, debounced,
+each, mount): [koalafacts.github.io/Purity/dashboard](https://koalafacts.github.io/Purity/dashboard/)
+([source](./examples/dashboard))
+
 ## Status
 
 **Pre-1.0 (`0.1.0`).** The API may break between minor versions until 1.0.

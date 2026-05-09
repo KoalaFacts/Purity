@@ -14,7 +14,13 @@ export type { DebouncedAccessor } from './debounced.ts';
 export { debounced } from './debounced.ts';
 export type { SlotAccessor } from './elements.ts';
 // Components, slots, teleport
-export { component, slot, teleport } from './elements.ts';
+export {
+  _getRegisteredComponent,
+  _renderComponentSSR,
+  component,
+  slot,
+  teleport,
+} from './elements.ts';
 export type {
   LazyResourceAccessor,
   ResourceAccessor,

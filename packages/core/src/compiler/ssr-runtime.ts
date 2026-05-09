@@ -88,6 +88,61 @@ export function valueToAttr(v: unknown): string | null {
   return escAttr(String(v));
 }
 
+// ---------------------------------------------------------------------------
+// Custom-element / component dispatch
+//
+// Codegen emits `_h.element(tag, attrs, slotHtml)` for any hyphenated tag.
+// The helper:
+//   1. Asks the SSR component renderer (installed by @purityjs/ssr on import)
+//      whether the tag is a registered component.
+//   2. If yes, the renderer returns the full DSD-wrapped HTML.
+//   3. If no, falls back to plain custom-element markup (host attrs + slot
+//      children, no shadow tree). This handles unregistered third-party web
+//      components gracefully.
+//
+// The hook indirection avoids an import cycle: ssr-runtime is in core (used
+// by the codegen output), elements.ts also lives in core, and @purityjs/ssr
+// owns the actual SSR-context machinery and CSS-capture logic.
+// ---------------------------------------------------------------------------
+
+/** Renderer hook signature. Returns DSD-wrapped HTML, or null if `tag` is not a registered component. */
+export type SSRComponentRenderer = (
+  tag: string,
+  attrs: Record<string, unknown>,
+  slotHtml: string,
+) => string | null;
+
+let componentRenderer: SSRComponentRenderer | null = null;
+
+/** Install the SSR component renderer. Called by `@purityjs/ssr` on import. */
+export function setSSRComponentRenderer(fn: SSRComponentRenderer | null): void {
+  componentRenderer = fn;
+}
+
+/**
+ * Plain element fallback — emits `<tag attr="…">slot</tag>` with proper escaping.
+ * Used when no component renderer is registered or when the tag is unknown.
+ */
+function plainElement(tag: string, attrs: Record<string, unknown>, slotHtml: string): string {
+  let s = `<${tag}`;
+  for (const k of Object.keys(attrs)) {
+    const av = valueToAttr(attrs[k]);
+    if (av !== null) s += av === '' ? ` ${k}` : ` ${k}="${av}"`;
+  }
+  // Custom elements are never void elements per the HTML spec — always emit
+  // an explicit closing tag even if `slotHtml` is empty.
+  return `${s}>${slotHtml}</${tag}>`;
+}
+
+/** Render a hyphenated element tag, dispatching to a registered component if any. */
+export function ssrElement(tag: string, attrs: Record<string, unknown>, slotHtml: string): string {
+  if (componentRenderer) {
+    const result = componentRenderer(tag, attrs, slotHtml);
+    if (result !== null) return result;
+  }
+  return plainElement(tag, attrs, slotHtml);
+}
+
 /** Helpers bundle passed as the second argument to SSR-compiled factories. */
 export const ssrHelpers = {
   esc: escHtml,
@@ -96,6 +151,7 @@ export const ssrHelpers = {
   toAttr: valueToAttr,
   isHtml: isSSRHtml,
   mark: markSSRHtml,
+  element: ssrElement,
 } as const;
 
 export type SSRHelpers = typeof ssrHelpers;

@@ -5,6 +5,8 @@
 // Error handling via onError (bubbles up to parent)
 // ---------------------------------------------------------------------------
 
+import { popHydrationCtx, pushHydrationCtx } from './compiler/compile.ts';
+import { stripHydrationMarkers } from './compiler/ssr-runtime.ts';
 import { primeHydrationCache } from './ssr-context.ts';
 
 /**
@@ -205,20 +207,30 @@ export function onError(fn: (err: unknown) => void): void {
  * @returns Object with `unmount()` to remove the component.
  */
 /**
- * Hydrate a server-rendered root: replace its children with a freshly rendered
- * component tree, then attach reactive bindings via the standard `mount()`
- * path.
+ * Hydrate a server-rendered root: walk the existing SSR DOM, install reactive
+ * bindings in place, return a tear-down handle.
  *
- * **PR 4 MVP — lossy hydration.** The pre-existing SSR DOM is discarded and
- * the component is rendered fresh on the client. SSR's main UX benefit (the
- * browser paints the initial HTML before JS loads) is preserved, but
- * matching content produces a brief invisible flash and mismatched content
- * produces a visible jump. A future PR will replace this with
- * marker-walking hydration that preserves the existing DOM.
+ * **Hydration model:**
  *
- * Custom Elements with Declarative Shadow DOM are handled separately: the
- * `connectedCallback` reuses the parser-attached shadow root and clears its
- * children before re-rendering, so DSD doesn't break component init.
+ * 1. Read the `<script id="__purity_resources__">` payload (if present) and
+ *    prime the resource cache so resources don't refetch on first read.
+ * 2. Strip `<!--[-->X<!--]-->` hydration markers from the SSR DOM. After
+ *    stripping, the structure matches what a freshly rendered template would
+ *    produce, so the same positional paths land on the same nodes.
+ * 3. Push a single-shot hydration context that captures `container` as the
+ *    root for the next `html\`\`` call.
+ * 4. Run the component. The first `html\`\`` call dispatches to the hydrate
+ *    factory and binds reactivity to the existing DOM. The factory returns
+ *    `null` for shapes the Phase 1 hydrator doesn't cover (custom-element
+ *    subtrees, complex nested shapes); in that case `html\`\`` falls back to
+ *    the render path. To keep that fallback safe, this function tracks
+ *    whether the component returned the existing root or a fresh tree and
+ *    swaps in place when needed.
+ * 5. Return an `unmount()` handle that disposes the component context.
+ *
+ * Custom Elements with Declarative Shadow DOM continue to use the lossy
+ * shadow-clear path inside `connectedCallback` — Phase 1 hydration covers
+ * the light-DOM template surrounding them, not the shadow content itself.
  *
  * @param container Element pre-rendered by `@purityjs/ssr`'s `renderToString`.
  * @param component The same component function used during SSR.
@@ -234,11 +246,111 @@ export function onError(fn: (err: unknown) => void): void {
  */
 export function hydrate(container: Element, component: ComponentFn): MountResult {
   // Prime the resource cache from the JSON payload renderToString embedded.
-  // Reading the cache before clearing children ensures the script tag (which
-  // is part of the SSR output) is still present when we look for it.
+  // Reading the cache before stripping ensures the script tag (which is part
+  // of the SSR output but NOT a hydration marker) is still present when we
+  // look for it. The script is removed after parsing.
   primeResourceHydrationCache(container);
-  while (container.firstChild) container.removeChild(container.firstChild);
-  return mount(component, container);
+
+  // Snapshot the existing first child before stripping. The hydrate factory
+  // expects `_root.firstChild` to be the rendered top-level element, so
+  // `container` itself is the right root to pass — its first child after
+  // stripping is the component's outer template root.
+  stripHydrationMarkers(container);
+  const existingRoot = container.firstChild as Element | null;
+
+  if (existingRoot === null) {
+    // No SSR content to hydrate — fall through to a fresh render.
+    return mount(component, container);
+  }
+
+  const ctx = new ComponentContext();
+  pushContext(ctx);
+  pushHydrationCtx({ root: existingRoot });
+  let result: Node | DocumentFragment;
+  try {
+    result = component();
+  } catch (err) {
+    popHydrationCtx();
+    popContext();
+    ctx._handleError(err);
+    return { unmount: () => {} };
+  }
+  popHydrationCtx();
+  popContext();
+
+  // Two outcomes:
+  //   (a) Phase 1 hydrator handled the top-level template — `result` is the
+  //       existing DOM root; reactivity is bound in place; container's
+  //       children are unchanged. No DOM swap needed.
+  //   (b) Hydrator returned null (shape unsupported) — `result` is a fresh
+  //       DOM tree from the render path; replace container's children.
+  if (result !== existingRoot) {
+    while (container.firstChild) container.removeChild(container.firstChild);
+    if (result instanceof DocumentFragment) {
+      ctx.nodes = Array.from(result.childNodes);
+    } else if (result instanceof Node) {
+      ctx.nodes = [result];
+    }
+    if (result) container.appendChild(result);
+  } else if (result instanceof Node) {
+    ctx.nodes = [result];
+  }
+
+  ctx._isMounted = true;
+
+  if (ctx.mounted) {
+    queueMicrotask(() => {
+      if (!ctx.mounted) return;
+      pushContext(ctx);
+      try {
+        for (let i = 0; i < ctx.mounted.length; i++) {
+          try {
+            ctx.mounted[i]();
+          } catch (err) {
+            ctx._handleError(err);
+          }
+        }
+      } finally {
+        popContext();
+      }
+    });
+  }
+
+  return {
+    unmount: () => {
+      if (ctx.disposers) {
+        for (let i = 0; i < ctx.disposers.length; i++) {
+          try {
+            ctx.disposers[i]();
+          } catch (e) {
+            console.error('[Purity] Error during hydrate unmount:', e);
+          }
+        }
+        ctx.disposers = null;
+      }
+      if (ctx.nodes) {
+        for (let i = 0; i < ctx.nodes.length; i++) {
+          const n = ctx.nodes[i];
+          if (n.parentNode) n.parentNode.removeChild(n);
+        }
+        ctx.nodes = null;
+      }
+      ctx._isDestroyed = true;
+      ctx._isMounted = false;
+      runHydrateDestroyCallbacks(ctx);
+    },
+  };
+}
+
+function runHydrateDestroyCallbacks(ctx: ComponentContext): void {
+  if (!ctx.destroyed) return;
+  for (let i = 0; i < ctx.destroyed.length; i++) {
+    try {
+      ctx.destroyed[i]();
+    } catch (err) {
+      ctx._handleError(err);
+    }
+  }
 }
 
 const RESOURCE_SCRIPT_ID = '__purity_resources__';

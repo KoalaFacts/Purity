@@ -50,9 +50,41 @@ export function escAttr(s: string): string {
 // Hydration markers wrap each reactive expression slot in SSR output so the
 // client-side hydrator can find binding sites without positional path drift
 // from text-node coalescing in the HTML parser. The pair is 14 bytes per
-// expression; PR 4 will consume and strip them.
+// expression; the hydrator strips them before installing watches.
 export const HYDRATION_OPEN = '<!--[-->';
 export const HYDRATION_CLOSE = '<!--]-->';
+
+/**
+ * Walk `root` and remove the `<!--[-->` / `<!--]-->` comment markers that
+ * SSR emits around every reactive expression slot. The text/element node
+ * between each pair is preserved in place — afterwards the DOM has the
+ * same structural shape as a freshly client-rendered template, so the
+ * positional paths the client codegen uses to find binding sites still land.
+ *
+ * O(n) over comment nodes only (skips text and elements via TreeWalker).
+ */
+export function stripHydrationMarkers(root: Node): void {
+  /* v8 ignore next 4 -- defensive; runtime is always DOM */
+  if (typeof document === 'undefined') return;
+  const NodeFilter = (globalThis as { NodeFilter?: { SHOW_COMMENT: number } }).NodeFilter;
+  if (!NodeFilter) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+  // Collect first, mutate after — TreeWalker's view is invalidated by removes.
+  const toRemove: Comment[] = [];
+  for (
+    let n: Comment | null = walker.nextNode() as Comment | null;
+    n !== null;
+    n = walker.nextNode() as Comment | null
+  ) {
+    const v = n.nodeValue;
+    if (v === '[' || v === ']') toRemove.push(n);
+  }
+  for (let i = 0; i < toRemove.length; i++) {
+    const c = toRemove[i];
+    /* v8 ignore next -- defensive; collected nodes are always attached */
+    if (c.parentNode) c.parentNode.removeChild(c);
+  }
+}
 
 /**
  * Convert any value to HTML text. Used by SSR codegen to render expression

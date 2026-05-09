@@ -851,6 +851,161 @@ function hasCustomElement(node: ASTNode): boolean {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// generateHydrate(ast)
+//
+// Emits a factory `function (_v, _w, _root) { ... return _root | null; }`
+// that binds reactivity onto an existing DOM tree (the SSR-rendered output
+// after `<!--[--><!--]-->` markers have been stripped). Returns null when
+// the AST shape can't be hydrated by this Phase 1 codegen — the caller
+// (`hydrate()`) falls back to a lossy clear+remount.
+//
+// Coverage:
+//   * Simple templates (single root element, text + expression children) — full
+//   * Complex templates (multi-element, positional-path bindings)        — full
+//   * Static templates (no dynamic content)                                — no-op
+//   * Custom-element tags                                                  — null (lossy fallback)
+//
+// The reactivity model matches the render path: the same per-binding watches
+// fire under the same conditions; they just write into existing text nodes
+// instead of nodes the codegen created itself.
+// ---------------------------------------------------------------------------
+
+export function generateHydrate(ast: FragmentNode): string {
+  ast = condenseWhitespace(ast) as FragmentNode;
+
+  // Custom-element subtrees still need full re-render: the component renderer
+  // owns shadow-root content lifecycle and we don't yet hydrate that path.
+  if (hasCustomElement(ast)) {
+    return 'function(_v,_w,_root){_v;_w;_root;return null;}';
+  }
+
+  if (!hasDynamic(ast)) {
+    // Static templates have nothing to bind — return root unchanged.
+    return 'function(_v,_w,_root){_v;_w;return _root;}';
+  }
+
+  const simple = isSimpleTemplate(ast);
+  if (simple) {
+    return genSimpleTemplateHydrate(simple);
+  }
+
+  // Complex template: same positional paths as the render path, but starting
+  // from the caller-supplied root instead of a fresh template clone.
+  const slots: Slot[] = [];
+  buildDynamicHtml(ast, slots, []);
+  const bindCode = genPositionalBindings(slots);
+  // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
+  return ['function(_v,_w,_root){var _r=_root;', bindCode, 'return _root;}'].join('');
+}
+
+export function generateHydrateModule(ast: FragmentNode): string {
+  return `export default ${generateHydrate(ast)}`;
+}
+
+function genSimpleTemplateHydrate(tpl: SimpleTemplate): string {
+  assertSafeName(tpl.tag, 'tag');
+  const setupParts: string[] = ['var _e=_root;'];
+  const reactiveParts: string[] = [];
+
+  // Static attributes are already in the SSR DOM — no setAttribute needed.
+  // Dynamic attributes need the same watch the render path installs; the
+  // initial run is a no-op visually because the SSR output already reflects
+  // the resolved value, but the watch must register with the signal graph.
+  for (const a of tpl.dynamicAttrs) {
+    assertSafeName(a.name, 'attribute');
+    const id = bindVarCounter++;
+    const av = `_av${id}`;
+    const fl = `_af${id}`;
+    const val = `_v[${a.index}]`;
+    const qname = JSON.stringify(a.name);
+    switch (a.kind) {
+      case 'event':
+        setupParts.push(`_e.addEventListener(${qname},${val});`);
+        break;
+      case 'dynamic':
+        setupParts.push(`var ${av}=${val};var ${fl}=typeof ${av}==='function';`);
+        reactiveParts.push(
+          `if(${fl}){var v${id}=${av}();if(v${id}==null||v${id}===false)_e.removeAttribute(${qname});else _e.setAttribute(${qname},String(v${id}));}`,
+        );
+        break;
+      case 'bool':
+        setupParts.push(`var ${av}=${val};var ${fl}=typeof ${av}==='function';`);
+        reactiveParts.push(
+          `if(${fl}){if(${av}())_e.setAttribute(${qname},'');else _e.removeAttribute(${qname});}`,
+        );
+        break;
+      case 'prop':
+      case 'reactive-prop':
+        setupParts.push(`var ${av}=${val};var ${fl}=typeof ${av}==='function';`);
+        reactiveParts.push(`if(${fl})_e[${qname}]=${av}();`);
+        break;
+      case 'bind': {
+        const evt = a.name === 'checked' || a.name === 'group' ? 'change' : 'input';
+        const qevt = JSON.stringify(evt);
+        if (a.name === 'group') {
+          setupParts.push(
+            `if(typeof ${val}==='function'){if(_e.type==='radio'){_w(function(){_e.checked=${val}()===_e.value;});_e.addEventListener('change',function(){if(_e.checked)${val}(_e.value);});}else{_w(function(){_e.checked=${val}().includes(_e.value);});_e.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(_e.value);if(_e.checked){if(i===-1)a.push(_e.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
+          );
+        } else {
+          const readSrc = a.name === 'checked' ? '_e.checked' : `_e[${qname}]`;
+          // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
+          setupParts.push(
+            `if(typeof ${val}==='function'){_w(function(){_e[${qname}]=${val}();});_e.addEventListener(${qevt},function(){${val}(${readSrc});});}`,
+          );
+        }
+        break;
+      }
+    }
+  }
+
+  // Walk the existing children sequentially. Each text child is a static
+  // text node already present in the SSR DOM — just advance the cursor. Each
+  // expression child is the binding site — capture it and install the same
+  // reactive write the render path uses.
+  let cursorInit = false;
+  for (let i = 0; i < tpl.children.length; i++) {
+    const ch = tpl.children[i];
+    if (i === 0) {
+      setupParts.push('var _node=_e.firstChild;');
+      cursorInit = true;
+    } else if (cursorInit) {
+      setupParts.push('_node=_node.nextSibling;');
+    }
+    if (ch.type === 'text') {
+      // Empty static text never made it into the SSR output; only advance
+      // when the child contributes a real text node.
+      if (ch.value === '') {
+        // No corresponding DOM node — un-advance by reading firstChild fresh
+        // is too brittle; instead we simply don't emit an advance for this
+        // synthetic empty-text case. (Empty text children are uncommon.)
+      }
+    } else if (ch.type === 'expression') {
+      const id = bindVarCounter++;
+      const xv = `_x${id}`;
+      const tn = `_t${id}`;
+      const fl = `_xf${id}`;
+      const val = `_v[${ch.index}]`;
+      setupParts.push(`var ${xv}=${val};var ${fl}=typeof ${xv}==='function';var ${tn}=_node;`);
+      // Bail out (return null) for non-primitive non-function values: those
+      // would have been a Node or array on the render path, which would
+      // require structural surgery during hydrate that's beyond this Phase 1.
+      setupParts.push(`if(!${fl}&&(${xv} instanceof Node||Array.isArray(${xv})))return null;`);
+      reactiveParts.push(
+        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=r${id}==null?'':String(r${id});}}`,
+      );
+    }
+  }
+
+  let body = setupParts.join('');
+  if (reactiveParts.length > 0) {
+    body += `_w(function(){${reactiveParts.join('')}});`;
+  }
+  body += 'return _e;';
+  // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
+  return `function(_v,_w,_root){${body}}`;
+}
+
 export function generateSSRModule(ast: FragmentNode): string {
   return `export default ${generateSSR(ast)}`;
 }

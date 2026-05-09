@@ -55,12 +55,20 @@ exported from `@purityjs/core`.
   `hydrate()` reads and parses the script, primes a cache, then each
   `resource()` consumes one value as its initial data and skips the
   first refetch — so server data appears immediately, no loading flash.
-- **Lossy hydration.** `hydrate()` clears existing children and renders
-  fresh via `mount()`. SSR's main UX win — fast initial paint before
-  JS loads — is preserved. Matching content produces an invisible
-  flash; mismatches produce a visible jump. The
-  `<!--[--><!--]-->` hydration markers are emitted in preparation for a
-  follow-up that walks them and preserves the existing DOM.
+- **Marker-walking hydration (Phase 1).** `hydrate()` strips the
+  `<!--[-->X<!--]-->` markers from the SSR DOM and dispatches to a new
+  `generateHydrate(ast)` codegen path that walks the existing tree and
+  installs reactivity in place. For simple-template ASTs (single root
+  element with text/expression children + attribute bindings) and
+  complex-template ASTs (multi-element trees with positional-path
+  bindings), the SSR DOM is preserved — same Node instances survive,
+  no flash. The hydrator returns null for shapes outside Phase 1
+  coverage (custom-element subtrees, deeply nested mixed structures);
+  the html-tag call site falls through to the fresh-render path, and
+  the hydrate entry swaps the resulting tree in. Components in custom
+  elements still re-render their shadow content on connectedCallback
+  (covered by the existing DSD reuse path), so DSD elements get a
+  brief shadow flash where surrounding light DOM is preserved.
 - **Vite plugin SSR mode.** `transform(code, id, opts)` reads
   `opts.ssr === true` and switches `generate` → `generateSSR`, swaps
   the `__purity_w__` (watch) runtime arg for `__purity_h__` (ssrHelpers),
@@ -80,9 +88,12 @@ it.
 
 ## Out of scope (intentionally)
 
-- **Marker-walking hydration.** Lossy hydration is the MVP. The
-  hydration-marker comments are emitted now so a future ADR can
-  introduce DOM-preserving hydration without changing SSR output.
+- **Marker-walking hydration for the remaining shapes.** Phase 1
+  covers simple- and complex-template paths in light DOM. Custom
+  Element shadow content, mixed nested-html-in-expressions, and the
+  control-flow helpers' SSR output (`each` / `when` / `match` / `list`)
+  still fall through to a fresh render. A future Phase 2 will extend
+  marker walking into those shapes.
 - **Streaming SSR / `renderToReadableStream`.** Buffered HTML only.
   Streaming requires a different async model and edge-runtime adapters.
 - **Edge runtime adapters.** Cloudflare Workers / Deno Deploy will need
@@ -115,10 +126,14 @@ it.
 
 **Negative:**
 
-- Lossy hydration means matching SSR/CSR content still triggers a brief
-  re-render flash (invisible) and mismatching content shows a visible
-  jump. This is worse than React/Solid/Vue's preserve-DOM hydration and
-  needs a follow-up ADR + implementation.
+- Phase 1 marker-walking hydration covers simple + complex template
+  shapes in light DOM but still falls back to fresh render for
+  custom-element subtrees, control-flow helpers, and deeply nested
+  shapes. Apps whose top-level template hits the supported paths get
+  preserve-DOM hydration with no flash; apps with custom elements at
+  the root still see a re-render. This is better than the original
+  lossy MVP but not yet on par with React/Solid/Vue's full preserve-DOM
+  hydration. Phase 2 work is needed to close the gap.
 - DSD's Chrome 111+/Safari 16.4+/Firefox 123+ floor cuts off pre-2024
   browsers for SSR'd Custom Elements. Pre-DSD browsers see empty
   custom-element hosts until JS runs.

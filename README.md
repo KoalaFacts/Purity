@@ -164,14 +164,16 @@ use case in mind for the breaking-change discussions.
 
 Knowing what's missing matters more than what's there. As of `0.1.0`:
 
-- **SSR is MVP-quality.** `renderToString` + `hydrate()` ship with
-  Declarative Shadow DOM and resource-aware two-pass rendering, but
-  hydration is currently **lossy**: the SSR DOM is discarded and the
-  component is re-rendered fresh on the client. Matching content
-  produces an invisible flash; mismatches produce a visible jump. The
-  hydration markers (`<!--[--><!--]-->`) are emitted in preparation for
-  a follow-up that preserves the existing DOM. Named / scoped slot SSR
-  and streaming output are not yet implemented.
+- **SSR hydration is partially DOM-preserving.** `renderToString` +
+  `hydrate()` ship with Declarative Shadow DOM and resource-aware
+  two-pass rendering. Hydration walks the SSR DOM, strips the
+  `<!--[--><!--]-->` markers, and installs reactivity in place — same
+  Node instances survive, no flash — for simple- and complex-template
+  shapes (single root element with text/expression children, and
+  multi-element trees with positional-path bindings). Custom-element
+  subtrees, control-flow helper output, and deeply nested mixed shapes
+  still fall back to a fresh render. Named / scoped slot SSR and
+  streaming output are not yet implemented.
 - **No router.** Not on the roadmap. Bring your own (the History API
   is straightforward to use directly).
 - **No devtools panel.** Signal-graph inspection happens via

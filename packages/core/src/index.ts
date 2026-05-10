@@ -85,6 +85,8 @@ export {
 export { interceptLinks, type InterceptLinksOptions } from './router-intercept.ts';
 // Navigation scroll management — ADR 0015.
 export { manageNavScroll, type ManageNavScrollOptions } from './router-scroll.ts';
+// Navigation focus management — ADR 0016.
+export { manageNavFocus, type ManageNavFocusOptions } from './router-focus.ts';
 // Server actions — ADR 0012.
 export {
   findAction,

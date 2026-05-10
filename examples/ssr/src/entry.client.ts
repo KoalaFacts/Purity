@@ -12,10 +12,16 @@
 // every programmatic navigate() — closes the "SPA keeps the previous
 // page's scroll position" UX gap. Native back/forward scroll restoration
 // is untouched.
-import { hydrate, interceptLinks, manageNavScroll } from '@purityjs/core';
+//
+// `manageNavFocus()` moves keyboard focus into the new page's <main>
+// landmark (or the URL hash target if present) after navigate(). Screen
+// readers announce the focused region's accessible name, restoring the
+// route-change announcement that SPAs lose by default.
+import { hydrate, interceptLinks, manageNavFocus, manageNavScroll } from '@purityjs/core';
 import { App } from './app.ts';
 
 const root = document.getElementById('app');
 if (root) hydrate(root, App);
 interceptLinks();
 manageNavScroll();
+manageNavFocus();

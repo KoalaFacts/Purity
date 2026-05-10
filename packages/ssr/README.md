@@ -342,7 +342,9 @@ manageNavScroll();
 
 Then templates use plain `<a href>` — same-origin clicks become `navigate()` calls automatically. The default `interceptLinks` predicate exempts modifier keys, `target="_blank"`, download links, cross-origin hrefs, hash-only same-page links, and elements carrying `data-no-intercept`. Pass a custom `shouldIntercept` to fully replace the default.
 
-`manageNavScroll()` subscribes to `onNavigate()` and scrolls to the URL's hash target (if any) or to the top after every forward `navigate()`. Browser-driven back/forward scroll restoration and `hashchange`-anchor scrolling are native — `manageNavScroll` only fills the pushState gap. Pass a custom `onNavigate` handler to take over (e.g. for smooth scroll, focus management, view transitions).
+`manageNavScroll()` subscribes to `onNavigate()` and scrolls to the URL's hash target (if any) or to the top after every forward `navigate()`. Browser-driven back/forward scroll restoration and `hashchange`-anchor scrolling are native — `manageNavScroll` only fills the pushState gap. Pass a custom `onNavigate` handler to take over (e.g. for smooth scroll, view transitions).
+
+`manageNavFocus()` ([ADR 0016](../../docs/decisions/0016-nav-focus-management.md)) closes the accessibility gap on the same nav event — focus moves into the URL's hash target (or the page's `<main>` landmark by default) so screen readers announce the new region's accessible name. Pairs with `manageNavScroll()` via `preventScroll: true` so the two don't fight. Pass `{ selector }` to target a different landmark (e.g. `'h1'`, `'.app-content'`) or `{ onNavigate }` to replace the default with a custom focus / live-region flow.
 
 Still not in scope: `<Route>` / `<Routes>` component, layout nesting, URL search / hash reactivity, file-system route discovery, scroll restoration, focus management, view transitions, prefetch-on-hover. See ADR 0011 + ADR 0013's "Explicit non-features" sections.
 

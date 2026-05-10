@@ -71,12 +71,13 @@ All three control-flow helpers now hydrate losslessly.
 SSR-key / client-key drift in either helper falls through to a fresh
 render of the current value, with the surrounding tree preserved.
 
-### 3. Static text-content rewriting on mismatch
+### 3. _(closed)_ Static text-content rewriting on mismatch
 
-Currently we _detect_ drift (commit `110ae1a`) but don't rewrite —
-the SSR text is preserved. Authors are expected to fix the source.
-A future improvement could opt in to overwrite, but it's a behavior
-change worth its own ADR.
+Shipped as [ADR 0007](docs/decisions/0007-text-rewrite-on-mismatch.md):
+opt-in `enableHydrationTextRewrite()` flag (off by default). When on,
+the hydrator overwrites SSR `Text` node `data` to match the template's
+AST text on mismatch — same node reference, only the bytes change.
+Independent of warnings; combine the two flags for fix-and-log.
 
 ### 4. Framework-level features
 

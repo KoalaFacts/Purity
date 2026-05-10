@@ -54,6 +54,13 @@ call + warn-on-mismatch when on. Independent of warnings, the hydrator
 catches walker failures and falls back to a fresh `mount()` so a
 divergent SSR can never crash the page.
 
+`enableHydrationTextRewrite()` (ADR 0007) is the opt-in self-heal mode
+for static-text drift. When on, an SSR `Text` node whose `data` differs
+from the template's AST text is rewritten in place — same node
+reference, only the bytes change. Useful for stale CDN caches or
+build-cache divergence. Independent of warnings; combine the two flags
+to fix-and-log.
+
 `each()`, `when()`, `match()` are all hydration-aware. From inside a
 hydrating template they return deferred handles instead of building
 DOM, and the hydrate factory routes those handles through specialised

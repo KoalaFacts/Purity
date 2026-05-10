@@ -3,7 +3,13 @@
 // ---------------------------------------------------------------------------
 
 // Template rendering (JIT compiled)
-export { disableHydrationWarnings, enableHydrationWarnings, html } from './compiler/compile.ts';
+export {
+  disableHydrationTextRewrite,
+  disableHydrationWarnings,
+  enableHydrationTextRewrite,
+  enableHydrationWarnings,
+  html,
+} from './compiler/compile.ts';
 export type { ComponentFn, MountResult } from './component.ts';
 // Lifecycle (3 hooks + error) + hydrate
 export { hydrate, mount, onDestroy, onDispose, onError, onMount } from './component.ts';

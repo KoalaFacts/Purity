@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  disableHydrationTextRewrite,
   disableHydrationWarnings,
+  enableHydrationTextRewrite,
   enableHydrationWarnings,
   html,
   hydrate,
@@ -133,5 +135,88 @@ describe('hydrate mismatch warnings (opt-in dev diagnostics)', () => {
     host.innerHTML = '<p>Hi <!--[-->world<!--]--></p>';
     hydrate(host, () => html`<p>Hi ${'world'}</p>`);
     expect(warnSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ADR 0007 — opt-in static text-content rewriting on mismatch.
+//
+// Default behavior (above) is detect + warn but preserve SSR text. This block
+// covers the new opt-in: enableHydrationTextRewrite() rewrites the SSR Text
+// node's data to match the template's AST text on mismatch. Same node
+// reference (no structural change), only the bytes change.
+// ---------------------------------------------------------------------------
+
+describe('hydrate text-rewrite on mismatch (opt-in)', () => {
+  let host: HTMLElement;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    disableHydrationTextRewrite();
+    disableHydrationWarnings();
+    warnSpy.mockRestore();
+  });
+
+  it('rewrites the SSR text node when mismatch is detected (silent by default)', () => {
+    enableHydrationTextRewrite();
+    host.innerHTML = '<p>Hello <!--[-->world<!--]--></p>';
+    const ssrText = host.querySelector('p')!.firstChild as Text;
+    expect(ssrText.data).toBe('Hello ');
+
+    hydrate(host, () => html`<p>Hi ${'world'}</p>`);
+
+    // Same node reference — only the bytes were rewritten.
+    expect(host.querySelector('p')!.firstChild).toBe(ssrText);
+    expect(ssrText.data).toBe('Hi ');
+    expect(host.textContent).toBe('Hi world');
+    // Silent rewrite by default.
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('preserves SSR text when rewrite is disabled (default)', () => {
+    host.innerHTML = '<p>Hello <!--[-->world<!--]--></p>';
+    hydrate(host, () => html`<p>Hi ${'world'}</p>`);
+    // No rewrite — original SSR text persists.
+    expect(host.textContent).toBe('Hello world');
+  });
+
+  it('rewrite + warnings together: rewrites AND logs', () => {
+    enableHydrationTextRewrite();
+    enableHydrationWarnings();
+    host.innerHTML = '<p>Hello <!--[-->world<!--]--></p>';
+    hydrate(host, () => html`<p>Hi ${'world'}</p>`);
+    expect(host.textContent).toBe('Hi world');
+    expect(warnSpy).toHaveBeenCalled();
+    const msg = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(msg).toContain('text content differs');
+    expect(msg).toContain('rewritten');
+  });
+
+  it('does not touch text when SSR matches the template', () => {
+    enableHydrationTextRewrite();
+    host.innerHTML = '<p>Hi <!--[-->world<!--]--></p>';
+    const ssrText = host.querySelector('p')!.firstChild as Text;
+    hydrate(host, () => html`<p>Hi ${'world'}</p>`);
+    expect(ssrText.data).toBe('Hi ');
+    expect(host.textContent).toBe('Hi world');
+  });
+
+  it('reactive bindings keep working alongside a static text rewrite', async () => {
+    enableHydrationTextRewrite();
+    host.innerHTML = '<p>Old <!--[-->X<!--]--></p>';
+    const v = state('first');
+    hydrate(host, () => html`<p>New ${() => v()}</p>`);
+    // Static text rewritten on hydrate.
+    expect(host.textContent).toBe('New first');
+    v('second');
+    await tick();
+    // Reactive update flowed through to the slot text.
+    expect(host.textContent).toBe('New second');
   });
 });

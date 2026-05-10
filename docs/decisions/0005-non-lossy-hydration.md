@@ -103,13 +103,13 @@ Marker-walking hydration" is now done.
     SSR key reuses the original SSR-derived DOM. SSR-key / client-key
     drift falls through to a fresh render of the current view.
 
-- **Static text-content rewriting.** When `enableHydrationWarnings()` is
-  on, the codegen now passes the AST's text value as a `detail` arg to
-  the cursor check, and the runtime warns on byte-level divergence
-  between SSR text and template text. We _detect_ the drift but don't
-  rewrite — preserving SSR text is intentional (it's the content the
-  user is already looking at). Authors fix the divergence at the
-  template source.
+- _(superseded by [ADR 0007](./0007-text-rewrite-on-mismatch.md))_
+  **Static text-content rewriting.** ADR 0005 detected text drift but
+  preserved SSR bytes by default. ADR 0007 keeps that default and adds
+  an opt-in `enableHydrationTextRewrite()` flag — when set, the
+  hydrator overwrites the SSR `Text` node's `data` to match the
+  template (same node reference, no structural change). Independent of
+  warnings; combine the two flags to fix-and-log.
 - **Streaming hydration.** Out of scope per ADR 0004.
 
 ## Consequences

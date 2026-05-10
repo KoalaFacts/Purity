@@ -10,6 +10,7 @@ import { generate, generateHydrate } from './codegen.ts';
 import {
   checkHydrationCursor,
   type DeferredTemplate,
+  hydrationTextRewriteEnabled,
   hydrationWarningsEnabled,
   isHydrating,
   makeDeferred,
@@ -141,7 +142,11 @@ export function inflateDeferred(deferred: DeferredTemplate, target: Node): Node 
   stripSuspenseMarkers(target);
   const entry = getOrInitEntry(deferred.strings);
   const fn = ensureHydrate(entry, deferred.strings);
-  const check = hydrationWarningsEnabled() ? checkHydrationCursor : undefined;
+  // Pass the cursor checker if either warnings or text-rewrite is enabled —
+  // the helper handles both behaviors and the codegen guard (`_c && _c(...)`)
+  // makes this a single null check per cursor step when both are off.
+  const check =
+    hydrationWarningsEnabled() || hydrationTextRewriteEnabled() ? checkHydrationCursor : undefined;
   return fn(
     deferred.values,
     watch,
@@ -223,7 +228,9 @@ export { watch as _watch } from '../signals.ts';
 // connectedCallback) that need to toggle the mode without importing the
 // hydrate-runtime module directly.
 export {
+  disableHydrationTextRewrite,
   disableHydrationWarnings,
+  enableHydrationTextRewrite,
   enableHydrationWarnings,
   enterHydration,
   exitHydration,

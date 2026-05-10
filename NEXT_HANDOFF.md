@@ -25,36 +25,62 @@ so the next session can pick up cold.
 ADRs:
 
 - [`0005-non-lossy-hydration.md`](docs/decisions/0005-non-lossy-hydration.md) — Accepted.
-- [`0006-streaming-suspense.md`](docs/decisions/0006-streaming-suspense.md) — Proposed; phases 1, 2, 5
-  shipped; phases 3, 4, 6-half remain.
+- [`0006-streaming-suspense.md`](docs/decisions/0006-streaming-suspense.md) — Proposed; phases 1, 2, 3, 5
+  shipped; phases 4 (adapter examples) and 6-half (per-boundary resources) remain.
 
 ## What's intentionally not done yet
 
-### 1. Phase 3 — `renderToStream` + `__purity_swap` (the actual streaming)
+### 1. _(MVP closed)_ Phase 3 — `renderToStream` + `__purity_swap`
 
-**Biggest remaining SSR win.** Multi-week per ADR 0006. Needs:
+The streaming MVP shipped: `renderToStream(component, options)` returns
+a `ReadableStream<Uint8Array>` from `@purityjs/ssr`. Wire format:
 
-- A `ReadableStream<Uint8Array>` server entry that flushes the shell
-  immediately, then streams `<template id="purity-s-N">` chunks +
-  `__purity_swap(N)` calls as boundaries resolve.
-- A ~150-byte client splice helper auto-injected into the response
-  (`packages/core/src/__purity_swap.ts`).
-- Hydration-defer-until-stream-close logic — the simplest path per
-  the ADR's "Hydration interplay" section is to wait for the response
-  to end before walking, sidestepping in-flight swap interleaving.
-- Edge-runtime adapter examples (`examples/ssr-stream-cf-workers/`,
+1. Doctype prefix (optional)
+2. Shell HTML — every `suspense()` call emits its fallback wrapped in
+   `<!--s:N-->...<!--/s:N-->`; top-level resources still block the shell
+3. `<script id="__purity_resources__">` with shell-resolved data
+4. `<script>` inlining `window.__purity_swap = ...` (~330 bytes, once)
+5. Per boundary, in declaration order:
+   `<template id="purity-s-N">RESOLVED_HTML</template><script>__purity_swap(N)</script>`
+
+`suspense()` checks `ssrCtx.streamingMode`; when set, it skips its
+inline `view()` and queues `(view, fallback, onError)` into
+`ssrCtx.streamingBoundaries`. `renderToStream` drains the queue after
+the shell flushes; each boundary renders in its own SSRRenderContext
+(plus its own multi-pass resolution loop) with its own `{ timeout }`
+budget.
+
+**Still TODO:**
+
+- **Per-boundary resource cache emit** (Phase 6 second-half). Boundary
+  chunks currently don't carry their resolved resources, so the client
+  refetches inside the boundary's view on hydrate. Plumbing: each
+  boundary's render loop already produces a `resolvedData[]` /
+  `resolvedDataByKey` pair; emit them as a per-boundary
+  `<script id="__purity_resources_N__">` next to the template, then
+  teach `consumeHydrationValue()` to read from the matching id when
+  the hydrator enters the boundary's subtree.
+- **Edge-runtime adapter examples** (`examples/ssr-stream-cf-workers/`,
   `examples/ssr-stream-vercel-edge/`, `examples/ssr-stream-deno/`).
+  No core changes needed — `ReadableStream<Uint8Array>` is platform-
+  standard. Each example wires the stream into its runtime's
+  `Response`.
+- **Selective hydration timing** — currently hydration waits for the
+  stream to close (per ADR). React's per-boundary hydration triggered
+  by user interaction is a strictly larger problem (event replay) and
+  out of scope for now.
 
-**Where to start:** ADR 0006 §"Implementation plan" item 3. The marker
-grammar (`<!--s:N--><!--/s:N-->`) is already emitted by `suspense()`;
-this phase is the streaming machinery on top of it.
+**Files added/changed for Phase 3:**
 
-**Open design question:** mid-stream hydration semantics. The ADR
-defers it ("hydrate after the stream closes") but a serious user will
-want event handlers attached before the slow boundary resolves —
-that's React's selective-hydration story. Worth deciding before
-shipping Phase 3 whether to follow React's per-boundary hydration
-model or keep the simpler defer-everything approach.
+- `packages/core/src/__purity_swap.ts` — client splice helper +
+  `PURITY_SWAP_SOURCE` for inlining.
+- `packages/core/src/ssr-context.ts` — `streamingMode`,
+  `streamingBoundaries` fields.
+- `packages/core/src/control.ts` — streaming branch in `suspense()`.
+- `packages/ssr/src/render-to-stream.ts` — new entry.
+- `packages/ssr/tests/render-to-stream.test.ts` — 10 tests covering
+  wire format, ordering, doctype, nonce, timeout fallback, and
+  end-to-end swap execution against jsdom.
 
 ### 2. _(closed)_ Per-row / per-case reconciliation in `each` / `when` / `match`
 
@@ -94,10 +120,15 @@ contract.
 
 ### 5. Phase 6 second-half — per-boundary `__purity_resources__` emit
 
-Tied to Phase 3 streaming. Each streamed boundary chunk would carry
-its own resource-cache entries instead of all entries piling into the
-shell's single `<script id="__purity_resources__">`. Defer until
-Phase 3 lands.
+Now unblocked: Phase 3 streaming shipped. Each streamed boundary chunk
+should carry its own `resolvedData` / `resolvedDataByKey` payload so
+the client doesn't refetch inside the boundary on hydrate. Hook point
+is `renderBoundary()` in `packages/ssr/src/render-to-stream.ts` — the
+loop already collects `resolvedData[]` per boundary; emit it as a
+`<script type="application/json" id="__purity_resources_N__">` next to
+each `<template id="purity-s-N">` and teach `consumeHydrationValue()`
+to read from the matching id when the hydrator enters the boundary's
+subtree.
 
 ## Test count by package (post-branch)
 

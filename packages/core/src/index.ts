@@ -62,5 +62,8 @@ export type { ComputedAccessor, Dispose, StateAccessor, WatchSource } from './si
 // Reactive primitives
 export { batch, compute, state, watch } from './signals.ts';
 
+// Streaming SSR — client splice helper for ADR 0006 Phase 3.
+export { __purity_swap, PURITY_SWAP_SOURCE } from './__purity_swap.ts';
+
 // Scoped styles
 export { css } from './styles.ts';

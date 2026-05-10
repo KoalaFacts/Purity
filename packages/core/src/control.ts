@@ -1684,6 +1684,46 @@ export function suspense<T>(
   };
 
   const isTimedOut = ssrCtx.timedOutBoundaries.has(id);
+
+  // Streaming branch (ADR 0006 Phase 3) — `renderToStream` flips
+  // ssrCtx.streamingMode and provides a streamingBoundaries registry.
+  // For each boundary we emit the fallback HTML in the shell and queue
+  // the view (+ its fallback for re-render on timeout) for later
+  // streaming, so the shell can flush immediately without awaiting the
+  // boundary's resources. The marker grammar is identical — only the
+  // body is the fallback rather than the resolved view.
+  if (ssrCtx.streamingMode && ssrCtx.streamingBoundaries) {
+    let body: string;
+    if (isTimedOut) {
+      reportError(undefined, 'timeout');
+      try {
+        body = valueToHtml(fallback());
+      } catch (fallbackErr) {
+        reportError(fallbackErr, 'fallback');
+        body = '';
+      }
+    } else {
+      try {
+        body = valueToHtml(fallback());
+      } catch (fallbackErr) {
+        reportError(fallbackErr, 'fallback');
+        console.error(
+          `[Purity] suspense() shell fallback threw (boundary ${id}); emitting empty fallback:`,
+          fallbackErr,
+        );
+        body = '';
+      }
+      // Don't queue boundaries that already timed out — the shell already
+      // shows their fallback; there's nothing left to stream.
+      ssrCtx.streamingBoundaries.set(id, {
+        view: view as () => unknown,
+        fallback: fallback as () => unknown,
+        onError,
+      });
+    }
+    return markSSRHtml(`<!--s:${id}-->${body}<!--/s:${id}-->`);
+  }
+
   let body: string;
   if (isTimedOut) {
     reportError(undefined, 'timeout');

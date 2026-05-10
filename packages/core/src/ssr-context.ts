@@ -60,6 +60,32 @@ export interface SSRRenderContext {
    * instead of the view.
    */
   timedOutBoundaries: Set<number>;
+  /**
+   * When true, `suspense()` skips its inline `view()` rendering during
+   * the SSR pass, emits the fallback in the shell, and registers the
+   * `view` (+ its `fallback` for a re-render on timeout) into
+   * {@link streamingBoundaries}. `renderToStream` then drains the map
+   * after the shell flush, awaiting each boundary's resources and
+   * emitting a `<template id="purity-s-N">resolved</template><script>
+   * __purity_swap(N)</script>` chunk per boundary. ADR 0006 Phase 3.
+   */
+  streamingMode?: boolean;
+  /**
+   * Boundaries deferred for streaming. Populated by `suspense()` when
+   * `streamingMode` is on; consumed by `renderToStream` after the
+   * shell has been flushed. Insertion order is the boundary's wire
+   * order in the response — boundaries stream in the same order they
+   * were declared in the source, regardless of resolution order, to
+   * keep the wire model deterministic for the simplest MVP.
+   */
+  streamingBoundaries?: Map<
+    number,
+    {
+      view: () => unknown;
+      fallback: () => unknown;
+      onError?: (err: unknown, info: { boundaryId: number; phase: string }) => void;
+    }
+  >;
 }
 
 let currentContext: SSRRenderContext | null = null;

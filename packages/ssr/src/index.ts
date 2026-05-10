@@ -12,4 +12,5 @@ import './component.ts';
 
 export type { SSRHtml } from '@purityjs/core/compiler';
 export { html } from './html.ts';
+export { type RenderToStreamOptions, renderToStream } from './render-to-stream.ts';
 export { type RenderToStringOptions, renderToString } from './render-to-string.ts';

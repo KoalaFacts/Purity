@@ -76,6 +76,8 @@ export {
   type NavigateOptions,
   type RouteMatch,
 } from './router.ts';
+// Link auto-interception — ADR 0013.
+export { interceptLinks, type InterceptLinksOptions } from './router-intercept.ts';
 // Server actions — ADR 0012.
 export {
   findAction,

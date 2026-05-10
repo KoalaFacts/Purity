@@ -4,7 +4,8 @@
 // client bundle; string builder for the SSR bundle).
 //
 // What this example exercises:
-//   - currentPath() + matchRoute() + navigate() router primitives (ADR 0011)
+//   - currentPath() + matchRoute() router primitives (ADR 0011)
+//   - interceptLinks() in entry.client.ts so plain <a href> works (ADR 0013)
 //   - getRequest() for URL-aware route dispatch (ADR 0009)
 //   - head() for per-route <title> and <meta> (ADR 0008)
 //   - suspense() with a slow keyed resource()
@@ -16,7 +17,6 @@ import {
   head,
   html,
   matchRoute,
-  navigate,
   resource,
   suspense,
 } from '@purityjs/core';
@@ -40,16 +40,7 @@ function HomePage() {
     <main>
       <h1>Hello from /</h1>
       <demo-counter :count=${42}></demo-counter>
-      <p>
-        <a
-          href="/about"
-          @click=${(e: Event) => {
-            e.preventDefault();
-            navigate('/about');
-          }}
-          >→ about</a
-        >
-      </p>
+      <p><a href="/about">→ about</a></p>
       ${suspense(
         () => {
           const todos = resource(
@@ -85,14 +76,11 @@ function AboutPage(_match: { params: Record<string, string> }) {
       <h1>About</h1>
       <p>This page uses currentPath() / matchRoute() / navigate().</p>
       <p>
-        <a
-          href="/"
-          @click=${(e: Event) => {
-            e.preventDefault();
-            navigate('/');
-          }}
-          >← home</a
-        >
+        <a href="/">← home</a>
+        ·
+        <a href="/users/42">/users/42 (try :param)</a>
+        ·
+        <a href="https://example.com" target="_blank" rel="noopener">external (opens in tab)</a>
       </p>
     </main>
   `;
@@ -104,16 +92,7 @@ function UserProfilePage(match: { params: Record<string, string> }) {
     <main>
       <h1>User profile</h1>
       <p>User id: <code>${match.params.id}</code></p>
-      <p>
-        <a
-          href="/"
-          @click=${(e: Event) => {
-            e.preventDefault();
-            navigate('/');
-          }}
-          >← home</a
-        >
-      </p>
+      <p><a href="/">← home</a></p>
     </main>
   `;
 }
@@ -125,26 +104,16 @@ function NotFoundPage() {
     <main>
       <h1>404</h1>
       <p>No route matches <code>${path}</code>.</p>
-      <p>
-        <a
-          href="/"
-          @click=${(e: Event) => {
-            e.preventDefault();
-            navigate('/');
-          }}
-          >← home</a
-        >
-      </p>
+      <p><a href="/">← home</a></p>
     </main>
   `;
 }
 
 // --- Route table -----------------------------------------------------------
 //
-// Plain array of `{ pattern, view }` tuples. Dispatch is one matchRoute()
-// call per entry, in declaration order. First-match wins. Real apps will
-// likely extract this into a tiny helper; the example keeps it inline so
-// every step is visible.
+// One matchRoute() per route, in declaration order. First-match wins.
+// Plain <a href> in the views — interceptLinks() in entry.client.ts
+// turns same-origin clicks into navigate() calls.
 
 export function App() {
   if (matchRoute('/')) return HomePage();

@@ -326,7 +326,20 @@ html`<a
 
 Pattern grammar: literals (`/about`), `:name` captures (`/users/:id`), and `*` splat tail (`/blog/*`). Captured `:name` values are URI-decoded. Returns `{ params } | null`.
 
-Not in scope for Phase 1: `<Route>` / `<Routes>` component, link auto-interception, layout nesting, URL search / hash reactivity, file-system route discovery. See ADR 0011's "Explicit non-features" section.
+Link auto-interception via [`interceptLinks()`](../../docs/decisions/0013-link-interception.md) drops the per-`<a>` `@click` boilerplate:
+
+```ts
+// entry.client.ts
+import { hydrate, interceptLinks } from '@purityjs/core';
+import { App } from './app.ts';
+
+hydrate(document.getElementById('app')!, App);
+interceptLinks();
+```
+
+Then templates use plain `<a href>` — same-origin clicks become `navigate()` calls automatically. The default predicate exempts modifier keys, `target="_blank"`, download links, cross-origin hrefs, hash-only same-page links, and elements carrying `data-no-intercept`. Pass a custom `shouldIntercept` to fully replace the default.
+
+Still not in scope: `<Route>` / `<Routes>` component, layout nesting, URL search / hash reactivity, file-system route discovery, scroll restoration, focus management, view transitions, prefetch-on-hover. See ADR 0011 + ADR 0013's "Explicit non-features" sections.
 
 ### Server actions (ADR 0012)
 

@@ -11,17 +11,20 @@ import { tick } from './_helpers.ts';
 describe('hydrate mismatch warnings (opt-in dev diagnostics)', () => {
   let host: HTMLElement;
   let warnSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     host = document.createElement('div');
     document.body.appendChild(host);
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     enableHydrationWarnings();
   });
 
   afterEach(() => {
     disableHydrationWarnings();
     warnSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 
   it('warns when SSR sends a different element tag than the template expects', () => {
@@ -77,5 +80,36 @@ describe('hydrate mismatch warnings (opt-in dev diagnostics)', () => {
     const msg = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(msg).toContain('<span>');
     expect(msg).toContain('<em>');
+  });
+
+  it('recovers after a structural mismatch by falling back to fresh mount', async () => {
+    // SSR sent <p>plain</p> but template has a reactive expression — the
+    // walker has no `<!--[-->` to consume and crashes on null.parentNode.
+    // Hydration must catch and re-render the page fresh so the user keeps
+    // a working DOM (just lossy for this render).
+    host.innerHTML = '<p>plain</p>';
+    const v = state('client-value');
+    hydrate(host, () => html`<p>${() => v()}</p>`);
+    await tick();
+    // Warned + errored, but the DOM is the freshly-rendered client output.
+    expect(warnSpy).toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalled();
+    expect(host.textContent).toBe('client-value');
+    // Reactivity wired up against the new tree.
+    v('updated');
+    await tick();
+    expect(host.textContent).toBe('updated');
+  });
+
+  it('still recovers cleanly when warnings are disabled', async () => {
+    disableHydrationWarnings();
+    host.innerHTML = '<p>plain</p>';
+    const v = state('client-value');
+    hydrate(host, () => html`<p>${() => v()}</p>`);
+    await tick();
+    // No warnings — but the recovery still happens via the top-level catch.
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalled();
+    expect(host.textContent).toBe('client-value');
   });
 });

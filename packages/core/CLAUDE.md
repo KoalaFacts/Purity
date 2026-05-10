@@ -31,6 +31,28 @@ each(listFn, mapFn, keyFn?)  // list rendering — mapFn receives item as access
 list(tag, listAccessor, textOrOptions, keyFn?) // leaner list of single-tag rows
 ```
 
+## Hydration
+
+`hydrate(container, App)` walks the SSR-rendered DOM and attaches bindings
+in place (no rebuild). Marker pairs `<!--[-->...<!--]-->` delimit each
+expression slot; nested `${html\`...\`}` returns a deferred thunk that
+inflates against its slot's subtree. See ADR
+[0005](../../docs/decisions/0005-non-lossy-hydration.md).
+
+```ts
+import { enableHydrationWarnings, hydrate } from '@purityjs/core';
+
+if (import.meta.env.DEV) enableHydrationWarnings();
+hydrate(document.getElementById('app')!, App);
+```
+
+`enableHydrationWarnings()` makes the hydrator log `console.warn` on
+structural mismatches (wrong element tag, missing marker, etc.). Off by
+default — adds one short-circuit per cursor step when off, a function
+call + warn-on-mismatch when on. Independent of warnings, the hydrator
+catches walker failures and falls back to a fresh `mount()` so a
+divergent SSR can never crash the page.
+
 ## Async data — `resource`, `lazyResource`, `debounced`
 
 Race-safe async fetcher backed by signals. Auto-aborts in-flight requests when

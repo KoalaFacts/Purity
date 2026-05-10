@@ -93,14 +93,15 @@ Marker-walking hydration" is now done.
   effectively lossy. Reconciling list output against SSR DOM at the
   per-item level is a much larger change (it needs keyed-row matching
   against marker triplets) and is left for a follow-up ADR.
-- **Mismatch detection / warnings.** If the SSR markup doesn't match
-  the client template's static structure (e.g. SSR sent `<p>` where the
-  template emits `<div>`), the marker walker may misread the cursor and
-  produce wrong output without complaining. Adding structural assertions
-  is straightforward but adds bytes to the hydrate factory; we ship
-  without them and rely on the SSR/client templates being shared user
-  source code (the Vite plugin compiles the same html-tag source for
-  both targets, so divergence is rare).
+- **Static text-content mismatch detection.** Reactive bindings re-bind
+  on hydration; static text nodes are walked past without comparing to
+  the AST's expected content. So if SSR emitted `<p>foo</p>` and the
+  client template is `<p>bar</p>`, the user sees the SSR text and no
+  warning fires. Adding a text-equality check would need an additional
+  emit per static text in the codegen; left for a follow-up. The
+  structural mismatches that _do_ break the walker (wrong tag, missing
+  marker, etc.) are now caught — see "Implementation summary" below for
+  the opt-in `enableHydrationWarnings()` flag.
 - **Streaming hydration.** Out of scope per ADR 0004.
 
 ## Consequences
@@ -163,11 +164,29 @@ Single PR, scope:
 | `packages/core/src/elements.ts`                 | `connectedCallback` enters hydration mode when shadow root already has children                      |
 | `packages/core/tests/hydrate.test.ts`           | Rewritten to assert SSR-DOM identity preservation across hydration                                   |
 | `packages/core/tests/hydrate-resource.test.ts`  | Updated SSR fixtures to include `<!--[--><!--]-->` markers                                           |
-| `packages/ssr/tests/hydrate-parity.test.ts`     | New — end-to-end SSR → hydrate parity (renderToString output, then hydrate, asserts node identity)   |
+| `packages/core/tests/hydrate-mismatch.test.ts`  | Covers `enableHydrationWarnings()` + the top-level catch + fresh-mount recovery path                 |
+| `packages/ssr/tests/hydrate-parity.test.ts`     | End-to-end SSR → hydrate parity (renderToString output, then hydrate, asserts node identity)         |
 | `docs/decisions/0005-non-lossy-hydration.md`    | This document                                                                                        |
 
-**Test count:** 456 core + 57 ssr + 85 vite-plugin = 598 passing
-(net +5 vs ADR 0004 — the new SSR parity tests).
+**Test count:** 464 core + 57 ssr + 85 vite-plugin = 606 passing
+(net +13 vs ADR 0004 — SSR parity tests + mismatch warning tests).
+
+### Mismatch warnings + recovery
+
+Shipped opt-in dev diagnostics in a follow-up commit:
+
+- `enableHydrationWarnings()` / `disableHydrationWarnings()` exported
+  from `@purityjs/core`. Off by default. When on, the hydrate factory
+  receives a cursor-check fn as its 5th arg and calls it before each
+  consume step (text / comment / expression-`open` marker / element
+  tag). Mismatches log a `console.warn` with expected vs. observed.
+- `hydrate()` wraps `inflateDeferred` in a try/catch. If the walker
+  goes off the rails (e.g. cursor becomes null because SSR omitted a
+  marker), it logs a `console.error` and falls back to a fresh
+  `mount()` so the page keeps working.
+- Cost when warnings are off: one `_c && _c(...)` short-circuit per
+  cursor step (single var read + truthy check). Tree-shaken from prod
+  builds that never call `enableHydrationWarnings()`.
 
 ## Alternatives considered
 

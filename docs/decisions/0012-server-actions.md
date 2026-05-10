@@ -100,10 +100,15 @@ formData })` for SPA UX; both call the same handler.
   arbitrary JS values needs a wire format, a versioning story, and
   trust boundaries — out of Phase 1 scope. Users who want RPC-style
   ergonomics build their own thin wrapper on top.
-- **No client-side `action.invoke(formData)` helper.** A 6-line
-  `fetch(action.url, { method: 'POST', body: formData })` call site
-  isn't worth abstracting until the request shape (headers,
-  credentials, error UX) settles.
+- _(closed)_ **Client-side `action.invoke(body, init?)` helper.**
+  Originally deferred. After two iterations of users (the SSR
+  example, hypothetical JS-driven form handlers) writing the same
+  `fetch(action.url, { method: 'POST', body })` four-liner, the
+  abstraction is worth it. `action.invoke()` defaults to `POST` and
+  forwards `body` + `init` to `fetch`, returning the raw `Response`
+  so the caller decides how to parse / handle errors. Client-only
+  — throws on the server with a clear message pointing at
+  `action.handler(request)` for direct invocation in tests / SSR.
 - **No build-time URL derivation.** Other frameworks (Next App
   Router, RSC) auto-generate stable URLs from function identity via
   bundler magic. That magic requires a build pipeline integration

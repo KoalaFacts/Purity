@@ -348,7 +348,7 @@ Still not in scope: `<Route>` / `<Routes>` component, layout nesting, URL search
 
 ### Server actions (ADR 0012)
 
-Server actions register a `(Request) => Response` handler at a stable URL. `<form action=${action.url} method="POST">` posts to it natively (progressive enhancement); JS apps can `fetch(action.url, …)` against the same URL.
+Server actions register a `(Request) => Response` handler at a stable URL. `<form action=${action.url} method="POST">` posts to it natively (progressive enhancement); JS apps call `action.invoke(body, init?)` to POST via fetch and get the raw `Response` back.
 
 ```ts
 // app/save-todo.server.ts
@@ -376,11 +376,12 @@ if (actionResponse) return actionResponse;
 // …else render the page normally.
 ```
 
-| API                          | Returns                     | Behavior                                                           |
-| ---------------------------- | --------------------------- | ------------------------------------------------------------------ |
-| `serverAction(url, handler)` | `{ url, handler }`          | Register at `url`. Last-wins on duplicate. Throws on bad input.    |
-| `findAction(request)`        | `handler \| null`           | Look up handler by `new URL(request.url).pathname`. No invocation. |
-| `handleAction(request)`      | `Promise<Response \| null>` | Find + invoke + await. `null` on no match so caller falls through. |
+| API                           | Returns                     | Behavior                                                                                                        |
+| ----------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `serverAction(url, handler)`  | `{ url, handler, invoke }`  | Register at `url`. Last-wins on duplicate. Throws on bad input.                                                 |
+| `action.invoke(body?, init?)` | `Promise<Response>`         | Client-only. POST to `action.url` via fetch. Defaults to method `POST`; `init` overrides. Throws on the server. |
+| `findAction(request)`         | `handler \| null`           | Look up handler by `new URL(request.url).pathname`. No invocation.                                              |
+| `handleAction(request)`       | `Promise<Response \| null>` | Find + invoke + await. `null` on no match so caller falls through.                                              |
 
 Phase 1 non-features: no CSRF helper, no auto-serialization, no build-time URL derivation, no client-bundle handler-body stripping. Action handlers must live in server-only modules — keep them under a `*.server.ts` / `server/` naming convention. See ADR 0012's "Explicit non-features" section.
 

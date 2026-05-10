@@ -35,6 +35,26 @@ export interface ServerAction<H extends ServerActionHandler = ServerActionHandle
   url: string;
   /** The registered handler. Exposed for direct invocation in tests / SSR. */
   handler: H;
+  /**
+   * Client-side helper: `POST`s `body` to `this.url` via `fetch` and returns
+   * the `Response`. Defaults to method `POST`; pass `init` to override
+   * method / headers / credentials / etc. (same shape as `fetch`'s second
+   * argument, minus the URL). Throws on the server — server-side callers
+   * have `this.handler` directly and don't need a network round-trip.
+   *
+   * @example
+   * ```ts
+   * // Inside a form submit handler:
+   * async function onSubmit(e: SubmitEvent) {
+   *   e.preventDefault();
+   *   const form = e.target as HTMLFormElement;
+   *   const res = await saveTodo.invoke(new FormData(form));
+   *   if (!res.ok) showError(await res.text());
+   *   else form.reset();
+   * }
+   * ```
+   */
+  invoke(body?: BodyInit | null, init?: RequestInit): Promise<Response>;
 }
 
 const registry = new Map<string, ServerActionHandler>();
@@ -84,7 +104,19 @@ export function serverAction<H extends ServerActionHandler>(
     throw new TypeError('[Purity] serverAction(): handler must be a function.');
   }
   registry.set(url, handler);
-  return { url, handler };
+  return {
+    url,
+    handler,
+    async invoke(body, init) {
+      if (typeof window === 'undefined' || typeof fetch !== 'function') {
+        throw new Error(
+          '[Purity] action.invoke() is client-only. ' +
+            'On the server, call `action.handler(request)` directly.',
+        );
+      }
+      return fetch(url, { method: 'POST', body: body ?? null, ...init });
+    },
+  };
 }
 
 /**

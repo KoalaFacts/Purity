@@ -101,3 +101,115 @@ describe('progressive form enhancement pattern', () => {
     expect(res?.headers.get('location')).toBe('https://example.com/?saved=1');
   });
 });
+
+describe('action.invoke() — client-side fetch helper', () => {
+  it('defaults to POST and calls fetch with the action URL', async () => {
+    const action = serverAction('/api/echo', async (req) => {
+      const data = await req.formData();
+      return new Response(`got ${data.get('x')}`);
+    });
+
+    const form = new FormData();
+    form.set('x', 'hi');
+
+    // jsdom ships fetch in newer versions — but to keep the test stable
+    // we stub it and just verify the call shape.
+    const originalFetch = globalThis.fetch;
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return new Response('stubbed');
+    }) as typeof fetch;
+
+    try {
+      const res = await action.invoke(form);
+      expect(res).toBeInstanceOf(Response);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].url).toBe('/api/echo');
+      expect(calls[0].init.method).toBe('POST');
+      expect(calls[0].init.body).toBe(form);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('honors init overrides (method, headers, credentials)', async () => {
+    const action = serverAction('/api/x', async () => new Response());
+    const originalFetch = globalThis.fetch;
+    let captured: RequestInit | null = null;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      captured = init;
+      return new Response();
+    }) as typeof fetch;
+
+    try {
+      await action.invoke('{"k":"v"}', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'include',
+      });
+      expect(captured).not.toBeNull();
+      const c = captured as RequestInit;
+      expect(c.method).toBe('PUT');
+      expect((c.headers as Record<string, string>)['content-type']).toBe('application/json');
+      expect(c.credentials).toBe('include');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('passes null body through cleanly when omitted', async () => {
+    const action = serverAction('/api/null', async () => new Response());
+    const originalFetch = globalThis.fetch;
+    let captured: RequestInit | null = null;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      captured = init;
+      return new Response();
+    }) as typeof fetch;
+
+    try {
+      await action.invoke();
+      expect(captured?.body).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('round-trips through the real handler via fetch + handleAction (end-to-end)', async () => {
+    // Wire a stub fetch that routes back through handleAction so the
+    // handler runs as it would in production.
+    const action = serverAction('/api/echo2', async (req) => {
+      const data = await req.formData();
+      return new Response(`hello ${data.get('name')}`);
+    });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      // Map the fetch call back into a real Request the handler accepts.
+      const req = new Request(`http://localhost${url}`, init);
+      const res = await handleAction(req);
+      return res ?? new Response('not found', { status: 404 });
+    }) as typeof fetch;
+
+    try {
+      const form = new FormData();
+      form.set('name', 'Ada');
+      const res = await action.invoke(form);
+      expect(await res.text()).toBe('hello Ada');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('throws clearly on the server (no window / no fetch)', async () => {
+    const action = serverAction('/api/server-only', async () => new Response());
+    // Simulate server: drop window so invoke() bails.
+    const originalWindow = (globalThis as { window?: unknown }).window;
+    delete (globalThis as { window?: unknown }).window;
+    try {
+      await expect(action.invoke(null)).rejects.toThrow(/client-only/);
+    } finally {
+      (globalThis as { window?: unknown }).window = originalWindow;
+    }
+  });
+});

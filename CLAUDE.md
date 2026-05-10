@@ -13,10 +13,10 @@ Minimal web framework built on TC39-Signals-inspired reactivity. 21 functions. ~
 
 ## SSR architecture (high-level)
 
-- Compiler emits two modes — `generate` (DOM) for client, `generateSSR` (string) for server. Both share the same parser + AST.
+- Compiler emits three modes — `generate` (DOM) for client, `generateSSR` (string) for server, `generateHydrate` (walks SSR DOM, attaches bindings) for hydration. All three share the same parser + AST.
 - Custom elements with `component()` SSR via `<template shadowrootmode="open">` (Declarative Shadow DOM).
 - `resource()` hooks an SSRRenderContext to await pending fetches across two render passes; resolved values are embedded as `<script id="__purity_resources__">` JSON for the client.
-- `hydrate()` is currently lossy (clear + remount). The `<!--[--><!--]-->` hydration markers are emitted in preparation for a marker-walking follow-up.
+- `hydrate()` walks `<!--[--><!--]-->` marker pairs and attaches bindings to the existing SSR nodes (no rebuild). Nested `${html\`...\`}` works via a deferred-template thunk. DSD-aware Custom Elements hydrate their own shadow content. See ADR [0005](./docs/decisions/0005-non-lossy-hydration.md).
 - The Vite plugin reads its `transform(code, id, opts)` third argument and switches codegen when `opts.ssr === true`.
 
 ## Commands

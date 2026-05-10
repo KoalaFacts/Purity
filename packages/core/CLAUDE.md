@@ -82,8 +82,9 @@ debounced.ts        — debounced() derived signal helper
 compiler/
   ast.ts            — AST node types
   parser.ts         — charcode-based template parser
-  codegen.ts        — AST → optimized JS DOM code
-  compile.ts        — JIT html`` with WeakMap cache
+  codegen.ts        — AST → optimized JS DOM code (generate / generateSSR / generateHydrate)
+  compile.ts        — JIT html`` with WeakMap cache + inflateDeferred for hydration
+  hydrate-runtime.ts — isHydrating flag + DeferredTemplate thunk (ADR 0005)
   index.ts          — re-exports for the @purityjs/core/compiler subpath
 component.ts        — ComponentContext, Scope, mount, lifecycle
 elements.ts         — component(), slot(), teleport(), Custom Element

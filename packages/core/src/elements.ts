@@ -1,3 +1,4 @@
+import { enterHydration, exitHydration, inflateDeferred, isDeferred } from './compiler/compile.ts';
 import {
   markSSRHtml,
   type SSRComponentRenderer,
@@ -446,15 +447,33 @@ export function component<
         (ctx as any)._shadowRoot = this._shadow;
         this._ctx = ctx;
 
-        const { result } = runRender(render, allProps, slotAccessors, ctx);
-
-        // PR 4 lossy hydration: when the shadow root already has children
-        // (DSD-parsed SSR content), clear them before appending the freshly
-        // rendered tree. The flash is invisible when SSR and CSR output match;
-        // mismatches produce a visible jump. A future PR can replace this
-        // with marker-walking hydration that preserves the existing DOM.
-        if (this._shadow.firstChild) {
-          while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
+        // Marker-walking hydration: if the shadow has DSD-parsed SSR content,
+        // run the renderer in hydration mode so `html\`\`` returns deferred
+        // thunks, then inflate against the shadow's existing children.
+        // Otherwise fall through to the standard fresh-render path.
+        const hasDSDContent = this._shadow.firstChild !== null;
+        let result: Node | DocumentFragment;
+        if (hasDSDContent) {
+          enterHydration();
+          let renderResult: { result: Node | DocumentFragment };
+          try {
+            renderResult = runRender(render, allProps, slotAccessors, ctx);
+          } finally {
+            exitHydration();
+          }
+          const view = renderResult.result as unknown;
+          if (isDeferred(view)) {
+            const frag = (this.ownerDocument ?? document).createDocumentFragment();
+            while (this._shadow.firstChild) frag.appendChild(this._shadow.firstChild);
+            inflateDeferred(view, frag);
+            result = frag;
+          } else {
+            // Renderer returned a non-deferred node — clear and re-render.
+            while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
+            result = renderResult.result;
+          }
+        } else {
+          result = runRender(render, allProps, slotAccessors, ctx).result;
         }
 
         // Render into shadow DOM

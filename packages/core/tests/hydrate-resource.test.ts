@@ -14,9 +14,10 @@ describe('hydrate + resource cache', () => {
   });
 
   it('reads __purity_resources__ script and primes the cache', async () => {
-    // Stage SSR-style markup: rendered content + the resources script.
+    // Stage SSR-style markup: rendered content (with marker-wrapped slot) +
+    // the resources script.
     host.innerHTML =
-      '<p>cached</p>' +
+      '<p><!--[-->primed<!--]--></p>' +
       '<script type="application/json" id="__purity_resources__">["primed"]</script>';
 
     let fetcherCalls = 0;
@@ -41,7 +42,7 @@ describe('hydrate + resource cache', () => {
   });
 
   it('falls back to normal fetching when no script is present', async () => {
-    host.innerHTML = '<p>old</p>';
+    host.innerHTML = '<p><!--[-->loading<!--]--></p>';
 
     hydrate(host, () => {
       const r = resource(() => Promise.resolve('fetched'));
@@ -58,7 +59,7 @@ describe('hydrate + resource cache', () => {
 
   it('respects creation order for multi-resource cache priming', async () => {
     host.innerHTML =
-      '<div></div>' +
+      '<p><!--[-->A<!--]-->-<!--[-->B<!--]-->-<!--[-->C<!--]--></p>' +
       '<script type="application/json" id="__purity_resources__">["A","B","C"]</script>';
 
     hydrate(host, () => {
@@ -74,7 +75,7 @@ describe('hydrate + resource cache', () => {
 
   it('still triggers a refetch when the source key changes after hydration', async () => {
     host.innerHTML =
-      '<p>cached</p>' +
+      '<p><!--[-->primed<!--]--></p>' +
       '<script type="application/json" id="__purity_resources__">["primed"]</script>';
 
     let fetcherCalls = 0;

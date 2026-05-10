@@ -299,7 +299,14 @@ function emitHydrateChildren(children: ASTNode[], ctx: HydrateCtx, cursor: strin
 function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
   switch (node.type) {
     case 'text': {
-      ctx.setup.push(`_c&&_c(${cursor},'text');`, `${cursor}=${cursor}.nextSibling;`);
+      // Pass the AST's text value as `detail` so the runtime helper can
+      // flag silent content divergence (SSR sent different bytes for the
+      // same structural slot). Codegen safety: JSON.stringify of an AST
+      // string literal — the same form used everywhere else in this file.
+      ctx.setup.push(
+        `_c&&_c(${cursor},'text',${JSON.stringify(node.value)});`,
+        `${cursor}=${cursor}.nextSibling;`,
+      );
       return;
     }
     case 'comment': {

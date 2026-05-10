@@ -27,7 +27,7 @@ type HydrateFn = (
   watch: typeof import('../signals.ts').watch,
   root: Node,
   inflate: (deferred: DeferredTemplate, target: Node) => void,
-  check: ((node: Node | null, expected: string) => void) | undefined,
+  check: ((node: Node | null, expected: string, detail?: string) => void) | undefined,
 ) => Node;
 
 interface CacheEntry {

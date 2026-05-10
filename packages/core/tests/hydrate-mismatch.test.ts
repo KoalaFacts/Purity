@@ -112,4 +112,26 @@ describe('hydrate mismatch warnings (opt-in dev diagnostics)', () => {
     expect(errorSpy).toHaveBeenCalled();
     expect(host.textContent).toBe('client-value');
   });
+
+  it('warns on silent text-content divergence (same shape, different bytes)', () => {
+    // Structural shape matches: <p>TEXT${expr}</p>. But the SSR text
+    // node says "Hello " and the template says "Hi ". With warnings on
+    // the runtime helper compares the AST-supplied value to what's in
+    // the DOM and surfaces the drift.
+    host.innerHTML = '<p>Hello <!--[-->world<!--]--></p>';
+    hydrate(host, () => html`<p>Hi ${'world'}</p>`);
+    expect(warnSpy).toHaveBeenCalled();
+    const msg = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(msg).toContain('text content differs');
+    expect(msg).toContain('"Hi "');
+    expect(msg).toContain('"Hello "');
+    // SSR text is preserved (we explicitly don't rewrite static content).
+    expect(host.textContent).toBe('Hello world');
+  });
+
+  it('does not warn when static text matches exactly', () => {
+    host.innerHTML = '<p>Hi <!--[-->world<!--]--></p>';
+    hydrate(host, () => html`<p>Hi ${'world'}</p>`);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
 });

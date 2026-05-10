@@ -93,15 +93,13 @@ Marker-walking hydration" is now done.
   effectively lossy. Reconciling list output against SSR DOM at the
   per-item level is a much larger change (it needs keyed-row matching
   against marker triplets) and is left for a follow-up ADR.
-- **Static text-content mismatch detection.** Reactive bindings re-bind
-  on hydration; static text nodes are walked past without comparing to
-  the AST's expected content. So if SSR emitted `<p>foo</p>` and the
-  client template is `<p>bar</p>`, the user sees the SSR text and no
-  warning fires. Adding a text-equality check would need an additional
-  emit per static text in the codegen; left for a follow-up. The
-  structural mismatches that _do_ break the walker (wrong tag, missing
-  marker, etc.) are now caught — see "Implementation summary" below for
-  the opt-in `enableHydrationWarnings()` flag.
+- **Static text-content rewriting.** When `enableHydrationWarnings()` is
+  on, the codegen now passes the AST's text value as a `detail` arg to
+  the cursor check, and the runtime warns on byte-level divergence
+  between SSR text and template text. We _detect_ the drift but don't
+  rewrite — preserving SSR text is intentional (it's the content the
+  user is already looking at). Authors fix the divergence at the
+  template source.
 - **Streaming hydration.** Out of scope per ADR 0004.
 
 ## Consequences
@@ -168,8 +166,9 @@ Single PR, scope:
 | `packages/ssr/tests/hydrate-parity.test.ts`     | End-to-end SSR → hydrate parity (renderToString output, then hydrate, asserts node identity)         |
 | `docs/decisions/0005-non-lossy-hydration.md`    | This document                                                                                        |
 
-**Test count:** 464 core + 57 ssr + 85 vite-plugin = 606 passing
-(net +13 vs ADR 0004 — SSR parity tests + mismatch warning tests).
+**Test count:** 466 core + 57 ssr + 85 vite-plugin = 608 passing
+(net +15 vs ADR 0004 — SSR parity tests + mismatch warning tests +
+static text-content drift tests).
 
 ### Mismatch warnings + recovery
 

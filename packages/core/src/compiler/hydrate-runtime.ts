@@ -87,9 +87,18 @@ type ExpectedKind = 'open' | 'text' | 'comment' | string;
  * Validate that a hydration cursor lands on the expected SSR node kind.
  * Called from compiled hydrate factories when warnings are enabled.
  *
+ * `detail` is an optional expected payload — currently used only for
+ * static text nodes, where the codegen passes the AST's text value so we
+ * can flag silent text-content divergence (SSR `<p>foo</p>` vs. template
+ * `<p>bar</p>` — the structural shape matches, only the bytes differ).
+ *
  * @internal
  */
-export function checkHydrationCursor(node: Node | null, expected: ExpectedKind): void {
+export function checkHydrationCursor(
+  node: Node | null,
+  expected: ExpectedKind,
+  detail?: string,
+): void {
   let actual: string;
   let ok = false;
   if (!node) {
@@ -102,6 +111,18 @@ export function checkHydrationCursor(node: Node | null, expected: ExpectedKind):
     const text = (node as Text).data;
     actual = `text(${JSON.stringify(text.length > 30 ? `${text.slice(0, 30)}…` : text)})`;
     ok = expected === 'text';
+    // Structural match — but if the codegen supplied the expected text
+    // value, also flag silent content divergence so the user notices SSR
+    // text drift before it shows up in production.
+    if (ok && detail !== undefined && text !== detail) {
+      console.warn(
+        `[Purity] Hydration mismatch — text content differs: ` +
+          `expected ${JSON.stringify(detail)}, got ${JSON.stringify(text)}. ` +
+          `The SSR text node is preserved (we don't rewrite static text); ` +
+          `update the SSR or client template so they agree.`,
+      );
+      return;
+    }
   } else if (node.nodeType === 1) {
     const tag = (node as Element).tagName.toLowerCase();
     actual = `<${tag}>`;

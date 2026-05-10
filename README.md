@@ -30,12 +30,12 @@ npm run dev
 
 ## Packages
 
-| Package                                           | Description                                  | Docs                                       |
-| ------------------------------------------------- | -------------------------------------------- | ------------------------------------------ |
-| [`@purityjs/core`](./packages/core)               | The framework — 21 functions                 | [README](./packages/core/README.md)        |
-| [`@purityjs/ssr`](./packages/ssr)                 | `renderToString` + DSD + resource awaiting   | [package](./packages/ssr)                  |
-| [`@purityjs/vite-plugin`](./packages/vite-plugin) | AOT template compilation (client + SSR)      | [README](./packages/vite-plugin/README.md) |
-| [`@purityjs/cli`](./packages/cli)                 | Project scaffolding (`--ssr` flag available) | [README](./packages/cli/README.md)         |
+| Package                                           | Description                                                   | Docs                                       |
+| ------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------ |
+| [`@purityjs/core`](./packages/core)               | The framework — 21 functions                                  | [README](./packages/core/README.md)        |
+| [`@purityjs/ssr`](./packages/ssr)                 | `renderToString` + `renderToStream` + DSD + resource awaiting | [README](./packages/ssr/README.md)         |
+| [`@purityjs/vite-plugin`](./packages/vite-plugin) | AOT template compilation (client + SSR)                       | [README](./packages/vite-plugin/README.md) |
+| [`@purityjs/cli`](./packages/cli)                 | Project scaffolding (`--ssr` flag available)                  | [README](./packages/cli/README.md)         |
 
 ## At a Glance
 

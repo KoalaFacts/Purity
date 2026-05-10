@@ -11,7 +11,6 @@ import {
   checkHydrationCursor,
   type DeferredTemplate,
   hydrationWarningsEnabled,
-  isDeferred,
   isHydrating,
   makeDeferred,
 } from './hydrate-runtime.ts';

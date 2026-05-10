@@ -4,12 +4,12 @@ Minimal web framework built on TC39-Signals-inspired reactivity. 21 functions. ~
 
 ## Packages
 
-| Package                 | Path                    | Docs                                          |
-| ----------------------- | ----------------------- | --------------------------------------------- |
-| `@purityjs/core`        | `packages/core/`        | [CLAUDE.md](./packages/core/CLAUDE.md)        |
-| `@purityjs/ssr`         | `packages/ssr/`         | server-side rendering — `renderToString`, DSD |
-| `@purityjs/vite-plugin` | `packages/vite-plugin/` | [CLAUDE.md](./packages/vite-plugin/CLAUDE.md) |
-| `@purityjs/cli`         | `packages/cli/`         | [CLAUDE.md](./packages/cli/CLAUDE.md)         |
+| Package                 | Path                    | Docs                                                             |
+| ----------------------- | ----------------------- | ---------------------------------------------------------------- |
+| `@purityjs/core`        | `packages/core/`        | [CLAUDE.md](./packages/core/CLAUDE.md)                           |
+| `@purityjs/ssr`         | `packages/ssr/`         | SSR — `renderToString` + `renderToStream` + `renderStatic` + DSD |
+| `@purityjs/vite-plugin` | `packages/vite-plugin/` | [CLAUDE.md](./packages/vite-plugin/CLAUDE.md)                    |
+| `@purityjs/cli`         | `packages/cli/`         | [CLAUDE.md](./packages/cli/CLAUDE.md)                            |
 
 ## SSR architecture (high-level)
 

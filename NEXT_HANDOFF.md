@@ -107,7 +107,7 @@ contract.
 - **Server actions / RPC + progressive form enhancement** — Remix/SvelteKit style.
 - **Head / meta tag management** — _(Phase 1 shipped, see [ADR 0008](docs/decisions/0008-head-meta-management.md))_. `head()` collects HTML during SSR; `renderToString({ extractHead: true })` returns `{ body, head }`. Phase 2 (reactive client-side head element management with dedup, OG/Twitter/JSON-LD helpers) is the natural follow-up; that's when it splits into a dedicated `@purityjs/head` package.
 - **Request context** — _(shipped, see [ADR 0009](docs/decisions/0009-request-context.md))_. `getRequest()` reads the incoming `Request` during SSR; `renderToString` / `renderToStream` accept it via the `request` option. Standard Web Platform `Request` so it works identically on every runtime.
-- **SSG / ISR / PPR** — `renderToString` is the primitive; needs a build-time / per-route driver on top.
+- **SSG** — _(shipped, see [ADR 0010](docs/decisions/0010-static-site-generation.md))_. `renderStatic({ routes, handler, shellTemplate, … })` composes `renderToString` over a list of routes, returning `Map<path, html>` + per-route errors. No filesystem I/O — runtime-agnostic. **ISR / PPR** (incremental static regen / partial pre-render) are higher-level patterns built on top; not yet shipped.
 - **DSD fallback for pre-2024 browsers** — out of scope per ADR 0004.
 
 ### 5. _(closed)_ Phase 6 second-half — per-boundary `__purity_resources__` emit

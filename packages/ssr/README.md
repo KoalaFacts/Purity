@@ -294,6 +294,52 @@ Contract:
 - On the client (and in tests / ad-hoc renders without a `request` option), `getRequest()` returns `null`. Branch on the result if your component is dual-target.
 - No URL pattern matcher / router is in scope — `getRequest()` exposes the raw request and the user decides how to dispatch.
 
+### Static site generation (ADR 0010)
+
+`renderStatic(options)` pre-renders a list of routes at build time. Composes `renderToString` + `extractHead` + `getRequest()`; returns a `Map<path, html>` plus a per-route errors map. **No filesystem I/O** — the caller writes the files however their runtime prefers.
+
+```ts
+import { renderStatic } from '@purityjs/ssr';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+
+const { files, errors } = await renderStatic({
+  routes: ['/', '/about', '/blog/hello-world'],
+  handler: (req) => () => App({ url: req.url }),
+  shellTemplate:
+    '<!doctype html><html><head>{{head}}</head>' +
+    '<body><div id="app">{{body}}</div></body></html>',
+  baseUrl: 'https://example.com',
+  concurrency: 8,
+});
+for (const [route, html] of files) {
+  const out = join('dist', route === '/' ? 'index.html' : `${route.replace(/^\//, '')}/index.html`);
+  await mkdir(dirname(out), { recursive: true });
+  await writeFile(out, html);
+}
+for (const [route, err] of errors) console.error('SSG failure:', route, err);
+```
+
+Options:
+
+| Field           | Type                                                      | Default                | Purpose                                                                   |
+| --------------- | --------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------- |
+| `routes`        | `Array<string \| { path; request? }>`                     | required               | URL paths to render. Per-route `request` overrides the synthesised one.   |
+| `handler`       | `(req: Request) => () => unknown`                         | required               | Resolves a request to the component thunk for that route.                 |
+| `shellTemplate` | `string`                                                  | _(none — return body)_ | `{{body}}` + optional `{{head}}` placeholders.                            |
+| `baseUrl`       | `string`                                                  | `'http://localhost'`   | Origin used to synthesise per-route `Request` URLs.                       |
+| `doctype`       | `string`                                                  | none                   | Forwarded to `renderToString`.                                            |
+| `renderOptions` | `Omit<RenderToStringOptions, 'extractHead' \| 'request'>` | `{}`                   | Forwarded per-render. `extractHead` is forced on; `request` is per-route. |
+| `concurrency`   | `number`                                                  | `Infinity`             | Bounded worker pool when SSG'ing thousands of routes.                     |
+| `onRoute`       | `(path, html) => void \| Promise<void>`                   | none                   | Stream completed renders to disk one-at-a-time.                           |
+
+Contract:
+
+- Errors are per-route. One bad render doesn't abort the batch — check `errors.size === 0` before publishing.
+- The synthesised `Request` is visible to components via `getRequest()`; `req.url` is `baseUrl + path`.
+- `head()` markup goes into `{{head}}`; if the template has no `{{head}}` placeholder, head markup is prepended to the body so it isn't lost.
+- `renderToStream` and `renderStatic` are mutually exclusive — pick the buffered (SSG) or streaming (SSR) path per response.
+
 ### Strict CSP
 
 Generate a nonce per request and pass it through; pair with a `Content-Security-Policy: script-src 'nonce-…'` header so every inline `<script>` we emit (resource cache prime, swap helper, per-boundary swap calls) is allowed under strict CSP.

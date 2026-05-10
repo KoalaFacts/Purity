@@ -250,7 +250,7 @@ describe('SSR control flow', () => {
       a: () => 'A',
       b: () => 'B',
     });
-    expect(out.__purity_ssr_html__).toBe('<!--m-->B<!--/m-->');
+    expect(out.__purity_ssr_html__).toBe('<!--m:b-->B<!--/m-->');
   });
 
   it('matchSSR uses fallback when no case matches', () => {
@@ -259,12 +259,12 @@ describe('SSR control flow', () => {
       { a: () => 'A' },
       () => 'F',
     );
-    expect(out.__purity_ssr_html__).toBe('<!--m-->F<!--/m-->');
+    expect(out.__purity_ssr_html__).toBe('<!--m:z-->F<!--/m-->');
   });
 
   it('matchSSR with no case and no fallback renders empty markers', () => {
     const out = matchSSR(() => 'z' as string, {});
-    expect(out.__purity_ssr_html__).toBe('<!--m--><!--/m-->');
+    expect(out.__purity_ssr_html__).toBe('<!--m:z--><!--/m-->');
   });
 
   it('whenSSR picks the then branch', () => {
@@ -273,7 +273,7 @@ describe('SSR control flow', () => {
       () => 'YES',
       () => 'NO',
     );
-    expect(out.__purity_ssr_html__).toBe('<!--m-->YES<!--/m-->');
+    expect(out.__purity_ssr_html__).toBe('<!--m:true-->YES<!--/m-->');
   });
 
   it('whenSSR picks the else branch', () => {
@@ -282,7 +282,7 @@ describe('SSR control flow', () => {
       () => 'YES',
       () => 'NO',
     );
-    expect(out.__purity_ssr_html__).toBe('<!--m-->NO<!--/m-->');
+    expect(out.__purity_ssr_html__).toBe('<!--m:false-->NO<!--/m-->');
   });
 
   it('whenSSR with no else renders empty markers', () => {
@@ -290,7 +290,7 @@ describe('SSR control flow', () => {
       () => false,
       () => 'YES',
     );
-    expect(out.__purity_ssr_html__).toBe('<!--m--><!--/m-->');
+    expect(out.__purity_ssr_html__).toBe('<!--m:false--><!--/m-->');
   });
 
   it('eachSSR concatenates mapped items', () => {
@@ -386,6 +386,6 @@ describe('generateSSR — integration with control flow', () => {
         () => markSSRHtml('<p>shown</p>'),
       ),
     );
-    expect(out).toBe('<div><!--[--><!--m--><p>shown</p><!--/m--><!--]--></div>');
+    expect(out).toBe('<div><!--[--><!--m:true--><p>shown</p><!--/m--><!--]--></div>');
   });
 });

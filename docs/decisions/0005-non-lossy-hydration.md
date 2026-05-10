@@ -85,23 +85,23 @@ Marker-walking hydration" is now done.
 
 ## Out of scope (intentionally)
 
-- **Per-slot lossy fallback for `when` / `match`.** When an expression
-  value is a function returning a `Node` from `when` / `match`, the
-  reactive watch's first execution replaces the SSR content for that
-  slot with the freshly-rendered client output. The surrounding tree
-  is preserved; the slot itself is effectively lossy. Per-case
-  reconciliation against SSR DOM is left for a follow-up ADR.
-
-  **Update:** `each()` is no longer in this list. `eachSSR` now emits
-  `<!--er:K-->row<!--/er-->` row markers (URL-encoded keys, dashes
-  rewritten to `%2D` so `--` can never appear in comment data) and
-  `each()` returns a `DeferredEach` handle during hydration. The
-  hydrate factory's expression-slot dispatch routes the handle through
-  `inflateDeferredEach`, which adopts SSR rows in place by key match
-  before installing the reactive watch — long-list hydration now
-  preserves DOM identity end-to-end. Mismatched keys per row fall
-  through to fresh DOM for that row only; the rest of the list still
-  hydrates losslessly.
+- _(closed)_ **Per-slot lossy fallback for control-flow helpers.**
+  Originally listed here as out-of-scope; both halves are now done.
+  - **`each()`** — `eachSSR` emits `<!--er:K-->row<!--/er-->` row
+    markers (URL-encoded keys, dashes rewritten to `%2D` so `--` can
+    never appear in comment data); `each()` returns a `DeferredEach`
+    handle during hydration; `inflateDeferredEach` adopts SSR rows in
+    place by key match before installing the reactive watch. Mismatched
+    keys per row fall through to fresh DOM for that row only.
+  - **`when()` / `match()`** — `matchSSR` and `whenSSR` now embed the
+    rendered key in the boundary marker (`<!--m:KEY-->...<!--/m-->`).
+    `match()` returns a `DeferredMatch` handle during hydration;
+    `inflateDeferredMatch` parses the boundary, compares the SSR key
+    against the current `sourceFn()` value, and inflates the matching
+    case's `html\`\`` template against the SSR view nodes. The adopted
+    nodes seed the per-case DOM cache, so toggling away and back to the
+    SSR key reuses the original SSR-derived DOM. SSR-key / client-key
+    drift falls through to a fresh render of the current view.
 
 - **Static text-content rewriting.** When `enableHydrationWarnings()` is
   on, the codegen now passes the AST's text value as a `detail` arg to

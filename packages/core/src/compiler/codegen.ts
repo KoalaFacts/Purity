@@ -263,7 +263,7 @@ export function generateHydrate(ast: FragmentNode): string {
   ast = condenseWhitespace(ast) as FragmentNode;
 
   if (!hasDynamic(ast)) {
-    return 'function(_v,_w,_r,_i,_c,_e){return _r;}';
+    return 'function(_v,_w,_r,_i,_c,_e,_m){return _r;}';
   }
 
   const ctx: HydrateCtx = { setup: [], reactive: [], id: 0 };
@@ -281,9 +281,10 @@ export function generateHydrate(ast: FragmentNode): string {
   // All identifiers spliced into `body` are framework-internal counters
   // (_c0, _el<id>, _open<id>, …) or have been validated/JSON.stringify'd by
   // the genAttrBinding / inline emitters used here. `_i` is the runtime
-  // inflateDeferred helper, `_c` the optional cursor-check fn, and `_e` the
-  // inflateDeferredEach helper — all threaded through by compile.ts.
-  return `function(_v,_w,_r,_i,_c,_e){${body}}`;
+  // inflateDeferred helper, `_c` the optional cursor-check fn, `_e` the
+  // inflateDeferredEach helper, and `_m` the inflateDeferredMatch helper —
+  // all threaded through by compile.ts.
+  return `function(_v,_w,_r,_i,_c,_e,_m){${body}}`;
 }
 
 export function generateHydrateModule(ast: FragmentNode): string {
@@ -358,6 +359,8 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         `}`,
         // Deferred each() — adopt SSR rows in place rather than rebuild.
         `else if(${xv}.__purity_deferred_each__===true){_e(${xv},${cont},${close});}`,
+        // Deferred match()/when() — adopt the SSR-rendered case in place.
+        `else if(${xv}.__purity_deferred_match__===true){_m(${xv},${cont},${close});}`,
         // Branded SSR HTML wrapper (e.g. eachSSR result) — SSR DOM is already
         // correct; nothing to bind on the client.
         `else if(typeof ${xv}.__purity_ssr_html__==='string'){}`,

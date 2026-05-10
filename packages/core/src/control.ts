@@ -1,4 +1,8 @@
-import { inflateDeferred, setInflateDeferredEach } from './compiler/compile.ts';
+import {
+  inflateDeferred,
+  setInflateDeferredEach,
+  setInflateDeferredMatch,
+} from './compiler/compile.ts';
 import {
   type DeferredTemplate,
   enterHydration,
@@ -20,6 +24,98 @@ import { getSSRRenderContext } from './ssr-context.ts';
 type MatchView = () => Node | DocumentFragment | string;
 type MatchCases<T extends string | number | boolean> = Partial<Record<`${T}`, MatchView>>;
 
+interface MatchState {
+  currentNodes: Node[];
+  prevKey: string | undefined;
+  cache: Map<string, Node[]>;
+}
+
+// Insert the result of viewFn() before endMarker and update matchState. Shared
+// between match()'s initial render and the reactive update path.
+function insertMatchView(
+  matchState: MatchState,
+  parent: Node,
+  endMarker: Node,
+  content: Node | DocumentFragment | string,
+): void {
+  if (content instanceof DocumentFragment) {
+    matchState.currentNodes = Array.from(content.childNodes);
+    parent.insertBefore(content, endMarker);
+  } else if (content instanceof Node) {
+    matchState.currentNodes = [content];
+    parent.insertBefore(content, endMarker);
+  } else {
+    const textNode = document.createTextNode(String(content));
+    matchState.currentNodes = [textNode];
+    parent.insertBefore(textNode, endMarker);
+  }
+}
+
+// Detach current nodes, archive them in the per-case cache (so toggling back
+// reuses them), then render the new key. Reused by client + hydration paths.
+function reconcileMatch<T extends string | number | boolean>(
+  matchState: MatchState,
+  parent: Node,
+  endMarker: Node,
+  key: string,
+  cases: MatchCases<T>,
+  fallback?: MatchView,
+): void {
+  for (let i = 0; i < matchState.currentNodes.length; i++) {
+    const node = matchState.currentNodes[i];
+    /* v8 ignore next -- defensive guard; nodes always have parent here */
+    if (node.parentNode) node.parentNode.removeChild(node);
+  }
+  if (matchState.prevKey !== undefined && matchState.currentNodes.length > 0) {
+    matchState.cache.set(matchState.prevKey, matchState.currentNodes);
+  }
+  matchState.prevKey = key;
+
+  const cached = matchState.cache.get(key);
+  if (cached) {
+    matchState.currentNodes = cached;
+    for (let i = 0; i < cached.length; i++) parent.insertBefore(cached[i], endMarker);
+    return;
+  }
+
+  const viewFn = cases[key as `${T}`] ?? fallback;
+  if (!viewFn) {
+    matchState.currentNodes = [];
+    return;
+  }
+  insertMatchView(matchState, parent, endMarker, viewFn());
+}
+
+function installMatchWatch<T extends string | number | boolean>(
+  matchState: MatchState,
+  endMarker: Node,
+  sourceFn: () => T,
+  cases: MatchCases<T>,
+  fallback?: MatchView,
+): () => void {
+  return watch(() => {
+    const key = String(sourceFn()) as `${T}`;
+    if (key === matchState.prevKey) return;
+    const parent = endMarker.parentNode;
+    /* v8 ignore next -- defensive; if endMarker is detached, watch is disposed */
+    if (!parent) return;
+    reconcileMatch(matchState, parent, endMarker, key, cases, fallback);
+  });
+}
+
+function registerMatchAutoDispose(
+  ownerCtx: Scope | null,
+  dispose: () => void,
+  matchState: MatchState,
+): void {
+  if (!ownerCtx) return;
+  (ownerCtx.disposers ??= []).push(() => {
+    dispose();
+    matchState.cache.clear();
+    matchState.currentNodes = [];
+  });
+}
+
 /**
  * Reactive pattern matching. Renders different content based on a signal value.
  * **Caches DOM** per case — switching back reuses the previous DOM, no recreation.
@@ -37,95 +133,28 @@ export function match<T extends string | number | boolean>(
   sourceFn: () => T,
   cases: MatchCases<T>,
   fallback?: MatchView,
-): DocumentFragment {
+): DocumentFragment | DeferredMatch<T> {
+  // Hydration mode: defer DOM creation. The hydrate factory sees the handle,
+  // routes through inflateDeferredMatch, which adopts the SSR-rendered case in
+  // place and seeds the per-case cache so toggling back reuses it. Closes the
+  // when()/match() half of the ADR 0005 control-flow lossy gap.
+  if (isHydrating()) return makeDeferredMatch(sourceFn, cases, fallback);
+
   const endMarker = document.createComment('m');
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
-  let currentNodes: Node[] = [];
-  let prevKey: string | undefined;
-  const cache = new Map<string, Node[]>();
+  const matchState: MatchState = { currentNodes: [], prevKey: undefined, cache: new Map() };
 
-  // Render helper — used for both initial + reactive updates
-  const renderKey = (key: string, parent: Node) => {
-    // Detach current
-    for (let i = 0; i < currentNodes.length; i++) {
-      const node = currentNodes[i];
-      /* v8 ignore next -- defensive guard; nodes always have parent here */
-      if (node.parentNode) node.parentNode.removeChild(node);
-    }
-    if (prevKey !== undefined && currentNodes.length > 0) {
-      cache.set(prevKey, currentNodes);
-    }
-    prevKey = key;
-
-    // Check cache
-    const cached = cache.get(key);
-    if (cached) {
-      currentNodes = cached;
-      for (let i = 0; i < cached.length; i++) parent.insertBefore(cached[i], endMarker);
-      return;
-    }
-
-    const viewFn = cases[key as `${T}`] ?? fallback;
-    if (!viewFn) {
-      currentNodes = [];
-      return;
-    }
-
-    const content = viewFn();
-    if (content instanceof DocumentFragment) {
-      currentNodes = Array.from(content.childNodes);
-      parent.insertBefore(content, endMarker);
-    } else if (content instanceof Node) {
-      currentNodes = [content];
-      parent.insertBefore(content, endMarker);
-    } else {
-      const textNode = document.createTextNode(String(content));
-      currentNodes = [textNode];
-      parent.insertBefore(textNode, endMarker);
-    }
-  };
-
-  // Initial render — synchronous, no watch overhead
   const initKey = String(sourceFn()) as `${T}`;
   const initView = cases[initKey] ?? fallback;
   if (initView) {
-    prevKey = initKey;
-    const content = initView();
-    if (content instanceof DocumentFragment) {
-      currentNodes = Array.from(content.childNodes);
-      fragment.insertBefore(content, endMarker);
-    } else if (content instanceof Node) {
-      currentNodes = [content];
-      fragment.insertBefore(content, endMarker);
-    } else {
-      const textNode = document.createTextNode(String(content));
-      currentNodes = [textNode];
-      fragment.insertBefore(textNode, endMarker);
-    }
+    matchState.prevKey = initKey;
+    insertMatchView(matchState, fragment, endMarker, initView());
   }
 
-  // Reactive updates — watch for changes
-  const dispose = watch(() => {
-    const key = String(sourceFn()) as `${T}`;
-    if (key === prevKey) return;
-    const parent = endMarker.parentNode;
-    /* v8 ignore next -- defensive; if endMarker is detached, watch is disposed */
-    if (!parent) return;
-    renderKey(key, parent);
-  });
-
-  // Auto-dispose watcher + clear cached DOM on component unmount
-  const ctx = getCurrentContext();
-  if (ctx) {
-    (ctx.disposers ??= []).push(() => {
-      dispose();
-      cache.clear();
-      currentNodes = [];
-    });
-  }
-
+  const dispose = installMatchWatch(matchState, endMarker, sourceFn, cases, fallback);
+  registerMatchAutoDispose(getCurrentContext(), dispose, matchState);
   return fragment;
 }
 
@@ -883,11 +912,202 @@ export function inflateDeferredEach<T>(
   registerEachAutoDispose(ownerCtx, dispose, eachState);
 }
 
-// Wire up the compiler's hydrate-runtime entry point. Compile.ts calls this
-// thunk when a hydrate factory encounters a deferred-each value in an
-// expression slot. Registering at module-top avoids a static import cycle
+// ---------------------------------------------------------------------------
+// Deferred-match handle + hydration adoption
+//
+// Mirrors the each() story for `match()` / `when()` (which both run through
+// match() on the client). During hydration `match()` returns a handle
+// instead of building a fresh DOM tree; the hydrate factory's expression-
+// slot dispatch routes it through inflateDeferredMatch, which adopts the
+// SSR-rendered case in place and seeds the per-case cache so toggling back
+// reuses the SSR-derived nodes.
+// ---------------------------------------------------------------------------
+
+/** A reified `match()` call captured during hydration. */
+export interface DeferredMatch<T extends string | number | boolean = string | number | boolean> {
+  __purity_deferred_match__: true;
+  sourceFn: () => T;
+  cases: MatchCases<T>;
+  fallback?: MatchView;
+}
+
+function makeDeferredMatch<T extends string | number | boolean>(
+  sourceFn: () => T,
+  cases: MatchCases<T>,
+  fallback?: MatchView,
+): DeferredMatch<T> {
+  return { __purity_deferred_match__: true, sourceFn, cases, fallback };
+}
+
+/** Type guard for {@link DeferredMatch}. @internal */
+export function isDeferredMatch(v: unknown): v is DeferredMatch {
+  return (
+    v != null &&
+    typeof v === 'object' &&
+    (v as { __purity_deferred_match__?: unknown }).__purity_deferred_match__ === true
+  );
+}
+
+// Locate the `<!--m:KEY-->...<!--/m-->` boundary inside a slot's content
+// nodes and return the boundary markers, key, and inner content nodes.
+// The slot also holds whitespace text nodes around the boundary in some
+// SSR layouts; those are returned in `boundaryNodes` so the caller can
+// detach them alongside the markers.
+interface SSRMatchBoundary {
+  key: string | null;
+  startMarker: Comment | null;
+  endMarker: Comment | null;
+  inner: Node[];
+  boundaryNodes: Node[];
+}
+
+function parseSSRMatchBoundary(contNodes: Node[]): SSRMatchBoundary {
+  let startMarker: Comment | null = null;
+  let endMarker: Comment | null = null;
+  let key: string | null = null;
+  const inner: Node[] = [];
+  const boundaryNodes: Node[] = [];
+
+  let i = 0;
+  // Skip leading non-marker noise (whitespace text nodes, etc.).
+  while (i < contNodes.length) {
+    const n = contNodes[i];
+    if (n.nodeType === 8) {
+      const data = (n as Comment).data;
+      const m = /^m:(.*)$/.exec(data);
+      if (m) {
+        startMarker = n as Comment;
+        key = decodeRowKey(m[1]);
+        boundaryNodes.push(n);
+        i++;
+        break;
+      }
+      // Bare `<!--m-->` (unkeyed legacy form) — adopt with key=null.
+      if (data === 'm') {
+        startMarker = n as Comment;
+        key = null;
+        boundaryNodes.push(n);
+        i++;
+        break;
+      }
+    }
+    boundaryNodes.push(n);
+    i++;
+  }
+
+  while (i < contNodes.length) {
+    const n = contNodes[i];
+    if (n.nodeType === 8 && (n as Comment).data === '/m') {
+      endMarker = n as Comment;
+      boundaryNodes.push(n);
+      i++;
+      break;
+    }
+    inner.push(n);
+    i++;
+  }
+
+  // Trailing noise after `<!--/m-->` (whitespace, stray comments).
+  while (i < contNodes.length) {
+    boundaryNodes.push(contNodes[i]);
+    i++;
+  }
+
+  return { key, startMarker, endMarker, inner, boundaryNodes };
+}
+
+/**
+ * Adopt the SSR-rendered case for a `match()` / `when()` slot. Inflates the
+ * matching case's deferred template against the SSR boundary content, seeds
+ * the per-case cache so toggling back reuses adopted DOM, and installs the
+ * reactive watch.
+ *
+ * Called from compiled hydrate factories when an expression slot's value is
+ * a {@link DeferredMatch} handle.
+ *
+ * @internal
+ */
+export function inflateDeferredMatch<T extends string | number | boolean>(
+  deferred: DeferredMatch<T>,
+  contNodes: Node[],
+  closeMarker: Node,
+): void {
+  const parent = closeMarker.parentNode;
+  /* v8 ignore next -- defensive; close marker always has a parent here */
+  if (!parent) return;
+
+  const { sourceFn, cases, fallback } = deferred;
+  const boundary = parseSSRMatchBoundary(contNodes);
+
+  // Insert the live end marker before the slot close and detach SSR
+  // boundary scaffolding (the `<!--m:K-->` / `<!--/m-->` markers themselves
+  // plus any whitespace text nodes around them). The view content stays put
+  // for adoption.
+  const endMarker = document.createComment('m');
+  parent.insertBefore(endMarker, closeMarker);
+  for (let i = 0; i < boundary.boundaryNodes.length; i++) {
+    const n = boundary.boundaryNodes[i];
+    if (n.parentNode) n.parentNode.removeChild(n);
+  }
+
+  const matchState: MatchState = { currentNodes: [], prevKey: undefined, cache: new Map() };
+  const initKey = String(sourceFn()) as `${T}`;
+  const ssrKey = boundary.key;
+  const initView = cases[initKey] ?? fallback;
+
+  if (ssrKey === initKey && initView && boundary.inner.length > 0) {
+    // Keys match — run the view under hydration mode so html`` produces a
+    // DeferredTemplate, then inflate against the boundary's existing nodes.
+    enterHydration();
+    let content: unknown;
+    try {
+      content = initView();
+    } finally {
+      exitHydration();
+    }
+
+    if (isDeferred(content)) {
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < boundary.inner.length; i++) frag.appendChild(boundary.inner[i]);
+      inflateDeferred(content as DeferredTemplate, frag);
+      matchState.currentNodes = Array.from(frag.childNodes);
+      parent.insertBefore(frag, endMarker);
+    } else {
+      // View returned a non-deferred value (raw Node, string, etc.) — can't
+      // adopt; lossy-replace the boundary content with the new value.
+      for (let i = 0; i < boundary.inner.length; i++) {
+        const n = boundary.inner[i];
+        if (n.parentNode) n.parentNode.removeChild(n);
+      }
+      insertMatchView(matchState, parent, endMarker, content as Node | DocumentFragment | string);
+    }
+    matchState.prevKey = initKey;
+  } else {
+    // Either no view was rendered server-side (key === undefined / no inner
+    // content) or the SSR key disagrees with the current key. Detach SSR
+    // inner content and render the current view fresh.
+    for (let i = 0; i < boundary.inner.length; i++) {
+      const n = boundary.inner[i];
+      if (n.parentNode) n.parentNode.removeChild(n);
+    }
+    if (initView) {
+      matchState.prevKey = initKey;
+      insertMatchView(matchState, parent, endMarker, initView());
+    }
+  }
+
+  const dispose = installMatchWatch(matchState, endMarker, sourceFn, cases, fallback);
+  registerMatchAutoDispose(getCurrentContext(), dispose, matchState);
+}
+
+// Wire up the compiler's hydrate-runtime entry points. Compile.ts calls these
+// thunks when a hydrate factory encounters a deferred control-flow value in
+// an expression slot. Registering at module-top avoids static import cycles
 // (compile.ts already exports symbols control.ts imports above).
 setInflateDeferredEach(inflateDeferredEach as (d: unknown, c: Node[], m: Node) => void);
+setInflateDeferredMatch(
+  inflateDeferredMatch as unknown as (d: unknown, c: Node[], m: Node) => void,
+);
 
 // ---------------------------------------------------------------------------
 // list() — fastest possible list rendering
@@ -1208,7 +1428,15 @@ export function list<T>(
 // signal accessors transparently.
 // ---------------------------------------------------------------------------
 
-/** SSR variant of {@link match}. Renders the matching case once, returns HTML. */
+/**
+ * SSR variant of {@link match}. Renders the matching case once, returns HTML.
+ *
+ * The boundary marker carries the rendered case key (URL-encoded) so the
+ * client-side hydrator can tell whether to adopt the SSR-rendered subtree
+ * (when the current key matches what SSR produced) or fall through to a
+ * fresh render (data drift between server and client). Encoding follows
+ * the same scheme as `eachSSR`'s row markers — see {@link encodeRowKey}.
+ */
 export function matchSSR<T extends string | number | boolean>(
   sourceFn: () => T,
   cases: Partial<Record<`${T}`, () => unknown>>,
@@ -1217,7 +1445,7 @@ export function matchSSR<T extends string | number | boolean>(
   const key = String(sourceFn()) as `${T}`;
   const view = cases[key] ?? fallback;
   const inner = view ? valueToHtml(view()) : '';
-  return markSSRHtml(`<!--m-->${inner}<!--/m-->`);
+  return markSSRHtml(`<!--m:${encodeRowKey(key)}-->${inner}<!--/m-->`);
 }
 
 /** SSR variant of {@link when}. Picks then/else once, returns HTML. */
@@ -1226,9 +1454,10 @@ export function whenSSR(
   thenFn: () => unknown,
   elseFn?: () => unknown,
 ): SSRHtml {
-  const view = conditionFn() ? thenFn : elseFn;
+  const cond = conditionFn();
+  const view = cond ? thenFn : elseFn;
   const inner = view ? valueToHtml(view()) : '';
-  return markSSRHtml(`<!--m-->${inner}<!--/m-->`);
+  return markSSRHtml(`<!--m:${cond ? 'true' : 'false'}-->${inner}<!--/m-->`);
 }
 
 /**

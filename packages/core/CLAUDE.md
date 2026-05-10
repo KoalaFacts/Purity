@@ -54,15 +54,23 @@ call + warn-on-mismatch when on. Independent of warnings, the hydrator
 catches walker failures and falls back to a fresh `mount()` so a
 divergent SSR can never crash the page.
 
-`each()` is hydration-aware: when called from inside a hydrating
-template it returns a `DeferredEach` handle instead of building DOM.
-`eachSSR` emits per-row markers `<!--er:KEY-->row<!--/er-->` (keys
-URL-encoded with `-` rewritten to `%2D`), and `inflateDeferredEach`
-matches each item's key against the SSR rows, inflating the row's
-deferred `html\`\`` template against the existing row DOM. Same node
-references survive — long-list hydration doesn't flash. Rows whose
-key has no SSR match (data drifted between server and client) fall
-through to fresh DOM for that row only.
+`each()`, `when()`, `match()` are all hydration-aware. From inside a
+hydrating template they return deferred handles instead of building
+DOM, and the hydrate factory routes those handles through specialised
+adoption helpers.
+
+- `each()` — `eachSSR` emits per-row markers `<!--er:KEY-->row<!--/er-->`
+  (keys URL-encoded with `-` rewritten to `%2D`). `inflateDeferredEach`
+  matches each item's key against the SSR rows and inflates the row's
+  deferred `html\`\`` template against the existing row DOM. Same node
+  references survive — long-list hydration doesn't flash. Rows whose
+  key has no SSR match fall through to fresh DOM for that row only.
+- `when()` / `match()` — `matchSSR` / `whenSSR` embed the rendered
+  case key in the boundary marker (`<!--m:KEY-->view<!--/m-->`).
+  `inflateDeferredMatch` compares the SSR key to the current
+  `sourceFn()` value and inflates the picked case's deferred template
+  against the SSR view nodes. Adopted nodes seed the per-case DOM
+  cache, so toggling back to the SSR key reuses the original DOM.
 
 ## Async data — `resource`, `lazyResource`, `debounced`
 

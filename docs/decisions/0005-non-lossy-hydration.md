@@ -85,14 +85,24 @@ Marker-walking hydration" is now done.
 
 ## Out of scope (intentionally)
 
-- **Per-slot lossy fallback for control-flow helpers.** When an
-  expression value is a function returning a `Node` (e.g. `each` /
-  `when` / `match` accessors), the reactive watch's first execution
-  replaces the SSR content for that slot with the freshly-rendered
-  client output. The surrounding tree is preserved; the slot itself is
-  effectively lossy. Reconciling list output against SSR DOM at the
-  per-item level is a much larger change (it needs keyed-row matching
-  against marker triplets) and is left for a follow-up ADR.
+- **Per-slot lossy fallback for `when` / `match`.** When an expression
+  value is a function returning a `Node` from `when` / `match`, the
+  reactive watch's first execution replaces the SSR content for that
+  slot with the freshly-rendered client output. The surrounding tree
+  is preserved; the slot itself is effectively lossy. Per-case
+  reconciliation against SSR DOM is left for a follow-up ADR.
+
+  **Update:** `each()` is no longer in this list. `eachSSR` now emits
+  `<!--er:K-->row<!--/er-->` row markers (URL-encoded keys, dashes
+  rewritten to `%2D` so `--` can never appear in comment data) and
+  `each()` returns a `DeferredEach` handle during hydration. The
+  hydrate factory's expression-slot dispatch routes the handle through
+  `inflateDeferredEach`, which adopts SSR rows in place by key match
+  before installing the reactive watch — long-list hydration now
+  preserves DOM identity end-to-end. Mismatched keys per row fall
+  through to fresh DOM for that row only; the rest of the list still
+  hydrates losslessly.
+
 - **Static text-content rewriting.** When `enableHydrationWarnings()` is
   on, the codegen now passes the AST's text value as a `detail` arg to
   the cursor check, and the runtime warns on byte-level divergence

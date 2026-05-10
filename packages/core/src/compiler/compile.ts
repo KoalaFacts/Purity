@@ -27,6 +27,7 @@ type HydrateFn = (
   root: Node,
   inflate: (deferred: DeferredTemplate, target: Node) => void,
   check: ((node: Node | null, expected: string, detail?: string) => void) | undefined,
+  inflateEach: (deferred: unknown, contNodes: Node[], closeMarker: Node) => void,
 ) => Node;
 
 interface CacheEntry {
@@ -140,7 +141,29 @@ export function inflateDeferred(deferred: DeferredTemplate, target: Node): Node 
   const entry = getOrInitEntry(deferred.strings);
   const fn = ensureHydrate(entry, deferred.strings);
   const check = hydrationWarningsEnabled() ? checkHydrationCursor : undefined;
-  return fn(deferred.values, watch, target, inflateDeferred, check);
+  return fn(deferred.values, watch, target, inflateDeferred, check, inflateDeferredEachThunk);
+}
+
+// control.ts (the `each()` runtime) registers its row-adoption helper here at
+// module load via {@link setInflateDeferredEach}. The thunk indirection
+// avoids a static `compile.ts → control.ts` import cycle (control.ts
+// already imports `inflateDeferred` from this module).
+type InflateDeferredEachFn = (deferred: unknown, contNodes: Node[], closeMarker: Node) => void;
+
+let _inflateDeferredEach: InflateDeferredEachFn | null = null;
+
+/** @internal — called once by control.ts during module init. */
+export function setInflateDeferredEach(fn: InflateDeferredEachFn): void {
+  _inflateDeferredEach = fn;
+}
+
+function inflateDeferredEachThunk(deferred: unknown, contNodes: Node[], closeMarker: Node): void {
+  /* v8 ignore start -- control.ts always registers before any hydrate runs */
+  if (!_inflateDeferredEach) {
+    throw new Error('[Purity] inflateDeferredEach not registered (control.ts not loaded)');
+  }
+  /* v8 ignore stop */
+  _inflateDeferredEach(deferred, contNodes, closeMarker);
 }
 
 const SUSPENSE_MARKER = /^\/?s:\d+$/;

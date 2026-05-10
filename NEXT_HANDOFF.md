@@ -56,18 +56,29 @@ that's React's selective-hydration story. Worth deciding before
 shipping Phase 3 whether to follow React's per-boundary hydration
 model or keep the simpler defer-everything approach.
 
-### 2. Per-row reconciliation in `each` / `when` / `match`
+### 2. Per-row reconciliation in `when` / `match`
 
-Explicitly out-of-scope per ADR 0005 ("Out of scope: Per-slot lossy
-fallback for control-flow helpers"). On first reactive read, the
-control-flow accessors replace the entire SSR slot with a fresh
-DOM tree — the surrounding tree is preserved but the list itself
-rebuilds. Visible flash for long lists.
+`each()` is **done** — `eachSSR` now emits `<!--er:KEY-->row<!--/er-->`
+markers per row (URL-encoded keys with `-` rewritten to `%2D` to keep
+HTML comment data safe), and `each()` returns a `DeferredEach` handle
+during hydration. The hydrate factory routes the handle through
+`inflateDeferredEach`, which walks the SSR row markers, matches them
+to current items by key, and inflates each row's deferred template
+against its existing SSR DOM. Same `<li>` references, no flash.
 
-**Where to start:** the keyed-row matching against
-`<!--[--><!--]-->` triplets inside `each()` output. Needs a per-row
-key extracted from the AST and compared against the SSR DOM's
-existing rows.
+`when()` and `match()` still rebuild on the first reactive read. Same
+shape of fix — return a `DeferredMatch` handle during hydration, walk
+the `<!--m-->...<!--/m-->` boundary, run `sourceFn()` to pick the
+initial case, and inflate the picked view's deferred template against
+the boundary's SSR content. Cache the inflated nodes per case so
+toggling back reuses the SSR-derived DOM (matches the existing client
+match cache behavior).
+
+**Where to start:** mirror the each() pattern in `control.ts` —
+`makeDeferredMatch`, `inflateDeferredMatch`, codegen branch in the
+expression slot dispatch. The per-case caching exists already on the
+client; you only need to seed the cache with the initial SSR-adopted
+nodes.
 
 ### 3. Static text-content rewriting on mismatch
 

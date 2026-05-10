@@ -54,6 +54,16 @@ call + warn-on-mismatch when on. Independent of warnings, the hydrator
 catches walker failures and falls back to a fresh `mount()` so a
 divergent SSR can never crash the page.
 
+`each()` is hydration-aware: when called from inside a hydrating
+template it returns a `DeferredEach` handle instead of building DOM.
+`eachSSR` emits per-row markers `<!--er:KEY-->row<!--/er-->` (keys
+URL-encoded with `-` rewritten to `%2D`), and `inflateDeferredEach`
+matches each item's key against the SSR rows, inflating the row's
+deferred `html\`\`` template against the existing row DOM. Same node
+references survive — long-list hydration doesn't flash. Rows whose
+key has no SSR match (data drifted between server and client) fall
+through to fresh DOM for that row only.
+
 ## Async data — `resource`, `lazyResource`, `debounced`
 
 Race-safe async fetcher backed by signals. Auto-aborts in-flight requests when

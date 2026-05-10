@@ -296,22 +296,49 @@ describe('SSR control flow', () => {
   it('eachSSR concatenates mapped items', () => {
     const items = ['a', 'b', 'c'];
     const out = eachSSR(items, (item) => item());
-    expect(out.__purity_ssr_html__).toBe('<!--e-->abc<!--/e-->');
+    expect(out.__purity_ssr_html__).toBe(
+      '<!--e--><!--er:a-->a<!--/er--><!--er:b-->b<!--/er--><!--er:c-->c<!--/er--><!--/e-->',
+    );
   });
 
   it('eachSSR escapes string returns', () => {
     const out = eachSSR(['<x>'], (item) => item());
-    expect(out.__purity_ssr_html__).toBe('<!--e-->&lt;x&gt;<!--/e-->');
+    expect(out.__purity_ssr_html__).toBe('<!--e--><!--er:%3Cx%3E-->&lt;x&gt;<!--/er--><!--/e-->');
   });
 
   it('eachSSR concatenates branded HTML returns raw', () => {
     const out = eachSSR([1, 2], (item) => markSSRHtml(`<li>${item()}</li>`));
-    expect(out.__purity_ssr_html__).toBe('<!--e--><li>1</li><li>2</li><!--/e-->');
+    expect(out.__purity_ssr_html__).toBe(
+      '<!--e--><!--er:1--><li>1</li><!--/er--><!--er:2--><li>2</li><!--/er--><!--/e-->',
+    );
   });
 
   it('eachSSR passes index to mapFn', () => {
     const out = eachSSR(['a', 'b'], (item, i) => `${i}:${item()}`);
-    expect(out.__purity_ssr_html__).toBe('<!--e-->0:a1:b<!--/e-->');
+    expect(out.__purity_ssr_html__).toBe(
+      '<!--e--><!--er:a-->0:a<!--/er--><!--er:b-->1:b<!--/er--><!--/e-->',
+    );
+  });
+
+  it('eachSSR encodes keys safely (dashes, slashes, unicode)', () => {
+    const out = eachSSR(
+      [
+        { id: 'a-b', label: 'one' },
+        { id: 'a--b', label: 'two' },
+        { id: 'café/3', label: 'three' },
+      ],
+      (item) => item().label,
+      (item) => item.id,
+    );
+    // - is rewritten to %2D so two consecutive dashes can never appear, and
+    // unicode + slashes go through encodeURIComponent.
+    expect(out.__purity_ssr_html__).toBe(
+      '<!--e-->' +
+        '<!--er:a%2Db-->one<!--/er-->' +
+        '<!--er:a%2D%2Db-->two<!--/er-->' +
+        '<!--er:caf%C3%A9%2F3-->three<!--/er-->' +
+        '<!--/e-->',
+    );
   });
 
   it('listSSR builds simple text rows', () => {
@@ -343,7 +370,12 @@ describe('generateSSR — integration with control flow', () => {
       ['<ul>', '</ul>'],
       eachSSR(['a', 'b'], (item) => markSSRHtml(`<li>${item()}</li>`)),
     );
-    expect(out).toBe('<ul><!--[--><!--e--><li>a</li><li>b</li><!--/e--><!--]--></ul>');
+    expect(out).toBe(
+      '<ul><!--[--><!--e-->' +
+        '<!--er:a--><li>a</li><!--/er-->' +
+        '<!--er:b--><li>b</li><!--/er-->' +
+        '<!--/e--><!--]--></ul>',
+    );
   });
 
   it('embeds whenSSR output', () => {

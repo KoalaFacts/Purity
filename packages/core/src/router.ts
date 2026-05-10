@@ -106,6 +106,39 @@ export interface NavigateOptions {
   replace?: boolean;
 }
 
+/** Signature for {@link onNavigate} listeners. */
+export type NavigateListener = (url: URL, replace: boolean) => void;
+
+const navigateListeners = new Set<NavigateListener>();
+
+/**
+ * Subscribe to programmatic `navigate()` calls. Listeners receive the new
+ * URL and whether the call used `{ replace: true }`. Returns a teardown
+ * function that removes the listener.
+ *
+ * Fires synchronously after the History API call and URL signal update,
+ * before the function returns. Listener errors are propagated to the
+ * caller — wrap your handler if you need isolation.
+ *
+ * **This does NOT fire on browser-driven popstate / hashchange events.**
+ * The reactive accessors ({@link currentPath} / {@link currentSearch} /
+ * {@link currentHash}) re-fire on every URL change regardless of source;
+ * subscribe to those if you want full coverage.
+ *
+ * @example
+ * ```ts
+ * import { onNavigate } from '@purityjs/core';
+ *
+ * onNavigate((url) => {
+ *   console.log('navigated to', url.pathname);
+ * });
+ * ```
+ */
+export function onNavigate(fn: NavigateListener): () => void {
+  navigateListeners.add(fn);
+  return () => navigateListeners.delete(fn);
+}
+
 /**
  * Programmatically change the URL on the client. Updates the History API
  * via `pushState` (or `replaceState` when `replace: true`) and triggers
@@ -129,9 +162,13 @@ export function navigate(href: string, options: NavigateOptions = {}): void {
   // Don't navigate cross-origin via pushState — that produces a malformed
   // state. Callers should set `window.location` directly for full-page nav.
   if (url.origin !== window.location.origin) return;
-  if (options.replace) window.history.replaceState(null, '', url);
+  const replace = options.replace === true;
+  if (replace) window.history.replaceState(null, '', url);
   else window.history.pushState(null, '', url);
   urlSignal(url);
+  // Fire after the History API + signal update so listeners observe the
+  // post-nav state. Errors propagate to the caller.
+  for (const fn of navigateListeners) fn(url, replace);
 }
 
 /** Result of a successful {@link matchRoute} call. */

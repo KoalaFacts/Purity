@@ -68,18 +68,23 @@ export { __purity_swap, PURITY_SWAP_SOURCE } from './__purity_swap.ts';
 export { head } from './head.ts';
 // Request context — ADR 0009.
 export { getRequest } from './request-context.ts';
-// Router primitives — ADR 0011 (path / navigate / match) + ADR 0014 (search / hash).
+// Router primitives — ADR 0011 (path / navigate / match) + ADR 0014 (search /
+// hash) + ADR 0015 (onNavigate listener hook).
 export {
   currentHash,
   currentPath,
   currentSearch,
   matchRoute,
   navigate,
+  type NavigateListener,
   type NavigateOptions,
+  onNavigate,
   type RouteMatch,
 } from './router.ts';
 // Link auto-interception — ADR 0013.
 export { interceptLinks, type InterceptLinksOptions } from './router-intercept.ts';
+// Navigation scroll management — ADR 0015.
+export { manageNavScroll, type ManageNavScrollOptions } from './router-scroll.ts';
 // Server actions — ADR 0012.
 export {
   findAction,

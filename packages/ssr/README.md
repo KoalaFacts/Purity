@@ -328,18 +328,21 @@ html`<a
 
 Pattern grammar: literals (`/about`), `:name` captures (`/users/:id`), and `*` splat tail (`/blog/*`). Captured `:name` values are URI-decoded. Returns `{ params } | null`.
 
-Link auto-interception via [`interceptLinks()`](../../docs/decisions/0013-link-interception.md) drops the per-`<a>` `@click` boilerplate:
+Link auto-interception via [`interceptLinks()`](../../docs/decisions/0013-link-interception.md) drops the per-`<a>` `@click` boilerplate; `manageNavScroll()` ([ADR 0015](../../docs/decisions/0015-nav-scroll-management.md)) closes the "SPA keeps the previous page's scroll position" UX gap on forward navigation:
 
 ```ts
 // entry.client.ts
-import { hydrate, interceptLinks } from '@purityjs/core';
+import { hydrate, interceptLinks, manageNavScroll } from '@purityjs/core';
 import { App } from './app.ts';
 
 hydrate(document.getElementById('app')!, App);
 interceptLinks();
+manageNavScroll();
 ```
 
-Then templates use plain `<a href>` — same-origin clicks become `navigate()` calls automatically. The default predicate exempts modifier keys, `target="_blank"`, download links, cross-origin hrefs, hash-only same-page links, and elements carrying `data-no-intercept`. Pass a custom `shouldIntercept` to fully replace the default.
+Then templates use plain `<a href>` — same-origin clicks become `navigate()` calls automatically. The default `interceptLinks` predicate exempts modifier keys, `target="_blank"`, download links, cross-origin hrefs, hash-only same-page links, and elements carrying `data-no-intercept`. Pass a custom `shouldIntercept` to fully replace the default.
+
+`manageNavScroll()` subscribes to `onNavigate()` and scrolls to the URL's hash target (if any) or to the top after every forward `navigate()`. Browser-driven back/forward scroll restoration and `hashchange`-anchor scrolling are native — `manageNavScroll` only fills the pushState gap. Pass a custom `onNavigate` handler to take over (e.g. for smooth scroll, focus management, view transitions).
 
 Still not in scope: `<Route>` / `<Routes>` component, layout nesting, URL search / hash reactivity, file-system route discovery, scroll restoration, focus management, view transitions, prefetch-on-hover. See ADR 0011 + ADR 0013's "Explicit non-features" sections.
 

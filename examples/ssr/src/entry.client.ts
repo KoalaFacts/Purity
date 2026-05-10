@@ -7,9 +7,15 @@
 // `<a href>` clicks into navigate() calls — no per-link @click handlers
 // required. Modifier keys, target="_blank", download links, and cross-origin
 // hrefs all pass through to the browser's native behavior.
-import { hydrate, interceptLinks } from '@purityjs/core';
+//
+// `manageNavScroll()` scrolls to the URL hash target (or to the top) after
+// every programmatic navigate() — closes the "SPA keeps the previous
+// page's scroll position" UX gap. Native back/forward scroll restoration
+// is untouched.
+import { hydrate, interceptLinks, manageNavScroll } from '@purityjs/core';
 import { App } from './app.ts';
 
 const root = document.getElementById('app');
 if (root) hydrate(root, App);
 interceptLinks();
+manageNavScroll();

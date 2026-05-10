@@ -92,10 +92,13 @@ it.
   surprised.
 - **Islands / per-component code-splitting.** The whole tree hydrates
   together. Per-island chunking is a separate ADR.
-- **User-controllable `resource()` keys.** Cache priming uses
-  creation-order indexing. Stable across passes for the same render
-  but not across separate runs; a future ADR will add user-controllable
-  keys for cross-process caching.
+- ~~**User-controllable `resource()` keys.** Cache priming uses
+  creation-order indexing.~~ Resolved in a follow-up: pass `{ key: 'todos' }`
+  to `resource()` and the SSR payload becomes `{ ordered: [...], keyed:
+{...} }`, with the keyed entries surviving conditional/reordered
+  creation between server and client. The legacy creation-order
+  indexing remains the default (and the array shape is still emitted
+  when no resource uses a key).
 
 ## Consequences
 
@@ -122,11 +125,12 @@ it.
 - DSD's Chrome 111+/Safari 16.4+/Firefox 123+ floor cuts off pre-2024
   browsers for SSR'd Custom Elements. Pre-DSD browsers see empty
   custom-element hosts until JS runs.
-- Resource cache keys are creation-order based, so a render that
+- Resource cache keys default to creation-order, so a render that
   conditionally creates resources (e.g., `if (foo) resource(...)`)
   can shift indices between server and client and serve stale data.
-  The MVP doesn't detect this; users have to keep resource creation
-  unconditional or accept the cache miss.
+  Users opt in to stable lookups via `resource(..., { key: 'todos' })`
+  (added in a follow-up commit), or keep resource creation
+  unconditional and accept the cache miss when conditions diverge.
 - Named/scoped slot users get a runtime error in SSR. Their components
   silently work in CSR but break the moment they're server-rendered.
 

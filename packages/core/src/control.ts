@@ -2,6 +2,7 @@ import { markSSRHtml, type SSRHtml, valueToHtml } from './compiler/ssr-runtime.t
 import { getCurrentContext, popContext, pushContext, type Scope } from './component.ts';
 import type { StateAccessor } from './signals.ts';
 import { state, watch } from './signals.ts';
+import { getSSRRenderContext } from './ssr-context.ts';
 
 // ---------------------------------------------------------------------------
 // match(sourceFn, cases, fallback?) — reactive pattern matching
@@ -1036,4 +1037,166 @@ function escapeAttrLocal(s: string): string {
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+// ---------------------------------------------------------------------------
+// suspense(view, fallback) — error-isolating render boundary
+//
+// Phase 1 of ADR 0006. The boundary serves two purposes today and one
+// forward-compat purpose:
+//
+//   - **SSR error isolation.** If `view()` throws synchronously during
+//     server render, the boundary catches the error, logs it, and emits
+//     `fallback()` instead. The outer renderToString call still completes;
+//     a single failing region can't take down the page.
+//   - **Marker grammar in SSR output.** The rendered region is wrapped in
+//     `<!--s:N--><!--/s:N-->` comment markers (N from the per-render
+//     suspenseCounter on SSRRenderContext). The hydrate factory's
+//     deferred-template inflate path strips these markers when carving
+//     the slot's subtree.
+//   - **Forward-compat for streaming (Phase 3).** The same markers will
+//     let `__purity_swap(N)` find and replace each boundary's content as
+//     it resolves over a `ReadableStream`.
+//
+// Per-boundary timeout / fallback-on-pending-resource is **not** in
+// Phase 1 — see ADR 0006 for the staged plan. Today, view's resources
+// share the outer renderToString resource-resolution loop.
+// ---------------------------------------------------------------------------
+
+/** Why `onError` was invoked. */
+export type SuspenseErrorPhase = 'view' | 'fallback' | 'timeout';
+
+/** Metadata passed to a `suspense({ onError })` callback. */
+export interface SuspenseErrorInfo {
+  /** Monotonic per-render boundary ID (matches the `<!--s:N-->` marker). */
+  boundaryId: number;
+  /**
+   * What raised the error:
+   *   * `'view'`     — `view()` threw synchronously; fallback is being rendered.
+   *   * `'fallback'` — the fallback ALSO threw; an empty boundary is emitted.
+   *   * `'timeout'`  — the per-boundary deadline fired; fallback is being rendered.
+   *                    `error` is undefined for this phase.
+   */
+  phase: SuspenseErrorPhase;
+}
+
+/** Per-boundary options for `suspense()`. */
+export interface SuspenseOptions {
+  /**
+   * Maximum ms `view()` may take before the boundary surrenders to its
+   * fallback. Measured from the first SSR pass that encounters the
+   * boundary. When unset, the boundary is bound only by the outer
+   * renderToString timeout. The renderer races pending promises against
+   * the soonest deadline; when a boundary times out the next pass
+   * renders the fallback instead of the view.
+   */
+  timeout?: number;
+  /**
+   * Observer for per-boundary errors and timeouts. Receives the original
+   * error (if any) plus a small info object. Use to forward to error
+   * tracking (Sentry, Honeybadger, …) or to log richer context than
+   * `console.error` does. The framework still emits its own
+   * `console.error` after the hook returns, so the hook can replace
+   * tracking but not silence the default log — use a separate logger
+   * config for that.
+   */
+  onError?: (error: unknown, info: SuspenseErrorInfo) => void;
+}
+
+/**
+ * Render `view()` with synchronous error isolation and an optional
+ * per-boundary timeout. On error or timeout, render `fallback()` instead.
+ * In SSR mode the rendered region is wrapped in `<!--s:N--><!--/s:N-->`
+ * boundary markers; on the client this is just `view()` (the fallback is
+ * unused — use `when()` against your resource's `loading()` accessor for
+ * client loading states).
+ *
+ * @example
+ * ```ts
+ * suspense(
+ *   () => html`<aside>${() => slowResource()}</aside>`,
+ *   () => html`<aside class="loading">…</aside>`,
+ *   { timeout: 1000 },
+ * )
+ * ```
+ */
+export function suspense<T>(
+  view: () => T,
+  fallback: () => T,
+  options?: SuspenseOptions,
+): T | SSRHtml {
+  const ssrCtx = getSSRRenderContext();
+  if (!ssrCtx) {
+    // Client path — render the view; the fallback is forward-compat for
+    // Phase 3 streaming where it shows while a streamed boundary is in
+    // flight. For now it's unused.
+    return view();
+  }
+  const id = ++ssrCtx.suspenseCounter;
+
+  // Record the first-encounter time so deadlines stay anchored to pass 1
+  // even when later passes re-execute view() with resolved data. If a
+  // timeout is supplied, register the deadline once.
+  if (!ssrCtx.boundaryStartTimes.has(id)) {
+    const start = Date.now();
+    ssrCtx.boundaryStartTimes.set(id, start);
+    if (options?.timeout !== undefined) {
+      ssrCtx.boundaryDeadlines.set(id, start + options.timeout);
+    }
+  }
+
+  const onError = options?.onError;
+  const reportError = (err: unknown, phase: SuspenseErrorPhase): void => {
+    if (onError) {
+      try {
+        onError(err, { boundaryId: id, phase });
+      } catch (hookErr) {
+        // The hook itself threw — log but don't propagate; one bad reporter
+        // shouldn't take down the whole render.
+        console.error(
+          `[Purity] suspense() onError hook threw (boundary ${id}, phase ${phase}):`,
+          hookErr,
+        );
+      }
+    }
+  };
+
+  const isTimedOut = ssrCtx.timedOutBoundaries.has(id);
+  let body: string;
+  if (isTimedOut) {
+    reportError(undefined, 'timeout');
+    try {
+      body = valueToHtml(fallback());
+    } catch (fallbackErr) {
+      reportError(fallbackErr, 'fallback');
+      console.error(
+        `[Purity] suspense() fallback threw after timeout (boundary ${id}); emitting empty boundary:`,
+        fallbackErr,
+      );
+      body = '';
+    }
+  } else {
+    try {
+      body = valueToHtml(view());
+    } catch (err) {
+      reportError(err, 'view');
+      console.error(
+        `[Purity] suspense() view threw during SSR (boundary ${id}); rendering fallback:`,
+        err,
+      );
+      try {
+        body = valueToHtml(fallback());
+      } catch (fallbackErr) {
+        reportError(fallbackErr, 'fallback');
+        // Fallback also threw — emit an empty boundary rather than blowing
+        // up the entire render. The error logs above identify the boundary.
+        console.error(
+          `[Purity] suspense() fallback also threw (boundary ${id}); emitting empty boundary:`,
+          fallbackErr,
+        );
+        body = '';
+      }
+    }
+  }
+  return markSSRHtml(`<!--s:${id}-->${body}<!--/s:${id}-->`);
 }

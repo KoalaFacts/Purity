@@ -5,6 +5,7 @@
 // Error handling via onError (bubbles up to parent)
 // ---------------------------------------------------------------------------
 
+import { enterHydration, exitHydration, inflateDeferred, isDeferred } from './compiler/compile.ts';
 import { primeHydrationCache } from './ssr-context.ts';
 
 /**
@@ -205,20 +206,24 @@ export function onError(fn: (err: unknown) => void): void {
  * @returns Object with `unmount()` to remove the component.
  */
 /**
- * Hydrate a server-rendered root: replace its children with a freshly rendered
- * component tree, then attach reactive bindings via the standard `mount()`
- * path.
+ * Hydrate a server-rendered root: walk the existing SSR DOM, attach reactive
+ * bindings to the existing nodes (no re-rendering), and return an unmount
+ * handle.
  *
- * **PR 4 MVP — lossy hydration.** The pre-existing SSR DOM is discarded and
- * the component is rendered fresh on the client. SSR's main UX benefit (the
- * browser paints the initial HTML before JS loads) is preserved, but
- * matching content produces a brief invisible flash and mismatched content
- * produces a visible jump. A future PR will replace this with
- * marker-walking hydration that preserves the existing DOM.
+ * **Marker-walking hydration.** `html\`\`` returns a deferred-template thunk
+ * during hydration; the hydrator inflates each thunk against the slice of
+ * SSR DOM it owns, walking `<!--[--><!--]-->` marker pairs to locate
+ * expression slots without rebuilding nodes. Nested templates (`html\`<p>${
+ * html\`<span>${name}</span>\`}</p>\``) inflate against their slot's subtree.
+ * Custom Elements with DSD content hydrate their own shadow tree from
+ * `connectedCallback`.
  *
- * Custom Elements with Declarative Shadow DOM are handled separately: the
- * `connectedCallback` reuses the parser-attached shadow root and clears its
- * children before re-rendering, so DSD doesn't break component init.
+ * Mismatch fallback — if the user's value at a slot is an Array or a Node
+ * provided directly (rather than a deferred template / reactive accessor /
+ * primitive), that one slot's SSR content is replaced. Function-valued
+ * slots (`each`/`when`/`match` and other reactive accessors returning
+ * Nodes) likewise replace their slot on first read; the surrounding tree
+ * is preserved.
  *
  * @param container Element pre-rendered by `@purityjs/ssr`'s `renderToString`.
  * @param component The same component function used during SSR.
@@ -234,11 +239,97 @@ export function onError(fn: (err: unknown) => void): void {
  */
 export function hydrate(container: Element, component: ComponentFn): MountResult {
   // Prime the resource cache from the JSON payload renderToString embedded.
-  // Reading the cache before clearing children ensures the script tag (which
-  // is part of the SSR output) is still present when we look for it.
+  // Done before any DOM manipulation so the script tag is still in place.
   primeResourceHydrationCache(container);
-  while (container.firstChild) container.removeChild(container.firstChild);
-  return mount(component, container);
+
+  // Empty container — nothing to hydrate. Fall back to a fresh mount so
+  // hydrate() works as a drop-in for mount() in dev/test setups that
+  // skipped the SSR step.
+  if (!container.firstChild) {
+    return mount(component, container);
+  }
+
+  const ctx = new ComponentContext();
+  const parentCtx = getCurrentContext();
+  if (parentCtx instanceof ComponentContext) {
+    ctx.parent = parentCtx;
+    (parentCtx.children ??= []).push(ctx);
+  }
+
+  pushContext(ctx);
+  enterHydration();
+
+  let view: unknown;
+  try {
+    view = component();
+  } catch (err) {
+    exitHydration();
+    popContext();
+    ctx._handleError(err);
+    return { unmount: () => {} };
+  }
+  exitHydration();
+  popContext();
+
+  if (isDeferred(view)) {
+    // Move the SSR children into a fragment, inflate the template against
+    // them, then re-insert. Working through a fragment lets the hydrate
+    // factory walk siblings without worrying about live-DOM observers, and
+    // gives us a clean handle (frag.childNodes) for ctx.nodes after.
+    const frag = container.ownerDocument.createDocumentFragment();
+    while (container.firstChild) frag.appendChild(container.firstChild);
+    try {
+      inflateDeferred(view, frag);
+    } catch (err) {
+      // The walker hit a structural mismatch (cursor went off the rails on
+      // null sibling / wrong nodeType). The opt-in mismatch warnings would
+      // already have logged the divergence; here we recover by dropping the
+      // SSR DOM and re-rendering fresh so the page keeps working.
+      console.error('[Purity] Hydration walk failed; falling back to fresh mount:', err);
+      if (ctx.parent?.children) {
+        const idx = ctx.parent.children.indexOf(ctx);
+        if (idx !== -1) ctx.parent.children.splice(idx, 1);
+      }
+      while (container.firstChild) container.removeChild(container.firstChild);
+      return mount(component, container);
+    }
+    ctx.nodes = Array.from(frag.childNodes);
+    container.appendChild(frag);
+  } else if (view instanceof Node) {
+    // Component returned a non-deferred Node (e.g. user wrapped html`` in
+    // something that bypassed deferral). Fall back to lossy: clear + insert.
+    while (container.firstChild) container.removeChild(container.firstChild);
+    if (view instanceof DocumentFragment) {
+      container.appendChild(view);
+      ctx.nodes = Array.from(container.childNodes);
+    } else {
+      container.appendChild(view);
+      ctx.nodes = [view];
+    }
+  }
+
+  ctx._isMounted = true;
+
+  if (ctx.mounted) {
+    queueMicrotask(() => {
+      if (!ctx.mounted) return;
+      pushContext(ctx);
+      try {
+        for (let i = 0; i < ctx.mounted.length; i++) {
+          try {
+            ctx.mounted[i]();
+          } catch (err) {
+            ctx._handleError(err);
+          }
+        }
+      } finally {
+        popContext();
+      }
+      ctx.mounted = null;
+    });
+  }
+
+  return { unmount: () => unmountContext(ctx) };
 }
 
 const RESOURCE_SCRIPT_ID = '__purity_resources__';
@@ -256,8 +347,10 @@ function primeResourceHydrationCache(container: Element): void {
     doc.getElementById(RESOURCE_SCRIPT_ID);
   if (!el || el.textContent == null) return;
   try {
-    const data = JSON.parse(el.textContent) as unknown;
-    if (Array.isArray(data)) primeHydrationCache(data);
+    // primeHydrationCache accepts either the legacy array shape (older SSR
+    // output) or the new `{ ordered, keyed }` object shape (when at least
+    // one resource opted into a `key`). Pass the raw parsed value through.
+    primeHydrationCache(JSON.parse(el.textContent) as unknown);
   } catch (err) {
     console.error('[Purity] Failed to parse hydration cache:', err);
   }

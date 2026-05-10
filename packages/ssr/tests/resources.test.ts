@@ -155,3 +155,65 @@ describe('client hydration cache priming', () => {
     expect(out).toContain('<!--[-->x<!--]-->');
   });
 });
+
+describe('renderToString — keyed resources', () => {
+  function decodePayload(out: string): unknown {
+    const match = out.match(
+      /<script type="application\/json" id="__purity_resources__">(.+?)<\/script>/,
+    );
+    if (!match) return null;
+    const decoded = match[1]
+      .replace(/\\u003c/g, '<')
+      .replace(/\\u003e/g, '>')
+      .replace(/\\u0026/g, '&');
+    return JSON.parse(decoded);
+  }
+
+  it('emits the legacy array shape when no resource opts into a key', async () => {
+    const out = await renderToString(() => {
+      const r = resource(() => Promise.resolve('plain'));
+      return html`<p>${() => r() ?? ''}</p>`;
+    });
+    expect(decodePayload(out)).toEqual(['plain']);
+  });
+
+  it('emits { ordered, keyed } when a key is supplied', async () => {
+    const out = await renderToString(() => {
+      const r = resource(() => Promise.resolve('value-by-key'), { key: 'todos' });
+      return html`<p>${() => r() ?? ''}</p>`;
+    });
+    expect(decodePayload(out)).toEqual({
+      ordered: [],
+      keyed: { todos: 'value-by-key' },
+    });
+  });
+
+  it('mixes keyed + unkeyed resources cleanly in the payload', async () => {
+    const out = await renderToString(() => {
+      const a = resource(() => Promise.resolve('A'));
+      const b = resource(() => Promise.resolve('B'), { key: 'b' });
+      const c = resource(() => Promise.resolve('C'));
+      return html`<p>${() => a() ?? ''}-${() => b() ?? ''}-${() => c() ?? ''}</p>`;
+    });
+    expect(decodePayload(out)).toEqual({
+      ordered: ['A', 'C'],
+      keyed: { b: 'B' },
+    });
+  });
+
+  it('survives conditional resource creation when keys are stable', async () => {
+    let conditional = true;
+    const App = () => {
+      // First pass: both resources created. Second pass: only the keyed
+      // one. Without keys the index would shift; with `key`, the keyed
+      // resource still resolves to the cached value.
+      if (conditional) resource(() => Promise.resolve('cond'));
+      const r = resource(() => Promise.resolve('keyed'), { key: 'stable' });
+      conditional = false;
+      return html`<p>${() => r() ?? ''}</p>`;
+    };
+    const out = await renderToString(App);
+    const payload = decodePayload(out) as { keyed: Record<string, unknown> };
+    expect(payload.keyed.stable).toBe('keyed');
+  });
+});

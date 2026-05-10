@@ -49,6 +49,15 @@ export interface ResourceOptions<T> {
    * cleared on dispose, mutate, or manual refresh.
    */
   pollInterval?: number;
+  /**
+   * Stable cache key for SSR ↔ hydration lookups. Without one, the
+   * server/client cache pairs each `resource()` by creation order — which
+   * shifts whenever a conditional resource skips a render. Provide a key
+   * (any unique-per-render string) for any resource that isn't
+   * unconditionally created, and the hydration cache will match by name
+   * instead of position.
+   */
+  key?: string;
 }
 
 /**
@@ -180,7 +189,12 @@ export function resource<T, K>(
   // loading flash that would otherwise refetch every server-rendered
   // resource on hydrate. The watch still fires later when source-key deps
   // change, so reactivity is intact.
-  const hydrationValue = consumeHydrationValue();
+  //
+  // When the user provided a stable `key`, look up by that name instead of
+  // by creation-order — robust to conditional resource creation between
+  // server and client.
+  const userKey = options.key;
+  const hydrationValue = consumeHydrationValue(userKey);
   const hasHydrationValue = hydrationValue !== undefined;
   let skipFirstFetch = hasHydrationValue;
 
@@ -231,14 +245,24 @@ export function resource<T, K>(
   // reactive and DOM-bound, neither of which applies on the server.
   const ssrCtx = getSSRRenderContext();
   if (ssrCtx) {
-    const idx = ssrCtx.resourceCounter++;
-    if (idx < ssrCtx.resolvedData.length) {
+    // Pick storage: keyed map if the user supplied `key`, else the
+    // creation-order array. Keyed entries are stable across passes even
+    // when conditional logic reorders unkeyed neighbors. We only bump
+    // `resourceCounter` for unkeyed resources so a keyed neighbor doesn't
+    // leave a `null` hole in `ordered`.
+    const hasKey = userKey !== undefined;
+    const idx = hasKey ? -1 : ssrCtx.resourceCounter++;
+    const alreadyResolved = hasKey
+      ? userKey in ssrCtx.resolvedDataByKey
+      : idx < ssrCtx.resolvedData.length;
+    if (alreadyResolved) {
       // Resolved by a prior pass — populate data + error synchronously.
       // Errors are tracked separately because each pass allocates fresh
       // state signals; without this, an error from pass 1 would silently
       // disappear on pass 2.
-      data(() => ssrCtx.resolvedData[idx] as T);
-      const e = ssrCtx.resolvedErrors[idx];
+      const value = hasKey ? ssrCtx.resolvedDataByKey[userKey] : ssrCtx.resolvedData[idx];
+      data(() => value as T);
+      const e = hasKey ? ssrCtx.resolvedErrorsByKey[userKey] : ssrCtx.resolvedErrors[idx];
       if (e !== undefined) error(e);
     } else {
       // First pass for this resource. Resolve the source key, fire the
@@ -270,16 +294,26 @@ export function resource<T, K>(
           const result = retry.count > 0 ? withRetry(callFetcher, ac.signal, retry) : callFetcher();
           const promise = Promise.resolve(result).then(
             (value) => {
-              ssrCtx.resolvedData[idx] = value;
-              ssrCtx.resolvedErrors[idx] = undefined;
+              if (hasKey) {
+                ssrCtx.resolvedDataByKey[userKey] = value;
+                ssrCtx.resolvedErrorsByKey[userKey] = undefined;
+              } else {
+                ssrCtx.resolvedData[idx] = value;
+                ssrCtx.resolvedErrors[idx] = undefined;
+              }
               data(() => value);
             },
             (err) => {
               // Record undefined so the slot index doesn't shift in the next
               // pass; persist the error so pass 2's resource() can re-surface
               // it through the error() accessor.
-              ssrCtx.resolvedData[idx] = undefined;
-              ssrCtx.resolvedErrors[idx] = err;
+              if (hasKey) {
+                ssrCtx.resolvedDataByKey[userKey] = undefined;
+                ssrCtx.resolvedErrorsByKey[userKey] = err;
+              } else {
+                ssrCtx.resolvedData[idx] = undefined;
+                ssrCtx.resolvedErrors[idx] = err;
+              }
               error(err);
             },
           );

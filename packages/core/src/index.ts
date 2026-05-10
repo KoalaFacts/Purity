@@ -68,9 +68,11 @@ export { __purity_swap, PURITY_SWAP_SOURCE } from './__purity_swap.ts';
 export { head } from './head.ts';
 // Request context — ADR 0009.
 export { getRequest } from './request-context.ts';
-// Router primitives — ADR 0011.
+// Router primitives — ADR 0011 (path / navigate / match) + ADR 0014 (search / hash).
 export {
+  currentHash,
   currentPath,
+  currentSearch,
   matchRoute,
   navigate,
   type NavigateOptions,

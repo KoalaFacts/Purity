@@ -6,7 +6,14 @@
 // covered in @purityjs/ssr's router test file.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { currentPath, matchRoute, navigate, watch } from '../src/index.ts';
+import {
+  currentHash,
+  currentPath,
+  currentSearch,
+  matchRoute,
+  navigate,
+  watch,
+} from '../src/index.ts';
 
 describe('matchRoute() — pattern matching', () => {
   it('matches exact literal paths', () => {
@@ -132,5 +139,86 @@ describe('currentPath() + navigate() — client-side history', () => {
     navigate('/users/42');
     expect(matchRoute('/users/:id')).toEqual({ params: { id: '42' } });
     expect(matchRoute('/about')).toBeNull();
+  });
+});
+
+describe('currentSearch() / currentHash() — URL part signals (ADR 0014)', () => {
+  beforeEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('currentSearch() reads the navigate()d URL search params', () => {
+    navigate('/list?sort=name&page=2');
+    const params = currentSearch();
+    expect(params.get('sort')).toBe('name');
+    expect(params.get('page')).toBe('2');
+  });
+
+  it('currentSearch() returns an empty params object when no query', () => {
+    navigate('/about');
+    expect(currentSearch().toString()).toBe('');
+  });
+
+  it('currentSearch() returns a fresh copy each call (mutations are local)', () => {
+    navigate('/list?a=1');
+    const params = currentSearch();
+    params.set('a', '999');
+    params.set('b', '2');
+    // The underlying URL still has the original search.
+    expect(currentSearch().get('a')).toBe('1');
+    expect(currentSearch().get('b')).toBeNull();
+  });
+
+  it('currentHash() returns the leading `#` + fragment, or empty when none', () => {
+    navigate('/page#section-2');
+    expect(currentHash()).toBe('#section-2');
+
+    navigate('/page');
+    expect(currentHash()).toBe('');
+  });
+
+  it('search reads are reactive — watch fires on navigate', async () => {
+    const { watch } = await import('../src/index.ts');
+    const seen: string[] = [];
+    navigate('/list?page=1');
+    const dispose = watch(() => {
+      seen.push(currentSearch().get('page') ?? '?');
+    });
+    navigate('/list?page=2');
+    await Promise.resolve();
+    navigate('/list?page=3');
+    await Promise.resolve();
+    dispose();
+    expect(seen).toEqual(['1', '2', '3']);
+  });
+
+  it('hash reads are reactive — watch fires on hashchange', async () => {
+    const { watch } = await import('../src/index.ts');
+    const seen: string[] = [];
+    navigate('/page');
+    const dispose = watch(() => {
+      seen.push(currentHash());
+    });
+    window.history.replaceState(null, '', '/page#first');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await Promise.resolve();
+    window.history.replaceState(null, '', '/page#second');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    await Promise.resolve();
+    dispose();
+    expect(seen).toContain('');
+    expect(seen).toContain('#first');
+    expect(seen).toContain('#second');
+  });
+
+  it('navigate() updates all three accessors atomically', () => {
+    navigate('/posts/42?reply=7#comment-9');
+    expect(currentPath()).toBe('/posts/42');
+    expect(currentSearch().get('reply')).toBe('7');
+    expect(currentHash()).toBe('#comment-9');
   });
 });

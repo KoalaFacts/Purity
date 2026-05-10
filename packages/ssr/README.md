@@ -318,11 +318,13 @@ html`<a
 >`;
 ```
 
-| API                            | SSR behavior                                              | Client behavior                                             |
-| ------------------------------ | --------------------------------------------------------- | ----------------------------------------------------------- |
-| `currentPath(): string`        | `new URL(request.url).pathname`, or `'/'` without request | Reactive — tracks `popstate` + `navigate()` updates         |
-| `navigate(href, { replace? })` | No-op                                                     | `pushState` (or `replaceState`) + updates the reactive path |
-| `matchRoute(pattern, path?)`   | Pattern matcher; `path` defaults to `currentPath()`       | Same — reactive when called inside a `watch()` / template   |
+| API                                | SSR behavior                                              | Client behavior                                                                                           |
+| ---------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `currentPath(): string`            | `new URL(request.url).pathname`, or `'/'` without request | Reactive — tracks `popstate` + `hashchange` + `navigate()`                                                |
+| `currentSearch(): URLSearchParams` | `new URL(request.url).searchParams` (fresh copy)          | Reactive — same signal as `currentPath`. Mutations are local — go through `navigate()` to change the URL. |
+| `currentHash(): string`            | `new URL(request.url).hash` (with `#`) or `''`            | Reactive — same signal as `currentPath`                                                                   |
+| `navigate(href, { replace? })`     | No-op                                                     | `pushState` (or `replaceState`) + updates the reactive URL                                                |
+| `matchRoute(pattern, path?)`       | Pattern matcher; `path` defaults to `currentPath()`       | Same — reactive when called inside a `watch()` / template                                                 |
 
 Pattern grammar: literals (`/about`), `:name` captures (`/users/:id`), and `*` splat tail (`/blog/*`). Captured `:name` values are URI-decoded. Returns `{ params } | null`.
 

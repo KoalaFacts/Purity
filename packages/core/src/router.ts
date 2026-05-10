@@ -1,39 +1,41 @@
 // ---------------------------------------------------------------------------
-// Router primitives — minimal client-side navigation + path matching.
-// ADR 0011.
+// Router primitives — minimal client-side navigation + URL part accessors.
+// ADR 0011 (path / navigate / match) + ADR 0014 (search / hash signals).
 //
-// Three functions:
-//   * currentPath()        — reactive pathname (tracks updates from
-//                            popstate / navigate). On SSR, reads the path
-//                            from `getRequest()` so server + client see the
-//                            same value.
-//   * navigate(href, opts) — pushState + update the reactive signal. Server:
-//                            no-op (there is no history API).
-//   * matchRoute(pattern)  — pattern matcher returning `{ params }` on hit,
-//                            `null` on miss. Patterns:
-//                              /about        — exact
-//                              /users/:id    — :param captures
-//                              /blog/*       — splat tail
-//
-// Three primitives compose to user routing: dispatch in render, call
-// `navigate()` from link click handlers (intercept `<a>` clicks yourself
-// — link interception is out of scope for Phase 1).
+// One reactive URL signal backs the three URL-part accessors. popstate +
+// hashchange refresh it from window.location; navigate() updates it
+// alongside pushState/replaceState. SSR reads bypass the signal — they go
+// straight through getRequest()'s Request URL.
 // ---------------------------------------------------------------------------
 
 import { state } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
-// Reactive signal backing `currentPath()` on the client. Initialised from
-// `window.location.pathname` at module load (or '/' on the server). Server
-// reads bypass this — they read directly from the SSR context's Request.
-const pathSignal = state(
-  typeof window !== 'undefined' && window.location ? window.location.pathname : '/',
+// Reactive signal backing the URL accessors on the client. Initialised from
+// `window.location.href` at module load (or a placeholder on the server).
+// Server reads bypass this — they read directly from the SSR context's
+// Request via getSSRRenderContext().
+const urlSignal = state(
+  typeof window !== 'undefined' && window.location
+    ? new URL(window.location.href)
+    : new URL('http://localhost/'),
 );
 
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-  window.addEventListener('popstate', () => {
-    pathSignal(window.location.pathname);
-  });
+  const refresh = (): void => {
+    urlSignal(new URL(window.location.href));
+  };
+  // popstate fires on history.back/forward. hashchange fires when only the
+  // fragment changes (e.g. clicking a non-intercepted `<a href="#x">`).
+  // pushState that changes only the search/path doesn't fire any event —
+  // users updating the URL outside of navigate() are on their own.
+  window.addEventListener('popstate', refresh);
+  window.addEventListener('hashchange', refresh);
+}
+
+function ssrUrl(): URL | null {
+  const ssrCtx = getSSRRenderContext();
+  return ssrCtx?.request ? new URL(ssrCtx.request.url) : null;
 }
 
 /**
@@ -43,27 +45,59 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
  * `renderToString` / `renderToStream` / `renderStatic` request supplied
  * via `{ request }`. Returns `'/'` when no request was supplied.
  *
- * **Client.** Returns a tracked signal initialised from
- * `window.location.pathname` and kept in sync with `popstate` events and
- * {@link navigate} calls. Reading this from inside a `watch()` / reactive
- * template establishes a subscription that re-fires when the path changes.
+ * **Client.** Returns a tracked accessor initialised from
+ * `window.location.pathname` and kept in sync with `popstate` /
+ * `hashchange` events and {@link navigate} calls. Reading this from
+ * inside a `watch()` / reactive template subscribes to changes.
+ */
+export function currentPath(): string {
+  return (ssrUrl() ?? urlSignal()).pathname;
+}
+
+/**
+ * Reactive accessor for the current URL search params. Returns a **fresh
+ * copy** each call so callers can mutate the returned object without
+ * affecting the underlying URL — to change the URL, build a new href and
+ * call {@link navigate}.
+ *
+ * Tracks the same reactive signal as {@link currentPath}, so reading
+ * inside a `watch()` re-fires when the URL changes (push/replaceState via
+ * `navigate()`, popstate, hashchange).
  *
  * @example
  * ```ts
- * import { currentPath, html } from '@purityjs/core';
+ * import { currentSearch, navigate, currentPath, html } from '@purityjs/core';
  *
- * function App() {
- *   const path = currentPath();
- *   if (path === '/') return html`<h1>Home</h1>`;
- *   if (path === '/about') return html`<h1>About</h1>`;
- *   return html`<h1>404</h1>`;
+ * function Paginator() {
+ *   const page = Number(currentSearch().get('page') ?? '1');
+ *   return html`
+ *     <p>Page ${page}</p>
+ *     <button @click=${() => {
+ *       const next = new URLSearchParams(currentSearch());
+ *       next.set('page', String(page + 1));
+ *       navigate(`${currentPath()}?${next}`);
+ *     }}>Next</button>
+ *   `;
  * }
  * ```
  */
-export function currentPath(): string {
-  const ssrCtx = getSSRRenderContext();
-  if (ssrCtx?.request) return new URL(ssrCtx.request.url).pathname;
-  return pathSignal();
+export function currentSearch(): URLSearchParams {
+  // Return a fresh URLSearchParams so caller mutations don't reach the
+  // underlying URL (which the user would expect to be authoritative).
+  return new URLSearchParams((ssrUrl() ?? urlSignal()).search);
+}
+
+/**
+ * Reactive accessor for the current URL hash, including the leading `#`,
+ * or the empty string if no hash is present.
+ *
+ * Tracks the same reactive signal as {@link currentPath}; `hashchange`
+ * events refresh the signal so reads inside a `watch()` re-fire when the
+ * fragment changes (via `<a href="#x">` or programmatic
+ * `location.hash = …`).
+ */
+export function currentHash(): string {
+  return (ssrUrl() ?? urlSignal()).hash;
 }
 
 /** Options for {@link navigate}. */
@@ -75,21 +109,18 @@ export interface NavigateOptions {
 /**
  * Programmatically change the URL on the client. Updates the History API
  * via `pushState` (or `replaceState` when `replace: true`) and triggers
- * subscribers of {@link currentPath}. No-op on the server.
+ * subscribers of {@link currentPath} / {@link currentSearch} /
+ * {@link currentHash}. No-op on the server.
  *
  * Same-origin only; cross-origin hrefs are ignored (use `window.location`
- * for those — full-page nav has different security semantics). Hash- and
- * search-only links update the URL bar but only re-render watchers that
- * read those parts via `new URL(window.location.href)`.
+ * for those — full-page nav has different security semantics).
  *
  * @example
  * ```ts
  * import { navigate } from '@purityjs/core';
  *
- * html`<a href="/about" @click=${(e) => {
- *   e.preventDefault();
- *   navigate('/about');
- * }}>About</a>`;
+ * // Add `?sort=date` to the current URL, replace so back-stack stays tidy.
+ * navigate(`${currentPath()}?sort=date`, { replace: true });
  * ```
  */
 export function navigate(href: string, options: NavigateOptions = {}): void {
@@ -100,7 +131,7 @@ export function navigate(href: string, options: NavigateOptions = {}): void {
   if (url.origin !== window.location.origin) return;
   if (options.replace) window.history.replaceState(null, '', url);
   else window.history.pushState(null, '', url);
-  pathSignal(url.pathname);
+  urlSignal(url);
 }
 
 /** Result of a successful {@link matchRoute} call. */

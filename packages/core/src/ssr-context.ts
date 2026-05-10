@@ -24,6 +24,14 @@ export interface SSRRenderContext {
    */
   resolvedErrors: unknown[];
   resourceCounter: number;
+  /**
+   * Monotonic per-render counter for `suspense()` boundary IDs. Reset to
+   * zero at the start of each pass so IDs are stable across the two-pass
+   * resource-resolution loop. Used by the boundary-marker grammar
+   * `<!--s:N--><!--/s:N-->` so streaming (ADR 0006 Phase 3) can address
+   * each boundary by its position-stable ID.
+   */
+  suspenseCounter: number;
 }
 
 let currentContext: SSRRenderContext | null = null;

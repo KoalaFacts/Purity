@@ -239,14 +239,19 @@ shadowrootmode>` inside a streamed Suspense boundary is parsed by the
 
 Phases, each landable as its own PR:
 
-1. **`suspense()` primitive + boundary markers in SSR output.** No
-   streaming yet — just the new function, the marker grammar, and a
-   `renderToString` extension that resolves boundaries inline.
-   Validates the marker design without the streaming machinery.
+1. ✅ **`suspense()` primitive + boundary markers in SSR output.** Shipped.
+   No streaming — `suspense(view, fallback)` runs view inline with a
+   try/catch, wraps the rendered region in `<!--s:N--><!--/s:N-->`
+   markers (N from a per-render counter on `SSRRenderContext`), and the
+   client `inflateDeferred` strips those markers before walking the
+   inner template. Validates the marker grammar end-to-end.
 2. **Per-boundary `SSRRenderContext` scoping.** Refactor
    `pendingPromises` from a single set to a stack per boundary. Lets
-   `renderToString` resolve boundaries independently. No user-visible
-   change.
+   `renderToString` resolve boundaries independently and emit the
+   fallback when a boundary's resources don't settle within its
+   per-boundary timeout. No user-visible change at the API level — the
+   `suspense()` shape stays the same; only the resolution semantics
+   tighten.
 3. **`renderToStream` MVP.** New server entry, emits the shell + a
    single chunk per resolved boundary. `__purity_swap` injected inline.
    Hydration deferred until stream close.

@@ -2,6 +2,7 @@ import { markSSRHtml, type SSRHtml, valueToHtml } from './compiler/ssr-runtime.t
 import { getCurrentContext, popContext, pushContext, type Scope } from './component.ts';
 import type { StateAccessor } from './signals.ts';
 import { state, watch } from './signals.ts';
+import { getSSRRenderContext } from './ssr-context.ts';
 
 // ---------------------------------------------------------------------------
 // match(sourceFn, cases, fallback?) — reactive pattern matching
@@ -1036,4 +1037,75 @@ function escapeAttrLocal(s: string): string {
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+// ---------------------------------------------------------------------------
+// suspense(view, fallback) — error-isolating render boundary
+//
+// Phase 1 of ADR 0006. The boundary serves two purposes today and one
+// forward-compat purpose:
+//
+//   - **SSR error isolation.** If `view()` throws synchronously during
+//     server render, the boundary catches the error, logs it, and emits
+//     `fallback()` instead. The outer renderToString call still completes;
+//     a single failing region can't take down the page.
+//   - **Marker grammar in SSR output.** The rendered region is wrapped in
+//     `<!--s:N--><!--/s:N-->` comment markers (N from the per-render
+//     suspenseCounter on SSRRenderContext). The hydrate factory's
+//     deferred-template inflate path strips these markers when carving
+//     the slot's subtree.
+//   - **Forward-compat for streaming (Phase 3).** The same markers will
+//     let `__purity_swap(N)` find and replace each boundary's content as
+//     it resolves over a `ReadableStream`.
+//
+// Per-boundary timeout / fallback-on-pending-resource is **not** in
+// Phase 1 — see ADR 0006 for the staged plan. Today, view's resources
+// share the outer renderToString resource-resolution loop.
+// ---------------------------------------------------------------------------
+
+/**
+ * Render `view()` with synchronous error isolation. On error, render
+ * `fallback()` instead. In SSR mode, the rendered region is wrapped in
+ * `<!--s:N--><!--/s:N-->` boundary markers; on the client, this is just
+ * `view()` (the fallback is unused — use `when()` against your resource's
+ * `loading()` accessor for client loading states).
+ *
+ * @example
+ * ```ts
+ * suspense(
+ *   () => html`<aside>${() => slowResource()}</aside>`,
+ *   () => html`<aside class="loading">…</aside>`,
+ * )
+ * ```
+ */
+export function suspense<T>(view: () => T, fallback: () => T): T | SSRHtml {
+  const ssrCtx = getSSRRenderContext();
+  if (!ssrCtx) {
+    // Client path — render the view; the fallback is forward-compat for
+    // Phase 3 streaming where it shows while a streamed boundary is in
+    // flight. For now it's unused.
+    return view();
+  }
+  const id = ++ssrCtx.suspenseCounter;
+  let body: string;
+  try {
+    body = valueToHtml(view());
+  } catch (err) {
+    console.error(
+      `[Purity] suspense() view threw during SSR (boundary ${id}); rendering fallback:`,
+      err,
+    );
+    try {
+      body = valueToHtml(fallback());
+    } catch (fallbackErr) {
+      // Fallback also threw — emit an empty boundary rather than blowing
+      // up the entire render. The error logs above identify the boundary.
+      console.error(
+        `[Purity] suspense() fallback also threw (boundary ${id}); emitting empty boundary:`,
+        fallbackErr,
+      );
+      body = '';
+    }
+  }
+  return markSSRHtml(`<!--s:${id}-->${body}<!--/s:${id}-->`);
 }

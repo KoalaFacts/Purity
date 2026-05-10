@@ -129,13 +129,34 @@ export function html(
  * this template — typically a DocumentFragment carved out of the parent
  * slot's marker pair, or the hydration root container's children.
  *
+ * Suspense boundary markers (`<!--s:N-->` / `<!--/s:N-->`) wrapping the
+ * SSR view content are stripped here — they wrap the slot's bytes but
+ * aren't part of the inner template's structural shape, so the hydrate
+ * factory shouldn't see them.
+ *
  * @internal
  */
 export function inflateDeferred(deferred: DeferredTemplate, target: Node): Node {
+  stripSuspenseMarkers(target);
   const entry = getOrInitEntry(deferred.strings);
   const fn = ensureHydrate(entry, deferred.strings);
   const check = hydrationWarningsEnabled() ? checkHydrationCursor : undefined;
   return fn(deferred.values, watch, target, inflateDeferred, check);
+}
+
+const SUSPENSE_MARKER = /^\/?s:\d+$/;
+
+function isSuspenseMarker(node: Node): boolean {
+  return node.nodeType === 8 && SUSPENSE_MARKER.test((node as Comment).data);
+}
+
+function stripSuspenseMarkers(target: Node): void {
+  while (target.firstChild && isSuspenseMarker(target.firstChild)) {
+    target.removeChild(target.firstChild);
+  }
+  while (target.lastChild && isSuspenseMarker(target.lastChild)) {
+    target.removeChild(target.lastChild);
+  }
 }
 
 /**

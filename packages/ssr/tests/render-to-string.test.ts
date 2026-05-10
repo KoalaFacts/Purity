@@ -1,5 +1,6 @@
 import { state } from '@purityjs/core';
 import { isSSRHtml, markSSRHtml } from '@purityjs/core/compiler';
+import { resource } from '@purityjs/core';
 import { describe, expect, it } from 'vitest';
 import { html, renderToString } from '../src/index.ts';
 
@@ -114,6 +115,37 @@ describe('renderToString', () => {
   it('returns a Promise', () => {
     const r = renderToString(() => html`<p>x</p>`);
     expect(r).toBeInstanceOf(Promise);
+  });
+});
+
+describe('renderToString — CSP nonce on resource-priming script', () => {
+  it('emits the nonce attribute on the resources script when supplied', async () => {
+    const App = () => {
+      const r = resource(() => Promise.resolve('hi'));
+      return html`<p>${() => r()}</p>`;
+    };
+    const out = await renderToString(App, { nonce: 'abc123' });
+    expect(out).toContain('id="__purity_resources__"');
+    expect(out).toContain('nonce="abc123"');
+  });
+
+  it('omits the nonce attribute by default (byte-for-byte output unchanged)', async () => {
+    const out = await renderToString(() => html`<p>hi</p>`);
+    expect(out).not.toContain('nonce=');
+  });
+
+  it('rejects nonces with characters outside the safe alphabet', async () => {
+    await expect(renderToString(() => html`<p>x</p>`, { nonce: 'bad"value' })).rejects.toThrow(
+      /invalid CSP nonce/,
+    );
+    await expect(renderToString(() => html`<p>x</p>`, { nonce: '<script>' })).rejects.toThrow(
+      /invalid CSP nonce/,
+    );
+  });
+
+  it('accepts standard base64 + URL-safe nonces', async () => {
+    // Must not throw — just exercises the validator.
+    await renderToString(() => html`<p>x</p>`, { nonce: 'AbCdEf+/=_-1234' });
   });
 });
 

@@ -27,6 +27,15 @@ export interface RenderToStringOptions {
   serializeResources?: boolean;
   /** Optional doctype prefix (e.g. `'<!doctype html>'`). */
   doctype?: string;
+  /**
+   * Strict-CSP nonce. Emitted as `nonce="…"` on the
+   * `<script id="__purity_resources__">` tag so a `Content-Security-
+   * Policy: script-src 'nonce-…'` header lets the cache-priming payload
+   * execute under strict CSP. Generate per-request and put the same
+   * value in your CSP header. Validated against `[A-Za-z0-9+/=_-]+`
+   * (base64 + URL-safe characters) so it can't escape the attribute.
+   */
+  nonce?: string;
 }
 
 const DEFAULT_TIMEOUT = 5000;
@@ -54,6 +63,13 @@ export async function renderToString(
   const timeout = options.timeout ?? DEFAULT_TIMEOUT;
   const serialize = options.serializeResources ?? true;
   const prefix = options.doctype ?? '';
+  const nonce = options.nonce;
+  if (nonce !== undefined && !NONCE_PATTERN.test(nonce)) {
+    throw new Error(
+      `[Purity] renderToString: invalid CSP nonce. Must match ` +
+        `${NONCE_PATTERN.source} (base64 / URL-safe characters).`,
+    );
+  }
   const start = Date.now();
 
   const resolvedData: unknown[] = [];
@@ -66,6 +82,7 @@ export async function renderToString(
       resolvedData,
       resolvedErrors,
       resourceCounter: 0,
+      suspenseCounter: 0,
     };
     pushSSRRenderContext(ctx);
     try {
@@ -76,7 +93,8 @@ export async function renderToString(
 
     if (ctx.pendingPromises.length === 0) {
       // Quiescent — no pending fetches triggered during this pass.
-      const cache = serialize && resolvedData.length > 0 ? buildResourceScript(resolvedData) : '';
+      const cache =
+        serialize && resolvedData.length > 0 ? buildResourceScript(resolvedData, nonce) : '';
       return prefix + html + cache;
     }
 
@@ -111,7 +129,12 @@ export async function renderToString(
   );
 }
 
-function buildResourceScript(data: unknown[]): string {
+// CSP nonces in HTTP headers are base64 (RFC 4648) and frequently URL-safe
+// (RFC 4648 \u00a75). Restrict to that alphabet so a hostile / mistyped value
+// can't break out of the attribute. Length is left to the caller.
+const NONCE_PATTERN = /^[A-Za-z0-9+/=_-]+$/;
+
+function buildResourceScript(data: unknown[], nonce: string | undefined): string {
   // JSON-encode then defang sequences that would close the script tag early.
   // Mirrors the standard SSR-payload escaping used by React, Vue, etc.
   const json = JSON.stringify(data)
@@ -120,7 +143,11 @@ function buildResourceScript(data: unknown[]): string {
     .replace(/&/g, '\\u0026')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
-  return `<script type="application/json" id="${RESOURCE_SCRIPT_ID}">${json}</script>`;
+  // `nonce` was validated above (NONCE_PATTERN); safe to splice into the
+  // attribute. Emitted only when supplied so the default output is byte-
+  // for-byte unchanged.
+  const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
+  return `<script type="application/json" id="${RESOURCE_SCRIPT_ID}"${nonceAttr}>${json}</script>`;
 }
 
 export { RESOURCE_SCRIPT_ID };

@@ -8,7 +8,17 @@ export type { ComponentFn, MountResult } from './component.ts';
 // Lifecycle (3 hooks + error) + hydrate
 export { hydrate, mount, onDestroy, onDispose, onError, onMount } from './component.ts';
 // Control flow
-export { each, eachSSR, list, listSSR, match, matchSSR, when, whenSSR } from './control.ts';
+export {
+  each,
+  eachSSR,
+  list,
+  listSSR,
+  match,
+  matchSSR,
+  suspense,
+  when,
+  whenSSR,
+} from './control.ts';
 export type { DebouncedAccessor } from './debounced.ts';
 // Debounced derived signal
 export { debounced } from './debounced.ts';

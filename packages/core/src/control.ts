@@ -1063,6 +1063,23 @@ function escapeAttrLocal(s: string): string {
 // share the outer renderToString resource-resolution loop.
 // ---------------------------------------------------------------------------
 
+/** Why `onError` was invoked. */
+export type SuspenseErrorPhase = 'view' | 'fallback' | 'timeout';
+
+/** Metadata passed to a `suspense({ onError })` callback. */
+export interface SuspenseErrorInfo {
+  /** Monotonic per-render boundary ID (matches the `<!--s:N-->` marker). */
+  boundaryId: number;
+  /**
+   * What raised the error:
+   *   * `'view'`     — `view()` threw synchronously; fallback is being rendered.
+   *   * `'fallback'` — the fallback ALSO threw; an empty boundary is emitted.
+   *   * `'timeout'`  — the per-boundary deadline fired; fallback is being rendered.
+   *                    `error` is undefined for this phase.
+   */
+  phase: SuspenseErrorPhase;
+}
+
 /** Per-boundary options for `suspense()`. */
 export interface SuspenseOptions {
   /**
@@ -1074,6 +1091,16 @@ export interface SuspenseOptions {
    * renders the fallback instead of the view.
    */
   timeout?: number;
+  /**
+   * Observer for per-boundary errors and timeouts. Receives the original
+   * error (if any) plus a small info object. Use to forward to error
+   * tracking (Sentry, Honeybadger, …) or to log richer context than
+   * `console.error` does. The framework still emits its own
+   * `console.error` after the hook returns, so the hook can replace
+   * tracking but not silence the default log — use a separate logger
+   * config for that.
+   */
+  onError?: (error: unknown, info: SuspenseErrorInfo) => void;
 }
 
 /**
@@ -1118,12 +1145,30 @@ export function suspense<T>(
     }
   }
 
+  const onError = options?.onError;
+  const reportError = (err: unknown, phase: SuspenseErrorPhase): void => {
+    if (onError) {
+      try {
+        onError(err, { boundaryId: id, phase });
+      } catch (hookErr) {
+        // The hook itself threw — log but don't propagate; one bad reporter
+        // shouldn't take down the whole render.
+        console.error(
+          `[Purity] suspense() onError hook threw (boundary ${id}, phase ${phase}):`,
+          hookErr,
+        );
+      }
+    }
+  };
+
   const isTimedOut = ssrCtx.timedOutBoundaries.has(id);
   let body: string;
   if (isTimedOut) {
+    reportError(undefined, 'timeout');
     try {
       body = valueToHtml(fallback());
     } catch (fallbackErr) {
+      reportError(fallbackErr, 'fallback');
       console.error(
         `[Purity] suspense() fallback threw after timeout (boundary ${id}); emitting empty boundary:`,
         fallbackErr,
@@ -1134,6 +1179,7 @@ export function suspense<T>(
     try {
       body = valueToHtml(view());
     } catch (err) {
+      reportError(err, 'view');
       console.error(
         `[Purity] suspense() view threw during SSR (boundary ${id}); rendering fallback:`,
         err,
@@ -1141,6 +1187,7 @@ export function suspense<T>(
       try {
         body = valueToHtml(fallback());
       } catch (fallbackErr) {
+        reportError(fallbackErr, 'fallback');
         // Fallback also threw — emit an empty boundary rather than blowing
         // up the entire render. The error logs above identify the boundary.
         console.error(

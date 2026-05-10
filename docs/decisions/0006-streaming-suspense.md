@@ -263,8 +263,13 @@ Phases, each landable as its own PR:
 4. **Edge-runtime adapter examples.** `examples/ssr-stream-cf-workers/`,
    `examples/ssr-stream-vercel-edge/`, `examples/ssr-stream-deno/`. No
    adapter code in core.
-5. **Per-boundary error handling + `onBoundaryError` hook.**
+5. ✅ **Per-boundary error handling + `onError` hook.** Shipped (a
+   subset of full Phase 5 — covers `suspense({ onError })` for view /
+   fallback / timeout phases). Per-boundary `__purity_resources__`
+   emit is still pending Phase 3 streaming.
 6. **CSP nonce support + `__purity_resources__` per-boundary emit.**
+   First half (CSP `nonce` on the resources script) shipped already;
+   the per-boundary emit half waits on Phase 3.
 
 Each phase has its own test + docs requirements; ADRs may follow if any
 phase reveals decisions that contradict this plan.

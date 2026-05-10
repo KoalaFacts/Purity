@@ -105,6 +105,100 @@ describe('suspense() — SSR error isolation + boundary markers', () => {
     expect(out.match(/<!--\/s:\d+-->/g)?.length).toBe(2);
   });
 
+  it('invokes onError(error, { phase: "view" }) when view throws', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const reports: Array<{ error: unknown; phase: string; boundaryId: number }> = [];
+    await renderToString(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            throw new Error('view boom');
+          },
+          () => ssrHtml`<aside>fb</aside>`,
+          {
+            onError: (error, info) => {
+              reports.push({ error, phase: info.phase, boundaryId: info.boundaryId });
+            },
+          },
+        )}</main>`,
+    );
+    expect(reports).toHaveLength(1);
+    expect(reports[0].phase).toBe('view');
+    expect(reports[0].boundaryId).toBe(1);
+    expect((reports[0].error as Error).message).toBe('view boom');
+    errSpy.mockRestore();
+  });
+
+  it('invokes onError twice when both view and fallback throw (phases: view, fallback)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const phases: string[] = [];
+    await renderToString(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            throw new Error('v');
+          },
+          () => {
+            throw new Error('f');
+          },
+          {
+            onError: (_err, info) => {
+              phases.push(info.phase);
+            },
+          },
+        )}</main>`,
+    );
+    expect(phases).toEqual(['view', 'fallback']);
+    errSpy.mockRestore();
+  });
+
+  it('invokes onError(undefined, { phase: "timeout" }) when boundary deadline fires', async () => {
+    const reports: Array<{ phase: string; boundaryId: number }> = [];
+    await renderToString(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            const r = resource(
+              () => new Promise((resolve) => setTimeout(() => resolve('slow'), 200)),
+              { key: 'slow' },
+            );
+            return ssrHtml`<aside>${() => r() ?? '...'}</aside>`;
+          },
+          () => ssrHtml`<aside>fb</aside>`,
+          {
+            timeout: 30,
+            onError: (_err, info) => {
+              reports.push({ phase: info.phase, boundaryId: info.boundaryId });
+            },
+          },
+        )}</main>`,
+    );
+    expect(reports.some((r) => r.phase === 'timeout')).toBe(true);
+  });
+
+  it('survives an onError hook that throws (logs but does not propagate)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const out = await renderToString(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            throw new Error('view boom');
+          },
+          () => ssrHtml`<aside>fb</aside>`,
+          {
+            onError: () => {
+              throw new Error('hook boom');
+            },
+          },
+        )}</main>`,
+    );
+    expect(out).toContain('<aside>fb</aside>');
+    // Two errors: the original view error + the hook's own error.
+    const messages = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(messages).toContain('onError hook threw');
+    errSpy.mockRestore();
+  });
+
   it('resets the suspenseCounter between separate renderToString calls', async () => {
     const view = () =>
       ssrHtml`${suspense(

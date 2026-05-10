@@ -333,6 +333,9 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
 }
 
 const RESOURCE_SCRIPT_ID = '__purity_resources__';
+// Per-boundary cache prime — emitted by `renderToStream` next to each
+// streamed `<template id="purity-s-N">` chunk. ADR 0006 Phase 6 second-half.
+const PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX = '__purity_resources_';
 
 function primeResourceHydrationCache(container: Element): void {
   // The script tag may be inside the container, immediately after it (when
@@ -342,20 +345,71 @@ function primeResourceHydrationCache(container: Element): void {
   const doc = container.ownerDocument ?? globalThis.document;
   /* v8 ignore next 2 -- tests run in jsdom which always has ownerDocument */
   if (!doc) return;
-  const el =
+
+  // Start with the shell-level cache. Accepts either the legacy positional
+  // array or the `{ ordered, keyed }` object shape; merge per-boundary
+  // keyed entries on top so streamed boundaries' resources hit the cache.
+  const shellEl =
     container.querySelector(`script#${RESOURCE_SCRIPT_ID}`) ??
     doc.getElementById(RESOURCE_SCRIPT_ID);
-  if (!el || el.textContent == null) return;
-  try {
-    // primeHydrationCache accepts either the legacy array shape (older SSR
-    // output) or the new `{ ordered, keyed }` object shape (when at least
-    // one resource opted into a `key`). Pass the raw parsed value through.
-    primeHydrationCache(JSON.parse(el.textContent) as unknown);
-  } catch (err) {
-    console.error('[Purity] Failed to parse hydration cache:', err);
+  let merged: { ordered: unknown[]; keyed: Record<string, unknown> } | null = null;
+  if (shellEl?.textContent != null) {
+    try {
+      const parsed = JSON.parse(shellEl.textContent) as unknown;
+      merged = normalizeCachePayload(parsed);
+    } catch (err) {
+      console.error('[Purity] Failed to parse hydration cache:', err);
+    }
+    if (shellEl.parentNode) shellEl.parentNode.removeChild(shellEl);
   }
-  // Remove the script so a subsequent re-mount doesn't re-prime.
-  if (el.parentNode) el.parentNode.removeChild(el);
+
+  // Find every streamed boundary's cache and merge keyed entries. The
+  // positional `ordered` from boundaries is dropped — boundary indices
+  // collide with the shell's index space, so we only support keyed
+  // resources for streaming. Scan in document order so a later boundary's
+  // entry wins on key collision (matches "later wins" everywhere else).
+  const boundaryScripts = doc.querySelectorAll(
+    `script[id^="${PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX}"]`,
+  );
+  if (boundaryScripts.length > 0) {
+    if (!merged) merged = { ordered: [], keyed: {} };
+    for (let i = 0; i < boundaryScripts.length; i++) {
+      const el = boundaryScripts[i] as Element;
+      if (el.textContent == null) continue;
+      try {
+        const parsed = JSON.parse(el.textContent) as { keyed?: unknown };
+        if (
+          parsed &&
+          typeof parsed === 'object' &&
+          parsed.keyed &&
+          typeof parsed.keyed === 'object'
+        ) {
+          Object.assign(merged.keyed, parsed.keyed as Record<string, unknown>);
+        }
+      } catch (err) {
+        console.error('[Purity] Failed to parse per-boundary hydration cache:', err);
+      }
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }
+  }
+
+  if (merged) primeHydrationCache(merged);
+}
+
+function normalizeCachePayload(parsed: unknown): {
+  ordered: unknown[];
+  keyed: Record<string, unknown>;
+} {
+  if (Array.isArray(parsed)) return { ordered: parsed, keyed: {} };
+  if (parsed && typeof parsed === 'object') {
+    const obj = parsed as { ordered?: unknown; keyed?: unknown };
+    return {
+      ordered: Array.isArray(obj.ordered) ? obj.ordered : [],
+      keyed:
+        obj.keyed && typeof obj.keyed === 'object' ? (obj.keyed as Record<string, unknown>) : {},
+    };
+  }
+  return { ordered: [], keyed: {} };
 }
 
 export function mount(component: ComponentFn, container: Element): MountResult {

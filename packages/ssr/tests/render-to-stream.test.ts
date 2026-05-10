@@ -262,3 +262,114 @@ describe('renderToStream — runtime swap behavior', () => {
     // What matters: the resolved content replaced the fallback.
   });
 });
+
+// ---------------------------------------------------------------------------
+// ADR 0006 Phase 6 second-half — per-boundary resource cache emit.
+//
+// Each streamed boundary chunk should carry its own resolved keyed-resource
+// payload as `<script id="__purity_resources_N__">` so the client doesn't
+// refetch inside the boundary on hydrate. Positional indices are dropped —
+// only keyed resources get cross-boundary cache priming. ADR 0006.
+// ---------------------------------------------------------------------------
+
+describe('renderToStream — per-boundary resource cache', () => {
+  it('emits <script id="__purity_resources_N__"> with keyed resources resolved inside the boundary', async () => {
+    const stream = renderToStream(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            const r = resource(() => Promise.resolve('LATE'), {
+              initialValue: undefined,
+              key: 'b1',
+            });
+            return ssrHtml`<aside>${() => r()}</aside>`;
+          },
+          () => ssrHtml`<aside>…</aside>`,
+        )}</main>`,
+    );
+    const out = await streamToString(stream);
+
+    // Per-boundary keyed cache emitted alongside the template.
+    expect(out).toMatch(
+      /<script type="application\/json" id="__purity_resources_1__">{"keyed":{"b1":"LATE"}}<\/script>/,
+    );
+    // Sanity: the swap script still follows the cache prime.
+    expect(out).toMatch(/__purity_resources_1__[\s\S]*__purity_swap\(1\)/);
+  });
+
+  it('omits the per-boundary script when the boundary has no keyed resources', async () => {
+    const stream = renderToStream(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            // No `key` option — positional only. Per-boundary script is skipped.
+            const r = resource(() => Promise.resolve('LATE'), { initialValue: undefined });
+            return ssrHtml`<aside>${() => r()}</aside>`;
+          },
+          () => ssrHtml`<aside>…</aside>`,
+        )}</main>`,
+    );
+    const out = await streamToString(stream);
+    expect(out).not.toContain('__purity_resources_1__');
+  });
+
+  it('emits one cache script per boundary, indexed by id', async () => {
+    const stream = renderToStream(
+      () => ssrHtml`<main>
+        ${suspense(
+          () => {
+            const a = resource(() => Promise.resolve('A'), { initialValue: undefined, key: 'a' });
+            return ssrHtml`<p>${() => a()}</p>`;
+          },
+          () => ssrHtml`<p>…</p>`,
+        )}
+        ${suspense(
+          () => {
+            const b = resource(() => Promise.resolve('B'), { initialValue: undefined, key: 'b' });
+            return ssrHtml`<p>${() => b()}</p>`;
+          },
+          () => ssrHtml`<p>…</p>`,
+        )}
+      </main>`,
+    );
+    const out = await streamToString(stream);
+    expect(out).toContain('id="__purity_resources_1__"');
+    expect(out).toContain('"keyed":{"a":"A"}');
+    expect(out).toContain('id="__purity_resources_2__"');
+    expect(out).toContain('"keyed":{"b":"B"}');
+  });
+
+  it('applies CSP nonce to the per-boundary cache script too', async () => {
+    const stream = renderToStream(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            const r = resource(() => Promise.resolve('X'), { initialValue: undefined, key: 'k' });
+            return ssrHtml`<aside>${() => r()}</aside>`;
+          },
+          () => ssrHtml`<aside>…</aside>`,
+        )}</main>`,
+      { nonce: 'abc123' },
+    );
+    const out = await streamToString(stream);
+    expect(out).toMatch(
+      /<script\s+type="application\/json"\s+id="__purity_resources_1__"\s+nonce="abc123">/,
+    );
+  });
+
+  it('respects serializeResources: false by also dropping per-boundary caches', async () => {
+    const stream = renderToStream(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            const r = resource(() => Promise.resolve('X'), { initialValue: undefined, key: 'k' });
+            return ssrHtml`<aside>${() => r()}</aside>`;
+          },
+          () => ssrHtml`<aside>…</aside>`,
+        )}</main>`,
+      { serializeResources: false },
+    );
+    const out = await streamToString(stream);
+    expect(out).not.toContain('__purity_resources_');
+  });
+});

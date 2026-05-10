@@ -178,3 +178,111 @@ describe('hydrate + keyed resource cache', () => {
     expect(host.textContent).toContain('A');
   });
 });
+
+describe('hydrate + per-boundary streaming cache (ADR 0006 Phase 6 second-half)', () => {
+  let host: HTMLElement;
+
+  beforeEach(() => {
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    primeHydrationCache([]);
+  });
+
+  it('merges per-boundary <script id="__purity_resources_N__"> into the keyed cache', async () => {
+    // Stage what a streamed renderToStream output looks like AFTER all
+    // boundaries have swapped: shell prime + two per-boundary primes already
+    // sitting in the document.
+    host.innerHTML = '<p><!--[-->shell<!--]--></p>';
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<script type="application/json" id="__purity_resources__">' +
+        '{"ordered":[],"keyed":{"shell":"shell"}}' +
+        '</script>' +
+        '<script type="application/json" id="__purity_resources_1__">' +
+        '{"keyed":{"b1":"first"}}' +
+        '</script>' +
+        '<script type="application/json" id="__purity_resources_2__">' +
+        '{"keyed":{"b2":"second"}}' +
+        '</script>',
+    );
+
+    let fetches = 0;
+    hydrate(host, () => {
+      const r1 = resource(
+        () => {
+          fetches++;
+          return Promise.resolve('refetch-1');
+        },
+        { key: 'b1' },
+      );
+      const r2 = resource(
+        () => {
+          fetches++;
+          return Promise.resolve('refetch-2');
+        },
+        { key: 'b2' },
+      );
+      const shell = resource(
+        () => {
+          fetches++;
+          return Promise.resolve('refetch-shell');
+        },
+        { key: 'shell' },
+      );
+      return html`<p>${() => `${shell() ?? '?'}/${r1() ?? '?'}/${r2() ?? '?'}`}</p>`;
+    });
+    await tick();
+
+    // All three keyed values primed from their respective scripts; no fetches.
+    expect(host.textContent).toContain('shell/first/second');
+    expect(fetches).toBe(0);
+  });
+
+  it('drops per-boundary scripts from the DOM after priming', async () => {
+    host.innerHTML = '<p><!--[-->X<!--]--></p>';
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<script type="application/json" id="__purity_resources_1__">' +
+        '{"keyed":{"k":"v"}}' +
+        '</script>',
+    );
+
+    hydrate(host, () => {
+      const r = resource(() => Promise.resolve('refetched'), { key: 'k' });
+      return html`<p>${() => r() ?? '?'}</p>`;
+    });
+    await tick();
+
+    // The boundary cache script is removed from the DOM after priming so a
+    // subsequent re-mount (hot reload, error recovery) doesn't double-prime.
+    expect(document.querySelector('script#__purity_resources_1__')).toBeNull();
+  });
+
+  it('works without a shell script — boundary-only cache', async () => {
+    // No shell-level resources, only a per-boundary prime. The shell script
+    // is absent; the boundary script alone should still drive the cache.
+    host.innerHTML = '<p><!--[-->X<!--]--></p>';
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<script type="application/json" id="__purity_resources_1__">' +
+        '{"keyed":{"only":"primed"}}' +
+        '</script>',
+    );
+
+    let fetches = 0;
+    hydrate(host, () => {
+      const r = resource(
+        () => {
+          fetches++;
+          return Promise.resolve('refetched');
+        },
+        { key: 'only' },
+      );
+      return html`<p>${() => r() ?? '?'}</p>`;
+    });
+    await tick();
+
+    expect(host.textContent).toContain('primed');
+    expect(fetches).toBe(0);
+  });
+});

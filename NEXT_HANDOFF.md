@@ -25,8 +25,8 @@ so the next session can pick up cold.
 ADRs:
 
 - [`0005-non-lossy-hydration.md`](docs/decisions/0005-non-lossy-hydration.md) — Accepted.
-- [`0006-streaming-suspense.md`](docs/decisions/0006-streaming-suspense.md) — Proposed; phases 1, 2, 3, 5
-  shipped; phases 4 (adapter examples) and 6-half (per-boundary resources) remain.
+- [`0006-streaming-suspense.md`](docs/decisions/0006-streaming-suspense.md) — Proposed; phases 1, 2, 3, 5, 6
+  shipped; phase 4 (adapter examples) remains.
 
 ## What's intentionally not done yet
 
@@ -118,17 +118,19 @@ contract.
 - **SSG / ISR / PPR** — `renderToString` is the primitive; needs a build-time / per-route driver on top.
 - **DSD fallback for pre-2024 browsers** — out of scope per ADR 0004.
 
-### 5. Phase 6 second-half — per-boundary `__purity_resources__` emit
+### 5. _(closed)_ Phase 6 second-half — per-boundary `__purity_resources__` emit
 
-Now unblocked: Phase 3 streaming shipped. Each streamed boundary chunk
-should carry its own `resolvedData` / `resolvedDataByKey` payload so
-the client doesn't refetch inside the boundary on hydrate. Hook point
-is `renderBoundary()` in `packages/ssr/src/render-to-stream.ts` — the
-loop already collects `resolvedData[]` per boundary; emit it as a
-`<script type="application/json" id="__purity_resources_N__">` next to
-each `<template id="purity-s-N">` and teach `consumeHydrationValue()`
-to read from the matching id when the hydrator enters the boundary's
-subtree.
+`renderBoundary()` now returns `{ html, resolvedData, resolvedDataByKey }`.
+The streaming loop emits a `<script type="application/json"
+id="__purity_resources_N__">{"keyed":{...}}</script>` chunk next to
+each `<template id="purity-s-N">` (only when the boundary has at least
+one keyed resource). Positional indices inside a boundary collide with
+the shell's index space, so we drop them — streamed-boundary resources
+should opt into `resource(..., { key })`. The client-side
+`primeResourceHydrationCache()` scans
+`script[id^="__purity_resources_"]` and merges all keyed payloads into
+the cache before hydration begins. CSP nonces propagate to the
+per-boundary scripts too.
 
 ## Test count by package (post-branch)
 

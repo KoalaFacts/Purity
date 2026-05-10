@@ -139,11 +139,20 @@ export function renderToStream(
         // ----- Boundary chunks ----------------------------------------------
         for (const [id, boundary] of shell.boundaries) {
           if (signal?.aborted) break;
-          const html = await renderBoundary(id, boundary, timeout);
-          enqueue(
-            `<template id="purity-s-${id}">${html}</template>` +
-              scriptTag(`__purity_swap(${id});`, nonce),
-          );
+          const result = await renderBoundary(id, boundary, timeout);
+          let chunk = `<template id="purity-s-${id}">${result.html}</template>`;
+          // Per-boundary resource cache prime (ADR 0006 Phase 6 second-half).
+          // Only the keyed map is meaningful across boundaries — the
+          // positional `ordered` array would collide with the shell's index
+          // space, so we drop it and document keyed resources as the
+          // recommended pattern inside `suspense(view)`. When there's
+          // nothing keyed, skip the script entirely.
+          if (serialize) {
+            const cache = buildBoundaryResourceScript(id, result.resolvedDataByKey, nonce);
+            if (cache) chunk += cache;
+          }
+          chunk += scriptTag(`__purity_swap(${id});`, nonce);
+          enqueue(chunk);
         }
 
         controller.close();
@@ -258,11 +267,17 @@ async function renderShell(component: () => unknown, timeout: number): Promise<S
   );
 }
 
+interface BoundaryResult {
+  html: string;
+  resolvedData: unknown[];
+  resolvedDataByKey: Record<string, unknown>;
+}
+
 async function renderBoundary(
   boundaryId: number,
   boundary: ShellResult['boundaries'] extends Map<number, infer V> ? V : never,
   timeout: number,
-): Promise<string> {
+): Promise<BoundaryResult> {
   const start = Date.now();
   const resolvedData: unknown[] = [];
   const resolvedErrors: unknown[] = [];
@@ -319,7 +334,7 @@ async function renderBoundary(
           err,
         );
         popSSRRenderContext();
-        return '';
+        return { html: '', resolvedData, resolvedDataByKey };
       }
       console.error(
         `[Purity] renderToStream: boundary ${boundaryId} view threw; ` +
@@ -333,13 +348,15 @@ async function renderBoundary(
       popSSRRenderContext();
     }
 
-    if (ctx.pendingPromises.length === 0) return html;
+    if (ctx.pendingPromises.length === 0) {
+      return { html, resolvedData, resolvedDataByKey };
+    }
 
     const remaining = timeout - (Date.now() - start);
     if (remaining <= 0) {
       if (viewTimedOut) {
         // Fallback itself timed out — emit empty rather than hanging.
-        return '';
+        return { html: '', resolvedData, resolvedDataByKey };
       }
       reportError(undefined, 'timeout');
       viewTimedOut = true;
@@ -357,7 +374,7 @@ async function renderBoundary(
       }),
     ]);
     if (raceTimedOut) {
-      if (viewTimedOut) return '';
+      if (viewTimedOut) return { html: '', resolvedData, resolvedDataByKey };
       reportError(undefined, 'timeout');
       viewTimedOut = true;
     }
@@ -368,7 +385,29 @@ async function renderBoundary(
     `[Purity] renderToStream: boundary ${boundaryId} did not converge within ${MAX_PASSES} passes; ` +
       'leaving shell fallback in place.',
   );
-  return '';
+  return { html: '', resolvedData, resolvedDataByKey };
+}
+
+// Per-boundary cache prime — only emitted when at least one keyed resource
+// resolved during the boundary's render. The script id is
+// `__purity_resources_N__` where N matches the boundary's `<!--s:N-->`
+// marker; the client merges all such scripts into the global keyed cache
+// during `hydrate()` priming.
+function buildBoundaryResourceScript(
+  boundaryId: number,
+  keyed: Record<string, unknown>,
+  nonce: string | undefined,
+): string {
+  const keys = Object.keys(keyed);
+  if (keys.length === 0) return '';
+  const json = JSON.stringify({ keyed })
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+  const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
+  return `<script type="application/json" id="__purity_resources_${boundaryId}__"${nonceAttr}>${json}</script>`;
 }
 
 function scriptTag(body: string, nonce: string | undefined): string {

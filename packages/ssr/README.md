@@ -151,7 +151,9 @@ interface RenderToStreamOptions {
 
 **Per-boundary budgets.** Each boundary renders in its own `SSRRenderContext` with its own multi-pass loop and its own `{ timeout }` budget (the option is per-boundary, not per-response). When a boundary's deadline fires the renderer falls back to its `fallback()` HTML for the streamed chunk — siblings continue resolving normally. Use `suspense({ onError })` to observe view / fallback / timeout phases.
 
-**Hydration timing.** The MVP defers `hydrate()` until the stream closes. Selective per-boundary hydration (React-style) is out of scope for now. Per-boundary resource cache emit (Phase 6 second-half, so each streamed boundary's resources prime the client cache) is open work.
+**Per-boundary resource cache.** When a boundary's view resolves any `resource(..., { key })`, the streamed chunk also includes a `<script type="application/json" id="__purity_resources_N__">{"keyed":{…}}</script>` payload alongside the `<template id="purity-s-N">`. On the client, `hydrate()` scans every `script[id^="__purity_resources_"]` and merges the keyed entries before priming — boundary-side keyed resources hit the cache and skip refetching. Positional resources inside a boundary collide with the shell's index space, so streamed-boundary resources should always opt into a key.
+
+**Hydration timing.** The MVP defers `hydrate()` until the stream closes. Selective per-boundary hydration (React-style) is out of scope for now.
 
 ## End-to-end recipes
 
@@ -306,14 +308,14 @@ The `<!--[-->` / `<!--]-->` markers are 14 bytes per slot; the cost is fixed and
 
 ## Common gotchas
 
-| Symptom                                          | Cause                                                                                                                                     |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `[Purity] renderToString timed out after 5000ms` | A `resource()` fetcher hangs. Check the network or set `{ timeout: longer }`.                                                             |
-| `did not converge within 10 passes`              | The render creates new resources on every pass. Memoize the resource list or move it out of the render path.                              |
-| Hydration mismatch — `<p>` vs `<div>`            | SSR and client templates disagree. Run with `enableHydrationWarnings()` in dev.                                                           |
-| Streamed boundary refetches its data on hydrate  | Phase 6 second-half (per-boundary resource cache emit) is open work. Use `resource(..., { key })` and prime via shell data when feasible. |
-| `__purity_swap` blocked by CSP                   | Pass `nonce` through both `renderToStream` and your CSP header.                                                                           |
-| Custom Element flickers on hydrate               | Browser doesn't support Declarative Shadow DOM. Pre-2024 browsers fall through to client-render — feature-detect or polyfill.             |
+| Symptom                                          | Cause                                                                                                                                                      |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[Purity] renderToString timed out after 5000ms` | A `resource()` fetcher hangs. Check the network or set `{ timeout: longer }`.                                                                              |
+| `did not converge within 10 passes`              | The render creates new resources on every pass. Memoize the resource list or move it out of the render path.                                               |
+| Hydration mismatch — `<p>` vs `<div>`            | SSR and client templates disagree. Run with `enableHydrationWarnings()` in dev.                                                                            |
+| Streamed boundary refetches its data on hydrate  | The resources inside the boundary's view aren't keyed. Use `resource(..., { key: 'unique-string' })` — only keyed values get cross-boundary cache priming. |
+| `__purity_swap` blocked by CSP                   | Pass `nonce` through both `renderToStream` and your CSP header.                                                                                            |
+| Custom Element flickers on hydrate               | Browser doesn't support Declarative Shadow DOM. Pre-2024 browsers fall through to client-render — feature-detect or polyfill.                              |
 
 ## Decision records
 

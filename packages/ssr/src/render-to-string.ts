@@ -74,6 +74,8 @@ export async function renderToString(
 
   const resolvedData: unknown[] = [];
   const resolvedErrors: unknown[] = [];
+  const resolvedDataByKey: Record<string, unknown> = {};
+  const resolvedErrorsByKey: Record<string, unknown> = {};
 
   let html = '';
   for (let pass = 0; pass < MAX_PASSES; pass++) {
@@ -81,6 +83,8 @@ export async function renderToString(
       pendingPromises: [],
       resolvedData,
       resolvedErrors,
+      resolvedDataByKey,
+      resolvedErrorsByKey,
       resourceCounter: 0,
       suspenseCounter: 0,
     };
@@ -93,8 +97,7 @@ export async function renderToString(
 
     if (ctx.pendingPromises.length === 0) {
       // Quiescent — no pending fetches triggered during this pass.
-      const cache =
-        serialize && resolvedData.length > 0 ? buildResourceScript(resolvedData, nonce) : '';
+      const cache = serialize ? buildResourceScript(resolvedData, resolvedDataByKey, nonce) : '';
       return prefix + html + cache;
     }
 
@@ -134,10 +137,22 @@ export async function renderToString(
 // can't break out of the attribute. Length is left to the caller.
 const NONCE_PATTERN = /^[A-Za-z0-9+/=_-]+$/;
 
-function buildResourceScript(data: unknown[], nonce: string | undefined): string {
+function buildResourceScript(
+  ordered: unknown[],
+  keyed: Record<string, unknown>,
+  nonce: string | undefined,
+): string {
+  const hasOrdered = ordered.length > 0;
+  const hasKeyed = Object.keys(keyed).length > 0;
+  if (!hasOrdered && !hasKeyed) return '';
+  // Backward-compat: when no resource opts into a key, emit the legacy
+  // array shape so existing caches and external consumers reading the
+  // payload format don't break. The new `{ ordered, keyed }` shape kicks
+  // in only when at least one keyed resource exists.
+  const payload = hasKeyed ? { ordered, keyed } : ordered;
   // JSON-encode then defang sequences that would close the script tag early.
   // Mirrors the standard SSR-payload escaping used by React, Vue, etc.
-  const json = JSON.stringify(data)
+  const json = JSON.stringify(payload)
     .replace(/</g, '\\u003c')
     .replace(/>/g, '\\u003e')
     .replace(/&/g, '\\u0026')

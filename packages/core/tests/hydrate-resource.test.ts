@@ -105,3 +105,76 @@ describe('hydrate + resource cache', () => {
     expect(host.textContent).toContain('fetched-2');
   });
 });
+
+describe('hydrate + keyed resource cache', () => {
+  let host: HTMLElement;
+
+  beforeEach(() => {
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    primeHydrationCache([]);
+  });
+
+  it('reads the new { ordered, keyed } payload shape and serves keyed values', async () => {
+    host.innerHTML =
+      '<p><!--[-->primed<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources__">' +
+      '{"ordered":[],"keyed":{"todos":"primed"}}' +
+      '</script>';
+
+    let fetcherCalls = 0;
+    hydrate(host, () => {
+      const r = resource(
+        () => {
+          fetcherCalls++;
+          return Promise.resolve('refetched');
+        },
+        { key: 'todos' },
+      );
+      return html`<p>${() => r() ?? 'loading'}</p>`;
+    });
+    await tick();
+
+    expect(host.textContent).toContain('primed');
+    expect(fetcherCalls).toBeLessThanOrEqual(0);
+  });
+
+  it('matches keyed resources even when conditional resources reorder unkeyed neighbors', async () => {
+    // Stage a payload where the keyed value is preserved by name even
+    // though the ordered array's first slot belongs to a different
+    // (conditional, skipped) resource.
+    host.innerHTML =
+      '<p><!--[-->primed-by-key<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources__">' +
+      '{"ordered":["wrong-pos-0"],"keyed":{"primary":"primed-by-key"}}' +
+      '</script>';
+
+    hydrate(host, () => {
+      // Conditional unkeyed resource — never created on the client; would
+      // shift the auto-index for the keyed one if we relied on positions.
+      const skip = false;
+      if (skip) {
+        resource(() => Promise.resolve('skipped'));
+      }
+      const r = resource(() => Promise.resolve('refetched'), { key: 'primary' });
+      return html`<p>${() => r() ?? 'loading'}</p>`;
+    });
+    await tick();
+
+    expect(host.textContent).toContain('primed-by-key');
+    expect(host.textContent).not.toContain('wrong-pos-0');
+  });
+
+  it('falls back to ordered cache when no key is supplied (legacy path intact)', async () => {
+    host.innerHTML =
+      '<p><!--[-->A<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources__">["A"]</script>';
+
+    hydrate(host, () => {
+      const r = resource(() => Promise.resolve('refetched'));
+      return html`<p>${() => r() ?? '?'}</p>`;
+    });
+    await tick();
+    expect(host.textContent).toContain('A');
+  });
+});

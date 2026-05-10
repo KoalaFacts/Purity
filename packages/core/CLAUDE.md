@@ -83,7 +83,10 @@ const results = resource(
 ```
 
 Options on `resource()` / `lazyResource()`: `initialValue`, `retry` (number or
-`{ count, delay }`), `pollInterval` (ms).
+`{ count, delay }`), `pollInterval` (ms), `key` (stable SSR ↔ hydration
+cache key — pass any unique-per-render string when creation is
+conditional, otherwise the index-based pairing shifts between server
+and client).
 
 ## Template Syntax
 

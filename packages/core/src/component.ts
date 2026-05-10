@@ -347,8 +347,10 @@ function primeResourceHydrationCache(container: Element): void {
     doc.getElementById(RESOURCE_SCRIPT_ID);
   if (!el || el.textContent == null) return;
   try {
-    const data = JSON.parse(el.textContent) as unknown;
-    if (Array.isArray(data)) primeHydrationCache(data);
+    // primeHydrationCache accepts either the legacy array shape (older SSR
+    // output) or the new `{ ordered, keyed }` object shape (when at least
+    // one resource opted into a `key`). Pass the raw parsed value through.
+    primeHydrationCache(JSON.parse(el.textContent) as unknown);
   } catch (err) {
     console.error('[Purity] Failed to parse hydration cache:', err);
   }

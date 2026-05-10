@@ -76,6 +76,14 @@ export {
   type NavigateOptions,
   type RouteMatch,
 } from './router.ts';
+// Server actions — ADR 0012.
+export {
+  findAction,
+  handleAction,
+  type ServerAction,
+  type ServerActionHandler,
+  serverAction,
+} from './server-action.ts';
 
 // Scoped styles
 export { css } from './styles.ts';

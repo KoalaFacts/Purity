@@ -328,6 +328,44 @@ Pattern grammar: literals (`/about`), `:name` captures (`/users/:id`), and `*` s
 
 Not in scope for Phase 1: `<Route>` / `<Routes>` component, link auto-interception, layout nesting, URL search / hash reactivity, file-system route discovery. See ADR 0011's "Explicit non-features" section.
 
+### Server actions (ADR 0012)
+
+Server actions register a `(Request) => Response` handler at a stable URL. `<form action=${action.url} method="POST">` posts to it natively (progressive enhancement); JS apps can `fetch(action.url, …)` against the same URL.
+
+```ts
+// app/save-todo.server.ts
+import { serverAction } from '@purityjs/core';
+
+export const saveTodo = serverAction('/api/save-todo', async (request) => {
+  const data = await request.formData();
+  const text = String(data.get('text') ?? '');
+  if (!text) return new Response('text required', { status: 400 });
+  await db.insert({ text });
+  return Response.redirect(new URL('/', request.url).toString(), 303);
+});
+
+// In a server-rendered component:
+html`<form action=${saveTodo.url} method="POST">
+  <input name="text" />
+  <button>Save</button>
+</form>`;
+
+// In your server entry, before SSR:
+import { handleAction } from '@purityjs/core';
+
+const actionResponse = await handleAction(request);
+if (actionResponse) return actionResponse;
+// …else render the page normally.
+```
+
+| API                          | Returns                     | Behavior                                                           |
+| ---------------------------- | --------------------------- | ------------------------------------------------------------------ |
+| `serverAction(url, handler)` | `{ url, handler }`          | Register at `url`. Last-wins on duplicate. Throws on bad input.    |
+| `findAction(request)`        | `handler \| null`           | Look up handler by `new URL(request.url).pathname`. No invocation. |
+| `handleAction(request)`      | `Promise<Response \| null>` | Find + invoke + await. `null` on no match so caller falls through. |
+
+Phase 1 non-features: no CSRF helper, no auto-serialization, no build-time URL derivation, no client-bundle handler-body stripping. Action handlers must live in server-only modules — keep them under a `*.server.ts` / `server/` naming convention. See ADR 0012's "Explicit non-features" section.
+
 ### Static site generation (ADR 0010)
 
 `renderStatic(options)` pre-renders a list of routes at build time. Composes `renderToString` + `extractHead` + `getRequest()`; returns a `Map<path, html>` plus a per-route errors map. **No filesystem I/O** — the caller writes the files however their runtime prefers.

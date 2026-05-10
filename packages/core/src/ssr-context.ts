@@ -92,6 +92,15 @@ export interface SSRRenderContext {
    * by `renderToString({ extractHead: true })`. ADR 0008.
    */
   head?: string[];
+  /**
+   * The incoming HTTP request that triggered this render. Optional —
+   * passed in via `renderToString({ request })` / `renderToStream({
+   * request })`. User components read it through `getRequest()` to
+   * branch on URL / headers / method / cookies during SSR. Standard
+   * Web Platform `Request` so it works on Node 18+, Bun, Deno,
+   * Cloudflare Workers, and Vercel Edge identically. ADR 0009.
+   */
+  request?: Request;
 }
 
 let currentContext: SSRRenderContext | null = null;

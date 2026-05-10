@@ -262,6 +262,38 @@ Contract:
 - The collected HTML is the **final render pass's** output, so resource-dependent values (`head(ssrHtml\`<title>${() => res()}</title>\`)`) show resolved values, not the loading placeholder.
 - `renderToStream` does **not** consume `head()` calls — the shell flushes before the head accumulator finishes. Stream-friendly head() is a follow-up.
 
+### Request context (ADR 0009)
+
+Pass the incoming `Request` through to components via the `request` option on either render entry. Components read it with `getRequest()`.
+
+```ts
+import { getRequest, head, html } from '@purityjs/core';
+import { renderToString } from '@purityjs/ssr';
+
+function PageHead() {
+  const req = getRequest();
+  if (!req) return; // client render — let the SSR head stand
+
+  const url = new URL(req.url);
+  const canonical = `${url.origin}${url.pathname}`;
+  head(html`<link rel="canonical" href="${canonical}" />`);
+}
+
+// Edge / Bun / Deno / CF Workers — request is already a Request:
+const html = await renderToString(App, { request });
+
+// Node http.createServer — convert IncomingMessage to Request in one line:
+const url = `http://${msg.headers.host}${msg.url}`;
+const request = new Request(url, { method: msg.method, headers: msg.headers as HeadersInit });
+const html = await renderToString(App, { request });
+```
+
+Contract:
+
+- `getRequest()` returns the same `Request` instance on every render pass and inside every `suspense()` boundary's view (`renderToStream` propagates through both shell and per-boundary contexts).
+- On the client (and in tests / ad-hoc renders without a `request` option), `getRequest()` returns `null`. Branch on the result if your component is dual-target.
+- No URL pattern matcher / router is in scope — `getRequest()` exposes the raw request and the user decides how to dispatch.
+
 ### Strict CSP
 
 Generate a nonce per request and pass it through; pair with a `Content-Security-Policy: script-src 'nonce-…'` header so every inline `<script>` we emit (resource cache prime, swap helper, per-boundary swap calls) is allowed under strict CSP.

@@ -67,6 +67,14 @@ export interface RenderToStreamOptions {
    * cleanup at the adapter layer.
    */
   signal?: AbortSignal;
+  /**
+   * The incoming HTTP `Request` that triggered this render. Exposed to
+   * shell + per-boundary components via `getRequest()` so they can read
+   * URL / headers / method / cookies and branch SSR output per-request.
+   * Standard Web Platform `Request` — works on Node 18+, Bun, Deno,
+   * Cloudflare Workers, and Vercel Edge. ADR 0009.
+   */
+  request?: Request;
 }
 
 /**
@@ -93,6 +101,7 @@ export function renderToStream(
     );
   }
   const signal = options.signal;
+  const request = options.request;
 
   const encoder = new TextEncoder();
 
@@ -122,7 +131,7 @@ export function renderToStream(
         // ----- Shell render --------------------------------------------------
         // Multi-pass loop for top-level resources; suspense() defers its
         // view via streamingBoundaries instead of awaiting inline.
-        const shell = await renderShell(component, timeout);
+        const shell = await renderShell(component, timeout, request);
 
         let head = prefix + shell.html;
         if (serialize) {
@@ -139,7 +148,7 @@ export function renderToStream(
         // ----- Boundary chunks ----------------------------------------------
         for (const [id, boundary] of shell.boundaries) {
           if (signal?.aborted) break;
-          const result = await renderBoundary(id, boundary, timeout);
+          const result = await renderBoundary(id, boundary, timeout, request);
           let chunk = `<template id="purity-s-${id}">${result.html}</template>`;
           // Per-boundary resource cache prime (ADR 0006 Phase 6 second-half).
           // Only the keyed map is meaningful across boundaries — the
@@ -190,7 +199,11 @@ interface ShellResult {
   >;
 }
 
-async function renderShell(component: () => unknown, timeout: number): Promise<ShellResult> {
+async function renderShell(
+  component: () => unknown,
+  timeout: number,
+  request: Request | undefined,
+): Promise<ShellResult> {
   const start = Date.now();
   const resolvedData: unknown[] = [];
   const resolvedErrors: unknown[] = [];
@@ -222,6 +235,7 @@ async function renderShell(component: () => unknown, timeout: number): Promise<S
       timedOutBoundaries,
       streamingMode: true,
       streamingBoundaries,
+      request,
     };
     pushSSRRenderContext(ctx);
     try {
@@ -277,6 +291,7 @@ async function renderBoundary(
   boundaryId: number,
   boundary: ShellResult['boundaries'] extends Map<number, infer V> ? V : never,
   timeout: number,
+  request: Request | undefined,
 ): Promise<BoundaryResult> {
   const start = Date.now();
   const resolvedData: unknown[] = [];
@@ -316,6 +331,7 @@ async function renderBoundary(
       boundaryStartTimes,
       boundaryDeadlines,
       timedOutBoundaries,
+      request,
       // Streaming mode is OFF inside a boundary render — nested suspense()
       // calls inside the view render inline. Phase 3 MVP intentionally
       // doesn't recursively stream sub-boundaries; that's a follow-up.

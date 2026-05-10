@@ -44,6 +44,15 @@ export interface RenderToStringOptions {
    * don't call `head()` keep the simpler string return. ADR 0008.
    */
   extractHead?: boolean;
+  /**
+   * The incoming HTTP `Request` that triggered this render. Exposed to
+   * components via `getRequest()` so they can read URL / headers /
+   * method / cookies and branch SSR output per-request. Standard Web
+   * Platform `Request` — works on Node 18+, Bun, Deno, Cloudflare
+   * Workers, and Vercel Edge. Omit for ad-hoc renders that don't
+   * correspond to a real request (static pre-render, tests). ADR 0009.
+   */
+  request?: Request;
 }
 
 /** Return shape for {@link renderToString} when `extractHead: true`. */
@@ -87,6 +96,7 @@ export async function renderToString(
   const prefix = options.doctype ?? '';
   const nonce = options.nonce;
   const extractHead = options.extractHead === true;
+  const request = options.request;
   if (nonce !== undefined && !NONCE_PATTERN.test(nonce)) {
     throw new Error(
       `[Purity] renderToString: invalid CSP nonce. Must match ` +
@@ -122,6 +132,7 @@ export async function renderToString(
       boundaryDeadlines,
       timedOutBoundaries,
       head: [],
+      request,
     };
     pushSSRRenderContext(ctx);
     try {

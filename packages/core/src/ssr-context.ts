@@ -86,6 +86,12 @@ export interface SSRRenderContext {
       onError?: (err: unknown, info: { boundaryId: number; phase: string }) => void;
     }
   >;
+  /**
+   * Accumulator for `head()` calls — each entry is a chunk of HTML to
+   * append to the document `<head>`. Populated during render; consumed
+   * by `renderToString({ extractHead: true })`. ADR 0008.
+   */
+  head?: string[];
 }
 
 let currentContext: SSRRenderContext | null = null;

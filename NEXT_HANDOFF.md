@@ -105,7 +105,7 @@ contract.
 
 - **File-system routing + nested layouts** — no equivalent to SolidStart / SvelteKit / Next App Router.
 - **Server actions / RPC + progressive form enhancement** — Remix/SvelteKit style.
-- **Head / meta tag management** — no `<Title>` / `<Meta>` API; users write the shell HTML by hand.
+- **Head / meta tag management** — _(Phase 1 shipped, see [ADR 0008](docs/decisions/0008-head-meta-management.md))_. `head()` collects HTML during SSR; `renderToString({ extractHead: true })` returns `{ body, head }`. Phase 2 (reactive client-side head element management with dedup, OG/Twitter/JSON-LD helpers) is the natural follow-up; that's when it splits into a dedicated `@purityjs/head` package.
 - **Request context** — components can't read cookies/headers/URL during SSR.
 - **SSG / ISR / PPR** — `renderToString` is the primitive; needs a build-time / per-route driver on top.
 - **DSD fallback for pre-2024 browsers** — out of scope per ADR 0004.

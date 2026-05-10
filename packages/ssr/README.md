@@ -26,11 +26,14 @@ npm install @purityjs/ssr
 | Export                                | Kind     | Purpose                                                                                                                                |
 | ------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `html`                                | function | Server counterpart of `@purityjs/core`'s `html` — returns a branded `SSRHtml` string instead of building DOM. Drop-in API replacement. |
-| `renderToString(component, options?)` | function | Buffered render. Returns `Promise<string>` with `<script id="__purity_resources__">` cache prime appended.                             |
+| `renderToString(component, options?)` | function | Buffered render. Returns `Promise<string>`, or `Promise<{ body, head }>` when `extractHead: true` is set.                              |
 | `renderToStream(component, options?)` | function | Progressive render. Returns `ReadableStream<Uint8Array>` that flushes the shell first, then per-`suspense()` boundary chunks.          |
-| `RenderToStringOptions`               | type     | Options for `renderToString` (timeout, doctype, nonce, serialize toggle).                                                              |
+| `RenderToStringOptions`               | type     | Options for `renderToString` (timeout, doctype, nonce, serialize toggle, extractHead).                                                 |
+| `RenderToStringWithHead`              | type     | `{ body: string; head: string }` — return shape when `extractHead: true`.                                                              |
 | `RenderToStreamOptions`               | type     | Options for `renderToStream` (timeout, doctype, nonce, serialize toggle, AbortSignal).                                                 |
 | `SSRHtml`                             | type     | Branded string `{ __purity_ssr_html__: string }` — emitted by `html` and the `*SSR` control-flow helpers.                              |
+
+`head()` itself is exported from `@purityjs/core` — see [Head / meta tags](#head--meta-tags-adr-0008) below for the call-site pattern.
 
 Every export is re-exported from `@purityjs/ssr`'s root entry. There are no subpaths.
 
@@ -227,6 +230,37 @@ const App = () => html`
 ```
 
 The shell paints with `<aside class="loading">…</aside>` immediately; when `slowData()` resolves the streamed chunk swaps in `<aside>RESOLVED</aside>`.
+
+### Head / meta tags (ADR 0008)
+
+`head(content)` lets a component contribute HTML to the document `<head>` from inside the render tree. `renderToString({ extractHead: true })` surfaces the collected HTML as `{ body, head }` so you can splice it into your shell.
+
+```ts
+import { head, html } from '@purityjs/core';
+import { renderToString, html as ssrHtml } from '@purityjs/ssr';
+
+function PageHead({ title, description }: { title: string; description: string }) {
+  head(ssrHtml`<title>${title}</title>`);
+  head(ssrHtml`<meta name="description" content="${description}">`);
+}
+
+function App() {
+  return ssrHtml`
+    ${PageHead({ title: 'My Page', description: 'Welcome' })}
+    <main><h1>Hi</h1></main>
+  `;
+}
+
+const { body, head: headHtml } = await renderToString(App, { extractHead: true });
+const final = template.replace('<!--head-->', headHtml).replace('<!--ssr-outlet-->', body);
+```
+
+Contract:
+
+- `head()` is **server-only in Phase 1** — it's a no-op on the client. The browser already shows the SSR-rendered `<head>`; reactive client-side head element management lands in a follow-up ADR.
+- `extractHead: false` (the default) preserves the legacy `Promise<string>` return — apps that don't use `head()` are unaffected.
+- The collected HTML is the **final render pass's** output, so resource-dependent values (`head(ssrHtml\`<title>${() => res()}</title>\`)`) show resolved values, not the loading placeholder.
+- `renderToStream` does **not** consume `head()` calls — the shell flushes before the head accumulator finishes. Stream-friendly head() is a follow-up.
 
 ### Strict CSP
 

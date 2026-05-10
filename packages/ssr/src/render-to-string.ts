@@ -36,6 +36,20 @@ export interface RenderToStringOptions {
    * (base64 + URL-safe characters) so it can't escape the attribute.
    */
   nonce?: string;
+  /**
+   * When true, return `{ body, head }` so the caller can splice the
+   * `head()`-collected HTML into the document `<head>` section of their
+   * shell template. The `body` field is identical to the legacy string
+   * return; only the return shape changes. Default false — apps that
+   * don't call `head()` keep the simpler string return. ADR 0008.
+   */
+  extractHead?: boolean;
+}
+
+/** Return shape for {@link renderToString} when `extractHead: true`. */
+export interface RenderToStringWithHead {
+  body: string;
+  head: string;
 }
 
 const DEFAULT_TIMEOUT = 5000;
@@ -56,14 +70,23 @@ const RESOURCE_SCRIPT_ID = '__purity_resources__';
  * });
  * ```
  */
+export function renderToString(
+  component: () => unknown,
+  options: RenderToStringOptions & { extractHead: true },
+): Promise<RenderToStringWithHead>;
+export function renderToString(
+  component: () => unknown,
+  options?: RenderToStringOptions,
+): Promise<string>;
 export async function renderToString(
   component: () => unknown,
   options: RenderToStringOptions = {},
-): Promise<string> {
+): Promise<string | RenderToStringWithHead> {
   const timeout = options.timeout ?? DEFAULT_TIMEOUT;
   const serialize = options.serializeResources ?? true;
   const prefix = options.doctype ?? '';
   const nonce = options.nonce;
+  const extractHead = options.extractHead === true;
   if (nonce !== undefined && !NONCE_PATTERN.test(nonce)) {
     throw new Error(
       `[Purity] renderToString: invalid CSP nonce. Must match ` +
@@ -81,6 +104,9 @@ export async function renderToString(
   const boundaryStartTimes = new Map<number, number>();
   const boundaryDeadlines = new Map<number, number>();
   const timedOutBoundaries = new Set<number>();
+  // head() collector. Reset per pass so later passes don't double-count;
+  // we capture the final pass's value when the render becomes quiescent.
+  let lastHead: string[] | undefined;
 
   let html = '';
   for (let pass = 0; pass < MAX_PASSES; pass++) {
@@ -95,6 +121,7 @@ export async function renderToString(
       boundaryStartTimes,
       boundaryDeadlines,
       timedOutBoundaries,
+      head: [],
     };
     pushSSRRenderContext(ctx);
     try {
@@ -102,11 +129,16 @@ export async function renderToString(
     } finally {
       popSSRRenderContext();
     }
+    lastHead = ctx.head;
 
     if (ctx.pendingPromises.length === 0) {
       // Quiescent — no pending fetches triggered during this pass.
       const cache = serialize ? buildResourceScript(resolvedData, resolvedDataByKey, nonce) : '';
-      return prefix + html + cache;
+      const body = prefix + html + cache;
+      if (extractHead) {
+        return { body, head: (lastHead ?? []).join('') };
+      }
+      return body;
     }
 
     const remaining = timeout - (Date.now() - start);

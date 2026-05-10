@@ -274,9 +274,16 @@ resolved</template><script>__purity_swap(N)</script>` chunk. The
    hydration is left for a follow-up. Per-boundary resource-cache
    serialisation is Phase 6 second-half — boundaries currently refetch
    on the client.
-4. **Edge-runtime adapter examples.** `examples/ssr-stream-cf-workers/`,
-   `examples/ssr-stream-vercel-edge/`, `examples/ssr-stream-deno/`. No
-   adapter code in core.
+4. ✅ **Edge-runtime adapter examples.** Shipped.
+   `examples/ssr-stream-cf-workers/`, `examples/ssr-stream-vercel-edge/`,
+   and `examples/ssr-stream-deno/` each show a single-file edge entry
+   that wires `renderToStream` into the runtime's standard
+   `Request → Response` handler. No adapter code lives in core — all
+   three runtimes already speak `ReadableStream<Uint8Array>`, so the
+   wiring is one `new Response(stream, …)` call. Each example uses
+   `req.signal` so a client disconnect cancels the renderer mid-stream;
+   each README documents CSP nonce propagation and the streaming wire
+   format users should expect to see on the wire.
 5. ✅ **Per-boundary error handling + `onError` hook.** Shipped (a
    subset of full Phase 5 — covers `suspense({ onError })` for view /
    fallback / timeout phases). Per-boundary `__purity_resources__`

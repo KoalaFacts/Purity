@@ -1,0 +1,6 @@
+name = "purity-ssr-stream-cf-workers"
+main = "src/worker.ts"
+# 2024-04-05+ enables ReadableStream / TextEncoder / Web Streams API in
+# the standard Workers compatibility surface (no nodejs_compat flag
+# required for the Purity runtime — it only uses Web Platform APIs).
+compatibility_date = "2024-04-05"

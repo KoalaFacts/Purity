@@ -25,8 +25,7 @@ so the next session can pick up cold.
 ADRs:
 
 - [`0005-non-lossy-hydration.md`](docs/decisions/0005-non-lossy-hydration.md) — Accepted.
-- [`0006-streaming-suspense.md`](docs/decisions/0006-streaming-suspense.md) — Proposed; phases 1, 2, 3, 5, 6
-  shipped; phase 4 (adapter examples) remains.
+- [`0006-streaming-suspense.md`](docs/decisions/0006-streaming-suspense.md) — Proposed; all phases (1, 2, 3, 4, 5, 6) shipped.
 
 ## What's intentionally not done yet
 
@@ -52,23 +51,16 @@ budget.
 
 **Still TODO:**
 
-- **Per-boundary resource cache emit** (Phase 6 second-half). Boundary
-  chunks currently don't carry their resolved resources, so the client
-  refetches inside the boundary's view on hydrate. Plumbing: each
-  boundary's render loop already produces a `resolvedData[]` /
-  `resolvedDataByKey` pair; emit them as a per-boundary
-  `<script id="__purity_resources_N__">` next to the template, then
-  teach `consumeHydrationValue()` to read from the matching id when
-  the hydrator enters the boundary's subtree.
-- **Edge-runtime adapter examples** (`examples/ssr-stream-cf-workers/`,
-  `examples/ssr-stream-vercel-edge/`, `examples/ssr-stream-deno/`).
-  No core changes needed — `ReadableStream<Uint8Array>` is platform-
-  standard. Each example wires the stream into its runtime's
-  `Response`.
 - **Selective hydration timing** — currently hydration waits for the
   stream to close (per ADR). React's per-boundary hydration triggered
   by user interaction is a strictly larger problem (event replay) and
   out of scope for now.
+
+Other ADR 0006 phases are all shipped: Phase 6 second-half
+(per-boundary `__purity_resources_N__` emit, with client-side merging
+in `primeResourceHydrationCache`) and Phase 4 (edge-runtime adapter
+examples for Cloudflare Workers, Vercel Edge, and Deno) both landed
+on this branch.
 
 **Files added/changed for Phase 3:**
 

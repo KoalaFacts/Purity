@@ -1,0 +1,6 @@
+{
+  "name": "purity-ssr-stream-deno",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Reference: serve.ts runs under Deno (`deno run --allow-net serve.ts`). No npm dependencies — the example uses Deno's `npm:` specifier to fetch @purityjs packages directly. This file exists only so the monorepo's `examples/*` workspaces glob recognises the directory."
+}

@@ -4,11 +4,22 @@
 // client bundle; string builder for the SSR bundle).
 //
 // What this example exercises:
+//   - currentPath() + matchRoute() + navigate() router primitives (ADR 0011)
 //   - getRequest() for URL-aware route dispatch (ADR 0009)
 //   - head() for per-route <title> and <meta> (ADR 0008)
 //   - suspense() with a slow keyed resource()
 //   - the standard hydration path (ADR 0005)
-import { component, eachSSR, getRequest, head, html, resource, suspense } from '@purityjs/core';
+import {
+  component,
+  currentPath,
+  eachSSR,
+  head,
+  html,
+  matchRoute,
+  navigate,
+  resource,
+  suspense,
+} from '@purityjs/core';
 
 component<{ count: number }>('demo-counter', ({ count }) => {
   return html`
@@ -19,20 +30,7 @@ component<{ count: number }>('demo-counter', ({ count }) => {
   `;
 });
 
-// --- Route dispatch -------------------------------------------------------
-//
-// One App() function, three routes. We dispatch on `request.url`'s pathname
-// inside the render so every entry point (renderToString / renderToStream /
-// renderStatic / hydrate) goes through identical code. On the client,
-// getRequest() returns null and we fall back to `window.location` so the
-// hydrated page sees the same path the SSR-rendered HTML did.
-
-function pathnameForRender(): string {
-  const req = getRequest();
-  if (req) return new URL(req.url).pathname;
-  if (typeof window !== 'undefined') return window.location.pathname;
-  return '/';
-}
+// --- Route handlers --------------------------------------------------------
 
 function HomePage() {
   head(html`<title>Purity SSR demo — home</title>`);
@@ -42,7 +40,16 @@ function HomePage() {
     <main>
       <h1>Hello from /</h1>
       <demo-counter :count=${42}></demo-counter>
-      <p><a href="/about">→ about</a></p>
+      <p>
+        <a
+          href="/about"
+          @click=${(e: Event) => {
+            e.preventDefault();
+            navigate('/about');
+          }}
+          >→ about</a
+        >
+      </p>
       ${suspense(
         () => {
           const todos = resource(
@@ -69,37 +76,81 @@ function HomePage() {
   `;
 }
 
-function AboutPage() {
+function AboutPage(_match: { params: Record<string, string> }) {
   head(html`<title>About — Purity SSR demo</title>`);
   head(html`<meta name="description" content="About this demo." />`);
-
-  const sourceLabel = getRequest()
-    ? 'rendered on the server'
-    : 'rendered on the client (post-hydration update)';
 
   return html`
     <main>
       <h1>About</h1>
-      <p>This page is ${sourceLabel}.</p>
-      <p><a href="/">← home</a></p>
+      <p>This page uses currentPath() / matchRoute() / navigate().</p>
+      <p>
+        <a
+          href="/"
+          @click=${(e: Event) => {
+            e.preventDefault();
+            navigate('/');
+          }}
+          >← home</a
+        >
+      </p>
     </main>
   `;
 }
 
-function NotFoundPage(path: string) {
+function UserProfilePage(match: { params: Record<string, string> }) {
+  head(html`<title>User ${match.params.id} — Purity SSR demo</title>`);
+  return html`
+    <main>
+      <h1>User profile</h1>
+      <p>User id: <code>${match.params.id}</code></p>
+      <p>
+        <a
+          href="/"
+          @click=${(e: Event) => {
+            e.preventDefault();
+            navigate('/');
+          }}
+          >← home</a
+        >
+      </p>
+    </main>
+  `;
+}
+
+function NotFoundPage() {
+  const path = currentPath();
   head(html`<title>Not found — Purity SSR demo</title>`);
   return html`
     <main>
       <h1>404</h1>
       <p>No route matches <code>${path}</code>.</p>
-      <p><a href="/">← home</a></p>
+      <p>
+        <a
+          href="/"
+          @click=${(e: Event) => {
+            e.preventDefault();
+            navigate('/');
+          }}
+          >← home</a
+        >
+      </p>
     </main>
   `;
 }
 
+// --- Route table -----------------------------------------------------------
+//
+// Plain array of `{ pattern, view }` tuples. Dispatch is one matchRoute()
+// call per entry, in declaration order. First-match wins. Real apps will
+// likely extract this into a tiny helper; the example keeps it inline so
+// every step is visible.
+
 export function App() {
-  const path = pathnameForRender();
-  if (path === '/' || path === '') return HomePage();
-  if (path === '/about') return AboutPage();
-  return NotFoundPage(path);
+  if (matchRoute('/')) return HomePage();
+  const aboutMatch = matchRoute('/about');
+  if (aboutMatch) return AboutPage(aboutMatch);
+  const userMatch = matchRoute('/users/:id');
+  if (userMatch) return UserProfilePage(userMatch);
+  return NotFoundPage();
 }

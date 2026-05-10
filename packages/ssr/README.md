@@ -292,7 +292,41 @@ Contract:
 
 - `getRequest()` returns the same `Request` instance on every render pass and inside every `suspense()` boundary's view (`renderToStream` propagates through both shell and per-boundary contexts).
 - On the client (and in tests / ad-hoc renders without a `request` option), `getRequest()` returns `null`. Branch on the result if your component is dual-target.
-- No URL pattern matcher / router is in scope — `getRequest()` exposes the raw request and the user decides how to dispatch.
+- `getRequest()` exposes the raw request; the [router primitives (ADR 0011)](../../docs/decisions/0011-router-primitives.md) layer dispatch on top — see below.
+
+### Router primitives (ADR 0011)
+
+Three composable functions in `@purityjs/core` close the per-app routing boilerplate without picking a routing convention.
+
+```ts
+import { currentPath, matchRoute, navigate, html } from '@purityjs/core';
+
+function App() {
+  if (matchRoute('/')) return Home();
+  const m = matchRoute('/users/:id');
+  if (m) return UserPage(m.params.id);
+  return NotFound();
+}
+
+html`<a
+  href="/about"
+  @click=${(e) => {
+    e.preventDefault();
+    navigate('/about');
+  }}
+  >About</a
+>`;
+```
+
+| API                            | SSR behavior                                              | Client behavior                                             |
+| ------------------------------ | --------------------------------------------------------- | ----------------------------------------------------------- |
+| `currentPath(): string`        | `new URL(request.url).pathname`, or `'/'` without request | Reactive — tracks `popstate` + `navigate()` updates         |
+| `navigate(href, { replace? })` | No-op                                                     | `pushState` (or `replaceState`) + updates the reactive path |
+| `matchRoute(pattern, path?)`   | Pattern matcher; `path` defaults to `currentPath()`       | Same — reactive when called inside a `watch()` / template   |
+
+Pattern grammar: literals (`/about`), `:name` captures (`/users/:id`), and `*` splat tail (`/blog/*`). Captured `:name` values are URI-decoded. Returns `{ params } | null`.
+
+Not in scope for Phase 1: `<Route>` / `<Routes>` component, link auto-interception, layout nesting, URL search / hash reactivity, file-system route discovery. See ADR 0011's "Explicit non-features" section.
 
 ### Static site generation (ADR 0010)
 

@@ -103,7 +103,7 @@ These aren't really SSR gaps — they're standalone framework features
 that need their own ADR. None of them blocks ADR 0004's "SSR MVP"
 contract.
 
-- **File-system routing + nested layouts** — no equivalent to SolidStart / SvelteKit / Next App Router.
+- **Router primitives** — _(shipped, see [ADR 0011](docs/decisions/0011-router-primitives.md))_. `currentPath()` (reactive, SSR+client parity via `getRequest()`), `navigate(href, { replace? })` (pushState + signal update), `matchRoute(pattern)` (`:param` + `*` splat). 80 LOC of glue, no routing convention. **File-system routing + nested layouts** is the larger follow-up — needs Vite plugin scanning, layout tree, route loaders. Separate ADR when there's demand.
 - **Server actions / RPC + progressive form enhancement** — Remix/SvelteKit style.
 - **Head / meta tag management** — _(Phase 1 shipped, see [ADR 0008](docs/decisions/0008-head-meta-management.md))_. `head()` collects HTML during SSR; `renderToString({ extractHead: true })` returns `{ body, head }`. Phase 2 (reactive client-side head element management with dedup, OG/Twitter/JSON-LD helpers) is the natural follow-up; that's when it splits into a dedicated `@purityjs/head` package.
 - **Request context** — _(shipped, see [ADR 0009](docs/decisions/0009-request-context.md))_. `getRequest()` reads the incoming `Request` during SSR; `renderToString` / `renderToStream` accept it via the `request` option. Standard Web Platform `Request` so it works identically on every runtime.

@@ -68,6 +68,14 @@ export { __purity_swap, PURITY_SWAP_SOURCE } from './__purity_swap.ts';
 export { head } from './head.ts';
 // Request context — ADR 0009.
 export { getRequest } from './request-context.ts';
+// Router primitives — ADR 0011.
+export {
+  currentPath,
+  matchRoute,
+  navigate,
+  type NavigateOptions,
+  type RouteMatch,
+} from './router.ts';
 
 // Scoped styles
 export { css } from './styles.ts';

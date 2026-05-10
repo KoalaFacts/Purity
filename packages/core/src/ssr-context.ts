@@ -41,6 +41,25 @@ export interface SSRRenderContext {
    * each boundary by its position-stable ID.
    */
   suspenseCounter: number;
+  /**
+   * Wall-clock timestamp (ms) at which each boundary was first
+   * encountered. Survives across passes so deadlines stay anchored to
+   * pass-1's start, not the pass currently running.
+   */
+  boundaryStartTimes: Map<number, number>;
+  /**
+   * Boundary deadlines (ms epoch). Populated when `suspense()` receives
+   * a `{ timeout }` option. The outer renderToString await loop races
+   * the pending promises against the soonest deadline and marks the
+   * boundary timed-out when its deadline fires first.
+   */
+  boundaryDeadlines: Map<number, number>;
+  /**
+   * Boundary IDs whose deadline has passed. The next pass's
+   * `suspense()` call detects membership and renders the fallback
+   * instead of the view.
+   */
+  timedOutBoundaries: Set<number>;
 }
 
 let currentContext: SSRRenderContext | null = null;

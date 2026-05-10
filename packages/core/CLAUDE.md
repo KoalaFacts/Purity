@@ -29,7 +29,7 @@ match(sourceFn, cases)       // pattern matching
 when(condFn, thenFn, elseFn?) // boolean conditional
 each(listFn, mapFn, keyFn?)  // list rendering — mapFn receives item as accessor: (item: () => T, i: number)
 list(tag, listAccessor, textOrOptions, keyFn?) // leaner list of single-tag rows
-suspense(view, fallback)     // SSR error-isolation boundary; emits `<!--s:N--><!--/s:N-->` markers (ADR 0006 Phase 1)
+suspense(view, fallback, { timeout? }) // SSR error/timeout isolation boundary — emits `<!--s:N--><!--/s:N-->` markers (ADR 0006 Phase 1+2)
 ```
 
 ## Hydration

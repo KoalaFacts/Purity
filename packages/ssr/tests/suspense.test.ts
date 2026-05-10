@@ -8,7 +8,7 @@
 //     transparent to the inner template's structural walk
 //   * per-render `suspenseCounter` reset on each renderToString pass
 
-import { html as clientHtml, hydrate, state, suspense } from '@purityjs/core';
+import { html as clientHtml, hydrate, resource, state, suspense } from '@purityjs/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { html as ssrHtml, renderToString } from '../src/index.ts';
 
@@ -170,6 +170,80 @@ describe('suspense() — client + hydration', () => {
     text('world');
     await Promise.resolve();
     expect(host.textContent).toBe('world');
+  });
+
+  it('renders fallback when the boundary deadline fires (Phase 2)', async () => {
+    // A slow resource (200ms) inside a boundary with a 30ms timeout.
+    // The boundary should give up after 30ms and emit the fallback.
+    // The outer renderToString continues without hanging on the slow promise.
+    const out = await renderToString(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            const r = resource(
+              () => new Promise((resolve) => setTimeout(() => resolve('slow'), 200)),
+            );
+            return ssrHtml`<aside>${() => r() ?? '...'}</aside>`;
+          },
+          () => ssrHtml`<aside class="loading">loading</aside>`,
+          { timeout: 30 },
+        )}</main>`,
+    );
+    expect(out).toContain('<!--s:1-->');
+    expect(out).toContain('<aside class="loading">loading</aside>');
+    expect(out).not.toContain('<aside><!--[-->slow<!--]--></aside>');
+    expect(out).toContain('<!--/s:1-->');
+  });
+
+  it('renders the view normally when the boundary resolves before its deadline', async () => {
+    // 50ms resource with a 1000ms deadline — view should win.
+    const out = await renderToString(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            const r = resource(
+              () => new Promise((resolve) => setTimeout(() => resolve('fast'), 10)),
+            );
+            return ssrHtml`<aside>${() => r() ?? '...'}</aside>`;
+          },
+          () => ssrHtml`<aside>fb</aside>`,
+          { timeout: 1000 },
+        )}</main>`,
+    );
+    expect(out).toContain('<aside><!--[-->fast<!--]--></aside>');
+    expect(out).not.toContain('<aside>fb</aside>');
+  });
+
+  it('isolates timeouts per boundary — fast neighbor still resolves', async () => {
+    // Use keyed resources so a timed-out neighbor's skipped view() can't
+    // shift creation-order indices for the surviving boundary's resource.
+    const out = await renderToString(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            const slow = resource(
+              () => new Promise((resolve) => setTimeout(() => resolve('slow'), 200)),
+              { key: 'slow' },
+            );
+            return ssrHtml`<aside>${() => slow() ?? '...'}</aside>`;
+          },
+          () => ssrHtml`<aside class="loading">SLOW-FB</aside>`,
+          { timeout: 30 },
+        )}${suspense(
+          () => {
+            const fast = resource(
+              () => new Promise((resolve) => setTimeout(() => resolve('fast'), 10)),
+              { key: 'fast' },
+            );
+            return ssrHtml`<aside>${() => fast() ?? '...'}</aside>`;
+          },
+          () => ssrHtml`<aside>FAST-FB</aside>`,
+          { timeout: 1000 },
+        )}</main>`,
+    );
+    // First boundary: fallback. Second boundary: view.
+    expect(out).toContain('<aside class="loading">SLOW-FB</aside>');
+    expect(out).toContain('<aside><!--[-->fast<!--]--></aside>');
   });
 
   it('hydrates nested suspense boundaries with marker stripping at each level', async () => {

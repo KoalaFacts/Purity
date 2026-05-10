@@ -245,13 +245,18 @@ Phases, each landable as its own PR:
    markers (N from a per-render counter on `SSRRenderContext`), and the
    client `inflateDeferred` strips those markers before walking the
    inner template. Validates the marker grammar end-to-end.
-2. **Per-boundary `SSRRenderContext` scoping.** Refactor
-   `pendingPromises` from a single set to a stack per boundary. Lets
-   `renderToString` resolve boundaries independently and emit the
-   fallback when a boundary's resources don't settle within its
-   per-boundary timeout. No user-visible change at the API level — the
-   `suspense()` shape stays the same; only the resolution semantics
-   tighten.
+2. ✅ **Per-boundary timeouts.** Shipped. `suspense(view, fallback,
+{ timeout })` records a wall-clock deadline anchored to the first
+   pass that encounters the boundary; the renderer's await loop races
+   pending promises against the soonest deadline and marks the
+   boundary timed-out when its deadline fires first. The next pass
+   sees the mark and emits the fallback. Sibling boundaries continue
+   resolving normally, so a slow region can't hang the rest of the
+   page. Implementation note: this Phase took the simpler path of
+   sharing one global pendingPromises set and racing per-boundary
+   deadlines against it, rather than refactoring to a per-boundary
+   pending stack — outcome is equivalent for the buffered render
+   model and far less invasive.
 3. **`renderToStream` MVP.** New server entry, emits the shell + a
    single chunk per resolved boundary. `__purity_swap` injected inline.
    Hydration deferred until stream close.

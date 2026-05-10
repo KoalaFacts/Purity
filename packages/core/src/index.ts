@@ -7,6 +7,7 @@ export { disableHydrationWarnings, enableHydrationWarnings, html } from './compi
 export type { ComponentFn, MountResult } from './component.ts';
 // Lifecycle (3 hooks + error) + hydrate
 export { hydrate, mount, onDestroy, onDispose, onError, onMount } from './component.ts';
+export type { SuspenseOptions } from './control.ts';
 // Control flow
 export {
   each,

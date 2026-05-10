@@ -76,6 +76,11 @@ export async function renderToString(
   const resolvedErrors: unknown[] = [];
   const resolvedDataByKey: Record<string, unknown> = {};
   const resolvedErrorsByKey: Record<string, unknown> = {};
+  // Boundary tracking — shared across passes so deadlines and timed-out
+  // marks survive the render loop. ADR 0006 Phase 2.
+  const boundaryStartTimes = new Map<number, number>();
+  const boundaryDeadlines = new Map<number, number>();
+  const timedOutBoundaries = new Set<number>();
 
   let html = '';
   for (let pass = 0; pass < MAX_PASSES; pass++) {
@@ -87,6 +92,9 @@ export async function renderToString(
       resolvedErrorsByKey,
       resourceCounter: 0,
       suspenseCounter: 0,
+      boundaryStartTimes,
+      boundaryDeadlines,
+      timedOutBoundaries,
     };
     pushSSRRenderContext(ctx);
     try {
@@ -109,21 +117,50 @@ export async function renderToString(
       );
     }
 
+    // Find the soonest live boundary deadline. If it falls inside the
+    // remaining global budget, we race against it and mark the boundary
+    // timed-out when it fires — letting the next pass render its
+    // fallback while the rest of the page keeps progressing.
+    const now = Date.now();
+    let nearestId = -1;
+    let nearestDeadline = Number.POSITIVE_INFINITY;
+    for (const [id, deadline] of boundaryDeadlines) {
+      if (timedOutBoundaries.has(id)) continue;
+      if (deadline < nearestDeadline) {
+        nearestDeadline = deadline;
+        nearestId = id;
+      }
+    }
+    const boundaryWaitMs = nearestId >= 0 ? Math.max(0, nearestDeadline - now) : Infinity;
+    const waitMs = Math.min(remaining, boundaryWaitMs);
+
+    let raceResult: 'settled' | 'boundary' | 'global' = 'settled';
     await Promise.race([
-      Promise.all(ctx.pendingPromises),
-      new Promise<void>((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new Error(
-                `[Purity] renderToString timed out after ${timeout}ms while ` +
-                  'awaiting pending resources.',
-              ),
-            ),
-          remaining,
-        ),
-      ),
+      Promise.all(ctx.pendingPromises).then(() => {
+        raceResult = 'settled';
+      }),
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          raceResult = waitMs >= remaining ? 'global' : 'boundary';
+          resolve();
+        }, waitMs);
+      }),
     ]);
+
+    if (raceResult === 'global') {
+      throw new Error(
+        `[Purity] renderToString timed out after ${timeout}ms while ` +
+          'awaiting pending resources.',
+      );
+    }
+    if (raceResult === 'boundary' && nearestId >= 0) {
+      timedOutBoundaries.add(nearestId);
+      // The next pass will render this boundary's fallback. The pending
+      // promise it owns is left running; resources have their own
+      // AbortControllers but we don't have a per-boundary handle to
+      // cancel them, so they finish in the background and the resolved
+      // values are simply ignored.
+    }
   }
 
   throw new Error(

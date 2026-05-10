@@ -1063,22 +1063,41 @@ function escapeAttrLocal(s: string): string {
 // share the outer renderToString resource-resolution loop.
 // ---------------------------------------------------------------------------
 
+/** Per-boundary options for `suspense()`. */
+export interface SuspenseOptions {
+  /**
+   * Maximum ms `view()` may take before the boundary surrenders to its
+   * fallback. Measured from the first SSR pass that encounters the
+   * boundary. When unset, the boundary is bound only by the outer
+   * renderToString timeout. The renderer races pending promises against
+   * the soonest deadline; when a boundary times out the next pass
+   * renders the fallback instead of the view.
+   */
+  timeout?: number;
+}
+
 /**
- * Render `view()` with synchronous error isolation. On error, render
- * `fallback()` instead. In SSR mode, the rendered region is wrapped in
- * `<!--s:N--><!--/s:N-->` boundary markers; on the client, this is just
- * `view()` (the fallback is unused — use `when()` against your resource's
- * `loading()` accessor for client loading states).
+ * Render `view()` with synchronous error isolation and an optional
+ * per-boundary timeout. On error or timeout, render `fallback()` instead.
+ * In SSR mode the rendered region is wrapped in `<!--s:N--><!--/s:N-->`
+ * boundary markers; on the client this is just `view()` (the fallback is
+ * unused — use `when()` against your resource's `loading()` accessor for
+ * client loading states).
  *
  * @example
  * ```ts
  * suspense(
  *   () => html`<aside>${() => slowResource()}</aside>`,
  *   () => html`<aside class="loading">…</aside>`,
+ *   { timeout: 1000 },
  * )
  * ```
  */
-export function suspense<T>(view: () => T, fallback: () => T): T | SSRHtml {
+export function suspense<T>(
+  view: () => T,
+  fallback: () => T,
+  options?: SuspenseOptions,
+): T | SSRHtml {
   const ssrCtx = getSSRRenderContext();
   if (!ssrCtx) {
     // Client path — render the view; the fallback is forward-compat for
@@ -1087,24 +1106,49 @@ export function suspense<T>(view: () => T, fallback: () => T): T | SSRHtml {
     return view();
   }
   const id = ++ssrCtx.suspenseCounter;
+
+  // Record the first-encounter time so deadlines stay anchored to pass 1
+  // even when later passes re-execute view() with resolved data. If a
+  // timeout is supplied, register the deadline once.
+  if (!ssrCtx.boundaryStartTimes.has(id)) {
+    const start = Date.now();
+    ssrCtx.boundaryStartTimes.set(id, start);
+    if (options?.timeout !== undefined) {
+      ssrCtx.boundaryDeadlines.set(id, start + options.timeout);
+    }
+  }
+
+  const isTimedOut = ssrCtx.timedOutBoundaries.has(id);
   let body: string;
-  try {
-    body = valueToHtml(view());
-  } catch (err) {
-    console.error(
-      `[Purity] suspense() view threw during SSR (boundary ${id}); rendering fallback:`,
-      err,
-    );
+  if (isTimedOut) {
     try {
       body = valueToHtml(fallback());
     } catch (fallbackErr) {
-      // Fallback also threw — emit an empty boundary rather than blowing
-      // up the entire render. The error logs above identify the boundary.
       console.error(
-        `[Purity] suspense() fallback also threw (boundary ${id}); emitting empty boundary:`,
+        `[Purity] suspense() fallback threw after timeout (boundary ${id}); emitting empty boundary:`,
         fallbackErr,
       );
       body = '';
+    }
+  } else {
+    try {
+      body = valueToHtml(view());
+    } catch (err) {
+      console.error(
+        `[Purity] suspense() view threw during SSR (boundary ${id}); rendering fallback:`,
+        err,
+      );
+      try {
+        body = valueToHtml(fallback());
+      } catch (fallbackErr) {
+        // Fallback also threw — emit an empty boundary rather than blowing
+        // up the entire render. The error logs above identify the boundary.
+        console.error(
+          `[Purity] suspense() fallback also threw (boundary ${id}); emitting empty boundary:`,
+          fallbackErr,
+        );
+        body = '';
+      }
     }
   }
   return markSSRHtml(`<!--s:${id}-->${body}<!--/s:${id}-->`);

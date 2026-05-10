@@ -263,7 +263,7 @@ export function generateHydrate(ast: FragmentNode): string {
   ast = condenseWhitespace(ast) as FragmentNode;
 
   if (!hasDynamic(ast)) {
-    return 'function(_v,_w,_r,_i){return _r;}';
+    return 'function(_v,_w,_r,_i,_c){return _r;}';
   }
 
   const ctx: HydrateCtx = { setup: [], reactive: [], id: 0 };
@@ -281,8 +281,9 @@ export function generateHydrate(ast: FragmentNode): string {
   // All identifiers spliced into `body` are framework-internal counters
   // (_c0, _el<id>, _open<id>, …) or have been validated/JSON.stringify'd by
   // the genAttrBinding / inline emitters used here. `_i` is the runtime
-  // inflateDeferred helper threaded through by compile.ts.
-  return `function(_v,_w,_r,_i){${body}}`;
+  // inflateDeferred helper and `_c` the optional cursor-check fn, both
+  // threaded through by compile.ts.
+  return `function(_v,_w,_r,_i,_c){${body}}`;
 }
 
 export function generateHydrateModule(ast: FragmentNode): string {
@@ -297,10 +298,12 @@ function emitHydrateChildren(children: ASTNode[], ctx: HydrateCtx, cursor: strin
 
 function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
   switch (node.type) {
-    case 'text':
+    case 'text': {
+      ctx.setup.push(`_c&&_c(${cursor},'text');`, `${cursor}=${cursor}.nextSibling;`);
+      return;
+    }
     case 'comment': {
-      // Static text/comment occupies one SSR DOM node — skip past it.
-      ctx.setup.push(`${cursor}=${cursor}.nextSibling;`);
+      ctx.setup.push(`_c&&_c(${cursor},'comment');`, `${cursor}=${cursor}.nextSibling;`);
       return;
     }
 
@@ -318,6 +321,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
       // Cursor is on the open marker `<!--[-->`. Walk siblings until we hit
       // the matching `<!--]-->`, collecting content nodes (may be empty).
       ctx.setup.push(
+        `_c&&_c(${cursor},'open');`,
         `var ${open}=${cursor};`,
         `var ${cont}=[];`,
         `var ${w}=${open}.nextSibling;`,
@@ -373,6 +377,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
       assertSafeName(node.tag, 'tag');
       const id = ctx.id++;
       const el = `_el${id}`;
+      ctx.setup.push(`_c&&_c(${cursor},${JSON.stringify(node.tag.toLowerCase())});`);
       ctx.setup.push(`var ${el}=${cursor};`);
 
       // Apply attribute bindings — events install listeners; dynamic/prop/

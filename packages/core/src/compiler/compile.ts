@@ -7,7 +7,14 @@
 
 import { watch } from '../signals.ts';
 import { generate, generateHydrate } from './codegen.ts';
-import { type DeferredTemplate, isDeferred, isHydrating, makeDeferred } from './hydrate-runtime.ts';
+import {
+  checkHydrationCursor,
+  type DeferredTemplate,
+  hydrationWarningsEnabled,
+  isDeferred,
+  isHydrating,
+  makeDeferred,
+} from './hydrate-runtime.ts';
 import { parse } from './parser.ts';
 
 type CompiledFn = (
@@ -20,6 +27,7 @@ type HydrateFn = (
   watch: typeof import('../signals.ts').watch,
   root: Node,
   inflate: (deferred: DeferredTemplate, target: Node) => void,
+  check: ((node: Node | null, expected: string) => void) | undefined,
 ) => Node;
 
 interface CacheEntry {
@@ -126,7 +134,8 @@ export function html(
 export function inflateDeferred(deferred: DeferredTemplate, target: Node): Node {
   const entry = getOrInitEntry(deferred.strings);
   const fn = ensureHydrate(entry, deferred.strings);
-  return fn(deferred.values, watch, target, inflateDeferred);
+  const check = hydrationWarningsEnabled() ? checkHydrationCursor : undefined;
+  return fn(deferred.values, watch, target, inflateDeferred, check);
 }
 
 /**
@@ -146,5 +155,12 @@ export { watch as _watch } from '../signals.ts';
 // Re-export hydration helpers for callers (hydrate(), Custom Element
 // connectedCallback) that need to toggle the mode without importing the
 // hydrate-runtime module directly.
-export { enterHydration, exitHydration, isDeferred, isHydrating } from './hydrate-runtime.ts';
+export {
+  disableHydrationWarnings,
+  enableHydrationWarnings,
+  enterHydration,
+  exitHydration,
+  isDeferred,
+  isHydrating,
+} from './hydrate-runtime.ts';
 export type { DeferredTemplate } from './hydrate-runtime.ts';

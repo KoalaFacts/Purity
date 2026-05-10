@@ -10,8 +10,12 @@ export {
 export { html, inflateDeferred } from './compile.ts';
 export type { DeferredTemplate } from './hydrate-runtime.ts';
 export {
+  checkHydrationCursor,
+  disableHydrationWarnings,
+  enableHydrationWarnings,
   enterHydration,
   exitHydration,
+  hydrationWarningsEnabled,
   isDeferred,
   isHydrating,
   makeDeferred,

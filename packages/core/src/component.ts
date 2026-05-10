@@ -278,7 +278,21 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     // gives us a clean handle (frag.childNodes) for ctx.nodes after.
     const frag = container.ownerDocument.createDocumentFragment();
     while (container.firstChild) frag.appendChild(container.firstChild);
-    inflateDeferred(view, frag);
+    try {
+      inflateDeferred(view, frag);
+    } catch (err) {
+      // The walker hit a structural mismatch (cursor went off the rails on
+      // null sibling / wrong nodeType). The opt-in mismatch warnings would
+      // already have logged the divergence; here we recover by dropping the
+      // SSR DOM and re-rendering fresh so the page keeps working.
+      console.error('[Purity] Hydration walk failed; falling back to fresh mount:', err);
+      if (ctx.parent?.children) {
+        const idx = ctx.parent.children.indexOf(ctx);
+        if (idx !== -1) ctx.parent.children.splice(idx, 1);
+      }
+      while (container.firstChild) container.removeChild(container.firstChild);
+      return mount(component, container);
+    }
     ctx.nodes = Array.from(frag.childNodes);
     container.appendChild(frag);
   } else if (view instanceof Node) {

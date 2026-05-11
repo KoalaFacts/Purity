@@ -1,26 +1,24 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Twenty-eight
-commits, eighteen new ADRs (0007–0024), 900 tests passing** across the
-three publishable packages. Latest iteration shipped ADR 0024 —
-SSR-aware `lazyResource.fetch()`. When called inside a server render
-pass with a `key` option, `.fetch()` now bypasses the argsState/watch
-plumbing, fires the fetcher synchronously, and registers the promise
-with `ssrCtx.pendingPromises`. Pass 2 reads the cached value through
-the underlying `resource()`'s existing SSR multipass path. **Closes
-gap 2 from the manifest migration**: `examples/ssr/src/app.ts` no
-longer needs static imports — the manifest's lazy `importFn()` works
-end-to-end on both server and client, loaders fire on the server, and
-the SSR HTML ships with loader-fetched data inlined.
+pass starting from the SSR-MVP follow-up gap list. **Twenty-nine
+commits, nineteen new ADRs (0007–0025), 908 tests passing** across the
+three publishable packages. Latest iteration shipped ADR 0025 —
+`asyncRoute(entry, params)` and `asyncNotFound(notFound)` runtime
+composers in `@purityjs/core`. The helpers wrap the lazyResource +
+when() + reduceRight + loader-await + error-boundary pipeline that
+ADRs 0019-0024 made possible into single function calls. The example
+app shrank from 128 lines to **30 lines** — the manifest-driven app
+pattern is now a documented framework primitive instead of a buried
+user-land composer.
 
 ## Test count by package (current)
 
 ```
-core         579 passing  (26 files)
+core         587 passing  (27 files)
 ssr          145 passing  (11 files)
 vite-plugin  176 passing  ( 9 files)
-total        900
+total        908
 ```
 
 ## ADRs accepted on this branch
@@ -50,6 +48,7 @@ rejected alternatives.
 | 0022 | [Data loaders — `loader` named export per route + layout](docs/decisions/0022-data-loaders.md)              | `hasLoader?: true` flag on routes + layouts via regex source detection. Loader signature documented; data plumbing user-land.                      |
 | 0023 | [Isomorphic conditional primitives](docs/decisions/0023-isomorphic-control-flow.md)                         | `when()`/`match()`/`each()` auto-detect the SSR render context and dispatch to the `*SSR` variants. Existing names keep working.                   |
 | 0024 | [SSR-aware `lazyResource.fetch()`](docs/decisions/0024-ssr-aware-lazy-resource.md)                          | `.fetch()` in an SSR context with a `key` option fires synchronously, registers the promise with `pendingPromises`, blocks the multipass renderer. |
+| 0025 | [`asyncRoute` runtime composer](docs/decisions/0025-async-route-composer.md)                                | `asyncRoute(entry, params)` + `asyncNotFound(notFound)` collapse the manifest-driven composer into one helper call per match.                      |
 
 ADR 0006 is `Status: Proposed` historically but every named phase is
 now shipped — promote to `Accepted` next time anyone touches it.
@@ -65,6 +64,7 @@ now shipped — promote to `Accepted` next time anyone touches it.
 - **Router**: `currentHash`, `currentPath`, `currentSearch`, `matchRoute`, `navigate`, `onNavigate`, plus the `NavigateListener` / `NavigateOptions` / `RouteMatch` types (ADRs 0011 + 0014 + 0015).
 - **Router opt-ins**: `interceptLinks`, `manageNavFocus`, `manageNavScroll`, `manageNavTransitions`, plus `*Options` types (ADRs 0013 + 0015 + 0016 + 0017).
 - **Server actions**: `serverAction`, `findAction`, `handleAction`, plus `ServerAction` / `ServerActionHandler` types (ADR 0012).
+- **Async-route composer**: `asyncRoute`, `asyncNotFound`, plus `AsyncRouteEntry` / `AsyncNotFoundEntry` / `AsyncRouteOptions` / `LoaderContext` types (ADR 0025).
 
 `@purityjs/ssr` exports:
 
@@ -91,7 +91,8 @@ has the full API tour with copy-pasteable examples for every entry.
 - `packages/vite-plugin/src/routes.ts` — pure helpers: filename → pattern, sort, layout chain + error boundary + 404 discovery, loader detection, manifest codegen (ADRs 0019 + 0020 + 0021 + 0022).
 - `examples/ssr/src/{app,entry.client,entry.server}.ts` — every primitive in one app.
 - `examples/ssr-stream-{cf-workers,vercel-edge,deno}/` — minimal edge-runtime templates.
-- `examples/ssr/src/pages/` — worked file-system-routing example: `index.ts` (with `loader`), `about.ts`, `users/[id].ts`, `_layout.ts`, `_404.ts`, `_error.ts`. The composer in `examples/ssr/src/app.ts` consumes the virtual `purity:routes` manifest, walks every route's layout chain via `reduceRight`, invokes loaders in parallel via `Promise.all`, and hooks into the SSR multipass cycle via `lazyResource({ key })` — full end-to-end exercise of ADRs 0019-0024 with no static-import workaround.
+- `examples/ssr/src/pages/` — worked file-system-routing example: `index.ts` (with `loader`), `about.ts`, `users/[id].ts`, `_layout.ts`, `_404.ts`, `_error.ts`. The composer in `examples/ssr/src/app.ts` is now **30 lines** — one `asyncRoute(entry, m.params)` call per match, falling through to `asyncNotFound(notFound!)`. End-to-end exercise of ADRs 0019-0025.
+- `packages/core/src/async-route.ts` — `asyncRoute` / `asyncNotFound` runtime composer (ADR 0025). Wraps the manifest-driven view-assembly pipeline.
 
 ## Migration findings — closed by this branch
 
@@ -221,34 +222,49 @@ user interaction needs event replay; a strictly larger problem.
 
 ## Recommended next sprint
 
-Both manifest-migration gaps are closed. The file-system-routing
-convention (ADRs 0019-0024) is now feature-complete in the SSR
-path AND has a working end-to-end demo. Two natural follow-ups:
+ADR 0025 closed Path C. The file-system-routing convention (ADRs
+0019-0025) is now feature-complete with a documented runtime
+composer + a 30-line worked example. Natural follow-ups in
+roughly priority order:
 
-**Path C — runtime composer helper `asyncRoute(entry, params)`**.
-The current `examples/ssr/src/app.ts` `loadStack` function is
-~60 lines and every app that wants the manifest will re-implement
-it. A built-in `asyncRoute(entry, params)` collapses the boilerplate
-into one call. Outline:
+**Path E — `loaderData()` context primitive (ADR 0026).** ADRs
+0022 + 0025 thread loader data into the component as the second
+positional arg (`(params, data) => view` for routes; `(children,
+data) => view` for layouts). That's clear but locks the component
+shape. A `loaderData<T>()` accessor would let the component read
+its data from a per-render slot — keeps signatures stable, lets
+loaders evolve. Outline:
 
-1. Decide the helper's shape. Likely
-   `asyncRoute(entry, params): unknown` — returns the view-or-fallback
-   directly, internally managing the `lazyResource({ key })` + when()
-   plumbing. Layout chain + error boundary handling stays inside.
-2. Decide loader-data plumbing. Phase 1 stays with the positional
-   arg shape from `examples/ssr/src/app.ts`. Phase 2 (separate ADR)
-   ships a `loaderData()` accessor primitive that reads from a
-   per-render context slot.
-3. Draft ADR 0025 + implement + migrate the example to use it
-   (shrinks `app.ts` to ~20 lines + makes the convention apparent).
-4. Tests + handoff.
+1. Decide the slot shape. A `WeakMap<routeKey, data>`? A
+   render-scoped context (cleared per render)? The latter matches
+   how `getRequest()` (ADR 0009) works.
+2. Decide whether to also expose `layoutData(filePath)` for
+   reading a parent layout's loader output. Composes with parallel
+   loader execution.
+3. Draft ADR 0026 + implement in `@purityjs/core` next to
+   `async-route.ts`.
+4. Migrate the example's home page to use `loaderData()` instead
+   of the positional arg. Update `asyncRoute` to populate the slot
+   before invoking the view.
+5. Tests + handoff.
 
-**Path D — promote ADR 0006 to Accepted and pick a smaller-items
-follow-up.** All ADR 0006 phases are shipped; the status is stale.
-Then pick a per-ADR follow-up from the list below (most are
-one-iteration items).
+**Path F — promote ADR 0006 to Accepted and pick a smaller-items
+follow-up.** All ADR 0006 phases shipped; the status string is
+stale. Smaller per-ADR follow-ups (smart serverAction body strip,
+per-directory `_404`, build-time route table emit, typed route
+params, hover-prefetch on links, configureNavigation
+consolidation) are each one-iteration items.
 
-Path C is the right pick if you have a full session — it turns the
-example's hand-rolled composer into a documented framework
-primitive. Path D is the right pick if time is tight or you want
-to refine an existing area.
+**Path G — ship the streaming-SSR adapter examples for the file-
+system manifest.** ADR 0006 adapter examples (`ssr-stream-cf-workers/`,
+`ssr-stream-vercel-edge/`, `ssr-stream-deno/`) predate the manifest
+
+- `asyncRoute()`. Migrate one to use the manifest pattern + verify
+  the streaming pipeline works with `asyncRoute`'s lazyResource
+  registration.
+
+Path E is the right pick if you have a full session — it closes
+the last loose end from ADR 0022 ("component-data plumbing is
+user-land in Phase 1"). Path F is right if time is tight; Path G
+if you want to validate the streaming pipeline against the
+manifest convention.

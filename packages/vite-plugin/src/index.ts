@@ -135,14 +135,14 @@ export function purity(options?: PurityPluginOptions) {
       // routesAbsDir is set in configResolved (always called before load).
       const dir = routesAbsDir as string;
       const files = listRouteFiles(dir);
-      const entries = buildRouteManifest(files, routesExt, (pattern, kept, dropped) => {
+      const manifest = buildRouteManifest(files, routesExt, (pattern, kept, dropped) => {
         const msg =
           `[purity] route conflict: pattern ${JSON.stringify(pattern)} resolved by ` +
           `${JSON.stringify(kept)}; dropping ${JSON.stringify(dropped)}.`;
         if (this && typeof this.warn === 'function') this.warn(msg);
         else console.warn(msg);
       });
-      return generateRouteManifestSource(entries, (filePath) => posix.join(dir, filePath));
+      return generateRouteManifestSource(manifest, (filePath) => posix.join(dir, filePath));
     },
 
     handleHotUpdate(this: any, ctx: { file: string; server: { moduleGraph: any } }) {

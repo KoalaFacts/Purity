@@ -1,16 +1,17 @@
 // ---------------------------------------------------------------------------
-// File-system routing — manifest generation (ADR 0019 + ADR 0020).
+// File-system routing — manifest generation
+// (ADR 0019 + ADR 0020 + ADR 0021).
 //
 // Pure helpers: filename → route pattern, route ordering, layout chain
-// discovery, virtual-module source codegen. The Vite-side glue (resolveId
-// / load / handleHotUpdate) lives in index.ts and calls into this module
-// so the route-derivation logic is unit-testable without touching the
-// filesystem.
+// discovery, error-boundary + 404 discovery, virtual-module source
+// codegen. The Vite-side glue (resolveId / load / handleHotUpdate)
+// lives in index.ts and calls into this module so the route-derivation
+// logic is unit-testable without touching the filesystem.
 // ---------------------------------------------------------------------------
 
-/** A layout module discovered for a particular directory under the routes dir. */
+/** A layout / error-boundary / 404 module discovered for a directory. */
 export interface LayoutEntry {
-  /** Path of the layout module relative to the routes directory. */
+  /** Path of the module relative to the routes directory. */
   filePath: string;
 }
 
@@ -26,6 +27,24 @@ export interface RouteEntry {
    * parent directory.
    */
   layouts: LayoutEntry[];
+  /**
+   * Nearest `_error.{ts,tsx,js,jsx}` in this route's directory chain
+   * (ADR 0021). Single entry — the deepest `_error` wins, no chained
+   * composition. Omitted when no `_error` exists in any parent.
+   */
+  errorBoundary?: LayoutEntry;
+}
+
+/** Output of `buildRouteManifest` — the routes plus an optional root `_404`. */
+export interface RouteManifest {
+  /** All route entries, sorted most-specific first. */
+  routes: RouteEntry[];
+  /**
+   * Root-level `_404.{ts,tsx,js,jsx}` page (ADR 0021). Omitted when
+   * no `_404` exists at the routes-dir root. Phase 1 supports root
+   * only; nested 404s are deferred.
+   */
+  notFound?: LayoutEntry;
 }
 
 /**
@@ -153,6 +172,53 @@ export function layoutChainFor(routeDir: string, layoutDirs: Set<string>): strin
   return chain;
 }
 
+/** Base name for an error-boundary module (ADR 0021). */
+const ERROR_BASENAME = '_error';
+
+/** Base name for a not-found page (ADR 0021). Root-level only in Phase 1. */
+const NOT_FOUND_BASENAME = '_404';
+
+/**
+ * If `filePath` is an `_error.<ext>` (with one of the configured
+ * extensions), return its containing directory ('' for the routes-dir
+ * root). Otherwise return null. ADR 0021.
+ */
+export function errorDirOf(filePath: string, extensions: string[]): string | null {
+  for (const ext of extensions) {
+    const target = ERROR_BASENAME + ext;
+    if (filePath === target) return '';
+    if (filePath.endsWith('/' + target)) return filePath.slice(0, -target.length - 1);
+  }
+  return null;
+}
+
+/**
+ * If `filePath` is a root-level `_404.<ext>`, return the path. Otherwise
+ * return null. Nested `_404` files at this stage of the project are
+ * silently ignored — Phase 1 supports root-only 404s (ADR 0021).
+ */
+export function notFoundFileOf(filePath: string, extensions: string[]): string | null {
+  for (const ext of extensions) {
+    if (filePath === NOT_FOUND_BASENAME + ext) return filePath;
+  }
+  return null;
+}
+
+/**
+ * Walk the directory chain leaf → root and return the deepest
+ * directory key found in `errorDirs`. Used to assign a route its
+ * single nearest `_error.ts` (no chained composition in Phase 1).
+ */
+export function nearestErrorDir(routeDir: string, errorDirs: Set<string>): string | null {
+  if (routeDir === '') return errorDirs.has('') ? '' : null;
+  const parts = routeDir.split('/');
+  for (let i = parts.length; i > 0; i--) {
+    const candidate = parts.slice(0, i).join('/');
+    if (errorDirs.has(candidate)) return candidate;
+  }
+  return errorDirs.has('') ? '' : null;
+}
+
 /**
  * Rank a pattern from most-specific to least-specific. Lower scores sort
  * first. Encoded as `[splatFlag, -literalCount, dynamicCount]` — splat
@@ -189,7 +255,8 @@ export function sortRoutes(entries: RouteEntry[]): RouteEntry[] {
 
 /**
  * Build the route manifest from a list of route-relative file paths.
- * Entries returned are sorted; pass straight into `generateRouteManifestSource`.
+ * Entries returned are sorted most-specific first; pass straight into
+ * `generateRouteManifestSource`.
  *
  * Conflict policy: if two files map to the same pattern (e.g. `users.ts`
  * + `users/index.ts`), the first one alphabetically wins and the conflict
@@ -198,28 +265,45 @@ export function sortRoutes(entries: RouteEntry[]): RouteEntry[] {
  *
  * Layouts: any `_layout.{ts,tsx,js,jsx}` file in the input is collected
  * into a per-directory map; each route entry's `layouts` field is filled
- * with its inherited chain (root → leaf) per ADR 0020. Layout files
- * themselves are not route entries (they were already excluded by the
- * reserved-`_` rule in `fileToRoute`).
+ * with its inherited chain (root → leaf) per ADR 0020.
+ *
+ * Error boundaries (ADR 0021): any `_error.{ts,tsx,js,jsx}` file is
+ * collected into a per-directory map; each route entry's `errorBoundary`
+ * is set to the nearest `_error` in its directory chain (deepest wins,
+ * single entry — no chained composition).
+ *
+ * 404 (ADR 0021): a root-level `_404.{ts,tsx,js,jsx}` becomes the
+ * manifest's top-level `notFound` field. Nested `_404` files at this
+ * stage are silently ignored.
+ *
+ * Layout / boundary / 404 files themselves are not route entries (they
+ * were already excluded by the reserved-`_` rule in `fileToRoute`).
  */
 export function buildRouteManifest(
   files: string[],
   extensions: string[] = ['.ts', '.tsx', '.js', '.jsx'],
   onConflict?: (pattern: string, kept: string, dropped: string) => void,
-): RouteEntry[] {
+): RouteManifest {
   const byPattern = new Map<string, RouteEntry>();
   // Sort input by file path so the "first wins" tiebreaker is deterministic
   // across operating systems with different readdir ordering.
   const sortedFiles = files.slice().sort();
 
-  // Discover layout modules first so the route assignment loop can resolve
-  // each route's chain in one pass. Map<directory, layoutFilePath>.
+  // Discover layout / error-boundary modules first so the route assignment
+  // loop can resolve each route's chain in one pass.
   const layoutByDir = new Map<string, string>();
+  const errorByDir = new Map<string, string>();
+  let notFoundFile: string | null = null;
   for (const file of sortedFiles) {
-    const dir = layoutDirOf(file, extensions);
-    if (dir !== null) layoutByDir.set(dir, file);
+    const ld = layoutDirOf(file, extensions);
+    if (ld !== null) layoutByDir.set(ld, file);
+    const ed = errorDirOf(file, extensions);
+    if (ed !== null) errorByDir.set(ed, file);
+    const nf = notFoundFileOf(file, extensions);
+    if (nf !== null) notFoundFile = nf;
   }
   const layoutDirs = new Set(layoutByDir.keys());
+  const errorDirs = new Set(errorByDir.keys());
 
   for (const file of sortedFiles) {
     const entry = fileToRoute(file, extensions);
@@ -229,11 +313,18 @@ export function buildRouteManifest(
       onConflict?.(entry.pattern, existing.filePath, entry.filePath);
       continue;
     }
-    const chain = layoutChainFor(dirname(entry.filePath), layoutDirs);
-    entry.layouts = chain.map((dir) => ({ filePath: layoutByDir.get(dir) as string }));
+    const dir = dirname(entry.filePath);
+    const chain = layoutChainFor(dir, layoutDirs);
+    entry.layouts = chain.map((d) => ({ filePath: layoutByDir.get(d) as string }));
+    const errDir = nearestErrorDir(dir, errorDirs);
+    if (errDir !== null) {
+      entry.errorBoundary = { filePath: errorByDir.get(errDir) as string };
+    }
     byPattern.set(entry.pattern, entry);
   }
-  return sortRoutes(Array.from(byPattern.values()));
+  const manifest: RouteManifest = { routes: sortRoutes(Array.from(byPattern.values())) };
+  if (notFoundFile !== null) manifest.notFound = { filePath: notFoundFile };
+  return manifest;
 }
 
 /**
@@ -246,30 +337,41 @@ export function buildRouteManifest(
  * path resolved against the routes dir). Kept as a callback so the
  * codegen stays decoupled from `node:path`.
  */
+/**
+ * Emit a single `LayoutEntry`-shaped object literal (filePath +
+ * importFn). Shared between layouts and error boundaries — the shapes
+ * are structurally identical (ADR 0021).
+ */
+function entryLiteral(e: LayoutEntry, absPathFor: (filePath: string) => string): string {
+  const fp = JSON.stringify(e.filePath);
+  const abs = JSON.stringify(absPathFor(e.filePath));
+  return `{ filePath: ${fp}, importFn: () => import(${abs}) }`;
+}
+
 export function generateRouteManifestSource(
-  entries: RouteEntry[],
+  manifest: RouteManifest,
   absPathFor: (filePath: string) => string,
 ): string {
   const lines: string[] = [
-    '// AUTO-GENERATED by @purityjs/vite-plugin (ADR 0019 + 0020). Do not edit.',
+    '// AUTO-GENERATED by @purityjs/vite-plugin (ADR 0019 + 0020 + 0021). Do not edit.',
     'export const routes = [',
   ];
-  for (const e of entries) {
+  for (const e of manifest.routes) {
     const abs = JSON.stringify(absPathFor(e.filePath));
     const pattern = JSON.stringify(e.pattern);
     const filePath = JSON.stringify(e.filePath);
-    const layouts = e.layouts
-      .map((l) => {
-        const lp = JSON.stringify(l.filePath);
-        const labs = JSON.stringify(absPathFor(l.filePath));
-        return `{ filePath: ${lp}, importFn: () => import(${labs}) }`;
-      })
-      .join(', ');
+    const layouts = e.layouts.map((l) => entryLiteral(l, absPathFor)).join(', ');
+    const errorPart = e.errorBoundary
+      ? `, errorBoundary: ${entryLiteral(e.errorBoundary, absPathFor)}`
+      : '';
     lines.push(
-      `  { pattern: ${pattern}, filePath: ${filePath}, importFn: () => import(${abs}), layouts: [${layouts}] },`,
+      `  { pattern: ${pattern}, filePath: ${filePath}, importFn: () => import(${abs}), layouts: [${layouts}]${errorPart} },`,
     );
   }
   lines.push('];');
+  if (manifest.notFound) {
+    lines.push(`export const notFound = ${entryLiteral(manifest.notFound, absPathFor)};`);
+  }
   lines.push('');
   return lines.join('\n');
 }

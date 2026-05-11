@@ -7,10 +7,13 @@ import { describe, expect, it } from 'vitest';
 import { purity } from '../src/index.ts';
 import {
   buildRouteManifest,
+  errorDirOf,
   fileToRoute,
   generateRouteManifestSource,
   layoutChainFor,
   layoutDirOf,
+  nearestErrorDir,
+  notFoundFileOf,
   sortRoutes,
 } from '../src/routes.ts';
 
@@ -187,6 +190,72 @@ describe('layoutChainFor — root → leaf inheritance', () => {
   });
 });
 
+describe('errorDirOf — recognising _error files (ADR 0021)', () => {
+  it('detects a root _error.ts (empty directory key)', () => {
+    expect(errorDirOf('_error.ts', EXTS)).toBe('');
+  });
+
+  it('detects nested _error files', () => {
+    expect(errorDirOf('admin/_error.tsx', EXTS)).toBe('admin');
+    expect(errorDirOf('admin/users/_error.ts', EXTS)).toBe('admin/users');
+  });
+
+  it('returns null for non-error files', () => {
+    expect(errorDirOf('index.ts', EXTS)).toBeNull();
+    expect(errorDirOf('_layout.ts', EXTS)).toBeNull();
+    expect(errorDirOf('_errors.ts', EXTS)).toBeNull();
+    expect(errorDirOf('users/_error-handler.ts', EXTS)).toBeNull();
+  });
+});
+
+describe('notFoundFileOf — recognising root _404 (ADR 0021)', () => {
+  it('detects a root _404 with any allowed extension', () => {
+    expect(notFoundFileOf('_404.ts', EXTS)).toBe('_404.ts');
+    expect(notFoundFileOf('_404.tsx', EXTS)).toBe('_404.tsx');
+  });
+
+  it('returns null for nested _404 files (Phase 1: root-only)', () => {
+    expect(notFoundFileOf('admin/_404.ts', EXTS)).toBeNull();
+    expect(notFoundFileOf('users/[id]/_404.ts', EXTS)).toBeNull();
+  });
+
+  it('returns null for non-404 files', () => {
+    expect(notFoundFileOf('_404.md', EXTS)).toBeNull();
+    expect(notFoundFileOf('_500.ts', EXTS)).toBeNull();
+    expect(notFoundFileOf('_404abc.ts', EXTS)).toBeNull();
+  });
+});
+
+describe('nearestErrorDir — deepest-wins boundary resolution', () => {
+  it('returns the route dir itself when it has its own _error', () => {
+    expect(nearestErrorDir('admin/users', new Set(['admin/users']))).toBe('admin/users');
+  });
+
+  it('walks up one level when the route has no own _error', () => {
+    expect(nearestErrorDir('admin/users/edit', new Set(['admin']))).toBe('admin');
+  });
+
+  it('falls back to the root _error', () => {
+    expect(nearestErrorDir('admin/users', new Set(['']))).toBe('');
+  });
+
+  it('returns null when no _error is in the chain', () => {
+    expect(nearestErrorDir('admin/users', new Set())).toBeNull();
+    expect(nearestErrorDir('', new Set())).toBeNull();
+  });
+
+  it('prefers the deepest match in the chain', () => {
+    expect(nearestErrorDir('admin/users/edit', new Set(['', 'admin', 'admin/users']))).toBe(
+      'admin/users',
+    );
+  });
+
+  it('handles a route at the routes-dir root', () => {
+    expect(nearestErrorDir('', new Set(['']))).toBe('');
+    expect(nearestErrorDir('', new Set(['admin']))).toBeNull();
+  });
+});
+
 describe('buildRouteManifest', () => {
   it('builds + sorts a typical pages tree', () => {
     const files = [
@@ -200,7 +269,7 @@ describe('buildRouteManifest', () => {
       'README.md', // wrong ext — dropped
     ];
     const manifest = buildRouteManifest(files, EXTS);
-    expect(manifest.map((e) => e.pattern)).toEqual([
+    expect(manifest.routes.map((e) => e.pattern)).toEqual([
       '/users/me',
       '/about',
       '/users',
@@ -208,6 +277,8 @@ describe('buildRouteManifest', () => {
       '/',
       '/blog/*',
     ]);
+    // No _404 in the input → no `notFound` field on the manifest.
+    expect(manifest.notFound).toBeUndefined();
   });
 
   it('reports + drops conflicts deterministically', () => {
@@ -218,12 +289,12 @@ describe('buildRouteManifest', () => {
       EXTS,
       (pattern, kept, dropped) => conflicts.push([pattern, kept, dropped]),
     );
-    expect(manifest.map((e) => e.filePath)).toEqual(['users.ts']);
+    expect(manifest.routes.map((e) => e.filePath)).toEqual(['users.ts']);
     expect(conflicts).toEqual([['/users', 'users.ts', 'users/index.ts']]);
   });
 
   it('returns an empty manifest for an empty file list', () => {
-    expect(buildRouteManifest([], EXTS)).toEqual([]);
+    expect(buildRouteManifest([], EXTS)).toEqual({ routes: [] });
   });
 
   it('assigns each route its inherited layout chain (root → leaf)', () => {
@@ -236,7 +307,7 @@ describe('buildRouteManifest', () => {
       'settings/index.ts',
     ];
     const manifest = buildRouteManifest(files, EXTS);
-    const byPattern = new Map(manifest.map((e) => [e.pattern, e]));
+    const byPattern = new Map(manifest.routes.map((e) => [e.pattern, e]));
 
     expect(byPattern.get('/')!.layouts).toEqual([{ filePath: '_layout.ts' }]);
     expect(byPattern.get('/users')!.layouts).toEqual([
@@ -253,29 +324,75 @@ describe('buildRouteManifest', () => {
 
   it('returns layouts: [] when no _layout files exist', () => {
     const manifest = buildRouteManifest(['index.ts', 'about.ts'], EXTS);
-    for (const e of manifest) expect(e.layouts).toEqual([]);
+    for (const e of manifest.routes) expect(e.layouts).toEqual([]);
   });
 
   it('inherits a deep chain through layout-only directories', () => {
     // admin/ has no route module of its own, only a _layout.
     const files = ['_layout.ts', 'admin/_layout.ts', 'admin/users/index.ts'];
     const manifest = buildRouteManifest(files, EXTS);
-    expect(manifest).toHaveLength(1);
-    expect(manifest[0].pattern).toBe('/admin/users');
-    expect(manifest[0].layouts).toEqual([
+    expect(manifest.routes).toHaveLength(1);
+    expect(manifest.routes[0].pattern).toBe('/admin/users');
+    expect(manifest.routes[0].layouts).toEqual([
       { filePath: '_layout.ts' },
       { filePath: 'admin/_layout.ts' },
     ]);
+  });
+
+  it('assigns each route the nearest _error in its chain (ADR 0021)', () => {
+    const files = [
+      '_error.ts',
+      'index.ts',
+      'about.ts',
+      'admin/_error.ts',
+      'admin/users.ts',
+      'admin/settings/index.ts',
+    ];
+    const manifest = buildRouteManifest(files, EXTS);
+    const byPattern = new Map(manifest.routes.map((e) => [e.pattern, e]));
+
+    // Routes at the root use the root _error.
+    expect(byPattern.get('/')!.errorBoundary).toEqual({ filePath: '_error.ts' });
+    expect(byPattern.get('/about')!.errorBoundary).toEqual({ filePath: '_error.ts' });
+    // Admin routes use the admin _error (deepest wins).
+    expect(byPattern.get('/admin/users')!.errorBoundary).toEqual({
+      filePath: 'admin/_error.ts',
+    });
+    expect(byPattern.get('/admin/settings')!.errorBoundary).toEqual({
+      filePath: 'admin/_error.ts',
+    });
+  });
+
+  it('omits errorBoundary on routes with no _error in the chain (ADR 0021)', () => {
+    const manifest = buildRouteManifest(['index.ts', 'about.ts'], EXTS);
+    for (const e of manifest.routes) {
+      expect(e.errorBoundary).toBeUndefined();
+    }
+  });
+
+  it('attaches a root _404 to the manifest top-level (ADR 0021)', () => {
+    const manifest = buildRouteManifest(['index.ts', '_404.ts'], EXTS);
+    expect(manifest.notFound).toEqual({ filePath: '_404.ts' });
+  });
+
+  it('ignores nested _404 files in Phase 1 (ADR 0021)', () => {
+    const manifest = buildRouteManifest(['index.ts', 'admin/_404.ts', 'admin/users.ts'], EXTS);
+    // No root _404 → no top-level notFound.
+    expect(manifest.notFound).toBeUndefined();
+    // Nested _404 is treated as a reserved file (dropped from routes).
+    expect(manifest.routes.map((e) => e.pattern).sort()).toEqual(['/', '/admin/users']);
   });
 });
 
 describe('generateRouteManifestSource', () => {
   it('emits an array of entries with import functions', () => {
     const src = generateRouteManifestSource(
-      [
-        { pattern: '/', filePath: 'index.ts', layouts: [] },
-        { pattern: '/users/:id', filePath: 'users/[id].ts', layouts: [] },
-      ],
+      {
+        routes: [
+          { pattern: '/', filePath: 'index.ts', layouts: [] },
+          { pattern: '/users/:id', filePath: 'users/[id].ts', layouts: [] },
+        ],
+      },
       (rel) => `/abs/pages/${rel}`,
     );
     expect(src).toContain('pattern: "/"');
@@ -285,11 +402,13 @@ describe('generateRouteManifestSource', () => {
     expect(src).toContain('import("/abs/pages/users/[id].ts")');
     // Empty layouts arrays are still emitted so consumers can rely on the field.
     expect(src).toContain('layouts: []');
+    // No `notFound` in the manifest → no top-level export.
+    expect(src).not.toContain('notFound');
   });
 
   it('escapes patterns with quotes via JSON.stringify', () => {
     const src = generateRouteManifestSource(
-      [{ pattern: "/weird'path", filePath: "weird'path.ts", layouts: [] }],
+      { routes: [{ pattern: "/weird'path", filePath: "weird'path.ts", layouts: [] }] },
       (rel) => `/abs/${rel}`,
     );
     // Single quotes inside double-quoted JSON strings need no escaping —
@@ -300,13 +419,15 @@ describe('generateRouteManifestSource', () => {
 
   it('emits the layout chain in the entry, root → leaf', () => {
     const src = generateRouteManifestSource(
-      [
-        {
-          pattern: '/users/:id',
-          filePath: 'users/[id].ts',
-          layouts: [{ filePath: '_layout.ts' }, { filePath: 'users/_layout.ts' }],
-        },
-      ],
+      {
+        routes: [
+          {
+            pattern: '/users/:id',
+            filePath: 'users/[id].ts',
+            layouts: [{ filePath: '_layout.ts' }, { filePath: 'users/_layout.ts' }],
+          },
+        ],
+      },
       (rel) => `/abs/pages/${rel}`,
     );
     expect(src).toContain('layouts: [');
@@ -316,6 +437,46 @@ describe('generateRouteManifestSource', () => {
     expect(src).toContain('import("/abs/pages/users/_layout.ts")');
     // Order: root layout precedes nested layout in the source.
     expect(src.indexOf('"_layout.ts"')).toBeLessThan(src.indexOf('"users/_layout.ts"'));
+  });
+
+  it('emits an entry errorBoundary when set', () => {
+    const src = generateRouteManifestSource(
+      {
+        routes: [
+          {
+            pattern: '/admin/users',
+            filePath: 'admin/users.ts',
+            layouts: [],
+            errorBoundary: { filePath: 'admin/_error.ts' },
+          },
+        ],
+      },
+      (rel) => `/abs/pages/${rel}`,
+    );
+    expect(src).toContain('errorBoundary: {');
+    expect(src).toContain('filePath: "admin/_error.ts"');
+    expect(src).toContain('import("/abs/pages/admin/_error.ts")');
+  });
+
+  it('omits errorBoundary on entries that lack one', () => {
+    const src = generateRouteManifestSource(
+      { routes: [{ pattern: '/', filePath: 'index.ts', layouts: [] }] },
+      (rel) => `/abs/pages/${rel}`,
+    );
+    expect(src).not.toContain('errorBoundary');
+  });
+
+  it('emits a top-level notFound export when the manifest has one', () => {
+    const src = generateRouteManifestSource(
+      {
+        routes: [{ pattern: '/', filePath: 'index.ts', layouts: [] }],
+        notFound: { filePath: '_404.ts' },
+      },
+      (rel) => `/abs/pages/${rel}`,
+    );
+    expect(src).toContain('export const notFound = {');
+    expect(src).toContain('filePath: "_404.ts"');
+    expect(src).toContain('import("/abs/pages/_404.ts")');
   });
 });
 
@@ -463,6 +624,60 @@ describe('purity({ routes }) — Vite plugin integration', () => {
       expect(userLine).toContain('"_layout.ts"');
       expect(userLine).toContain('"users/_layout.ts"');
       expect(userLine.indexOf('"_layout.ts"')).toBeLessThan(userLine.indexOf('"users/_layout.ts"'));
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('emits errorBoundary + notFound in the virtual manifest (ADR 0021)', () => {
+    const { root, cleanup } = makeTmpPages({
+      'pages/_error.ts': '// root error',
+      'pages/_404.ts': '// root not-found',
+      'pages/index.ts': '// home',
+      'pages/admin/_error.ts': '// admin error',
+      'pages/admin/users.ts': '// admin users',
+    });
+    try {
+      const plugin = purity({ routes: { dir: 'pages' } });
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
+        'purity:routes',
+      ) as string;
+      const src = (plugin as { load: (id: string) => string | null }).load(resolved) as string;
+
+      // notFound shows up as a top-level export.
+      expect(src).toContain('export const notFound = {');
+      expect(src).toContain(`import("${root}/pages/_404.ts")`);
+
+      // /admin/users uses the admin/_error boundary, not the root one.
+      const adminLine = src.split('\n').find((l) => l.includes('"/admin/users"')) as string;
+      expect(adminLine).toContain('errorBoundary:');
+      expect(adminLine).toContain('"admin/_error.ts"');
+      expect(adminLine).not.toContain('"_error.ts"'); // root error wouldn't appear in admin's line
+
+      // / uses the root _error boundary.
+      const homeLine = src.split('\n').find((l) => l.includes('"/"')) as string;
+      expect(homeLine).toContain('errorBoundary:');
+      expect(homeLine).toContain('"_error.ts"');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('omits notFound from the virtual manifest when no root _404 exists', () => {
+    const { root, cleanup } = makeTmpPages({
+      'pages/index.ts': '// home',
+      'pages/admin/_404.ts': '// nested 404 — Phase 1 ignores this',
+      'pages/admin/users.ts': '// admin users',
+    });
+    try {
+      const plugin = purity({ routes: { dir: 'pages' } });
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
+        'purity:routes',
+      ) as string;
+      const src = (plugin as { load: (id: string) => string | null }).load(resolved) as string;
+      expect(src).not.toContain('notFound');
     } finally {
       cleanup();
     }

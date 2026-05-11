@@ -1,172 +1,164 @@
-# Next handoff — SSR follow-up after the marker-walking + suspense pass
+# Next handoff
 
-This branch (`claude/next-handoff-task-BE8PV`) closed the bulk of the
-SSR gap list called out after ADR 0004 shipped. The remaining items
-are either multi-week (streaming) or already documented out-of-scope.
-This note captures **what's done, what isn't, and where to start next**
+This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
+pass starting from the SSR-MVP follow-up gap list. **Twenty commits,
+twelve new ADRs (0007–0018), 804 tests passing** across the three
+publishable packages. Everything is documented and shipped — only one
+substantive item remains open. This note captures the current state
 so the next session can pick up cold.
 
-## What shipped on this branch
-
-8 commits, **+2477 / −138** across 24 files, **635 tests passing**
-(469 core + 81 ssr + 85 vite-plugin).
-
-| Commit    | Scope                                                                                                                                                               |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `d89b32d` | **Marker-walking, non-lossy hydration** — ADR 0005. Walks `<!--[--><!--]-->` SSR markers and binds in place; `DeferredTemplate` thunks for nested `${html\`...\`}`. |
-| `8de8ce9` | **Mismatch warnings + ADR 0006 (Proposed)** — `enableHydrationWarnings()` opt-in cursor checks; `hydrate()` catches walker failures and falls back to `mount()`.    |
-| `e467ccc` | Recovery test coverage + doc refresh.                                                                                                                               |
-| `110ae1a` | **Silent static-text divergence detection** — codegen passes AST text values to the cursor check.                                                                   |
-| `a7577f5` | **`suspense()` Phase 1 + CSP nonce** — boundary markers, sync error isolation; `renderToString({ nonce })`.                                                         |
-| `7073d29` | **User-controllable `resource()` keys** — closes ADR 0004's cache-shift bug; `{ ordered, keyed }` payload shape.                                                    |
-| `65e14df` | **`suspense()` Phase 2 — per-boundary timeouts** — `{ timeout }` option; renderer races deadlines.                                                                  |
-| `aa9ec21` | **`suspense()` Phase 5 — `onError` hook** — `{ onError(err, { boundaryId, phase }) }` for view / fallback / timeout.                                                |
-
-ADRs:
-
-- [`0005-non-lossy-hydration.md`](docs/decisions/0005-non-lossy-hydration.md) — Accepted.
-- [`0006-streaming-suspense.md`](docs/decisions/0006-streaming-suspense.md) — Proposed; all phases (1, 2, 3, 4, 5, 6) shipped.
-
-## What's intentionally not done yet
-
-### 1. _(MVP closed)_ Phase 3 — `renderToStream` + `__purity_swap`
-
-The streaming MVP shipped: `renderToStream(component, options)` returns
-a `ReadableStream<Uint8Array>` from `@purityjs/ssr`. Wire format:
-
-1. Doctype prefix (optional)
-2. Shell HTML — every `suspense()` call emits its fallback wrapped in
-   `<!--s:N-->...<!--/s:N-->`; top-level resources still block the shell
-3. `<script id="__purity_resources__">` with shell-resolved data
-4. `<script>` inlining `window.__purity_swap = ...` (~330 bytes, once)
-5. Per boundary, in declaration order:
-   `<template id="purity-s-N">RESOLVED_HTML</template><script>__purity_swap(N)</script>`
-
-`suspense()` checks `ssrCtx.streamingMode`; when set, it skips its
-inline `view()` and queues `(view, fallback, onError)` into
-`ssrCtx.streamingBoundaries`. `renderToStream` drains the queue after
-the shell flushes; each boundary renders in its own SSRRenderContext
-(plus its own multi-pass resolution loop) with its own `{ timeout }`
-budget.
-
-**Still TODO:**
-
-- **Selective hydration timing** — currently hydration waits for the
-  stream to close (per ADR). React's per-boundary hydration triggered
-  by user interaction is a strictly larger problem (event replay) and
-  out of scope for now.
-
-Other ADR 0006 phases are all shipped: Phase 6 second-half
-(per-boundary `__purity_resources_N__` emit, with client-side merging
-in `primeResourceHydrationCache`) and Phase 4 (edge-runtime adapter
-examples for Cloudflare Workers, Vercel Edge, and Deno) both landed
-on this branch.
-
-**Files added/changed for Phase 3:**
-
-- `packages/core/src/__purity_swap.ts` — client splice helper +
-  `PURITY_SWAP_SOURCE` for inlining.
-- `packages/core/src/ssr-context.ts` — `streamingMode`,
-  `streamingBoundaries` fields.
-- `packages/core/src/control.ts` — streaming branch in `suspense()`.
-- `packages/ssr/src/render-to-stream.ts` — new entry.
-- `packages/ssr/tests/render-to-stream.test.ts` — 10 tests covering
-  wire format, ordering, doctype, nonce, timeout fallback, and
-  end-to-end swap execution against jsdom.
-
-### 2. _(closed)_ Per-row / per-case reconciliation in `each` / `when` / `match`
-
-All three control-flow helpers now hydrate losslessly.
-
-- `each()` adopts SSR rows by key — `<!--er:K-->row<!--/er-->` markers,
-  `DeferredEach` handle, `inflateDeferredEach` adoption helper.
-- `when()` / `match()` adopt the SSR-rendered case —
-  `<!--m:KEY-->view<!--/m-->` boundary marker, `DeferredMatch` handle,
-  `inflateDeferredMatch` adoption helper. The adopted nodes seed the
-  per-case DOM cache, so toggling away and back to the SSR key reuses
-  the original SSR-derived DOM.
-
-SSR-key / client-key drift in either helper falls through to a fresh
-render of the current value, with the surrounding tree preserved.
-
-### 3. _(closed)_ Static text-content rewriting on mismatch
-
-Shipped as [ADR 0007](docs/decisions/0007-text-rewrite-on-mismatch.md):
-opt-in `enableHydrationTextRewrite()` flag (off by default). When on,
-the hydrator overwrites SSR `Text` node `data` to match the template's
-AST text on mismatch — same node reference, only the bytes change.
-Independent of warnings; combine the two flags for fix-and-log.
-
-### 4. Framework-level features
-
-These aren't really SSR gaps — they're standalone framework features
-that need their own ADR. None of them blocks ADR 0004's "SSR MVP"
-contract.
-
-- **Router primitives** — _(shipped, see [ADR 0011](docs/decisions/0011-router-primitives.md))_. `currentPath()` (reactive, SSR+client parity via `getRequest()`), `navigate(href, { replace? })` (pushState + signal update), `matchRoute(pattern)` (`:param` + `*` splat). 80 LOC of glue, no routing convention. **File-system routing + nested layouts** is the larger follow-up — needs Vite plugin scanning, layout tree, route loaders. Separate ADR when there's demand.
-- **Link auto-interception** — _(shipped, see [ADR 0013](docs/decisions/0013-link-interception.md))_. `interceptLinks()` installs a global click listener that converts qualifying internal `<a href>` clicks into `navigate()` calls. Default predicate exempts modifier keys, `target="_blank"`, downloads, cross-origin hrefs, hash-only links, and `data-no-intercept` opt-outs. Returns a teardown for HMR / tests. Drops the per-link `@click` boilerplate from user code (SSR example shrunk by ~20 lines).
-- **URL search / hash signals** — _(shipped, see [ADR 0014](docs/decisions/0014-url-search-hash-signals.md))_. `currentSearch()` returns a fresh `URLSearchParams` copy; `currentHash()` returns the hash string. Both reactive, both SSR-aware via the same `getRequest()` path. Internal refactor: `pathSignal: state<string>` → `urlSignal: state<URL>`; popstate + `hashchange` listeners refresh it. Completes the URL part-by-part reactive surface.
-- **Navigation scroll management** — _(shipped, see [ADR 0015](docs/decisions/0015-nav-scroll-management.md))_. `onNavigate(listener)` is a public hook fired on every `navigate()` call (not popstate / hashchange — those have native browser behavior). `manageNavScroll()` is a thin consumer that scrolls to the URL's hash target (or top) on forward nav, closing the SPA scroll-restoration gap. Custom `onNavigate` handler replaces the default for smooth-scroll / view-transitions integrations.
-- **Navigation focus management** — _(shipped, see [ADR 0016](docs/decisions/0016-nav-focus-management.md))_. `manageNavFocus()` moves keyboard focus into the URL's hash target (or the `<main>` landmark by default) after every `navigate()`. Closes the SPA accessibility gap — screen readers announce the focused region's accessible name, restoring the route-change announcement that's lost without it. Pairs with `manageNavScroll` via `preventScroll: true`. Tabindex auto-set when needed; existing values preserved. Custom `selector` or full `onNavigate` handler override the default.
-- **View transitions integration** — _(shipped, see [ADR 0017](docs/decisions/0017-view-transitions.md))_. `manageNavTransitions()` wraps `navigate()` URL + DOM updates in `document.startViewTransition()` so route changes can cross-fade. No-op when API unsupported; honors `prefers-reduced-motion`. Custom `shouldTransition` predicate for per-nav opt-out. Internal: a single-slot `_setNavigateWrapper` hook on the router lets one consumer wrap the navigate update; future ADRs may consolidate the four `manageNav*` primitives.
-- **Server actions / form enhancement** — _(shipped, see [ADR 0012](docs/decisions/0012-server-actions.md) + [ADR 0018](docs/decisions/0018-server-module-strip.md))_. `serverAction(url, handler)` registers a `(Request) => Response` handler at a stable URL; `handleAction(request)` dispatches in the server entry; `action.invoke(body, init?)` POSTs via fetch on the client. Progressive enhancement works natively via `<form action="${action.url}" method="POST">`. ADR 0018 closes the bundler-side strip: `*.server.{ts,js,tsx,jsx}` files are replaced with `export {};` in client builds (Vite plugin, default-on) so handler bodies + transitive imports don't ship to the browser. Phase 1 still punts on CSRF / auto-serialization / build-time URL derivation.
-- **Head / meta tag management** — _(Phase 1 shipped, see [ADR 0008](docs/decisions/0008-head-meta-management.md))_. `head()` collects HTML during SSR; `renderToString({ extractHead: true })` returns `{ body, head }`. Phase 2 (reactive client-side head element management with dedup, OG/Twitter/JSON-LD helpers) is the natural follow-up; that's when it splits into a dedicated `@purityjs/head` package.
-- **Request context** — _(shipped, see [ADR 0009](docs/decisions/0009-request-context.md))_. `getRequest()` reads the incoming `Request` during SSR; `renderToString` / `renderToStream` accept it via the `request` option. Standard Web Platform `Request` so it works identically on every runtime.
-- **SSG** — _(shipped, see [ADR 0010](docs/decisions/0010-static-site-generation.md))_. `renderStatic({ routes, handler, shellTemplate, … })` composes `renderToString` over a list of routes, returning `Map<path, html>` + per-route errors. No filesystem I/O — runtime-agnostic. **ISR / PPR** (incremental static regen / partial pre-render) are higher-level patterns built on top; not yet shipped.
-- **DSD fallback for pre-2024 browsers** — out of scope per ADR 0004.
-
-### 5. _(closed)_ Phase 6 second-half — per-boundary `__purity_resources__` emit
-
-`renderBoundary()` now returns `{ html, resolvedData, resolvedDataByKey }`.
-The streaming loop emits a `<script type="application/json"
-id="__purity_resources_N__">{"keyed":{...}}</script>` chunk next to
-each `<template id="purity-s-N">` (only when the boundary has at least
-one keyed resource). Positional indices inside a boundary collide with
-the shell's index space, so we drop them — streamed-boundary resources
-should opt into `resource(..., { key })`. The client-side
-`primeResourceHydrationCache()` scans
-`script[id^="__purity_resources_"]` and merges all keyed payloads into
-the cache before hydration begins. CSP nonces propagate to the
-per-boundary scripts too.
-
-## Test count by package (post-branch)
+## Test count by package (current)
 
 ```
-core         469 passing  (18 files)  — was 451 before this branch
-ssr           81 passing  ( 6 files)  — was 52
-vite-plugin   85 passing  ( 7 files)  — unchanged
-total        635
+core         565 passing  (26 files)
+ssr          145 passing  (11 files)
+vite-plugin   94 passing  ( 8 files)
+total        804
 ```
 
-New test files:
+## ADRs accepted on this branch
 
-- `packages/core/tests/hydrate-mismatch.test.ts` — opt-in warnings + fallback recovery.
-- `packages/ssr/tests/hydrate-parity.test.ts` — end-to-end SSR → hydrate identity preservation.
-- `packages/ssr/tests/suspense.test.ts` — Phase 1 / 2 / 5 coverage.
+Each links to its own decision record with rationale + non-features +
+rejected alternatives.
+
+| ADR  | Title                                                                               | One-line summary                                                                                                                 |
+| ---- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 0005 | [Marker-walking, non-lossy hydration](docs/decisions/0005-non-lossy-hydration.md)   | `hydrate()` walks SSR markers and binds in place. Per-row `each()` + per-case `when()`/`match()` adoption added in the same era. |
+| 0006 | [Streaming SSR with Suspense](docs/decisions/0006-streaming-suspense.md)            | `suspense(view, fallback)` + `renderToStream` + `__purity_swap`. All six phases shipped — selective hydration is out of scope.   |
+| 0007 | [Text-content rewrite on mismatch](docs/decisions/0007-text-rewrite-on-mismatch.md) | Opt-in `enableHydrationTextRewrite()` self-heals SSR text drift in place.                                                        |
+| 0008 | [Head / meta tag management](docs/decisions/0008-head-meta-management.md)           | `head()` + `renderToString({ extractHead: true })` for per-route `<title>` / `<meta>`.                                           |
+| 0009 | [Request context](docs/decisions/0009-request-context.md)                           | `getRequest()` reads the SSR request; `request?: Request` option on both renderers.                                              |
+| 0010 | [Static site generation](docs/decisions/0010-static-site-generation.md)             | `renderStatic({ routes, handler, shellTemplate })` returns `Map<path, html>` + per-route errors. Runtime-agnostic.               |
+| 0011 | [Router primitives](docs/decisions/0011-router-primitives.md)                       | `currentPath()` (reactive, SSR-parity), `navigate(href)`, `matchRoute(pattern)` with `:param` + `*` splat.                       |
+| 0012 | [Server actions](docs/decisions/0012-server-actions.md)                             | `serverAction(url, handler)` + `handleAction(request)` + `action.invoke(body, init?)`. PRG-friendly, pure Web Platform.          |
+| 0013 | [Link auto-interception](docs/decisions/0013-link-interception.md)                  | `interceptLinks()` global click listener with conservative-default predicate. Drops per-link `@click` boilerplate.               |
+| 0014 | [URL search/hash signals](docs/decisions/0014-url-search-hash-signals.md)           | `currentSearch()` + `currentHash()` reactive accessors backed by the same URL signal as `currentPath`.                           |
+| 0015 | [Navigation scroll management](docs/decisions/0015-nav-scroll-management.md)        | `onNavigate(listener)` hook + `manageNavScroll()` consumer. Closes SPA scroll-restoration gap on forward nav.                    |
+| 0016 | [Navigation focus management](docs/decisions/0016-nav-focus-management.md)          | `manageNavFocus()` moves focus into the new page's landmark. Closes the SPA accessibility gap.                                   |
+| 0017 | [View Transitions API integration](docs/decisions/0017-view-transitions.md)         | `manageNavTransitions()` wraps navigate() in `document.startViewTransition()`. Reduced-motion aware.                             |
+| 0018 | [Server-only module strip](docs/decisions/0018-server-module-strip.md)              | `*.server.{ts,js,tsx,jsx}` files replaced with `export {};` in client builds. Default-on Vite plugin option.                     |
+
+ADR 0006 is `Status: Proposed` historically but every named phase is
+now shipped — promote to `Accepted` next time anyone touches it.
+
+## Public API map (post-branch)
+
+`@purityjs/core` exports beyond the original 21:
+
+- **Hydration**: `disableHydrationTextRewrite`, `enableHydrationTextRewrite` (ADR 0007).
+- **Streaming SSR**: `__purity_swap`, `PURITY_SWAP_SOURCE` (ADR 0006).
+- **Head**: `head` (ADR 0008).
+- **Request**: `getRequest` (ADR 0009).
+- **Router**: `currentHash`, `currentPath`, `currentSearch`, `matchRoute`, `navigate`, `onNavigate`, plus the `NavigateListener` / `NavigateOptions` / `RouteMatch` types (ADRs 0011 + 0014 + 0015).
+- **Router opt-ins**: `interceptLinks`, `manageNavFocus`, `manageNavScroll`, `manageNavTransitions`, plus `*Options` types (ADRs 0013 + 0015 + 0016 + 0017).
+- **Server actions**: `serverAction`, `findAction`, `handleAction`, plus `ServerAction` / `ServerActionHandler` types (ADR 0012).
+
+`@purityjs/ssr` exports:
+
+- `html` (SSR-side template tag).
+- `renderToString` (overloaded — returns `string` or `{ body, head }` with `extractHead: true`).
+- `renderToStream` (returns `ReadableStream<Uint8Array>`).
+- `renderStatic` (returns `Promise<{ files, errors }>`).
+- Option/return types: `RenderToStringOptions`, `RenderToStringWithHead`, `RenderToStreamOptions`, `RenderStaticOptions`, `RenderStaticResult`, `RenderStaticRoute`, `SSRHtml`.
+
+`@purityjs/vite-plugin` options:
+
+- `purity({ include?, stripServerModules? })`. `stripServerModules` defaults `true` (ADR 0018).
+
+The SSR README ([packages/ssr/README.md](packages/ssr/README.md))
+has the full API tour with copy-pasteable examples for every entry.
 
 ## Files most worth re-reading before the next session
 
-- `packages/core/src/compiler/hydrate-runtime.ts` — the deferred-thunk + warnings runtime.
-- `packages/core/src/compiler/codegen.ts` — `generateHydrate(ast)` cursor walker.
-- `packages/core/src/control.ts` — `suspense()` (lines ~1040–1180).
-- `packages/ssr/src/render-to-string.ts` — boundary deadline race in the await loop.
-- `packages/core/src/ssr-context.ts` — both cache stores (positional + keyed).
+- `packages/core/src/router.ts` — URL signal, `navigate()`, `onNavigate()`, internal `_setNavigateWrapper`.
+- `packages/core/src/server-action.ts` — registry + `handleAction` + `action.invoke`.
+- `packages/ssr/src/render-to-stream.ts` — streaming pipeline incl. per-boundary resource emit.
+- `packages/ssr/src/render-static.ts` — SSG driver, composable on top of `renderToString`.
+- `packages/vite-plugin/src/index.ts` — `*.server.ts` strip + AOT html-template compile.
+- `examples/ssr/src/{app,entry.client,entry.server}.ts` — every primitive in one app.
+- `examples/ssr-stream-{cf-workers,vercel-edge,deno}/` — minimal edge-runtime templates.
+
+## What's still open
+
+### File-system routing + nested layouts (substantial — multi-iteration)
+
+The biggest remaining framework gap. Builds on top of ADR 0011's
+router primitives (`currentPath` / `matchRoute` / `navigate`) and
+ADR 0018's server-module strip. Needs:
+
+- **Vite plugin pass** that scans a `pages/` (or `routes/`)
+  directory at dev/build time, generates a route table mapping URL
+  patterns to lazy module imports.
+- **Layout nesting**: a `_layout.ts` per directory that wraps
+  child route output. Standard pattern (Remix / SvelteKit / Astro).
+- **Per-route data loaders**: a route module's `loader()` runs on
+  the server before the view renders. Co-located with the route.
+- **Route-level error boundaries** + 404 conventions.
+- **HMR for the route table** — adding / removing files updates the
+  match dispatcher without a server restart.
+
+Where to start: a focused ADR sketching the file convention and the
+minimum viable plugin pass. Match the existing `/loop next` pattern
+of "ship the smallest correct thing, defer the smart additions to
+follow-up ADRs." Likely 3–5 iterations to get to a usable MVP.
+
+### ISR / PPR (incremental static regen / partial pre-render)
+
+Higher-level patterns that compose on top of `renderStatic` (ADR
+0010). Not yet designed — separate ADR when there's demand.
+
+### Selective per-boundary hydration timing
+
+Out of scope per ADR 0006. Currently hydration waits until the
+stream closes. React-style per-boundary hydration triggered by
+user interaction needs event replay; a strictly larger problem.
+
+### Smaller deferred follow-ups (each its own ADR slot)
+
+- **Smart `serverAction()` body-only stripping** (ADR 0018
+  non-feature) — preserves `.url` + `.invoke()` on the client side
+  while stripping the handler body.
+- **`<title>` synchronisation helper** (ADR 0016 non-feature) —
+  reactive title-tag management beyond `head()`'s static capture.
+- **ARIA live region announce primitive** (ADR 0016 non-feature) —
+  alternative to focus-move for routes that prefer announce-only.
+- **Scroll-position persistence across reload** (ADR 0015
+  non-feature).
+- **Async-aware view transitions** (ADR 0017 non-feature) —
+  return-Promise from the wrapper callback to await route data.
+- **`configureNavigation({ scroll, focus, transitions, … })`
+  consolidation** (ADR 0017 non-feature) — single setup helper for
+  the four `manageNav*` opt-ins.
+- **Reactive head element management for client routes** (ADR 0008
+  Phase 2) — likely splits into `@purityjs/head` package.
+- **Phoenix-LiveView-style scroll persistence** + **focus
+  restoration on back-nav** + **prefetch-on-hover** (ADRs 0015 +
+  0016 non-features).
+- **DSD fallback for pre-2024 browsers** — out of scope per ADR 0004.
+- **CSRF helper** (ADR 0012 non-feature).
+- **Auto-serialization / RPC sugar over `serverAction`** (ADR 0012
+  non-feature).
+- **Build-time URL derivation for server actions** (ADR 0012
+  non-feature) — Next-style stable opaque IDs.
 
 ## Recommended next sprint
 
-If you have a session-or-more of focus to spend: **start ADR 0006
-Phase 3 (streaming)**. Outline:
+If you have a session-or-more of focus to spend: **start the
+file-system routing ADR**. Outline:
 
-1. Sketch the wire format end-to-end on paper first — what does the
-   response body look like for a 2-boundary page with one slow boundary?
-2. Implement `renderToStream(component, options)` returning
-   `ReadableStream<Uint8Array>`. Reuse `renderToString`'s helpers;
-   the new piece is the controller + the `__purity_swap` injection.
-3. Add a single end-to-end SSR-stream test before adding adapter
-   examples — the ADR's "Hydration interplay" section is the
-   trickiest part and benefits from real bytes through a real stream.
-4. The hydration-defer-until-stream-close MVP is fine; per-boundary
-   selective hydration can be a follow-up ADR.
+1. Sketch the `pages/` vs `routes/` directory convention. What's a
+   route module? How are layouts nested? How does the dynamic
+   `[id].ts` segment map to `:id`?
+2. Decide the manifest shape: build-time generated TypeScript
+   module exporting an array of `{ pattern, importFn }` that the
+   client + server imports. Or runtime via `import.meta.glob`.
+3. Draft ADR 0019 with the convention + the rejected alternatives
+   (Next App Router file conventions, Remix nested routes,
+   SvelteKit `+page.ts`/`+layout.ts`, Astro `pages/`).
+4. Implement the smallest viable plugin pass. Tests + worked example
+   - handoff entry.
 
-If you have less time: **ship per-row reconciliation in `each()`** —
-real visible improvement for table-heavy apps, contained scope.
+If you have less time: **promote ADR 0006 to Accepted** (one-line
+status change — every named phase has shipped) and **pick a
+deferred follow-up from the list above** that matches the time
+budget.

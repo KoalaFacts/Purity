@@ -97,6 +97,8 @@ export {
 } from './router-configure.ts';
 // Hover-prefetch — ADR 0029.
 export { prefetchManifestLinks, type PrefetchManifestLinksOptions } from './router-prefetch.ts';
+// Reactive <title> sync — ADR 0030.
+export { manageTitle } from './manage-title.ts';
 // Async-route runtime composer — ADR 0025.
 export {
   asyncNotFound,

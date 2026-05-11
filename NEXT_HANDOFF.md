@@ -1,28 +1,27 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Thirty-three
-commits, twenty-three new ADRs (0007–0029), 945 tests passing** across
-the three publishable packages. Latest iteration shipped ADR 0029 —
-`prefetchManifestLinks(routes, options?)`: a sister to
-`interceptLinks` that installs a delegated `mouseover` listener (plus
-`focusin` for keyboard users), debounces hover events, and fires
-`entry.importFn()` + every `entry.layouts[].importFn()` to warm the
-bundler module cache. By the time the click fires, asyncRoute's
-import resolves from cache — no JS roundtrip on slow networks.
+pass starting from the SSR-MVP follow-up gap list. **Thirty-four
+commits, twenty-four new ADRs (0007–0030), 953 tests passing** across
+the three publishable packages. Latest iteration shipped ADR 0030 —
+`manageTitle(fn)`: isomorphic reactive `<title>` sync. On the server,
+emits `<title>${fn()}</title>` into the SSR head accumulator (via
+`head()`); on the client, wraps `fn` in a `watch()` that writes
+`document.title` on every dependency change.
 
-ADR 0027's `configureNavigation` consolidator gained a
-`prefetch: { routes }` option, so the canonical SPA boot sequence is
-now `hydrate(...); configureNavigation({ prefetch: { routes } });`.
-The example's `entry.client.ts` migrated.
+Closes the most visible piece of ADR 0008's "client-side head
+management is a follow-up" non-feature. The example's
+`pages/users/[id].ts` migrated to demonstrate — title still appears
+in SSR HTML (`<title>User 42 — …</title>`) and updates on client
+SPA navigation between `/users/42` ↔ `/users/99`.
 
 ## Test count by package (current)
 
 ```
-core         621 passing  (30 files)
+core         629 passing  (31 files)
 ssr          145 passing  (11 files)
 vite-plugin  179 passing  ( 9 files)
-total        945
+total        953
 ```
 
 ## ADRs accepted on this branch
@@ -57,6 +56,7 @@ rejected alternatives.
 | 0027 | [`configureNavigation()` consolidator](docs/decisions/0027-configure-navigation.md)                         | Single `configureNavigation(options?)` enables interceptLinks + manageNavScroll + manageNavFocus + manageNavTransitions. Per-helper opt-out/options. |
 | 0028 | [Per-directory `_404.ts` — nested not-found chain](docs/decisions/0028-nested-404-chain.md)                 | Manifest emits `notFoundChain: LayoutEntry[]` (deepest-first); `asyncNotFound(chain)` walks by URL prefix and picks the nearest entry.               |
 | 0029 | [`prefetchManifestLinks()` — hover-prefetch route modules](docs/decisions/0029-hover-prefetch.md)           | Delegated `mouseover`/`focusin` listener warms the bundler chunk cache on link hover. Composes with `configureNavigation({ prefetch: { routes } })`. |
+| 0030 | [`manageTitle(fn)` — reactive `<title>` sync](docs/decisions/0030-reactive-title.md)                        | Isomorphic helper: emits `<title>` to the SSR head on the server; watches `fn` and writes `document.title` on the client.                            |
 
 All ADRs on this branch are `Status: Accepted` (ADR 0006 was promoted
 from `Proposed` in this iteration's housekeeping pass).
@@ -67,7 +67,7 @@ from `Proposed` in this iteration's housekeeping pass).
 
 - **Hydration**: `disableHydrationTextRewrite`, `enableHydrationTextRewrite` (ADR 0007).
 - **Streaming SSR**: `__purity_swap`, `PURITY_SWAP_SOURCE` (ADR 0006).
-- **Head**: `head` (ADR 0008).
+- **Head**: `head` (ADR 0008), `manageTitle` (ADR 0030).
 - **Request**: `getRequest` (ADR 0009).
 - **Router**: `currentHash`, `currentPath`, `currentSearch`, `matchRoute`, `navigate`, `onNavigate`, plus the `NavigateListener` / `NavigateOptions` / `RouteMatch` types (ADRs 0011 + 0014 + 0015).
 - **Router opt-ins**: `interceptLinks`, `manageNavFocus`, `manageNavScroll`, `manageNavTransitions`, `configureNavigation`, `prefetchManifestLinks`, plus `*Options` types (ADRs 0013 + 0015 + 0016 + 0017 + 0027 + 0029).
@@ -232,8 +232,8 @@ user interaction needs event replay; a strictly larger problem.
 
 ## Recommended next sprint
 
-This iteration shipped hover-prefetch (ADR 0029) from the
-remaining Path K list. Three items left:
+ADR 0030 shipped the `<title>` sync from the Path K remainder list
+this iteration. Three items left on the high-leverage list:
 
 **Path H — streaming-SSR adapter migration to the manifest.**
 ADR 0006's adapter examples (`ssr-stream-cf-workers/`,
@@ -251,16 +251,16 @@ shape so `tsc` / IDEs can introspect it. Pairs naturally with
 typed `RouteParams<'/users/:id'>` template-literal inference. Apps
 that import from `purity:routes` get strongly typed entries.
 
-**Path K (remainder) — smaller-items follow-ups.** Two items left:
+**Path K (remainder) — one item left.**
 
 - Smart `serverAction()` body-only stripping (ADR 0018) — strip
   handler bodies without renaming files to `*.server.ts`. Needs
-  an AST parser pass.
-- `<title>` synchronisation helper (ADR 0008/0016) — a reactive
-  client-side helper for keeping `<title>` in sync with a signal.
-  `head()` is SSR-only today.
+  an AST parser pass to find `serverAction(url, fn)` calls and
+  replace the handler arg with a stub in client builds. ~half a
+  day; depends on adding a minimal JS parser dep or carving out
+  esbuild's parse pass.
 
 Path H is the right pick if you want to validate the streaming
 pipeline against the manifest. Path J is the larger build-time-
-typing follow-up. Path K is right if time is tight — pick the
-smallest item and ship it.
+typing follow-up. Path K's last item is parser-shaped — bigger
+than the items shipped so far.

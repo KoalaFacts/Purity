@@ -1,11 +1,12 @@
 # @purityjs/vite-plugin
 
-AOT template compilation for Purity. Transforms `html` tagged templates at build time.
+AOT template compilation for Purity. Transforms `html` tagged templates at build time. Optionally exposes a file-system route manifest.
 
 ## What It Does
 
 - **Template AOT compile** — finds `html`...``in user source, parses via`@purityjs/core/compiler`(separate subpath — no runtime code), generates direct`document.createElement`calls (or string-builder factories on the SSR build path), replaces the template literal with compiled output, removes`html`from imports (dead code eliminated), auto-injects`import { watch as **purity_w** } from '@purityjs/core'` once per file
 - **Server-module strip (ADR 0018)** — replaces `*.server.{ts,js,tsx,jsx}` files with `export {};` in client builds (`opts.ssr !== true`); SSR builds pass through unchanged. Default-on, opt out with `purity({ stripServerModules: false })`. Handler bodies + transitive imports (DB driver, secrets, API tokens) stop shipping to the browser.
+- **File-system routing (ADR 0019)** — opt-in `routes: { dir }` (or `routes: true` for `pages/`). Scans the directory and exposes a virtual `purity:routes` module exporting a sorted `RouteEntry[]`. Convention: `index.ts` → `/`, `[id].ts` → `:id`, `[...slug].ts` → `*` splat, `_*` reserved (skipped). HMR-aware via `handleHotUpdate`.
 - Skips framework internals (only compiles user code)
 - Emits a hand-rolled v3 source map (line-anchored — each output line maps back to the original line) so stack traces land in user source
 - Reports compile failures as `[purity] file:line:col — ...` warnings via the Vite plugin context (or `console.warn` outside Vite); failed templates are left as-is so the rest of the file still builds
@@ -14,7 +15,8 @@ AOT template compilation for Purity. Transforms `html` tagged templates at build
 
 ```
 src/
-  index.ts    — plugin export, template extraction, compilation
+  index.ts    — plugin export, template extraction, compilation, routes wiring
+  routes.ts   — pure helpers: filename → pattern, sort, manifest codegen (ADR 0019)
 ```
 
 ## Key Functions

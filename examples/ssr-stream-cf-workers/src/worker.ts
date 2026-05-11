@@ -14,6 +14,10 @@ import { App } from './app.ts';
 export default {
   async fetch(req: Request): Promise<Response> {
     const stream = renderToStream(App, {
+      // The doctype option prepends one declaration before the shell.
+      // Keep it here (vs inside the layout template) so the 404 path —
+      // which doesn't go through `_layout.ts` per ADR 0028 — still
+      // gets a valid doctype.
       doctype: '<!doctype html>',
       // Cancel the renderer when the visitor disconnects mid-stream.
       signal: req.signal,

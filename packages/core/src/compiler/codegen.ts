@@ -655,7 +655,9 @@ function genStaticDOM(
 function buildStaticHtml(node: ASTNode): string {
   switch (node.type) {
     case 'text':
-      return escapeHtml(node.value);
+      // `raw: true` marks SGML declarations like `<!doctype html>` parsed
+      // verbatim from the template; escaping would corrupt them.
+      return node.raw ? node.value : escapeHtml(node.value);
     case 'comment':
       return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
     case 'element': {
@@ -696,7 +698,9 @@ function buildDynamicHtml(
 ): string {
   switch (node.type) {
     case 'text':
-      return escapeHtml(node.value);
+      // `raw: true` marks SGML declarations like `<!doctype html>` parsed
+      // verbatim from the template — escaping would corrupt the doctype.
+      return node.raw ? node.value : escapeHtml(node.value);
 
     case 'comment':
       return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
@@ -1075,7 +1079,8 @@ function emitLit(ctx: SSRGenCtx, html: string): void {
 function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
   switch (node.type) {
     case 'text':
-      emitLit(ctx, escapeHtml(node.value));
+      // `raw: true` declarations (DOCTYPE, etc.) bypass the escape.
+      emitLit(ctx, node.raw ? node.value : escapeHtml(node.value));
       return;
 
     case 'comment':

@@ -57,6 +57,29 @@ describe('generateSSR — static templates', () => {
     expect(compileSSR(['<br><hr><img src="x.png">'])).toBe('<br/><hr/><img src="x.png"/>');
   });
 
+  it('emits `<!doctype html>` verbatim (raw text, not escaped)', () => {
+    // ADR 0033 follow-up: regression test for the parser's doctype
+    // handling. Before the fix, an html`` template that started with
+    // `<!doctype html>` infinite-looped the parser; this test pins the
+    // emit shape so SSR output ships a valid doctype.
+    expect(compileSSR(['<!doctype html><html><body></body></html>'])).toBe(
+      '<!doctype html><html><body></body></html>',
+    );
+  });
+
+  it('emits `<!DOCTYPE html>` (uppercase) verbatim', () => {
+    expect(compileSSR(['<!DOCTYPE html>'])).toBe('<!DOCTYPE html>');
+  });
+
+  it('emits doctype + expression interpolation correctly', () => {
+    // The two paths (buildStaticHtml fast-path vs buildSSRBody slow-path
+    // with expressions) both need the raw-emit branch. Force the slow
+    // path by including a `${}` slot.
+    expect(compileSSR(['<!doctype html><title>', '</title>'], 'Page')).toContain(
+      '<!doctype html>',
+    );
+  });
+
   it('renders comments', () => {
     expect(compileSSR(['<!-- hi --><div></div>'])).toBe('<!-- hi --><div></div>');
   });

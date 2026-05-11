@@ -1,11 +1,12 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Thirty-seven
-commits, twenty-seven new ADRs (0007–0033), 970 tests passing** across
-the three publishable packages. Latest iteration shipped ADR 0033 —
-`buildStart` eager manifest emit + Path H (streaming-SSR adapter
-migration to the manifest).
+pass starting from the SSR-MVP follow-up gap list. **Thirty-eight
+commits, twenty-seven new ADRs (0007–0033), 976 tests passing** across
+the three publishable packages. Latest iteration shipped ADR 0033
+(`buildStart` eager manifest emit + Path H streaming-SSR adapter
+migration) and a follow-up parser bug fix that unblocked the
+cf-workers SSR build end-to-end.
 
 **ADR 0033 — eager-emit.** ADR 0032's `emitTo` only fires when the
 virtual `purity:routes` module is `load()`'d. Consumers that bundle
@@ -19,36 +20,42 @@ guard; same content; same warnings.
 now has the full manifest-driven shape — `src/pages/` (with
 `_layout.ts`, `_404.ts`, `index.ts`, `stream.ts`), `src/app.ts` with
 `asyncRoute()` + `asyncNotFound()`, and a `src/worker.ts` that
-imports `App` and pipes it through `renderToStream(App, { request,
-signal })`. A `vite.config.ts` wires the plugin in SSR build mode so
-every `html\`\`` in the worker + pages AOT-compiles to string-builder
-factories (no `document` needed at runtime). `wrangler.toml` points
-`main = "dist/worker.js"` — Vite produces the bundle, wrangler
-deploys it.
+imports `App` and pipes it through `renderToStream(App, { doctype,
+request, signal })`. A `vite.config.ts` wires the plugin in SSR
+build mode so every `html\`\`` in the worker + pages AOT-compiles to
+string-builder factories (no `document` needed at runtime).
+`wrangler.toml` points `main = "dist/worker.js"` — Vite produces
+the bundle, wrangler deploys it. Smoke-tested by importing the built
+`dist/worker.js` and calling its `fetch` handler against synthetic
+Requests: `/` renders a single 574-byte shell, `/stream` ships
+shell + boundary-resolved chunk 152ms apart, `/missing` ships the
+404 page. **Streaming pipeline + manifest + asyncRoute + lazyResource
+all work end-to-end on Cloudflare Workers.**
 
-**Known regression — Vite SSR build OOM (next iteration's signal).**
-Running `vite build --ssr src/worker.ts` against the cf-workers
-example OOMs reproducibly in Vite 8 + rolldown. The same plugin +
-alias setup builds the canonical Node SSR demo (`examples/ssr/`,
-`vite build --ssr src/entry.server.ts`) without issue, so the trigger
-is specific to this entry shape — probably an interaction between the
-plugin-injected side-effect `import '@purityjs/ssr'` and rolldown's
-SSR-build module-graph traversal for a single-entry bundle. The
-handoff originally predicted "a missing pendingPromises-for-stream
-hook in renderToStream" — that's NOT the gap. `renderToStream`
-already has a working shell + per-boundary multipass convergence
-loop that drains `ssrCtx.pendingPromises`; the `lazyResource({ key })`
-SSR-context registration in `asyncRoute` works against streaming.
-The real gap is the bundling pipeline, not the runtime. See
-"Recommended next sprint" below.
+**Parser fix (the real signal).** Last iteration's handoff predicted
+"a missing pendingPromises-for-stream hook in renderToStream" — that
+turned out to be wrong. `renderToStream` already drains
+`ssrCtx.pendingPromises` correctly across the shell + per-boundary
+multipass loops. The actual blocker was a **parser bug**: the
+HTML parser's `parseChildren` only recognised `<!--` after `<!`
+(comments) and fell through to `parseElement` for anything else.
+`<!doctype html>` ended up in `parseAttribute` which couldn't read
+`!` as a name char and made no progress — infinite loop, OOM
+during `vite build`. Fix: parser now treats `<!…>` as a raw text
+node (DOCTYPE, CDATA, etc.) plus a defensive guard in
+`parseAttribute` that advances at least one char when no name can
+be read. Codegen handles the new `TextNode.raw` flag in
+`buildStaticHtml`, `buildSSRBody`, and `buildSsrTpl` so the
+declaration survives unescaped. Six new regression tests in
+`compiler.test.ts` + `compiler.ssr.test.ts`.
 
 ## Test count by package (current)
 
 ```
-core         629 passing  (31 files)
+core         635 passing  (31 files)
 ssr          145 passing  (11 files)
 vite-plugin  196 passing  (10 files)
-total        970
+total        976
 ```
 
 ## ADRs accepted on this branch
@@ -262,40 +269,34 @@ user interaction needs event replay; a strictly larger problem.
 
 ## Recommended next sprint
 
-ADR 0033 shipped this iteration. Path H is architecturally complete
-in source (the cf-workers example has the full manifest +
-`asyncRoute()` + `renderToStream` wiring) but blocked on a real build
-issue. Three actionable items remain.
+Path H is now provably end-to-end on Cloudflare Workers — the parser
+fix unblocked the SSR build, and the smoke test confirms streaming +
+manifest + asyncRoute + lazyResource all work. Three items remain on
+the high-leverage list.
 
-**Path H' — diagnose & fix the Vite SSR-build OOM for cf-workers.**
-`vite build --ssr src/worker.ts` OOMs in Vite 8 + rolldown. The
-canonical Node SSR demo builds fine with the same plugin + alias
-config, so the trigger is specific to the cf-workers entry shape.
-Hypotheses to test next time:
+**Path H'' — port the manifest pattern to the other two adapter
+examples.** `ssr-stream-vercel-edge/` and `ssr-stream-deno/` predate
+the manifest + `asyncRoute()`. Copy the cf-workers pattern over —
+identical `src/pages/`, `app.ts`, `vite.config.ts` (with whatever
+adapter-specific entry-shape tweaks each runtime needs). Each
+adapter has its own deploy harness (Vercel CLI, `deno deploy`) —
+smoke-test each by building and invoking the entry's fetch handler
+against synthetic Requests, same pattern as the cf-workers smoke
+test in this iteration. Each port is ~30 minutes of mechanical
+work; together they prove the manifest pattern is genuinely
+runtime-agnostic.
 
-- The plugin's transform output adds `import '@purityjs/ssr';` as a
-  side-effect import after AOT-compiling `html\`\``. Inspect whether
-  this creates a cycle when the worker entry directly imports
-  `@purityjs/ssr` for `renderToStream` — i.e. the entry both
-  imports the package directly AND has the plugin-injected
-  side-effect import.
-- `enforce: 'pre'` on the plugin combined with rolldown's SSR
-  resolver. Try lowering the enforce position to see if it changes
-  the module-graph traversal.
-- The aliased `@purityjs/core/compiler` subpath. The canonical SSR
-  pages don't all import this subpath in the same way the
-  cf-workers' compiled pages do (after `html\`\`` AOT) — test with
-  a non-aliased build.
-- Try `vite build --ssr` without alias plumbing (point at the
-  workspace package distributions). If the OOM disappears, it's an
-  alias / source-package-resolution interaction with rolldown.
-
-The minimal reproducer is in `examples/ssr-stream-cf-workers/` —
-just run `npm run build` after `npm install`. Three small diagnostic
-configs (with/without plugin, with/without alias) make this a fast
-half-hour debug. Once fixed, smoke-test `npm run dev` against
-`wrangler dev` and copy the same pattern to
-`ssr-stream-vercel-edge/` + `ssr-stream-deno/`.
+**Path L — typed loader data threaded through the manifest.** ADR
+0031 shipped `RouteParams<P>` (template-literal-derived params).
+The parallel piece is typed loader data: the plugin scans each
+route module's `loader` export, captures its return type, and emits
+a `loaderData<P>(): InferredType` helper that's strongly typed per
+route. This would close out the ADR-0026 deferred work
+("user supplies type via generic" → "inferred from the route's
+loader signature"). Cost: a TypeScript-aware analysis pass during
+the manifest emit, plus codegen for typed helpers. Probably a half
+day; depends on whether the plugin grows a TS-parser dep or
+unrolls a regex/simple-AST approach.
 
 **Path K (remainder) — one item left.**
 
@@ -306,7 +307,8 @@ half-hour debug. Once fixed, smoke-test `npm run dev` against
   day; depends on adding a minimal JS parser dep or carving out
   esbuild's parse pass.
 
-Path H' is the highest-leverage signal — once unblocked, the three
-adapter examples all become real end-to-end demos and the Workers
-+ Edge + Deno deploy story is provable. Path K's last item is
-parser-shaped and bigger. Pick H' first.
+H'' is the most strategically valuable — once the three adapter
+examples all build and stream end-to-end, Purity's "deploy anywhere
+with a Web Standards fetch handler" story becomes a real demo
+matrix instead of an aspiration. L and K are parser-shaped
+follow-ons; pick H'' first.

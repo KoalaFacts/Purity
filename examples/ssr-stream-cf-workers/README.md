@@ -27,19 +27,6 @@ npm run deploy   # build + wrangler deploy
 `src/.purity/routes.ts` (the emitted manifest) and `dist/` are
 gitignored.
 
-> **Known issue (2026-05-11):** The Vite 8 + rolldown SSR build with the
-> `@purityjs/vite-plugin` currently OOMs on this example's worker
-> entry shape. The same plugin + alias configuration builds the
-> canonical Node SSR demo without issue, so the trigger is specific to
-> the worker entry — likely either the side-effect `import
-> '@purityjs/ssr'` the plugin injects after AOT-compiling templates,
-> or rolldown's handling of an SSR-mode entry whose only output is one
-> single file. Tracked as the actionable signal for the next iteration
-> (see `NEXT_HANDOFF.md`). The source files (`src/app.ts`,
-> `src/worker.ts`, `src/pages/*`) and `vite.config.ts` are wired
-> correctly — once the build OOM is resolved, `npm run build` should
-> emit a deployable `dist/worker.js`.
-
 ## Files
 
 ```

@@ -4,9 +4,11 @@
 
 import { html } from '@purityjs/core';
 
+// `<!doctype html>` is prepended by `renderToStream({ doctype })` in
+// `worker.ts` so the 404 path (which skips the layout per ADR 0028)
+// also ships a valid declaration.
 export default function RootLayout(children: () => unknown): unknown {
   return html`
-    <!doctype html>
     <html lang="en">
       <head>
         <meta charset="utf-8" />

@@ -184,6 +184,18 @@ class Parser {
           continue;
         }
 
+        // SGML-style declaration: `<!doctype ...>`, `<![CDATA[...]]>`, etc.
+        // Captured verbatim so SSR codegen can emit the original bytes
+        // (DOCTYPE is the common case — letting a template literal start
+        // with `<!doctype html>` is the obvious way to ship a full HTML
+        // document from a single `html\`\`` template). Without this we
+        // fall through to `parseElement`, where `readName()` can't
+        // consume `!` and `parseAttribute()` spins forever (no advance).
+        if (this.pos + 1 < s.length && s.charCodeAt(this.pos + 1) === BANG) {
+          children.push(this.parseDeclaration());
+          continue;
+        }
+
         // Opening tag
         children.push(this.parseElement());
         continue;
@@ -204,6 +216,22 @@ class Parser {
     }
     const value = s.slice(start, this.pos);
     return { type: 'text', value };
+  }
+
+  private parseDeclaration(): ASTNode {
+    // Skip `<!`
+    this.pos += 2;
+    const s = this.current();
+    const start = this.pos;
+    // Scan for `>` — declarations don't nest, so first `>` wins.
+    while (this.pos < s.length && s.charCodeAt(this.pos) !== GT) {
+      this.pos++;
+    }
+    const body = s.slice(start, this.pos);
+    if (this.pos < s.length) this.pos++; // consume `>`
+    // Re-emit as a raw text node — bytes flow through codegen unescaped
+    // so `<!doctype html>` survives intact. `raw` is the discriminator.
+    return { type: 'text', value: `<!${body}>`, raw: true };
   }
 
   private parseComment(): ASTNode {
@@ -295,7 +323,7 @@ class Parser {
 
   private parseAttribute(): AttributeNode {
     const s = this.current();
-    const _startPos = this.pos;
+    const startPos = this.pos;
     const firstChar = s.charCodeAt(this.pos);
 
     // Detect prefix: @event, ?bool, .prop, ::two-way, :one-way
@@ -316,6 +344,17 @@ class Parser {
 
     // Read attribute name
     const name = this.readName();
+
+    // Defensive guard: if we couldn't make progress AND there's no
+    // prefix that already advanced us, skip one char so the
+    // `parseAttributes()` loop terminates. Without this, an
+    // unrecognized character at attribute position (e.g. `<!doctype>`
+    // mistakenly routed to parseElement before the declaration
+    // handler shipped) would spin forever.
+    if (name === '' && prefix === '' && this.pos === startPos) {
+      if (!this.atEnd() && !this.atExprBoundary()) this.advance();
+      return { kind: 'static', name: '', value: '' };
+    }
 
     // Check for = (value assignment)
     this.skipWhitespace();

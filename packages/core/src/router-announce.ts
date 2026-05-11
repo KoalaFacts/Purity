@@ -139,12 +139,20 @@ export function manageNavAnnounce(options: ManageNavAnnounceOptions = {}): () =>
   const live = options.live ?? 'polite';
   const message = options.message ?? defaultMessage;
 
+  // Per-nav token bumped at the start of every outer microtask. The
+  // same-text-restore inner microtask captures the token and only writes
+  // back if it's still current — without this guard, a queued restore
+  // would clobber a later navigation's direct text set when navs queue
+  // rapidly with mixed same/different text.
+  let pending = 0;
+
   return onNavigate((url, replace) => {
     // Microtask defer matches manageNavFocus + manageNavScroll. Route
     // handlers may update document.title (via manageTitle) or mount new
     // DOM synchronously in response to the reactive URL signal; deferring
     // gives those writes a chance to flush before we read.
     queueMicrotask(() => {
+      const token = ++pending;
       const region = ensureRegion(regionId, live);
       // Setting textContent to the same value doesn't always re-announce
       // (browsers/ATs vary). Clear-then-set on a second microtask is the
@@ -153,7 +161,9 @@ export function manageNavAnnounce(options: ManageNavAnnounceOptions = {}): () =>
       if (region.textContent === text) {
         region.textContent = '';
         queueMicrotask(() => {
-          region.textContent = text;
+          // Skip if a later navigation already ran — restoring our older
+          // text would clobber the newer announce.
+          if (token === pending) region.textContent = text;
         });
       } else {
         region.textContent = text;

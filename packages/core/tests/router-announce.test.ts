@@ -140,6 +140,35 @@ describe('manageNavAnnounce() — re-announce on same text', () => {
     await tick();
     expect(region.textContent).toBe('static');
   });
+
+  it('a queued same-text restore does NOT clobber a subsequent different-text navigate', async () => {
+    // Three navigations with text sequence (X, X, Y) — message() runs per
+    // outer microtask after navigate() queues them, so an in-message
+    // counter gives us deterministic interleave:
+    //   MT 1 → "X"  (region empty → direct set)
+    //   MT 2 → "X"  (region has "X" → clear + queue restore "X")
+    //   MT 3 → "Y"  (region empty from MT 2's clear → direct set "Y")
+    //
+    // Without the per-nav token guard, MT 2's queued restore would fire
+    // AFTER MT 3's direct set and overwrite "Y" with stale "X".
+    let count = 0;
+    teardown = manageNavAnnounce({
+      message: () => {
+        count++;
+        return count <= 2 ? 'X' : 'Y';
+      },
+    });
+    navigate('/a');
+    navigate('/b');
+    navigate('/c');
+    // Flush all queued microtasks: outer MTs first, then inner restores.
+    await tick();
+    await tick();
+    await tick();
+    await tick();
+    const region = document.getElementById(DEFAULT_ID)!;
+    expect(region.textContent).toBe('Y');
+  });
 });
 
 describe('manageNavAnnounce() — custom onNavigate', () => {

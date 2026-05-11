@@ -2,10 +2,12 @@
 // pre-built bundles (production mode). Demonstrates the canonical SSR flow:
 //
 //   1. Read the index.html template.
-//   2. Run the app via Vite's ssrLoadModule (dev) or the pre-built server
-//      bundle (prod) to produce an HTML string.
-//   3. Replace the <!--ssr-outlet--> marker with the rendered HTML.
-//   4. Send the result.
+//   2. Convert IncomingMessage → Request (ADR 0009 contract — the framework
+//      expects a Web Request).
+//   3. Run the app via Vite's ssrLoadModule (dev) or the pre-built server
+//      bundle (prod) to produce { body, head }.
+//   4. Splice body into <!--ssr-outlet--> and head into <!--head-outlet-->.
+//   5. Send the result.
 //
 // Run with `node --experimental-strip-types server.ts` (Node 22.6+) or just
 // `node server.ts` on Node 23.6+ where the flag is on by default.
@@ -23,9 +25,26 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const isProd = process.env.NODE_ENV === 'production';
 const port = Number(process.env.PORT ?? 3000);
 
-// Always log errors server-side; never leak stack traces or unescaped
-// exception text to the client (info disclosure + reflected XSS via the
-// HTML-typed response).
+// Convert Node's IncomingMessage to a Web Platform Request so the framework's
+// per-render context (getRequest()) sees the standard shape. The framework
+// accepts a real Request on every supported runtime (edge / Node / Bun /
+// Deno) — only old Node `http` servers need this one-line shim.
+function toRequest(msg: IncomingMessage): Request {
+  const host = msg.headers.host ?? 'localhost';
+  const proto = (msg.headers['x-forwarded-proto'] as string) ?? 'http';
+  const url = `${proto}://${host}${msg.url ?? '/'}`;
+  return new Request(url, {
+    method: msg.method ?? 'GET',
+    headers: msg.headers as HeadersInit,
+  });
+}
+
+// Splice `body` into <!--ssr-outlet--> and `head` into <!--head-outlet-->.
+// Plain string replacement — index.html owns the surrounding shell.
+function spliceShell(template: string, body: string, head: string): string {
+  return template.replace('<!--head-outlet-->', head).replace('<!--ssr-outlet-->', body);
+}
+
 function sendError(res: ServerResponse, err: unknown): void {
   console.error(err);
   res.statusCode = 500;
@@ -45,11 +64,11 @@ async function startDev(): Promise<void> {
       let template = await readFile(resolve(__dirname, 'index.html'), 'utf-8');
       template = await vite.transformIndexHtml(req.url ?? '/', template);
       const mod = (await vite.ssrLoadModule('/src/entry.server.ts')) as {
-        render: (url: string) => Promise<string>;
+        render: (request: Request) => Promise<{ body: string; head: string }>;
       };
-      const html = await mod.render(req.url ?? '/');
+      const { body, head } = await mod.render(toRequest(req));
       res.setHeader('Content-Type', 'text/html');
-      res.end(template.replace('<!--ssr-outlet-->', html));
+      res.end(spliceShell(template, body, head));
     } catch (err) {
       vite.ssrFixStacktrace?.(err as Error);
       sendError(res, err);
@@ -67,13 +86,13 @@ async function startDev(): Promise<void> {
 async function startProd(): Promise<void> {
   const template = await readFile(resolve(__dirname, 'dist/client/index.html'), 'utf-8');
   const mod = (await import(resolve(__dirname, 'dist/server/entry.server.js'))) as {
-    render: (url: string) => Promise<string>;
+    render: (request: Request) => Promise<{ body: string; head: string }>;
   };
   const server = createHttpServer(async (req, res) => {
     try {
-      const html = await mod.render(req.url ?? '/');
+      const { body, head } = await mod.render(toRequest(req));
       res.setHeader('Content-Type', 'text/html');
-      res.end(template.replace('<!--ssr-outlet-->', html));
+      res.end(spliceShell(template, body, head));
     } catch (err) {
       sendError(res, err);
     }

@@ -12,7 +12,17 @@
 // the user's component on the `html` tag — the test then drives it with
 // the SSR variant for renderToString and the core variant for hydrate.
 
-import { html as clientHtml, hydrate, state } from '@purityjs/core';
+import {
+  each,
+  eachSSR,
+  html as clientHtml,
+  hydrate,
+  match,
+  matchSSR,
+  state,
+  when,
+  whenSSR,
+} from '@purityjs/core';
 import { describe, expect, it } from 'vitest';
 import { html as ssrHtml, renderToString } from '../src/index.ts';
 
@@ -111,5 +121,459 @@ describe('SSR → hydrate parity (marker-walking)', () => {
     await Promise.resolve();
     expect(host.firstChild).toBe(p);
     expect(host.textContent).toBe('X-Y');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// each() per-row hydration adoption
+//
+// Closes the ADR 0005 "Out of scope: Per-slot lossy fallback for control-flow
+// helpers" gap. Without these, hydrating an `each()` slot rebuilt the whole
+// list — a visible flash on long lists. With per-row markers + a deferred-
+// each handle, the hydrator adopts existing SSR rows in place.
+// ---------------------------------------------------------------------------
+
+interface Todo {
+  id: number;
+  text: string;
+}
+
+function eachApp(items: ReturnType<typeof state<Todo[]>>): (h: AnyHtml) => unknown {
+  return (h) => {
+    // The SSR / client variants of each are dispatched by the @purityjs/vite-
+    // plugin in real apps; here we resolve manually by checking which `h` is
+    // bound. We rely on the fact that `eachSSR` is used in SSR-rendered code
+    // and `each()` in client code, both with identical signatures.
+    const list = h === (ssrHtml as AnyHtml) ? eachSSR : each;
+    return h`<ul>${list(
+      () => items(),
+      (todo: () => Todo) => h`<li class="row">${() => todo().text}</li>`,
+      (todo: Todo) => todo.id,
+    )}</ul>`;
+  };
+}
+
+describe('SSR → hydrate parity (each per-row reconciliation)', () => {
+  it('adopts SSR rows in place — same node identities, no rebuild', async () => {
+    const items = state<Todo[]>([
+      { id: 1, text: 'A' },
+      { id: 2, text: 'B' },
+      { id: 3, text: 'C' },
+    ]);
+    const App = eachApp(items);
+
+    const ssrOutput = await renderToString(() => App(ssrHtml as AnyHtml));
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+    const ul = host.querySelector('ul')!;
+    const ssrLis = Array.from(ul.querySelectorAll('li.row'));
+    expect(ssrLis).toHaveLength(3);
+    expect(ssrLis.map((li) => li.textContent)).toEqual(['A', 'B', 'C']);
+
+    hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+
+    // Identical node references — no rebuild.
+    const postLis = Array.from(ul.querySelectorAll('li.row'));
+    expect(postLis).toEqual(ssrLis);
+    expect(host.textContent?.replace(/\s+/g, '')).toBe('ABC');
+  });
+
+  it('re-renders text reactively against adopted SSR rows', async () => {
+    const items = state<Todo[]>([
+      { id: 1, text: 'A' },
+      { id: 2, text: 'B' },
+    ]);
+    const App = eachApp(items);
+
+    const ssrOutput = await renderToString(() => App(ssrHtml as AnyHtml));
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+    const ssrLis = Array.from(host.querySelectorAll('li.row'));
+
+    hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+
+    items([
+      { id: 1, text: 'X' },
+      { id: 2, text: 'Y' },
+    ]);
+    await Promise.resolve();
+
+    // Same nodes — text mutated in place.
+    const postLis = Array.from(host.querySelectorAll('li.row'));
+    expect(postLis).toEqual(ssrLis);
+    expect(postLis.map((li) => li.textContent)).toEqual(['X', 'Y']);
+  });
+
+  it('reorders adopted rows by key without recreating DOM', async () => {
+    const items = state<Todo[]>([
+      { id: 1, text: 'A' },
+      { id: 2, text: 'B' },
+      { id: 3, text: 'C' },
+    ]);
+    const App = eachApp(items);
+
+    const ssrOutput = await renderToString(() => App(ssrHtml as AnyHtml));
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+    const [li1, li2, li3] = Array.from(host.querySelectorAll('li.row'));
+
+    hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+
+    items([
+      { id: 3, text: 'C' },
+      { id: 1, text: 'A' },
+      { id: 2, text: 'B' },
+    ]);
+    await Promise.resolve();
+
+    const after = Array.from(host.querySelectorAll('li.row'));
+    expect(after).toEqual([li3, li1, li2]);
+    expect(after.map((li) => li.textContent)).toEqual(['C', 'A', 'B']);
+  });
+
+  it('keeps SSR rows on append; new rows fill in', async () => {
+    const items = state<Todo[]>([
+      { id: 1, text: 'A' },
+      { id: 2, text: 'B' },
+    ]);
+    const App = eachApp(items);
+
+    const ssrOutput = await renderToString(() => App(ssrHtml as AnyHtml));
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+    const [li1, li2] = Array.from(host.querySelectorAll('li.row'));
+
+    hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+
+    items([
+      { id: 1, text: 'A' },
+      { id: 2, text: 'B' },
+      { id: 3, text: 'C' },
+    ]);
+    await Promise.resolve();
+
+    const after = Array.from(host.querySelectorAll('li.row'));
+    expect(after[0]).toBe(li1);
+    expect(after[1]).toBe(li2);
+    expect(after).toHaveLength(3);
+    expect(after[2].textContent).toBe('C');
+  });
+
+  it('removes adopted rows when an item is dropped', async () => {
+    const items = state<Todo[]>([
+      { id: 1, text: 'A' },
+      { id: 2, text: 'B' },
+      { id: 3, text: 'C' },
+    ]);
+    const App = eachApp(items);
+
+    const ssrOutput = await renderToString(() => App(ssrHtml as AnyHtml));
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+    const [li1, , li3] = Array.from(host.querySelectorAll('li.row'));
+
+    hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+
+    items([
+      { id: 1, text: 'A' },
+      { id: 3, text: 'C' },
+    ]);
+    await Promise.resolve();
+
+    const after = Array.from(host.querySelectorAll('li.row'));
+    expect(after).toEqual([li1, li3]);
+  });
+
+  it('handles empty SSR list followed by client-side append', async () => {
+    const items = state<Todo[]>([]);
+    const App = eachApp(items);
+
+    const ssrOutput = await renderToString(() => App(ssrHtml as AnyHtml));
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+    expect(host.querySelectorAll('li.row')).toHaveLength(0);
+
+    hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+
+    items([
+      { id: 1, text: 'A' },
+      { id: 2, text: 'B' },
+    ]);
+    await Promise.resolve();
+
+    expect(Array.from(host.querySelectorAll('li.row')).map((li) => li.textContent)).toEqual([
+      'A',
+      'B',
+    ]);
+  });
+
+  it('handles keys with dashes, slashes and unicode without collisions', async () => {
+    interface Tagged {
+      id: string;
+      label: string;
+    }
+    const items = state<Tagged[]>([
+      { id: 'a-b', label: 'one' },
+      { id: 'a--b', label: 'two' },
+      { id: 'café/3', label: 'three' },
+    ]);
+    const App = (h: AnyHtml) => {
+      const list = h === (ssrHtml as AnyHtml) ? eachSSR : each;
+      return h`<ul>${list(
+        () => items(),
+        (item: () => Tagged) => h`<li class="row">${() => item().label}</li>`,
+        (item: Tagged) => item.id,
+      )}</ul>`;
+    };
+
+    const ssrOutput = await renderToString(() => App(ssrHtml as AnyHtml));
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+    const ssrLis = Array.from(host.querySelectorAll('li.row'));
+    expect(ssrLis.map((li) => li.textContent)).toEqual(['one', 'two', 'three']);
+
+    hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+
+    const postLis = Array.from(host.querySelectorAll('li.row'));
+    // Same SSR nodes adopted — encoding round-tripped each key intact.
+    expect(postLis).toEqual(ssrLis);
+  });
+
+  it('falls back to fresh DOM when hydration data diverges from SSR', async () => {
+    const ssrItems: Todo[] = [
+      { id: 1, text: 'A' },
+      { id: 2, text: 'B' },
+    ];
+    const clientItems: Todo[] = [
+      { id: 10, text: 'X' },
+      { id: 20, text: 'Y' },
+    ];
+
+    // Render SSR with one set of data, then hydrate with a different list —
+    // simulates real-world data drift. Adoption should fall through to the
+    // fresh-DOM path per row, and the page should still end up correct.
+    const ssrOutput = await renderToString(
+      () =>
+        ssrHtml`<ul>${eachSSR(
+          () => ssrItems,
+          (item: () => Todo) => ssrHtml`<li class="row">${() => item().text}</li>`,
+          (item: Todo) => item.id,
+        )}</ul>`,
+    );
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+
+    const items = state(clientItems);
+    hydrate(
+      host,
+      () =>
+        clientHtml`<ul>${each(
+          () => items(),
+          (item: () => Todo) => clientHtml`<li class="row">${() => item().text}</li>`,
+          (item: Todo) => item.id,
+        )}</ul>` as Node,
+    );
+
+    expect(Array.from(host.querySelectorAll('li.row')).map((li) => li.textContent)).toEqual([
+      'X',
+      'Y',
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// match() / when() per-case adoption
+//
+// Closes the second half of ADR 0005's "Per-slot lossy fallback for control-
+// flow helpers" gap. matchSSR / whenSSR now embed the rendered key in the
+// boundary marker (`<!--m:KEY-->...<!--/m-->`); during hydration match()
+// returns a DeferredMatch handle, and inflateDeferredMatch adopts the SSR
+// case in place when the current key still matches what was rendered.
+// ---------------------------------------------------------------------------
+
+describe('SSR → hydrate parity (when/match per-case adoption)', () => {
+  it('when(): preserves the SSR-rendered branch DOM through hydration', async () => {
+    const ok = state(true);
+    const App = (h: AnyHtml) => {
+      const cond = h === (ssrHtml as AnyHtml) ? whenSSR : when;
+      return h`<section>${cond(
+        () => ok(),
+        () => h`<p class="yes">yes</p>`,
+        () => h`<p class="no">no</p>`,
+      )}</section>`;
+    };
+
+    const ssrOutput = await renderToString(() => App(ssrHtml as AnyHtml));
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+    const ssrYes = host.querySelector('p.yes')!;
+    expect(ssrYes).not.toBeNull();
+
+    hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+
+    // Same node — adopted in place.
+    expect(host.querySelector('p.yes')).toBe(ssrYes);
+    expect(host.textContent).toContain('yes');
+  });
+
+  it('when(): reactive update toggles to else branch and back to cached then', async () => {
+    const ok = state(true);
+    const App = (h: AnyHtml) => {
+      const cond = h === (ssrHtml as AnyHtml) ? whenSSR : when;
+      return h`<section>${cond(
+        () => ok(),
+        () => h`<p class="yes">yes</p>`,
+        () => h`<p class="no">no</p>`,
+      )}</section>`;
+    };
+
+    const ssrOutput = await renderToString(() => App(ssrHtml as AnyHtml));
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+    const ssrYes = host.querySelector('p.yes')!;
+
+    hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+
+    ok(false);
+    await Promise.resolve();
+    expect(host.querySelector('p.yes')).toBeNull();
+    expect(host.querySelector('p.no')).not.toBeNull();
+
+    // Toggle back — the original SSR-derived <p.yes> should be reused from
+    // the per-case cache (matches the existing client match() behavior).
+    ok(true);
+    await Promise.resolve();
+    expect(host.querySelector('p.yes')).toBe(ssrYes);
+  });
+
+  it('when(): event handler binds to the adopted SSR element', async () => {
+    let clicks = 0;
+    const ok = state(true);
+    const App = (h: AnyHtml) => {
+      const cond = h === (ssrHtml as AnyHtml) ? whenSSR : when;
+      return h`<section>${cond(
+        () => ok(),
+        () => h`<button @click=${() => clicks++}>click me</button>`,
+      )}</section>`;
+    };
+
+    const ssrOutput = await renderToString(() => App(ssrHtml as AnyHtml));
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+    const ssrButton = host.querySelector('button')!;
+
+    hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+    expect(host.querySelector('button')).toBe(ssrButton);
+    ssrButton.click();
+    ssrButton.click();
+    expect(clicks).toBe(2);
+  });
+
+  it('match(): adopts the SSR-rendered case + toggles between cases', async () => {
+    const status = state<'loading' | 'ready' | 'error'>('ready');
+    const App = (h: AnyHtml) => {
+      const m = h === (ssrHtml as AnyHtml) ? matchSSR : match;
+      return h`<section>${m(() => status(), {
+        loading: () => h`<p class="loading">...</p>`,
+        ready: () => h`<p class="ready">OK</p>`,
+        error: () => h`<p class="error">!</p>`,
+      })}</section>`;
+    };
+
+    const ssrOutput = await renderToString(() => App(ssrHtml as AnyHtml));
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+    const ssrReady = host.querySelector('p.ready')!;
+    expect(ssrReady).not.toBeNull();
+
+    hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+
+    expect(host.querySelector('p.ready')).toBe(ssrReady);
+
+    status('error');
+    await Promise.resolve();
+    expect(host.querySelector('p.error')).not.toBeNull();
+    expect(host.querySelector('p.ready')).toBeNull();
+
+    status('ready');
+    await Promise.resolve();
+    // Adopted SSR node returns from the cache.
+    expect(host.querySelector('p.ready')).toBe(ssrReady);
+  });
+
+  it('match(): reactive text in adopted view updates against SSR text node', async () => {
+    const status = state<'loading' | 'ready'>('ready');
+    const label = state('OK');
+    const App = (h: AnyHtml) => {
+      const m = h === (ssrHtml as AnyHtml) ? matchSSR : match;
+      return h`<section>${m(() => status(), {
+        loading: () => h`<p>...</p>`,
+        ready: () => h`<p class="ready">${() => label()}</p>`,
+      })}</section>`;
+    };
+
+    const ssrOutput = await renderToString(() => App(ssrHtml as AnyHtml));
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+    const ssrReady = host.querySelector('p.ready')!;
+
+    hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+
+    label('Done');
+    await Promise.resolve();
+    expect(host.querySelector('p.ready')).toBe(ssrReady);
+    expect(ssrReady.textContent).toBe('Done');
+  });
+
+  it('match(): falls back to fresh DOM when SSR key disagrees with client key', async () => {
+    // SSR rendered with status="ready", client hydrates with status="error".
+    const ssrStatus: 'ready' | 'error' = 'ready';
+    const clientStatus = state<'ready' | 'error'>('error');
+
+    const ssrOutput = await renderToString(
+      () =>
+        ssrHtml`<section>${matchSSR(() => ssrStatus, {
+          ready: () => ssrHtml`<p class="ready">OK</p>`,
+          error: () => ssrHtml`<p class="error">!</p>`,
+        })}</section>`,
+    );
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+    expect(host.querySelector('p.ready')).not.toBeNull();
+    expect(host.querySelector('p.error')).toBeNull();
+
+    hydrate(
+      host,
+      () =>
+        clientHtml`<section>${match(() => clientStatus(), {
+          ready: () => clientHtml`<p class="ready">OK</p>`,
+          error: () => clientHtml`<p class="error">!</p>`,
+        })}</section>` as Node,
+    );
+
+    // SSR <p.ready> should be detached; fresh <p.error> takes the slot.
+    expect(host.querySelector('p.ready')).toBeNull();
+    expect(host.querySelector('p.error')).not.toBeNull();
+  });
+
+  it('match(): handles fallback when no case matches at hydrate time', async () => {
+    const App = (h: AnyHtml) => {
+      const m = h === (ssrHtml as AnyHtml) ? matchSSR : match;
+      return h`<section>${m(
+        () => 'unknown' as 'a' | 'unknown',
+        { a: () => h`<p class="a">A</p>` },
+        () => h`<p class="fb">fallback</p>`,
+      )}</section>`;
+    };
+
+    const ssrOutput = await renderToString(() => App(ssrHtml as AnyHtml));
+    const host = document.createElement('div');
+    host.innerHTML = ssrOutput;
+    const ssrFb = host.querySelector('p.fb')!;
+    expect(ssrFb).not.toBeNull();
+
+    hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+    // Fallback was the SSR-rendered case; key 'unknown' matches; same node.
+    expect(host.querySelector('p.fb')).toBe(ssrFb);
   });
 });

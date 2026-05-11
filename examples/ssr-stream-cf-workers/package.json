@@ -1,0 +1,21 @@
+{
+  "name": "purity-ssr-stream-cf-workers",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "NODE_OPTIONS='--conditions=development' vite build --logLevel info",
+    "dev": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "@purityjs/core": "*",
+    "@purityjs/ssr": "*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240405.0",
+    "@purityjs/vite-plugin": "*",
+    "vite": "^8.0.10",
+    "wrangler": "^3.50.0"
+  }
+}

@@ -1,7 +1,8 @@
 # 0006: Streaming SSR with Suspense boundaries
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-05-10
+**Note:** Promoted from Proposed to Accepted in the ADR-0027 housekeeping pass. All six named phases (boundary markers + per-boundary timeouts + `renderToStream` + edge adapters + `onError` + streaming-boundary resource cache) shipped during the ADRs 0007-0026 sprint.
 
 ## Context
 
@@ -257,19 +258,48 @@ Phases, each landable as its own PR:
    deadlines against it, rather than refactoring to a per-boundary
    pending stack — outcome is equivalent for the buffered render
    model and far less invasive.
-3. **`renderToStream` MVP.** New server entry, emits the shell + a
-   single chunk per resolved boundary. `__purity_swap` injected inline.
-   Hydration deferred until stream close.
-4. **Edge-runtime adapter examples.** `examples/ssr-stream-cf-workers/`,
-   `examples/ssr-stream-vercel-edge/`, `examples/ssr-stream-deno/`. No
-   adapter code in core.
+3. ✅ **`renderToStream` MVP.** Shipped. New server entry returning
+   `ReadableStream<Uint8Array>` from `@purityjs/ssr`. The shell renders
+   via the existing multi-pass loop (top-level resources still block
+   the shell — wrap async data in `suspense()` to defer it); each
+   `suspense()` call emits its fallback wrapped in `<!--s:N-->...
+      <!--/s:N-->` markers and queues `(view, fallback)` into the new
+   `streamingBoundaries` map on `SSRRenderContext`. After the shell
+   flushes, the renderer drains the queue in declaration order: each
+   boundary renders in its own SSRRenderContext + multi-pass loop with
+   its own `{ timeout }` budget, then emits a `<template id="purity-s-N">
+resolved</template><script>__purity_swap(N)</script>` chunk. The
+   ~330-byte swap helper inlines exactly once at the shell tail when
+   any boundaries are queued. Hydration timing remains "defer until
+   stream close" per the original plan; selective per-boundary
+   hydration is left for a follow-up. Per-boundary resource-cache
+   serialisation is Phase 6 second-half — boundaries currently refetch
+   on the client.
+4. ✅ **Edge-runtime adapter examples.** Shipped.
+   `examples/ssr-stream-cf-workers/`, `examples/ssr-stream-vercel-edge/`,
+   and `examples/ssr-stream-deno/` each show a single-file edge entry
+   that wires `renderToStream` into the runtime's standard
+   `Request → Response` handler. No adapter code lives in core — all
+   three runtimes already speak `ReadableStream<Uint8Array>`, so the
+   wiring is one `new Response(stream, …)` call. Each example uses
+   `req.signal` so a client disconnect cancels the renderer mid-stream;
+   each README documents CSP nonce propagation and the streaming wire
+   format users should expect to see on the wire.
 5. ✅ **Per-boundary error handling + `onError` hook.** Shipped (a
    subset of full Phase 5 — covers `suspense({ onError })` for view /
    fallback / timeout phases). Per-boundary `__purity_resources__`
-   emit is still pending Phase 3 streaming.
-6. **CSP nonce support + `__purity_resources__` per-boundary emit.**
-   First half (CSP `nonce` on the resources script) shipped already;
-   the per-boundary emit half waits on Phase 3.
+   emit landed with Phase 6.
+6. ✅ **CSP nonce support + `__purity_resources__` per-boundary emit.**
+   Both halves shipped. CSP `nonce` propagates through every inline
+   `<script>` we emit (resource cache, swap helper, per-boundary swap
+   calls, per-boundary cache primes). Per-boundary cache emits as
+   `<script type="application/json" id="__purity_resources_N__">
+{"keyed":{...}}</script>` next to each `<template id="purity-s-N">`.
+   Only the keyed map is serialised — positional indices inside a
+   boundary collide with the shell's index space, so streamed
+   boundaries' resources should opt into `resource(..., { key })`. The
+   client-side hydrate priming scans `script[id^="__purity_resources_"]`
+   and merges all keyed payloads into the cache before priming.
 
 Each phase has its own test + docs requirements; ADRs may follow if any
 phase reveals decisions that contradict this plan.

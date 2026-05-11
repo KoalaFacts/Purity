@@ -23,6 +23,13 @@ export interface ElementNode {
 export interface TextNode {
   type: 'text';
   value: string;
+  /**
+   * When true the text is emitted byte-for-byte without HTML escaping
+   * (SSR) and without text-node coercion (client DOM build). Used for
+   * SGML-style declarations like `<!doctype html>` parsed verbatim from
+   * the template — escaping would corrupt the doctype.
+   */
+  raw?: boolean;
 }
 
 export interface ExpressionNode {

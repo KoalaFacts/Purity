@@ -1148,3 +1148,167 @@ describe('debounced', () => {
     expect((d as unknown as { set?: unknown }).set).toBe(undefined);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ADR 0024 — SSR-aware lazyResource.fetch()
+//
+// When called inside an SSR render context with a `key` option, fetch()
+// bypasses the argsState/watch plumbing and registers the in-flight
+// promise with `ssrCtx.pendingPromises` so the multipass renderer awaits
+// it. Pass 2 reads the cached value via mutate().
+// ---------------------------------------------------------------------------
+
+import {
+  popSSRRenderContext,
+  pushSSRRenderContext,
+  type SSRRenderContext,
+} from '../src/ssr-context.ts';
+
+function makeSSRContext(): SSRRenderContext {
+  return {
+    pendingPromises: [],
+    resolvedData: [],
+    resolvedErrors: [],
+    resourceCounter: 0,
+    resolvedDataByKey: {},
+    resolvedErrorsByKey: {},
+    suspenseCounter: 0,
+    boundaryStartTimes: new Map(),
+  };
+}
+
+describe('lazyResource — SSR multipass registration (ADR 0024)', () => {
+  it('pushes the fetcher promise onto pendingPromises on pass 1', () => {
+    const ctx = makeSSRContext();
+    pushSSRRenderContext(ctx);
+    try {
+      let fetcherCalls = 0;
+      const r = lazyResource(
+        async (args: { id: number }) => {
+          fetcherCalls++;
+          return `user-${args.id}`;
+        },
+        { key: 'user-fetch' },
+      );
+      r.fetch({ id: 42 });
+      expect(fetcherCalls).toBe(1);
+      expect(ctx.pendingPromises).toHaveLength(1);
+    } finally {
+      popSSRRenderContext();
+    }
+  });
+
+  it('caches the resolved value in resolvedDataByKey for the second pass', async () => {
+    const ctx = makeSSRContext();
+    pushSSRRenderContext(ctx);
+    try {
+      const r = lazyResource(async (id: number) => `user-${id}`, { key: 'k' });
+      r.fetch(42);
+      await Promise.all(ctx.pendingPromises);
+      expect(ctx.resolvedDataByKey.k).toBe('user-42');
+      expect(ctx.resolvedErrorsByKey.k).toBeUndefined();
+    } finally {
+      popSSRRenderContext();
+    }
+  });
+
+  it('pass-2 fetch reads the cached value via mutate() without re-fetching', async () => {
+    const ctx = makeSSRContext();
+    pushSSRRenderContext(ctx);
+    try {
+      let fetcherCalls = 0;
+      // Pass 1
+      const r1 = lazyResource(
+        async (id: number) => {
+          fetcherCalls++;
+          return `user-${id}`;
+        },
+        { key: 'k' },
+      );
+      r1.fetch(42);
+      await Promise.all(ctx.pendingPromises);
+      expect(fetcherCalls).toBe(1);
+
+      // Pass 2 — fresh lazyResource (the App function reruns), cached value applied.
+      ctx.pendingPromises.length = 0;
+      const r2 = lazyResource(
+        async (id: number) => {
+          fetcherCalls++;
+          return `user-${id}`;
+        },
+        { key: 'k' },
+      );
+      r2.fetch(42);
+      // Fetcher was NOT called again.
+      expect(fetcherCalls).toBe(1);
+      // r2.data() should now reflect the cached value (mutate ran).
+      expect(r2()).toBe('user-42');
+      // No promise was registered on pass 2 either.
+      expect(ctx.pendingPromises).toHaveLength(0);
+    } finally {
+      popSSRRenderContext();
+    }
+  });
+
+  it('pass-2 re-throws cached error so consumer try/catch fires an errorBoundary path', async () => {
+    const ctx = makeSSRContext();
+    pushSSRRenderContext(ctx);
+    try {
+      // Pass 1 — fetcher throws.
+      const r1 = lazyResource(
+        async () => {
+          throw new Error('boom');
+        },
+        { key: 'k' },
+      );
+      r1.fetch(undefined);
+      // Let the rejection settle.
+      await Promise.allSettled(ctx.pendingPromises);
+      expect(ctx.resolvedErrorsByKey.k).toBeInstanceOf(Error);
+
+      // Pass 2 — fresh lazyResource should re-throw on fetch().
+      ctx.pendingPromises.length = 0;
+      const r2 = lazyResource(async () => 'never', { key: 'k' });
+      expect(() => r2.fetch(undefined)).toThrow('boom');
+    } finally {
+      popSSRRenderContext();
+    }
+  });
+
+  it('falls back to client-only behavior when no key is supplied', () => {
+    const ctx = makeSSRContext();
+    pushSSRRenderContext(ctx);
+    try {
+      let fetcherCalls = 0;
+      const r = lazyResource(async () => {
+        fetcherCalls++;
+        return 'x';
+      });
+      r.fetch(undefined);
+      // No SSR registration without key — the fetcher runs on the
+      // microtask queue (client path), not synchronously.
+      expect(fetcherCalls).toBe(0);
+      expect(ctx.pendingPromises).toHaveLength(0);
+    } finally {
+      popSSRRenderContext();
+    }
+  });
+
+  it('outside SSR context behaves exactly like before (lazy + reactive)', async () => {
+    let fetcherCalls = 0;
+    const r = lazyResource(
+      async (id: number) => {
+        fetcherCalls++;
+        return `v-${id}`;
+      },
+      { key: 'k' },
+    );
+    expect(fetcherCalls).toBe(0);
+    expect(r()).toBeUndefined();
+    r.fetch(1);
+    await flushAll();
+    expect(fetcherCalls).toBe(1);
+    expect(r()).toBe('v-1');
+    r.dispose();
+  });
+});

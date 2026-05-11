@@ -271,6 +271,40 @@ describe('compiler — extra coverage', () => {
     expect(div.children[0].type).toBe('comment');
   });
 
+  it('parses `<!doctype html>` as a raw text node', () => {
+    // Regression: before this fix the parser fell through from comment
+    // detection to parseElement → parseAttribute, which spun forever on
+    // the leading `!` (not a name char and no progress made). Surfaced
+    // as a Vite SSR-build OOM in the cf-workers example.
+    const ast = parse(['<!doctype html><p>hi</p>']);
+    const first = ast.children[0] as any;
+    expect(first.type).toBe('text');
+    expect(first.raw).toBe(true);
+    expect(first.value).toBe('<!doctype html>');
+    const second = ast.children[1] as any;
+    expect(second.type).toBe('element');
+    expect(second.tag).toBe('p');
+  });
+
+  it('parses `<!DOCTYPE html>` (uppercase) the same way', () => {
+    const ast = parse(['<!DOCTYPE html>']);
+    const first = ast.children[0] as any;
+    expect(first.type).toBe('text');
+    expect(first.raw).toBe(true);
+    expect(first.value).toBe('<!DOCTYPE html>');
+  });
+
+  it('parses `<![CDATA[...]]>` as a raw text node', () => {
+    const ast = parse(['<![CDATA[x>y]]>']);
+    const first = ast.children[0] as any;
+    expect(first.type).toBe('text');
+    expect(first.raw).toBe(true);
+    // Stops at the first `>` — CDATA in template literals is unusual;
+    // the goal is to survive parsing without infinite-looping, not to
+    // be a full SGML reader.
+    expect(first.value.startsWith('<![CDATA[')).toBe(true);
+  });
+
   it('parses unquoted attribute values', () => {
     const ast = parse(['<div data-x=hello id=foo></div>']);
     const div = ast.children[0] as any;

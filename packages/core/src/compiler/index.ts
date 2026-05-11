@@ -11,10 +11,13 @@ export { html, inflateDeferred } from './compile.ts';
 export type { DeferredTemplate } from './hydrate-runtime.ts';
 export {
   checkHydrationCursor,
+  disableHydrationTextRewrite,
   disableHydrationWarnings,
+  enableHydrationTextRewrite,
   enableHydrationWarnings,
   enterHydration,
   exitHydration,
+  hydrationTextRewriteEnabled,
   hydrationWarningsEnabled,
   isDeferred,
   isHydrating,

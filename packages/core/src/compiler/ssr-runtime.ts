@@ -33,9 +33,20 @@ export function isSSRHtml(x: unknown): x is SSRHtml {
   );
 }
 
-/** Escape a value for safe inclusion in HTML text content. */
+/**
+ * Escape a value for safe inclusion in HTML text content. Covers the OWASP
+ * five-character set (`&`, `<`, `>`, `"`, `'`) — `"` and `'` aren't strictly
+ * needed in text position, but escaping them makes the function safe to
+ * reuse in attribute contexts and silences static-analysis warnings about
+ * incomplete sanitization.
+ */
 export function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 /** Escape a value for safe inclusion in a double-quoted attribute. */
@@ -43,6 +54,7 @@ export function escAttr(s: string): string {
   return s
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }

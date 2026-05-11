@@ -1027,3 +1027,137 @@ describe('each — entry disposer registration (leak regression)', () => {
     expect(runs).toEqual([1]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ADR 0023 — isomorphic conditional primitives
+//
+// `when()` / `match()` / `each()` auto-detect the SSR render context and
+// dispatch to their SSR variants when set. This means the unsuffixed names
+// are safe to call from manifest-driven composers without crashing on
+// `document is not defined`.
+// ---------------------------------------------------------------------------
+
+import { each as eachIso, match as matchIso, when as whenIso } from '../src/control.ts';
+import {
+  popSSRRenderContext,
+  pushSSRRenderContext,
+  type SSRRenderContext,
+} from '../src/ssr-context.ts';
+
+function makeSSRContext(): SSRRenderContext {
+  return {
+    pendingPromises: [],
+    resolvedData: [],
+    resolvedErrors: [],
+    resourceCounter: 0,
+    resolvedDataByKey: {},
+    resolvedErrorsByKey: {},
+    suspenseCounter: 0,
+    boundaryStartTimes: new Map(),
+  };
+}
+
+function inSSRContext<T>(fn: () => T): T {
+  pushSSRRenderContext(makeSSRContext());
+  try {
+    return fn();
+  } finally {
+    popSSRRenderContext();
+  }
+}
+
+// SSRHtml is `{ __purity_ssr_html__: string }`; helper to extract the markup.
+function ssrHtmlText(v: unknown): string {
+  return (v as { __purity_ssr_html__: string }).__purity_ssr_html__;
+}
+
+describe('match — SSR-context dispatch (ADR 0023)', () => {
+  it('returns SSRHtml when called inside an SSR render context', () => {
+    const result = inSSRContext(() =>
+      matchIso(() => 'a' as 'a' | 'b', {
+        a: () => 'left',
+        b: () => 'right',
+      }),
+    );
+    const html = ssrHtmlText(result);
+    expect(html).toContain('left');
+    expect(html).toContain('<!--m:');
+  });
+
+  it('returns a DocumentFragment when called outside an SSR context', () => {
+    const result = matchIso(() => 'a' as 'a' | 'b', {
+      a: () => 'left',
+      b: () => 'right',
+    });
+    expect(result).toBeInstanceOf(DocumentFragment);
+  });
+});
+
+describe('when — SSR-context dispatch (ADR 0023)', () => {
+  it('returns SSRHtml when called inside an SSR render context', () => {
+    const result = inSSRContext(() =>
+      whenIso(
+        () => true,
+        () => 'shown',
+        () => 'hidden',
+      ),
+    );
+    const html = ssrHtmlText(result);
+    expect(html).toContain('shown');
+    expect(html).toContain('<!--m:true-->');
+  });
+
+  it('returns the elseFn branch in SSR when condition is false', () => {
+    const result = inSSRContext(() =>
+      whenIso(
+        () => false,
+        () => 'shown',
+        () => 'hidden',
+      ),
+    );
+    const html = ssrHtmlText(result);
+    expect(html).toContain('hidden');
+    expect(html).toContain('<!--m:false-->');
+  });
+
+  it('returns a DocumentFragment when called outside an SSR context', () => {
+    const result = whenIso(
+      () => true,
+      () => 'shown',
+    );
+    expect(result).toBeInstanceOf(DocumentFragment);
+  });
+});
+
+describe('each — SSR-context dispatch (ADR 0023)', () => {
+  it('returns SSRHtml when called inside an SSR render context', () => {
+    // Plain-string mapFn returns are HTML-escaped by valueToHtml — that's
+    // the existing eachSSR contract. Use the escaped form in the assertion.
+    const result = inSSRContext(() => eachIso([1, 2, 3], (item) => `<li>${item()}</li>`));
+    const html = ssrHtmlText(result);
+    expect(html).toContain('&lt;li&gt;1&lt;/li&gt;');
+    expect(html).toContain('&lt;li&gt;2&lt;/li&gt;');
+    expect(html).toContain('&lt;li&gt;3&lt;/li&gt;');
+    // eachSSR's per-row marker grammar.
+    expect(html).toMatch(/<!--er:[^-]+-->/);
+    expect(html).toContain('<!--/er-->');
+  });
+
+  it('returns a DocumentFragment when called outside an SSR context', () => {
+    const result = eachIso([1, 2], (item) => {
+      const li = document.createElement('li');
+      li.textContent = String(item());
+      return li;
+    });
+    expect(result).toBeInstanceOf(DocumentFragment);
+  });
+
+  it('emits the eachSSR boundary marker grammar in SSR (no document.createComment)', () => {
+    // Regression for the gap surfaced by the examples/ssr migration: calling
+    // each() inside an SSR pass should dispatch to eachSSR rather than reach
+    // for document.createComment (which crashes on the server). Asserting
+    // the boundary-marker prefix proves the dispatch went through SSR.
+    const result = inSSRContext(() => eachIso([1], (i) => `<li>${i()}</li>`));
+    expect(ssrHtmlText(result)).toMatch(/^<!--e-->/);
+  });
+});

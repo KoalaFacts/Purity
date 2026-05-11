@@ -14,7 +14,7 @@ describe('whenSSR + html', () => {
           )}
         </div>`,
     );
-    expect(out).toBe('<div><!--[--><!--m--><p>yes</p><!--/m--><!--]--></div>');
+    expect(out).toBe('<div><!--[--><!--m:true--><p>yes</p><!--/m--><!--]--></div>');
   });
 
   it('renders the else branch', async () => {
@@ -29,7 +29,7 @@ describe('whenSSR + html', () => {
           )}
         </div>`,
     );
-    expect(out).toBe('<div><!--[--><!--m--><p>no</p><!--/m--><!--]--></div>');
+    expect(out).toBe('<div><!--[--><!--m:false--><p>no</p><!--/m--><!--]--></div>');
   });
 });
 
@@ -46,7 +46,7 @@ describe('matchSSR + html', () => {
           })}
         </section>`,
     );
-    expect(out).toBe('<section><!--[--><!--m--><p>OK</p><!--/m--><!--]--></section>');
+    expect(out).toBe('<section><!--[--><!--m:ready--><p>OK</p><!--/m--><!--]--></section>');
   });
 
   it('falls through to fallback', async () => {
@@ -60,7 +60,7 @@ describe('matchSSR + html', () => {
           )}
         </section>`,
     );
-    expect(out).toBe('<section><!--[--><!--m--><p>fallback</p><!--/m--><!--]--></section>');
+    expect(out).toBe('<section><!--[--><!--m:unknown--><p>fallback</p><!--/m--><!--]--></section>');
   });
 });
 
@@ -77,7 +77,11 @@ describe('eachSSR + html', () => {
         </ul>`,
     );
     expect(out).toBe(
-      '<ul><!--[--><!--e--><li><!--[-->a<!--]--></li><li><!--[-->b<!--]--></li><li><!--[-->c<!--]--></li><!--/e--><!--]--></ul>',
+      '<ul><!--[--><!--e-->' +
+        '<!--er:a--><li><!--[-->a<!--]--></li><!--/er-->' +
+        '<!--er:b--><li><!--[-->b<!--]--></li><!--/er-->' +
+        '<!--er:c--><li><!--[-->c<!--]--></li><!--/er-->' +
+        '<!--/e--><!--]--></ul>',
     );
   });
 

@@ -1,15 +1,15 @@
 # @purityjs/vite-plugin
 
-AOT template compilation for Purity. Transforms `html` tagged templates at build time.
+AOT template compilation for Purity. Transforms `html` tagged templates at build time. Optionally exposes a file-system route manifest.
 
 ## What It Does
 
-- Finds `html`...`` in user source files
-- Parses into AST using `@purityjs/core/compiler` (separate subpath — no runtime code)
-- Generates direct `document.createElement` calls via the same `generate` codegen
-- Replaces the template literal with compiled output
-- Removes `html` from imports (dead code eliminated)
-- Auto-injects `import { watch as __purity_w__ } from '@purityjs/core'` once per file
+- **Template AOT compile** — finds `html`...``in user source, parses via`@purityjs/core/compiler`(separate subpath — no runtime code), generates direct`document.createElement`calls (or string-builder factories on the SSR build path), replaces the template literal with compiled output, removes`html`from imports (dead code eliminated), auto-injects`import { watch as **purity_w** } from '@purityjs/core'` once per file
+- **Server-module strip (ADR 0018)** — replaces `*.server.{ts,js,tsx,jsx}` files with `export {};` in client builds (`opts.ssr !== true`); SSR builds pass through unchanged. Default-on, opt out with `purity({ stripServerModules: false })`. Handler bodies + transitive imports (DB driver, secrets, API tokens) stop shipping to the browser.
+- **File-system routing (ADR 0019)** — opt-in `routes: { dir }` (or `routes: true` for `pages/`). Scans the directory and exposes a virtual `purity:routes` module exporting a sorted `RouteEntry[]`. Convention: `index.ts` → `/`, `[id].ts` → `:id`, `[...slug].ts` → `*` splat, `_*` reserved (skipped). HMR-aware via `handleHotUpdate`.
+- **Layouts (ADR 0020)** — `_layout.{ts,tsx,js,jsx}` per directory inside the routes dir. Each `RouteEntry` gets a `layouts: LayoutEntry[]` field with the inherited chain (root → leaf). Composer is user-land (`reduceRight` over the array). No new plugin option — convention-discovered.
+- **Error boundaries + 404 (ADR 0021)** — `_error.{ts,tsx,js,jsx}` per directory under the routes dir; `_404.{ts,tsx,js,jsx}` at the root only (Phase 1). Each `RouteEntry` gets an optional `errorBoundary?: LayoutEntry` (nearest in chain, single entry — no chained composition). The manifest gains a top-level `notFound?: LayoutEntry`. Both are emitted only when the corresponding files exist; consumers reading just `routes` keep working.
+- **Data loaders (ADR 0022)** — any route or layout module exporting a named `loader` gets a `hasLoader: true` flag in the manifest. Detection is regex-based on the module source (no parser dep); recognises `export const|let|var|function loader`, `export async function loader`, `export { loader }`, `export { x as loader }`, plus TypeScript-typed forms. Plugin reads each route + layout file once per build (cached via `attachLoaderInfo`'s internal map). Component-data plumbing stays user-land for Phase 1.
 - Skips framework internals (only compiles user code)
 - Emits a hand-rolled v3 source map (line-anchored — each output line maps back to the original line) so stack traces land in user source
 - Reports compile failures as `[purity] file:line:col — ...` warnings via the Vite plugin context (or `console.warn` outside Vite); failed templates are left as-is so the rest of the file still builds
@@ -18,7 +18,8 @@ AOT template compilation for Purity. Transforms `html` tagged templates at build
 
 ```
 src/
-  index.ts    — plugin export, template extraction, compilation
+  index.ts    — plugin export, template extraction, compilation, routes wiring
+  routes.ts   — pure helpers: filename → pattern, sort, manifest codegen (ADR 0019)
 ```
 
 ## Key Functions

@@ -60,6 +60,47 @@ export interface SSRRenderContext {
    * instead of the view.
    */
   timedOutBoundaries: Set<number>;
+  /**
+   * When true, `suspense()` skips its inline `view()` rendering during
+   * the SSR pass, emits the fallback in the shell, and registers the
+   * `view` (+ its `fallback` for a re-render on timeout) into
+   * {@link streamingBoundaries}. `renderToStream` then drains the map
+   * after the shell flush, awaiting each boundary's resources and
+   * emitting a `<template id="purity-s-N">resolved</template><script>
+   * __purity_swap(N)</script>` chunk per boundary. ADR 0006 Phase 3.
+   */
+  streamingMode?: boolean;
+  /**
+   * Boundaries deferred for streaming. Populated by `suspense()` when
+   * `streamingMode` is on; consumed by `renderToStream` after the
+   * shell has been flushed. Insertion order is the boundary's wire
+   * order in the response — boundaries stream in the same order they
+   * were declared in the source, regardless of resolution order, to
+   * keep the wire model deterministic for the simplest MVP.
+   */
+  streamingBoundaries?: Map<
+    number,
+    {
+      view: () => unknown;
+      fallback: () => unknown;
+      onError?: (err: unknown, info: { boundaryId: number; phase: string }) => void;
+    }
+  >;
+  /**
+   * Accumulator for `head()` calls — each entry is a chunk of HTML to
+   * append to the document `<head>`. Populated during render; consumed
+   * by `renderToString({ extractHead: true })`. ADR 0008.
+   */
+  head?: string[];
+  /**
+   * The incoming HTTP request that triggered this render. Optional —
+   * passed in via `renderToString({ request })` / `renderToStream({
+   * request })`. User components read it through `getRequest()` to
+   * branch on URL / headers / method / cookies during SSR. Standard
+   * Web Platform `Request` so it works on Node 18+, Bun, Deno,
+   * Cloudflare Workers, and Vercel Edge identically. ADR 0009.
+   */
+  request?: Request;
 }
 
 let currentContext: SSRRenderContext | null = null;

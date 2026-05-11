@@ -1,0 +1,9 @@
+name = "purity-ssr-stream-cf-workers"
+# Worker entry is the Vite SSR build output, not the source. `npm run build`
+# runs `vite build --ssr` which AOT-compiles every `html\`\`` in the page
+# tree + worker entry and writes the bundled artefact here.
+main = "dist/worker.js"
+# 2024-04-05+ enables ReadableStream / TextEncoder / Web Streams API in
+# the standard Workers compatibility surface (no nodejs_compat flag
+# required for the Purity runtime — it only uses Web Platform APIs).
+compatibility_date = "2024-04-05"

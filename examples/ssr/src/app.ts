@@ -1,43 +1,31 @@
-// Shared component used by both entry.server.ts and entry.client.ts.
+// File-system-routing demo. The plugin scans `src/pages/` (configured in
+// vite.config.ts) and emits a virtual `purity:routes` module that this file
+// consumes. The whole composer is ADR 0025's `asyncRoute` /
+// `asyncNotFound` — every step (route + layout import, loader awaits,
+// reduceRight wrap, error-boundary fallback, SSR-multipass registration via
+// ADR 0024's lazyResource) lives inside the helper.
 //
-// Uses @purityjs/core's `html` import — the Vite plugin AOT-compiles each
-// `html\`\`` call site for the appropriate build target (DOM-builder for the
-// client bundle, string-builder for the SSR bundle).
-import { component, eachSSR, html, resource, state } from '@purityjs/core';
+// What this app exercises end-to-end:
+//
+//   - ADR 0019 — pattern matching from the manifest.
+//   - ADR 0020 — `entry.layouts` chain wrapped via reduceRight.
+//   - ADR 0021 — `entry.errorBoundary` rendered on load failure.
+//   - ADR 0022 — `entry.hasLoader` / `layout.hasLoader` drive loader calls.
+//   - ADR 0023 — `when()` / `each()` are SSR-isomorphic.
+//   - ADR 0024 — lazyResource registers with the SSR multipass cycle.
+//   - ADR 0025 — the dispatcher is one helper call per match.
+//   - ADR 0026 — components read loader data via `loaderData()`.
+//   - ADR 0028 — `notFoundChain` picks the nearest `_404.ts` by URL prefix.
+//     `/users/missing` lands on `pages/users/_404.ts`; `/missing` lands on
+//     `pages/_404.ts`.
 
-// A registered component. SSR renders this with `<template shadowrootmode>`
-// (Declarative Shadow DOM); the client constructor reuses the parser-attached
-// shadow root and re-renders against it.
-component<{ count: number }>('demo-counter', ({ count }) => {
-  return html`
-    <div>
-      <h2>Count: ${() => count}</h2>
-      <p>Server-rendered, hydrated on the client.</p>
-    </div>
-  `;
-});
+import { asyncNotFound, asyncRoute, matchRoute } from '@purityjs/core';
+import { notFoundChain, routes } from 'purity:routes';
 
-export function App() {
-  // Async resource — server awaits before serializing, payload is embedded
-  // for the client to skip the first refetch.
-  const todos = resource(async () => {
-    // Simulate latency. In a real app this would be a `fetch(...)` call.
-    await new Promise((r) => setTimeout(r, 30));
-    return ['Write tests', 'Ship SSR', 'Celebrate'];
-  });
-
-  const greeting = state('hello, world');
-
-  return html`
-    <main>
-      <h1>${() => greeting()}</h1>
-      <demo-counter :count=${42}></demo-counter>
-      <ul>
-        ${eachSSR(
-          () => todos() ?? [],
-          (item) => html`<li>${() => item()}</li>`,
-        )}
-      </ul>
-    </main>
-  `;
+export function App(): unknown {
+  for (const entry of routes) {
+    const m = matchRoute(entry.pattern);
+    if (m) return asyncRoute(entry, m.params);
+  }
+  return asyncNotFound(notFoundChain);
 }

@@ -1,0 +1,20 @@
+{
+  "name": "purity-ssr-stream-vercel-edge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "NODE_OPTIONS='--conditions=development' vite build --logLevel info",
+    "dev": "npm run build && vercel dev",
+    "deploy": "npm run build && vercel deploy --prod"
+  },
+  "dependencies": {
+    "@purityjs/core": "*",
+    "@purityjs/ssr": "*"
+  },
+  "devDependencies": {
+    "@purityjs/vite-plugin": "*",
+    "vercel": "^34.0.0",
+    "vite": "^8.0.10"
+  }
+}

@@ -1,3 +1,15 @@
+import {
+  inflateDeferred,
+  setInflateDeferredEach,
+  setInflateDeferredMatch,
+} from './compiler/compile.ts';
+import {
+  type DeferredTemplate,
+  enterHydration,
+  exitHydration,
+  isDeferred,
+  isHydrating,
+} from './compiler/hydrate-runtime.ts';
 import { markSSRHtml, type SSRHtml, valueToHtml } from './compiler/ssr-runtime.ts';
 import { getCurrentContext, popContext, pushContext, type Scope } from './component.ts';
 import type { StateAccessor } from './signals.ts';
@@ -9,8 +21,107 @@ import { getSSRRenderContext } from './ssr-context.ts';
 // NOW CACHES DOM per case key — toggling reuses nodes instead of recreating
 // ---------------------------------------------------------------------------
 
-type MatchView = () => Node | DocumentFragment | string;
+// Branch views can return arbitrary user code: a Node / DocumentFragment for
+// the client DOM path, a string for SSR, or `undefined` / `null` for "render
+// nothing". `insertMatchView` already calls `String(content)` for non-Node
+// values, so the runtime contract is permissive — widen the type to match.
+type MatchView = () => unknown;
 type MatchCases<T extends string | number | boolean> = Partial<Record<`${T}`, MatchView>>;
+
+interface MatchState {
+  currentNodes: Node[];
+  prevKey: string | undefined;
+  cache: Map<string, Node[]>;
+}
+
+// Insert the result of viewFn() before endMarker and update matchState. Shared
+// between match()'s initial render and the reactive update path.
+function insertMatchView(
+  matchState: MatchState,
+  parent: Node,
+  endMarker: Node,
+  content: unknown,
+): void {
+  if (content instanceof DocumentFragment) {
+    matchState.currentNodes = Array.from(content.childNodes);
+    parent.insertBefore(content, endMarker);
+  } else if (content instanceof Node) {
+    matchState.currentNodes = [content];
+    parent.insertBefore(content, endMarker);
+  } else if (content == null) {
+    // `undefined` / `null` view return → render nothing.
+    matchState.currentNodes = [];
+  } else {
+    const textNode = document.createTextNode(String(content));
+    matchState.currentNodes = [textNode];
+    parent.insertBefore(textNode, endMarker);
+  }
+}
+
+// Detach current nodes, archive them in the per-case cache (so toggling back
+// reuses them), then render the new key. Reused by client + hydration paths.
+function reconcileMatch<T extends string | number | boolean>(
+  matchState: MatchState,
+  parent: Node,
+  endMarker: Node,
+  key: string,
+  cases: MatchCases<T>,
+  fallback?: MatchView,
+): void {
+  for (let i = 0; i < matchState.currentNodes.length; i++) {
+    const node = matchState.currentNodes[i];
+    /* v8 ignore next -- defensive guard; nodes always have parent here */
+    if (node.parentNode) node.parentNode.removeChild(node);
+  }
+  if (matchState.prevKey !== undefined && matchState.currentNodes.length > 0) {
+    matchState.cache.set(matchState.prevKey, matchState.currentNodes);
+  }
+  matchState.prevKey = key;
+
+  const cached = matchState.cache.get(key);
+  if (cached) {
+    matchState.currentNodes = cached;
+    for (let i = 0; i < cached.length; i++) parent.insertBefore(cached[i], endMarker);
+    return;
+  }
+
+  const viewFn = cases[key as `${T}`] ?? fallback;
+  if (!viewFn) {
+    matchState.currentNodes = [];
+    return;
+  }
+  insertMatchView(matchState, parent, endMarker, viewFn());
+}
+
+function installMatchWatch<T extends string | number | boolean>(
+  matchState: MatchState,
+  endMarker: Node,
+  sourceFn: () => T,
+  cases: MatchCases<T>,
+  fallback?: MatchView,
+): () => void {
+  return watch(() => {
+    const key = String(sourceFn()) as `${T}`;
+    if (key === matchState.prevKey) return;
+    const parent = endMarker.parentNode;
+    /* v8 ignore next -- defensive; if endMarker is detached, watch is disposed */
+    if (!parent) return;
+    reconcileMatch(matchState, parent, endMarker, key, cases, fallback);
+  });
+}
+
+function registerMatchAutoDispose(
+  ownerCtx: Scope | null,
+  dispose: () => void,
+  matchState: MatchState,
+): void {
+  if (!ownerCtx) return;
+  (ownerCtx.disposers ??= []).push(() => {
+    dispose();
+    matchState.cache.clear();
+    matchState.currentNodes = [];
+  });
+}
 
 /**
  * Reactive pattern matching. Renders different content based on a signal value.
@@ -29,95 +140,34 @@ export function match<T extends string | number | boolean>(
   sourceFn: () => T,
   cases: MatchCases<T>,
   fallback?: MatchView,
-): DocumentFragment {
+): DocumentFragment | DeferredMatch<T> | SSRHtml {
+  // Hydration mode: defer DOM creation. The hydrate factory sees the handle,
+  // routes through inflateDeferredMatch, which adopts the SSR-rendered case in
+  // place and seeds the per-case cache so toggling back reuses it. Closes the
+  // when()/match() half of the ADR 0005 control-flow lossy gap.
+  if (isHydrating()) return makeDeferredMatch(sourceFn, cases, fallback);
+
+  // SSR-context dispatch (ADR 0023). Inside a `renderToString` /
+  // `renderToStream` / `renderStatic` pass, return SSRHtml string output
+  // instead of touching `document`. Lets `match()` be called from
+  // manifest-driven composers without needing the explicit `matchSSR`.
+  if (getSSRRenderContext() !== null) return matchSSR(sourceFn, cases, fallback);
+
   const endMarker = document.createComment('m');
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
-  let currentNodes: Node[] = [];
-  let prevKey: string | undefined;
-  const cache = new Map<string, Node[]>();
+  const matchState: MatchState = { currentNodes: [], prevKey: undefined, cache: new Map() };
 
-  // Render helper — used for both initial + reactive updates
-  const renderKey = (key: string, parent: Node) => {
-    // Detach current
-    for (let i = 0; i < currentNodes.length; i++) {
-      const node = currentNodes[i];
-      /* v8 ignore next -- defensive guard; nodes always have parent here */
-      if (node.parentNode) node.parentNode.removeChild(node);
-    }
-    if (prevKey !== undefined && currentNodes.length > 0) {
-      cache.set(prevKey, currentNodes);
-    }
-    prevKey = key;
-
-    // Check cache
-    const cached = cache.get(key);
-    if (cached) {
-      currentNodes = cached;
-      for (let i = 0; i < cached.length; i++) parent.insertBefore(cached[i], endMarker);
-      return;
-    }
-
-    const viewFn = cases[key as `${T}`] ?? fallback;
-    if (!viewFn) {
-      currentNodes = [];
-      return;
-    }
-
-    const content = viewFn();
-    if (content instanceof DocumentFragment) {
-      currentNodes = Array.from(content.childNodes);
-      parent.insertBefore(content, endMarker);
-    } else if (content instanceof Node) {
-      currentNodes = [content];
-      parent.insertBefore(content, endMarker);
-    } else {
-      const textNode = document.createTextNode(String(content));
-      currentNodes = [textNode];
-      parent.insertBefore(textNode, endMarker);
-    }
-  };
-
-  // Initial render — synchronous, no watch overhead
   const initKey = String(sourceFn()) as `${T}`;
   const initView = cases[initKey] ?? fallback;
   if (initView) {
-    prevKey = initKey;
-    const content = initView();
-    if (content instanceof DocumentFragment) {
-      currentNodes = Array.from(content.childNodes);
-      fragment.insertBefore(content, endMarker);
-    } else if (content instanceof Node) {
-      currentNodes = [content];
-      fragment.insertBefore(content, endMarker);
-    } else {
-      const textNode = document.createTextNode(String(content));
-      currentNodes = [textNode];
-      fragment.insertBefore(textNode, endMarker);
-    }
+    matchState.prevKey = initKey;
+    insertMatchView(matchState, fragment, endMarker, initView());
   }
 
-  // Reactive updates — watch for changes
-  const dispose = watch(() => {
-    const key = String(sourceFn()) as `${T}`;
-    if (key === prevKey) return;
-    const parent = endMarker.parentNode;
-    /* v8 ignore next -- defensive; if endMarker is detached, watch is disposed */
-    if (!parent) return;
-    renderKey(key, parent);
-  });
-
-  // Auto-dispose watcher + clear cached DOM on component unmount
-  const ctx = getCurrentContext();
-  if (ctx) {
-    (ctx.disposers ??= []).push(() => {
-      dispose();
-      cache.clear();
-      currentNodes = [];
-    });
-  }
-
+  const dispose = installMatchWatch(matchState, endMarker, sourceFn, cases, fallback);
+  registerMatchAutoDispose(getCurrentContext(), dispose, matchState);
   return fragment;
 }
 
@@ -141,11 +191,16 @@ export function when(
   conditionFn: () => boolean,
   thenFn: MatchView,
   elseFn?: MatchView,
-): DocumentFragment {
+): DocumentFragment | SSRHtml {
+  // SSR-context fast path (ADR 0023). Bypasses match()'s reactive plumbing
+  // entirely on the server — whenSSR returns the picked branch as a tagged
+  // string. `match()` itself ALSO dispatches in SSR (so the recursion would
+  // be safe), but going direct is clearer + slightly faster.
+  if (getSSRRenderContext() !== null) return whenSSR(conditionFn, thenFn, elseFn);
   return match((() => String(conditionFn())) as () => 'true' | 'false', {
     true: thenFn,
     ...(elseFn ? { false: elseFn } : {}),
-  });
+  }) as DocumentFragment;
 }
 
 // ---------------------------------------------------------------------------
@@ -257,13 +312,6 @@ function disposeEntry<T>(entry: EachEntry<T>): void {
   entry.ctx.disposers = null;
 }
 
-function disposeEntries<T>(prevKeys: unknown[], keyToEntry: Map<unknown, EachEntry<T>>): void {
-  for (let i = 0; i < prevKeys.length; i++) {
-    const entry = keyToEntry.get(prevKeys[i]);
-    if (entry) disposeEntry(entry);
-  }
-}
-
 function canReplaceOwnedRange<T>(
   parent: Node,
   prevKeys: unknown[],
@@ -329,6 +377,274 @@ function extractNodes(content: Node | DocumentFragment | string): Node[] {
   return [document.createTextNode(String(content ?? ''))];
 }
 
+// Mutable state shared between each()'s watch and inflateDeferredEach's hydration
+// pre-population so a hydrated each() can fall straight through into the same
+// reconciliation logic on subsequent reactive updates.
+interface EachState<T> {
+  keyToEntry: Map<unknown, EachEntry<T>>;
+  prevKeys: unknown[];
+}
+
+function reconcileEach<T>(
+  eachState: EachState<T>,
+  items: T[],
+  parent: Node,
+  endMarker: Node,
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  getKey: (item: T, index: number) => unknown,
+  ownerCtx: Scope | null,
+): void {
+  const len = items.length;
+  const { keyToEntry, prevKeys } = eachState;
+  const prevLen = prevKeys.length;
+
+  // Fast path: same keys in same order — just update data signals
+  if (len === prevLen) {
+    let same = true;
+    for (let i = 0; i < len; i++) {
+      if (prevKeys[i] !== getKey(items[i], i)) {
+        same = false;
+        break;
+      }
+    }
+    if (same) {
+      for (let i = 0; i < len; i++) {
+        const entry = keyToEntry.get(prevKeys[i])!;
+        entry.data(items[i]);
+      }
+      return;
+    }
+  }
+
+  if (len === 0) {
+    if (prevLen > 0) {
+      bulkClear(parent, prevKeys, keyToEntry, endMarker);
+      eachState.keyToEntry = new Map();
+    }
+    eachState.prevKeys = [];
+    return;
+  }
+
+  if (prevLen === 0) {
+    const newKeys2: unknown[] = new Array(len);
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < len; i++) {
+      const item = items[i];
+      newKeys2[i] = getKey(item, i);
+      const data = state(item);
+      const { entry, content } = runEntryMapFn(mapFn, data, i, ownerCtx);
+      if (content instanceof DocumentFragment) {
+        const fc = content.firstChild;
+        entry.nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
+        frag.appendChild(content);
+      } else if (content instanceof Node) {
+        entry.nodes = [content];
+        frag.appendChild(content);
+      } else {
+        const tn = document.createTextNode(String(content ?? ''));
+        entry.nodes = [tn];
+        frag.appendChild(tn);
+      }
+      keyToEntry.set(newKeys2[i], entry);
+    }
+    parent.insertBefore(frag, endMarker);
+    eachState.prevKeys = newKeys2;
+    return;
+  }
+
+  const newKeys: unknown[] = new Array(len);
+  const newEntries = new Map<unknown, EachEntry<T>>();
+  let reuseCount = 0;
+
+  for (let i = 0; i < len; i++) {
+    const item = items[i];
+    const key = getKey(item, i);
+    newKeys[i] = key;
+
+    const _existing = keyToEntry.get(key) as EachEntry<T> | undefined;
+    if (_existing) {
+      _existing.data(item);
+      newEntries.set(key, _existing);
+      reuseCount++;
+    } else {
+      const data = state(item);
+      const { entry, content } = runEntryMapFn(mapFn, data, i, ownerCtx);
+      entry.nodes = extractNodes(content);
+      newEntries.set(key, entry);
+    }
+  }
+
+  if (reuseCount === 0) {
+    bulkClear(parent, prevKeys, keyToEntry, endMarker);
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < len; i++) {
+      const entry = newEntries.get(newKeys[i])!;
+      for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
+    }
+    parent.insertBefore(frag, endMarker);
+    eachState.keyToEntry = newEntries;
+    eachState.prevKeys = newKeys;
+    return;
+  }
+
+  if (reuseCount < prevLen) {
+    const newKeySet = new Set(newKeys);
+    for (let i = 0; i < prevLen; i++) {
+      const key = prevKeys[i];
+      if (!newKeySet.has(key)) {
+        const entry = keyToEntry.get(key);
+        if (entry) {
+          for (let j = 0; j < entry.nodes.length; j++) {
+            const node = entry.nodes[j];
+            if (node.parentNode) node.parentNode.removeChild(node);
+          }
+          disposeEntry(entry);
+        }
+      }
+    }
+  }
+
+  let isAppend = len > prevLen;
+  if (isAppend) {
+    for (let i = 0; i < prevLen; i++) {
+      if (prevKeys[i] !== newKeys[i]) {
+        isAppend = false;
+        break;
+      }
+    }
+  }
+
+  let isPrepend = !isAppend && len > prevLen;
+  if (isPrepend) {
+    const offset = len - prevLen;
+    for (let i = 0; i < prevLen; i++) {
+      if (prevKeys[i] !== newKeys[i + offset]) {
+        isPrepend = false;
+        break;
+      }
+    }
+  }
+
+  if (isAppend) {
+    const frag = document.createDocumentFragment();
+    for (let i = prevLen; i < len; i++) {
+      const entry = newEntries.get(newKeys[i])!;
+      for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
+    }
+    parent.insertBefore(frag, endMarker);
+  } else if (isPrepend) {
+    const newCount = len - prevLen;
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < newCount; i++) {
+      const entry = newEntries.get(newKeys[i])!;
+      for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
+    }
+    const firstExisting = newEntries.get(newKeys[newCount])!.nodes[0];
+    parent.insertBefore(frag, firstExisting);
+  } else {
+    let swapped = false;
+    if (len === prevLen && reuseCount === len) {
+      let sc = 0;
+      let sa = -1;
+      let sb = -1;
+      for (let i = 0; i < len; i++) {
+        if (prevKeys[i] !== newKeys[i]) {
+          if (sc === 0) sa = i;
+          else if (sc === 1) sb = i;
+          sc++;
+          if (sc > 2) break;
+        }
+      }
+      if (sc === 2 && sa >= 0 && sb >= 0) {
+        const entryA = newEntries.get(newKeys[sa])!;
+        const entryB = newEntries.get(newKeys[sb])!;
+        if (entryA.nodes.length === 1 && entryB.nodes.length === 1) {
+          swapped = true;
+          const nodeA = entryA.nodes[0];
+          const nodeB = entryB.nodes[0];
+          const marker = document.createComment('');
+          parent.insertBefore(marker, nodeA);
+          parent.insertBefore(nodeA, nodeB);
+          parent.insertBefore(nodeB, marker);
+          parent.removeChild(marker);
+        }
+      }
+    }
+
+    if (!swapped) {
+      const oldKeyIndex = new Map<unknown, number>();
+      for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
+
+      const sources: number[] = [];
+      const newIndexToSource: number[] = new Array(len).fill(-1);
+
+      for (let i = 0; i < len; i++) {
+        const oldIdx = oldKeyIndex.get(newKeys[i]);
+        if (oldIdx !== undefined) {
+          sources.push(oldIdx);
+          newIndexToSource[i] = sources.length - 1;
+        }
+      }
+
+      const lisIndices = new Set(lis(sources));
+
+      let nextSibling: Node = endMarker;
+      let batch: Node[] | null = null;
+      let batchTarget: Node = endMarker;
+
+      for (let i = len - 1; i >= 0; i--) {
+        const entry = newEntries.get(newKeys[i])!;
+        const firstNode = entry.nodes[0];
+        const sourceIdx = newIndexToSource[i];
+        const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
+
+        if (needsMove) {
+          if (!batch) {
+            batch = [];
+            batchTarget = nextSibling;
+          }
+          batch.push(firstNode);
+        } else {
+          if (batch) {
+            const frag = document.createDocumentFragment();
+            for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
+            parent.insertBefore(frag, batchTarget);
+            batch = null;
+          }
+        }
+
+        nextSibling = entry.nodes[0] || nextSibling;
+      }
+
+      if (batch) {
+        const frag = document.createDocumentFragment();
+        for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
+        parent.insertBefore(frag, batchTarget);
+      }
+    }
+  }
+
+  eachState.keyToEntry = newEntries;
+  eachState.prevKeys = newKeys;
+}
+
+// Set up the auto-disposer that releases per-row watchers and the outer
+// reconcile watch when the surrounding component unmounts. Shared between
+// each()'s synchronous build and inflateDeferredEach's hydration adoption.
+function registerEachAutoDispose<T>(
+  ownerCtx: Scope | null,
+  dispose: () => void,
+  eachState: EachState<T>,
+): void {
+  if (!ownerCtx) return;
+  (ownerCtx.disposers ??= []).push(() => {
+    dispose();
+    for (const entry of eachState.keyToEntry.values()) disposeEntry(entry);
+    eachState.keyToEntry.clear();
+    eachState.prevKeys = [];
+  });
+}
+
 /**
  * Reactive list rendering. Reuses DOM via per-item signals + LIS reorder.
  *
@@ -355,296 +671,492 @@ export function each<T>(
   listAccessor: (() => T[]) | T[],
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
   keyFn?: (item: T, index: number) => unknown,
-): DocumentFragment {
+): DocumentFragment | DeferredEach<T> | SSRHtml {
+  // Hydration mode: defer DOM creation. The hydrate factory recognises the
+  // returned handle and routes it through inflateDeferredEach, which adopts
+  // the SSR-rendered rows in place rather than rebuilding the slot. See
+  // ADR 0005 / handoff item "Per-row reconciliation in each()".
+  if (isHydrating()) return makeDeferredEach(listAccessor, mapFn, keyFn);
+
+  // SSR-context dispatch (ADR 0023). Inside a server render pass, return
+  // SSRHtml string output. Same per-row marker grammar as eachSSR, so
+  // hydration adoption still works against the resulting markup.
+  if (getSSRRenderContext() !== null) return eachSSR(listAccessor, mapFn, keyFn);
+
   const endMarker = document.createComment('e');
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
-  let keyToEntry = new Map<unknown, EachEntry<T>>();
-  let prevKeys: unknown[] = [];
-
+  const eachState: EachState<T> = { keyToEntry: new Map(), prevKeys: [] };
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
+  const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
 
   const dispose = watch(() => {
     const items = getList() || [];
     const parent = endMarker.parentNode;
     if (!parent) return;
-
-    const len = items.length;
-    const prevLen = prevKeys.length;
-    const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
-
-    // Fast path: same keys in same order — just update data signals
-    if (len === prevLen) {
-      let same = true;
-      for (let i = 0; i < len; i++) {
-        if (prevKeys[i] !== getKey(items[i], i)) {
-          same = false;
-          break;
-        }
-      }
-      if (same) {
-        // Keys match — update data signals in place (zero DOM creation)
-        for (let i = 0; i < len; i++) {
-          const entry = keyToEntry.get(prevKeys[i])!;
-          entry.data(items[i]);
-        }
-        return;
-      }
-    }
-
-    // Fast path: clear all — bulk remove via Range API
-    if (len === 0) {
-      if (prevLen > 0) {
-        bulkClear(parent, prevKeys, keyToEntry, endMarker);
-        keyToEntry = new Map();
-      }
-      prevKeys = [];
-      return;
-    }
-
-    // Fast path: all new items (first render or full replace with new keys)
-    // Single pass — create + append + build map in one loop
-    const ownerCtx = getCurrentContext();
-
-    if (prevLen === 0) {
-      const newKeys2: unknown[] = new Array(len);
-      const frag = document.createDocumentFragment();
-      for (let i = 0; i < len; i++) {
-        const item = items[i];
-        newKeys2[i] = getKey(item, i);
-        const data = state(item);
-        const { entry, content } = runEntryMapFn(mapFn, data, i, ownerCtx);
-        if (content instanceof DocumentFragment) {
-          const fc = content.firstChild;
-          entry.nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
-          frag.appendChild(content);
-        } else if (content instanceof Node) {
-          entry.nodes = [content];
-          frag.appendChild(content);
-        } else {
-          const tn = document.createTextNode(String(content ?? ''));
-          entry.nodes = [tn];
-          frag.appendChild(tn);
-        }
-        keyToEntry.set(newKeys2[i], entry);
-      }
-      parent.insertBefore(frag, endMarker);
-      prevKeys = newKeys2;
-      return;
-    }
-
-    const newKeys: unknown[] = new Array(len);
-    const newEntries = new Map<unknown, EachEntry<T>>();
-    let reuseCount = 0;
-
-    for (let i = 0; i < len; i++) {
-      const item = items[i];
-      const key = getKey(item, i);
-      newKeys[i] = key;
-
-      const _existing = keyToEntry.get(key) as EachEntry<T> | undefined;
-      if (_existing) {
-        _existing.data(item);
-        newEntries.set(key, _existing);
-        reuseCount++;
-      } else {
-        const data = state(item);
-        const { entry, content } = runEntryMapFn(mapFn, data, i, ownerCtx);
-        entry.nodes = extractNodes(content);
-        newEntries.set(key, entry);
-      }
-    }
-
-    // Fast path: no reuse — full replace → bulk remove + single-pass bulk insert
-    if (reuseCount === 0) {
-      const frag = document.createDocumentFragment();
-      for (let i = 0; i < len; i++) {
-        const entry = newEntries.get(newKeys[i])!;
-        for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
-      }
-      if (canReplaceOwnedRange(parent, prevKeys, keyToEntry, endMarker)) {
-        frag.appendChild(endMarker);
-        (parent as ParentNode).replaceChildren(frag);
-        disposeEntries(prevKeys, keyToEntry);
-      } else {
-        bulkClear(parent, prevKeys, keyToEntry, endMarker);
-        parent.insertBefore(frag, endMarker);
-      }
-      keyToEntry = newEntries;
-      prevKeys = newKeys;
-      return;
-    }
-
-    // Remove deleted entries
-    if (reuseCount < prevLen) {
-      const newKeySet = new Set(newKeys);
-      for (let i = 0; i < prevLen; i++) {
-        const key = prevKeys[i];
-        if (!newKeySet.has(key)) {
-          const entry = keyToEntry.get(key);
-          if (entry) {
-            for (let j = 0; j < entry.nodes.length; j++) {
-              const node = entry.nodes[j];
-              if (node.parentNode) node.parentNode.removeChild(node);
-            }
-            disposeEntry(entry);
-          }
-        }
-      }
-    }
-
-    // --- Reorder: detect append, prepend, swap, or full LIS ---
-    // Fast path: all old keys at start in same order = pure append
-    let isAppend = len > prevLen;
-    if (isAppend) {
-      for (let i = 0; i < prevLen; i++) {
-        if (prevKeys[i] !== newKeys[i]) {
-          isAppend = false;
-          break;
-        }
-      }
-    }
-
-    // Fast path: all old keys at end in same order = pure prepend
-    let isPrepend = !isAppend && len > prevLen;
-    if (isPrepend) {
-      const offset = len - prevLen;
-      for (let i = 0; i < prevLen; i++) {
-        if (prevKeys[i] !== newKeys[i + offset]) {
-          isPrepend = false;
-          break;
-        }
-      }
-    }
-
-    if (isAppend) {
-      // Pure append — just insert new items before endMarker, no LIS
-      const frag = document.createDocumentFragment();
-      for (let i = prevLen; i < len; i++) {
-        const entry = newEntries.get(newKeys[i])!;
-        for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
-      }
-      parent.insertBefore(frag, endMarker);
-    } else if (isPrepend) {
-      // Pure prepend — insert new items before the first existing entry, no LIS.
-      // Suffix-match implies every prevKey is preserved, so the deletion loop
-      // above was a no-op and all old entry nodes are still attached.
-      const newCount = len - prevLen;
-      const frag = document.createDocumentFragment();
-      for (let i = 0; i < newCount; i++) {
-        const entry = newEntries.get(newKeys[i])!;
-        for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
-      }
-      const firstExisting = newEntries.get(newKeys[newCount])!.nodes[0];
-      parent.insertBefore(frag, firstExisting);
-    } else {
-      // Fast path: swap — exactly 2 positions differ, same length, all reused
-      let swapped = false;
-      if (len === prevLen && reuseCount === len) {
-        let sc = 0;
-        let sa = -1;
-        let sb = -1;
-        for (let i = 0; i < len; i++) {
-          if (prevKeys[i] !== newKeys[i]) {
-            if (sc === 0) sa = i;
-            else if (sc === 1) sb = i;
-            sc++;
-            if (sc > 2) break;
-          }
-        }
-        if (sc === 2 && sa >= 0 && sb >= 0) {
-          const entryA = newEntries.get(newKeys[sa])!;
-          const entryB = newEntries.get(newKeys[sb])!;
-          if (entryA.nodes.length === 1 && entryB.nodes.length === 1) {
-            swapped = true;
-            const nodeA = entryA.nodes[0];
-            const nodeB = entryB.nodes[0];
-            // Correct DOM swap using a temporary marker
-            const marker = document.createComment('');
-            parent.insertBefore(marker, nodeA);
-            parent.insertBefore(nodeA, nodeB);
-            parent.insertBefore(nodeB, marker);
-            parent.removeChild(marker);
-          }
-        }
-      }
-
-      if (!swapped) {
-        // Full LIS-based reorder
-        const oldKeyIndex = new Map<unknown, number>();
-        for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
-
-        const sources: number[] = [];
-        const newIndexToSource: number[] = new Array(len).fill(-1);
-
-        for (let i = 0; i < len; i++) {
-          const oldIdx = oldKeyIndex.get(newKeys[i]);
-          if (oldIdx !== undefined) {
-            sources.push(oldIdx);
-            newIndexToSource[i] = sources.length - 1;
-          }
-        }
-
-        const lisIndices = new Set(lis(sources));
-
-        // Reverse pass: collect batch in array, flush in correct order
-        let nextSibling: Node = endMarker;
-        let batch: Node[] | null = null;
-        let batchTarget: Node = endMarker;
-
-        for (let i = len - 1; i >= 0; i--) {
-          const entry = newEntries.get(newKeys[i])!;
-          const firstNode = entry.nodes[0];
-          const sourceIdx = newIndexToSource[i];
-          const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
-
-          if (needsMove) {
-            if (!batch) {
-              batch = [];
-              batchTarget = nextSibling;
-            }
-            batch.push(firstNode);
-          } else {
-            // Stable item — flush batch if pending
-            if (batch) {
-              const frag = document.createDocumentFragment();
-              for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
-              parent.insertBefore(frag, batchTarget);
-              batch = null;
-            }
-          }
-
-          nextSibling = entry.nodes[0] || nextSibling;
-        }
-
-        // Flush remaining batch
-        if (batch) {
-          const frag = document.createDocumentFragment();
-          for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
-          parent.insertBefore(frag, batchTarget);
-        }
-      }
-    }
-
-    keyToEntry = newEntries;
-    prevKeys = newKeys;
+    reconcileEach(eachState, items, parent, endMarker, mapFn, getKey, getCurrentContext());
   });
 
-  // Auto-dispose watcher + clean up entries on component unmount
-  const ctx = getCurrentContext();
-  if (ctx) {
-    (ctx.disposers ??= []).push(() => {
-      dispose();
-      for (const entry of keyToEntry.values()) disposeEntry(entry);
-      keyToEntry.clear();
-      prevKeys = [];
-    });
-  }
-
+  registerEachAutoDispose(getCurrentContext(), dispose, eachState);
   return fragment;
 }
+
+// ---------------------------------------------------------------------------
+// Deferred-each handle + hydration adoption
+//
+// `each()` is called eagerly inside `html` template values, so during a
+// `hydrate()` call it runs before the hydrate factory has located the
+// expression slot. Returning a deferred handle lets the hydrate factory
+// recognise the slot's user-supplied value and route it through a
+// keyed-row-adoption helper. See ADR 0005's "non-lossy hydration" thread —
+// this closes the per-row gap that was deferred there.
+// ---------------------------------------------------------------------------
+
+/** A reified `each()` call captured during hydration; adopted against an SSR row run. */
+export interface DeferredEach<T = unknown> {
+  __purity_deferred_each__: true;
+  listAccessor: (() => T[]) | T[];
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string;
+  keyFn?: (item: T, index: number) => unknown;
+}
+
+function makeDeferredEach<T>(
+  listAccessor: (() => T[]) | T[],
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  keyFn?: (item: T, index: number) => unknown,
+): DeferredEach<T> {
+  return { __purity_deferred_each__: true, listAccessor, mapFn, keyFn };
+}
+
+/** Type guard for {@link DeferredEach}. @internal */
+export function isDeferredEach(v: unknown): v is DeferredEach {
+  return (
+    v != null &&
+    typeof v === 'object' &&
+    (v as { __purity_deferred_each__?: unknown }).__purity_deferred_each__ === true
+  );
+}
+
+// Encode an arbitrary key into a comment-data-safe string. encodeURIComponent
+// escapes everything except `A-Za-z0-9-_.!~*'()`; we additionally rewrite `-`
+// to `%2D` so two consecutive dashes can never appear in the encoded form
+// (HTML comments forbid `--`). decodeURIComponent inverts both transforms in
+// one step, since `%2D` round-trips to `-`. See WHATWG comment grammar.
+function encodeRowKey(key: unknown): string {
+  return encodeURIComponent(String(key)).replace(/-/g, '%2D');
+}
+
+function decodeRowKey(s: string): string {
+  return decodeURIComponent(s);
+}
+
+// Walk an each() slot's SSR content nodes and split into rows by `<!--er:K-->`
+// markers. Rows whose end marker is missing or which lack a leading marker are
+// dropped from the map (caller treats them as orphan SSR content and replaces
+// with fresh DOM). The boundary markers (`<!--e-->` / `<!--/e-->`) — and any
+// orphan stragglers — are also returned so the caller can detach them.
+interface SSRRow {
+  key: string;
+  nodes: Node[];
+}
+
+function parseSSRRows(contNodes: Node[]): { rows: SSRRow[]; boundaryNodes: Node[] } {
+  const rows: SSRRow[] = [];
+  const boundaryNodes: Node[] = [];
+  let i = 0;
+  const len = contNodes.length;
+  while (i < len) {
+    const node = contNodes[i];
+    if (node.nodeType !== 8) {
+      // Whitespace / orphan content between markers — drop it. The renderer's
+      // inner output is comment-prefixed, so only stray whitespace ends up
+      // here in practice (the template tag's own marker pair sits outside).
+      boundaryNodes.push(node);
+      i++;
+      continue;
+    }
+    const data = (node as Comment).data;
+    if (data === 'e' || data === '/e') {
+      boundaryNodes.push(node);
+      i++;
+      continue;
+    }
+    const startMatch = /^er:(.*)$/.exec(data);
+    if (!startMatch) {
+      // Unknown comment between rows — drop it.
+      boundaryNodes.push(node);
+      i++;
+      continue;
+    }
+    const key = decodeRowKey(startMatch[1]);
+    boundaryNodes.push(node);
+    i++;
+    const rowNodes: Node[] = [];
+    let closed = false;
+    while (i < len) {
+      const inner = contNodes[i];
+      if (inner.nodeType === 8 && (inner as Comment).data === '/er') {
+        boundaryNodes.push(inner);
+        i++;
+        closed = true;
+        break;
+      }
+      rowNodes.push(inner);
+      i++;
+    }
+    if (closed) rows.push({ key, nodes: rowNodes });
+    // If unclosed, the SSR was malformed — discard the partial row's nodes
+    // (they're already in rowNodes; we don't push them anywhere, but they're
+    // still in the DOM. The caller falls through to lossy replace.)
+    else {
+      // Add rowNodes to boundaryNodes so caller can detach them on lossy fallback.
+      for (let k = 0; k < rowNodes.length; k++) boundaryNodes.push(rowNodes[k]);
+    }
+  }
+  return { rows, boundaryNodes };
+}
+
+/**
+ * Adopt the SSR-rendered rows in `contNodes` for a `each()` call, reusing
+ * existing row DOM where keys match the current items list. Sets up the
+ * reactive watch for subsequent updates.
+ *
+ * Called from compiled hydrate factories when an expression slot's value is
+ * a {@link DeferredEach} handle (i.e. the user wrote `${each(...)}`).
+ *
+ * @internal
+ */
+export function inflateDeferredEach<T>(
+  deferred: DeferredEach<T>,
+  contNodes: Node[],
+  closeMarker: Node,
+): void {
+  const parent = closeMarker.parentNode;
+  /* v8 ignore next -- defensive; close marker always has a parent here */
+  if (!parent) return;
+
+  const { listAccessor, mapFn, keyFn } = deferred;
+  const getList =
+    typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
+  const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
+
+  // Insert the live `each()` end marker just before the slot close — keeps
+  // future inserts/removes scoped to this slot the same way they would be in
+  // a fresh client render.
+  const endMarker = document.createComment('e');
+  parent.insertBefore(endMarker, closeMarker);
+
+  const { rows: ssrRows, boundaryNodes } = parseSSRRows(contNodes);
+  // Detach the SSR `<!--e-->` / `<!--/e-->` markers and any orphan content —
+  // the new endMarker replaces them. Row content is left in place and adopted.
+  for (let i = 0; i < boundaryNodes.length; i++) {
+    const n = boundaryNodes[i];
+    if (n.parentNode) n.parentNode.removeChild(n);
+  }
+
+  const ssrByKey = new Map<string, SSRRow>();
+  for (let i = 0; i < ssrRows.length; i++) ssrByKey.set(ssrRows[i].key, ssrRows[i]);
+
+  const ownerCtx = getCurrentContext();
+  const items = getList() || [];
+  const eachState: EachState<T> = { keyToEntry: new Map(), prevKeys: new Array(items.length) };
+
+  // Adopt rows in items order. For each item, if a matching SSR row exists,
+  // run mapFn under the entry scope (yielding a DeferredTemplate when the
+  // user uses `html\`\``) and inflate against that row's nodes. Otherwise
+  // build fresh DOM.
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const key = getKey(item, i);
+    eachState.prevKeys[i] = key;
+
+    // Items match SSR rows by `String(key)` — same coercion that eachSSR's
+    // encoder applies (round-trip through encodeURIComponent / decode).
+    const ssrRow = ssrByKey.get(String(key));
+    const data = state(item);
+    const ctx: Scope = { disposers: null };
+    pushContext(ctx);
+    // Re-enter hydration mode while mapFn runs so nested `html\`\`` calls
+    // return DeferredTemplate handles (which we then inflate against the
+    // matching SSR row) instead of building fresh DOM. The outer hydrate()
+    // exits hydration mode before invoking inflate helpers, so each row
+    // toggles it locally.
+    enterHydration();
+    let content: Node | DocumentFragment | string | DeferredTemplate;
+    try {
+      content = mapFn(data, i) as Node | DocumentFragment | string | DeferredTemplate;
+    } finally {
+      exitHydration();
+      popContext();
+    }
+
+    let nodes: Node[];
+    if (ssrRow && isDeferred(content)) {
+      // Inflate the row template against a fragment carved from this row's
+      // SSR nodes. The hydrate factory mutates row DOM in place; we then
+      // re-attach the (now bound) nodes to the parent in their original
+      // position before the slot close marker.
+      const frag = document.createDocumentFragment();
+      for (let j = 0; j < ssrRow.nodes.length; j++) frag.appendChild(ssrRow.nodes[j]);
+      inflateDeferred(content as DeferredTemplate, frag);
+      nodes = Array.from(frag.childNodes);
+      parent.insertBefore(frag, endMarker);
+    } else {
+      // No SSR row OR mapFn returned non-deferred (string / static Node /
+      // fragment). Detach any SSR row nodes for this key — they're stale —
+      // and insert the fresh content.
+      if (ssrRow) {
+        for (let j = 0; j < ssrRow.nodes.length; j++) {
+          const n = ssrRow.nodes[j];
+          if (n.parentNode) n.parentNode.removeChild(n);
+        }
+      }
+      if (isDeferred(content)) {
+        // No SSR row to adopt — inflate against an empty fragment. The
+        // factory builds fresh DOM under that fragment via the same path
+        // used for top-level mismatched-slot recovery; we then move it in.
+        const frag = document.createDocumentFragment();
+        inflateDeferred(content as DeferredTemplate, frag);
+        nodes = Array.from(frag.childNodes);
+        parent.insertBefore(frag, endMarker);
+      } else if (content instanceof DocumentFragment) {
+        const fc = content.firstChild;
+        nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
+        parent.insertBefore(content, endMarker);
+      } else if (content instanceof Node) {
+        nodes = [content];
+        parent.insertBefore(content, endMarker);
+      } else {
+        const tn = document.createTextNode(String(content ?? ''));
+        nodes = [tn];
+        parent.insertBefore(tn, endMarker);
+      }
+    }
+
+    eachState.keyToEntry.set(key, { nodes, data, ctx });
+    ssrByKey.delete(String(key));
+  }
+
+  // Detach any SSR rows that didn't match a current key (rare — implies the
+  // data changed between SSR and hydration).
+  for (const stale of ssrByKey.values()) {
+    for (let j = 0; j < stale.nodes.length; j++) {
+      const n = stale.nodes[j];
+      if (n.parentNode) n.parentNode.removeChild(n);
+    }
+  }
+
+  // Set up the reactive watch for subsequent updates. The first invocation
+  // hits the "same keys" fast path (we just built them), so it's a cheap
+  // dependency-tracking pass.
+  const dispose = watch(() => {
+    const next = getList() || [];
+    const p = endMarker.parentNode;
+    if (!p) return;
+    reconcileEach(eachState, next, p, endMarker, mapFn, getKey, ownerCtx);
+  });
+
+  registerEachAutoDispose(ownerCtx, dispose, eachState);
+}
+
+// ---------------------------------------------------------------------------
+// Deferred-match handle + hydration adoption
+//
+// Mirrors the each() story for `match()` / `when()` (which both run through
+// match() on the client). During hydration `match()` returns a handle
+// instead of building a fresh DOM tree; the hydrate factory's expression-
+// slot dispatch routes it through inflateDeferredMatch, which adopts the
+// SSR-rendered case in place and seeds the per-case cache so toggling back
+// reuses the SSR-derived nodes.
+// ---------------------------------------------------------------------------
+
+/** A reified `match()` call captured during hydration. */
+export interface DeferredMatch<T extends string | number | boolean = string | number | boolean> {
+  __purity_deferred_match__: true;
+  sourceFn: () => T;
+  cases: MatchCases<T>;
+  fallback?: MatchView;
+}
+
+function makeDeferredMatch<T extends string | number | boolean>(
+  sourceFn: () => T,
+  cases: MatchCases<T>,
+  fallback?: MatchView,
+): DeferredMatch<T> {
+  return { __purity_deferred_match__: true, sourceFn, cases, fallback };
+}
+
+/** Type guard for {@link DeferredMatch}. @internal */
+export function isDeferredMatch(v: unknown): v is DeferredMatch {
+  return (
+    v != null &&
+    typeof v === 'object' &&
+    (v as { __purity_deferred_match__?: unknown }).__purity_deferred_match__ === true
+  );
+}
+
+// Locate the `<!--m:KEY-->...<!--/m-->` boundary inside a slot's content
+// nodes and return the boundary markers, key, and inner content nodes.
+// The slot also holds whitespace text nodes around the boundary in some
+// SSR layouts; those are returned in `boundaryNodes` so the caller can
+// detach them alongside the markers.
+interface SSRMatchBoundary {
+  key: string | null;
+  startMarker: Comment | null;
+  endMarker: Comment | null;
+  inner: Node[];
+  boundaryNodes: Node[];
+}
+
+function parseSSRMatchBoundary(contNodes: Node[]): SSRMatchBoundary {
+  let startMarker: Comment | null = null;
+  let endMarker: Comment | null = null;
+  let key: string | null = null;
+  const inner: Node[] = [];
+  const boundaryNodes: Node[] = [];
+
+  let i = 0;
+  // Skip leading non-marker noise (whitespace text nodes, etc.).
+  while (i < contNodes.length) {
+    const n = contNodes[i];
+    if (n.nodeType === 8) {
+      const data = (n as Comment).data;
+      const m = /^m:(.*)$/.exec(data);
+      if (m) {
+        startMarker = n as Comment;
+        key = decodeRowKey(m[1]);
+        boundaryNodes.push(n);
+        i++;
+        break;
+      }
+      // Bare `<!--m-->` (unkeyed legacy form) — adopt with key=null.
+      if (data === 'm') {
+        startMarker = n as Comment;
+        key = null;
+        boundaryNodes.push(n);
+        i++;
+        break;
+      }
+    }
+    boundaryNodes.push(n);
+    i++;
+  }
+
+  while (i < contNodes.length) {
+    const n = contNodes[i];
+    if (n.nodeType === 8 && (n as Comment).data === '/m') {
+      endMarker = n as Comment;
+      boundaryNodes.push(n);
+      i++;
+      break;
+    }
+    inner.push(n);
+    i++;
+  }
+
+  // Trailing noise after `<!--/m-->` (whitespace, stray comments).
+  while (i < contNodes.length) {
+    boundaryNodes.push(contNodes[i]);
+    i++;
+  }
+
+  return { key, startMarker, endMarker, inner, boundaryNodes };
+}
+
+/**
+ * Adopt the SSR-rendered case for a `match()` / `when()` slot. Inflates the
+ * matching case's deferred template against the SSR boundary content, seeds
+ * the per-case cache so toggling back reuses adopted DOM, and installs the
+ * reactive watch.
+ *
+ * Called from compiled hydrate factories when an expression slot's value is
+ * a {@link DeferredMatch} handle.
+ *
+ * @internal
+ */
+export function inflateDeferredMatch<T extends string | number | boolean>(
+  deferred: DeferredMatch<T>,
+  contNodes: Node[],
+  closeMarker: Node,
+): void {
+  const parent = closeMarker.parentNode;
+  /* v8 ignore next -- defensive; close marker always has a parent here */
+  if (!parent) return;
+
+  const { sourceFn, cases, fallback } = deferred;
+  const boundary = parseSSRMatchBoundary(contNodes);
+
+  // Insert the live end marker before the slot close and detach SSR
+  // boundary scaffolding (the `<!--m:K-->` / `<!--/m-->` markers themselves
+  // plus any whitespace text nodes around them). The view content stays put
+  // for adoption.
+  const endMarker = document.createComment('m');
+  parent.insertBefore(endMarker, closeMarker);
+  for (let i = 0; i < boundary.boundaryNodes.length; i++) {
+    const n = boundary.boundaryNodes[i];
+    if (n.parentNode) n.parentNode.removeChild(n);
+  }
+
+  const matchState: MatchState = { currentNodes: [], prevKey: undefined, cache: new Map() };
+  const initKey = String(sourceFn()) as `${T}`;
+  const ssrKey = boundary.key;
+  const initView = cases[initKey] ?? fallback;
+
+  if (ssrKey === initKey && initView && boundary.inner.length > 0) {
+    // Keys match — run the view under hydration mode so html`` produces a
+    // DeferredTemplate, then inflate against the boundary's existing nodes.
+    enterHydration();
+    let content: unknown;
+    try {
+      content = initView();
+    } finally {
+      exitHydration();
+    }
+
+    if (isDeferred(content)) {
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < boundary.inner.length; i++) frag.appendChild(boundary.inner[i]);
+      inflateDeferred(content as DeferredTemplate, frag);
+      matchState.currentNodes = Array.from(frag.childNodes);
+      parent.insertBefore(frag, endMarker);
+    } else {
+      // View returned a non-deferred value (raw Node, string, etc.) — can't
+      // adopt; lossy-replace the boundary content with the new value.
+      for (let i = 0; i < boundary.inner.length; i++) {
+        const n = boundary.inner[i];
+        if (n.parentNode) n.parentNode.removeChild(n);
+      }
+      insertMatchView(matchState, parent, endMarker, content as Node | DocumentFragment | string);
+    }
+    matchState.prevKey = initKey;
+  } else {
+    // Either no view was rendered server-side (key === undefined / no inner
+    // content) or the SSR key disagrees with the current key. Detach SSR
+    // inner content and render the current view fresh.
+    for (let i = 0; i < boundary.inner.length; i++) {
+      const n = boundary.inner[i];
+      if (n.parentNode) n.parentNode.removeChild(n);
+    }
+    if (initView) {
+      matchState.prevKey = initKey;
+      insertMatchView(matchState, parent, endMarker, initView());
+    }
+  }
+
+  const dispose = installMatchWatch(matchState, endMarker, sourceFn, cases, fallback);
+  registerMatchAutoDispose(getCurrentContext(), dispose, matchState);
+}
+
+// Wire up the compiler's hydrate-runtime entry points. Compile.ts calls these
+// thunks when a hydrate factory encounters a deferred control-flow value in
+// an expression slot. Registering at module-top avoids static import cycles
+// (compile.ts already exports symbols control.ts imports above).
+setInflateDeferredEach(inflateDeferredEach as (d: unknown, c: Node[], m: Node) => void);
+setInflateDeferredMatch(
+  inflateDeferredMatch as unknown as (d: unknown, c: Node[], m: Node) => void,
+);
 
 // ---------------------------------------------------------------------------
 // list() — fastest possible list rendering
@@ -965,7 +1477,15 @@ export function list<T>(
 // signal accessors transparently.
 // ---------------------------------------------------------------------------
 
-/** SSR variant of {@link match}. Renders the matching case once, returns HTML. */
+/**
+ * SSR variant of {@link match}. Renders the matching case once, returns HTML.
+ *
+ * The boundary marker carries the rendered case key (URL-encoded) so the
+ * client-side hydrator can tell whether to adopt the SSR-rendered subtree
+ * (when the current key matches what SSR produced) or fall through to a
+ * fresh render (data drift between server and client). Encoding follows
+ * the same scheme as `eachSSR`'s row markers — see {@link encodeRowKey}.
+ */
 export function matchSSR<T extends string | number | boolean>(
   sourceFn: () => T,
   cases: Partial<Record<`${T}`, () => unknown>>,
@@ -974,7 +1494,7 @@ export function matchSSR<T extends string | number | boolean>(
   const key = String(sourceFn()) as `${T}`;
   const view = cases[key] ?? fallback;
   const inner = view ? valueToHtml(view()) : '';
-  return markSSRHtml(`<!--m-->${inner}<!--/m-->`);
+  return markSSRHtml(`<!--m:${encodeRowKey(key)}-->${inner}<!--/m-->`);
 }
 
 /** SSR variant of {@link when}. Picks then/else once, returns HTML. */
@@ -983,25 +1503,37 @@ export function whenSSR(
   thenFn: () => unknown,
   elseFn?: () => unknown,
 ): SSRHtml {
-  const view = conditionFn() ? thenFn : elseFn;
+  const cond = conditionFn();
+  const view = cond ? thenFn : elseFn;
   const inner = view ? valueToHtml(view()) : '';
-  return markSSRHtml(`<!--m-->${inner}<!--/m-->`);
+  return markSSRHtml(`<!--m:${cond ? 'true' : 'false'}-->${inner}<!--/m-->`);
 }
 
-/** SSR variant of {@link each}. Maps each item once, concatenates HTML. */
+/**
+ * SSR variant of {@link each}. Maps each item once, concatenates HTML.
+ *
+ * Each row is wrapped in `<!--er:KEY-->...<!--/er-->` markers so the client-
+ * side hydrator can split the SSR output back into individual rows and
+ * adopt their DOM in place when keys match the hydration items list. KEY
+ * is the result of `keyFn(item, i)` (or the item itself when no keyFn is
+ * supplied), encoded via {@link encodeRowKey} so it survives HTML comment
+ * data restrictions. See ADR 0005 / `inflateDeferredEach`.
+ */
 export function eachSSR<T>(
   listAccessor: (() => T[]) | T[],
   mapFn: (item: () => T, index: number) => unknown,
-  _keyFn?: (item: T, index: number) => unknown,
+  keyFn?: (item: T, index: number) => unknown,
 ): SSRHtml {
   const items = (typeof listAccessor === 'function' ? listAccessor() : listAccessor) || [];
+  const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
   let inner = '';
   for (let i = 0; i < items.length; i++) {
     // Pass a frozen accessor so user code that calls `item()` works the same
     // shape as the client. No reactivity — the value is captured at render.
     const value = items[i];
     const accessor = () => value;
-    inner += valueToHtml(mapFn(accessor, i));
+    const keyHex = encodeRowKey(getKey(value, i));
+    inner += `<!--er:${keyHex}-->${valueToHtml(mapFn(accessor, i))}<!--/er-->`;
   }
   return markSSRHtml(`<!--e-->${inner}<!--/e-->`);
 }
@@ -1067,13 +1599,20 @@ export function listSSR<T>(
 // through the converter. Inlining keeps control.ts free of cross-file calls
 // in the hot path.
 function escapeHtmlLocal(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // OWASP five-character set so the helper is safe in attribute contexts too.
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function escapeAttrLocal(s: string): string {
   return s
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
@@ -1201,6 +1740,52 @@ export function suspense<T>(
   };
 
   const isTimedOut = ssrCtx.timedOutBoundaries.has(id);
+
+  // Streaming branch (ADR 0006 Phase 3) — `renderToStream` flips
+  // ssrCtx.streamingMode and provides a streamingBoundaries registry.
+  // For each boundary we emit the fallback HTML in the shell and queue
+  // the view (+ its fallback for re-render on timeout) for later
+  // streaming, so the shell can flush immediately without awaiting the
+  // boundary's resources. The marker grammar is identical — only the
+  // body is the fallback rather than the resolved view.
+  if (ssrCtx.streamingMode && ssrCtx.streamingBoundaries) {
+    let body: string;
+    if (isTimedOut) {
+      reportError(undefined, 'timeout');
+      try {
+        body = valueToHtml(fallback());
+      } catch (fallbackErr) {
+        reportError(fallbackErr, 'fallback');
+        body = '';
+      }
+    } else {
+      try {
+        body = valueToHtml(fallback());
+      } catch (fallbackErr) {
+        reportError(fallbackErr, 'fallback');
+        console.error(
+          `[Purity] suspense() shell fallback threw (boundary ${id}); emitting empty fallback:`,
+          fallbackErr,
+        );
+        body = '';
+      }
+      // Don't queue boundaries that already timed out — the shell already
+      // shows their fallback; there's nothing left to stream.
+      ssrCtx.streamingBoundaries.set(id, {
+        view: view as () => unknown,
+        fallback: fallback as () => unknown,
+        // The ssr-context types `phase` as `string` (variance-friendly for
+        // the boundary table); our `onError` only ever fires with a
+        // `SuspenseErrorPhase` literal at runtime. The cast bridges the
+        // narrower → wider contravariance.
+        onError: onError as
+          | ((err: unknown, info: { boundaryId: number; phase: string }) => void)
+          | undefined,
+      });
+    }
+    return markSSRHtml(`<!--s:${id}-->${body}<!--/s:${id}-->`);
+  }
+
   let body: string;
   if (isTimedOut) {
     reportError(undefined, 'timeout');

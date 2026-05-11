@@ -64,6 +64,7 @@ export function makeDeferred(strings: TemplateStringsArray, values: unknown[]): 
 // ---------------------------------------------------------------------------
 
 let warnMismatches = false;
+let rewriteText = false;
 
 /** Enable console.warn diagnostics for hydration mismatches. Off by default. */
 export function enableHydrationWarnings(): void {
@@ -78,6 +79,33 @@ export function disableHydrationWarnings(): void {
 /** True if hydration warnings are currently enabled. @internal */
 export function hydrationWarningsEnabled(): boolean {
   return warnMismatches;
+}
+
+/**
+ * Opt in to rewriting SSR static-text-node content when it diverges from
+ * the client template's AST text. Off by default — see ADR 0007.
+ *
+ * When on, the hydrator overwrites the SSR `Text` node's `data` with the
+ * template's value on mismatch. Same node reference is preserved (no
+ * structural change); only the text bytes are corrected. Useful for stale
+ * CDN caches or mismatched build artefacts where the client template is
+ * authoritative.
+ *
+ * Independent of {@link enableHydrationWarnings}: rewrite is silent on its
+ * own; combine the two flags if you want both a fix and a log.
+ */
+export function enableHydrationTextRewrite(): void {
+  rewriteText = true;
+}
+
+/** Disable text-rewrite hydration mode (the default). */
+export function disableHydrationTextRewrite(): void {
+  rewriteText = false;
+}
+
+/** True if hydration text-rewrite is currently enabled. @internal */
+export function hydrationTextRewriteEnabled(): boolean {
+  return rewriteText;
 }
 
 /** Expected cursor kind. element-tag is passed as the bare lowercased tag name. */
@@ -113,14 +141,26 @@ export function checkHydrationCursor(
     ok = expected === 'text';
     // Structural match — but if the codegen supplied the expected text
     // value, also flag silent content divergence so the user notices SSR
-    // text drift before it shows up in production.
+    // text drift before it shows up in production. Optionally rewrite the
+    // SSR text to match when {@link enableHydrationTextRewrite} is on (ADR
+    // 0007). The two behaviors are independent — rewrite + warn lets the
+    // app self-heal AND log the drift.
     if (ok && detail !== undefined && text !== detail) {
-      console.warn(
-        `[Purity] Hydration mismatch — text content differs: ` +
-          `expected ${JSON.stringify(detail)}, got ${JSON.stringify(text)}. ` +
-          `The SSR text node is preserved (we don't rewrite static text); ` +
-          `update the SSR or client template so they agree.`,
-      );
+      if (rewriteText) {
+        (node as Text).data = detail;
+      }
+      if (warnMismatches) {
+        console.warn(
+          `[Purity] Hydration mismatch — text content differs: ` +
+            `expected ${JSON.stringify(detail)}, got ${JSON.stringify(text)}. ` +
+            `${
+              rewriteText
+                ? 'SSR text was rewritten to match the template (text-rewrite mode).'
+                : "The SSR text node is preserved (we don't rewrite static text); update " +
+                  'the SSR or client template so they agree.'
+            }`,
+        );
+      }
       return;
     }
   } else if (node.nodeType === 1) {

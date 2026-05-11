@@ -85,21 +85,31 @@ Marker-walking hydration" is now done.
 
 ## Out of scope (intentionally)
 
-- **Per-slot lossy fallback for control-flow helpers.** When an
-  expression value is a function returning a `Node` (e.g. `each` /
-  `when` / `match` accessors), the reactive watch's first execution
-  replaces the SSR content for that slot with the freshly-rendered
-  client output. The surrounding tree is preserved; the slot itself is
-  effectively lossy. Reconciling list output against SSR DOM at the
-  per-item level is a much larger change (it needs keyed-row matching
-  against marker triplets) and is left for a follow-up ADR.
-- **Static text-content rewriting.** When `enableHydrationWarnings()` is
-  on, the codegen now passes the AST's text value as a `detail` arg to
-  the cursor check, and the runtime warns on byte-level divergence
-  between SSR text and template text. We _detect_ the drift but don't
-  rewrite — preserving SSR text is intentional (it's the content the
-  user is already looking at). Authors fix the divergence at the
-  template source.
+- _(closed)_ **Per-slot lossy fallback for control-flow helpers.**
+  Originally listed here as out-of-scope; both halves are now done.
+  - **`each()`** — `eachSSR` emits `<!--er:K-->row<!--/er-->` row
+    markers (URL-encoded keys, dashes rewritten to `%2D` so `--` can
+    never appear in comment data); `each()` returns a `DeferredEach`
+    handle during hydration; `inflateDeferredEach` adopts SSR rows in
+    place by key match before installing the reactive watch. Mismatched
+    keys per row fall through to fresh DOM for that row only.
+  - **`when()` / `match()`** — `matchSSR` and `whenSSR` now embed the
+    rendered key in the boundary marker (`<!--m:KEY-->...<!--/m-->`).
+    `match()` returns a `DeferredMatch` handle during hydration;
+    `inflateDeferredMatch` parses the boundary, compares the SSR key
+    against the current `sourceFn()` value, and inflates the matching
+    case's `html\`\`` template against the SSR view nodes. The adopted
+    nodes seed the per-case DOM cache, so toggling away and back to the
+    SSR key reuses the original SSR-derived DOM. SSR-key / client-key
+    drift falls through to a fresh render of the current view.
+
+- _(superseded by [ADR 0007](./0007-text-rewrite-on-mismatch.md))_
+  **Static text-content rewriting.** ADR 0005 detected text drift but
+  preserved SSR bytes by default. ADR 0007 keeps that default and adds
+  an opt-in `enableHydrationTextRewrite()` flag — when set, the
+  hydrator overwrites the SSR `Text` node's `data` to match the
+  template (same node reference, no structural change). Independent of
+  warnings; combine the two flags to fix-and-log.
 - **Streaming hydration.** Out of scope per ADR 0004.
 
 ## Consequences

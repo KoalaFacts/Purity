@@ -1,0 +1,556 @@
+# @purityjs/ssr
+
+[![npm version](https://img.shields.io/npm/v/@purityjs/ssr.svg)](https://www.npmjs.com/package/@purityjs/ssr)
+[![npm downloads](https://img.shields.io/npm/dm/@purityjs/ssr.svg)](https://www.npmjs.com/package/@purityjs/ssr)
+[![license](https://img.shields.io/npm/l/@purityjs/ssr.svg)](../../LICENSE)
+
+Server-side rendering for Purity. Renders components to an HTML string, awaits async `resource()` data, primes the client cache, supports Custom Elements via Declarative Shadow DOM, and (since 0.1) ships a streaming entry with `<Suspense>` boundaries for progressive flush.
+
+```ts
+import { renderToString, html } from '@purityjs/ssr';
+
+const out = await renderToString(() => html`<h1>Hi</h1>`, { doctype: '<!doctype html>' });
+//   → '<!doctype html><h1>Hi</h1>'
+```
+
+## Install
+
+```bash
+npm install @purityjs/ssr
+```
+
+`@purityjs/ssr` has a peer dependency on `@purityjs/core`. Node 18+, Bun, Deno, Cloudflare Workers, and Vercel Edge are all supported runtimes — anything with `ReadableStream<Uint8Array>` and `TextEncoder`.
+
+## Module surface
+
+| Export                                | Kind     | Purpose                                                                                                                                |
+| ------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `html`                                | function | Server counterpart of `@purityjs/core`'s `html` — returns a branded `SSRHtml` string instead of building DOM. Drop-in API replacement. |
+| `renderToString(component, options?)` | function | Buffered render. Returns `Promise<string>`, or `Promise<{ body, head }>` when `extractHead: true` is set.                              |
+| `renderToStream(component, options?)` | function | Progressive render. Returns `ReadableStream<Uint8Array>` that flushes the shell first, then per-`suspense()` boundary chunks.          |
+| `RenderToStringOptions`               | type     | Options for `renderToString` (timeout, doctype, nonce, serialize toggle, extractHead).                                                 |
+| `RenderToStringWithHead`              | type     | `{ body: string; head: string }` — return shape when `extractHead: true`.                                                              |
+| `RenderToStreamOptions`               | type     | Options for `renderToStream` (timeout, doctype, nonce, serialize toggle, AbortSignal).                                                 |
+| `SSRHtml`                             | type     | Branded string `{ __purity_ssr_html__: string }` — emitted by `html` and the `*SSR` control-flow helpers.                              |
+
+`head()` itself is exported from `@purityjs/core` — see [Head / meta tags](#head--meta-tags-adr-0008) below for the call-site pattern.
+
+Every export is re-exported from `@purityjs/ssr`'s root entry. There are no subpaths.
+
+## When to use which entry
+
+| Scenario                                                 | Entry            |
+| -------------------------------------------------------- | ---------------- |
+| Static prerender (build-time, sitemap)                   | `renderToString` |
+| Small response, no slow data                             | `renderToString` |
+| Edge function with one-shot HTML reply                   | `renderToString` |
+| Slow data behind a fast shell (dashboards, app listings) | `renderToStream` |
+| Multiple independent slow regions                        | `renderToStream` |
+| Want progressive paint on a slow connection              | `renderToStream` |
+
+## API
+
+### `html`
+
+Identical signature to `@purityjs/core`'s `html`, but its compiled factory emits **HTML strings** rather than DOM nodes. Returns `SSRHtml`.
+
+```ts
+import { html } from '@purityjs/ssr';
+
+const greeting = (name: string) => html`<h1>Hello, ${name}</h1>`;
+greeting('Ada').__purity_ssr_html__;
+//   → '<h1>Hello, <!--[-->Ada<!--]--></h1>'
+```
+
+The `<!--[-->VALUE<!--]-->` marker pair brackets every `${expression}` slot. The client-side hydrator walks these markers and binds reactivity in place — see [ADR 0005](../../docs/decisions/0005-non-lossy-hydration.md).
+
+In a Vite SSR build, the `@purityjs/vite-plugin` AOT-compiles `html\`\``calls directly to the SSR factory output and the runtime`html` function is not invoked. It still ships for unit tests and for ad-hoc SSR-without-Vite scripts.
+
+### `renderToString(component, options?)`
+
+```ts
+function renderToString(component: () => unknown, options?: RenderToStringOptions): Promise<string>;
+
+interface RenderToStringOptions {
+  /** Maximum ms to wait for pending resources during render. Default 5000. */
+  timeout?: number;
+  /** Inline a JSON snapshot of resolved resources. Default true. */
+  serializeResources?: boolean;
+  /** Optional doctype prefix (e.g. `'<!doctype html>'`). */
+  doctype?: string;
+  /** Strict-CSP nonce, base64 / URL-safe characters. */
+  nonce?: string;
+}
+```
+
+**Resolution loop.** Renders the component, awaits any `resource()` fetchers triggered during the pass, re-runs, and repeats until the render is quiescent (no new pending promises) or `timeout` ms elapse. Throws on timeout. `MAX_PASSES = 10` — a render that creates new resources on every pass diverges and throws.
+
+**Resource cache.** When `serializeResources !== false` and at least one `resource()` resolved during the render, the output ends with:
+
+```html
+<script type="application/json" id="__purity_resources__">
+  …
+</script>
+```
+
+The client-side `hydrate()` reads this script, calls `primeHydrationCache(...)`, and `resource()` calls inside the hydrating component consume cached values without re-fetching. The payload shape is:
+
+- `[v0, v1, …]` (positional) when no resource opted into a stable key.
+- `{ ordered: [...], keyed: { ...} }` when at least one `resource(..., { key })` is in play. Recommended for production code — positional indexing shifts under conditional resource creation.
+
+**Custom Elements.** Components registered via `component('p-tag', …)` SSR through Declarative Shadow DOM:
+
+```html
+<p-card>
+  <template shadowrootmode="open">
+    <style>
+      …
+    </style>
+    <div class="card">…</div>
+  </template>
+</p-card>
+```
+
+Browsers since 2024 (Chrome 124+, Safari 16.4+, Firefox 123+) parse the inline shadow root immediately. `connectedCallback` then hydrates against it. ADR [0004](../../docs/decisions/0004-ssr-mvp.md) covers the contract; pre-2024 browsers fall through to client-only render.
+
+### `renderToStream(component, options?)`
+
+```ts
+function renderToStream(
+  component: () => unknown,
+  options?: RenderToStreamOptions,
+): ReadableStream<Uint8Array>;
+
+interface RenderToStreamOptions {
+  /** Per-boundary resource timeout. Default 5000. */
+  timeout?: number;
+  /** Inline shell-resolved resources. Default true. */
+  serializeResources?: boolean;
+  /** Optional doctype prefix. */
+  doctype?: string;
+  /** Strict-CSP nonce applied to every inline `<script>` we emit. */
+  nonce?: string;
+  /** Abort mid-stream — closes the controller and drops in-flight boundary renders. */
+  signal?: AbortSignal;
+}
+```
+
+**Wire format.** The stream emits, in order:
+
+1. The `doctype` prefix, if supplied.
+2. The shell HTML — every `suspense(view, fallback)` call emits its **fallback** HTML wrapped in `<!--s:N-->FALLBACK<!--/s:N-->` markers. Top-level resources still block the shell via the multi-pass loop; wrap async data in `suspense()` to defer it.
+3. `<script type="application/json" id="__purity_resources__">…</script>` with shell-resolved resources (suppressible via `serializeResources: false`).
+4. `<script>window.__purity_swap = …</script>` — the ~330-byte client splice helper, inlined exactly once when there is at least one queued boundary.
+5. Per boundary, in declaration order:
+   ```html
+   <template id="purity-s-N">RESOLVED_HTML</template>
+   <script>
+     __purity_swap(N);
+   </script>
+   ```
+6. The stream closes when the queue drains (or `signal` aborts).
+
+`__purity_swap(N)` walks the document's comment nodes via `TreeWalker` to find the matching `<!--s:N-->` / `<!--/s:N-->` pair, removes the fallback nodes between them, and inserts the template's content in place. ADR [0006](../../docs/decisions/0006-streaming-suspense.md) Phase 3.
+
+**Per-boundary budgets.** Each boundary renders in its own `SSRRenderContext` with its own multi-pass loop and its own `{ timeout }` budget (the option is per-boundary, not per-response). When a boundary's deadline fires the renderer falls back to its `fallback()` HTML for the streamed chunk — siblings continue resolving normally. Use `suspense({ onError })` to observe view / fallback / timeout phases.
+
+**Per-boundary resource cache.** When a boundary's view resolves any `resource(..., { key })`, the streamed chunk also includes a `<script type="application/json" id="__purity_resources_N__">{"keyed":{…}}</script>` payload alongside the `<template id="purity-s-N">`. On the client, `hydrate()` scans every `script[id^="__purity_resources_"]` and merges the keyed entries before priming — boundary-side keyed resources hit the cache and skip refetching. Positional resources inside a boundary collide with the shell's index space, so streamed-boundary resources should always opt into a key.
+
+**Hydration timing.** The MVP defers `hydrate()` until the stream closes. Selective per-boundary hydration (React-style) is out of scope for now.
+
+## End-to-end recipes
+
+### Node 18+ HTTP server
+
+```ts
+// server.ts
+import { createServer } from 'node:http';
+import { renderToString } from '@purityjs/ssr';
+import { App } from './app.js';
+
+createServer(async (req, res) => {
+  try {
+    const html = await renderToString(App, { doctype: '<!doctype html>' });
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end(html);
+  } catch (err) {
+    res.writeHead(500).end('SSR error');
+  }
+}).listen(3000);
+```
+
+### Streaming Node 18+
+
+```ts
+import { createServer } from 'node:http';
+import { Readable } from 'node:stream';
+import { renderToStream } from '@purityjs/ssr';
+
+createServer(async (req, res) => {
+  res.writeHead(200, { 'content-type': 'text/html', 'transfer-encoding': 'chunked' });
+  const stream = renderToStream(App, { doctype: '<!doctype html>' });
+  Readable.fromWeb(stream as any).pipe(res);
+}).listen(3000);
+```
+
+### Cloudflare Workers / Vercel Edge / Bun / Deno
+
+```ts
+import { renderToStream } from '@purityjs/ssr';
+
+export default {
+  async fetch(req: Request): Promise<Response> {
+    const stream = renderToStream(App, {
+      doctype: '<!doctype html>',
+      signal: req.signal, // cancel on client disconnect
+    });
+    return new Response(stream, { headers: { 'content-type': 'text/html' } });
+  },
+};
+```
+
+`ReadableStream<Uint8Array>` is the platform standard — no adapter code needed.
+
+### With `<Suspense>`
+
+```ts
+import { html, suspense } from '@purityjs/core';
+import { renderToStream } from '@purityjs/ssr';
+
+const App = () => html`
+  <main>
+    <h1>Hello</h1>
+    ${suspense(
+      () => html`<aside>${() => slowData()}</aside>`,
+      () => html`<aside class="loading">…</aside>`,
+      { timeout: 2000, onError: (err, info) => log(info.boundaryId, err) },
+    )}
+  </main>
+`;
+```
+
+The shell paints with `<aside class="loading">…</aside>` immediately; when `slowData()` resolves the streamed chunk swaps in `<aside>RESOLVED</aside>`.
+
+### Head / meta tags (ADR 0008)
+
+`head(content)` lets a component contribute HTML to the document `<head>` from inside the render tree. `renderToString({ extractHead: true })` surfaces the collected HTML as `{ body, head }` so you can splice it into your shell.
+
+```ts
+import { head, html } from '@purityjs/core';
+import { renderToString, html as ssrHtml } from '@purityjs/ssr';
+
+function PageHead({ title, description }: { title: string; description: string }) {
+  head(ssrHtml`<title>${title}</title>`);
+  head(ssrHtml`<meta name="description" content="${description}">`);
+}
+
+function App() {
+  return ssrHtml`
+    ${PageHead({ title: 'My Page', description: 'Welcome' })}
+    <main><h1>Hi</h1></main>
+  `;
+}
+
+const { body, head: headHtml } = await renderToString(App, { extractHead: true });
+const final = template.replace('<!--head-->', headHtml).replace('<!--ssr-outlet-->', body);
+```
+
+Contract:
+
+- `head()` is **server-only in Phase 1** — it's a no-op on the client. The browser already shows the SSR-rendered `<head>`; reactive client-side head element management lands in a follow-up ADR.
+- `extractHead: false` (the default) preserves the legacy `Promise<string>` return — apps that don't use `head()` are unaffected.
+- The collected HTML is the **final render pass's** output, so resource-dependent values (`head(ssrHtml\`<title>${() => res()}</title>\`)`) show resolved values, not the loading placeholder.
+- `renderToStream` does **not** consume `head()` calls — the shell flushes before the head accumulator finishes. Stream-friendly head() is a follow-up.
+
+### Request context (ADR 0009)
+
+Pass the incoming `Request` through to components via the `request` option on either render entry. Components read it with `getRequest()`.
+
+```ts
+import { getRequest, head, html } from '@purityjs/core';
+import { renderToString } from '@purityjs/ssr';
+
+function PageHead() {
+  const req = getRequest();
+  if (!req) return; // client render — let the SSR head stand
+
+  const url = new URL(req.url);
+  const canonical = `${url.origin}${url.pathname}`;
+  head(html`<link rel="canonical" href="${canonical}" />`);
+}
+
+// Edge / Bun / Deno / CF Workers — request is already a Request:
+const html = await renderToString(App, { request });
+
+// Node http.createServer — convert IncomingMessage to Request in one line:
+const url = `http://${msg.headers.host}${msg.url}`;
+const request = new Request(url, { method: msg.method, headers: msg.headers as HeadersInit });
+const html = await renderToString(App, { request });
+```
+
+Contract:
+
+- `getRequest()` returns the same `Request` instance on every render pass and inside every `suspense()` boundary's view (`renderToStream` propagates through both shell and per-boundary contexts).
+- On the client (and in tests / ad-hoc renders without a `request` option), `getRequest()` returns `null`. Branch on the result if your component is dual-target.
+- `getRequest()` exposes the raw request; the [router primitives (ADR 0011)](../../docs/decisions/0011-router-primitives.md) layer dispatch on top — see below.
+
+### Router primitives (ADR 0011)
+
+Three composable functions in `@purityjs/core` close the per-app routing boilerplate without picking a routing convention.
+
+```ts
+import { currentPath, matchRoute, navigate, html } from '@purityjs/core';
+
+function App() {
+  if (matchRoute('/')) return Home();
+  const m = matchRoute('/users/:id');
+  if (m) return UserPage(m.params.id);
+  return NotFound();
+}
+
+html`<a
+  href="/about"
+  @click=${(e) => {
+    e.preventDefault();
+    navigate('/about');
+  }}
+  >About</a
+>`;
+```
+
+| API                                | SSR behavior                                              | Client behavior                                                                                           |
+| ---------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `currentPath(): string`            | `new URL(request.url).pathname`, or `'/'` without request | Reactive — tracks `popstate` + `hashchange` + `navigate()`                                                |
+| `currentSearch(): URLSearchParams` | `new URL(request.url).searchParams` (fresh copy)          | Reactive — same signal as `currentPath`. Mutations are local — go through `navigate()` to change the URL. |
+| `currentHash(): string`            | `new URL(request.url).hash` (with `#`) or `''`            | Reactive — same signal as `currentPath`                                                                   |
+| `navigate(href, { replace? })`     | No-op                                                     | `pushState` (or `replaceState`) + updates the reactive URL                                                |
+| `matchRoute(pattern, path?)`       | Pattern matcher; `path` defaults to `currentPath()`       | Same — reactive when called inside a `watch()` / template                                                 |
+
+Pattern grammar: literals (`/about`), `:name` captures (`/users/:id`), and `*` splat tail (`/blog/*`). Captured `:name` values are URI-decoded. Returns `{ params } | null`.
+
+Link auto-interception via [`interceptLinks()`](../../docs/decisions/0013-link-interception.md) drops the per-`<a>` `@click` boilerplate; `manageNavScroll()` ([ADR 0015](../../docs/decisions/0015-nav-scroll-management.md)) closes the "SPA keeps the previous page's scroll position" UX gap on forward navigation:
+
+```ts
+// entry.client.ts
+import { hydrate, interceptLinks, manageNavScroll } from '@purityjs/core';
+import { App } from './app.ts';
+
+hydrate(document.getElementById('app')!, App);
+interceptLinks();
+manageNavScroll();
+```
+
+Then templates use plain `<a href>` — same-origin clicks become `navigate()` calls automatically. The default `interceptLinks` predicate exempts modifier keys, `target="_blank"`, download links, cross-origin hrefs, hash-only same-page links, and elements carrying `data-no-intercept`. Pass a custom `shouldIntercept` to fully replace the default.
+
+`manageNavScroll()` subscribes to `onNavigate()` and scrolls to the URL's hash target (if any) or to the top after every forward `navigate()`. Browser-driven back/forward scroll restoration and `hashchange`-anchor scrolling are native — `manageNavScroll` only fills the pushState gap. Pass a custom `onNavigate` handler to take over (e.g. for smooth scroll, view transitions).
+
+`manageNavFocus()` ([ADR 0016](../../docs/decisions/0016-nav-focus-management.md)) closes the accessibility gap on the same nav event — focus moves into the URL's hash target (or the page's `<main>` landmark by default) so screen readers announce the new region's accessible name. Pairs with `manageNavScroll()` via `preventScroll: true` so the two don't fight. Pass `{ selector }` to target a different landmark (e.g. `'h1'`, `'.app-content'`) or `{ onNavigate }` to replace the default with a custom focus / live-region flow.
+
+`manageNavTransitions()` ([ADR 0017](../../docs/decisions/0017-view-transitions.md)) wraps `navigate()`-driven URL + DOM updates in `document.startViewTransition()` so route changes can cross-fade. No-op on browsers without the API (Safari < 18, all Firefox as of 2026-05); honors `prefers-reduced-motion`. Pass `{ shouldTransition }` to opt out per-nav. Style the cross-fade or per-element morph via the standard `::view-transition-*` CSS pseudo-elements.
+
+Still not in scope: `<Route>` / `<Routes>` component, layout nesting, URL search / hash reactivity, file-system route discovery, scroll restoration, focus management, view transitions, prefetch-on-hover. See ADR 0011 + ADR 0013's "Explicit non-features" sections.
+
+### Server actions (ADR 0012)
+
+Server actions register a `(Request) => Response` handler at a stable URL. `<form action=${action.url} method="POST">` posts to it natively (progressive enhancement); JS apps call `action.invoke(body, init?)` to POST via fetch and get the raw `Response` back.
+
+```ts
+// app/save-todo.server.ts
+import { serverAction } from '@purityjs/core';
+
+export const saveTodo = serverAction('/api/save-todo', async (request) => {
+  const data = await request.formData();
+  const text = String(data.get('text') ?? '');
+  if (!text) return new Response('text required', { status: 400 });
+  await db.insert({ text });
+  return Response.redirect(new URL('/', request.url).toString(), 303);
+});
+
+// In a server-rendered component:
+html`<form action=${saveTodo.url} method="POST">
+  <input name="text" />
+  <button>Save</button>
+</form>`;
+
+// In your server entry, before SSR:
+import { handleAction } from '@purityjs/core';
+
+const actionResponse = await handleAction(request);
+if (actionResponse) return actionResponse;
+// …else render the page normally.
+```
+
+| API                           | Returns                     | Behavior                                                                                                        |
+| ----------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `serverAction(url, handler)`  | `{ url, handler, invoke }`  | Register at `url`. Last-wins on duplicate. Throws on bad input.                                                 |
+| `action.invoke(body?, init?)` | `Promise<Response>`         | Client-only. POST to `action.url` via fetch. Defaults to method `POST`; `init` overrides. Throws on the server. |
+| `findAction(request)`         | `handler \| null`           | Look up handler by `new URL(request.url).pathname`. No invocation.                                              |
+| `handleAction(request)`       | `Promise<Response \| null>` | Find + invoke + await. `null` on no match so caller falls through.                                              |
+
+Action handlers belong in `*.server.{ts,js,tsx,jsx}` files — the `@purityjs/vite-plugin` strips those from client bundles automatically (default-on, [ADR 0018](../../docs/decisions/0018-server-module-strip.md)). Handler bodies + their transitive imports (DB driver, secrets, API tokens) stop shipping to the browser. Apps sharing the URL between client + server pull it into a non-server module:
+
+```ts
+// app/api-urls.ts (shared)
+export const SAVE_TODO_URL = '/api/save-todo';
+
+// app/save-todo.server.ts (server-only — stripped from client)
+import { serverAction } from '@purityjs/core';
+import { SAVE_TODO_URL } from './api-urls.ts';
+export const saveTodo = serverAction(SAVE_TODO_URL, async (request) => {
+  /* … */
+});
+
+// app/components/SaveButton.ts (client)
+import { SAVE_TODO_URL } from '../api-urls.ts';
+html`<form action=${SAVE_TODO_URL} method="POST">…</form>`;
+```
+
+Phase 1 non-features (per ADR 0012): no CSRF helper, no auto-serialization, no build-time URL derivation. CSRF + auth-aware checks live in your handler.
+
+### Static site generation (ADR 0010)
+
+`renderStatic(options)` pre-renders a list of routes at build time. Composes `renderToString` + `extractHead` + `getRequest()`; returns a `Map<path, html>` plus a per-route errors map. **No filesystem I/O** — the caller writes the files however their runtime prefers.
+
+```ts
+import { renderStatic } from '@purityjs/ssr';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+
+const { files, errors } = await renderStatic({
+  routes: ['/', '/about', '/blog/hello-world'],
+  handler: (req) => () => App({ url: req.url }),
+  shellTemplate:
+    '<!doctype html><html><head>{{head}}</head>' +
+    '<body><div id="app">{{body}}</div></body></html>',
+  baseUrl: 'https://example.com',
+  concurrency: 8,
+});
+for (const [route, html] of files) {
+  const out = join('dist', route === '/' ? 'index.html' : `${route.replace(/^\//, '')}/index.html`);
+  await mkdir(dirname(out), { recursive: true });
+  await writeFile(out, html);
+}
+for (const [route, err] of errors) console.error('SSG failure:', route, err);
+```
+
+Options:
+
+| Field           | Type                                                      | Default                | Purpose                                                                   |
+| --------------- | --------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------- |
+| `routes`        | `Array<string \| { path; request? }>`                     | required               | URL paths to render. Per-route `request` overrides the synthesised one.   |
+| `handler`       | `(req: Request) => () => unknown`                         | required               | Resolves a request to the component thunk for that route.                 |
+| `shellTemplate` | `string`                                                  | _(none — return body)_ | `{{body}}` + optional `{{head}}` placeholders.                            |
+| `baseUrl`       | `string`                                                  | `'http://localhost'`   | Origin used to synthesise per-route `Request` URLs.                       |
+| `doctype`       | `string`                                                  | none                   | Forwarded to `renderToString`.                                            |
+| `renderOptions` | `Omit<RenderToStringOptions, 'extractHead' \| 'request'>` | `{}`                   | Forwarded per-render. `extractHead` is forced on; `request` is per-route. |
+| `concurrency`   | `number`                                                  | `Infinity`             | Bounded worker pool when SSG'ing thousands of routes.                     |
+| `onRoute`       | `(path, html) => void \| Promise<void>`                   | none                   | Stream completed renders to disk one-at-a-time.                           |
+
+Contract:
+
+- Errors are per-route. One bad render doesn't abort the batch — check `errors.size === 0` before publishing.
+- The synthesised `Request` is visible to components via `getRequest()`; `req.url` is `baseUrl + path`.
+- `head()` markup goes into `{{head}}`; if the template has no `{{head}}` placeholder, head markup is prepended to the body so it isn't lost.
+- `renderToStream` and `renderStatic` are mutually exclusive — pick the buffered (SSG) or streaming (SSR) path per response.
+
+### Strict CSP
+
+Generate a nonce per request and pass it through; pair with a `Content-Security-Policy: script-src 'nonce-…'` header so every inline `<script>` we emit (resource cache prime, swap helper, per-boundary swap calls) is allowed under strict CSP.
+
+```ts
+import crypto from 'node:crypto';
+const nonce = crypto.randomBytes(16).toString('base64');
+const stream = renderToStream(App, { nonce });
+res.setHeader('content-security-policy', `script-src 'nonce-${nonce}'; default-src 'self'`);
+```
+
+`nonce` is validated against `[A-Za-z0-9+/=_-]+` (base64 + URL-safe). An invalid nonce throws synchronously.
+
+## Hydration contract
+
+| What renders the SSR HTML                    | What attaches client behavior      | Where to call it  |
+| -------------------------------------------- | ---------------------------------- | ----------------- |
+| `renderToString` / `renderToStream` (server) | `hydrate(container, App)` (client) | `entry.client.ts` |
+
+```ts
+// entry.client.ts
+import { hydrate } from '@purityjs/core';
+import { App } from './app.js';
+
+hydrate(document.getElementById('app')!, App);
+```
+
+The hydrator:
+
+- Walks `<!--[-->…<!--]-->` slot markers and binds reactivity to existing nodes (no rebuild). ADR 0005.
+- Adopts `each()` rows by key via `<!--er:KEY-->row<!--/er-->` per-row markers, and `when()` / `match()` cases via `<!--m:KEY-->view<!--/m-->` boundary markers. Same node references survive across hydration.
+- Strips `<!--s:N-->` / `<!--/s:N-->` Suspense markers (or treats them as opaque if a boundary hasn't streamed yet — Phase 3 MVP defers full hydration until the stream closes).
+- Falls back to a fresh `mount()` if the SSR DOM diverges structurally from the client template; never crashes the page.
+- Optional `enableHydrationWarnings()` logs structural mismatches; opt-in `enableHydrationTextRewrite()` overwrites SSR text content to match the template (ADR [0007](../../docs/decisions/0007-text-rewrite-on-mismatch.md)).
+
+## SSR control-flow helpers
+
+`@purityjs/core` re-exports server variants: `eachSSR`, `whenSSR`, `matchSSR`, `listSSR`. Use them in code that runs on the server only — they emit the same marker grammar the hydrator expects, including encoded keys for per-row / per-case adoption.
+
+```ts
+import { html as ssrHtml, renderToString } from '@purityjs/ssr';
+import { eachSSR } from '@purityjs/core';
+
+const out = await renderToString(
+  () =>
+    ssrHtml`<ul>${eachSSR(
+      () => items,
+      (todo) => ssrHtml`<li>${() => todo().text}</li>`,
+      (todo) => todo.id,
+    )}</ul>`,
+);
+```
+
+In a Vite SSR build the plugin auto-rewrites client `each` / `when` / `match` to their SSR variants — you write client code, it transparently emits SSR HTML.
+
+## Marker grammar reference
+
+| Marker                                         | Emitted by             | Purpose                                                         |
+| ---------------------------------------------- | ---------------------- | --------------------------------------------------------------- |
+| `<!--[-->VALUE<!--]-->`                        | every expression slot  | Hydrator finds reactive bindings without text-coalescing drift  |
+| `<!--e-->ROWS<!--/e-->`                        | `eachSSR`              | Outer `each()` boundary                                         |
+| `<!--er:KEY-->row<!--/er-->`                   | `eachSSR` per row      | Per-row adoption (KEY is `encodeURIComponent` with `-` → `%2D`) |
+| `<!--m:KEY-->view<!--/m-->`                    | `matchSSR` / `whenSSR` | Boundary marker carrying the rendered case key                  |
+| `<!--l-->ROWS<!--/l-->`                        | `listSSR`              | Flat single-tag list boundary                                   |
+| `<!--s:N-->view<!--/s:N-->`                    | `suspense()`           | Streaming boundary; `N` is the per-render monotonic id          |
+| `<template shadowrootmode="open">…</template>` | `component()` SSR      | Declarative Shadow DOM payload for Custom Elements              |
+
+The `<!--[-->` / `<!--]-->` markers are 14 bytes per slot; the cost is fixed and pays for non-lossy hydration.
+
+## Conventions
+
+- **One `pushSSRRenderContext` per render.** Both `renderToString` and `renderToStream` push their own `SSRRenderContext`; user code reads it through `getSSRRenderContext()`. Don't push your own.
+- **Async by default.** Both render entries are async (the multi-pass resource loop awaits between passes). `renderToStream` returns the `ReadableStream` synchronously but the `start()` controller is `async`.
+- **`html` is two different functions.** `@purityjs/core/html` builds DOM (or returns a deferred-template thunk during hydration). `@purityjs/ssr/html` returns `SSRHtml`. Vite's SSR transform picks the right one per build target — apps written for both targets parametrise the user code on the html tag.
+- **Shadow DOM scope.** Components are isolated. Global stylesheets that need to pierce the shadow root use `adoptedStyleSheets` per component; CSS variables work normally. See [`docs/shadow-dom-rationale.md`](../../docs/shadow-dom-rationale.md).
+- **Resources need keys for streaming.** Inside a `suspense(view)` view, prefer `resource(..., { key: 'unique-string' })` so the per-boundary cache (Phase 6 second-half) addresses values stably across the SSR/hydrate boundary.
+- **Output is byte-for-byte deterministic** for a fixed input: marker IDs reset per render, resource counters reset per pass, and per-boundary IDs are monotonic. Snapshot tests are reliable.
+
+## Common gotchas
+
+| Symptom                                          | Cause                                                                                                                                                      |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[Purity] renderToString timed out after 5000ms` | A `resource()` fetcher hangs. Check the network or set `{ timeout: longer }`.                                                                              |
+| `did not converge within 10 passes`              | The render creates new resources on every pass. Memoize the resource list or move it out of the render path.                                               |
+| Hydration mismatch — `<p>` vs `<div>`            | SSR and client templates disagree. Run with `enableHydrationWarnings()` in dev.                                                                            |
+| Streamed boundary refetches its data on hydrate  | The resources inside the boundary's view aren't keyed. Use `resource(..., { key: 'unique-string' })` — only keyed values get cross-boundary cache priming. |
+| `__purity_swap` blocked by CSP                   | Pass `nonce` through both `renderToStream` and your CSP header.                                                                                            |
+| Custom Element flickers on hydrate               | Browser doesn't support Declarative Shadow DOM. Pre-2024 browsers fall through to client-render — feature-detect or polyfill.                              |
+
+## Decision records
+
+The SSR feature set is documented through ADRs — start here when you need to dig deeper:
+
+- [0004 — SSR MVP](../../docs/decisions/0004-ssr-mvp.md) — `renderToString`, DSD, resource awaiting, lossy hydration baseline.
+- [0005 — Marker-walking, non-lossy hydration](../../docs/decisions/0005-non-lossy-hydration.md) — `<!--[-->` slot markers, deferred-template thunks, per-row / per-case adoption.
+- [0006 — Streaming + Suspense](../../docs/decisions/0006-streaming-suspense.md) — `<!--s:N-->` boundary grammar, `renderToStream` MVP, `__purity_swap` client splice.
+- [0007 — Text-content rewriting on mismatch](../../docs/decisions/0007-text-rewrite-on-mismatch.md) — opt-in self-heal for stale-CDN drift.
+
+## License
+
+MIT

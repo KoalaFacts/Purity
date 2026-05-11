@@ -57,6 +57,27 @@ describe('generateSSR — static templates', () => {
     expect(compileSSR(['<br><hr><img src="x.png">'])).toBe('<br/><hr/><img src="x.png"/>');
   });
 
+  it('emits `<!doctype html>` verbatim (raw text, not escaped)', () => {
+    // ADR 0033 follow-up: regression test for the parser's doctype
+    // handling. Before the fix, an html`` template that started with
+    // `<!doctype html>` infinite-looped the parser; this test pins the
+    // emit shape so SSR output ships a valid doctype.
+    expect(compileSSR(['<!doctype html><html><body></body></html>'])).toBe(
+      '<!doctype html><html><body></body></html>',
+    );
+  });
+
+  it('emits `<!DOCTYPE html>` (uppercase) verbatim', () => {
+    expect(compileSSR(['<!DOCTYPE html>'])).toBe('<!DOCTYPE html>');
+  });
+
+  it('emits doctype + expression interpolation correctly', () => {
+    // The two paths (buildStaticHtml fast-path vs buildSSRBody slow-path
+    // with expressions) both need the raw-emit branch. Force the slow
+    // path by including a `${}` slot.
+    expect(compileSSR(['<!doctype html><title>', '</title>'], 'Page')).toContain('<!doctype html>');
+  });
+
   it('renders comments', () => {
     expect(compileSSR(['<!-- hi --><div></div>'])).toBe('<!-- hi --><div></div>');
   });
@@ -250,7 +271,7 @@ describe('SSR control flow', () => {
       a: () => 'A',
       b: () => 'B',
     });
-    expect(out.__purity_ssr_html__).toBe('<!--m-->B<!--/m-->');
+    expect(out.__purity_ssr_html__).toBe('<!--m:b-->B<!--/m-->');
   });
 
   it('matchSSR uses fallback when no case matches', () => {
@@ -259,12 +280,12 @@ describe('SSR control flow', () => {
       { a: () => 'A' },
       () => 'F',
     );
-    expect(out.__purity_ssr_html__).toBe('<!--m-->F<!--/m-->');
+    expect(out.__purity_ssr_html__).toBe('<!--m:z-->F<!--/m-->');
   });
 
   it('matchSSR with no case and no fallback renders empty markers', () => {
     const out = matchSSR(() => 'z' as string, {});
-    expect(out.__purity_ssr_html__).toBe('<!--m--><!--/m-->');
+    expect(out.__purity_ssr_html__).toBe('<!--m:z--><!--/m-->');
   });
 
   it('whenSSR picks the then branch', () => {
@@ -273,7 +294,7 @@ describe('SSR control flow', () => {
       () => 'YES',
       () => 'NO',
     );
-    expect(out.__purity_ssr_html__).toBe('<!--m-->YES<!--/m-->');
+    expect(out.__purity_ssr_html__).toBe('<!--m:true-->YES<!--/m-->');
   });
 
   it('whenSSR picks the else branch', () => {
@@ -282,7 +303,7 @@ describe('SSR control flow', () => {
       () => 'YES',
       () => 'NO',
     );
-    expect(out.__purity_ssr_html__).toBe('<!--m-->NO<!--/m-->');
+    expect(out.__purity_ssr_html__).toBe('<!--m:false-->NO<!--/m-->');
   });
 
   it('whenSSR with no else renders empty markers', () => {
@@ -290,28 +311,55 @@ describe('SSR control flow', () => {
       () => false,
       () => 'YES',
     );
-    expect(out.__purity_ssr_html__).toBe('<!--m--><!--/m-->');
+    expect(out.__purity_ssr_html__).toBe('<!--m:false--><!--/m-->');
   });
 
   it('eachSSR concatenates mapped items', () => {
     const items = ['a', 'b', 'c'];
     const out = eachSSR(items, (item) => item());
-    expect(out.__purity_ssr_html__).toBe('<!--e-->abc<!--/e-->');
+    expect(out.__purity_ssr_html__).toBe(
+      '<!--e--><!--er:a-->a<!--/er--><!--er:b-->b<!--/er--><!--er:c-->c<!--/er--><!--/e-->',
+    );
   });
 
   it('eachSSR escapes string returns', () => {
     const out = eachSSR(['<x>'], (item) => item());
-    expect(out.__purity_ssr_html__).toBe('<!--e-->&lt;x&gt;<!--/e-->');
+    expect(out.__purity_ssr_html__).toBe('<!--e--><!--er:%3Cx%3E-->&lt;x&gt;<!--/er--><!--/e-->');
   });
 
   it('eachSSR concatenates branded HTML returns raw', () => {
     const out = eachSSR([1, 2], (item) => markSSRHtml(`<li>${item()}</li>`));
-    expect(out.__purity_ssr_html__).toBe('<!--e--><li>1</li><li>2</li><!--/e-->');
+    expect(out.__purity_ssr_html__).toBe(
+      '<!--e--><!--er:1--><li>1</li><!--/er--><!--er:2--><li>2</li><!--/er--><!--/e-->',
+    );
   });
 
   it('eachSSR passes index to mapFn', () => {
     const out = eachSSR(['a', 'b'], (item, i) => `${i}:${item()}`);
-    expect(out.__purity_ssr_html__).toBe('<!--e-->0:a1:b<!--/e-->');
+    expect(out.__purity_ssr_html__).toBe(
+      '<!--e--><!--er:a-->0:a<!--/er--><!--er:b-->1:b<!--/er--><!--/e-->',
+    );
+  });
+
+  it('eachSSR encodes keys safely (dashes, slashes, unicode)', () => {
+    const out = eachSSR(
+      [
+        { id: 'a-b', label: 'one' },
+        { id: 'a--b', label: 'two' },
+        { id: 'café/3', label: 'three' },
+      ],
+      (item) => item().label,
+      (item) => item.id,
+    );
+    // - is rewritten to %2D so two consecutive dashes can never appear, and
+    // unicode + slashes go through encodeURIComponent.
+    expect(out.__purity_ssr_html__).toBe(
+      '<!--e-->' +
+        '<!--er:a%2Db-->one<!--/er-->' +
+        '<!--er:a%2D%2Db-->two<!--/er-->' +
+        '<!--er:caf%C3%A9%2F3-->three<!--/er-->' +
+        '<!--/e-->',
+    );
   });
 
   it('listSSR builds simple text rows', () => {
@@ -343,7 +391,12 @@ describe('generateSSR — integration with control flow', () => {
       ['<ul>', '</ul>'],
       eachSSR(['a', 'b'], (item) => markSSRHtml(`<li>${item()}</li>`)),
     );
-    expect(out).toBe('<ul><!--[--><!--e--><li>a</li><li>b</li><!--/e--><!--]--></ul>');
+    expect(out).toBe(
+      '<ul><!--[--><!--e-->' +
+        '<!--er:a--><li>a</li><!--/er-->' +
+        '<!--er:b--><li>b</li><!--/er-->' +
+        '<!--/e--><!--]--></ul>',
+    );
   });
 
   it('embeds whenSSR output', () => {
@@ -354,6 +407,6 @@ describe('generateSSR — integration with control flow', () => {
         () => markSSRHtml('<p>shown</p>'),
       ),
     );
-    expect(out).toBe('<div><!--[--><!--m--><p>shown</p><!--/m--><!--]--></div>');
+    expect(out).toBe('<div><!--[--><!--m:true--><p>shown</p><!--/m--><!--]--></div>');
   });
 });

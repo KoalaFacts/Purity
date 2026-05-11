@@ -1,15 +1,54 @@
 // ---------------------------------------------------------------------------
-// @purityjs/vite-plugin — AOT template compilation
+// @purityjs/vite-plugin — AOT template compilation + file-system routing
 //
 // Transforms html`...` at build time into direct DOM creation code.
 // No runtime parser, no new Function(), CSP-safe.
+//
+// Optionally scans a routes directory and exposes a virtual
+// `purity:routes` module (ADR 0019).
 //
 // Usage:
 //   import { purity } from '@purityjs/vite-plugin';
 //   export default defineConfig({ plugins: [purity()] });
 // ---------------------------------------------------------------------------
 
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { posix, resolve as resolvePath } from 'node:path';
+
 import { generate, generateSSR, parse } from '@purityjs/core/compiler';
+
+import { attachLoaderInfo, buildRouteManifest, generateRouteManifestSource } from './routes.ts';
+
+/**
+ * File-system routing options. ADR 0019.
+ */
+export interface RoutesOptions {
+  /**
+   * Path to the routes directory, relative to Vite's project root.
+   * @example 'src/pages'
+   */
+  dir: string;
+  /**
+   * File extensions counted as route modules.
+   * @default ['.ts', '.tsx', '.js', '.jsx']
+   */
+  extensions?: string[];
+  /**
+   * Virtual-module specifier the manifest is exposed under.
+   * @default 'purity:routes'
+   */
+  virtualId?: string;
+  /**
+   * Optional on-disk emit (ADR 0032). When set, the plugin writes the
+   * generated manifest source to this path (relative to Vite's project
+   * root) every time the virtual module is loaded. Apps `tsc` /
+   * IDE jump-to-definition into the file directly; the virtual module
+   * specifier keeps working unchanged. Skipped silently when the file
+   * already matches the new content. Add the emit path to `.gitignore`.
+   * @example 'src/.purity/routes.ts'
+   */
+  emitTo?: string;
+}
 
 /**
  * Configuration options for the Purity Vite plugin.
@@ -20,6 +59,21 @@ export interface PurityPluginOptions {
    * @default ['.ts', '.js', '.tsx', '.jsx']
    */
   include?: string[];
+  /**
+   * Strip `*.server.{ts,js,tsx,jsx}` modules from client bundles
+   * (replacing the file with `export {};`). Server-side builds pass
+   * through unchanged. Default `true` — opt out by passing `false` for
+   * apps that want a different convention. ADR 0018.
+   */
+  stripServerModules?: boolean;
+  /**
+   * Enable file-system routing (ADR 0019). Pass `true` for the default
+   * `pages/` directory at the project root, or `{ dir, extensions?,
+   * virtualId? }` to customize. When set, the plugin exposes a virtual
+   * module (`purity:routes` by default) exporting a sorted route
+   * manifest. Off by default — opt in.
+   */
+  routes?: boolean | RoutesOptions;
 }
 
 /**
@@ -59,13 +113,84 @@ export interface PuritySourceMap {
  */
 export function purity(options?: PurityPluginOptions) {
   const extensions = options?.include ?? ['.ts', '.js', '.tsx', '.jsx'];
+  const stripServerModules = options?.stripServerModules !== false;
+
+  const routesOpts = normaliseRoutesOption(options?.routes);
+  // Resolved at configResolved time once Vite tells us the project root.
+  let routesAbsDir: string | null = null;
+  let routesExt: string[] = [];
+  let virtualId = '';
+  let resolvedVirtualId = '';
+  let emitToAbs: string | null = null;
 
   return {
     name: 'purity',
     enforce: 'pre' as const,
 
+    configResolved(this: any, config: { root: string }) {
+      if (!routesOpts) return;
+      routesAbsDir = resolvePath(config.root, routesOpts.dir);
+      routesExt = routesOpts.extensions ?? ['.ts', '.tsx', '.js', '.jsx'];
+      virtualId = routesOpts.virtualId ?? 'purity:routes';
+      resolvedVirtualId = '\0' + virtualId;
+      emitToAbs = routesOpts.emitTo ? resolvePath(config.root, routesOpts.emitTo) : null;
+    },
+
+    buildStart(this: any) {
+      // ADR 0033 — eager manifest emit. When `emitTo` is set we regenerate
+      // the on-disk file at the start of every `vite build` / `vite dev`,
+      // regardless of whether anything imports `purity:routes` in this run.
+      // Enables consumers that bundle the emitted file outside Vite
+      // (Cloudflare Workers via wrangler, Deno deploy, custom Node entries)
+      // to drive the emit with a plain `vite build` pre-step.
+      if (!routesOpts || emitToAbs === null || routesAbsDir === null) return;
+      const source = generateManifestSource(this, routesAbsDir, routesExt);
+      emitManifestToDisk(emitToAbs, source, (msg) => {
+        if (this && typeof this.warn === 'function') this.warn(msg);
+        else console.warn(msg);
+      });
+    },
+
+    resolveId(this: any, source: string) {
+      if (!routesOpts) return null;
+      if (source === virtualId) return resolvedVirtualId;
+      return null;
+    },
+
+    load(this: any, id: string) {
+      if (!routesOpts || id !== resolvedVirtualId) return null;
+      // routesAbsDir is set in configResolved (always called before load).
+      const source = generateManifestSource(this, routesAbsDir as string, routesExt);
+      // ADR 0032: optional on-disk emit. Skip the write when content
+      // matches to avoid filesystem-watch loops in dev. Failures are
+      // non-fatal — virtual module still returns `source`.
+      if (emitToAbs !== null) {
+        emitManifestToDisk(emitToAbs, source, (msg) => {
+          if (this && typeof this.warn === 'function') this.warn(msg);
+          else console.warn(msg);
+        });
+      }
+      return source;
+    },
+
+    handleHotUpdate(this: any, ctx: { file: string; server: { moduleGraph: any } }) {
+      if (!routesOpts || !routesAbsDir) return;
+      // Only invalidate the manifest when a file under the routes dir was
+      // added / removed / renamed. In-place edits to a route module HMR
+      // through their own module graph and don't need a manifest regen.
+      // Vite calls handleHotUpdate for every change including content
+      // edits, so we discriminate on whether the file currently exists vs
+      // was tracked previously. Cheap heuristic: if the changed file is
+      // under the routes dir but the loaded manifest doesn't reference it
+      // (or references it but the file no longer exists), invalidate.
+      const file = ctx.file.replace(/\\/g, '/');
+      const dir = routesAbsDir.replace(/\\/g, '/');
+      if (!file.startsWith(dir + '/')) return;
+      const mod = ctx.server.moduleGraph.getModuleById(resolvedVirtualId);
+      if (mod) ctx.server.moduleGraph.invalidateModule(mod);
+    },
+
     transform(this: any, code: string, id: string, transformOpts?: { ssr?: boolean }) {
-      if (!extensions.some((ext) => id.endsWith(ext))) return null;
       // Skip framework internals — only compile user code
       if (
         id.includes('@purityjs/') ||
@@ -74,6 +199,22 @@ export function purity(options?: PurityPluginOptions) {
         id.includes('packages/ssr/')
       )
         return null;
+
+      // Strip *.server.{ts,js,tsx,jsx} modules from client builds (ADR 0018).
+      // Server builds (transformOpts.ssr === true) pass through unchanged
+      // so handler bodies still execute on the server. Runs BEFORE the
+      // extension filter so the regex (which tolerates Vite query-string
+      // suffixes like `?import`, `?worker`, `?url`) is the source of truth.
+      if (stripServerModules && transformOpts?.ssr !== true && isServerOnlyId(id)) {
+        return {
+          code:
+            '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\n' +
+            'export {};\n',
+          map: null,
+        };
+      }
+
+      if (!extensions.some((ext) => id.endsWith(ext))) return null;
       if (!code.includes('html`')) return null;
 
       const result = compileTemplates(code, id, transformOpts?.ssr === true);
@@ -92,6 +233,120 @@ export function purity(options?: PurityPluginOptions) {
       return { code: result.code, map: result.map };
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// File-system routing helpers (ADR 0019)
+// ---------------------------------------------------------------------------
+
+function normaliseRoutesOption(opt: PurityPluginOptions['routes']): RoutesOptions | null {
+  if (!opt) return null;
+  if (opt === true) return { dir: 'pages' };
+  return opt;
+}
+
+/**
+ * Recursively list every file under `dir`, returning POSIX-relative paths.
+ * Returns an empty array when `dir` doesn't exist (the plugin tolerates a
+ * missing routes dir so apps can wire the option in before adding pages).
+ */
+/**
+ * Write the generated manifest source to disk if the existing content
+ * differs (ADR 0032). Creates parent directories as needed. Failures
+ * call `warn` and are otherwise non-fatal — the virtual module still
+ * returns the source.
+ */
+/**
+ * Build the manifest source string from a route directory. Shared by
+ * the virtual-module `load()` hook and the `buildStart` eager-emit
+ * path (ADR 0033). Uses the Rollup plugin context (`pluginCtx`) to
+ * surface route-conflict warnings via `this.warn` when available.
+ */
+function generateManifestSource(
+  pluginCtx: { warn?: (m: string) => void } | null,
+  dir: string,
+  extensions: string[],
+): string {
+  const files = listRouteFiles(dir);
+  const manifest = buildRouteManifest(files, extensions, (pattern, kept, dropped) => {
+    const msg =
+      `[purity] route conflict: pattern ${JSON.stringify(pattern)} resolved by ` +
+      `${JSON.stringify(kept)}; dropping ${JSON.stringify(dropped)}.`;
+    if (pluginCtx && typeof pluginCtx.warn === 'function') pluginCtx.warn(msg);
+    else console.warn(msg);
+  });
+  // Detect named `loader` exports per ADR 0022. Reads each route +
+  // layout file's contents once per build (cached internally).
+  attachLoaderInfo(manifest, (rel) => {
+    const abs = resolvePath(dir, rel);
+    try {
+      return readFileSync(abs, 'utf8');
+    } catch {
+      return null;
+    }
+  });
+  return generateRouteManifestSource(manifest, (filePath) => posix.join(dir, filePath));
+}
+
+function emitManifestToDisk(absPath: string, source: string, warn: (m: string) => void): void {
+  try {
+    // No-op when the file already matches — avoid filesystem-watch loops.
+    if (existsSync(absPath)) {
+      try {
+        if (readFileSync(absPath, 'utf8') === source) return;
+      } catch {
+        // Unreadable but exists — fall through and try to overwrite.
+      }
+    } else {
+      // Ensure the parent directory exists.
+      const parent = absPath.replace(/\/[^/]+$/, '');
+      if (parent && parent !== absPath) {
+        mkdirSync(parent, { recursive: true });
+      }
+    }
+    writeFileSync(absPath, source);
+  } catch (err) {
+    warn(`[purity] failed to write manifest to ${JSON.stringify(absPath)}: ${String(err)}`);
+  }
+}
+
+function listRouteFiles(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  const out: string[] = [];
+  const walk = (current: string, relPrefix: string): void => {
+    const entries = readdirSync(current);
+    for (const name of entries) {
+      const abs = posix.join(current.replace(/\\/g, '/'), name);
+      const rel = relPrefix ? posix.join(relPrefix, name) : name;
+      const st = statSync(abs);
+      if (st.isDirectory()) walk(abs, rel);
+      else if (st.isFile()) out.push(rel);
+    }
+  };
+  walk(dir, '');
+  return out;
+}
+
+// Match `*.server.ts`, `*.server.js`, `*.server.tsx`, `*.server.jsx` —
+// optionally followed by Vite's query string (`?…`) so stripped modules also
+// work when Vite tags imports with `?import` / `?worker` / etc. Hidden /
+// dotfile-prefixed names match too. ADR 0018.
+//
+// Implemented with string indexOf + endsWith instead of a regex with
+// alternation. CodeQL flagged the earlier regex as `js/polynomial-redos`
+// because `tsx` and `ts` (and `jsx`/`js`) share prefixes, which makes the
+// matcher backtrack on long inputs ending with mismatched chars. Plain
+// suffix checks are linear and bounded.
+const SERVER_SUFFIXES = ['.server.ts', '.server.tsx', '.server.js', '.server.jsx'] as const;
+
+function isServerOnlyId(id: string): boolean {
+  // Strip the optional `?query` so the suffix check sees the bare module path.
+  const q = id.indexOf('?');
+  const base = q === -1 ? id : id.slice(0, q);
+  for (let i = 0; i < SERVER_SUFFIXES.length; i++) {
+    if (base.endsWith(SERVER_SUFFIXES[i])) return true;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -666,5 +921,9 @@ function findLastImportEnd(code: string): number {
 
   return lastEnd;
 }
+
+export type { LayoutEntry, RouteEntry } from './routes.ts';
+export type { RouteParams } from './route-params.ts';
+export type { LoaderDataOf, LoaderDataOfEntry } from './loader-data-of.ts';
 
 export default purity;

@@ -10,6 +10,7 @@ import { generate, generateHydrate } from './codegen.ts';
 import {
   checkHydrationCursor,
   type DeferredTemplate,
+  hydrationTextRewriteEnabled,
   hydrationWarningsEnabled,
   isHydrating,
   makeDeferred,
@@ -27,6 +28,8 @@ type HydrateFn = (
   root: Node,
   inflate: (deferred: DeferredTemplate, target: Node) => void,
   check: ((node: Node | null, expected: string, detail?: string) => void) | undefined,
+  inflateEach: (deferred: unknown, contNodes: Node[], closeMarker: Node) => void,
+  inflateMatch: (deferred: unknown, contNodes: Node[], closeMarker: Node) => void,
 ) => Node;
 
 interface CacheEntry {
@@ -139,8 +142,57 @@ export function inflateDeferred(deferred: DeferredTemplate, target: Node): Node 
   stripSuspenseMarkers(target);
   const entry = getOrInitEntry(deferred.strings);
   const fn = ensureHydrate(entry, deferred.strings);
-  const check = hydrationWarningsEnabled() ? checkHydrationCursor : undefined;
-  return fn(deferred.values, watch, target, inflateDeferred, check);
+  // Pass the cursor checker if either warnings or text-rewrite is enabled —
+  // the helper handles both behaviors and the codegen guard (`_c && _c(...)`)
+  // makes this a single null check per cursor step when both are off.
+  const check =
+    hydrationWarningsEnabled() || hydrationTextRewriteEnabled() ? checkHydrationCursor : undefined;
+  return fn(
+    deferred.values,
+    watch,
+    target,
+    inflateDeferred,
+    check,
+    inflateDeferredEachThunk,
+    inflateDeferredMatchThunk,
+  );
+}
+
+// control.ts (the `each()` / `match()` runtimes) register their adoption
+// helpers here at module load via setInflateDeferredEach / setInflateDeferredMatch.
+// The thunk indirection avoids a static `compile.ts → control.ts` import
+// cycle (control.ts already imports `inflateDeferred` from this module).
+type InflateDeferredFn = (deferred: unknown, contNodes: Node[], closeMarker: Node) => void;
+
+let _inflateDeferredEach: InflateDeferredFn | null = null;
+let _inflateDeferredMatch: InflateDeferredFn | null = null;
+
+/** @internal — called once by control.ts during module init. */
+export function setInflateDeferredEach(fn: InflateDeferredFn): void {
+  _inflateDeferredEach = fn;
+}
+
+/** @internal — called once by control.ts during module init. */
+export function setInflateDeferredMatch(fn: InflateDeferredFn): void {
+  _inflateDeferredMatch = fn;
+}
+
+function inflateDeferredEachThunk(deferred: unknown, contNodes: Node[], closeMarker: Node): void {
+  /* v8 ignore start -- control.ts always registers before any hydrate runs */
+  if (!_inflateDeferredEach) {
+    throw new Error('[Purity] inflateDeferredEach not registered (control.ts not loaded)');
+  }
+  /* v8 ignore stop */
+  _inflateDeferredEach(deferred, contNodes, closeMarker);
+}
+
+function inflateDeferredMatchThunk(deferred: unknown, contNodes: Node[], closeMarker: Node): void {
+  /* v8 ignore start -- control.ts always registers before any hydrate runs */
+  if (!_inflateDeferredMatch) {
+    throw new Error('[Purity] inflateDeferredMatch not registered (control.ts not loaded)');
+  }
+  /* v8 ignore stop */
+  _inflateDeferredMatch(deferred, contNodes, closeMarker);
 }
 
 const SUSPENSE_MARKER = /^\/?s:\d+$/;
@@ -176,7 +228,9 @@ export { watch as _watch } from '../signals.ts';
 // connectedCallback) that need to toggle the mode without importing the
 // hydrate-runtime module directly.
 export {
+  disableHydrationTextRewrite,
   disableHydrationWarnings,
+  enableHydrationTextRewrite,
   enableHydrationWarnings,
   enterHydration,
   exitHydration,

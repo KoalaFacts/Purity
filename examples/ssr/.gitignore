@@ -1,0 +1,7 @@
+# Vite + Node build artefacts
+dist/
+node_modules/
+
+# Plugin-emitted manifest (ADR 0032). Source of truth is `src/pages/`;
+# the file is regenerated on every dev server start / build.
+src/.purity/

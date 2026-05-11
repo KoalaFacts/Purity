@@ -7,8 +7,18 @@ import { defineConfig } from 'vite';
 // resolve aliases let the example consume the workspace packages from source
 // (matching the dashboard demo's pattern), so a single `npm install` is
 // enough to bootstrap.
+// `routes: { dir: 'src/pages' }` enables the file-system route manifest
+// (ADRs 0019-0022). The plugin scans pages/ at dev/build time and exposes
+// the manifest via the virtual `purity:routes` module that `src/app.ts`
+// imports. `emitTo: 'src/.purity/routes.ts'` (ADR 0032) also writes the
+// generated source to disk so `tsc` + IDE jump-to-definition work without
+// an ambient declaration. Gitignore the emit path.
 export default defineConfig({
-  plugins: [purity()],
+  plugins: [
+    purity({
+      routes: { dir: 'src/pages', emitTo: 'src/.purity/routes.ts' },
+    }),
+  ],
   resolve: {
     alias: {
       // Order matters: longer / more-specific subpath aliases must come

@@ -78,9 +78,9 @@ total        1016
 
 ## ADRs accepted on this branch
 
-| ADR  | Title                                                                                                | One-line summary                                                                                                                                |
-| ---- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0035 | [Smart serverAction body-only strip](docs/decisions/0035-smart-server-action-strip.md)               | `oxc-parser`-backed per-call strip in client builds. Replaces just the inline handler with a thrower stub; preserves `.url` + `.invoke()`.      |
+| ADR  | Title                                                                                                | One-line summary                                                                                                                                  |
+| ---- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0035 | [Smart serverAction body-only strip](docs/decisions/0035-smart-server-action-strip.md)               | `oxc-parser`-backed per-call strip in client builds. Replaces just the inline handler with a thrower stub; preserves `.url` + `.invoke()`.        |
 | 0036 | [Sibling routes.d.ts with per-route typed importFn](docs/decisions/0036-virtual-routes-typed-dts.md) | Auto-emits a `.d.ts` next to the `emitTo` `.ts`. Declares `'purity:routes'` with literal tuple types so virtual-module imports get strong typing. |
 
 ## Public API map (deltas this branch)
@@ -106,8 +106,7 @@ total        1016
   backed strip helper. Import-bound resolution, inline-handler-only
   scope, cheap precheck, edits applied right-to-left.
 - `packages/vite-plugin/src/index.ts` — `transform()` wiring:
-  precheck-then-strip-then-html`` pipeline, plus the `buildStart` /
-  `load` hooks that now write both the `.ts` and `.d.ts`.
+  precheck-then-strip-then-html``pipeline, plus the`buildStart`/`load`hooks that now write both the`.ts`and`.d.ts`.
 - `packages/vite-plugin/src/routes.ts` — adds
   `generateRouteManifestTypes(manifest, absPathFor)` alongside the
   existing `generateRouteManifestSource()`. Same shape, different

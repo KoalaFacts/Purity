@@ -36,7 +36,11 @@ function updateOne() {
 </script>
 
 <h1>Svelte — Diamond Dependency (1000 patterns)</h1>
-<button type="button" id="setup" onclick={setup}>Setup 1000 Diamonds</button>
+<button type="button" id="setup" onclick={() => setup(1000)}>Setup 1000 Diamonds</button>
 <button type="button" id="update-all" onclick={updateAll}>Update All Sources</button>
 <button type="button" id="update-one" onclick={updateOne}>Update One Source</button>
+<button type="button" id="setup-10" style="display:none">Setup 10</button>
+<button type="button" id="setup-100" style="display:none">Setup 100</button>
+<button type="button" id="setup-diamonds" style="display:none">Setup 1000</button>
+<button type="button" id="setup-10k" style="display:none">Setup 10k</button>
 <div id="result">{total}</div>

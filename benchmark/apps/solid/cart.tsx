@@ -28,7 +28,11 @@ const NAMES = [
   'Mechanism',
 ];
 let nextId = 1;
-const rnd = (m: number) => (Math.random() * m) | 0;
+let seed = 1;
+const rnd = (m: number) => {
+  seed = (seed * 1664525 + 1013904223) >>> 0;
+  return seed % m;
+};
 
 const catalog: { name: string; price: number }[] = [];
 for (let i = 0; i < 100; i++) {

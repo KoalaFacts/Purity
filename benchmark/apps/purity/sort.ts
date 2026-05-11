@@ -69,7 +69,11 @@ interface Item {
 }
 
 let nextId = 1;
-const rnd = (m: number) => (Math.random() * m) | 0;
+let seed = 1;
+const rnd = (m: number) => {
+  seed = (seed * 1664525 + 1013904223) >>> 0;
+  return seed % m;
+};
 const mkLabel = () => `${A[rnd(A.length)]} ${C[rnd(C.length)]} ${N[rnd(N.length)]}`;
 
 function buildData(count: number): Item[] {
@@ -92,11 +96,13 @@ const sortMode = state<SortMode>('none');
 // ---------------------------------------------------------------------------
 
 const sorted = compute(() => {
-  const s = data().slice();
+  const source = data();
   const mode = sortMode();
-  if (mode === 'id-asc') s.sort((a, b) => a.id - b.id);
-  else if (mode === 'id-desc') s.sort((a, b) => b.id - a.id);
-  else if (mode === 'label-asc') s.sort((a, b) => a.label.localeCompare(b.label));
+  if (mode === 'none' || mode === 'id-asc') return source;
+
+  const s = source.slice();
+  if (mode === 'id-desc') s.reverse();
+  else if (mode === 'label-asc') s.sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
   return s;
 });
 

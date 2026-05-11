@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Playwright orchestrator — runs each framework's scenario pages in headless
-// Chromium, performs operations via button clicks, measures rendering time
-// via double-rAF paint timing.
+// Chromium, performs operations via button clicks, and measures framework
+// work after microtask flush plus forced layout.
 //
 // Usage: cd benchmark && npm run build-prod && npx vite preview & node --import tsx run-bench.ts
 
@@ -9,16 +9,28 @@ import { chromium, type Page } from 'playwright';
 
 const PORT = process.env.PORT || 4173;
 const BASE = `http://localhost:${PORT}/Purity`;
-const WARMUP = 3;
+const WARMUP = parseInt(process.env.WARMUP || '3', 10);
 const ITERATIONS = parseInt(process.env.ITERATIONS || '7', 10);
 const MEM_ITERATIONS = parseInt(process.env.MEM_ITERATIONS || '3', 10);
 const DROP_OUTLIERS = 1; // drop N fastest + N slowest before computing median
-const FRAMEWORKS = (process.env.FRAMEWORKS?.split(',') ?? [
-  'purity',
-  'solid',
-  'svelte',
-  'vue',
-]) as readonly ('purity' | 'solid' | 'svelte' | 'vue')[];
+const ALL_FRAMEWORKS = ['purity', 'solid', 'svelte', 'vue'] as const;
+type Framework = (typeof ALL_FRAMEWORKS)[number];
+const FRAMEWORKS = selectFrameworks();
+
+function selectFrameworks(): Framework[] {
+  const requested = new Set(
+    (process.env.FRAMEWORKS || '')
+      .split(',')
+      .map((fw) => fw.trim())
+      .filter(Boolean),
+  );
+  if (requested.size === 0) return [...ALL_FRAMEWORKS];
+  const selected = ALL_FRAMEWORKS.filter((fw) => requested.has(fw));
+  if (selected.length === 0) {
+    throw new Error(`No valid frameworks selected from FRAMEWORKS=${process.env.FRAMEWORKS}`);
+  }
+  return selected;
+}
 
 // ---------------------------------------------------------------------------
 // Scenario definitions
@@ -760,17 +772,17 @@ async function measureSteps(page: Page, steps: Step[]): Promise<number> {
     for (const step of stepsData) {
       if (step.action.startsWith('input#')) {
         const input = document.querySelector(step.action) as HTMLInputElement;
-        if (input) {
-          input.value = step.value || '';
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-        }
+        if (!input) throw new Error(`Missing input element: ${step.action}`);
+        input.value = step.value || '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
       } else {
         const btn = document.querySelector(step.action) as HTMLElement;
-        if (btn) btn.click();
+        if (!btn) throw new Error(`Missing action element: ${step.action}`);
+        btn.click();
       }
     }
-    // Wait for framework processing + browser paint
-    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+    await Promise.resolve();
+    document.body.getBoundingClientRect();
     return performance.now() - t0;
   }, steps);
   return duration;
@@ -782,10 +794,11 @@ async function runSetup(page: Page, steps: Step[]): Promise<void> {
       await page.fill(step.action.replace('input', ''), step.value || '');
     } else {
       // Use page.evaluate for clicks — works with hidden buttons (display:none)
-      await page.evaluate(
-        (sel) => (document.querySelector(sel) as HTMLElement)?.click(),
-        step.action,
-      );
+      await page.evaluate((sel) => {
+        const el = document.querySelector(sel) as HTMLElement | null;
+        if (!el) throw new Error(`Missing setup element: ${sel}`);
+        el.click();
+      }, step.action);
     }
     await settle(page);
     if (step.delay) await page.waitForTimeout(step.delay);
@@ -814,6 +827,22 @@ function trimmedMedian(arr: number[], drop: number): number {
   return trimmed.length % 2 === 0 ? (trimmed[mid - 1] + trimmed[mid]) / 2 : trimmed[mid];
 }
 
+function selectScenarios<T extends { page: string }>(scenarios: T[], allowEmpty = false): T[] {
+  const requested = new Set(
+    (process.env.PAGES || '')
+      .split(',')
+      .map((page) => page.trim())
+      .filter(Boolean),
+  );
+  if (requested.size === 0) return scenarios;
+  const selected = scenarios.filter((scenario) => requested.has(scenario.page));
+  if (selected.length === 0) {
+    if (allowEmpty) return [];
+    throw new Error(`No valid pages selected from PAGES=${process.env.PAGES}`);
+  }
+  return selected;
+}
+
 interface Result {
   scenario: string;
   category: string;
@@ -834,14 +863,18 @@ interface MemoryResult {
 }
 
 async function main() {
+  const scenarios = selectScenarios(SCENARIOS);
+  const memoryScenarios = MEM_ITERATIONS > 0 ? selectScenarios(MEMORY_SCENARIOS, true) : [];
+
   console.log('\nPurity Comprehensive Benchmark');
   console.log(`Frameworks: ${FRAMEWORKS.join(', ')}`);
   console.log(
-    `Scenarios: ${SCENARIOS.length} pages, ${SCENARIOS.reduce((s, sc) => s + sc.ops.length, 0)} operations`,
+    `Scenarios: ${scenarios.length} pages, ${scenarios.reduce((s, sc) => s + sc.ops.length, 0)} operations`,
   );
   console.log(
     `Warmup: ${WARMUP} | Iterations: ${ITERATIONS} | Drop: fastest ${DROP_OUTLIERS} + slowest ${DROP_OUTLIERS}\n`,
   );
+  console.log('Primary metric: CPU + microtask flush + forced layout.\n');
 
   const browser = await chromium.launch({
     headless: true,
@@ -851,7 +884,7 @@ async function main() {
   const allResults: Result[] = [];
   const memoryResults: MemoryResult[] = [];
 
-  for (const scenario of SCENARIOS) {
+  for (const scenario of scenarios) {
     console.log(`\n=== ${scenario.category}: ${scenario.page} ===`);
 
     for (const op of scenario.ops) {
@@ -912,10 +945,12 @@ async function main() {
   // ---------------------------------------------------------------------------
   // Memory benchmarks
   // ---------------------------------------------------------------------------
-  console.log('\n\n=== Memory Benchmarks ===');
-  console.log(`Iterations: ${MEM_ITERATIONS}\n`);
+  if (MEM_ITERATIONS > 0) {
+    console.log('\n\n=== Memory Benchmarks ===');
+    console.log(`Iterations: ${MEM_ITERATIONS}\n`);
+  }
 
-  for (const scenario of MEMORY_SCENARIOS) {
+  for (const scenario of memoryScenarios) {
     for (const op of scenario.ops) {
       const fwResults: Record<string, { createKB: number; retainedKB: number }> = {};
 
@@ -993,7 +1028,7 @@ async function main() {
 
   // Group by category
   let lastCategory = '';
-  for (const scenario of SCENARIOS) {
+  for (const scenario of scenarios) {
     for (const op of scenario.ops) {
       const cat = scenario.category === lastCategory ? '' : scenario.category;
       lastCategory = scenario.category;

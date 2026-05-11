@@ -66,15 +66,23 @@ const N = [
 interface Item {
   id: number;
   label: string;
+  lowerLabel: string;
 }
 
 let nextId = 1;
-const rnd = (m: number) => (Math.random() * m) | 0;
+let seed = 1;
+const rnd = (m: number) => {
+  seed = (seed * 1664525 + 1013904223) >>> 0;
+  return seed % m;
+};
 const mkLabel = () => `${A[rnd(A.length)]} ${C[rnd(C.length)]} ${N[rnd(N.length)]}`;
 
 function buildData(count: number): Item[] {
   const d = new Array<Item>(count);
-  for (let i = 0; i < count; i++) d[i] = { id: nextId++, label: mkLabel() };
+  for (let i = 0; i < count; i++) {
+    const label = mkLabel();
+    d[i] = { id: nextId++, label, lowerLabel: label.toLowerCase() };
+  }
   return d;
 }
 
@@ -92,7 +100,7 @@ const query = state('');
 const filtered = compute(() => {
   const q = query().toLowerCase();
   if (!q) return data();
-  return data().filter((item) => item.label.toLowerCase().includes(q));
+  return data().filter((item) => item.lowerLabel.includes(q));
 });
 
 // ---------------------------------------------------------------------------

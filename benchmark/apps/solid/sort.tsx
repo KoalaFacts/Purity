@@ -70,7 +70,11 @@ interface Item {
 }
 
 let nextId = 1;
-const rnd = (m: number) => (Math.random() * m) | 0;
+let seed = 1;
+const rnd = (m: number) => {
+  seed = (seed * 1664525 + 1013904223) >>> 0;
+  return seed % m;
+};
 const mkLabel = () => `${A[rnd(A.length)]} ${C[rnd(C.length)]} ${N[rnd(N.length)]}`;
 
 function buildData(count: number): Item[] {

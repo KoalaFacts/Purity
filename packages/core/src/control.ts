@@ -312,15 +312,39 @@ function disposeEntry<T>(entry: EachEntry<T>): void {
   entry.ctx.disposers = null;
 }
 
-// Detach all managed nodes from the parent and release their reactive scopes.
-function bulkClear<T>(
-  _parent: Node,
+function canReplaceOwnedRange<T>(
+  parent: Node,
   prevKeys: unknown[],
   keyToEntry: Map<unknown, EachEntry<T>>,
-  _endMarker: Node,
+  endMarker: Node,
+): boolean {
+  const firstEntry = keyToEntry.get(prevKeys[0]);
+  return (
+    prevKeys.length > 32 &&
+    firstEntry !== undefined &&
+    firstEntry.nodes[0]?.parentNode === parent &&
+    firstEntry.nodes[0] === parent.firstChild &&
+    endMarker.parentNode === parent &&
+    endMarker.nextSibling === null &&
+    'replaceChildren' in parent
+  );
+}
+
+// Detach all managed nodes from the parent and release their reactive scopes.
+function bulkClear<T>(
+  parent: Node,
+  prevKeys: unknown[],
+  keyToEntry: Map<unknown, EachEntry<T>>,
+  endMarker: Node,
 ): void {
   const prevLen = prevKeys.length;
   if (prevLen === 0) return;
+
+  const canReplaceChildren = canReplaceOwnedRange(parent, prevKeys, keyToEntry, endMarker);
+
+  if (canReplaceChildren) {
+    (parent as ParentNode).replaceChildren(endMarker);
+  }
 
   // Detach + dispose each entry. We walk per-entry nodes rather than calling
   // Range.deleteContents because jsdom's Range is O(N^2) on long sibling
@@ -329,11 +353,13 @@ function bulkClear<T>(
   for (let i = 0; i < prevLen; i++) {
     const entry = keyToEntry.get(prevKeys[i]);
     if (!entry) continue;
-    const nodes = entry.nodes;
-    for (let j = 0; j < nodes.length; j++) {
-      const node = nodes[j];
-      const p = node.parentNode;
-      if (p) p.removeChild(node);
+    if (!canReplaceChildren) {
+      const nodes = entry.nodes;
+      for (let j = 0; j < nodes.length; j++) {
+        const node = nodes[j];
+        const p = node.parentNode;
+        if (p) p.removeChild(node);
+      }
     }
     disposeEntry(entry);
   }

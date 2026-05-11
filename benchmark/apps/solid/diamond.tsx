@@ -53,7 +53,7 @@ function App() {
         onClick={() => {
           batch(() => {
             for (let i = 0; i < sources.length; i++) {
-              sources[i](i + ((Math.random() * 100) | 0));
+              sources[i](i + ((i * 17 + 23) % 100));
             }
           });
         }}
@@ -64,18 +64,45 @@ function App() {
         type="button"
         id="update-one"
         onClick={() => {
-          if (sources.length) sources[0]((Math.random() * 100) | 0);
+          if (sources.length) sources[0](23);
         }}
       >
         Update One Source
+      </button>
+      <button
+        type="button"
+        id="setup-10"
+        style={{ display: 'none' }}
+        onClick={() => setupDiamond(10)}
+      >
+        Setup 10
+      </button>
+      <button
+        type="button"
+        id="setup-100"
+        style={{ display: 'none' }}
+        onClick={() => setupDiamond(100)}
+      >
+        Setup 100
+      </button>
+      <button
+        type="button"
+        id="setup-diamonds"
+        style={{ display: 'none' }}
+        onClick={() => setupDiamond(1000)}
+      >
+        Setup 1000
+      </button>
+      <button
+        type="button"
+        id="setup-10k"
+        style={{ display: 'none' }}
+        onClick={() => setupDiamond(10000)}
+      >
+        Setup 10k
       </button>
     </>
   );
 }
 
 render(App, document.getElementById('app')!);
-
-// Hidden button handlers for benchmark permutations
-document.getElementById('setup-10')?.addEventListener('click', () => setupDiamond(10));
-document.getElementById('setup-100')?.addEventListener('click', () => setupDiamond(100));
-document.getElementById('setup-10k')?.addEventListener('click', () => setupDiamond(10000));

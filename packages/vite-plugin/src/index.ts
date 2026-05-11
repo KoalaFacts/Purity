@@ -12,12 +12,12 @@
 //   export default defineConfig({ plugins: [purity()] });
 // ---------------------------------------------------------------------------
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { posix, resolve as resolvePath } from 'node:path';
 
 import { generate, generateSSR, parse } from '@purityjs/core/compiler';
 
-import { buildRouteManifest, generateRouteManifestSource } from './routes.ts';
+import { attachLoaderInfo, buildRouteManifest, generateRouteManifestSource } from './routes.ts';
 
 /**
  * File-system routing options. ADR 0019.
@@ -141,6 +141,16 @@ export function purity(options?: PurityPluginOptions) {
           `${JSON.stringify(kept)}; dropping ${JSON.stringify(dropped)}.`;
         if (this && typeof this.warn === 'function') this.warn(msg);
         else console.warn(msg);
+      });
+      // Detect named `loader` exports per ADR 0022. Reads each route +
+      // layout file's contents once per build (cached internally).
+      attachLoaderInfo(manifest, (rel) => {
+        const abs = resolvePath(dir, rel);
+        try {
+          return readFileSync(abs, 'utf8');
+        } catch {
+          return null;
+        }
       });
       return generateRouteManifestSource(manifest, (filePath) => posix.join(dir, filePath));
     },

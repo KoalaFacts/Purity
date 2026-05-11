@@ -6,7 +6,9 @@ import { describe, expect, it } from 'vitest';
 
 import { purity } from '../src/index.ts';
 import {
+  attachLoaderInfo,
   buildRouteManifest,
+  detectLoaderExport,
   errorDirOf,
   fileToRoute,
   generateRouteManifestSource,
@@ -256,6 +258,115 @@ describe('nearestErrorDir — deepest-wins boundary resolution', () => {
   });
 });
 
+describe('detectLoaderExport — recognising named loader exports (ADR 0022)', () => {
+  it('matches `export const loader = …`', () => {
+    expect(detectLoaderExport('export const loader = async () => {}')).toBe(true);
+  });
+
+  it('matches `export let loader = …` and `export var loader = …`', () => {
+    expect(detectLoaderExport('export let loader = () => 1')).toBe(true);
+    expect(detectLoaderExport('export var loader = () => 1')).toBe(true);
+  });
+
+  it('matches `export function loader(...) { ... }`', () => {
+    expect(detectLoaderExport('export function loader() { return {} }')).toBe(true);
+  });
+
+  it('matches `export async function loader(...)`', () => {
+    expect(detectLoaderExport('export async function loader(ctx) { return {} }')).toBe(true);
+  });
+
+  it('matches a TypeScript-typed const export', () => {
+    const src = 'export const loader: LoaderFn<{ id: string }> = async ({ params }) => params;';
+    expect(detectLoaderExport(src)).toBe(true);
+  });
+
+  it('matches `export { loader }` (re-export, bare)', () => {
+    expect(detectLoaderExport('export { loader };')).toBe(true);
+  });
+
+  it('matches `export { foo, loader, bar }` (re-export, mid-list)', () => {
+    expect(detectLoaderExport('export { foo, loader, bar };')).toBe(true);
+  });
+
+  it('matches `export { foo as loader }` (re-export, renamed)', () => {
+    expect(detectLoaderExport('export { foo as loader };')).toBe(true);
+  });
+
+  it('does not match identifiers that merely contain "loader"', () => {
+    expect(detectLoaderExport('export const loaderFoo = () => 1')).toBe(false);
+    expect(detectLoaderExport('export const fooLoader = () => 1')).toBe(false);
+  });
+
+  it('does not match other named exports', () => {
+    expect(detectLoaderExport('export const action = () => 1')).toBe(false);
+    expect(detectLoaderExport('export default function () {}')).toBe(false);
+  });
+
+  it('does not match commented-out lines (single-line)', () => {
+    expect(detectLoaderExport('// export const loader = () => 1')).toBe(false);
+    expect(detectLoaderExport('  // export const loader = () => 1')).toBe(false);
+  });
+
+  it('returns false for empty input or whitespace', () => {
+    expect(detectLoaderExport('')).toBe(false);
+    expect(detectLoaderExport('   \n   ')).toBe(false);
+  });
+});
+
+describe('attachLoaderInfo — manifest enrichment (ADR 0022)', () => {
+  it('sets hasLoader on routes whose source has a loader export', () => {
+    const manifest = buildRouteManifest(['index.ts', 'about.ts'], EXTS);
+    const sources: Record<string, string> = {
+      'index.ts': 'export default function () {}\nexport const loader = async () => ({})',
+      'about.ts': 'export default function () {}',
+    };
+    attachLoaderInfo(manifest, (rel) => sources[rel] ?? null);
+    const byPattern = new Map(manifest.routes.map((e) => [e.pattern, e]));
+    expect(byPattern.get('/')!.hasLoader).toBe(true);
+    expect(byPattern.get('/about')!.hasLoader).toBeUndefined();
+  });
+
+  it('sets hasLoader on layouts whose source has a loader export', () => {
+    const manifest = buildRouteManifest(['_layout.ts', 'users/_layout.ts', 'users/[id].ts'], EXTS);
+    const sources: Record<string, string> = {
+      '_layout.ts': 'export default (children) => children()',
+      'users/_layout.ts':
+        'export async function loader() { return [] }\nexport default (children) => children()',
+      'users/[id].ts': 'export default (params) => params.id',
+    };
+    attachLoaderInfo(manifest, (rel) => sources[rel] ?? null);
+    const userRoute = manifest.routes.find((e) => e.pattern === '/users/:id');
+    expect(userRoute!.hasLoader).toBeUndefined();
+    const rootLayout = userRoute!.layouts.find((l) => l.filePath === '_layout.ts');
+    const usersLayout = userRoute!.layouts.find((l) => l.filePath === 'users/_layout.ts');
+    expect(rootLayout!.hasLoader).toBeUndefined();
+    expect(usersLayout!.hasLoader).toBe(true);
+  });
+
+  it('caches the source read so each layout is checked only once', () => {
+    const manifest = buildRouteManifest(['_layout.ts', 'a.ts', 'b.ts', 'c.ts'], EXTS);
+    let calls = 0;
+    attachLoaderInfo(manifest, (rel) => {
+      calls++;
+      if (rel === '_layout.ts') return 'export const loader = async () => ({})';
+      return 'export default () => null';
+    });
+    // 3 routes + 1 shared layout = 4 unique files. Without caching the
+    // shared layout would be read 3 times (once per route's chain).
+    expect(calls).toBe(4);
+    for (const r of manifest.routes) {
+      expect(r.layouts[0].hasLoader).toBe(true);
+    }
+  });
+
+  it('treats null reads as no-loader (file unreadable)', () => {
+    const manifest = buildRouteManifest(['index.ts'], EXTS);
+    attachLoaderInfo(manifest, () => null);
+    expect(manifest.routes[0].hasLoader).toBeUndefined();
+  });
+});
+
 describe('buildRouteManifest', () => {
   it('builds + sorts a typical pages tree', () => {
     const files = [
@@ -464,6 +575,35 @@ describe('generateRouteManifestSource', () => {
       (rel) => `/abs/pages/${rel}`,
     );
     expect(src).not.toContain('errorBoundary');
+  });
+
+  it('emits hasLoader: true on entries that have a loader (ADR 0022)', () => {
+    const src = generateRouteManifestSource(
+      {
+        routes: [
+          {
+            pattern: '/users/:id',
+            filePath: 'users/[id].ts',
+            layouts: [{ filePath: 'users/_layout.ts', hasLoader: true }],
+            hasLoader: true,
+          },
+        ],
+      },
+      (rel) => `/abs/pages/${rel}`,
+    );
+    // Route entry has the flag.
+    const userLine = src.split('\n').find((l) => l.includes('"/users/:id"')) as string;
+    expect(userLine).toContain('hasLoader: true');
+    // Layout entry inside that route's layouts also has the flag.
+    expect(userLine.match(/hasLoader: true/g)?.length).toBe(2);
+  });
+
+  it('omits hasLoader on entries that lack one', () => {
+    const src = generateRouteManifestSource(
+      { routes: [{ pattern: '/', filePath: 'index.ts', layouts: [] }] },
+      (rel) => `/abs/pages/${rel}`,
+    );
+    expect(src).not.toContain('hasLoader');
   });
 
   it('emits a top-level notFound export when the manifest has one', () => {
@@ -678,6 +818,43 @@ describe('purity({ routes }) — Vite plugin integration', () => {
       ) as string;
       const src = (plugin as { load: (id: string) => string | null }).load(resolved) as string;
       expect(src).not.toContain('notFound');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('detects loader exports per ADR 0022 and emits hasLoader in the manifest', () => {
+    const { root, cleanup } = makeTmpPages({
+      'pages/_layout.ts': 'export default (children) => children()',
+      'pages/index.ts':
+        'export default () => null\nexport const loader = async () => ({ greeting: "hi" });',
+      'pages/users/_layout.ts':
+        'export async function loader() { return { session: 1 } }\nexport default (c) => c()',
+      'pages/users/[id].ts': 'export default (p) => p.id',
+    });
+    try {
+      const plugin = purity({ routes: { dir: 'pages' } });
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
+        'purity:routes',
+      ) as string;
+      const src = (plugin as { load: (id: string) => string | null }).load(resolved) as string;
+
+      // Index has its own loader.
+      const homeLine = src.split('\n').find((l) => l.includes('"/"')) as string;
+      expect(homeLine).toContain('hasLoader: true');
+
+      // /users/:id has no route-level loader BUT inherits a layout with one.
+      const userLine = src.split('\n').find((l) => l.includes('"/users/:id"')) as string;
+      // The route entry itself doesn't have a loader.
+      const routeOnly = userLine.split('layouts:')[0];
+      expect(routeOnly).not.toContain('hasLoader');
+      // The users/_layout.ts layout entry inside the chain has hasLoader.
+      expect(userLine).toContain('"users/_layout.ts"');
+      expect(userLine).toContain('hasLoader: true');
+      // The bare _layout.ts (no loader) does NOT have hasLoader.
+      const rootLayoutChunk = userLine.match(/\{[^{}]*"_layout\.ts"[^{}]*\}/) as RegExpMatchArray;
+      expect(rootLayoutChunk[0]).not.toContain('hasLoader');
     } finally {
       cleanup();
     }

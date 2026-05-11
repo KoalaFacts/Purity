@@ -1,18 +1,23 @@
 // ---------------------------------------------------------------------------
 // File-system routing — manifest generation
-// (ADR 0019 + ADR 0020 + ADR 0021).
+// (ADR 0019 + ADR 0020 + ADR 0021 + ADR 0022).
 //
 // Pure helpers: filename → route pattern, route ordering, layout chain
-// discovery, error-boundary + 404 discovery, virtual-module source
-// codegen. The Vite-side glue (resolveId / load / handleHotUpdate)
-// lives in index.ts and calls into this module so the route-derivation
-// logic is unit-testable without touching the filesystem.
+// discovery, error-boundary + 404 discovery, loader detection,
+// virtual-module source codegen. The Vite-side glue (resolveId / load /
+// handleHotUpdate) lives in index.ts and calls into this module so the
+// route-derivation logic is unit-testable without touching the filesystem.
 // ---------------------------------------------------------------------------
 
 /** A layout / error-boundary / 404 module discovered for a directory. */
 export interface LayoutEntry {
   /** Path of the module relative to the routes directory. */
   filePath: string;
+  /**
+   * Set when the layout module exports a named `loader` (ADR 0022).
+   * Always literal `true` when present; absent ≡ no loader detected.
+   */
+  hasLoader?: true;
 }
 
 /** A single entry in the generated route manifest. */
@@ -33,6 +38,11 @@ export interface RouteEntry {
    * composition. Omitted when no `_error` exists in any parent.
    */
   errorBoundary?: LayoutEntry;
+  /**
+   * Set when the route module exports a named `loader` (ADR 0022).
+   * Always literal `true` when present; absent ≡ no loader detected.
+   */
+  hasLoader?: true;
 }
 
 /** Output of `buildRouteManifest` — the routes plus an optional root `_404`. */
@@ -220,6 +230,77 @@ export function nearestErrorDir(routeDir: string, errorDirs: Set<string>): strin
 }
 
 /**
+ * Detect whether `source` exports a named `loader` (ADR 0022). Regex-
+ * based — handles the common forms apps actually write:
+ *
+ *   export const loader = …
+ *   export let loader = …
+ *   export var loader = …
+ *   export function loader(…) { … }
+ *   export async function loader(…) { … }
+ *   export { loader }
+ *   export { foo, loader, bar }
+ *   export { foo as loader }
+ *
+ * Anchors at line start (multi-line mode) so commented-out lines that
+ * start with `// export const loader = …` do NOT match. False positives
+ * remain possible for `/* export const loader = … *\/` block comments;
+ * documented in the ADR.
+ */
+export function detectLoaderExport(source: string): boolean {
+  // Form 1: named declaration export. Allow optional async + the
+  // var-style keywords. Identifier boundary `\b` so `loaderFoo` doesn't
+  // match.
+  if (/^[ \t]*export[ \t]+(?:async[ \t]+)?(?:const|let|var|function)[ \t]+loader\b/m.test(source)) {
+    return true;
+  }
+  // Form 2: re-export blocks. Match `export { … }`. Inside the braces
+  // accept either a bare `loader` or a renamed `something as loader`.
+  // Use a non-greedy body match capped at one line to avoid runaway
+  // backtracking on pathological input.
+  const reexport = /^[ \t]*export[ \t]*\{([^}\n]*)\}/gm;
+  let m: RegExpExecArray | null;
+  while ((m = reexport.exec(source)) !== null) {
+    const body = m[1];
+    // Either `loader` as a standalone identifier or `... as loader`.
+    if (/(?:^|,)\s*loader(?:\s+as\s+\w+)?\s*(?:,|$)/.test(body)) return true;
+    if (/\bas\s+loader\b/.test(body)) return true;
+  }
+  return false;
+}
+
+/**
+ * Enrich a built `RouteManifest` with `hasLoader: true` flags on every
+ * route + layout entry whose source contains a named `loader` export
+ * (ADR 0022). The same layout file may appear in many routes' chains —
+ * each call to `readSource` is cached so each file is read at most
+ * once per manifest build.
+ *
+ * Mutates the manifest in place and returns it.
+ */
+export function attachLoaderInfo(
+  manifest: RouteManifest,
+  readSource: (filePath: string) => string | null,
+): RouteManifest {
+  const cache = new Map<string, boolean>();
+  const has = (filePath: string): boolean => {
+    const cached = cache.get(filePath);
+    if (cached !== undefined) return cached;
+    const src = readSource(filePath);
+    const result = src !== null && detectLoaderExport(src);
+    cache.set(filePath, result);
+    return result;
+  };
+  for (const entry of manifest.routes) {
+    if (has(entry.filePath)) entry.hasLoader = true;
+    for (const layout of entry.layouts) {
+      if (has(layout.filePath)) layout.hasLoader = true;
+    }
+  }
+  return manifest;
+}
+
+/**
  * Rank a pattern from most-specific to least-specific. Lower scores sort
  * first. Encoded as `[splatFlag, -literalCount, dynamicCount]` — splat
  * dominates everything (always last), then more literals win, then fewer
@@ -339,13 +420,14 @@ export function buildRouteManifest(
  */
 /**
  * Emit a single `LayoutEntry`-shaped object literal (filePath +
- * importFn). Shared between layouts and error boundaries — the shapes
- * are structurally identical (ADR 0021).
+ * importFn + optional hasLoader). Shared between layouts and error
+ * boundaries — the shapes are structurally identical (ADRs 0021 + 0022).
  */
 function entryLiteral(e: LayoutEntry, absPathFor: (filePath: string) => string): string {
   const fp = JSON.stringify(e.filePath);
   const abs = JSON.stringify(absPathFor(e.filePath));
-  return `{ filePath: ${fp}, importFn: () => import(${abs}) }`;
+  const loaderPart = e.hasLoader ? ', hasLoader: true' : '';
+  return `{ filePath: ${fp}, importFn: () => import(${abs})${loaderPart} }`;
 }
 
 export function generateRouteManifestSource(
@@ -353,7 +435,7 @@ export function generateRouteManifestSource(
   absPathFor: (filePath: string) => string,
 ): string {
   const lines: string[] = [
-    '// AUTO-GENERATED by @purityjs/vite-plugin (ADR 0019 + 0020 + 0021). Do not edit.',
+    '// AUTO-GENERATED by @purityjs/vite-plugin (ADR 0019 + 0020 + 0021 + 0022). Do not edit.',
     'export const routes = [',
   ];
   for (const e of manifest.routes) {
@@ -364,8 +446,9 @@ export function generateRouteManifestSource(
     const errorPart = e.errorBoundary
       ? `, errorBoundary: ${entryLiteral(e.errorBoundary, absPathFor)}`
       : '';
+    const loaderPart = e.hasLoader ? ', hasLoader: true' : '';
     lines.push(
-      `  { pattern: ${pattern}, filePath: ${filePath}, importFn: () => import(${abs}), layouts: [${layouts}]${errorPart} },`,
+      `  { pattern: ${pattern}, filePath: ${filePath}, importFn: () => import(${abs}), layouts: [${layouts}]${errorPart}${loaderPart} },`,
     );
   }
   lines.push('];');

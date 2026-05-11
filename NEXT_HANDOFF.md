@@ -1,23 +1,22 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Twenty-four
-commits, fifteen new ADRs (0007–0021), 867 tests passing** across the
-three publishable packages. Latest iteration shipped ADR 0021 — error
-boundaries (`_error.{ts,tsx,js,jsx}` per directory, nearest-wins) plus
-a root-level not-found page (`_404.{ts,tsx,js,jsx}`). Each
-`RouteEntry` grows an optional `errorBoundary?: LayoutEntry`; the
-manifest grows a top-level optional `notFound?: LayoutEntry`. Same
-convention-discovered shape as layouts; both omitted when no
-corresponding files exist.
+pass starting from the SSR-MVP follow-up gap list. **Twenty-five
+commits, sixteen new ADRs (0007–0022), 886 tests passing** across the
+three publishable packages. Latest iteration shipped ADR 0022 — data
+loaders. Any route or layout module exporting a named `loader`
+function gets a `hasLoader: true` flag in the manifest; the plugin
+detects via regex on file source (no parser dep). The runtime
+component-data plumbing stays user-land for Phase 1, consistent with
+the layouts / error-boundary patterns from ADRs 0020 + 0021.
 
 ## Test count by package (current)
 
 ```
 core         565 passing  (26 files)
 ssr          145 passing  (11 files)
-vite-plugin  157 passing  ( 9 files)
-total        867
+vite-plugin  176 passing  ( 9 files)
+total        886
 ```
 
 ## ADRs accepted on this branch
@@ -44,6 +43,7 @@ rejected alternatives.
 | 0019 | [File-system routing — manifest generation](docs/decisions/0019-file-system-routing.md)                     | Opt-in `purity({ routes: { dir } })` exposes virtual `purity:routes` module. `[id]` / `[...slug]` / `index` / `_*` conventions.  |
 | 0020 | [File-system layouts — `_layout` per directory](docs/decisions/0020-layouts.md)                             | Each `RouteEntry` carries a `layouts: LayoutEntry[]` chain (root → leaf). Composer is user-land `reduceRight` for now.           |
 | 0021 | [Error boundaries + 404 — `_error` per directory, root `_404`](docs/decisions/0021-error-boundaries-404.md) | Per-route `errorBoundary?: LayoutEntry` (nearest-wins, no chain) + manifest top-level `notFound?: LayoutEntry`.                  |
+| 0022 | [Data loaders — `loader` named export per route + layout](docs/decisions/0022-data-loaders.md)              | `hasLoader?: true` flag on routes + layouts via regex source detection. Loader signature documented; data plumbing user-land.    |
 
 ADR 0006 is `Status: Proposed` historically but every named phase is
 now shipped — promote to `Accepted` next time anyone touches it.
@@ -70,7 +70,7 @@ now shipped — promote to `Accepted` next time anyone touches it.
 
 `@purityjs/vite-plugin` options:
 
-- `purity({ include?, stripServerModules?, routes? })`. `stripServerModules` defaults `true` (ADR 0018). `routes` defaults `false`; pass `true` for `pages/` or `{ dir, extensions?, virtualId? }` (ADR 0019). `_layout.{ts,tsx,js,jsx}` files attach to each route's `layouts` chain (ADR 0020). `_error.{ts,tsx,js,jsx}` per directory attach a single nearest `errorBoundary` per route, and a root `_404.{ts,tsx,js,jsx}` becomes the manifest's top-level `notFound` (ADR 0021). Re-exports `RouteEntry` + `LayoutEntry` for consumers of the virtual module.
+- `purity({ include?, stripServerModules?, routes? })`. `stripServerModules` defaults `true` (ADR 0018). `routes` defaults `false`; pass `true` for `pages/` or `{ dir, extensions?, virtualId? }` (ADR 0019). `_layout.{ts,tsx,js,jsx}` files attach to each route's `layouts` chain (ADR 0020). `_error.{ts,tsx,js,jsx}` per directory attach a single nearest `errorBoundary` per route, and a root `_404.{ts,tsx,js,jsx}` becomes the manifest's top-level `notFound` (ADR 0021). Routes + layouts that export a named `loader` get `hasLoader: true` in the manifest (ADR 0022). Re-exports `RouteEntry` + `LayoutEntry` for consumers of the virtual module.
 
 The SSR README ([packages/ssr/README.md](packages/ssr/README.md))
 has the full API tour with copy-pasteable examples for every entry.
@@ -82,50 +82,57 @@ has the full API tour with copy-pasteable examples for every entry.
 - `packages/ssr/src/render-to-stream.ts` — streaming pipeline incl. per-boundary resource emit.
 - `packages/ssr/src/render-static.ts` — SSG driver, composable on top of `renderToString`.
 - `packages/vite-plugin/src/index.ts` — `*.server.ts` strip + AOT html-template compile + routes plugin glue.
-- `packages/vite-plugin/src/routes.ts` — pure helpers: filename → pattern, sort, layout chain + error boundary + 404 discovery, manifest codegen (ADRs 0019 + 0020 + 0021).
+- `packages/vite-plugin/src/routes.ts` — pure helpers: filename → pattern, sort, layout chain + error boundary + 404 discovery, loader detection, manifest codegen (ADRs 0019 + 0020 + 0021 + 0022).
 - `examples/ssr/src/{app,entry.client,entry.server}.ts` — every primitive in one app.
 - `examples/ssr-stream-{cf-workers,vercel-edge,deno}/` — minimal edge-runtime templates.
 
 ## What's still open
 
-### File-system routing — Phase 4+ (multi-iteration)
+### File-system routing — Phase 5+ (multi-iteration)
 
-ADRs 0019 + 0020 + 0021 ship the manifest, layouts, error
-boundaries, and root 404. Apps now have all the convention pieces
-to write a real multi-page app on top of the file-system manifest.
-Remaining features, each deserving its own ADR:
+ADRs 0019 + 0020 + 0021 + 0022 ship the manifest, layouts, error
+boundaries, root 404, and loader detection. Apps now have every
+convention piece needed for a real multi-page server-rendered app
+on top of the file-system manifest. Remaining items, each
+deserving its own ADR:
 
-- **Per-route data loaders**. A `loader()` named export co-located
-  with the route (and optionally with layouts), run on the server
-  before the view renders, with the resolved data threaded into
-  the component via a context primitive. Composes with
-  `getRequest()` (ADR 0009) + `serverAction()` (ADR 0012). Pin
-  the layout / error-boundary module shapes here so loader-aware
-  modules have a consistent contract. Likely the highest-leverage
-  next ADR — once loaders exist the convention is feature-complete.
-- **Async-component primitive**. ADR 0020 + 0021's example shows
-  users hand-rolling `lazyResource(() => loadStack(entry))` plus a
-  `when()` on its data state. A small built-in (`asyncRoute(entry)`
-  or similar) collapses the boilerplate once the loading / error
-  UX pattern crystallizes (probably easier to design after loaders
-  land).
-- **Per-directory `_404.ts`**. ADR 0021 explicitly defers nested
-  404s. Adding them needs a `notFoundChain` field on the manifest
-  (or an in-tree walk at runtime) so the consumer can pick the
-  nearest `_404.ts` to the unmatched URL prefix. Useful once apps
-  have section-styled 404 pages.
-- **Build-time route table emit**. The manifest is currently virtual.
+- **Runtime `loaderData()` context primitive** (ADR 0022 deferred
+  non-feature). Phase 1 leaves loader-data plumbing user-land —
+  the consumer composer passes data as a positional arg. A
+  `loaderData()` accessor in `@purityjs/core` would unify the
+  component-signature shape across apps. Wait until enough apps
+  converge on the right shape before shipping.
+- **Async-component primitive** (`asyncRoute(entry)` or similar).
+  ADRs 0020-0022's examples have users hand-rolling
+  `lazyResource(() => loadStack(entry))` + `when()` on its data
+  state. A small built-in collapses the boilerplate. Probably
+  easier to design alongside `loaderData()`.
+- **Per-directory `_404.ts`** (ADR 0021 deferred non-feature).
+  Adding nested 404s needs a `notFoundChain` field on the
+  manifest (or an in-tree walk at runtime). Useful once apps
+  ship section-styled 404 pages.
+- **Loader on error boundaries / 404** (ADR 0022 deferred
+  non-feature). Currently only routes + layouts get loader
+  detection. A 404 page wanting server-side data has to fall back
+  to client-side fetch.
+- **Build-time route table emit**. The manifest is virtual today.
   Emitting to disk (e.g. `src/.purity/routes.ts`) gives `tsc` and
   IDEs something to inspect — useful for typed route params (a
   follow-on after this).
-- **Typed route params**. TS template-literal trick to generate
-  `RouteParams<'/users/:id'>` from the pattern. Cheap once the
-  manifest is real-on-disk.
+- **Typed route params + typed loader data**. Template-literal-
+  derived `RouteParams<'/users/:id'>` plus the loader return type
+  threaded through the manifest type. Cheap once the manifest is
+  real-on-disk; both pin themselves to the consumer's component
+  signature.
+- **Loader-data revalidation**. Per-resource invalidate (Remix
+  `revalidate()`, Next `revalidatePath()`) needs a cache +
+  invalidation primitive. Out of Phase 1; documented as a
+  non-feature in ADR 0022.
 - **Worked example**. `examples/ssr/` still uses the
-  `if (matchRoute(…))` ladder from before ADRs 0019 + 0020 + 0021
-  shipped. A 30-minute migration to the manifest + layout +
-  boundary loop would prove the convention end-to-end and double
-  as docs.
+  `if (matchRoute(…))` ladder from before ADRs 0019-0022 shipped.
+  A 30-60-minute migration to the manifest + layout + boundary
+  - loader loop would prove the four-ADR conventions end-to-end
+    and double as docs.
 
 ### ISR / PPR (incremental static regen / partial pre-render)
 
@@ -168,31 +175,38 @@ user interaction needs event replay; a strictly larger problem.
 
 ## Recommended next sprint
 
-The natural follow-up to ADR 0021 is **per-route + per-layout data
-loaders** (ADR 0022). It pins the module shapes that ADRs 0020 +
-0021 left intentionally loose, and gives apps a server-first
-data-fetching story that composes with `getRequest()` (ADR 0009)
-and `serverAction()` (ADR 0012). Outline:
+The four-ADR file-system-routing convention (0019-0022) is now
+**feature-complete on the manifest side**. The remaining work is
+about runtime ergonomics + a worked example that proves the
+conventions end-to-end. Two equally-valid paths:
 
-1. Decide the loader signature. `loader(ctx) => data` where `ctx`
-   bundles `{ request, params, signal }` matches Remix / Next
-   App Router. The layout's loader runs before the route's; data
-   threads through via a per-render context primitive.
-2. Pick the manifest extension shape. Each route + layout entry
-   gets `hasLoader: boolean` so the consumer skips the import on
-   modules without one. The actual `loader` is a named export of
-   the same module — no new file convention.
-3. Draft ADR 0022 with the convention + rejected alternatives
-   (Next App Router `async function Page()`, SvelteKit
-   `+page.ts` `load()`, Remix `loader` named export).
-4. Implement: extend `buildRouteManifest` to detect a `loader`
-   named export per file (likely a regex on the source — keep
-   it cheap; defer to a real parser only if false-positives
-   appear in real code). Tests for the detection + integration
-   with the consumer pattern. Update handoff.
+**Path A — migrate `examples/ssr/` to the manifest** (30-60 min).
+The example still uses the pre-0019 `if (matchRoute(…))` ladder.
+Migrating it shows the canonical loop (`for (const entry of
+routes)`) plus a layout chain plus an `_error.ts` plus a `loader`
+plus the user-land `loadStack` composer. Shorter iteration; proves
+the conventions; doubles as docs. The migration WILL surface
+ergonomic gaps (the user-land composer is non-trivial) — that
+feedback is itself the rationale for Path B.
 
-If you have less time: **promote ADR 0006 to Accepted** (one-line
-status change — every named phase has shipped), **migrate
-`examples/ssr/` to the manifest + layout + boundary loop** (30
-min, doubles as docs), or **pick a deferred follow-up from the
-smaller-items list below** that matches the time budget.
+**Path B — runtime `loaderData()` + `asyncRoute()` primitives**
+(multi-iteration). ADR 0023 ships `loaderData()` (a per-render
+context accessor) + `asyncRoute()` (the consumer composer rolled
+into one function). Both pin the component-signature shape that
+ADRs 0020 + 0022 left loose. Outline:
+
+1. Pick `loaderData()`'s API. Likely `loaderData(): unknown` (the
+   route's own loader data) plus `layoutLoaderData(filePath):
+unknown`. Or a single `loaderData(): { route, layouts: [] }`.
+2. Decide if `asyncRoute(entry, params)` is exposed as a function
+   or as a Custom Element. Function is simpler; the element
+   composes better with `<head>` / suspense.
+3. Draft ADR 0023 with the convention + rejected alternatives.
+4. Implement + test + update handoff.
+
+Path A first, then Path B informed by what hurt. If the time
+budget is tight, **Path A alone is the right next iteration**.
+
+If the time budget is even tighter: **promote ADR 0006 to
+Accepted** (one-line status change) or **pick a deferred
+follow-up from the smaller-items list below**.

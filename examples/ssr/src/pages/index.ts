@@ -5,8 +5,15 @@
 //   - ADR 0026: the view reads its loader data via `loaderData()` instead
 //     of the positional `data` arg — decouples the component signature
 //     from the loader's return type.
+//   - ADR 0034: `LoaderDataOf<'/', typeof routes>` derives the data
+//     shape from THIS file's `loader` signature — no hand-written
+//     generic on `loaderData()`.
 
 import { component, each, head, html, loaderData } from '@purityjs/core';
+import type { LoaderDataOf } from '@purityjs/vite-plugin';
+// `import type` — value-namespace binding usable in `typeof` positions
+// only. Compiles to nothing; no runtime import or cycle.
+import type { routes } from '../.purity/routes.ts';
 
 component<{ count: number }>('demo-counter', ({ count }) => {
   return html`
@@ -28,7 +35,10 @@ export default function HomePage(): unknown {
   head(html`<title>Purity SSR demo — home</title>`);
   head(html`<meta name="description" content="Reactive SSR with streaming." />`);
 
-  const data = loaderData<{ todos: string[] }>();
+  // Type is `{ todos: string[] } | undefined` — inferred from the
+  // `loader` signature above by LoaderDataOf<P, R> (ADR 0034). Edit
+  // the loader's return type and this accessor's type follows.
+  const data = loaderData<LoaderDataOf<'/', typeof routes>>();
   const todos = data?.todos ?? [];
 
   // `each()` is ADR-0023 isomorphic — the same call works in SSR (emits

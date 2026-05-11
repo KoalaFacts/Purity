@@ -912,5 +912,6 @@ function findLastImportEnd(code: string): number {
 
 export type { LayoutEntry, RouteEntry } from './routes.ts';
 export type { RouteParams } from './route-params.ts';
+export type { LoaderDataOf, LoaderDataOfEntry } from './loader-data-of.ts';
 
 export default purity;

@@ -1,15 +1,44 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Thirty-nine
-commits, twenty-seven new ADRs (0007–0033), 976 tests passing** across
-the three publishable packages. Latest iteration completed **Path H''**
-— ported the manifest + `asyncRoute()` pattern to the remaining two
-streaming-SSR adapter examples (`ssr-stream-vercel-edge/`,
-`ssr-stream-deno/`). All three adapters now build, stream, and pass
-the same smoke-test pattern: GET `/` ships the home shell in one
-chunk; GET `/stream` ships shell + boundary-resolved chunk 152ms
-apart; GET `/missing` ships the 404 page via `notFoundChain`.
+pass starting from the SSR-MVP follow-up gap list. **Forty commits,
+twenty-eight new ADRs (0007–0034), 986 tests passing** across the
+three publishable packages. Latest iteration shipped ADR 0034 —
+`LoaderDataOf<P, R>` — typed loader data threaded through the manifest.
+
+**ADR 0034 — typed loader data.** ADR 0022's `loader` named export
+convention plus ADR 0026's `loaderData<T>()` accessor left the
+generic `T` as a hand-written annotation. The on-disk manifest emit
+from ADR 0032/0033 made strong typing tractable: the emitted
+`routes.ts` has dynamic imports with literal absolute paths, which
+TypeScript infers as `Promise<typeof import('…')>`. That gives us
+the route module's exports — including the `loader` function's
+signature — at type level. `LoaderDataOf<P, R>` walks that chain
+via conditional/inference types and returns `Awaited<ReturnType<…>>`.
+
+Usage (canonical SSR demo `src/pages/index.ts` now follows this
+pattern):
+
+```ts
+import type { LoaderDataOf } from '@purityjs/vite-plugin';
+import type { routes } from '../.purity/routes.ts';
+
+export async function loader(): Promise<{ todos: string[] }> { … }
+export default function HomePage() {
+  // `data` typed as { todos: string[] } | undefined — inferred from
+  // the loader signature above. Edit the loader's return type and
+  // this accessor follows.
+  const data = loaderData<LoaderDataOf<'/', typeof routes>>();
+}
+```
+
+Pure-type machinery (no runtime cost, no plugin codegen change).
+Pairs with `RouteParams<P>` (ADR 0031) as the second half of the
+typed-route-surface story — patterns get param typing, loaders get
+return-shape typing. Tests cover async + sync loaders, missing
+loaders (resolves to `undefined`), unknown-pattern compile error,
+unknown-key compile error, and the ambient-declaration fallback
+(routes typed as `Promise<unknown>` resolves to `undefined`).
 
 **ADR 0033 — eager-emit.** ADR 0032's `emitTo` only fires when the
 virtual `purity:routes` module is `load()`'d. Consumers that bundle
@@ -57,8 +86,8 @@ declaration survives unescaped. Six new regression tests in
 ```
 core         635 passing  (31 files)
 ssr          145 passing  (11 files)
-vite-plugin  196 passing  (10 files)
-total        976
+vite-plugin  206 passing  (11 files)
+total        986
 ```
 
 ## ADRs accepted on this branch
@@ -97,6 +126,7 @@ rejected alternatives.
 | 0031 | [`RouteParams<P>` — typed route params](docs/decisions/0031-typed-route-params.md)                          | Template-literal type derives `{ id: string }` from `'/users/:id'`. Type-only export from `@purityjs/vite-plugin`; zero runtime cost.                |
 | 0032 | [`emitTo` — on-disk manifest emit](docs/decisions/0032-on-disk-manifest-emit.md)                            | Opt-in plugin option writes the generated manifest source to disk each `load()`. Skips rewrites when content matches. `tsc` + IDE jump-to-def.       |
 | 0033 | [Eager manifest emit for non-Vite consumers](docs/decisions/0033-eager-manifest-emit.md)                    | `buildStart` hook regenerates the on-disk manifest at every `vite build` / `vite dev`, so wrangler / Deno / non-Vite bundlers can consume the file.   |
+| 0034 | [`LoaderDataOf<P, R>` — typed loader data](docs/decisions/0034-typed-loader-data.md)                        | Pure-type helper derives `loaderData()` return shape from a route's `loader` signature via the emitted manifest's typed dynamic imports.                |
 
 All ADRs on this branch are `Status: Accepted` (ADR 0006 was promoted
 from `Proposed` in this iteration's housekeeping pass).
@@ -272,37 +302,34 @@ user interaction needs event replay; a strictly larger problem.
 
 ## Recommended next sprint
 
-Path H, H', H'' are all done — the three streaming-SSR adapter
-examples (`ssr-stream-cf-workers/`, `ssr-stream-vercel-edge/`,
-`ssr-stream-deno/`) all build, stream, and dispatch routes via the
-manifest. The "deploy anywhere with a Web Standards fetch handler"
-story is now a real demo matrix. Two strategically valuable items
-left:
+Path H/H'/H'' (adapter migrations) and Path L (typed loader data)
+are all done. The "deploy anywhere with a Web Standards fetch
+handler" matrix is now a real demo across three adapters, and the
+typed-route-surface story (params + loader data) is complete. Two
+items left, both parser-shaped:
 
-**Path L — typed loader data threaded through the manifest.** ADR
-0031 shipped `RouteParams<P>` (template-literal-derived params). The
-parallel piece is typed loader data: the plugin scans each route
-module's `loader` export, captures its return type, and emits a
-`loaderData<P>(): InferredType` helper that's strongly typed per
-route. This would close out the ADR-0026 deferred work ("user
-supplies type via generic" → "inferred from the route's loader
-signature"). Cost: a TypeScript-aware analysis pass during the
-manifest emit, plus codegen for typed helpers. Half day-ish;
-depends on whether the plugin grows a TS-parser dep or unrolls a
-regex/simple-AST approach.
+**Path K (remainder) — smart `serverAction()` body-only stripping.**
+ADR 0018 ships server-module stripping via filename convention
+(`*.server.{ts,js,tsx,jsx}` → `export {};` in client builds). The
+finer-grained alternative: detect `serverAction(url, fn)` calls in
+user source and replace just the handler body with a stub, while
+preserving `.url` + `.invoke()` accessors on the client. Needs an
+AST parser pass (regex won't safely handle arrow-fn vs block-fn vs
+async vs nested calls). Half-day-ish; depends on adding a minimal
+JS parser dep or carving out esbuild's parse pass.
 
-**Path K (remainder) — one item left.**
+**Path M (new) — synthetic ambient-declaration tightening.** ADR 0034
+notes that the typed loader-data helper requires importing from
+the emitted on-disk manifest (`./.purity/routes.ts`) rather than
+the virtual `'purity:routes'` module — because the ambient
+declaration types `importFn` as `() => Promise<unknown>`. The
+plugin could auto-emit a sibling `routes.d.ts` (alongside the
+`.ts`) whose `importFn` is typed per-route via `() => Promise<typeof
+import('/abs/path')>`. That would let apps stay on
+`'purity:routes'` AND get strong types. Cost: a small d.ts emitter
++ a `tsconfig`-include for users to wire up. Quarter-day-ish.
 
-- Smart `serverAction()` body-only stripping (ADR 0018) — strip
-  handler bodies without renaming files to `*.server.ts`. Needs an
-  AST parser pass to find `serverAction(url, fn)` calls and replace
-  the handler arg with a stub in client builds. Half day-ish;
-  depends on adding a minimal JS parser dep or carving out esbuild's
-  parse pass.
-
-Both are parser-shaped follow-ons of similar size. Path L closes a
-typing loop that maps directly to user-visible IDE behaviour (jump-
-to-def + autocomplete on `loaderData()`); Path K closes a
-security/payload story (handler bodies leaving the client bundle).
-Pick whichever the time budget fits — L is slightly higher-leverage
-for the typing story, K for production-readiness.
+Path K is the higher-leverage shipping concern (security + payload
+story for production apps). Path M is the polish item that tightens
+the type story across the manifest import surface. Pick K first
+unless the typing-surface symmetry feels more urgent.

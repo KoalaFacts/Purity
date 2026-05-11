@@ -9,6 +9,8 @@ import {
   buildRouteManifest,
   fileToRoute,
   generateRouteManifestSource,
+  layoutChainFor,
+  layoutDirOf,
   sortRoutes,
 } from '../src/routes.ts';
 
@@ -21,17 +23,26 @@ const EXTS = ['.ts', '.tsx', '.js', '.jsx'];
 
 describe('fileToRoute — filename → pattern grammar', () => {
   it('maps index.ts at the root to /', () => {
-    expect(fileToRoute('index.ts', EXTS)).toEqual({ pattern: '/', filePath: 'index.ts' });
+    expect(fileToRoute('index.ts', EXTS)).toEqual({
+      pattern: '/',
+      filePath: 'index.ts',
+      layouts: [],
+    });
   });
 
   it('maps about.ts to /about', () => {
-    expect(fileToRoute('about.ts', EXTS)).toEqual({ pattern: '/about', filePath: 'about.ts' });
+    expect(fileToRoute('about.ts', EXTS)).toEqual({
+      pattern: '/about',
+      filePath: 'about.ts',
+      layouts: [],
+    });
   });
 
   it('maps users/index.ts to /users', () => {
     expect(fileToRoute('users/index.ts', EXTS)).toEqual({
       pattern: '/users',
       filePath: 'users/index.ts',
+      layouts: [],
     });
   });
 
@@ -39,6 +50,7 @@ describe('fileToRoute — filename → pattern grammar', () => {
     expect(fileToRoute('users/[id].ts', EXTS)).toEqual({
       pattern: '/users/:id',
       filePath: 'users/[id].ts',
+      layouts: [],
     });
   });
 
@@ -46,6 +58,7 @@ describe('fileToRoute — filename → pattern grammar', () => {
     expect(fileToRoute('blog/[...slug].ts', EXTS)).toEqual({
       pattern: '/blog/*',
       filePath: 'blog/[...slug].ts',
+      layouts: [],
     });
   });
 
@@ -53,6 +66,7 @@ describe('fileToRoute — filename → pattern grammar', () => {
     expect(fileToRoute('orgs/[org]/users/[id].ts', EXTS)).toEqual({
       pattern: '/orgs/:org/users/:id',
       filePath: 'orgs/[org]/users/[id].ts',
+      layouts: [],
     });
   });
 
@@ -92,36 +106,84 @@ describe('fileToRoute — filename → pattern grammar', () => {
 describe('sortRoutes — most-specific first', () => {
   it('sorts literal-only routes before dynamic routes at the same depth', () => {
     const sorted = sortRoutes([
-      { pattern: '/users/:id', filePath: 'users/[id].ts' },
-      { pattern: '/users/me', filePath: 'users/me.ts' },
+      { pattern: '/users/:id', filePath: 'users/[id].ts', layouts: [] },
+      { pattern: '/users/me', filePath: 'users/me.ts', layouts: [] },
     ]);
     expect(sorted.map((e) => e.pattern)).toEqual(['/users/me', '/users/:id']);
   });
 
   it('sorts deeper literal routes before shorter ones', () => {
     const sorted = sortRoutes([
-      { pattern: '/about', filePath: 'about.ts' },
-      { pattern: '/about/team', filePath: 'about/team.ts' },
+      { pattern: '/about', filePath: 'about.ts', layouts: [] },
+      { pattern: '/about/team', filePath: 'about/team.ts', layouts: [] },
     ]);
     expect(sorted.map((e) => e.pattern)).toEqual(['/about/team', '/about']);
   });
 
   it('places splat routes last', () => {
     const sorted = sortRoutes([
-      { pattern: '/blog/*', filePath: 'blog/[...slug].ts' },
-      { pattern: '/blog/:year', filePath: 'blog/[year].ts' },
-      { pattern: '/blog/index', filePath: 'blog/index/page.ts' },
+      { pattern: '/blog/*', filePath: 'blog/[...slug].ts', layouts: [] },
+      { pattern: '/blog/:year', filePath: 'blog/[year].ts', layouts: [] },
+      { pattern: '/blog/index', filePath: 'blog/index/page.ts', layouts: [] },
     ]);
     expect(sorted[sorted.length - 1].pattern).toBe('/blog/*');
   });
 
   it('is stable — alphabetical on the final tiebreaker', () => {
     const sorted = sortRoutes([
-      { pattern: '/zebra', filePath: 'zebra.ts' },
-      { pattern: '/alpha', filePath: 'alpha.ts' },
-      { pattern: '/middle', filePath: 'middle.ts' },
+      { pattern: '/zebra', filePath: 'zebra.ts', layouts: [] },
+      { pattern: '/alpha', filePath: 'alpha.ts', layouts: [] },
+      { pattern: '/middle', filePath: 'middle.ts', layouts: [] },
     ]);
     expect(sorted.map((e) => e.pattern)).toEqual(['/alpha', '/middle', '/zebra']);
+  });
+});
+
+describe('layoutDirOf — recognising _layout files', () => {
+  it('detects a root _layout.ts (empty directory key)', () => {
+    expect(layoutDirOf('_layout.ts', EXTS)).toBe('');
+  });
+
+  it('detects nested _layout files', () => {
+    expect(layoutDirOf('users/_layout.ts', EXTS)).toBe('users');
+    expect(layoutDirOf('admin/users/_layout.tsx', EXTS)).toBe('admin/users');
+  });
+
+  it('returns null for non-layout files', () => {
+    expect(layoutDirOf('index.ts', EXTS)).toBeNull();
+    expect(layoutDirOf('users/index.ts', EXTS)).toBeNull();
+    expect(layoutDirOf('_layouts.ts', EXTS)).toBeNull();
+    expect(layoutDirOf('users/_layout-helper.ts', EXTS)).toBeNull();
+  });
+
+  it('honors the configured extension list', () => {
+    expect(layoutDirOf('_layout.svelte', EXTS)).toBeNull();
+    expect(layoutDirOf('_layout.svelte', ['.svelte'])).toBe('');
+  });
+});
+
+describe('layoutChainFor — root → leaf inheritance', () => {
+  it('returns just the root layout for a route at the routes-dir root', () => {
+    expect(layoutChainFor('', new Set(['']))).toEqual(['']);
+  });
+
+  it('returns the empty chain when no layouts exist', () => {
+    expect(layoutChainFor('users', new Set())).toEqual([]);
+  });
+
+  it('walks up the directory chain root → leaf', () => {
+    const chain = layoutChainFor('admin/users', new Set(['', 'admin', 'admin/users']));
+    expect(chain).toEqual(['', 'admin', 'admin/users']);
+  });
+
+  it('skips intermediate directories without their own layout', () => {
+    const chain = layoutChainFor('admin/users/edit', new Set(['', 'admin/users']));
+    expect(chain).toEqual(['', 'admin/users']);
+  });
+
+  it('omits the root layout when there is no root _layout', () => {
+    const chain = layoutChainFor('users/edit', new Set(['users']));
+    expect(chain).toEqual(['users']);
   });
 });
 
@@ -163,14 +225,56 @@ describe('buildRouteManifest', () => {
   it('returns an empty manifest for an empty file list', () => {
     expect(buildRouteManifest([], EXTS)).toEqual([]);
   });
+
+  it('assigns each route its inherited layout chain (root → leaf)', () => {
+    const files = [
+      '_layout.ts',
+      'index.ts',
+      'users/_layout.ts',
+      'users/index.ts',
+      'users/[id].ts',
+      'settings/index.ts',
+    ];
+    const manifest = buildRouteManifest(files, EXTS);
+    const byPattern = new Map(manifest.map((e) => [e.pattern, e]));
+
+    expect(byPattern.get('/')!.layouts).toEqual([{ filePath: '_layout.ts' }]);
+    expect(byPattern.get('/users')!.layouts).toEqual([
+      { filePath: '_layout.ts' },
+      { filePath: 'users/_layout.ts' },
+    ]);
+    expect(byPattern.get('/users/:id')!.layouts).toEqual([
+      { filePath: '_layout.ts' },
+      { filePath: 'users/_layout.ts' },
+    ]);
+    // /settings has no settings/_layout.ts so it inherits only the root.
+    expect(byPattern.get('/settings')!.layouts).toEqual([{ filePath: '_layout.ts' }]);
+  });
+
+  it('returns layouts: [] when no _layout files exist', () => {
+    const manifest = buildRouteManifest(['index.ts', 'about.ts'], EXTS);
+    for (const e of manifest) expect(e.layouts).toEqual([]);
+  });
+
+  it('inherits a deep chain through layout-only directories', () => {
+    // admin/ has no route module of its own, only a _layout.
+    const files = ['_layout.ts', 'admin/_layout.ts', 'admin/users/index.ts'];
+    const manifest = buildRouteManifest(files, EXTS);
+    expect(manifest).toHaveLength(1);
+    expect(manifest[0].pattern).toBe('/admin/users');
+    expect(manifest[0].layouts).toEqual([
+      { filePath: '_layout.ts' },
+      { filePath: 'admin/_layout.ts' },
+    ]);
+  });
 });
 
 describe('generateRouteManifestSource', () => {
   it('emits an array of entries with import functions', () => {
     const src = generateRouteManifestSource(
       [
-        { pattern: '/', filePath: 'index.ts' },
-        { pattern: '/users/:id', filePath: 'users/[id].ts' },
+        { pattern: '/', filePath: 'index.ts', layouts: [] },
+        { pattern: '/users/:id', filePath: 'users/[id].ts', layouts: [] },
       ],
       (rel) => `/abs/pages/${rel}`,
     );
@@ -179,17 +283,39 @@ describe('generateRouteManifestSource', () => {
     expect(src).toContain('import("/abs/pages/index.ts")');
     expect(src).toContain('pattern: "/users/:id"');
     expect(src).toContain('import("/abs/pages/users/[id].ts")');
+    // Empty layouts arrays are still emitted so consumers can rely on the field.
+    expect(src).toContain('layouts: []');
   });
 
   it('escapes patterns with quotes via JSON.stringify', () => {
     const src = generateRouteManifestSource(
-      [{ pattern: "/weird'path", filePath: "weird'path.ts" }],
+      [{ pattern: "/weird'path", filePath: "weird'path.ts", layouts: [] }],
       (rel) => `/abs/${rel}`,
     );
     // Single quotes inside double-quoted JSON strings need no escaping —
     // the emitted source is still parseable JS.
     expect(src).toContain(`pattern: "/weird'path"`);
     expect(src).toContain(`filePath: "weird'path.ts"`);
+  });
+
+  it('emits the layout chain in the entry, root → leaf', () => {
+    const src = generateRouteManifestSource(
+      [
+        {
+          pattern: '/users/:id',
+          filePath: 'users/[id].ts',
+          layouts: [{ filePath: '_layout.ts' }, { filePath: 'users/_layout.ts' }],
+        },
+      ],
+      (rel) => `/abs/pages/${rel}`,
+    );
+    expect(src).toContain('layouts: [');
+    expect(src).toContain('filePath: "_layout.ts"');
+    expect(src).toContain('import("/abs/pages/_layout.ts")');
+    expect(src).toContain('filePath: "users/_layout.ts"');
+    expect(src).toContain('import("/abs/pages/users/_layout.ts")');
+    // Order: root layout precedes nested layout in the source.
+    expect(src.indexOf('"_layout.ts"')).toBeLessThan(src.indexOf('"users/_layout.ts"'));
   });
 });
 
@@ -309,6 +435,34 @@ describe('purity({ routes }) — Vite plugin integration', () => {
       };
       (plugin as { handleHotUpdate: (c: typeof ctx) => void }).handleHotUpdate(ctx);
       expect(invalidated).toEqual(['\0purity:routes']);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('emits layout chains in the virtual manifest', () => {
+    const { root, cleanup } = makeTmpPages({
+      'pages/_layout.ts': '// root layout',
+      'pages/index.ts': '// home',
+      'pages/users/_layout.ts': '// users layout',
+      'pages/users/[id].ts': '// user detail',
+    });
+    try {
+      const plugin = purity({ routes: { dir: 'pages' } });
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
+        'purity:routes',
+      ) as string;
+      const src = (plugin as { load: (id: string) => string | null }).load(resolved) as string;
+
+      // Both layout modules show up in the manifest as importable chunks.
+      expect(src).toContain(`import("${root}/pages/_layout.ts")`);
+      expect(src).toContain(`import("${root}/pages/users/_layout.ts")`);
+      // The users/:id entry includes both layouts (root → leaf).
+      const userLine = src.split('\n').find((l) => l.includes('"/users/:id"')) as string;
+      expect(userLine).toContain('"_layout.ts"');
+      expect(userLine).toContain('"users/_layout.ts"');
+      expect(userLine.indexOf('"_layout.ts"')).toBeLessThan(userLine.indexOf('"users/_layout.ts"'));
     } finally {
       cleanup();
     }

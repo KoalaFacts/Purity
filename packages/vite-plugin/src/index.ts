@@ -822,6 +822,6 @@ function findLastImportEnd(code: string): number {
   return lastEnd;
 }
 
-export type { RouteEntry } from './routes.ts';
+export type { LayoutEntry, RouteEntry } from './routes.ts';
 
 export default purity;

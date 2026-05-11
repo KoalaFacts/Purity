@@ -1,20 +1,19 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Twenty-two
-commits, thirteen new ADRs (0007–0019), 832 tests passing** across the
-three publishable packages. Latest iteration shipped Phase 1 of file-
-system routing (ADR 0019) — the manifest is generated, the consumer
-loop is three lines on top of `matchRoute()`, but layouts / loaders /
-error boundaries are deferred to follow-up ADRs.
+pass starting from the SSR-MVP follow-up gap list. **Twenty-three
+commits, fourteen new ADRs (0007–0020), 846 tests passing** across the
+three publishable packages. Latest iteration shipped layouts (ADR 0020) on top of the file-system routing manifest from ADR 0019:
+`_layout.{ts,tsx,js,jsx}` per directory, each route gets a
+`layouts: LayoutEntry[]` field with the inherited root→leaf chain.
 
 ## Test count by package (current)
 
 ```
 core         565 passing  (26 files)
 ssr          145 passing  (11 files)
-vite-plugin  122 passing  ( 9 files)
-total        832
+vite-plugin  136 passing  ( 9 files)
+total        846
 ```
 
 ## ADRs accepted on this branch
@@ -39,6 +38,7 @@ rejected alternatives.
 | 0017 | [View Transitions API integration](docs/decisions/0017-view-transitions.md)             | `manageNavTransitions()` wraps navigate() in `document.startViewTransition()`. Reduced-motion aware.                             |
 | 0018 | [Server-only module strip](docs/decisions/0018-server-module-strip.md)                  | `*.server.{ts,js,tsx,jsx}` files replaced with `export {};` in client builds. Default-on Vite plugin option.                     |
 | 0019 | [File-system routing — manifest generation](docs/decisions/0019-file-system-routing.md) | Opt-in `purity({ routes: { dir } })` exposes virtual `purity:routes` module. `[id]` / `[...slug]` / `index` / `_*` conventions.  |
+| 0020 | [File-system layouts — `_layout` per directory](docs/decisions/0020-layouts.md)         | Each `RouteEntry` carries a `layouts: LayoutEntry[]` chain (root → leaf). Composer is user-land `reduceRight` for now.           |
 
 ADR 0006 is `Status: Proposed` historically but every named phase is
 now shipped — promote to `Accepted` next time anyone touches it.
@@ -65,7 +65,7 @@ now shipped — promote to `Accepted` next time anyone touches it.
 
 `@purityjs/vite-plugin` options:
 
-- `purity({ include?, stripServerModules?, routes? })`. `stripServerModules` defaults `true` (ADR 0018). `routes` defaults `false`; pass `true` for `pages/` or `{ dir, extensions?, virtualId? }` (ADR 0019). Re-exports `RouteEntry` for consumers of the virtual module.
+- `purity({ include?, stripServerModules?, routes? })`. `stripServerModules` defaults `true` (ADR 0018). `routes` defaults `false`; pass `true` for `pages/` or `{ dir, extensions?, virtualId? }` (ADR 0019). `_layout.{ts,tsx,js,jsx}` files inside the routes dir auto-attach to each route's `layouts` chain (ADR 0020). Re-exports `RouteEntry` + `LayoutEntry` for consumers of the virtual module.
 
 The SSR README ([packages/ssr/README.md](packages/ssr/README.md))
 has the full API tour with copy-pasteable examples for every entry.
@@ -77,39 +77,35 @@ has the full API tour with copy-pasteable examples for every entry.
 - `packages/ssr/src/render-to-stream.ts` — streaming pipeline incl. per-boundary resource emit.
 - `packages/ssr/src/render-static.ts` — SSG driver, composable on top of `renderToString`.
 - `packages/vite-plugin/src/index.ts` — `*.server.ts` strip + AOT html-template compile + routes plugin glue.
-- `packages/vite-plugin/src/routes.ts` — pure helpers: filename → pattern, sort, manifest codegen (ADR 0019).
+- `packages/vite-plugin/src/routes.ts` — pure helpers: filename → pattern, sort, layout chain discovery, manifest codegen (ADRs 0019 + 0020).
 - `examples/ssr/src/{app,entry.client,entry.server}.ts` — every primitive in one app.
 - `examples/ssr-stream-{cf-workers,vercel-edge,deno}/` — minimal edge-runtime templates.
 
 ## What's still open
 
-### File-system routing — Phase 2+ (multi-iteration)
+### File-system routing — Phase 3+ (multi-iteration)
 
-ADR 0019 shipped Phase 1: the manifest exists, dynamic / splat /
-index / reserved-`_` conventions all work, HMR invalidates on
-add / remove. Apps consume it with the existing `matchRoute()`
-primitive in a three-line loop. The deferred Phase-2 features each
-deserve their own ADR, in roughly this order:
+ADR 0019 shipped the manifest; ADR 0020 shipped layouts. Apps can
+now compose chrome via `_layout.ts` files; the manifest carries the
+chain. The remaining file-system-routing features each deserve
+their own ADR, in roughly this order:
 
-- **Layouts (`_layout.ts`)**. Per-directory layout module that wraps
-  child route output. Convention is reserved (`_` prefix already
-  skipped from the manifest); needs a manifest extension to record
-  the layout chain per route + a runtime helper to compose them.
-  Standard pattern (Remix / SvelteKit / Astro / Next).
-- **Per-route data loaders**. A `loader()` named export co-located
-  with the route, run on the server before the view renders, with
-  the resolved data threaded into the component via a context
-  primitive. Composes with `getRequest()` (ADR 0009) +
-  `serverAction()` (ADR 0012).
 - **Error boundaries + 404 conventions** (`_error.ts` / `_404.ts`).
-  Pairs with layouts — an error in a child route bubbles to the
-  nearest `_error.ts` in the layout chain. Composes with the
-  existing `onError()` lifecycle.
-- **Async-component primitive**. The Phase-1 example shows users
-  hand-rolling `lazyResource(() => entry.importFn())` plus a
-  `when()` on its data state. A small built-in (`asyncRoute()` or
-  similar) collapses the boilerplate once the loading / error UX
-  pattern is known.
+  Reuses the layout chain — an error in a child route bubbles to the
+  nearest `_error.ts` in the chain; an unmatched path renders the
+  nearest `_404.ts`. Composes with the existing `onError()`
+  lifecycle. Likely the most-requested follow-up.
+- **Per-route data loaders**. A `loader()` named export co-located
+  with the route (and optionally layouts), run on the server before
+  the view renders, with the resolved data threaded into the
+  component via a context primitive. Composes with `getRequest()`
+  (ADR 0009) + `serverAction()` (ADR 0012). Pin the layout-module
+  shape here so loader-aware layouts have a consistent contract.
+- **Async-component primitive**. ADR 0020's example shows users
+  hand-rolling `lazyResource(() => loadStack(entry))` plus a
+  `when()` on its data state. A small built-in
+  (`asyncRoute(entry)` or similar) collapses the boilerplate
+  once the loading / error UX pattern crystallizes.
 - **Build-time route table emit**. The manifest is currently virtual.
   Emitting to disk (e.g. `src/.purity/routes.ts`) gives `tsc` and
   IDEs something to inspect — useful for typed route params (a
@@ -117,6 +113,10 @@ deserve their own ADR, in roughly this order:
 - **Typed route params**. TS template-literal trick to generate
   `RouteParams<'/users/:id'>` from the pattern. Cheap once the
   manifest is real-on-disk.
+- **Worked example**. `examples/ssr/` still uses the
+  `if (matchRoute(…))` ladder from before ADRs 0019 + 0020 shipped.
+  A 30-minute migration to the manifest + layout loop would prove
+  the convention end-to-end and double as docs.
 
 ### ISR / PPR (incremental static regen / partial pre-render)
 
@@ -159,30 +159,28 @@ user interaction needs event replay; a strictly larger problem.
 
 ## Recommended next sprint
 
-The natural follow-up to ADR 0019 is **layouts + error boundaries**
-(one combined ADR — `_layout.ts` + `_error.ts` + `_404.ts` all
-extend the manifest with parent-chain metadata, and the runtime
-composer is the same shape for all three). Outline:
+The natural follow-up to ADR 0020 is **error boundaries + 404
+conventions** (one combined ADR — `_error.ts` + `_404.ts` both
+reuse the layout chain machinery). Outline:
 
-1. Decide the manifest extension shape — does `RouteEntry` grow a
-   `layouts: string[]` field of relative paths up to the root, or
-   does the plugin emit a separate `layouts` array indexed by route
-   id? Whichever lets the consumer compose with one
-   `Array.reduceRight` is right.
-2. Pick the layout module export contract. Match the route
-   contract (default-export component, optional named
-   `loader()` later) so layout authors don't learn a separate API.
-3. Draft ADR 0020 with the convention + the rejected alternatives
-   (Next App Router `layout.tsx` + `error.tsx` + `not-found.tsx`,
-   Remix `_layout.tsx` per directory, SvelteKit `+layout.svelte` +
-   `+error.svelte`).
-4. Implement the manifest extension + a small `composeLayouts()`
-   helper. Tests + a worked example in `examples/ssr/` that adds a
-   shared header layout. Update handoff.
+1. Decide the boundary shape — does the manifest grow per-route
+   `errorBoundary?: LayoutEntry` and `notFound?: LayoutEntry`
+   fields, or are they plain entries in the `layouts` chain
+   distinguished by filename? The first is more explicit; the
+   second composes with the existing reducer for free.
+2. Pick the runtime contract. Error boundaries probably want
+   `(error, retry) => view`; 404 boundaries are just a route
+   component without `params`. Match the layout module shape so
+   authors don't learn a third API.
+3. Draft ADR 0021 with the convention + the rejected alternatives
+   (Next App Router `error.tsx` + `not-found.tsx`, Remix
+   `ErrorBoundary` named export, SvelteKit `+error.svelte`).
+4. Implement: extend `buildRouteManifest` to detect `_error.ts` /
+   `_404.ts` files; emit them in the manifest. Tests for chain
+   resolution + plugin integration. Update handoff.
 
 If you have less time: **promote ADR 0006 to Accepted** (one-line
-status change — every named phase has shipped) or **pick a deferred
-follow-up from the smaller-items list above** that matches the
-time budget. The Phase-1 manifest also wants a worked example in
-`examples/ssr/` — a 30-minute task to migrate the existing
-`if (matchRoute(…))` ladder to the manifest loop.
+status change — every named phase has shipped), **migrate
+`examples/ssr/` to the manifest + layout loop** (30 min, doubles as
+docs), or **pick a deferred follow-up from the smaller-items list
+below** that matches the time budget.

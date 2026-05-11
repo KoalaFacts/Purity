@@ -1,11 +1,18 @@
 // ---------------------------------------------------------------------------
-// File-system routing — manifest generation (ADR 0019).
+// File-system routing — manifest generation (ADR 0019 + ADR 0020).
 //
-// Pure helpers: filename → route pattern, route ordering, virtual-module
-// source codegen. The Vite-side glue (resolveId / load / handleHotUpdate)
-// lives in index.ts and calls into this module so the route-derivation
-// logic is unit-testable without touching the filesystem.
+// Pure helpers: filename → route pattern, route ordering, layout chain
+// discovery, virtual-module source codegen. The Vite-side glue (resolveId
+// / load / handleHotUpdate) lives in index.ts and calls into this module
+// so the route-derivation logic is unit-testable without touching the
+// filesystem.
 // ---------------------------------------------------------------------------
+
+/** A layout module discovered for a particular directory under the routes dir. */
+export interface LayoutEntry {
+  /** Path of the layout module relative to the routes directory. */
+  filePath: string;
+}
 
 /** A single entry in the generated route manifest. */
 export interface RouteEntry {
@@ -13,6 +20,12 @@ export interface RouteEntry {
   pattern: string;
   /** Path of the route module relative to the routes directory, with extension. */
   filePath: string;
+  /**
+   * Layout chain inherited by this route, ordered root → leaf
+   * (ADR 0020). Empty when no `_layout.{ts,tsx,js,jsx}` exists in any
+   * parent directory.
+   */
+  layouts: LayoutEntry[];
 }
 
 /**
@@ -86,7 +99,58 @@ export function fileToRoute(filePath: string, extensions: string[]): RouteEntry 
   }
 
   const pattern = '/' + patternParts.join('/');
-  return { pattern, filePath };
+  return { pattern, filePath, layouts: [] };
+}
+
+/**
+ * The basename used to recognise a layout module. Case-sensitive; one of
+ * the configured `extensions` is appended when matching.
+ */
+const LAYOUT_BASENAME = '_layout';
+
+/**
+ * Return the directory portion of a route-relative path (POSIX). Empty
+ * string for files at the routes-dir root.
+ */
+function dirname(filePath: string): string {
+  const idx = filePath.lastIndexOf('/');
+  return idx === -1 ? '' : filePath.slice(0, idx);
+}
+
+/**
+ * If `filePath` is a `_layout.<ext>` (with one of the configured
+ * extensions), return its containing directory ('' for the routes-dir
+ * root). Otherwise return null.
+ */
+export function layoutDirOf(filePath: string, extensions: string[]): string | null {
+  for (const ext of extensions) {
+    const target = LAYOUT_BASENAME + ext;
+    if (filePath === target) return '';
+    if (filePath.endsWith('/' + target)) return filePath.slice(0, -target.length - 1);
+  }
+  return null;
+}
+
+/**
+ * Given the set of directories that contain a `_layout` and the
+ * directory of a route, return the layout chain that the route
+ * inherits — ordered root → leaf. Each chain entry is the directory
+ * key (`''` for the routes-dir root).
+ */
+export function layoutChainFor(routeDir: string, layoutDirs: Set<string>): string[] {
+  const chain: string[] = [];
+  // The root layout always wraps everything below it.
+  if (layoutDirs.has('')) chain.push('');
+  if (routeDir === '') return chain;
+  // Walk each prefix of the route's directory, root → leaf, including
+  // the route's own directory.
+  const parts = routeDir.split('/');
+  let acc = '';
+  for (let i = 0; i < parts.length; i++) {
+    acc = acc === '' ? parts[i] : acc + '/' + parts[i];
+    if (layoutDirs.has(acc)) chain.push(acc);
+  }
+  return chain;
 }
 
 /**
@@ -131,6 +195,12 @@ export function sortRoutes(entries: RouteEntry[]): RouteEntry[] {
  * + `users/index.ts`), the first one alphabetically wins and the conflict
  * is reported via the `onConflict` callback (so the plugin can surface a
  * Vite warning). The loser is dropped from the manifest.
+ *
+ * Layouts: any `_layout.{ts,tsx,js,jsx}` file in the input is collected
+ * into a per-directory map; each route entry's `layouts` field is filled
+ * with its inherited chain (root → leaf) per ADR 0020. Layout files
+ * themselves are not route entries (they were already excluded by the
+ * reserved-`_` rule in `fileToRoute`).
  */
 export function buildRouteManifest(
   files: string[],
@@ -141,6 +211,16 @@ export function buildRouteManifest(
   // Sort input by file path so the "first wins" tiebreaker is deterministic
   // across operating systems with different readdir ordering.
   const sortedFiles = files.slice().sort();
+
+  // Discover layout modules first so the route assignment loop can resolve
+  // each route's chain in one pass. Map<directory, layoutFilePath>.
+  const layoutByDir = new Map<string, string>();
+  for (const file of sortedFiles) {
+    const dir = layoutDirOf(file, extensions);
+    if (dir !== null) layoutByDir.set(dir, file);
+  }
+  const layoutDirs = new Set(layoutByDir.keys());
+
   for (const file of sortedFiles) {
     const entry = fileToRoute(file, extensions);
     if (!entry) continue;
@@ -149,6 +229,8 @@ export function buildRouteManifest(
       onConflict?.(entry.pattern, existing.filePath, entry.filePath);
       continue;
     }
+    const chain = layoutChainFor(dirname(entry.filePath), layoutDirs);
+    entry.layouts = chain.map((dir) => ({ filePath: layoutByDir.get(dir) as string }));
     byPattern.set(entry.pattern, entry);
   }
   return sortRoutes(Array.from(byPattern.values()));
@@ -169,14 +251,23 @@ export function generateRouteManifestSource(
   absPathFor: (filePath: string) => string,
 ): string {
   const lines: string[] = [
-    '// AUTO-GENERATED by @purityjs/vite-plugin (ADR 0019). Do not edit.',
+    '// AUTO-GENERATED by @purityjs/vite-plugin (ADR 0019 + 0020). Do not edit.',
     'export const routes = [',
   ];
   for (const e of entries) {
     const abs = JSON.stringify(absPathFor(e.filePath));
     const pattern = JSON.stringify(e.pattern);
     const filePath = JSON.stringify(e.filePath);
-    lines.push(`  { pattern: ${pattern}, filePath: ${filePath}, importFn: () => import(${abs}) },`);
+    const layouts = e.layouts
+      .map((l) => {
+        const lp = JSON.stringify(l.filePath);
+        const labs = JSON.stringify(absPathFor(l.filePath));
+        return `{ filePath: ${lp}, importFn: () => import(${labs}) }`;
+      })
+      .join(', ');
+    lines.push(
+      `  { pattern: ${pattern}, filePath: ${filePath}, importFn: () => import(${abs}), layouts: [${layouts}] },`,
+    );
   }
   lines.push('];');
   lines.push('');

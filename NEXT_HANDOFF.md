@@ -1,27 +1,54 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Thirty-six
-commits, twenty-six new ADRs (0007–0032), 966 tests passing** across
-the three publishable packages. Latest iteration shipped ADR 0032 —
-`emitTo`: opt-in on-disk manifest emit. The plugin's `load()` hook
-writes the generated source to a configurable path on each load,
-skipping rewrites when the content is unchanged (avoids filesystem-
-watch loops). Closes the on-disk-emit half of ADR 0019's deferred
-"build-time route table emit" non-feature.
+pass starting from the SSR-MVP follow-up gap list. **Thirty-seven
+commits, twenty-seven new ADRs (0007–0033), 970 tests passing** across
+the three publishable packages. Latest iteration shipped ADR 0033 —
+`buildStart` eager manifest emit + Path H (streaming-SSR adapter
+migration to the manifest).
 
-Apps get `tsc` + IDE jump-to-def without hand-maintaining ambient
-`declare module 'purity:routes'` blocks. The example wired
-`emitTo: 'src/.purity/routes.ts'` (with a `.gitignore` entry) — the
-file is regenerated on every build / dev start.
+**ADR 0033 — eager-emit.** ADR 0032's `emitTo` only fires when the
+virtual `purity:routes` module is `load()`'d. Consumers that bundle
+the emitted file outside Vite (wrangler, Deno deploy, custom non-Vite
+pipelines) never trigger that load(). ADR 0033 hooks the emit into
+the plugin's `buildStart` so a plain `vite build` (against any
+entry) writes the file as a side effect. Same skip-if-unchanged
+guard; same content; same warnings.
+
+**Path H — cf-workers migration.** `examples/ssr-stream-cf-workers/`
+now has the full manifest-driven shape — `src/pages/` (with
+`_layout.ts`, `_404.ts`, `index.ts`, `stream.ts`), `src/app.ts` with
+`asyncRoute()` + `asyncNotFound()`, and a `src/worker.ts` that
+imports `App` and pipes it through `renderToStream(App, { request,
+signal })`. A `vite.config.ts` wires the plugin in SSR build mode so
+every `html\`\`` in the worker + pages AOT-compiles to string-builder
+factories (no `document` needed at runtime). `wrangler.toml` points
+`main = "dist/worker.js"` — Vite produces the bundle, wrangler
+deploys it.
+
+**Known regression — Vite SSR build OOM (next iteration's signal).**
+Running `vite build --ssr src/worker.ts` against the cf-workers
+example OOMs reproducibly in Vite 8 + rolldown. The same plugin +
+alias setup builds the canonical Node SSR demo (`examples/ssr/`,
+`vite build --ssr src/entry.server.ts`) without issue, so the trigger
+is specific to this entry shape — probably an interaction between the
+plugin-injected side-effect `import '@purityjs/ssr'` and rolldown's
+SSR-build module-graph traversal for a single-entry bundle. The
+handoff originally predicted "a missing pendingPromises-for-stream
+hook in renderToStream" — that's NOT the gap. `renderToStream`
+already has a working shell + per-boundary multipass convergence
+loop that drains `ssrCtx.pendingPromises`; the `lazyResource({ key })`
+SSR-context registration in `asyncRoute` works against streaming.
+The real gap is the bundling pipeline, not the runtime. See
+"Recommended next sprint" below.
 
 ## Test count by package (current)
 
 ```
 core         629 passing  (31 files)
 ssr          145 passing  (11 files)
-vite-plugin  192 passing  (10 files)
-total        966
+vite-plugin  196 passing  (10 files)
+total        970
 ```
 
 ## ADRs accepted on this branch
@@ -59,6 +86,7 @@ rejected alternatives.
 | 0030 | [`manageTitle(fn)` — reactive `<title>` sync](docs/decisions/0030-reactive-title.md)                        | Isomorphic helper: emits `<title>` to the SSR head on the server; watches `fn` and writes `document.title` on the client.                            |
 | 0031 | [`RouteParams<P>` — typed route params](docs/decisions/0031-typed-route-params.md)                          | Template-literal type derives `{ id: string }` from `'/users/:id'`. Type-only export from `@purityjs/vite-plugin`; zero runtime cost.                |
 | 0032 | [`emitTo` — on-disk manifest emit](docs/decisions/0032-on-disk-manifest-emit.md)                            | Opt-in plugin option writes the generated manifest source to disk each `load()`. Skips rewrites when content matches. `tsc` + IDE jump-to-def.       |
+| 0033 | [Eager manifest emit for non-Vite consumers](docs/decisions/0033-eager-manifest-emit.md)                    | `buildStart` hook regenerates the on-disk manifest at every `vite build` / `vite dev`, so wrangler / Deno / non-Vite bundlers can consume the file.   |
 
 All ADRs on this branch are `Status: Accepted` (ADR 0006 was promoted
 from `Proposed` in this iteration's housekeeping pass).
@@ -234,17 +262,40 @@ user interaction needs event replay; a strictly larger problem.
 
 ## Recommended next sprint
 
-ADR 0032 shipped Path J' this iteration. Two items remain on the
-high-leverage list.
+ADR 0033 shipped this iteration. Path H is architecturally complete
+in source (the cf-workers example has the full manifest +
+`asyncRoute()` + `renderToStream` wiring) but blocked on a real build
+issue. Three actionable items remain.
 
-**Path H — streaming-SSR adapter migration to the manifest.**
-ADR 0006's adapter examples (`ssr-stream-cf-workers/`,
-`ssr-stream-vercel-edge/`, `ssr-stream-deno/`) predate the
-manifest + `asyncRoute()`. Migrate one (start with `cf-workers`)
-to use the manifest + `asyncRoute()` pattern and verify the
-streaming pipeline works end-to-end with the lazyResource
-registration. Likely surfaces a missing pendingPromises-for-stream
-hook in `renderToStream`; that's the actionable signal.
+**Path H' — diagnose & fix the Vite SSR-build OOM for cf-workers.**
+`vite build --ssr src/worker.ts` OOMs in Vite 8 + rolldown. The
+canonical Node SSR demo builds fine with the same plugin + alias
+config, so the trigger is specific to the cf-workers entry shape.
+Hypotheses to test next time:
+
+- The plugin's transform output adds `import '@purityjs/ssr';` as a
+  side-effect import after AOT-compiling `html\`\``. Inspect whether
+  this creates a cycle when the worker entry directly imports
+  `@purityjs/ssr` for `renderToStream` — i.e. the entry both
+  imports the package directly AND has the plugin-injected
+  side-effect import.
+- `enforce: 'pre'` on the plugin combined with rolldown's SSR
+  resolver. Try lowering the enforce position to see if it changes
+  the module-graph traversal.
+- The aliased `@purityjs/core/compiler` subpath. The canonical SSR
+  pages don't all import this subpath in the same way the
+  cf-workers' compiled pages do (after `html\`\`` AOT) — test with
+  a non-aliased build.
+- Try `vite build --ssr` without alias plumbing (point at the
+  workspace package distributions). If the OOM disappears, it's an
+  alias / source-package-resolution interaction with rolldown.
+
+The minimal reproducer is in `examples/ssr-stream-cf-workers/` —
+just run `npm run build` after `npm install`. Three small diagnostic
+configs (with/without plugin, with/without alias) make this a fast
+half-hour debug. Once fixed, smoke-test `npm run dev` against
+`wrangler dev` and copy the same pattern to
+`ssr-stream-vercel-edge/` + `ssr-stream-deno/`.
 
 **Path K (remainder) — one item left.**
 
@@ -255,7 +306,7 @@ hook in `renderToStream`; that's the actionable signal.
   day; depends on adding a minimal JS parser dep or carving out
   esbuild's parse pass.
 
-Path H validates the streaming pipeline against the manifest.
-Path K's last item is parser-shaped — bigger than the items
-shipped so far. Both move the framework toward a polished 1.0
-ship; pick the one matching the time budget.
+Path H' is the highest-leverage signal — once unblocked, the three
+adapter examples all become real end-to-end demos and the Workers
++ Edge + Deno deploy story is provable. Path K's last item is
+parser-shaped and bigger. Pick H' first.

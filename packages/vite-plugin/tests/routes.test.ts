@@ -1063,3 +1063,88 @@ describe('purity({ routes: { emitTo } }) — on-disk manifest emit (ADR 0032)', 
     }
   });
 });
+
+describe('purity({ routes: { emitTo } }) — buildStart eager-emit (ADR 0033)', () => {
+  function makeTmpPages(layout: Record<string, string>): { root: string; cleanup: () => void } {
+    const root = mkdtempSync(join(tmpdir(), 'purity-buildstart-'));
+    for (const [rel, content] of Object.entries(layout)) {
+      const abs = join(root, rel);
+      mkdirSync(abs.replace(/\/[^/]+$/, ''), { recursive: true });
+      writeFileSync(abs, content);
+    }
+    return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+  }
+
+  it('emits the manifest at buildStart without anyone importing purity:routes', () => {
+    const { root, cleanup } = makeTmpPages({
+      'pages/index.ts': '// home',
+      'pages/about.ts': '// about',
+    });
+    try {
+      const plugin = purity({
+        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+      });
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      // Critical: NO `resolveId` / `load` calls — buildStart fires on its own.
+      (plugin as { buildStart: () => void }).buildStart();
+
+      const emittedPath = join(root, '.purity/routes.ts');
+      expect(existsSync(emittedPath)).toBe(true);
+      const content = readFileSync(emittedPath, 'utf8');
+      expect(content).toContain('pattern: "/"');
+      expect(content).toContain('pattern: "/about"');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('buildStart is a no-op when emitTo is omitted', () => {
+    const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
+    try {
+      const plugin = purity({ routes: { dir: 'pages' } });
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      (plugin as { buildStart: () => void }).buildStart();
+      // No emitTo means no on-disk side-effect, even with buildStart.
+      expect(existsSync(join(root, '.purity'))).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('buildStart is a no-op when routes is disabled entirely', () => {
+    const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
+    try {
+      const plugin = purity({});
+      // configResolved still runs, but routesOpts is null.
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      // buildStart must short-circuit cleanly.
+      expect(() => (plugin as { buildStart: () => void }).buildStart()).not.toThrow();
+      expect(existsSync(join(root, '.purity'))).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('subsequent buildStart calls skip the rewrite when content matches', () => {
+    const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
+    try {
+      const plugin = purity({
+        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+      });
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      (plugin as { buildStart: () => void }).buildStart();
+
+      const emittedPath = join(root, '.purity/routes.ts');
+      const mtimeBefore = statSync(emittedPath).mtimeMs;
+      const start = Date.now();
+      while (Date.now() - start < 20) {
+        // Busy-wait briefly so mtime resolution can register any rewrite.
+      }
+      (plugin as { buildStart: () => void }).buildStart();
+      const mtimeAfter = statSync(emittedPath).mtimeMs;
+      expect(mtimeAfter).toBe(mtimeBefore);
+    } finally {
+      cleanup();
+    }
+  });
+});

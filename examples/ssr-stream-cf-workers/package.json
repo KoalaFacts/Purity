@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "build": "NODE_OPTIONS='--conditions=development' vite build --logLevel info",
+    "dev": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "@purityjs/core": "*",
@@ -13,6 +14,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240405.0",
+    "@purityjs/vite-plugin": "*",
+    "vite": "^8.0.10",
     "wrangler": "^3.50.0"
   }
 }

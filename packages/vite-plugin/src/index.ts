@@ -136,6 +136,21 @@ export function purity(options?: PurityPluginOptions) {
       emitToAbs = routesOpts.emitTo ? resolvePath(config.root, routesOpts.emitTo) : null;
     },
 
+    buildStart(this: any) {
+      // ADR 0033 — eager manifest emit. When `emitTo` is set we regenerate
+      // the on-disk file at the start of every `vite build` / `vite dev`,
+      // regardless of whether anything imports `purity:routes` in this run.
+      // Enables consumers that bundle the emitted file outside Vite
+      // (Cloudflare Workers via wrangler, Deno deploy, custom Node entries)
+      // to drive the emit with a plain `vite build` pre-step.
+      if (!routesOpts || emitToAbs === null || routesAbsDir === null) return;
+      const source = generateManifestSource(this, routesAbsDir, routesExt);
+      emitManifestToDisk(emitToAbs, source, (msg) => {
+        if (this && typeof this.warn === 'function') this.warn(msg);
+        else console.warn(msg);
+      });
+    },
+
     resolveId(this: any, source: string) {
       if (!routesOpts) return null;
       if (source === virtualId) return resolvedVirtualId;
@@ -145,26 +160,7 @@ export function purity(options?: PurityPluginOptions) {
     load(this: any, id: string) {
       if (!routesOpts || id !== resolvedVirtualId) return null;
       // routesAbsDir is set in configResolved (always called before load).
-      const dir = routesAbsDir as string;
-      const files = listRouteFiles(dir);
-      const manifest = buildRouteManifest(files, routesExt, (pattern, kept, dropped) => {
-        const msg =
-          `[purity] route conflict: pattern ${JSON.stringify(pattern)} resolved by ` +
-          `${JSON.stringify(kept)}; dropping ${JSON.stringify(dropped)}.`;
-        if (this && typeof this.warn === 'function') this.warn(msg);
-        else console.warn(msg);
-      });
-      // Detect named `loader` exports per ADR 0022. Reads each route +
-      // layout file's contents once per build (cached internally).
-      attachLoaderInfo(manifest, (rel) => {
-        const abs = resolvePath(dir, rel);
-        try {
-          return readFileSync(abs, 'utf8');
-        } catch {
-          return null;
-        }
-      });
-      const source = generateRouteManifestSource(manifest, (filePath) => posix.join(dir, filePath));
+      const source = generateManifestSource(this, routesAbsDir as string, routesExt);
       // ADR 0032: optional on-disk emit. Skip the write when content
       // matches to avoid filesystem-watch loops in dev. Failures are
       // non-fatal — virtual module still returns `source`.
@@ -260,6 +256,38 @@ function normaliseRoutesOption(opt: PurityPluginOptions['routes']): RoutesOption
  * call `warn` and are otherwise non-fatal — the virtual module still
  * returns the source.
  */
+/**
+ * Build the manifest source string from a route directory. Shared by
+ * the virtual-module `load()` hook and the `buildStart` eager-emit
+ * path (ADR 0033). Uses the Rollup plugin context (`pluginCtx`) to
+ * surface route-conflict warnings via `this.warn` when available.
+ */
+function generateManifestSource(
+  pluginCtx: { warn?: (m: string) => void } | null,
+  dir: string,
+  extensions: string[],
+): string {
+  const files = listRouteFiles(dir);
+  const manifest = buildRouteManifest(files, extensions, (pattern, kept, dropped) => {
+    const msg =
+      `[purity] route conflict: pattern ${JSON.stringify(pattern)} resolved by ` +
+      `${JSON.stringify(kept)}; dropping ${JSON.stringify(dropped)}.`;
+    if (pluginCtx && typeof pluginCtx.warn === 'function') pluginCtx.warn(msg);
+    else console.warn(msg);
+  });
+  // Detect named `loader` exports per ADR 0022. Reads each route +
+  // layout file's contents once per build (cached internally).
+  attachLoaderInfo(manifest, (rel) => {
+    const abs = resolvePath(dir, rel);
+    try {
+      return readFileSync(abs, 'utf8');
+    } catch {
+      return null;
+    }
+  });
+  return generateRouteManifestSource(manifest, (filePath) => posix.join(dir, filePath));
+}
+
 function emitManifestToDisk(absPath: string, source: string, warn: (m: string) => void): void {
   try {
     // No-op when the file already matches — avoid filesystem-watch loops.

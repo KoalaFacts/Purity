@@ -1,35 +1,61 @@
 # purity-ssr-stream-cf-workers
 
-Streaming SSR on **Cloudflare Workers**, using `@purityjs/ssr`'s
-`renderToStream` directly with the Workers `fetch` handler. ADR 0006
-Phase 4.
+Streaming SSR on **Cloudflare Workers**, driven by Purity's file-system
+route manifest. ADR 0006 Phase 4 + ADR 0033.
 
-The Worker returns a `ReadableStream<Uint8Array>` that flushes the page
-shell immediately, then streams each `suspense()` boundary's resolved
-HTML as a separate chunk. The `__purity_swap(N)` helper splices each
-chunk into place in the browser as it arrives.
+The Worker calls `renderToStream(App, …)` which returns a
+`ReadableStream<Uint8Array>` that flushes the shell immediately, then
+streams each `suspense()` boundary's resolved HTML as a separate chunk.
+`App` is a manifest-driven composer (`asyncRoute` + `asyncNotFound`,
+same shape as the canonical Node SSR demo).
 
-## Run
+## How the manifest reaches the Worker
+
+Wrangler does not bundle Purity's `html\`\`` templates directly — the
+runtime `html` tag emits DOM nodes, which fails under a Workers runtime
+that has no `document`. We use Vite (in SSR build mode) to AOT-compile
+every `html\`\`` call in the worker + pages into string-builder
+factories, plus emit the route manifest. Wrangler then deploys the
+Vite output as a single ES-Modules Worker.
 
 ```bash
-npm install
-npm run dev   # wrangler dev — local Workers runtime on http://127.0.0.1:8787
+npm run build    # vite build --ssr → dist/worker.js + manifest emit (ADR 0033)
+npm run dev      # build + wrangler dev
+npm run deploy   # build + wrangler deploy
 ```
 
-Deploy to your account with `npm run deploy` (after `wrangler login`).
+`src/.purity/routes.ts` (the emitted manifest) and `dist/` are
+gitignored.
 
-## What to look at
+> **Known issue (2026-05-11):** The Vite 8 + rolldown SSR build with the
+> `@purityjs/vite-plugin` currently OOMs on this example's worker
+> entry shape. The same plugin + alias configuration builds the
+> canonical Node SSR demo without issue, so the trigger is specific to
+> the worker entry — likely either the side-effect `import
+> '@purityjs/ssr'` the plugin injects after AOT-compiling templates,
+> or rolldown's handling of an SSR-mode entry whose only output is one
+> single file. Tracked as the actionable signal for the next iteration
+> (see `NEXT_HANDOFF.md`). The source files (`src/app.ts`,
+> `src/worker.ts`, `src/pages/*`) and `vite.config.ts` are wired
+> correctly — once the build OOM is resolved, `npm run build` should
+> emit a deployable `dist/worker.js`.
 
-- `src/worker.ts` — the `fetch` handler. Builds the response with the
-  streamed body in three lines:
-  ```ts
-  const stream = renderToStream(App, { doctype: '<!doctype html>', signal: req.signal });
-  return new Response(stream, { headers: { 'content-type': 'text/html; charset=utf-8' } });
-  ```
-  `req.signal` cancels the renderer when the visitor disconnects.
-- `wrangler.toml` — Workers runtime config. `compatibility_date` should
-  be on or after 2024-04-05 so `ReadableStream` + `TextEncoder` are
-  available without flags.
+## Files
+
+```
+src/
+  pages/
+    _layout.ts      — root layout (page shell, ADR 0020)
+    _404.ts         — root not-found page (ADRs 0021 + 0028)
+    index.ts        — /
+    stream.ts       — /stream — exercises suspense() + resource()
+  app.ts            — asyncRoute / asyncNotFound composer
+  worker.ts         — `export default { fetch }` — calls renderToStream
+  .purity/
+    routes.ts       — emitted manifest (gitignored)
+vite.config.ts      — wires the plugin + SSR build mode for the worker
+wrangler.toml       — Workers runtime config (compatibility_date ≥ 2024-04-05)
+```
 
 ## Expected wire format
 
@@ -59,7 +85,7 @@ nonce per request and pass it through:
 
 ```ts
 const nonce = crypto.randomUUID().replace(/-/g, '');
-const stream = renderToStream(App, { nonce });
+const stream = renderToStream(App, { nonce, request: req, signal: req.signal });
 return new Response(stream, {
   headers: {
     'content-type': 'text/html; charset=utf-8',

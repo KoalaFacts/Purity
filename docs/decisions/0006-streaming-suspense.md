@@ -1,7 +1,8 @@
 # 0006: Streaming SSR with Suspense boundaries
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-05-10
+**Note:** Promoted from Proposed to Accepted in the ADR-0027 housekeeping pass. All six named phases (boundary markers + per-boundary timeouts + `renderToStream` + edge adapters + `onError` + streaming-boundary resource cache) shipped during the ADRs 0007-0026 sprint.
 
 ## Context
 

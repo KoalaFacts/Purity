@@ -89,6 +89,8 @@ export { manageNavScroll, type ManageNavScrollOptions } from './router-scroll.ts
 export { manageNavFocus, type ManageNavFocusOptions } from './router-focus.ts';
 // Navigation view transitions — ADR 0017.
 export { manageNavTransitions, type ManageNavTransitionsOptions } from './router-transitions.ts';
+// Navigation consolidator — ADR 0027.
+export { configureNavigation, type ConfigureNavigationOptions } from './router-configure.ts';
 // Async-route runtime composer — ADR 0025.
 export {
   asyncNotFound,

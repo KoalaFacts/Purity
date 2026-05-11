@@ -1,39 +1,18 @@
-// Client entry — boots reactivity against the SSR-rendered DOM.
-// `hydrate()` reads the `<script id="__purity_resources__">` payload to prime
-// the resource cache, clears any stale children, and runs the same App
-// component fresh on the client.
+// Client entry — boots reactivity against the SSR-rendered DOM and wires up
+// the canonical SPA navigation stack via `configureNavigation()` (ADR 0027):
 //
-// `interceptLinks()` installs a global click listener that converts internal
-// `<a href>` clicks into navigate() calls — no per-link @click handlers
-// required. Modifier keys, target="_blank", download links, and cross-origin
-// hrefs all pass through to the browser's native behavior.
+//   - interceptLinks (ADR 0013) — same-origin <a href> clicks call navigate()
+//   - manageNavScroll (ADR 0015) — scroll to hash or top after navigate()
+//   - manageNavFocus (ADR 0016) — move focus into <main> after navigate()
+//   - manageNavTransitions (ADR 0017) — wrap navigate() in startViewTransition()
 //
-// `manageNavScroll()` scrolls to the URL hash target (or to the top) after
-// every programmatic navigate() — closes the "SPA keeps the previous
-// page's scroll position" UX gap. Native back/forward scroll restoration
-// is untouched.
-//
-// `manageNavFocus()` moves keyboard focus into the new page's <main>
-// landmark (or the URL hash target if present) after navigate(). Screen
-// readers announce the focused region's accessible name, restoring the
-// route-change announcement that SPAs lose by default.
-//
-// `manageNavTransitions()` wraps the navigate() URL + DOM updates in
-// document.startViewTransition() so route changes can cross-fade. No-op
-// on browsers without the API; honors prefers-reduced-motion. Style the
-// transition via the ::view-transition-* CSS pseudo-elements.
-import {
-  hydrate,
-  interceptLinks,
-  manageNavFocus,
-  manageNavScroll,
-  manageNavTransitions,
-} from '@purityjs/core';
+// All four enabled by default. Opt out per-helper via e.g.
+// `configureNavigation({ transitions: false })`, or pass per-helper options
+// via the same keys (e.g. `{ focus: { selector: 'main' } }`).
+
+import { configureNavigation, hydrate } from '@purityjs/core';
 import { App } from './app.ts';
 
 const root = document.getElementById('app');
 if (root) hydrate(root, App);
-interceptLinks();
-manageNavScroll();
-manageNavFocus();
-manageNavTransitions();
+configureNavigation();

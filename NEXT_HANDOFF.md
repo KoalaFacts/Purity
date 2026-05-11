@@ -1,25 +1,27 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Thirty commits,
-twenty new ADRs (0007–0026), 919 tests passing** across the three
-publishable packages. Latest iteration shipped ADR 0026 — the
-`loaderData<T>(): T | undefined` context accessor. The `asyncRoute`
-composer now pushes each component's resolved loader data onto a
-module-scoped stack before invoking the view (and pops after); the
-view reads via `loaderData()` instead of receiving it positionally.
-Closes the last "user-land" non-feature from ADR 0022. The example's
-home page migrated as a worked demo — its view reads
-`loaderData<{ todos: string[] }>()` instead of accepting `data` as
-the second positional arg.
+pass starting from the SSR-MVP follow-up gap list. **Thirty-one
+commits, twenty-one new ADRs (0007–0027), 926 tests passing** across
+the three publishable packages. Latest iteration was a Path I
+housekeeping pass:
+
+- **Promoted ADR 0006 to Accepted** (status was stale — all six
+  named phases shipped during the ADRs 0007-0026 sprint).
+- **Shipped ADR 0027** — `configureNavigation(options?)`. Consolidates
+  the four `manageNav*` opt-ins (intercept / scroll / focus /
+  transitions) into one call. Per-helper opt-out + per-helper option
+  pass-through via named keys. Returns a teardown for the rare cases
+  that want one (tests). The example's `entry.client.ts` migrated
+  from four imports + four call sites to one of each.
 
 ## Test count by package (current)
 
 ```
-core         598 passing  (28 files)
+core         605 passing  (29 files)
 ssr          145 passing  (11 files)
 vite-plugin  176 passing  ( 9 files)
-total        919
+total        926
 ```
 
 ## ADRs accepted on this branch
@@ -27,33 +29,34 @@ total        919
 Each links to its own decision record with rationale + non-features +
 rejected alternatives.
 
-| ADR  | Title                                                                                                       | One-line summary                                                                                                                                   |
-| ---- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0005 | [Marker-walking, non-lossy hydration](docs/decisions/0005-non-lossy-hydration.md)                           | `hydrate()` walks SSR markers and binds in place. Per-row `each()` + per-case `when()`/`match()` adoption added in the same era.                   |
-| 0006 | [Streaming SSR with Suspense](docs/decisions/0006-streaming-suspense.md)                                    | `suspense(view, fallback)` + `renderToStream` + `__purity_swap`. All six phases shipped — selective hydration is out of scope.                     |
-| 0007 | [Text-content rewrite on mismatch](docs/decisions/0007-text-rewrite-on-mismatch.md)                         | Opt-in `enableHydrationTextRewrite()` self-heals SSR text drift in place.                                                                          |
-| 0008 | [Head / meta tag management](docs/decisions/0008-head-meta-management.md)                                   | `head()` + `renderToString({ extractHead: true })` for per-route `<title>` / `<meta>`.                                                             |
-| 0009 | [Request context](docs/decisions/0009-request-context.md)                                                   | `getRequest()` reads the SSR request; `request?: Request` option on both renderers.                                                                |
-| 0010 | [Static site generation](docs/decisions/0010-static-site-generation.md)                                     | `renderStatic({ routes, handler, shellTemplate })` returns `Map<path, html>` + per-route errors. Runtime-agnostic.                                 |
-| 0011 | [Router primitives](docs/decisions/0011-router-primitives.md)                                               | `currentPath()` (reactive, SSR-parity), `navigate(href)`, `matchRoute(pattern)` with `:param` + `*` splat.                                         |
-| 0012 | [Server actions](docs/decisions/0012-server-actions.md)                                                     | `serverAction(url, handler)` + `handleAction(request)` + `action.invoke(body, init?)`. PRG-friendly, pure Web Platform.                            |
-| 0013 | [Link auto-interception](docs/decisions/0013-link-interception.md)                                          | `interceptLinks()` global click listener with conservative-default predicate. Drops per-link `@click` boilerplate.                                 |
-| 0014 | [URL search/hash signals](docs/decisions/0014-url-search-hash-signals.md)                                   | `currentSearch()` + `currentHash()` reactive accessors backed by the same URL signal as `currentPath`.                                             |
-| 0015 | [Navigation scroll management](docs/decisions/0015-nav-scroll-management.md)                                | `onNavigate(listener)` hook + `manageNavScroll()` consumer. Closes SPA scroll-restoration gap on forward nav.                                      |
-| 0016 | [Navigation focus management](docs/decisions/0016-nav-focus-management.md)                                  | `manageNavFocus()` moves focus into the new page's landmark. Closes the SPA accessibility gap.                                                     |
-| 0017 | [View Transitions API integration](docs/decisions/0017-view-transitions.md)                                 | `manageNavTransitions()` wraps navigate() in `document.startViewTransition()`. Reduced-motion aware.                                               |
-| 0018 | [Server-only module strip](docs/decisions/0018-server-module-strip.md)                                      | `*.server.{ts,js,tsx,jsx}` files replaced with `export {};` in client builds. Default-on Vite plugin option.                                       |
-| 0019 | [File-system routing — manifest generation](docs/decisions/0019-file-system-routing.md)                     | Opt-in `purity({ routes: { dir } })` exposes virtual `purity:routes` module. `[id]` / `[...slug]` / `index` / `_*` conventions.                    |
-| 0020 | [File-system layouts — `_layout` per directory](docs/decisions/0020-layouts.md)                             | Each `RouteEntry` carries a `layouts: LayoutEntry[]` chain (root → leaf). Composer is user-land `reduceRight` for now.                             |
-| 0021 | [Error boundaries + 404 — `_error` per directory, root `_404`](docs/decisions/0021-error-boundaries-404.md) | Per-route `errorBoundary?: LayoutEntry` (nearest-wins, no chain) + manifest top-level `notFound?: LayoutEntry`.                                    |
-| 0022 | [Data loaders — `loader` named export per route + layout](docs/decisions/0022-data-loaders.md)              | `hasLoader?: true` flag on routes + layouts via regex source detection. Loader signature documented; data plumbing user-land.                      |
-| 0023 | [Isomorphic conditional primitives](docs/decisions/0023-isomorphic-control-flow.md)                         | `when()`/`match()`/`each()` auto-detect the SSR render context and dispatch to the `*SSR` variants. Existing names keep working.                   |
-| 0024 | [SSR-aware `lazyResource.fetch()`](docs/decisions/0024-ssr-aware-lazy-resource.md)                          | `.fetch()` in an SSR context with a `key` option fires synchronously, registers the promise with `pendingPromises`, blocks the multipass renderer. |
-| 0025 | [`asyncRoute` runtime composer](docs/decisions/0025-async-route-composer.md)                                | `asyncRoute(entry, params)` + `asyncNotFound(notFound)` collapse the manifest-driven composer into one helper call per match.                      |
-| 0026 | [`loaderData()` context accessor](docs/decisions/0026-loader-data-accessor.md)                              | Component reads its own loader-data slot via `loaderData<T>()` (no positional arg). Stack-based; pushed/popped by `asyncRoute` per component.      |
+| ADR  | Title                                                                                                       | One-line summary                                                                                                                                     |
+| ---- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0005 | [Marker-walking, non-lossy hydration](docs/decisions/0005-non-lossy-hydration.md)                           | `hydrate()` walks SSR markers and binds in place. Per-row `each()` + per-case `when()`/`match()` adoption added in the same era.                     |
+| 0006 | [Streaming SSR with Suspense](docs/decisions/0006-streaming-suspense.md)                                    | `suspense(view, fallback)` + `renderToStream` + `__purity_swap`. All six phases shipped — promoted to Accepted in this iteration.                    |
+| 0007 | [Text-content rewrite on mismatch](docs/decisions/0007-text-rewrite-on-mismatch.md)                         | Opt-in `enableHydrationTextRewrite()` self-heals SSR text drift in place.                                                                            |
+| 0008 | [Head / meta tag management](docs/decisions/0008-head-meta-management.md)                                   | `head()` + `renderToString({ extractHead: true })` for per-route `<title>` / `<meta>`.                                                               |
+| 0009 | [Request context](docs/decisions/0009-request-context.md)                                                   | `getRequest()` reads the SSR request; `request?: Request` option on both renderers.                                                                  |
+| 0010 | [Static site generation](docs/decisions/0010-static-site-generation.md)                                     | `renderStatic({ routes, handler, shellTemplate })` returns `Map<path, html>` + per-route errors. Runtime-agnostic.                                   |
+| 0011 | [Router primitives](docs/decisions/0011-router-primitives.md)                                               | `currentPath()` (reactive, SSR-parity), `navigate(href)`, `matchRoute(pattern)` with `:param` + `*` splat.                                           |
+| 0012 | [Server actions](docs/decisions/0012-server-actions.md)                                                     | `serverAction(url, handler)` + `handleAction(request)` + `action.invoke(body, init?)`. PRG-friendly, pure Web Platform.                              |
+| 0013 | [Link auto-interception](docs/decisions/0013-link-interception.md)                                          | `interceptLinks()` global click listener with conservative-default predicate. Drops per-link `@click` boilerplate.                                   |
+| 0014 | [URL search/hash signals](docs/decisions/0014-url-search-hash-signals.md)                                   | `currentSearch()` + `currentHash()` reactive accessors backed by the same URL signal as `currentPath`.                                               |
+| 0015 | [Navigation scroll management](docs/decisions/0015-nav-scroll-management.md)                                | `onNavigate(listener)` hook + `manageNavScroll()` consumer. Closes SPA scroll-restoration gap on forward nav.                                        |
+| 0016 | [Navigation focus management](docs/decisions/0016-nav-focus-management.md)                                  | `manageNavFocus()` moves focus into the new page's landmark. Closes the SPA accessibility gap.                                                       |
+| 0017 | [View Transitions API integration](docs/decisions/0017-view-transitions.md)                                 | `manageNavTransitions()` wraps navigate() in `document.startViewTransition()`. Reduced-motion aware.                                                 |
+| 0018 | [Server-only module strip](docs/decisions/0018-server-module-strip.md)                                      | `*.server.{ts,js,tsx,jsx}` files replaced with `export {};` in client builds. Default-on Vite plugin option.                                         |
+| 0019 | [File-system routing — manifest generation](docs/decisions/0019-file-system-routing.md)                     | Opt-in `purity({ routes: { dir } })` exposes virtual `purity:routes` module. `[id]` / `[...slug]` / `index` / `_*` conventions.                      |
+| 0020 | [File-system layouts — `_layout` per directory](docs/decisions/0020-layouts.md)                             | Each `RouteEntry` carries a `layouts: LayoutEntry[]` chain (root → leaf). Composer is user-land `reduceRight` for now.                               |
+| 0021 | [Error boundaries + 404 — `_error` per directory, root `_404`](docs/decisions/0021-error-boundaries-404.md) | Per-route `errorBoundary?: LayoutEntry` (nearest-wins, no chain) + manifest top-level `notFound?: LayoutEntry`.                                      |
+| 0022 | [Data loaders — `loader` named export per route + layout](docs/decisions/0022-data-loaders.md)              | `hasLoader?: true` flag on routes + layouts via regex source detection. Loader signature documented; data plumbing user-land.                        |
+| 0023 | [Isomorphic conditional primitives](docs/decisions/0023-isomorphic-control-flow.md)                         | `when()`/`match()`/`each()` auto-detect the SSR render context and dispatch to the `*SSR` variants. Existing names keep working.                     |
+| 0024 | [SSR-aware `lazyResource.fetch()`](docs/decisions/0024-ssr-aware-lazy-resource.md)                          | `.fetch()` in an SSR context with a `key` option fires synchronously, registers the promise with `pendingPromises`, blocks the multipass renderer.   |
+| 0025 | [`asyncRoute` runtime composer](docs/decisions/0025-async-route-composer.md)                                | `asyncRoute(entry, params)` + `asyncNotFound(notFound)` collapse the manifest-driven composer into one helper call per match.                        |
+| 0026 | [`loaderData()` context accessor](docs/decisions/0026-loader-data-accessor.md)                              | Component reads its own loader-data slot via `loaderData<T>()` (no positional arg). Stack-based; pushed/popped by `asyncRoute` per component.        |
+| 0027 | [`configureNavigation()` consolidator](docs/decisions/0027-configure-navigation.md)                         | Single `configureNavigation(options?)` enables interceptLinks + manageNavScroll + manageNavFocus + manageNavTransitions. Per-helper opt-out/options. |
 
-ADR 0006 is `Status: Proposed` historically but every named phase is
-now shipped — promote to `Accepted` next time anyone touches it.
+All ADRs on this branch are `Status: Accepted` (ADR 0006 was promoted
+from `Proposed` in this iteration's housekeeping pass).
 
 ## Public API map (post-branch)
 
@@ -64,7 +67,7 @@ now shipped — promote to `Accepted` next time anyone touches it.
 - **Head**: `head` (ADR 0008).
 - **Request**: `getRequest` (ADR 0009).
 - **Router**: `currentHash`, `currentPath`, `currentSearch`, `matchRoute`, `navigate`, `onNavigate`, plus the `NavigateListener` / `NavigateOptions` / `RouteMatch` types (ADRs 0011 + 0014 + 0015).
-- **Router opt-ins**: `interceptLinks`, `manageNavFocus`, `manageNavScroll`, `manageNavTransitions`, plus `*Options` types (ADRs 0013 + 0015 + 0016 + 0017).
+- **Router opt-ins**: `interceptLinks`, `manageNavFocus`, `manageNavScroll`, `manageNavTransitions`, `configureNavigation`, plus `*Options` types (ADRs 0013 + 0015 + 0016 + 0017 + 0027).
 - **Server actions**: `serverAction`, `findAction`, `handleAction`, plus `ServerAction` / `ServerActionHandler` types (ADR 0012).
 - **Async-route composer**: `asyncRoute`, `asyncNotFound`, plus `AsyncRouteEntry` / `AsyncNotFoundEntry` / `AsyncRouteOptions` / `LoaderContext` types (ADR 0025).
 - **Loader data**: `loaderData<T>()` accessor (ADR 0026).
@@ -226,13 +229,10 @@ user interaction needs event replay; a strictly larger problem.
 
 ## Recommended next sprint
 
-ADR 0026 closed Path E. The file-system-routing convention (ADRs
-0019-0026) is now feature-complete: manifest + layouts + boundaries
-
-- 404 + loaders + isomorphic control flow + SSR-aware lazy +
-  runtime composer + per-component data accessor. The remaining
-  follow-ups are higher-ROI single iterations and accumulated
-  non-features from earlier ADRs.
+Path I shipped this iteration (ADR 0006 promoted + ADR 0027's
+`configureNavigation`). The file-system-routing + navigation
+convention (ADRs 0019-0027) is now feature-complete on the runtime
+side. Remaining higher-leverage items:
 
 **Path H — streaming-SSR adapter migration to the manifest.**
 ADR 0006's adapter examples (`ssr-stream-cf-workers/`,
@@ -241,45 +241,28 @@ manifest + `asyncRoute()`. Migrate one (start with `cf-workers`)
 to use the manifest + `asyncRoute()` pattern and verify the
 streaming pipeline works end-to-end with the lazyResource
 registration. Likely surfaces a missing pendingPromises-for-stream
-hook in `renderToStream`; that's the actionable signal. Outline:
+hook in `renderToStream`; that's the actionable signal.
 
-1. Copy `examples/ssr/src/pages/` + `app.ts` into the cf-workers
-   example.
-2. Replace the existing entry's component with the manifest
-   dispatcher; wire `purity({ routes: { dir } })` into the
-   example's `vite.config.ts`.
-3. Run `wrangler dev` (or the local equivalent) and verify
-   streaming flushes the shell + per-boundary chunks correctly.
-4. Document any gaps in handoff; iterate.
-
-**Path I — promote ADR 0006 to Accepted and pick a smaller-items
-follow-up.** All ADR 0006 phases shipped; the status string has
-been stale for ten ADRs now. Smaller per-ADR follow-ups (smart
-serverAction body strip, per-directory `_404`, build-time route
-table emit, typed route params, hover-prefetch on links,
-configureNavigation consolidation) are each one-iteration items.
-
-**Path J — typed-manifest emit (ADR 0027).** The build-time route
+**Path J — typed-manifest emit (next ADR).** The build-time route
 table emit deferred from ADR 0019. Emit a TypeScript file at e.g.
 `src/.purity/routes.ts` that mirrors the virtual `purity:routes`
 shape so `tsc` / IDEs can introspect it. Pairs naturally with
-typed route params from the pattern. Outline:
+typed `RouteParams<'/users/:id'>` template-literal inference. Apps
+that import from `purity:routes` get strongly typed entries.
 
-1. Decide where the file lives + whether it's gitignored.
-2. Pipe the file generation into the existing `buildRouteManifest`
-   output. Emit on `load` of the virtual module + on
-   `handleHotUpdate`.
-3. Add typed `RouteParams<'/users/:id'>` template-literal
-   inference. Apps that import from `purity:routes` get strongly
-   typed entries.
-4. Draft ADR 0027 + tests + handoff.
+**Path K — smaller-items follow-ups.** Each is a one-iteration
+item from the per-ADR non-feature lists below:
 
-Path I is right if time is tight. Path H is right if you want to
-validate the streaming pipeline against the manifest. Path J is
-the larger build-time-typing follow-up.
+- Smart `serverAction()` body-only stripping (ADR 0018) — strip
+  handler bodies without renaming files to `*.server.ts`.
+- Per-directory `_404.ts` (ADR 0021) — adds a `notFoundChain`
+  manifest field; consumer walks URL prefix at runtime.
+- Hover-prefetch on links (ADRs 0013 + 0019) — `interceptLinks`
+  option to fire `entry.importFn()` on hover.
+- `<title>` synchronisation helper (ADR 0016) — reactive title
+  beyond `head()`'s static capture.
 
-Path E is the right pick if you have a full session — it closes
-the last loose end from ADR 0022 ("component-data plumbing is
-user-land in Phase 1"). Path F is right if time is tight; Path G
-if you want to validate the streaming pipeline against the
-manifest convention.
+Path H is the right pick if you want to validate the streaming
+pipeline against the manifest. Path J is the larger build-time-
+typing follow-up. Path K is right if time is tight — pick the
+smallest item and ship it.

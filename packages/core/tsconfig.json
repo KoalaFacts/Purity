@@ -11,6 +11,7 @@
     "rootDir": "src",
     "sourceMap": true,
     "esModuleInterop": true,
+    "emitDeclarationOnly": true,
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true

@@ -133,12 +133,18 @@ export function match<T extends string | number | boolean>(
   sourceFn: () => T,
   cases: MatchCases<T>,
   fallback?: MatchView,
-): DocumentFragment | DeferredMatch<T> {
+): DocumentFragment | DeferredMatch<T> | SSRHtml {
   // Hydration mode: defer DOM creation. The hydrate factory sees the handle,
   // routes through inflateDeferredMatch, which adopts the SSR-rendered case in
   // place and seeds the per-case cache so toggling back reuses it. Closes the
   // when()/match() half of the ADR 0005 control-flow lossy gap.
   if (isHydrating()) return makeDeferredMatch(sourceFn, cases, fallback);
+
+  // SSR-context dispatch (ADR 0023). Inside a `renderToString` /
+  // `renderToStream` / `renderStatic` pass, return SSRHtml string output
+  // instead of touching `document`. Lets `match()` be called from
+  // manifest-driven composers without needing the explicit `matchSSR`.
+  if (getSSRRenderContext() !== null) return matchSSR(sourceFn, cases, fallback);
 
   const endMarker = document.createComment('m');
   const fragment = document.createDocumentFragment();
@@ -178,11 +184,16 @@ export function when(
   conditionFn: () => boolean,
   thenFn: MatchView,
   elseFn?: MatchView,
-): DocumentFragment {
+): DocumentFragment | SSRHtml {
+  // SSR-context fast path (ADR 0023). Bypasses match()'s reactive plumbing
+  // entirely on the server — whenSSR returns the picked branch as a tagged
+  // string. `match()` itself ALSO dispatches in SSR (so the recursion would
+  // be safe), but going direct is clearer + slightly faster.
+  if (getSSRRenderContext() !== null) return whenSSR(conditionFn, thenFn, elseFn);
   return match((() => String(conditionFn())) as () => 'true' | 'false', {
     true: thenFn,
     ...(elseFn ? { false: elseFn } : {}),
-  });
+  }) as DocumentFragment;
 }
 
 // ---------------------------------------------------------------------------
@@ -627,12 +638,17 @@ export function each<T>(
   listAccessor: (() => T[]) | T[],
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
   keyFn?: (item: T, index: number) => unknown,
-): DocumentFragment | DeferredEach<T> {
+): DocumentFragment | DeferredEach<T> | SSRHtml {
   // Hydration mode: defer DOM creation. The hydrate factory recognises the
   // returned handle and routes it through inflateDeferredEach, which adopts
   // the SSR-rendered rows in place rather than rebuilding the slot. See
   // ADR 0005 / handoff item "Per-row reconciliation in each()".
   if (isHydrating()) return makeDeferredEach(listAccessor, mapFn, keyFn);
+
+  // SSR-context dispatch (ADR 0023). Inside a server render pass, return
+  // SSRHtml string output. Same per-row marker grammar as eachSSR, so
+  // hydration adoption still works against the resulting markup.
+  if (getSSRRenderContext() !== null) return eachSSR(listAccessor, mapFn, keyFn);
 
   const endMarker = document.createComment('e');
   const fragment = document.createDocumentFragment();

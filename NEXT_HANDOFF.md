@@ -1,22 +1,23 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Twenty-six
-commits, sixteen new ADRs (0007–0022), 886 tests passing** across the
-three publishable packages. Latest iteration migrated `examples/ssr/`
-to consume the file-system-routing manifest end-to-end — every route,
-the root layout, the root 404, and the root error boundary now live
-under `examples/ssr/src/pages/`. Surfaced two real ergonomics gaps
-along the way (see "Migration findings" below); both motivate the
-runtime ADR (0023).
+pass starting from the SSR-MVP follow-up gap list. **Twenty-seven
+commits, seventeen new ADRs (0007–0023), 894 tests passing** across
+the three publishable packages. Latest iteration shipped ADR 0023 —
+isomorphic conditional primitives. `when()` / `match()` / `each()`
+now auto-detect the SSR render context and dispatch to the SSR
+variants (`whenSSR` / `matchSSR` / `eachSSR`) when called inside a
+server render pass. Closes one of the two ergonomics gaps the manifest
+migration surfaced; the `lazyResource`-doesn't-register-with-SSR
+gap remains and is the next ADR target.
 
 ## Test count by package (current)
 
 ```
-core         565 passing  (26 files)
+core         573 passing  (26 files)
 ssr          145 passing  (11 files)
 vite-plugin  176 passing  ( 9 files)
-total        886
+total        894
 ```
 
 ## ADRs accepted on this branch
@@ -44,6 +45,7 @@ rejected alternatives.
 | 0020 | [File-system layouts — `_layout` per directory](docs/decisions/0020-layouts.md)                             | Each `RouteEntry` carries a `layouts: LayoutEntry[]` chain (root → leaf). Composer is user-land `reduceRight` for now.           |
 | 0021 | [Error boundaries + 404 — `_error` per directory, root `_404`](docs/decisions/0021-error-boundaries-404.md) | Per-route `errorBoundary?: LayoutEntry` (nearest-wins, no chain) + manifest top-level `notFound?: LayoutEntry`.                  |
 | 0022 | [Data loaders — `loader` named export per route + layout](docs/decisions/0022-data-loaders.md)              | `hasLoader?: true` flag on routes + layouts via regex source detection. Loader signature documented; data plumbing user-land.    |
+| 0023 | [Isomorphic conditional primitives](docs/decisions/0023-isomorphic-control-flow.md)                         | `when()`/`match()`/`each()` auto-detect the SSR render context and dispatch to the `*SSR` variants. Existing names keep working. |
 
 ADR 0006 is `Status: Proposed` historically but every named phase is
 now shipped — promote to `Accepted` next time anyone touches it.
@@ -87,46 +89,43 @@ has the full API tour with copy-pasteable examples for every entry.
 - `examples/ssr-stream-{cf-workers,vercel-edge,deno}/` — minimal edge-runtime templates.
 - `examples/ssr/src/pages/` — worked file-system-routing example: `index.ts` (with `loader`), `about.ts`, `users/[id].ts`, `_layout.ts`, `_404.ts`, `_error.ts`. The composer in `examples/ssr/src/app.ts` uses the manifest for dispatch + layout chain + error-boundary identification but currently relies on static page-module imports — the gap that motivates the runtime ADR.
 
-## Migration findings (Path A — what hurt)
+## Migration findings (Path A — what hurt, what's left)
 
-The `examples/ssr/` migration to the manifest exposed two gaps the
-composer-pattern docs in ADRs 0020-0022 hand-wave past. Both are the
-concrete scope of the runtime ADR (0023):
+The `examples/ssr/` migration to the manifest exposed two gaps. ADR
+0023 closed the first; the second remains and is the next ADR target.
 
-1. **`when()` / `match()` are client-only.** Both call
-   `document.createComment` to lay marker nodes, so calling them
-   inside an SSR render path throws `ReferenceError: document is not
-defined`. The framework ships explicit SSR variants
-   (`whenSSR` / `matchSSR` / `eachSSR`) that the user must pick
-   per call site. Users writing a manifest-driven composer will
-   reach for `when(stack.data(), …)` first and get a confusing
-   server crash; isomorphic versions (auto-detect SSR context) would
-   close this hole.
-2. **`lazyResource()` doesn't register with the SSR multipass
-   context.** Apps using `lazyResource(() => loadStack(entry, params))
-.fetch(); when(() => stack.data(), …)` see SSR ship the suspense
-   fallback because the resource never registers a pending promise the
+1. **(closed by ADR 0023)** `when()` / `match()` / `each()` were
+   client-only — they called `document.createComment` and crashed
+   inside an SSR render path. The unsuffixed names now auto-detect
+   the SSR render context and dispatch to the explicit `*SSR`
+   variants. The explicit names stay for code that wants a guaranteed
+   `SSRHtml` return without the union.
+2. **(open)** `lazyResource()` doesn't register with the SSR
+   multipass context. A composer pattern like
+   `lazyResource(() => loadStack(entry, params)).fetch();` followed
+   by `when(() => stack.data(), …)` ships the suspense fallback
+   because the resource never registers a pending promise the
    renderer awaits between passes. `resource()` (the auto-fetching
-   variant) does register, but doesn't fit the "fetch on demand
+   variant) does register but doesn't fit the "fetch on demand
    per-route" shape. The runtime composer needs a primitive that
-   blocks SSR until the imports + loader resolve.
+   blocks SSR until the imports + loader resolve. **Next ADR target.**
 
-Concrete consequence: `examples/ssr/src/app.ts` falls back to
-**static imports of every page module** at the top of the file. The
-manifest is still consulted for pattern matching + layout-chain
-walking + error-boundary identification + `hasLoader` reporting — so
-ADRs 0019-0022 are exercised — but the per-route lazy `importFn()` is
-shadowed by static imports. Code splitting still happens for the
-client bundle (Vite warns about the ineffective dynamic imports but
-doesn't drop them), so the trade-off is local to the demo.
+Concrete consequence: `examples/ssr/src/app.ts` still uses **static
+imports of every page module** at the top of the file because of
+gap 2. The manifest is still consulted for pattern matching +
+layout-chain walking + error-boundary identification + `hasLoader`
+reporting — so ADRs 0019-0022 are exercised — but the per-route
+lazy `importFn()` is shadowed by static imports. Code splitting
+still happens for the client bundle (Vite warns about the ineffective
+dynamic imports but doesn't drop them), so the trade-off is local
+to the demo.
 
 The home page (`pages/index.ts`) ships a `loader` named export that
 the manifest correctly flags with `hasLoader: true` — verifiable in
 the built `entry.server.js`. The page itself uses the existing
 `resource()` + `suspense()` pattern for its data because the user-
 land composer cannot yet invoke the loader and thread the result
-into the component without re-introducing the `when()` / async
-gaps above.
+into the component without re-introducing the `lazyResource` gap.
 
 ## Side-fix shipped this iteration
 
@@ -228,29 +227,36 @@ user interaction needs event replay; a strictly larger problem.
 
 ## Recommended next sprint
 
-Path A landed this iteration. The natural follow-up is **Path B —
-ADR 0023: runtime composition primitives**, informed by the two
-gaps the migration surfaced. Outline:
+ADR 0023 closed gap 1 from the migration. The natural follow-up is
+**ADR 0024: SSR-aware lazy resources** — closes gap 2 so the
+manifest-driven composer in `examples/ssr/src/app.ts` can drop the
+static-import workaround. Outline:
 
-1. **Isomorphic `when` / `match`** (or document the SSR variants
-   harder). Either auto-detect the SSR context inside `when()` and
-   route to `whenSSR` internally, or rename `whenSSR` to make it
-   harder to reach for the wrong one. The SSR-vs-client split is a
-   foot-gun the manifest-consumer pattern walks straight into.
-2. **`asyncRoute(entry, params)` runtime helper**. Wraps the
-   route + layout-chain + error-boundary + loader-await pipeline
-   into one function the consumer's loop calls per match. Probably
-   needs an SSR-aware async primitive (a `lazyResource` variant
-   that registers with the multipass context, or extending
-   `resource()` to accept lazy fetchers).
-3. **`loaderData()` accessor** for routes / layouts to read their
-   own loader's resolved value without positional-arg threading.
-   Per-render slot keyed by the route entry.
-4. Draft ADR 0023 with the convention + rejected alternatives,
-   migrate `examples/ssr/src/app.ts` to use the new helpers
-   (drops the static-import workaround documented in "Migration
-   findings"), update tests, update handoff.
+1. Decide the API. Options: extend `lazyResource()` so `.fetch()`
+   registers the in-flight promise with `getSSRRenderContext()
+.pendingPromises` (like `resource()` does on auto-fetch), OR add
+   a new `ssrAwareLazy()` primitive that explicitly opts in. The
+   first is lower-friction but changes existing behavior; the
+   second adds surface area.
+2. Decide the multipass interaction. When the SSR pipeline awaits
+   pending promises and re-renders, does the lazyResource see the
+   resolved data and produce its real view, or does it need a
+   separate "this fetch goes through" signal?
+3. Draft ADR 0024 with the API + rejected alternatives.
+4. Implement + tests. Drop the static imports from
+   `examples/ssr/src/app.ts` and verify the demo still serves
+   every route correctly. Update handoff.
+
+After ADR 0024 lands, the next steps are the higher-level helpers:
+
+- **`asyncRoute(entry, params)`** — wraps the route + layout +
+  error-boundary + loader pipeline into one function the consumer
+  loop calls per match.
+- **`loaderData()` accessor** — per-render context primitive routes
+  - layouts read instead of positional-arg threading.
 
 If the time budget is tight: **promote ADR 0006 to Accepted**
-(one-line status change) or **pick a deferred follow-up from the
-smaller-items list below**.
+(one-line status change), **migrate the demo to use isomorphic
+`when` / `match` / `each` from ADR 0023** in a couple of small
+spots, or **pick a deferred follow-up from the smaller-items list
+below**.

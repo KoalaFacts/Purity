@@ -17,12 +17,12 @@
 //
 //   ✗ Async-aware route loading. This composer uses STATIC imports of
 //     every page module at the top of this file rather than the
-//     manifest's lazy `importFn()`. The reason: the user-land async
-//     composer (lazyResource + when over the resolved factory) hits
-//     two existing-API gaps — `when()`/`match()` are client-only
-//     (document.createComment) and `lazyResource()` does not yet
-//     register with the SSR multipass context. Both are the planned
-//     scope of the runtime ADR (`loaderData()` + `asyncRoute()`).
+//     manifest's lazy `importFn()`. The remaining blocker (after
+//     ADR 0023 made `when()`/`match()`/`each()` SSR-isomorphic):
+//     `lazyResource()` does not yet register with the SSR multipass
+//     context, so `lazyResource(loadStack).fetch(); when(stack.data, …)`
+//     ships the suspense fallback because no pending promise blocks
+//     the renderer between passes. Subject of the next ADR.
 //   ✗ Loader execution. The home page's `loader` export is detected
 //     by the plugin (verifiable by inspecting the generated
 //     `purity:routes` module) but this demo's composer does not call

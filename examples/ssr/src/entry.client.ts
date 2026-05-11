@@ -5,14 +5,14 @@
 //   - manageNavScroll (ADR 0015) — scroll to hash or top after navigate()
 //   - manageNavFocus (ADR 0016) — move focus into <main> after navigate()
 //   - manageNavTransitions (ADR 0017) — wrap navigate() in startViewTransition()
-//
-// All four enabled by default. Opt out per-helper via e.g.
-// `configureNavigation({ transitions: false })`, or pass per-helper options
-// via the same keys (e.g. `{ focus: { selector: 'main' } }`).
+//   - prefetchManifestLinks (ADR 0029) — hover-prefetch route modules.
+//     Pass the manifest's `routes` array via `prefetch: { routes }`; the
+//     consolidator wires the listener for you.
 
 import { configureNavigation, hydrate } from '@purityjs/core';
+import { routes } from 'purity:routes';
 import { App } from './app.ts';
 
 const root = document.getElementById('app');
 if (root) hydrate(root, App);
-configureNavigation();
+configureNavigation({ prefetch: { routes } });

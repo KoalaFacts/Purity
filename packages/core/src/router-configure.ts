@@ -6,9 +6,20 @@
 // ---------------------------------------------------------------------------
 
 import { interceptLinks, type InterceptLinksOptions } from './router-intercept.ts';
+import { prefetchManifestLinks, type PrefetchManifestLinksOptions } from './router-prefetch.ts';
 import { manageNavScroll, type ManageNavScrollOptions } from './router-scroll.ts';
 import { manageNavFocus, type ManageNavFocusOptions } from './router-focus.ts';
 import { manageNavTransitions, type ManageNavTransitionsOptions } from './router-transitions.ts';
+
+/** Prefetch sub-option for {@link ConfigureNavigationOptions}. */
+export interface ConfigureNavigationPrefetch extends PrefetchManifestLinksOptions {
+  /** Manifest routes — typically imported from `'purity:routes'`. */
+  routes: ReadonlyArray<{
+    pattern: string;
+    importFn: () => Promise<unknown>;
+    layouts: ReadonlyArray<{ importFn: () => Promise<unknown> }>;
+  }>;
+}
 
 /**
  * Options for {@link configureNavigation}. Each key controls one of the
@@ -28,6 +39,13 @@ export interface ConfigureNavigationOptions {
   focus?: ManageNavFocusOptions | boolean;
   /** Forwarded to {@link manageNavTransitions} (ADR 0017). */
   transitions?: ManageNavTransitionsOptions | boolean;
+  /**
+   * Forwarded to {@link prefetchManifestLinks} (ADR 0029). Pass
+   * `{ routes }` (plus optional `delay` / `shouldPrefetch`) to enable.
+   * `false` is the implicit default. `true` is rejected (no routes to
+   * prefetch).
+   */
+  prefetch?: ConfigureNavigationPrefetch | false;
 }
 
 function isEnabled(v: unknown): boolean {
@@ -77,6 +95,12 @@ export function configureNavigation(options: ConfigureNavigationOptions = {}): (
     teardowns.push(
       manageNavTransitions(optionsOf<ManageNavTransitionsOptions>(options.transitions)),
     );
+  }
+  // ADR 0029: opt-in by passing `{ prefetch: { routes } }`. Unlike the
+  // other keys, prefetch has no useful default — needs the manifest.
+  if (options.prefetch && options.prefetch !== false) {
+    const { routes, ...rest } = options.prefetch;
+    teardowns.push(prefetchManifestLinks(routes, rest));
   }
   return () => {
     for (const t of teardowns) t();

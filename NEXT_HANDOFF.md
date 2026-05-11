@@ -1,25 +1,28 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Thirty-two
-commits, twenty-two new ADRs (0007–0028), 934 tests passing** across
-the three publishable packages. Latest iteration shipped ADR 0028 —
-per-directory `_404.{ts,tsx,js,jsx}`. The manifest now emits a
-`notFoundChain: LayoutEntry[]` (deepest-first) collecting every `_404`
-file; `asyncNotFound` accepts the chain and walks by URL prefix to
-pick the nearest. Closes ADR 0021's deferred non-feature.
+pass starting from the SSR-MVP follow-up gap list. **Thirty-three
+commits, twenty-three new ADRs (0007–0029), 945 tests passing** across
+the three publishable packages. Latest iteration shipped ADR 0029 —
+`prefetchManifestLinks(routes, options?)`: a sister to
+`interceptLinks` that installs a delegated `mouseover` listener (plus
+`focusin` for keyboard users), debounces hover events, and fires
+`entry.importFn()` + every `entry.layouts[].importFn()` to warm the
+bundler module cache. By the time the click fires, asyncRoute's
+import resolves from cache — no JS roundtrip on slow networks.
 
-The example demonstrates: `pages/users/_404.ts` catches
-`/users/foo/bar`; `pages/_404.ts` catches `/missing` and falls
-through for `/administrator` (no false-positive prefix match).
+ADR 0027's `configureNavigation` consolidator gained a
+`prefetch: { routes }` option, so the canonical SPA boot sequence is
+now `hydrate(...); configureNavigation({ prefetch: { routes } });`.
+The example's `entry.client.ts` migrated.
 
 ## Test count by package (current)
 
 ```
-core         610 passing  (29 files)
+core         621 passing  (30 files)
 ssr          145 passing  (11 files)
 vite-plugin  179 passing  ( 9 files)
-total        934
+total        945
 ```
 
 ## ADRs accepted on this branch
@@ -53,6 +56,7 @@ rejected alternatives.
 | 0026 | [`loaderData()` context accessor](docs/decisions/0026-loader-data-accessor.md)                              | Component reads its own loader-data slot via `loaderData<T>()` (no positional arg). Stack-based; pushed/popped by `asyncRoute` per component.        |
 | 0027 | [`configureNavigation()` consolidator](docs/decisions/0027-configure-navigation.md)                         | Single `configureNavigation(options?)` enables interceptLinks + manageNavScroll + manageNavFocus + manageNavTransitions. Per-helper opt-out/options. |
 | 0028 | [Per-directory `_404.ts` — nested not-found chain](docs/decisions/0028-nested-404-chain.md)                 | Manifest emits `notFoundChain: LayoutEntry[]` (deepest-first); `asyncNotFound(chain)` walks by URL prefix and picks the nearest entry.               |
+| 0029 | [`prefetchManifestLinks()` — hover-prefetch route modules](docs/decisions/0029-hover-prefetch.md)           | Delegated `mouseover`/`focusin` listener warms the bundler chunk cache on link hover. Composes with `configureNavigation({ prefetch: { routes } })`. |
 
 All ADRs on this branch are `Status: Accepted` (ADR 0006 was promoted
 from `Proposed` in this iteration's housekeeping pass).
@@ -66,7 +70,7 @@ from `Proposed` in this iteration's housekeeping pass).
 - **Head**: `head` (ADR 0008).
 - **Request**: `getRequest` (ADR 0009).
 - **Router**: `currentHash`, `currentPath`, `currentSearch`, `matchRoute`, `navigate`, `onNavigate`, plus the `NavigateListener` / `NavigateOptions` / `RouteMatch` types (ADRs 0011 + 0014 + 0015).
-- **Router opt-ins**: `interceptLinks`, `manageNavFocus`, `manageNavScroll`, `manageNavTransitions`, `configureNavigation`, plus `*Options` types (ADRs 0013 + 0015 + 0016 + 0017 + 0027).
+- **Router opt-ins**: `interceptLinks`, `manageNavFocus`, `manageNavScroll`, `manageNavTransitions`, `configureNavigation`, `prefetchManifestLinks`, plus `*Options` types (ADRs 0013 + 0015 + 0016 + 0017 + 0027 + 0029).
 - **Server actions**: `serverAction`, `findAction`, `handleAction`, plus `ServerAction` / `ServerActionHandler` types (ADR 0012).
 - **Async-route composer**: `asyncRoute`, `asyncNotFound`, plus `AsyncRouteEntry` / `AsyncNotFoundEntry` / `AsyncRouteOptions` / `LoaderContext` types (ADR 0025).
 - **Loader data**: `loaderData<T>()` accessor (ADR 0026).
@@ -228,9 +232,8 @@ user interaction needs event replay; a strictly larger problem.
 
 ## Recommended next sprint
 
-Path K closed the per-directory `_404` item from the smaller-items
-list this iteration. Three meaningful items remain on the high-
-leverage list:
+This iteration shipped hover-prefetch (ADR 0029) from the
+remaining Path K list. Three items left:
 
 **Path H — streaming-SSR adapter migration to the manifest.**
 ADR 0006's adapter examples (`ssr-stream-cf-workers/`,
@@ -248,15 +251,14 @@ shape so `tsc` / IDEs can introspect it. Pairs naturally with
 typed `RouteParams<'/users/:id'>` template-literal inference. Apps
 that import from `purity:routes` get strongly typed entries.
 
-**Path K (remainder) — smaller-items follow-ups.** Each is a
-one-iteration item:
+**Path K (remainder) — smaller-items follow-ups.** Two items left:
 
 - Smart `serverAction()` body-only stripping (ADR 0018) — strip
-  handler bodies without renaming files to `*.server.ts`.
-- Hover-prefetch on links (ADRs 0013 + 0019) — `interceptLinks`
-  option (or sibling helper) to fire `entry.importFn()` on hover.
-- `<title>` synchronisation helper (ADR 0016) — reactive title
-  beyond `head()`'s static capture.
+  handler bodies without renaming files to `*.server.ts`. Needs
+  an AST parser pass.
+- `<title>` synchronisation helper (ADR 0008/0016) — a reactive
+  client-side helper for keeping `<title>` in sync with a signal.
+  `head()` is SSR-only today.
 
 Path H is the right pick if you want to validate the streaming
 pipeline against the manifest. Path J is the larger build-time-

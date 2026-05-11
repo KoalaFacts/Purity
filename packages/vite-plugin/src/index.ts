@@ -331,10 +331,22 @@ function listRouteFiles(dir: string): string[] {
 // optionally followed by Vite's query string (`?…`) so stripped modules also
 // work when Vite tags imports with `?import` / `?worker` / etc. Hidden /
 // dotfile-prefixed names match too. ADR 0018.
-const SERVER_MODULE_RE = /\.server\.(?:ts|js|tsx|jsx)(?:\?.*)?$/;
+//
+// Implemented with string indexOf + endsWith instead of a regex with
+// alternation. CodeQL flagged the earlier regex as `js/polynomial-redos`
+// because `tsx` and `ts` (and `jsx`/`js`) share prefixes, which makes the
+// matcher backtrack on long inputs ending with mismatched chars. Plain
+// suffix checks are linear and bounded.
+const SERVER_SUFFIXES = ['.server.ts', '.server.tsx', '.server.js', '.server.jsx'] as const;
 
 function isServerOnlyId(id: string): boolean {
-  return SERVER_MODULE_RE.test(id);
+  // Strip the optional `?query` so the suffix check sees the bare module path.
+  const q = id.indexOf('?');
+  const base = q === -1 ? id : id.slice(0, q);
+  for (let i = 0; i < SERVER_SUFFIXES.length; i++) {
+    if (base.endsWith(SERVER_SUFFIXES[i])) return true;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------

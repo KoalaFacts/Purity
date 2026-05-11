@@ -458,6 +458,31 @@ export function buildRouteManifest(
 }
 
 /**
+ * Manifest-source codegen safety contract — relevant for the
+ * `js/code-injection` finding GitHub Advanced Security raises on the
+ * string templates below.
+ *
+ * Every value spliced into the generated JS source goes through
+ * `JSON.stringify`. That's a complete sanitizer for the
+ * "embed-as-double-quoted-string-literal" context: any character —
+ * including quotes, backslashes, newlines, control chars, lone
+ * surrogates — is encoded into a sequence that's safe inside a JS
+ * string literal. The string-template positions (`${fp}`, `${abs}`,
+ * `${pattern}`, `${filePath}`) all surround `JSON.stringify` output,
+ * so the values can't escape the literal.
+ *
+ * Inputs come from the filesystem walk (`listRouteFiles`) plus the
+ * filename → pattern conversion (`filenameToPattern`) — deterministic
+ * helpers that work on names a developer chose. Even an adversarially-
+ * named file can only flow into the manifest as a fully-escaped JSON
+ * string literal.
+ *
+ * CodeQL's data-flow analysis treats `JSON.stringify` as a sanitizer
+ * for some rules; this one trips it anyway. The inline directives on
+ * the affected lines document the audit.
+ */
+
+/**
  * Codegen for the virtual `purity:routes` module. Emits an array of
  * `RouteEntry` literals; each entry's `importFn` is a static
  * `() => import('<absPath>')` so Vite / Rollup code-split per route.
@@ -477,6 +502,7 @@ function entryLiteral(e: LayoutEntry, absPathFor: (filePath: string) => string):
   const abs = JSON.stringify(absPathFor(e.filePath));
   const loaderPart = e.hasLoader ? ', hasLoader: true' : '';
   const dirPart = e.dir !== undefined ? `, dir: ${JSON.stringify(e.dir)}` : '';
+  // codeql[js/code-injection]
   return `{ filePath: ${fp}, importFn: () => import(${abs})${loaderPart}${dirPart} }`;
 }
 
@@ -497,6 +523,7 @@ export function generateRouteManifestSource(
       ? `, errorBoundary: ${entryLiteral(e.errorBoundary, absPathFor)}`
       : '';
     const loaderPart = e.hasLoader ? ', hasLoader: true' : '';
+    // codeql[js/code-injection]
     lines.push(
       `  { pattern: ${pattern}, filePath: ${filePath}, importFn: () => import(${abs}), layouts: [${layouts}]${errorPart}${loaderPart} },`,
     );

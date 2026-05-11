@@ -284,13 +284,14 @@ export function generateHydrate(ast: FragmentNode): string {
   }
   body += 'return _r;';
 
-  // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
   // All identifiers spliced into `body` are framework-internal counters
   // (_c0, _el<id>, _open<id>, …) or have been validated/JSON.stringify'd by
   // the genAttrBinding / inline emitters used here. `_i` is the runtime
   // inflateDeferred helper, `_c` the optional cursor-check fn, `_e` the
   // inflateDeferredEach helper, and `_m` the inflateDeferredMatch helper —
-  // all threaded through by compile.ts.
+  // all threaded through by compile.ts. See "Codegen safety contract"
+  // near SAFE_NAME for the full audit.
+  // codeql[js/code-injection]
   return `function(_v,_w,_r,_i,_c,_e,_m){${body}}`;
 }
 

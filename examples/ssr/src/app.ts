@@ -1,75 +1,122 @@
-// File-system-routing demo (ADRs 0019-0022). Consumes the virtual
-// `purity:routes` manifest emitted by `@purityjs/vite-plugin`.
+// File-system-routing demo. The plugin scans `src/pages/` (configured in
+// vite.config.ts) and emits a virtual `purity:routes` module that this file
+// consumes. End-to-end exercise of ADRs 0019-0024:
 //
-// What this demo exercises and what it intentionally does NOT:
-//
-//   ✓ Pattern matching driven by manifest filenames (ADR 0019)
-//     — `pages/index.ts`, `pages/about.ts`, `pages/users/[id].ts`,
-//       `pages/_404.ts`.
-//   ✓ Layout chain (ADR 0020) — the root `pages/_layout.ts` wraps every
-//     route via the user-land reduceRight pattern below.
-//   ✓ Error boundary identification (ADR 0021) — the manifest reports
-//     each route's nearest `_error.ts`; the dispatcher catches throws
-//     and renders it.
-//   ✓ Loader detection (ADR 0022) — `pages/index.ts` declares an
-//     `export const loader` so the manifest's `hasLoader: true` lights
-//     up. (See note below on the runtime gap.)
-//
-//   ✗ Async-aware route loading. This composer uses STATIC imports of
-//     every page module at the top of this file rather than the
-//     manifest's lazy `importFn()`. The remaining blocker (after
-//     ADR 0023 made `when()`/`match()`/`each()` SSR-isomorphic):
-//     `lazyResource()` does not yet register with the SSR multipass
-//     context, so `lazyResource(loadStack).fetch(); when(stack.data, …)`
-//     ships the suspense fallback because no pending promise blocks
-//     the renderer between passes. Subject of the next ADR.
-//   ✗ Loader execution. The home page's `loader` export is detected
-//     by the plugin (verifiable by inspecting the generated
-//     `purity:routes` module) but this demo's composer does not call
-//     it; the home page reads its data via the existing `resource()`
-//     primitive instead. Wiring loader-data into the component is
-//     the ergonomic pain point the next ADR closes.
-import { currentPath, matchRoute } from '@purityjs/core';
-import { routes } from 'purity:routes';
+//   - ADR 0019 — pattern matching from the manifest's `pattern` field.
+//   - ADR 0020 — layout chain in `entry.layouts` wrapped via reduceRight.
+//   - ADR 0021 — `entry.errorBoundary` rendered on load failure; manifest
+//     `notFound` rendered when no route matches.
+//   - ADR 0022 — `entry.hasLoader` / `layout.hasLoader` flags drive loader
+//     calls; resolved data threads into the component as the second
+//     positional arg.
+//   - ADR 0023 — `when()` / `suspense()` here are SSR-isomorphic.
+//   - ADR 0024 — `lazyResource(..., { key })` registers its pending promise
+//     with the SSR multipass context so the renderer awaits the route
+//     module + loader resolution before pass 2.
 
-// Static imports — see the note above. Once the async composer ships,
-// this whole block goes away in favour of the manifest's `importFn()`.
-import RootLayout from './pages/_layout.ts';
-import HomePage from './pages/index.ts';
-import AboutPage from './pages/about.ts';
-import UserProfilePage from './pages/users/[id].ts';
-import NotFoundPage from './pages/_404.ts';
-import RootError from './pages/_error.ts';
+import { html, lazyResource, matchRoute, when } from '@purityjs/core';
+import { notFound, type RouteEntry, routes } from 'purity:routes';
 
-const routeViews: Record<string, (params: Record<string, string>) => unknown> = {
-  'index.ts': (p) => HomePage(p, { todos: [] }),
-  'about.ts': () => AboutPage(),
-  'users/[id].ts': (p) => UserProfilePage(p as { id: string }),
-};
+interface LoaderContext {
+  request: Request;
+  params: Record<string, string>;
+  signal: AbortSignal;
+}
 
-const layoutViews: Record<string, (children: () => unknown) => unknown> = {
-  '_layout.ts': (children) => RootLayout(children),
-};
+type ViewFactory = () => unknown;
 
-function renderEntry(entry: (typeof routes)[number], params: Record<string, string>): unknown {
+async function callLoader(
+  mod: { loader?: (ctx: LoaderContext) => unknown },
+  ctx: LoaderContext,
+): Promise<unknown> {
+  if (typeof mod.loader !== 'function') return undefined;
+  return await mod.loader(ctx);
+}
+
+async function loadStack(entry: RouteEntry, params: Record<string, string>): Promise<ViewFactory> {
+  const ctx: LoaderContext = {
+    request: new Request('http://localhost' + (params._path ?? '/')),
+    params,
+    signal: new AbortController().signal,
+  };
+
   try {
-    let view = (): unknown => {
-      const fn = routeViews[entry.filePath];
-      if (!fn) throw new Error(`no static binding for ${entry.filePath}`);
-      return fn(params);
+    // Parallel import: the route module + every layout module.
+    type AnyMod = {
+      default: (...args: unknown[]) => unknown;
+      loader?: (ctx: LoaderContext) => unknown;
     };
-    for (let i = entry.layouts.length - 1; i >= 0; i--) {
-      const layoutFile = entry.layouts[i].filePath;
-      const layout = layoutViews[layoutFile];
-      if (!layout) throw new Error(`no static binding for layout ${layoutFile}`);
-      const inner = view;
-      view = (): unknown => layout(inner);
-    }
-    return view();
+    const [routeMod, ...layoutMods] = (await Promise.all([
+      entry.importFn(),
+      ...entry.layouts.map((l) => l.importFn()),
+    ])) as [AnyMod, ...AnyMod[]];
+
+    // Loader calls. Routes + layouts that exported a `loader` get a chance
+    // to fetch their server data before the view runs.
+    const [routeData, ...layoutsData] = await Promise.all([
+      entry.hasLoader ? callLoader(routeMod, ctx) : Promise.resolve(undefined),
+      ...entry.layouts.map((l, i) =>
+        l.hasLoader ? callLoader(layoutMods[i], ctx) : Promise.resolve(undefined),
+      ),
+    ]);
+
+    // reduceRight wraps layouts around the inner route view, leaf → root.
+    return (): unknown => {
+      let view: ViewFactory = () => routeMod.default(params, routeData);
+      for (let i = layoutMods.length - 1; i >= 0; i--) {
+        const layout = layoutMods[i];
+        const data = layoutsData[i];
+        const inner = view;
+        view = () => layout.default(inner, data);
+      }
+      return view();
+    };
   } catch (err) {
-    if (entry.errorBoundary) return RootError(err);
+    // Route-level error boundary (ADR 0021). Load it on demand — most
+    // routes never error so paying the import cost up front would be
+    // wasteful. The boundary itself shouldn't throw, so we let any
+    // failure here bubble to the consumer's fallback.
+    if (entry.errorBoundary) {
+      const errMod = (await entry.errorBoundary.importFn()) as { default: (e: unknown) => unknown };
+      return () => errMod.default(err);
+    }
     throw err;
   }
+}
+
+function renderEntry(entry: RouteEntry, params: Record<string, string>): unknown {
+  // The key threads through ADR 0024's SSR multipass cache. Same key on
+  // every render of the same route lets pass 2 read the resolved view
+  // factory without re-running loadStack — the underlying resource()
+  // surfaces the cached value on pass 2 automatically.
+  const stack = lazyResource(() => loadStack(entry, params), {
+    key: `route:${entry.pattern}`,
+  });
+  stack.fetch();
+  // when() / each() / match() are ADR-0023 isomorphic — this same call
+  // emits SSR HTML on the server and reactive DOM on the client.
+  return when(
+    () => stack() !== undefined,
+    () => (stack() as ViewFactory)(),
+    () => html`<p class="loading">loading…</p>`,
+  );
+}
+
+function renderNotFound(): unknown {
+  if (!notFound) return html`<h1>404</h1>`;
+  const r = lazyResource(
+    async () => {
+      const mod = (await notFound.importFn()) as { default: () => unknown };
+      return mod.default;
+    },
+    { key: 'notFound' },
+  );
+  r.fetch();
+  return when(
+    () => r() !== undefined,
+    () => (r() as () => unknown)(),
+    () => html`<p class="loading">loading…</p>`,
+  );
 }
 
 export function App(): unknown {
@@ -77,12 +124,5 @@ export function App(): unknown {
     const m = matchRoute(entry.pattern);
     if (m) return renderEntry(entry, m.params);
   }
-  // No matching route — render the manifest's notFound page wrapped in the
-  // root layout so users still see the chrome.
-  return RootLayout(() => NotFoundPage());
+  return renderNotFound();
 }
-
-// Avoid unused-import warnings — currentPath is exported by the framework
-// for app code that wants the SPA-friendly accessor; the dispatcher above
-// reaches it via matchRoute() instead.
-void currentPath;

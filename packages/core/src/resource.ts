@@ -507,7 +507,59 @@ export function lazyResource<T, A = void>(
     (wrapped, info) => fetcher(wrapped.value, info),
     options,
   ) as LazyResourceAccessor<T, A>;
+  const userKey = options?.key;
   r.fetch = (a: A) => {
+    // SSR multipass registration (ADR 0024). When `.fetch()` runs inside a
+    // server render pass, the argsState/watch plumbing fires too late —
+    // the renderer awaits `pendingPromises` and returns before the queued
+    // microtask runs the underlying resource()'s fetch. Bypass argsState
+    // entirely on the server: fire the fetcher synchronously, push the
+    // promise onto `ssrCtx.pendingPromises`, and cache the resolved value
+    // in `ssrCtx.resolvedDataByKey` keyed by the user-supplied `key`.
+    //
+    // Requires `key` — positional indices collide with the inner
+    // resource()'s own counter slot. Without a key the SSR pass falls
+    // through to the client-only argsState path (i.e. the existing
+    // broken-on-server behavior); apps that want SSR support opt in via
+    // the key option.
+    const ssrCtx = getSSRRenderContext();
+    if (ssrCtx && userKey !== undefined) {
+      if (userKey in ssrCtx.resolvedDataByKey) {
+        // Pass 2 — cached value lives on the SSR context across passes.
+        // Surface via mutate() so the synchronous render sees the
+        // resolved data. Re-throw a cached error so the consumer's
+        // try/catch around loadStack triggers the error boundary
+        // (matches how `resource()`'s pass-2 error surfacing works on
+        // its own `error()` accessor).
+        const cachedErr = ssrCtx.resolvedErrorsByKey[userKey];
+        if (cachedErr !== undefined) throw cachedErr;
+        r.mutate(ssrCtx.resolvedDataByKey[userKey] as T);
+        return;
+      }
+      // Pass 1 — fire the fetcher and register the promise with the
+      // SSR multipass cycle. The AbortController's signal is included
+      // for signature parity with the client path; SSR never aborts
+      // mid-render.
+      const ac = new AbortController();
+      const result = fetcher(a, { signal: ac.signal });
+      const promise = Promise.resolve(result).then(
+        (value) => {
+          ssrCtx.resolvedDataByKey[userKey] = value;
+          ssrCtx.resolvedErrorsByKey[userKey] = undefined;
+        },
+        (err) => {
+          // Mirror resource()'s `resolvedDataByKey[key] = undefined` on
+          // rejection so the slot is occupied; persist the error
+          // separately for pass 2 to throw.
+          ssrCtx.resolvedDataByKey[userKey] = undefined;
+          ssrCtx.resolvedErrorsByKey[userKey] = err;
+        },
+      );
+      ssrCtx.pendingPromises.push(promise);
+      // Don't set argsState — the client-side watch path is moot during
+      // SSR and writing to the signal here just queues a no-op microtask.
+      return;
+    }
     argsState({ value: a });
   };
   return r;

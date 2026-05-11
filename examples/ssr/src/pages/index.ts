@@ -1,16 +1,15 @@
-// Home page. Demonstrates two ADR-0022 details:
+// Home page. Demonstrates ADRs 0022 + 0024:
 //
-//   - The `loader` named export below is detected by `@purityjs/vite-plugin`
-//     and the manifest entry for this route gets `hasLoader: true`. You can
-//     verify by inspecting the generated `purity:routes` virtual module.
-//
-//   - The component itself does NOT use the loader's data in this demo
-//     because the user-land async composer is gated on the runtime ADR
-//     (`asyncRoute()` / `loaderData()`). The component falls back to the
-//     existing `resource()` + `suspense()` primitives that already
-//     register correctly with the SSR multipass context.
+//   - `loader` named export is detected by the plugin (hasLoader: true on
+//     the manifest entry).
+//   - The composer in src/app.ts awaits the loader's result and threads it
+//     into the component as the second positional arg.
+//   - ADR 0024's SSR-aware lazyResource is what lets the renderer await
+//     the route module + loader resolution before pass 2 — that's why the
+//     SSR HTML ships with `data.todos` already rendered, not the
+//     suspense fallback.
 
-import { component, eachSSR, head, html, resource, suspense } from '@purityjs/core';
+import { component, each, head, html } from '@purityjs/core';
 
 component<{ count: number }>('demo-counter', ({ count }) => {
   return html`
@@ -22,38 +21,31 @@ component<{ count: number }>('demo-counter', ({ count }) => {
 });
 
 export async function loader(): Promise<{ todos: string[] }> {
+  // Simulate a slow server-side fetch — the renderer awaits this before
+  // pass 2 (ADR 0024), so the SSR HTML ships with the data inlined.
   await new Promise((r) => setTimeout(r, 30));
   return { todos: ['Write tests', 'Ship SSR', 'Celebrate'] };
 }
 
-export default function HomePage(_params: Record<string, string>, _data: unknown): unknown {
+interface HomeData {
+  todos: string[];
+}
+
+export default function HomePage(_params: Record<string, string>, data: HomeData): unknown {
   head(html`<title>Purity SSR demo — home</title>`);
   head(html`<meta name="description" content="Reactive SSR with streaming." />`);
 
+  // `each()` is ADR-0023 isomorphic — the same call works in SSR (emits
+  // the per-row marker grammar) and on the client (builds the DOM).
   return html`
     <h1>Hello from /</h1>
     <demo-counter :count=${42}></demo-counter>
-    ${suspense(
-      () => {
-        const todos = resource(
-          () =>
-            new Promise<string[]>((r) =>
-              setTimeout(() => r(['Write tests', 'Ship SSR', 'Celebrate']), 30),
-            ),
-          { initialValue: [], key: 'todos' },
-        );
-        return html`
-          <h2>Todos (via resource — runtime composer ships in next ADR)</h2>
-          <ul>
-            ${eachSSR(
-              () => todos() ?? [],
-              (item) => html`<li>${() => item()}</li>`,
-            )}
-          </ul>
-        `;
-      },
-      () => html`<p class="loading">loading todos…</p>`,
-      { timeout: 5000 },
-    )}
+    <h2>Todos (loaded via ADR 0022's loader)</h2>
+    <ul>
+      ${each(
+        () => data.todos,
+        (item) => html`<li>${() => item()}</li>`,
+      )}
+    </ul>
   `;
 }

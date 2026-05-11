@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "dev": "deno run --allow-net serve.ts"
+    "dev": "deno run --allow-net dist/serve.js"
   },
   "compilerOptions": {
     "lib": ["deno.window", "DOM"],

@@ -2,5 +2,19 @@
   "name": "purity-ssr-stream-deno",
   "version": "0.0.0",
   "private": true,
-  "description": "Reference: serve.ts runs under Deno (`deno run --allow-net serve.ts`). No npm dependencies — the example uses Deno's `npm:` specifier to fetch @purityjs packages directly. This file exists only so the monorepo's `examples/*` workspaces glob recognises the directory."
+  "type": "module",
+  "description": "Vite SSR-builds `src/serve.ts` to `dist/serve.js`; Deno runs the built artefact via `deno run --allow-net dist/serve.js`. The Vite build is needed to AOT-compile every `html\\`\\`` template into a string-builder factory (Deno has no `document`).",
+  "scripts": {
+    "build": "NODE_OPTIONS='--conditions=development' vite build --logLevel info",
+    "dev": "npm run build && deno run --allow-net dist/serve.js",
+    "deploy": "echo 'Push dist/serve.js (built via npm run build) to Deno Deploy.'"
+  },
+  "dependencies": {
+    "@purityjs/core": "*",
+    "@purityjs/ssr": "*"
+  },
+  "devDependencies": {
+    "@purityjs/vite-plugin": "*",
+    "vite": "^8.0.10"
+  }
 }

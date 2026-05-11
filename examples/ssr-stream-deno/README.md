@@ -1,53 +1,74 @@
 # purity-ssr-stream-deno
 
-Streaming SSR on **Deno**, using `@purityjs/ssr`'s `renderToStream`
-directly with `Deno.serve`. ADR 0006 Phase 4.
+Streaming SSR on **Deno**, driven by Purity's file-system route
+manifest. ADR 0006 Phase 4 + ADRs 0019-0033.
 
 The handler returns a `ReadableStream<Uint8Array>` that flushes the
 page shell immediately, then streams each `suspense()` boundary's
-resolved HTML as a separate chunk.
+resolved HTML as a separate chunk. `App` is a manifest-driven
+composer (`asyncRoute` + `asyncNotFound`, identical shape to the
+cf-workers + Vercel Edge examples).
 
-## Run
+## Architecture
+
+Deno has no `document`, so the runtime `html\`\`` tag from
+`@purityjs/core` (which builds DOM nodes on first call) can't run
+unmodified. We use Vite to SSR-build `src/serve.ts` into
+`dist/serve.js` — that pass AOT-compiles every `html\`\`` into a
+string-builder factory. Deno then runs `dist/serve.js` directly with
+no further dependencies.
 
 ```bash
-deno run --allow-net --allow-read serve.ts
+npm install
+npm run build    # vite build → dist/serve.js + manifest emit (ADR 0033)
+npm run dev      # build + deno run --allow-net dist/serve.js
 # → http://localhost:8000
 ```
 
-Deno 1.40+. `--allow-net` is for the listening socket; `--allow-read`
-is only required if your `suspense()` views read files (the bare demo
-in `serve.ts` doesn't).
+Deno 1.40+. `--allow-net` is for the listening socket.
 
-If you have not installed the packages via Deno's npm specifiers
-locally, the imports use `npm:@purityjs/core` and `npm:@purityjs/ssr`
-which Deno resolves on first run.
+`src/.purity/routes.ts` and `dist/` are gitignored (per-machine
+absolute paths + build artefacts).
 
-## What to look at
+## Files
 
-- `serve.ts` — the entire example. ~50 lines. Demonstrates:
-  - `Deno.serve(handler)` — the platform's HTTP entry.
-  - `renderToStream(App, { signal: req.signal })` — wired directly to
-    the request's abort signal so a disconnect cancels the renderer.
-  - A `suspense()` boundary with a slow keyed `resource()` so the
-    streaming wire format is visible end-to-end.
+```
+src/
+  pages/
+    _layout.ts      — root layout (page shell, ADR 0020)
+    _404.ts         — root not-found page (ADRs 0021 + 0028)
+    index.ts        — /
+    stream.ts       — /stream — exercises suspense() + resource()
+  app.ts            — asyncRoute / asyncNotFound composer
+  serve.ts          — `Deno.serve(...)` entry — calls renderToStream
+  .purity/
+    routes.ts       — emitted manifest (gitignored)
+dist/
+  serve.js          — built artefact (gitignored)
+vite.config.ts      — wires the plugin + SSR build mode for the Deno entry
+deno.json           — Deno runtime config — `deno task dev` runs the built file
+```
 
 ## Curl the streaming output
 
 ```bash
-curl --no-buffer http://localhost:8000
+curl --no-buffer http://localhost:8000/stream
 ```
 
 `--no-buffer` disables curl's output buffering so you see the shell
-arrive before the resolved chunk.
+arrive before the resolved chunk (~150 ms later).
+
+## Deno Deploy
+
+Push `dist/serve.js` after running `npm run build`. Deno Deploy's
+runtime is the same Deno that runs the file locally — no adapter
+code changes needed.
 
 ## CSP
 
-Same pattern as the Workers / Vercel Edge examples — generate a nonce
-per request, pass it through, set the header:
-
 ```ts
 const nonce = crypto.randomUUID().replaceAll('-', '');
-const stream = renderToStream(App, { nonce });
+const stream = renderToStream(App, { nonce, request: req, signal: req.signal });
 return new Response(stream, {
   headers: {
     'content-type': 'text/html; charset=utf-8',
@@ -56,7 +77,4 @@ return new Response(stream, {
 });
 ```
 
-## Deno Deploy
-
-The same `serve.ts` runs on Deno Deploy without changes. Push the
-single file as the entry; Deploy uses the standard Deno runtime.
+The nonce is applied to every inline `<script>` Purity emits.

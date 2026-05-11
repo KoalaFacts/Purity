@@ -1,12 +1,15 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Thirty-eight
+pass starting from the SSR-MVP follow-up gap list. **Thirty-nine
 commits, twenty-seven new ADRs (0007–0033), 976 tests passing** across
-the three publishable packages. Latest iteration shipped ADR 0033
-(`buildStart` eager manifest emit + Path H streaming-SSR adapter
-migration) and a follow-up parser bug fix that unblocked the
-cf-workers SSR build end-to-end.
+the three publishable packages. Latest iteration completed **Path H''**
+— ported the manifest + `asyncRoute()` pattern to the remaining two
+streaming-SSR adapter examples (`ssr-stream-vercel-edge/`,
+`ssr-stream-deno/`). All three adapters now build, stream, and pass
+the same smoke-test pattern: GET `/` ships the home shell in one
+chunk; GET `/stream` ships shell + boundary-resolved chunk 152ms
+apart; GET `/missing` ships the 404 page via `notFoundChain`.
 
 **ADR 0033 — eager-emit.** ADR 0032's `emitTo` only fires when the
 virtual `purity:routes` module is `load()`'d. Consumers that bundle
@@ -269,46 +272,37 @@ user interaction needs event replay; a strictly larger problem.
 
 ## Recommended next sprint
 
-Path H is now provably end-to-end on Cloudflare Workers — the parser
-fix unblocked the SSR build, and the smoke test confirms streaming +
-manifest + asyncRoute + lazyResource all work. Three items remain on
-the high-leverage list.
-
-**Path H'' — port the manifest pattern to the other two adapter
-examples.** `ssr-stream-vercel-edge/` and `ssr-stream-deno/` predate
-the manifest + `asyncRoute()`. Copy the cf-workers pattern over —
-identical `src/pages/`, `app.ts`, `vite.config.ts` (with whatever
-adapter-specific entry-shape tweaks each runtime needs). Each
-adapter has its own deploy harness (Vercel CLI, `deno deploy`) —
-smoke-test each by building and invoking the entry's fetch handler
-against synthetic Requests, same pattern as the cf-workers smoke
-test in this iteration. Each port is ~30 minutes of mechanical
-work; together they prove the manifest pattern is genuinely
-runtime-agnostic.
+Path H, H', H'' are all done — the three streaming-SSR adapter
+examples (`ssr-stream-cf-workers/`, `ssr-stream-vercel-edge/`,
+`ssr-stream-deno/`) all build, stream, and dispatch routes via the
+manifest. The "deploy anywhere with a Web Standards fetch handler"
+story is now a real demo matrix. Two strategically valuable items
+left:
 
 **Path L — typed loader data threaded through the manifest.** ADR
-0031 shipped `RouteParams<P>` (template-literal-derived params).
-The parallel piece is typed loader data: the plugin scans each
-route module's `loader` export, captures its return type, and emits
-a `loaderData<P>(): InferredType` helper that's strongly typed per
-route. This would close out the ADR-0026 deferred work
-("user supplies type via generic" → "inferred from the route's
-loader signature"). Cost: a TypeScript-aware analysis pass during
-the manifest emit, plus codegen for typed helpers. Probably a half
-day; depends on whether the plugin grows a TS-parser dep or
-unrolls a regex/simple-AST approach.
+0031 shipped `RouteParams<P>` (template-literal-derived params). The
+parallel piece is typed loader data: the plugin scans each route
+module's `loader` export, captures its return type, and emits a
+`loaderData<P>(): InferredType` helper that's strongly typed per
+route. This would close out the ADR-0026 deferred work ("user
+supplies type via generic" → "inferred from the route's loader
+signature"). Cost: a TypeScript-aware analysis pass during the
+manifest emit, plus codegen for typed helpers. Half day-ish;
+depends on whether the plugin grows a TS-parser dep or unrolls a
+regex/simple-AST approach.
 
 **Path K (remainder) — one item left.**
 
 - Smart `serverAction()` body-only stripping (ADR 0018) — strip
-  handler bodies without renaming files to `*.server.ts`. Needs
-  an AST parser pass to find `serverAction(url, fn)` calls and
-  replace the handler arg with a stub in client builds. ~half a
-  day; depends on adding a minimal JS parser dep or carving out
-  esbuild's parse pass.
+  handler bodies without renaming files to `*.server.ts`. Needs an
+  AST parser pass to find `serverAction(url, fn)` calls and replace
+  the handler arg with a stub in client builds. Half day-ish;
+  depends on adding a minimal JS parser dep or carving out esbuild's
+  parse pass.
 
-H'' is the most strategically valuable — once the three adapter
-examples all build and stream end-to-end, Purity's "deploy anywhere
-with a Web Standards fetch handler" story becomes a real demo
-matrix instead of an aspiration. L and K are parser-shaped
-follow-ons; pick H'' first.
+Both are parser-shaped follow-ons of similar size. Path L closes a
+typing loop that maps directly to user-visible IDE behaviour (jump-
+to-def + autocomplete on `loaderData()`); Path K closes a
+security/payload story (handler bodies leaving the client bundle).
+Pick whichever the time budget fits — L is slightly higher-leverage
+for the typing story, K for production-readiness.

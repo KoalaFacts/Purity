@@ -1,0 +1,6 @@
+# Vite output
+node_modules/
+dist/
+
+# Plugin-emitted manifest (ADRs 0032 + 0033). Per-machine absolute paths.
+src/.purity/

@@ -4,14 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vercel dev",
-    "deploy": "vercel deploy --prod"
+    "build": "NODE_OPTIONS='--conditions=development' vite build --logLevel info",
+    "dev": "npm run build && vercel dev",
+    "deploy": "npm run build && vercel deploy --prod"
   },
   "dependencies": {
     "@purityjs/core": "*",
     "@purityjs/ssr": "*"
   },
   "devDependencies": {
-    "vercel": "^34.0.0"
+    "@purityjs/vite-plugin": "*",
+    "vercel": "^34.0.0",
+    "vite": "^8.0.10"
   }
 }

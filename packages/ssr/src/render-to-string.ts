@@ -177,15 +177,15 @@ export async function renderToString(
     const boundaryWaitMs = nearestId >= 0 ? Math.max(0, nearestDeadline - now) : Infinity;
     const waitMs = Math.min(remaining, boundaryWaitMs);
 
-    let raceResult: 'settled' | 'boundary' | 'global' = 'settled';
-    await Promise.race([
-      Promise.all(ctx.pendingPromises).then(() => {
-        raceResult = 'settled';
-      }),
-      new Promise<void>((resolve) => {
+    // Each race branch resolves with its own discriminator so the winning
+    // value is captured by the await. Mutating a shared `let` from inside
+    // the inner promises bypasses TS's flow narrowing across the await.
+    type RaceResult = 'settled' | 'boundary' | 'global';
+    const raceResult: RaceResult = await Promise.race<RaceResult>([
+      Promise.all(ctx.pendingPromises).then(() => 'settled' as const),
+      new Promise<RaceResult>((resolve) => {
         setTimeout(() => {
-          raceResult = waitMs >= remaining ? 'global' : 'boundary';
-          resolve();
+          resolve(waitMs >= remaining ? 'global' : 'boundary');
         }, waitMs);
       }),
     ]);

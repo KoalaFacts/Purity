@@ -13,11 +13,17 @@
 // ---------------------------------------------------------------------------
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { posix, resolve as resolvePath } from 'node:path';
+import { dirname, posix, resolve as resolvePath } from 'node:path';
 
 import { generate, generateSSR, parse } from '@purityjs/core/compiler';
 
-import { attachLoaderInfo, buildRouteManifest, generateRouteManifestSource } from './routes.ts';
+import {
+  attachLoaderInfo,
+  buildRouteManifest,
+  generateRouteManifestSource,
+  generateRouteManifestTypes,
+} from './routes.ts';
+import { stripServerActionBodies } from './server-action-strip.ts';
 
 /**
  * File-system routing options. ADR 0019.
@@ -67,6 +73,16 @@ export interface PurityPluginOptions {
    */
   stripServerModules?: boolean;
   /**
+   * Strip the inline handler body of `serverAction(url, handler)` calls
+   * in client builds (ADR 0035). `.url` and `.invoke()` survive; the
+   * handler body and its server-only imports are dropped via tree-shaking.
+   * Server-side builds pass through unchanged. Defense-in-depth on top
+   * of the `*.server.ts` filename convention (ADR 0018) for files that
+   * mix server-action registration with client-bundled code. Default
+   * `true` — opt out with `false`.
+   */
+  stripServerActions?: boolean;
+  /**
    * Enable file-system routing (ADR 0019). Pass `true` for the default
    * `pages/` directory at the project root, or `{ dir, extensions?,
    * virtualId? }` to customize. When set, the plugin exposes a virtual
@@ -114,6 +130,7 @@ export interface PuritySourceMap {
 export function purity(options?: PurityPluginOptions) {
   const extensions = options?.include ?? ['.ts', '.js', '.tsx', '.jsx'];
   const stripServerModules = options?.stripServerModules !== false;
+  const stripServerActions = options?.stripServerActions !== false;
 
   const routesOpts = normaliseRoutesOption(options?.routes);
   // Resolved at configResolved time once Vite tells us the project root.
@@ -143,12 +160,20 @@ export function purity(options?: PurityPluginOptions) {
       // Enables consumers that bundle the emitted file outside Vite
       // (Cloudflare Workers via wrangler, Deno deploy, custom Node entries)
       // to drive the emit with a plain `vite build` pre-step.
+      //
+      // ADR 0036 — sibling `.d.ts` emit. Alongside the runtime `.ts` we
+      // write a per-app type declaration that augments the virtual
+      // `purity:routes` module with literal tuple types, so apps that
+      // import from `'purity:routes'` get the same strong typing as apps
+      // that import from the on-disk `.ts`.
       if (!routesOpts || emitToAbs === null || routesAbsDir === null) return;
-      const source = generateManifestSource(this, routesAbsDir, routesExt);
-      emitManifestToDisk(emitToAbs, source, (msg) => {
+      const { source, types } = generateManifestSources(this, routesAbsDir, routesExt);
+      const warn = (msg: string): void => {
         if (this && typeof this.warn === 'function') this.warn(msg);
         else console.warn(msg);
-      });
+      };
+      emitManifestToDisk(emitToAbs, source, warn);
+      emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
     },
 
     resolveId(this: any, source: string) {
@@ -160,15 +185,19 @@ export function purity(options?: PurityPluginOptions) {
     load(this: any, id: string) {
       if (!routesOpts || id !== resolvedVirtualId) return null;
       // routesAbsDir is set in configResolved (always called before load).
-      const source = generateManifestSource(this, routesAbsDir as string, routesExt);
+      const { source, types } = generateManifestSources(this, routesAbsDir as string, routesExt);
       // ADR 0032: optional on-disk emit. Skip the write when content
       // matches to avoid filesystem-watch loops in dev. Failures are
       // non-fatal — virtual module still returns `source`.
+      // ADR 0036: alongside the `.ts`, write a sibling `.d.ts` so apps
+      // importing from `'purity:routes'` get the per-route typed `importFn`.
       if (emitToAbs !== null) {
-        emitManifestToDisk(emitToAbs, source, (msg) => {
+        const warn = (msg: string): void => {
           if (this && typeof this.warn === 'function') this.warn(msg);
           else console.warn(msg);
-        });
+        };
+        emitManifestToDisk(emitToAbs, source, warn);
+        emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
       }
       return source;
     },
@@ -214,10 +243,31 @@ export function purity(options?: PurityPluginOptions) {
         };
       }
 
-      if (!extensions.some((ext) => id.endsWith(ext))) return null;
-      if (!code.includes('html`')) return null;
+      // Match plugin extension filter (also tolerates Vite query suffixes
+      // by stripping ?xxx before the suffix check).
+      const cleanId = id.split('?')[0]!;
+      if (!extensions.some((ext) => cleanId.endsWith(ext))) return null;
 
-      const result = compileTemplates(code, id, transformOpts?.ssr === true);
+      // ADR 0035 — smart serverAction body stripping. Runs in client builds
+      // only and only on files that pass the cheap precheck (mention both
+      // `@purityjs/core` and `serverAction`). Returns null when nothing to
+      // do, in which case we fall through to the html`` template pass.
+      let workingCode = code;
+      let strippedAny = false;
+      if (stripServerActions && transformOpts?.ssr !== true) {
+        const stripped = stripServerActionBodies(workingCode, id);
+        if (stripped !== null) {
+          workingCode = stripped.code;
+          strippedAny = true;
+        }
+      }
+
+      if (!workingCode.includes('html`')) {
+        if (!strippedAny) return null;
+        return { code: workingCode, map: null };
+      }
+
+      const result = compileTemplates(workingCode, id, transformOpts?.ssr === true);
 
       // Surface compile failures: prefer the Rollup/Vite plugin context
       // (yields a proper warning in the dev overlay + build log) and fall
@@ -229,7 +279,10 @@ export function purity(options?: PurityPluginOptions) {
         else console.warn(w);
       }
 
-      if (!result.changed) return null;
+      if (!result.changed) {
+        if (strippedAny) return { code: workingCode, map: null };
+        return null;
+      }
       return { code: result.code, map: result.map };
     },
   };
@@ -262,11 +315,17 @@ function normaliseRoutesOption(opt: PurityPluginOptions['routes']): RoutesOption
  * path (ADR 0033). Uses the Rollup plugin context (`pluginCtx`) to
  * surface route-conflict warnings via `this.warn` when available.
  */
-function generateManifestSource(
+/**
+ * Build both the runtime `.ts` source and the per-app `.d.ts` source for
+ * the manifest in a single pass — used by `load()` (returns the `.ts`
+ * to the bundler) and by the disk emitter (writes both when `emitTo` is
+ * set, per ADRs 0032 + 0033 + 0036).
+ */
+function generateManifestSources(
   pluginCtx: { warn?: (m: string) => void } | null,
   dir: string,
   extensions: string[],
-): string {
+): { source: string; types: string } {
   const files = listRouteFiles(dir);
   const manifest = buildRouteManifest(files, extensions, (pattern, kept, dropped) => {
     const msg =
@@ -285,7 +344,28 @@ function generateManifestSource(
       return null;
     }
   });
-  return generateRouteManifestSource(manifest, (filePath) => posix.join(dir, filePath));
+  // Normalize the routes dir to POSIX separators before joining. On
+  // Windows the dir is a backslash-separated absolute path; `posix.join`
+  // alone would leave the backslashes intact, producing mixed-separator
+  // emit paths. TS dynamic imports and Vite both prefer forward slashes.
+  const posixDir = dir.replace(/\\/g, '/');
+  const absPathFor = (filePath: string): string => posix.join(posixDir, filePath);
+  return {
+    source: generateRouteManifestSource(manifest, absPathFor),
+    types: generateRouteManifestTypes(manifest, absPathFor),
+  };
+}
+
+/**
+ * Compute the sibling `.d.ts` path for a given on-disk `.ts` emit path
+ * (ADR 0036). Replaces a trailing `.ts` with `.d.ts`; for any other
+ * extension (or no extension) appends `.d.ts`.
+ */
+function typesPathFor(absPath: string): string {
+  if (absPath.endsWith('.ts') && !absPath.endsWith('.d.ts')) {
+    return absPath.slice(0, -3) + '.d.ts';
+  }
+  return absPath + '.d.ts';
 }
 
 function emitManifestToDisk(absPath: string, source: string, warn: (m: string) => void): void {
@@ -298,8 +378,11 @@ function emitManifestToDisk(absPath: string, source: string, warn: (m: string) =
         // Unreadable but exists — fall through and try to overwrite.
       }
     } else {
-      // Ensure the parent directory exists.
-      const parent = absPath.replace(/\/[^/]+$/, '');
+      // Ensure the parent directory exists. `node:path.dirname` handles
+      // both `/` and `\` separators — the prior regex-based approach
+      // (`/\/[^/]+$/`) silently failed on Windows backslash paths and
+      // left the parent un-created, causing ENOENT on writeFileSync.
+      const parent = dirname(absPath);
       if (parent && parent !== absPath) {
         mkdirSync(parent, { recursive: true });
       }

@@ -20,6 +20,13 @@ export interface PurityPluginOptions {
    * @default ['.ts', '.js', '.tsx', '.jsx']
    */
   include?: string[];
+  /**
+   * Strip `*.server.{ts,js,tsx,jsx}` modules from client bundles
+   * (replacing the file with `export {};`). Server-side builds pass
+   * through unchanged. Default `true` — opt out by passing `false` for
+   * apps that want a different convention. ADR 0018.
+   */
+  stripServerModules?: boolean;
 }
 
 /**
@@ -59,13 +66,13 @@ export interface PuritySourceMap {
  */
 export function purity(options?: PurityPluginOptions) {
   const extensions = options?.include ?? ['.ts', '.js', '.tsx', '.jsx'];
+  const stripServerModules = options?.stripServerModules !== false;
 
   return {
     name: 'purity',
     enforce: 'pre' as const,
 
     transform(this: any, code: string, id: string, transformOpts?: { ssr?: boolean }) {
-      if (!extensions.some((ext) => id.endsWith(ext))) return null;
       // Skip framework internals — only compile user code
       if (
         id.includes('@purityjs/') ||
@@ -74,6 +81,22 @@ export function purity(options?: PurityPluginOptions) {
         id.includes('packages/ssr/')
       )
         return null;
+
+      // Strip *.server.{ts,js,tsx,jsx} modules from client builds (ADR 0018).
+      // Server builds (transformOpts.ssr === true) pass through unchanged
+      // so handler bodies still execute on the server. Runs BEFORE the
+      // extension filter so the regex (which tolerates Vite query-string
+      // suffixes like `?import`, `?worker`, `?url`) is the source of truth.
+      if (stripServerModules && transformOpts?.ssr !== true && isServerOnlyId(id)) {
+        return {
+          code:
+            '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\n' +
+            'export {};\n',
+          map: null,
+        };
+      }
+
+      if (!extensions.some((ext) => id.endsWith(ext))) return null;
       if (!code.includes('html`')) return null;
 
       const result = compileTemplates(code, id, transformOpts?.ssr === true);
@@ -92,6 +115,16 @@ export function purity(options?: PurityPluginOptions) {
       return { code: result.code, map: result.map };
     },
   };
+}
+
+// Match `*.server.ts`, `*.server.js`, `*.server.tsx`, `*.server.jsx` —
+// optionally followed by Vite's query string (`?…`) so stripped modules also
+// work when Vite tags imports with `?import` / `?worker` / etc. Hidden /
+// dotfile-prefixed names match too. ADR 0018.
+const SERVER_MODULE_RE = /\.server\.(?:ts|js|tsx|jsx)(?:\?.*)?$/;
+
+function isServerOnlyId(id: string): boolean {
+  return SERVER_MODULE_RE.test(id);
 }
 
 // ---------------------------------------------------------------------------

@@ -387,7 +387,25 @@ if (actionResponse) return actionResponse;
 | `findAction(request)`         | `handler \| null`           | Look up handler by `new URL(request.url).pathname`. No invocation.                                              |
 | `handleAction(request)`       | `Promise<Response \| null>` | Find + invoke + await. `null` on no match so caller falls through.                                              |
 
-Phase 1 non-features: no CSRF helper, no auto-serialization, no build-time URL derivation, no client-bundle handler-body stripping. Action handlers must live in server-only modules — keep them under a `*.server.ts` / `server/` naming convention. See ADR 0012's "Explicit non-features" section.
+Action handlers belong in `*.server.{ts,js,tsx,jsx}` files — the `@purityjs/vite-plugin` strips those from client bundles automatically (default-on, [ADR 0018](../../docs/decisions/0018-server-module-strip.md)). Handler bodies + their transitive imports (DB driver, secrets, API tokens) stop shipping to the browser. Apps sharing the URL between client + server pull it into a non-server module:
+
+```ts
+// app/api-urls.ts (shared)
+export const SAVE_TODO_URL = '/api/save-todo';
+
+// app/save-todo.server.ts (server-only — stripped from client)
+import { serverAction } from '@purityjs/core';
+import { SAVE_TODO_URL } from './api-urls.ts';
+export const saveTodo = serverAction(SAVE_TODO_URL, async (request) => {
+  /* … */
+});
+
+// app/components/SaveButton.ts (client)
+import { SAVE_TODO_URL } from '../api-urls.ts';
+html`<form action=${SAVE_TODO_URL} method="POST">…</form>`;
+```
+
+Phase 1 non-features (per ADR 0012): no CSRF helper, no auto-serialization, no build-time URL derivation. CSRF + auth-aware checks live in your handler.
 
 ### Static site generation (ADR 0010)
 

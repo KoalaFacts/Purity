@@ -4,12 +4,8 @@ AOT template compilation for Purity. Transforms `html` tagged templates at build
 
 ## What It Does
 
-- Finds `html`...`` in user source files
-- Parses into AST using `@purityjs/core/compiler` (separate subpath — no runtime code)
-- Generates direct `document.createElement` calls via the same `generate` codegen
-- Replaces the template literal with compiled output
-- Removes `html` from imports (dead code eliminated)
-- Auto-injects `import { watch as __purity_w__ } from '@purityjs/core'` once per file
+- **Template AOT compile** — finds `html`...``in user source, parses via`@purityjs/core/compiler`(separate subpath — no runtime code), generates direct`document.createElement`calls (or string-builder factories on the SSR build path), replaces the template literal with compiled output, removes`html`from imports (dead code eliminated), auto-injects`import { watch as **purity_w** } from '@purityjs/core'` once per file
+- **Server-module strip (ADR 0018)** — replaces `*.server.{ts,js,tsx,jsx}` files with `export {};` in client builds (`opts.ssr !== true`); SSR builds pass through unchanged. Default-on, opt out with `purity({ stripServerModules: false })`. Handler bodies + transitive imports (DB driver, secrets, API tokens) stop shipping to the browser.
 - Skips framework internals (only compiles user code)
 - Emits a hand-rolled v3 source map (line-anchored — each output line maps back to the original line) so stack traces land in user source
 - Reports compile failures as `[purity] file:line:col — ...` warnings via the Vite plugin context (or `console.warn` outside Vite); failed templates are left as-is so the rest of the file still builds

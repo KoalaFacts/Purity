@@ -114,12 +114,15 @@ formData })` for SPA UX; both call the same handler.
   bundler magic. That magic requires a build pipeline integration
   Purity doesn't have yet. Explicit URLs are clear, debuggable, and
   trivially serialize across deploys.
-- **No client-bundle handler-body stripping.** Bundler-side scrubbing
-  of `serverAction(…)` calls from client bundles is a Vite plugin
-  follow-up. Phase 1's contract: action handlers must live in
-  server-only modules. Users keep them under a `server/`
-  directory or a `*.server.ts` naming convention so an
-  accidental client import is visible.
+- _(closed)_ **Client-bundle handler-body stripping.** Originally
+  deferred. Shipped as [ADR 0018](./0018-server-module-strip.md):
+  the `@purityjs/vite-plugin`'s `stripServerModules` option
+  (default `true`) replaces `*.server.{ts,js,tsx,jsx}` files with
+  `export {};` in client builds. SSR builds pass through unchanged.
+  Convention-based file-level strip — handler bodies + their
+  transitive imports (DB driver, secrets, API tokens) stop shipping
+  to the browser. Users sharing the action URL between client +
+  server pull it into a non-server module (`api-urls.ts`).
 
 ## Consequences
 

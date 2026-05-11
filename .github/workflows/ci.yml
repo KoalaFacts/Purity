@@ -31,8 +31,14 @@ jobs:
         # Installs all workspace dependencies from lockfile
         run: npm ci
 
-      - name: 🔐 Audit dependencies
-        run: npm audit --audit-level=high
+      - name: 🔐 Audit dependencies (production only)
+        # Only audit production deps — gates on real shipping risk for the
+        # publishable packages (@purityjs/core, @purityjs/ssr,
+        # @purityjs/vite-plugin, @purityjs/cli) without choking on
+        # vercel/wrangler/miniflare dev-tool transitives that surface from
+        # example app workspaces and are never bundled into a published
+        # artefact. Devops triages dev-tool advisories via Dependabot.
+        run: npm audit --omit=dev --audit-level=high
 
       - name: 🔐 Verify package provenance (non-blocking)
         # npm attestation API can be flaky; log results but don't gate CI

@@ -17,7 +17,18 @@
 // landmark (or the URL hash target if present) after navigate(). Screen
 // readers announce the focused region's accessible name, restoring the
 // route-change announcement that SPAs lose by default.
-import { hydrate, interceptLinks, manageNavFocus, manageNavScroll } from '@purityjs/core';
+//
+// `manageNavTransitions()` wraps the navigate() URL + DOM updates in
+// document.startViewTransition() so route changes can cross-fade. No-op
+// on browsers without the API; honors prefers-reduced-motion. Style the
+// transition via the ::view-transition-* CSS pseudo-elements.
+import {
+  hydrate,
+  interceptLinks,
+  manageNavFocus,
+  manageNavScroll,
+  manageNavTransitions,
+} from '@purityjs/core';
 import { App } from './app.ts';
 
 const root = document.getElementById('app');
@@ -25,3 +36,4 @@ if (root) hydrate(root, App);
 interceptLinks();
 manageNavScroll();
 manageNavFocus();
+manageNavTransitions();

@@ -346,6 +346,8 @@ Then templates use plain `<a href>` — same-origin clicks become `navigate()` c
 
 `manageNavFocus()` ([ADR 0016](../../docs/decisions/0016-nav-focus-management.md)) closes the accessibility gap on the same nav event — focus moves into the URL's hash target (or the page's `<main>` landmark by default) so screen readers announce the new region's accessible name. Pairs with `manageNavScroll()` via `preventScroll: true` so the two don't fight. Pass `{ selector }` to target a different landmark (e.g. `'h1'`, `'.app-content'`) or `{ onNavigate }` to replace the default with a custom focus / live-region flow.
 
+`manageNavTransitions()` ([ADR 0017](../../docs/decisions/0017-view-transitions.md)) wraps `navigate()`-driven URL + DOM updates in `document.startViewTransition()` so route changes can cross-fade. No-op on browsers without the API (Safari < 18, all Firefox as of 2026-05); honors `prefers-reduced-motion`. Pass `{ shouldTransition }` to opt out per-nav. Style the cross-fade or per-element morph via the standard `::view-transition-*` CSS pseudo-elements.
+
 Still not in scope: `<Route>` / `<Routes>` component, layout nesting, URL search / hash reactivity, file-system route discovery, scroll restoration, focus management, view transitions, prefetch-on-hover. See ADR 0011 + ADR 0013's "Explicit non-features" sections.
 
 ### Server actions (ADR 0012)

@@ -156,6 +156,29 @@ export function onNavigate(fn: NavigateListener): () => void {
  * navigate(`${currentPath()}?sort=date`, { replace: true });
  * ```
  */
+/**
+ * Navigation wrapper hook (ADR 0017). When set, `navigate()` calls the
+ * wrapper with the resolved URL + replace flag + an `update` callback that
+ * performs the actual History API + signal mutation. The wrapper decides
+ * when to call `update()` — synchronously, deferred, or wrapped in
+ * `document.startViewTransition()` for view-transition integrations.
+ *
+ * Single-slot (last setter wins). The intent is one consumer per app
+ * (`manageNavTransitions()`); apps wanting multiple effects should compose
+ * inside their wrapper.
+ *
+ * @internal — exposed for `manageNavTransitions()`. Apps that need lower-
+ * level control are welcome to use it; the underscore prefix marks the API
+ * as opt-in / not yet stabilized.
+ */
+export type NavigateWrapper = (url: URL, replace: boolean, update: () => void) => void;
+let navigateWrapper: NavigateWrapper | null = null;
+
+/** @internal — called by manageNavTransitions(). Pass `null` to clear. */
+export function _setNavigateWrapper(fn: NavigateWrapper | null): void {
+  navigateWrapper = fn;
+}
+
 export function navigate(href: string, options: NavigateOptions = {}): void {
   if (typeof window === 'undefined' || !window.history) return;
   const url = new URL(href, window.location.origin);
@@ -163,12 +186,16 @@ export function navigate(href: string, options: NavigateOptions = {}): void {
   // state. Callers should set `window.location` directly for full-page nav.
   if (url.origin !== window.location.origin) return;
   const replace = options.replace === true;
-  if (replace) window.history.replaceState(null, '', url);
-  else window.history.pushState(null, '', url);
-  urlSignal(url);
-  // Fire after the History API + signal update so listeners observe the
-  // post-nav state. Errors propagate to the caller.
-  for (const fn of navigateListeners) fn(url, replace);
+  const update = (): void => {
+    if (replace) window.history.replaceState(null, '', url);
+    else window.history.pushState(null, '', url);
+    urlSignal(url);
+    // Fire after the History API + signal update so listeners observe the
+    // post-nav state. Errors propagate to the caller.
+    for (const fn of navigateListeners) fn(url, replace);
+  };
+  if (navigateWrapper) navigateWrapper(url, replace, update);
+  else update();
 }
 
 /** Result of a successful {@link matchRoute} call. */

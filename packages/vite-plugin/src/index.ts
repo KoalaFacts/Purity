@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, posix, resolve as resolvePath } from 'node:path';
+import { dirname, posix, resolve as resolvePath, sep as pathSep } from 'node:path';
 
 import { generate, generateSSR, parse } from '@purityjs/core/compiler';
 
@@ -348,7 +348,9 @@ function generateManifestSources(
   // Windows the dir is a backslash-separated absolute path; `posix.join`
   // alone would leave the backslashes intact, producing mixed-separator
   // emit paths. TS dynamic imports and Vite both prefer forward slashes.
-  const posixDir = dir.replace(/\\/g, '/');
+  // Gate on `path.sep` so we don't rewrite legitimate `\` characters in
+  // POSIX filenames on Linux/macOS (rare but legal).
+  const posixDir = pathSep === '\\' ? dir.replace(/\\/g, '/') : dir;
   const absPathFor = (filePath: string): string => posix.join(posixDir, filePath);
   return {
     source: generateRouteManifestSource(manifest, absPathFor),

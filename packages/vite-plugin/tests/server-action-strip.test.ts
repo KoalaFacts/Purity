@@ -158,6 +158,107 @@ describe('stripServerActionBodies — direct helper', () => {
   });
 });
 
+describe('stripServerActionBodies — scope-aware shadowing', () => {
+  it('does NOT strip a locally-shadowed serverAction (inner function declaration)', () => {
+    // The inner `serverAction` is a local function — even though the file
+    // imports a same-named symbol from @purityjs/core, the inner call
+    // resolves to the local binding and must not be stripped.
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `function outer() {`,
+      `  function serverAction(url, fn) { return fn; }`,
+      `  return serverAction('/api/x', async () => INNER_SECRET);`,
+      `}`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    // No edits — the import-bound name is shadowed inside `outer`.
+    expect(result).toBeNull();
+  });
+
+  it('does NOT strip when shadowed by a const declaration in the same scope', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `function outer() {`,
+      `  const serverAction = (url, fn) => fn;`,
+      `  return serverAction('/api/x', async () => INNER_SECRET);`,
+      `}`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).toBeNull();
+  });
+
+  it('does NOT strip when shadowed by a parameter', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `function outer(serverAction) {`,
+      `  return serverAction('/api/x', async () => INNER_SECRET);`,
+      `}`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).toBeNull();
+  });
+
+  it('strips outer calls correctly even when an inner scope shadows', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const outer = serverAction('/api/outer', async () => OUTER_SECRET);`,
+      `function inner() {`,
+      `  function serverAction(url, fn) { return fn; }`,
+      `  return serverAction('/api/inner', async () => INNER_SECRET);`,
+      `}`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).not.toBeNull();
+    // Outer handler is stripped.
+    expect(result!.code).not.toContain('OUTER_SECRET');
+    // Inner is preserved.
+    expect(result!.code).toContain('INNER_SECRET');
+  });
+});
+
+describe('stripServerActionBodies — type-only imports', () => {
+  it('ignores `import type { serverAction }` (declaration is type-only)', () => {
+    const src = [
+      `import type { serverAction } from '@purityjs/core';`,
+      `function serverAction(url, fn) { return fn; }`,
+      `export const a = serverAction('/api/a', async () => LOCAL_SECRET);`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    // Type-only import doesn't introduce a runtime binding; the call
+    // resolves to the local function and must not be stripped.
+    expect(result).toBeNull();
+  });
+
+  it('ignores `import { type serverAction }` (per-specifier type-only)', () => {
+    const src = [
+      `import { type serverAction } from '@purityjs/core';`,
+      `function serverAction(url, fn) { return fn; }`,
+      `export const a = serverAction('/api/a', async () => LOCAL_SECRET);`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).toBeNull();
+  });
+});
+
+describe('stripServerActionBodies — stub form', () => {
+  it('emits `(..._args) =>` so introspection of the stub is honest', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = serverAction('/api/a', async (req) => new Response('ok'));`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).not.toBeNull();
+    expect(result!.code).toContain('..._args');
+  });
+});
+
 describe('stripServerActions plugin option — wired into transform', () => {
   it('strips handler bodies in client builds by default', () => {
     const plugin = purity();

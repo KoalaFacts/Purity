@@ -75,9 +75,7 @@ describe('generateSSR — static templates', () => {
     // The two paths (buildStaticHtml fast-path vs buildSSRBody slow-path
     // with expressions) both need the raw-emit branch. Force the slow
     // path by including a `${}` slot.
-    expect(compileSSR(['<!doctype html><title>', '</title>'], 'Page')).toContain(
-      '<!doctype html>',
-    );
+    expect(compileSSR(['<!doctype html><title>', '</title>'], 'Page')).toContain('<!doctype html>');
   });
 
   it('renders comments', () => {

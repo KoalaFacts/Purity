@@ -11,13 +11,20 @@
 import type { ASTNode, AttributeNode, FragmentNode } from './ast.ts';
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // OWASP five-character set so the helper is safe in attribute contexts too.
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function escapeAttr(s: string): string {
   return s
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
@@ -1008,7 +1015,7 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
 
 export function generateSSR(ast: FragmentNode): string {
   ast = condenseWhitespace(ast) as FragmentNode;
-  const ctx: SSRGenCtx = { parts: [], counter: 0, out: '_o' };
+  const ctx: SSRGenCtx = { parts: [], counter: 0, out: '_o', lastLitHtml: null };
   // Static-prefix optimization: if the entire tree is static AND contains no
   // hyphenated tags (which require runtime component dispatch), emit a closure
   // returning the prebuilt string. Avoids per-call work and skips the _v / _h
@@ -1056,6 +1063,13 @@ interface SSRGenCtx {
   parts: string[]; // JS source fragments that mutate the active output var
   counter: number; // unique-id counter for emitted local variables
   out: string; // current output variable name (default '_o', changes for slot capture)
+  // Coalescing state: when the most recent push was a literal HTML append
+  // (`_o+="…";`), track the raw HTML so we can extend the last entry without
+  // re-parsing it out of the JS source. Reset whenever a non-literal part is
+  // pushed. Previously this used a regex over `last`, which CodeQL flagged as
+  // polynomial-redos — keeping the unstringified value side-by-side sidesteps
+  // both the perf risk and the alert.
+  lastLitHtml: string | null;
 }
 
 // Append a JS literal that adds a static HTML chunk to the active output var.
@@ -1064,16 +1078,22 @@ interface SSRGenCtx {
 function emitLit(ctx: SSRGenCtx, html: string): void {
   if (html === '') return;
   const prefix = `${ctx.out}+=`;
-  const last = ctx.parts[ctx.parts.length - 1];
-  if (last && last.startsWith(prefix) && last.endsWith(';')) {
-    const m = last.match(new RegExp(`^${ctx.out}\\+=("(?:[^"\\\\]|\\\\.)*")\\s*;$`));
-    if (m) {
-      const prev = JSON.parse(m[1]);
-      ctx.parts[ctx.parts.length - 1] = `${prefix}${JSON.stringify(prev + html)};`;
-      return;
-    }
+  if (ctx.lastLitHtml !== null) {
+    const merged = ctx.lastLitHtml + html;
+    ctx.parts[ctx.parts.length - 1] = `${prefix}${JSON.stringify(merged)};`;
+    ctx.lastLitHtml = merged;
+    return;
   }
   ctx.parts.push(`${prefix}${JSON.stringify(html)};`);
+  ctx.lastLitHtml = html;
+}
+
+// Push a non-literal JS source fragment and invalidate the coalescing state.
+// Use this anywhere `ctx.parts.push(...)` would otherwise have been called for
+// non-literal code.
+function pushRaw(ctx: SSRGenCtx, code: string): void {
+  ctx.parts.push(code);
+  ctx.lastLitHtml = null;
 }
 
 function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
@@ -1092,7 +1112,7 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
       // _h.toHtml handles signal-accessor calls, branded HTML, arrays, and
       // primitive escaping in one place.
       emitLit(ctx, '<!--[-->');
-      ctx.parts.push(`${ctx.out}+=_h.toHtml(_v[${node.index}]);`);
+      pushRaw(ctx, `${ctx.out}+=_h.toHtml(_v[${node.index}]);`);
       emitLit(ctx, '<!--]-->');
       return;
     }
@@ -1135,10 +1155,10 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
   // Build attrs object literal — static + dynamic (events skipped server-side).
   // Static: literal value. Dynamic/prop/reactive-prop/bind: pass the raw value
   // (function or scalar); valueToAttr / the host renderer handles it.
-  ctx.parts.push(`var ${attrsVar}={};`);
+  pushRaw(ctx, `var ${attrsVar}={};`);
   for (const a of node.attributes) {
     if (a.kind === 'static') {
-      ctx.parts.push(`${attrsVar}[${JSON.stringify(a.name)}]=${JSON.stringify(a.value)};`);
+      pushRaw(ctx, `${attrsVar}[${JSON.stringify(a.name)}]=${JSON.stringify(a.value)};`);
       continue;
     }
     if (a.kind === 'event') continue;
@@ -1147,21 +1167,21 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
       // Boolean attribute: store the truthy/falsy raw value; the renderer
       // calls valueToAttr which collapses null/undefined/false to omitted
       // and `true` to bare-name form.
-      ctx.parts.push(`${attrsVar}[${JSON.stringify(a.name)}]=_v[${a.index}];`);
+      pushRaw(ctx, `${attrsVar}[${JSON.stringify(a.name)}]=_v[${a.index}];`);
     } else {
-      ctx.parts.push(`${attrsVar}[${JSON.stringify(a.name)}]=_v[${a.index}];`);
+      pushRaw(ctx, `${attrsVar}[${JSON.stringify(a.name)}]=_v[${a.index}];`);
     }
   }
 
   // Capture children into a slot string. Temporarily swap the active output
   // variable so all nested emissions append to slotVar; restore afterward.
-  ctx.parts.push(`var ${slotVar}='';`);
+  pushRaw(ctx, `var ${slotVar}='';`);
   const prevOut = ctx.out;
   ctx.out = slotVar;
   for (const ch of node.children) buildSSRBody(ch, ctx);
   ctx.out = prevOut;
 
-  ctx.parts.push(`${ctx.out}+=_h.element(${JSON.stringify(node.tag)},${attrsVar},${slotVar});`);
+  pushRaw(ctx, `${ctx.out}+=_h.element(${JSON.stringify(node.tag)},${attrsVar},${slotVar});`);
 }
 
 function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx): void {
@@ -1197,19 +1217,15 @@ function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx): void {
       // All four read the current value (calling the accessor if it's a
       // function) and emit it as a quoted attribute. `bind` skips the
       // listener install — that's a hydration-time concern.
-      ctx.parts.push(
-        `var ${av}=_h.toAttr(${val});`,
-        `if(${av}!==null)_o+=${namePrefix}+(${av}===''?'':'="'+${av}+'"');`,
-      );
+      pushRaw(ctx, `var ${av}=_h.toAttr(${val});`);
+      pushRaw(ctx, `if(${av}!==null)_o+=${namePrefix}+(${av}===''?'':'="'+${av}+'"');`);
       return;
     }
 
     case 'bool': {
       // Boolean attribute: present (no value) when truthy, absent otherwise.
-      ctx.parts.push(
-        `var ${av}=${val};if(typeof ${av}==='function')${av}=${av}();`,
-        `if(${av})_o+=${namePrefix};`,
-      );
+      pushRaw(ctx, `var ${av}=${val};if(typeof ${av}==='function')${av}=${av}();`);
+      pushRaw(ctx, `if(${av})_o+=${namePrefix};`);
       return;
     }
 

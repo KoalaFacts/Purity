@@ -21,7 +21,11 @@ import { getSSRRenderContext } from './ssr-context.ts';
 // NOW CACHES DOM per case key — toggling reuses nodes instead of recreating
 // ---------------------------------------------------------------------------
 
-type MatchView = () => Node | DocumentFragment | string;
+// Branch views can return arbitrary user code: a Node / DocumentFragment for
+// the client DOM path, a string for SSR, or `undefined` / `null` for "render
+// nothing". `insertMatchView` already calls `String(content)` for non-Node
+// values, so the runtime contract is permissive — widen the type to match.
+type MatchView = () => unknown;
 type MatchCases<T extends string | number | boolean> = Partial<Record<`${T}`, MatchView>>;
 
 interface MatchState {
@@ -36,7 +40,7 @@ function insertMatchView(
   matchState: MatchState,
   parent: Node,
   endMarker: Node,
-  content: Node | DocumentFragment | string,
+  content: unknown,
 ): void {
   if (content instanceof DocumentFragment) {
     matchState.currentNodes = Array.from(content.childNodes);
@@ -44,6 +48,9 @@ function insertMatchView(
   } else if (content instanceof Node) {
     matchState.currentNodes = [content];
     parent.insertBefore(content, endMarker);
+  } else if (content == null) {
+    // `undefined` / `null` view return → render nothing.
+    matchState.currentNodes = [];
   } else {
     const textNode = document.createTextNode(String(content));
     matchState.currentNodes = [textNode];
@@ -1566,13 +1573,20 @@ export function listSSR<T>(
 // through the converter. Inlining keeps control.ts free of cross-file calls
 // in the hot path.
 function escapeHtmlLocal(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // OWASP five-character set so the helper is safe in attribute contexts too.
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function escapeAttrLocal(s: string): string {
   return s
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
@@ -1734,7 +1748,13 @@ export function suspense<T>(
       ssrCtx.streamingBoundaries.set(id, {
         view: view as () => unknown,
         fallback: fallback as () => unknown,
-        onError,
+        // The ssr-context types `phase` as `string` (variance-friendly for
+        // the boundary table); our `onError` only ever fires with a
+        // `SuspenseErrorPhase` literal at runtime. The cast bridges the
+        // narrower → wider contravariance.
+        onError: onError as
+          | ((err: unknown, info: { boundaryId: number; phase: string }) => void)
+          | undefined,
       });
     }
     return markSSRHtml(`<!--s:${id}-->${body}<!--/s:${id}-->`);

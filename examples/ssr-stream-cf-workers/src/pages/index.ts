@@ -11,8 +11,8 @@ export default function HomePage(): unknown {
     <h1>Hello from Workers</h1>
     <p>
       File-system routing + <code>asyncRoute()</code> end-to-end on top of
-      <code>renderToStream</code>. Visit <a href="/stream">/stream</a> for a
-      streaming-suspense demo.
+      <code>renderToStream</code>. Visit <a href="/stream">/stream</a> for a streaming-suspense
+      demo.
     </p>
   `;
 }

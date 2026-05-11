@@ -11,11 +11,9 @@ cf-workers + Vercel Edge examples).
 
 ## Architecture
 
-Deno has no `document`, so the runtime `html\`\`` tag from
-`@purityjs/core` (which builds DOM nodes on first call) can't run
-unmodified. We use Vite to SSR-build `src/serve.ts` into
-`dist/serve.js` — that pass AOT-compiles every `html\`\`` into a
-string-builder factory. Deno then runs `dist/serve.js` directly with
+Deno has no `document`, so the runtime `html\`\``tag from`@purityjs/core`(which builds DOM nodes on first call) can't run
+unmodified. We use Vite to SSR-build`src/serve.ts`into`dist/serve.js`— that pass AOT-compiles every`html\`\``into a
+string-builder factory. Deno then runs`dist/serve.js` directly with
 no further dependencies.
 
 ```bash

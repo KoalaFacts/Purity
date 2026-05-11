@@ -98,7 +98,9 @@ export function configureNavigation(options: ConfigureNavigationOptions = {}): (
   }
   // ADR 0029: opt-in by passing `{ prefetch: { routes } }`. Unlike the
   // other keys, prefetch has no useful default — needs the manifest.
-  if (options.prefetch && options.prefetch !== false) {
+  if (options.prefetch) {
+    // `options.prefetch` is narrowed to ConfigureNavigationPrefetch by the
+    // truthy guard (the `false` branch of the union falls through).
     const { routes, ...rest } = options.prefetch;
     teardowns.push(prefetchManifestLinks(routes, rest));
   }

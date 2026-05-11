@@ -55,13 +55,11 @@ now has the full manifest-driven shape — `src/pages/` (with
 `asyncRoute()` + `asyncNotFound()`, and a `src/worker.ts` that
 imports `App` and pipes it through `renderToStream(App, { doctype,
 request, signal })`. A `vite.config.ts` wires the plugin in SSR
-build mode so every `html\`\`` in the worker + pages AOT-compiles to
-string-builder factories (no `document` needed at runtime).
-`wrangler.toml` points `main = "dist/worker.js"` — Vite produces
-the bundle, wrangler deploys it. Smoke-tested by importing the built
-`dist/worker.js` and calling its `fetch` handler against synthetic
-Requests: `/` renders a single 574-byte shell, `/stream` ships
-shell + boundary-resolved chunk 152ms apart, `/missing` ships the
+build mode so every `html\`\``in the worker + pages AOT-compiles to
+string-builder factories (no`document`needed at runtime).`wrangler.toml`points`main = "dist/worker.js"`— Vite produces
+the bundle, wrangler deploys it. Smoke-tested by importing the built`dist/worker.js`and calling its`fetch`handler against synthetic
+Requests:`/`renders a single 574-byte shell,`/stream`ships
+shell + boundary-resolved chunk 152ms apart,`/missing` ships the
 404 page. **Streaming pipeline + manifest + asyncRoute + lazyResource
 all work end-to-end on Cloudflare Workers.**
 
@@ -126,8 +124,8 @@ rejected alternatives.
 | 0030 | [`manageTitle(fn)` — reactive `<title>` sync](docs/decisions/0030-reactive-title.md)                        | Isomorphic helper: emits `<title>` to the SSR head on the server; watches `fn` and writes `document.title` on the client.                            |
 | 0031 | [`RouteParams<P>` — typed route params](docs/decisions/0031-typed-route-params.md)                          | Template-literal type derives `{ id: string }` from `'/users/:id'`. Type-only export from `@purityjs/vite-plugin`; zero runtime cost.                |
 | 0032 | [`emitTo` — on-disk manifest emit](docs/decisions/0032-on-disk-manifest-emit.md)                            | Opt-in plugin option writes the generated manifest source to disk each `load()`. Skips rewrites when content matches. `tsc` + IDE jump-to-def.       |
-| 0033 | [Eager manifest emit for non-Vite consumers](docs/decisions/0033-eager-manifest-emit.md)                    | `buildStart` hook regenerates the on-disk manifest at every `vite build` / `vite dev`, so wrangler / Deno / non-Vite bundlers can consume the file.   |
-| 0034 | [`LoaderDataOf<P, R>` — typed loader data](docs/decisions/0034-typed-loader-data.md)                        | Pure-type helper derives `loaderData()` return shape from a route's `loader` signature via the emitted manifest's typed dynamic imports.                |
+| 0033 | [Eager manifest emit for non-Vite consumers](docs/decisions/0033-eager-manifest-emit.md)                    | `buildStart` hook regenerates the on-disk manifest at every `vite build` / `vite dev`, so wrangler / Deno / non-Vite bundlers can consume the file.  |
+| 0034 | [`LoaderDataOf<P, R>` — typed loader data](docs/decisions/0034-typed-loader-data.md)                        | Pure-type helper derives `loaderData()` return shape from a route's `loader` signature via the emitted manifest's typed dynamic imports.             |
 
 All ADRs on this branch are `Status: Accepted` (ADR 0006 was promoted
 from `Proposed` in this iteration's housekeeping pass).
@@ -328,7 +326,8 @@ plugin could auto-emit a sibling `routes.d.ts` (alongside the
 `.ts`) whose `importFn` is typed per-route via `() => Promise<typeof
 import('/abs/path')>`. That would let apps stay on
 `'purity:routes'` AND get strong types. Cost: a small d.ts emitter
-+ a `tsconfig`-include for users to wire up. Quarter-day-ish.
+
+- a `tsconfig`-include for users to wire up. Quarter-day-ish.
 
 Path K is the higher-leverage shipping concern (security + payload
 story for production apps). Path M is the polish item that tightens

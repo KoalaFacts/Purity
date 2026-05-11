@@ -34,9 +34,13 @@ export interface ManageNavTransitionsOptions {
   shouldTransition?: (url: URL, replace: boolean) => boolean;
 }
 
-interface DocumentWithViewTransition extends Document {
+// Don't extend `Document` — the modern TS DOM lib already declares
+// `startViewTransition(callbackOptions?): ViewTransition` (non-optional,
+// narrower callback). We only need a structural shape to feature-test
+// for, so use an intersection at the call sites instead.
+type DocumentWithViewTransition = Document & {
   startViewTransition?: (callback: () => void | Promise<void>) => unknown;
-}
+};
 
 function viewTransitionsSupported(): boolean {
   return (

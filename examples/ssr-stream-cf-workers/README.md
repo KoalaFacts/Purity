@@ -11,9 +11,9 @@ same shape as the canonical Node SSR demo).
 
 ## How the manifest reaches the Worker
 
-Wrangler does not bundle Purity's `html\`\`` templates directly — the
-runtime `html` tag emits DOM nodes, which fails under a Workers runtime
-that has no `document`. We use Vite (in SSR build mode) to AOT-compile
+Wrangler does not bundle Purity's `html\`\``templates directly — the
+runtime`html`tag emits DOM nodes, which fails under a Workers runtime
+that has no`document`. We use Vite (in SSR build mode) to AOT-compile
 every `html\`\`` call in the worker + pages into string-builder
 factories, plus emit the route manifest. Wrangler then deploys the
 Vite output as a single ES-Modules Worker.

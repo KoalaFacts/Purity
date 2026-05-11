@@ -28,12 +28,13 @@ inference. Pattern strings can't tell us the loader's return type;
 the source file's signature is the only ground truth.
 
 The on-disk manifest emit from ADR [0032](./0032-on-disk-manifest-emit.md)
-+ ADR [0033](./0033-eager-manifest-emit.md) creates an opening here.
-The emitted `routes.ts` has dynamic imports with literal absolute
-paths:
+
+- ADR [0033](./0033-eager-manifest-emit.md) creates an opening here.
+  The emitted `routes.ts` has dynamic imports with literal absolute
+  paths:
 
 ```ts
-importFn: () => import('/abs/path/to/pages/index.ts')
+importFn: () => import('/abs/path/to/pages/index.ts');
 ```
 
 TypeScript infers `() => import('…')` as `() => Promise<typeof
@@ -77,7 +78,12 @@ export default function HomePage(params: RouteParams<'/'>): unknown {
   // Type of `data` is `{ todos: string[] }` — inferred from the
   // loader signature in this file, not hand-written.
   const data = loaderData<LoaderDataOf<'/', typeof routes>>();
-  return html`<ul>${each(() => data?.todos ?? [], (t) => html`<li>${t}</li>`)}</ul>`;
+  return html`<ul>
+    ${each(
+      () => data?.todos ?? [],
+      (t) => html`<li>${t}</li>`,
+    )}
+  </ul>`;
 }
 ```
 
@@ -91,7 +97,7 @@ want strong types should:
 1. Set `purity({ routes: { dir, emitTo: 'src/.purity/routes.ts' } })`
    (ADR 0032 + 0033 already document this).
 2. Import from the emitted file: `import { routes } from
-   './.purity/routes.ts'` instead of `from 'purity:routes'`.
+'./.purity/routes.ts'` instead of `from 'purity:routes'`.
 
 The runtime behaviour is identical — the emitted file's content IS
 the virtual module's content (per ADR 0032). The choice is purely a
@@ -105,7 +111,7 @@ keying by pattern doesn't apply. Layout chains, error boundaries, and
 so users index into them and pass the entry's type:
 
 ```ts
-type RootLayoutData = LoaderDataOfEntry<typeof routes[0]['layouts'][0]>;
+type RootLayoutData = LoaderDataOfEntry<(typeof routes)[0]['layouts'][0]>;
 ```
 
 ### Explicit non-features
@@ -181,7 +187,7 @@ could emit per-route type aliases alongside the manifest:
 ```ts
 // In src/.purity/routes.ts:
 export type RouteFor_$1 = typeof import('/abs/path/.../index.ts');
-export type LoaderFor_$1 = LoaderDataOfEntry<typeof routes[0]>;
+export type LoaderFor_$1 = LoaderDataOfEntry<(typeof routes)[0]>;
 ```
 
 Cleaner ergonomics (`LoaderFor<'/'>`) but duplicates the helper at

@@ -144,8 +144,7 @@ describe('LoaderDataOfEntry<E> — single-entry helper (ADR 0034)', () => {
   it('resolves to undefined when the entry has no loader', () => {
     const layoutEntry = {
       filePath: '_layout.ts',
-      importFn: (): Promise<{ default: () => unknown }> =>
-        Promise.resolve({ default: () => null }),
+      importFn: (): Promise<{ default: () => unknown }> => Promise.resolve({ default: () => null }),
     };
     const data: LoaderDataOfEntry<typeof layoutEntry> = undefined;
     expect(data).toBeUndefined();

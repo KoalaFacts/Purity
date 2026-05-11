@@ -8,9 +8,7 @@ export default function StreamPage(): unknown {
       () => {
         const fact = resource(
           () =>
-            new Promise<string>((r) =>
-              setTimeout(() => r('Vercel Edge runs on V8 isolates'), 150),
-            ),
+            new Promise<string>((r) => setTimeout(() => r('Vercel Edge runs on V8 isolates'), 150)),
           { initialValue: undefined, key: 'fact' },
         );
         return html`<aside>${() => fact() ?? '…'}</aside>`;

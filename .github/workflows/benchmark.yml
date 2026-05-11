@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '24'
           cache: 'npm'
@@ -68,8 +68,17 @@ jobs:
           DATE=$(date +%Y-%m-%d-%H%M%S)
           cp benchmark/benchmark-results.md "benchmark/history/${DATE}.md"
 
-      - name: Generate GitHub Pages site (Purity report app)
-        # Injects benchmark JSON into the Vite-built Purity report app
+      - name: Build dashboard demo
+        # Built before page generation so generate-pages.ts can copy
+        # examples/dashboard/dist → gh-pages/dashboard.
+        run: |
+          npm run build -w packages/core
+          npm run build -w packages/vite-plugin
+          npm run build -w examples/dashboard
+
+      - name: Generate GitHub Pages site (Purity report app + dashboard demo)
+        # Injects benchmark JSON into the Vite-built Purity report app and
+        # copies the dashboard demo build into /dashboard/.
         run: npx tsx benchmark/generate-pages.ts
 
       - name: Upload Pages artifact

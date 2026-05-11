@@ -1,3 +1,11 @@
+import { enterHydration, exitHydration, inflateDeferred, isDeferred } from './compiler/compile.ts';
+import {
+  markSSRHtml,
+  type SSRComponentRenderer,
+  type SSRHtml,
+  valueToAttr,
+  valueToHtml,
+} from './compiler/ssr-runtime.ts';
 import { ComponentContext, getCurrentContext, popContext, pushContext } from './component.ts';
 import { watch } from './signals.ts';
 
@@ -136,8 +144,20 @@ export function slot<E = void>(name?: string): SlotAccessor<E> {
     );
 
   const slotName = name ?? 'default';
-  const children = ctx._slotContent;
 
+  // SSR path: ctx carries pre-rendered slot HTML strings instead of DOM
+  // children. Return a branded SSR HTML wrapper so valueToHtml splices it
+  // raw into the surrounding template. Cast through `unknown` because the
+  // SlotAccessor type signature targets DOM consumers.
+  const ssrSlots = (ctx as unknown as { _ssrSlots?: Record<string, string | undefined> })._ssrSlots;
+  if (ssrSlots !== undefined) {
+    return ((_exposed?: unknown): SSRHtml | null => {
+      const html = ssrSlots[slotName];
+      return html != null ? markSSRHtml(html) : null;
+    }) as unknown as SlotAccessor<E>;
+  }
+
+  const children = ctx._slotContent;
   return ((_exposed?: unknown): Node | null => {
     return resolveFromRaw(children, slotName, _exposed);
   }) as SlotAccessor<E>;
@@ -235,8 +255,94 @@ function runRender<P, S>(
 //   Card({ title: 'Hi' }, html`<p>Body</p>`)
 // ---------------------------------------------------------------------------
 
-// Registry of component render functions by tag name
+// Registry of component render functions by tag name. Exposed via
+// `_getRegisteredComponent` so `@purityjs/ssr` can dispatch to render fns
+// without depending on the Custom Element registration path (which requires
+// `customElements`, absent on Node).
 const componentRegistry = new Map<string, RenderFn<any, any>>();
+
+/** @internal — accessor used by `@purityjs/ssr` to look up registered render fns. */
+export function _getRegisteredComponent(
+  tag: string,
+): RenderFn<Record<string, unknown>, Record<string, unknown>> | undefined {
+  return componentRegistry.get(tag);
+}
+
+// Build SSR slot accessors that mirror createAccessors() but yield branded
+// SSRHtml wrappers instead of cloned DOM nodes. Cast through `unknown`
+// because the SlotAccessor public type is DOM-shaped.
+function createSSRSlotAccessors(
+  slots: Record<string, string | undefined>,
+): Record<string, SlotAccessor<any>> {
+  return new Proxy({} as Record<string, SlotAccessor<any>>, {
+    get(_target, prop) {
+      if (typeof prop !== 'string') return undefined;
+      return ((): SSRHtml | null => {
+        const html = slots[prop];
+        return html != null ? markSSRHtml(html) : null;
+      }) as unknown as SlotAccessor<any>;
+    },
+  });
+}
+
+/**
+ * @internal
+ * SSR component renderer hook implementation. Registered with
+ * `setSSRComponentRenderer` by `@purityjs/ssr` on import — kept here so it
+ * has direct access to the component registry and lifecycle context.
+ *
+ * Activates Declarative Shadow DOM by emitting
+ * `<tag …host attrs…><template shadowrootmode="open">…</template></tag>`.
+ * Modern browsers parse the inner template into a real Shadow Root before
+ * any JS executes, eliminating the upgrade flash that the alternative
+ * "attach Shadow at hydration" strategy would introduce.
+ */
+export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) => {
+  const renderFn = componentRegistry.get(tag);
+  if (!renderFn) return null;
+
+  // Resolve attribute values into a props object — match the client's
+  // "every non-event attribute is a prop" behavior. Functions are treated as
+  // signal accessors and called once.
+  const props: Record<string, unknown> = {};
+  for (const k of Object.keys(attrs)) {
+    const v = attrs[k];
+    props[k] = typeof v === 'function' ? (v as () => unknown)() : v;
+  }
+
+  const ctx = new ComponentContext();
+  // Two SSR-only slots on the context:
+  //   _ssrStyles — css() pushes here instead of touching adoptedStyleSheets
+  //   _ssrSlots  — slot() reads here instead of resolving from DOM children
+  (ctx as unknown as { _ssrStyles: string[] })._ssrStyles = [];
+  (ctx as unknown as { _ssrSlots: Record<string, string | undefined> })._ssrSlots = {
+    default: slotHtml,
+  };
+
+  pushContext(ctx);
+  let view: unknown;
+  try {
+    view = renderFn(props, createSSRSlotAccessors({ default: slotHtml }));
+  } finally {
+    popContext();
+  }
+
+  const renderedHtml = valueToHtml(view);
+
+  // Host-element attributes mirror what was declared in the parent template.
+  // Hydration (PR 4) re-binds props by reading these back off the element.
+  let hostAttrs = '';
+  for (const k of Object.keys(attrs)) {
+    const av = valueToAttr(attrs[k]);
+    if (av !== null) hostAttrs += av === '' ? ` ${k}` : ` ${k}="${av}"`;
+  }
+
+  const styles = (ctx as unknown as { _ssrStyles: string[] })._ssrStyles;
+  const styleBlock = styles.length > 0 ? `<style>${styles.join('\n')}</style>` : '';
+  const inner = styleBlock + renderedHtml;
+
+  return `<${tag}${hostAttrs}><template shadowrootmode="open">${inner}</template></${tag}>`;
+};
 
 /**
  * Define a component as a Custom Element with Shadow DOM.
@@ -292,7 +398,11 @@ export function component<
 
       constructor() {
         super();
-        this._shadow = this.attachShadow({ mode: 'open' });
+        // Reuse a Declarative Shadow DOM root if the parser already attached
+        // one (the SSR-then-hydrate path emits
+        // `<tag><template shadowrootmode="open">…</template></tag>`).
+        // Calling attachShadow a second time would throw, so check first.
+        this._shadow = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
       }
 
       connectedCallback() {
@@ -337,7 +447,34 @@ export function component<
         (ctx as any)._shadowRoot = this._shadow;
         this._ctx = ctx;
 
-        const { result } = runRender(render, allProps, slotAccessors, ctx);
+        // Marker-walking hydration: if the shadow has DSD-parsed SSR content,
+        // run the renderer in hydration mode so `html\`\`` returns deferred
+        // thunks, then inflate against the shadow's existing children.
+        // Otherwise fall through to the standard fresh-render path.
+        const hasDSDContent = this._shadow.firstChild !== null;
+        let result: Node | DocumentFragment;
+        if (hasDSDContent) {
+          enterHydration();
+          let renderResult: { result: Node | DocumentFragment };
+          try {
+            renderResult = runRender(render, allProps, slotAccessors, ctx);
+          } finally {
+            exitHydration();
+          }
+          const view = renderResult.result as unknown;
+          if (isDeferred(view)) {
+            const frag = (this.ownerDocument ?? document).createDocumentFragment();
+            while (this._shadow.firstChild) frag.appendChild(this._shadow.firstChild);
+            inflateDeferred(view, frag);
+            result = frag;
+          } else {
+            // Renderer returned a non-deferred node — clear and re-render.
+            while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
+            result = renderResult.result;
+          }
+        } else {
+          result = runRender(render, allProps, slotAccessors, ctx).result;
+        }
 
         // Render into shadow DOM
         this._shadow.appendChild(result);

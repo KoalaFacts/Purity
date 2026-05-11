@@ -130,7 +130,7 @@ function isIndentation(n: ASTNode): boolean {
 // createTextNode + replaceWith pair.
 const EXPR_PLACEHOLDER = '​';
 
-function condenseWhitespace(node: ASTNode): ASTNode {
+export function condenseWhitespace(node: ASTNode): ASTNode {
   if (node.type === 'fragment' || node.type === 'element') {
     if (node.type === 'element' && PRESERVE_WS_TAGS.has(node.tag)) return node;
     let changed = false;
@@ -229,6 +229,194 @@ function genTemplateCommentToTextConversion(slots: Slot[]): string {
 
 export function generateModule(ast: FragmentNode): string {
   return `export default ${generate(ast)}`;
+}
+
+// ---------------------------------------------------------------------------
+// generateHydrate(ast)
+//
+// Emits a factory `function (_v, _w, _r) { ...; return _r; }` that walks the
+// SSR-rendered DOM subtree `_r`, attaching reactive bindings to existing
+// nodes instead of building new ones. Mirrors generate()'s slot semantics
+// against the marker-wrapped SSR layout: every `${...}` slot in the SSR
+// output is `<!--[--> ...content... <!--]-->`, and the generator walks
+// siblings between markers to discover the actual content nodes (which may
+// be empty, a single text node, or arbitrary subtrees).
+//
+// `_r` is a Node container whose direct children are the SSR roots for this
+// template instance (a DocumentFragment for top-level hydrate, the parent
+// fragment of a slot's content for nested templates).
+//
+// The generator walks the AST in order and threads a "cursor" variable
+// through siblings — element children consume one DOM node, expression
+// children consume marker-open + content + marker-close, advancing the
+// cursor past the close marker. Path-based navigation (used by generate())
+// can't be reused because per-slot content sizes vary at runtime.
+// ---------------------------------------------------------------------------
+
+interface HydrateCtx {
+  setup: string[];
+  reactive: string[];
+  id: number;
+}
+
+export function generateHydrate(ast: FragmentNode): string {
+  ast = condenseWhitespace(ast) as FragmentNode;
+
+  if (!hasDynamic(ast)) {
+    return 'function(_v,_w,_r,_i,_c){return _r;}';
+  }
+
+  const ctx: HydrateCtx = { setup: [], reactive: [], id: 0 };
+  // Top-level cursor = first child of the SSR root container.
+  ctx.setup.push('var _c0=_r.firstChild;');
+  emitHydrateChildren(ast.children, ctx, '_c0');
+
+  let body = ctx.setup.join('');
+  if (ctx.reactive.length > 0) {
+    body += `_w(function(){${ctx.reactive.join('')}});`;
+  }
+  body += 'return _r;';
+
+  // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
+  // All identifiers spliced into `body` are framework-internal counters
+  // (_c0, _el<id>, _open<id>, …) or have been validated/JSON.stringify'd by
+  // the genAttrBinding / inline emitters used here. `_i` is the runtime
+  // inflateDeferred helper and `_c` the optional cursor-check fn, both
+  // threaded through by compile.ts.
+  return `function(_v,_w,_r,_i,_c){${body}}`;
+}
+
+export function generateHydrateModule(ast: FragmentNode): string {
+  return `export default ${generateHydrate(ast)}`;
+}
+
+function emitHydrateChildren(children: ASTNode[], ctx: HydrateCtx, cursor: string): void {
+  for (const ch of children) {
+    emitHydrate(ch, ctx, cursor);
+  }
+}
+
+function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
+  switch (node.type) {
+    case 'text': {
+      // Pass the AST's text value as `detail` so the runtime helper can
+      // flag silent content divergence (SSR sent different bytes for the
+      // same structural slot). Codegen safety: JSON.stringify of an AST
+      // string literal — the same form used everywhere else in this file.
+      ctx.setup.push(
+        `_c&&_c(${cursor},'text',${JSON.stringify(node.value)});`,
+        `${cursor}=${cursor}.nextSibling;`,
+      );
+      return;
+    }
+    case 'comment': {
+      ctx.setup.push(`_c&&_c(${cursor},'comment');`, `${cursor}=${cursor}.nextSibling;`);
+      return;
+    }
+
+    case 'expression': {
+      const id = ctx.id++;
+      const open = `_open${id}`;
+      const close = `_close${id}`;
+      const cont = `_cn${id}`;
+      const xv = `_xv${id}`;
+      const fl = `_xf${id}`;
+      const tn = `_tn${id}`;
+      const w = `_w${id}`;
+      const val = `_v[${node.index}]`;
+
+      // Cursor is on the open marker `<!--[-->`. Walk siblings until we hit
+      // the matching `<!--]-->`, collecting content nodes (may be empty).
+      ctx.setup.push(
+        `_c&&_c(${cursor},'open');`,
+        `var ${open}=${cursor};`,
+        `var ${cont}=[];`,
+        `var ${w}=${open}.nextSibling;`,
+        `while(${w}&&!(${w}.nodeType===8&&${w}.data===']')){${cont}.push(${w});${w}=${w}.nextSibling;}`,
+        `var ${close}=${w};`,
+      );
+
+      // Bind based on the user's value. Mirrors generate()'s genExprBinding
+      // type-dispatch (function / Node / Array / primitive) plus a deferred-
+      // template branch for nested `html\`\`` and an SSR-branded escape hatch
+      // for users who left an `eachSSR(...)` in client code.
+      ctx.setup.push(
+        `var ${xv}=${val};`,
+        `var ${fl}=typeof ${xv}==='function';`,
+        // Reactive accessor: collapse content to a single text node, watch.
+        `if(${fl}){`,
+        `var ${tn};`,
+        `if(${cont}.length===1&&${cont}[0].nodeType===3){${tn}=${cont}[0];}`,
+        `else{${tn}=document.createTextNode('');for(var _ci${id}=0;_ci${id}<${cont}.length;_ci${id}++)${cont}[_ci${id}].parentNode.removeChild(${cont}[_ci${id}]);${close}.parentNode.insertBefore(${tn},${close});}`,
+        `}`,
+        // Static value branches.
+        `else if(${xv}!=null&&typeof ${xv}==='object'){`,
+        `if(${xv}.__purity_deferred__===true){`,
+        // Nested template — inflate against a fragment containing this slot's
+        // SSR content; re-insert before the close marker afterward.
+        `var _df${id}=document.createDocumentFragment();for(var _di${id}=0;_di${id}<${cont}.length;_di${id}++)_df${id}.appendChild(${cont}[_di${id}]);_i(${xv},_df${id});${close}.parentNode.insertBefore(_df${id},${close});`,
+        `}`,
+        // Branded SSR HTML wrapper (e.g. eachSSR result) — SSR DOM is already
+        // correct; nothing to bind on the client.
+        `else if(typeof ${xv}.__purity_ssr_html__==='string'){}`,
+        // Real Node provided directly — replace SSR slot contents with it.
+        `else if(${xv} instanceof Node){for(var _ri${id}=0;_ri${id}<${cont}.length;_ri${id}++)${cont}[_ri${id}].parentNode.removeChild(${cont}[_ri${id}]);${close}.parentNode.insertBefore(${xv},${close});}`,
+        // Array — fall back to lossy replace for this slot only.
+        `else if(Array.isArray(${xv})){for(var _ai${id}=0;_ai${id}<${cont}.length;_ai${id}++)${cont}[_ai${id}].parentNode.removeChild(${cont}[_ai${id}]);var _af${id}=document.createDocumentFragment();for(var _aj${id}=0;_aj${id}<${xv}.length;_aj${id}++)_af${id}.appendChild(${xv}[_aj${id}] instanceof Node?${xv}[_aj${id}]:document.createTextNode(String(${xv}[_aj${id}])));${close}.parentNode.insertBefore(_af${id},${close});}`,
+        `}`,
+        // Primitive — SSR text already correct (or correctly empty); no-op.
+      );
+
+      ctx.reactive.push(
+        `if(${fl}){`,
+        `var r${id}=${xv}();`,
+        `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
+        `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=r${id}==null?'':String(r${id});}`,
+        `}`,
+      );
+
+      // Advance cursor past the close marker.
+      ctx.setup.push(`${cursor}=${close}.nextSibling;`);
+      return;
+    }
+
+    case 'element': {
+      assertSafeName(node.tag, 'tag');
+      const id = ctx.id++;
+      const el = `_el${id}`;
+      ctx.setup.push(`_c&&_c(${cursor},${JSON.stringify(node.tag.toLowerCase())});`);
+      ctx.setup.push(`var ${el}=${cursor};`);
+
+      // Apply attribute bindings — events install listeners; dynamic/prop/
+      // bind/bool reuse the existing genAttrBinding emitter, which is
+      // correct against an existing element (setAttribute on an already-set
+      // attribute is a no-op; props weren't set by SSR and need to be).
+      for (const attr of node.attributes) {
+        if (attr.kind !== 'static') {
+          const { setup, reactive } = genAttrBinding(el, attr);
+          if (setup) ctx.setup.push(setup);
+          if (reactive) ctx.reactive.push(reactive);
+        }
+      }
+
+      // Recurse into children. Hyphenated tags are Custom Elements — their
+      // shadow root is opaque to the outer hydrator; the element's own
+      // connectedCallback handles its interior. Skip walking children here.
+      if (!VOID.has(node.tag) && node.children.length > 0 && !node.tag.includes('-')) {
+        const child = `_ch${id}`;
+        ctx.setup.push(`var ${child}=${el}.firstChild;`);
+        emitHydrateChildren(node.children, ctx, child);
+      }
+
+      ctx.setup.push(`${cursor}=${el}.nextSibling;`);
+      return;
+    }
+
+    case 'fragment': {
+      emitHydrateChildren(node.children, ctx, cursor);
+      return;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -789,5 +977,234 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
     default:
       /* v8 ignore next -- defensive fallthrough; parser only emits known kinds */
       return { setup: '', reactive: '' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// generateSSR(ast)
+//
+// Emits a factory `function (_v, _h) { var _o = ''; ...; return _o; }` that
+// walks the same AST as generate() but produces an HTML string instead of DOM
+// nodes. Used by @purityjs/ssr's renderToString.
+//
+// _h is the helpers bundle from ssr-runtime.ts (esc, attr, toHtml, toAttr).
+// Branded `__purity_ssr_html__` results from nested templates and SSR
+// control-flow helpers (eachSSR / whenSSR / matchSSR) concatenate raw via
+// _h.toHtml.
+//
+// Reactive expression slots are wrapped in HYDRATION_OPEN / HYDRATION_CLOSE
+// comment markers so the PR 4 hydrator can locate binding sites without
+// path drift from HTML-parser text coalescing.
+// ---------------------------------------------------------------------------
+
+export function generateSSR(ast: FragmentNode): string {
+  ast = condenseWhitespace(ast) as FragmentNode;
+  const ctx: SSRGenCtx = { parts: [], counter: 0, out: '_o' };
+  // Static-prefix optimization: if the entire tree is static AND contains no
+  // hyphenated tags (which require runtime component dispatch), emit a closure
+  // returning the prebuilt string. Avoids per-call work and skips the _v / _h
+  // arguments entirely.
+  if (!hasDynamic(ast) && !hasCustomElement(ast)) {
+    const html = buildStaticHtml(ast);
+    // `html` is built by buildStaticHtml which assertSafeName-validates
+    // tag/attr names and escapeHtml/escapeAttr-escapes text/attribute literals
+    // from the parser. JSON.stringify wraps the result in a valid JS string
+    // literal — the only interpolated value below. See "Codegen safety
+    // contract" near SAFE_NAME at the top.
+    // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
+    return [
+      '(function(){var _s={__purity_ssr_html__:',
+      JSON.stringify(html),
+      '};return function(){return _s;};})()',
+    ].join('');
+  }
+  buildSSRBody(ast, ctx);
+  // Every part appended to ctx.parts is either (a) a JSON.stringify'd string
+  // literal, (b) a regex-validated identifier, or (c) a framework-internal
+  // variable reference (`_v[N]`, `_av${id}`). See "Codegen safety contract"
+  // near SAFE_NAME at the top.
+  // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
+  return ["function(_v,_h){var _o='';", ctx.parts.join(''), 'return _h.mark(_o);}'].join('');
+}
+
+// True if any element node in the tree has a hyphenated tag. Custom elements
+// with no other dynamic content still need the runtime _h.element dispatch
+// because the component registry only populates at runtime.
+function hasCustomElement(node: ASTNode): boolean {
+  if (node.type === 'element') {
+    if (node.tag.includes('-')) return true;
+    return node.children.some(hasCustomElement);
+  }
+  if (node.type === 'fragment') return node.children.some(hasCustomElement);
+  return false;
+}
+
+export function generateSSRModule(ast: FragmentNode): string {
+  return `export default ${generateSSR(ast)}`;
+}
+
+interface SSRGenCtx {
+  parts: string[]; // JS source fragments that mutate the active output var
+  counter: number; // unique-id counter for emitted local variables
+  out: string; // current output variable name (default '_o', changes for slot capture)
+}
+
+// Append a JS literal that adds a static HTML chunk to the active output var.
+// Coalesces with the previous chunk if it also appends a literal to the same
+// output var, keeping output compact.
+function emitLit(ctx: SSRGenCtx, html: string): void {
+  if (html === '') return;
+  const prefix = `${ctx.out}+=`;
+  const last = ctx.parts[ctx.parts.length - 1];
+  if (last && last.startsWith(prefix) && last.endsWith(';')) {
+    const m = last.match(new RegExp(`^${ctx.out}\\+=("(?:[^"\\\\]|\\\\.)*")\\s*;$`));
+    if (m) {
+      const prev = JSON.parse(m[1]);
+      ctx.parts[ctx.parts.length - 1] = `${prefix}${JSON.stringify(prev + html)};`;
+      return;
+    }
+  }
+  ctx.parts.push(`${prefix}${JSON.stringify(html)};`);
+}
+
+function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
+  switch (node.type) {
+    case 'text':
+      emitLit(ctx, escapeHtml(node.value));
+      return;
+
+    case 'comment':
+      emitLit(ctx, `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`);
+      return;
+
+    case 'expression': {
+      // Reactive slot: wrapped in hydration markers so PR 4 can locate it.
+      // _h.toHtml handles signal-accessor calls, branded HTML, arrays, and
+      // primitive escaping in one place.
+      emitLit(ctx, '<!--[-->');
+      ctx.parts.push(`${ctx.out}+=_h.toHtml(_v[${node.index}]);`);
+      emitLit(ctx, '<!--]-->');
+      return;
+    }
+
+    case 'fragment':
+      for (const ch of node.children) buildSSRBody(ch, ctx);
+      return;
+
+    case 'element': {
+      assertSafeName(node.tag, 'tag');
+      // Hyphenated tags route through _h.element, which dispatches to a
+      // registered component (DSD-wrapped output) or falls back to plain
+      // custom-element markup. PR 3 component SSR hangs off this path.
+      if (node.tag.includes('-')) {
+        emitCustomElement(node, ctx);
+        return;
+      }
+      emitLit(ctx, `<${node.tag}`);
+      for (const a of node.attributes) emitSSRAttr(a, ctx);
+      if (VOID.has(node.tag)) {
+        emitLit(ctx, '/>');
+        return;
+      }
+      emitLit(ctx, '>');
+      for (const ch of node.children) buildSSRBody(ch, ctx);
+      emitLit(ctx, `</${node.tag}>`);
+      return;
+    }
+  }
+}
+
+// Custom-element emission: assemble props from non-event attributes, build the
+// child slot HTML into a separate string, and dispatch through _h.element. The
+// helper registers a renderer hook that @purityjs/ssr installs on import.
+function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx): void {
+  const id = ctx.counter++;
+  const attrsVar = `_attrs${id}`;
+  const slotVar = `_slot${id}`;
+
+  // Build attrs object literal — static + dynamic (events skipped server-side).
+  // Static: literal value. Dynamic/prop/reactive-prop/bind: pass the raw value
+  // (function or scalar); valueToAttr / the host renderer handles it.
+  ctx.parts.push(`var ${attrsVar}={};`);
+  for (const a of node.attributes) {
+    if (a.kind === 'static') {
+      ctx.parts.push(`${attrsVar}[${JSON.stringify(a.name)}]=${JSON.stringify(a.value)};`);
+      continue;
+    }
+    if (a.kind === 'event') continue;
+    assertSafeName(a.name, 'attribute');
+    if (a.kind === 'bool') {
+      // Boolean attribute: store the truthy/falsy raw value; the renderer
+      // calls valueToAttr which collapses null/undefined/false to omitted
+      // and `true` to bare-name form.
+      ctx.parts.push(`${attrsVar}[${JSON.stringify(a.name)}]=_v[${a.index}];`);
+    } else {
+      ctx.parts.push(`${attrsVar}[${JSON.stringify(a.name)}]=_v[${a.index}];`);
+    }
+  }
+
+  // Capture children into a slot string. Temporarily swap the active output
+  // variable so all nested emissions append to slotVar; restore afterward.
+  ctx.parts.push(`var ${slotVar}='';`);
+  const prevOut = ctx.out;
+  ctx.out = slotVar;
+  for (const ch of node.children) buildSSRBody(ch, ctx);
+  ctx.out = prevOut;
+
+  ctx.parts.push(`${ctx.out}+=_h.element(${JSON.stringify(node.tag)},${attrsVar},${slotVar});`);
+}
+
+function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx): void {
+  if (a.kind === 'static') {
+    if (a.value) {
+      emitLit(ctx, ` ${a.name}="${escapeAttr(a.value)}"`);
+    } else {
+      emitLit(ctx, ` ${a.name}`);
+    }
+    return;
+  }
+
+  assertSafeName(a.name, 'attribute');
+  const id = ctx.counter++;
+  const av = `_av${id}`;
+  const val = `_v[${a.index}]`;
+  // Pre-escape the leading space + name once at codegen time. The trailing
+  // `="..."` is appended at runtime so we can omit the attribute when the
+  // value resolves to null/false.
+  const namePrefix = JSON.stringify(` ${a.name}`);
+
+  switch (a.kind) {
+    case 'event':
+      // Server has no listeners — skip entirely. The expression itself is
+      // never evaluated, matching the client behavior of installing it via
+      // addEventListener at hydration time (PR 4).
+      return;
+
+    case 'dynamic':
+    case 'prop':
+    case 'reactive-prop':
+    case 'bind': {
+      // All four read the current value (calling the accessor if it's a
+      // function) and emit it as a quoted attribute. `bind` skips the
+      // listener install — that's a hydration-time concern.
+      ctx.parts.push(
+        `var ${av}=_h.toAttr(${val});`,
+        `if(${av}!==null)_o+=${namePrefix}+(${av}===''?'':'="'+${av}+'"');`,
+      );
+      return;
+    }
+
+    case 'bool': {
+      // Boolean attribute: present (no value) when truthy, absent otherwise.
+      ctx.parts.push(
+        `var ${av}=${val};if(typeof ${av}==='function')${av}=${av}();`,
+        `if(${av})_o+=${namePrefix};`,
+      );
+      return;
+    }
+
+    /* v8 ignore next 2 -- defensive fallthrough; parser only emits known kinds */
+    default:
+      return;
   }
 }

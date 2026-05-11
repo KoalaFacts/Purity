@@ -179,3 +179,14 @@ if (existsSync(assetsDir)) {
 console.log(
   `Generated ${outDir}/index.html (${benchData.speed.length} speed ops, ${benchData.memory.length} memory ops, ${benchData.history.length} history runs)`,
 );
+
+// ---------------------------------------------------------------------------
+// Copy the dashboard demo (if it has been built) into /dashboard/.
+// The demo lives in `examples/dashboard/`; deployed at /Purity/dashboard/.
+// ---------------------------------------------------------------------------
+
+const demoDist = 'examples/dashboard/dist';
+if (existsSync(demoDist)) {
+  cpSync(demoDist, join(outDir, 'dashboard'), { recursive: true });
+  console.log('Copied examples/dashboard/dist → gh-pages/dashboard/');
+}

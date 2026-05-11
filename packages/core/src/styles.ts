@@ -59,6 +59,15 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
     return raw;
   };
 
+  // SSR path: collect styles into the active context for inlining inside the
+  // component's <template shadowrootmode> block. Reactive values are resolved
+  // once at render time — there's no second pass on the server.
+  const ssrStyles = ctx ? (ctx as unknown as { _ssrStyles?: string[] })._ssrStyles : undefined;
+  if (ssrStyles !== undefined) {
+    ssrStyles.push(buildCss());
+    return '';
+  }
+
   // Shadow DOM path — native scoping, no regex, no class names
   /* v8 ignore start -- jsdom lacks CSSStyleSheet ctor + adoptedStyleSheets */
   if (shadowRoot) {

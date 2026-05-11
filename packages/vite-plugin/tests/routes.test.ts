@@ -928,3 +928,138 @@ describe('purity({ routes }) — Vite plugin integration', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// ADR 0032 — on-disk manifest emit. Verifies the file is written, that
+// re-loads with unchanged content skip the rewrite, and that manifest
+// changes re-emit.
+// ---------------------------------------------------------------------------
+
+import { existsSync, readFileSync, statSync } from 'node:fs';
+
+describe('purity({ routes: { emitTo } }) — on-disk manifest emit (ADR 0032)', () => {
+  function makeTmpPages(layout: Record<string, string>): { root: string; cleanup: () => void } {
+    const root = mkdtempSync(join(tmpdir(), 'purity-emit-'));
+    for (const [rel, content] of Object.entries(layout)) {
+      const abs = join(root, rel);
+      mkdirSync(abs.replace(/\/[^/]+$/, ''), { recursive: true });
+      writeFileSync(abs, content);
+    }
+    return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+  }
+
+  it('writes the manifest source to the configured emitTo path on load', () => {
+    const { root, cleanup } = makeTmpPages({
+      'pages/index.ts': '// home',
+      'pages/about.ts': '// about',
+    });
+    try {
+      const plugin = purity({
+        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+      });
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
+        'purity:routes',
+      ) as string;
+      const src = (plugin as { load: (id: string) => string | null }).load(resolved) as string;
+
+      const emittedPath = join(root, '.purity/routes.ts');
+      expect(existsSync(emittedPath)).toBe(true);
+      expect(readFileSync(emittedPath, 'utf8')).toBe(src);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('skips the rewrite when content matches (no filesystem-watch loop)', () => {
+    const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
+    try {
+      const plugin = purity({
+        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+      });
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
+        'purity:routes',
+      ) as string;
+      (plugin as { load: (id: string) => string | null }).load(resolved);
+
+      const emittedPath = join(root, '.purity/routes.ts');
+      const mtimeBefore = statSync(emittedPath).mtimeMs;
+      // Wait a moment so mtime resolution catches any rewrite.
+      const start = Date.now();
+      while (Date.now() - start < 20) {
+        // Busy-wait briefly — `setTimeout` would require async.
+      }
+      // Reload — content unchanged.
+      (plugin as { load: (id: string) => string | null }).load(resolved);
+      const mtimeAfter = statSync(emittedPath).mtimeMs;
+      expect(mtimeAfter).toBe(mtimeBefore);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('rewrites the file when the manifest changes (new route added)', () => {
+    const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
+    try {
+      const plugin = purity({
+        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+      });
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
+        'purity:routes',
+      ) as string;
+      (plugin as { load: (id: string) => string | null }).load(resolved);
+
+      const emittedPath = join(root, '.purity/routes.ts');
+      const initialContent = readFileSync(emittedPath, 'utf8');
+      expect(initialContent).toContain('pattern: "/"');
+      expect(initialContent).not.toContain('pattern: "/about"');
+
+      // Add a new route.
+      writeFileSync(join(root, 'pages/about.ts'), '// about');
+      (plugin as { load: (id: string) => string | null }).load(resolved);
+
+      const newContent = readFileSync(emittedPath, 'utf8');
+      expect(newContent).toContain('pattern: "/about"');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('creates parent directories as needed', () => {
+    const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
+    try {
+      const plugin = purity({
+        routes: { dir: 'pages', emitTo: 'deeply/nested/routes.ts' },
+      });
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
+        'purity:routes',
+      ) as string;
+      (plugin as { load: (id: string) => string | null }).load(resolved);
+
+      const emittedPath = join(root, 'deeply/nested/routes.ts');
+      expect(existsSync(emittedPath)).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('does NOT emit when emitTo is omitted (default off)', () => {
+    const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
+    try {
+      const plugin = purity({ routes: { dir: 'pages' } });
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
+        'purity:routes',
+      ) as string;
+      (plugin as { load: (id: string) => string | null }).load(resolved);
+
+      // No emit path configured — no file should appear anywhere.
+      expect(existsSync(join(root, '.purity'))).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+});

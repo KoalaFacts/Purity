@@ -12,7 +12,7 @@
 //   export default defineConfig({ plugins: [purity()] });
 // ---------------------------------------------------------------------------
 
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { posix, resolve as resolvePath } from 'node:path';
 
 import { generate, generateSSR, parse } from '@purityjs/core/compiler';
@@ -38,6 +38,16 @@ export interface RoutesOptions {
    * @default 'purity:routes'
    */
   virtualId?: string;
+  /**
+   * Optional on-disk emit (ADR 0032). When set, the plugin writes the
+   * generated manifest source to this path (relative to Vite's project
+   * root) every time the virtual module is loaded. Apps `tsc` /
+   * IDE jump-to-definition into the file directly; the virtual module
+   * specifier keeps working unchanged. Skipped silently when the file
+   * already matches the new content. Add the emit path to `.gitignore`.
+   * @example 'src/.purity/routes.ts'
+   */
+  emitTo?: string;
 }
 
 /**
@@ -111,6 +121,7 @@ export function purity(options?: PurityPluginOptions) {
   let routesExt: string[] = [];
   let virtualId = '';
   let resolvedVirtualId = '';
+  let emitToAbs: string | null = null;
 
   return {
     name: 'purity',
@@ -122,6 +133,7 @@ export function purity(options?: PurityPluginOptions) {
       routesExt = routesOpts.extensions ?? ['.ts', '.tsx', '.js', '.jsx'];
       virtualId = routesOpts.virtualId ?? 'purity:routes';
       resolvedVirtualId = '\0' + virtualId;
+      emitToAbs = routesOpts.emitTo ? resolvePath(config.root, routesOpts.emitTo) : null;
     },
 
     resolveId(this: any, source: string) {
@@ -152,7 +164,17 @@ export function purity(options?: PurityPluginOptions) {
           return null;
         }
       });
-      return generateRouteManifestSource(manifest, (filePath) => posix.join(dir, filePath));
+      const source = generateRouteManifestSource(manifest, (filePath) => posix.join(dir, filePath));
+      // ADR 0032: optional on-disk emit. Skip the write when content
+      // matches to avoid filesystem-watch loops in dev. Failures are
+      // non-fatal — virtual module still returns `source`.
+      if (emitToAbs !== null) {
+        emitManifestToDisk(emitToAbs, source, (msg) => {
+          if (this && typeof this.warn === 'function') this.warn(msg);
+          else console.warn(msg);
+        });
+      }
+      return source;
     },
 
     handleHotUpdate(this: any, ctx: { file: string; server: { moduleGraph: any } }) {
@@ -232,6 +254,34 @@ function normaliseRoutesOption(opt: PurityPluginOptions['routes']): RoutesOption
  * Returns an empty array when `dir` doesn't exist (the plugin tolerates a
  * missing routes dir so apps can wire the option in before adding pages).
  */
+/**
+ * Write the generated manifest source to disk if the existing content
+ * differs (ADR 0032). Creates parent directories as needed. Failures
+ * call `warn` and are otherwise non-fatal — the virtual module still
+ * returns the source.
+ */
+function emitManifestToDisk(absPath: string, source: string, warn: (m: string) => void): void {
+  try {
+    // No-op when the file already matches — avoid filesystem-watch loops.
+    if (existsSync(absPath)) {
+      try {
+        if (readFileSync(absPath, 'utf8') === source) return;
+      } catch {
+        // Unreadable but exists — fall through and try to overwrite.
+      }
+    } else {
+      // Ensure the parent directory exists.
+      const parent = absPath.replace(/\/[^/]+$/, '');
+      if (parent && parent !== absPath) {
+        mkdirSync(parent, { recursive: true });
+      }
+    }
+    writeFileSync(absPath, source);
+  } catch (err) {
+    warn(`[purity] failed to write manifest to ${JSON.stringify(absPath)}: ${String(err)}`);
+  }
+}
+
 function listRouteFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
   const out: string[] = [];

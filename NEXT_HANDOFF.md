@@ -1,26 +1,27 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Thirty-five
-commits, twenty-five new ADRs (0007–0031), 961 tests passing** across
-the three publishable packages. Latest iteration shipped ADR 0031 —
-`RouteParams<P>`: a template-literal type that derives a typed param
-shape from a `matchRoute()` pattern string. Closes the typed-params
-half of ADR 0019's deferred "typed route params" non-feature.
+pass starting from the SSR-MVP follow-up gap list. **Thirty-six
+commits, twenty-six new ADRs (0007–0032), 966 tests passing** across
+the three publishable packages. Latest iteration shipped ADR 0032 —
+`emitTo`: opt-in on-disk manifest emit. The plugin's `load()` hook
+writes the generated source to a configurable path on each load,
+skipping rewrites when the content is unchanged (avoids filesystem-
+watch loops). Closes the on-disk-emit half of ADR 0019's deferred
+"build-time route table emit" non-feature.
 
-Type-only export from `@purityjs/vite-plugin`; zero runtime cost.
-Route modules annotate their first arg via
-`params: RouteParams<'/users/:id'>` and get `{ id: string }` instead
-of the generic `Record<string, string>`. The example's
-`pages/users/[id].ts` migrated to demonstrate.
+Apps get `tsc` + IDE jump-to-def without hand-maintaining ambient
+`declare module 'purity:routes'` blocks. The example wired
+`emitTo: 'src/.purity/routes.ts'` (with a `.gitignore` entry) — the
+file is regenerated on every build / dev start.
 
 ## Test count by package (current)
 
 ```
 core         629 passing  (31 files)
 ssr          145 passing  (11 files)
-vite-plugin  187 passing  (10 files)
-total        961
+vite-plugin  192 passing  (10 files)
+total        966
 ```
 
 ## ADRs accepted on this branch
@@ -57,6 +58,7 @@ rejected alternatives.
 | 0029 | [`prefetchManifestLinks()` — hover-prefetch route modules](docs/decisions/0029-hover-prefetch.md)           | Delegated `mouseover`/`focusin` listener warms the bundler chunk cache on link hover. Composes with `configureNavigation({ prefetch: { routes } })`. |
 | 0030 | [`manageTitle(fn)` — reactive `<title>` sync](docs/decisions/0030-reactive-title.md)                        | Isomorphic helper: emits `<title>` to the SSR head on the server; watches `fn` and writes `document.title` on the client.                            |
 | 0031 | [`RouteParams<P>` — typed route params](docs/decisions/0031-typed-route-params.md)                          | Template-literal type derives `{ id: string }` from `'/users/:id'`. Type-only export from `@purityjs/vite-plugin`; zero runtime cost.                |
+| 0032 | [`emitTo` — on-disk manifest emit](docs/decisions/0032-on-disk-manifest-emit.md)                            | Opt-in plugin option writes the generated manifest source to disk each `load()`. Skips rewrites when content matches. `tsc` + IDE jump-to-def.       |
 
 All ADRs on this branch are `Status: Accepted` (ADR 0006 was promoted
 from `Proposed` in this iteration's housekeeping pass).
@@ -85,7 +87,7 @@ from `Proposed` in this iteration's housekeeping pass).
 
 `@purityjs/vite-plugin` options:
 
-- `purity({ include?, stripServerModules?, routes? })`. `stripServerModules` defaults `true` (ADR 0018). `routes` defaults `false`; pass `true` for `pages/` or `{ dir, extensions?, virtualId? }` (ADR 0019). `_layout.{ts,tsx,js,jsx}` files attach to each route's `layouts` chain (ADR 0020). `_error.{ts,tsx,js,jsx}` per directory attach a single nearest `errorBoundary` per route, and a root `_404.{ts,tsx,js,jsx}` becomes the manifest's top-level `notFound` (ADR 0021). Routes + layouts that export a named `loader` get `hasLoader: true` in the manifest (ADR 0022). Every `_404` in the tree contributes to `notFoundChain` (ADR 0028). Re-exports `RouteEntry` + `LayoutEntry` for consumers of the virtual module, plus the type-only `RouteParams<P>` for typed route params (ADR 0031).
+- `purity({ include?, stripServerModules?, routes? })`. `stripServerModules` defaults `true` (ADR 0018). `routes` defaults `false`; pass `true` for `pages/` or `{ dir, extensions?, virtualId?, emitTo? }` (ADRs 0019 + 0032). `_layout.{ts,tsx,js,jsx}` files attach to each route's `layouts` chain (ADR 0020). `_error.{ts,tsx,js,jsx}` per directory attach a single nearest `errorBoundary` per route, and a root `_404.{ts,tsx,js,jsx}` becomes the manifest's top-level `notFound` (ADR 0021). Routes + layouts that export a named `loader` get `hasLoader: true` in the manifest (ADR 0022). Every `_404` in the tree contributes to `notFoundChain` (ADR 0028). `emitTo: '<path>'` (ADR 0032) opt-in writes the manifest source to disk for `tsc`/IDE visibility. Re-exports `RouteEntry` + `LayoutEntry` for consumers of the virtual module, plus the type-only `RouteParams<P>` for typed route params (ADR 0031).
 
 The SSR README ([packages/ssr/README.md](packages/ssr/README.md))
 has the full API tour with copy-pasteable examples for every entry.
@@ -232,17 +234,8 @@ user interaction needs event replay; a strictly larger problem.
 
 ## Recommended next sprint
 
-ADR 0031 shipped the typed-params half of Path J this iteration.
-The on-disk emit half is the natural follow-up; two items remain
-on the high-leverage list plus one Path K leftover.
-
-**Path J' — on-disk manifest emit (next ADR).** ADR 0031 ships
-the type utility; the matching build-time emit would let `tsc`
-infer typed entries via iteration. Adds an `emitTo?: string`
-option to the plugin; on `load()` of the virtual module, also
-writes the generated source to disk. Apps that want auto-typed
-entries set the option + import from the file path instead of
-`purity:routes`. ~half a day.
+ADR 0032 shipped Path J' this iteration. Two items remain on the
+high-leverage list.
 
 **Path H — streaming-SSR adapter migration to the manifest.**
 ADR 0006's adapter examples (`ssr-stream-cf-workers/`,
@@ -262,6 +255,7 @@ hook in `renderToStream`; that's the actionable signal.
   day; depends on adding a minimal JS parser dep or carving out
   esbuild's parse pass.
 
-Path J' is the natural sequel to this iteration. Path H validates
-the streaming pipeline. Path K's last item is parser-shaped —
-bigger than the items shipped so far.
+Path H validates the streaming pipeline against the manifest.
+Path K's last item is parser-shaped — bigger than the items
+shipped so far. Both move the framework toward a polished 1.0
+ship; pick the one matching the time budget.

@@ -107,4 +107,44 @@ describe('configureNavigation — per-helper option pass-through (ADR 0027)', ()
       expect(document.activeElement?.tagName.toLowerCase()).toBe('custom-landmark');
     });
   });
+
+  it('announce: true enables the ARIA live region (ADR 0037)', async () => {
+    document.title = 'My Page';
+    teardown = configureNavigation({
+      intercept: false,
+      scroll: false,
+      focus: false,
+      transitions: false,
+      announce: true,
+    });
+    navigate('/somewhere');
+    await new Promise((r) => queueMicrotask(r));
+    const region = document.getElementById('__purity_announce__');
+    expect(region).not.toBeNull();
+    expect(region!.textContent).toBe('My Page');
+  });
+
+  it('announce: { ... } forwards options to manageNavAnnounce', async () => {
+    teardown = configureNavigation({
+      intercept: false,
+      scroll: false,
+      focus: false,
+      transitions: false,
+      announce: { regionId: 'my-region', message: (url) => `at ${url.pathname}` },
+    });
+    navigate('/about');
+    await new Promise((r) => queueMicrotask(r));
+    const region = document.getElementById('my-region');
+    expect(region).not.toBeNull();
+    expect(region!.textContent).toBe('at /about');
+    // Default region was NOT created.
+    expect(document.getElementById('__purity_announce__')).toBeNull();
+  });
+
+  it('announce defaults to off — no live region without opting in', async () => {
+    teardown = configureNavigation();
+    navigate('/x');
+    await new Promise((r) => queueMicrotask(r));
+    expect(document.getElementById('__purity_announce__')).toBeNull();
+  });
 });

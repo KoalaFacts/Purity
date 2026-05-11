@@ -87,6 +87,8 @@ export { interceptLinks, type InterceptLinksOptions } from './router-intercept.t
 export { manageNavScroll, type ManageNavScrollOptions } from './router-scroll.ts';
 // Navigation focus management — ADR 0016.
 export { manageNavFocus, type ManageNavFocusOptions } from './router-focus.ts';
+// ARIA live-region announce on navigate — ADR 0037.
+export { manageNavAnnounce, type ManageNavAnnounceOptions } from './router-announce.ts';
 // Navigation view transitions — ADR 0017.
 export { manageNavTransitions, type ManageNavTransitionsOptions } from './router-transitions.ts';
 // Navigation consolidator — ADR 0027.

@@ -10,6 +10,7 @@ import { prefetchManifestLinks, type PrefetchManifestLinksOptions } from './rout
 import { manageNavScroll, type ManageNavScrollOptions } from './router-scroll.ts';
 import { manageNavFocus, type ManageNavFocusOptions } from './router-focus.ts';
 import { manageNavTransitions, type ManageNavTransitionsOptions } from './router-transitions.ts';
+import { manageNavAnnounce, type ManageNavAnnounceOptions } from './router-announce.ts';
 
 /** Prefetch sub-option for {@link ConfigureNavigationOptions}. */
 export interface ConfigureNavigationPrefetch extends PrefetchManifestLinksOptions {
@@ -39,6 +40,15 @@ export interface ConfigureNavigationOptions {
   focus?: ManageNavFocusOptions | boolean;
   /** Forwarded to {@link manageNavTransitions} (ADR 0017). */
   transitions?: ManageNavTransitionsOptions | boolean;
+  /**
+   * Forwarded to {@link manageNavAnnounce} (ADR 0037). ARIA live-region
+   * announcer — alternative to focus-move for routes that prefer
+   * announce-only. Off by default; opt in with `true` or an options
+   * object. Most apps pair `focus` OR `announce`, not both — moving
+   * focus already triggers an AT announce, so the live region is
+   * redundant when focus is on.
+   */
+  announce?: ManageNavAnnounceOptions | boolean;
   /**
    * Forwarded to {@link prefetchManifestLinks} (ADR 0029). Pass
    * `{ routes }` (plus optional `delay` / `shouldPrefetch`) to enable.
@@ -95,6 +105,11 @@ export function configureNavigation(options: ConfigureNavigationOptions = {}): (
     teardowns.push(
       manageNavTransitions(optionsOf<ManageNavTransitionsOptions>(options.transitions)),
     );
+  }
+  // ADR 0037: announce is opt-in (default off). Apps that prefer announce
+  // over focus-move pass `{ focus: false, announce: true }`.
+  if (options.announce !== undefined && options.announce !== false) {
+    teardowns.push(manageNavAnnounce(optionsOf<ManageNavAnnounceOptions>(options.announce)));
   }
   // ADR 0029: opt-in by passing `{ prefetch: { routes } }`. Unlike the
   // other keys, prefetch has no useful default — needs the manifest.

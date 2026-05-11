@@ -1,27 +1,26 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Thirty-four
-commits, twenty-four new ADRs (0007–0030), 953 tests passing** across
-the three publishable packages. Latest iteration shipped ADR 0030 —
-`manageTitle(fn)`: isomorphic reactive `<title>` sync. On the server,
-emits `<title>${fn()}</title>` into the SSR head accumulator (via
-`head()`); on the client, wraps `fn` in a `watch()` that writes
-`document.title` on every dependency change.
+pass starting from the SSR-MVP follow-up gap list. **Thirty-five
+commits, twenty-five new ADRs (0007–0031), 961 tests passing** across
+the three publishable packages. Latest iteration shipped ADR 0031 —
+`RouteParams<P>`: a template-literal type that derives a typed param
+shape from a `matchRoute()` pattern string. Closes the typed-params
+half of ADR 0019's deferred "typed route params" non-feature.
 
-Closes the most visible piece of ADR 0008's "client-side head
-management is a follow-up" non-feature. The example's
-`pages/users/[id].ts` migrated to demonstrate — title still appears
-in SSR HTML (`<title>User 42 — …</title>`) and updates on client
-SPA navigation between `/users/42` ↔ `/users/99`.
+Type-only export from `@purityjs/vite-plugin`; zero runtime cost.
+Route modules annotate their first arg via
+`params: RouteParams<'/users/:id'>` and get `{ id: string }` instead
+of the generic `Record<string, string>`. The example's
+`pages/users/[id].ts` migrated to demonstrate.
 
 ## Test count by package (current)
 
 ```
 core         629 passing  (31 files)
 ssr          145 passing  (11 files)
-vite-plugin  179 passing  ( 9 files)
-total        953
+vite-plugin  187 passing  (10 files)
+total        961
 ```
 
 ## ADRs accepted on this branch
@@ -57,6 +56,7 @@ rejected alternatives.
 | 0028 | [Per-directory `_404.ts` — nested not-found chain](docs/decisions/0028-nested-404-chain.md)                 | Manifest emits `notFoundChain: LayoutEntry[]` (deepest-first); `asyncNotFound(chain)` walks by URL prefix and picks the nearest entry.               |
 | 0029 | [`prefetchManifestLinks()` — hover-prefetch route modules](docs/decisions/0029-hover-prefetch.md)           | Delegated `mouseover`/`focusin` listener warms the bundler chunk cache on link hover. Composes with `configureNavigation({ prefetch: { routes } })`. |
 | 0030 | [`manageTitle(fn)` — reactive `<title>` sync](docs/decisions/0030-reactive-title.md)                        | Isomorphic helper: emits `<title>` to the SSR head on the server; watches `fn` and writes `document.title` on the client.                            |
+| 0031 | [`RouteParams<P>` — typed route params](docs/decisions/0031-typed-route-params.md)                          | Template-literal type derives `{ id: string }` from `'/users/:id'`. Type-only export from `@purityjs/vite-plugin`; zero runtime cost.                |
 
 All ADRs on this branch are `Status: Accepted` (ADR 0006 was promoted
 from `Proposed` in this iteration's housekeeping pass).
@@ -85,7 +85,7 @@ from `Proposed` in this iteration's housekeeping pass).
 
 `@purityjs/vite-plugin` options:
 
-- `purity({ include?, stripServerModules?, routes? })`. `stripServerModules` defaults `true` (ADR 0018). `routes` defaults `false`; pass `true` for `pages/` or `{ dir, extensions?, virtualId? }` (ADR 0019). `_layout.{ts,tsx,js,jsx}` files attach to each route's `layouts` chain (ADR 0020). `_error.{ts,tsx,js,jsx}` per directory attach a single nearest `errorBoundary` per route, and a root `_404.{ts,tsx,js,jsx}` becomes the manifest's top-level `notFound` (ADR 0021). Routes + layouts that export a named `loader` get `hasLoader: true` in the manifest (ADR 0022). Re-exports `RouteEntry` + `LayoutEntry` for consumers of the virtual module.
+- `purity({ include?, stripServerModules?, routes? })`. `stripServerModules` defaults `true` (ADR 0018). `routes` defaults `false`; pass `true` for `pages/` or `{ dir, extensions?, virtualId? }` (ADR 0019). `_layout.{ts,tsx,js,jsx}` files attach to each route's `layouts` chain (ADR 0020). `_error.{ts,tsx,js,jsx}` per directory attach a single nearest `errorBoundary` per route, and a root `_404.{ts,tsx,js,jsx}` becomes the manifest's top-level `notFound` (ADR 0021). Routes + layouts that export a named `loader` get `hasLoader: true` in the manifest (ADR 0022). Every `_404` in the tree contributes to `notFoundChain` (ADR 0028). Re-exports `RouteEntry` + `LayoutEntry` for consumers of the virtual module, plus the type-only `RouteParams<P>` for typed route params (ADR 0031).
 
 The SSR README ([packages/ssr/README.md](packages/ssr/README.md))
 has the full API tour with copy-pasteable examples for every entry.
@@ -232,8 +232,17 @@ user interaction needs event replay; a strictly larger problem.
 
 ## Recommended next sprint
 
-ADR 0030 shipped the `<title>` sync from the Path K remainder list
-this iteration. Three items left on the high-leverage list:
+ADR 0031 shipped the typed-params half of Path J this iteration.
+The on-disk emit half is the natural follow-up; two items remain
+on the high-leverage list plus one Path K leftover.
+
+**Path J' — on-disk manifest emit (next ADR).** ADR 0031 ships
+the type utility; the matching build-time emit would let `tsc`
+infer typed entries via iteration. Adds an `emitTo?: string`
+option to the plugin; on `load()` of the virtual module, also
+writes the generated source to disk. Apps that want auto-typed
+entries set the option + import from the file path instead of
+`purity:routes`. ~half a day.
 
 **Path H — streaming-SSR adapter migration to the manifest.**
 ADR 0006's adapter examples (`ssr-stream-cf-workers/`,
@@ -244,13 +253,6 @@ streaming pipeline works end-to-end with the lazyResource
 registration. Likely surfaces a missing pendingPromises-for-stream
 hook in `renderToStream`; that's the actionable signal.
 
-**Path J — typed-manifest emit (next ADR).** The build-time route
-table emit deferred from ADR 0019. Emit a TypeScript file at e.g.
-`src/.purity/routes.ts` that mirrors the virtual `purity:routes`
-shape so `tsc` / IDEs can introspect it. Pairs naturally with
-typed `RouteParams<'/users/:id'>` template-literal inference. Apps
-that import from `purity:routes` get strongly typed entries.
-
 **Path K (remainder) — one item left.**
 
 - Smart `serverAction()` body-only stripping (ADR 0018) — strip
@@ -260,7 +262,6 @@ that import from `purity:routes` get strongly typed entries.
   day; depends on adding a minimal JS parser dep or carving out
   esbuild's parse pass.
 
-Path H is the right pick if you want to validate the streaming
-pipeline against the manifest. Path J is the larger build-time-
-typing follow-up. Path K's last item is parser-shaped — bigger
-than the items shipped so far.
+Path J' is the natural sequel to this iteration. Path H validates
+the streaming pipeline. Path K's last item is parser-shaped —
+bigger than the items shipped so far.

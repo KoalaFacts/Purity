@@ -11,6 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import { when } from './control.ts';
+import { popLoaderData, pushLoaderData } from './loader-data.ts';
 import { lazyResource } from './resource.ts';
 import { getRequest } from './request-context.ts';
 
@@ -121,13 +122,30 @@ async function loadStack(
     ]);
 
     // reduceRight wraps each layout around the inner view, leaf → root.
+    // Each component invocation is bracketed by push/pop so `loaderData()`
+    // (ADR 0026) reads the calling view's own slot. Nested layouts +
+    // route compose correctly because pushes mirror the JS call stack.
     return (): unknown => {
-      let view: () => unknown = () => routeMod.default(params, routeData);
+      let view: () => unknown = () => {
+        pushLoaderData(routeData);
+        try {
+          return routeMod.default(params, routeData);
+        } finally {
+          popLoaderData();
+        }
+      };
       for (let i = layoutMods.length - 1; i >= 0; i--) {
         const layout = layoutMods[i];
         const data = layoutsData[i];
         const inner = view;
-        view = () => layout.default(inner, data);
+        view = () => {
+          pushLoaderData(data);
+          try {
+            return layout.default(inner, data);
+          } finally {
+            popLoaderData();
+          }
+        };
       }
       return view();
     };
@@ -135,12 +153,21 @@ async function loadStack(
     // Route-level error boundary (ADR 0021). Loaded on demand — most
     // routes never error so paying the import cost up front would be
     // wasteful. The boundary itself shouldn't throw; if it does, the
-    // throw escapes to the consumer's fallback path.
+    // throw escapes to the consumer's fallback path. The boundary's
+    // loaderData slot is the caught error so `_error.ts` views can
+    // call `loaderData<{ error: unknown }>()` if they prefer.
     if (entry.errorBoundary) {
       const errMod = (await entry.errorBoundary.importFn()) as {
         default: (e: unknown) => unknown;
       };
-      return () => errMod.default(err);
+      return () => {
+        pushLoaderData(err);
+        try {
+          return errMod.default(err);
+        } finally {
+          popLoaderData();
+        }
+      };
     }
     throw err;
   }
@@ -214,7 +241,17 @@ export function asyncNotFound(entry: AsyncNotFoundEntry, options?: AsyncRouteOpt
   r.fetch();
   return when(
     () => r() !== undefined,
-    () => (r() as () => unknown)(),
+    () => {
+      // 404 has no loader data; push `undefined` so `loaderData()` inside
+      // the page consistently returns undefined (vs. inheriting some
+      // outer push). Matches ADR 0026's documented behavior.
+      pushLoaderData(undefined);
+      try {
+        return (r() as () => unknown)();
+      } finally {
+        popLoaderData();
+      }
+    },
     options?.fallback,
   );
 }

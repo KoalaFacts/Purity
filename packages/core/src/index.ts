@@ -98,6 +98,8 @@ export {
   type AsyncRouteOptions,
   type LoaderContext,
 } from './async-route.ts';
+// Loader-data accessor — ADR 0026.
+export { loaderData } from './loader-data.ts';
 // Server actions — ADR 0012.
 export {
   findAction,

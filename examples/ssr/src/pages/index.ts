@@ -1,15 +1,12 @@
-// Home page. Demonstrates ADRs 0022 + 0024:
+// Home page. Demonstrates the full loader pipeline end-to-end:
 //
-//   - `loader` named export is detected by the plugin (hasLoader: true on
-//     the manifest entry).
-//   - The composer in src/app.ts awaits the loader's result and threads it
-//     into the component as the second positional arg.
-//   - ADR 0024's SSR-aware lazyResource is what lets the renderer await
-//     the route module + loader resolution before pass 2 — that's why the
-//     SSR HTML ships with `data.todos` already rendered, not the
-//     suspense fallback.
+//   - ADR 0022: `loader` named export detected by the manifest.
+//   - ADR 0025: `asyncRoute()` invokes the loader before the view.
+//   - ADR 0026: the view reads its loader data via `loaderData()` instead
+//     of the positional `data` arg — decouples the component signature
+//     from the loader's return type.
 
-import { component, each, head, html } from '@purityjs/core';
+import { component, each, head, html, loaderData } from '@purityjs/core';
 
 component<{ count: number }>('demo-counter', ({ count }) => {
   return html`
@@ -27,23 +24,22 @@ export async function loader(): Promise<{ todos: string[] }> {
   return { todos: ['Write tests', 'Ship SSR', 'Celebrate'] };
 }
 
-interface HomeData {
-  todos: string[];
-}
-
-export default function HomePage(_params: Record<string, string>, data: HomeData): unknown {
+export default function HomePage(): unknown {
   head(html`<title>Purity SSR demo — home</title>`);
   head(html`<meta name="description" content="Reactive SSR with streaming." />`);
+
+  const data = loaderData<{ todos: string[] }>();
+  const todos = data?.todos ?? [];
 
   // `each()` is ADR-0023 isomorphic — the same call works in SSR (emits
   // the per-row marker grammar) and on the client (builds the DOM).
   return html`
     <h1>Hello from /</h1>
     <demo-counter :count=${42}></demo-counter>
-    <h2>Todos (loaded via ADR 0022's loader)</h2>
+    <h2>Todos (loaded via ADR 0022, read via ADR 0026's loaderData())</h2>
     <ul>
       ${each(
-        () => data.todos,
+        () => todos,
         (item) => html`<li>${() => item()}</li>`,
       )}
     </ul>

@@ -14,6 +14,7 @@ import { when } from './control.ts';
 import { popLoaderData, pushLoaderData } from './loader-data.ts';
 import { lazyResource } from './resource.ts';
 import { getRequest } from './request-context.ts';
+import { currentPath } from './router.ts';
 
 /**
  * Loader context passed to a route or layout's `loader()` named export
@@ -56,6 +57,12 @@ export interface AsyncRouteEntry {
 export interface AsyncNotFoundEntry {
   filePath: string;
   importFn: () => Promise<unknown>;
+  /**
+   * Routes-relative directory this 404 covers. `''` for the root entry,
+   * a directory path for nested ones (ADR 0028). Optional for single-
+   * entry callers; required for `notFoundChain` callers to resolve.
+   */
+  dir?: string;
 }
 
 /** Options shared by {@link asyncRoute} and {@link asyncNotFound}. */
@@ -212,25 +219,71 @@ export function asyncRoute(
 }
 
 /**
- * Render the manifest's top-level `notFound` page (ADR 0021). Same
- * SSR-multipass story as {@link asyncRoute} — the lazyResource registers
- * the import promise so pass 2 sees the resolved view.
+ * Pick the deepest entry in a `notFoundChain` whose `dir` is a prefix
+ * of `path` (ADR 0028). Chain is expected deepest-first; first match
+ * wins. Returns null when no entry matches.
+ */
+function pickNotFoundForPath(
+  chain: ReadonlyArray<AsyncNotFoundEntry>,
+  path: string,
+): AsyncNotFoundEntry | null {
+  for (const entry of chain) {
+    const dir = entry.dir;
+    if (dir === undefined || dir === '') return entry; // root entry / no dir = catches all
+    // Match `/admin`, `/admin/`, `/admin/anything` but NOT `/administrator`.
+    const prefix = '/' + dir;
+    if (path === prefix || path.startsWith(prefix + '/')) return entry;
+  }
+  return null;
+}
+
+/**
+ * Render the manifest's `notFound` page (ADR 0021) or pick from a
+ * `notFoundChain` (ADR 0028). Same SSR-multipass story as
+ * {@link asyncRoute} — the lazyResource registers the import promise
+ * so pass 2 sees the resolved view.
+ *
+ * Two call shapes:
+ *
+ * - **Single entry** — `asyncNotFound(notFound)`. Renders the supplied
+ *   entry directly. Back-compat with ADR 0021.
+ * - **Chain** — `asyncNotFound(notFoundChain)`. Walks the chain
+ *   deepest-first and picks the first entry whose `dir` is a prefix of
+ *   `currentPath()`. ADR 0028. Returns the options.fallback (or
+ *   nothing) when the chain is empty / no entry matches.
  *
  * @example
  * ```ts
- * import { asyncNotFound, asyncRoute, html, matchRoute } from '@purityjs/core';
- * import { notFound, routes } from 'purity:routes';
+ * import { asyncNotFound, asyncRoute, matchRoute } from '@purityjs/core';
+ * import { notFoundChain, routes } from 'purity:routes';
  *
  * export function App() {
  *   for (const entry of routes) {
  *     const m = matchRoute(entry.pattern);
  *     if (m) return asyncRoute(entry, m.params);
  *   }
- *   return notFound ? asyncNotFound(notFound) : html`<h1>404</h1>`;
+ *   return asyncNotFound(notFoundChain);
  * }
  * ```
  */
-export function asyncNotFound(entry: AsyncNotFoundEntry, options?: AsyncRouteOptions): unknown {
+export function asyncNotFound(
+  entryOrChain: AsyncNotFoundEntry | ReadonlyArray<AsyncNotFoundEntry>,
+  options?: AsyncRouteOptions,
+): unknown {
+  // Resolve the active entry. For a chain, pick by current path; for a
+  // single entry, use it as-is.
+  const entry = Array.isArray(entryOrChain)
+    ? pickNotFoundForPath(entryOrChain as ReadonlyArray<AsyncNotFoundEntry>, currentPath())
+    : (entryOrChain as AsyncNotFoundEntry);
+  if (!entry) {
+    // No 404 matched the current path — render fallback (typically undefined,
+    // which when() handles as "render nothing").
+    return when(
+      () => false,
+      () => undefined,
+      options?.fallback,
+    );
+  }
   const r = lazyResource(
     async () => {
       const mod = (await entry.importFn()) as { default: () => unknown };

@@ -18,6 +18,13 @@ export interface LayoutEntry {
    * Always literal `true` when present; absent ≡ no loader detected.
    */
   hasLoader?: true;
+  /**
+   * Routes-relative directory this entry covers, when applicable
+   * (ADR 0028). Currently populated only on `notFoundChain` entries —
+   * `''` for the root `_404`, the directory path for nested ones.
+   * Layout / error-boundary entries omit it.
+   */
+  dir?: string;
 }
 
 /** A single entry in the generated route manifest. */
@@ -45,16 +52,23 @@ export interface RouteEntry {
   hasLoader?: true;
 }
 
-/** Output of `buildRouteManifest` — the routes plus an optional root `_404`. */
+/** Output of `buildRouteManifest` — routes plus 404 chain + back-compat root alias. */
 export interface RouteManifest {
   /** All route entries, sorted most-specific first. */
   routes: RouteEntry[];
   /**
-   * Root-level `_404.{ts,tsx,js,jsx}` page (ADR 0021). Omitted when
-   * no `_404` exists at the routes-dir root. Phase 1 supports root
-   * only; nested 404s are deferred.
+   * Root-level `_404.{ts,tsx,js,jsx}` page (ADR 0021). Back-compat
+   * alias for `notFoundChain` entries whose `dir === ''`. Omitted
+   * when no root `_404` exists (the chain may still be non-empty).
    */
   notFound?: LayoutEntry;
+  /**
+   * Every `_404.{ts,tsx,js,jsx}` file in the routes tree (ADR 0028),
+   * sorted deepest-first so a consumer's first-match walk picks the
+   * narrowest section before falling through to broader. Empty when
+   * no `_404` files exist anywhere.
+   */
+  notFoundChain: LayoutEntry[];
 }
 
 /**
@@ -203,9 +217,24 @@ export function errorDirOf(filePath: string, extensions: string[]): string | nul
 }
 
 /**
- * If `filePath` is a root-level `_404.<ext>`, return the path. Otherwise
- * return null. Nested `_404` files at this stage of the project are
- * silently ignored — Phase 1 supports root-only 404s (ADR 0021).
+ * If `filePath` is a `_404.<ext>` (root or nested), return its containing
+ * directory ('' for the routes-dir root). Otherwise return null. ADR 0028
+ * extended this to recognise nested 404s; ADR 0021 originally restricted
+ * to root only.
+ */
+export function notFoundDirOf(filePath: string, extensions: string[]): string | null {
+  for (const ext of extensions) {
+    const target = NOT_FOUND_BASENAME + ext;
+    if (filePath === target) return '';
+    if (filePath.endsWith('/' + target)) return filePath.slice(0, -target.length - 1);
+  }
+  return null;
+}
+
+/**
+ * Legacy helper preserved for backwards compat with existing tests + the
+ * `notFound` top-level field (ADR 0021). Returns the file path for a root
+ * `_404` only; nested `_404` files yield null.
  */
 export function notFoundFileOf(filePath: string, extensions: string[]): string | null {
   for (const ext of extensions) {
@@ -370,18 +399,20 @@ export function buildRouteManifest(
   // across operating systems with different readdir ordering.
   const sortedFiles = files.slice().sort();
 
-  // Discover layout / error-boundary modules first so the route assignment
-  // loop can resolve each route's chain in one pass.
+  // Discover layout / error-boundary / 404 modules first so the route
+  // assignment loop can resolve each route's chain in one pass.
   const layoutByDir = new Map<string, string>();
   const errorByDir = new Map<string, string>();
-  let notFoundFile: string | null = null;
+  // ADR 0028: every `_404.<ext>` in the tree contributes to the chain.
+  // Map<directory, filePath> — `''` for the root.
+  const notFoundByDir = new Map<string, string>();
   for (const file of sortedFiles) {
     const ld = layoutDirOf(file, extensions);
     if (ld !== null) layoutByDir.set(ld, file);
     const ed = errorDirOf(file, extensions);
     if (ed !== null) errorByDir.set(ed, file);
-    const nf = notFoundFileOf(file, extensions);
-    if (nf !== null) notFoundFile = nf;
+    const nfDir = notFoundDirOf(file, extensions);
+    if (nfDir !== null) notFoundByDir.set(nfDir, file);
   }
   const layoutDirs = new Set(layoutByDir.keys());
   const errorDirs = new Set(errorByDir.keys());
@@ -403,8 +434,26 @@ export function buildRouteManifest(
     }
     byPattern.set(entry.pattern, entry);
   }
-  const manifest: RouteManifest = { routes: sortRoutes(Array.from(byPattern.values())) };
-  if (notFoundFile !== null) manifest.notFound = { filePath: notFoundFile };
+
+  // Build the notFoundChain: every _404 sorted deepest-first by directory
+  // depth, alphabetical tiebreaker. Empty when no _404 files exist.
+  const notFoundChain: LayoutEntry[] = Array.from(notFoundByDir.entries())
+    .sort(([dirA], [dirB]) => {
+      const depthA = dirA === '' ? 0 : dirA.split('/').length;
+      const depthB = dirB === '' ? 0 : dirB.split('/').length;
+      if (depthA !== depthB) return depthB - depthA; // deeper first
+      return dirA < dirB ? -1 : dirA > dirB ? 1 : 0;
+    })
+    .map(([dir, filePath]) => ({ filePath, dir }));
+
+  const manifest: RouteManifest = {
+    routes: sortRoutes(Array.from(byPattern.values())),
+    notFoundChain,
+  };
+  // Back-compat: surface the root entry under the original `notFound` field.
+  // Shape parity with ADR 0021's emission — no `dir` field.
+  const rootNotFound = notFoundByDir.get('');
+  if (rootNotFound !== undefined) manifest.notFound = { filePath: rootNotFound };
   return manifest;
 }
 
@@ -427,7 +476,8 @@ function entryLiteral(e: LayoutEntry, absPathFor: (filePath: string) => string):
   const fp = JSON.stringify(e.filePath);
   const abs = JSON.stringify(absPathFor(e.filePath));
   const loaderPart = e.hasLoader ? ', hasLoader: true' : '';
-  return `{ filePath: ${fp}, importFn: () => import(${abs})${loaderPart} }`;
+  const dirPart = e.dir !== undefined ? `, dir: ${JSON.stringify(e.dir)}` : '';
+  return `{ filePath: ${fp}, importFn: () => import(${abs})${loaderPart}${dirPart} }`;
 }
 
 export function generateRouteManifestSource(
@@ -435,7 +485,7 @@ export function generateRouteManifestSource(
   absPathFor: (filePath: string) => string,
 ): string {
   const lines: string[] = [
-    '// AUTO-GENERATED by @purityjs/vite-plugin (ADR 0019 + 0020 + 0021 + 0022). Do not edit.',
+    '// AUTO-GENERATED by @purityjs/vite-plugin (ADR 0019 + 0020 + 0021 + 0022 + 0028). Do not edit.',
     'export const routes = [',
   ];
   for (const e of manifest.routes) {
@@ -455,6 +505,15 @@ export function generateRouteManifestSource(
   if (manifest.notFound) {
     lines.push(`export const notFound = ${entryLiteral(manifest.notFound, absPathFor)};`);
   }
+  // ADR 0028: always emit notFoundChain. Empty array when no _404 files
+  // exist anywhere — consumers always see the field. Tolerates a missing
+  // field on the manifest input (older test fixtures).
+  const chain = manifest.notFoundChain ?? [];
+  lines.push('export const notFoundChain = [');
+  for (const e of chain) {
+    lines.push(`  ${entryLiteral(e, absPathFor)},`);
+  }
+  lines.push('];');
   lines.push('');
   return lines.join('\n');
 }

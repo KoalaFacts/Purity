@@ -405,7 +405,7 @@ describe('buildRouteManifest', () => {
   });
 
   it('returns an empty manifest for an empty file list', () => {
-    expect(buildRouteManifest([], EXTS)).toEqual({ routes: [] });
+    expect(buildRouteManifest([], EXTS)).toEqual({ routes: [], notFoundChain: [] });
   });
 
   it('assigns each route its inherited layout chain (root → leaf)', () => {
@@ -486,12 +486,31 @@ describe('buildRouteManifest', () => {
     expect(manifest.notFound).toEqual({ filePath: '_404.ts' });
   });
 
-  it('ignores nested _404 files in Phase 1 (ADR 0021)', () => {
+  it('collects nested _404 files into notFoundChain (ADR 0028)', () => {
     const manifest = buildRouteManifest(['index.ts', 'admin/_404.ts', 'admin/users.ts'], EXTS);
-    // No root _404 → no top-level notFound.
+    // No root _404 → no top-level alias.
     expect(manifest.notFound).toBeUndefined();
-    // Nested _404 is treated as a reserved file (dropped from routes).
+    // Nested _404 still excluded from routes (reserved-`_` rule).
     expect(manifest.routes.map((e) => e.pattern).sort()).toEqual(['/', '/admin/users']);
+    // Chain contains the admin/_404 with its directory.
+    expect(manifest.notFoundChain).toEqual([{ filePath: 'admin/_404.ts', dir: 'admin' }]);
+  });
+
+  it('sorts notFoundChain deepest-first (ADR 0028)', () => {
+    const manifest = buildRouteManifest(
+      ['_404.ts', 'admin/_404.ts', 'admin/users/_404.ts', 'blog/_404.ts', 'index.ts'],
+      EXTS,
+    );
+    // Depth 2 first, then depth 1 (alphabetical tiebreak), then depth 0.
+    expect(manifest.notFoundChain.map((e) => e.dir)).toEqual(['admin/users', 'admin', 'blog', '']);
+    // Back-compat alias: root entry surfaces under `notFound`.
+    expect(manifest.notFound).toEqual({ filePath: '_404.ts' });
+  });
+
+  it('emits an empty chain when no _404 files exist anywhere', () => {
+    const manifest = buildRouteManifest(['index.ts', 'about.ts'], EXTS);
+    expect(manifest.notFoundChain).toEqual([]);
+    expect(manifest.notFound).toBeUndefined();
   });
 });
 
@@ -513,8 +532,10 @@ describe('generateRouteManifestSource', () => {
     expect(src).toContain('import("/abs/pages/users/[id].ts")');
     // Empty layouts arrays are still emitted so consumers can rely on the field.
     expect(src).toContain('layouts: []');
-    // No `notFound` in the manifest → no top-level export.
-    expect(src).not.toContain('notFound');
+    // No `notFound` in the manifest → no top-level alias export.
+    expect(src).not.toContain('export const notFound = ');
+    // notFoundChain is always emitted (empty when no _404 files exist).
+    expect(src).toContain('export const notFoundChain = [');
   });
 
   it('escapes patterns with quotes via JSON.stringify', () => {
@@ -611,12 +632,33 @@ describe('generateRouteManifestSource', () => {
       {
         routes: [{ pattern: '/', filePath: 'index.ts', layouts: [] }],
         notFound: { filePath: '_404.ts' },
+        notFoundChain: [{ filePath: '_404.ts', dir: '' }],
       },
       (rel) => `/abs/pages/${rel}`,
     );
     expect(src).toContain('export const notFound = {');
     expect(src).toContain('filePath: "_404.ts"');
     expect(src).toContain('import("/abs/pages/_404.ts")');
+  });
+
+  it('emits the notFoundChain with dir field on every entry (ADR 0028)', () => {
+    const src = generateRouteManifestSource(
+      {
+        routes: [],
+        notFoundChain: [
+          { filePath: 'admin/_404.ts', dir: 'admin' },
+          { filePath: '_404.ts', dir: '' },
+        ],
+      },
+      (rel) => `/abs/pages/${rel}`,
+    );
+    expect(src).toContain('export const notFoundChain = [');
+    expect(src).toContain('dir: "admin"');
+    expect(src).toContain('dir: ""');
+    // Order: deepest first in the emit too.
+    const adminIdx = src.indexOf('"admin/_404.ts"');
+    const rootIdx = src.indexOf('"_404.ts"');
+    expect(adminIdx).toBeLessThan(rootIdx);
   });
 });
 
@@ -817,7 +859,11 @@ describe('purity({ routes }) — Vite plugin integration', () => {
         'purity:routes',
       ) as string;
       const src = (plugin as { load: (id: string) => string | null }).load(resolved) as string;
-      expect(src).not.toContain('notFound');
+      // No root _404 → no top-level alias export. notFoundChain stays
+      // (empty if no nested _404 either; ADR 0028).
+      expect(src).not.toContain('export const notFound = ');
+      // nested admin/_404 fed into the chain (ADR 0028) even though no root.
+      expect(src).toContain('admin/_404.ts');
     } finally {
       cleanup();
     }

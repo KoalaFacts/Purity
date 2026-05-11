@@ -246,3 +246,106 @@ describe('asyncNotFound — manifest top-level 404 (ADR 0025 / 0021)', () => {
     expect(factory()).toBe('404 view');
   });
 });
+
+// ---------------------------------------------------------------------------
+// ADR 0028 — asyncNotFound chain form. Walks the manifest's notFoundChain
+// deepest-first and renders the entry whose `dir` prefixes the current path.
+// ---------------------------------------------------------------------------
+
+import { navigate } from '../src/router.ts';
+
+describe('asyncNotFound — chain form (ADR 0028)', () => {
+  it('picks the deepest entry whose dir prefixes the current path', async () => {
+    // We're inside an SSR context here, so navigate() does nothing on the
+    // server — but the test exercises the chain-walk logic via a manually
+    // set window.location-like signal. Simulate by pushing the SSR context's
+    // request URL.
+    const chain = [
+      {
+        filePath: 'admin/_404.ts',
+        dir: 'admin',
+        importFn: async () => ({ default: () => 'ADMIN 404' }),
+      },
+      {
+        filePath: '_404.ts',
+        dir: '',
+        importFn: async () => ({ default: () => 'ROOT 404' }),
+      },
+    ];
+    // Set client-side URL to /admin/missing so currentPath() returns /admin/missing.
+    navigate('/admin/missing');
+    const { ctx } = inSSRContext(() => asyncNotFound(chain));
+    await Promise.all(ctx.pendingPromises);
+    expect(ctx.resolvedDataByKey['notFound:admin/_404.ts']).toBeTypeOf('function');
+    const factory = ctx.resolvedDataByKey['notFound:admin/_404.ts'] as () => unknown;
+    expect(factory()).toBe('ADMIN 404');
+  });
+
+  it('falls through to the root entry when no nested dir matches', async () => {
+    const chain = [
+      {
+        filePath: 'admin/_404.ts',
+        dir: 'admin',
+        importFn: async () => ({ default: () => 'ADMIN 404' }),
+      },
+      {
+        filePath: '_404.ts',
+        dir: '',
+        importFn: async () => ({ default: () => 'ROOT 404' }),
+      },
+    ];
+    navigate('/blog/missing');
+    const { ctx } = inSSRContext(() => asyncNotFound(chain));
+    await Promise.all(ctx.pendingPromises);
+    expect(ctx.resolvedDataByKey['notFound:_404.ts']).toBeTypeOf('function');
+    const factory = ctx.resolvedDataByKey['notFound:_404.ts'] as () => unknown;
+    expect(factory()).toBe('ROOT 404');
+  });
+
+  it('does NOT match dir prefix on similar-but-different paths', async () => {
+    // `dir: 'admin'` should match /admin and /admin/* but NOT /administrator.
+    const chain = [
+      {
+        filePath: 'admin/_404.ts',
+        dir: 'admin',
+        importFn: async () => ({ default: () => 'ADMIN 404' }),
+      },
+      {
+        filePath: '_404.ts',
+        dir: '',
+        importFn: async () => ({ default: () => 'ROOT 404' }),
+      },
+    ];
+    navigate('/administrator');
+    const { ctx } = inSSRContext(() => asyncNotFound(chain));
+    await Promise.all(ctx.pendingPromises);
+    // /administrator falls through to root.
+    const factory = ctx.resolvedDataByKey['notFound:_404.ts'] as () => unknown;
+    expect(factory()).toBe('ROOT 404');
+    // admin's _404 was NOT loaded.
+    expect(ctx.resolvedDataByKey['notFound:admin/_404.ts']).toBeUndefined();
+  });
+
+  it('renders nothing when the chain is empty', () => {
+    const { result } = inSSRContext(() => asyncNotFound([]));
+    // Empty chain → result is `when(false, ...)` which renders an empty match.
+    // We don't assert the exact shape (it's an SSR HTML marker); just that
+    // it doesn't throw.
+    expect(result).toBeDefined();
+  });
+
+  it('renders nothing when no entry matches the current path', async () => {
+    const chain = [
+      {
+        filePath: 'admin/_404.ts',
+        dir: 'admin',
+        importFn: async () => ({ default: () => 'ADMIN 404' }),
+      },
+    ];
+    navigate('/blog/missing');
+    const { ctx, result } = inSSRContext(() => asyncNotFound(chain));
+    // No matching entry → nothing fetched.
+    expect(ctx.pendingPromises).toHaveLength(0);
+    expect(result).toBeDefined();
+  });
+});

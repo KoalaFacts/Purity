@@ -1,335 +1,199 @@
 # Next handoff
 
-This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **100 commits
-ahead of main, twenty-eight new ADRs (0007–0034), 986 tests passing**
-across the three publishable packages. Latest iteration shipped
-ADR 0034 — `LoaderDataOf<P, R>` — typed loader data threaded
-through the manifest.
+This branch (`claude/path-k-m-server-action-strip-typed-routes`)
+shipped both deferred follow-up items from the prior handoff:
+**Path K** (smart `serverAction()` body-only stripping) and **Path M**
+(sibling `routes.d.ts` emit for typed virtual-module imports). Plus a
+pair of pre-existing Windows path bugs in the routes-emit pipeline
+that surfaced once Path M's tests started exercising it on a
+non-POSIX host. **1016 tests passing** across the three publishable
+packages (up from 986 in the prior handoff: +30 new tests, +20
+pre-existing failures fixed).
 
-**ADR 0034 — typed loader data.** ADR 0022's `loader` named export
-convention plus ADR 0026's `loaderData<T>()` accessor left the
-generic `T` as a hand-written annotation. The on-disk manifest emit
-from ADR 0032/0033 made strong typing tractable: the emitted
-`routes.ts` has dynamic imports with literal absolute paths, which
-TypeScript infers as `Promise<typeof import('…')>`. That gives us
-the route module's exports — including the `loader` function's
-signature — at type level. `LoaderDataOf<P, R>` walks that chain
-via conditional/inference types and returns `Awaited<ReturnType<…>>`.
+**ADR 0035 — smart `serverAction()` body-only stripping.** Adds
+`oxc-parser` as the first hard JS-parser dep of `@purityjs/vite-plugin`
+(natural fit alongside the existing `oxlint` / `oxfmt` toolchain).
+The transform runs in client builds, parses each non-server-convention
+file, finds `serverAction(url, handler)` calls bound to
+`@purityjs/core` (direct, aliased, or namespace member), and replaces
+just the inline arrow / function-expression handler with a stub
+thrower. `.url` and `.invoke()` survive on the client; handler body
+and its server-only imports stop shipping (tree-shaking handles the
+imports). Cheap precheck — skip files that don't textually mention
+both `@purityjs/core` and `serverAction` — keeps parser cost on
+hits only. Defense-in-depth on top of ADR 0018's filename
+convention; composes cleanly (a `*.server.ts` file is stripped
+whole before reaching the per-call pass). Default-on, opt out with
+`purity({ stripServerActions: false })`.
 
-Usage (canonical SSR demo `src/pages/index.ts` now follows this
-pattern):
+**ADR 0036 — sibling `routes.d.ts` with per-route typed `importFn`.**
+ADR 0034 (`LoaderDataOf<P, R>`) typed loader data through the on-disk
+emitted manifest's `() => import('<abs>')` calls, but the user-authored
+ambient declaration for `'purity:routes'` types `importFn` as
+`() => Promise<unknown>` — so virtual-module imports lose the per-
+route shape. ADR 0036 has the plugin auto-emit a sibling `.d.ts`
+next to the `emitTo` `.ts` (path swap `.ts → .d.ts`, append `.d.ts`
+for any other extension). The `.d.ts` `declare module 'purity:routes'`
+block emits literal tuple types whose `importFn` is
+`() => Promise<typeof import('<abs>')>` per-entry; `LoaderDataOf<'/users/:id',
+typeof routes>` now resolves equally well against the virtual
+specifier and the on-disk one. Same content-equality skip as the
+`.ts` emit — no extra filesystem-watch loops in dev.
 
-```ts
-import type { LoaderDataOf } from '@purityjs/vite-plugin';
-import type { routes } from '../.purity/routes.ts';
+**Side-fixes shipped this iteration.** Two pre-existing Windows
+path bugs in the routes-emit pipeline (turned out to be the root
+cause of the 18 pre-existing failures on Windows that the prior
+handoff didn't surface):
 
-export async function loader(): Promise<{ todos: string[] }> { … }
-export default function HomePage() {
-  // `data` typed as { todos: string[] } | undefined — inferred from
-  // the loader signature above. Edit the loader's return type and
-  // this accessor follows.
-  const data = loaderData<LoaderDataOf<'/', typeof routes>>();
-}
-```
+1. **`emitManifestToDisk` parent-dir computation.** Used a POSIX-only
+   regex (`/\/[^/]+$/`) to derive the parent directory before
+   `mkdirSync`. Silent no-op on Windows backslash paths → ENOENT on
+   `writeFileSync`. Replaced with `node:path.dirname`.
+2. **Mixed-separator emit paths.** `posix.join(dir, file)` with a
+   Windows-native `dir` produced strings like
+   `C:\Users\...\pages/index.ts`. Now normalises `dir` to forward
+   slashes before joining so emit paths stay POSIX-consistent. TS
+   dynamic-import specifiers and the new typed `import('<abs>')`
+   references both prefer forward slashes.
 
-Pure-type machinery (no runtime cost, no plugin codegen change).
-Pairs with `RouteParams<P>` (ADR 0031) as the second half of the
-typed-route-surface story — patterns get param typing, loaders get
-return-shape typing. Tests cover async + sync loaders, missing
-loaders (resolves to `undefined`), unknown-pattern compile error,
-unknown-key compile error, and the ambient-declaration fallback
-(routes typed as `Promise<unknown>` resolves to `undefined`).
+Plus the long-standing `fuzz.test.ts` not running because
+`fast-check` wasn't in `@purityjs/vite-plugin`'s devDependencies
+(only at root) — now pinned at `4.7.0` alongside the rest.
 
-**ADR 0033 — eager-emit.** ADR 0032's `emitTo` only fires when the
-virtual `purity:routes` module is `load()`'d. Consumers that bundle
-the emitted file outside Vite (wrangler, Deno deploy, custom non-Vite
-pipelines) never trigger that load(). ADR 0033 hooks the emit into
-the plugin's `buildStart` so a plain `vite build` (against any
-entry) writes the file as a side effect. Same skip-if-unchanged
-guard; same content; same warnings.
-
-**Path H — cf-workers migration.** `examples/ssr-stream-cf-workers/`
-now has the full manifest-driven shape — `src/pages/` (with
-`_layout.ts`, `_404.ts`, `index.ts`, `stream.ts`), `src/app.ts` with
-`asyncRoute()` + `asyncNotFound()`, and a `src/worker.ts` that
-imports `App` and pipes it through `renderToStream(App, { doctype,
-request, signal })`. A `vite.config.ts` wires the plugin in SSR
-build mode so every `html\`\``in the worker + pages AOT-compiles to
-string-builder factories (no`document`needed at runtime).`wrangler.toml`points`main = "dist/worker.js"`— Vite produces
-the bundle, wrangler deploys it. Smoke-tested by importing the built`dist/worker.js`and calling its`fetch`handler against synthetic
-Requests:`/`renders a single 574-byte shell,`/stream`ships
-shell + boundary-resolved chunk 152ms apart,`/missing` ships the
-404 page. **Streaming pipeline + manifest + asyncRoute + lazyResource
-all work end-to-end on Cloudflare Workers.**
-
-**Parser fix (the real signal).** Last iteration's handoff predicted
-"a missing pendingPromises-for-stream hook in renderToStream" — that
-turned out to be wrong. `renderToStream` already drains
-`ssrCtx.pendingPromises` correctly across the shell + per-boundary
-multipass loops. The actual blocker was a **parser bug**: the
-HTML parser's `parseChildren` only recognised `<!--` after `<!`
-(comments) and fell through to `parseElement` for anything else.
-`<!doctype html>` ended up in `parseAttribute` which couldn't read
-`!` as a name char and made no progress — infinite loop, OOM
-during `vite build`. Fix: parser now treats `<!…>` as a raw text
-node (DOCTYPE, CDATA, etc.) plus a defensive guard in
-`parseAttribute` that advances at least one char when no name can
-be read. Codegen handles the new `TextNode.raw` flag in
-`buildStaticHtml`, `buildSSRBody`, and `buildSsrTpl` so the
-declaration survives unescaped. Six new regression tests in
-`compiler.test.ts` + `compiler.ssr.test.ts`.
+**Plugin build fix.** `oxc-parser` and its `@oxc-parser/*` native
+bindings have to be externalised in `vite.config.ts` alongside the
+existing `@purityjs/*` and `node:*` externals — otherwise Rolldown
+fails on the unresolvable `@oxc-parser/binding-wasm32-wasi` fallback
+path. Plugin bundle is now 20.49 kB ESM / 15.76 kB CJS (parser is a
+real runtime dep, not bundled).
 
 ## Test count by package (current)
 
 ```
 core         635 passing  (31 files)
 ssr          145 passing  (11 files)
-vite-plugin  206 passing  (11 files)
-total        986
+vite-plugin  236 passing  (13 files)   ← was 200 (18 pre-existing fails on Windows)
+total        1016
 ```
 
 ## ADRs accepted on this branch
 
-Each links to its own decision record with rationale + non-features +
-rejected alternatives.
+| ADR  | Title                                                                                                | One-line summary                                                                                                                                  |
+| ---- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0035 | [Smart serverAction body-only strip](docs/decisions/0035-smart-server-action-strip.md)               | `oxc-parser`-backed per-call strip in client builds. Replaces just the inline handler with a thrower stub; preserves `.url` + `.invoke()`.        |
+| 0036 | [Sibling routes.d.ts with per-route typed importFn](docs/decisions/0036-virtual-routes-typed-dts.md) | Auto-emits a `.d.ts` next to the `emitTo` `.ts`. Declares `'purity:routes'` with literal tuple types so virtual-module imports get strong typing. |
 
-| ADR  | Title                                                                                                       | One-line summary                                                                                                                                     |
-| ---- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0005 | [Marker-walking, non-lossy hydration](docs/decisions/0005-non-lossy-hydration.md)                           | `hydrate()` walks SSR markers and binds in place. Per-row `each()` + per-case `when()`/`match()` adoption added in the same era.                     |
-| 0006 | [Streaming SSR with Suspense](docs/decisions/0006-streaming-suspense.md)                                    | `suspense(view, fallback)` + `renderToStream` + `__purity_swap`. All six phases shipped — promoted to Accepted in this iteration.                    |
-| 0007 | [Text-content rewrite on mismatch](docs/decisions/0007-text-rewrite-on-mismatch.md)                         | Opt-in `enableHydrationTextRewrite()` self-heals SSR text drift in place.                                                                            |
-| 0008 | [Head / meta tag management](docs/decisions/0008-head-meta-management.md)                                   | `head()` + `renderToString({ extractHead: true })` for per-route `<title>` / `<meta>`.                                                               |
-| 0009 | [Request context](docs/decisions/0009-request-context.md)                                                   | `getRequest()` reads the SSR request; `request?: Request` option on both renderers.                                                                  |
-| 0010 | [Static site generation](docs/decisions/0010-static-site-generation.md)                                     | `renderStatic({ routes, handler, shellTemplate })` returns `Map<path, html>` + per-route errors. Runtime-agnostic.                                   |
-| 0011 | [Router primitives](docs/decisions/0011-router-primitives.md)                                               | `currentPath()` (reactive, SSR-parity), `navigate(href)`, `matchRoute(pattern)` with `:param` + `*` splat.                                           |
-| 0012 | [Server actions](docs/decisions/0012-server-actions.md)                                                     | `serverAction(url, handler)` + `handleAction(request)` + `action.invoke(body, init?)`. PRG-friendly, pure Web Platform.                              |
-| 0013 | [Link auto-interception](docs/decisions/0013-link-interception.md)                                          | `interceptLinks()` global click listener with conservative-default predicate. Drops per-link `@click` boilerplate.                                   |
-| 0014 | [URL search/hash signals](docs/decisions/0014-url-search-hash-signals.md)                                   | `currentSearch()` + `currentHash()` reactive accessors backed by the same URL signal as `currentPath`.                                               |
-| 0015 | [Navigation scroll management](docs/decisions/0015-nav-scroll-management.md)                                | `onNavigate(listener)` hook + `manageNavScroll()` consumer. Closes SPA scroll-restoration gap on forward nav.                                        |
-| 0016 | [Navigation focus management](docs/decisions/0016-nav-focus-management.md)                                  | `manageNavFocus()` moves focus into the new page's landmark. Closes the SPA accessibility gap.                                                       |
-| 0017 | [View Transitions API integration](docs/decisions/0017-view-transitions.md)                                 | `manageNavTransitions()` wraps navigate() in `document.startViewTransition()`. Reduced-motion aware.                                                 |
-| 0018 | [Server-only module strip](docs/decisions/0018-server-module-strip.md)                                      | `*.server.{ts,js,tsx,jsx}` files replaced with `export {};` in client builds. Default-on Vite plugin option.                                         |
-| 0019 | [File-system routing — manifest generation](docs/decisions/0019-file-system-routing.md)                     | Opt-in `purity({ routes: { dir } })` exposes virtual `purity:routes` module. `[id]` / `[...slug]` / `index` / `_*` conventions.                      |
-| 0020 | [File-system layouts — `_layout` per directory](docs/decisions/0020-layouts.md)                             | Each `RouteEntry` carries a `layouts: LayoutEntry[]` chain (root → leaf). Composer is user-land `reduceRight` for now.                               |
-| 0021 | [Error boundaries + 404 — `_error` per directory, root `_404`](docs/decisions/0021-error-boundaries-404.md) | Per-route `errorBoundary?: LayoutEntry` (nearest-wins, no chain) + manifest top-level `notFound?: LayoutEntry`.                                      |
-| 0022 | [Data loaders — `loader` named export per route + layout](docs/decisions/0022-data-loaders.md)              | `hasLoader?: true` flag on routes + layouts via regex source detection. Loader signature documented; data plumbing user-land.                        |
-| 0023 | [Isomorphic conditional primitives](docs/decisions/0023-isomorphic-control-flow.md)                         | `when()`/`match()`/`each()` auto-detect the SSR render context and dispatch to the `*SSR` variants. Existing names keep working.                     |
-| 0024 | [SSR-aware `lazyResource.fetch()`](docs/decisions/0024-ssr-aware-lazy-resource.md)                          | `.fetch()` in an SSR context with a `key` option fires synchronously, registers the promise with `pendingPromises`, blocks the multipass renderer.   |
-| 0025 | [`asyncRoute` runtime composer](docs/decisions/0025-async-route-composer.md)                                | `asyncRoute(entry, params)` + `asyncNotFound(notFound)` collapse the manifest-driven composer into one helper call per match.                        |
-| 0026 | [`loaderData()` context accessor](docs/decisions/0026-loader-data-accessor.md)                              | Component reads its own loader-data slot via `loaderData<T>()` (no positional arg). Stack-based; pushed/popped by `asyncRoute` per component.        |
-| 0027 | [`configureNavigation()` consolidator](docs/decisions/0027-configure-navigation.md)                         | Single `configureNavigation(options?)` enables interceptLinks + manageNavScroll + manageNavFocus + manageNavTransitions. Per-helper opt-out/options. |
-| 0028 | [Per-directory `_404.ts` — nested not-found chain](docs/decisions/0028-nested-404-chain.md)                 | Manifest emits `notFoundChain: LayoutEntry[]` (deepest-first); `asyncNotFound(chain)` walks by URL prefix and picks the nearest entry.               |
-| 0029 | [`prefetchManifestLinks()` — hover-prefetch route modules](docs/decisions/0029-hover-prefetch.md)           | Delegated `mouseover`/`focusin` listener warms the bundler chunk cache on link hover. Composes with `configureNavigation({ prefetch: { routes } })`. |
-| 0030 | [`manageTitle(fn)` — reactive `<title>` sync](docs/decisions/0030-reactive-title.md)                        | Isomorphic helper: emits `<title>` to the SSR head on the server; watches `fn` and writes `document.title` on the client.                            |
-| 0031 | [`RouteParams<P>` — typed route params](docs/decisions/0031-typed-route-params.md)                          | Template-literal type derives `{ id: string }` from `'/users/:id'`. Type-only export from `@purityjs/vite-plugin`; zero runtime cost.                |
-| 0032 | [`emitTo` — on-disk manifest emit](docs/decisions/0032-on-disk-manifest-emit.md)                            | Opt-in plugin option writes the generated manifest source to disk each `load()`. Skips rewrites when content matches. `tsc` + IDE jump-to-def.       |
-| 0033 | [Eager manifest emit for non-Vite consumers](docs/decisions/0033-eager-manifest-emit.md)                    | `buildStart` hook regenerates the on-disk manifest at every `vite build` / `vite dev`, so wrangler / Deno / non-Vite bundlers can consume the file.  |
-| 0034 | [`LoaderDataOf<P, R>` — typed loader data](docs/decisions/0034-typed-loader-data.md)                        | Pure-type helper derives `loaderData()` return shape from a route's `loader` signature via the emitted manifest's typed dynamic imports.             |
+## Public API map (deltas this branch)
 
-All ADRs on this branch are `Status: Accepted` (ADR 0006 was promoted
-from `Proposed` in this iteration's housekeeping pass).
+`@purityjs/vite-plugin`:
 
-## Public API map (post-branch)
+- New plugin option `stripServerActions?: boolean` (default `true`).
+- Internal exports `generateRouteManifestTypes()` (used by the disk
+  emitter when `emitTo` is set).
+- New runtime dep `oxc-parser@^0.129.0` (externalised in the
+  plugin's own build).
 
-`@purityjs/core` exports beyond the original 21:
+`@purityjs/vite-plugin/tests`:
 
-- **Hydration**: `disableHydrationTextRewrite`, `enableHydrationTextRewrite` (ADR 0007).
-- **Streaming SSR**: `__purity_swap`, `PURITY_SWAP_SOURCE` (ADR 0006).
-- **Head**: `head` (ADR 0008), `manageTitle` (ADR 0030).
-- **Request**: `getRequest` (ADR 0009).
-- **Router**: `currentHash`, `currentPath`, `currentSearch`, `matchRoute`, `navigate`, `onNavigate`, plus the `NavigateListener` / `NavigateOptions` / `RouteMatch` types (ADRs 0011 + 0014 + 0015).
-- **Router opt-ins**: `interceptLinks`, `manageNavFocus`, `manageNavScroll`, `manageNavTransitions`, `configureNavigation`, `prefetchManifestLinks`, plus `*Options` types (ADRs 0013 + 0015 + 0016 + 0017 + 0027 + 0029).
-- **Server actions**: `serverAction`, `findAction`, `handleAction`, plus `ServerAction` / `ServerActionHandler` types (ADR 0012).
-- **Async-route composer**: `asyncRoute`, `asyncNotFound`, plus `AsyncRouteEntry` / `AsyncNotFoundEntry` / `AsyncRouteOptions` / `LoaderContext` types (ADR 0025).
-- **Loader data**: `loaderData<T>()` accessor (ADR 0026).
+- New `tests/server-action-strip.test.ts` (16 tests).
+- New `tests/routes-types-emit.test.ts` (14 tests).
 
-`@purityjs/ssr` exports:
-
-- `html` (SSR-side template tag).
-- `renderToString` (overloaded — returns `string` or `{ body, head }` with `extractHead: true`).
-- `renderToStream` (returns `ReadableStream<Uint8Array>`).
-- `renderStatic` (returns `Promise<{ files, errors }>`).
-- Option/return types: `RenderToStringOptions`, `RenderToStringWithHead`, `RenderToStreamOptions`, `RenderStaticOptions`, `RenderStaticResult`, `RenderStaticRoute`, `SSRHtml`.
-
-`@purityjs/vite-plugin` options:
-
-- `purity({ include?, stripServerModules?, routes? })`. `stripServerModules` defaults `true` (ADR 0018). `routes` defaults `false`; pass `true` for `pages/` or `{ dir, extensions?, virtualId?, emitTo? }` (ADRs 0019 + 0032). `_layout.{ts,tsx,js,jsx}` files attach to each route's `layouts` chain (ADR 0020). `_error.{ts,tsx,js,jsx}` per directory attach a single nearest `errorBoundary` per route, and a root `_404.{ts,tsx,js,jsx}` becomes the manifest's top-level `notFound` (ADR 0021). Routes + layouts that export a named `loader` get `hasLoader: true` in the manifest (ADR 0022). Every `_404` in the tree contributes to `notFoundChain` (ADR 0028). `emitTo: '<path>'` (ADR 0032) opt-in writes the manifest source to disk for `tsc`/IDE visibility. Re-exports `RouteEntry` + `LayoutEntry` for consumers of the virtual module, plus the type-only `RouteParams<P>` for typed route params (ADR 0031).
-
-The SSR README ([packages/ssr/README.md](packages/ssr/README.md))
-has the full API tour with copy-pasteable examples for every entry.
+`@purityjs/core` exports: unchanged. `@purityjs/ssr` exports: unchanged.
 
 ## Files most worth re-reading before the next session
 
-- `packages/core/src/router.ts` — URL signal, `navigate()`, `onNavigate()`, internal `_setNavigateWrapper`.
-- `packages/core/src/server-action.ts` — registry + `handleAction` + `action.invoke`.
-- `packages/ssr/src/render-to-stream.ts` — streaming pipeline incl. per-boundary resource emit.
-- `packages/ssr/src/render-static.ts` — SSG driver, composable on top of `renderToString`.
-- `packages/vite-plugin/src/index.ts` — `*.server.ts` strip + AOT html-template compile + routes plugin glue.
-- `packages/vite-plugin/src/routes.ts` — pure helpers: filename → pattern, sort, layout chain + error boundary + 404 discovery, loader detection, manifest codegen (ADRs 0019 + 0020 + 0021 + 0022).
-- `examples/ssr/src/{app,entry.client,entry.server}.ts` — every primitive in one app.
-- `examples/ssr-stream-{cf-workers,vercel-edge,deno}/` — minimal edge-runtime templates.
-- `examples/ssr/src/pages/` — worked file-system-routing example: `index.ts` (with `loader`), `about.ts`, `users/[id].ts`, `_layout.ts`, `_404.ts`, `_error.ts`. The composer in `examples/ssr/src/app.ts` is now **30 lines** — one `asyncRoute(entry, m.params)` call per match, falling through to `asyncNotFound(notFound!)`. End-to-end exercise of ADRs 0019-0025.
-- `packages/core/src/async-route.ts` — `asyncRoute` / `asyncNotFound` runtime composer (ADR 0025). Wraps the manifest-driven view-assembly pipeline; pushes/pops loader data per component (ADR 0026).
-- `packages/core/src/loader-data.ts` — `loaderData()` per-component slot stack (ADR 0026). Internal `pushLoaderData` / `popLoaderData` drive the stack from `async-route.ts`.
-
-## Migration findings — closed by this branch
-
-The original `examples/ssr/` manifest migration surfaced two gaps; both
-are now closed by ADRs 0023 + 0024.
-
-1. **(closed by ADR 0023)** `when()` / `match()` / `each()` were
-   client-only — they called `document.createComment` and crashed
-   inside an SSR render path. The unsuffixed names now auto-detect
-   the SSR render context and dispatch to the explicit `*SSR`
-   variants. The explicit names stay for code that wants a guaranteed
-   `SSRHtml` return without the union.
-2. **(closed by ADR 0024)** `lazyResource().fetch()` didn't register
-   with the SSR multipass context, so a composer pattern like
-   `lazyResource(loadStack, { key }).fetch();` shipped the fallback
-   because no pending promise blocked the renderer. The new dispatch:
-   `.fetch()` inside an SSR context with a `key` option fires the
-   fetcher synchronously, pushes the promise onto `pendingPromises`,
-   and caches the resolved value in `resolvedDataByKey` so pass 2
-   surfaces it through the underlying `resource()`'s SSR path.
-
-Concrete result: `examples/ssr/src/app.ts` is now 128 lines, uses
-exclusively the manifest's lazy `importFn()`, calls every route +
-layout `loader` in parallel, and threads the resolved data into the
-component as a positional arg. The dev/prod server smoke-tests pass —
-`/` shows the home page with loader-fetched todos wrapped in the
-root layout chrome; `/about`, `/users/42`, `/missing` all render
-correctly.
-
-## Side-fix shipped this iteration
-
-The `@purityjs/vite-plugin` build (`vite.config.ts`) used to leave
-`node:fs` / `node:path` un-externalized, so the bundled output
-inlined a stub module and `dist/index.js` crashed at load with
-`(0, r.resolve) is not a function` whenever a downstream config
-imported the built plugin. Added `/^node:/` to the `external` list
-alongside `/^@purityjs\//`. Affects the publishable plugin —
-catches one of the issues a `npm pack` smoke test would have
-flagged in CI.
+- `packages/vite-plugin/src/server-action-strip.ts` — `oxc-parser`-
+  backed strip helper. Import-bound resolution, inline-handler-only
+  scope, cheap precheck, edits applied right-to-left.
+- `packages/vite-plugin/src/index.ts` — `transform()` wiring:
+  precheck-then-strip-then-html``pipeline, plus the`buildStart`/`load`hooks that now write both the`.ts`and`.d.ts`.
+- `packages/vite-plugin/src/routes.ts` — adds
+  `generateRouteManifestTypes(manifest, absPathFor)` alongside the
+  existing `generateRouteManifestSource()`. Same shape, different
+  output (literal tuple types vs runtime array literals).
+- `docs/decisions/0035-smart-server-action-strip.md`,
+  `docs/decisions/0036-virtual-routes-typed-dts.md` — design
+  records for both items, including rejected alternatives.
 
 ## What's still open
 
-### File-system routing — Phase 5+ (multi-iteration)
+### Server-action ergonomics — Phase K+
 
-ADRs 0019 + 0020 + 0021 + 0022 ship the manifest, layouts, error
-boundaries, root 404, and loader detection. Apps now have every
-convention piece needed for a real multi-page server-rendered app
-on top of the file-system manifest. Remaining items, each
-deserving its own ADR:
+- **`*.server.ts` boundary checker (compile error)**. ADR 0018
+  silently strips a `*.server.ts` module from client bundles, but a
+  client file importing the action's `.url` only works because the
+  stripped file still exports its top-level bindings (the URL
+  string lives at module scope). A friendly compile-error / warning
+  when a client file imports a `*.server` module would surface the
+  intent. Out of scope for K/M; potential follow-up.
+- **`serverAction()` build-time URL derivation**. Next-style stable
+  opaque IDs derived from the file path + export name. Would let
+  the plugin guarantee URL uniqueness across the app. ADR 0035
+  documents this as a deferred non-feature.
+- **CSRF helper / wrapper around stripped handlers**. ADR 0012
+  non-feature. Could compose with the stripped-handler stub to fail
+  closed when a client accidentally calls `.handler()`.
 
-- **Runtime `loaderData()` context primitive** (ADR 0022 deferred
-  non-feature). Phase 1 leaves loader-data plumbing user-land —
-  the consumer composer passes data as a positional arg. A
-  `loaderData()` accessor in `@purityjs/core` would unify the
-  component-signature shape across apps. Wait until enough apps
-  converge on the right shape before shipping.
-- **Async-component primitive** (`asyncRoute(entry)` or similar).
-  ADRs 0020-0022's examples have users hand-rolling
-  `lazyResource(() => loadStack(entry))` + `when()` on its data
-  state. A small built-in collapses the boilerplate. Probably
-  easier to design alongside `loaderData()`.
-- **Per-directory `_404.ts`** (ADR 0021 deferred non-feature).
-  Adding nested 404s needs a `notFoundChain` field on the
-  manifest (or an in-tree walk at runtime). Useful once apps
-  ship section-styled 404 pages.
-- **Loader on error boundaries / 404** (ADR 0022 deferred
-  non-feature). Currently only routes + layouts get loader
-  detection. A 404 page wanting server-side data has to fall back
-  to client-side fetch.
-- **Build-time route table emit**. The manifest is virtual today.
-  Emitting to disk (e.g. `src/.purity/routes.ts`) gives `tsc` and
-  IDEs something to inspect — useful for typed route params (a
-  follow-on after this).
-- **Typed route params + typed loader data**. Template-literal-
-  derived `RouteParams<'/users/:id'>` plus the loader return type
-  threaded through the manifest type. Cheap once the manifest is
-  real-on-disk; both pin themselves to the consumer's component
-  signature.
-- **Loader-data revalidation**. Per-resource invalidate (Remix
-  `revalidate()`, Next `revalidatePath()`) needs a cache +
-  invalidation primitive. Out of Phase 1; documented as a
-  non-feature in ADR 0022.
-- **Worked example**. `examples/ssr/` still uses the
-  `if (matchRoute(…))` ladder from before ADRs 0019-0022 shipped.
-  A 30-60-minute migration to the manifest + layout + boundary
-  - loader loop would prove the four-ADR conventions end-to-end
-    and double as docs.
+### Type-surface polish — Phase M+
 
-### ISR / PPR (incremental static regen / partial pre-render)
+- **`'purity:routes'` virtual-module type-only mode.** Today the
+  `.d.ts` only fires alongside `emitTo`. Some teams may prefer a
+  default-location `.d.ts` even without `emitTo`. Would need an
+  extra option; not worth the API surface for Phase 1.
+- **Auto-include the emitted `.d.ts` in tsconfig.** A `purity init`
+  command that touches `tsconfig.json` is out of scope.
+- **Smart strip's identifier-reference handlers.** ADR 0035 only
+  strips inline arrow / function-expression handlers; named-
+  identifier handlers (`const handler = …; serverAction(url, handler);`)
+  fall back to the `*.server.ts` filename convention. Tracking the
+  binding flow to also strip those would need use-def analysis;
+  rare enough to be Phase 2.
 
-Higher-level patterns that compose on top of `renderStatic` (ADR
-0010). Not yet designed — separate ADR when there's demand.
+### Pre-existing items still open
 
-### Selective per-boundary hydration timing
-
-Out of scope per ADR 0006. Currently hydration waits until the
-stream closes. React-style per-boundary hydration triggered by
-user interaction needs event replay; a strictly larger problem.
-
-### Smaller deferred follow-ups (each its own ADR slot)
-
-- **Smart `serverAction()` body-only stripping** (ADR 0018
-  non-feature) — preserves `.url` + `.invoke()` on the client side
-  while stripping the handler body.
-- **`<title>` synchronisation helper** (ADR 0016 non-feature) —
-  reactive title-tag management beyond `head()`'s static capture.
-- **ARIA live region announce primitive** (ADR 0016 non-feature) —
-  alternative to focus-move for routes that prefer announce-only.
-- **Scroll-position persistence across reload** (ADR 0015
-  non-feature).
-- **Async-aware view transitions** (ADR 0017 non-feature) —
-  return-Promise from the wrapper callback to await route data.
-- **`configureNavigation({ scroll, focus, transitions, … })`
-  consolidation** (ADR 0017 non-feature) — single setup helper for
-  the four `manageNav*` opt-ins.
-- **Reactive head element management for client routes** (ADR 0008
-  Phase 2) — likely splits into `@purityjs/head` package.
-- **Phoenix-LiveView-style scroll persistence** + **focus
-  restoration on back-nav** + **prefetch-on-hover** (ADRs 0015 +
-  0016 non-features).
-- **DSD fallback for pre-2024 browsers** — out of scope per ADR 0004.
-- **CSRF helper** (ADR 0012 non-feature).
-- **Auto-serialization / RPC sugar over `serverAction`** (ADR 0012
-  non-feature).
-- **Build-time URL derivation for server actions** (ADR 0012
-  non-feature) — Next-style stable opaque IDs.
+- **Server-module strip — explicit non-feature carry-over from
+  ADR 0018**: `"use server"` directive-style detection instead of
+  filename convention. Both ADR 0018 and ADR 0035 are convention-
+  based; a directive-based mode would let users mark individual
+  files / blocks without renaming.
+- **`@purityjs/ssr` build TS errors on `render-to-string.ts`
+  (TS2367)**. Pre-existing on main; the `'settled'` vs `'global'` /
+  `'boundary'` literal-union comparisons trip tsc. Tests pass; the
+  type lattice for `SuspenseState` probably needs a tightening pass.
+  Not blocking package publish (vite build still produces the
+  artefact), but worth fixing before the 1.0 cut.
+- **Loader-data revalidation primitives, ISR/PPR patterns, selective
+  per-boundary hydration timing** — all documented as deferred
+  non-features in the relevant ADRs. No change this iteration.
 
 ## Recommended next sprint
 
-Path H/H'/H'' (adapter migrations) and Path L (typed loader data)
-are all done. The "deploy anywhere with a Web Standards fetch
-handler" matrix is now a real demo across three adapters, and the
-typed-route-surface story (params + loader data) is complete. Two
-items left, both parser-shaped:
+K + M shipped together as planned. The "deploy anywhere with a Web
+Standards fetch handler" matrix (Path H/H'/H'') plus the typed-route-
+surface story (Paths L + M) plus the security-and-payload story
+(Path K) are all closed. The plugin's transform pipeline is now:
 
-**Path K (remainder) — smart `serverAction()` body-only stripping.**
-ADR 0018 ships server-module stripping via filename convention
-(`*.server.{ts,js,tsx,jsx}` → `export {};` in client builds). The
-finer-grained alternative: detect `serverAction(url, fn)` calls in
-user source and replace just the handler body with a stub, while
-preserving `.url` + `.invoke()` accessors on the client. Needs an
-AST parser pass (regex won't safely handle arrow-fn vs block-fn vs
-async vs nested calls). Half-day-ish; depends on adding a minimal
-JS parser dep or carving out esbuild's parse pass.
+```
+*.server.ts (ADR 0018)
+  → serverAction() bodies (ADR 0035)
+    → html`` AOT compile (ADR 0019-era + parser fix from ADR 0006)
+```
 
-**Path M (new) — synthetic ambient-declaration tightening.** ADR 0034
-notes that the typed loader-data helper requires importing from
-the emitted on-disk manifest (`./.purity/routes.ts`) rather than
-the virtual `'purity:routes'` module — because the ambient
-declaration types `importFn` as `() => Promise<unknown>`. The
-plugin could auto-emit a sibling `routes.d.ts` (alongside the
-`.ts`) whose `importFn` is typed per-route via `() => Promise<typeof
-import('/abs/path')>`. That would let apps stay on
-`'purity:routes'` AND get strong types. Cost: a small d.ts emitter
+Three plausible next directions:
 
-- a `tsconfig`-include for users to wire up. Quarter-day-ish.
+1. **`@purityjs/ssr` TS2367 cleanup** — pre-existing on main,
+   blocks `npm run build` on `@purityjs/ssr` even though tests
+   pass. Small focused fix; worthwhile before the 1.0 cut.
+2. **`"use server"` directive variant** — directive-style detection
+   on top of ADR 0035's per-call strip. Lets users mark individual
+   handlers as server-only without renaming the file. Composes
+   with ADR 0018's filename convention (either is sufficient).
+3. **Smart strip — body-only when `serverAction()` is called with a
+   referenced identifier** — extends ADR 0035 to strip
+   `const handler = …` declarations whose only consumer is the
+   `serverAction()` call. Requires use-def tracking; the AST is
+   already available via the existing `oxc-parser` pass.
 
-Path K is the higher-leverage shipping concern (security + payload
-story for production apps). Path M is the polish item that tightens
-the type story across the manifest import surface. Pick K first
-unless the typing-surface symmetry feels more urgent.
+Pick (1) if you want to clear pre-existing build errors before the
+next ADR. Pick (2) or (3) if the server-action story has more
+runway to mine before it's truly "done".

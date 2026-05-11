@@ -54,6 +54,11 @@ export interface ManageNavTransitionsOptions {
    * The thunk receives `(url, replace)` for routing decisions. Throwing
    * (or rejecting) aborts the transition; navigation still completes
    * because the URL signal update happened synchronously before the await.
+   *
+   * Return type is `unknown` so synchronous returns also work — the
+   * wrapper just `await`s whatever the thunk returns, and `await
+   * <non-promise>` is the value itself. Useful for predicate-style
+   * gates like `awaitNavigation: () => alreadyReady ? null : asyncFetch()`.
    */
   awaitNavigation?: (url: URL, replace: boolean) => unknown;
 }

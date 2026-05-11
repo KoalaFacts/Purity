@@ -40,13 +40,13 @@ function setup(count = 1000) {
 function updateAll() {
   batch(() => {
     for (let i = 0; i < sources.length; i++) {
-      sources[i]((i + Math.random() * 100) | 0);
+      sources[i](i + ((i * 17 + 23) % 100));
     }
   });
 }
 
 function updateOne() {
-  if (sources.length > 0) sources[0]((Math.random() * 100) | 0);
+  if (sources.length > 0) sources[0](23);
 }
 
 // ---------------------------------------------------------------------------

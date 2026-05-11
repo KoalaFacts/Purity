@@ -255,15 +255,46 @@ function disposeEntry<T>(entry: EachEntry<T>): void {
   entry.ctx.disposers = null;
 }
 
-// Detach all managed nodes from the parent and release their reactive scopes.
-function bulkClear<T>(
-  _parent: Node,
+function disposeEntries<T>(prevKeys: unknown[], keyToEntry: Map<unknown, EachEntry<T>>): void {
+  for (let i = 0; i < prevKeys.length; i++) {
+    const entry = keyToEntry.get(prevKeys[i]);
+    if (entry) disposeEntry(entry);
+  }
+}
+
+function canReplaceOwnedRange<T>(
+  parent: Node,
   prevKeys: unknown[],
   keyToEntry: Map<unknown, EachEntry<T>>,
-  _endMarker: Node,
+  endMarker: Node,
+): boolean {
+  const firstEntry = keyToEntry.get(prevKeys[0]);
+  return (
+    prevKeys.length > 32 &&
+    firstEntry !== undefined &&
+    firstEntry.nodes[0]?.parentNode === parent &&
+    firstEntry.nodes[0] === parent.firstChild &&
+    endMarker.parentNode === parent &&
+    endMarker.nextSibling === null &&
+    'replaceChildren' in parent
+  );
+}
+
+// Detach all managed nodes from the parent and release their reactive scopes.
+function bulkClear<T>(
+  parent: Node,
+  prevKeys: unknown[],
+  keyToEntry: Map<unknown, EachEntry<T>>,
+  endMarker: Node,
 ): void {
   const prevLen = prevKeys.length;
   if (prevLen === 0) return;
+
+  const canReplaceChildren = canReplaceOwnedRange(parent, prevKeys, keyToEntry, endMarker);
+
+  if (canReplaceChildren) {
+    (parent as ParentNode).replaceChildren(endMarker);
+  }
 
   // Detach + dispose each entry. We walk per-entry nodes rather than calling
   // Range.deleteContents because jsdom's Range is O(N^2) on long sibling
@@ -272,11 +303,13 @@ function bulkClear<T>(
   for (let i = 0; i < prevLen; i++) {
     const entry = keyToEntry.get(prevKeys[i]);
     if (!entry) continue;
-    const nodes = entry.nodes;
-    for (let j = 0; j < nodes.length; j++) {
-      const node = nodes[j];
-      const p = node.parentNode;
-      if (p) p.removeChild(node);
+    if (!canReplaceChildren) {
+      const nodes = entry.nodes;
+      for (let j = 0; j < nodes.length; j++) {
+        const node = nodes[j];
+        const p = node.parentNode;
+        if (p) p.removeChild(node);
+      }
     }
     disposeEntry(entry);
   }
@@ -424,13 +457,19 @@ export function each<T>(
 
     // Fast path: no reuse — full replace → bulk remove + single-pass bulk insert
     if (reuseCount === 0) {
-      bulkClear(parent, prevKeys, keyToEntry, endMarker);
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) {
         const entry = newEntries.get(newKeys[i])!;
         for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
       }
-      parent.insertBefore(frag, endMarker);
+      if (canReplaceOwnedRange(parent, prevKeys, keyToEntry, endMarker)) {
+        frag.appendChild(endMarker);
+        (parent as ParentNode).replaceChildren(frag);
+        disposeEntries(prevKeys, keyToEntry);
+      } else {
+        bulkClear(parent, prevKeys, keyToEntry, endMarker);
+        parent.insertBefore(frag, endMarker);
+      }
       keyToEntry = newEntries;
       prevKeys = newKeys;
       return;

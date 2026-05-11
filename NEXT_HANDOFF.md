@@ -1,14 +1,14 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Twenty-five
+pass starting from the SSR-MVP follow-up gap list. **Twenty-six
 commits, sixteen new ADRs (0007–0022), 886 tests passing** across the
-three publishable packages. Latest iteration shipped ADR 0022 — data
-loaders. Any route or layout module exporting a named `loader`
-function gets a `hasLoader: true` flag in the manifest; the plugin
-detects via regex on file source (no parser dep). The runtime
-component-data plumbing stays user-land for Phase 1, consistent with
-the layouts / error-boundary patterns from ADRs 0020 + 0021.
+three publishable packages. Latest iteration migrated `examples/ssr/`
+to consume the file-system-routing manifest end-to-end — every route,
+the root layout, the root 404, and the root error boundary now live
+under `examples/ssr/src/pages/`. Surfaced two real ergonomics gaps
+along the way (see "Migration findings" below); both motivate the
+runtime ADR (0023).
 
 ## Test count by package (current)
 
@@ -85,6 +85,59 @@ has the full API tour with copy-pasteable examples for every entry.
 - `packages/vite-plugin/src/routes.ts` — pure helpers: filename → pattern, sort, layout chain + error boundary + 404 discovery, loader detection, manifest codegen (ADRs 0019 + 0020 + 0021 + 0022).
 - `examples/ssr/src/{app,entry.client,entry.server}.ts` — every primitive in one app.
 - `examples/ssr-stream-{cf-workers,vercel-edge,deno}/` — minimal edge-runtime templates.
+- `examples/ssr/src/pages/` — worked file-system-routing example: `index.ts` (with `loader`), `about.ts`, `users/[id].ts`, `_layout.ts`, `_404.ts`, `_error.ts`. The composer in `examples/ssr/src/app.ts` uses the manifest for dispatch + layout chain + error-boundary identification but currently relies on static page-module imports — the gap that motivates the runtime ADR.
+
+## Migration findings (Path A — what hurt)
+
+The `examples/ssr/` migration to the manifest exposed two gaps the
+composer-pattern docs in ADRs 0020-0022 hand-wave past. Both are the
+concrete scope of the runtime ADR (0023):
+
+1. **`when()` / `match()` are client-only.** Both call
+   `document.createComment` to lay marker nodes, so calling them
+   inside an SSR render path throws `ReferenceError: document is not
+defined`. The framework ships explicit SSR variants
+   (`whenSSR` / `matchSSR` / `eachSSR`) that the user must pick
+   per call site. Users writing a manifest-driven composer will
+   reach for `when(stack.data(), …)` first and get a confusing
+   server crash; isomorphic versions (auto-detect SSR context) would
+   close this hole.
+2. **`lazyResource()` doesn't register with the SSR multipass
+   context.** Apps using `lazyResource(() => loadStack(entry, params))
+.fetch(); when(() => stack.data(), …)` see SSR ship the suspense
+   fallback because the resource never registers a pending promise the
+   renderer awaits between passes. `resource()` (the auto-fetching
+   variant) does register, but doesn't fit the "fetch on demand
+   per-route" shape. The runtime composer needs a primitive that
+   blocks SSR until the imports + loader resolve.
+
+Concrete consequence: `examples/ssr/src/app.ts` falls back to
+**static imports of every page module** at the top of the file. The
+manifest is still consulted for pattern matching + layout-chain
+walking + error-boundary identification + `hasLoader` reporting — so
+ADRs 0019-0022 are exercised — but the per-route lazy `importFn()` is
+shadowed by static imports. Code splitting still happens for the
+client bundle (Vite warns about the ineffective dynamic imports but
+doesn't drop them), so the trade-off is local to the demo.
+
+The home page (`pages/index.ts`) ships a `loader` named export that
+the manifest correctly flags with `hasLoader: true` — verifiable in
+the built `entry.server.js`. The page itself uses the existing
+`resource()` + `suspense()` pattern for its data because the user-
+land composer cannot yet invoke the loader and thread the result
+into the component without re-introducing the `when()` / async
+gaps above.
+
+## Side-fix shipped this iteration
+
+The `@purityjs/vite-plugin` build (`vite.config.ts`) used to leave
+`node:fs` / `node:path` un-externalized, so the bundled output
+inlined a stub module and `dist/index.js` crashed at load with
+`(0, r.resolve) is not a function` whenever a downstream config
+imported the built plugin. Added `/^node:/` to the `external` list
+alongside `/^@purityjs\//`. Affects the publishable plugin —
+catches one of the issues a `npm pack` smoke test would have
+flagged in CI.
 
 ## What's still open
 
@@ -175,38 +228,29 @@ user interaction needs event replay; a strictly larger problem.
 
 ## Recommended next sprint
 
-The four-ADR file-system-routing convention (0019-0022) is now
-**feature-complete on the manifest side**. The remaining work is
-about runtime ergonomics + a worked example that proves the
-conventions end-to-end. Two equally-valid paths:
+Path A landed this iteration. The natural follow-up is **Path B —
+ADR 0023: runtime composition primitives**, informed by the two
+gaps the migration surfaced. Outline:
 
-**Path A — migrate `examples/ssr/` to the manifest** (30-60 min).
-The example still uses the pre-0019 `if (matchRoute(…))` ladder.
-Migrating it shows the canonical loop (`for (const entry of
-routes)`) plus a layout chain plus an `_error.ts` plus a `loader`
-plus the user-land `loadStack` composer. Shorter iteration; proves
-the conventions; doubles as docs. The migration WILL surface
-ergonomic gaps (the user-land composer is non-trivial) — that
-feedback is itself the rationale for Path B.
+1. **Isomorphic `when` / `match`** (or document the SSR variants
+   harder). Either auto-detect the SSR context inside `when()` and
+   route to `whenSSR` internally, or rename `whenSSR` to make it
+   harder to reach for the wrong one. The SSR-vs-client split is a
+   foot-gun the manifest-consumer pattern walks straight into.
+2. **`asyncRoute(entry, params)` runtime helper**. Wraps the
+   route + layout-chain + error-boundary + loader-await pipeline
+   into one function the consumer's loop calls per match. Probably
+   needs an SSR-aware async primitive (a `lazyResource` variant
+   that registers with the multipass context, or extending
+   `resource()` to accept lazy fetchers).
+3. **`loaderData()` accessor** for routes / layouts to read their
+   own loader's resolved value without positional-arg threading.
+   Per-render slot keyed by the route entry.
+4. Draft ADR 0023 with the convention + rejected alternatives,
+   migrate `examples/ssr/src/app.ts` to use the new helpers
+   (drops the static-import workaround documented in "Migration
+   findings"), update tests, update handoff.
 
-**Path B — runtime `loaderData()` + `asyncRoute()` primitives**
-(multi-iteration). ADR 0023 ships `loaderData()` (a per-render
-context accessor) + `asyncRoute()` (the consumer composer rolled
-into one function). Both pin the component-signature shape that
-ADRs 0020 + 0022 left loose. Outline:
-
-1. Pick `loaderData()`'s API. Likely `loaderData(): unknown` (the
-   route's own loader data) plus `layoutLoaderData(filePath):
-unknown`. Or a single `loaderData(): { route, layouts: [] }`.
-2. Decide if `asyncRoute(entry, params)` is exposed as a function
-   or as a Custom Element. Function is simpler; the element
-   composes better with `<head>` / suspense.
-3. Draft ADR 0023 with the convention + rejected alternatives.
-4. Implement + test + update handoff.
-
-Path A first, then Path B informed by what hurt. If the time
-budget is tight, **Path A alone is the right next iteration**.
-
-If the time budget is even tighter: **promote ADR 0006 to
-Accepted** (one-line status change) or **pick a deferred
-follow-up from the smaller-items list below**.
+If the time budget is tight: **promote ADR 0006 to Accepted**
+(one-line status change) or **pick a deferred follow-up from the
+smaller-items list below**.

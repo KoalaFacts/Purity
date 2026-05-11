@@ -1,125 +1,88 @@
-// Shared component used by every entry — server (renderToString), SSG
-// (renderStatic), and client (hydrate). The Vite plugin AOT-compiles each
-// `html\`\`` call site for the appropriate build target (DOM builder for the
-// client bundle; string builder for the SSR bundle).
+// File-system-routing demo (ADRs 0019-0022). Consumes the virtual
+// `purity:routes` manifest emitted by `@purityjs/vite-plugin`.
 //
-// What this example exercises:
-//   - currentPath() + matchRoute() router primitives (ADR 0011)
-//   - interceptLinks() in entry.client.ts so plain <a href> works (ADR 0013)
-//   - getRequest() for URL-aware route dispatch (ADR 0009)
-//   - head() for per-route <title> and <meta> (ADR 0008)
-//   - suspense() with a slow keyed resource()
-//   - the standard hydration path (ADR 0005)
-import {
-  component,
-  currentPath,
-  eachSSR,
-  head,
-  html,
-  matchRoute,
-  resource,
-  suspense,
-} from '@purityjs/core';
-
-component<{ count: number }>('demo-counter', ({ count }) => {
-  return html`
-    <div>
-      <h2>Count: ${() => count}</h2>
-      <p>Server-rendered, hydrated on the client.</p>
-    </div>
-  `;
-});
-
-// --- Route handlers --------------------------------------------------------
-
-function HomePage() {
-  head(html`<title>Purity SSR demo — home</title>`);
-  head(html`<meta name="description" content="Reactive SSR with streaming." />`);
-
-  return html`
-    <main>
-      <h1>Hello from /</h1>
-      <demo-counter :count=${42}></demo-counter>
-      <p><a href="/about">→ about</a></p>
-      ${suspense(
-        () => {
-          const todos = resource(
-            () =>
-              new Promise<string[]>((r) =>
-                setTimeout(() => r(['Write tests', 'Ship SSR', 'Celebrate']), 30),
-              ),
-            { initialValue: [], key: 'todos' },
-          );
-          return html`
-            <h2>Todos</h2>
-            <ul>
-              ${eachSSR(
-                () => todos() ?? [],
-                (item) => html`<li>${() => item()}</li>`,
-              )}
-            </ul>
-          `;
-        },
-        () => html`<p class="loading">loading todos…</p>`,
-        { timeout: 5000 },
-      )}
-    </main>
-  `;
-}
-
-function AboutPage(_match: { params: Record<string, string> }) {
-  head(html`<title>About — Purity SSR demo</title>`);
-  head(html`<meta name="description" content="About this demo." />`);
-
-  return html`
-    <main>
-      <h1>About</h1>
-      <p>This page uses currentPath() / matchRoute() / navigate().</p>
-      <p>
-        <a href="/">← home</a>
-        ·
-        <a href="/users/42">/users/42 (try :param)</a>
-        ·
-        <a href="https://example.com" target="_blank" rel="noopener">external (opens in tab)</a>
-      </p>
-    </main>
-  `;
-}
-
-function UserProfilePage(match: { params: Record<string, string> }) {
-  head(html`<title>User ${match.params.id} — Purity SSR demo</title>`);
-  return html`
-    <main>
-      <h1>User profile</h1>
-      <p>User id: <code>${match.params.id}</code></p>
-      <p><a href="/">← home</a></p>
-    </main>
-  `;
-}
-
-function NotFoundPage() {
-  const path = currentPath();
-  head(html`<title>Not found — Purity SSR demo</title>`);
-  return html`
-    <main>
-      <h1>404</h1>
-      <p>No route matches <code>${path}</code>.</p>
-      <p><a href="/">← home</a></p>
-    </main>
-  `;
-}
-
-// --- Route table -----------------------------------------------------------
+// What this demo exercises and what it intentionally does NOT:
 //
-// One matchRoute() per route, in declaration order. First-match wins.
-// Plain <a href> in the views — interceptLinks() in entry.client.ts
-// turns same-origin clicks into navigate() calls.
+//   ✓ Pattern matching driven by manifest filenames (ADR 0019)
+//     — `pages/index.ts`, `pages/about.ts`, `pages/users/[id].ts`,
+//       `pages/_404.ts`.
+//   ✓ Layout chain (ADR 0020) — the root `pages/_layout.ts` wraps every
+//     route via the user-land reduceRight pattern below.
+//   ✓ Error boundary identification (ADR 0021) — the manifest reports
+//     each route's nearest `_error.ts`; the dispatcher catches throws
+//     and renders it.
+//   ✓ Loader detection (ADR 0022) — `pages/index.ts` declares an
+//     `export const loader` so the manifest's `hasLoader: true` lights
+//     up. (See note below on the runtime gap.)
+//
+//   ✗ Async-aware route loading. This composer uses STATIC imports of
+//     every page module at the top of this file rather than the
+//     manifest's lazy `importFn()`. The reason: the user-land async
+//     composer (lazyResource + when over the resolved factory) hits
+//     two existing-API gaps — `when()`/`match()` are client-only
+//     (document.createComment) and `lazyResource()` does not yet
+//     register with the SSR multipass context. Both are the planned
+//     scope of the runtime ADR (`loaderData()` + `asyncRoute()`).
+//   ✗ Loader execution. The home page's `loader` export is detected
+//     by the plugin (verifiable by inspecting the generated
+//     `purity:routes` module) but this demo's composer does not call
+//     it; the home page reads its data via the existing `resource()`
+//     primitive instead. Wiring loader-data into the component is
+//     the ergonomic pain point the next ADR closes.
+import { currentPath, matchRoute } from '@purityjs/core';
+import { routes } from 'purity:routes';
 
-export function App() {
-  if (matchRoute('/')) return HomePage();
-  const aboutMatch = matchRoute('/about');
-  if (aboutMatch) return AboutPage(aboutMatch);
-  const userMatch = matchRoute('/users/:id');
-  if (userMatch) return UserProfilePage(userMatch);
-  return NotFoundPage();
+// Static imports — see the note above. Once the async composer ships,
+// this whole block goes away in favour of the manifest's `importFn()`.
+import RootLayout from './pages/_layout.ts';
+import HomePage from './pages/index.ts';
+import AboutPage from './pages/about.ts';
+import UserProfilePage from './pages/users/[id].ts';
+import NotFoundPage from './pages/_404.ts';
+import RootError from './pages/_error.ts';
+
+const routeViews: Record<string, (params: Record<string, string>) => unknown> = {
+  'index.ts': (p) => HomePage(p, { todos: [] }),
+  'about.ts': () => AboutPage(),
+  'users/[id].ts': (p) => UserProfilePage(p as { id: string }),
+};
+
+const layoutViews: Record<string, (children: () => unknown) => unknown> = {
+  '_layout.ts': (children) => RootLayout(children),
+};
+
+function renderEntry(entry: (typeof routes)[number], params: Record<string, string>): unknown {
+  try {
+    let view = (): unknown => {
+      const fn = routeViews[entry.filePath];
+      if (!fn) throw new Error(`no static binding for ${entry.filePath}`);
+      return fn(params);
+    };
+    for (let i = entry.layouts.length - 1; i >= 0; i--) {
+      const layoutFile = entry.layouts[i].filePath;
+      const layout = layoutViews[layoutFile];
+      if (!layout) throw new Error(`no static binding for layout ${layoutFile}`);
+      const inner = view;
+      view = (): unknown => layout(inner);
+    }
+    return view();
+  } catch (err) {
+    if (entry.errorBoundary) return RootError(err);
+    throw err;
+  }
 }
+
+export function App(): unknown {
+  for (const entry of routes) {
+    const m = matchRoute(entry.pattern);
+    if (m) return renderEntry(entry, m.params);
+  }
+  // No matching route — render the manifest's notFound page wrapped in the
+  // root layout so users still see the chrome.
+  return RootLayout(() => NotFoundPage());
+}
+
+// Avoid unused-import warnings — currentPath is exported by the framework
+// for app code that wants the SPA-friendly accessor; the dispatcher above
+// reaches it via matchRoute() instead.
+void currentPath;

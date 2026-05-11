@@ -1,10 +1,11 @@
 # Next handoff
 
 This branch (`claude/next-handoff-item-ect1Q`) ran a long `/loop next`
-pass starting from the SSR-MVP follow-up gap list. **Forty commits,
-twenty-eight new ADRs (0007–0034), 986 tests passing** across the
-three publishable packages. Latest iteration shipped ADR 0034 —
-`LoaderDataOf<P, R>` — typed loader data threaded through the manifest.
+pass starting from the SSR-MVP follow-up gap list. **100 commits
+ahead of main, twenty-eight new ADRs (0007–0034), 986 tests passing**
+across the three publishable packages. Latest iteration shipped
+ADR 0034 — `LoaderDataOf<P, R>` — typed loader data threaded
+through the manifest.
 
 **ADR 0034 — typed loader data.** ADR 0022's `loader` named export
 convention plus ADR 0026's `loaderData<T>()` accessor left the

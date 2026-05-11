@@ -158,3 +158,122 @@ describe('manageNavTransitions() — listeners + URL signal', () => {
     t1();
   });
 });
+
+describe('manageNavTransitions() — async-aware (ADR 0038)', () => {
+  it('awaits awaitNavigation inside the view-transition callback', async () => {
+    let resolveGate: (() => void) | undefined;
+    let captured: (() => Promise<void>) | null = null;
+    (document as DocStub).startViewTransition = (cb) => {
+      captured = cb as () => Promise<void>;
+      return {} as unknown;
+    };
+    teardown = manageNavTransitions({
+      awaitNavigation: () => new Promise<void>((r) => (resolveGate = r)),
+    });
+    navigate('/async');
+    // Trigger the captured callback — kicks off the async wait.
+    const finished = captured!();
+    expect(window.location.pathname).toBe('/async'); // update is synchronous
+
+    let settled = false;
+    finished.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    // The wrapper is still awaiting our gate.
+    expect(settled).toBe(false);
+
+    resolveGate!();
+    await finished;
+    expect(settled).toBe(true);
+  });
+
+  it('passes url + replace flag to awaitNavigation', async () => {
+    const seen: Array<[string, boolean]> = [];
+    let captured: (() => Promise<void>) | null = null;
+    (document as DocStub).startViewTransition = (cb) => {
+      captured = cb as () => Promise<void>;
+      return {} as unknown;
+    };
+    teardown = manageNavTransitions({
+      awaitNavigation: (url, replace) => {
+        seen.push([url.pathname, replace]);
+        return undefined;
+      },
+    });
+    navigate('/a');
+    await captured!();
+    navigate('/b', { replace: true });
+    await captured!();
+    expect(seen).toEqual([
+      ['/a', false],
+      ['/b', true],
+    ]);
+  });
+
+  it('returning a non-Promise value is fine — wrapper resolves immediately', async () => {
+    let captured: (() => Promise<void>) | null = null;
+    (document as DocStub).startViewTransition = (cb) => {
+      captured = cb as () => Promise<void>;
+      return {} as unknown;
+    };
+    teardown = manageNavTransitions({
+      awaitNavigation: () => 42, // sync return — `await 42` is just 42
+    });
+    navigate('/sync');
+    await captured!();
+    expect(window.location.pathname).toBe('/sync');
+  });
+
+  it('a rejecting awaitNavigation lets the URL update land before the rejection', async () => {
+    let captured: (() => Promise<void>) | null = null;
+    (document as DocStub).startViewTransition = (cb) => {
+      captured = cb as () => Promise<void>;
+      return {} as unknown;
+    };
+    teardown = manageNavTransitions({
+      awaitNavigation: () => Promise.reject(new Error('loader failed')),
+    });
+    navigate('/failed');
+    // Inside the wrapper, `update()` runs synchronously before the
+    // `await awaitNavigation(...)`. So by the time the returned promise
+    // rejects, the URL change has already happened.
+    const settle = captured!();
+    expect(window.location.pathname).toBe('/failed');
+    await expect(settle).rejects.toThrow('loader failed');
+    expect(window.location.pathname).toBe('/failed');
+  });
+
+  it('shouldTransition: false still skips the wrapper even when awaitNavigation is set', () => {
+    let calls = 0;
+    (document as DocStub).startViewTransition = (cb) => {
+      calls++;
+      void (cb as () => void)();
+      return {} as unknown;
+    };
+    teardown = manageNavTransitions({
+      shouldTransition: () => false,
+      awaitNavigation: () => Promise.resolve(),
+    });
+    navigate('/skip');
+    // shouldTransition short-circuits before reaching startViewTransition.
+    expect(calls).toBe(0);
+    expect(window.location.pathname).toBe('/skip');
+  });
+
+  it('omitting awaitNavigation keeps the sync callback shape (no async overhead)', () => {
+    let lastCb: unknown;
+    (document as DocStub).startViewTransition = (cb) => {
+      lastCb = cb;
+      (cb as () => void)();
+      return {} as unknown;
+    };
+    teardown = manageNavTransitions();
+    navigate('/plain');
+    // The wrapper passed a sync callback when no awaitNavigation is set.
+    // We can't check the function's literal shape, but its execution is
+    // synchronous — its return is undefined, not a Promise.
+    expect(typeof lastCb).toBe('function');
+    expect((lastCb as () => unknown)()).toBeUndefined();
+  });
+});

@@ -13,6 +13,6 @@
     "@purityjs/vite-plugin": "*"
   },
   "devDependencies": {
-    "vite": "^8.0.10"
+    "vite": "^8.0.12"
   }
 }

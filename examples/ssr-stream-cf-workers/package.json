@@ -15,7 +15,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240405.0",
     "@purityjs/vite-plugin": "*",
-    "vite": "^8.0.10",
+    "vite": "^8.0.12",
     "wrangler": "^3.50.0"
   }
 }

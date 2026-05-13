@@ -20,7 +20,7 @@
     "solid-js": "^1.9.12",
     "svelte": "^5.55.5",
     "vite-plugin-solid": "^2.11.12",
-    "vue": "^3.6.0-beta.10"
+    "vue": "^3.6.0-beta.11"
   },
   "devDependencies": {
     "playwright": "^1.59.1",

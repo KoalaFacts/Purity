@@ -17,6 +17,44 @@ import { state, watch } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
 // ---------------------------------------------------------------------------
+// State-preserving DOM moves (ADR 0037)
+//
+// `Element.moveBefore` keeps focus, CSS transitions/animations, iframe load
+// state, popover/dialog open state, and pointer capture across reorder.
+// `insertBefore` does not. Each-list reorder is the dominant beneficiary —
+// hovering a row, focusing inside it, or starting a CSS transition all
+// survive a keyed reorder when this path is taken.
+//
+// Support (May 2026): Chromium 133+ / Firefox 144+. Safari has not shipped.
+// Falls back to insertBefore transparently — correctness unchanged on any
+// engine.
+// ---------------------------------------------------------------------------
+
+const hasMoveBefore =
+  typeof Element !== 'undefined' &&
+  typeof (Element.prototype as { moveBefore?: unknown }).moveBefore === 'function';
+
+type MovableParent = Node & { moveBefore: (node: Node, ref: Node | null) => void };
+
+function moveOrInsert(parent: Node, node: Node, ref: Node | null): void {
+  // moveBefore requires both `node` and `ref` to already be children of
+  // `parent`. For fresh rows (added to the list this tick) the node isn't
+  // attached yet — there's nothing to preserve, so the insertBefore branch
+  // is correct. For existing rows already in `parent`, moveBefore preserves
+  // their state on supporting engines.
+  if (hasMoveBefore && node.parentNode === parent) {
+    try {
+      (parent as MovableParent).moveBefore(node, ref);
+      return;
+    } catch {
+      /* fall through — structural mismatch (e.g. ref isn't a child of parent
+         at this exact instant). insertBefore is always safe. */
+    }
+  }
+  parent.insertBefore(node, ref);
+}
+
+// ---------------------------------------------------------------------------
 // match(sourceFn, cases, fallback?) — reactive pattern matching
 // NOW CACHES DOM per case key — toggling reuses nodes instead of recreating
 // ---------------------------------------------------------------------------
@@ -562,10 +600,13 @@ function reconcileEach<T>(
           swapped = true;
           const nodeA = entryA.nodes[0];
           const nodeB = entryB.nodes[0];
+          // Two-element swap. moveOrInsert preserves focus/animations on
+          // the two moved rows when moveBefore is available; the marker is
+          // a fresh node so it always uses insertBefore.
           const marker = document.createComment('');
           parent.insertBefore(marker, nodeA);
-          parent.insertBefore(nodeA, nodeB);
-          parent.insertBefore(nodeB, marker);
+          moveOrInsert(parent, nodeA, nodeB);
+          moveOrInsert(parent, nodeB, marker);
           parent.removeChild(marker);
         }
       }
@@ -588,38 +629,62 @@ function reconcileEach<T>(
 
       const lisIndices = new Set(lis(sources));
 
-      let nextSibling: Node = endMarker;
-      let batch: Node[] | null = null;
-      let batchTarget: Node = endMarker;
-
-      for (let i = len - 1; i >= 0; i--) {
-        const entry = newEntries.get(newKeys[i])!;
-        const firstNode = entry.nodes[0];
-        const sourceIdx = newIndexToSource[i];
-        const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
-
-        if (needsMove) {
-          if (!batch) {
-            batch = [];
-            batchTarget = nextSibling;
+      if (hasMoveBefore) {
+        // moveBefore path: per-row moves preserve focus, CSS
+        // transitions/animations, iframe load, popover/dialog state,
+        // and pointer capture across the reorder. No fragment batching —
+        // moveBefore is O(1) per node, and pulling rows into a fragment
+        // first would detach them and lose the preserved state.
+        let nextSibling: Node = endMarker;
+        for (let i = len - 1; i >= 0; i--) {
+          const entry = newEntries.get(newKeys[i])!;
+          const sourceIdx = newIndexToSource[i];
+          const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
+          if (needsMove) {
+            for (let j = entry.nodes.length - 1; j >= 0; j--) {
+              moveOrInsert(parent, entry.nodes[j], nextSibling);
+            }
           }
-          batch.push(firstNode);
-        } else {
-          if (batch) {
-            const frag = document.createDocumentFragment();
-            for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
-            parent.insertBefore(frag, batchTarget);
-            batch = null;
+          nextSibling = entry.nodes[0] || nextSibling;
+        }
+      } else {
+        // Fragment-batching path for engines without moveBefore (Safari
+        // as of May 2026). Accumulates consecutive moves into a
+        // DocumentFragment and inserts them in a single DOM op. Loses
+        // focus/animation state on moved rows — acceptable fallback.
+        let nextSibling: Node = endMarker;
+        let batch: Node[] | null = null;
+        let batchTarget: Node = endMarker;
+
+        for (let i = len - 1; i >= 0; i--) {
+          const entry = newEntries.get(newKeys[i])!;
+          const firstNode = entry.nodes[0];
+          const sourceIdx = newIndexToSource[i];
+          const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
+
+          if (needsMove) {
+            if (!batch) {
+              batch = [];
+              batchTarget = nextSibling;
+            }
+            batch.push(firstNode);
+          } else {
+            if (batch) {
+              const frag = document.createDocumentFragment();
+              for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
+              parent.insertBefore(frag, batchTarget);
+              batch = null;
+            }
           }
+
+          nextSibling = entry.nodes[0] || nextSibling;
         }
 
-        nextSibling = entry.nodes[0] || nextSibling;
-      }
-
-      if (batch) {
-        const frag = document.createDocumentFragment();
-        for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
-        parent.insertBefore(frag, batchTarget);
+        if (batch) {
+          const frag = document.createDocumentFragment();
+          for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
+          parent.insertBefore(frag, batchTarget);
+        }
       }
     }
   }

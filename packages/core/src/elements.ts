@@ -559,6 +559,17 @@ export function component<
         queueMicrotask(() => runCallbacks(ctx.mounted, ctx));
       }
 
+      // Empty by design — declaring this method opts the custom element
+      // into state-preserving moves on engines that support `moveBefore`.
+      // Without it, `moveBefore` falls back to the disconnect+connect
+      // lifecycle for custom elements, defeating the whole point. The
+      // call site in control.ts uses moveBefore for each() reorder; this
+      // method tells the platform "we want move semantics, not churn."
+      /* v8 ignore next 3 -- only invoked by browsers that support moveBefore */
+      connectedMoveCallback() {
+        // intentionally empty
+      }
+
       disconnectedCallback() {
         if (this._ctx) {
           if (this._ctx.disposers) {

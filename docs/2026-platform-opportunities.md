@@ -37,7 +37,7 @@ fast, and this doc is a snapshot.
 | `ElementInternals.states`       | Baseline      | Bare-ident `:state(x)` since May 2024 (Chrome 125, Safari 17.4). |
 | CSS `@layer`                    | Baseline      | All evergreens since Mar 2022.                                   |
 | CSS `@scope`                    | Baseline      | Firefox 146 shipped Jan 6 2026. Newly safe.                      |
-| `Element.moveBefore` + callback | Chromium-only | Chrome 133, Feb 2025. Firefox positive, WebKit "support".        |
+| `Element.moveBefore` + callback | Chrome + FF   | Chrome 133 (Feb 2025) + Firefox 144 (late 2025). WebKit pending. |
 | Serializable shadow roots       | Baseline      | `getHTML({ serializableShadowRoots: true })`.                    |
 | `::part()` / `exportparts`      | Baseline      | Universally supported. Use as primary styling hook.              |
 | `:host-context()`               | Chromium-only | WebKit declined. Do not expose.                                  |
@@ -229,8 +229,7 @@ boolean })` overload.
 
 ## Opportunity 5 — `moveBefore` + `connectedMoveCallback` in `each()` reorder
 
-**Status:** Progressive enhancement (Chromium-only today).
-**ADR required** — touches the hydration + lifecycle invariants.
+**Status:** Landed on `claude/new-specs-forward-planning-9NBW9` as ADR 0037. Note (May 2026): Firefox 144 has shipped `moveBefore` since the original planning doc — coverage is now ~71% globally (Chrome + Firefox), Safari still pending.
 **Files:** `packages/core/src/control.ts` (the LIS reorder path in
 `each()`), `packages/core/src/elements.ts` (define
 `connectedMoveCallback` on `PurityElement` so its semantics opt in).

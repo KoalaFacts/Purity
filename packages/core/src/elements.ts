@@ -234,6 +234,28 @@ type RenderFn<P, S> = (
   slots: { [K in keyof S]: SlotAccessor<S[K]> },
 ) => Node | DocumentFragment | RenderOutput;
 
+/**
+ * Optional configuration passed as the third argument to `component()`.
+ *
+ * @example
+ * ```ts
+ * component('p-input', () => { … }, { formAssociated: true });
+ * ```
+ */
+export interface ComponentOptions {
+  /**
+   * Opt the custom element into form participation. The host gets
+   * `static formAssociated = true`, joins the containing `<form>`'s
+   * FormData submission, and receives `formAssociatedCallback`,
+   * `formDisabledCallback`, `formResetCallback`, and
+   * `formStateRestoreCallback` — surfaced to render code as
+   * `onFormAssociated` / `onFormDisabled` / `onFormReset` /
+   * `onFormStateRestore`. Use `internals().setFormValue(...)` to
+   * publish the component's value to the form.
+   */
+  formAssociated?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Internal: run component render with registry
 // ---------------------------------------------------------------------------
@@ -411,6 +433,7 @@ export function component<
 >(
   tagName: string,
   renderFn: RenderFn<P, S>,
+  options?: ComponentOptions,
 ): (props: P, children?: any) => Node | DocumentFragment {
   // Store in registry
   componentRegistry.set(tagName, renderFn);
@@ -418,6 +441,7 @@ export function component<
   // Register as Custom Element
   if (typeof customElements !== 'undefined' && !customElements.get(tagName)) {
     const render = renderFn;
+    const formAssociated = options?.formAssociated === true;
 
     class PurityElement extends HTMLElement {
       _ctx: ComponentContext | null = null;
@@ -553,6 +577,70 @@ export function component<
           runCallbacks(this._ctx.destroyed, this._ctx);
         }
       }
+
+      // Form-associated lifecycle. Defined unconditionally — the browser
+      // only dispatches when both `static formAssociated = true` and the
+      // callback exists on the prototype, so non-form components incur no
+      // runtime cost. Each callback is a thin shim: it walks the matching
+      // ctx array and invokes user handlers with the platform's argument.
+      formAssociatedCallback(form: HTMLFormElement | null) {
+        const arr = this._ctx?._formAssociated;
+        if (!arr) return;
+        for (let i = 0; i < arr.length; i++) {
+          try {
+            arr[i](form);
+          } catch (err) {
+            this._ctx?._handleError(err);
+          }
+        }
+      }
+
+      formDisabledCallback(disabled: boolean) {
+        const arr = this._ctx?._formDisabled;
+        if (!arr) return;
+        for (let i = 0; i < arr.length; i++) {
+          try {
+            arr[i](disabled);
+          } catch (err) {
+            this._ctx?._handleError(err);
+          }
+        }
+      }
+
+      formResetCallback() {
+        const arr = this._ctx?._formReset;
+        if (!arr) return;
+        for (let i = 0; i < arr.length; i++) {
+          try {
+            arr[i]();
+          } catch (err) {
+            this._ctx?._handleError(err);
+          }
+        }
+      }
+
+      formStateRestoreCallback(
+        state: string | File | FormData | null,
+        mode: 'restore' | 'autocomplete',
+      ) {
+        const arr = this._ctx?._formStateRestore;
+        if (!arr) return;
+        for (let i = 0; i < arr.length; i++) {
+          try {
+            arr[i](state, mode);
+          } catch (err) {
+            this._ctx?._handleError(err);
+          }
+        }
+      }
+    }
+
+    // Spec reads `formAssociated` off the constructor at define-time, so
+    // it must be set before customElements.define. Conditional so the
+    // default branch produces a plain (non-form) custom element with the
+    // same static surface as before.
+    if (formAssociated) {
+      Object.defineProperty(PurityElement, 'formAssociated', { value: true });
     }
 
     customElements.define(tagName, PurityElement);

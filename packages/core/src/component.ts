@@ -71,6 +71,15 @@ export class ComponentContext implements Scope {
   // Ref counts per state name. bindComponentState() composes — many sources
   // can drive the same state and the host only flips when count crosses 0↔1.
   _stateRefs: Map<string, number> | null = null;
+  // Form-associated lifecycle callback arrays. Populated by the onForm*
+  // hooks; drained by PurityElement's matching callbacks. All nullable so
+  // non-form-associated components pay zero allocation cost.
+  _formAssociated: ((form: HTMLFormElement | null) => void)[] | null = null;
+  _formDisabled: ((disabled: boolean) => void)[] | null = null;
+  _formReset: (() => void)[] | null = null;
+  _formStateRestore:
+    | ((state: string | File | FormData | null, mode: 'restore' | 'autocomplete') => void)[]
+    | null = null;
 
   _handleError(err: unknown): void {
     if (this.errorHandlers) {
@@ -190,6 +199,61 @@ export function onDispose(fn: () => void): void {
 export function onError(fn: (err: unknown) => void): void {
   const ctx = getCurrentContext();
   if (ctx instanceof ComponentContext) (ctx.errorHandlers ??= []).push(fn);
+}
+
+// ---------------------------------------------------------------------------
+// Form-associated lifecycle hooks — only invoked when the component was
+// declared with `component(tag, fn, { formAssociated: true })`. Defined on
+// the PurityElement class unconditionally; the browser only dispatches when
+// both `static formAssociated = true` and the relevant callback exist on
+// the prototype, so non-form components pay nothing.
+// ---------------------------------------------------------------------------
+
+/**
+ * Register a callback that runs when the host element is associated with
+ * (or disassociated from) a `<form>`. Only fires for components declared
+ * with `{ formAssociated: true }`.
+ *
+ * @param fn Receives the new form (or `null` when disassociated).
+ */
+export function onFormAssociated(fn: (form: HTMLFormElement | null) => void): void {
+  const ctx = getCurrentContext();
+  if (ctx instanceof ComponentContext) (ctx._formAssociated ??= []).push(fn);
+}
+
+/**
+ * Register a callback that runs when the containing form's `disabled` state
+ * changes (typically via a `<fieldset disabled>` ancestor). Only fires for
+ * components declared with `{ formAssociated: true }`.
+ */
+export function onFormDisabled(fn: (disabled: boolean) => void): void {
+  const ctx = getCurrentContext();
+  if (ctx instanceof ComponentContext) (ctx._formDisabled ??= []).push(fn);
+}
+
+/**
+ * Register a callback that runs when the containing form is reset.
+ * Components should clear their local state. Only fires for components
+ * declared with `{ formAssociated: true }`.
+ */
+export function onFormReset(fn: () => void): void {
+  const ctx = getCurrentContext();
+  if (ctx instanceof ComponentContext) (ctx._formReset ??= []).push(fn);
+}
+
+/**
+ * Register a callback that runs during form state restoration — both
+ * back/forward cache restore and browser autofill. `state` is whatever the
+ * component last passed to `internals().setFormValue(value, state)`; `mode`
+ * is `'restore'` (bfcache) or `'autocomplete'` (autofill).
+ *
+ * Only fires for components declared with `{ formAssociated: true }`.
+ */
+export function onFormStateRestore(
+  fn: (state: string | File | FormData | null, mode: 'restore' | 'autocomplete') => void,
+): void {
+  const ctx = getCurrentContext();
+  if (ctx instanceof ComponentContext) (ctx._formStateRestore ??= []).push(fn);
 }
 
 // ---------------------------------------------------------------------------

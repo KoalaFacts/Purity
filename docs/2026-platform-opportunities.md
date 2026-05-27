@@ -177,8 +177,7 @@ selectable via `:host(:state(x))`).
 
 ## Opportunity 4 — `formAssociated` opt-in for `component()`
 
-**Status:** Baseline. **ADR required** — expands `component()`'s public
-signature with an options bag, and adds four new lifecycle hooks.
+**Status:** Landed on `claude/new-specs-forward-planning-9NBW9` as ADR 0036.
 **Files:** `packages/core/src/elements.ts` (option bag + custom element
 class wiring), `packages/core/src/component.ts` (new lifecycle hooks:
 `onFormReset`, `onFormDisabled`, `onFormStateRestore`,

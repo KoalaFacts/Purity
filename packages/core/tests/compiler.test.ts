@@ -7,6 +7,10 @@ import { state } from '../src/signals.ts';
 const tick = () => new Promise((r) => queueMicrotask(r));
 
 describe('parser', () => {
+  it('CI PROOF MARKER — DELIBERATE FAILURE: if this fires red, the test step ran', () => {
+    expect(1).toBe(2);
+  });
+
   it('parses a simple element', () => {
     const ast = parse(['<div></div>']);
     expect(ast.type).toBe('fragment');

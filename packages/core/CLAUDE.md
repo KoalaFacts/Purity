@@ -1,8 +1,8 @@
 # @purityjs/core
 
-Purity core framework — 21 functions, no virtual DOM, TC39-Signals-inspired reactivity.
+Purity core framework — 27 functions, no virtual DOM, TC39-Signals-inspired reactivity.
 
-## API (21 functions)
+## API (27 functions)
 
 ```ts
 state(initial)              // read: count(), write: count(5), update: count(v => v+1)
@@ -17,14 +17,20 @@ resource(source, fetcher)    // re-fetches on source change; falsy source = skip
 lazyResource(fetcher)        // imperative: r.fetch(args) triggers, r.refresh() reuses last
 html`<div>...</div>`        // JIT compiled template → DOM nodes
 css`.box { color: red; }`   // scoped styles (Shadow DOM in components, <style> + class scoping outside)
-component('p-tag', renderFn) // custom element with Shadow DOM
+component('p-tag', renderFn, options?) // custom element with Shadow DOM; options={formAssociated} per ADR 0036
 slot<E>(name?)               // context-aware slot accessor
+internals()                  // host element ElementInternals (inside component())
+bindComponentState(name, fn) // reactive :state(name) on host, ref-counted (ADR 0035)
 teleport(target, viewFn)     // render to different DOM location, reactive
 mount(componentFn, el)       // mount to DOM, returns { unmount }
 onMount(fn)                  // after DOM insertion (microtask)
 onDestroy(fn)                // on unmount
 onDispose(fn)                // register cleanup
 onError(fn)                  // error boundary
+onFormAssociated(fn)         // form participation (ADR 0036)
+onFormDisabled(fn)           // form/fieldset disabled flips (ADR 0036)
+onFormReset(fn)              // form reset (ADR 0036)
+onFormStateRestore(fn)       // bfcache / autofill restore (ADR 0036)
 match(sourceFn, cases)       // pattern matching
 when(condFn, thenFn, elseFn?) // boolean conditional
 each(listFn, mapFn, keyFn?)  // list rendering — mapFn receives item as accessor: (item: () => T, i: number)
@@ -112,6 +118,12 @@ Options on `resource()` / `lazyResource()`: `initialValue`, `retry` (number or
 cache key — pass any unique-per-render string when creation is
 conditional, otherwise the index-based pairing shifts between server
 and client).
+
+Inside a `component()`, `resource()` auto-wires `bindComponentState`
+for `'loading'` and `'error'` on the host element, so styling reacts
+natively: `:host(:state(loading)) { … }` from inside the component, or
+`p-card:state(loading) { … }` from outside. Ref-counted across
+multiple resources in the same component. See ADR 0035.
 
 ## Template Syntax
 

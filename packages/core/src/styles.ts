@@ -5,7 +5,8 @@ import { watch } from './signals.ts';
 // css`` — scoped styles
 //
 // Inside a component: uses Shadow DOM adoptedStyleSheets (native scoping)
-// Outside a component: falls back to <style> injection with class scoping
+// Outside a component: falls back to <style> injection wrapped in
+//   `@layer purity { @scope (.p-N) { … } }` for layered + DOM-bounded scope.
 //
 // Reactive by default — functions in interpolations auto-update.
 //
@@ -17,9 +18,16 @@ import { watch } from './signals.ts';
 
 /**
  * Scoped CSS styles. Inside a component, uses Shadow DOM `adoptedStyleSheets`
- * for native scoping. Outside, injects a `<style>` tag with class-based scoping.
+ * for native scoping. Outside, injects a `<style>` tag containing
+ * `@layer purity { @scope (.p-N) { … } }` — `@scope` provides DOM-bounded
+ * scoping (proximity-weighted, no specificity bump from a wrapping class),
+ * and `@layer purity` lets unlayered user CSS override framework rules.
  *
  * Supports reactive values — functions in interpolations auto-update the styles.
+ *
+ * `:host` (used out of habit from the Shadow DOM path) is rewritten to
+ * `:scope` so the same source compiles in both contexts. More complex
+ * selectors like `:host(.x)` or `:host-context()` remain Shadow-only.
  *
  * @example
  * ```ts
@@ -94,34 +102,33 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
   }
   /* v8 ignore stop */
 
-  // Fallback path — <style> injection with class scoping (no Shadow DOM)
+  // Fallback path — light-DOM scoping via `@layer purity { @scope (.p-N) { … } }`.
+  //
+  // `@scope` provides real DOM-bounded scoping: rules only match descendants
+  // of the scope root, lower boundaries can be expressed, and proximity is
+  // the cascade tie-breaker. Crucially the scope root itself contributes
+  // zero specificity to descendant selectors (a bare `h1` inside the block
+  // is 0,0,1, not 0,1,1 like the old `.p-N h1` rewrite emitted).
+  //
+  // `@layer purity` keeps user CSS — which sits outside any named layer —
+  // ahead of the framework's emission in the cascade, so users override
+  // without `!important`.
+  installLayerOrder();
+
   const scopeClass = `p-${scopeCounter++}`;
   const styleEl = document.createElement('style');
   styleEl.setAttribute('data-purity-scope', scopeClass);
   document.head.appendChild(styleEl);
 
-  if (hasReactive) {
-    // Fast path: when every interpolation lands inside a `{...}` rule body,
-    // selectors live entirely in `strings` and can be scoped once. Each
-    // reactive update then just concatenates current values into the
-    // pre-scoped chunks instead of re-walking the whole CSS string.
-    const scopedChunks = allPlaceholdersInBodies(strings)
-      ? precomputeScopedChunks(strings, `.${scopeClass}`)
-      : null;
+  const buildScoped = (): string => {
+    const body = rewriteHostToScope(buildCss());
+    return `@layer purity { @scope (.${scopeClass}) { ${body} } }`;
+  };
 
+  if (hasReactive) {
     let prevCss = '';
     const dispose = watch(() => {
-      let newCss: string;
-      if (scopedChunks) {
-        newCss = scopedChunks[0];
-        for (let i = 0; i < values.length; i++) {
-          const val = values[i];
-          newCss += String(typeof val === 'function' ? (val as () => unknown)() : (val ?? ''));
-          newCss += scopedChunks[i + 1];
-        }
-      } else {
-        newCss = scopeSelectors(buildCss(), `.${scopeClass}`);
-      }
+      const newCss = buildScoped();
       /* v8 ignore next -- newCss==prevCss only when state writes the same value, which the reactivity layer already skips before we get here */
       if (newCss !== prevCss) {
         prevCss = newCss;
@@ -135,7 +142,7 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
       });
     }
   } else {
-    styleEl.textContent = scopeSelectors(buildCss(), `.${scopeClass}`);
+    styleEl.textContent = buildScoped();
     if (ctx) {
       (ctx.disposers ??= []).push(() => styleEl.remove());
     }
@@ -144,113 +151,27 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
   return scopeClass;
 }
 
+// Map `:host` (the Shadow DOM root pseudo) to `:scope` (the @scope root) so
+// users can write the same CSS for either context. Lookahead rules out
+// `:host(.x)` (functional form) and `:host-context()` (separate pseudo) —
+// both were already unsupported by the previous selector-rewriter, so this
+// preserves the pre-@scope contract.
+function rewriteHostToScope(cssText: string): string {
+  return cssText.replace(/:host(?![-(\w])/g, ':scope');
+}
+
+// Install the layer-order declaration once per document. Prepending to
+// `<head>` keeps it lexically before any per-component `<style>` tag the
+// framework emits, which is what cascade-layers needs to establish order.
+// Idempotent: re-checks the DOM so HMR / test resets don't reinstall.
+function installLayerOrder(): void {
+  /* v8 ignore next -- defensive; the non-Shadow path only runs in a browser */
+  if (typeof document === 'undefined') return;
+  if (document.head.querySelector('style[data-purity-layers]')) return;
+  const el = document.createElement('style');
+  el.setAttribute('data-purity-layers', '');
+  el.textContent = '@layer purity, user;';
+  document.head.prepend(el);
+}
+
 let scopeCounter = 0;
-
-const CC_QUOTE = 34; // "
-const CC_APOS = 39; // '
-const CC_STAR = 42; // *
-const CC_SLASH = 47; // /
-const CC_BACKSLASH = 92; // \
-const CC_OPEN_BRACE = 123; // {
-const CC_CLOSE_BRACE = 125; // }
-
-// Returns true when every interpolation gap in the template is inside a
-// `{...}` rule body. When false, an interpolated value could change selector
-// parsing (e.g. by introducing a comma), so we must re-scope on every update.
-// Tracks brace depth, CSS strings, and /* */ comments.
-function allPlaceholdersInBodies(strings: ReadonlyArray<string>): boolean {
-  /* v8 ignore next -- defensive; only reached via reactive css() which has interpolations */
-  if (strings.length <= 1) return true;
-  let depth = 0;
-  let inString = 0;
-  for (let i = 0; i < strings.length; i++) {
-    const s = strings[i];
-    for (let j = 0; j < s.length; j++) {
-      const c = s.charCodeAt(j);
-      if (inString) {
-        if (c === CC_BACKSLASH) {
-          j++;
-          continue;
-        }
-        if (c === inString) inString = 0;
-        continue;
-      }
-      if (c === CC_QUOTE || c === CC_APOS) inString = c;
-      else if (c === CC_SLASH && j + 1 < s.length && s.charCodeAt(j + 1) === CC_STAR) {
-        const end = s.indexOf('*/', j + 2);
-        j = end === -1 ? s.length : end + 1;
-      } else if (c === CC_OPEN_BRACE) depth++;
-      else if (c === CC_CLOSE_BRACE) depth--;
-    }
-    if (i < strings.length - 1 && depth <= 0) return false;
-  }
-  return true;
-}
-
-// Run scopeSelectors() once over the template with the value positions
-// stand-in'd by control-character markers, then split the scoped output on
-// those markers. The resulting chunks satisfy:
-//   chunks[0] + values[0] + chunks[1] + ... + values[n] + chunks[n+1]
-// Returns null if a marker is lost in scoping (caller falls back to slow path).
-function precomputeScopedChunks(strings: ReadonlyArray<string>, scope: string): string[] | null {
-  /* v8 ignore next -- defensive; caller guards via allPlaceholdersInBodies + hasReactive */
-  if (strings.length === 1) return [scopeSelectors(strings[0], scope)];
-  // SOH (\u0001) / STX (\u0002) — control chars never present in valid CSS,
-  // so they survive scopeSelectors() unchanged and split cleanly afterward.
-  const PH_OPEN = '\u0001';
-  const PH_CLOSE = '\u0002';
-  let synthetic = strings[0];
-  for (let i = 1; i < strings.length; i++) {
-    synthetic += `${PH_OPEN}${i - 1}${PH_CLOSE}${strings[i]}`;
-  }
-  const scoped = scopeSelectors(synthetic, scope);
-  const chunks: string[] = [];
-  let pos = 0;
-  for (let i = 0; i < strings.length - 1; i++) {
-    const marker = `${PH_OPEN}${i}${PH_CLOSE}`;
-    const idx = scoped.indexOf(marker, pos);
-    /* v8 ignore next -- defensive; markers use control chars not used in CSS */
-    if (idx === -1) return null;
-    chunks.push(scoped.slice(pos, idx));
-    pos = idx + marker.length;
-  }
-  chunks.push(scoped.slice(pos));
-  return chunks;
-}
-
-// Fallback scoping — only used when no Shadow DOM
-// Uses split-based parsing instead of regex to avoid polynomial backtracking
-function scopeSelectors(cssText: string, scope: string): string {
-  let result = '';
-  let i = 0;
-  while (i < cssText.length) {
-    const openBrace = cssText.indexOf('{', i);
-    if (openBrace === -1) {
-      result += cssText.slice(i);
-      break;
-    }
-    const selectorGroup = cssText.slice(i, openBrace);
-    const selectors = selectorGroup.split(',').map((s) => {
-      const trimmed = s.trim();
-      /* v8 ignore next -- defensive; valid CSS shouldn't have empty selectors */
-      if (!trimmed) return s;
-      if (trimmed === ':host') return `${scope} `;
-      /* v8 ignore next -- defensive; only fires on re-scope of already-scoped CSS */
-      if (trimmed.startsWith(scope)) return `${trimmed} `;
-      return `${scope} ${trimmed}`;
-    });
-    result += `${selectors.join(', ')}{`;
-    // Find matching close brace (skip nested braces)
-    let depth = 1;
-    let j = openBrace + 1;
-    while (j < cssText.length && depth > 0) {
-      if (cssText[j] === '{') depth++;
-      else if (cssText[j] === '}') depth--;
-      if (depth > 0) result += cssText[j];
-      j++;
-    }
-    result += '}';
-    i = j;
-  }
-  return result;
-}

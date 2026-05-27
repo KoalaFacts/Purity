@@ -163,6 +163,35 @@ export function slot<E = void>(name?: string): SlotAccessor<E> {
   }) as SlotAccessor<E>;
 }
 
+// ---------------------------------------------------------------------------
+// internals() — access the host element's ElementInternals
+// ---------------------------------------------------------------------------
+
+/**
+ * Access the host element's `ElementInternals` inside a `component()` render.
+ * Useful for `setFormValue`, `setValidity`, the ARIA mixin properties, and
+ * direct `states` manipulation. For reactive state toggling prefer
+ * `bindComponentState(name, accessor)`.
+ *
+ * Returns `null` when called outside a `component()` render or on a runtime
+ * that doesn't expose `attachInternals` (very old engines).
+ *
+ * @example
+ * ```ts
+ * component('p-toggle', () => {
+ *   const open = state(false);
+ *   const i = internals();
+ *   onMount(() => i?.setFormValue(String(open())));
+ *   return html`<button @click=${() => open((v) => !v)}>...</button>`;
+ * });
+ * ```
+ */
+export function internals(): ElementInternals | null {
+  const ctx = getCurrentContext();
+  if (ctx instanceof ComponentContext) return ctx._internals;
+  return null;
+}
+
 function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node | null {
   if (children == null) return null;
 
@@ -204,6 +233,28 @@ type RenderFn<P, S> = (
   props: P,
   slots: { [K in keyof S]: SlotAccessor<S[K]> },
 ) => Node | DocumentFragment | RenderOutput;
+
+/**
+ * Optional configuration passed as the third argument to `component()`.
+ *
+ * @example
+ * ```ts
+ * component('p-input', () => { … }, { formAssociated: true });
+ * ```
+ */
+export interface ComponentOptions {
+  /**
+   * Opt the custom element into form participation. The host gets
+   * `static formAssociated = true`, joins the containing `<form>`'s
+   * FormData submission, and receives `formAssociatedCallback`,
+   * `formDisabledCallback`, `formResetCallback`, and
+   * `formStateRestoreCallback` — surfaced to render code as
+   * `onFormAssociated` / `onFormDisabled` / `onFormReset` /
+   * `onFormStateRestore`. Use `internals().setFormValue(...)` to
+   * publish the component's value to the form.
+   */
+  formAssociated?: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Internal: run component render with registry
@@ -382,6 +433,7 @@ export function component<
 >(
   tagName: string,
   renderFn: RenderFn<P, S>,
+  options?: ComponentOptions,
 ): (props: P, children?: any) => Node | DocumentFragment {
   // Store in registry
   componentRegistry.set(tagName, renderFn);
@@ -389,12 +441,14 @@ export function component<
   // Register as Custom Element
   if (typeof customElements !== 'undefined' && !customElements.get(tagName)) {
     const render = renderFn;
+    const formAssociated = options?.formAssociated === true;
 
     class PurityElement extends HTMLElement {
       _ctx: ComponentContext | null = null;
       _props: Record<string, unknown> = {};
       _mounted = false;
       _shadow: ShadowRoot;
+      _internals: ElementInternals | null = null;
 
       constructor() {
         super();
@@ -403,6 +457,17 @@ export function component<
         // `<tag><template shadowrootmode="open">…</template></tag>`).
         // Calling attachShadow a second time would throw, so check first.
         this._shadow = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
+        // ElementInternals is once-per-element. We claim it eagerly so
+        // bindComponentState() and the public `internals()` accessor always
+        // have a target. Older runtimes without attachInternals fall through
+        // gracefully — _internals stays null and state binding becomes a
+        // no-op.
+        try {
+          this._internals = this.attachInternals();
+        } catch {
+          /* v8 ignore next -- defensive; modern engines all expose attachInternals */
+          this._internals = null;
+        }
       }
 
       connectedCallback() {
@@ -445,6 +510,9 @@ export function component<
         }
         // Store shadow root on context so css() can find it
         (ctx as any)._shadowRoot = this._shadow;
+        // Expose internals to the render scope: bindComponentState() and the
+        // public `internals()` accessor both read from `ctx._internals`.
+        ctx._internals = this._internals;
         this._ctx = ctx;
 
         // Marker-walking hydration: if the shadow has DSD-parsed SSR content,
@@ -491,6 +559,17 @@ export function component<
         queueMicrotask(() => runCallbacks(ctx.mounted, ctx));
       }
 
+      // Empty by design — declaring this method opts the custom element
+      // into state-preserving moves on engines that support `moveBefore`.
+      // Without it, `moveBefore` falls back to the disconnect+connect
+      // lifecycle for custom elements, defeating the whole point. The
+      // call site in control.ts uses moveBefore for each() reorder; this
+      // method tells the platform "we want move semantics, not churn."
+      /* v8 ignore next 3 -- only invoked by browsers that support moveBefore */
+      connectedMoveCallback() {
+        // intentionally empty
+      }
+
       disconnectedCallback() {
         if (this._ctx) {
           if (this._ctx.disposers) {
@@ -509,6 +588,70 @@ export function component<
           runCallbacks(this._ctx.destroyed, this._ctx);
         }
       }
+
+      // Form-associated lifecycle. Defined unconditionally — the browser
+      // only dispatches when both `static formAssociated = true` and the
+      // callback exists on the prototype, so non-form components incur no
+      // runtime cost. Each callback is a thin shim: it walks the matching
+      // ctx array and invokes user handlers with the platform's argument.
+      formAssociatedCallback(form: HTMLFormElement | null) {
+        const arr = this._ctx?._formAssociated;
+        if (!arr) return;
+        for (let i = 0; i < arr.length; i++) {
+          try {
+            arr[i](form);
+          } catch (err) {
+            this._ctx?._handleError(err);
+          }
+        }
+      }
+
+      formDisabledCallback(disabled: boolean) {
+        const arr = this._ctx?._formDisabled;
+        if (!arr) return;
+        for (let i = 0; i < arr.length; i++) {
+          try {
+            arr[i](disabled);
+          } catch (err) {
+            this._ctx?._handleError(err);
+          }
+        }
+      }
+
+      formResetCallback() {
+        const arr = this._ctx?._formReset;
+        if (!arr) return;
+        for (let i = 0; i < arr.length; i++) {
+          try {
+            arr[i]();
+          } catch (err) {
+            this._ctx?._handleError(err);
+          }
+        }
+      }
+
+      formStateRestoreCallback(
+        state: string | File | FormData | null,
+        mode: 'restore' | 'autocomplete',
+      ) {
+        const arr = this._ctx?._formStateRestore;
+        if (!arr) return;
+        for (let i = 0; i < arr.length; i++) {
+          try {
+            arr[i](state, mode);
+          } catch (err) {
+            this._ctx?._handleError(err);
+          }
+        }
+      }
+    }
+
+    // Spec reads `formAssociated` off the constructor at define-time, so
+    // it must be set before customElements.define. Conditional so the
+    // default branch produces a plain (non-form) custom element with the
+    // same static surface as before.
+    if (formAssociated) {
+      Object.defineProperty(PurityElement, 'formAssociated', { value: true });
     }
 
     customElements.define(tagName, PurityElement);

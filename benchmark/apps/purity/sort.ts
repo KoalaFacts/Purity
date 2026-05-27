@@ -102,7 +102,8 @@ const sorted = compute(() => {
 
   const s = source.slice();
   if (mode === 'id-desc') s.reverse();
-  else if (mode === 'label-asc') s.sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
+  else if (mode === 'label-asc')
+    s.sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
   return s;
 });
 

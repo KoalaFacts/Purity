@@ -11,8 +11,21 @@ export {
   html,
 } from './compiler/compile.ts';
 export type { ComponentFn, MountResult } from './component.ts';
-// Lifecycle (3 hooks + error) + hydrate
-export { hydrate, mount, onDestroy, onDispose, onError, onMount } from './component.ts';
+// Lifecycle (3 hooks + error) + hydrate + custom-state binder
+// + form-associated lifecycle hooks (ADR 0036)
+export {
+  bindComponentState,
+  hydrate,
+  mount,
+  onDestroy,
+  onDispose,
+  onError,
+  onFormAssociated,
+  onFormDisabled,
+  onFormReset,
+  onFormStateRestore,
+  onMount,
+} from './component.ts';
 export type { SuspenseErrorInfo, SuspenseErrorPhase, SuspenseOptions } from './control.ts';
 // Control flow
 export {
@@ -29,12 +42,13 @@ export {
 export type { DebouncedAccessor } from './debounced.ts';
 // Debounced derived signal
 export { debounced } from './debounced.ts';
-export type { SlotAccessor } from './elements.ts';
+export type { ComponentOptions, SlotAccessor } from './elements.ts';
 // Components, slots, teleport
 export {
   _getRegisteredComponent,
   _renderComponentSSR,
   component,
+  internals,
   slot,
   teleport,
 } from './elements.ts';

@@ -87,7 +87,7 @@ to source-order — same outcome as today. No regression risk.
 
 ## Opportunity 2 — Adopt `@scope` for the non-Shadow fallback
 
-**Status:** Ready as of Jan 2026. No ADR required (compiler-internal).
+**Status:** Landed on `claude/new-specs-forward-planning-9NBW9`. No ADR required (compiler-internal).
 **Files:** `packages/core/src/styles.ts` — retires
 `scopeSelectors()` (lines 223–256), `allPlaceholdersInBodies()`
 (161–188), `precomputeScopedChunks()` (195–219), and most of the

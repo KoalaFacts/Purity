@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { enterHydration, exitHydration, inflateDeferred, isDeferred } from './compiler/compile.ts';
+import { watch } from './signals.ts';
 import { primeHydrationCache } from './ssr-context.ts';
 
 /**
@@ -64,6 +65,12 @@ export class ComponentContext implements Scope {
   _isMounted = false;
   _isDestroyed = false;
   _slotContent: unknown = undefined;
+  // Set by PurityElement.connectedCallback when the component is a Custom
+  // Element. null for plain mount() roots (no host element to attach to).
+  _internals: ElementInternals | null = null;
+  // Ref counts per state name. bindComponentState() composes — many sources
+  // can drive the same state and the host only flips when count crosses 0↔1.
+  _stateRefs: Map<string, number> | null = null;
 
   _handleError(err: unknown): void {
     if (this.errorHandlers) {
@@ -473,6 +480,85 @@ export function mount(component: ComponentFn, container: Element): MountResult {
 // ---------------------------------------------------------------------------
 // unmountContext
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// bindComponentState — reactively drive an ElementInternals custom state
+//
+// Sync membership of `name` in the host element's CustomStateSet to the
+// truthiness of `accessor()`. Composes across sources: multiple binders to
+// the same state name are ref-counted, and the host flips only on the
+// 0↔1 boundary. Auto-disposed when the surrounding component unmounts.
+// ---------------------------------------------------------------------------
+
+/**
+ * Reactively drive a CSS custom state on the surrounding component's host
+ * element. The state is added/removed in lockstep with the truthiness of
+ * `accessor()`. Users style with `:state(name)` or `:host(:state(name))`.
+ *
+ * No-op when called outside a `component()` render, or when running on a
+ * platform without `ElementInternals.states` support.
+ *
+ * @example
+ * ```ts
+ * component('p-data', () => {
+ *   const r = resource(fetchUser);   // already auto-binds 'loading' / 'error'
+ *   bindComponentState('empty', () => !r() && !r.loading());
+ *   return html`<div>${r}</div>`;
+ * });
+ * ```
+ */
+export function bindComponentState(name: string, accessor: () => unknown): void {
+  const ctx = getCurrentContext();
+  if (!(ctx instanceof ComponentContext)) return;
+  const internals = ctx._internals;
+  const states = internals?.states as
+    | { add: (s: string) => void; delete: (s: string) => void }
+    | undefined;
+  if (!states) return;
+
+  const refs = (ctx._stateRefs ??= new Map());
+  let prevOn = false;
+
+  const dispose = watch(() => {
+    const on = !!accessor();
+    if (on === prevOn) return;
+    prevOn = on;
+    const cur = refs.get(name) ?? 0;
+    const next = cur + (on ? 1 : -1);
+    refs.set(name, next);
+    if (cur === 0 && next === 1) {
+      try {
+        states.add(name);
+      } catch (err) {
+        /* v8 ignore next -- defensive; spec-compliant impls don't throw on valid idents */
+        console.error('[Purity] bindComponentState add failed:', err);
+      }
+    } else if (cur === 1 && next === 0) {
+      try {
+        states.delete(name);
+      } catch {
+        /* v8 ignore next -- defensive; symmetrical to add() */
+      }
+    }
+  });
+
+  (ctx.disposers ??= []).push(() => {
+    dispose();
+    // Release this binder's ref if it was contributing at dispose time.
+    if (prevOn) {
+      const cur = refs.get(name) ?? 0;
+      const next = cur - 1;
+      refs.set(name, next);
+      if (cur === 1 && next === 0) {
+        try {
+          states.delete(name);
+        } catch {
+          /* v8 ignore next -- defensive */
+        }
+      }
+    }
+  });
+}
 
 function unmountContext(ctx: ComponentContext): void {
   if (ctx._isDestroyed) return;

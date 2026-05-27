@@ -133,8 +133,7 @@ README before landing.
 
 ## Opportunity 3 — Expose `ElementInternals.states` for `resource()` lifecycle
 
-**Status:** Baseline since May 2024. **ADR required** — adds a new
-public capability tied to `resource()` and to `component()`.
+**Status:** Landed on `claude/new-specs-forward-planning-9NBW9` as ADR 0035.
 **Files:** `packages/core/src/elements.ts` (custom element constructor
 to call `attachInternals()`), `packages/core/src/resource.ts` (drive
 state set/clear from `loading()` / `error()`).

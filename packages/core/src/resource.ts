@@ -13,6 +13,7 @@
 // fresher data. data() is preserved across refetches (SWR by default).
 // ---------------------------------------------------------------------------
 
+import { bindComponentState } from './component.ts';
 import { batch, state, watch } from './signals.ts';
 import { consumeHydrationValue, getSSRRenderContext } from './ssr-context.ts';
 
@@ -476,6 +477,14 @@ export function resource<T, K>(
     loading(false);
     dispose();
   };
+
+  // Auto-expose the resource's lifecycle as CSS custom states on the
+  // surrounding component's host element. No-op outside a component() or
+  // when `ElementInternals.states` is unavailable. Multiple resources
+  // compose via bindComponentState()'s ref-counting — the host is
+  // `:state(loading)` if *any* resource is loading.
+  bindComponentState('loading', loading.get);
+  bindComponentState('error', () => error.get() !== undefined);
 
   return accessor;
 }

@@ -163,6 +163,35 @@ export function slot<E = void>(name?: string): SlotAccessor<E> {
   }) as SlotAccessor<E>;
 }
 
+// ---------------------------------------------------------------------------
+// internals() — access the host element's ElementInternals
+// ---------------------------------------------------------------------------
+
+/**
+ * Access the host element's `ElementInternals` inside a `component()` render.
+ * Useful for `setFormValue`, `setValidity`, the ARIA mixin properties, and
+ * direct `states` manipulation. For reactive state toggling prefer
+ * `bindComponentState(name, accessor)`.
+ *
+ * Returns `null` when called outside a `component()` render or on a runtime
+ * that doesn't expose `attachInternals` (very old engines).
+ *
+ * @example
+ * ```ts
+ * component('p-toggle', () => {
+ *   const open = state(false);
+ *   const i = internals();
+ *   onMount(() => i?.setFormValue(String(open())));
+ *   return html`<button @click=${() => open((v) => !v)}>...</button>`;
+ * });
+ * ```
+ */
+export function internals(): ElementInternals | null {
+  const ctx = getCurrentContext();
+  if (ctx instanceof ComponentContext) return ctx._internals;
+  return null;
+}
+
 function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node | null {
   if (children == null) return null;
 
@@ -395,6 +424,7 @@ export function component<
       _props: Record<string, unknown> = {};
       _mounted = false;
       _shadow: ShadowRoot;
+      _internals: ElementInternals | null = null;
 
       constructor() {
         super();
@@ -403,6 +433,17 @@ export function component<
         // `<tag><template shadowrootmode="open">…</template></tag>`).
         // Calling attachShadow a second time would throw, so check first.
         this._shadow = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
+        // ElementInternals is once-per-element. We claim it eagerly so
+        // bindComponentState() and the public `internals()` accessor always
+        // have a target. Older runtimes without attachInternals fall through
+        // gracefully — _internals stays null and state binding becomes a
+        // no-op.
+        try {
+          this._internals = this.attachInternals();
+        } catch {
+          /* v8 ignore next -- defensive; modern engines all expose attachInternals */
+          this._internals = null;
+        }
       }
 
       connectedCallback() {
@@ -445,6 +486,9 @@ export function component<
         }
         // Store shadow root on context so css() can find it
         (ctx as any)._shadowRoot = this._shadow;
+        // Expose internals to the render scope: bindComponentState() and the
+        // public `internals()` accessor both read from `ctx._internals`.
+        ctx._internals = this._internals;
         this._ctx = ctx;
 
         // Marker-walking hydration: if the shadow has DSD-parsed SSR content,

@@ -94,7 +94,13 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
   }
   /* v8 ignore stop */
 
-  // Fallback path — <style> injection with class scoping (no Shadow DOM)
+  // Fallback path — <style> injection with class scoping (no Shadow DOM).
+  // Framework styles ship inside `@layer purity` so any unlayered user CSS
+  // wins by default without `!important`. A single `@layer purity, user;`
+  // ordering declaration is installed once per document — see
+  // `installLayerOrder()`.
+  installLayerOrder();
+
   const scopeClass = `p-${scopeCounter++}`;
   const styleEl = document.createElement('style');
   styleEl.setAttribute('data-purity-scope', scopeClass);
@@ -125,7 +131,7 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
       /* v8 ignore next -- newCss==prevCss only when state writes the same value, which the reactivity layer already skips before we get here */
       if (newCss !== prevCss) {
         prevCss = newCss;
-        styleEl.textContent = newCss;
+        styleEl.textContent = wrapInLayer(newCss);
       }
     });
     if (ctx) {
@@ -135,13 +141,34 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
       });
     }
   } else {
-    styleEl.textContent = scopeSelectors(buildCss(), `.${scopeClass}`);
+    styleEl.textContent = wrapInLayer(scopeSelectors(buildCss(), `.${scopeClass}`));
     if (ctx) {
       (ctx.disposers ??= []).push(() => styleEl.remove());
     }
   }
 
   return scopeClass;
+}
+
+// `@layer purity { … }` wrapper for emitted scoped CSS. Unlayered user CSS
+// wins over anything in a named layer, so framework rules never fight with
+// page-level styles on specificity.
+function wrapInLayer(scopedCss: string): string {
+  return `@layer purity { ${scopedCss} }`;
+}
+
+// Install the layer-order declaration once per document. Prepending to
+// `<head>` keeps it lexically before any per-component `<style>` tag the
+// framework emits, which is what cascade-layers needs to establish order.
+// Idempotent: re-checks the DOM so HMR / test resets don't reinstall.
+function installLayerOrder(): void {
+  /* v8 ignore next -- defensive; the non-Shadow path only runs in a browser */
+  if (typeof document === 'undefined') return;
+  if (document.head.querySelector('style[data-purity-layers]')) return;
+  const el = document.createElement('style');
+  el.setAttribute('data-purity-layers', '');
+  el.textContent = '@layer purity, user;';
+  document.head.prepend(el);
 }
 
 let scopeCounter = 0;

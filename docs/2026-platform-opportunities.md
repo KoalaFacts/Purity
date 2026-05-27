@@ -29,20 +29,20 @@ fast, and this doc is a snapshot.
 
 ## Snapshot of platform status (May 2026)
 
-| Feature                          | Status         | Notes                                                            |
-| -------------------------------- | -------------- | ---------------------------------------------------------------- |
-| Declarative Shadow DOM           | Baseline       | Shipped. Already used by Purity SSR.                             |
-| `adoptedStyleSheets` + ctor      | Baseline       | Shipped. Already used by Purity's Shadow-scoped `css()`.         |
-| Form-associated custom elements  | Baseline       | Safari 16.4, Mar 2023. Not yet exposed by Purity.                |
-| `ElementInternals.states`        | Baseline       | Bare-ident `:state(x)` since May 2024 (Chrome 125, Safari 17.4). |
-| CSS `@layer`                     | Baseline       | All evergreens since Mar 2022.                                   |
-| CSS `@scope`                     | Baseline       | Firefox 146 shipped Jan 6 2026. Newly safe.                      |
-| `Element.moveBefore` + callback  | Chromium-only  | Chrome 133, Feb 2025. Firefox positive, WebKit "support".        |
-| Serializable shadow roots        | Baseline       | `getHTML({ serializableShadowRoots: true })`.                    |
-| `::part()` / `exportparts`       | Baseline       | Universally supported. Use as primary styling hook.              |
-| `:host-context()`                | Chromium-only  | WebKit declined. Do not expose.                                  |
-| Cross-root ARIA / Reference Tgt  | Not interop    | Interop 2026 goal; Chromium-experiment only. Watch.              |
-| CSS Module Scripts (`with css`)  | Partial        | Firefox gap. Keep current `css\`\`` runtime path.                |
+| Feature                         | Status        | Notes                                                            |
+| ------------------------------- | ------------- | ---------------------------------------------------------------- |
+| Declarative Shadow DOM          | Baseline      | Shipped. Already used by Purity SSR.                             |
+| `adoptedStyleSheets` + ctor     | Baseline      | Shipped. Already used by Purity's Shadow-scoped `css()`.         |
+| Form-associated custom elements | Baseline      | Safari 16.4, Mar 2023. Not yet exposed by Purity.                |
+| `ElementInternals.states`       | Baseline      | Bare-ident `:state(x)` since May 2024 (Chrome 125, Safari 17.4). |
+| CSS `@layer`                    | Baseline      | All evergreens since Mar 2022.                                   |
+| CSS `@scope`                    | Baseline      | Firefox 146 shipped Jan 6 2026. Newly safe.                      |
+| `Element.moveBefore` + callback | Chromium-only | Chrome 133, Feb 2025. Firefox positive, WebKit "support".        |
+| Serializable shadow roots       | Baseline      | `getHTML({ serializableShadowRoots: true })`.                    |
+| `::part()` / `exportparts`      | Baseline      | Universally supported. Use as primary styling hook.              |
+| `:host-context()`               | Chromium-only | WebKit declined. Do not expose.                                  |
+| Cross-root ARIA / Reference Tgt | Not interop   | Interop 2026 goal; Chromium-experiment only. Watch.              |
+| CSS Module Scripts (`with css`) | Partial       | Firefox gap. Keep current `css\`\`` runtime path.                |
 
 Sources current as of 2026-05-27: MDN, caniuse, Chrome Status, WebKit
 release notes, web-standards.dev. Re-fetch before relying on any row.
@@ -51,7 +51,7 @@ release notes, web-standards.dev. Re-fetch before relying on any row.
 
 ## Opportunity 1 — Wrap framework CSS in `@layer purity`
 
-**Status:** Ready. Zero feature-detect needed. No ADR required.
+**Status:** Landed on `claude/new-specs-forward-planning-9NBW9`. No ADR required.
 **Files:** `packages/core/src/styles.ts` (non-Shadow fallback path,
 roughly lines 99–145).
 **Why:** Today's non-Shadow `css()` injects `<style>` tags with a
@@ -112,8 +112,7 @@ README before landing.
       still reflected and global support hasn't regressed.
 - [ ] Re-check `@scope` syntax on MDN, specifically the `to (.boundary)`
       clause and whether `:scope` specificity is still 0,1,0.
-- [ ] Confirm interaction with `@layer`: a `@layer purity { @scope (...)
-      { ... } }` is legal and behaves as expected (it is, but verify).
+- [ ] Confirm interaction with `@layer`: `@layer purity { @scope (...) { ... } }` is legal and behaves as expected (it is, but verify).
 - [ ] Check the Purity README / CLAUDE.md for any stated minimum
       browser version. If the target predates the support matrix
       above, raise this as a conscious decision before landing.
@@ -121,7 +120,7 @@ README before landing.
 **Execution plan:**
 
 1. Replace the scope-class emission with `@scope (.p-N) { :scope { ... }
-   .x { ... } }`.
+.x { ... } }`.
 2. Delete `scopeSelectors`, `allPlaceholdersInBodies`,
    `precomputeScopedChunks`. The reactive path simplifies to "rebuild
    the body of the `@scope` block on signal change".
@@ -218,7 +217,7 @@ point (e.g. for future `delegatesFocus`).
 
 1. Draft ADR: "Form-associated components via options bag".
 2. Add `component(tag, fn, { formAssociated?: boolean, delegatesFocus?:
-   boolean })` overload.
+boolean })` overload.
 3. When `formAssociated`, set `static formAssociated = true` on the
    element class, call `attachInternals()` in the constructor.
 4. Add the four lifecycle hooks. Route to `_ctx` arrays parallel to
@@ -291,14 +290,14 @@ benefits.
 These came up in the research but are not on the action list yet:
 
 - **CSS Module Scripts** (`import sheet from './x.css' with { type:
-  'css' }`) — Firefox gap as of May 2026. Re-evaluate quarterly.
+'css' }`) — Firefox gap as of May 2026. Re-evaluate quarterly.
 - **`:host-context()`** — Chromium-only; WebKit explicitly declined.
   Do not expose as a documented styling hook.
 - **Cross-root ARIA / Reference Target** — Interop 2026 target, but
   only in a Chromium origin trial. Watch for Firefox + WebKit
   intent-to-ship signals.
 - **Serializable shadow roots** (`getHTML({ serializableShadowRoots:
-  true })`) — useful in-browser, but Purity's SSR runs on Node where
+true })`) — useful in-browser, but Purity's SSR runs on Node where
   this API isn't present. Revisit if a browser-side SSR target
   emerges.
 - **Scoped custom-element registries** — Chromium-only shipped path;

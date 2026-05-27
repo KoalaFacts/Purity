@@ -334,4 +334,62 @@ describe('css', () => {
     await tick();
     expect(styleEl!.textContent).toContain('2');
   });
+
+  it('wraps emitted styles in @layer purity', () => {
+    const scope = css`
+      .box {
+        color: red;
+      }
+    `;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl!.textContent!.trim().startsWith('@layer purity {')).toBe(true);
+    expect(styleEl!.textContent).toContain(`.${scope} .box`);
+  });
+
+  it('wraps reactive emitted styles in @layer purity across updates', async () => {
+    const c = state('red');
+    const scope = css`
+      .box {
+        color: ${() => c()};
+      }
+    `;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl!.textContent!.trim().startsWith('@layer purity {')).toBe(true);
+
+    c('blue');
+    await tick();
+    expect(styleEl!.textContent!.trim().startsWith('@layer purity {')).toBe(true);
+    expect(styleEl!.textContent).toContain('blue');
+  });
+
+  it('installs `@layer purity, user;` order declaration exactly once', () => {
+    css`
+      .a {
+        color: red;
+      }
+    `;
+    css`
+      .b {
+        color: green;
+      }
+    `;
+    const orderEls = document.querySelectorAll('style[data-purity-layers]');
+    expect(orderEls.length).toBe(1);
+    expect(orderEls[0].textContent).toBe('@layer purity, user;');
+  });
+
+  it('prepends the layer-order declaration before the first scoped <style>', () => {
+    const scope = css`
+      .late {
+        color: red;
+      }
+    `;
+    const orderEl = document.head.querySelector('style[data-purity-layers]');
+    const scopeEl = document.head.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(orderEl).not.toBeNull();
+    expect(scopeEl).not.toBeNull();
+    // compareDocumentPosition: bit 4 = follows. orderEl must precede scopeEl.
+    const rel = orderEl!.compareDocumentPosition(scopeEl!);
+    expect(rel & Node.DOCUMENT_POSITION_FOLLOWING).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
 });

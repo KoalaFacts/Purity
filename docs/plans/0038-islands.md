@@ -63,8 +63,7 @@ behaviour change.
 **API delta.**
 
 ```ts
-export type IslandTrigger =
-  | 'load' | 'idle' | 'visible' | 'interact' | `media:${string}`;
+export type IslandTrigger = 'load' | 'idle' | 'visible' | 'interact' | `media:${string}`;
 
 export interface IslandOptions {
   hydrate?: IslandTrigger; // default 'load'
@@ -88,11 +87,11 @@ it survives function passing without polluting `typeof view`.
 
 **Risks.**
 
-- *Brand survives `Function.prototype.bind` / wrapper functions*?
-  Mitigation: brand the *return value* of `view()`, not `view` itself,
+- _Brand survives `Function.prototype.bind` / wrapper functions_?
+  Mitigation: brand the _return value_ of `view()`, not `view` itself,
   if the closure form proves fragile. The test suite makes both forms
   fail loudly.
-- *TypeScript inference loses the original signature*? Mitigation:
+- _TypeScript inference loses the original signature_? Mitigation:
   the `<V>` generic preserves it; tests assert this with a
   type-only test (`expectTypeOf`).
 
@@ -106,7 +105,7 @@ it survives function passing without polluting `typeof view`.
 sibling that awaits the trigger, dynamic-imports the main bundle, and
 calls `hydrate(root, View)` on the island's root. Only two triggers
 ship in this phase: `'load'` (immediate) and `'visible'`
-(`IntersectionObserver`). Chunks are *not* split yet — the bootstrap
+(`IntersectionObserver`). Chunks are _not_ split yet — the bootstrap
 imports the main bundle. This phase validates the trigger machinery
 and the per-root hydration handoff in isolation from the bundler
 work.
@@ -135,7 +134,7 @@ work.
 - `packages/ssr/src/render-to-string.ts:67, 220–246` — the resource
   script injection (`<script id="__purity_resources__">`) is the
   reference for "where inline scripts go". Confirm the bootstrap
-  emits *inline next to the island*, not in the document tail —
+  emits _inline next to the island_, not in the document tail —
   otherwise the trigger fires before the DOM exists.
 - Marker grammar for non-custom-element islands: add `<!--pi:N-->`
   and `<!--/pi:N-->` to the same comment-marker family as
@@ -149,9 +148,7 @@ work.
   <template shadowrootmode="open">…</template>
 </my-counter>
 <script type="module" data-pi-boot="0">
-import('/_purity/main.js').then(m =>
-  m.__pi[0](document.querySelector('[data-pi="0"]'))
-);
+  import('/_purity/main.js').then((m) => m.__pi[0](document.querySelector('[data-pi="0"]')));
 </script>
 ```
 
@@ -164,13 +161,13 @@ per-island chunks; in P2 it's all bundled together.
 
 ```html
 <script type="module" data-pi-boot="0">
-const el = document.querySelector('[data-pi="0"]');
-new IntersectionObserver((es, o) => {
-  if (es.some(e => e.isIntersecting)) {
-    o.disconnect();
-    import('/_purity/main.js').then(m => m.__pi[0](el));
-  }
-}).observe(el);
+  const el = document.querySelector('[data-pi="0"]');
+  new IntersectionObserver((es, o) => {
+    if (es.some((e) => e.isIntersecting)) {
+      o.disconnect();
+      import('/_purity/main.js').then((m) => m.__pi[0](el));
+    }
+  }).observe(el);
 </script>
 ```
 
@@ -191,15 +188,15 @@ new IntersectionObserver((es, o) => {
 
 **Risks.**
 
-- *The bootstrap fires before the island element exists.* Mitigation:
+- _The bootstrap fires before the island element exists._ Mitigation:
   `<script type="module">` is deferred and executes after DOM parsing
   in document order; sibling-after-element placement guarantees the
   element exists.
-- *Multiple islands of the same component on one page collide on
-  `data-pi`.* Each gets its own monotonic ID; the test suite covers
+- _Multiple islands of the same component on one page collide on
+  `data-pi`._ Each gets its own monotonic ID; the test suite covers
   N>1.
-- *Hydration mismatch warnings fire because the shell has no
-  markers.* The hydrator only walks where called; this is a non-issue
+- _Hydration mismatch warnings fire because the shell has no
+  markers._ The hydrator only walks where called; this is a non-issue
   but the test suite pins it.
 
 **Estimate.** ~350 LOC across core + SSR + tests, two days.
@@ -212,7 +209,7 @@ new IntersectionObserver((es, o) => {
 virtual `purity:island/N` module per island, and switch the bootstrap
 from `import('/_purity/main.js')` to `import('/_purity/island-N.js')`.
 The main bundle now contains only non-islanded interactivity (often
-*nothing* for content pages). This phase delivers the headline byte
+_nothing_ for content pages). This phase delivers the headline byte
 savings.
 
 **New files.**
@@ -255,7 +252,9 @@ Its implementation:
 ```ts
 import { hydrate } from '@purityjs/core';
 import { View } from './island-N-view'; // generated; imports user code
-export function boot(root) { hydrate(root, View); }
+export function boot(root) {
+  hydrate(root, View);
+}
 ```
 
 Rollup deduplicates shared imports across islands automatically — no
@@ -264,12 +263,12 @@ bootstrap is what drives chunk emission.
 
 **Dev vs build.**
 
-- *Dev*: Vite serves each virtual module on demand via `load()`. The
+- _Dev_: Vite serves each virtual module on demand via `load()`. The
   bootstrap imports `/_purity/island-N.js` which Vite resolves to
   the in-memory virtual module. HMR for the island's user code
   triggers a full re-import (acceptable for islands; hot-swap inside
   a hydrated island is a separate problem).
-- *Build*: Rollup emits each virtual module as a real chunk; the
+- _Build_: Rollup emits each virtual module as a real chunk; the
   bootstrap's URL is rewritten to the hashed filename. The
   island-map JSON is inlined into every SSR HTML response so the
   bootstrap script knows where to import from.
@@ -289,18 +288,18 @@ bootstrap is what drives chunk emission.
 
 **Risks.**
 
-- *Regex detection misses dynamically-imported `island()` calls* (e.g.
+- _Regex detection misses dynamically-imported `island()` calls_ (e.g.
   `const isle = await import('./isle'); isle.default(...)`). Acceptable
   miss in MVP — documented limitation. Static detection covers the
   authored pattern, and runtime registration is a follow-up if real
   apps hit this.
-- *The island's view function captures a closure over module-scope
-  state* (e.g. a top-level `state()` shared with the shell). When the
+- _The island's view function captures a closure over module-scope
+  state_ (e.g. a top-level `state()` shared with the shell). When the
   island is split into its own chunk, the closure is duplicated, not
   shared. Document this loudly in the JSDoc and the example.
   Cross-island state belongs in URL / `persist()` / server.
-- *Build-time codegen for the bootstrap depends on knowing chunk URLs
-  before they're hashed.* Standard Vite plugin pattern — use Rollup's
+- _Build-time codegen for the bootstrap depends on knowing chunk URLs
+  before they're hashed._ Standard Vite plugin pattern — use Rollup's
   `generateBundle` hook to rewrite the bootstrap script content with
   the final hashed filenames.
 
@@ -328,19 +327,19 @@ small, specialised inline script. No new architecture.
 - `'idle'`: `requestIdleCallback(() => import(...), { timeout: 2000 })`,
   fallback `setTimeout(() => import(...), 1)` for Safari pre-17.
 - `'interact'`: `['pointerdown','focusin','keydown'].forEach(e =>
-  el.addEventListener(e, h, { once: true, capture: true }))`, handler
+el.addEventListener(e, h, { once: true, capture: true }))`, handler
   removes the other listeners and triggers the import.
 - `'media:(min-width: 768px)'`: `const mq = matchMedia('(min-width:
-  768px)'); if (mq.matches) import(...); else mq.addEventListener(
-  'change', e => e.matches && import(...), { once: true })`.
+768px)'); if (mq.matches) import(...); else mq.addEventListener(
+'change', e => e.matches && import(...), { once: true })`.
 
 **Acceptance.**
 
 - Each trigger fires under its condition and doesn't fire under
   others, verified in jsdom tests.
-- `'interact'`: the click that *fires* the trigger is replayed after
+- `'interact'`: the click that _fires_ the trigger is replayed after
   hydration so it doesn't get lost. (See ADR's "Out of scope" — we
-  said event replay is out of scope, but the click that *causes* the
+  said event replay is out of scope, but the click that _causes_ the
   hydration is the trivially-replayable case. Tracks separately if
   it proves harder than expected.)
 - `media:(...)` query string is escaped to avoid script-injection
@@ -412,5 +411,5 @@ These don't gate any phase but should land alongside the work:
   changing the surface.
 - A `client:only` equivalent — the user can already produce this
   by wrapping the view in a `when(typeof window !== 'undefined',
-  ...)` gate inside the island. If real apps need an ergonomic
+...)` gate inside the island. If real apps need an ergonomic
   shortcut, file a follow-up.

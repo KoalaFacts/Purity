@@ -23,7 +23,7 @@ this workload:
   `client:media`, `client:only` directives on imported framework
   components. The surrounding HTML is rendered once on the server and
   ships zero JS; each islanded component ships its own framework runtime
-  + component code on its own schedule.
+  - component code on its own schedule.
 - **Fresh (Deno)** — `islands/` directory; anything imported from it is
   an island, anything else is server-only.
 - **Marko** — `.marko` files declare per-tag boundaries; the compiler
@@ -52,7 +52,7 @@ Purity has the pieces to do it cleanly:
    passes the island's root element to `hydrate()` and the walker takes
    it from there.
 3. Custom Elements + Declarative Shadow DOM (`<template
-   shadowrootmode="open">`) work in the browser *before* the element's
+shadowrootmode="open">`) work in the browser _before_ the element's
    JS class is registered — the DSD content renders as visual content
    immediately, and the element upgrades in place when
    `customElements.define()` is later called. This is the foundation
@@ -68,7 +68,7 @@ Purity has the pieces to do it cleanly:
 
 The reason we didn't ship islands with the SSR MVP was scope and
 prioritisation: the whole-page hydration story had to land first
-because islands depend on it (an island *is* a non-lossy hydration
+because islands depend on it (an island _is_ a non-lossy hydration
 boundary). With ADRs 0005, 0006, and 0019–0034 shipped, the
 foundations are now in place and the missing work is small enough to
 fit in one ADR.
@@ -89,7 +89,7 @@ import { island, component, html, state } from '@purityjs/core';
 
 const Counter = component('my-counter', () => {
   const n = state(0);
-  return html`<button onclick=${() => n.update(v => v + 1)}>${n}</button>`;
+  return html`<button onclick=${() => n.update((v) => v + 1)}>${n}</button>`;
 });
 
 // Mark it as an island; the wrapped view IS the original view,
@@ -104,8 +104,7 @@ const Page = () => html`
     <h1>Hello</h1>
     <p>Lots of static content…</p>
     ${InteractiveCounter()}
-    <p>More static content. None of this paragraph or its surroundings
-       ship JS.</p>
+    <p>More static content. None of this paragraph or its surroundings ship JS.</p>
   </article>
 `;
 ```
@@ -117,13 +116,13 @@ to user code; the SSR codegen and the Vite plugin look for it.
 
 ### Hydration triggers
 
-| Trigger          | Semantics                                                 |
-| ---------------- | --------------------------------------------------------- |
-| `'load'`         | Hydrate immediately after the chunk loads. Default.       |
-| `'idle'`         | Hydrate inside `requestIdleCallback` (fallback: `setTimeout(0)`). |
-| `'visible'`      | Hydrate when the island enters the viewport (`IntersectionObserver`). |
-| `'interact'`     | Hydrate on first `pointerdown` / `focusin` / `keydown` inside the island root. |
-| `media:(...)`    | Hydrate when the given media query matches (`matchMedia`). |
+| Trigger       | Semantics                                                                      |
+| ------------- | ------------------------------------------------------------------------------ |
+| `'load'`      | Hydrate immediately after the chunk loads. Default.                            |
+| `'idle'`      | Hydrate inside `requestIdleCallback` (fallback: `setTimeout(0)`).              |
+| `'visible'`   | Hydrate when the island enters the viewport (`IntersectionObserver`).          |
+| `'interact'`  | Hydrate on first `pointerdown` / `focusin` / `keydown` inside the island root. |
+| `media:(...)` | Hydrate when the given media query matches (`matchMedia`).                     |
 
 Triggers are mutually exclusive in the MVP — one per island. Composite
 triggers (`['visible', 'interact']`, "whichever fires first") can be
@@ -145,13 +144,15 @@ sibling:
 </my-counter>
 <script type="module" data-pi-boot="0">
   // Inlined per-trigger waiter, then dynamic import + hydrate.
-  import('/_purity/island-0.js').then(m => m.boot('[data-pi="0"]'));
+  import('/_purity/island-0.js').then((m) => m.boot('[data-pi="0"]'));
 </script>
 ```
 
 For an island wrapping a non-custom-element view (a plain html-returning
 function), the server wraps the rendered subtree in `<!--pi:N-->...
+
 <!--/pi:N-->` markers so the bootstrap can locate the root by marker
+
 ID rather than by data attribute.
 
 The bootstrap script is per-trigger: `'load'` calls `boot()`
@@ -172,7 +173,7 @@ export function boot(rootSelector: string | Element): void;
 The chunk contains:
 
 - The island's view function compiled in `generate` + `generateHydrate`
-  modes (both — `generate` for the case where the chunk loads *before*
+  modes (both — `generate` for the case where the chunk loads _before_
   the SSR HTML has been parsed for this region, e.g. a Suspense
   boundary mid-stream; `generateHydrate` for the normal case).
 - The minimum `@purityjs/core` runtime the view actually uses
@@ -187,15 +188,15 @@ dynamic-import shape.
 
 ### Compiler & plugin changes
 
-| Component | Change |
-| --- | --- |
-| `packages/core/src/island.ts` | New file. `island(view, options)` returns a branded view; brand carries `{ trigger, viewRef }` for codegen pickup. ~30 LOC. |
-| `packages/core/src/compiler/ssr-runtime.ts` | When emitting an island brand: render the wrapped view, then append the per-trigger bootstrap script next to it. |
-| `packages/core/src/compiler/index.ts` | New `generateIsland` pass: produces the per-island `boot()` chunk's source. |
-| `packages/vite-plugin/src/index.ts` | Scan modules for `island(...)` call sites (regex-based, similar to ADR 0022's loader detection); register each as a virtual `purity:island/N` module backed by `generateIsland`; surface them to Rollup as dynamic-import targets so `manualChunks` keeps the default per-island split. |
-| `packages/vite-plugin/src/islands.ts` | New file. Island registry, brand discovery, bootstrap template per trigger. |
-| `packages/ssr/src/render-to-string.ts` | Unchanged — island brands fall through `_h.island(view, opts)` which the SSR runtime already handles per the row above. |
-| `packages/core/src/hydrate.ts` | Unchanged — `hydrate(root, View)` already accepts any element as the starting point. |
+| Component                                   | Change                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core/src/island.ts`               | New file. `island(view, options)` returns a branded view; brand carries `{ trigger, viewRef }` for codegen pickup. ~30 LOC.                                                                                                                                                             |
+| `packages/core/src/compiler/ssr-runtime.ts` | When emitting an island brand: render the wrapped view, then append the per-trigger bootstrap script next to it.                                                                                                                                                                        |
+| `packages/core/src/compiler/index.ts`       | New `generateIsland` pass: produces the per-island `boot()` chunk's source.                                                                                                                                                                                                             |
+| `packages/vite-plugin/src/index.ts`         | Scan modules for `island(...)` call sites (regex-based, similar to ADR 0022's loader detection); register each as a virtual `purity:island/N` module backed by `generateIsland`; surface them to Rollup as dynamic-import targets so `manualChunks` keeps the default per-island split. |
+| `packages/vite-plugin/src/islands.ts`       | New file. Island registry, brand discovery, bootstrap template per trigger.                                                                                                                                                                                                             |
+| `packages/ssr/src/render-to-string.ts`      | Unchanged — island brands fall through `_h.island(view, opts)` which the SSR runtime already handles per the row above.                                                                                                                                                                 |
+| `packages/core/src/hydrate.ts`              | Unchanged — `hydrate(root, View)` already accepts any element as the starting point.                                                                                                                                                                                                    |
 
 Bundle delta on the shell: **zero** for pages with no islands; the
 brand wrapper is dead-code-eliminated. For pages with islands, each
@@ -233,7 +234,7 @@ patterns handle the realistic cases without new API surface.
   inside a normally-hydrating island already.
 - **Per-island Suspense boundaries.** ADR 0006 marked
   "per-Suspense code splitting / islands" as out of scope; this ADR
-  inherits that. A streamed Suspense boundary can *contain* an island,
+  inherits that. A streamed Suspense boundary can _contain_ an island,
   but the boundary itself is not an island.
 - **Selective hydration order driven by user interaction.** Triggers
   fire when their condition fires; there's no priority queue. Good
@@ -242,7 +243,7 @@ patterns handle the realistic cases without new API surface.
   hasn't hydrated yet, the click is lost. Acceptable for `'visible'`
   and `'idle'` triggers (the user is unlikely to be interacting yet);
   for `'interact'` it's exactly the trigger that hydrates, so the
-  click that hydrates *is* the click that wires up the handler — a
+  click that hydrates _is_ the click that wires up the handler — a
   separate spec issue worth a follow-up if real users notice the lost
   first event.
 - **`signalChannel(name)` BroadcastChannel primitive.** Useful for
@@ -311,7 +312,7 @@ patterns handle the realistic cases without new API surface.
 Phases, each landable as its own PR:
 
 1. **`island()` brand + SSR codegen passthrough.** Ship `island(view,
-   options)` as a no-op brand that records `{ trigger, view }` and
+options)` as a no-op brand that records `{ trigger, view }` and
    delegates rendering to the wrapped view. SSR emits the wrapped
    view's HTML unchanged. No chunk split yet — the island's code still
    ships in the main bundle. Validates the brand mechanism end-to-end
@@ -356,7 +357,7 @@ any phase reveals decisions that contradict this plan.
 
 - **Directory convention instead of a function brand
   (Fresh-style `islands/`).** Implicit and easy to grep, but adds a
-  second source of truth (the directory *and* the import graph) and
+  second source of truth (the directory _and_ the import graph) and
   means a single-file refactor — moving a component out of `islands/`
   to colocate it with its caller — silently changes its hydration
   behaviour. The function brand is explicit at the call site.

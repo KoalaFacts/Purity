@@ -1,8 +1,8 @@
 # @purityjs/core
 
-Purity core framework — 32 functions, no virtual DOM, TC39-Signals-inspired reactivity.
+Purity core framework — 36 functions, no virtual DOM, TC39-Signals-inspired reactivity.
 
-## API (32 functions)
+## API (36 functions)
 
 ```ts
 state(initial)              // read: count(), write: count(5), update: count(v => v+1)
@@ -43,6 +43,12 @@ broadcastSignal(channel, default)        // BroadcastChannel-backed cross-tab si
 pageVisibilitySignal()                   // 'visible' | 'hidden' — visibilitychange
 pageLifecycleSignal()                    // 'active' | 'passive' | 'hidden' | 'frozen' | 'terminated'
 bfcacheRestoreSignal()                   // counter — increments on each bfcache restore
+
+// Observer-as-signal primitives — ADR 0040
+intersectionSignal(target, options?)     // IntersectionObserver → boolean
+mutationSignal(target, options?)         // MutationObserver → MutationRecord[] (latest batch)
+mediaSignal(query)                       // matchMedia → boolean (cached per query)
+resizeSignal(target, options?)           // ResizeObserver → DOMRectReadOnly (contentRect)
 ```
 
 ## Hydration

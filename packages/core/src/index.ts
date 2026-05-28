@@ -154,3 +154,9 @@ export { broadcastSignal } from './broadcast-signal.ts';
 export { pageVisibilitySignal } from './page-visibility-signal.ts';
 export { pageLifecycleSignal, type PageLifecycleState } from './page-lifecycle-signal.ts';
 export { bfcacheRestoreSignal } from './bfcache-restore-signal.ts';
+
+// Observer-as-signal primitives — ADR 0040.
+export { intersectionSignal } from './intersection-signal.ts';
+export { mutationSignal } from './mutation-signal.ts';
+export { mediaSignal } from './media-signal.ts';
+export { resizeSignal } from './resize-signal.ts';

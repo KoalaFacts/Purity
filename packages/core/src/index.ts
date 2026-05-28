@@ -151,9 +151,6 @@ export { css } from './styles.ts';
 // Persistence + lifecycle signal primitives — ADR 0039.
 export { localSignal, type LocalSignalOptions } from './local-signal.ts';
 export { broadcastSignal } from './broadcast-signal.ts';
-export {
-  bfcacheRestoreSignal,
-  pageLifecycleSignal,
-  type PageLifecycleState,
-  pageVisibilitySignal,
-} from './lifecycle-signals.ts';
+export { pageVisibilitySignal } from './page-visibility-signal.ts';
+export { pageLifecycleSignal, type PageLifecycleState } from './page-lifecycle-signal.ts';
+export { bfcacheRestoreSignal } from './bfcache-restore-signal.ts';

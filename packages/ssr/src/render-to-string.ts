@@ -128,6 +128,7 @@ export async function renderToString(
       resolvedErrorsByKey,
       resourceCounter: 0,
       suspenseCounter: 0,
+      islandCounter: 0,
       boundaryStartTimes,
       boundaryDeadlines,
       timedOutBoundaries,

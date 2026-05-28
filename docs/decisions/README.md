@@ -31,6 +31,7 @@ accept. Numbered sequentially.
 | [0035](./0035-element-internals-states.md)   | ElementInternals.states for component lifecycle | Proposed                |
 | [0036](./0036-form-associated-components.md) | Form-associated components via options bag      | Proposed                |
 | [0037](./0037-move-before-each-reorder.md)   | moveBefore in each() reorder                    | Proposed                |
+| [0038](./0038-islands.md)                    | Islands — opt-in per-subtree hydration          | Proposed                |
 
 ## Template
 

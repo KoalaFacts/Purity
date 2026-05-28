@@ -13,6 +13,29 @@ import {
 
 const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
 
+// Build a `storage`-typed Event with the relevant StorageEventInit fields
+// patched on. Constructing `new StorageEvent('storage', init)` is
+// spec-compliant but CodeQL's web externs flag the init arg as
+// "superfluous" — this helper keeps the call sites quiet without losing
+// the signal under test.
+function makeStorageEvent(init: {
+  key: string | null;
+  newValue: string | null;
+  oldValue?: string | null;
+  storageArea?: Storage;
+}): Event {
+  const event = new Event('storage');
+  Object.defineProperty(event, 'key', { value: init.key });
+  Object.defineProperty(event, 'newValue', { value: init.newValue });
+  if ('oldValue' in init) {
+    Object.defineProperty(event, 'oldValue', { value: init.oldValue });
+  }
+  if (init.storageArea) {
+    Object.defineProperty(event, 'storageArea', { value: init.storageArea });
+  }
+  return event;
+}
+
 function makeSSRContext(): SSRRenderContext {
   return {
     pendingPromises: [],
@@ -106,7 +129,7 @@ describe('localSignal — client path (ADR 0039)', () => {
     expect(theme()).toBe('light');
     // Simulate another tab writing.
     window.dispatchEvent(
-      new StorageEvent('storage', {
+      makeStorageEvent({
         key: 'theme',
         newValue: JSON.stringify('dark'),
         oldValue: null,
@@ -121,7 +144,7 @@ describe('localSignal — client path (ADR 0039)', () => {
     const theme = localSignal('theme', 'light');
     const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
     window.dispatchEvent(
-      new StorageEvent('storage', {
+      makeStorageEvent({
         key: 'theme',
         newValue: JSON.stringify('dark'),
       }),
@@ -136,7 +159,7 @@ describe('localSignal — client path (ADR 0039)', () => {
     const theme = localSignal('theme', 'light');
     expect(theme()).toBe('dark');
     window.dispatchEvent(
-      new StorageEvent('storage', {
+      makeStorageEvent({
         key: 'theme',
         newValue: null,
         oldValue: JSON.stringify('dark'),
@@ -150,7 +173,7 @@ describe('localSignal — client path (ADR 0039)', () => {
     const b = localSignal('b', 'x');
     a.set(5);
     b.set('y');
-    window.dispatchEvent(new StorageEvent('storage', { key: null, newValue: null }));
+    window.dispatchEvent(makeStorageEvent({ key: null, newValue: null }));
     expect(a()).toBe(0);
     expect(b()).toBe('x');
   });

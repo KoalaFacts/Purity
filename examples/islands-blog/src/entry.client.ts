@@ -10,5 +10,6 @@ import { mountIslands } from '@purityjs/core';
 
 mountIslands([
   () => import('./islands/counter.ts').then((m) => m.Counter),
+  () => import('./islands/expander.ts').then((m) => m.Expander),
   () => import('./islands/like.ts').then((m) => m.Like),
 ]);

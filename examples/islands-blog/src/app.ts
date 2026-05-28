@@ -5,6 +5,7 @@
 
 import { html } from '@purityjs/ssr';
 import { Counter } from './islands/counter.ts';
+import { Expander } from './islands/expander.ts';
 import { Like } from './islands/like.ts';
 
 export function App(): unknown {
@@ -26,6 +27,25 @@ export function App(): unknown {
       moment its chunk loads. Click it; the count survives because each island has its own signal
       graph that lives in its chunk's module scope.
     </p>
+
+    <hr />
+
+    <h2>Custom-element-rooted islands (DSD)</h2>
+    <p>
+      The next island wraps a <code>component()</code>-defined Custom Element. The server emits a
+      <code>&lt;demo-expander&gt;</code> tag containing a
+      <code>&lt;template shadowrootmode="open"&gt;</code> with scoped styles and the rendered shadow
+      content. The browser renders the shadow tree immediately — before any JS loads — and the
+      element auto-upgrades the moment its chunk's <code>customElements.define</code> call runs. No
+      explicit <code>hydrate()</code> happens on this island; the upgrade does it via the Custom
+      Element's <code>connectedCallback</code>.
+    </p>
+    <p>
+      This island uses <code>hydrate: 'interact'</code> — its chunk isn't requested until you click
+      or tab into it. Try clicking the toggle.
+    </p>
+
+    ${Expander()}
 
     <hr />
 

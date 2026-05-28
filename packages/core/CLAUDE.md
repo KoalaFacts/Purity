@@ -1,8 +1,8 @@
 # @purityjs/core
 
-Purity core framework — 36 functions, no virtual DOM, TC39-Signals-inspired reactivity.
+Purity core framework — 44 functions, no virtual DOM, TC39-Signals-inspired reactivity.
 
-## API (36 functions)
+## API (44 functions)
 
 ```ts
 state(initial)              // read: count(), write: count(5), update: count(v => v+1)
@@ -49,6 +49,16 @@ intersectionSignal(target, options?)     // IntersectionObserver → boolean
 mutationSignal(target, options?)         // MutationObserver → MutationRecord[] (latest batch)
 mediaSignal(query)                       // matchMedia → boolean (cached per query)
 resizeSignal(target, options?)           // ResizeObserver → DOMRectReadOnly (contentRect)
+
+// Environment + system preference signals — ADR 0041
+onlineSignal()                           // boolean — navigator.onLine + online/offline events
+prefersColorSchemeSignal()               // 'light' | 'dark'
+prefersReducedMotionSignal()             // boolean
+prefersContrastSignal()                  // 'no-preference' | 'more' | 'less' | 'custom'
+screenOrientationSignal()                // 'portrait' | 'landscape'
+localeSignal()                           // string — navigator.language + languagechange
+devicePixelRatioSignal()                 // number — re-binds on DPR change
+fullscreenSignal()                       // Element | null — document.fullscreenElement
 ```
 
 ## Hydration

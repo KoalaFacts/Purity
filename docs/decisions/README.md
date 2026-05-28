@@ -35,6 +35,7 @@ accept. Numbered sequentially.
 | [0039](./0039-persistence-lifecycle-signals.md)  | Persistence + lifecycle signal primitives       | Proposed                |
 | [0040](./0040-observer-signal-primitives.md)     | Observer-as-signal primitives                   | Proposed                |
 | [0041](./0041-environment-preference-signals.md) | Environment + system preference signals         | Proposed                |
+| [0042](./0042-capability-permission-signals.md)  | Capability + permission signals                 | Proposed                |
 
 ## Template
 

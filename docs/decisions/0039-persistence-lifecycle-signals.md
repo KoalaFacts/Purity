@@ -122,25 +122,49 @@ Behavior:
 ```ts
 import { broadcastSignal } from '@purityjs/core';
 
-const session = broadcastSignal<Session | null>('auth', null);
+type Session = { userId: string; expiresAt: number };
+const isSession = (v: unknown): v is Session | null =>
+  v === null ||
+  (typeof v === 'object' &&
+    v !== null &&
+    typeof (v as Session).userId === 'string' &&
+    typeof (v as Session).expiresAt === 'number');
+
+const session = broadcastSignal<Session | null>('auth', null, isSession);
 session.set(null); // logs out every tab on the same origin
 ```
 
 Signature:
 
 ```ts
-export function broadcastSignal<T>(channel: string, defaultValue: T): StateAccessor<T>;
+export type BroadcastValidator<T> = (value: unknown) => value is T;
+
+export function broadcastSignal<T>(
+  channel: string,
+  defaultValue: T,
+  validate: BroadcastValidator<T>,
+): StateAccessor<T>;
 ```
 
 Behavior:
 
 - **Server.** Returns `state(defaultValue)`; `.set()` is in-memory
-  only. The channel is never opened.
+  only. The channel is never opened and `validate` is never called.
 - **Client.** Opens one `BroadcastChannel(channel)` per channel
-  name, refcounted across `broadcastSignal` callers; closes when
-  the last subscriber disposes. `.set(value)` updates the local
-  signal and posts the value to the channel. Incoming messages
-  update the signal without re-posting.
+  name, shared as a singleton across `broadcastSignal` callers
+  (first call's `defaultValue` + `validate` win). `.set(value)`
+  updates the local signal and posts the value to the channel.
+  Incoming messages are passed to `validate(e.data)` — any value
+  that fails the predicate is dropped and a `console.warn` is
+  emitted so an attack signal is visible in dev.
+- **Why `validate` is required.** The channel crosses a trust
+  boundary: any same-origin code (including a supply-chain-
+  compromised chunk) can post arbitrary structured-clonable data.
+  An unvalidated receiver lets a single compromised tab poison
+  every other tab via one message. The required predicate keeps
+  the broadcast surface honest about what shapes are accepted.
+  Local writes (`.set` / accessor calls) skip the validator —
+  same-tab writes don't cross the trust boundary.
 - **Serialization.** Uses structured clone (the channel's
   native format). No `JSON.stringify` — `Date`, `Map`, `Set`,
   `Uint8Array` all round-trip.

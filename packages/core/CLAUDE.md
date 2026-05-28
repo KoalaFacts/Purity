@@ -39,7 +39,7 @@ suspense(view, fallback, { timeout? }) // SSR error/timeout isolation boundary �
 
 // Persistence + lifecycle signal primitives — ADR 0039
 localSignal(key, default, options?)      // localStorage/sessionStorage-backed, cross-tab synced
-broadcastSignal(channel, default)        // BroadcastChannel-backed cross-tab signal
+broadcastSignal(channel, default, validate)  // BroadcastChannel-backed cross-tab signal — validate is a required type-predicate; incoming messages that fail are dropped
 pageVisibilitySignal()                   // 'visible' | 'hidden' — visibilitychange
 pageLifecycleSignal()                    // 'active' | 'passive' | 'hidden' | 'frozen' | 'terminated'
 bfcacheRestoreSignal()                   // counter — increments on each bfcache restore

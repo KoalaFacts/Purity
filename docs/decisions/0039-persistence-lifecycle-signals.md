@@ -129,10 +129,7 @@ session.set(null); // logs out every tab on the same origin
 Signature:
 
 ```ts
-export function broadcastSignal<T>(
-  channel: string,
-  defaultValue: T,
-): StateAccessor<T>;
+export function broadcastSignal<T>(channel: string, defaultValue: T): StateAccessor<T>;
 ```
 
 Behavior:

@@ -1,8 +1,8 @@
 # @purityjs/core
 
-Purity core framework — 27 functions, no virtual DOM, TC39-Signals-inspired reactivity.
+Purity core framework — 32 functions, no virtual DOM, TC39-Signals-inspired reactivity.
 
-## API (27 functions)
+## API (32 functions)
 
 ```ts
 state(initial)              // read: count(), write: count(5), update: count(v => v+1)
@@ -36,6 +36,13 @@ when(condFn, thenFn, elseFn?) // boolean conditional
 each(listFn, mapFn, keyFn?)  // list rendering — mapFn receives item as accessor: (item: () => T, i: number)
 list(tag, listAccessor, textOrOptions, keyFn?) // leaner list of single-tag rows
 suspense(view, fallback, { timeout? }) // SSR error/timeout isolation boundary — emits `<!--s:N--><!--/s:N-->` markers (ADR 0006 Phase 1+2)
+
+// Persistence + lifecycle signal primitives — ADR 0039
+localSignal(key, default, options?)      // localStorage/sessionStorage-backed, cross-tab synced
+broadcastSignal(channel, default)        // BroadcastChannel-backed cross-tab signal
+pageVisibilitySignal()                   // 'visible' | 'hidden' — visibilitychange
+pageLifecycleSignal()                    // 'active' | 'passive' | 'hidden' | 'frozen' | 'terminated'
+bfcacheRestoreSignal()                   // counter — increments on each bfcache restore
 ```
 
 ## Hydration

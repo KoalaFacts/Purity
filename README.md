@@ -189,6 +189,7 @@ Knowing what's missing matters more than what's there. As of `0.1.0`:
 Long-form guides live in [`/docs`](./docs/README.md):
 
 - [TypeScript guide](./docs/typescript.md)
+- [Islands — opt-in per-subtree hydration](./docs/islands.md)
 - [Why Shadow DOM by default](./docs/shadow-dom-rationale.md)
 - [Accessibility under Shadow DOM](./docs/accessibility.md)
 - [Migration cheatsheet](./docs/migration.md) (React / SolidJS / Vue / Svelte → Purity)

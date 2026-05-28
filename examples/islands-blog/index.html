@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Purity islands — blog demo</title>
+    <style>
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        max-width: 38rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        line-height: 1.55;
+        color: #222;
+      }
+      article h1 {
+        margin-bottom: 0.25rem;
+      }
+      .byline {
+        color: #666;
+        font-size: 0.9rem;
+        margin-bottom: 2rem;
+      }
+      hr {
+        border: none;
+        border-top: 1px solid #eee;
+        margin: 2rem 0;
+      }
+      .island-box {
+        background: #fafafa;
+        border: 1px solid #e6e6e6;
+        border-radius: 6px;
+        padding: 1rem 1.25rem;
+        margin: 1.25rem 0;
+      }
+      .island-box button {
+        font: inherit;
+        padding: 0.35rem 0.75rem;
+        border: 1px solid #ccc;
+        background: white;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .island-box button:hover {
+        background: #f0f0f0;
+      }
+      .island-box[data-state='active'] {
+        background: #fff8e1;
+        border-color: #ffd54f;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"><!--ssr-outlet--></div>
+    <script type="module" src="/src/entry.client.ts"></script>
+  </body>
+</html>

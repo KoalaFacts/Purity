@@ -1,8 +1,8 @@
 # @purityjs/core
 
-Purity core framework — 44 functions, no virtual DOM, TC39-Signals-inspired reactivity.
+Purity core framework — 48 functions, no virtual DOM, TC39-Signals-inspired reactivity.
 
-## API (44 functions)
+## API (48 functions)
 
 ```ts
 state(initial)              // read: count(), write: count(5), update: count(v => v+1)
@@ -59,6 +59,12 @@ screenOrientationSignal()                // 'portrait' | 'landscape'
 localeSignal()                           // string — navigator.language + languagechange
 devicePixelRatioSignal()                 // number — re-binds on DPR change
 fullscreenSignal()                       // Element | null — document.fullscreenElement
+
+// Capability + permission signals — ADR 0042
+permissionSignal(name)                   // PermissionState — async navigator.permissions.query
+batterySignal()                          // BatteryInfo | null — async navigator.getBattery
+networkInformationSignal()               // NetworkInformation — navigator.connection
+idleSignal(detector)                     // IdleSignalState — wraps a user-started IdleDetector
 ```
 
 ## Hydration

@@ -170,3 +170,9 @@ export { screenOrientationSignal } from './screen-orientation-signal.ts';
 export { localeSignal } from './locale-signal.ts';
 export { devicePixelRatioSignal } from './device-pixel-ratio-signal.ts';
 export { fullscreenSignal } from './fullscreen-signal.ts';
+
+// Capability + permission signals — ADR 0042.
+export { permissionSignal } from './permission-signal.ts';
+export { type BatteryInfo, batterySignal } from './battery-signal.ts';
+export { type NetworkInformation, networkInformationSignal } from './network-information-signal.ts';
+export { type IdleDetectorLike, idleSignal, type IdleSignalState } from './idle-signal.ts';

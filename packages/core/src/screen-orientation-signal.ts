@@ -36,7 +36,9 @@ export function screenOrientationSignal(): ComputedAccessor<'portrait' | 'landsc
   }
   if (singleton) return singleton;
   const inner = state(deriveOrientation());
-  const refresh = (): void => inner(deriveOrientation());
+  const refresh = (): void => {
+    inner(deriveOrientation());
+  };
   if (typeof screen !== 'undefined' && screen.orientation?.addEventListener) {
     screen.orientation.addEventListener('change', refresh);
   } else if (typeof window.addEventListener === 'function') {

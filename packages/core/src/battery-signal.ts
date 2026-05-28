@@ -52,7 +52,9 @@ export function batterySignal(): ComputedAccessor<BatteryInfo | null> {
       .getBattery()
       .then((bm) => {
         inner(snapshot(bm));
-        const refresh = (): void => inner(snapshot(bm));
+        const refresh = (): void => {
+          inner(snapshot(bm));
+        };
         bm.addEventListener('chargingchange', refresh);
         bm.addEventListener('levelchange', refresh);
         bm.addEventListener('chargingtimechange', refresh);

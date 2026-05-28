@@ -167,6 +167,276 @@ describe('mountIslands() — load trigger', () => {
   });
 });
 
+describe('mountIslands() — lazy entries (ADR 0038 Phase 3)', () => {
+  let host: HTMLElement | null = null;
+  afterEach(() => {
+    if (host) host.remove();
+    host = null;
+  });
+
+  it('awaits a thunk that returns a Promise of a view function', async () => {
+    const count = state(0);
+    const View = (): unknown => html`<p><!--[-->${() => count()}<!--]--></p>`;
+    host = makeWrapper(1, 'load', '<p><!--[-->0<!--]--></p>');
+
+    mountIslands([() => Promise.resolve(island(View))]);
+    // Wait for the lazy resolution + queueMicrotask trigger.
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(host.textContent).toBe('0');
+    count(11);
+    await tick();
+    expect(host.textContent).toBe('11');
+  });
+
+  it('unwraps a module namespace with a single named function export', async () => {
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'load', '<span>x</span>');
+
+    const onMount = vi.fn();
+    mountIslands([() => Promise.resolve({ Counter: island(View) })], { onMount });
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
+
+  it('prefers a `default` export when both default and named are present', async () => {
+    let calls = 0;
+    const Default = (): unknown => {
+      calls++;
+      return html`<span>x</span>`;
+    };
+    const Other = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'load', '<span>x</span>');
+
+    mountIslands([() => Promise.resolve({ default: island(Default), Other: island(Other) })]);
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(calls).toBeGreaterThan(0);
+  });
+
+  it('logs an error and skips when the thunk rejects', async () => {
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'load', '<span>x</span>');
+
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onMount = vi.fn();
+    mountIslands([() => Promise.reject(new Error('chunk load failed')), island(View)], {
+      onMount,
+    });
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(err).toHaveBeenCalled();
+    expect(String(err.mock.calls[0][0])).toContain('island 1 import rejected');
+    err.mockRestore();
+  });
+
+  it('warns when the resolved module has no usable view', async () => {
+    host = makeWrapper(1, 'load', '<span>x</span>');
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mountIslands([() => Promise.resolve({ notAFunction: 42 })]);
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(warn).toHaveBeenCalled();
+    expect(String(warn.mock.calls[0][0])).toContain('0 function exports');
+    warn.mockRestore();
+  });
+});
+
+describe('mountIslands() — idle trigger (ADR 0038 Phase 4)', () => {
+  let host: HTMLElement | null = null;
+  let originalRic: ((cb: () => void, opts?: object) => number) | undefined;
+
+  beforeEach(() => {
+    originalRic = (
+      globalThis as { requestIdleCallback?: (cb: () => void, opts?: object) => number }
+    ).requestIdleCallback;
+  });
+  afterEach(() => {
+    if (originalRic) {
+      (globalThis as Record<string, unknown>).requestIdleCallback = originalRic;
+    } else {
+      delete (globalThis as Record<string, unknown>).requestIdleCallback;
+    }
+    if (host) host.remove();
+    host = null;
+  });
+
+  it('uses requestIdleCallback when present', async () => {
+    const calls: (() => void)[] = [];
+    (globalThis as Record<string, unknown>).requestIdleCallback = (cb: () => void) => {
+      calls.push(cb);
+      return 1;
+    };
+
+    const onMount = vi.fn();
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'idle', '<span>x</span>');
+
+    mountIslands([island(View, { hydrate: 'idle' })], { onMount });
+    await tick();
+
+    expect(calls).toHaveLength(1);
+    expect(onMount).not.toHaveBeenCalled();
+    calls[0]();
+    await tick();
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to setTimeout when requestIdleCallback is missing', async () => {
+    delete (globalThis as Record<string, unknown>).requestIdleCallback;
+    const onMount = vi.fn();
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'idle', '<span>x</span>');
+
+    mountIslands([island(View, { hydrate: 'idle' })], { onMount });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mountIslands() — interact trigger (ADR 0038 Phase 4)', () => {
+  let host: HTMLElement | null = null;
+  afterEach(() => {
+    if (host) host.remove();
+    host = null;
+  });
+
+  it('defers hydration until pointerdown', async () => {
+    const count = state(0);
+    const View = (): unknown => html`<p><!--[-->${() => count()}<!--]--></p>`;
+    host = makeWrapper(1, 'interact', '<p><!--[-->0<!--]--></p>');
+
+    mountIslands([island(View, { hydrate: 'interact' })]);
+    await tick();
+
+    // No interaction yet — write doesn't flow.
+    count(2);
+    await tick();
+    expect(host.textContent).toBe('0');
+
+    // Fire interaction at the wrapper level (the listener is on the
+    // wrapper with capture: true).
+    const wrapper = host.querySelector('purity-island')!;
+    wrapper.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    for (let i = 0; i < 3; i++) await tick();
+    expect(host.textContent).toBe('2');
+  });
+
+  it('also fires on focusin and keydown', async () => {
+    const View = (): unknown => html`<span>x</span>`;
+    const focusHost = makeWrapper(1, 'interact', '<span>x</span>');
+    const keyHost = document.createElement('div');
+    keyHost.innerHTML =
+      '<purity-island data-pi-id="1" data-pi-trigger="interact" style="display:contents"><span>x</span></purity-island>';
+    document.body.appendChild(keyHost);
+
+    const onMountA = vi.fn();
+    const onMountB = vi.fn();
+    mountIslands([island(View, { hydrate: 'interact' })], { root: focusHost, onMount: onMountA });
+    mountIslands([island(View, { hydrate: 'interact' })], { root: keyHost, onMount: onMountB });
+    await tick();
+
+    focusHost
+      .querySelector('purity-island')!
+      .dispatchEvent(new Event('focusin', { bubbles: true }));
+    keyHost.querySelector('purity-island')!.dispatchEvent(new Event('keydown', { bubbles: true }));
+    for (let i = 0; i < 3; i++) await tick();
+
+    expect(onMountA).toHaveBeenCalledTimes(1);
+    expect(onMountB).toHaveBeenCalledTimes(1);
+    focusHost.remove();
+    keyHost.remove();
+    host = null;
+  });
+
+  it('hydrates exactly once even on rapid repeated events', async () => {
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'interact', '<span>x</span>');
+
+    const onMount = vi.fn();
+    mountIslands([island(View, { hydrate: 'interact' })], { onMount });
+    await tick();
+
+    const wrapper = host.querySelector('purity-island')!;
+    wrapper.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    wrapper.dispatchEvent(new Event('focusin', { bubbles: true }));
+    wrapper.dispatchEvent(new Event('keydown', { bubbles: true }));
+    for (let i = 0; i < 3; i++) await tick();
+
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mountIslands() — media trigger (ADR 0038 Phase 4)', () => {
+  let host: HTMLElement | null = null;
+  let originalMM: typeof matchMedia | undefined;
+  const listeners: Record<string, Array<(e: MediaQueryListEvent) => void>> = {};
+
+  beforeEach(() => {
+    originalMM = (globalThis as { matchMedia?: typeof matchMedia }).matchMedia;
+    for (const k in listeners) delete listeners[k];
+  });
+  afterEach(() => {
+    if (originalMM) (globalThis as Record<string, unknown>).matchMedia = originalMM;
+    else delete (globalThis as Record<string, unknown>).matchMedia;
+    if (host) host.remove();
+    host = null;
+  });
+
+  function installMatchMedia(matches: Record<string, boolean>): void {
+    (globalThis as Record<string, unknown>).matchMedia = (query: string): MediaQueryList => {
+      const matched = !!matches[query];
+      return {
+        matches: matched,
+        media: query,
+        onchange: null,
+        addEventListener: (
+          ev: string,
+          cb: ((e: MediaQueryListEvent) => void) | EventListenerOrEventListenerObject,
+        ): void => {
+          if (ev !== 'change') return;
+          (listeners[query] ??= []).push(cb as (e: MediaQueryListEvent) => void);
+        },
+        removeEventListener: (): void => {},
+        dispatchEvent: (): boolean => true,
+        addListener: (): void => {},
+        removeListener: (): void => {},
+      } as MediaQueryList;
+    };
+  }
+
+  it('hydrates immediately when the query already matches', async () => {
+    installMatchMedia({ '(min-width: 768px)': true });
+    const onMount = vi.fn();
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'media:(min-width: 768px)', '<span>x</span>');
+
+    mountIslands([island(View, { hydrate: 'media:(min-width: 768px)' })], { onMount });
+    await tick();
+
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
+
+  it('defers hydration until the query starts matching', async () => {
+    installMatchMedia({ '(min-width: 768px)': false });
+    const onMount = vi.fn();
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'media:(min-width: 768px)', '<span>x</span>');
+
+    mountIslands([island(View, { hydrate: 'media:(min-width: 768px)' })], { onMount });
+    await tick();
+    expect(onMount).not.toHaveBeenCalled();
+
+    const cbs = listeners['(min-width: 768px)'];
+    expect(cbs).toHaveLength(1);
+    cbs[0]({ matches: true } as MediaQueryListEvent);
+    await tick();
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('mountIslands() — visible trigger (IntersectionObserver)', () => {
   // jsdom doesn't ship IntersectionObserver; install a controllable stub.
   type Cb = (entries: { isIntersecting: boolean; target: Element }[], obs: any) => void;

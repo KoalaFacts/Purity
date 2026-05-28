@@ -168,6 +168,26 @@ describe('localSignal — client path (ADR 0039)', () => {
     errSpy.mockRestore();
   });
 
+  it('logs (but does not throw) when serialize itself throws', () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const sig = localSignal<{ ref: unknown }>(
+      'cyclic',
+      { ref: null },
+      {
+        // Force serialize to throw on every write — simulates circular refs /
+        // BigInt / a user-supplied serializer that rejects bad input.
+        serialize: () => {
+          throw new Error('cannot serialize');
+        },
+        deserialize: (raw) => JSON.parse(raw),
+      },
+    );
+    expect(() => sig.set({ ref: {} })).not.toThrow();
+    expect(sig()).toEqual({ ref: {} });
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
   it('supports custom serialize/deserialize', () => {
     const dateSig = localSignal('d', new Date(0), {
       serialize: (d) => String(d.getTime()),

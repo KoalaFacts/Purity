@@ -149,6 +149,31 @@ describe('permissionSignal (ADR 0042)', () => {
     errSpy.mockRestore();
   });
 
+  it('does not cache a rejected query — a later call retries', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    rejectNextQuery = true;
+    const first = permissionSignal('flaky');
+    await flush();
+    expect(first()).toBe('prompt');
+    // Second call should re-query (rejectNextQuery already consumed and
+    // reset to false), and the resolved status should flow through.
+    statuses.set('flaky', {
+      state: 'granted',
+      listeners: [],
+      addEventListener(_t, cb) {
+        this.listeners.push(cb);
+      },
+      removeEventListener() {},
+      setState(s) {
+        this.state = s;
+      },
+    });
+    const second = permissionSignal('flaky');
+    await flush();
+    expect(second()).toBe('granted');
+    errSpy.mockRestore();
+  });
+
   it('returns `prompt` when navigator.permissions is unavailable', () => {
     uninstallPermissionsMock();
     const s = permissionSignal('camera');

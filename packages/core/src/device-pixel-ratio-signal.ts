@@ -37,9 +37,11 @@ export function devicePixelRatioSignal(): ComputedAccessor<number> {
   const onChange = (): void => {
     const next = window.devicePixelRatio;
     inner(next);
-    // The previous mql no longer reflects the current DPR; replace it.
-    mql.removeEventListener('change', onChange);
+    // Snapshot the previous MQL before reassigning so a re-entrant
+    // change handler can't leak a listener on the stale instance.
+    const prev = mql;
     mql = window.matchMedia(`(resolution: ${next}dppx)`);
+    prev.removeEventListener('change', onChange);
     mql.addEventListener('change', onChange);
   };
   mql.addEventListener('change', onChange);

@@ -42,6 +42,11 @@ export function permissionSignal(
   const existing = cache.get(key);
   if (existing) return existing;
   const inner = state<PermissionState>('prompt');
+  const accessor = compute(() => inner());
+  // Cache optimistically so concurrent synchronous callers share one
+  // in-flight query. On rejection we evict the entry so a later call
+  // retries instead of being stuck against a stale accessor.
+  cache.set(key, accessor);
   navigator.permissions
     .query({ name: key as PermissionName })
     .then((status) => {
@@ -50,9 +55,8 @@ export function permissionSignal(
     })
     .catch((err) => {
       console.error('[purity] permissionSignal query failed for', key, err);
+      if (cache.get(key) === accessor) cache.delete(key);
     });
-  const accessor = compute(() => inner());
-  cache.set(key, accessor);
   return accessor;
 }
 

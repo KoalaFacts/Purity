@@ -100,4 +100,12 @@ describe('networkInformationSignal (ADR 0042)', () => {
     installConnectionMock();
     expect(networkInformationSignal()).toBe(networkInformationSignal());
   });
+
+  it('narrows an out-of-spec effectiveType back to the default', () => {
+    installConnectionMock();
+    // Simulate a future browser returning '5g' (not in the spec union).
+    (conn as unknown as { effectiveType: string }).effectiveType = '5g';
+    const s = networkInformationSignal();
+    expect(s().effectiveType).toBe('4g');
+  });
 });

@@ -160,3 +160,13 @@ export { intersectionSignal } from './intersection-signal.ts';
 export { mutationSignal } from './mutation-signal.ts';
 export { mediaSignal } from './media-signal.ts';
 export { resizeSignal } from './resize-signal.ts';
+
+// Environment + system preference signals — ADR 0041.
+export { onlineSignal } from './online-signal.ts';
+export { prefersColorSchemeSignal } from './prefers-color-scheme-signal.ts';
+export { prefersReducedMotionSignal } from './prefers-reduced-motion-signal.ts';
+export { type ContrastPreference, prefersContrastSignal } from './prefers-contrast-signal.ts';
+export { screenOrientationSignal } from './screen-orientation-signal.ts';
+export { localeSignal } from './locale-signal.ts';
+export { devicePixelRatioSignal } from './device-pixel-ratio-signal.ts';
+export { fullscreenSignal } from './fullscreen-signal.ts';

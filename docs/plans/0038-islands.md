@@ -5,6 +5,44 @@ the design; this plan fixes the order, the file-level touchpoints, and
 the acceptance criteria for each PR. Line numbers are accurate as of
 commit `f0fc56f` and should be re-checked at the start of each PR.
 
+## Status snapshot (post-implementation)
+
+All five phases shipped on branch `claude/unique-features-suggestion-L9Swe`.
+The phase definitions below are unchanged from the original plan;
+this section records what actually landed and where the architecture
+diverged.
+
+| Phase | Status  | Commit    | What shipped                                                                   |
+| ----- | ------- | --------- | ------------------------------------------------------------------------------ |
+| P1    | Shipped | `e23e00b` | `island()` brand + `isIsland` / `getIslandBrand`. 11 + 5 tests.                |
+| P2    | Shipped | `dbd92a4` | `<purity-island>` SSR wrapper + `mountIslands()` runtime + `load` / `visible`. |
+| P3    | Shipped | `c154ec2` | Per-island chunk split via lazy `() => import(...)` thunks in `mountIslands`.  |
+| P4    | Shipped | `c154ec2` | `idle`, `interact`, `media:(...)` triggers with platform fallbacks.            |
+| P5    | Shipped | `6490a74` | `docs/islands.md` + runnable `examples/islands-blog/`.                         |
+
+**Architectural divergence from the original plan:**
+
+- **P2 chose a single `mountIslands(views)` runtime over per-island
+  inline `<script type="module">` bootstraps.** The runtime walks the
+  document for `<purity-island data-pi-id="N">` wrappers and
+  dispatches each to its trigger waiter. The per-island-script design
+  is still viable as a future optimisation when the shell needs to
+  ship zero JS — for now the runtime is small enough that lazy thunks
+  (P3) deliver the same byte savings.
+- **P3 delivered chunk splitting via user-side lazy thunks, not via
+  the Vite plugin.** Each `() => import('./island.ts').then(m =>
+m.View)` entry is one Rollup dynamic import; Rollup's default
+  chunk-splitting puts each in its own file. The auto-detection-via-
+  plugin path from the original plan is a future enhancement that
+  would just rewrite `mountIslands([X, Y])` calls into the lazy form.
+- **CE-rooted islands skip the explicit `hydrate(wrapper, view)`
+  call.** When `mountIslands` resolves an island whose SSR-rendered
+  root is a registered custom element, the runtime detects this and
+  no-ops — Custom Element auto-upgrade via DSD already hydrated the
+  element when its class was imported.
+- The `<purity-island>` wrapper carries `style="display:contents"` so
+  the wrapper is layout-transparent without users needing a CSS rule.
+
 ## Conventions
 
 - One PR per phase. Each PR is independently mergeable and leaves the

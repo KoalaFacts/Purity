@@ -13,6 +13,11 @@ import { html } from '../src/compiler/compile.ts';
 import { mount } from '../src/component.ts';
 import { getIslandBrand, island, isIsland } from '../src/island.ts';
 import { state } from '../src/signals.ts';
+import {
+  popSSRRenderContext,
+  pushSSRRenderContext,
+  type SSRRenderContext,
+} from '../src/ssr-context.ts';
 
 describe('island() — Phase 1 brand', () => {
   it('defaults the trigger to "load" when no options are passed', () => {
@@ -76,6 +81,80 @@ describe('island() — Phase 1 brand', () => {
     const sentinel = document.createElement('div');
     const view = () => sentinel;
     expect(island(view)()).toBe(sentinel);
+  });
+});
+
+describe('island() — SSR branch (synthetic context)', () => {
+  // The full SSR integration tests live in @purityjs/ssr's
+  // island-passthrough.test.ts. These cases exercise island()'s SSR
+  // branch from within @purityjs/core so coverage reflects the branch.
+
+  function withSsrCtx<T>(fn: () => T): T {
+    const ctx: SSRRenderContext = {
+      pendingPromises: [],
+      resolvedData: [],
+      resolvedErrors: [],
+      resolvedDataByKey: {},
+      resolvedErrorsByKey: {},
+      resourceCounter: 0,
+      suspenseCounter: 0,
+      islandCounter: 0,
+      boundaryStartTimes: new Map(),
+      boundaryDeadlines: new Map(),
+      timedOutBoundaries: new Set(),
+    };
+    pushSSRRenderContext(ctx);
+    try {
+      return fn();
+    } finally {
+      popSSRRenderContext();
+    }
+  }
+
+  it('emits a <purity-island> wrapper around the rendered HTML', () => {
+    const View = (): { __purity_ssr_html__: string } => ({
+      __purity_ssr_html__: '<span>x</span>',
+    });
+    const Wrapped = island(View);
+    const result = withSsrCtx(() => Wrapped() as { __purity_ssr_html__: string });
+    expect(result.__purity_ssr_html__).toBe(
+      '<purity-island data-pi-id="1" data-pi-trigger="load" style="display:contents"><span>x</span></purity-island>',
+    );
+  });
+
+  it('writes the option trigger into data-pi-trigger', () => {
+    const View = (): { __purity_ssr_html__: string } => ({
+      __purity_ssr_html__: '<i>x</i>',
+    });
+    const Wrapped = island(View, { hydrate: 'visible' });
+    const result = withSsrCtx(() => Wrapped() as { __purity_ssr_html__: string });
+    expect(result.__purity_ssr_html__).toContain('data-pi-trigger="visible"');
+  });
+
+  it('escapes attribute-unsafe characters in media: triggers', () => {
+    const View = (): { __purity_ssr_html__: string } => ({
+      __purity_ssr_html__: 'x',
+    });
+    // Real media queries don't contain `"`, but escAttr should still
+    // neutralise the character should it appear.
+    const Wrapped = island(View, { hydrate: 'media:(min-width: 768px) and ("foo")' });
+    const result = withSsrCtx(() => Wrapped() as { __purity_ssr_html__: string });
+    expect(result.__purity_ssr_html__).toContain('&quot;');
+  });
+
+  it('allocates a fresh ID per island and resets per render', () => {
+    const View = (): { __purity_ssr_html__: string } => ({
+      __purity_ssr_html__: 'x',
+    });
+    const a = island(View);
+    const b = island(View);
+    const out = withSsrCtx(() => {
+      const first = a() as { __purity_ssr_html__: string };
+      const second = b() as { __purity_ssr_html__: string };
+      return first.__purity_ssr_html__ + second.__purity_ssr_html__;
+    });
+    expect(out).toContain('data-pi-id="1"');
+    expect(out).toContain('data-pi-id="2"');
   });
 });
 

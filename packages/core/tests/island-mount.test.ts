@@ -275,6 +275,38 @@ describe('mountIslands() — lazy entries (ADR 0038 Phase 3)', () => {
     expect(calls).toBeGreaterThan(0);
   });
 
+  it('logs an error and skips when the thunk throws synchronously', async () => {
+    host = makeWrapper(1, 'load', '<span>x</span>');
+
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mountIslands([
+      (): never => {
+        throw new Error('thunk threw');
+      },
+    ]);
+    for (let i = 0; i < 3; i++) await tick();
+
+    expect(err).toHaveBeenCalled();
+    expect(String(err.mock.calls[0][0])).toContain('thunk threw');
+    err.mockRestore();
+  });
+
+  it('treats a synchronously-returned module from a thunk as the resolved value', async () => {
+    const count = state(0);
+    const View = (): unknown => html`<p><!--[-->${() => count()}<!--]--></p>`;
+    host = makeWrapper(1, 'load', '<p><!--[-->0<!--]--></p>');
+
+    // The thunk returns the module synchronously (not via a Promise) —
+    // simulating an already-resolved import or a precomputed factory.
+    mountIslands([(): { default: typeof View } => ({ default: island(View) })]);
+    for (let i = 0; i < 3; i++) await tick();
+
+    expect(host.textContent).toBe('0');
+    count(4);
+    await tick();
+    expect(host.textContent).toBe('4');
+  });
+
   it('logs an error and skips when the thunk rejects', async () => {
     const View = (): unknown => html`<span>x</span>`;
     host = makeWrapper(1, 'load', '<span>x</span>');
@@ -289,6 +321,18 @@ describe('mountIslands() — lazy entries (ADR 0038 Phase 3)', () => {
     expect(err).toHaveBeenCalled();
     expect(String(err.mock.calls[0][0])).toContain('island 1 import rejected');
     err.mockRestore();
+  });
+
+  it('warns when the resolved value is a non-object, non-function primitive', async () => {
+    host = makeWrapper(1, 'load', '<span>x</span>');
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mountIslands([() => Promise.resolve(42)]);
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(warn).toHaveBeenCalled();
+    expect(String(warn.mock.calls[0][0])).toContain('expected a function or module');
+    warn.mockRestore();
   });
 
   it('warns when the resolved module has no usable view', async () => {
@@ -479,6 +523,35 @@ describe('mountIslands() — media trigger (ADR 0038 Phase 4)', () => {
     expect(onMount).toHaveBeenCalledTimes(1);
   });
 
+  it('falls back to load trigger when matchMedia is missing', async () => {
+    delete (globalThis as Record<string, unknown>).matchMedia;
+    const onMount = vi.fn();
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'media:(min-width: 768px)', '<span>x</span>');
+
+    mountIslands([island(View, { hydrate: 'media:(min-width: 768px)' })], { onMount });
+    await tick();
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns and falls back to load when matchMedia throws on the query', async () => {
+    (globalThis as Record<string, unknown>).matchMedia = (): never => {
+      throw new SyntaxError('bad media query');
+    };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const onMount = vi.fn();
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'media:(bogus(', '<span>x</span>');
+
+    mountIslands([island(View, { hydrate: 'media:(bogus(' })], { onMount });
+    await tick();
+
+    expect(warn).toHaveBeenCalled();
+    expect(String(warn.mock.calls[0][0])).toContain('invalid media query');
+    expect(onMount).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
   it('defers hydration until the query starts matching', async () => {
     installMatchMedia({ '(min-width: 768px)': false });
     const onMount = vi.fn();
@@ -494,6 +567,29 @@ describe('mountIslands() — media trigger (ADR 0038 Phase 4)', () => {
     cbs[0]({ matches: true } as MediaQueryListEvent);
     await tick();
     expect(onMount).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mountIslands() — visible fallback', () => {
+  it('falls back to load when IntersectionObserver is missing', async () => {
+    const originalIO = (globalThis as { IntersectionObserver?: typeof IntersectionObserver })
+      .IntersectionObserver;
+    delete (globalThis as Record<string, unknown>).IntersectionObserver;
+    try {
+      const onMount = vi.fn();
+      const View = (): unknown => html`<span>x</span>`;
+      const host = makeWrapper(1, 'visible', '<span>x</span>');
+
+      mountIslands([island(View, { hydrate: 'visible' })], { onMount });
+      await tick();
+
+      expect(onMount).toHaveBeenCalledTimes(1);
+      host.remove();
+    } finally {
+      if (originalIO) {
+        (globalThis as Record<string, unknown>).IntersectionObserver = originalIO;
+      }
+    }
   });
 });
 

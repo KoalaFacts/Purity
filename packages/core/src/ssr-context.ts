@@ -42,6 +42,15 @@ export interface SSRRenderContext {
    */
   suspenseCounter: number;
   /**
+   * Monotonic per-render counter for `island()` IDs. Reset to zero at the
+   * start of each pass so IDs are stable across the two-pass
+   * resource-resolution loop. The ID is written into the SSR-emitted
+   * `<purity-island data-pi-id="N">` wrapper and consumed by
+   * `mountIslands()` on the client to look up the matching view function
+   * by position. ADR 0038 Phase 2.
+   */
+  islandCounter: number;
+  /**
    * Wall-clock timestamp (ms) at which each boundary was first
    * encountered. Survives across passes so deadlines stay anchored to
    * pass-1's start, not the pass currently running.

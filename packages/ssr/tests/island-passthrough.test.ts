@@ -1,62 +1,101 @@
 // @vitest-environment jsdom
-// Tests for `island(view)` SSR passthrough — ADR 0038 Phase 1.
+// Tests for `island(view)` SSR output — ADR 0038 Phase 2.
 //
-// Phase 1 is brand-only: an islanded view must produce byte-identical
-// SSR output to the unwrapped view. Phase 2 adds the per-island
-// bootstrap script and breaks byte-equality intentionally.
+// Phase 2 wraps each island in `<purity-island data-pi-id="N"
+// data-pi-trigger="…" style="display:contents">…</purity-island>`. The
+// inner HTML is exactly what the unwrapped view would have emitted, so
+// substring equality holds; only the wrapper differs from Phase 1's
+// byte-identical output.
 
 import { html as clientHtml, island, state } from '@purityjs/core';
 import { describe, expect, it } from 'vitest';
 import { html as ssrHtml, renderToString } from '../src/index.ts';
 
-describe('island() — SSR passthrough (Phase 1)', () => {
-  it('produces byte-identical HTML to the unwrapped view (static)', async () => {
-    const View = () => ssrHtml`<aside class="x"><h2>hi</h2></aside>`;
+const WRAPPER_OPEN = (id: number, trigger: string): string =>
+  `<purity-island data-pi-id="${id}" data-pi-trigger="${trigger}" style="display:contents">`;
+const WRAPPER_CLOSE = '</purity-island>';
 
-    const plain = await renderToString(View);
+describe('island() — SSR wrapper (Phase 2)', () => {
+  it('wraps the rendered view in <purity-island> with the default trigger', async () => {
+    const View = () => ssrHtml`<aside class="x"><h2>hi</h2></aside>`;
+    const inner = await renderToString(View);
+
     const wrapped = await renderToString(island(View));
 
-    expect(wrapped).toBe(plain);
+    expect(wrapped).toBe(`${WRAPPER_OPEN(1, 'load')}${inner}${WRAPPER_CLOSE}`);
   });
 
-  it('produces byte-identical HTML when nested inside a parent template', async () => {
-    const View = () => ssrHtml`<span>${'counter'}</span>`;
-    const PageA = () => ssrHtml`<main>${View()}</main>`;
-    const PageB = () => ssrHtml`<main>${island(View, { hydrate: 'visible' })()}</main>`;
+  it('records the trigger from options in the data-pi-trigger attribute', async () => {
+    const View = () => ssrHtml`<span>ok</span>`;
+    const inner = await renderToString(View);
 
-    const a = await renderToString(PageA);
-    const b = await renderToString(PageB);
-
-    expect(b).toBe(a);
+    expect(await renderToString(island(View, { hydrate: 'visible' }))).toBe(
+      `${WRAPPER_OPEN(1, 'visible')}${inner}${WRAPPER_CLOSE}`,
+    );
+    expect(await renderToString(island(View, { hydrate: 'idle' }))).toBe(
+      `${WRAPPER_OPEN(1, 'idle')}${inner}${WRAPPER_CLOSE}`,
+    );
+    expect(await renderToString(island(View, { hydrate: 'interact' }))).toBe(
+      `${WRAPPER_OPEN(1, 'interact')}${inner}${WRAPPER_CLOSE}`,
+    );
   });
 
-  it('produces byte-identical HTML when passed as a function reference into a slot', async () => {
-    // Templates that receive a function (not its call) invoke it as part of
-    // the SSR value-to-html coercion. An islanded function must coerce the
-    // same way an unwrapped function does.
+  it('escapes media: trigger values in the data-pi-trigger attribute', async () => {
+    const View = () => ssrHtml`<span>ok</span>`;
+    const out = await renderToString(island(View, { hydrate: 'media:(min-width: 768px)' }));
+    expect(out).toContain('data-pi-trigger="media:(min-width: 768px)"');
+  });
+
+  it('allocates monotonically increasing IDs across multiple islands', async () => {
     const View = () => ssrHtml`<em>x</em>`;
-    const a = await renderToString(() => ssrHtml`<p>${View}</p>`);
-    const b = await renderToString(() => ssrHtml`<p>${island(View)}</p>`);
-
-    expect(b).toBe(a);
+    const out = await renderToString(
+      () => ssrHtml`<main>${island(View)()}${island(View, { hydrate: 'visible' })()}</main>`,
+    );
+    expect(out).toContain('data-pi-id="1"');
+    expect(out).toContain('data-pi-id="2"');
+    expect(out.indexOf('data-pi-id="1"')).toBeLessThan(out.indexOf('data-pi-id="2"'));
   });
 
-  it('does not interfere with reactive expressions inside the islanded view', async () => {
+  it("resets island IDs between renders so two pages don't collide", async () => {
+    const View = () => ssrHtml`<i>x</i>`;
+    const a = await renderToString(island(View));
+    const b = await renderToString(island(View));
+    expect(a).toBe(b);
+    expect(a).toContain('data-pi-id="1"');
+  });
+
+  it('preserves nested reactive expressions inside the islanded view', async () => {
     const label = state('hello');
     const View = () => ssrHtml`<button>${() => label()}</button>`;
+    const inner = await renderToString(View);
 
-    const plain = await renderToString(View);
-    const wrapped = await renderToString(island(View, { hydrate: 'idle' }));
+    const out = await renderToString(island(View, { hydrate: 'idle' }));
 
-    expect(wrapped).toBe(plain);
+    expect(out).toBe(`${WRAPPER_OPEN(1, 'idle')}${inner}${WRAPPER_CLOSE}`);
   });
 
-  it('client and server templates remain interoperable when one is islanded', async () => {
-    // Sanity: the client `html` tag isn't tested here (that's the brand
-    // test), but importing it alongside the SSR tag must not pull a
-    // different code path that the brand could perturb.
+  it('works when the island appears as a function reference in a slot', async () => {
+    // Templates that receive a function (not its call) invoke it as part
+    // of the SSR value-to-html coercion. The branded function takes the
+    // same path: SSR context is on the stack, so the wrapper is emitted.
+    // The expression slot itself wraps in hydration markers
+    // (<!--[-->/<!--]-->); the island wrapper sits inside.
+    const View = () => ssrHtml`<em>x</em>`;
+    const inner = await renderToString(View);
+
+    const Wrapped = island(View);
+    const out = await renderToString(() => ssrHtml`<p>${Wrapped}</p>`);
+
+    expect(out).toBe(`<p><!--[-->${WRAPPER_OPEN(1, 'load')}${inner}${WRAPPER_CLOSE}<!--]--></p>`);
+  });
+
+  it('keeps client and server template tags interoperable', async () => {
+    // Sanity: importing both tags must not perturb the wrapper output.
     expect(typeof clientHtml).toBe('function');
     const View = () => ssrHtml`<i>ok</i>`;
-    expect(await renderToString(island(View))).toBe(await renderToString(View));
+    const inner = await renderToString(View);
+    expect(await renderToString(island(View))).toBe(
+      `${WRAPPER_OPEN(1, 'load')}${inner}${WRAPPER_CLOSE}`,
+    );
   });
 });

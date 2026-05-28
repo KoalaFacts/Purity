@@ -1,27 +1,36 @@
 // ---------------------------------------------------------------------------
-// island(view, options) — opt-in per-subtree hydration boundary. ADR 0038,
-// Phase 1.
+// island(view, options) — opt-in per-subtree hydration boundary. ADR 0038.
 //
-// Phase 1 ships the brand mechanism only. `island(view)` returns a function
-// that behaves identically to `view` on both SSR and client paths — same
-// HTML out, same DOM out, same return value. The brand records `{ view,
-// trigger }` so Phase 2's SSR runtime can emit a per-island bootstrap
-// script next to the rendered region, and Phase 3's Vite plugin can split
-// each island into its own client chunk.
+// Phase 1 shipped the brand mechanism only; Phase 2 adds the SSR wrapper.
+// When called inside an SSR context, the wrapper now emits the island's
+// rendered HTML inside `<purity-island data-pi-id="N" data-pi-trigger="…"
+// style="display:contents">…</purity-island>` so the client-side
+// `mountIslands()` runtime can locate each island and hydrate it on its
+// configured trigger. On the client, `island(view)()` is still a direct
+// passthrough to `view()` — there is no client-side island runtime cost
+// unless the user opts in by calling `mountIslands(...)`.
+//
+// The wrapper element name is hyphen-cased so it parses as a valid
+// HTMLElement (HTML treats unknown custom-name elements as `HTMLElement`).
+// `display:contents` keeps the wrapper layout-transparent so users don't
+// have to add a CSS rule to undo a stray block-vs-inline default.
 //
 // The brand is a non-enumerable symbol property on the wrapper function,
-// not on the wrapper's return value. That lets the Vite plugin's static
-// scan find islands at their call sites (`const X = island(Y)`) without
-// having to invoke them, and lets the SSR runtime detect islands as they
+// not on its return value. That lets the Vite plugin's static scan in
+// Phase 3 find islands at their call sites (`const X = island(Y)`)
+// without invoking them, and lets the SSR runtime detect islands as they
 // flow through expression slots without changing the result shape.
 // ---------------------------------------------------------------------------
 
+import { escAttr, markSSRHtml, type SSRHtml, valueToHtml } from './compiler/ssr-runtime.ts';
+import { getSSRRenderContext } from './ssr-context.ts';
+
 /**
- * When the island's chunk loads + hydrates. Phase 1 records the trigger
- * but does not act on it; Phase 2 implements `'load'` and `'visible'`,
- * Phase 4 fills in the rest.
+ * When the island's chunk loads + hydrates. Phase 2 implements `'load'`
+ * and `'visible'` in {@link mountIslands}; Phase 4 fills in `'idle'`,
+ * `'interact'`, and `media:…`.
  *
- * - `'load'`     — immediately after the chunk loads (default).
+ * - `'load'`     — immediately on the next microtask (default).
  * - `'idle'`     — inside `requestIdleCallback`.
  * - `'visible'`  — when the island's root enters the viewport.
  * - `'interact'` — on first pointerdown / focusin / keydown inside the root.
@@ -54,17 +63,21 @@ type Branded<V extends (...args: never[]) => unknown> = V & {
 };
 
 /**
- * Mark a view function as an island — a hydration boundary that will (in
- * later phases) ship its own client chunk and hydrate on its own trigger.
- *
- * In Phase 1 this is a no-op brand: the wrapped view renders identically
- * to the unwrapped view. See ADR 0038 for the full design.
+ * Mark a view function as an island — a hydration boundary that ships
+ * with its own per-trigger bootstrap on the server and (in Phase 3) its
+ * own client chunk.
  *
  * @example
  * ```ts
  * const Counter = component('my-counter', () => { ... });
  * export const Interactive = island(Counter, { hydrate: 'visible' });
  * ```
+ *
+ * @remarks
+ * Two islands on the same page have independent signal graphs. Shared
+ * state belongs in the URL, in `persist()`-style storage, or behind a
+ * server round-trip — closures over module-scope state will be
+ * duplicated when each island ships in its own chunk (Phase 3).
  */
 export function island<V extends (...args: never[]) => unknown>(
   view: V,
@@ -74,8 +87,21 @@ export function island<V extends (...args: never[]) => unknown>(
   // Defining a fresh wrapper (rather than branding `view` directly) keeps
   // the user's view function untouched — `island(Counter)` doesn't mutate
   // `Counter`, so the same component can be used branded *and* unbranded.
-  const wrapped = ((...args: Parameters<V>): ReturnType<V> =>
-    view(...(args as never[])) as ReturnType<V>) as V;
+  const wrapped = ((...args: Parameters<V>): ReturnType<V> | SSRHtml => {
+    const ctx = getSSRRenderContext();
+    if (ctx) {
+      // SSR path — render the inner view to HTML and wrap it. The wrapper
+      // is a valid HTMLElement (hyphen-cased custom-name → HTMLElement per
+      // HTML spec) with `display:contents` so it doesn't affect layout.
+      const id = ++ctx.islandCounter;
+      const inner = valueToHtml(view(...(args as never[])));
+      return markSSRHtml(
+        `<purity-island data-pi-id="${id}" data-pi-trigger="${escAttr(trigger)}" ` +
+          `style="display:contents">${inner}</purity-island>`,
+      );
+    }
+    return view(...(args as never[])) as ReturnType<V>;
+  }) as V;
   const brand: IslandBrand<V> = { view, trigger };
   Object.defineProperty(wrapped, ISLAND_BRAND, {
     value: brand,
@@ -93,8 +119,8 @@ export function isIsland(v: unknown): v is Branded<(...args: never[]) => unknown
 
 /**
  * Read the island brand from a view function. Returns `undefined` if the
- * value isn't branded. Used by the SSR runtime (Phase 2) and Vite plugin
- * (Phase 3); user code rarely needs this.
+ * value isn't branded. Used by the SSR runtime and the Vite plugin (Phase
+ * 3); user code rarely needs this.
  */
 export function getIslandBrand<V extends (...args: never[]) => unknown>(
   v: V,

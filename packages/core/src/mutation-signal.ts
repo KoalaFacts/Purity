@@ -23,6 +23,9 @@ import { getSSRRenderContext } from './ssr-context.ts';
  * - **Client.** Creates one `MutationObserver` per call, observes
  *   `target` with the given `options`. The signal holds the latest
  *   batch of records.
+ * - **Default `options`.** When omitted, the observer is started with
+ *   `{ childList: true }` (the most common case). Pass an explicit
+ *   `options` to observe attributes, character data, or subtrees.
  *
  * @example
  * ```ts

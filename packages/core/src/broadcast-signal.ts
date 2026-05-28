@@ -16,6 +16,7 @@ import { state, type StateAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
 const instances: Map<string, StateAccessor<unknown>> = new Map();
+const initialDefaults: Map<string, unknown> = new Map();
 
 /**
  * Cross-tab reactive state over `BroadcastChannel` (ADR 0039).
@@ -45,7 +46,15 @@ export function broadcastSignal<T>(channel: string, defaultValue: T): StateAcces
     return state(defaultValue);
   }
   const existing = instances.get(channel);
-  if (existing) return existing as StateAccessor<T>;
+  if (existing) {
+    if (!Object.is(initialDefaults.get(channel), defaultValue)) {
+      console.warn(
+        `[purity] broadcastSignal('${channel}') called again with a different defaultValue; the first default wins. Extract a shared default to silence this warning.`,
+      );
+    }
+    return existing as StateAccessor<T>;
+  }
+  initialDefaults.set(channel, defaultValue);
 
   const inner = state(defaultValue);
   const bc = new BroadcastChannel(channel);
@@ -84,4 +93,5 @@ export function broadcastSignal<T>(channel: string, defaultValue: T): StateAcces
 /** @internal — test helper. Clears the per-channel instance cache. */
 export function _resetBroadcastSignalRegistry(): void {
   instances.clear();
+  initialDefaults.clear();
 }

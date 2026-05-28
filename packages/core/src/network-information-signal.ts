@@ -40,10 +40,17 @@ function getConnection(): NetworkInformationLike | null {
   return nav.connection ?? nav.mozConnection ?? nav.webkitConnection ?? null;
 }
 
+const EFFECTIVE_TYPES = ['4g', '3g', '2g', 'slow-2g'] as const;
+
+function narrowEffectiveType(v: unknown): NetworkInformation['effectiveType'] {
+  return (EFFECTIVE_TYPES as readonly string[]).includes(v as string)
+    ? (v as NetworkInformation['effectiveType'])
+    : DEFAULT.effectiveType;
+}
+
 function snapshot(c: NetworkInformationLike): NetworkInformation {
   return {
-    effectiveType: (c.effectiveType ??
-      DEFAULT.effectiveType) as NetworkInformation['effectiveType'],
+    effectiveType: narrowEffectiveType(c.effectiveType),
     saveData: c.saveData ?? DEFAULT.saveData,
     downlink: c.downlink ?? DEFAULT.downlink,
     rtt: c.rtt ?? DEFAULT.rtt,

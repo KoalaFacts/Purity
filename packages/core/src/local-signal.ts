@@ -188,17 +188,20 @@ export function localSignal<T>(
   const migrate = options?.migrate;
   const storage = pickStorage(storageKind);
 
-  // Read initial value.
-  let initial = defaultValue;
+  // Read the resolved value: either the parsed stored value (post-migrate
+  // when versions differ) or the supplied default when storage is empty
+  // or unreadable.
+  let resolvedValue = defaultValue;
   let writeUpgrade = false;
   if (storage) {
     try {
       const raw = storage.getItem(key);
       if (raw !== null) {
-        const parsed = parseStored(raw, defaultValue, deserialize, version, migrate);
-        initial = parsed;
-        // If the stored envelope's version didn't match, the migrated value
-        // hasn't been persisted yet — schedule a write-back below.
+        // parseStored returns the post-migration value when version > 0
+        // and the stored envelope version doesn't match.
+        resolvedValue = parseStored(raw, defaultValue, deserialize, version, migrate);
+        // If the stored envelope's version didn't match, the migrated
+        // value hasn't been persisted yet — schedule a write-back below.
         if (version > 0) {
           try {
             const obj = JSON.parse(raw);
@@ -214,7 +217,7 @@ export function localSignal<T>(
     }
   }
 
-  const inner = state(initial);
+  const inner = state(resolvedValue);
 
   const writeToStorage = (value: T): void => {
     if (!storage) return;
@@ -225,7 +228,9 @@ export function localSignal<T>(
     }
   };
 
-  if (writeUpgrade) writeToStorage(initial);
+  // Persist the post-migration value back so the next read sees the new
+  // envelope version directly.
+  if (writeUpgrade) writeToStorage(resolvedValue);
 
   // Register for cross-tab `storage` events.
   installListener();

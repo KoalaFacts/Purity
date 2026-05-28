@@ -78,12 +78,31 @@ describe('broadcastSignal — client path (ADR 0039)', () => {
   });
 
   it('shares one instance per channel name', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const a = broadcastSignal<number>('shared', 7);
     const b = broadcastSignal<number>('shared', 999); // default ignored on second call
     expect(a).toBe(b);
     expect(b()).toBe(7);
     b.set(42);
     expect(a()).toBe(42);
+    warnSpy.mockRestore();
+  });
+
+  it('warns when a second call passes a different default for the same channel', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    broadcastSignal<number>('warn-diff', 1);
+    broadcastSignal<number>('warn-diff', 2);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain("broadcastSignal('warn-diff')");
+    warnSpy.mockRestore();
+  });
+
+  it('does not warn when a second call passes the same default', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    broadcastSignal<number>('warn-same', 7);
+    broadcastSignal<number>('warn-same', 7);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 
   it('cross-tab message updates the signal without re-posting', async () => {

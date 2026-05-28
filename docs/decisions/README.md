@@ -33,6 +33,7 @@ accept. Numbered sequentially.
 | [0037](./0037-move-before-each-reorder.md)      | moveBefore in each() reorder                    | Proposed                |
 | [0038](./0038-islands.md)                       | Islands — opt-in per-subtree hydration          | Proposed                |
 | [0039](./0039-persistence-lifecycle-signals.md) | Persistence + lifecycle signal primitives       | Proposed                |
+| [0040](./0040-observer-signal-primitives.md)    | Observer-as-signal primitives                   | Proposed                |
 
 ## Template
 

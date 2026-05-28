@@ -83,9 +83,12 @@ export interface MountIslandsOptions {
    */
   root?: ParentNode;
   /**
-   * Called once per island after `hydrate()` returns. Receives the island
-   * ID (1-based, matching the `data-pi-id` attribute) and the wrapper
-   * element. Useful for instrumentation in tests.
+   * Called once per island after the trigger fires and the resolution +
+   * hydration attempt completes. Fires for both successful and
+   * skipped/errored islands (a thrown hydrate() is caught + logged
+   * before this fires). Receives the island ID (1-based, matching the
+   * `data-pi-id` attribute) and the wrapper element. Useful for
+   * instrumentation in tests.
    */
   onMount?: (id: number, root: Element) => void;
 }
@@ -171,33 +174,29 @@ function scheduleHydration(
   done: () => void,
 ): void {
   const run = (): void => {
-    // Custom-element-rooted islands: the SSR-emitted element auto-upgrades
-    // the moment its class is registered (which happens at import time —
-    // either at module init for an eager entry, or when the lazy chunk
-    // resolves below). Either way, by the time we'd call hydrate() the
-    // CE has either already done it via DSD or will once the class
-    // arrives. Calling `hydrate(wrapper, view)` would re-execute the
-    // view's factory, which returns a fresh Node — and hydrate()'s
-    // non-deferred branch (component.ts:369) would lossily replace the
-    // already-upgraded SSR element. So we detect and skip.
-    const first = el.firstElementChild;
-    const tag = first?.tagName.toLowerCase();
-    const isCustomElementRoot =
-      !!tag &&
-      tag.includes('-') &&
-      typeof customElements !== 'undefined' &&
-      !!customElements.get(tag);
-
     resolveEntry(entry, id)
       .then((view) => {
         if (!view) {
           done();
           return;
         }
-        if (isCustomElementRoot) {
-          // Even for lazy entries: importing the chunk registered the
-          // class, which upgrades the SSR element synchronously. Nothing
-          // for us to do beyond that.
+        // Custom-element-rooted islands: the SSR-emitted element
+        // auto-upgrades the moment its class is registered. For lazy
+        // entries, registration happens during the `await import(...)`
+        // above — so the CE check MUST run after resolveEntry resolves,
+        // not before. Otherwise `customElements.get(tag)` returns
+        // undefined for lazy CE-rooted islands and we'd fall through to
+        // hydrate(el, view), which moves the just-upgraded CE through a
+        // DocumentFragment and triggers disconnect/reconnect — double
+        // hydration on an already-hydrated element.
+        const first = el.firstElementChild;
+        const tag = first?.tagName.toLowerCase();
+        if (
+          tag &&
+          tag.includes('-') &&
+          typeof customElements !== 'undefined' &&
+          customElements.get(tag)
+        ) {
           done();
           return;
         }
@@ -227,11 +226,11 @@ function scheduleHydration(
       waitForLoad(run);
       return;
     default: {
-      // media:(query) — string-literal match exhausted above; anything
-      // else here is malformed and readTrigger() will have already
-      // warned + downgraded. We re-check the string defensively.
-      if (typeof trigger === 'string' && (trigger as string).startsWith('media:')) {
-        waitForMedia((trigger as string).slice('media:'.length), run);
+      // media:(query) — `IslandTrigger` is string-only and the literal
+      // values are exhausted above, so the remaining shape is the
+      // template-literal `media:${string}`.
+      if (trigger.startsWith('media:')) {
+        waitForMedia(trigger.slice('media:'.length), run);
         return;
       }
       waitForLoad(run);

@@ -167,6 +167,66 @@ describe('mountIslands() — load trigger', () => {
   });
 });
 
+describe('mountIslands() — CE-rooted island via lazy thunk (ADR 0038)', () => {
+  // Regression: the CE detection used to run BEFORE resolveEntry awaited
+  // the lazy import, so `customElements.get(tag)` was undefined at the
+  // time of the check (the chunk hadn't loaded yet). That made
+  // mountIslands fall through to hydrate(wrapper, view), which moves the
+  // CE through a DocumentFragment — triggering disconnect/reconnect on a
+  // Custom Element that had just hydrated via DSD. The fix is to detect
+  // the CE root AFTER the lazy chunk resolves.
+
+  let host: HTMLElement | null = null;
+  let tagSeq = 0;
+  afterEach(() => {
+    if (host) host.remove();
+    host = null;
+  });
+
+  it('detects the registered custom element AFTER the lazy chunk resolves', async () => {
+    // A unique tag per test run so multiple test runs don't collide on
+    // the CE registry. Define the CE lazily inside the thunk so it isn't
+    // registered until the chunk "loads".
+    const tag = `lazy-ce-${++tagSeq}`;
+    host = document.createElement('div');
+    host.innerHTML =
+      `<purity-island data-pi-id="1" data-pi-trigger="load" style="display:contents">` +
+      `<${tag}></${tag}></purity-island>`;
+    document.body.appendChild(host);
+
+    // Sanity: tag isn't registered yet.
+    expect(customElements.get(tag)).toBeUndefined();
+
+    let hydrateCalls = 0;
+    // The "view" is a plain function — what matters is that the lazy
+    // thunk registers the CE during resolution and the runtime then
+    // detects it and skips hydrate. We spy on hydrate by counting how
+    // many times the thunk's view function is called (which only happens
+    // when hydrate(wrapper, view) runs).
+    const View = (): unknown => {
+      hydrateCalls++;
+      return document.createElement('span');
+    };
+    const Wrapped = island(View);
+
+    mountIslands([
+      () => {
+        // Simulate the lazy chunk: register the CE, then return the view.
+        class FakeCE extends HTMLElement {}
+        if (!customElements.get(tag)) customElements.define(tag, FakeCE);
+        return Promise.resolve(Wrapped);
+      },
+    ]);
+
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(customElements.get(tag)).toBeDefined();
+    // The CE was registered before we'd have called hydrate; the runtime
+    // should have detected this AFTER awaiting and skipped hydrate.
+    expect(hydrateCalls).toBe(0);
+  });
+});
+
 describe('mountIslands() — lazy entries (ADR 0038 Phase 3)', () => {
   let host: HTMLElement | null = null;
   afterEach(() => {

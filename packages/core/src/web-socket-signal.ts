@@ -102,9 +102,18 @@ export function webSocketSignal<T>(
       console.warn(`[purity] webSocketSignal('${label}') failed to parse:`, err);
       return;
     }
-    let ok: boolean;
+    // Keep validate() inside the try AND narrow within it: the predicate
+    // refines `parsed` from `unknown` to `T`, so `inner(value)` stays
+    // typed. A separate boolean would discard that narrowing.
+    let value: T;
     try {
-      ok = validate(parsed);
+      if (!validate(parsed)) {
+        console.warn(
+          `[purity] webSocketSignal('${label}') dropped incoming message — failed validator`,
+        );
+        return;
+      }
+      value = parsed;
     } catch (err) {
       console.warn(
         `[purity] webSocketSignal('${label}') dropped incoming message — validator threw:`,
@@ -112,13 +121,7 @@ export function webSocketSignal<T>(
       );
       return;
     }
-    if (!ok) {
-      console.warn(
-        `[purity] webSocketSignal('${label}') dropped incoming message — failed validator`,
-      );
-      return;
-    }
-    inner(parsed);
+    inner(value);
   };
 
   const open = (): void => {

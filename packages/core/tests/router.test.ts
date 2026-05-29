@@ -44,6 +44,19 @@ describe('matchRoute() — pattern matching', () => {
     });
   });
 
+  it('does not throw on a malformed percent-encoded :param (falls back to raw)', () => {
+    // decodeURIComponent('%') raises URIError. A path segment is fully
+    // attacker-controllable, and matchRoute gates the whole render — a
+    // throw here would crash routing. We fall back to the raw segment.
+    expect(() => matchRoute('/users/:id', '/users/%')).not.toThrow();
+    expect(matchRoute('/users/:id', '/users/%')).toEqual({ params: { id: '%' } });
+    // Incomplete UTF-8 escape sequence.
+    expect(matchRoute('/users/:id', '/users/%E0%A4')).toEqual({ params: { id: '%E0%A4' } });
+    // Valid segments alongside a malformed one still match; only the bad
+    // one falls back.
+    expect(matchRoute('/u/:a/:b', '/u/ok/%C0')).toEqual({ params: { a: 'ok', b: '%C0' } });
+  });
+
   it('rejects paths that are too short for the pattern', () => {
     expect(matchRoute('/users/:id', '/users')).toBeNull();
     expect(matchRoute('/a/b/c', '/a/b')).toBeNull();

@@ -243,11 +243,29 @@ export function matchRoute(pattern: string, path?: string): RouteMatch | null {
     }
     if (i >= pathParts.length) return null;
     if (seg.startsWith(':')) {
-      params[seg.slice(1)] = decodeURIComponent(pathParts[i]);
+      params[seg.slice(1)] = safeDecode(pathParts[i]);
       continue;
     }
     if (seg !== pathParts[i]) return null;
   }
   if (pathParts.length > patternParts.length) return null;
   return { params };
+}
+
+/**
+ * `decodeURIComponent` that never throws. A path segment is fully
+ * attacker-controllable (address bar, untrusted links), and a malformed
+ * percent-sequence like `/users/%` makes the native call raise a
+ * `URIError`. Letting that escape would crash route matching — and
+ * matchRoute() gates the whole render on both server and client. On a
+ * malformed segment we fall back to the raw (still-encoded) bytes so the
+ * route still matches and the param is non-empty; the view decides what to
+ * do with an undecodable value.
+ */
+function safeDecode(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
 }

@@ -8,12 +8,16 @@
 //   - ADR 0034: `LoaderDataOf<'/', typeof routes>` derives the data
 //     shape from THIS file's `loader` signature — no hand-written
 //     generic on `loaderData()`.
+//   - ADR 0036: `typeof routes` imports from the virtual `'purity:routes'`
+//     specifier (typing comes from the auto-emitted sibling `.d.ts`).
+//     Apps no longer need to thread the on-disk `./.purity/routes.ts`
+//     path through every page.
 
 import { component, each, head, html, loaderData } from '@purityjs/core';
 import type { LoaderDataOf } from '@purityjs/vite-plugin';
 // `import type` — value-namespace binding usable in `typeof` positions
 // only. Compiles to nothing; no runtime import or cycle.
-import type { routes } from '../.purity/routes.ts';
+import type { routes } from 'purity:routes';
 
 component<{ count: number }>('demo-counter', ({ count }) => {
   return html`

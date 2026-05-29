@@ -85,8 +85,26 @@ let effectDepth = 0;
 
 const trackedNodes: Set<WeakRef<AnyNode>> = new Set();
 
+// Without this, `trackedNodes` grows by one WeakRef per signal/effect ever
+// created and only sheds dead entries when the inspector hook is manually
+// invoked (`__purity_inspect__.liveNodes()`) — which most apps never do. A
+// long-running app with heavy each()/component churn would accumulate dead
+// WeakRef wrappers (and their Set slots) without bound even though the nodes
+// themselves are collected. The FinalizationRegistry drops each WeakRef from
+// the Set when its node is reclaimed, keeping the registry ~bounded to live
+// nodes. Feature-detected so non-supporting runtimes fall back to the lazy
+// prune in inspectorLiveNodes().
+const nodeFinalization: FinalizationRegistry<WeakRef<AnyNode>> | null =
+  typeof FinalizationRegistry !== 'undefined'
+    ? new FinalizationRegistry<WeakRef<AnyNode>>((ref) => {
+        trackedNodes.delete(ref);
+      })
+    : null;
+
 function trackNode(node: AnyNode): void {
-  trackedNodes.add(new WeakRef(node));
+  const ref = new WeakRef(node);
+  trackedNodes.add(ref);
+  nodeFinalization?.register(node, ref);
 }
 
 // ---------------------------------------------------------------------------

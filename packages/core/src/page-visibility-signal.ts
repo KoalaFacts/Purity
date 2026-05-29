@@ -10,6 +10,7 @@ import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
 let singleton: ComputedAccessor<'visible' | 'hidden'> | null = null;
+let listener: (() => void) | null = null;
 
 /**
  * Reactive `document.visibilityState` (ADR 0039).
@@ -24,14 +25,20 @@ export function pageVisibilitySignal(): ComputedAccessor<'visible' | 'hidden'> {
   }
   if (singleton) return singleton;
   const inner = state(document.visibilityState as 'visible' | 'hidden');
-  document.addEventListener('visibilitychange', () => {
+  listener = () => {
     inner(document.visibilityState as 'visible' | 'hidden');
-  });
+  };
+  document.addEventListener('visibilitychange', listener);
   singleton = compute(() => inner());
   return singleton;
 }
 
-/** @internal — test helper. Clears the cached singleton so tests can re-init. */
+/** @internal — test helper. Clears the cached singleton and removes the
+ * document listener so subsequent test runs start from a clean state. */
 export function _resetPageVisibilitySignal(): void {
+  if (listener && typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', listener);
+  }
+  listener = null;
   singleton = null;
 }

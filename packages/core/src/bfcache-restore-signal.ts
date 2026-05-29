@@ -11,6 +11,7 @@ import { state, type StateAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
 let singleton: StateAccessor<number> | null = null;
+let listener: ((e: PageTransitionEvent) => void) | null = null;
 
 /**
  * Reactive counter that increments every time the page is restored from
@@ -37,14 +38,20 @@ export function bfcacheRestoreSignal(): StateAccessor<number> {
   }
   if (singleton) return singleton;
   const counter = state(0);
-  window.addEventListener('pageshow', (e: PageTransitionEvent) => {
+  listener = (e: PageTransitionEvent) => {
     if (e.persisted) counter((v) => v + 1);
-  });
+  };
+  window.addEventListener('pageshow', listener);
   singleton = counter;
   return counter;
 }
 
-/** @internal — test helper. Clears the cached singleton so tests can re-init. */
+/** @internal — test helper. Clears the cached singleton and removes the
+ * window listener so subsequent test runs start from a clean state. */
 export function _resetBfcacheRestoreSignal(): void {
+  if (listener && typeof window !== 'undefined') {
+    window.removeEventListener('pageshow', listener as EventListener);
+  }
+  listener = null;
   singleton = null;
 }

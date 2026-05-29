@@ -178,3 +178,17 @@ export { permissionSignal } from './permission-signal.ts';
 export { type BatteryInfo, batterySignal } from './battery-signal.ts';
 export { type NetworkInformation, networkInformationSignal } from './network-information-signal.ts';
 export { type IdleDetectorLike, idleSignal, type IdleSignalState } from './idle-signal.ts';
+
+// Live data signals — ADR 0047.
+export {
+  eventSourceSignal,
+  type EventSourceSignalOptions,
+  type LiveReconnectPolicy,
+  type LiveValidator,
+} from './event-source-signal.ts';
+export {
+  type WebSocketReadyState,
+  type WebSocketSignal,
+  webSocketSignal,
+  type WebSocketSignalOptions,
+} from './web-socket-signal.ts';

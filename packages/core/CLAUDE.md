@@ -1,8 +1,8 @@
 # @purityjs/core
 
-Purity core framework — 48 functions, no virtual DOM, TC39-Signals-inspired reactivity.
+Purity core framework — 50 functions, no virtual DOM, TC39-Signals-inspired reactivity.
 
-## API (48 functions)
+## API (50 functions)
 
 ```ts
 state(initial)              // read: count(), write: count(5), update: count(v => v+1)
@@ -65,6 +65,10 @@ permissionSignal(name)                   // PermissionState — async navigator.
 batterySignal()                          // BatteryInfo | null — async navigator.getBattery
 networkInformationSignal()               // NetworkInformation — navigator.connection
 idleSignal(detector)                     // IdleSignalState — wraps a user-started IdleDetector
+
+// Live data signals — ADR 0047
+eventSourceSignal(url, opts)             // SSE → ComputedAccessor<T>; required validate; on-visible reconnect by default
+webSocketSignal(url, opts)               // WS → ComputedAccessor<T> & { send, readyState }; validate required; send-on-closed = warn+drop
 ```
 
 ## Hydration

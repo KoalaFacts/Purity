@@ -15,6 +15,9 @@ import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
 let singleton: ComputedAccessor<number> | null = null;
+// Captured so reset can detach the listener from the currently-bound mql.
+let activeMql: MediaQueryList | null = null;
+let activeOnChange: (() => void) | null = null;
 
 /**
  * Reactive `window.devicePixelRatio` (ADR 0041).
@@ -43,13 +46,22 @@ export function devicePixelRatioSignal(): ComputedAccessor<number> {
     mql = window.matchMedia(`(resolution: ${next}dppx)`);
     prev.removeEventListener('change', onChange);
     mql.addEventListener('change', onChange);
+    activeMql = mql;
   };
   mql.addEventListener('change', onChange);
+  activeMql = mql;
+  activeOnChange = onChange;
   singleton = compute(() => inner());
   return singleton;
 }
 
-/** @internal — test helper. */
+/** @internal — test helper. Clears the cached singleton and detaches the
+ * listener from the currently-bound media query so tests start clean. */
 export function _resetDevicePixelRatioSignal(): void {
+  if (activeMql && activeOnChange) {
+    activeMql.removeEventListener('change', activeOnChange);
+  }
+  activeMql = null;
+  activeOnChange = null;
   singleton = null;
 }

@@ -10,6 +10,7 @@ import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
 let singleton: ComputedAccessor<string> | null = null;
+let onLanguageChange: (() => void) | null = null;
 
 /**
  * Reactive `navigator.language` (ADR 0041).
@@ -29,14 +30,20 @@ export function localeSignal(): ComputedAccessor<string> {
   }
   if (singleton) return singleton;
   const inner = state(navigator.language || 'en');
-  window.addEventListener('languagechange', () => {
+  onLanguageChange = () => {
     inner(navigator.language || 'en');
-  });
+  };
+  window.addEventListener('languagechange', onLanguageChange);
   singleton = compute(() => inner());
   return singleton;
 }
 
-/** @internal — test helper. */
+/** @internal — test helper. Clears the cached singleton and removes the
+ * window listener so subsequent test runs start from a clean state. */
 export function _resetLocaleSignal(): void {
+  if (onLanguageChange && typeof window !== 'undefined') {
+    window.removeEventListener('languagechange', onLanguageChange);
+  }
+  onLanguageChange = null;
   singleton = null;
 }

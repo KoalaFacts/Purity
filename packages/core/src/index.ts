@@ -182,6 +182,9 @@ export { type IdleDetectorLike, idleSignal, type IdleSignalState } from './idle-
 // Query SWR — ADR 0048.
 export { invalidateQuery, query, type QueryKey, type QueryOptions } from './query.ts';
 
+// Optimistic-update server-action wrapper — ADR 0049.
+export { optimistic, type OptimisticAction, type OptimisticOptions } from './optimistic.ts';
+
 // Live data signals — ADR 0047.
 export {
   eventSourceSignal,

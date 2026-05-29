@@ -20,28 +20,29 @@ accept. Numbered sequentially.
 
 ## Index
 
-| #                                                | Title                                                | Status                  |
-| ------------------------------------------------ | ---------------------------------------------------- | ----------------------- |
-| [0001](./0001-ssr-strategy.md)                   | SSR strategy for 1.0                                 | Superseded by 0004      |
-| [0002](./0002-devtools.md)                       | Devtools approach                                    | Proposed                |
-| [0003](./0003-path-to-1.0.md)                    | Path to 1.0                                          | Proposed                |
-| [0004](./0004-ssr-mvp.md)                        | SSR MVP via Declarative Shadow DOM                   | Accepted (partial 0005) |
-| [0005](./0005-non-lossy-hydration.md)            | Marker-walking, non-lossy hydration                  | Accepted                |
-| [0006](./0006-streaming-suspense.md)             | Streaming SSR with Suspense boundaries               | Proposed                |
-| [0035](./0035-element-internals-states.md)       | ElementInternals.states for component lifecycle      | Proposed                |
-| [0036](./0036-form-associated-components.md)     | Form-associated components via options bag           | Proposed                |
-| [0037](./0037-move-before-each-reorder.md)       | moveBefore in each() reorder                         | Proposed                |
-| [0038](./0038-islands.md)                        | Islands — opt-in per-subtree hydration               | Proposed                |
-| [0039](./0039-persistence-lifecycle-signals.md)  | Persistence + lifecycle signal primitives            | Proposed                |
-| [0040](./0040-observer-signal-primitives.md)     | Observer-as-signal primitives                        | Proposed                |
-| [0041](./0041-environment-preference-signals.md) | Environment + system preference signals              | Proposed                |
-| [0042](./0042-capability-permission-signals.md)  | Capability + permission signals                      | Proposed                |
-| [0043](./0043-smart-server-action-strip.md)      | Smart serverAction() body-only stripping             | Proposed                |
-| [0044](./0044-virtual-routes-typed-dts.md)       | Sibling routes.d.ts with typed importFn              | Proposed                |
-| [0045](./0045-aria-nav-announce.md)              | ARIA live-region announce on navigate                | Proposed                |
-| [0046](./0046-async-view-transitions.md)         | Async-aware view transitions                         | Proposed                |
-| [0047](./0047-live-data-signals.md)              | Live data signals (eventSource + webSocket)          | Proposed                |
-| [0048](./0048-query-swr.md)                      | `query()` — stale-while-revalidate over `resource()` | Proposed                |
+| #                                                | Title                                                    | Status                  |
+| ------------------------------------------------ | -------------------------------------------------------- | ----------------------- |
+| [0001](./0001-ssr-strategy.md)                   | SSR strategy for 1.0                                     | Superseded by 0004      |
+| [0002](./0002-devtools.md)                       | Devtools approach                                        | Proposed                |
+| [0003](./0003-path-to-1.0.md)                    | Path to 1.0                                              | Proposed                |
+| [0004](./0004-ssr-mvp.md)                        | SSR MVP via Declarative Shadow DOM                       | Accepted (partial 0005) |
+| [0005](./0005-non-lossy-hydration.md)            | Marker-walking, non-lossy hydration                      | Accepted                |
+| [0006](./0006-streaming-suspense.md)             | Streaming SSR with Suspense boundaries                   | Proposed                |
+| [0035](./0035-element-internals-states.md)       | ElementInternals.states for component lifecycle          | Proposed                |
+| [0036](./0036-form-associated-components.md)     | Form-associated components via options bag               | Proposed                |
+| [0037](./0037-move-before-each-reorder.md)       | moveBefore in each() reorder                             | Proposed                |
+| [0038](./0038-islands.md)                        | Islands — opt-in per-subtree hydration                   | Proposed                |
+| [0039](./0039-persistence-lifecycle-signals.md)  | Persistence + lifecycle signal primitives                | Proposed                |
+| [0040](./0040-observer-signal-primitives.md)     | Observer-as-signal primitives                            | Proposed                |
+| [0041](./0041-environment-preference-signals.md) | Environment + system preference signals                  | Proposed                |
+| [0042](./0042-capability-permission-signals.md)  | Capability + permission signals                          | Proposed                |
+| [0043](./0043-smart-server-action-strip.md)      | Smart serverAction() body-only stripping                 | Proposed                |
+| [0044](./0044-virtual-routes-typed-dts.md)       | Sibling routes.d.ts with typed importFn                  | Proposed                |
+| [0045](./0045-aria-nav-announce.md)              | ARIA live-region announce on navigate                    | Proposed                |
+| [0046](./0046-async-view-transitions.md)         | Async-aware view transitions                             | Proposed                |
+| [0047](./0047-live-data-signals.md)              | Live data signals (eventSource + webSocket)              | Proposed                |
+| [0048](./0048-query-swr.md)                      | `query()` — stale-while-revalidate over `resource()`     | Proposed                |
+| [0049](./0049-optimistic.md)                     | `optimistic()` — optimistic-update server-action wrapper | Proposed                |
 
 ## Template
 

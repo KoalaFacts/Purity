@@ -424,4 +424,28 @@ describe('optimistic — user-hook throw isolation (audit Bug D)', () => {
     expect(errSpy).toHaveBeenCalledTimes(2);
     errSpy.mockRestore();
   });
+
+  it('isSuccess throwing is treated as failure: rollback fires, response still returned', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let rolledBack = false;
+    const act = makeFakeAction('/ok', () => new Response('body', { status: 200 }));
+    const wrapped = optimistic<void>(act, {
+      body: () => null,
+      apply: () => () => {
+        rolledBack = true;
+      },
+      isSuccess: () => {
+        throw new Error('isSuccess exploded');
+      },
+      invalidates: ['x'], // must NOT fire (we're in the failure path)
+    });
+    const res = await wrapped.invoke();
+    expect(res.status).toBe(200);
+    expect(rolledBack).toBe(true);
+    expect(errSpy).toHaveBeenCalledWith(
+      '[purity] optimistic isSuccess threw; treating response as failure:',
+      expect.any(Error),
+    );
+    errSpy.mockRestore();
+  });
 });

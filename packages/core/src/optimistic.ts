@@ -114,11 +114,20 @@ export function optimistic<TArgs>(
       }
 
       // The action settled with a Response. From here we MUST NOT let
-      // user-supplied hooks (`invalidates`, `onSettle`) throw out of this
-      // function — a throw would have been caught by the outer try and
-      // treated a successful server action as a network failure, firing
-      // a spurious rollback. Each hook is isolated.
-      if (isSuccess(response)) {
+      // user-supplied hooks (`isSuccess`, `invalidates`, `onSettle`) throw
+      // out of this function — a throw would have been caught by the outer
+      // try and treated a successful server action as a network failure,
+      // firing a spurious rollback. Each hook is isolated.
+      // A throwing `isSuccess` can't decide pass-vs-fail; treat it as
+      // failure so rollback restores the pre-optimistic state.
+      let succeeded: boolean;
+      try {
+        succeeded = isSuccess(response);
+      } catch (err) {
+        console.error('[purity] optimistic isSuccess threw; treating response as failure:', err);
+        succeeded = false;
+      }
+      if (succeeded) {
         try {
           if (options.invalidates) {
             const keys =

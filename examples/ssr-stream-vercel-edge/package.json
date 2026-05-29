@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "@purityjs/vite-plugin": "*",
-    "vercel": "^54.5.0",
+    "vercel": "^54.6.1",
     "vite": "^8.0.14"
   }
 }

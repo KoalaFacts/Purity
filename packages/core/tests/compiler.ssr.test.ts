@@ -167,6 +167,36 @@ describe('generateSSR — dynamic attributes', () => {
     expect(compileSSR(['<input ?disabled=', ' />'], false)).toBe('<input/>');
   });
 
+  it('?bool attributes render as bare name for any truthy value (matches client setAttribute, no hydration drift)', () => {
+    // Boolean attributes have presence-only semantics per HTML spec, and
+    // the client codegen uses `truthy → setAttribute('')` regardless of
+    // the value's shape. The SSR side must agree — otherwise a truthy
+    // non-boolean value (e.g. `?disabled=${'yes'}`) renders as
+    // `disabled="yes"` on the server but `disabled=""` on the client, a
+    // silent hydration mismatch.
+    expect(compileSSR(['<input ?disabled=', ' />'], 'yes')).toBe('<input disabled/>');
+    expect(compileSSR(['<input ?disabled=', ' />'], 1)).toBe('<input disabled/>');
+    expect(compileSSR(['<input ?disabled=', ' />'], {})).toBe('<input disabled/>');
+    // Falsy non-boolean: omitted (matches removeAttribute on client).
+    expect(compileSSR(['<input ?disabled=', ' />'], 0)).toBe('<input/>');
+    expect(compileSSR(['<input ?disabled=', ' />'], '')).toBe('<input/>');
+    expect(compileSSR(['<input ?disabled=', ' />'], null)).toBe('<input/>');
+    expect(compileSSR(['<input ?disabled=', ' />'], undefined)).toBe('<input/>');
+  });
+
+  it('?bool attributes on custom elements also collapse to bare name for any truthy value', () => {
+    // Custom elements flow through emitCustomElement → plainElement →
+    // valueToAttr, which doesn't know about boolean semantics and would
+    // emit `disabled="yes"` for a truthy non-boolean. Client setAttribute
+    // emits `disabled=""`. Same hydration drift as above, just routed
+    // through a different code path.
+    expect(compileSSR(['<my-el ?disabled=', '></my-el>'], 'yes')).toBe('<my-el disabled></my-el>');
+    expect(compileSSR(['<my-el ?disabled=', '></my-el>'], 1)).toBe('<my-el disabled></my-el>');
+    expect(compileSSR(['<my-el ?disabled=', '></my-el>'], true)).toBe('<my-el disabled></my-el>');
+    expect(compileSSR(['<my-el ?disabled=', '></my-el>'], false)).toBe('<my-el></my-el>');
+    expect(compileSSR(['<my-el ?disabled=', '></my-el>'], null)).toBe('<my-el></my-el>');
+  });
+
   it('renders .prop attributes as quoted attribute on the server', () => {
     expect(compileSSR(['<input .value=', ' />'], 'hi')).toBe('<input value="hi"/>');
   });

@@ -1165,10 +1165,18 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
     if (a.kind === 'event') continue;
     assertSafeName(a.name, 'attribute');
     if (a.kind === 'bool') {
-      // Boolean attribute: store the truthy/falsy raw value; the renderer
-      // calls valueToAttr which collapses null/undefined/false to omitted
-      // and `true` to bare-name form.
-      pushRaw(ctx, `${attrsVar}[${JSON.stringify(a.name)}]=_v[${a.index}];`);
+      // Boolean attribute: resolve any signal-accessor function and
+      // coerce to a real boolean BEFORE handing it to the renderer.
+      // valueToAttr only collapses `true → ''` (bare name); a truthy
+      // non-boolean (e.g. `?disabled=${'yes'}`) would otherwise SSR as
+      // `disabled="yes"` while the client setAttribute emits
+      // `disabled=""` — a silent hydration mismatch. With the !! coerce,
+      // both sides agree: truthy → bare name, falsy → omitted.
+      const bv = `_b${a.index}`;
+      pushRaw(
+        ctx,
+        `var ${bv}=_v[${a.index}];if(typeof ${bv}==='function')${bv}=${bv}();${attrsVar}[${JSON.stringify(a.name)}]=!!${bv};`,
+      );
     } else {
       pushRaw(ctx, `${attrsVar}[${JSON.stringify(a.name)}]=_v[${a.index}];`);
     }

@@ -8,24 +8,8 @@ import { _resetBfcacheRestoreSignal } from '../src/bfcache-restore-signal.ts';
 import { _resetOnlineSignal } from '../src/online-signal.ts';
 import { _resetPageVisibilitySignal } from '../src/page-visibility-signal.ts';
 import { _resetQueryCache } from '../src/query.ts';
-import {
-  popSSRRenderContext,
-  pushSSRRenderContext,
-  type SSRRenderContext,
-} from '../src/ssr-context.ts';
-
-function makeSSRContext(): SSRRenderContext {
-  return {
-    pendingPromises: [],
-    resolvedData: [],
-    resolvedErrors: [],
-    resourceCounter: 0,
-    resolvedDataByKey: {},
-    resolvedErrorsByKey: {},
-    suspenseCounter: 0,
-    boundaryStartTimes: new Map(),
-  };
-}
+import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
+import { makeSSRContext } from './_helpers.ts';
 
 const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
 const drain = async (): Promise<void> => {

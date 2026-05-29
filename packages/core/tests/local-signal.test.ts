@@ -5,11 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { localSignal, watch } from '../src/index.ts';
 import { _resetLocalSignalRegistry } from '../src/local-signal.ts';
-import {
-  popSSRRenderContext,
-  pushSSRRenderContext,
-  type SSRRenderContext,
-} from '../src/ssr-context.ts';
+import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
+import { makeSSRContext } from './_helpers.ts';
 
 const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
 
@@ -34,19 +31,6 @@ function makeStorageEvent(init: {
     Object.defineProperty(event, 'storageArea', { value: init.storageArea });
   }
   return event;
-}
-
-function makeSSRContext(): SSRRenderContext {
-  return {
-    pendingPromises: [],
-    resolvedData: [],
-    resolvedErrors: [],
-    resourceCounter: 0,
-    resolvedDataByKey: {},
-    resolvedErrorsByKey: {},
-    suspenseCounter: 0,
-    boundaryStartTimes: new Map(),
-  };
 }
 
 beforeEach(() => {

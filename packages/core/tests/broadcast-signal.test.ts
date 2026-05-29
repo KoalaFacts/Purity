@@ -5,11 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { broadcastSignal, watch } from '../src/index.ts';
 import { _resetBroadcastSignalRegistry } from '../src/broadcast-signal.ts';
-import {
-  popSSRRenderContext,
-  pushSSRRenderContext,
-  type SSRRenderContext,
-} from '../src/ssr-context.ts';
+import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
+import { makeSSRContext } from './_helpers.ts';
 
 const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
 // jsdom delivers BroadcastChannel messages on a macrotask, not microtask.
@@ -22,19 +19,6 @@ const isStringOrNull = (v: unknown): v is string | null => v === null || typeof 
 const isNumberOrNull = (v: unknown): v is number | null => v === null || typeof v === 'number';
 const isXObj = (v: unknown): v is { x: number } =>
   !!v && typeof v === 'object' && typeof (v as { x?: unknown }).x === 'number';
-
-function makeSSRContext(): SSRRenderContext {
-  return {
-    pendingPromises: [],
-    resolvedData: [],
-    resolvedErrors: [],
-    resourceCounter: 0,
-    resolvedDataByKey: {},
-    resolvedErrorsByKey: {},
-    suspenseCounter: 0,
-    boundaryStartTimes: new Map(),
-  };
-}
 
 beforeEach(() => {
   _resetBroadcastSignalRegistry();

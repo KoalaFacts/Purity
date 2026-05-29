@@ -5,24 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { fullscreenSignal } from '../src/index.ts';
 import { _resetFullscreenSignal } from '../src/fullscreen-signal.ts';
-import {
-  popSSRRenderContext,
-  pushSSRRenderContext,
-  type SSRRenderContext,
-} from '../src/ssr-context.ts';
-
-function makeSSRContext(): SSRRenderContext {
-  return {
-    pendingPromises: [],
-    resolvedData: [],
-    resolvedErrors: [],
-    resourceCounter: 0,
-    resolvedDataByKey: {},
-    resolvedErrorsByKey: {},
-    suspenseCounter: 0,
-    boundaryStartTimes: new Map(),
-  };
-}
+import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
+import { makeSSRContext } from './_helpers.ts';
 
 function setFullscreenElement(el: Element | null): void {
   Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => el });

@@ -5,26 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { batterySignal } from '../src/index.ts';
 import { _resetBatterySignal } from '../src/battery-signal.ts';
-import {
-  popSSRRenderContext,
-  pushSSRRenderContext,
-  type SSRRenderContext,
-} from '../src/ssr-context.ts';
+import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
+import { makeSSRContext } from './_helpers.ts';
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
-
-function makeSSRContext(): SSRRenderContext {
-  return {
-    pendingPromises: [],
-    resolvedData: [],
-    resolvedErrors: [],
-    resourceCounter: 0,
-    resolvedDataByKey: {},
-    resolvedErrorsByKey: {},
-    suspenseCounter: 0,
-    boundaryStartTimes: new Map(),
-  };
-}
 
 class MockBatteryManager extends EventTarget {
   charging = true;

@@ -5,24 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { networkInformationSignal } from '../src/index.ts';
 import { _resetNetworkInformationSignal } from '../src/network-information-signal.ts';
-import {
-  popSSRRenderContext,
-  pushSSRRenderContext,
-  type SSRRenderContext,
-} from '../src/ssr-context.ts';
-
-function makeSSRContext(): SSRRenderContext {
-  return {
-    pendingPromises: [],
-    resolvedData: [],
-    resolvedErrors: [],
-    resourceCounter: 0,
-    resolvedDataByKey: {},
-    resolvedErrorsByKey: {},
-    suspenseCounter: 0,
-    boundaryStartTimes: new Map(),
-  };
-}
+import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
+import { makeSSRContext } from './_helpers.ts';
 
 class MockConnection extends EventTarget {
   effectiveType: '4g' | '3g' | '2g' | 'slow-2g' = '4g';

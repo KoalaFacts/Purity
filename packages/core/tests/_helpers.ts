@@ -1,11 +1,31 @@
 // Shared async helpers for resource() tests and benchmarks.
 
+import type { SSRRenderContext } from '../src/ssr-context.ts';
+
 export const tick = (): Promise<void> => new Promise((r) => queueMicrotask(() => r()));
 
 /** Drain several microtask rounds — enough for chained .then handlers + flush. */
 export const flushAll = async (): Promise<void> => {
   for (let i = 0; i < 5; i++) await tick();
 };
+
+/**
+ * Build a fresh SSRRenderContext for tests that push/pop the SSR scope.
+ * Centralised here so adding new fields to SSRRenderContext doesn't require
+ * touching ~30 test files individually.
+ */
+export function makeSSRContext(): SSRRenderContext {
+  return {
+    pendingPromises: [],
+    resolvedData: [],
+    resolvedErrors: [],
+    resourceCounter: 0,
+    resolvedDataByKey: {},
+    resolvedErrorsByKey: {},
+    suspenseCounter: 0,
+    boundaryStartTimes: new Map(),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // matchMedia mock — used by media + environment-preference signal tests.

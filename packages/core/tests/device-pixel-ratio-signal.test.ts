@@ -5,25 +5,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { devicePixelRatioSignal } from '../src/index.ts';
 import { _resetDevicePixelRatioSignal } from '../src/device-pixel-ratio-signal.ts';
+import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import {
-  popSSRRenderContext,
-  pushSSRRenderContext,
-  type SSRRenderContext,
-} from '../src/ssr-context.ts';
-import { installMatchMediaMock, mockMqls, uninstallMatchMediaMock } from './_helpers.ts';
-
-function makeSSRContext(): SSRRenderContext {
-  return {
-    pendingPromises: [],
-    resolvedData: [],
-    resolvedErrors: [],
-    resourceCounter: 0,
-    resolvedDataByKey: {},
-    resolvedErrorsByKey: {},
-    suspenseCounter: 0,
-    boundaryStartTimes: new Map(),
-  };
-}
+  installMatchMediaMock,
+  mockMqls,
+  uninstallMatchMediaMock,
+  makeSSRContext,
+} from './_helpers.ts';
 
 function setDpr(value: number): void {
   Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value });

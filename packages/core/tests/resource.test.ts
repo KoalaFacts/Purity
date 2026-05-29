@@ -3,7 +3,7 @@ import { mount, onMount } from '../src/component.ts';
 import { debounced } from '../src/debounced.ts';
 import { lazyResource, resource } from '../src/resource.ts';
 import { compute, state, watch } from '../src/signals.ts';
-import { flushAll, tick } from './_helpers.ts';
+import { flushAll, tick, makeSSRContext } from './_helpers.ts';
 
 describe('resource — single-arg fetcher form', () => {
   it('resolves and surfaces data, error, and loading correctly', async () => {
@@ -1158,24 +1158,7 @@ describe('debounced', () => {
 // it. Pass 2 reads the cached value via mutate().
 // ---------------------------------------------------------------------------
 
-import {
-  popSSRRenderContext,
-  pushSSRRenderContext,
-  type SSRRenderContext,
-} from '../src/ssr-context.ts';
-
-function makeSSRContext(): SSRRenderContext {
-  return {
-    pendingPromises: [],
-    resolvedData: [],
-    resolvedErrors: [],
-    resourceCounter: 0,
-    resolvedDataByKey: {},
-    resolvedErrorsByKey: {},
-    suspenseCounter: 0,
-    boundaryStartTimes: new Map(),
-  };
-}
+import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 
 describe('lazyResource — SSR multipass registration (ADR 0024)', () => {
   it('pushes the fetcher promise onto pendingPromises on pass 1', () => {

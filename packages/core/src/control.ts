@@ -1649,6 +1649,17 @@ export function listSSR<T>(
     }
     if (getAttrs) {
       for (const k of Object.keys(getAttrs)) {
+        // Attribute NAMES are interpolated raw into the opening tag — a
+        // hostile name like `foo"><script>...` would close the tag and
+        // inject markup. Validate against the same conservative HTML name
+        // grammar the codegen uses (assertSafeName); skip invalid keys
+        // with a warning rather than silently render unsafe HTML.
+        if (!LIST_SAFE_ATTR_NAME.test(k)) {
+          console.warn(
+            `[Purity] listSSR: dropping attrs key ${JSON.stringify(k)} — not a valid HTML attribute name.`,
+          );
+          continue;
+        }
         const v = getAttrs[k](item, i);
         if (v != null) attrs += ` ${k}="${escapeAttrLocal(v)}"`;
       }
@@ -1681,6 +1692,13 @@ function escapeAttrLocal(s: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
+
+// HTML attribute name grammar — letters, digits, hyphen, colon, underscore.
+// Matches the conservative set codegen's assertSafeName accepts, plus `:`
+// for namespaced attrs (xml:lang, xlink:href). Anything outside this set
+// (quotes, angle brackets, whitespace, equals signs, …) could escape the
+// tag-attribute context and inject markup.
+const LIST_SAFE_ATTR_NAME = /^[A-Za-z_][\w:-]*$/;
 
 // ---------------------------------------------------------------------------
 // suspense(view, fallback) — error-isolating render boundary

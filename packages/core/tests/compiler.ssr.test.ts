@@ -413,6 +413,23 @@ describe('SSR control flow', () => {
     });
     expect(out.__purity_ssr_html__).toBe('<!--l--><li data-id="1">1</li><!--/l-->');
   });
+
+  it('listSSR rejects or escapes hostile attribute NAMES (no XSS via attrs key)', () => {
+    // The attrs object key was interpolated raw into the tag, so a hostile
+    // name like `foo"><script>alert(1)</script>` could break out of the
+    // opening tag. Validate that listSSR doesn't emit a tag-attribute name
+    // that contains characters which can terminate the tag context.
+    const out = listSSR('li', [{ id: 1 }], {
+      text: (item) => String(item.id),
+      attrs: { 'foo"><script>alert(1)</script>': () => 'x' },
+    });
+    const html = out.__purity_ssr_html__;
+    // The literal `"><script>` MUST NOT appear unescaped inside the tag.
+    expect(html).not.toMatch(/<li[^>]*"><script/);
+    // Either the bad name is skipped entirely or its quote/angle-bracket
+    // chars are escaped; in both cases the script tag literal is absent.
+    expect(html).not.toContain('<script>alert(1)</script>');
+  });
 });
 
 describe('generateSSR — integration with control flow', () => {

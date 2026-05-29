@@ -314,11 +314,27 @@ export function stripServerActionBodies(code: string, _id: string): StripResult 
 
   if (edits.length === 0) return null;
 
-  // Apply edits right-to-left so earlier offsets stay valid.
-  edits.sort((a, b) => b.start - a.start);
-  let out = code;
+  // Drop edits nested inside another edit's range. A serverAction handler
+  // can itself contain a serverAction() call, so the walker emits an outer
+  // edit that fully encloses an inner one. The outer STUB already discards
+  // the inner handler, and right-to-left application only stays correct for
+  // DISJOINT ranges — applying the inner edit first shifts the string length
+  // and invalidates the outer edit's stale `end` offset, corrupting
+  // everything after the outer handler. Keep only the outermost edits.
+  edits.sort((a, b) => a.start - b.start);
+  const disjoint: Edit[] = [];
+  let lastEnd = -1;
   for (const edit of edits) {
+    if (edit.start < lastEnd) continue; // contained in the previous kept edit
+    disjoint.push(edit);
+    lastEnd = edit.end;
+  }
+
+  // Apply right-to-left so earlier offsets stay valid.
+  disjoint.sort((a, b) => b.start - a.start);
+  let out = code;
+  for (const edit of disjoint) {
     out = out.slice(0, edit.start) + edit.replacement + out.slice(edit.end);
   }
-  return { code: out, stripped: edits.length };
+  return { code: out, stripped: disjoint.length };
 }

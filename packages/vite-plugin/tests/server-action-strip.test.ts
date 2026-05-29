@@ -30,6 +30,40 @@ describe('stripServerActionBodies — direct helper', () => {
     expect(result!.code).toContain('serverAction');
   });
 
+  it('handles a serverAction nested inside another serverAction handler', () => {
+    // A handler may itself call serverAction — producing nested (overlapping)
+    // edit ranges. Right-to-left application is only valid for disjoint
+    // edits; the inner edit shifts string length and corrupts the outer
+    // edit's stale end offset. The outer STUB subsumes the inner one, so
+    // the contained edit must be dropped. Output must stay valid.
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = serverAction('/api/outer', async (req) => {`,
+      `  const inner = serverAction('/api/inner', async (r) => new Response(INNER_SECRET));`,
+      `  await db.insert({ outer: OUTER_SECRET });`,
+      `  return new Response('ok');`,
+      `});`,
+      `export const tail = 42;`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).not.toBeNull();
+    // Both secrets gone (outer STUB subsumes the whole handler).
+    expect(result!.code).not.toContain('INNER_SECRET');
+    expect(result!.code).not.toContain('OUTER_SECRET');
+    expect(result!.code).not.toContain('db.insert');
+    // Code AFTER the outer handler must survive intact — corruption from a
+    // stale offset would drop or duplicate this.
+    expect(result!.code).toContain('export const tail = 42;');
+    expect(result!.code).toContain('/api/outer');
+    // The rewritten source must still be syntactically valid (no offset
+    // corruption). Strip module-level import/export keywords so `new
+    // Function` (which only parses script bodies) can parse it; any
+    // offset corruption would leave unbalanced braces and throw.
+    const asScript = result!.code.replace(/import .*?;/g, '').replace(/\bexport /g, '');
+    expect(() => new Function(asScript)).not.toThrow();
+  });
+
   it('replaces a block-bodied function expression handler', () => {
     const src = [
       `import { serverAction } from '@purityjs/core';`,

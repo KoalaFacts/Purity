@@ -20,8 +20,8 @@ export function makeSSRContext(): SSRRenderContext {
     resolvedData: [],
     resolvedErrors: [],
     resourceCounter: 0,
-    resolvedDataByKey: {},
-    resolvedErrorsByKey: {},
+    resolvedDataByKey: Object.create(null),
+    resolvedErrorsByKey: Object.create(null),
     suspenseCounter: 0,
     boundaryStartTimes: new Map(),
   };

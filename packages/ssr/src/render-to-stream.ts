@@ -207,8 +207,9 @@ async function renderShell(
   const start = Date.now();
   const resolvedData: unknown[] = [];
   const resolvedErrors: unknown[] = [];
-  const resolvedDataByKey: Record<string, unknown> = {};
-  const resolvedErrorsByKey: Record<string, unknown> = {};
+  // Null-prototype: see render-to-string.ts for rationale.
+  const resolvedDataByKey: Record<string, unknown> = Object.create(null);
+  const resolvedErrorsByKey: Record<string, unknown> = Object.create(null);
   const boundaryStartTimes = new Map<number, number>();
   const boundaryDeadlines = new Map<number, number>();
   const timedOutBoundaries = new Set<number>();
@@ -297,8 +298,8 @@ async function renderBoundary(
   const start = Date.now();
   const resolvedData: unknown[] = [];
   const resolvedErrors: unknown[] = [];
-  const resolvedDataByKey: Record<string, unknown> = {};
-  const resolvedErrorsByKey: Record<string, unknown> = {};
+  const resolvedDataByKey: Record<string, unknown> = Object.create(null);
+  const resolvedErrorsByKey: Record<string, unknown> = Object.create(null);
   // Per-boundary deadline is just the supplied timeout — boundary timing
   // started the moment the shell registered it; we reuse that wall clock.
   const boundaryStartTimes = new Map<number, number>();

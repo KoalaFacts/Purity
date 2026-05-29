@@ -148,6 +148,15 @@ let hydrationCache: unknown[] | null = null;
 let hydrationCursor = 0;
 let hydrationCacheByKey: Record<string, unknown> | null = null;
 
+// Null-prototype copy so `key in hydrationCacheByKey` can't match prototype
+// methods (`constructor`, `toString`, `__proto__`, `hasOwnProperty`, …) for
+// a user-supplied `key`. JSON.parse always returns prototype-having objects.
+function intoNullProto(src: Record<string, unknown>): Record<string, unknown> {
+  const dst = Object.create(null) as Record<string, unknown>;
+  for (const k of Object.keys(src)) dst[k] = src[k];
+  return dst;
+}
+
 /**
  * Accept the legacy array shape (`[v0, v1, …]`) or the new object shape
  * (`{ ordered: [...], keyed: {...} }`). Older renderToString output is the
@@ -168,7 +177,9 @@ export function primeHydrationCache(data: unknown): void {
     const obj = data as { ordered?: unknown; keyed?: unknown };
     hydrationCache = Array.isArray(obj.ordered) ? obj.ordered : [];
     hydrationCacheByKey =
-      obj.keyed && typeof obj.keyed === 'object' ? (obj.keyed as Record<string, unknown>) : null;
+      obj.keyed && typeof obj.keyed === 'object'
+        ? intoNullProto(obj.keyed as Record<string, unknown>)
+        : null;
     return;
   }
   hydrationCache = null;

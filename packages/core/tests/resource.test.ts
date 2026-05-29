@@ -1295,3 +1295,72 @@ describe('lazyResource — SSR multipass registration (ADR 0024)', () => {
     r.dispose();
   });
 });
+
+// ---------------------------------------------------------------------------
+// SSR keyed-cache prototype safety (audit follow-up to the listener-leak fixes).
+//
+// `ssrCtx.resolvedDataByKey` is a Record<string, unknown>. Without a null
+// prototype, `key in resolvedDataByKey` returns true for inherited names
+// (`constructor`, `toString`, `__proto__`, `hasOwnProperty`, …) and a
+// developer who chooses one of those as a resource key picks up
+// Object.prototype's value instead of seeing a clean miss. The renderers
+// now construct these maps via Object.create(null); these tests pin that.
+// ---------------------------------------------------------------------------
+describe('resource — SSR keyed cache prototype safety', () => {
+  for (const reserved of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    it(`reserved key '${reserved}' on a fresh SSR ctx reports NOT cached on pass 1`, () => {
+      const ctx = makeSSRContext();
+      pushSSRRenderContext(ctx);
+      try {
+        let fetcherCalls = 0;
+        const r = lazyResource(
+          async () => {
+            fetcherCalls++;
+            return 'pass-1';
+          },
+          { key: reserved },
+        );
+        r.fetch();
+        // Fix: fresh ctx ⇒ key NOT present ⇒ pass-1 branch ⇒ fetcher fires.
+        // Leak: `reserved in ctx.resolvedDataByKey` would be true, taking
+        // the pass-2 branch and reading Object.prototype's value as the
+        // cached resource value.
+        expect(fetcherCalls).toBe(1);
+        expect(ctx.pendingPromises.length).toBe(1);
+      } finally {
+        popSSRRenderContext();
+      }
+    });
+  }
+
+  it('a real round-trip with a reserved key still works (write + read back)', async () => {
+    const ctx = makeSSRContext();
+    pushSSRRenderContext(ctx);
+    try {
+      const r1 = lazyResource(async (id: number) => `user-${id}`, { key: '__proto__' });
+      r1.fetch(7);
+      await Promise.all(ctx.pendingPromises);
+      // Pass-1 wrote into the keyed cache.
+      // Use Object.prototype.hasOwnProperty.call so this assertion itself
+      // is prototype-safe — we want to verify the value, not test `in`.
+      expect(Object.prototype.hasOwnProperty.call(ctx.resolvedDataByKey, '__proto__')).toBe(true);
+      expect((ctx.resolvedDataByKey as Record<string, unknown>)['__proto__']).toBe('user-7');
+
+      // Pass 2 with the same key should read the cached value via mutate().
+      ctx.pendingPromises.length = 0;
+      let fetcherCalls = 0;
+      const r2 = lazyResource(
+        async (id: number) => {
+          fetcherCalls++;
+          return `user-${id}`;
+        },
+        { key: '__proto__' },
+      );
+      r2.fetch(7);
+      expect(fetcherCalls).toBe(0);
+      expect(r2()).toBe('user-7');
+    } finally {
+      popSSRRenderContext();
+    }
+  });
+});

@@ -107,8 +107,11 @@ export async function renderToString(
 
   const resolvedData: unknown[] = [];
   const resolvedErrors: unknown[] = [];
-  const resolvedDataByKey: Record<string, unknown> = {};
-  const resolvedErrorsByKey: Record<string, unknown> = {};
+  // Null-prototype: `key in resolvedDataByKey` and writes like
+  // `resolvedDataByKey['__proto__'] = ...` can't traverse / mutate
+  // Object.prototype for a user-supplied resource `key`.
+  const resolvedDataByKey: Record<string, unknown> = Object.create(null);
+  const resolvedErrorsByKey: Record<string, unknown> = Object.create(null);
   // Boundary tracking — shared across passes so deadlines and timed-out
   // marks survive the render loop. ADR 0006 Phase 2.
   const boundaryStartTimes = new Map<number, number>();

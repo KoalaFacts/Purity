@@ -40,6 +40,7 @@ accept. Numbered sequentially.
 | [0044](./0044-virtual-routes-typed-dts.md)       | Sibling routes.d.ts with typed importFn         | Proposed                |
 | [0045](./0045-aria-nav-announce.md)              | ARIA live-region announce on navigate           | Proposed                |
 | [0046](./0046-async-view-transitions.md)         | Async-aware view transitions                    | Proposed                |
+| [0047](./0047-live-data-signals.md)              | Live data signals (eventSource + webSocket)     | Proposed                |
 
 ## Template
 

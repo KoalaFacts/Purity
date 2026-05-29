@@ -132,6 +132,13 @@ export function webSocketSignal<T>(
     const closing = ws;
     ws = null;
     stateAccessor('closing');
+    // Detach our four listeners BEFORE close() so a late 'message' arriving
+    // after the socket's async close path can't ride back into the shared
+    // inner state on the next reconnect cycle. Matches eventSourceSignal.
+    closing.removeEventListener('open', onOpen);
+    closing.removeEventListener('close', onClose);
+    closing.removeEventListener('error', onError);
+    closing.removeEventListener('message', onMessage);
     try {
       closing.close();
     } catch (err) {

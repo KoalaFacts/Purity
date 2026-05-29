@@ -269,4 +269,41 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     });
     expect(instances[0].protocols).toEqual(['v1', 'v2']);
   });
+
+  it('close() detaches the four listeners so a late message after reconnect cannot ride into the new state', async () => {
+    const sig = webSocketSignal<number>('/ws', {
+      initialValue: 0,
+      validate: isNumber,
+      reconnect: 'on-visible',
+    });
+    expect(instances).toHaveLength(1);
+    const first = instances[0];
+    first.fireOpen();
+    first.fireMessage(7);
+    expect(sig()).toBe(7);
+
+    // Trigger the close path via hidden visibility.
+    setVisibility('hidden');
+    await tick();
+
+    // All four of our listeners should be detached from the old socket.
+    expect(first.listeners.get('open')?.length ?? 0).toBe(0);
+    expect(first.listeners.get('close')?.length ?? 0).toBe(0);
+    expect(first.listeners.get('error')?.length ?? 0).toBe(0);
+    expect(first.listeners.get('message')?.length ?? 0).toBe(0);
+
+    // Reconnect: a NEW socket opens.
+    setVisibility('visible');
+    await tick();
+    expect(instances).toHaveLength(2);
+
+    // The OLD socket dispatches a late message (real-world: in-flight bytes
+    // arrive after close() but before the close handshake completes). With
+    // the leak, this would update the shared inner state to 99. With the
+    // fix the listeners are gone — the new socket's 42 wins.
+    first.fireMessage(99);
+    instances[1].fireOpen();
+    instances[1].fireMessage(42);
+    expect(sig()).toBe(42);
+  });
 });

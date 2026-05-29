@@ -81,10 +81,15 @@ export function optimistic<TArgs>(
   return {
     url: action.url,
     async invoke(args: TArgs): Promise<Response> {
-      // 1. Apply optimistic local state synchronously, capturing rollback.
-      const rollback = options.apply ? options.apply(args) : undefined;
+      // Compute the request payload FIRST. If `body`/`init` throws (a bad
+      // serializer, a circular structure), we bail before applying any
+      // optimistic mutation — so a serialization error can't strand the UI
+      // in an optimistic state with no rollback.
       const init = typeof options.init === 'function' ? options.init(args) : options.init;
       const body = options.body(args);
+
+      // Apply optimistic local state synchronously, capturing rollback.
+      const rollback = options.apply ? options.apply(args) : undefined;
 
       try {
         const response = await action.invoke(body, init);

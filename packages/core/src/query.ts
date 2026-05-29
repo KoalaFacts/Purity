@@ -138,6 +138,20 @@ function makeStampedFetcher<T>(
  */
 export function query<T>(options: QueryOptions<T>): ResourceAccessor<T> {
   const keyStr = serializeKey(options.key);
+
+  // SSR: bypass the module-level cache. That Map is process-global and
+  // persists across requests — sharing a cached entry between two SSR
+  // renders would leak one request's data into another. Delegate straight
+  // to resource(), whose own per-SSRRenderContext cache (keyed by `key`)
+  // handles dedup within a single render and pairs the resolved value to
+  // the client for hydration.
+  if (getSSRRenderContext() !== null) {
+    return resource((info) => options.fetcher(options.key, info), {
+      initialValue: options.initialValue,
+      key: keyStr,
+    });
+  }
+
   const existing = cache.get(keyStr);
   if (existing) {
     warnOnConfigMismatch(keyStr, options, existing);

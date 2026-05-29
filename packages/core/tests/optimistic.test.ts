@@ -303,4 +303,42 @@ describe('optimistic — options shape (ADR 0049)', () => {
     });
     await expect(wrapped.invoke()).resolves.toBeInstanceOf(Response);
   });
+
+  it('does NOT apply optimistic state when body() throws (no dirty UI strand)', async () => {
+    let applied = false;
+    let requested = false;
+    const act = makeFakeAction('/never', () => {
+      requested = true;
+      return new Response('ok');
+    });
+    const wrapped = optimistic<{ x: number }>(act, {
+      body: () => {
+        throw new Error('cannot serialize');
+      },
+      apply: () => {
+        applied = true;
+        return () => {};
+      },
+    });
+    await expect(wrapped.invoke({ x: 1 })).rejects.toThrow('cannot serialize');
+    // body threw before apply ran → no optimistic mutation, no request.
+    expect(applied).toBe(false);
+    expect(requested).toBe(false);
+  });
+
+  it('does NOT apply optimistic state when init() throws', async () => {
+    let applied = false;
+    const act = makeFakeAction('/never', () => new Response('ok'));
+    const wrapped = optimistic<void>(act, {
+      body: () => null,
+      init: () => {
+        throw new Error('bad init');
+      },
+      apply: () => {
+        applied = true;
+      },
+    });
+    await expect(wrapped.invoke()).rejects.toThrow('bad init');
+    expect(applied).toBe(false);
+  });
 });

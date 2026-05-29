@@ -319,4 +319,57 @@ describe('query — SSR (ADR 0048)', () => {
       popSSRRenderContext();
     }
   });
+
+  it('does NOT populate the module cache from an SSR render (no cross-request leak)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ctx = makeSSRContext();
+    pushSSRRenderContext(ctx);
+    try {
+      query({
+        key: 'ssr-leak',
+        fetcher: () => Promise.resolve('secret'),
+        initialValue: null,
+        staleTime: 1000,
+      });
+    } finally {
+      popSSRRenderContext();
+    }
+    // A client query with the SAME key but DIFFERENT config must NOT warn:
+    // a warning would mean the SSR render wrongly cached an entry that the
+    // client call then hit (the cross-request leak). Silence proves the SSR
+    // render left the module cache empty.
+    query({
+      key: 'ssr-leak',
+      fetcher: () => Promise.resolve('fresh'),
+      initialValue: null,
+      staleTime: 9999,
+    });
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('two SSR renders with the same key get independent resources', () => {
+    const ctxA = makeSSRContext();
+    pushSSRRenderContext(ctxA);
+    let qA: ReturnType<typeof query<string>>;
+    try {
+      qA = query({ key: 'iso', fetcher: () => Promise.resolve('A'), initialValue: '' });
+    } finally {
+      popSSRRenderContext();
+    }
+    const ctxB = makeSSRContext();
+    pushSSRRenderContext(ctxB);
+    let qB: ReturnType<typeof query<string>>;
+    try {
+      qB = query({ key: 'iso', fetcher: () => Promise.resolve('B'), initialValue: '' });
+    } finally {
+      popSSRRenderContext();
+    }
+    // Distinct accessor instances — no shared module-cache entry between
+    // the two server renders.
+    expect(qA).not.toBe(qB);
+    // Each render registered its own pending promise on its own context.
+    expect(ctxA.pendingPromises.length).toBeGreaterThanOrEqual(1);
+    expect(ctxB.pendingPromises.length).toBeGreaterThanOrEqual(1);
+  });
 });

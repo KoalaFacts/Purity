@@ -92,10 +92,13 @@ export function optimistic<TArgs>(
 
 `invoke(args)` runs the following sequence:
 
-1. **`apply(args)`** — synchronous. Capture the rollback thunk (or
+1. **Compute body + init** — `body(args)` and (if `init` is a
+   function) `init(args)`. Done _before_ `apply` so a throwing
+   serializer (circular structure, bad input) bails before any
+   optimistic mutation — a doomed request never strands the UI in an
+   optimistic state with no rollback.
+2. **`apply(args)`** — synchronous. Capture the rollback thunk (or
    `undefined`). The UI sees the optimistic change immediately.
-2. **Compute body + init** — `body(args)` and (if `init` is a
-   function) `init(args)`.
 3. **`action.invoke(body, init)`** — fire the request.
 4. **On `Response`:**
    - If `isSuccess(response)` (default: `response.ok`):

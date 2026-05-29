@@ -179,6 +179,9 @@ export { type BatteryInfo, batterySignal } from './battery-signal.ts';
 export { type NetworkInformation, networkInformationSignal } from './network-information-signal.ts';
 export { type IdleDetectorLike, idleSignal, type IdleSignalState } from './idle-signal.ts';
 
+// Query SWR — ADR 0048.
+export { invalidateQuery, query, type QueryKey, type QueryOptions } from './query.ts';
+
 // Live data signals — ADR 0047.
 export {
   eventSourceSignal,

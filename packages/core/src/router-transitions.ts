@@ -15,10 +15,11 @@
 //   * `prefers-reduced-motion: reduce` user preference → skip the transition;
 //     navigate() runs unwrapped. Saves both motion sensitivity and CPU.
 //
-// Async route handlers (resource() inside the route view) aren't fully
-// captured — startViewTransition's callback completes before async work
-// settles. The MVP wraps the synchronous reactive path; richer support is
-// a follow-up.
+// Async-aware (ADR 0038): pass `awaitNavigation` to hold the snapshot until
+// route data resolves. The View Transitions API supports an async callback
+// — `startViewTransition` waits for the returned promise before sampling
+// the "after" state and animating. Apps with loader-driven routes pass a
+// thunk that resolves once the new route's data has settled.
 // ---------------------------------------------------------------------------
 
 import { _setNavigateWrapper } from './router.ts';
@@ -32,6 +33,34 @@ export interface ManageNavTransitionsOptions {
    * is supported and the user hasn't requested reduced motion."
    */
   shouldTransition?: (url: URL, replace: boolean) => boolean;
+  /**
+   * Async-aware view transitions (ADR 0038). When supplied, the wrapper
+   * awaits this thunk inside `startViewTransition`'s callback before the
+   * browser samples the "after" state. Use it to hold the snapshot until
+   * route data is ready — typical pattern:
+   *
+   * ```ts
+   * manageNavTransitions({
+   *   awaitNavigation: async () => {
+   *     // Wait one task tick so the route handler's reactive watchers
+   *     // have flushed and any `resource()` calls have been registered.
+   *     await Promise.resolve();
+   *     // Then await the new route's loader promise(s).
+   *     await Promise.all(pendingLoaderPromises());
+   *   },
+   * });
+   * ```
+   *
+   * The thunk receives `(url, replace)` for routing decisions. Throwing
+   * (or rejecting) aborts the transition; navigation still completes
+   * because the URL signal update happened synchronously before the await.
+   *
+   * Return type is `unknown` so synchronous returns also work — the
+   * wrapper just `await`s whatever the thunk returns, and `await
+   * <non-promise>` is the value itself. Useful for predicate-style
+   * gates like `awaitNavigation: () => alreadyReady ? null : asyncFetch()`.
+   */
+  awaitNavigation?: (url: URL, replace: boolean) => unknown;
 }
 
 // Don't extend `Document` — the modern TS DOM lib already declares
@@ -99,6 +128,7 @@ export function manageNavTransitions(options: ManageNavTransitionsOptions = {}):
     return () => {};
   }
   const should = options.shouldTransition;
+  const awaitNavigation = options.awaitNavigation;
 
   _setNavigateWrapper((url, replace, update) => {
     if (prefersReducedMotion()) {
@@ -109,13 +139,22 @@ export function manageNavTransitions(options: ManageNavTransitionsOptions = {}):
       update();
       return;
     }
-    // Synchronous callback: urlSignal(url) update fires reactive watchers
-    // synchronously, route handlers re-render synchronously, DOM mutations
-    // land before the function returns. startViewTransition then captures
-    // the new state and animates from the snapshot it took before.
-    (document as DocumentWithViewTransition).startViewTransition?.(() => {
-      update();
-    });
+    // The view-transition callback runs the URL update synchronously so
+    // reactive watchers fire + the route view renders before the browser
+    // samples the "after" snapshot. When `awaitNavigation` is supplied
+    // the callback is async — the browser holds the snapshot until the
+    // returned promise settles (ADR 0038). Throwing or rejecting aborts
+    // the transition but the navigation already happened (update was sync).
+    (document as DocumentWithViewTransition).startViewTransition?.(
+      awaitNavigation
+        ? async (): Promise<void> => {
+            update();
+            await awaitNavigation(url, replace);
+          }
+        : (): void => {
+            update();
+          },
+    );
   });
 
   return () => _setNavigateWrapper(null);

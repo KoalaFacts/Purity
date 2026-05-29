@@ -36,6 +36,7 @@ accept. Numbered sequentially.
 | [0040](./0040-observer-signal-primitives.md)     | Observer-as-signal primitives                   | Proposed                |
 | [0041](./0041-environment-preference-signals.md) | Environment + system preference signals         | Proposed                |
 | [0042](./0042-capability-permission-signals.md)  | Capability + permission signals                 | Proposed                |
+| [0046](./0046-async-view-transitions.md)         | Async-aware view transitions                    | Proposed                |
 
 ## Template
 

@@ -151,9 +151,11 @@ export function eventSourceSignal<T>(
   const open = (): void => {
     if (es) return;
     try {
-      // Branch the constructor call so CodeQL's web externs (which model
-      // EventSource as single-argument) don't flag a `, undefined` trailing
-      // argument as superfluous. Both branches are spec-compliant.
+      // codeql[js/superfluous-trailing-arguments]
+      // CodeQL's web externs model EventSource as single-argument, but the
+      // spec accepts an EventSourceInit dict as the second argument. The
+      // `withCredentials` option is part of the public ADR 0047 API;
+      // deleting the 2-arg call is not an option.
       es = withCredentials ? new EventSource(url, { withCredentials: true }) : new EventSource(url);
     } catch (err) {
       console.warn(`[purity] eventSourceSignal('${label}') failed to open:`, err);

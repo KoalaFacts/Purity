@@ -24,7 +24,7 @@ describe('css', () => {
     expect(scope1).not.toBe(scope2);
   });
 
-  it('injects a <style> element into head', () => {
+  it('injects a <style> element into head wrapping CSS in @scope', () => {
     const scope = css`
       .box {
         padding: 1rem;
@@ -32,10 +32,11 @@ describe('css', () => {
     `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl).not.toBeNull();
-    expect(styleEl.textContent).toContain(`.${scope} .box`);
+    expect(styleEl!.textContent).toContain(`@scope (.${scope})`);
+    expect(styleEl!.textContent).toContain('.box');
   });
 
-  it('scopes selectors with the scope class', () => {
+  it('keeps selectors verbatim inside the @scope block (no specificity bump)', () => {
     const scope = css`
       h1 {
         font-size: 2rem;
@@ -45,22 +46,27 @@ describe('css', () => {
       }
     `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
-    expect(styleEl.textContent).toContain(`.${scope} h1`);
-    expect(styleEl.textContent).toContain(`.${scope} .card`);
+    // Old behavior rewrote selectors to `.p-N h1` / `.p-N .card`. The new
+    // emission leaves them unrewritten — @scope provides the bounding.
+    expect(styleEl!.textContent).toContain(`@scope (.${scope})`);
+    expect(styleEl!.textContent).toContain('h1');
+    expect(styleEl!.textContent).toContain('.card');
+    expect(styleEl!.textContent).not.toContain(`.${scope} h1`);
   });
 
-  it('handles :host as the scope element itself', () => {
+  it('rewrites :host to :scope inside @scope', () => {
     const scope = css`
       :host {
         display: block;
       }
     `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
-    expect(styleEl.textContent).toContain(`.${scope} `);
-    expect(styleEl.textContent).not.toContain(':host');
+    expect(styleEl!.textContent).toContain(':scope');
+    expect(styleEl!.textContent).not.toContain(':host');
+    expect(styleEl!.textContent).toContain(`@scope (.${scope})`);
   });
 
-  it('handles multiple selectors', () => {
+  it('handles multiple selectors verbatim inside @scope', () => {
     const scope = css`
       h1,
       h2 {
@@ -68,8 +74,9 @@ describe('css', () => {
       }
     `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
-    expect(styleEl.textContent).toContain(`.${scope} h1`);
-    expect(styleEl.textContent).toContain(`.${scope} h2`);
+    expect(styleEl!.textContent).toContain(`@scope (.${scope})`);
+    expect(styleEl!.textContent).toContain('h1');
+    expect(styleEl!.textContent).toContain('h2');
   });
 
   it('supports static interpolated values', () => {
@@ -80,7 +87,7 @@ describe('css', () => {
       }
     `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
-    expect(styleEl.textContent).toContain('tomato');
+    expect(styleEl!.textContent).toContain('tomato');
   });
 
   it('supports reactive interpolated values', async () => {
@@ -92,14 +99,14 @@ describe('css', () => {
     `;
 
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
-    expect(styleEl.textContent).toContain('red');
+    expect(styleEl!.textContent).toContain('red');
 
     color('blue');
     await tick();
-    expect(styleEl.textContent).toContain('blue');
+    expect(styleEl!.textContent).toContain('blue');
   });
 
-  it('keeps multiple selectors scoped across reactive updates', async () => {
+  it('keeps multiple selectors inside @scope across reactive updates', async () => {
     const m = state('0');
     const scope = css`
       h1,
@@ -109,14 +116,15 @@ describe('css', () => {
     `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
 
-    expect(styleEl.textContent).toContain(`.${scope} h1`);
-    expect(styleEl.textContent).toContain(`.${scope} h2`);
+    expect(styleEl!.textContent).toContain(`@scope (.${scope})`);
+    expect(styleEl!.textContent).toContain('h1');
+    expect(styleEl!.textContent).toContain('h2');
 
     m('1rem');
     await tick();
-    expect(styleEl.textContent).toContain('1rem');
-    expect(styleEl.textContent).toContain(`.${scope} h1`);
-    expect(styleEl.textContent).toContain(`.${scope} h2`);
+    expect(styleEl!.textContent).toContain('1rem');
+    expect(styleEl!.textContent).toContain('h1');
+    expect(styleEl!.textContent).toContain('h2');
   });
 
   it('handles multiple reactive values in one rule', async () => {
@@ -130,17 +138,17 @@ describe('css', () => {
     `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
 
-    expect(styleEl.textContent).toContain('color: black');
-    expect(styleEl.textContent).toContain('background: white');
+    expect(styleEl!.textContent).toContain('color: black');
+    expect(styleEl!.textContent).toContain('background: white');
 
     fg('red');
     bg('blue');
     await tick();
-    expect(styleEl.textContent).toContain('color: red');
-    expect(styleEl.textContent).toContain('background: blue');
+    expect(styleEl!.textContent).toContain('color: red');
+    expect(styleEl!.textContent).toContain('background: blue');
   });
 
-  it('falls back to per-update scoping when a value is in selector position', async () => {
+  it('supports a reactive value in selector position', async () => {
     const sel = state('.a');
     const scope = css`
       ${() => sel()} {
@@ -148,11 +156,15 @@ describe('css', () => {
       }
     `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
-    expect(styleEl.textContent).toContain(`.${scope} .a`);
+    // @scope's body changes in lockstep with the reactive selector; no
+    // class-prefix rewrite anymore, so the selector appears verbatim.
+    expect(styleEl!.textContent).toContain(`@scope (.${scope})`);
+    expect(styleEl!.textContent).toContain('.a');
 
     sel('.b');
     await tick();
-    expect(styleEl.textContent).toContain(`.${scope} .b`);
+    expect(styleEl!.textContent).toContain('.b');
+    expect(styleEl!.textContent).not.toContain('.a {');
   });
 
   it('handles escaped quote in CSS string literal', async () => {
@@ -163,10 +175,10 @@ describe('css', () => {
       }
     `;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
-    expect(styleEl.textContent).toContain('say');
+    expect(styleEl!.textContent).toContain('say');
     v('B');
     await tick();
-    expect(styleEl.textContent).toContain('B');
+    expect(styleEl!.textContent).toContain('B');
   });
 
   it('handles unterminated /* */ comment in template', () => {
@@ -303,7 +315,7 @@ describe('css', () => {
     expect(styleEl!.textContent).toBe(before);
   });
 
-  it('handles reactive values inside @media (depth>1, scopeSelectors body walk)', async () => {
+  it('handles reactive values inside @media', async () => {
     const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
     const c = state('red');
     const scope = css`
@@ -322,16 +334,91 @@ describe('css', () => {
     warn.mockRestore();
   });
 
-  it('falls back when reactive template has unterminated comment before placeholder', async () => {
+  it('reacts to a value just after an unterminated comment without crashing', async () => {
     const v = state('1');
-    // Strings: ["/* never closes ", ""] — placeholder is in selector position after
-    // /* with no */, so allPlaceholdersInBodies walks past the unterminated comment
-    // and concludes depth <= 0 at the placeholder gap (fallback).
+    // The @scope-based path is tolerant of malformed input at template-level;
+    // jsdom may warn, but the watcher still rebuilds on signal change.
     const scope = css`/* unterminated ${() => v()}`;
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl).not.toBeNull();
     v('2');
     await tick();
     expect(styleEl!.textContent).toContain('2');
+  });
+
+  it('wraps emitted styles in @layer purity', () => {
+    const scope = css`
+      .box {
+        color: red;
+      }
+    `;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl!.textContent!.trim().startsWith('@layer purity {')).toBe(true);
+    expect(styleEl!.textContent).toContain(`@scope (.${scope})`);
+  });
+
+  it('wraps reactive emitted styles in @layer purity across updates', async () => {
+    const c = state('red');
+    const scope = css`
+      .box {
+        color: ${() => c()};
+      }
+    `;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl!.textContent!.trim().startsWith('@layer purity {')).toBe(true);
+
+    c('blue');
+    await tick();
+    expect(styleEl!.textContent!.trim().startsWith('@layer purity {')).toBe(true);
+    expect(styleEl!.textContent).toContain('blue');
+  });
+
+  it('installs `@layer purity, user;` order declaration exactly once', () => {
+    css`
+      .a {
+        color: red;
+      }
+    `;
+    css`
+      .b {
+        color: green;
+      }
+    `;
+    const orderEls = document.querySelectorAll('style[data-purity-layers]');
+    expect(orderEls.length).toBe(1);
+    expect(orderEls[0].textContent).toBe('@layer purity, user;');
+  });
+
+  it('prepends the layer-order declaration before the first scoped <style>', () => {
+    const scope = css`
+      .late {
+        color: red;
+      }
+    `;
+    const orderEl = document.head.querySelector('style[data-purity-layers]');
+    const scopeEl = document.head.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(orderEl).not.toBeNull();
+    expect(scopeEl).not.toBeNull();
+    // compareDocumentPosition: bit 4 = follows. orderEl must precede scopeEl.
+    const rel = orderEl!.compareDocumentPosition(scopeEl!);
+    expect(rel & Node.DOCUMENT_POSITION_FOLLOWING).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('leaves :host(.x) and :host-context() alone (not rewritten)', () => {
+    // The pre-@scope implementation only handled bare `:host` as a sole
+    // selector. The :host → :scope rewrite preserves that contract: more
+    // complex Shadow-only forms are left untouched (and won't be valid in
+    // the light-DOM fallback either way, but we don't corrupt them).
+    const scope = css`
+      :host(.special) {
+        color: blue;
+      }
+      :host-context(.dark) {
+        color: white;
+      }
+    `;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl!.textContent).toContain(':host(.special)');
+    expect(styleEl!.textContent).toContain(':host-context(.dark)');
   });
 });

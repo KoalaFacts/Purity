@@ -1,8 +1,8 @@
 # @purityjs/core
 
-Purity core framework — 21 functions, no virtual DOM, TC39-Signals-inspired reactivity.
+Purity core framework — 48 functions, no virtual DOM, TC39-Signals-inspired reactivity.
 
-## API (21 functions)
+## API (48 functions)
 
 ```ts
 state(initial)              // read: count(), write: count(5), update: count(v => v+1)
@@ -17,19 +17,54 @@ resource(source, fetcher)    // re-fetches on source change; falsy source = skip
 lazyResource(fetcher)        // imperative: r.fetch(args) triggers, r.refresh() reuses last
 html`<div>...</div>`        // JIT compiled template → DOM nodes
 css`.box { color: red; }`   // scoped styles (Shadow DOM in components, <style> + class scoping outside)
-component('p-tag', renderFn) // custom element with Shadow DOM
+component('p-tag', renderFn, options?) // custom element with Shadow DOM; options={formAssociated} per ADR 0036
 slot<E>(name?)               // context-aware slot accessor
+internals()                  // host element ElementInternals (inside component())
+bindComponentState(name, fn) // reactive :state(name) on host, ref-counted (ADR 0035)
 teleport(target, viewFn)     // render to different DOM location, reactive
 mount(componentFn, el)       // mount to DOM, returns { unmount }
 onMount(fn)                  // after DOM insertion (microtask)
 onDestroy(fn)                // on unmount
 onDispose(fn)                // register cleanup
 onError(fn)                  // error boundary
+onFormAssociated(fn)         // form participation (ADR 0036)
+onFormDisabled(fn)           // form/fieldset disabled flips (ADR 0036)
+onFormReset(fn)              // form reset (ADR 0036)
+onFormStateRestore(fn)       // bfcache / autofill restore (ADR 0036)
 match(sourceFn, cases)       // pattern matching
 when(condFn, thenFn, elseFn?) // boolean conditional
 each(listFn, mapFn, keyFn?)  // list rendering — mapFn receives item as accessor: (item: () => T, i: number)
 list(tag, listAccessor, textOrOptions, keyFn?) // leaner list of single-tag rows
 suspense(view, fallback, { timeout? }) // SSR error/timeout isolation boundary — emits `<!--s:N--><!--/s:N-->` markers (ADR 0006 Phase 1+2)
+
+// Persistence + lifecycle signal primitives — ADR 0039
+localSignal(key, default, options?)      // localStorage/sessionStorage-backed, cross-tab synced
+broadcastSignal(channel, default, validate)  // BroadcastChannel-backed cross-tab signal — validate is a required type-predicate; incoming messages that fail are dropped
+pageVisibilitySignal()                   // 'visible' | 'hidden' — visibilitychange
+pageLifecycleSignal()                    // 'active' | 'passive' | 'hidden' | 'frozen' | 'terminated'
+bfcacheRestoreSignal()                   // counter — increments on each bfcache restore
+
+// Observer-as-signal primitives — ADR 0040
+intersectionSignal(target, options?)     // IntersectionObserver → boolean
+mutationSignal(target, options?)         // MutationObserver → MutationRecord[] (latest batch)
+mediaSignal(query)                       // matchMedia → boolean (cached per query)
+resizeSignal(target, options?)           // ResizeObserver → DOMRectReadOnly (contentRect)
+
+// Environment + system preference signals — ADR 0041
+onlineSignal()                           // boolean — navigator.onLine + online/offline events
+prefersColorSchemeSignal()               // 'light' | 'dark'
+prefersReducedMotionSignal()             // boolean
+prefersContrastSignal()                  // 'no-preference' | 'more' | 'less' | 'custom'
+screenOrientationSignal()                // 'portrait' | 'landscape'
+localeSignal()                           // string — navigator.language + languagechange
+devicePixelRatioSignal()                 // number — re-binds on DPR change
+fullscreenSignal()                       // Element | null — document.fullscreenElement
+
+// Capability + permission signals — ADR 0042
+permissionSignal(name)                   // PermissionState — async navigator.permissions.query
+batterySignal()                          // BatteryInfo | null — async navigator.getBattery
+networkInformationSignal()               // NetworkInformation — navigator.connection
+idleSignal(detector)                     // IdleSignalState — wraps a user-started IdleDetector
 ```
 
 ## Hydration
@@ -112,6 +147,12 @@ Options on `resource()` / `lazyResource()`: `initialValue`, `retry` (number or
 cache key — pass any unique-per-render string when creation is
 conditional, otherwise the index-based pairing shifts between server
 and client).
+
+Inside a `component()`, `resource()` auto-wires `bindComponentState`
+for `'loading'` and `'error'` on the host element, so styling reacts
+natively: `:host(:state(loading)) { … }` from inside the component, or
+`p-card:state(loading) { … }` from outside. Ref-counted across
+multiple resources in the same component. See ADR 0035.
 
 ## Template Syntax
 

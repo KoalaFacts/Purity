@@ -11,8 +11,21 @@ export {
   html,
 } from './compiler/compile.ts';
 export type { ComponentFn, MountResult } from './component.ts';
-// Lifecycle (3 hooks + error) + hydrate
-export { hydrate, mount, onDestroy, onDispose, onError, onMount } from './component.ts';
+// Lifecycle (3 hooks + error) + hydrate + custom-state binder
+// + form-associated lifecycle hooks (ADR 0036)
+export {
+  bindComponentState,
+  hydrate,
+  mount,
+  onDestroy,
+  onDispose,
+  onError,
+  onFormAssociated,
+  onFormDisabled,
+  onFormReset,
+  onFormStateRestore,
+  onMount,
+} from './component.ts';
 export type { SuspenseErrorInfo, SuspenseErrorPhase, SuspenseOptions } from './control.ts';
 // Control flow
 export {
@@ -29,12 +42,13 @@ export {
 export type { DebouncedAccessor } from './debounced.ts';
 // Debounced derived signal
 export { debounced } from './debounced.ts';
-export type { SlotAccessor } from './elements.ts';
+export type { ComponentOptions, SlotAccessor } from './elements.ts';
 // Components, slots, teleport
 export {
   _getRegisteredComponent,
   _renderComponentSSR,
   component,
+  internals,
   slot,
   teleport,
 } from './elements.ts';
@@ -66,6 +80,18 @@ export { batch, compute, state, watch } from './signals.ts';
 export { __purity_swap, PURITY_SWAP_SOURCE } from './__purity_swap.ts';
 // Head / meta tag management — ADR 0008.
 export { head } from './head.ts';
+// Islands — opt-in per-subtree hydration. ADR 0038. Phase 1: brand. Phase 2:
+// `<purity-island>` SSR wrapper + `mountIslands()` client runtime.
+// See docs/decisions/0038-islands.md.
+export {
+  getIslandBrand,
+  island,
+  type IslandBrand,
+  type IslandOptions,
+  type IslandTrigger,
+  isIsland,
+} from './island.ts';
+export { mountIslands, type MountIslandsOptions } from './island-mount.ts';
 // Request context — ADR 0009.
 export { getRequest } from './request-context.ts';
 // Router primitives — ADR 0011 (path / navigate / match) + ADR 0014 (search /
@@ -121,3 +147,32 @@ export {
 
 // Scoped styles
 export { css } from './styles.ts';
+
+// Persistence + lifecycle signal primitives — ADR 0039.
+export { localSignal, type LocalSignalOptions } from './local-signal.ts';
+export { broadcastSignal, type BroadcastValidator } from './broadcast-signal.ts';
+export { pageVisibilitySignal } from './page-visibility-signal.ts';
+export { pageLifecycleSignal, type PageLifecycleState } from './page-lifecycle-signal.ts';
+export { bfcacheRestoreSignal } from './bfcache-restore-signal.ts';
+
+// Observer-as-signal primitives — ADR 0040.
+export { intersectionSignal } from './intersection-signal.ts';
+export { mutationSignal } from './mutation-signal.ts';
+export { mediaSignal } from './media-signal.ts';
+export { resizeSignal } from './resize-signal.ts';
+
+// Environment + system preference signals — ADR 0041.
+export { onlineSignal } from './online-signal.ts';
+export { prefersColorSchemeSignal } from './prefers-color-scheme-signal.ts';
+export { prefersReducedMotionSignal } from './prefers-reduced-motion-signal.ts';
+export { type ContrastPreference, prefersContrastSignal } from './prefers-contrast-signal.ts';
+export { screenOrientationSignal } from './screen-orientation-signal.ts';
+export { localeSignal } from './locale-signal.ts';
+export { devicePixelRatioSignal } from './device-pixel-ratio-signal.ts';
+export { fullscreenSignal } from './fullscreen-signal.ts';
+
+// Capability + permission signals — ADR 0042.
+export { permissionSignal } from './permission-signal.ts';
+export { type BatteryInfo, batterySignal } from './battery-signal.ts';
+export { type NetworkInformation, networkInformationSignal } from './network-information-signal.ts';
+export { type IdleDetectorLike, idleSignal, type IdleSignalState } from './idle-signal.ts';

@@ -91,32 +91,13 @@ export function optimistic<TArgs>(
       // Apply optimistic local state synchronously, capturing rollback.
       const rollback = options.apply ? options.apply(args) : undefined;
 
+      let response: Response;
       try {
-        const response = await action.invoke(body, init);
-        if (isSuccess(response)) {
-          // Success path — invalidate listed queries.
-          if (options.invalidates) {
-            const keys =
-              typeof options.invalidates === 'function'
-                ? options.invalidates(args, response)
-                : options.invalidates;
-            if (keys) for (const k of keys) invalidateQuery(k);
-          }
-          options.onSettle?.(args, response, undefined);
-        } else {
-          // !isSuccess: treat as failure — rollback, settle, return response.
-          if (rollback) {
-            try {
-              rollback();
-            } catch (err) {
-              console.error('[purity] optimistic rollback threw:', err);
-            }
-          }
-          options.onSettle?.(args, response, undefined);
-        }
-        return response;
+        response = await action.invoke(body, init);
       } catch (error) {
-        // Network / abort error — rollback, settle, re-throw.
+        // Network / abort: rollback, settle, re-throw. Each user hook is
+        // isolated so a throwing rollback or onSettle can't swallow the
+        // original error.
         if (rollback) {
           try {
             rollback();
@@ -124,9 +105,44 @@ export function optimistic<TArgs>(
             console.error('[purity] optimistic rollback threw:', err);
           }
         }
-        options.onSettle?.(args, undefined, error);
+        try {
+          options.onSettle?.(args, undefined, error);
+        } catch (err) {
+          console.error('[purity] optimistic onSettle threw:', err);
+        }
         throw error;
       }
+
+      // The action settled with a Response. From here we MUST NOT let
+      // user-supplied hooks (`invalidates`, `onSettle`) throw out of this
+      // function — a throw would have been caught by the outer try and
+      // treated a successful server action as a network failure, firing
+      // a spurious rollback. Each hook is isolated.
+      if (isSuccess(response)) {
+        try {
+          if (options.invalidates) {
+            const keys =
+              typeof options.invalidates === 'function'
+                ? options.invalidates(args, response)
+                : options.invalidates;
+            if (keys) for (const k of keys) invalidateQuery(k);
+          }
+        } catch (err) {
+          console.error('[purity] optimistic invalidates threw:', err);
+        }
+      } else if (rollback) {
+        try {
+          rollback();
+        } catch (err) {
+          console.error('[purity] optimistic rollback threw:', err);
+        }
+      }
+      try {
+        options.onSettle?.(args, response, undefined);
+      } catch (err) {
+        console.error('[purity] optimistic onSettle threw:', err);
+      }
+      return response;
     },
   };
 }

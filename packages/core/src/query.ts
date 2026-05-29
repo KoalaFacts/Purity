@@ -21,7 +21,7 @@ import { bfcacheRestoreSignal } from './bfcache-restore-signal.ts';
 import { onlineSignal } from './online-signal.ts';
 import { pageVisibilitySignal } from './page-visibility-signal.ts';
 import { resource, type ResourceAccessor, type ResourceFetchInfo } from './resource.ts';
-import { watch } from './signals.ts';
+import { watch, type Dispose } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
 /** Cache key for query(). Strings are used as-is; arrays are JSON-serialized. */
@@ -55,6 +55,10 @@ interface QueryEntry<T = unknown> {
 
 const cache: Map<string, QueryEntry<unknown>> = new Map();
 let triggersWired = false;
+// Captured so _resetQueryCache() can dispose them — without this, every
+// reset (test runs, HMR) leaves the old watches ticking on the lifecycle
+// signals and the next wire registers three fresh ones. Compounding leak.
+let triggerDisposes: Dispose[] = [];
 
 /** Serialize a QueryKey to a stable cache string. */
 function serializeKey(k: QueryKey): string {
@@ -85,15 +89,17 @@ function wireRevalidationTriggers(): void {
   const online = onlineSignal();
   const bfcache = bfcacheRestoreSignal();
 
-  watch(visible, (v, prev) => {
-    if (v === 'visible' && prev !== 'visible') refreshMatching('revalidateOnVisible');
-  });
-  watch(online, (v, prev) => {
-    if (v === true && prev === false) refreshMatching('revalidateOnReconnect');
-  });
-  watch(bfcache, () => {
-    refreshMatching('revalidateOnBfcacheRestore');
-  });
+  triggerDisposes.push(
+    watch(visible, (v, prev) => {
+      if (v === 'visible' && prev !== 'visible') refreshMatching('revalidateOnVisible');
+    }),
+    watch(online, (v, prev) => {
+      if (v === true && prev === false) refreshMatching('revalidateOnReconnect');
+    }),
+    watch(bfcache, () => {
+      refreshMatching('revalidateOnBfcacheRestore');
+    }),
+  );
 }
 
 /** Wrap the user fetcher so each successful settle stamps `lastFetchedAt`. */
@@ -210,8 +216,12 @@ function warnOnConfigMismatch<T>(
   }
 }
 
-/** @internal — test helper. Clears the cache + un-arms the trigger wiring. */
+/** @internal — test helper. Disposes the trigger watches, clears the
+ * cache + every cached resource, and un-arms the trigger wiring so a
+ * subsequent client call re-arms a fresh, single set of watches. */
 export function _resetQueryCache(): void {
+  for (const dispose of triggerDisposes) dispose();
+  triggerDisposes = [];
   for (const entry of cache.values()) {
     entry.resource.dispose();
   }

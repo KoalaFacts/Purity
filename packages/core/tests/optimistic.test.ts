@@ -342,3 +342,86 @@ describe('optimistic — options shape (ADR 0049)', () => {
     expect(applied).toBe(false);
   });
 });
+
+describe('optimistic — user-hook throw isolation (audit Bug D)', () => {
+  it('invalidates() throwing on success does NOT trigger rollback', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let rollbackCalls = 0;
+    const act = makeFakeAction('/ok', () => new Response('', { status: 200 }));
+    const wrapped = optimistic<{ id: number }>(act, {
+      body: () => null,
+      apply: () => () => {
+        rollbackCalls++;
+      },
+      invalidates: () => {
+        throw new Error('invalidates blew up');
+      },
+    });
+    // The action succeeded — invalidates throwing must NOT propagate, and
+    // must NOT roll back the optimistic state. The wrapper logs and returns
+    // the response.
+    const res = await wrapped.invoke({ id: 1 });
+    expect(res.status).toBe(200);
+    expect(rollbackCalls).toBe(0);
+    expect(errSpy).toHaveBeenCalledWith(
+      '[purity] optimistic invalidates threw:',
+      expect.any(Error),
+    );
+    errSpy.mockRestore();
+  });
+
+  it('onSettle() throwing on success does NOT trigger rollback', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let rollbackCalls = 0;
+    const act = makeFakeAction('/ok', () => new Response('', { status: 200 }));
+    const wrapped = optimistic<void>(act, {
+      body: () => null,
+      apply: () => () => {
+        rollbackCalls++;
+      },
+      onSettle: () => {
+        throw new Error('onSettle exploded');
+      },
+    });
+    const res = await wrapped.invoke();
+    expect(res.status).toBe(200);
+    expect(rollbackCalls).toBe(0);
+    expect(errSpy).toHaveBeenCalledWith('[purity] optimistic onSettle threw:', expect.any(Error));
+    errSpy.mockRestore();
+  });
+
+  it('onSettle() throwing on failure path does NOT swallow the error', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const networkErr = new Error('network down');
+    const act = makeFakeAction('/reject', () => Promise.reject(networkErr));
+    const wrapped = optimistic<void>(act, {
+      body: () => null,
+      onSettle: () => {
+        throw new Error('onSettle exploded');
+      },
+    });
+    // The original network error must propagate; the user's broken onSettle
+    // is logged and discarded.
+    await expect(wrapped.invoke()).rejects.toBe(networkErr);
+    expect(errSpy).toHaveBeenCalledWith('[purity] optimistic onSettle threw:', expect.any(Error));
+    errSpy.mockRestore();
+  });
+
+  it('a successful response is returned even when invalidates AND onSettle throw', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const act = makeFakeAction('/ok', () => new Response('body', { status: 200 }));
+    const wrapped = optimistic<void>(act, {
+      body: () => null,
+      invalidates: () => {
+        throw new Error('inv');
+      },
+      onSettle: () => {
+        throw new Error('settle');
+      },
+    });
+    const res = await wrapped.invoke();
+    expect(res.status).toBe(200);
+    expect(errSpy).toHaveBeenCalledTimes(2);
+    errSpy.mockRestore();
+  });
+});

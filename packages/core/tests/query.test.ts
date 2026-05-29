@@ -373,3 +373,42 @@ describe('query — SSR (ADR 0048)', () => {
     expect(ctxB.pendingPromises.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('query — trigger-watch leak across resets (audit Bug C)', () => {
+  it('_resetQueryCache disposes the lifecycle watches so a reset+rewire does not double-fire revalidation', async () => {
+    // Wire round 1. This installs three watches on the lifecycle signals.
+    const q1 = query({
+      key: 'leak-1',
+      fetcher: () => Promise.resolve(1),
+    });
+    await drain();
+    expect(q1()).toBe(1);
+
+    // Reset ONLY the query cache, NOT the page-visibility singleton.
+    // Without the fix the round-1 watch is still subscribed to the SAME
+    // pageVisibilitySignal() instance, so a subsequent visibility toggle
+    // fires BOTH the orphaned round-1 watch AND the freshly wired round-2
+    // watch — refreshing every cache entry twice per event.
+    _resetQueryCache();
+
+    let calls2 = 0;
+    const q2 = query({
+      key: 'leak-2',
+      fetcher: () => {
+        calls2++;
+        return Promise.resolve(calls2);
+      },
+    });
+    await drain();
+    expect(q2()).toBe(1);
+    expect(calls2).toBe(1);
+
+    // One hidden→visible toggle. Fix: exactly one refresh ⇒ calls2 === 2.
+    // Leak: two watches on the singleton ⇒ calls2 >= 3.
+    setVisibility('hidden');
+    await tick();
+    setVisibility('visible');
+    await drain();
+    expect(calls2).toBe(2);
+  });
+});

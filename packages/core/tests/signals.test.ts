@@ -387,6 +387,61 @@ describe('batch — nested', () => {
   });
 });
 
+describe('watch flush — throw isolation across pending effects', () => {
+  // Verifies the scheduler invariant: a throwing watch must not silently
+  // skip its siblings nor wedge the queue. Without per-effect isolation,
+  // when watch A (queued first) throws, watch B (queued after) is dropped
+  // on the floor and its view stays stale until some unrelated write
+  // re-triggers a flush. Worse, `pendingEffects.length = 0` at the bottom
+  // of flush() never runs after the throw, leaving the queue polluted.
+
+  it('runs sibling watches after one throws', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const a = state(0);
+    let bRuns = 0;
+    const disposers: Array<() => void> = [
+      watch(() => {
+        if (a() > 0) throw new Error('boom');
+      }),
+      watch(() => {
+        a();
+        bRuns++;
+      }),
+    ];
+    bRuns = 0; // discount the initial sync run
+    a(1);
+    await tick();
+    expect(bRuns).toBe(1);
+    expect(errSpy).toHaveBeenCalled();
+    for (const d of disposers) d();
+    errSpy.mockRestore();
+  });
+
+  it('does not wedge the queue after a throw (later writes still flush cleanly)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const a = state(0);
+    let runs = 0;
+    const dispose = watch(() => {
+      const v = a();
+      runs++;
+      if (v === 1) throw new Error('one');
+    });
+    runs = 0;
+    a(1);
+    await tick();
+    // The throwing run fired AND was logged…
+    expect(runs).toBe(1);
+    expect(errSpy).toHaveBeenCalled();
+    // …and a follow-up write still flushes — proving the queue isn't
+    // wedged with leftover state from the failed pass.
+    a(2);
+    await tick();
+    expect(runs).toBe(2);
+    dispose();
+    errSpy.mockRestore();
+  });
+});
+
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 // ---------------------------------------------------------------------------

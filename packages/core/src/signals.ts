@@ -376,13 +376,37 @@ function flush(): void {
   microtaskScheduled = false;
   // Process effects FIFO. New effects pushed during flushing are picked up
   // in subsequent loop iterations of this same flush.
-  let i = 0;
-  while (i < pendingEffects.length) {
-    const e = pendingEffects[i++];
-    if (e.disposed || e.status === STATUS_CLEAN) continue;
-    updateValue(e);
+  //
+  // Isolate each effect's throw: a user watch/effect callback that throws
+  // would otherwise (a) skip every sibling queued after it — their views
+  // stay stale until some unrelated write retriggers a flush — and (b)
+  // skip `pendingEffects.length = 0` below, leaving the queue polluted
+  // with stale entries the next flush would re-run. Catch + console.error
+  // matches how cleanup errors and every other user-callback site in the
+  // codebase handle throws (resource error, optimistic onSettle, lifecycle
+  // hooks, …). The outer try/finally guarantees the queue is cleared
+  // regardless.
+  try {
+    let i = 0;
+    while (i < pendingEffects.length) {
+      const e = pendingEffects[i++];
+      if (e.disposed || e.status === STATUS_CLEAN) continue;
+      try {
+        updateValue(e);
+      } catch (err) {
+        // runComputed left the node DIRTY (it sets CLEAN only on the
+        // success path). Without resetting here, markDirty's
+        // already-DIRTY short-circuit would skip the effect on every
+        // subsequent write — the watcher would silently never run
+        // again. CLEAN restores the normal CLEAN→DIRTY transition that
+        // the next markDirty needs to re-queue.
+        e.status = STATUS_CLEAN;
+        console.error('[Purity] watch/effect threw:', err);
+      }
+    }
+  } finally {
+    pendingEffects.length = 0;
   }
-  pendingEffects.length = 0;
 }
 
 // ---------------------------------------------------------------------------

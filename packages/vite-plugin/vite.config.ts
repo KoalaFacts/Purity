@@ -12,7 +12,10 @@ export default defineConfig({
       // — the latter must not be inlined or `node:fs.readFileSync` would
       // come from a stub module instead of the real Node API. Failure mode:
       // `(0, r.resolve) is not a function` at plugin load.
-      external: [/^@purityjs\//, /^node:/],
+      // Also externalize `oxc-parser` (ADR 0035) — it's a real runtime dep
+      // that pulls in platform-specific native bindings; inlining trips on
+      // the unresolvable `@oxc-parser/binding-wasm32-wasi` fallback path.
+      external: [/^@purityjs\//, /^node:/, 'oxc-parser', /^@oxc-parser\//],
       output: {
         exports: 'named',
       },

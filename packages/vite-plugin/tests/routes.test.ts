@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -667,7 +667,7 @@ describe('purity({ routes }) — Vite plugin integration', () => {
     const root = mkdtempSync(join(tmpdir(), 'purity-routes-'));
     for (const [rel, content] of Object.entries(layout)) {
       const abs = join(root, rel);
-      mkdirSync(abs.replace(/\/[^/]+$/, ''), { recursive: true });
+      mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, content);
     }
     return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
@@ -799,8 +799,11 @@ describe('purity({ routes }) — Vite plugin integration', () => {
       const src = (plugin as { load: (id: string) => string | null }).load(resolved) as string;
 
       // Both layout modules show up in the manifest as importable chunks.
-      expect(src).toContain(`import("${root}/pages/_layout.ts")`);
-      expect(src).toContain(`import("${root}/pages/users/_layout.ts")`);
+      // Emit normalizes to POSIX separators (Windows back-slashes are
+      // rewritten so dynamic-import specifiers stay portable).
+      const posixRoot = root.replace(/\\/g, '/');
+      expect(src).toContain(`import("${posixRoot}/pages/_layout.ts")`);
+      expect(src).toContain(`import("${posixRoot}/pages/users/_layout.ts")`);
       // The users/:id entry includes both layouts (root → leaf).
       const userLine = src.split('\n').find((l) => l.includes('"/users/:id"')) as string;
       expect(userLine).toContain('"_layout.ts"');
@@ -829,7 +832,8 @@ describe('purity({ routes }) — Vite plugin integration', () => {
 
       // notFound shows up as a top-level export.
       expect(src).toContain('export const notFound = {');
-      expect(src).toContain(`import("${root}/pages/_404.ts")`);
+      const posixRoot = root.replace(/\\/g, '/');
+      expect(src).toContain(`import("${posixRoot}/pages/_404.ts")`);
 
       // /admin/users uses the admin/_error boundary, not the root one.
       const adminLine = src.split('\n').find((l) => l.includes('"/admin/users"')) as string;
@@ -942,7 +946,7 @@ describe('purity({ routes: { emitTo } }) — on-disk manifest emit (ADR 0032)', 
     const root = mkdtempSync(join(tmpdir(), 'purity-emit-'));
     for (const [rel, content] of Object.entries(layout)) {
       const abs = join(root, rel);
-      mkdirSync(abs.replace(/\/[^/]+$/, ''), { recursive: true });
+      mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, content);
     }
     return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
@@ -1069,7 +1073,7 @@ describe('purity({ routes: { emitTo } }) — buildStart eager-emit (ADR 0033)', 
     const root = mkdtempSync(join(tmpdir(), 'purity-buildstart-'));
     for (const [rel, content] of Object.entries(layout)) {
       const abs = join(root, rel);
-      mkdirSync(abs.replace(/\/[^/]+$/, ''), { recursive: true });
+      mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, content);
     }
     return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) };

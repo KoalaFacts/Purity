@@ -389,7 +389,18 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
   }
 
   const styles = (ctx as unknown as { _ssrStyles: string[] })._ssrStyles;
-  const styleBlock = styles.length > 0 ? `<style>${styles.join('\n')}</style>` : '';
+  // `<style>` is an HTML5 "raw text element" — its content runs verbatim
+  // until the parser sees a literal `</style` sequence. An interpolated
+  // CSS value containing `</style><script>...</script>` would otherwise
+  // close the style tag early and execute the injected script (XSS).
+  // Insert a backslash between `<` and `/style`: the HTML parser only
+  // matches the literal `</style` substring (the `<` followed by `\`
+  // bounces it back to raw-text state), but CSS treats `\/` as a literal
+  // `/` escape, so the rendered styling is unchanged.
+  const styleBlock =
+    styles.length > 0
+      ? `<style>${styles.join('\n').replace(/<\/style/gi, '<\\/style')}</style>`
+      : '';
   const inner = styleBlock + renderedHtml;
 
   return `<${tag}${hostAttrs}><template shadowrootmode="open">${inner}</template></${tag}>`;

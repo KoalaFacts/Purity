@@ -151,7 +151,10 @@ export function eventSourceSignal<T>(
   const open = (): void => {
     if (es) return;
     try {
-      es = new EventSource(url, withCredentials ? { withCredentials: true } : undefined);
+      // Branch the constructor call so CodeQL's web externs (which model
+      // EventSource as single-argument) don't flag a `, undefined` trailing
+      // argument as superfluous. Both branches are spec-compliant.
+      es = withCredentials ? new EventSource(url, { withCredentials: true }) : new EventSource(url);
     } catch (err) {
       console.warn(`[purity] eventSourceSignal('${label}') failed to open:`, err);
       es = null;

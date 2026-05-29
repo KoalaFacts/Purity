@@ -103,4 +103,35 @@ describe('batterySignal (ADR 0042)', () => {
   it('returns the same singleton across calls', () => {
     expect(batterySignal()).toBe(batterySignal());
   });
+
+  it('_resetBatterySignal detaches the four BatteryManager listeners', async () => {
+    installBatteryMock();
+    const orphan = batterySignal();
+    await flush();
+    expect(orphan()!.level).toBe(0.8);
+
+    _resetBatterySignal();
+
+    // With the leak, the four listeners on `bm` still fire and tick the
+    // orphan's inner state. With the fix, they're detached.
+    bm!.level = 0.2;
+    bm!.dispatchEvent(new Event('levelchange'));
+    expect(orphan()!.level).toBe(0.8);
+  });
+
+  it('_resetBatterySignal racing against an in-flight getBattery never attaches the listeners', async () => {
+    installBatteryMock();
+    const orphan = batterySignal(); // begins getBattery().then(...)
+
+    // Reset BEFORE the promise resolves — listener attach must be skipped
+    // entirely. Without the abort flag, the .then resolves and adds 4
+    // listeners to bm regardless.
+    _resetBatterySignal();
+    await flush();
+
+    // Mutate + emit. Orphan should not advance — no listener attached.
+    bm!.level = 0.1;
+    bm!.dispatchEvent(new Event('levelchange'));
+    expect(orphan()).toBeNull(); // never even got the initial snapshot
+  });
 });

@@ -33,6 +33,10 @@ const DEFAULT: NetworkInformation = {
 };
 
 let singleton: ComputedAccessor<NetworkInformation> | null = null;
+// (connection, listener) so reset can detach. Without this, _reset nulls
+// the singleton but leaves the listener attached to navigator.connection.
+let boundConnection: EventTarget | null = null;
+let boundListener: (() => void) | null = null;
 
 function getConnection(): NetworkInformationLike | null {
   if (typeof navigator === 'undefined') return null;
@@ -79,12 +83,24 @@ export function networkInformationSignal(): ComputedAccessor<NetworkInformation>
     return singleton;
   }
   const inner = state<NetworkInformation>(snapshot(connection));
-  connection.addEventListener('change', () => inner(snapshot(connection)));
+  const onChange = (): void => {
+    inner(snapshot(connection));
+  };
+  connection.addEventListener('change', onChange);
+  boundConnection = connection;
+  boundListener = onChange;
   singleton = compute(() => inner());
   return singleton;
 }
 
-/** @internal — test helper. */
+/** @internal — test helper. Detaches the `change` listener so a fresh
+ * call rebuilds from scratch without doubling up listeners on a cached
+ * `navigator.connection`. */
 export function _resetNetworkInformationSignal(): void {
+  if (boundConnection && boundListener) {
+    boundConnection.removeEventListener('change', boundListener);
+  }
+  boundConnection = null;
+  boundListener = null;
   singleton = null;
 }

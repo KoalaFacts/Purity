@@ -92,4 +92,21 @@ describe('networkInformationSignal (ADR 0042)', () => {
     const s = networkInformationSignal();
     expect(s().effectiveType).toBe('4g');
   });
+
+  it('_resetNetworkInformationSignal detaches the change listener', () => {
+    installConnectionMock();
+    // Capture the orphaned signal from the first call; it must NOT keep
+    // ticking after reset (the leak would update its inner state on emit).
+    const firstSignal = networkInformationSignal();
+    expect(firstSignal().effectiveType).toBe('4g');
+
+    _resetNetworkInformationSignal();
+
+    // Mutate + emit. With the leak, the orphaned listener fires and the
+    // old signal's value advances. With the fix, the listener is detached
+    // and the orphan stays frozen at its last value.
+    (conn as unknown as { effectiveType: string }).effectiveType = 'slow-2g';
+    conn!.emit();
+    expect(firstSignal().effectiveType).toBe('4g');
+  });
 });

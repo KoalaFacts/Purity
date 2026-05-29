@@ -164,4 +164,24 @@ describe('permissionSignal (ADR 0042)', () => {
     expect(s()).toBe('prompt');
     installPermissionsMock();
   });
+
+  it('_resetPermissionSignalCache detaches the PermissionStatus change listener', async () => {
+    permissionSignal('camera');
+    await flush();
+    const status = statuses.get('camera')!;
+    expect(status.listeners.length).toBe(1);
+
+    _resetPermissionSignalCache();
+    expect(status.listeners.length).toBe(0);
+  });
+
+  it('_resetPermissionSignalCache racing an in-flight query never attaches a listener', async () => {
+    permissionSignal('camera'); // begins the async query
+    _resetPermissionSignalCache(); // reset BEFORE the query resolves
+    await flush();
+    const status = statuses.get('camera');
+    // The query did resolve into the mock, but the abort flag prevented
+    // the addEventListener call.
+    expect(status?.listeners.length ?? 0).toBe(0);
+  });
 });

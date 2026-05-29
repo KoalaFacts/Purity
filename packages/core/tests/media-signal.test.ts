@@ -132,4 +132,19 @@ describe('mediaSignal — client (ADR 0040)', () => {
     expect(a).not.toBe(b);
     expect(mqlsByQuery.size).toBe(2);
   });
+
+  it('_resetMediaSignalCache detaches the change listener (no leak across resets)', () => {
+    mediaSignal('(min-width: 600px)');
+    const mql = mqlsByQuery.get('(min-width: 600px)')!;
+    expect(mql.listeners.length).toBe(1);
+
+    // Browsers cache `matchMedia(q)` so the same `mql` is reused on the
+    // next call — without proper cleanup the second call stacks a second
+    // listener on the same target. Reset must detach.
+    _resetMediaSignalCache();
+    expect(mql.listeners.length).toBe(0);
+
+    mediaSignal('(min-width: 600px)');
+    expect(mql.listeners.length).toBe(1);
+  });
 });

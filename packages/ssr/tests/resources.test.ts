@@ -1,5 +1,5 @@
 import { resource, state } from '@purityjs/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { html, renderToString } from '../src/index.ts';
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
@@ -60,6 +60,27 @@ describe('renderToString — resource awaiting', () => {
     });
     expect(out).not.toContain('</script><script>');
     expect(out).toContain('\\u003c/script\\u003e');
+  });
+
+  it('clears the timeout race timer once pending resources settle (no dangling timer)', async () => {
+    // The pass that awaits resources races Promise.all against a setTimeout.
+    // When the resources win, the timer must be cleared — otherwise a ref'd
+    // timer stays armed for the full timeout window after the render is done.
+    const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const before = clearSpy.mock.calls.length;
+    const out = await renderToString(
+      () => {
+        // A resource without pollInterval — its only timer interaction is
+        // none, so any clearTimeout we observe comes from the race cleanup.
+        const r = resource(() => Promise.resolve('done'));
+        return html`<p>${() => r() ?? '...'}</p>`;
+      },
+      { timeout: 30_000 },
+    );
+    expect(out).toContain('done');
+    // The race ran (one pending resource) and its loser timer was cleared.
+    expect(clearSpy.mock.calls.length).toBeGreaterThan(before);
+    clearSpy.mockRestore();
   });
 
   it('times out when a resource never resolves', async () => {

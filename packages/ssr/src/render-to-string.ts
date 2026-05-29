@@ -185,14 +185,20 @@ export async function renderToString(
     // value is captured by the await. Mutating a shared `let` from inside
     // the inner promises bypasses TS's flow narrowing across the await.
     type RaceResult = 'settled' | 'boundary' | 'global';
+    // Capture the timer so we can clear it when the promises win the race.
+    // Otherwise a ref'd timer stays armed for the full `waitMs` after the
+    // render already finished — on every pass, accumulating under load and
+    // keeping the event loop alive (notably on serverless/edge).
+    let raceTimer: ReturnType<typeof setTimeout> | undefined;
     const raceResult: RaceResult = await Promise.race<RaceResult>([
       Promise.all(ctx.pendingPromises).then(() => 'settled' as const),
       new Promise<RaceResult>((resolve) => {
-        setTimeout(() => {
+        raceTimer = setTimeout(() => {
           resolve(waitMs >= remaining ? 'global' : 'boundary');
         }, waitMs);
       }),
     ]);
+    clearTimeout(raceTimer);
 
     if (raceResult === 'global') {
       throw new Error(

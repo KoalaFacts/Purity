@@ -260,15 +260,19 @@ async function renderShell(
     }
 
     let timedOut = false;
+    // Clear the loser timer so it doesn't stay armed (and keep the event
+    // loop alive) for `remaining` ms after the resources already settled.
+    let shellTimer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
       Promise.all(ctx.pendingPromises),
       new Promise<void>((resolve) => {
-        setTimeout(() => {
+        shellTimer = setTimeout(() => {
           timedOut = true;
           resolve();
         }, remaining);
       }),
     ]);
+    clearTimeout(shellTimer);
     if (timedOut) {
       throw new Error(
         `[Purity] renderToStream shell timed out after ${timeout}ms while ` +
@@ -383,15 +387,17 @@ async function renderBoundary(
     }
 
     let raceTimedOut = false;
+    let boundaryTimer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
       Promise.all(ctx.pendingPromises),
       new Promise<void>((resolve) => {
-        setTimeout(() => {
+        boundaryTimer = setTimeout(() => {
           raceTimedOut = true;
           resolve();
         }, remaining);
       }),
     ]);
+    clearTimeout(boundaryTimer);
     if (raceTimedOut) {
       if (viewTimedOut) return { html: '', resolvedData, resolvedDataByKey };
       reportError(undefined, 'timeout');

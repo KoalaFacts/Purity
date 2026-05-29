@@ -149,6 +149,12 @@ export function renderToStream(
         for (const [id, boundary] of shell.boundaries) {
           if (signal?.aborted) break;
           const result = await renderBoundary(id, boundary, timeout, request);
+          // null signals "boundary couldn't produce content; leave the
+          // shell-rendered fallback in place." Without this skip, an
+          // empty <template> + __purity_swap(N) chunk wiped the rendered
+          // fallback DOM (the swap replaces everything between the
+          // markers with the template content — empty content = blank).
+          if (result === null) continue;
           let chunk = `<template id="purity-s-${id}">${result.html}</template>`;
           // Per-boundary resource cache prime (ADR 0006 Phase 6 second-half).
           // Only the keyed map is meaningful across boundaries — the
@@ -298,7 +304,7 @@ async function renderBoundary(
   boundary: ShellResult['boundaries'] extends Map<number, infer V> ? V : never,
   timeout: number,
   request: Request | undefined,
-): Promise<BoundaryResult> {
+): Promise<BoundaryResult | null> {
   const start = Date.now();
   const resolvedData: unknown[] = [];
   const resolvedErrors: unknown[] = [];
@@ -349,15 +355,17 @@ async function renderBoundary(
     } catch (err) {
       reportError(err, viewTimedOut ? 'fallback' : 'view');
       if (viewTimedOut) {
-        // Fallback also threw — emit empty resolved chunk; the shell
-        // already showed the fallback so the user still sees something.
+        // Fallback also threw inside the boundary. Return null so the
+        // streaming loop skips this boundary's chunk — the shell already
+        // rendered (its own pass-1 call to) the fallback, and replacing
+        // it with empty content would wipe what the user can see.
         console.error(
           `[Purity] renderToStream: boundary ${boundaryId} fallback threw; ` +
             'leaving the shell fallback in place.',
           err,
         );
         popSSRRenderContext();
-        return { html: '', resolvedData, resolvedDataByKey };
+        return null;
       }
       console.error(
         `[Purity] renderToStream: boundary ${boundaryId} view threw; ` +
@@ -378,8 +386,10 @@ async function renderBoundary(
     const remaining = timeout - (Date.now() - start);
     if (remaining <= 0) {
       if (viewTimedOut) {
-        // Fallback itself timed out — emit empty rather than hanging.
-        return { html: '', resolvedData, resolvedDataByKey };
+        // Fallback's resources timed out too. Same reasoning as the
+        // catch-block null return above — leave the shell fallback in
+        // place rather than wipe it with an empty swap.
+        return null;
       }
       reportError(undefined, 'timeout');
       viewTimedOut = true;
@@ -399,18 +409,24 @@ async function renderBoundary(
     ]);
     clearTimeout(boundaryTimer);
     if (raceTimedOut) {
-      if (viewTimedOut) return { html: '', resolvedData, resolvedDataByKey };
+      // viewTimedOut means we're already in the fallback pass and IT
+      // timed out too — return null so the loop skips the chunk and the
+      // shell fallback survives.
+      if (viewTimedOut) return null;
       reportError(undefined, 'timeout');
       viewTimedOut = true;
     }
   }
 
-  // Didn't converge — give up gracefully and leave the shell fallback.
+  // Didn't converge — give up gracefully and leave the shell fallback in
+  // place. Returning null tells the streaming loop to skip this
+  // boundary's chunk entirely so the swap can't wipe what the shell
+  // already rendered.
   console.error(
     `[Purity] renderToStream: boundary ${boundaryId} did not converge within ${MAX_PASSES} passes; ` +
       'leaving shell fallback in place.',
   );
-  return { html: '', resolvedData, resolvedDataByKey };
+  return null;
 }
 
 // Per-boundary cache prime — only emitted when at least one keyed resource

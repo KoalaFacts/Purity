@@ -261,6 +261,48 @@ describe('renderToStream — runtime swap behavior', () => {
     // between <!--s:1--> and <!--/s:1-->) — the markers themselves stay.
     // What matters: the resolved content replaced the fallback.
   });
+
+  it('boundary failure leaves the shell-rendered fallback intact (does not wipe it with empty)', async () => {
+    // The doc on the failure path says "leave shell fallback in place"
+    // (renderBoundary -> empty html on non-convergence / fallback-throws).
+    // But the loop still emitted a `<template id="purity-s-N"></template>`
+    // + __purity_swap(N) chunk for the empty html, so the swap wiped the
+    // shell's fallback and replaced it with NOTHING — user saw a blank
+    // boundary after JS ran. Constructed reproducer: a fallback that
+    // succeeds the first time (shell pass) and throws the second
+    // (renderBoundary's pass-2 fallback retry after a view throw) → empty
+    // chunk → swap wipes the rendered fallback.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let count = 0;
+    const fallback = (): unknown => {
+      count++;
+      if (count > 1) throw new Error('fallback boom in boundary pass');
+      return ssrHtml`<aside class="fallback">offline</aside>`;
+    };
+    const view = (): unknown => {
+      throw new Error('view boom');
+    };
+    const stream = renderToStream(() => ssrHtml`<main>${suspense(view, fallback)}</main>`, {
+      timeout: 100,
+    });
+    const out = await streamToString(stream);
+
+    const doc = document.implementation.createHTMLDocument('test');
+    doc.body.innerHTML = out;
+    const scripts = Array.from(doc.body.querySelectorAll('script'));
+    for (const s of scripts) {
+      // biome-ignore lint/security/noGlobalEval: test-only execution of generated SSR scripts
+      new Function('document', 'window', s.textContent || '')(doc, doc.defaultView ?? globalThis);
+    }
+
+    // The shell rendered the fallback successfully. The boundary chunk
+    // came back empty (both view AND fallback threw inside the boundary).
+    // The swap MUST NOT have wiped the fallback DOM.
+    const visible = doc.body.querySelector('aside.fallback');
+    expect(visible).not.toBeNull();
+    expect(visible!.textContent).toBe('offline');
+    errSpy.mockRestore();
+  });
 });
 
 // ---------------------------------------------------------------------------

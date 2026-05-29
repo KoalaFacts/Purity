@@ -283,15 +283,19 @@ export function detectLoaderExport(source: string): boolean {
   if (/^[ \t]*export[ \t]+(?:async[ \t]+)?(?:const|let|var|function)[ \t]+loader\b/m.test(source)) {
     return true;
   }
-  // Form 2: re-export blocks. Match `export { … }`. Inside the braces
-  // accept either a bare `loader` or a renamed `something as loader`.
-  // Use a non-greedy body match capped at one line to avoid runaway
-  // backtracking on pathological input.
-  const reexport = /^[ \t]*export[ \t]*\{([^}\n]*)\}/gm;
+  // Form 2: re-export blocks. Match `export { … }` where the body MAY
+  // span multiple lines — real apps run Prettier and a long re-export
+  // list gets split across lines, so the previous newline-excluding
+  // body match (`[^}\n]*`) silently missed those forms and the route's
+  // loader was never flagged in the manifest. `[^}]*` is bounded by the
+  // closing brace; `{` doesn't appear inside an `export { … }` block, so
+  // greedy backtracking can't run away.
+  const reexport = /^[ \t]*export[ \t]*\{([^}]*)\}/gm;
   let m: RegExpExecArray | null;
   while ((m = reexport.exec(source)) !== null) {
     const body = m[1];
-    // Either `loader` as a standalone identifier or `... as loader`.
+    // Either `loader` as a standalone identifier or `... as loader`. `\s`
+    // covers newlines in the multi-line case (the body may contain them).
     if (/(?:^|,)\s*loader(?:\s+as\s+\w+)?\s*(?:,|$)/.test(body)) return true;
     if (/\bas\s+loader\b/.test(body)) return true;
   }

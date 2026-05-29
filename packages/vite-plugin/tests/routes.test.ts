@@ -303,6 +303,30 @@ describe('detectLoaderExport — recognising named loader exports (ADR 0022)', (
     expect(detectLoaderExport('export default function () {}')).toBe(false);
   });
 
+  it('matches multi-line `export { ... }` re-exports (Prettier-formatted)', () => {
+    // Real apps run Prettier; long re-export lists get split across lines.
+    // The previous regex (`[^}\n]*`) excluded newlines from the body, so
+    // multi-line forms silently slipped past — the route's loader was
+    // then never flagged in the manifest and never called during SSG/SSR.
+    expect(
+      detectLoaderExport(`export {
+  loader,
+  foo,
+};`),
+    ).toBe(true);
+    expect(
+      detectLoaderExport(`export {
+  foo,
+  loader,
+};`),
+    ).toBe(true);
+    expect(
+      detectLoaderExport(`export {
+  myLoader as loader,
+};`),
+    ).toBe(true);
+  });
+
   it('does not match commented-out lines (single-line)', () => {
     expect(detectLoaderExport('// export const loader = () => 1')).toBe(false);
     expect(detectLoaderExport('  // export const loader = () => 1')).toBe(false);

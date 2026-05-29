@@ -258,6 +258,47 @@ describe('hydrate + per-boundary streaming cache (ADR 0006 Phase 6 second-half)'
     expect(document.querySelector('script#__purity_resources_1__')).toBeNull();
   });
 
+  it('merges a boundary resource keyed with a reserved name without prototype pollution', async () => {
+    // A resource keyed `__proto__` arrives from JSON.parse as an own data
+    // property. The merge must store it as plain data (not route it through
+    // the prototype setter, which would drop the value) and must never
+    // pollute Object.prototype.
+    host.innerHTML = '<p><!--[-->X<!--]--></p>';
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<script type="application/json" id="__purity_resources_1__">' +
+        '{"keyed":{"__proto__":"polluted","constructor":"ctor"}}' +
+        '</script>',
+    );
+
+    let fetches = 0;
+    hydrate(host, () => {
+      const r1 = resource(
+        () => {
+          fetches++;
+          return Promise.resolve('refetch');
+        },
+        { key: '__proto__' },
+      );
+      const r2 = resource(
+        () => {
+          fetches++;
+          return Promise.resolve('refetch');
+        },
+        { key: 'constructor' },
+      );
+      return html`<p>${() => `${r1() ?? '?'}/${r2() ?? '?'}`}</p>`;
+    });
+    await tick();
+
+    // Both reserved-key values primed from the boundary script; no refetch.
+    expect(host.textContent).toContain('polluted/ctor');
+    expect(fetches).toBe(0);
+    // Global prototype is untouched.
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.prototype).not.toHaveProperty('polluted');
+  });
+
   it('works without a shell script — boundary-only cache', async () => {
     // No shell-level resources, only a per-boundary prime. The shell script
     // is absent; the boundary script alone should still drive the cache.

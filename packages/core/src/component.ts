@@ -443,7 +443,7 @@ function primeResourceHydrationCache(container: Element): void {
     `script[id^="${PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX}"]`,
   );
   if (boundaryScripts.length > 0) {
-    if (!merged) merged = { ordered: [], keyed: {} };
+    if (!merged) merged = { ordered: [], keyed: Object.create(null) };
     for (let i = 0; i < boundaryScripts.length; i++) {
       const el = boundaryScripts[i] as Element;
       if (el.textContent == null) continue;
@@ -455,7 +455,14 @@ function primeResourceHydrationCache(container: Element): void {
           parsed.keyed &&
           typeof parsed.keyed === 'object'
         ) {
-          Object.assign(merged.keyed, parsed.keyed as Record<string, unknown>);
+          // Copy own keys explicitly rather than Object.assign: a boundary
+          // resource keyed `__proto__` arrives from JSON.parse as an own
+          // data property, and Object.assign([[Set]]) would route it through
+          // the prototype setter (dropping the value). `merged.keyed` is a
+          // null-prototype object (see normalizeCachePayload), so a direct
+          // bracket assignment stores even reserved names as plain data.
+          const src = parsed.keyed as Record<string, unknown>;
+          for (const k of Object.keys(src)) merged.keyed[k] = src[k];
         }
       } catch (err) {
         console.error('[Purity] Failed to parse per-boundary hydration cache:', err);
@@ -471,16 +478,21 @@ function normalizeCachePayload(parsed: unknown): {
   ordered: unknown[];
   keyed: Record<string, unknown>;
 } {
-  if (Array.isArray(parsed)) return { ordered: parsed, keyed: {} };
+  if (Array.isArray(parsed)) return { ordered: parsed, keyed: Object.create(null) };
   if (parsed && typeof parsed === 'object') {
     const obj = parsed as { ordered?: unknown; keyed?: unknown };
-    return {
-      ordered: Array.isArray(obj.ordered) ? obj.ordered : [],
-      keyed:
-        obj.keyed && typeof obj.keyed === 'object' ? (obj.keyed as Record<string, unknown>) : {},
-    };
+    // Copy keyed entries into a null-prototype object so a resource keyed
+    // with a reserved name (`__proto__`, `constructor`, …) lands as plain
+    // data and `key in keyed` never matches an inherited member. The
+    // boundary-merge loop and primeHydrationCache rely on this shape.
+    const keyed: Record<string, unknown> = Object.create(null);
+    if (obj.keyed && typeof obj.keyed === 'object') {
+      const src = obj.keyed as Record<string, unknown>;
+      for (const k of Object.keys(src)) keyed[k] = src[k];
+    }
+    return { ordered: Array.isArray(obj.ordered) ? obj.ordered : [], keyed };
   }
-  return { ordered: [], keyed: {} };
+  return { ordered: [], keyed: Object.create(null) };
 }
 
 export function mount(component: ComponentFn, container: Element): MountResult {

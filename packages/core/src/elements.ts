@@ -767,8 +767,16 @@ export function teleport(
   const anchor = document.createComment('teleport');
   let currentNodes: Node[] = [];
   let dispose: (() => void) | null = null;
+  // Setup is deferred a microtask (so the target exists), but the owning
+  // component's disposer runs synchronously on unmount. If the component
+  // unmounts before this microtask drains, `disposed` short-circuits the
+  // setup — otherwise we'd create a watch (which can't auto-register here,
+  // since the microtask runs outside any render context) and append
+  // teleported DOM that nothing ever tears down.
+  let disposed = false;
 
   queueMicrotask(() => {
+    if (disposed) return;
     const container = typeof target === 'string' ? document.querySelector(target) : target;
     if (!container) {
       console.error(
@@ -799,6 +807,7 @@ export function teleport(
   const ctx = getCurrentContext();
   if (ctx) {
     (ctx.disposers ??= []).push(() => {
+      disposed = true;
       if (dispose) dispose();
       for (let i = 0; i < currentNodes.length; i++) {
         const node = currentNodes[i];

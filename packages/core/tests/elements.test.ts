@@ -339,6 +339,27 @@ describe('teleport() reactive', () => {
     expect(target.querySelector('.ported')).toBeNull();
     document.body.removeChild(target);
   });
+
+  it('does not leak when the owner unmounts before the deferred setup runs', async () => {
+    const target = document.createElement('div');
+    target.id = `tpre-${tagCounter++}`;
+    document.body.appendChild(target);
+
+    const container = document.createElement('div');
+    const { unmount } = mount(
+      () => teleport(`#${target.id}`, () => html`<p class="ported">early</p>`),
+      container,
+    );
+    // Unmount synchronously — BEFORE the teleport's queueMicrotask setup
+    // has had a chance to run. The deferred setup must bail; otherwise it
+    // would append teleported DOM that nothing ever disposes.
+    unmount();
+    await tick();
+    await tick();
+
+    expect(target.querySelector('.ported')).toBeNull();
+    document.body.removeChild(target);
+  });
 });
 
 describe('slots — extra coverage', () => {

@@ -12,6 +12,7 @@
 // don't throw — the in-memory state still updates.
 // ---------------------------------------------------------------------------
 
+import { getCurrentContext } from './component.ts';
 import { state, type StateAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
@@ -38,23 +39,40 @@ export interface LocalSignalOptions<T> {
 
 type Registration = (raw: string | null) => void;
 
-// storageKey -> set of subscribers listening for cross-tab updates
+// Registry key is `${storageKind}:${key}` so a `local`-backed and a
+// `session`-backed signal that happen to share the same key are isolated
+// — a localStorage event won't bleed into a sessionStorage-backed signal
+// and vice versa.
 const registry: Map<string, Set<Registration>> = new Map();
 let listenerInstalled = false;
+
+function makeRegistryKey(kind: 'local' | 'session', key: string): string {
+  return `${kind}:${key}`;
+}
 
 function installListener(): void {
   if (listenerInstalled) return;
   if (typeof window === 'undefined') return;
   listenerInstalled = true;
   window.addEventListener('storage', (e: StorageEvent) => {
+    // Storage events fire for BOTH localStorage and sessionStorage writes
+    // (the latter same-tab same-origin). Route to the matching storage's
+    // registrations only — without this filter, a localStorage event would
+    // (incorrectly) also mutate sessionStorage-backed signals that happen
+    // to share a key, and vice versa.
+    const areaKind: 'local' | 'session' =
+      e.storageArea === window.sessionStorage ? 'session' : 'local';
+    const prefix = `${areaKind}:`;
     if (e.key === null) {
-      // The whole storage was cleared — reset every registration.
-      for (const set of registry.values()) {
+      // Whole storage was cleared — reset every registration belonging to
+      // that storage area only.
+      for (const [k, set] of registry) {
+        if (!k.startsWith(prefix)) continue;
         for (const apply of set) apply(null);
       }
       return;
     }
-    const set = registry.get(e.key);
+    const set = registry.get(prefix + e.key);
     if (!set) return;
     for (const apply of set) apply(e.newValue);
   });
@@ -234,10 +252,11 @@ export function localSignal<T>(
 
   // Register for cross-tab `storage` events.
   installListener();
-  let set = registry.get(key);
+  const registryKey = makeRegistryKey(storageKind, key);
+  let set = registry.get(registryKey);
   if (!set) {
     set = new Set();
-    registry.set(key, set);
+    registry.set(registryKey, set);
   }
   const apply: Registration = (raw: string | null) => {
     if (raw === null) {
@@ -248,6 +267,22 @@ export function localSignal<T>(
     inner(parseStored(raw, defaultValue, deserialize, version, migrate));
   };
   set.add(apply);
+
+  // Without this, every localSignal() call leaked one Registration (and
+  // the state node it captures) into the registry for the page lifetime —
+  // fine for module-scope usage, a real leak when called inside a
+  // component / each() row that may unmount many times. Auto-register the
+  // cleanup with the current component context, matching what watch() does.
+  const ctx = getCurrentContext();
+  if (ctx) {
+    const dispose = (): void => {
+      const s = registry.get(registryKey);
+      if (!s) return;
+      s.delete(apply);
+      if (s.size === 0) registry.delete(registryKey);
+    };
+    (ctx.disposers ??= []).push(dispose);
+  }
 
   const accessor = ((...args: [T | ((current: T) => T)] | []): T => {
     if (args.length === 0) return inner();
@@ -270,4 +305,11 @@ export function localSignal<T>(
 /** @internal — test helper. Resets module-level state between tests. */
 export function _resetLocalSignalRegistry(): void {
   registry.clear();
+}
+
+/** @internal — test helper. Returns the number of live registrations for a
+ * given (storageKind, key) pair. Lets lifecycle tests verify that unmount
+ * actually removes the apply from the registry. */
+export function _localSignalRegistrySize(kind: 'local' | 'session', key: string): number {
+  return registry.get(makeRegistryKey(kind, key))?.size ?? 0;
 }

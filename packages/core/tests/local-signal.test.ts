@@ -212,6 +212,69 @@ describe('localSignal — client path (ADR 0039)', () => {
   });
 });
 
+describe('localSignal — registry isolation + lifecycle', () => {
+  it('a localStorage event does not bleed into a sessionStorage-backed signal sharing the key', () => {
+    // Same key, different storage backends. The previous registry used the
+    // bare key — so a localStorage `storage` event also drove the
+    // sessionStorage-backed signal, cross-contaminating two unrelated stores.
+    const localSig = localSignal('shared', 'L', { storage: 'local' });
+    const sessSig = localSignal('shared', 'S', { storage: 'session' });
+    expect(localSig()).toBe('L');
+    expect(sessSig()).toBe('S');
+    window.dispatchEvent(
+      makeStorageEvent({
+        key: 'shared',
+        newValue: JSON.stringify('LL'),
+        oldValue: null,
+        storageArea: localStorage,
+      }),
+    );
+    expect(localSig()).toBe('LL');
+    // Session signal MUST be unaffected by a localStorage event.
+    expect(sessSig()).toBe('S');
+  });
+
+  it('a localStorage clear (key === null) only resets local-backed signals', () => {
+    const localSig = localSignal('a', 'L-default', { storage: 'local' });
+    const sessSig = localSignal('a', 'S-default', { storage: 'session' });
+    localSig.set('L-set');
+    sessSig.set('S-set');
+    window.dispatchEvent(
+      makeStorageEvent({ key: null, newValue: null, storageArea: localStorage }),
+    );
+    expect(localSig()).toBe('L-default');
+    // Session signal MUST survive a localStorage clear.
+    expect(sessSig()).toBe('S-set');
+  });
+
+  it('auto-cleans the registry when the surrounding component unmounts', async () => {
+    // Without lifecycle cleanup, every component mount that calls
+    // localSignal() leaks one Registration + one captured state node into
+    // the registry forever. Verify the cleanup is wired through to the
+    // current component context (matches how watch() auto-disposes).
+    const { mount } = await import('../src/index.ts');
+    const { _localSignalRegistrySize } = await import('../src/local-signal.ts');
+    const container = document.createElement('div');
+    expect(_localSignalRegistrySize('local', 'per-mount')).toBe(0);
+    const m1 = mount(() => {
+      localSignal('per-mount', 'x');
+      return document.createComment('m');
+    }, container);
+    expect(_localSignalRegistrySize('local', 'per-mount')).toBe(1);
+    const m2 = mount(() => {
+      localSignal('per-mount', 'y');
+      return document.createComment('m');
+    }, container);
+    expect(_localSignalRegistrySize('local', 'per-mount')).toBe(2);
+    m1.unmount();
+    expect(_localSignalRegistrySize('local', 'per-mount')).toBe(1);
+    m2.unmount();
+    // Both registrations gone; the empty Set is also dropped so a future
+    // lookup doesn't grow the Map without bound.
+    expect(_localSignalRegistrySize('local', 'per-mount')).toBe(0);
+  });
+});
+
 describe('localSignal — versioning + migration (ADR 0039)', () => {
   it('wraps writes in a version envelope when version > 0', () => {
     const sig = localSignal('v', { n: 1 }, { version: 2 });

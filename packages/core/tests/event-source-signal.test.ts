@@ -157,6 +157,20 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('drops the message and logs when the validator THROWS', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const throwing = ((v: unknown): v is number => {
+      if (typeof v !== 'number') throw new TypeError('nope');
+      return true;
+    }) as (v: unknown) => v is number;
+    const sig = eventSourceSignal<number>('/sse', { initialValue: 0, validate: throwing });
+    instances[0].fire('message', '"not-a-number"');
+    expect(sig()).toBe(0);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('validator threw');
+    warnSpy.mockRestore();
+  });
+
   it('honours a custom eventName', () => {
     const sig = eventSourceSignal<number>('/sse', {
       initialValue: 0,

@@ -139,7 +139,17 @@ export function eventSourceSignal<T>(
       console.warn(`[purity] eventSourceSignal('${label}') failed to parse:`, err);
       return;
     }
-    if (!validate(parsed)) {
+    let ok: boolean;
+    try {
+      ok = validate(parsed);
+    } catch (err) {
+      console.warn(
+        `[purity] eventSourceSignal('${label}') dropped incoming message — validator threw:`,
+        err,
+      );
+      return;
+    }
+    if (!ok) {
       console.warn(
         `[purity] eventSourceSignal('${label}') dropped incoming message — failed validator`,
       );

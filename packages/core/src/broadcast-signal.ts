@@ -83,7 +83,17 @@ export function broadcastSignal<T>(
   const inner = state(defaultValue);
   const bc = new BroadcastChannel(channel);
   bc.addEventListener('message', (e: MessageEvent) => {
-    if (!validate(e.data)) {
+    let ok: boolean;
+    try {
+      ok = validate(e.data);
+    } catch (err) {
+      console.warn(
+        `[purity] broadcastSignal('${channel}') dropped incoming message — validator threw:`,
+        err,
+      );
+      return;
+    }
+    if (!ok) {
       console.warn(
         `[purity] broadcastSignal('${channel}') dropped incoming message — failed validator`,
       );

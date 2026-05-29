@@ -195,6 +195,23 @@ describe('broadcastSignal — validator (ADR 0039)', () => {
     expect(sig()).toBe(5);
   });
 
+  it('drops the message and logs when the validator THROWS (not just returns false)', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const throwing = ((v: unknown): v is number => {
+      if (typeof v !== 'number') throw new TypeError('validator hates this');
+      return true;
+    }) as (v: unknown) => v is number;
+    const sig = broadcastSignal<number>('validator-throws', 0, throwing);
+    const peer = new BroadcastChannel('validator-throws');
+    peer.postMessage({ poisoned: true });
+    await flushBC();
+    expect(sig()).toBe(0);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('validator threw');
+    peer.close();
+    warnSpy.mockRestore();
+  });
+
   it('uses the first call’s validator and ignores later validators per channel', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const strictNum = broadcastSignal<number>('first-wins', 0, isNumber);

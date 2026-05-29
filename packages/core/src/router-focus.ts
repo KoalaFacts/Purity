@@ -91,7 +91,16 @@ export function manageNavFocus(options: ManageNavFocusOptions = {}): () => void 
         // Hash target takes precedence — matches manageNavScroll so the
         // user gets a coherent "scroll + focus on the same element" feel.
         if (url.hash) {
-          const id = decodeURIComponent(url.hash.slice(1));
+          // The hash is attacker-controllable; a malformed percent-sequence
+          // (`#%`) would make decodeURIComponent throw inside this microtask
+          // (uncaught → skips focus). Fall back to the raw fragment, which
+          // getElementById treats as a plain miss.
+          let id: string;
+          try {
+            id = decodeURIComponent(url.hash.slice(1));
+          } catch {
+            id = url.hash.slice(1);
+          }
           const hashEl = document.getElementById(id);
           if (hashEl) {
             focusElement(hashEl);

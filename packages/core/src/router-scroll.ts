@@ -29,7 +29,18 @@ export interface ManageNavScrollOptions {
 
 function defaultScrollHandler(url: URL): void {
   if (url.hash) {
-    const el = document.getElementById(decodeURIComponent(url.hash.slice(1)));
+    // The hash is attacker-controllable (e.g. `<a href="#%">`); a malformed
+    // percent-sequence makes decodeURIComponent throw. This runs in a
+    // microtask, so an uncaught throw would surface as an unhandled error
+    // and skip the scroll. Fall back to the raw fragment — getElementById
+    // on the undecoded id simply finds nothing and we scroll to top.
+    let id: string;
+    try {
+      id = decodeURIComponent(url.hash.slice(1));
+    } catch {
+      id = url.hash.slice(1);
+    }
+    const el = document.getElementById(id);
     if (el) {
       el.scrollIntoView();
       return;

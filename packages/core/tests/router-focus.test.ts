@@ -106,6 +106,17 @@ describe('manageNavFocus() — hash target priority', () => {
     await Promise.resolve();
     expect(document.activeElement).toBe(main);
   });
+
+  it('does not throw on a malformed-percent hash (falls back to selector)', async () => {
+    document.body.innerHTML = '<main></main>';
+    const main = document.querySelector('main')!;
+    teardown = manageNavFocus();
+    // `#%` makes decodeURIComponent throw; the handler must swallow it and
+    // still focus the landmark rather than leak an uncaught error.
+    navigate('/page#%');
+    await Promise.resolve();
+    expect(document.activeElement).toBe(main);
+  });
 });
 
 describe('manageNavFocus() — custom handler', () => {

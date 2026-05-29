@@ -114,6 +114,17 @@ describe('manageNavScroll() — default behavior', () => {
     expect(scrollSpy).toHaveBeenCalled();
   });
 
+  it('does not throw on a malformed-percent hash (falls back to top)', async () => {
+    teardown = manageNavScroll();
+    const spy = vi.spyOn(window, 'scrollTo');
+    // `#%` makes decodeURIComponent throw; the handler must swallow it and
+    // still scroll to top rather than leak an uncaught error.
+    navigate('/page#%');
+    await Promise.resolve();
+    expect(spy).toHaveBeenCalledWith(0, 0);
+    spy.mockRestore();
+  });
+
   it('fires on replace navs too', async () => {
     teardown = manageNavScroll();
     const spy = vi.spyOn(window, 'scrollTo');

@@ -136,12 +136,12 @@ export function eventSourceSignal<T>(
     try {
       parsed = parse(e.data as string);
     } catch (err) {
-      console.warn(`[purity] eventSourceSignal('${label}') failed to parse:`, err);
+      console.warn(`[Purity] eventSourceSignal('${label}') failed to parse:`, err);
       return;
     }
     if (!validate(parsed)) {
       console.warn(
-        `[purity] eventSourceSignal('${label}') dropped incoming message — failed validator`,
+        `[Purity] eventSourceSignal('${label}') dropped incoming message — failed validator`,
       );
       return;
     }
@@ -158,7 +158,7 @@ export function eventSourceSignal<T>(
       // deleting the 2-arg call is not an option.
       es = withCredentials ? new EventSource(url, { withCredentials: true }) : new EventSource(url);
     } catch (err) {
-      console.warn(`[purity] eventSourceSignal('${label}') failed to open:`, err);
+      console.warn(`[Purity] eventSourceSignal('${label}') failed to open:`, err);
       es = null;
       return;
     }

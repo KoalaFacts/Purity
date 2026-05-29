@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { broadcastSignal, watch } from '../src/index.ts';
-import { _resetBroadcastSignalRegistry } from '../src/broadcast-signal.ts';
+import { _resetBroadcastSignalCache } from '../src/broadcast-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';
 
@@ -21,7 +21,7 @@ const isXObj = (v: unknown): v is { x: number } =>
   !!v && typeof v === 'object' && typeof (v as { x?: unknown }).x === 'number';
 
 beforeEach(() => {
-  _resetBroadcastSignalRegistry();
+  _resetBroadcastSignalCache();
 });
 
 describe('broadcastSignal — SSR path (ADR 0039)', () => {

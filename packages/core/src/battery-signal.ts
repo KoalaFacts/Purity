@@ -61,7 +61,7 @@ export function batterySignal(): ComputedAccessor<BatteryInfo | null> {
         bm.addEventListener('dischargingtimechange', refresh);
       })
       .catch((err) => {
-        console.error('[purity] batterySignal getBattery failed:', err);
+        console.error('[Purity] batterySignal getBattery failed:', err);
       });
   }
   singleton = compute(() => inner());

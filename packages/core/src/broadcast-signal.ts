@@ -73,7 +73,7 @@ export function broadcastSignal<T>(
   if (existing) {
     if (!Object.is(initialDefaults.get(channel), defaultValue)) {
       console.warn(
-        `[purity] broadcastSignal('${channel}') called again with a different defaultValue; the first default wins. Extract a shared default to silence this warning.`,
+        `[Purity] broadcastSignal('${channel}') called again with a different defaultValue; the first default wins. Extract a shared default to silence this warning.`,
       );
     }
     return existing as StateAccessor<T>;
@@ -85,7 +85,7 @@ export function broadcastSignal<T>(
   bc.addEventListener('message', (e: MessageEvent) => {
     if (!validate(e.data)) {
       console.warn(
-        `[purity] broadcastSignal('${channel}') dropped incoming message — failed validator`,
+        `[Purity] broadcastSignal('${channel}') dropped incoming message — failed validator`,
       );
       return;
     }
@@ -96,7 +96,7 @@ export function broadcastSignal<T>(
     try {
       bc.postMessage(value);
     } catch (err) {
-      console.error('[purity] broadcastSignal postMessage failed:', err);
+      console.error('[Purity] broadcastSignal postMessage failed:', err);
     }
   };
 
@@ -121,7 +121,7 @@ export function broadcastSignal<T>(
 }
 
 /** @internal — test helper. Clears the per-channel instance cache. */
-export function _resetBroadcastSignalRegistry(): void {
+export function _resetBroadcastSignalCache(): void {
   instances.clear();
   initialDefaults.clear();
 }

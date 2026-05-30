@@ -8,12 +8,12 @@ Lite web framework built on TC39-Signals-inspired reactivity. Templates compile 
 
 ## Packages
 
-| Package                 | Path                    | Role                                                                | Docs                                          |
-| ----------------------- | ----------------------- | ------------------------------------------------------------------- | --------------------------------------------- |
-| `@purityjs/core`        | `packages/core/`        | The framework — signals, templates, components, control flow          | [CLAUDE.md](./packages/core/CLAUDE.md)        |
+| Package                 | Path                    | Role                                                                       | Docs                                          |
+| ----------------------- | ----------------------- | -------------------------------------------------------------------------- | --------------------------------------------- |
+| `@purityjs/core`        | `packages/core/`        | The framework — signals, templates, components, control flow               | [CLAUDE.md](./packages/core/CLAUDE.md)        |
 | `@purityjs/ssr`         | `packages/ssr/`         | Node-only SSR — `renderToString` + `renderToStream` + `renderStatic` + DSD | [README](./packages/ssr/README.md)            |
-| `@purityjs/vite-plugin` | `packages/vite-plugin/` | AOT template compile + server-module strip + file-system routing    | [CLAUDE.md](./packages/vite-plugin/CLAUDE.md) |
-| `@purityjs/cli`         | `packages/cli/`         | Project scaffolding (`--ssr` flag)                                  | [CLAUDE.md](./packages/cli/CLAUDE.md)         |
+| `@purityjs/vite-plugin` | `packages/vite-plugin/` | AOT template compile + server-module strip + file-system routing           | [CLAUDE.md](./packages/vite-plugin/CLAUDE.md) |
+| `@purityjs/cli`         | `packages/cli/`         | Project scaffolding (`--ssr` flag)                                         | [CLAUDE.md](./packages/cli/CLAUDE.md)         |
 
 Each package's CLAUDE.md (or README) carries the detailed API, file layout, and conventions. **Read the relevant package CLAUDE.md before editing inside that package** — they are the source of truth for per-package detail; this file is the cross-cutting big picture.
 
@@ -32,13 +32,13 @@ A custom push-pull signal graph inspired by the TC39 Signals proposal (Stage 1) 
 
 ### Compiler — three codegen modes from one parser/AST
 
-The template compiler (`packages/core/src/compiler/`) parses `html`...`` once into an AST, then emits one of three modes that **must stay behaviorally aligned**:
+The template compiler (`packages/core/src/compiler/`) parses each `html` template literal once into an AST, then emits one of three modes that **must stay behaviorally aligned**:
 
 - `generate` — direct `document.createElement` DOM code, for the client.
 - `generateSSR` — string-builder factories, for the server.
 - `generateHydrate` — walks the existing SSR DOM and attaches bindings in place (no rebuild).
 
-`html` works two ways: JIT at runtime (`compile.ts`, WeakMap-cached) or AOT via `@purityjs/vite-plugin`, which extracts every `html`...`` at build time, replaces it with compiled output, and strips `html` from imports (CSP-safe — no `eval`/`new Function`). The compiler is exported under the **`@purityjs/core/compiler`** subpath so the Vite plugin imports it without pulling in runtime code. The plugin switches between DOM and SSR codegen on its `transform(code, id, opts)` third arg (`opts.ssr === true`).
+`html` works two ways: JIT at runtime (`compile.ts`, WeakMap-cached) or AOT via `@purityjs/vite-plugin`, which extracts every `html` template at build time, replaces it with compiled output, and strips `html` from imports (CSP-safe — no `eval` / `new Function`). The compiler is exported under the **`@purityjs/core/compiler`** subpath so the Vite plugin imports it without pulling in runtime code. The plugin switches between DOM and SSR codegen on its `transform(code, id, opts)` third arg (`opts.ssr === true`).
 
 ### SSR + hydration
 

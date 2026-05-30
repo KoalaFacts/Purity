@@ -40,19 +40,47 @@ import { getSSRRenderContext } from './ssr-context.ts';
 export function manageTitle(fn: () => string): () => void {
   if (getSSRRenderContext() !== null) {
     // SSR: emit once. The `head()` helper handles the head accumulator.
-    head(markSSRHtml(`<title>${escHtml(fn())}</title>`));
+    // Isolate throws so a single broken `manageTitle` call site never
+    // poisons the whole renderToString pass — matches head()'s own
+    // thunk-error isolation. String() coerces non-string returns
+    // defensively so `escHtml`'s `.replace` never sees a non-string
+    // (e.g. a count signal accidentally passed as the title).
+    let raw: unknown;
+    try {
+      raw = fn();
+    } catch (err) {
+      console.error('[purity] manageTitle() fn threw during SSR — entry skipped:', err);
+      return () => {};
+    }
+    head(markSSRHtml(`<title>${escHtml(String(raw ?? ''))}</title>`));
     return () => {};
   }
   if (typeof document === 'undefined') {
     // Non-browser non-SSR context (e.g. a test runner without jsdom).
     // Watch the signal and stash the result on a local var so subscribers
-    // still track, but no DOM write happens.
+    // still track, but no DOM write happens. Per-run throws are isolated
+    // by the watch flush, but the initial synchronous run is not — wrap
+    // it so a throw can't escape the helper and break the caller.
     return watch(() => {
-      void fn();
+      try {
+        void fn();
+      } catch (err) {
+        console.error('[purity] manageTitle() fn threw — title not updated:', err);
+      }
     });
   }
   // Client: track + write to document.title.
+  // - Isolate the initial synchronous run (the watch flush isolates
+  //   subsequent re-runs, but the eager first run propagates by default
+  //   from `_effect`, which would otherwise propagate out of manageTitle
+  //   and unwind the surrounding render).
+  // - String() coerces so a non-string return (e.g. a number signal)
+  //   doesn't land as `"undefined"` / `"[object Object]"` on the tab.
   return watch(() => {
-    document.title = fn();
+    try {
+      document.title = String(fn() ?? '');
+    } catch (err) {
+      console.error('[purity] manageTitle() fn threw — title not updated:', err);
+    }
   });
 }

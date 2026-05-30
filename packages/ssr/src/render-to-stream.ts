@@ -268,17 +268,22 @@ async function renderShell(
     let timedOut = false;
     // Clear the loser timer so it doesn't stay armed (and keep the event
     // loop alive) for `remaining` ms after the resources already settled.
+    // try/finally so the clear happens even when Promise.all rejects —
+    // the post-await clear was previously skipped on the throw path.
     let shellTimer: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
-      Promise.all(ctx.pendingPromises),
-      new Promise<void>((resolve) => {
-        shellTimer = setTimeout(() => {
-          timedOut = true;
-          resolve();
-        }, remaining);
-      }),
-    ]);
-    clearTimeout(shellTimer);
+    try {
+      await Promise.race([
+        Promise.all(ctx.pendingPromises),
+        new Promise<void>((resolve) => {
+          shellTimer = setTimeout(() => {
+            timedOut = true;
+            resolve();
+          }, remaining);
+        }),
+      ]);
+    } finally {
+      clearTimeout(shellTimer);
+    }
     if (timedOut) {
       throw new Error(
         `[Purity] renderToStream shell timed out after ${timeout}ms while ` +
@@ -398,16 +403,20 @@ async function renderBoundary(
 
     let raceTimedOut = false;
     let boundaryTimer: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
-      Promise.all(ctx.pendingPromises),
-      new Promise<void>((resolve) => {
-        boundaryTimer = setTimeout(() => {
-          raceTimedOut = true;
-          resolve();
-        }, remaining);
-      }),
-    ]);
-    clearTimeout(boundaryTimer);
+    try {
+      await Promise.race([
+        Promise.all(ctx.pendingPromises),
+        new Promise<void>((resolve) => {
+          boundaryTimer = setTimeout(() => {
+            raceTimedOut = true;
+            resolve();
+          }, remaining);
+        }),
+      ]);
+    } finally {
+      // try/finally so the clear runs even when Promise.all rejects.
+      clearTimeout(boundaryTimer);
+    }
     if (raceTimedOut) {
       // viewTimedOut means we're already in the fallback pass and IT
       // timed out too — return null so the loop skips the chunk and the

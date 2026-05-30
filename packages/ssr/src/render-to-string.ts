@@ -190,15 +190,25 @@ export async function renderToString(
     // render already finished — on every pass, accumulating under load and
     // keeping the event loop alive (notably on serverless/edge).
     let raceTimer: ReturnType<typeof setTimeout> | undefined;
-    const raceResult: RaceResult = await Promise.race<RaceResult>([
-      Promise.all(ctx.pendingPromises).then(() => 'settled' as const),
-      new Promise<RaceResult>((resolve) => {
-        raceTimer = setTimeout(() => {
-          resolve(waitMs >= remaining ? 'global' : 'boundary');
-        }, waitMs);
-      }),
-    ]);
-    clearTimeout(raceTimer);
+    let raceResult: RaceResult;
+    try {
+      raceResult = await Promise.race<RaceResult>([
+        Promise.all(ctx.pendingPromises).then(() => 'settled' as const),
+        new Promise<RaceResult>((resolve) => {
+          raceTimer = setTimeout(() => {
+            resolve(waitMs >= remaining ? 'global' : 'boundary');
+          }, waitMs);
+        }),
+      ]);
+    } finally {
+      // The cycle-4 fix cleared the timer on the happy path only; if
+      // Promise.all rejected (a user fetcher errored), the await threw
+      // and the post-await clear was skipped. The timer then stayed
+      // armed for the full `waitMs` — exactly the "ref'd timer keeps
+      // the event loop alive on serverless/edge" hazard cycle 4 was
+      // meant to close. try/finally guarantees cleanup on every path.
+      clearTimeout(raceTimer);
+    }
 
     if (raceResult === 'global') {
       throw new Error(

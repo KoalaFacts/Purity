@@ -12,6 +12,13 @@ import { getSSRRenderContext } from './ssr-context.ts';
 let singleton: ComputedAccessor<string> | null = null;
 let onLanguageChange: (() => void) | null = null;
 
+// Coerce — some environments expose `navigator.language` as a non-string
+// (undefined, null, an array, etc.). Always return a usable string.
+function readLanguage(): string {
+  const lang = (navigator as { language?: unknown }).language;
+  return typeof lang === 'string' && lang.length > 0 ? lang : 'en';
+}
+
 /**
  * Reactive `navigator.language` (ADR 0041).
  *
@@ -24,17 +31,36 @@ export function localeSignal(): ComputedAccessor<string> {
   if (
     getSSRRenderContext() !== null ||
     typeof window === 'undefined' ||
+    typeof window.addEventListener !== 'function' ||
     typeof navigator === 'undefined'
   ) {
     return compute(() => 'en');
   }
   if (singleton) return singleton;
-  const inner = state(navigator.language || 'en');
-  onLanguageChange = () => {
-    inner(navigator.language || 'en');
+  const inner = state(readLanguage());
+  const handler = (): void => {
+    inner(readLanguage());
   };
-  window.addEventListener('languagechange', onLanguageChange);
+  // Publish the singleton + handler ref BEFORE attaching the listener, so a
+  // throw from addEventListener cannot leave the module in a half-bound
+  // state (listener attached, ref lost ⇒ leak on _resetLocaleSignal).
+  onLanguageChange = handler;
   singleton = compute(() => inner());
+  try {
+    window.addEventListener('languagechange', handler);
+  } catch (err) {
+    // Roll back so a partial bind doesn't leak a listener or pin a stale
+    // singleton that can never receive updates.
+    try {
+      window.removeEventListener('languagechange', handler);
+    } catch {
+      /* noop */
+    }
+    onLanguageChange = null;
+    singleton = null;
+    console.error('[purity] localeSignal: failed to register listener', err);
+    return compute(() => readLanguage());
+  }
   return singleton;
 }
 

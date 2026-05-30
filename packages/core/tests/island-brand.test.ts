@@ -11,7 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import { html } from '../src/compiler/compile.ts';
 import { mount } from '../src/component.ts';
-import { getIslandBrand, island, isIsland } from '../src/island.ts';
+import { getIslandBrand, island, isIsland, type IslandOptions } from '../src/island.ts';
 import { state } from '../src/signals.ts';
 import {
   popSSRRenderContext,
@@ -155,6 +155,105 @@ describe('island() — SSR branch (synthetic context)', () => {
     });
     expect(out).toContain('data-pi-id="1"');
     expect(out).toContain('data-pi-id="2"');
+  });
+
+  // audit-v2: HIGH — throw isolation. If the inner view throws on the SSR
+  // path, the island counter must NOT advance, or subsequent islands shift
+  // IDs and the position-based pairing in mountIslands desyncs.
+  it('rolls the island counter back when the inner view throws (no ID drift)', () => {
+    const Bad = (): { __purity_ssr_html__: string } => {
+      throw new Error('boom');
+    };
+    const Good = (): { __purity_ssr_html__: string } => ({
+      __purity_ssr_html__: '<span>ok</span>',
+    });
+    const wrappedBad = island(Bad);
+    const wrappedGood = island(Good);
+    const ctx: SSRRenderContext = {
+      pendingPromises: [],
+      resolvedData: [],
+      resolvedErrors: [],
+      resolvedDataByKey: {},
+      resolvedErrorsByKey: {},
+      resourceCounter: 0,
+      suspenseCounter: 0,
+      islandCounter: 0,
+      boundaryStartTimes: new Map(),
+      boundaryDeadlines: new Map(),
+      timedOutBoundaries: new Set(),
+    };
+    pushSSRRenderContext(ctx);
+    try {
+      expect(() => wrappedBad()).toThrow('boom');
+      // Counter rolled back — next island still claims id 1.
+      const out = wrappedGood() as { __purity_ssr_html__: string };
+      expect(out.__purity_ssr_html__).toContain('data-pi-id="1"');
+      expect(ctx.islandCounter).toBe(1);
+    } finally {
+      popSSRRenderContext();
+    }
+  });
+});
+
+describe('island() — audit-v2 hardening', () => {
+  // audit-v2: MEDIUM — unknown trigger strings must normalize to 'load'
+  // instead of flowing through as a foreign data-pi-trigger value that the
+  // client runtime would treat as unknown (only to fall back with a warn).
+  // We narrow at the source.
+  it('normalises an unknown trigger to "load" on the brand', () => {
+    const view = () => document.createElement('span');
+    const wrapped = island(view, { hydrate: 'totally-bogus' as unknown as 'load' });
+    expect(getIslandBrand(wrapped)?.trigger).toBe('load');
+  });
+
+  it('accepts media:… triggers with non-empty suffix only', () => {
+    const view = () => document.createElement('span');
+    expect(getIslandBrand(island(view, { hydrate: 'media:(min-width: 1px)' }))?.trigger).toBe(
+      'media:(min-width: 1px)',
+    );
+    // Empty media: suffix is not a valid trigger — normalise to 'load'.
+    expect(getIslandBrand(island(view, { hydrate: 'media:' as 'media:x' }))?.trigger).toBe('load');
+  });
+
+  // audit-v2: MEDIUM — prototype-pollution guard on options.hydrate.
+  it('does not read options.hydrate from the prototype chain', () => {
+    const view = () => document.createElement('span');
+    const polluted = Object.create({ hydrate: 'visible' });
+    const wrapped = island(view, polluted as IslandOptions);
+    expect(getIslandBrand(wrapped)?.trigger).toBe('load');
+  });
+
+  it('tolerates a null / non-object options bag', () => {
+    const view = () => document.createElement('span');
+    // @ts-expect-error — auditing runtime safety against bad call sites.
+    expect(getIslandBrand(island(view, null))?.trigger).toBe('load');
+    // @ts-expect-error — auditing runtime safety against bad call sites.
+    expect(getIslandBrand(island(view, 'load'))?.trigger).toBe('load');
+  });
+
+  // audit-v2: MEDIUM — brand object is frozen so user code can't post-hoc
+  // mutate `trigger` (which would silently desync SSR / Vite-plugin scan).
+  it('freezes the brand against post-hoc mutation', () => {
+    const view = () => document.createElement('span');
+    const wrapped = island(view, { hydrate: 'visible' });
+    const brand = getIslandBrand(wrapped)!;
+    expect(Object.isFrozen(brand)).toBe(true);
+    expect(() => {
+      (brand as unknown as { trigger: string }).trigger = 'evil';
+    }).toThrow(TypeError);
+    expect(brand.trigger).toBe('visible');
+  });
+
+  // audit-v2: MEDIUM — brand descriptor itself remains non-configurable
+  // and non-writable so the property can't be redefined or removed.
+  it('keeps the brand property non-configurable and non-writable', () => {
+    const wrapped = island(() => document.createElement('span'));
+    const symbols = Object.getOwnPropertySymbols(wrapped);
+    expect(symbols.length).toBeGreaterThan(0);
+    const desc = Object.getOwnPropertyDescriptor(wrapped, symbols[0])!;
+    expect(desc.configurable).toBe(false);
+    expect(desc.writable).toBe(false);
+    expect(desc.enumerable).toBe(false);
   });
 });
 

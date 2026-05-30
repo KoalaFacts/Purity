@@ -79,11 +79,33 @@ type Branded<V extends (...args: never[]) => unknown> = V & {
  * server round-trip — closures over module-scope state will be
  * duplicated when each island ships in its own chunk (Phase 3).
  */
+// Allow-list of literal trigger prefixes; `media:` accepts any suffix. Keeping
+// this audit-local (rather than recomputing from the type) means a bad
+// `options.hydrate` (e.g. from untrusted props JSON) can't slip a foreign
+// data-pi-trigger attribute through escAttr into the wrapper.
+const VALID_TRIGGERS: ReadonlySet<string> = new Set(['load', 'idle', 'visible', 'interact']);
+
+function normalizeTrigger(raw: unknown): IslandTrigger {
+  if (typeof raw !== 'string') return 'load';
+  if (VALID_TRIGGERS.has(raw)) return raw as IslandTrigger;
+  if (raw.startsWith('media:') && raw.length > 'media:'.length) return raw as IslandTrigger;
+  return 'load';
+}
+
 export function island<V extends (...args: never[]) => unknown>(
   view: V,
   options: IslandOptions = {},
 ): V {
-  const trigger: IslandTrigger = options.hydrate ?? 'load';
+  // Guard against prototype-polluted / non-object options. Read `hydrate`
+  // via `hasOwnProperty` so a malicious `Object.prototype.hydrate = ...`
+  // can't poison every island in the page.
+  const rawHydrate =
+    options != null && typeof options === 'object'
+      ? Object.prototype.hasOwnProperty.call(options, 'hydrate')
+        ? (options as { hydrate?: unknown }).hydrate
+        : undefined
+      : undefined;
+  const trigger: IslandTrigger = normalizeTrigger(rawHydrate);
   // Defining a fresh wrapper (rather than branding `view` directly) keeps
   // the user's view function untouched — `island(Counter)` doesn't mutate
   // `Counter`, so the same component can be used branded *and* unbranded.
@@ -93,8 +115,20 @@ export function island<V extends (...args: never[]) => unknown>(
       // SSR path — render the inner view to HTML and wrap it. The wrapper
       // is a valid HTMLElement (hyphen-cased custom-name → HTMLElement per
       // HTML spec) with `display:contents` so it doesn't affect layout.
+      //
+      // Throw isolation: allocate the ID BEFORE invoking `view`, but if
+      // `view` throws we roll the counter back so subsequent islands keep
+      // contiguous, stable IDs (essential for the position-based pairing
+      // used by mountIslands). The error itself is rethrown unchanged —
+      // higher-level boundaries (suspense, renderToString) decide policy.
       const id = ++ctx.islandCounter;
-      const inner = valueToHtml(view(...(args as never[])));
+      let inner: string;
+      try {
+        inner = valueToHtml(view(...(args as never[])));
+      } catch (err) {
+        ctx.islandCounter = id - 1;
+        throw err;
+      }
       return markSSRHtml(
         `<purity-island data-pi-id="${id}" data-pi-trigger="${escAttr(trigger)}" ` +
           `style="display:contents">${inner}</purity-island>`,
@@ -102,7 +136,10 @@ export function island<V extends (...args: never[]) => unknown>(
     }
     return view(...(args as never[])) as ReturnType<V>;
   }) as V;
-  const brand: IslandBrand<V> = { view, trigger };
+  // Freeze the brand so user code can't mutate `trigger`/`view` after the
+  // fact (which would silently break SSR-side data-pi-trigger emission or
+  // the Vite plugin's static scan).
+  const brand: IslandBrand<V> = Object.freeze({ view, trigger });
   Object.defineProperty(wrapped, ISLAND_BRAND, {
     value: brand,
     enumerable: false,

@@ -44,17 +44,61 @@ export function mutationSignal(
   if (getSSRRenderContext() !== null || typeof MutationObserver === 'undefined') {
     return compute(() => [] as MutationRecord[]);
   }
+  // MutationObserver.observe() throws synchronously if none of childList,
+  // attributes, or characterData is true. Validate up front so we surface
+  // a useful message at the call site instead of a native TypeError that
+  // points back into the observer callback registration.
+  const resolved: MutationObserverInit =
+    options === undefined ? { childList: true } : options;
+  if (!resolved.childList && !resolved.attributes && !resolved.characterData) {
+    throw new TypeError(
+      '[Purity] mutationSignal(target, options): at least one of childList, attributes, or characterData must be true.',
+    );
+  }
   const inner = state<MutationRecord[]>([]);
   const observer = new MutationObserver((records) => {
-    inner(records);
+    // Isolate consumer-side throws so a buggy watcher can't kill the
+    // observer (subsequent batches would otherwise stop landing here).
+    try {
+      inner(records);
+    } catch (err) {
+      console.error('[Purity] mutationSignal observer callback error:', err);
+    }
   });
-  observer.observe(target, options ?? { childList: true });
+  observer.observe(target, resolved);
   // MutationObserver holds a STRONG ref to its target (callout at top of
   // file), so without this, calling mutationSignal() inside a component
   // pinned the target node alive past component unmount. Auto-disconnect
   // on the surrounding component's unmount; module-scope calls keep the
   // documented "lifetime = page" semantics.
+  //
+  // Idempotent: parent + nested cleanup paths can both fire the disposer,
+  // and disconnect() needs to be a true no-op the second time. We also
+  // drain any queued records via takeRecords() — disconnect() drops them
+  // silently otherwise, so the last batch of mutations before unmount
+  // would never reach the signal.
+  let disposed = false;
+  const dispose = (): void => {
+    if (disposed) return;
+    disposed = true;
+    // Drain pending records so the signal sees the final batch before we
+    // detach. Guarded by try/catch because takeRecords() shouldn't throw
+    // in any spec-compliant impl, but we'd rather not break unmount.
+    try {
+      const pending = observer.takeRecords();
+      if (pending.length > 0) {
+        try {
+          inner(pending);
+        } catch (err) {
+          console.error('[Purity] mutationSignal observer callback error:', err);
+        }
+      }
+    } catch {
+      // ignore — proceed to disconnect
+    }
+    observer.disconnect();
+  };
   const ctx = getCurrentContext();
-  if (ctx) (ctx.disposers ??= []).push(() => observer.disconnect());
+  if (ctx) (ctx.disposers ??= []).push(dispose);
   return compute(() => inner());
 }

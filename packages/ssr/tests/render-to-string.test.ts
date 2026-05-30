@@ -4,6 +4,10 @@ import { resource } from '@purityjs/core';
 import { describe, expect, it } from 'vitest';
 import { html, renderToString } from '../src/index.ts';
 
+// queueMicrotask-as-promise — lets us yield to the renderToString await
+// loop without a setTimeout dependency.
+const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+
 describe('html`` SSR tag', () => {
   it('returns a branded SSR HTML wrapper', () => {
     const out = html`<div></div>`;
@@ -208,6 +212,127 @@ describe('renderToString — CSP nonce on resource-priming script', () => {
   it('accepts standard base64 + URL-safe nonces', async () => {
     // Must not throw — just exercises the validator.
     await renderToString(() => html`<p>x</p>`, { nonce: 'AbCdEf+/=_-1234' });
+  });
+});
+
+describe('renderToString — audit-v2 AbortSignal + cleanup hardening', () => {
+  it('rejects synchronously-aborted signals before invoking the component', async () => {
+    // Pre-flight check: if the caller has already given up (client
+    // disconnect arrived before the handler started rendering) there's
+    // no point pushing a render context or invoking the user component.
+    // Mirrors `fetch`'s pre-aborted-signal behaviour.
+    const ac = new AbortController();
+    ac.abort();
+    let calls = 0;
+    await expect(
+      renderToString(
+        () => {
+          calls++;
+          return html`<p>x</p>`;
+        },
+        { signal: ac.signal },
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(calls).toBe(0);
+  });
+
+  it('rejects mid-await with the signal reason when the signal fires', async () => {
+    // The abort race branch must win over the still-pending fetcher and
+    // the global-timeout timer. Without the wiring, an HTTP-disconnect-
+    // driven abort still holds the render slot for the full `timeout`
+    // window while the pending fetch runs to completion.
+    const ac = new AbortController();
+    const promise = renderToString(
+      () => {
+        const r = resource(() => new Promise<string>(() => {}));
+        return html`<p>${() => r() ?? ''}</p>`;
+      },
+      { signal: ac.signal, timeout: 30_000 },
+    );
+    // Yield so the renderToString pass has time to install its abort
+    // listener before we fire abort.
+    await tick();
+    await new Promise((r) => setImmediate(r));
+    ac.abort(new Error('client gone'));
+    await expect(promise).rejects.toThrow('client gone');
+  });
+
+  it('detaches the abort listener once the render settles cleanly', async () => {
+    // A long-lived AbortSignal (shared across many renders) shouldn't
+    // accumulate one listener per renderToString call. The race-
+    // resolution path must detach the listener on the happy path too,
+    // not only when the abort branch fires.
+    const ac = new AbortController();
+    let added = 0;
+    let removed = 0;
+    const realAdd = ac.signal.addEventListener.bind(ac.signal);
+    const realRemove = ac.signal.removeEventListener.bind(ac.signal);
+    ac.signal.addEventListener = ((type: string, listener: unknown, opts?: unknown) => {
+      if (type === 'abort') added++;
+      return realAdd(type, listener as EventListener, opts as AddEventListenerOptions);
+    }) as typeof ac.signal.addEventListener;
+    ac.signal.removeEventListener = ((type: string, listener: unknown, opts?: unknown) => {
+      if (type === 'abort') removed++;
+      return realRemove(type, listener as EventListener, opts as EventListenerOptions);
+    }) as typeof ac.signal.removeEventListener;
+    const out = await renderToString(
+      () => {
+        const r = resource(() => Promise.resolve('ok'));
+        return html`<p>${() => r() ?? ''}</p>`;
+      },
+      { signal: ac.signal },
+    );
+    expect(out).toContain('ok');
+    expect(added).toBeGreaterThan(0);
+    expect(removed).toBe(added);
+  });
+
+  it('pops the SSR context even when the user component throws synchronously', async () => {
+    // If a synchronous throw inside valueToHtml(component()) escaped the
+    // pass loop without popping the context, the next renderToString call
+    // would inherit the stale frame on top of the stack. Two back-to-back
+    // renders must each see a fresh, isolated context — the second one
+    // resolves correctly only if the first one's stack frame was popped.
+    await expect(
+      renderToString(() => {
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+    const out = await renderToString(() => {
+      const r = resource(() => Promise.resolve('clean'));
+      return html`<p>${() => r() ?? ''}</p>`;
+    });
+    expect(out).toContain('clean');
+  });
+
+  it('does not surface an unhandled rejection when a resource fetcher rejects', async () => {
+    // resource() folds fetcher rejections into resolve(undefined) + an
+    // error() accessor, but the defensive `.then(ok, err)` on the
+    // Promise.all race ensures that even if a rogue primitive ever
+    // pushes a raw rejecting promise onto ctx.pendingPromises we don't
+    // surface it as an unhandledRejection. Regression-proxy: a render
+    // that exercises the rejection path completes cleanly without any
+    // unhandled rejection during its run.
+    const seen: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      seen.push(reason);
+    };
+    const existing = process.listeners('unhandledRejection');
+    process.removeAllListeners('unhandledRejection');
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const out = await renderToString(() => {
+        const r = resource<string>(() => Promise.reject(new Error('fetcher boom')));
+        return html`<p>${() => (r.error() ? 'errored' : '...')}</p>`;
+      });
+      expect(out).toContain('errored');
+      await tick();
+      await new Promise((r) => setImmediate(r));
+      expect(seen).toEqual([]);
+    } finally {
+      process.removeListener('unhandledRejection', onUnhandled);
+      for (const l of existing) process.on('unhandledRejection', l);
+    }
   });
 });
 

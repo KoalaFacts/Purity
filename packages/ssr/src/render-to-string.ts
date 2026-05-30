@@ -53,6 +53,23 @@ export interface RenderToStringOptions {
    * correspond to a real request (static pre-render, tests). ADR 0009.
    */
   request?: Request;
+  /**
+   * Cancel an in-flight render. When the signal aborts (caller hung up,
+   * HTTP client disconnected, fastify request closed, …) the next race
+   * loses immediately and the returned promise rejects with the
+   * signal's `reason` (an `AbortError` `DOMException` when none was
+   * supplied to `AbortController.abort()`). Without this, a render
+   * that's blocked on a slow fetcher keeps awaiting up to `timeout`ms
+   * even though no one is listening — burning CPU / open sockets on
+   * the server. Mirrors `renderToStream`'s `signal` option.
+   *
+   * Late-arriving fetches that win the race after the abort still
+   * write to the shared resolved-data cache for their resource, but
+   * the renderToString promise has already rejected — those writes
+   * are harmless since the shared cache is GC-rooted only through the
+   * pending promises themselves.
+   */
+  signal?: AbortSignal;
 }
 
 /** Return shape for {@link renderToString} when `extractHead: true`. */
@@ -97,6 +114,14 @@ export async function renderToString(
   const nonce = options.nonce;
   const extractHead = options.extractHead === true;
   const request = options.request;
+  const signal = options.signal;
+  // Fail fast if the caller is already gone — no point pushing a context
+  // or invoking the user component. Mirrors fetch's pre-flight abort
+  // check. `signal.reason` defaults to a DOMException('…','AbortError')
+  // when AbortController.abort() is called without an argument.
+  if (signal?.aborted) {
+    throw abortReason(signal);
+  }
   if (nonce !== undefined && !NONCE_PATTERN.test(nonce)) {
     throw new Error(
       `[Purity] renderToString: invalid CSP nonce. Must match ` +
@@ -155,9 +180,20 @@ export async function renderToString(
     try {
       html = valueToHtml(component());
     } finally {
+      // Pop in a finally so a synchronous throw inside the user component
+      // doesn't escape the pass boundary with the context still on the
+      // stack — that would leak into the next renderToString call on the
+      // same event loop turn and crash with stale `resolvedData`.
       popSSRRenderContext();
     }
     lastHead = ctx.head;
+
+    // Abort observed mid-render (a sibling fetch triggered the signal
+    // while the synchronous render was running). Bail before we award
+    // resources to a render no one is listening for.
+    if (signal?.aborted) {
+      throw abortReason(signal);
+    }
 
     if (ctx.pendingPromises.length === 0) {
       // Quiescent — no pending fetches triggered during this pass.
@@ -197,22 +233,52 @@ export async function renderToString(
     // Each race branch resolves with its own discriminator so the winning
     // value is captured by the await. Mutating a shared `let` from inside
     // the inner promises bypasses TS's flow narrowing across the await.
-    type RaceResult = 'settled' | 'boundary' | 'global';
+    type RaceResult = 'settled' | 'boundary' | 'global' | 'aborted';
     // Capture the timer so we can clear it when the promises win the race.
     // Otherwise a ref'd timer stays armed for the full `waitMs` after the
     // render already finished — on every pass, accumulating under load and
     // keeping the event loop alive (notably on serverless/edge).
     let raceTimer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
     let raceResult: RaceResult;
     try {
-      raceResult = await Promise.race<RaceResult>([
-        Promise.all(ctx.pendingPromises).then(() => 'settled' as const),
+      // Defensive `.catch`: resource()'s SSR branch wraps the user fetcher
+      // in a Promise.resolve(...).then(ok, err) handler that *never*
+      // rejects — both success and failure write back to the resolved-
+      // data/error caches and resolve `undefined`. But anything else a
+      // user might push onto `ctx.pendingPromises` (a custom directive,
+      // a future primitive) could reject. We can't let that reject the
+      // outer race promise: a rejection would escape the await as a throw
+      // and bypass the `boundary`/`global` discriminator logic, *and*
+      // surface as an unhandled rejection on the race's loser branch.
+      // Treat any rejection as "settled" — the next pass renders against
+      // whatever state the failing promise left in the cache.
+      const settledPromise = Promise.all(ctx.pendingPromises).then(
+        () => 'settled' as const,
+        () => 'settled' as const,
+      );
+      const racers: Promise<RaceResult>[] = [
+        settledPromise,
         new Promise<RaceResult>((resolve) => {
           raceTimer = setTimeout(() => {
             resolve(waitMs >= remaining ? 'global' : 'boundary');
           }, waitMs);
         }),
-      ]);
+      ];
+      if (signal) {
+        // The caller can yank us out of the await as soon as they
+        // give up — no need to wait for the next boundary deadline or
+        // the global timeout. Without this, an aborted HTTP request
+        // still holds onto its server-side render slot for up to
+        // `timeout`ms while fetches it triggered keep running.
+        racers.push(
+          new Promise<RaceResult>((resolve) => {
+            onAbort = () => resolve('aborted');
+            signal.addEventListener('abort', onAbort, { once: true });
+          }),
+        );
+      }
+      raceResult = await Promise.race<RaceResult>(racers);
     } finally {
       // The cycle-4 fix cleared the timer on the happy path only; if
       // Promise.all rejected (a user fetcher errored), the await threw
@@ -221,8 +287,18 @@ export async function renderToString(
       // the event loop alive on serverless/edge" hazard cycle 4 was
       // meant to close. try/finally guarantees cleanup on every path.
       clearTimeout(raceTimer);
+      // Detach the abort listener so the AbortSignal doesn't retain a
+      // reference to this render's closure once we move on. Listeners
+      // registered with `{ once: true }` self-detach on fire, but a
+      // race that wins via the resources/timer never fires the abort
+      // branch — and a leaked listener pins the SSRRenderContext for
+      // every still-living AbortSignal in the process.
+      if (signal && onAbort) signal.removeEventListener('abort', onAbort);
     }
 
+    if (raceResult === 'aborted') {
+      throw abortReason(signal as AbortSignal);
+    }
     if (raceResult === 'global') {
       throw new Error(
         `[Purity] renderToString timed out after ${timeout}ms while ` +
@@ -243,6 +319,25 @@ export async function renderToString(
     `[Purity] renderToString did not converge within ${MAX_PASSES} passes — ` +
       'a resource is likely creating new resources on every pass.',
   );
+}
+
+// Normalise the AbortSignal's reason into something throwable. Modern
+// runtimes (Node 18+, Bun, Deno, browsers) populate `signal.reason` with
+// a `DOMException('…','AbortError')` when `AbortController.abort()` is
+// called without an argument, or whatever value the caller passed. If
+// `reason` is missing (very old runtimes) we synthesise one so the
+// rejection still has `name === 'AbortError'` for the standard
+// `err.name === 'AbortError'` consumer pattern.
+function abortReason(signal: AbortSignal): unknown {
+  const reason = signal.reason;
+  if (reason !== undefined) return reason;
+  // Synthesised fallback.
+  if (typeof DOMException === 'function') {
+    return new DOMException('renderToString aborted', 'AbortError');
+  }
+  const err = new Error('renderToString aborted');
+  (err as Error & { name: string }).name = 'AbortError';
+  return err;
 }
 
 // CSP nonces in HTTP headers are base64 (RFC 4648) and frequently URL-safe

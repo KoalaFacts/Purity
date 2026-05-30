@@ -46,6 +46,13 @@ function defaultShouldPrefetch(event: MouseEvent | FocusEvent, a: HTMLAnchorElem
   if (target && target !== '_self') return false;
   // Download links — the browser will handle, no SPA chunk involved.
   if (a.hasAttribute('download')) return false;
+  // Scheme allow-list: only prefetch http(s) navigations. `a.origin` is
+  // `'null'` for `javascript:` / `data:` / `mailto:` etc. in current
+  // browsers — that incidentally falls through the cross-origin check
+  // below, but `blob:<page-origin>/...` and `filesystem:<page-origin>/...`
+  // inherit the page origin and would slip past it. Bind the contract
+  // explicitly. Mirrors the allow-list in router-intercept.ts.
+  if (a.protocol !== 'http:' && a.protocol !== 'https:') return false;
   // Cross-origin — full-page navigation, nothing to prefetch.
   if (typeof window !== 'undefined' && a.origin !== window.location.origin) return false;
   // Same-page hash-only — no module load needed.
@@ -83,11 +90,15 @@ export function prefetchManifestLinks(
   if (typeof document === 'undefined') return () => {};
   const delay = options.delay ?? 50;
   const should = options.shouldPrefetch ?? defaultShouldPrefetch;
-  // Map of <a> elements with a pending setTimeout; cancel on mouseleave.
+  // Map of <a> elements with a pending setTimeout; cancel on mouseleave / focusout.
   const pending = new Map<HTMLAnchorElement, ReturnType<typeof setTimeout>>();
   // Anchors we've already kicked off a prefetch for. Dedupes hovering
   // over the same link twice within a session.
   const fired = new WeakSet<HTMLAnchorElement>();
+  // Flag consulted by in-flight `.catch` callbacks so they short-circuit
+  // after teardown. Dynamic `import()` cannot be aborted, but we can stop
+  // mutating `fired` and stop starting new imports.
+  let disposed = false;
 
   function findMatch(pathname: string): PrefetchableEntry | null {
     for (const entry of routes) {
@@ -97,6 +108,7 @@ export function prefetchManifestLinks(
   }
 
   function firePrefetch(anchor: HTMLAnchorElement): void {
+    if (disposed) return;
     if (fired.has(anchor)) return;
     const entry = findMatch(anchor.pathname);
     if (!entry) return;
@@ -106,16 +118,41 @@ export function prefetchManifestLinks(
     const imports: Array<Promise<unknown>> = [entry.importFn()];
     for (const layout of entry.layouts) imports.push(layout.importFn());
     Promise.all(imports).catch(() => {
-      // Allow retry on next hover.
+      // Allow retry on next hover — unless teardown happened, in which
+      // case the WeakSet is closure-private and irrelevant anyway, but
+      // avoid the late mutation for cleanliness.
+      if (disposed) return;
       fired.delete(anchor);
     });
   }
 
   function onEnter(event: MouseEvent | FocusEvent): void {
+    if (disposed) return;
     const target = event.target as Element | null;
     if (!target) return;
-    // `mouseenter` doesn't bubble; we use mouseover via the delegated path
-    // to mimic the bubbling form. Find the anchor ancestor of the target.
+    // For mouseover delegation: if the cursor merely moved between two
+    // descendants of the same anchor, `event.relatedTarget` is inside
+    // the anchor too — skip the expensive `should()` work. Mimics the
+    // native `mouseenter` semantics ("fired once per cursor entry").
+    if ('relatedTarget' in event) {
+      const related = (event as MouseEvent).relatedTarget as Node | null;
+      const fromAnchor =
+        related && 'closest' in related ? ((related as Element).closest?.('a') ?? null) : null;
+      // Walk up from the current target too, before doing it again below,
+      // so the same-anchor short-circuit is one closest() call cheaper.
+      const intoAnchor = (target.closest?.('a') ?? null) as HTMLAnchorElement | null;
+      if (!intoAnchor) return;
+      if (fromAnchor === intoAnchor) return;
+      if (pending.has(intoAnchor) || fired.has(intoAnchor)) return;
+      if (!should(event, intoAnchor)) return;
+      const timer = setTimeout(() => {
+        pending.delete(intoAnchor);
+        firePrefetch(intoAnchor);
+      }, delay);
+      pending.set(intoAnchor, timer);
+      return;
+    }
+    // Focus path — `mouseenter`-style descendant noise doesn't apply.
     const anchor = (target.closest?.('a') ?? null) as HTMLAnchorElement | null;
     if (!anchor) return;
     if (pending.has(anchor) || fired.has(anchor)) return;
@@ -127,7 +164,7 @@ export function prefetchManifestLinks(
     pending.set(anchor, timer);
   }
 
-  function onLeave(event: MouseEvent): void {
+  function onLeave(event: Event): void {
     const target = event.target as Element | null;
     if (!target) return;
     const anchor = (target.closest?.('a') ?? null) as HTMLAnchorElement | null;
@@ -141,16 +178,23 @@ export function prefetchManifestLinks(
 
   // `mouseover` bubbles (mouseenter doesn't), so delegate via mouseover +
   // mouseout. Same UX as native mouseenter — fires once per cursor entry
-  // into the link (we dedupe via the `pending` map + `fired` WeakSet).
+  // into the link (we short-circuit via `event.relatedTarget` for moves
+  // between descendants of the same anchor, plus the `pending` map +
+  // `fired` WeakSet).
   document.addEventListener('mouseover', onEnter, true);
   document.addEventListener('mouseout', onLeave, true);
-  // Also fire on focus for keyboard users navigating with Tab.
+  // Also fire on focus for keyboard users navigating with Tab. Pair with
+  // focusout so Tabbing past a link cancels its pending timer (otherwise
+  // rapid-Tab through N links queues N concurrent prefetches).
   document.addEventListener('focusin', onEnter, true);
+  document.addEventListener('focusout', onLeave, true);
 
   return () => {
+    disposed = true;
     document.removeEventListener('mouseover', onEnter, true);
     document.removeEventListener('mouseout', onLeave, true);
     document.removeEventListener('focusin', onEnter, true);
+    document.removeEventListener('focusout', onLeave, true);
     for (const timer of pending.values()) clearTimeout(timer);
     pending.clear();
   };

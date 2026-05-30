@@ -45,13 +45,52 @@
  * }
  * ```
  */
+// audit-v2 hardening notes (see audit-v2 changelog):
+//
+//  • `[E] extends [never]` short-circuit — when `R[number]` collapses to
+//    `never` (empty routes tuple) or when `Extract` finds no match, the
+//    naked conditional distributes over `never` and yields `never`,
+//    which makes every downstream assignment fail to typecheck. We
+//    resolve those edge cases to `undefined` so `loaderData()` simply
+//    has no payload, matching the runtime story.
+//
+//  • Optional `loader?:` — apps may declare an ambient loader as
+//    optional (`export const loader?: …`). The original
+//    `M extends { loader: … }` arm fails for optional members and
+//    silently falls through to `undefined`, hiding the real return
+//    shape from `loaderData()`. We gate on `'loader' extends keyof M`
+//    (so a missing loader still resolves to `undefined`), then use
+//    `IsRequiredKey` to decide whether the optional variant surfaces
+//    as `Awaited<Ret> | undefined` (optional / could be absent at
+//    runtime) or `Awaited<Ret>` (required, guaranteed-present).
+//
+// Reused by both `LoaderDataOf` (manifest entry point) and
+// `LoaderDataOfEntry` (single layout entry). Kept as a non-exported
+// helper so the surface area of this module stays at the two public
+// types above.
+type IsRequiredKey<M, K extends PropertyKey> = K extends keyof M
+  ? Record<string, never> extends Pick<M, K>
+    ? false
+    : true
+  : false;
+
+type LoaderShape<M> = 'loader' extends keyof M
+  ? M extends { loader?: infer L }
+    ? L extends (...args: never[]) => infer Ret
+      ? IsRequiredKey<M, 'loader'> extends true
+        ? Awaited<Ret>
+        : Awaited<Ret> | undefined
+      : undefined
+    : undefined
+  : undefined;
+
 export type LoaderDataOf<P extends string, R extends readonly unknown[]> =
   Extract<R[number], { pattern: P }> extends infer E
-    ? E extends { importFn: () => Promise<infer M> }
-      ? M extends { loader: (...args: never[]) => infer Ret }
-        ? Awaited<Ret>
+    ? [E] extends [never]
+      ? undefined
+      : E extends { importFn: () => Promise<infer M> }
+        ? LoaderShape<M>
         : undefined
-      : undefined
     : never;
 
 /**
@@ -70,8 +109,11 @@ export type LoaderDataOf<P extends string, R extends readonly unknown[]> =
  * type RootLayoutData = LoaderDataOfEntry<typeof routes[0]['layouts'][0]>;
  * ```
  */
-export type LoaderDataOfEntry<E> = E extends { importFn: () => Promise<infer M> }
-  ? M extends { loader: (...args: never[]) => infer Ret }
-    ? Awaited<Ret>
-    : undefined
-  : undefined;
+// Same audit-v2 hardening as `LoaderDataOf` above — see the comment
+// block on `LoaderShape` for the optional-loader / never-short-circuit
+// rationale.
+export type LoaderDataOfEntry<E> = [E] extends [never]
+  ? undefined
+  : E extends { importFn: () => Promise<infer M> }
+    ? LoaderShape<M>
+    : undefined;

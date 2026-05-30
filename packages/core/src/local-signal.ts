@@ -60,8 +60,20 @@ function installListener(): void {
     // registrations only — without this filter, a localStorage event would
     // (incorrectly) also mutate sessionStorage-backed signals that happen
     // to share a key, and vice versa.
-    const areaKind: 'local' | 'session' =
-      e.storageArea === window.sessionStorage ? 'session' : 'local';
+    //
+    // Hardened: only act when `storageArea` is EXACTLY window.localStorage
+    // or window.sessionStorage. Synthetic / dispatched events with a null
+    // or unrecognised `storageArea` previously fell through to 'local',
+    // letting any code on the page (or a cross-origin iframe synth event)
+    // overwrite every local-backed signal. Now such events are ignored.
+    let areaKind: 'local' | 'session';
+    if (e.storageArea === window.localStorage) {
+      areaKind = 'local';
+    } else if (e.storageArea === window.sessionStorage) {
+      areaKind = 'session';
+    } else {
+      return;
+    }
     const prefix = `${areaKind}:`;
     if (e.key === null) {
       // Whole storage was cleared — reset every registration belonging to

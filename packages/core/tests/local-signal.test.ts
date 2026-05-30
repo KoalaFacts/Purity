@@ -131,6 +131,7 @@ describe('localSignal — client path (ADR 0039)', () => {
       makeStorageEvent({
         key: 'theme',
         newValue: JSON.stringify('dark'),
+        storageArea: localStorage,
       }),
     );
     expect(theme()).toBe('dark');
@@ -147,6 +148,7 @@ describe('localSignal — client path (ADR 0039)', () => {
         key: 'theme',
         newValue: null,
         oldValue: JSON.stringify('dark'),
+        storageArea: localStorage,
       }),
     );
     expect(theme()).toBe('light');
@@ -157,7 +159,9 @@ describe('localSignal — client path (ADR 0039)', () => {
     const b = localSignal('b', 'x');
     a.set(5);
     b.set('y');
-    window.dispatchEvent(makeStorageEvent({ key: null, newValue: null }));
+    window.dispatchEvent(
+      makeStorageEvent({ key: null, newValue: null, storageArea: localStorage }),
+    );
     expect(a()).toBe(0);
     expect(b()).toBe('x');
   });
@@ -316,6 +320,30 @@ describe('localSignal — versioning + migration (ADR 0039)', () => {
     });
     expect(sig()).toBe('migrated');
     expect(seen).toEqual([{ old: 'legacy-raw', from: 0 }]);
+  });
+
+  it('ignores storage events with an unknown storageArea (defense against misrouting)', () => {
+    // Pre-fix: when `e.storageArea` was null / undefined / some unrecognised
+    // Storage object the handler defaulted to 'local' and mutated every
+    // local-backed signal. That is an unbounded vector for cross-origin
+    // / synthetic events to write into our state. Fix: only route when
+    // `storageArea` is exactly window.localStorage or window.sessionStorage.
+    const localSig = localSignal('iso-local', 'L', { storage: 'local' });
+    const sessSig = localSignal('iso-sess', 'S', { storage: 'session' });
+    // Synthetic event with no storageArea set — must not move either signal.
+    window.dispatchEvent(
+      makeStorageEvent({
+        key: 'iso-local',
+        newValue: JSON.stringify('attack'),
+      }),
+    );
+    expect(localSig()).toBe('L');
+    // And a key=null synthetic clear with no storageArea must not reset
+    // every local signal either.
+    localSig.set('user-set');
+    window.dispatchEvent(makeStorageEvent({ key: null, newValue: null }));
+    expect(localSig()).toBe('user-set');
+    expect(sessSig()).toBe('S');
   });
 
   it('a throwing migrate does NOT silently overwrite the original data with default', () => {

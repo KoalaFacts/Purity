@@ -105,6 +105,85 @@ describe('parser', () => {
     expect(el.attributes[2].kind).toBe('event');
     expect(el.attributes[2].index).toBe(1);
   });
+
+  // ---------------------------------------------------------------------------
+  // Expression-boundary handling (audit-v2 HIGH fixes)
+  //
+  // Spread attributes, interpolated quoted attribute values, and dynamic
+  // content inside comments are NOT supported binding forms (there is no
+  // AST node for them). The contract is: the parser must not let the
+  // expression — or any structural delimiter after it (`>`, the closing
+  // quote, `-->`) — leak into the element's children. The interpolated
+  // value is dropped, but `exprIndex` still advances so later slots stay
+  // aligned with the runtime values array (which codegen indexes absolutely
+  // via `_v[N]`).
+  // ---------------------------------------------------------------------------
+
+  it('spread expression in open tag does not leak `>` into content', () => {
+    // html`<div ${spread}>hi</div>` → strings = ['<div ', '>hi</div>']
+    const ast = parse(['<div ', '>hi</div>']);
+    const el = ast.children[0];
+    expect(el.type).toBe('element');
+    expect(el.tag).toBe('div');
+    // The `>` must be consumed — children is just the text node, never `>hi`.
+    expect(el.children.length).toBe(1);
+    expect(el.children[0]).toEqual({ type: 'text', value: 'hi' });
+  });
+
+  it('preserves real attributes that follow a spread expression', () => {
+    // html`<div ${spread} id="x">` keeps the trailing static attribute.
+    const ast = parse(['<div ', ' id="x">y</div>']);
+    const el = ast.children[0];
+    expect(el.tag).toBe('div');
+    expect(el.attributes).toEqual([{ kind: 'static', name: 'id', value: 'x' }]);
+    expect(el.children).toEqual([{ type: 'text', value: 'y' }]);
+  });
+
+  it('keeps slot indices aligned after a dropped spread expression', () => {
+    // strings = ['<div ', ' class=', '>'] — spread is index 0 (dropped),
+    // class is index 1 and MUST stay index 1.
+    const ast = parse(['<div ', ' class=', '></div>']);
+    const el = ast.children[0];
+    const cls = el.attributes.find((a: any) => a.name === 'class');
+    expect(cls).toEqual({ kind: 'dynamic', name: 'class', index: 1 });
+  });
+
+  it('interpolated quoted attribute value does not leak into content', () => {
+    // html`<div class="x-${y}-z"></div>` → strings = ['<div class="x-', '-z"></div>']
+    const ast = parse(['<div class="x-', '-z"></div>']);
+    const el = ast.children[0];
+    // Single static attribute stitched from the literal segments; the
+    // interpolated value is dropped. No `-z">` text leaks into children.
+    expect(el.attributes).toEqual([{ kind: 'static', name: 'class', value: 'x--z' }]);
+    expect(el.children.length).toBe(0);
+  });
+
+  it('quoted single-expression attribute value is still dynamic (not regressed)', () => {
+    // html`<div class="${y}"></div>` must remain a dynamic binding.
+    const ast = parse(['<div class="', '"></div>']);
+    const el = ast.children[0];
+    expect(el.attributes).toEqual([{ kind: 'dynamic', name: 'class', index: 0 }]);
+    expect(el.children.length).toBe(0);
+  });
+
+  it('comment spanning an expression boundary stays a single comment', () => {
+    // html`<!-- debug: ${value} -->` → strings = ['<!-- debug: ', ' -->']
+    const ast = parse(['<!-- debug: ', ' -->']);
+    expect(ast.children.length).toBe(1);
+    expect(ast.children[0].type).toBe('comment');
+    // The expression is dropped; the trailing ` -->` is consumed, not leaked.
+    expect((ast.children[0] as any).value).toBe(' debug:  ');
+  });
+
+  it('uppercase void tag `<BR>` is treated as void (case-insensitive)', () => {
+    const ast = parse(['<BR>after']);
+    const br = ast.children[0];
+    expect(br.type).toBe('element');
+    expect(br.isVoid).toBe(true);
+    // `after` is a sibling text node, not swallowed as a child of <BR>.
+    expect(br.children.length).toBe(0);
+    expect(ast.children[1]).toEqual({ type: 'text', value: 'after' });
+  });
 });
 
 describe('codegen', () => {

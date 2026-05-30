@@ -237,16 +237,42 @@ class Parser {
   private parseComment(): ASTNode {
     // Skip <!--
     this.pos += 4;
-    const s = this.current();
-    const start = this.pos;
-    // Find -->
-    const endIdx = s.indexOf('-->', this.pos);
-    if (endIdx === -1) {
-      this.pos = s.length;
-      return { type: 'comment', value: s.slice(start) };
+    let s = this.current();
+    let endIdx = s.indexOf('-->', this.pos);
+
+    // Fast path: comment closes inside the current string segment.
+    if (endIdx !== -1) {
+      const value = s.slice(this.pos, endIdx);
+      this.pos = endIdx + 3;
+      return { type: 'comment', value };
     }
-    this.pos = endIdx + 3;
-    return { type: 'comment', value: s.slice(start, endIdx) };
+
+    // Slow path: the `-->` lives past an expression boundary, e.g.
+    // `<!-- debug: ${x} -->`. Without this, the comment would truncate at
+    // the end of strings[i] and the expression would escape into live
+    // content (and the trailing ` -->` would parse as a text node). Walk
+    // across boundaries, collecting literal segments, and CONSUME each
+    // interpolated expression so it never reaches child parsing. Dynamic
+    // content inside an HTML comment is not a supported feature — the
+    // author's intent is "this is a comment", so the expression value is
+    // dropped while `exprIndex` still advances to keep slot indices aligned.
+    let value = s.slice(this.pos);
+    this.pos = s.length;
+    while (this.atExprBoundary()) {
+      this.consumeExpr(); // advance past `${...}`, dropping its value
+      s = this.current();
+      endIdx = s.indexOf('-->', this.pos);
+      if (endIdx !== -1) {
+        value += s.slice(this.pos, endIdx);
+        this.pos = endIdx + 3;
+        return { type: 'comment', value };
+      }
+      value += s;
+      this.pos = s.length;
+    }
+
+    // Reached the end of the template without a closing `-->`.
+    return { type: 'comment', value };
   }
 
   private parseElement(): ElementNode {
@@ -257,9 +283,24 @@ class Parser {
     const tag = this.readName();
     const attributes = this.parseAttributes();
 
-    // Self-closing or void?
+    // Expression in attribute position, e.g. spread `<div ${attrs}>`.
+    // `parseAttributes()` stops at the boundary without consuming it; left
+    // alone, the `>` after the expression would never be consumed and the
+    // expression plus `>` would leak into the element's children. Spread
+    // attributes are not a supported binding form (there is no spread-
+    // attribute AST node), so we CONSUME the expression(s) and re-scan for
+    // any following attributes — which ARE preserved. `exprIndex` advances
+    // so later slots stay aligned. `skipWhitespace()` first so the boundary
+    // check isn't blocked by trailing whitespace inside the open tag.
     this.skipWhitespace();
+    while (this.atExprBoundary()) {
+      this.consumeExpr(); // drop the spread expression itself
+      // Keep any real attributes that follow the spread (e.g. `<div ${s} id="x">`).
+      for (const a of this.parseAttributes()) attributes.push(a);
+      this.skipWhitespace();
+    }
 
+    // Self-closing or void? (whitespace already skipped above)
     let selfClosing = false;
     if (!this.atEnd() && !this.atExprBoundary() && this.peek() === SLASH) {
       selfClosing = true;
@@ -271,7 +312,13 @@ class Parser {
       this.advance();
     }
 
-    const isVoid = VOID_TAGS.has(tag) || selfClosing;
+    // HTML built-in tag names are ASCII case-insensitive, so `<BR>` is the
+    // same void element as `<br>`. `VOID_TAGS` is lowercase, so normalise
+    // before the membership test — otherwise the parser would hunt for a
+    // `</BR>` close tag and swallow following siblings as children. Custom
+    // elements (which must contain a `-`) are never in VOID_TAGS, so the
+    // lowercase doesn't affect them.
+    const isVoid = VOID_TAGS.has(tag.toLowerCase()) || selfClosing;
 
     let children: ASTNode[] = [];
     if (!isVoid) {
@@ -394,6 +441,19 @@ class Parser {
     let value: string;
     if (quoteChar) {
       value = this.readUntil(quoteChar);
+      // Interpolated quoted value, e.g. `class="x-${y}-z"`. `readUntil`
+      // stopped at the expression boundary without reaching the closing
+      // quote. Without handling this, the parser would emit a truncated
+      // `static` attribute (`x-`) and leak the trailing `-z">` plus the
+      // expression into the element's children. Concatenated/interpolated
+      // attribute values are not a supported binding form (there is no
+      // concat-attribute AST node), so we CONSUME the expression(s),
+      // stitch the literal segments together, and emit a single static
+      // attribute. `exprIndex` still advances so later slots stay aligned.
+      while (this.atExprBoundary()) {
+        this.consumeExpr(); // drop interpolated value
+        value += this.readUntil(quoteChar);
+      }
       if (!this.atEnd() && !this.atExprBoundary() && this.peek() === quoteChar) {
         this.advance();
       }

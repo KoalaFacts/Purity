@@ -40,7 +40,18 @@ export function mediaSignal(query: string): ComputedAccessor<boolean> {
   }
   const existing = cache.get(query);
   if (existing) return existing;
-  const mql = window.matchMedia(query);
+  // WebKit throws SyntaxError on malformed CSS media queries (island-mount
+  // already handles this on its `media:` trigger path). Fall back to a
+  // never-matching constant so the caller's compute() chain keeps working.
+  let mql: MediaQueryList;
+  try {
+    mql = window.matchMedia(query);
+  } catch (err) {
+    console.warn(`[purity] mediaSignal: invalid query ${JSON.stringify(query)}:`, err);
+    const fallback = compute(() => false);
+    cache.set(query, fallback);
+    return fallback;
+  }
   const inner = state(mql.matches);
   const onChange = (e: MediaQueryListEvent): void => {
     inner(e.matches);

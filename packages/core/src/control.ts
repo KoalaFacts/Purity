@@ -814,7 +814,17 @@ function encodeRowKey(key: unknown): string {
 }
 
 function decodeRowKey(s: string): string {
-  return decodeURIComponent(s);
+  // SSR row markers are encoded by encodeRowKey, but the bytes flow
+  // through HTML comment content — a poisoned upstream cache or middlebox
+  // can mutate them. A bare decodeURIComponent throws URIError on
+  // malformed `%`, which aborts hydration with no recovery; fall back to
+  // the raw bytes (matches router.ts:safeDecode, cycle 1) so the
+  // hydrator at worst sees a non-matching key and re-renders the row.
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
 }
 
 // Walk an each() slot's SSR content nodes and split into rows by `<!--er:K-->`

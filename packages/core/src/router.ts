@@ -35,7 +35,18 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
 
 function ssrUrl(): URL | null {
   const ssrCtx = getSSRRenderContext();
-  return ssrCtx?.request ? new URL(ssrCtx.request.url) : null;
+  if (!ssrCtx?.request) return null;
+  // `new URL` throws TypeError on a malformed URL. SSR adapter code that
+  // surfaces an unvetted req.url (edge runtimes, hand-rolled handlers)
+  // would otherwise crash every component reading currentPath/Search/Hash,
+  // and currentSearch() re-throws on every call. Fall back to null so the
+  // hot path stays alive — components see "no request URL", same as the
+  // no-SSR-context branch.
+  try {
+    return new URL(ssrCtx.request.url);
+  } catch {
+    return null;
+  }
 }
 
 /**

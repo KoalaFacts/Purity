@@ -14,6 +14,8 @@ import {
   navigate,
   watch,
 } from '../src/index.ts';
+import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
+import { makeSSRContext } from './_helpers.ts';
 
 describe('matchRoute() — pattern matching', () => {
   it('matches exact literal paths', () => {
@@ -233,5 +235,28 @@ describe('currentSearch() / currentHash() — URL part signals (ADR 0014)', () =
     expect(currentPath()).toBe('/posts/42');
     expect(currentSearch().get('reply')).toBe('7');
     expect(currentHash()).toBe('#comment-9');
+  });
+});
+
+describe('currentPath/Search/Hash — SSR with malformed request.url', () => {
+  it('does not crash when the SSR Request URL is malformed', () => {
+    // SSR adapters that surface req.url verbatim (edge runtimes,
+    // hand-rolled handlers) can deliver malformed URLs. `new URL(req.url)`
+    // throws TypeError. Components reading currentPath/Search/Hash should
+    // see "no request" rather than crash the whole render.
+    const ctx = makeSSRContext();
+    ctx.request = { url: 'not a url' } as Request;
+    pushSSRRenderContext(ctx);
+    try {
+      expect(() => currentPath()).not.toThrow();
+      expect(() => currentSearch()).not.toThrow();
+      expect(() => currentHash()).not.toThrow();
+      // Falls through to the client-side urlSignal (initialised from
+      // window.location). Path is whatever jsdom set; the important
+      // invariant is "no throw".
+      expect(typeof currentPath()).toBe('string');
+    } finally {
+      popSSRRenderContext();
+    }
   });
 });

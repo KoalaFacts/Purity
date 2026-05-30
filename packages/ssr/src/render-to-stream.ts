@@ -104,10 +104,18 @@ export function renderToStream(
   const request = options.request;
 
   const encoder = new TextEncoder();
+  // Mutable cancellation flag shared between start() and cancel(). Lets the
+  // boundary loop short-circuit when the consumer disconnects WITHOUT an
+  // external AbortSignal — previously cancel() was a no-op and the loop
+  // happily awaited every slow boundary, calling enqueue() into a closed
+  // controller each time (silently caught downstream, but the work still
+  // burned CPU / kept timers + fetches alive until they all settled).
+  const state = { cancelled: false };
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       const onAbort = (): void => {
+        state.cancelled = true;
         try {
           controller.close();
         } catch {
@@ -122,9 +130,17 @@ export function renderToStream(
         signal.addEventListener('abort', onAbort, { once: true });
       }
 
+      const isAborted = (): boolean => state.cancelled || signal?.aborted === true;
+
       const enqueue = (s: string): void => {
-        if (signal?.aborted) return;
-        controller.enqueue(encoder.encode(s));
+        if (isAborted()) return;
+        try {
+          controller.enqueue(encoder.encode(s));
+        } catch {
+          // Controller already closed (e.g. consumer cancelled mid-flush).
+          // Flip the cancel flag so subsequent boundary work bails out.
+          state.cancelled = true;
+        }
       };
 
       try {
@@ -132,6 +148,7 @@ export function renderToStream(
         // Multi-pass loop for top-level resources; suspense() defers its
         // view via streamingBoundaries instead of awaiting inline.
         const shell = await renderShell(component, timeout, request);
+        if (isAborted()) return;
 
         let head = prefix + shell.html;
         if (serialize) {
@@ -147,14 +164,43 @@ export function renderToStream(
 
         // ----- Boundary chunks ----------------------------------------------
         for (const [id, boundary] of shell.boundaries) {
-          if (signal?.aborted) break;
+          if (isAborted()) break;
+          // Defense-in-depth: even though `id` is typed as `number` from the
+          // Map, validate it's a finite non-negative integer before
+          // interpolating it into an inline `<script>__purity_swap(${id})`
+          // body. If a future refactor lets a non-numeric id slip in, this
+          // prevents code injection through the swap call site.
+          if (!Number.isSafeInteger(id) || id < 0) {
+            console.error(
+              `[Purity] renderToStream: refusing to emit chunk for non-integer boundary id ${String(
+                id,
+              )}; skipping.`,
+            );
+            continue;
+          }
           const result = await renderBoundary(id, boundary, timeout, request);
+          if (isAborted()) break;
           // null signals "boundary couldn't produce content; leave the
           // shell-rendered fallback in place." Without this skip, an
           // empty <template> + __purity_swap(N) chunk wiped the rendered
           // fallback DOM (the swap replaces everything between the
           // markers with the template content — empty content = blank).
           if (result === null) continue;
+          // Defense-in-depth: branded SSR HTML is supposed to never contain
+          // `</template>` (escHtml escapes `<` in user input, and the
+          // codegen doesn't emit raw `</template>`), but if a future
+          // compiler bug or hand-crafted markSSRHtml() value smuggled one
+          // in, it would break out of the `<template id="purity-s-N">`
+          // wrapper and execute as live markup before the swap script
+          // runs. Refuse to emit such a chunk and leave the shell
+          // fallback in place.
+          if (containsTemplateClose(result.html)) {
+            console.error(
+              `[Purity] renderToStream: boundary ${id} HTML contained </template>; ` +
+                'refusing to emit chunk to prevent <template> breakout. Leaving shell fallback in place.',
+            );
+            continue;
+          }
           let chunk = `<template id="purity-s-${id}">${result.html}</template>`;
           // Per-boundary resource cache prime (ADR 0006 Phase 6 second-half).
           // Only the keyed map is meaningful across boundaries — the
@@ -170,25 +216,44 @@ export function renderToStream(
           enqueue(chunk);
         }
 
-        controller.close();
-      } catch (err) {
         try {
-          controller.error(err);
+          controller.close();
         } catch {
-          // Already errored — ignore.
+          // Already closed by cancel() / signal abort — ignore.
+        }
+      } catch (err) {
+        // Don't error a stream the consumer already cancelled — calling
+        // controller.error() after close() throws, which would mask the
+        // original cause in unhandled-rejection logs.
+        if (!isAborted()) {
+          try {
+            controller.error(err);
+          } catch {
+            // Already errored — ignore.
+          }
         }
       } finally {
         if (signal) signal.removeEventListener('abort', onAbort);
       }
     },
     cancel() {
-      // Consumer disconnected. Nothing async to release here — the start()
-      // promise completes on its own; subsequent enqueue() guards on
-      // `signal?.aborted` inside the closure (when an external signal is
-      // wired up). For pure cancel-without-signal, we rely on enqueue
-      // throwing once the controller is closed.
+      // Consumer disconnected. Flip the shared cancel flag so the boundary
+      // loop in start() short-circuits on its next `isAborted()` check
+      // instead of awaiting every remaining slow boundary. Without this,
+      // a single suspense() with a 30s fetch would keep the renderer
+      // (and its timers + AbortSignals) alive even after the client gave
+      // up.
+      state.cancelled = true;
     },
   });
+}
+
+// Pre-compiled regex: case-insensitive `</template` followed by `>` or
+// whitespace (per HTML spec — `</template foo>` is still a closing tag).
+const TEMPLATE_CLOSE_RE = /<\/template[\s>/]/i;
+
+function containsTemplateClose(s: string): boolean {
+  return TEMPLATE_CLOSE_RE.test(s);
 }
 
 interface ShellResult {

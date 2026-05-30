@@ -4,6 +4,7 @@ import { parse } from '../src/compiler/parser.ts';
 import {
   isSSRHtml,
   markSSRHtml,
+  ssrElement,
   ssrHelpers,
   valueToAttr,
   valueToHtml,
@@ -367,12 +368,47 @@ describe('ssr-runtime helpers', () => {
     expect(valueToHtml(['a', 1, markSSRHtml('<b>!</b>')])).toBe('a1<b>!</b>');
   });
 
+  it('valueToHtml terminates on self-referential array (cycle guard)', () => {
+    // Regression: prior to the WeakSet guard, a cyclic array stack-overflowed
+    // the SSR render. Repeat occurrences of an already-visited array now
+    // render as empty so the surrounding render stays correct.
+    const a: unknown[] = ['x'];
+    a.push(a);
+    a.push('y');
+    expect(valueToHtml(a)).toBe('xy');
+  });
+
+  it('valueToHtml handles mutually recursive arrays without overflow', () => {
+    const a: unknown[] = ['a'];
+    const b: unknown[] = ['b', a];
+    a.push(b);
+    expect(() => valueToHtml(a)).not.toThrow();
+  });
+
   it('valueToAttr returns null for omitted, empty for boolean-true', () => {
     expect(valueToAttr(null)).toBe(null);
     expect(valueToAttr(undefined)).toBe(null);
     expect(valueToAttr(false)).toBe(null);
     expect(valueToAttr(true)).toBe('');
     expect(valueToAttr('a"b')).toBe('a&quot;b');
+  });
+
+  it('ssrElement skips attribute keys that would break out of the name', () => {
+    // Defense-in-depth on the public `_h.element` entry point: caller-
+    // controlled attr keys (e.g. spread from JSON) containing `=`, `>`, or
+    // whitespace would otherwise inject raw HTML via the plainElement
+    // fallback. They are now dropped instead of emitted.
+    const out = ssrElement(
+      'x-card',
+      {
+        'safe-attr': 'ok',
+        'evil onmouseover=alert(1) x': 'pwn',
+        'a">b': 'pwn',
+        'with space': 'pwn',
+      },
+      '',
+    );
+    expect(out).toBe('<x-card safe-attr="ok"></x-card>');
   });
 });
 

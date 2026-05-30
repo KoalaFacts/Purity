@@ -46,5 +46,18 @@ import { getSSRRenderContext } from './ssr-context.ts';
  */
 export function getRequest(): Request | null {
   const ssrCtx = getSSRRenderContext();
-  return ssrCtx?.request ?? null;
+  const req = ssrCtx?.request;
+  // Defensive runtime guard: if the SSR caller stuffed a non-Request
+  // value into `ssrCtx.request` (a plain object, a URL string, etc.)
+  // the declared `Request | null` return type would lie and any
+  // downstream `.headers.get(…)` / `.url` reader would crash or worse,
+  // silently consume attacker-controlled data. Coerce anything that
+  // isn't a real Request instance — including the case where the
+  // runtime lacks a `Request` global at all — back to `null`.
+  if (req == null) return null;
+  const R = (globalThis as { Request?: unknown }).Request;
+  if (typeof R !== 'function' || !(req instanceof (R as typeof Request))) {
+    return null;
+  }
+  return req;
 }

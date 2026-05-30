@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { generate } from '../src/compiler/codegen.ts';
-import { html } from '../src/compiler/compile.ts';
+import { html, inflateDeferred } from '../src/compiler/compile.ts';
+import {
+  type DeferredTemplate,
+  enterHydration,
+  exitHydration,
+} from '../src/compiler/hydrate-runtime.ts';
 import { parse } from '../src/compiler/parser.ts';
 import { state } from '../src/signals.ts';
 
@@ -1047,5 +1052,96 @@ describe('compiled html`` performance', () => {
     const elapsed = performance.now() - start;
     console.log(`  1k compiled reactive renders: ${elapsed.toFixed(2)}ms`);
     expect(elapsed).toBeLessThan(200);
+  });
+});
+
+describe('compile.ts — inflateDeferred suspense marker stripping', () => {
+  function collectComments(root: Node): string[] {
+    const out: string[] = [];
+    let n = root.firstChild;
+    while (n) {
+      if (n.nodeType === 8) out.push((n as Comment).data);
+      n = n.nextSibling;
+    }
+    return out;
+  }
+
+  function withHydration<T>(fn: () => T): T {
+    enterHydration();
+    try {
+      return fn();
+    } finally {
+      exitHydration();
+    }
+  }
+
+  it('strips edge suspense markers wrapping the SSR view', () => {
+    const deferred = withHydration(() => html`<p>hi</p>`) as DeferredTemplate;
+    const target = document.createDocumentFragment();
+    target.appendChild(document.createComment('s:1'));
+    const p = document.createElement('p');
+    p.textContent = 'hi';
+    target.appendChild(p);
+    target.appendChild(document.createComment('/s:1'));
+    inflateDeferred(deferred, target);
+    expect(collectComments(target)).toEqual([]);
+  });
+
+  it('strips interior suspense markers between sibling roots (defense-in-depth)', () => {
+    // SSR drift / nested-boundary residue: an `<!--s:N-->`/`<!--/s:N-->`
+    // pair sitting BETWEEN the template's two structural roots. Edge-only
+    // strip would leave them, breaking the cursor walk on the second root.
+    const a = state('a');
+    const b = state('b');
+    const deferred = withHydration(
+      () =>
+        html`<p>${() => a()}</p>
+          <p>${() => b()}</p>`,
+    ) as DeferredTemplate;
+    const target = document.createDocumentFragment();
+    const p1 = document.createElement('p');
+    p1.appendChild(document.createComment('['));
+    p1.appendChild(document.createTextNode('a'));
+    p1.appendChild(document.createComment(']'));
+    target.appendChild(p1);
+    target.appendChild(document.createComment('s:2'));
+    target.appendChild(document.createComment('/s:2'));
+    const p2 = document.createElement('p');
+    p2.appendChild(document.createComment('['));
+    p2.appendChild(document.createTextNode('b'));
+    p2.appendChild(document.createComment(']'));
+    target.appendChild(p2);
+    inflateDeferred(deferred, target);
+    // No suspense markers should survive at the target's top level.
+    expect(collectComments(target).filter((d) => /^\/?s:\d+$/.test(d))).toEqual([]);
+    // Both <p> roots preserved in order.
+    const elems = Array.from(target.childNodes).filter((n) => n.nodeType === 1) as Element[];
+    expect(elems.length).toBe(2);
+    expect(elems[0].textContent).toBe('a');
+    expect(elems[1].textContent).toBe('b');
+  });
+
+  it('only strips comments whose data matches /^\\/?s:\\d+$/ — look-alikes survive', () => {
+    // ' s:1' (leading space), 'ms:1', 's:1abc', 's:' all fail the regex and
+    // must NOT be removed. A static-only template is a no-op past the strip
+    // step, so this isolates the strip behavior.
+    const staticDeferred = withHydration(() => html`<p>x</p>`) as DeferredTemplate;
+    const target = document.createDocumentFragment();
+    target.appendChild(document.createComment(' s:1'));
+    target.appendChild(document.createComment('ms:1'));
+    target.appendChild(document.createComment('s:1abc'));
+    target.appendChild(document.createComment('s:'));
+    const p = document.createElement('p');
+    p.textContent = 'x';
+    target.appendChild(p);
+    // And a genuine suspense marker at the trailing edge — should be stripped.
+    target.appendChild(document.createComment('/s:1'));
+    inflateDeferred(staticDeferred, target);
+    const comments = collectComments(target);
+    expect(comments).toContain(' s:1');
+    expect(comments).toContain('ms:1');
+    expect(comments).toContain('s:1abc');
+    expect(comments).toContain('s:');
+    expect(comments.some((d) => /^\/?s:\d+$/.test(d))).toBe(false);
   });
 });

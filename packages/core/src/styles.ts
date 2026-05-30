@@ -88,7 +88,15 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
   // Shadow DOM path — native scoping, no regex, no class names
   /* v8 ignore start -- jsdom lacks CSSStyleSheet ctor + adoptedStyleSheets */
   if (shadowRoot) {
-    const sheet = new CSSStyleSheet();
+    // Construct the sheet via the OWNER document's realm — not the
+    // module-realm `CSSStyleSheet`. In multi-window / portal scenarios the
+    // shadowRoot may live in a different document, and a sheet from the
+    // wrong realm leaks across documents and triggers
+    // "Failed to construct 'CSSStyleSheet': Owner document mismatch"-style
+    // errors. Fall back to module-global only when ownerDocument.defaultView
+    // is unavailable (SSR, detached docs).
+    const Ctor = getCSSStyleSheetCtor(shadowRoot);
+    const sheet = new Ctor();
     sheet.replaceSync(buildCss());
 
     shadowRoot.adoptedStyleSheets = [...shadowRoot.adoptedStyleSheets, sheet];
@@ -124,7 +132,7 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
   // without `!important`.
   installLayerOrder();
 
-  const scopeClass = `p-${scopeCounter++}`;
+  const scopeClass = `p-${nextScopeId()}`;
   // Defensive: if `document.head` is missing (early-document, mid-unload,
   // some jsdom resets), skip the DOM emit but still return a stable scope
   // class so the caller's `className=` interpolation stays well-formed.
@@ -202,4 +210,32 @@ function installLayerOrder(): void {
   head.prepend(el);
 }
 
-let scopeCounter = 0;
+// HMR-stable scope counter. Stashed on `globalThis` so a re-imported module
+// (Vite HMR, test re-imports) reuses the same monotonic counter instead of
+// resetting to 0 and colliding with still-mounted `p-N` classes from the
+// previous module epoch.
+const SCOPE_COUNTER_KEY = '__purityCssScopeCounter';
+function nextScopeId(): number {
+  const g = globalThis as unknown as Record<string, number>;
+  const n = (g[SCOPE_COUNTER_KEY] ?? 0) + 1;
+  g[SCOPE_COUNTER_KEY] = n;
+  return n - 1;
+}
+
+// Per-document CSSStyleSheet constructor cache. Keyed by the owner document
+// so the sheet is built in the same realm as the shadowRoot it gets adopted
+// into. Falls back to the module-global `CSSStyleSheet` when there's no
+// defaultView (SSR / detached docs / iframe edge cases).
+/* v8 ignore start -- jsdom path; covered by the owner-document test */
+const ctorCache = new WeakMap<Document, typeof CSSStyleSheet>();
+function getCSSStyleSheetCtor(shadowRoot: ShadowRoot): typeof CSSStyleSheet {
+  const owner = shadowRoot.ownerDocument;
+  if (!owner) return CSSStyleSheet;
+  const cached = ctorCache.get(owner);
+  if (cached) return cached;
+  const view = owner.defaultView as (Window & typeof globalThis) | null;
+  const Ctor = view?.CSSStyleSheet ?? CSSStyleSheet;
+  ctorCache.set(owner, Ctor);
+  return Ctor;
+}
+/* v8 ignore stop */

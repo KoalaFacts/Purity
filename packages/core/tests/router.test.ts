@@ -12,8 +12,10 @@ import {
   currentSearch,
   matchRoute,
   navigate,
+  onNavigate,
   watch,
 } from '../src/index.ts';
+import { _setNavigateWrapper } from '../src/router.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';
 
@@ -253,6 +255,138 @@ describe('currentSearch() / currentHash() — URL part signals (ADR 0014)', () =
     expect(currentPath()).toBe('/posts/42');
     expect(currentSearch().get('reply')).toBe('7');
     expect(currentHash()).toBe('#comment-9');
+  });
+});
+
+describe('navigate() — audit-v2 hardening', () => {
+  beforeEach(() => {
+    window.history.replaceState(null, '', '/');
+    _setNavigateWrapper(null);
+  });
+
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+    _setNavigateWrapper(null);
+  });
+
+  it('blocks `javascript:` hrefs even when origins match (opaque/null-origin defense)', () => {
+    // The cross-origin guard catches `javascript:` in normal cases because
+    // its parsed origin is `'null'` which differs from `window.location.origin`.
+    // But in a sandboxed iframe or some `file://` contexts the document
+    // itself has an opaque origin, so `null === null` would slip a hostile
+    // `javascript:` payload into pushState. Defense in depth: the scheme
+    // allow-list rejects it unconditionally.
+    navigate('/safe');
+    expect(currentPath()).toBe('/safe');
+    navigate('javascript:alert(1)');
+    // Still on /safe; hostile scheme was ignored.
+    expect(currentPath()).toBe('/safe');
+    expect(window.location.href).not.toContain('javascript:');
+  });
+
+  it('blocks `data:` and `blob:` hrefs', () => {
+    navigate('/start');
+    navigate('data:text/html,<script>alert(1)</script>');
+    expect(currentPath()).toBe('/start');
+    navigate('blob:https://example.com/uuid');
+    expect(currentPath()).toBe('/start');
+  });
+
+  it('still allows http(s) absolute same-origin URLs', () => {
+    navigate(`${window.location.origin}/ok`);
+    expect(currentPath()).toBe('/ok');
+  });
+
+  it('isolates onNavigate listener throws (one bad listener does not abort the rest)', () => {
+    navigate('/before');
+    const seen: string[] = [];
+    const offA = onNavigate(() => {
+      seen.push('a');
+      throw new Error('listener-a-boom');
+    });
+    const offB = onNavigate((url) => {
+      seen.push(`b:${url.pathname}`);
+    });
+    expect(() => navigate('/after')).not.toThrow();
+    expect(seen).toEqual(['a', 'b:/after']);
+    offA();
+    offB();
+  });
+
+  it('isolates navigateWrapper throws and still applies the History update (fallback)', () => {
+    // A throwing view-transition wrapper otherwise (a) escapes to the
+    // navigate() caller (link clicks, deep imports) and (b) leaves the
+    // user on the previous URL with no signal update. The fix wraps the
+    // wrapper call in try/catch and runs an unwrapped update so the
+    // navigation still lands.
+    navigate('/origin');
+    _setNavigateWrapper(() => {
+      throw new Error('wrapper-boom');
+    });
+    expect(() => navigate('/destination')).not.toThrow();
+    // Fallback update ran: URL signal + history advanced to the target.
+    expect(currentPath()).toBe('/destination');
+  });
+
+  it('guards against a wrapper calling update() twice (no double pushState / double listener fan-out)', () => {
+    navigate('/before-double');
+    const fireCount: string[] = [];
+    const off = onNavigate((url) => {
+      fireCount.push(url.pathname);
+    });
+    _setNavigateWrapper((_url, _replace, update) => {
+      update();
+      update(); // misbehaving wrapper — second call must be a no-op.
+    });
+    const before = window.history.length;
+    navigate('/double-target');
+    const after = window.history.length;
+    // Exactly one pushState entry, exactly one listener fan-out.
+    expect(after - before).toBe(1);
+    expect(fireCount).toEqual(['/double-target']);
+    off();
+  });
+});
+
+describe('matchRoute() — audit-v2 prototype-pollution defense', () => {
+  it('does not pollute Object.prototype via `:__proto__` capture', () => {
+    // Pattern with `:__proto__` segment. Before the fix the captured
+    // value would be assigned to `params.__proto__` (silently a no-op
+    // when value is a string, but `params` would still inherit
+    // Object.prototype and any code spreading params into a plain object
+    // could later poison ancestors). The fix uses a null-proto bag and
+    // skips reserved names entirely.
+    const m = matchRoute('/u/:__proto__', '/u/polluted');
+    expect(m).not.toBeNull();
+    // The dangerous key was skipped; no own slot installed.
+    expect(Object.prototype.hasOwnProperty.call(m!.params, '__proto__')).toBe(false);
+    // Object.prototype is intact.
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    // Spreading params into a plain object can't smuggle the __proto__
+    // slot either.
+    const copy = { ...m!.params };
+    expect(Object.getPrototypeOf(copy)).toBe(Object.prototype);
+    expect((copy as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it('skips `constructor` / `prototype` named captures (defense in depth)', () => {
+    const a = matchRoute('/u/:constructor', '/u/x');
+    expect(a).not.toBeNull();
+    expect(Object.prototype.hasOwnProperty.call(a!.params, 'constructor')).toBe(false);
+
+    const b = matchRoute('/u/:prototype', '/u/x');
+    expect(b).not.toBeNull();
+    expect(Object.prototype.hasOwnProperty.call(b!.params, 'prototype')).toBe(false);
+  });
+
+  it('params is a null-prototype object (no inherited methods leak to consumers)', () => {
+    const m = matchRoute('/u/:id', '/u/42');
+    expect(m).not.toBeNull();
+    expect(Object.getPrototypeOf(m!.params)).toBeNull();
+    // Consumer code doing `params.hasOwnProperty` would have shadowed
+    // the prototype method on a poisoned bag; on a null-proto bag that
+    // key is just `undefined` — safer surface.
+    expect((m!.params as Record<string, unknown>).hasOwnProperty).toBeUndefined();
   });
 });
 

@@ -190,6 +190,18 @@ export function _setNavigateWrapper(fn: NavigateWrapper | null): void {
   navigateWrapper = fn;
 }
 
+// Schemes we'll route through pushState. ADR-aligned with the link-intercept
+// allow-list (commit 64f1b43): `javascript:` / `data:` / `blob:` / `mailto:`
+// all parse via `new URL(href, origin)` to a `null` origin, and the
+// cross-origin check below catches them in the common case. But when the
+// document itself runs at an opaque/null origin (sandboxed iframe without
+// `allow-same-origin`, some `file://` deployments), `null === null` makes
+// the origin guard pass — at which point an attacker-crafted
+// `javascript:alert(document.cookie)` would land in `history.pushState`
+// and any onNavigate handler would see it as a "trusted" route. Defense
+// in depth: hard-cap the scheme to http(s).
+const ALLOWED_NAVIGATE_PROTOCOLS = new Set(['http:', 'https:']);
+
 export function navigate(href: string, options: NavigateOptions = {}): void {
   if (typeof window === 'undefined' || !window.history) return;
   // `new URL` throws TypeError on a malformed href. navigate() is called
@@ -205,11 +217,24 @@ export function navigate(href: string, options: NavigateOptions = {}): void {
     console.warn(`[purity] navigate(): invalid href, ignored:`, href);
     return;
   }
+  // Scheme allow-list — see ALLOWED_NAVIGATE_PROTOCOLS doc above. Stops
+  // `javascript:` / `data:` / `blob:` from reaching pushState even when
+  // the host page has an opaque origin.
+  if (!ALLOWED_NAVIGATE_PROTOCOLS.has(url.protocol)) {
+    console.warn(`[purity] navigate(): blocked non-http(s) scheme, ignored:`, href);
+    return;
+  }
   // Don't navigate cross-origin via pushState — that produces a malformed
   // state. Callers should set `window.location` directly for full-page nav.
   if (url.origin !== window.location.origin) return;
   const replace = options.replace === true;
+  // Single-shot `update()` — a misbehaving navigateWrapper that calls
+  // update() twice (e.g. view-transition + sync fallback path) must not
+  // pushState the same URL twice or fan-out listeners twice.
+  let applied = false;
   const update = (): void => {
+    if (applied) return;
+    applied = true;
     if (replace) window.history.replaceState(null, '', url);
     else window.history.pushState(null, '', url);
     urlSignal(url);
@@ -226,8 +251,22 @@ export function navigate(href: string, options: NavigateOptions = {}): void {
       }
     }
   };
-  if (navigateWrapper) navigateWrapper(url, replace, update);
-  else update();
+  if (navigateWrapper) {
+    // Isolate wrapper throws: a throwing view-transition wrapper otherwise
+    // (a) aborts the navigation entirely without applying the History API
+    // update, and (b) escapes to the navigate() caller — link-click
+    // handlers, deep import chains. Match the listener-isolation pattern
+    // above and fall back to an unwrapped update so the user lands on the
+    // requested page.
+    try {
+      navigateWrapper(url, replace, update);
+    } catch (err) {
+      console.error('[purity] navigate wrapper threw:', err);
+      update();
+    }
+  } else {
+    update();
+  }
 }
 
 /** Result of a successful {@link matchRoute} call. */
@@ -261,7 +300,15 @@ export function matchRoute(pattern: string, path?: string): RouteMatch | null {
   const p = path ?? currentPath();
   const patternParts = pattern.split('/').filter(Boolean);
   const pathParts = p.split('/').filter(Boolean);
-  const params: Record<string, string> = {};
+  // `Object.create(null)` so a pattern like `/u/:__proto__` can't poison
+  // params with an inherited `Object.prototype` slot — and so consumers
+  // doing `params.toString` / `params.hasOwnProperty` don't accidentally
+  // pick up the prototype's methods. Defense in depth: the named-segment
+  // write below also explicitly blocks `__proto__` / `constructor` /
+  // `prototype` keys (silent skip; the match still succeeds, but the
+  // dangerous slot is unset). Matches the same null-proto / reserved-key
+  // guard ssr-runtime + the hydration-cache merge use.
+  const params: Record<string, string> = Object.create(null);
 
   if (patternParts.length === 0) {
     return pathParts.length === 0 ? { params } : null;
@@ -280,7 +327,15 @@ export function matchRoute(pattern: string, path?: string): RouteMatch | null {
     }
     if (i >= pathParts.length) return null;
     if (seg.startsWith(':')) {
-      params[seg.slice(1)] = safeDecode(pathParts[i]);
+      const name = seg.slice(1);
+      // Reject prototype-poisoning names. The params bag is null-proto
+      // already, but skipping these keys means even a downstream caller
+      // that copies `params` into a plain object (`{ ...params }`) can't
+      // be tricked into installing a `__proto__` slot.
+      if (name === '__proto__' || name === 'constructor' || name === 'prototype') {
+        continue;
+      }
+      params[name] = safeDecode(pathParts[i]);
       continue;
     }
     if (seg !== pathParts[i]) return null;

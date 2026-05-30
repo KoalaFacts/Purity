@@ -338,6 +338,106 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(instances[0].protocols).toEqual(['v1', 'v2']);
   });
 
+  it('rejects non-ws/wss URL schemes pre-construction (no side effects, redacted warn)', () => {
+    // audit-v2: WebSocket only ever speaks ws:// or wss://. Without an
+    // explicit allow-list, passing `javascript:alert(1)` or a leaked
+    // `http://…?access_token=SECRET` reaches the browser constructor,
+    // which then surfaces an unredacted DOMException to the page's error
+    // reporter (and to any window.onerror sink) — leaking the secret
+    // past the trust boundary the redacted label is supposed to enforce.
+    // The pre-check collapses these into an inert accessor + a single
+    // redacted warn before any side effect fires.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sig = webSocketSignal<number>('http://host/api?access_token=SECRET', {
+      initialValue: 7,
+      validate: isNumber,
+    });
+    // No WebSocket constructed.
+    expect(instances).toEqual([]);
+    // Inert accessor: returns initialValue, readyState 'closed', send no-op.
+    expect(sig()).toBe(7);
+    expect(sig.readyState()).toBe('closed');
+    expect(() => sig.send('x')).not.toThrow();
+    // Warn fired once, with the redacted URL — no secret leaked.
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const line = warnSpy.mock.calls[0].map(String).join(' ');
+    expect(line).toContain('only ws:// and wss://');
+    expect(line).not.toContain('SECRET');
+    expect(line).not.toContain('access_token');
+    warnSpy.mockRestore();
+  });
+
+  it('rejects javascript: URLs even when passed via a URL instance', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sig = webSocketSignal<number>(new URL('https://host/api'), {
+      initialValue: 0,
+      validate: isNumber,
+    });
+    expect(instances).toEqual([]);
+    expect(sig.readyState()).toBe('closed');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
+  it('accepts ws:// and wss:// URLs (allow-list happy path)', () => {
+    const a = webSocketSignal<number>('ws://host/api', { initialValue: 0, validate: isNumber });
+    const b = webSocketSignal<number>('wss://host/api', { initialValue: 0, validate: isNumber });
+    expect(instances).toHaveLength(2);
+    void a;
+    void b;
+  });
+
+  it('accepts relative URLs (resolved against page origin by the platform)', () => {
+    // The platform resolves `/ws` against the current page's origin,
+    // upgrading http→ws / https→wss. We can't verify the final scheme
+    // pre-construction without inventing a base, so relative URLs skip
+    // the allow-list check.
+    webSocketSignal<number>('/ws', { initialValue: 0, validate: isNumber });
+    expect(instances).toHaveLength(1);
+  });
+
+  it('rejects subprotocols containing CR/LF or non-token bytes (header smuggling)', () => {
+    // audit-v2: Sec-WebSocket-Protocol values are echoed back by the
+    // server. Passing a string with embedded CR/LF / non-token bytes
+    // can let a misconfigured server smuggle headers through the echo,
+    // or — depending on the UA — trip the constructor into an
+    // unredacted DOMException. Reject anything outside RFC 7230 tchar
+    // pre-construction.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sig = webSocketSignal<number>('/ws', {
+      initialValue: 0,
+      validate: isNumber,
+      protocols: ['v1\r\nInjected-Header: yes'],
+    });
+    expect(instances).toEqual([]);
+    expect(sig.readyState()).toBe('closed');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('invalid subprotocol');
+    warnSpy.mockRestore();
+  });
+
+  it('rejects an empty subprotocol token (not a valid RFC 6455 token)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    webSocketSignal<number>('/ws', {
+      initialValue: 0,
+      validate: isNumber,
+      protocols: [''],
+    });
+    expect(instances).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
+  it('accepts well-formed subprotocol tokens (happy path)', () => {
+    webSocketSignal<number>('/ws', {
+      initialValue: 0,
+      validate: isNumber,
+      protocols: ['chat.v1', 'json.v2+ext'],
+    });
+    expect(instances).toHaveLength(1);
+    expect(instances[0].protocols).toEqual(['chat.v1', 'json.v2+ext']);
+  });
+
   it('close() detaches the four listeners so a late message after reconnect cannot ride into the new state', async () => {
     const sig = webSocketSignal<number>('/ws', {
       initialValue: 0,

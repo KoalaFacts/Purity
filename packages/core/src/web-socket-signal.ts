@@ -88,6 +88,69 @@ export function webSocketSignal<T>(
   // `?access_token=…` and `user:pw@` don't leak into log sinks.
   const label = redactUrl(url);
 
+  // Scheme allow-list: WebSocket only ever opens ws:// or wss://.
+  // The browser constructor enforces this, but a pre-check produces a
+  // single sourced warn (with a redacted URL) instead of an unredacted
+  // DOMException landing in the page's error reporter. It also collapses
+  // attacker-controlled URLs like `javascript:…` / `data:…` / a leaked
+  // `http:` token from a misconfigured backend into an inert accessor
+  // before any side effects fire.
+  let schemeOk = true;
+  try {
+    if (typeof url !== 'string') {
+      schemeOk = url.protocol === 'ws:' || url.protocol === 'wss:';
+    } else if (/^[a-z][a-z0-9+.-]*:/i.test(url)) {
+      // Absolute URL — extract scheme. Relative URLs (no scheme) are
+      // resolved against the current page's origin by the platform, so
+      // skip the scheme check for them.
+      const scheme = url.slice(0, url.indexOf(':')).toLowerCase();
+      schemeOk = scheme === 'ws' || scheme === 'wss';
+    }
+  } catch {
+    schemeOk = false;
+  }
+  if (!schemeOk) {
+    console.warn(
+      `[purity] webSocketSignal('${label}') rejected — only ws:// and wss:// URLs are permitted`,
+    );
+    const inert = compute(() => options.initialValue) as WebSocketSignal<T>;
+    inert.send = () => {};
+    inert.readyState = () => 'closed' as const;
+    return inert;
+  }
+
+  // Subprotocol validation: per RFC 6455 §4.1, each subprotocol must be
+  // a non-empty token (RFC 7230 §3.2.6 tchar set). Containing CR/LF or
+  // other control bytes lets a misconfigured server smuggle headers
+  // through the Sec-WebSocket-Protocol echo or trip the browser into a
+  // DOMException at construction. Reject pre-construction to a sourced,
+  // redacted warn and an inert accessor.
+  if (options.protocols !== undefined) {
+    const list = typeof options.protocols === 'string' ? [options.protocols] : options.protocols;
+    // RFC 7230 token: 1*tchar where tchar = !#$%&'*+-.^_`|~ / DIGIT / ALPHA.
+    const tokenRe = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+    let bad = false;
+    if (!Array.isArray(list)) bad = true;
+    else {
+      for (let i = 0; i < list.length; i++) {
+        const p = list[i];
+        if (typeof p !== 'string' || !tokenRe.test(p)) {
+          bad = true;
+          break;
+        }
+      }
+    }
+    if (bad) {
+      console.warn(
+        `[purity] webSocketSignal('${label}') rejected — invalid subprotocol (must be RFC 6455 tokens)`,
+      );
+      const inert = compute(() => options.initialValue) as WebSocketSignal<T>;
+      inert.send = () => {};
+      inert.readyState = () => 'closed' as const;
+      return inert;
+    }
+  }
+
   let ws: WebSocket | null = null;
   const onOpen = (): void => {
     stateAccessor('open');

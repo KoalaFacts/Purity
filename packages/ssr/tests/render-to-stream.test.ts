@@ -447,6 +447,35 @@ describe('renderToStream — per-boundary resource cache', () => {
     const out = await streamToString(stream);
     expect(out).not.toContain('__purity_resources_');
   });
+
+  it('defangs </script> smuggling in both the shell and per-boundary resource scripts', async () => {
+    // Guards the SHARED helper across renderers. If render-to-stream's
+    // escape table ever drifts from render-to-string's, this test catches
+    // it: both the top-level shell payload (id="__purity_resources__")
+    // and each per-boundary payload (id="__purity_resources_N__") flow
+    // through the same `serializeResourceScriptPayload` helper.
+    const stream = renderToStream(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            const r = resource(() => Promise.resolve('</script><img src=x onerror=alert(1)>'), {
+              initialValue: undefined,
+              key: 'b1',
+            });
+            return ssrHtml`<aside>${() => r()}</aside>`;
+          },
+          () => ssrHtml`<aside>…</aside>`,
+        )}</main>`,
+    );
+    const out = await streamToString(stream);
+    // Per-boundary cache prime emitted.
+    expect(out).toContain('id="__purity_resources_1__"');
+    // No raw </script> inside any resource payload — the escape rewrote
+    // it to </script> so the inline JSON script can't be
+    // broken out of.
+    expect(out).not.toContain('</script><img');
+    expect(out).toContain('\\u003c/script\\u003e');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -548,8 +577,7 @@ describe('renderToStream — audit-v2 hardening', () => {
         ssrHtml`<main>${suspense(
           () => {
             const r = resource(
-              () =>
-                new Promise<string>((res) => setTimeout(() => res('NEVER-SHOULD-FLUSH'), 50)),
+              () => new Promise<string>((res) => setTimeout(() => res('NEVER-SHOULD-FLUSH'), 50)),
               { initialValue: undefined },
             );
             return ssrHtml`<aside>${() => r()}</aside>`;

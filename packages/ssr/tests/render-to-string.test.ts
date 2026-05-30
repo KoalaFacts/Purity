@@ -215,6 +215,29 @@ describe('renderToString — CSP nonce on resource-priming script', () => {
   });
 });
 
+describe('renderToString — resource-script JSON escape', () => {
+  it('defangs </script> smuggling in resolved resource payloads', async () => {
+    // A resource that resolves to a string containing `</script>` must
+    // never appear verbatim inside the cache-priming <script> body — that
+    // would close the inline JSON script tag early and let the trailing
+    // markup execute as HTML / parse as live script. We escape `<`, `>`
+    // and `&` to `<` / `>` / `&` (the standard SSR-payload
+    // contract React/Vue/etc. use). This test guards the shared helper —
+    // if either renderer drifts to its own escape table, the contract
+    // catches it here.
+    const App = (): unknown => {
+      const r = resource(() => Promise.resolve('</script><img src=x onerror=alert(1)>'));
+      return html`<p>${() => r()}</p>`;
+    };
+    const out = await renderToString(App);
+    // No raw </script> inside the cache-priming payload.
+    expect(out).toContain('id="__purity_resources__"');
+    expect(out).not.toContain('</script><img');
+    // Confirms the escape made it through.
+    expect(out).toContain('\\u003c/script\\u003e');
+  });
+});
+
 describe('renderToString — audit-v2 AbortSignal + cleanup hardening', () => {
   it('rejects synchronously-aborted signals before invoking the component', async () => {
     // Pre-flight check: if the caller has already given up (client

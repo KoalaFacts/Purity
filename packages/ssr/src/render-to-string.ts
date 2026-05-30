@@ -15,6 +15,7 @@
 
 import { popSSRRenderContext, pushSSRRenderContext, type SSRRenderContext } from '@purityjs/core';
 import { valueToHtml } from '@purityjs/core/compiler';
+import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
 
 export interface RenderToStringOptions {
   /** Maximum ms to wait for pending resources during render. Default 5000. */
@@ -80,8 +81,6 @@ export interface RenderToStringWithHead {
 
 const DEFAULT_TIMEOUT = 5000;
 const MAX_PASSES = 10;
-
-const RESOURCE_SCRIPT_ID = '__purity_resources__';
 
 /**
  * Render a Purity component to an HTML string, awaiting any in-flight
@@ -366,19 +365,10 @@ function buildResourceScript(
   // payload format don't break. The new `{ ordered, keyed }` shape kicks
   // in only when at least one keyed resource exists.
   const payload = hasKeyed ? { ordered, keyed } : ordered;
-  // JSON-encode then defang sequences that would close the script tag early.
-  // Mirrors the standard SSR-payload escaping used by React, Vue, etc.
-  const json = JSON.stringify(payload)
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
   // `nonce` was validated above (NONCE_PATTERN); safe to splice into the
-  // attribute. Emitted only when supplied so the default output is byte-
-  // for-byte unchanged.
-  const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
-  return `<script type="application/json" id="${RESOURCE_SCRIPT_ID}"${nonceAttr}>${json}</script>`;
+  // attribute via the shared serializer. Emitted only when supplied so the
+  // default output is byte-for-byte unchanged.
+  return serializeResourceScriptPayload(payload, RESOURCE_SCRIPT_ID, nonce);
 }
 
 export { RESOURCE_SCRIPT_ID };

@@ -30,8 +30,8 @@ import {
   type SSRRenderContext,
 } from '@purityjs/core';
 import { valueToHtml } from '@purityjs/core/compiler';
+import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
 
-const RESOURCE_SCRIPT_ID = '__purity_resources__';
 const DEFAULT_TIMEOUT = 5000;
 const MAX_PASSES = 10;
 // Restrict CSP nonces to base64 / URL-safe characters so a hostile or
@@ -524,14 +524,7 @@ function buildBoundaryResourceScript(
 ): string {
   const keys = Object.keys(keyed);
   if (keys.length === 0) return '';
-  const json = JSON.stringify({ keyed })
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
-  const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
-  return `<script type="application/json" id="__purity_resources_${boundaryId}__"${nonceAttr}>${json}</script>`;
+  return serializeResourceScriptPayload({ keyed }, `__purity_resources_${boundaryId}__`, nonce);
 }
 
 function scriptTag(body: string, nonce: string | undefined): string {
@@ -548,12 +541,5 @@ function buildResourceScript(
   const hasKeyed = Object.keys(keyed).length > 0;
   if (!hasOrdered && !hasKeyed) return '';
   const payload = hasKeyed ? { ordered, keyed } : ordered;
-  const json = JSON.stringify(payload)
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
-  const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
-  return `<script type="application/json" id="${RESOURCE_SCRIPT_ID}"${nonceAttr}>${json}</script>`;
+  return serializeResourceScriptPayload(payload, RESOURCE_SCRIPT_ID, nonce);
 }

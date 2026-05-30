@@ -337,3 +337,279 @@ describe('asyncNotFound — chain form (ADR 0028)', () => {
     expect(result).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// audit-v2 regressions — render-time error isolation, boundary-import
+// failure preservation, dir normalization, loader param freeze.
+// ---------------------------------------------------------------------------
+
+describe('asyncRoute — audit-v2 render-time error isolation', () => {
+  it('routes a route-view throw through the error boundary instead of escaping when()', async () => {
+    // RED before fix: a sync throw inside `routeMod.default()` escapes the
+    // try-block in loadStack's catch (which only catches imports/loaders),
+    // so when() invokes a thrown factory and the consumer's render crashes.
+    const entry: AsyncRouteEntry = {
+      pattern: '/p',
+      filePath: 'p.ts',
+      importFn: async () => ({
+        default: () => {
+          throw new Error('view rendered with stale data');
+        },
+      }),
+      layouts: [],
+      errorBoundary: {
+        filePath: '_error.ts',
+        importFn: async () => ({
+          default: (err: unknown) => `caught:${(err as Error).message}`,
+        }),
+      },
+    };
+
+    const { ctx } = inSSRContext(() => asyncRoute(entry, {}));
+    await Promise.all(ctx.pendingPromises);
+    const factory = ctx.resolvedDataByKey['route:/p'] as () => unknown;
+    // GREEN: the factory does NOT throw; the boundary view rendered instead.
+    expect(() => factory()).not.toThrow();
+    expect(factory()).toBe('caught:view rendered with stale data');
+  });
+
+  it('routes a layout-render throw through the error boundary', async () => {
+    const entry: AsyncRouteEntry = {
+      pattern: '/p',
+      filePath: 'p.ts',
+      importFn: async () => ({ default: () => 'inner' }),
+      layouts: [
+        {
+          filePath: '_layout.ts',
+          importFn: async () => ({
+            default: (_children: () => unknown) => {
+              throw new TypeError('layout crashed');
+            },
+          }),
+        },
+      ],
+      errorBoundary: {
+        filePath: '_error.ts',
+        importFn: async () => ({
+          default: (err: unknown) => `boundary:${(err as Error).message}`,
+        }),
+      },
+    };
+
+    const { ctx } = inSSRContext(() => asyncRoute(entry, {}));
+    await Promise.all(ctx.pendingPromises);
+    const factory = ctx.resolvedDataByKey['route:/p'] as () => unknown;
+    expect(factory()).toBe('boundary:layout crashed');
+  });
+
+  it('still rethrows a render-time throw when no errorBoundary is configured', async () => {
+    const entry: AsyncRouteEntry = {
+      pattern: '/p',
+      filePath: 'p.ts',
+      importFn: async () => ({
+        default: () => {
+          throw new Error('escapes');
+        },
+      }),
+      layouts: [],
+    };
+
+    const { ctx } = inSSRContext(() => asyncRoute(entry, {}));
+    await Promise.all(ctx.pendingPromises);
+    const factory = ctx.resolvedDataByKey['route:/p'] as () => unknown;
+    // No boundary → throw must still surface to the consumer's outer
+    // fallback path. Routing it to a fake boundary would silently swallow.
+    expect(() => factory()).toThrow('escapes');
+  });
+});
+
+describe('asyncRoute — audit-v2 errorBoundary import failure', () => {
+  it('preserves the original loader error when the boundary import itself fails', async () => {
+    // RED before fix: the catch block awaited errorBoundary.importFn(),
+    // and if that rejected, the throw replaced `err` with the boundary's
+    // import error — the original loader bug was invisible.
+    const loaderErr = new Error('original loader bug');
+    const boundaryErr = new Error('boundary chunk 404');
+    const entry: AsyncRouteEntry = {
+      pattern: '/p',
+      filePath: 'p.ts',
+      hasLoader: true,
+      importFn: async () => ({
+        default: () => 'never',
+        loader: async () => {
+          throw loaderErr;
+        },
+      }),
+      layouts: [],
+      errorBoundary: {
+        filePath: '_error.ts',
+        importFn: async () => {
+          throw boundaryErr;
+        },
+      },
+    };
+
+    const { ctx } = inSSRContext(() => asyncRoute(entry, {}));
+    await Promise.allSettled(ctx.pendingPromises);
+    const surfaced = ctx.resolvedErrorsByKey['route:/p'];
+    // GREEN: AggregateError with both layers visible.
+    expect(surfaced).toBeInstanceOf(AggregateError);
+    const agg = surfaced as AggregateError;
+    expect(agg.errors).toHaveLength(2);
+    expect(agg.errors[0]).toBe(loaderErr);
+    expect(agg.errors[1]).toBe(boundaryErr);
+  });
+
+  it('falls through to original-throw when boundary module has no default export', async () => {
+    const loaderErr = new Error('the real bug');
+    const entry: AsyncRouteEntry = {
+      pattern: '/p',
+      filePath: 'p.ts',
+      hasLoader: true,
+      importFn: async () => ({
+        default: () => 'never',
+        loader: async () => {
+          throw loaderErr;
+        },
+      }),
+      layouts: [],
+      errorBoundary: {
+        filePath: '_error.ts',
+        // No `default` — malformed boundary module.
+        importFn: async () => ({}),
+      },
+    };
+
+    const { ctx } = inSSRContext(() => asyncRoute(entry, {}));
+    await Promise.allSettled(ctx.pendingPromises);
+    // Should surface the ORIGINAL error — not an opaque "boundary unusable".
+    expect(ctx.resolvedErrorsByKey['route:/p']).toBe(loaderErr);
+  });
+});
+
+describe('asyncNotFound — audit-v2 dir normalization (ADR 0028)', () => {
+  it('accepts a leading slash on dir', async () => {
+    // RED before fix: `dir: '/admin'` produced prefix '//admin' which
+    // can never match any sane URL path — silently routed to the next
+    // chain entry instead.
+    const chain = [
+      {
+        filePath: 'admin/_404.ts',
+        dir: '/admin',
+        importFn: async () => ({ default: () => 'ADMIN 404' }),
+      },
+      {
+        filePath: '_404.ts',
+        dir: '',
+        importFn: async () => ({ default: () => 'ROOT 404' }),
+      },
+    ];
+    navigate('/admin/missing');
+    const { ctx } = inSSRContext(() => asyncNotFound(chain));
+    await Promise.all(ctx.pendingPromises);
+    const factory = ctx.resolvedDataByKey['notFound:admin/_404.ts'] as () => unknown;
+    expect(factory()).toBe('ADMIN 404');
+  });
+
+  it('accepts a trailing slash on dir', async () => {
+    const chain = [
+      {
+        filePath: 'admin/_404.ts',
+        dir: 'admin/',
+        importFn: async () => ({ default: () => 'ADMIN 404' }),
+      },
+      {
+        filePath: '_404.ts',
+        dir: '',
+        importFn: async () => ({ default: () => 'ROOT 404' }),
+      },
+    ];
+    navigate('/admin');
+    const { ctx } = inSSRContext(() => asyncNotFound(chain));
+    await Promise.all(ctx.pendingPromises);
+    const factory = ctx.resolvedDataByKey['notFound:admin/_404.ts'] as () => unknown;
+    expect(factory()).toBe('ADMIN 404');
+  });
+
+  it('treats dir consisting solely of slashes as the root catch-all', async () => {
+    const chain = [
+      {
+        filePath: 'catch.ts',
+        dir: '///',
+        importFn: async () => ({ default: () => 'CATCH' }),
+      },
+    ];
+    navigate('/anywhere');
+    const { ctx } = inSSRContext(() => asyncNotFound(chain));
+    await Promise.all(ctx.pendingPromises);
+    const factory = ctx.resolvedDataByKey['notFound:catch.ts'] as () => unknown;
+    expect(factory()).toBe('CATCH');
+  });
+});
+
+describe('asyncRoute — audit-v2 loader param shielding', () => {
+  it('hands the loader a frozen params snapshot so mutations cannot race the view', async () => {
+    // RED before fix: ctx.params === routeMod.default(params, …)'s same
+    // object. A loader that did `ctx.params.id = sanitize(ctx.params.id)`
+    // would silently mutate the view's input mid-render. Freezing the
+    // snapshot surfaces the bug at the loader instead.
+    let loaderSawFrozen = false;
+    const original = { id: 'raw' };
+    const entry: AsyncRouteEntry = {
+      pattern: '/p',
+      filePath: 'p.ts',
+      hasLoader: true,
+      importFn: async () => ({
+        default: (_p: Record<string, string>) => 'ok',
+        loader: async (ctx: LoaderContext) => {
+          loaderSawFrozen = Object.isFrozen(ctx.params);
+          // The original caller's bag must NOT be frozen — only the loader's
+          // snapshot is sealed.
+          return null;
+        },
+      }),
+      layouts: [],
+    };
+    // Need a local import for LoaderContext typing within the test scope.
+    type LoaderContext = import('../src/async-route.ts').LoaderContext;
+
+    const { ctx } = inSSRContext(() => asyncRoute(entry, original));
+    await Promise.all(ctx.pendingPromises);
+    expect(loaderSawFrozen).toBe(true);
+    // Caller's original params bag is untouched (and still mutable).
+    expect(Object.isFrozen(original)).toBe(false);
+    expect(original).toEqual({ id: 'raw' });
+  });
+});
+
+describe('asyncRoute — audit-v2 tokened loaderData balance', () => {
+  it('the route view-factory uses tokened push/pop so unbalanced user pushes are detected', async () => {
+    // RED before fix: untokened popLoaderData() silently removed whatever
+    // top frame was on the stack — a misbehaving route view that pushed
+    // without popping leaked its frame upward and corrupted later reads.
+    const { pushLoaderData, loaderDataStackDepth, resetLoaderDataStack } =
+      await import('../src/loader-data.ts');
+    resetLoaderDataStack();
+    const entry: AsyncRouteEntry = {
+      pattern: '/p',
+      filePath: 'p.ts',
+      importFn: async () => ({
+        default: () => {
+          // Misbehaving view: pushes without popping.
+          pushLoaderData('rogue');
+          return 'view';
+        },
+      }),
+      layouts: [],
+    };
+    const { ctx } = inSSRContext(() => asyncRoute(entry, {}));
+    await Promise.all(ctx.pendingPromises);
+    const factory = ctx.resolvedDataByKey['route:/p'] as () => unknown;
+    // GREEN: the wrapping tokened pop throws on mismatch — bug surfaces
+    // at the offending call site instead of silently leaking the frame.
+    expect(() => factory()).toThrow(/imbalance/);
+    // Clean up so other tests aren't poisoned.
+    resetLoaderDataStack();
+    expect(loaderDataStackDepth()).toBe(0);
+  });
+});

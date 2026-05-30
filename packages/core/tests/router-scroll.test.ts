@@ -86,6 +86,22 @@ describe('onNavigate() — listener hook', () => {
     navigate('https://other.example.com/');
     expect(calls).toEqual([]);
   });
+
+  it('does not throw on a malformed href; logs and no-ops', () => {
+    // navigate() is called from intercepted clicks, where a crafted
+    // <a href> could be unparseable, and from user code under any
+    // circumstance. A bare `new URL(...)` throws TypeError — that
+    // would escape to navigate()'s caller and break the nav handler.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const calls: string[] = [];
+    teardown = onNavigate((u) => calls.push(u.pathname));
+    // These all throw on `new URL(href)` (invalid port / host):
+    expect(() => navigate('http://[::]:99999/')).not.toThrow();
+    expect(() => navigate('http://%')).not.toThrow();
+    expect(calls).toEqual([]);
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
 });
 
 describe('manageNavScroll() — default behavior', () => {

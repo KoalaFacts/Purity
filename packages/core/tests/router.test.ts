@@ -83,6 +83,24 @@ describe('matchRoute() — pattern matching', () => {
     });
   });
 
+  it('URI-decodes splat segments symmetrically with :param', () => {
+    // Before the fix the splat capture skipped safeDecode while :param
+    // captures decoded. So `/files/Hello%20World/c%2B%2B.md` matched
+    // `/files/*` to `Hello%20World/c%2B%2B.md` raw — asymmetric and
+    // surprising. Each path segment is now decoded.
+    expect(matchRoute('/files/*', '/files/Hello%20World/c%2B%2B.md')).toEqual({
+      params: { '*': 'Hello World/c++.md' },
+    });
+    // Mixed :param + * — both decoded.
+    expect(matchRoute('/u/:name/*', '/u/Ada%20Lovelace/notes/2024%2F01.md')).toEqual({
+      params: { name: 'Ada Lovelace', '*': 'notes/2024/01.md' },
+    });
+    // Malformed percent in a splat segment falls back to raw, doesn't throw.
+    expect(matchRoute('/files/*', '/files/%/safe')).toEqual({
+      params: { '*': '%/safe' },
+    });
+  });
+
   it('treats consecutive / as one segment (filter Boolean)', () => {
     expect(matchRoute('/about', '//about///')).toEqual({ params: {} });
   });

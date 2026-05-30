@@ -192,7 +192,19 @@ export function _setNavigateWrapper(fn: NavigateWrapper | null): void {
 
 export function navigate(href: string, options: NavigateOptions = {}): void {
   if (typeof window === 'undefined' || !window.history) return;
-  const url = new URL(href, window.location.origin);
+  // `new URL` throws TypeError on a malformed href. navigate() is called
+  // from intercepted link clicks (where attackers can craft hostile
+  // hrefs), from user code, and from configureNavigation chains — any
+  // throw escapes to the caller and breaks the nav. Treat malformed as
+  // "no-op", same fail-safe shape as `matchRoute` / `safeDecode` /
+  // `ssrUrl` (cycles 1 and 5).
+  let url: URL;
+  try {
+    url = new URL(href, window.location.origin);
+  } catch {
+    console.warn(`[purity] navigate(): invalid href, ignored:`, href);
+    return;
+  }
   // Don't navigate cross-origin via pushState — that produces a malformed
   // state. Callers should set `window.location` directly for full-page nav.
   if (url.origin !== window.location.origin) return;
@@ -258,7 +270,12 @@ export function matchRoute(pattern: string, path?: string): RouteMatch | null {
   for (let i = 0; i < patternParts.length; i++) {
     const seg = patternParts[i];
     if (seg === '*') {
-      params['*'] = pathParts.slice(i).join('/');
+      // Decode each splat segment so the captured tail matches the
+      // `:param` decoding behavior. Asymmetric was a real footgun:
+      // `/blog/:section/*` over `/blog/tech/Hello%20World` returned
+      // `{ section: 'tech', '*': 'Hello%20World' }`. safeDecode never
+      // throws (cycle-1 pattern), so malformed `%` falls back to raw.
+      params['*'] = pathParts.slice(i).map(safeDecode).join('/');
       return { params };
     }
     if (i >= pathParts.length) return null;

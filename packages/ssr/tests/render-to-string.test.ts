@@ -49,6 +49,43 @@ describe('html`` SSR tag', () => {
     expect(factory(2)).toBe('<p><!--[-->2<!--]--></p>');
     expect(factory(3)).toBe('<p><!--[-->3<!--]--></p>');
   });
+
+  it('keeps escaping even when the shared ssrHelpers bundle is mutated', async () => {
+    // Audit-v2 regression: the runtime `html` tag used to forward the
+    // live `ssrHelpers` object by reference into every compiled factory.
+    // A consumer that swapped `ssrHelpers.esc` for the identity function
+    // (intentionally or via a buggy plugin) could strip all XSS escaping
+    // out of subsequent SSR renders. The entry point now snapshots and
+    // freezes the helpers at module load, so post-load mutation cannot
+    // alter what the compiled factory sees.
+    const mod = await import('@purityjs/core/compiler');
+    const realEsc = mod.ssrHelpers.esc;
+    try {
+      // Mutate the live export to a pass-through. If the html tag forwarded
+      // by reference, the next render would emit raw `<script>` bytes.
+      (mod.ssrHelpers as { esc: (s: string) => string }).esc = (s: string) => s;
+      const out = html`<p>${'<script>alert(1)</script>'}</p>`.__purity_ssr_html__;
+      expect(out).toBe('<p><!--[-->&lt;script&gt;alert(1)&lt;/script&gt;<!--]--></p>');
+      expect(out).not.toContain('<script>');
+    } finally {
+      (mod.ssrHelpers as { esc: (s: string) => string }).esc = realEsc;
+    }
+  });
+
+  it('keeps attribute escaping even when ssrHelpers.attr is mutated', async () => {
+    const mod = await import('@purityjs/core/compiler');
+    const realAttr = mod.ssrHelpers.attr;
+    try {
+      (mod.ssrHelpers as { attr: (s: string) => string }).attr = (s: string) => s;
+      const out = html`<a href=${'"><script>alert(1)</script><a x="'}>x</a>`.__purity_ssr_html__;
+      // Must NOT contain a literal `<script>` — the attribute escaper has
+      // to neutralise the double quote that would close the attribute.
+      expect(out).not.toContain('<script>');
+      expect(out).not.toContain('"><script');
+    } finally {
+      (mod.ssrHelpers as { attr: (s: string) => string }).attr = realAttr;
+    }
+  });
 });
 
 describe('renderToString', () => {

@@ -112,21 +112,33 @@ export interface SSRRenderContext {
   request?: Request;
 }
 
-let currentContext: SSRRenderContext | null = null;
+// A real LIFO stack — earlier versions held a single-slot `currentContext`,
+// so a nested `pushSSRRenderContext` from inside another render (e.g. a
+// streaming boundary re-entering a render pass, or any inner SSR call site
+// that pushes its own context) clobbered the outer caller's context and a
+// subsequent `popSSRRenderContext` unconditionally nulled it. The stack
+// shape preserves LIFO save/restore semantics so nested/concurrent SSR
+// scopes can coexist. `getSSRRenderContext` reads the top of the stack.
+const contextStack: SSRRenderContext[] = [];
 
 /** @internal */
 export function getSSRRenderContext(): SSRRenderContext | null {
-  return currentContext;
+  return contextStack.length === 0
+    ? null
+    : (contextStack[contextStack.length - 1] as SSRRenderContext);
 }
 
 /** @internal */
 export function pushSSRRenderContext(ctx: SSRRenderContext): void {
-  currentContext = ctx;
+  contextStack.push(ctx);
 }
 
 /** @internal */
 export function popSSRRenderContext(): void {
-  currentContext = null;
+  // No-op on an empty stack — defensive against stray pops (e.g. an outer
+  // `finally` running after a callee already popped the same frame). Was
+  // previously a silent overwrite-to-null, which had the same effect.
+  contextStack.pop();
 }
 
 // ---------------------------------------------------------------------------

@@ -499,6 +499,19 @@ function reconcileEach<T>(
     const key = getKey(item, i);
     newKeys[i] = key;
 
+    // Duplicate-key detection. When two items resolve to the same key, the
+    // second `newEntries.set` overwrites the first, the same entry's nodes
+    // get adopted by both insert points in the reorder loop, and a row
+    // visually disappears. The reuseCount also gets inflated past prevLen,
+    // throwing off the append/prepend heuristics. Warn once per render with
+    // the offending key so the caller can fix their keyFn — full dedupe
+    // would change semantics (the documented contract is "keys are unique").
+    if (newEntries.has(key)) {
+      console.warn(
+        `[Purity] each() duplicate key ${JSON.stringify(String(key))} at index ${i}; rows after the first occurrence may corrupt. Ensure keyFn returns a unique value per item.`,
+      );
+    }
+
     const _existing = keyToEntry.get(key) as EachEntry<T> | undefined;
     if (_existing) {
       _existing.data(item);
@@ -1265,6 +1278,12 @@ type ListTextFn<T> = (item: T, index: number) => string;
 interface ListEntry {
   node: Element;
   textNode: Text | null;
+  // Bound event handlers for this entry, keyed by event name. Stored so
+  // updateEntry can `removeEventListener` the stale ones (which close over
+  // the previous `item`) and rebind with the fresh item, and so the dispose
+  // path can release them when the row is removed. `null` when no events
+  // were configured — avoids the per-row allocation in the common case.
+  boundEvents: Map<string, EventListener> | null;
 }
 
 /**
@@ -1320,6 +1339,24 @@ export function list<T>(
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
 
+  // Resolve `fn(item, index)` for an attr/event resolver, isolating throws
+  // from sibling keys. One bad resolver shouldn't drop the rest of the row's
+  // attrs/events (matches the policy in signals.flush + component lifecycle).
+  const safeCall = <R>(
+    fn: (item: T, index: number) => R,
+    item: T,
+    index: number,
+    label: string,
+    key: string,
+  ): R | undefined => {
+    try {
+      return fn(item, index);
+    } catch (err) {
+      console.error(`[Purity] list() ${label}[${key}] threw for row ${index}:`, err);
+      return undefined;
+    }
+  };
+
   // Create a single element — the tightest possible code
   const createEntry = (item: T, index: number): ListEntry => {
     const el = document.createElement(tag);
@@ -1332,13 +1369,27 @@ export function list<T>(
     if (getClass) (el as HTMLElement).className = getClass(item, index);
     if (getStyle) (el as HTMLElement).style.cssText = getStyle(item, index);
     if (getAttrs) {
-      for (const [k, fn] of Object.entries(getAttrs)) el.setAttribute(k, fn(item, index));
+      for (const [k, fn] of Object.entries(getAttrs)) {
+        const v = safeCall(fn, item, index, 'getAttrs', k);
+        // Mirror listSSR's `v != null` gate so client + SSR produce the same
+        // attribute set for nullable resolvers (the SSR path explicitly omits
+        // the attribute when the resolver returns null/undefined).
+        if (v != null) el.setAttribute(k, v);
+      }
     }
+    let boundEvents: Map<string, EventListener> | null = null;
     if (getEvents) {
-      for (const [k, fn] of Object.entries(getEvents)) el.addEventListener(k, fn(item, index));
+      boundEvents = new Map();
+      for (const [k, fn] of Object.entries(getEvents)) {
+        const handler = safeCall(fn, item, index, 'getEvents', k);
+        if (typeof handler === 'function') {
+          el.addEventListener(k, handler);
+          boundEvents.set(k, handler);
+        }
+      }
     }
 
-    return { node: el, textNode };
+    return { node: el, textNode, boundEvents };
   };
 
   // Update an existing element in place — zero DOM creation
@@ -1347,8 +1398,44 @@ export function list<T>(
     if (getClass) (entry.node as HTMLElement).className = getClass(item, index);
     if (getStyle) (entry.node as HTMLElement).style.cssText = getStyle(item, index);
     if (getAttrs) {
-      for (const [k, fn] of Object.entries(getAttrs)) entry.node.setAttribute(k, fn(item, index));
+      for (const [k, fn] of Object.entries(getAttrs)) {
+        const v = safeCall(fn, item, index, 'getAttrs', k);
+        if (v != null) entry.node.setAttribute(k, v);
+        // Match SSR semantics: nullable resolver → attribute absent.
+        else entry.node.removeAttribute(k);
+      }
     }
+    // Rebind event handlers — each `fn(item, index)` closes over the row's
+    // current `item`, so reused entries whose underlying item changed need
+    // their handlers refreshed or clicks fire with stale data.
+    if (getEvents) {
+      const prev = entry.boundEvents;
+      if (prev) {
+        for (const [k, h] of prev) entry.node.removeEventListener(k, h);
+        prev.clear();
+      }
+      const next = prev ?? new Map<string, EventListener>();
+      for (const [k, fn] of Object.entries(getEvents)) {
+        const handler = safeCall(fn, item, index, 'getEvents', k);
+        if (typeof handler === 'function') {
+          entry.node.addEventListener(k, handler);
+          next.set(k, handler);
+        }
+      }
+      entry.boundEvents = next;
+    }
+  };
+
+  // Release any handlers attached by createEntry/updateEntry so the entry
+  // (and its captured item closure) can be GC'd even if an external reference
+  // pins the row node. Centralised so both the dispose path and the removal
+  // path use the same teardown.
+  const releaseEntry = (entry: ListEntry): void => {
+    const events = entry.boundEvents;
+    if (!events) return;
+    for (const [k, h] of events) entry.node.removeEventListener(k, h);
+    events.clear();
+    entry.boundEvents = null;
   };
 
   const dispose = watch(() => {
@@ -1380,8 +1467,10 @@ export function list<T>(
     if (len === 0) {
       for (let i = 0; i < prevLen; i++) {
         const entry = keyToEntry.get(prevKeys[i]);
-        const p = entry?.node.parentNode;
-        if (entry && p) p.removeChild(entry.node);
+        if (!entry) continue;
+        const p = entry.node.parentNode;
+        if (p) p.removeChild(entry.node);
+        releaseEntry(entry);
       }
       keyToEntry = new Map();
       prevKeys = [];
@@ -1429,8 +1518,10 @@ export function list<T>(
     if (reuseCount === 0) {
       for (let i = 0; i < prevLen; i++) {
         const entry = keyToEntry.get(prevKeys[i]);
-        const p = entry?.node.parentNode;
-        if (entry && p) p.removeChild(entry.node);
+        if (!entry) continue;
+        const p = entry.node.parentNode;
+        if (p) p.removeChild(entry.node);
+        releaseEntry(entry);
       }
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
@@ -1446,7 +1537,9 @@ export function list<T>(
       for (let i = 0; i < prevLen; i++) {
         if (!newKeySet.has(prevKeys[i])) {
           const entry = keyToEntry.get(prevKeys[i]);
-          if (entry?.node.parentNode) entry.node.parentNode.removeChild(entry.node);
+          if (!entry) continue;
+          if (entry.node.parentNode) entry.node.parentNode.removeChild(entry.node);
+          releaseEntry(entry);
         }
       }
     }
@@ -1528,6 +1621,12 @@ export function list<T>(
   if (ctx) {
     (ctx.disposers ??= []).push(() => {
       dispose();
+      // Release every row's bound event handlers so external references to
+      // the row nodes (focus restoration, popover anchors, ref callbacks) can
+      // no longer pin the captured `item` closure. The row nodes themselves
+      // are left to GC alongside their parent — the same shape as each()'s
+      // disposeEntry walk.
+      for (const entry of keyToEntry.values()) releaseEntry(entry);
       keyToEntry.clear();
       prevKeys = [];
     });

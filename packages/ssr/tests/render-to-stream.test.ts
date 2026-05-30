@@ -303,6 +303,38 @@ describe('renderToStream — runtime swap behavior', () => {
     expect(visible!.textContent).toBe('offline');
     errSpy.mockRestore();
   });
+
+  it('does not double-pop SSRRenderContext when a boundary view throws', async () => {
+    // Pre-fix the catch block popped the SSR context AND the finally
+    // popped it again — single-slot currentContext nulled before
+    // siblings rendered. With multiple boundaries where one throws,
+    // any sibling boundary running concurrently in the same task lost
+    // its context (NPE / hydration markers off).
+    //
+    // Test: a two-boundary stream where the first boundary's view
+    // throws (forcing the catch path) must still render the second
+    // boundary correctly. Without the fix, the second boundary would
+    // either crash on null currentContext or emit malformed content.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const stream = renderToStream(
+      () => ssrHtml`<main>
+        ${suspense(
+          () => {
+            throw new Error('first boundary boom');
+          },
+          () => ssrHtml`<aside class="lf">first-fallback</aside>`,
+        )}
+        ${suspense(
+          () => ssrHtml`<aside class="ok">second-resolved</aside>`,
+          () => ssrHtml`<aside class="ls">second-fallback</aside>`,
+        )}
+      </main>`,
+    );
+    const out = await streamToString(stream);
+    // Second boundary correctly streamed (not crashed by double-pop):
+    expect(out).toContain('second-resolved');
+    errSpy.mockRestore();
+  });
 });
 
 // ---------------------------------------------------------------------------

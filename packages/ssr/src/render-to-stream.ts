@@ -355,6 +355,8 @@ async function renderBoundary(
       // doesn't recursively stream sub-boundaries; that's a follow-up.
     };
     pushSSRRenderContext(ctx);
+    let viewThrewAndExhausted = false;
+    let viewThrewNeedsRetry = false;
     try {
       html = valueToHtml(viewTimedOut ? boundary.fallback() : boundary.view());
     } catch (err) {
@@ -369,20 +371,27 @@ async function renderBoundary(
             'leaving the shell fallback in place.',
           err,
         );
-        popSSRRenderContext();
-        return null;
+        viewThrewAndExhausted = true;
+      } else {
+        console.error(
+          `[Purity] renderToStream: boundary ${boundaryId} view threw; ` +
+            'rendering fallback for this boundary.',
+          err,
+        );
+        viewTimedOut = true;
+        viewThrewNeedsRetry = true;
       }
-      console.error(
-        `[Purity] renderToStream: boundary ${boundaryId} view threw; ` +
-          'rendering fallback for this boundary.',
-        err,
-      );
-      viewTimedOut = true;
-      popSSRRenderContext();
-      continue;
     } finally {
+      // Single pop point. The previous code popped inside the catch
+      // before `return null` / `continue`, AND popped again in finally —
+      // a double-pop on every boundary throw. SSRRenderContext is a
+      // single-slot module-global, so a double-pop nulled the outer
+      // render's slot (or, with a future fix to stack-ify it, would
+      // pop the parent's frame off too).
       popSSRRenderContext();
     }
+    if (viewThrewAndExhausted) return null;
+    if (viewThrewNeedsRetry) continue;
 
     if (ctx.pendingPromises.length === 0) {
       return { html, resolvedData, resolvedDataByKey };

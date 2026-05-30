@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # Purity Monorepo
 
-Minimal web framework built on TC39-Signals-inspired reactivity. Templates compile to direct DOM operations — no virtual DOM. `@purityjs/core` is ~5.8 kB gzipped with zero runtime dependencies. Optional SSR via Declarative Shadow DOM. Pre-1.0 (`0.1.0`); the API may break between minor versions.
+Lite web framework built on TC39-Signals-inspired reactivity. Templates compile to direct DOM operations — no virtual DOM. `@purityjs/core` is ~5.8 kB gzipped with zero runtime dependencies. Optional SSR via Declarative Shadow DOM. Pre-1.0 (`0.1.0`); the API may break between minor versions.
 
 ## Packages
 
 | Package                 | Path                    | Role                                                                | Docs                                          |
 | ----------------------- | ----------------------- | ------------------------------------------------------------------- | --------------------------------------------- |
-| `@purityjs/core`        | `packages/core/`        | The framework (signals, templates, components, control flow) — 53 fns | [CLAUDE.md](./packages/core/CLAUDE.md)        |
+| `@purityjs/core`        | `packages/core/`        | The framework — signals, templates, components, control flow          | [CLAUDE.md](./packages/core/CLAUDE.md)        |
 | `@purityjs/ssr`         | `packages/ssr/`         | Node-only SSR — `renderToString` + `renderToStream` + `renderStatic` + DSD | [README](./packages/ssr/README.md)            |
 | `@purityjs/vite-plugin` | `packages/vite-plugin/` | AOT template compile + server-module strip + file-system routing    | [CLAUDE.md](./packages/vite-plugin/CLAUDE.md) |
 | `@purityjs/cli`         | `packages/cli/`         | Project scaffolding (`--ssr` flag)                                  | [CLAUDE.md](./packages/cli/CLAUDE.md)         |

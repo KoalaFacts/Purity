@@ -23,11 +23,33 @@ type Split<S extends string, D extends string> = string extends S
       ? [T, ...Split<U, D>]
       : [S];
 
+// Param names that `matchRoute()` silently rejects at runtime to prevent
+// prototype-pollution (`Object.create(null)` plus an explicit allow-list
+// guard in `router.ts`). Including these in the derived type would be a
+// false positive — consumers would dereference a key the runtime never
+// populates. Audit-v2 (HIGH).
+type ReservedParamName = '__proto__' | 'constructor' | 'prototype';
+
 // Extract the name from a single segment:
-//   ':name' → 'name'
-//   '*'     → '*'
-//   anything else → never
-type SegmentParam<S> = S extends `:${infer Name}` ? Name : S extends '*' ? '*' : never;
+//   ':name'            → 'name'
+//   '*'                → '*'
+//   ':' (empty name)   → never  (audit-v2 HIGH — would surface a `''` key)
+//   ':__proto__' etc.  → never  (audit-v2 HIGH — runtime drops these)
+//   anything else      → never
+// The `S extends string` guard keeps the conditional well-behaved when a
+// caller passes a non-string through `Split<string, '/'>` (which widens
+// to `string[]` and threads `unknown` as `Head`).
+type SegmentParam<S> = S extends string
+  ? S extends `:${infer Name}`
+    ? Name extends ''
+      ? never
+      : Name extends ReservedParamName
+        ? never
+        : Name
+    : S extends '*'
+      ? '*'
+      : never
+  : never;
 
 // Walk a tuple of segments, collecting the union of param names.
 type ParamNames<S extends readonly unknown[]> = S extends readonly [infer Head, ...infer Rest]

@@ -112,6 +112,32 @@ describe('interceptLinks() — default predicate', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it('skips non-http(s) schemes (defense-in-depth scheme allow-list)', () => {
+    // Schemes other than http(s) must not reach navigate(). The pre-
+    // existing cross-origin guard happens to catch most of them in
+    // jsdom (where `a.origin === 'null'` for non-http schemes), but in
+    // real browsers `blob:<page-origin>/uuid` and `filesystem:` URLs
+    // share the page origin and pass that guard — they would push a
+    // non-http URL into SPA history (silent 404 + address-bar
+    // pollution). The explicit `a.protocol` check binds the contract
+    // independent of origin.
+    teardown = interceptLinks();
+    for (const href of [
+      'javascript:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+      'mailto:user@example.com',
+      'tel:+15551234',
+      'sms:+15551234',
+      `blob:${window.location.origin}/00000000-0000-0000-0000-000000000000`,
+      `filesystem:${window.location.origin}/temporary/foo`,
+    ]) {
+      const a = makeLink(href);
+      const event = clickLink(a);
+      expect(event.defaultPrevented, `should NOT intercept ${href}`).toBe(false);
+      a.remove();
+    }
+  });
+
   it('skips same-page hash-only links', () => {
     teardown = interceptLinks();
     const a = makeLink('#section-2');

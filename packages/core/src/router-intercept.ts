@@ -35,6 +35,14 @@ function defaultShouldIntercept(event: MouseEvent, a: HTMLAnchorElement): boolea
   if (event.button !== 0) return false;
   // Modifier keys: cmd / ctrl / shift / alt open in new tab/window/etc.
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+  // Scheme allow-list: only intercept http(s) navigations. Other schemes
+  // shouldn't reach navigate() at all — `javascript:` runs as JS,
+  // `data:` / `blob:` / `vbscript:` / `file:` would push a non-http URL
+  // into history (silent SPA 404 + address-bar pollution), `mailto:` /
+  // `tel:` / `sms:` need their native handler. `a.origin === 'null'` for
+  // most of these happens to bounce them off the cross-origin check
+  // below, but only by accident; bind the contract explicitly.
+  if (a.protocol !== 'http:' && a.protocol !== 'https:') return false;
   // Per-link opt-out.
   if (a.hasAttribute('data-no-intercept')) return false;
   // target="" / target="_self" are intercepted; anything else (_blank, etc.) is not.

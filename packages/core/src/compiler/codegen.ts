@@ -1151,7 +1151,7 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
         return;
       }
       emitLit(ctx, `<${node.tag}`);
-      for (const a of node.attributes) emitSSRAttr(a, ctx);
+      for (const a of node.attributes) emitSSRAttr(a, ctx, node);
       if (VOID.has(node.tag)) {
         emitLit(ctx, '/>');
         return;
@@ -1212,7 +1212,16 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
   pushRaw(ctx, `${ctx.out}+=_h.element(${JSON.stringify(node.tag)},${attrsVar},${slotVar});`);
 }
 
-function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx): void {
+// DOM properties that do NOT reflect to a same-named HTML attribute. For
+// `prop` / `reactive-prop` / `bind`, the client codegen assigns `_e[name]=value`
+// (or, for these, writes child content). Emitting `name="value"` server-side is
+// a no-op the browser never interprets as the property — worse for `innerHTML`,
+// where the markup is HTML-escaped into a dead attribute. Skip them during SSR;
+// the property assignment runs client-side at hydration. (Reflecting props such
+// as `value` / `checked` / `selected` keep their existing attribute emission.)
+const NON_REFLECTING_PROPS = new Set(['innerHTML', 'outerHTML', 'innerText', 'textContent']);
+
+function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx, node: import('./ast.ts').ElementNode): void {
   if (a.kind === 'static') {
     if (a.value) {
       emitLit(ctx, ` ${a.name}="${escapeAttr(a.value)}"`);
@@ -1242,18 +1251,33 @@ function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx): void {
     case 'prop':
     case 'reactive-prop':
     case 'bind': {
-      // All four read the current value (calling the accessor if it's a
-      // function) and emit it as a quoted attribute. `bind` skips the
+      // `::group=${signal}` is radio/checkbox group binding, not an attribute.
+      // The client sets `_e.checked` from `signal() === value` (radio) or
+      // `signal().includes(value)` (checkbox). SSR has no such branch and
+      // previously emitted a bogus `group="…"` attribute with no `checked`, so
+      // the prerendered group showed no selection. Resolve it to a `checked`
+      // attribute server-side using the element's static `type` + `value`.
+      if (a.kind === 'bind' && a.name === 'group') {
+        emitGroupBindSSR(a, ctx, node);
+        return;
+      }
+      // Non-reflecting DOM properties (`.innerHTML`, `.textContent`, …) are
+      // assigned as properties on the client; serializing them as attributes
+      // is a no-op (and escapes markup into a dead attribute). Skip server-side
+      // for the property-ish kinds — `dynamic` keeps true setAttribute semantics.
+      if (a.kind !== 'dynamic' && NON_REFLECTING_PROPS.has(a.name)) return;
+      // The remaining kinds read the current value (calling the accessor if
+      // it's a function) and emit it as a quoted attribute. `bind` skips the
       // listener install — that's a hydration-time concern.
       pushRaw(ctx, `var ${av}=_h.toAttr(${val});`);
-      pushRaw(ctx, `if(${av}!==null)_o+=${namePrefix}+(${av}===''?'':'="'+${av}+'"');`);
+      pushRaw(ctx, `if(${av}!==null)${ctx.out}+=${namePrefix}+(${av}===''?'':'="'+${av}+'"');`);
       return;
     }
 
     case 'bool': {
       // Boolean attribute: present (no value) when truthy, absent otherwise.
       pushRaw(ctx, `var ${av}=${val};if(typeof ${av}==='function')${av}=${av}();`);
-      pushRaw(ctx, `if(${av})_o+=${namePrefix};`);
+      pushRaw(ctx, `if(${av})${ctx.out}+=${namePrefix};`);
       return;
     }
 
@@ -1261,4 +1285,43 @@ function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx): void {
     default:
       return;
   }
+}
+
+/**
+ * SSR for `::group=${signal}` radio/checkbox binding. Mirrors the client setup
+ * (codegen.ts `bind` case, `name === 'group'`): emits a bare `checked`
+ * attribute when the signal currently selects this input, and never emits the
+ * non-existent `group` attribute. Radio vs checkbox is decided from the static
+ * `type` attribute, and the comparison value from the static `value` attribute.
+ * When either is dynamic / absent the server can't resolve selection — it omits
+ * `checked` and lets hydration set it client-side (no bogus attribute either way).
+ */
+function emitGroupBindSSR(
+  a: import('./ast.ts').BindAttribute,
+  ctx: SSRGenCtx,
+  node: import('./ast.ts').ElementNode,
+): void {
+  const staticAttr = (name: string): string | null => {
+    for (const attr of node.attributes) {
+      if (attr.name === name) return attr.kind === 'static' ? attr.value : null;
+    }
+    return null;
+  };
+  const type = staticAttr('type');
+  const value = staticAttr('value');
+  // Need a concrete value to compare the signal against. Checkbox membership and
+  // radio equality both read it; without it, defer entirely to client hydration.
+  if (value === null) return;
+
+  const id = ctx.counter++;
+  const gv = `_g${id}`;
+  const qval = JSON.stringify(value);
+  // Resolve the signal (call accessor if function) once.
+  pushRaw(ctx, `var ${gv}=${`_v[${a.index}]`};if(typeof ${gv}==='function')${gv}=${gv}();`);
+  const selected =
+    type === 'radio'
+      ? `${gv}===${qval}`
+      : // checkbox (default for ::group when not explicitly radio): membership.
+        `${gv}!=null&&typeof ${gv}.includes==='function'&&${gv}.includes(${qval})`;
+  pushRaw(ctx, `if(${selected})${ctx.out}+=" checked";`);
 }

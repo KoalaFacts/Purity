@@ -197,6 +197,21 @@ describe('generateSSR — dynamic attributes', () => {
     expect(compileSSR(['<my-el ?disabled=', '></my-el>'], null)).toBe('<my-el></my-el>');
   });
 
+  it('emits a nested dynamic attr into the custom element slot, not the outer buffer (no fragment leak)', () => {
+    // emitCustomElement captures children into a per-instance `_slot<id>`
+    // buffer by swapping `ctx.out`. emitSSRAttr's dynamic/prop/bind + bool
+    // branches previously hardcoded the literal `_o` instead of `ctx.out`, so a
+    // nested element's attribute fragment leaked OUT of the slot and appeared
+    // before the custom element opened (audit codegen.ts:1230,1237). Both the
+    // quoted-attr and bool branches are exercised here.
+    expect(compileSSR(['<my-el><span :class=', '>x</span></my-el>'], 'red')).toBe(
+      '<my-el><span class="red">x</span></my-el>',
+    );
+    expect(compileSSR(['<my-el><input ?disabled=', ' /></my-el>'], true)).toBe(
+      '<my-el><input disabled/></my-el>',
+    );
+  });
+
   it('renders .prop attributes as quoted attribute on the server', () => {
     expect(compileSSR(['<input .value=', ' />'], 'hi')).toBe('<input value="hi"/>');
   });
@@ -220,6 +235,72 @@ describe('generateSSR — dynamic attributes', () => {
     expect(compileSSR(['<a href=', ' class="link" ?disabled=', '>Go</a>'], '/x', false)).toBe(
       '<a href="/x" class="link">Go</a>',
     );
+  });
+
+  // ::group is radio/checkbox group binding (client sets `_e.checked` from the
+  // signal), NOT a real attribute. SSR must resolve it to `checked` server-side
+  // — it previously emitted a bogus `group="…"` attribute with no `checked`, so
+  // a prerendered group showed no selection until hydration ran (audit
+  // codegen.ts:1229).
+  it('::group radio binding emits `checked` when the signal matches value (no `group` attr)', () => {
+    const out = compileSSR(['<input type="radio" name="g" value="a" ::group=', ' />'], () => 'a');
+    expect(out).toBe('<input type="radio" name="g" value="a" checked/>');
+    expect(out).not.toContain('group=');
+  });
+
+  it('::group radio binding omits `checked` when the signal does not match value', () => {
+    expect(compileSSR(['<input type="radio" name="g" value="a" ::group=', ' />'], () => 'b')).toBe(
+      '<input type="radio" name="g" value="a"/>',
+    );
+  });
+
+  it('::group checkbox binding emits `checked` when value is in the signal array', () => {
+    expect(
+      compileSSR(['<input type="checkbox" name="g" value="a" ::group=', ' />'], () => ['a', 'c']),
+    ).toBe('<input type="checkbox" name="g" value="a" checked/>');
+    expect(
+      compileSSR(['<input type="checkbox" name="g" value="a" ::group=', ' />'], () => ['c']),
+    ).toBe('<input type="checkbox" name="g" value="a"/>');
+  });
+
+  it('::group with no static value defers selection to the client (no `checked`, no `group`)', () => {
+    // Server can't resolve which input is selected without a concrete value to
+    // compare against — omit `checked` and let hydration set it, but never emit
+    // the bogus `group` attribute.
+    const out = compileSSR(['<input type="radio" name="g" ::group=', ' />'], () => 'a');
+    expect(out).toBe('<input type="radio" name="g"/>');
+    expect(out).not.toContain('group=');
+    expect(out).not.toContain('checked');
+  });
+
+  // Non-reflecting DOM properties (`.innerHTML`, `.textContent`, …) are assigned
+  // as properties on the client; serializing them as same-named attributes is a
+  // no-op the browser never interprets — and for `.innerHTML` the markup is
+  // HTML-escaped into a dead attribute. Skip them server-side (audit
+  // codegen.ts:1222-1232). The property assignment runs at hydration.
+  it('skips non-reflecting `.innerHTML` prop server-side (no dead escaped attribute)', () => {
+    expect(compileSSR(['<div .innerHTML=', '></div>'], '<b>x</b>')).toBe('<div></div>');
+  });
+
+  it('skips non-reflecting `.textContent` / `.innerText` / `.outerHTML` props server-side', () => {
+    expect(compileSSR(['<div .textContent=', '></div>'], 'hi')).toBe('<div></div>');
+    expect(compileSSR(['<div .innerText=', '></div>'], 'hi')).toBe('<div></div>');
+    expect(compileSSR(['<div .outerHTML=', '></div>'], '<i>x</i>')).toBe('<div></div>');
+  });
+
+  it('skips a non-reflecting prop via :reactive-prop and :: bind too', () => {
+    expect(compileSSR(['<div :innerHTML=', '></div>'], '<b>x</b>')).toBe('<div></div>');
+    expect(compileSSR(['<div ::innerHTML=', '></div>'], () => '<b>x</b>')).toBe('<div></div>');
+  });
+
+  it('still emits reflecting `.value` prop server-side (allowlist of skipped props is narrow)', () => {
+    expect(compileSSR(['<input .value=', ' />'], 'hi')).toBe('<input value="hi"/>');
+  });
+
+  it('keeps setAttribute semantics for a `dynamic` attr that happens to be named innerHTML', () => {
+    // Only the property-ish kinds (.prop / :reactive-prop / ::bind) skip
+    // non-reflecting names. A plain dynamic attr keeps true setAttribute output.
+    expect(compileSSR(['<div innerHTML=', '></div>'], 'x')).toBe('<div innerHTML="x"></div>');
   });
 });
 

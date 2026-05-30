@@ -22,7 +22,14 @@
 // thunk that resolves once the new route's data has settled.
 // ---------------------------------------------------------------------------
 
-import { _setNavigateWrapper } from './router.ts';
+import { _setNavigateWrapper, type NavigateWrapper } from './router.ts';
+
+// Module-local CAS for the single-slot navigate wrapper. `_setNavigateWrapper`
+// is last-writer-wins; without coordination, the teardown returned by an
+// earlier `manageNavTransitions()` call would null out a *later* caller's
+// wrapper. We track the most recently installed wrapper owned by this module
+// and only clear if our token still matches — preserving the later install.
+let activeWrapper: NavigateWrapper | null = null;
 
 /** Options for {@link manageNavTransitions}. */
 export interface ManageNavTransitionsOptions {
@@ -41,26 +48,35 @@ export interface ManageNavTransitionsOptions {
    *
    * ```ts
    * manageNavTransitions({
-   *   awaitNavigation: async () => {
+   *   awaitNavigation: async (_url, _replace, { signal }) => {
    *     // Wait one task tick so the route handler's reactive watchers
    *     // have flushed and any `resource()` calls have been registered.
    *     await Promise.resolve();
-   *     // Then await the new route's loader promise(s).
-   *     await Promise.all(pendingLoaderPromises());
+   *     // Then await the new route's loader promise(s). Pass `signal`
+   *     // through to fetch/AbortController consumers so a superseded or
+   *     // torn-down navigation can short-circuit.
+   *     await Promise.all(pendingLoaderPromises({ signal }));
    *   },
    * });
    * ```
    *
-   * The thunk receives `(url, replace)` for routing decisions. Throwing
-   * (or rejecting) aborts the transition; navigation still completes
-   * because the URL signal update happened synchronously before the await.
+   * The thunk receives `(url, replace, { signal })` for routing
+   * decisions. The `signal` aborts when (a) another `navigate()` arrives
+   * while this one is still waiting (re-entrant nav — the earlier
+   * snapshot is moot) or (b) the wrapper's teardown is invoked while
+   * this navigation is mid-flight. Forward it to `fetch()` / your own
+   * cancellation plumbing so superseded navigations stop wasting work.
+   *
+   * Throwing (or rejecting) aborts the transition; navigation still
+   * completes because the URL signal update happened synchronously
+   * before the await.
    *
    * Return type is `unknown` so synchronous returns also work — the
    * wrapper just `await`s whatever the thunk returns, and `await
    * <non-promise>` is the value itself. Useful for predicate-style
    * gates like `awaitNavigation: () => alreadyReady ? null : asyncFetch()`.
    */
-  awaitNavigation?: (url: URL, replace: boolean) => unknown;
+  awaitNavigation?: (url: URL, replace: boolean, ctx: { signal: AbortSignal }) => unknown;
 }
 
 // Don't extend `Document` — the modern TS DOM lib already declares
@@ -130,7 +146,35 @@ export function manageNavTransitions(options: ManageNavTransitionsOptions = {}):
   const should = options.shouldTransition;
   const awaitNavigation = options.awaitNavigation;
 
-  _setNavigateWrapper((url, replace, update) => {
+  // Performing `update()` inside the View Transition callback is risky:
+  // `history.pushState` can throw (SecurityError in sandboxed iframes,
+  // exceeded quota), and any synchronous reactive watcher woken by the URL
+  // signal write could in principle throw too. A throw out of the callback
+  // aborts the transition AND surfaces as the navigate() caller's error —
+  // partial URL state with a noisy stack trace. Wrap it so the transition
+  // always completes; the navigation already happened (or already failed
+  // visibly via `update()`'s own listener isolation).
+  const safeUpdate = (update: () => void): void => {
+    try {
+      update();
+    } catch (err) {
+      console.error('[purity] navigate update threw inside view transition:', err);
+    }
+  };
+
+  // Cancellation token for the currently in-flight `awaitNavigation`. Two
+  // events flip it to aborted:
+  //   1. Re-entrant navigation — a new `navigate()` arrives while a prior
+  //      transition is still awaiting. The earlier snapshot is moot; signal
+  //      the prior thunk so its loader chain can short-circuit.
+  //   2. Teardown — caller dismantles the wrapper mid-flight (component
+  //      unmount, test cleanup). The transition is about to be discarded;
+  //      same short-circuit.
+  // Plain DOM `AbortController` so user code can plumb `signal` into
+  // `fetch()` without any adapter layer.
+  let inFlight: AbortController | null = null;
+
+  const wrapper: NavigateWrapper = (url, replace, update) => {
     if (prefersReducedMotion()) {
       update();
       return;
@@ -139,23 +183,92 @@ export function manageNavTransitions(options: ManageNavTransitionsOptions = {}):
       update();
       return;
     }
+    // Supersede any prior in-flight awaitNavigation. The previous
+    // transition is still running in the background; its abort handler
+    // will see `signal.aborted` and bail out. We then mint a fresh
+    // controller for THIS navigation. Even when `awaitNavigation` is not
+    // configured we still cycle the controller — keeps the contract
+    // simple: one navigation, one signal lifetime.
+    if (inFlight) inFlight.abort();
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    inFlight = controller;
+    // Settle hook clears the slot only if WE are still the live one —
+    // a re-entrant navigation may have already swapped in a new controller.
+    const settle = (): void => {
+      if (inFlight === controller) inFlight = null;
+    };
     // The view-transition callback runs the URL update synchronously so
     // reactive watchers fire + the route view renders before the browser
     // samples the "after" snapshot. When `awaitNavigation` is supplied
     // the callback is async — the browser holds the snapshot until the
     // returned promise settles (ADR 0038). Throwing or rejecting aborts
     // the transition but the navigation already happened (update was sync).
-    (document as DocumentWithViewTransition).startViewTransition?.(
+    const transition = (document as DocumentWithViewTransition).startViewTransition?.(
       awaitNavigation
         ? async (): Promise<void> => {
-            update();
-            await awaitNavigation(url, replace);
+            safeUpdate(update);
+            try {
+              // `controller` may be null on ancient engines without
+              // AbortController — fall back to a never-aborting signal
+              // so the thunk's `{ signal }` destructure still works.
+              const signal: AbortSignal = controller
+                ? controller.signal
+                : ({
+                    aborted: false,
+                    addEventListener() {},
+                    removeEventListener() {},
+                  } as unknown as AbortSignal);
+              await awaitNavigation(url, replace, { signal });
+            } finally {
+              settle();
+            }
           }
         : (): void => {
-            update();
+            safeUpdate(update);
+            settle();
           },
     );
-  });
+    // The View Transition spec exposes `.updateCallbackDone` (rejects if the
+    // callback rejects) and `.finished` (rejects if the transition itself is
+    // aborted). Without observers, an `awaitNavigation` rejection becomes an
+    // "Uncaught (in promise)" warning that pollutes test runners + error
+    // trackers. The navigation already landed (update is sync); log and move
+    // on — same console.error policy as listener isolation.
+    if (transition && typeof transition === 'object') {
+      const t = transition as {
+        updateCallbackDone?: Promise<unknown>;
+        finished?: Promise<unknown>;
+      };
+      t.updateCallbackDone?.catch?.((err) => {
+        // Abort-driven rejections are expected (re-entrant nav / teardown).
+        // Don't pollute consoles with a "[purity] view-transition callback
+        // rejected: AbortError" trail every time the user double-clicks.
+        if (err && (err as { name?: string }).name === 'AbortError') return;
+        console.error('[purity] view-transition callback rejected:', err);
+      });
+    }
+  };
 
-  return () => _setNavigateWrapper(null);
+  activeWrapper = wrapper;
+  _setNavigateWrapper(wrapper);
+
+  return () => {
+    // Compare-and-swap: only clear if another `manageNavTransitions()` call
+    // hasn't replaced us. Otherwise we'd silently uninstall a sibling helper's
+    // wrapper — the single-slot semantics (last writer wins) become a stale-
+    // teardown footgun across multiple callers in the same module.
+    if (activeWrapper === wrapper) {
+      activeWrapper = null;
+      _setNavigateWrapper(null);
+    }
+    // Cancel any awaitNavigation that's still in flight. The thunk's
+    // consumers (fetch, custom loaders) observe `signal.aborted` and bail
+    // out instead of mutating now-unmounted state. `inFlight` tracks the
+    // most recent navigation owned by this wrapper instance; if the last
+    // one already settled it'll be null and the abort is a no-op.
+    if (inFlight) {
+      inFlight.abort();
+      inFlight = null;
+    }
+  };
 }

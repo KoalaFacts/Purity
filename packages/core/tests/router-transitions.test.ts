@@ -277,3 +277,231 @@ describe('manageNavTransitions() — async-aware (ADR 0038)', () => {
     expect((lastCb as () => unknown)()).toBeUndefined();
   });
 });
+
+describe('manageNavTransitions() — audit-v2 regressions', () => {
+  // Finding: synchronous `update()` runs inside the View Transition
+  // callback; if it throws — e.g. `history.pushState` rejected
+  // (SecurityError in sandboxed iframes, exceeded quota) — the throw
+  // escapes the transition callback. Result: browser aborts the
+  // transition AND the throw bubbles back to the navigate() caller, on
+  // top of a partial URL state. `safeUpdate` wraps update() in
+  // try/catch + console.error so the transition unwinds cleanly.
+  it('isolates a throwing update() inside the view-transition callback', () => {
+    const errors: unknown[] = [];
+    const origError = console.error;
+    const origPushState = window.history.pushState.bind(window.history);
+    let pushCount = 0;
+    console.error = (...args: unknown[]) => {
+      errors.push(args);
+    };
+    // Make pushState throw on the FIRST call inside the transition
+    // callback. The wrapper must catch it; without safeUpdate the throw
+    // would propagate out and abort startViewTransition.
+    window.history.pushState = ((..._args: unknown[]) => {
+      pushCount++;
+      throw new Error('pushState blocked');
+    }) as typeof window.history.pushState;
+    try {
+      (document as DocStub).startViewTransition = (cb) => {
+        // Mirror the spec: synchronous callback. The callback CAN throw
+        // — without safeUpdate, the throw escapes here and the caller
+        // (navigate()) sees it.
+        (cb as () => void)();
+        return {} as unknown;
+      };
+      teardown = manageNavTransitions();
+      // navigate() must NOT throw — safeUpdate swallows the pushState
+      // failure and lets the transition unwind cleanly.
+      expect(() => navigate('/safe-update')).not.toThrow();
+      expect(pushCount).toBe(1);
+      // The throw was logged, not silently dropped.
+      expect(
+        errors.some(
+          (args) =>
+            typeof args[0] === 'string' &&
+            (args[0] as string).includes('navigate update threw inside view transition'),
+        ),
+      ).toBe(true);
+    } finally {
+      window.history.pushState = origPushState;
+      console.error = origError;
+    }
+  });
+
+  // Finding: a rejecting `awaitNavigation` propagates via the View
+  // Transition's `updateCallbackDone` promise. Nothing observes it →
+  // "Uncaught (in promise)" in test runners / Sentry. Wrapper now
+  // attaches a `.catch` that logs via console.error.
+  it('observes updateCallbackDone rejections and logs them via console.error', async () => {
+    const errors: unknown[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      errors.push(args);
+    };
+    try {
+      let captured: (() => Promise<void>) | null = null;
+      let updateCallbackDone: Promise<unknown> | undefined;
+      (document as DocStub).startViewTransition = (cb) => {
+        captured = cb as () => Promise<void>;
+        // The browser awaits `cb()` and exposes the resulting promise as
+        // `.updateCallbackDone`. Mirror that here.
+        updateCallbackDone = Promise.resolve().then(() => captured!());
+        return { updateCallbackDone } as unknown;
+      };
+      teardown = manageNavTransitions({
+        awaitNavigation: () => Promise.reject(new Error('loader failed')),
+      });
+      navigate('/await-reject');
+      // Let microtasks drain so the inner promise actually rejects and
+      // our `.catch` handler fires.
+      await Promise.resolve();
+      await updateCallbackDone!.catch(() => {});
+      await Promise.resolve();
+      expect(
+        errors.some(
+          (args) =>
+            typeof args[0] === 'string' &&
+            (args[0] as string).includes('view-transition callback rejected'),
+        ),
+      ).toBe(true);
+    } finally {
+      console.error = origError;
+    }
+  });
+
+  // Finding: `_setNavigateWrapper` is single-slot (last writer wins).
+  // Without coordination, the teardown from the FIRST manageNavTransitions
+  // call would null out a SECOND caller's wrapper. CAS check fixes this.
+  it('teardown from an earlier manageNavTransitions does not clobber a later install', () => {
+    const callsA: number[] = [];
+    const callsB: number[] = [];
+    let activeCounter = callsA;
+    (document as DocStub).startViewTransition = (cb) => {
+      activeCounter.push(1);
+      (cb as () => void)();
+      return {} as unknown;
+    };
+    const teardownA = manageNavTransitions();
+    const teardownB = manageNavTransitions();
+    // Tearing down A should NOT remove B's wrapper — B was installed last.
+    teardownA();
+    activeCounter = callsB;
+    navigate('/post-a-teardown');
+    expect(callsB.length).toBe(1);
+    expect(window.location.pathname).toBe('/post-a-teardown');
+    teardownB();
+    navigate('/post-b-teardown');
+    expect(callsB.length).toBe(1);
+    teardown = null;
+  });
+
+  // Finding (MED): a re-entrant navigate() arriving while a prior
+  // awaitNavigation is still pending should signal the prior thunk so
+  // its loaders can short-circuit. Wrapper threads an AbortSignal via
+  // the third callback arg.
+  it('aborts a pending awaitNavigation when a new navigation supersedes it', async () => {
+    const captured: Array<() => Promise<void>> = [];
+    (document as DocStub).startViewTransition = (cb) => {
+      captured.push(cb as () => Promise<void>);
+      return {} as unknown;
+    };
+    const seenSignals: AbortSignal[] = [];
+    teardown = manageNavTransitions({
+      awaitNavigation: (_url, _replace, { signal }) => {
+        seenSignals.push(signal);
+        // Never resolves on its own — only the abort can release it.
+        return new Promise<void>((resolve) => {
+          signal.addEventListener('abort', () => resolve());
+        });
+      },
+    });
+    navigate('/first');
+    const first = captured[0]!();
+    await Promise.resolve();
+    expect(seenSignals.length).toBe(1);
+    expect(seenSignals[0].aborted).toBe(false);
+    // Re-entrant navigation while the first awaitNavigation is still
+    // pending — must abort the first signal.
+    navigate('/second');
+    const second = captured[1]!();
+    await Promise.resolve();
+    expect(seenSignals[0].aborted).toBe(true);
+    expect(seenSignals[1].aborted).toBe(false);
+    // First should resolve once we let the abort handler run.
+    await first;
+    // Now abort the second by tearing down.
+    teardown!();
+    teardown = null;
+    await second;
+    expect(seenSignals[1].aborted).toBe(true);
+  });
+
+  // Finding (MED): teardown should signal cancellation to any in-flight
+  // awaitNavigation so its consumers (fetch, loaders) stop wasting work
+  // against an unmounted scope.
+  it('aborts an in-flight awaitNavigation when teardown runs', async () => {
+    let captured: (() => Promise<void>) | null = null;
+    (document as DocStub).startViewTransition = (cb) => {
+      captured = cb as () => Promise<void>;
+      return {} as unknown;
+    };
+    let observedSignal: AbortSignal | null = null;
+    teardown = manageNavTransitions({
+      awaitNavigation: (_url, _replace, { signal }) => {
+        observedSignal = signal;
+        return new Promise<void>((resolve) => {
+          signal.addEventListener('abort', () => resolve());
+        });
+      },
+    });
+    navigate('/will-be-aborted');
+    const settle = captured!();
+    await Promise.resolve();
+    expect(observedSignal).not.toBeNull();
+    expect((observedSignal as unknown as AbortSignal).aborted).toBe(false);
+    teardown!();
+    teardown = null;
+    await settle;
+    expect((observedSignal as unknown as AbortSignal).aborted).toBe(true);
+  });
+
+  // Finding: abort-driven updateCallbackDone rejections should not
+  // pollute the console (re-entrant nav, teardown — expected outcomes).
+  it('does not log an error for AbortError rejections in updateCallbackDone', async () => {
+    const errors: unknown[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      errors.push(args);
+    };
+    try {
+      let captured: (() => Promise<void>) | null = null;
+      let updateCallbackDone: Promise<unknown> | undefined;
+      (document as DocStub).startViewTransition = (cb) => {
+        captured = cb as () => Promise<void>;
+        updateCallbackDone = Promise.resolve().then(() => captured!());
+        return { updateCallbackDone } as unknown;
+      };
+      teardown = manageNavTransitions({
+        awaitNavigation: () => {
+          // Synthesize a DOMException-style AbortError — matches what
+          // `fetch(url, { signal })` throws after an abort.
+          const err = new Error('aborted') as Error & { name: string };
+          err.name = 'AbortError';
+          return Promise.reject(err);
+        },
+      });
+      navigate('/aborted');
+      await updateCallbackDone!.catch(() => {});
+      await Promise.resolve();
+      expect(
+        errors.some(
+          (args) =>
+            typeof args[0] === 'string' &&
+            (args[0] as string).includes('view-transition callback rejected'),
+        ),
+      ).toBe(false);
+    } finally {
+      console.error = origError;
+    }
+  });
+});

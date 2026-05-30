@@ -22,14 +22,11 @@
 // thunk that resolves once the new route's data has settled.
 // ---------------------------------------------------------------------------
 
-import { _setNavigateWrapper, type NavigateWrapper } from './router.ts';
-
-// Module-local CAS for the single-slot navigate wrapper. `_setNavigateWrapper`
-// is last-writer-wins; without coordination, the teardown returned by an
-// earlier `manageNavTransitions()` call would null out a *later* caller's
-// wrapper. We track the most recently installed wrapper owned by this module
-// and only clear if our token still matches — preserving the later install.
-let activeWrapper: NavigateWrapper | null = null;
+import {
+  _setNavigateWrapper,
+  type NavigateWrapper,
+  type NavigateWrapperToken,
+} from './router.ts';
 
 /** Options for {@link manageNavTransitions}. */
 export interface ManageNavTransitionsOptions {
@@ -249,18 +246,19 @@ export function manageNavTransitions(options: ManageNavTransitionsOptions = {}):
     }
   };
 
-  activeWrapper = wrapper;
-  _setNavigateWrapper(wrapper);
+  // CAS install: capture the token returned by the router so our teardown
+  // can prove ownership before clearing. Without this, any subsequent
+  // `_setNavigateWrapper()` caller (from this module OR a different one) is
+  // silently uninstalled when our teardown later runs — the single-slot
+  // semantics (last writer wins) otherwise become a stale-teardown footgun
+  // across siblings (cross-file backlog item #15).
+  const token: NavigateWrapperToken | null = _setNavigateWrapper(wrapper);
 
   return () => {
-    // Compare-and-swap: only clear if another `manageNavTransitions()` call
-    // hasn't replaced us. Otherwise we'd silently uninstall a sibling helper's
-    // wrapper — the single-slot semantics (last writer wins) become a stale-
-    // teardown footgun across multiple callers in the same module.
-    if (activeWrapper === wrapper) {
-      activeWrapper = null;
-      _setNavigateWrapper(null);
-    }
+    // CAS clear: pass our token back so the router only nulls the slot when
+    // OUR wrapper is still installed. If a later caller has since taken over,
+    // the router rejects the swap and the live wrapper is preserved.
+    _setNavigateWrapper(null, token);
     // Cancel any awaitNavigation that's still in flight. The thunk's
     // consumers (fetch, custom loaders) observe `signal.aborted` and bail
     // out instead of mutating now-unmounted state. `inFlight` tracks the

@@ -50,6 +50,19 @@ function ssrUrl(): URL | null {
 }
 
 /**
+ * Strip a trailing slash so `/app` and `/app/` canonicalize to the same
+ * form. Audit-v2 fix (#4): `currentPath()` and `matchRoute()` previously
+ * disagreed — matchRoute's `split('/').filter(Boolean)` silently coalesced
+ * trailing slashes, but currentPath returned the raw pathname, so a string
+ * compare `currentPath() === '/app'` failed on `/app/`. We normalize at
+ * the read site to the "no trailing slash except root" form so prefix
+ * and equality checks agree across every consumer.
+ */
+function stripTrailingSlash(p: string): string {
+  return p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p;
+}
+
+/**
  * Reactive accessor for the current URL pathname.
  *
  * **Server.** Returns `new URL(request.url).pathname` for the
@@ -60,9 +73,13 @@ function ssrUrl(): URL | null {
  * `window.location.pathname` and kept in sync with `popstate` /
  * `hashchange` events and {@link navigate} calls. Reading this from
  * inside a `watch()` / reactive template subscribes to changes.
+ *
+ * Trailing slashes are stripped (except the root `/`) so `/app` and
+ * `/app/` always read back as `/app` — matching the canonical form
+ * {@link matchRoute} compares against (audit-v2 fix #4).
  */
 export function currentPath(): string {
-  return (ssrUrl() ?? urlSignal()).pathname;
+  return stripTrailingSlash((ssrUrl() ?? urlSignal()).pathname);
 }
 
 /**
@@ -120,7 +137,21 @@ export interface NavigateOptions {
 /** Signature for {@link onNavigate} listeners. */
 export type NavigateListener = (url: URL, replace: boolean) => void;
 
-const navigateListeners = new Set<NavigateListener>();
+// Audit-v2 fix (#6): hoist the listener set onto globalThis so a Vite HMR
+// re-import doesn't create a fresh module-local Set and orphan the
+// previous one. Without the sentinel, every hot reload of any module that
+// imports router.ts would (a) lose the old subscribers' teardown identity
+// — `unsubscribe()` would call `.delete` on the new Set and silently miss
+// the stale entries, and (b) leak the previous listeners' closures (and
+// any DOM they reference) for the lifetime of the page. Sharing the same
+// Set across module incarnations keeps subscriber identity stable, so
+// teardown still works and there's no accumulation.
+interface PurityRouterGlobal {
+  __purityNavigateListeners?: Set<NavigateListener>;
+}
+const routerGlobal = globalThis as unknown as PurityRouterGlobal;
+const navigateListeners: Set<NavigateListener> = (routerGlobal.__purityNavigateListeners ??=
+  new Set());
 
 /**
  * Subscribe to programmatic `navigate()` calls. Listeners receive the new
@@ -185,9 +216,50 @@ export function onNavigate(fn: NavigateListener): () => void {
 export type NavigateWrapper = (url: URL, replace: boolean, update: () => void) => void;
 let navigateWrapper: NavigateWrapper | null = null;
 
-/** @internal — called by manageNavTransitions(). Pass `null` to clear. */
-export function _setNavigateWrapper(fn: NavigateWrapper | null): void {
+/**
+ * Opaque identity token returned by {@link _setNavigateWrapper}. Callers pass
+ * it back on teardown so we can CAS-clear only when our wrapper is still the
+ * installed one — preventing a stale teardown from clobbering a later caller.
+ *
+ * @internal
+ */
+export type NavigateWrapperToken = { readonly fn: NavigateWrapper | null };
+let activeToken: NavigateWrapperToken | null = null;
+
+/**
+ * @internal — called by manageNavTransitions(). Pass `null` to clear.
+ *
+ * Compare-and-swap install: the optional `expected` argument is the token
+ * returned by a prior install. When supplied, the swap only occurs if the
+ * currently active token still matches — otherwise another caller has since
+ * installed a different wrapper and we MUST NOT overwrite it. Without this
+ * guard, two independent callers each holding their own teardown would
+ * race: the earlier teardown would silently null out the later caller's
+ * wrapper (cross-file backlog item #15).
+ *
+ * Returns the newly active token on success, or the currently-active token
+ * when the CAS rejected the swap. The legacy unconditional set (no
+ * `expected`) is preserved for callers that haven't migrated yet.
+ */
+export function _setNavigateWrapper(
+  fn: NavigateWrapper | null,
+  expected?: NavigateWrapperToken | null,
+): NavigateWrapperToken | null {
+  // CAS guard: when `expected` is provided AND it doesn't match the current
+  // active token, leave state untouched. `undefined` (sentinel) preserves
+  // the legacy unconditional-set behavior for callers that don't opt in.
+  if (expected !== undefined && expected !== activeToken) {
+    return activeToken;
+  }
+  if (fn === null) {
+    navigateWrapper = null;
+    activeToken = null;
+    return null;
+  }
+  const token: NavigateWrapperToken = { fn };
   navigateWrapper = fn;
+  activeToken = token;
+  return token;
 }
 
 // Schemes we'll route through pushState. ADR-aligned with the link-intercept

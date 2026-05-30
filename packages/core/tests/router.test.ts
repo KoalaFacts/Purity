@@ -346,6 +346,50 @@ describe('navigate() — audit-v2 hardening', () => {
     expect(fireCount).toEqual(['/double-target']);
     off();
   });
+
+  // Finding (cross-file #15): `_setNavigateWrapper` was last-writer-wins
+  // with no atomicity. If caller A installed a wrapper, caller B then
+  // installed its own wrapper (e.g. configureNavigation → manageNavTransitions
+  // arriving after a custom wrapper was already in place), and A later ran
+  // its teardown, A's `_setNavigateWrapper(null)` would silently uninstall
+  // B's wrapper. The fix returns an opaque token from install and accepts
+  // an `expected` token on clear — the swap only proceeds when the token
+  // still matches the live one.
+  it('CAS install: A.teardown does not clobber B after B overwrites A', () => {
+    const seenByA: URL[] = [];
+    const seenByB: URL[] = [];
+    // Caller A installs first.
+    const tokenA = _setNavigateWrapper((url, _replace, update) => {
+      seenByA.push(url);
+      update();
+    });
+    // Caller B installs after, taking ownership of the slot.
+    const tokenB = _setNavigateWrapper((url, _replace, update) => {
+      seenByB.push(url);
+      update();
+    });
+    expect(tokenA).not.toBeNull();
+    expect(tokenB).not.toBeNull();
+    expect(tokenA).not.toBe(tokenB);
+
+    // A's teardown tries to null the slot — but B owns it now, so the CAS
+    // must reject and B's wrapper must stay live.
+    const afterAClear = _setNavigateWrapper(null, tokenA);
+    // Returned token reflects the still-active install (B), not null.
+    expect(afterAClear).toBe(tokenB);
+
+    // Verify B's wrapper is still routing.
+    navigate('/after-a-teardown');
+    expect(seenByA).toEqual([]);
+    expect(seenByB.map((u) => u.pathname)).toEqual(['/after-a-teardown']);
+
+    // Now B's own teardown should succeed (token matches the live one).
+    const afterBClear = _setNavigateWrapper(null, tokenB);
+    expect(afterBClear).toBeNull();
+    navigate('/post-b-teardown');
+    // No wrapper installed — B's counter doesn't advance.
+    expect(seenByB.map((u) => u.pathname)).toEqual(['/after-a-teardown']);
+  });
 });
 
 describe('matchRoute() — audit-v2 prototype-pollution defense', () => {

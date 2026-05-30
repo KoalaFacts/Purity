@@ -103,6 +103,19 @@ export async function renderToString(
         `${NONCE_PATTERN.source} (base64 / URL-safe characters).`,
     );
   }
+  // doctype is concatenated verbatim into the response prefix. The only
+  // legitimate shapes are the HTML5 doctype and legacy XHTML/HTML4
+  // variants — anything else would emit attacker-controlled markup
+  // before the document. Reject anything that isn't a `<!doctype …>`
+  // declaration (case-insensitive on the keyword) with no embedded `<`
+  // — which would otherwise let `<!doctype><script>...</script>` slip
+  // through.
+  if (prefix !== '' && !DOCTYPE_PATTERN.test(prefix)) {
+    throw new Error(
+      `[Purity] renderToString: invalid doctype option. ` +
+        `Must be a single <!DOCTYPE …> declaration with no embedded markup.`,
+    );
+  }
   const start = Date.now();
 
   const resolvedData: unknown[] = [];
@@ -236,6 +249,14 @@ export async function renderToString(
 // (RFC 4648 \u00a75). Restrict to that alphabet so a hostile / mistyped value
 // can't break out of the attribute. Length is left to the caller.
 const NONCE_PATTERN = /^[A-Za-z0-9+/=_-]+$/;
+
+// Accept a single `<!doctype \u2026>` declaration (case-insensitive on the
+// keyword) with no embedded `<` inside the body, so a hostile string
+// like `<!doctype html><script>alert(1)</script>` is rejected before
+// it can be concatenated into the response prefix. Optional internal
+// subset (`[\u2026]`) is excluded \u2014 apps shipping a DTD subset are vanishing
+// rare and can pre-stringify their shell.
+const DOCTYPE_PATTERN = /^<!(?:doctype|DOCTYPE)\s[^<>]*>$/;
 
 function buildResourceScript(
   ordered: unknown[],

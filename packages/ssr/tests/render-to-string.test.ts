@@ -77,6 +77,31 @@ describe('renderToString', () => {
     expect(out).toBe('<!doctype html><html><body></body></html>');
   });
 
+  it('rejects a doctype that smuggles markup', async () => {
+    // doctype is concatenated verbatim — a hostile string like
+    // `<!doctype html><script>alert(1)</script>` would emit unescaped
+    // markup before the document. Reject anything that isn't a valid
+    // `<!DOCTYPE …>` declaration before the render starts.
+    const cases = [
+      '<!doctype html><script>alert(1)</script>',
+      '<script>alert(1)</script>',
+      '<!doctype html><!doctype html>', // double
+      'arbitrary text',
+      '<', // unterminated
+      '<!doctype>', // missing space + body
+    ];
+    for (const bad of cases) {
+      await expect(renderToString(() => html`<html></html>`, { doctype: bad })).rejects.toThrow(
+        /invalid doctype/i,
+      );
+    }
+    // The legitimate uppercase form is accepted.
+    const ok = await renderToString(() => html`<html></html>`, {
+      doctype: '<!DOCTYPE html>',
+    });
+    expect(ok.startsWith('<!DOCTYPE html>')).toBe(true);
+  });
+
   it('accepts a component returning a plain string and escapes it', async () => {
     const out = await renderToString(() => '<x>');
     expect(out).toBe('&lt;x&gt;');

@@ -106,6 +106,66 @@ describe('fileToRoute — filename → pattern grammar', () => {
     // `index/about.ts` keeps `index` as a literal segment.
     expect(fileToRoute('index/about.ts', EXTS)?.pattern).toBe('/index/about');
   });
+
+  // Audit-v2 regression: the helper is reachable from callers that pass
+  // OS-native paths. Without normalization a Windows-shaped input slipped
+  // through as a single literal segment — `users\[id].ts` became the
+  // route `/users\[id]` instead of `/users/:id`, and the route module's
+  // dynamic-import specifier embedded a raw backslash that breaks Vite.
+  it('normalizes Windows backslashes to POSIX separators', () => {
+    expect(fileToRoute('users\\[id].ts', EXTS)).toEqual({
+      pattern: '/users/:id',
+      filePath: 'users/[id].ts',
+      layouts: [],
+    });
+    expect(fileToRoute('admin\\users\\index.ts', EXTS)).toEqual({
+      pattern: '/admin/users',
+      filePath: 'admin/users/index.ts',
+      layouts: [],
+    });
+  });
+
+  // Audit-v2 regression: a `.` or `..` segment in a route filename would
+  // otherwise emit a manifest entry whose dynamic-import specifier
+  // traverses out of the routes dir. Reject upfront.
+  it('rejects path-traversal segments (`.` and `..`)', () => {
+    expect(fileToRoute('users/./me.ts', EXTS)).toBeNull();
+    expect(fileToRoute('users/../escape.ts', EXTS)).toBeNull();
+  });
+
+  // Audit-v2 regression: bracket-segment names must be plain identifiers.
+  // Names containing `:`, `*`, U+2028, control chars, or other grammar-
+  // breaking characters were previously spliced straight into the
+  // pattern — `[a:b].ts` produced `/:a:b` which downstream `matchRoute`
+  // mis-parses.
+  it('rejects bracket segments with invalid identifier characters', () => {
+    expect(fileToRoute('users/[a:b].ts', EXTS)).toBeNull();
+    expect(fileToRoute('users/[a b].ts', EXTS)).toBeNull();
+    expect(fileToRoute('users/[a*b].ts', EXTS)).toBeNull();
+    expect(fileToRoute('users/[a b].ts', EXTS)).toBeNull();
+    // The splat counterpart is rejected for the same reasons.
+    expect(fileToRoute('blog/[...].ts', EXTS)).toBeNull();
+    expect(fileToRoute('blog/[...a:b].ts', EXTS)).toBeNull();
+  });
+
+  // Audit-v2 regression: when an extension list contained overlapping
+  // suffixes (e.g. `['.ts', '.test.ts']`), the previous left-to-right
+  // walk picked whichever extension came first, silently stripping the
+  // wrong suffix and treating the residual `.test` as part of the route
+  // path. Longest-first resolution puts the more-specific extension
+  // ahead so the route entry is well-formed.
+  it('prefers the longest matching extension', () => {
+    const r = fileToRoute('signup.test.ts', ['.ts', '.test.ts']);
+    expect(r?.pattern).toBe('/signup');
+    expect(r?.filePath).toBe('signup.test.ts');
+  });
+
+  // Audit-v2 regression: an empty-string extension would otherwise match
+  // every file path and slice off zero characters, polluting the manifest
+  // with arbitrary non-route files.
+  it('ignores empty-string extensions in the list', () => {
+    expect(fileToRoute('README.md', ['', '.ts'])).toBeNull();
+  });
 });
 
 describe('sortRoutes — most-specific first', () => {
@@ -164,6 +224,13 @@ describe('layoutDirOf — recognising _layout files', () => {
   it('honors the configured extension list', () => {
     expect(layoutDirOf('_layout.svelte', EXTS)).toBeNull();
     expect(layoutDirOf('_layout.svelte', ['.svelte'])).toBe('');
+  });
+
+  // Audit-v2 regression: Windows-shaped paths weren't recognised as
+  // layouts so the whole subtree silently lost its layout chain.
+  it('normalizes Windows backslashes to POSIX separators', () => {
+    expect(layoutDirOf('users\\_layout.ts', EXTS)).toBe('users');
+    expect(layoutDirOf('admin\\users\\_layout.tsx', EXTS)).toBe('admin/users');
   });
 });
 
@@ -335,6 +402,42 @@ describe('detectLoaderExport — recognising named loader exports (ADR 0022)', (
   it('returns false for empty input or whitespace', () => {
     expect(detectLoaderExport('')).toBe(false);
     expect(detectLoaderExport('   \n   ')).toBe(false);
+  });
+
+  // Audit-v2 regression: the previous re-export body match
+  // `(?:^|,)\s*loader(?:\s+as\s+\w+)?\s*(?:,|$)` over-matched
+  // `export { loader as foo }`. That re-export exposes the binding
+  // under name `foo`, NOT `loader` — so the consumer's
+  // `import { loader }` would fail, and flagging hasLoader=true on the
+  // route produced a bogus loader invocation at runtime.
+  it('does not match `export { loader as foo }` (renamed away from `loader`)', () => {
+    expect(detectLoaderExport('export { loader as foo }')).toBe(false);
+    expect(detectLoaderExport('export { foo, loader as bar }')).toBe(false);
+  });
+
+  // Audit-v2 regression: Form 1's `^[ \t]*export …` anchor only blocks
+  // block-commented exports that share a line with `/*`. A multi-line
+  // block comment that places `export const loader = …` on its own line
+  // would otherwise hit the anchor and return true. Strip block comments
+  // before matching to cover that gap.
+  it('does not match declaration exports inside a block comment', () => {
+    expect(
+      detectLoaderExport(`/*
+export const loader = async () => ({});
+*/
+export default () => null;`),
+    ).toBe(false);
+  });
+
+  // Audit-v2 regression: same for Form 2 — a multi-line block comment
+  // wrapping `export { loader }` previously matched.
+  it('does not match re-export blocks inside a block comment', () => {
+    expect(
+      detectLoaderExport(`/*
+export { loader };
+*/
+export default () => null;`),
+    ).toBe(false);
   });
 });
 

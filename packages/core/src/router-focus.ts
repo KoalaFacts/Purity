@@ -21,7 +21,7 @@
 // No-op on the server. Returns a teardown for HMR / tests.
 // ---------------------------------------------------------------------------
 
-import { onNavigate } from './router.ts';
+import { _getNavigationGeneration, onNavigate } from './router.ts';
 
 const DEFAULT_SELECTOR = 'main';
 
@@ -138,12 +138,22 @@ export function manageNavFocus(options: ManageNavFocusOptions = {}): () => void 
   // contract.
   let active = true;
   const unsubscribe = onNavigate((url, replace) => {
+    // Audit-v2 fix (#2): capture the router's navigation generation when
+    // we enqueue. If a SECOND navigate() fires before this microtask
+    // drains, the counter advances and we short-circuit — preventing the
+    // older nav's focus from clobbering the newer nav's scroll target
+    // (and vice versa in manageNavScroll). Last-writer-wins becomes
+    // first-loser-cancels, which is what users expect from rapid clicks.
+    const generation = _getNavigationGeneration();
     // Microtask defer — same reasoning as manageNavScroll: route handlers
     // may mount the target element synchronously in response to the
     // reactive URL signal, but the DOM only flushes after the current
     // task. Deferring gives the new landmark a chance to exist.
     queueMicrotask(() => {
       if (!active) return;
+      // Generation moved on — newer navigate() has happened; drop this
+      // microtask so we don't focus the now-stale target.
+      if (_getNavigationGeneration() !== generation) return;
       // Isolate handler throws — including a user-supplied custom handler.
       // navigate()'s listener loop already isolates synchronous throws, but
       // we deferred to a microtask: an uncaught throw escapes as an

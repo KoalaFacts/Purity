@@ -13,7 +13,7 @@
 // ~10 LOC including the teardown.
 // ---------------------------------------------------------------------------
 
-import { onNavigate } from './router.ts';
+import { _getNavigationGeneration, onNavigate } from './router.ts';
 
 /** Options for {@link manageNavScroll}. */
 export interface ManageNavScrollOptions {
@@ -82,12 +82,21 @@ export function manageNavScroll(options: ManageNavScrollOptions = {}): () => voi
   // listener firing and the microtask draining.
   let disposed = false;
   const off = onNavigate((url, replace) => {
+    // Audit-v2 fix (#2): capture the router's navigation generation when
+    // we enqueue. If a SECOND navigate() fires before this microtask
+    // drains, the counter advances and we short-circuit — keeping the
+    // newer nav's focus / scroll target authoritative and preventing the
+    // older nav's microtask from racing the newer one. Mirrors the
+    // identical guard in manageNavFocus.
+    const generation = _getNavigationGeneration();
     queueMicrotask(() => {
       // Defer to a microtask so any DOM updates triggered by the same
       // navigate() (signal subscribers re-rendering) have a chance to land
       // before we scroll — otherwise a hash target that the router just
       // mounted wouldn't exist yet.
       if (disposed) return;
+      // Generation moved on — newer navigate() has happened; drop.
+      if (_getNavigationGeneration() !== generation) return;
       // Isolate handler throws — a user-supplied custom `onNavigate`
       // (which the docs explicitly invite to "perform whatever scroll
       // action you want") can throw arbitrary errors, and so can the

@@ -137,6 +137,36 @@ describe('manageNavFocus() — custom handler', () => {
   });
 });
 
+describe('manageNavFocus() — audit-v2 fix #2: generation guard', () => {
+  it('cancels a stale microtask when a newer navigate() arrives', async () => {
+    // Repro: rapid double navigate(). Both onNavigate listeners queue a
+    // microtask. Without the generation guard, the OLDER nav's focus
+    // would race the NEWER nav's focus (last-writer-wins). After fix
+    // the older microtask short-circuits when it sees the generation
+    // has advanced.
+    document.body.innerHTML =
+      '<section id="first" tabindex="-1"></section><section id="second" tabindex="-1"></section>';
+    const first = document.getElementById('first')!;
+    const second = document.getElementById('second')!;
+    let firstFocused = 0;
+    let secondFocused = 0;
+    first.focus = function () {
+      firstFocused++;
+    } as typeof first.focus;
+    second.focus = function () {
+      secondFocused++;
+    } as typeof second.focus;
+    teardown = manageNavFocus();
+    // Two navs back-to-back, before any microtask drains.
+    navigate('/page#first');
+    navigate('/page#second');
+    await Promise.resolve();
+    // Only the newer nav's target gets focused — older cancelled.
+    expect(firstFocused).toBe(0);
+    expect(secondFocused).toBe(1);
+  });
+});
+
 describe('manageNavFocus() — lifecycle', () => {
   it('returns a teardown that stops handling future navs', async () => {
     document.body.innerHTML = '<main></main>';

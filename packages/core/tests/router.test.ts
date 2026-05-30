@@ -434,6 +434,137 @@ describe('matchRoute() — audit-v2 prototype-pollution defense', () => {
   });
 });
 
+describe('currentPath() — audit-v2 fix #4: trailing-slash normalization', () => {
+  beforeEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('strips a trailing slash from a non-root path (canonical form)', () => {
+    // Before fix: `currentPath()` returned `/app/` verbatim, while
+    // `matchRoute('/app')` happily matched both — disagreement broke
+    // string-equality consumers: `currentPath() === '/app'` was true
+    // for `/app` but false for `/app/`. After fix: both forms read
+    // back as `/app`.
+    navigate('/app/');
+    expect(currentPath()).toBe('/app');
+    navigate('/app/sub/');
+    expect(currentPath()).toBe('/app/sub');
+  });
+
+  it('keeps the root `/` as `/` (not the empty string)', () => {
+    navigate('/');
+    expect(currentPath()).toBe('/');
+  });
+
+  it('does not touch paths without a trailing slash', () => {
+    navigate('/app');
+    expect(currentPath()).toBe('/app');
+    navigate('/users/42');
+    expect(currentPath()).toBe('/users/42');
+  });
+
+  it('matchRoute() over the normalized currentPath agrees with explicit form', () => {
+    // Same path written two ways → same match.
+    navigate('/app/');
+    const fromCurrent = matchRoute('/app');
+    const fromExplicit = matchRoute('/app', '/app');
+    expect(fromCurrent).toEqual(fromExplicit);
+  });
+});
+
+describe('navigate() — audit-v2 fix #3: in-flight no-op-and-warn', () => {
+  beforeEach(() => {
+    window.history.replaceState(null, '', '/');
+    _setNavigateWrapper(null);
+  });
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+    _setNavigateWrapper(null);
+  });
+
+  it('no-ops + warns when a second navigate() fires before a wrapper-deferred update() runs', async () => {
+    // Repro: a view-transition wrapper that defers update() to a
+    // microtask is mid-flight when the user double-clicks a link.
+    // Without the in-flight latch, the second call races the History/
+    // signal update. Fix: second call no-ops + warns.
+    const { vi } = await import('vitest');
+    // Establish a known baseline so we don't depend on prior-test state.
+    navigate('/baseline');
+    expect(currentPath()).toBe('/baseline');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let deferredUpdate: (() => void) | null = null;
+    _setNavigateWrapper((_url, _replace, update) => {
+      deferredUpdate = update;
+    });
+    navigate('/first');
+    // First call hasn't applied yet — wrapper hasn't run update().
+    expect(currentPath()).toBe('/baseline');
+    // Second call must be ignored.
+    navigate('/second');
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('a previous nav is still pending'),
+      '/second',
+    );
+    // Resolve the first nav — URL settles to /first, not /second.
+    deferredUpdate!();
+    expect(currentPath()).toBe('/first');
+    // Now a fresh navigate() works — flag was cleared inside update().
+    navigate('/third');
+    deferredUpdate!();
+    expect(currentPath()).toBe('/third');
+    warnSpy.mockRestore();
+  });
+
+  it('clears the in-flight flag synchronously on the no-wrapper path', () => {
+    // No wrapper installed — update() runs synchronously, so the flag
+    // clears before navigate() returns, allowing the next call.
+    navigate('/a');
+    expect(currentPath()).toBe('/a');
+    navigate('/b');
+    expect(currentPath()).toBe('/b');
+    navigate('/c');
+    expect(currentPath()).toBe('/c');
+  });
+
+  it('clears the flag when the wrapper throws (fallback update() ran)', () => {
+    _setNavigateWrapper(() => {
+      throw new Error('wrapper-boom');
+    });
+    navigate('/x');
+    // Fallback update() inside catch DID run and cleared the flag.
+    expect(currentPath()).toBe('/x');
+    _setNavigateWrapper(null);
+    // Next nav not blocked by a stale flag.
+    navigate('/y');
+    expect(currentPath()).toBe('/y');
+  });
+});
+
+describe('onNavigate() — audit-v2 fix #6: globalThis listener sentinel', () => {
+  it('shares a single listener Set across module incarnations (HMR safety)', () => {
+    // The fix hoists `navigateListeners` onto globalThis under
+    // `__purityNavigateListeners`. A Vite HMR re-import then re-uses
+    // the existing Set rather than creating a fresh one, so the
+    // pre-HMR subscribers stay reachable and `unsubscribe()` still
+    // points at the right entry. Verify the sentinel exists, is a
+    // Set, and add/remove flows it correctly.
+    interface RouterGlobal {
+      __purityNavigateListeners?: Set<unknown>;
+    }
+    const sentinel = (globalThis as unknown as RouterGlobal).__purityNavigateListeners;
+    expect(sentinel).toBeDefined();
+    expect(sentinel).toBeInstanceOf(Set);
+    const sizeBefore = sentinel!.size;
+    const off = onNavigate(() => {});
+    expect(sentinel!.size).toBe(sizeBefore + 1);
+    off();
+    expect(sentinel!.size).toBe(sizeBefore);
+  });
+});
+
 describe('currentPath/Search/Hash — SSR with malformed request.url', () => {
   it('does not crash when the SSR Request URL is malformed', () => {
     // SSR adapters that surface req.url verbatim (edge runtimes,

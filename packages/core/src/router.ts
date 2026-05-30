@@ -274,8 +274,42 @@ export function _setNavigateWrapper(
 // in depth: hard-cap the scheme to http(s).
 const ALLOWED_NAVIGATE_PROTOCOLS = new Set(['http:', 'https:']);
 
+// Audit-v2 fix (#3): in-flight guard. Rapid back-to-back `navigate()`
+// calls can fire while a view-transition wrapper is mid-DOM-swap, racing
+// the History/signal update against the in-progress transition. Behavior
+// chosen: no-op + warn on the second call (vs queue-after, which hides
+// the bug and can fire stale URLs after the user moved on). The flag is
+// cleared inside `update()` (the single-shot callback) so a wrapper that
+// runs update sync, deferred, or throws (fallback update() inside catch)
+// all converge on the same release point.
+let navigatePending = false;
+
+// Audit-v2 fix (#2): generation counter shared with router-focus and
+// router-scroll. Both helpers queue a microtask that reads `location.hash`
+// and races focus vs. scroll on the same target. When the user fires a
+// second `navigate()` before those microtasks drain, last-writer-wins
+// picked whichever queued most recently. Helpers capture the generation
+// when they enqueue, then short-circuit if the counter advanced — newer
+// navs cancel older microtasks. Counter only moves forward on actual
+// navigations (post-validation); blocked schemes / cross-origin
+// short-circuits don't burn a generation.
+let currentNavigationGeneration = 0;
+/** @internal — read by manageNavFocus + manageNavScroll. */
+export function _getNavigationGeneration(): number {
+  return currentNavigationGeneration;
+}
+
 export function navigate(href: string, options: NavigateOptions = {}): void {
   if (typeof window === 'undefined' || !window.history) return;
+  // Audit-v2 fix (#3): rapid consecutive nav while a previous nav is
+  // mid-flight (e.g. inside a view-transition wrapper's DOM swap) races
+  // the History/signal update against the in-progress transition. No-op
+  // + warn so the bug is visible. Runs before parsing — a burst of
+  // identical clicks costs one branch.
+  if (navigatePending) {
+    console.warn(`[purity] navigate(): ignored — a previous nav is still pending:`, href);
+    return;
+  }
   // `new URL` throws TypeError on a malformed href. navigate() is called
   // from intercepted link clicks (where attackers can craft hostile
   // hrefs), from user code, and from configureNavigation chains — any
@@ -300,6 +334,13 @@ export function navigate(href: string, options: NavigateOptions = {}): void {
   // state. Callers should set `window.location` directly for full-page nav.
   if (url.origin !== window.location.origin) return;
   const replace = options.replace === true;
+  // Audit-v2 fix (#2): bump generation BEFORE listeners fire so the
+  // focus/scroll helpers (which subscribe via onNavigate) capture the
+  // new value when they enqueue their microtasks.
+  currentNavigationGeneration++;
+  // Audit-v2 fix (#3): latch the in-flight flag — cleared inside
+  // `update()` (single-shot) below.
+  navigatePending = true;
   // Single-shot `update()` — a misbehaving navigateWrapper that calls
   // update() twice (e.g. view-transition + sync fallback path) must not
   // pushState the same URL twice or fan-out listeners twice.
@@ -307,6 +348,11 @@ export function navigate(href: string, options: NavigateOptions = {}): void {
   const update = (): void => {
     if (applied) return;
     applied = true;
+    // Audit-v2 fix (#3): clear the in-flight flag before listeners fan
+    // out so a listener that synchronously calls `navigate()` again
+    // (e.g. redirect chain from an auth guard) isn't blocked by its
+    // own outer call.
+    navigatePending = false;
     if (replace) window.history.replaceState(null, '', url);
     else window.history.pushState(null, '', url);
     urlSignal(url);

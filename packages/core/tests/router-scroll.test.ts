@@ -223,6 +223,30 @@ describe('manageNavScroll() — custom handler', () => {
     errSpy.mockRestore();
   });
 
+  it('audit-v2 fix #2: cancels stale microtask when a newer navigate() arrives', async () => {
+    // Repro: user clicks two links rapidly. Both navigate()s fire +
+    // queue microtasks targeting `location.hash`. Without the
+    // generation guard the OLDER nav's scroll races the NEWER nav's
+    // scroll (last-writer-wins). After fix the older microtask
+    // short-circuits when it sees the generation has advanced.
+    teardown = manageNavScroll();
+    document.body.innerHTML = '<section id="first"></section><section id="second"></section>';
+    const first = document.getElementById('first')!;
+    const second = document.getElementById('second')!;
+    const firstSpy = vi.fn();
+    const secondSpy = vi.fn();
+    (first as unknown as { scrollIntoView: () => void }).scrollIntoView = firstSpy;
+    (second as unknown as { scrollIntoView: () => void }).scrollIntoView = secondSpy;
+    // Two navs back-to-back, before any microtask drains.
+    navigate('/page#first');
+    navigate('/page#second');
+    // Drain.
+    await Promise.resolve();
+    // Only the newer nav's scroll target fires — older one cancelled.
+    expect(firstSpy).not.toHaveBeenCalled();
+    expect(secondSpy).toHaveBeenCalled();
+  });
+
   it('does not scroll when teardown happens before the deferred microtask drains', async () => {
     // Race: navigate() fires the onNavigate listener synchronously, which
     // queues a microtask. If teardown runs between the listener and the

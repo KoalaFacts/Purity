@@ -158,6 +158,13 @@ export function webSocketSignal<T>(
     } catch (err) {
       console.warn(`[purity] webSocketSignal('${label}') close failed:`, err);
     }
+    // Transition through 'closing' → 'closed' synchronously after the
+    // close() call. Previously the close listener was the only path to
+    // 'closed', but we just detached it — leaving readyState() stuck
+    // on 'closing' forever after a manual close. Wait one microtask so
+    // any pending 'closing' write flushes to subscribers first, then
+    // settle to 'closed' so UI bound to readyState() unsticks.
+    queueMicrotask(() => stateAccessor('closed'));
   };
 
   wireLiveReconnect(reconnect, open, close);

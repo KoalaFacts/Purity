@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { webSocketSignal } from '../src/index.ts';
+import { mount, webSocketSignal } from '../src/index.ts';
 import { _resetPageVisibilitySignal } from '../src/page-visibility-signal.ts';
 import { _resetBfcacheRestoreSignal } from '../src/bfcache-restore-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
@@ -144,6 +144,33 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(sig.readyState()).toBe('open');
     instances[0].fireClose();
     expect(sig.readyState()).toBe('closed');
+  });
+
+  it('manual close transitions readyState through closing → closed (no stuck closing)', async () => {
+    // The close() helper detaches the WS close listener BEFORE invoking
+    // socket.close() (cycle-8 fix to stop late messages riding back in
+    // on reconnect). Side effect: the close-event-driven path that used
+    // to settle `closed` no longer runs — readyState stayed on 'closing'
+    // forever. Test via the cycle-1 ctx auto-close (mount + unmount).
+    const host = document.createElement('div');
+    let observed: 'connecting' | 'open' | 'closing' | 'closed' = 'connecting';
+    let sig: ReturnType<typeof webSocketSignal<number>> | null = null;
+    const { unmount } = mount(() => {
+      sig = webSocketSignal<number>('/ws', { initialValue: 0, validate: isNumber });
+      observed = sig.readyState();
+      return document.createComment('m');
+    }, host);
+    expect(sig).not.toBeNull();
+    instances[0].fireOpen();
+    expect(sig!.readyState()).toBe('open');
+    // Auto-close on unmount runs close() — pre-fix, readyState would
+    // stick on 'closing'.
+    unmount();
+    expect(sig!.readyState()).toBe('closing');
+    // After one microtask, the close path's queueMicrotask flush runs.
+    await new Promise<void>((r) => queueMicrotask(r));
+    expect(sig!.readyState()).toBe('closed');
+    void observed; // exercise the closure-capture, no-op assertion
   });
 
   it('starts at initialValue and updates on validated message', () => {

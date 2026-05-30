@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { html } from '../src/compiler/compile.ts';
-import { mount, onDestroy, onMount } from '../src/component.ts';
-import { component, slot, teleport } from '../src/elements.ts';
+import {
+  mount,
+  onDestroy,
+  onDispose,
+  onFormDisabled,
+  onFormReset,
+  onMount,
+} from '../src/component.ts';
+import { _renderComponentSSR, component, slot, teleport } from '../src/elements.ts';
 import { compute, state } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
@@ -621,5 +628,198 @@ describe('component as custom element — lifecycle', () => {
     await tick();
     expect(err).toHaveBeenCalled();
     err.mockRestore();
+  });
+
+  it('recurses into factory-rendered child contexts on host disconnect', async () => {
+    const calls: string[] = [];
+
+    // A child component rendered programmatically (the factory return value),
+    // NOT as its own custom element child in light DOM. Its ComponentContext
+    // is linked into the host ctx.children list during render.
+    const Child = component(tag('cel-child'), () => {
+      onDestroy(() => calls.push('child-destroyed'));
+      onDispose(() => calls.push('child-disposed'));
+      return html`<span class="child">child</span>`;
+    });
+
+    const hostName = tag('cel-host');
+    component(hostName, () => {
+      onDestroy(() => calls.push('host-destroyed'));
+      // Render the child factory inside the host's render scope so the child
+      // ctx is parented to the host ctx (non-custom-element child context).
+      return html`<div>${Child({})}</div>`;
+    });
+
+    const el = document.createElement(hostName);
+    document.body.appendChild(el);
+    await tick();
+    expect(el.shadowRoot!.querySelector('.child')).not.toBeNull();
+
+    document.body.removeChild(el);
+    await tick();
+
+    // Child disposers + destroyed must fire (child-first), then host destroyed.
+    expect(calls).toContain('child-disposed');
+    expect(calls).toContain('child-destroyed');
+    expect(calls).toContain('host-destroyed');
+    // Child must be torn down before (or with) the host — child-first ordering.
+    expect(calls.indexOf('child-destroyed')).toBeLessThan(calls.indexOf('host-destroyed'));
+  });
+
+  it('recurses into deeply nested factory-rendered child contexts on disconnect', async () => {
+    const calls: string[] = [];
+
+    const Grandchild = component(tag('cel-gchild'), () => {
+      onDestroy(() => calls.push('gchild-destroyed'));
+      return html`<i class="gchild">g</i>`;
+    });
+    const Child = component(tag('cel-child2'), () => {
+      onDestroy(() => calls.push('child-destroyed'));
+      return html`<span class="child2">${Grandchild({})}</span>`;
+    });
+    const hostName = tag('cel-host2');
+    component(hostName, () => {
+      onDestroy(() => calls.push('host-destroyed'));
+      return html`<div>${Child({})}</div>`;
+    });
+
+    const el = document.createElement(hostName);
+    document.body.appendChild(el);
+    await tick();
+    expect(el.shadowRoot!.querySelector('.gchild')).not.toBeNull();
+
+    document.body.removeChild(el);
+    await tick();
+
+    expect(calls).toContain('gchild-destroyed');
+    expect(calls).toContain('child-destroyed');
+    expect(calls).toContain('host-destroyed');
+  });
+
+  it('does not fire child destroy twice on host disconnect', async () => {
+    const calls: string[] = [];
+    const Child = component(tag('cel-child-once'), () => {
+      onDestroy(() => calls.push('child-destroyed'));
+      return html`<span class="once">x</span>`;
+    });
+    const hostName = tag('cel-host-once');
+    component(hostName, () => html`<div>${Child({})}</div>`);
+
+    const el = document.createElement(hostName);
+    document.body.appendChild(el);
+    await tick();
+    document.body.removeChild(el);
+    await tick();
+
+    expect(calls.filter((c) => c === 'child-destroyed')).toHaveLength(1);
+  });
+
+  it('re-renders cleanly on disconnect-then-reconnect (no re-hydration crash)', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const count = state(0);
+    const hostName = tag('cel-reconnect');
+    component(hostName, () => {
+      return html`<button @click=${() => count((v) => v + 1)}>val:${() => count()}</button>`;
+    });
+
+    const el = document.createElement(hostName);
+    document.body.appendChild(el);
+    await tick();
+    expect(el.shadowRoot!.querySelectorAll('button')).toHaveLength(1);
+    expect(el.shadowRoot!.textContent).toContain('val:0');
+
+    // Detach and re-attach (e.g. each() remove-then-readd). The shadow still
+    // holds the prior render, which must NOT be treated as DSD/SSR content.
+    document.body.removeChild(el);
+    await tick();
+    document.body.appendChild(el);
+    await tick();
+
+    // No uncaught hydration error, and exactly one button (no duplicate render).
+    expect(err).not.toHaveBeenCalled();
+    expect(el.shadowRoot!.querySelectorAll('button')).toHaveLength(1);
+
+    // Reactivity is re-established against the fresh render.
+    el.shadowRoot!.querySelector('button')!.dispatchEvent(new Event('click'));
+    await tick();
+    expect(el.shadowRoot!.textContent).toContain('val:1');
+    err.mockRestore();
+  });
+
+  it('rejects an invalid (non-hyphenated / unsafe) component tag name', () => {
+    expect(() => component('nohyphen', () => html`<i></i>`)).toThrow(/invalid custom element/i);
+    expect(() => component('bad><script>', () => html`<i></i>`)).toThrow(/invalid custom element/i);
+    expect(() => component('1-bad', () => html`<i></i>`)).toThrow(/invalid custom element/i);
+    // A valid hyphenated name does not throw.
+    expect(() => component(tag('ok'), () => html`<i></i>`)).not.toThrow();
+  });
+
+  it('_renderComponentSSR drops unsafe attribute names from the host attrs', () => {
+    const name = tag('ssr-attrfilter');
+    component(name, () => html`<span>x</span>`);
+    const out = _renderComponentSSR(
+      name,
+      { title: 'ok', 'bad"><script>': 'evil', 'data-x': 'y' },
+      '',
+    );
+    expect(out).not.toBeNull();
+    // Safe attr names survive; the injected key is dropped entirely.
+    expect(out).toContain(' title="ok"');
+    expect(out).toContain(' data-x="y"');
+    expect(out).not.toContain('<script>');
+    expect(out).not.toContain('bad');
+  });
+
+  it('does not invoke form-associated handlers after disconnect', async () => {
+    const onReset = vi.fn();
+    const onDisabled = vi.fn();
+    const hostName = tag('cel-form-dead');
+    component(
+      hostName,
+      () => {
+        onFormReset(onReset);
+        onFormDisabled(onDisabled);
+        return html`<input />`;
+      },
+      { formAssociated: true },
+    );
+
+    const form = document.createElement('form');
+    const el = document.createElement(hostName) as HTMLElement & {
+      formResetCallback: () => void;
+      formDisabledCallback: (d: boolean) => void;
+    };
+    form.appendChild(el);
+    document.body.appendChild(form);
+    await tick();
+
+    // Detach the host — ctx is now destroyed but not nulled.
+    form.removeChild(el);
+    await tick();
+
+    // A late spec-dispatched form callback (race with disconnect) must no-op.
+    el.formResetCallback();
+    el.formDisabledCallback(true);
+    expect(onReset).not.toHaveBeenCalled();
+    expect(onDisabled).not.toHaveBeenCalled();
+    document.body.removeChild(form);
+  });
+
+  it('hydrates against DSD-staged shadow content on the first connect', async () => {
+    const hostName = tag('cel-dsd');
+    component(hostName, () => html`<span>${'fresh'}</span>`);
+
+    // Stage what DSD parsing would leave in the shadow before the first connect.
+    const el = document.createElement(hostName);
+    el.shadowRoot!.innerHTML = '<span><!--[-->fresh<!--]--></span>';
+    const ssrSpan = el.shadowRoot!.firstChild;
+
+    document.body.appendChild(el);
+    await tick();
+
+    // First connect hydrated in place — same node reference is preserved.
+    expect(el.shadowRoot!.firstChild).toBe(ssrSpan);
+    expect(el.shadowRoot!.querySelector('span')!.textContent).toBe('fresh');
+    document.body.removeChild(el);
   });
 });

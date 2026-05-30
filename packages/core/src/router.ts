@@ -202,8 +202,17 @@ export function navigate(href: string, options: NavigateOptions = {}): void {
     else window.history.pushState(null, '', url);
     urlSignal(url);
     // Fire after the History API + signal update so listeners observe the
-    // post-nav state. Errors propagate to the caller.
-    for (const fn of navigateListeners) fn(url, replace);
+    // post-nav state. Isolate each listener so one bad subscriber can't
+    // abort the rest + the calling navigate() — same pattern as the
+    // scheduler flush, optimistic onSettle, suspense onError, configure
+    // teardown, lifecycle callbacks, validator-throws, …
+    for (const fn of navigateListeners) {
+      try {
+        fn(url, replace);
+      } catch (err) {
+        console.error('[purity] onNavigate listener threw:', err);
+      }
+    }
   };
   if (navigateWrapper) navigateWrapper(url, replace, update);
   else update();

@@ -46,6 +46,23 @@ describe('onNavigate() — listener hook', () => {
     expect(seen2).toEqual(['/x']);
   });
 
+  it('isolates a throwing listener so siblings + navigate() still run', () => {
+    // Without per-listener try/catch, a single throwing onNavigate
+    // subscriber aborted the rest AND escaped to the navigate() caller.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const seen: string[] = [];
+    const t1 = onNavigate(() => {
+      throw new Error('boom');
+    });
+    const t2 = onNavigate((u) => seen.push(u.pathname));
+    expect(() => navigate('/iso')).not.toThrow();
+    expect(seen).toEqual(['/iso']);
+    expect(errSpy).toHaveBeenCalledWith('[purity] onNavigate listener threw:', expect.any(Error));
+    t1();
+    t2();
+    errSpy.mockRestore();
+  });
+
   it('teardown removes the listener', () => {
     const calls: string[] = [];
     const t = onNavigate((u) => calls.push(u.pathname));

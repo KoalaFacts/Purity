@@ -76,7 +76,13 @@ function refreshMatching(
   for (const entry of cache.values()) {
     if (!entry[triggerKey]) continue;
     if (now - entry.lastFetchedAt < entry.staleTime) continue;
-    entry.resource.refresh();
+    // Isolate: one resource.refresh() throw must not skip revalidation
+    // for every other matching query in the same lifecycle event.
+    try {
+      entry.resource.refresh();
+    } catch (err) {
+      console.error('[purity] query refresh threw during lifecycle trigger:', err);
+    }
   }
 }
 
@@ -220,10 +226,23 @@ function warnOnConfigMismatch<T>(
  * cache + every cached resource, and un-arms the trigger wiring so a
  * subsequent client call re-arms a fresh, single set of watches. */
 export function _resetQueryCache(): void {
-  for (const dispose of triggerDisposes) dispose();
+  // Isolate each teardown — one throw can't strand the rest. Test runs
+  // and HMR rely on _reset being a "burn it down" path; partial cleanup
+  // poisons subsequent tests.
+  for (const dispose of triggerDisposes) {
+    try {
+      dispose();
+    } catch (err) {
+      console.error('[purity] _resetQueryCache: trigger-watch dispose threw:', err);
+    }
+  }
   triggerDisposes = [];
   for (const entry of cache.values()) {
-    entry.resource.dispose();
+    try {
+      entry.resource.dispose();
+    } catch (err) {
+      console.error('[purity] _resetQueryCache: resource dispose threw:', err);
+    }
   }
   cache.clear();
   triggersWired = false;

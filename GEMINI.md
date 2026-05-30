@@ -1,6 +1,6 @@
 # Purity Monorepo — Gemini Context
 
-Minimal web framework. 21 functions. ~5.8 kB gzipped.
+Lite web framework. ~5.8 kB gzipped.
 
 ## Packages
 

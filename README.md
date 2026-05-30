@@ -7,7 +7,7 @@
 
 A minimal web framework with TC39-Signals-inspired reactivity and templates that compile to direct DOM operations.
 
-- **21 functions** — that's the entire API
+- **A tiny API** — that's the whole thing
 - **~5.8 kB gzipped** — with AOT compilation
 - **No virtual DOM** — signals drive DOM updates directly
 - **CSP-safe** — no `eval`, no `new Function` (with the Vite plugin)
@@ -32,7 +32,7 @@ npm run dev
 
 | Package                                           | Description                                                   | Docs                                       |
 | ------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------ |
-| [`@purityjs/core`](./packages/core)               | The framework — 21 functions                                  | [README](./packages/core/README.md)        |
+| [`@purityjs/core`](./packages/core)               | The framework                                                 | [README](./packages/core/README.md)        |
 | [`@purityjs/ssr`](./packages/ssr)                 | `renderToString` + `renderToStream` + DSD + resource awaiting | [README](./packages/ssr/README.md)         |
 | [`@purityjs/vite-plugin`](./packages/vite-plugin) | AOT template compilation (client + SSR)                       | [README](./packages/vite-plugin/README.md) |
 | [`@purityjs/cli`](./packages/cli)                 | Project scaffolding (`--ssr` flag available)                  | [README](./packages/cli/README.md)         |

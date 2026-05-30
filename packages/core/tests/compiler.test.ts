@@ -257,6 +257,54 @@ describe('compiled html``', () => {
   });
 });
 
+describe('compiled html`` — SSR/client output parity (hydration mismatch class)', () => {
+  // The SSR codegen and client codegen MUST coerce values to the same
+  // HTML for every value kind; otherwise hydration leaves the DOM in
+  // a different state than what SSR rendered (silent UI drift, broken
+  // bindings).
+
+  it('dynamic-attribute literal `true` emits bare name (matches SSR `valueToAttr`)', () => {
+    // SSR: valueToAttr(true) → '' → bare ` name`.
+    // Client (pre-fix): setAttribute(name, 'true') → `name="true"`.
+    const frag = html`<input disabled=${true} />`;
+    const container = document.createElement('div');
+    container.appendChild(frag);
+    const el = container.querySelector('input')!;
+    // Attribute is PRESENT but has empty string value (bare form):
+    expect(el.hasAttribute('disabled')).toBe(true);
+    expect(el.getAttribute('disabled')).toBe('');
+  });
+
+  it('dynamic-attribute signal returning `true` emits bare name', () => {
+    const sig = state(true);
+    const frag = html`<input disabled=${() => sig()} />`;
+    const container = document.createElement('div');
+    container.appendChild(frag);
+    const el = container.querySelector('input')!;
+    expect(el.getAttribute('disabled')).toBe('');
+  });
+
+  it('text-slot signal returning `false` renders empty (matches SSR `valueToHtml`)', () => {
+    // SSR: valueToHtml(false) → ''.
+    // Client (pre-fix): `r==null?'':String(r)` → 'false'.
+    const sig = state<unknown>(false);
+    const frag = html`<p>${() => sig()}</p>`;
+    const container = document.createElement('div');
+    container.appendChild(frag);
+    expect(container.querySelector('p')!.textContent).toBe('');
+  });
+
+  it('text-slot array drops null/undefined/false items (matches SSR recursion)', () => {
+    // SSR: valueToHtml([null, 'a', undefined, false, 'b']) → 'ab'.
+    // Client (pre-fix): String() each → 'nullaundefinedfalseb'.
+    const arr: unknown[] = [null, 'a', undefined, false, 'b'];
+    const frag = html`<p>${arr}</p>`;
+    const container = document.createElement('div');
+    container.appendChild(frag);
+    expect(container.querySelector('p')!.textContent).toBe('ab');
+  });
+});
+
 describe('compiler — extra coverage', () => {
   it('parses comments in templates', () => {
     const ast = parse(['<div><!-- hello --><p>x</p></div>']);

@@ -496,12 +496,19 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
         setupParts.push(`_e.addEventListener(${qname},${val});`);
         break;
       case 'dynamic':
+        // Dynamic-attr value coercion MUST match valueToAttr() on the SSR
+        // side: true → bare name (empty value), false/null/undefined →
+        // omitted. The client previously emitted `name="true"` for a
+        // literal `true` while SSR emitted bare `name` — a hydration
+        // mismatch the runtime never warned about. Align both code paths
+        // (literal value setup + signal-returning-value reactive) on the
+        // same valueToAttr semantics.
         setupParts.push(
           `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
-          `if(!${fl}&&${av}!=null&&${av}!==false)_e.setAttribute(${qname},String(${av}));`,
+          `if(!${fl}&&${av}!=null&&${av}!==false)_e.setAttribute(${qname},${av}===true?'':String(${av}));`,
         );
         reactiveParts.push(
-          `if(${fl}){var v${id}=${av}();if(v${id}==null||v${id}===false)_e.removeAttribute(${qname});else _e.setAttribute(${qname},String(v${id}));}`,
+          `if(${fl}){var v${id}=${av}();if(v${id}==null||v${id}===false)_e.removeAttribute(${qname});else _e.setAttribute(${qname},v${id}===true?'':String(v${id}));}`,
         );
         break;
       case 'bool':
@@ -564,15 +571,22 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
       const xv = `_x${id}`;
       const tn = `_t${id}`;
       const fl = `_xf${id}`;
+      // Text-slot value coercion MUST match valueToHtml() on the SSR side
+      // (compiler/ssr-runtime.ts): null / undefined / false render as empty
+      // string, everything else stringifies. The previous client path
+      // skipped `=== false` in the reactive (function-call) branch AND in
+      // the array-item branch — so a signal returning `false` produced
+      // the literal text "false" on the client while SSR rendered nothing.
+      // Symmetric `==null||===false` filter at every text-emit site.
       setupParts.push(
         `var ${xv}=${val};var ${fl}=typeof ${xv}==='function';var ${tn};`,
         `if(${fl}){${tn}=document.createTextNode('');_e.appendChild(${tn});}`,
         `else if(${xv} instanceof Node)_e.appendChild(${xv});`,
-        `else if(Array.isArray(${xv})){for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++)_e.appendChild(${xv}[_ai${id}] instanceof Node?${xv}[_ai${id}]:document.createTextNode(String(${xv}[_ai${id}])));}`,
+        `else if(Array.isArray(${xv})){for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++){var _av${id}=${xv}[_ai${id}];if(_av${id}==null||_av${id}===false)continue;_e.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}}`,
         `else _e.appendChild(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));`,
       );
       reactiveParts.push(
-        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=r${id}==null?'':String(r${id});}}`,
+        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=(r${id}==null||r${id}===false)?'':String(r${id});}}`,
       );
     }
   }
@@ -876,17 +890,22 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
     `if(!${fl}){`,
     `if(typeof ${xv}==='object'){`,
     `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});${tn}=${xv};}`,
-    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++)_af${id}.appendChild(${xv}[_ai${id}] instanceof Node?${xv}[_ai${id}]:document.createTextNode(String(${xv}[_ai${id}])));${slotVar}.replaceWith(_af${id});}`,
+    // Array path: drop null/undefined/false items so SSR (valueToHtml
+    // recurses + concats with empty for falsy) matches the client.
+    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++){var _av${id}=${xv}[_ai${id}];if(_av${id}==null||_av${id}===false)continue;_af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}${slotVar}.replaceWith(_af${id});}`,
     `else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
     `}else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
     `}`,
   ].join('');
 
+  // Reactive: `r${id}===false` was missing from the falsy filter, so
+  // a signal returning false rendered "false" on the client while SSR
+  // emitted empty. Symmetric with the setup branch above.
   const reactive = [
     `if(${fl}){`,
     `var r${id}=${xv}();`,
     `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
-    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=r${id}==null?'':String(r${id});}`,
+    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=(r${id}==null||r${id}===false)?'':String(r${id});}`,
     `}`,
   ].join('');
 

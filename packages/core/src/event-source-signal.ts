@@ -57,6 +57,36 @@ export interface EventSourceSignalOptions<T> {
 }
 
 /**
+ * Allow-list of URL schemes accepted by eventSourceSignal. Browsers
+ * reject non-HTTP(S) schemes at `new EventSource()` time, but a hostile
+ * SSR-derived URL string with an attacker-controlled `javascript:`,
+ * `data:`, `blob:`, or `file:` scheme would still be reflected into our
+ * `console.warn` diagnostics and (under non-conformant runtimes /
+ * tests) reach the constructor. Enforce HTTP(S) before construction so
+ * the trust boundary lives at the signal — not at the browser.
+ *
+ * @internal
+ */
+export function isSafeEventSourceUrl(url: string | URL): boolean {
+  if (typeof url !== 'string') {
+    const proto = url.protocol;
+    return proto === 'http:' || proto === 'https:';
+  }
+  // Relative (no scheme) is fine — it resolves against document.baseURI
+  // which the page already trusts. Match the same RFC-3986 scheme prefix
+  // used by redactUrl() for consistency.
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) return true;
+  try {
+    const proto = new URL(url).protocol;
+    return proto === 'http:' || proto === 'https:';
+  } catch {
+    // Unparseable absolute-looking string — let the constructor reject it
+    // so the surface error matches the platform.
+    return false;
+  }
+}
+
+/**
  * Strip secrets from a URL before logging. SSE/WS commonly authenticate
  * via `?access_token=…` (they can't set request headers per spec), and
  * userinfo (`user:pw@`) is similarly sensitive. Every error path of
@@ -170,8 +200,18 @@ export function eventSourceSignal<T>(
   // Use the redacted label for ALL diagnostic console.warn paths so
   // `?access_token=…` and `user:pw@` don't leak into log sinks.
   const label = redactUrl(url);
+  // Refuse non-HTTP(S) URLs up-front. `javascript:`, `data:`, `blob:`,
+  // and `file:` schemes are NOT valid SSE endpoints; reflecting them
+  // through `new EventSource(url)` invites runtime-specific surprises
+  // (jsdom + custom mocks won't reject), so gate before construction.
+  const urlIsSafe = isSafeEventSourceUrl(url);
 
   let es: EventSource | null = null;
+  // `disposed` guards against open() racing a unmount-triggered close():
+  // wireLiveReconnect's watch may schedule an open() asynchronously, and
+  // we DON'T want it to reopen the connection after the surrounding
+  // component has unmounted (or after the explicit disposer ran).
+  let disposed = false;
   const onMessage = (e: MessageEvent): void => {
     let parsed: unknown;
     try {
@@ -203,7 +243,13 @@ export function eventSourceSignal<T>(
   };
 
   const open = (): void => {
-    if (es) return;
+    if (disposed || es) return;
+    if (!urlIsSafe) {
+      console.warn(
+        `[purity] eventSourceSignal('${label}') refused to open — only http(s) schemes are allowed`,
+      );
+      return;
+    }
     try {
       // codeql[js/superfluous-trailing-arguments]
       // CodeQL's web externs model EventSource as single-argument, but the
@@ -220,9 +266,13 @@ export function eventSourceSignal<T>(
   };
   const close = (): void => {
     if (!es) return;
-    es.removeEventListener(eventName, onMessage);
-    es.close();
+    // Snapshot + null BEFORE removeEventListener/close() so a late
+    // synchronous re-entry (close fired during another teardown path)
+    // is a fast no-op instead of double-detaching the listener.
+    const closing = es;
     es = null;
+    closing.removeEventListener(eventName, onMessage);
+    closing.close();
   };
 
   wireLiveReconnect(reconnect, open, close);
@@ -231,8 +281,14 @@ export function eventSourceSignal<T>(
   // connection that survived unmount (the `wireLiveReconnect` watches
   // auto-dispose, but they only flip open/close on lifecycle changes —
   // they don't close the socket on owner unmount). Module-scope callers
-  // keep "lifetime = page" semantics.
+  // keep "lifetime = page" semantics. Flip `disposed` first so any
+  // open() queued by the lifecycle watches (e.g. a visibility flip racing
+  // the unmount) becomes a no-op instead of resurrecting the connection.
   const ctx = getCurrentContext();
-  if (ctx) (ctx.disposers ??= []).push(close);
+  if (ctx)
+    (ctx.disposers ??= []).push(() => {
+      disposed = true;
+      close();
+    });
   return compute(() => inner());
 }

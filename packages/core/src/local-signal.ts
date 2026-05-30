@@ -97,13 +97,25 @@ function isEnvelope(v: unknown): v is EnvelopeShape {
   );
 }
 
+// `succeeded: false` means "we fell back to defaultValue because the
+// stored bytes were unreadable / unmigratable" — the caller MUST NOT
+// then write defaultValue back to storage, or one buggy migrate
+// function silently destroys user data across all their sessions /
+// tabs. `succeeded: true` means the value reflects either a successful
+// parse OR a successful migration; safe to persist.
+interface ParseResult<T> {
+  value: T;
+  succeeded: boolean;
+}
+
 function parseStored<T>(
   raw: string,
   defaultValue: T,
   deserialize: (raw: string) => T,
   version: number,
   migrate: ((old: unknown, oldVersion: number) => T) | undefined,
-): T {
+): ParseResult<T> {
+  const fallback: ParseResult<T> = { value: defaultValue, succeeded: false };
   // Versioned envelope path.
   if (version > 0) {
     let envelope: unknown;
@@ -113,46 +125,56 @@ function parseStored<T>(
       // Not JSON at all — treat as legacy unversioned value.
       try {
         const legacy = deserialize(raw);
-        return migrate ? migrate(legacy, 0) : defaultValue;
+        if (!migrate) return fallback;
+        try {
+          return { value: migrate(legacy, 0), succeeded: true };
+        } catch {
+          return fallback;
+        }
       } catch {
-        return defaultValue;
+        return fallback;
       }
     }
     if (isEnvelope(envelope)) {
       if (envelope.__pv === version) {
         try {
-          return deserialize(envelope.d);
+          return { value: deserialize(envelope.d), succeeded: true };
         } catch {
-          return defaultValue;
+          return fallback;
         }
       }
       if (migrate) {
         try {
           const old = deserialize(envelope.d);
-          return migrate(old, envelope.__pv);
+          return { value: migrate(old, envelope.__pv), succeeded: true };
         } catch {
           try {
-            return migrate(envelope.d, envelope.__pv);
+            return { value: migrate(envelope.d, envelope.__pv), succeeded: true };
           } catch {
-            return defaultValue;
+            return fallback;
           }
         }
       }
-      return defaultValue;
+      return fallback;
     }
     // No envelope wrapper — treat as legacy unversioned raw value.
     try {
       const legacy = deserialize(raw);
-      return migrate ? migrate(legacy, 0) : defaultValue;
+      if (!migrate) return fallback;
+      try {
+        return { value: migrate(legacy, 0), succeeded: true };
+      } catch {
+        return fallback;
+      }
     } catch {
-      return defaultValue;
+      return fallback;
     }
   }
   // Unversioned path — raw deserialize.
   try {
-    return deserialize(raw);
+    return { value: deserialize(raw), succeeded: true };
   } catch {
-    return defaultValue;
+    return fallback;
   }
 }
 
@@ -215,12 +237,15 @@ export function localSignal<T>(
     try {
       const raw = storage.getItem(key);
       if (raw !== null) {
-        // parseStored returns the post-migration value when version > 0
-        // and the stored envelope version doesn't match.
-        resolvedValue = parseStored(raw, defaultValue, deserialize, version, migrate);
-        // If the stored envelope's version didn't match, the migrated
-        // value hasn't been persisted yet — schedule a write-back below.
-        if (version > 0) {
+        // parseStored returns { value, succeeded }. `succeeded: false`
+        // means we fell back to defaultValue because the bytes were
+        // unreadable / unmigratable — we MUST NOT then write that
+        // default back, or a buggy migrate function silently destroys
+        // the original data across every session and cross-tab listener.
+        // Original bytes stay in storage so the developer can debug.
+        const parsed = parseStored(raw, defaultValue, deserialize, version, migrate);
+        resolvedValue = parsed.value;
+        if (parsed.succeeded && version > 0) {
           try {
             const obj = JSON.parse(raw);
             if (!isEnvelope(obj) || obj.__pv !== version) writeUpgrade = true;
@@ -264,7 +289,7 @@ export function localSignal<T>(
       inner(defaultValue);
       return;
     }
-    inner(parseStored(raw, defaultValue, deserialize, version, migrate));
+    inner(parseStored(raw, defaultValue, deserialize, version, migrate).value);
   };
   set.add(apply);
 

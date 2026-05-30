@@ -317,4 +317,30 @@ describe('localSignal — versioning + migration (ADR 0039)', () => {
     expect(sig()).toBe('migrated');
     expect(seen).toEqual([{ old: 'legacy-raw', from: 0 }]);
   });
+
+  it('a throwing migrate does NOT silently overwrite the original data with default', () => {
+    // Pre-fix: parseStored caught migrate-throw and returned defaultValue,
+    // then writeUpgrade fired regardless — writing the default back to
+    // storage. So a buggy migrate function silently destroyed the user's
+    // existing data across every session and cross-tab apply. Fix: the
+    // `succeeded` flag suppresses writeUpgrade on a fall-back.
+    const original = JSON.stringify({ __pv: 1, d: JSON.stringify({ user: 'ada', kept: true }) });
+    localStorage.setItem('cart', original);
+    const sig = localSignal<{ user: string; kept: boolean }>(
+      'cart',
+      { user: '', kept: false },
+      {
+        version: 2,
+        migrate: () => {
+          throw new Error('migrate is buggy');
+        },
+      },
+    );
+    // The accessor falls back to default in memory (no crash) …
+    expect(sig()).toEqual({ user: '', kept: false });
+    // … but the ORIGINAL bytes MUST still be in storage, untouched, so
+    // the dev can debug and ship a real migrate later without losing
+    // the data.
+    expect(localStorage.getItem('cart')).toBe(original);
+  });
 });

@@ -38,10 +38,41 @@ export function bfcacheRestoreSignal(): StateAccessor<number> {
   }
   if (singleton) return singleton;
   const counter = state(0);
-  listener = (e: PageTransitionEvent) => {
-    if (e.persisted) counter((v) => v + 1);
+  const handler = (e: PageTransitionEvent): void => {
+    // Throw isolation — a thrown `persisted` getter or a downstream
+    // subscriber must not poison the `pageshow` callback and break
+    // every subsequent restore detection.
+    try {
+      // Strict `=== true` matches the doc contract and rejects truthy
+      // non-boolean values from quirky environments.
+      if (e.persisted !== true) return;
+      counter((v) => {
+        // Saturate at MAX_SAFE_INTEGER so a hostile / extremely
+        // long-lived tab can't slide into float territory where
+        // `v + 1 === v` and the signal silently stops firing.
+        if (v >= Number.MAX_SAFE_INTEGER) return Number.MAX_SAFE_INTEGER;
+        return v + 1;
+      });
+    } catch (err) {
+      console.error('[purity] bfcacheRestoreSignal: pageshow handler threw', err);
+    }
   };
-  window.addEventListener('pageshow', listener);
+  // Attach FIRST, then publish the module-level refs. If
+  // `addEventListener` throws (e.g. patched window in some sandbox),
+  // we must not leave `listener`/`singleton` populated — otherwise a
+  // subsequent call short-circuits on the cached singleton and
+  // `_resetBfcacheRestoreSignal()` would call `removeEventListener`
+  // on a listener that was never attached.
+  try {
+    window.addEventListener('pageshow', handler as EventListener);
+  } catch (err) {
+    console.error('[purity] bfcacheRestoreSignal: failed to register pageshow listener', err);
+    // Half-bound rollback — return a one-shot non-singleton state(0)
+    // so the caller still gets a usable accessor without pinning a
+    // broken singleton.
+    return state(0);
+  }
+  listener = handler;
   singleton = counter;
   return counter;
 }
@@ -50,7 +81,11 @@ export function bfcacheRestoreSignal(): StateAccessor<number> {
  * window listener so subsequent test runs start from a clean state. */
 export function _resetBfcacheRestoreSignal(): void {
   if (listener && typeof window !== 'undefined') {
-    window.removeEventListener('pageshow', listener as EventListener);
+    try {
+      window.removeEventListener('pageshow', listener as EventListener);
+    } catch {
+      /* noop — defensive against sandboxes that throw on removal. */
+    }
   }
   listener = null;
   singleton = null;

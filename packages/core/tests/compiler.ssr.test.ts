@@ -4,6 +4,8 @@ import { parse } from '../src/compiler/parser.ts';
 import {
   isSSRHtml,
   markSSRHtml,
+  type SSRComponentRenderer,
+  setSSRComponentRenderer,
   ssrElement,
   ssrHelpers,
   valueToAttr,
@@ -391,6 +393,31 @@ describe('ssr-runtime helpers', () => {
     expect(valueToAttr(false)).toBe(null);
     expect(valueToAttr(true)).toBe('');
     expect(valueToAttr('a"b')).toBe('a&quot;b');
+  });
+
+  it('setSSRComponentRenderer is idempotent for the same function reference', () => {
+    // Regression: prior to the idempotency guard, re-importing @purityjs/ssr
+    // (test setup churn, ESM dual instantiation) would silently overwrite the
+    // renderer. Same-reference re-install is now a no-op so double-imports
+    // are harmless.
+    const renderer: SSRComponentRenderer = () => null;
+    setSSRComponentRenderer(null);
+    setSSRComponentRenderer(renderer);
+    expect(() => setSSRComponentRenderer(renderer)).not.toThrow();
+    // Cleanup so subsequent tests / other suites in this process see a clean slate.
+    setSSRComponentRenderer(null);
+  });
+
+  it('setSSRComponentRenderer throws on a conflicting renderer', () => {
+    // A real conflict (two different SSR implementations racing to register)
+    // must surface loudly instead of silent last-write-wins.
+    const a: SSRComponentRenderer = () => null;
+    const b: SSRComponentRenderer = () => null;
+    setSSRComponentRenderer(null);
+    setSSRComponentRenderer(a);
+    expect(() => setSSRComponentRenderer(b)).toThrow(/different renderer is already installed/);
+    // Cleanup — null is always accepted, and re-installing `a` is a no-op now.
+    setSSRComponentRenderer(null);
   });
 
   it('ssrElement skips attribute keys that would break out of the name', () => {

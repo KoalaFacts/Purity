@@ -137,8 +137,29 @@ export type SSRComponentRenderer = (
 
 let componentRenderer: SSRComponentRenderer | null = null;
 
-/** Install the SSR component renderer. Called by `@purityjs/ssr` on import. */
+/**
+ * Install the SSR component renderer. Called by `@purityjs/ssr` on import.
+ *
+ * Idempotent: re-installing the same function reference (or clearing to
+ * `null` when already cleared) is a silent no-op. This guards against
+ * harmless double-imports of `@purityjs/ssr` (test setup churn, bundler
+ * dedup glitches, ESM dual instantiation).
+ *
+ * Throws when called with a *different* non-null renderer while one is
+ * already installed — a real conflict between two SSR implementations
+ * surfaces loudly instead of silently last-write-wins. Pass `null`
+ * first to explicitly hand off.
+ */
 export function setSSRComponentRenderer(fn: SSRComponentRenderer | null): void {
+  if (componentRenderer === fn) return;
+  if (componentRenderer !== null && fn !== null) {
+    throw new Error(
+      'setSSRComponentRenderer: a different renderer is already installed. ' +
+        'This usually means `@purityjs/ssr` was loaded twice (e.g. ESM dual ' +
+        'instantiation or a bundler dedup glitch). Reset to null before ' +
+        'installing a new renderer.',
+    );
+  }
   componentRenderer = fn;
 }
 

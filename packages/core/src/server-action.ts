@@ -148,6 +148,20 @@ export function findAction(request: Request): ServerActionHandler | null {
  * ```
  */
 export async function handleAction(request: Request): Promise<Response | null> {
+  // Method gate: server actions are POST-only by spec (ADR 0012 docs +
+  // the example `<form method="POST">` everywhere). Without an explicit
+  // check, a GET to /api/save-todo would still dispatch the mutation —
+  // a CSRF surface (a `<a href="/api/save-todo">click</a>` from any
+  // page could trigger a write). Reject non-POST/PUT/PATCH/DELETE so
+  // routing falls through to SSR (which can render a 405 or the page).
+  if (
+    request.method !== 'POST' &&
+    request.method !== 'PUT' &&
+    request.method !== 'PATCH' &&
+    request.method !== 'DELETE'
+  ) {
+    return null;
+  }
   const handler = findAction(request);
   if (!handler) return null;
   return handler(request);

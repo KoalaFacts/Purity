@@ -73,8 +73,32 @@ describe('handleAction() — dispatch', () => {
 
   it('supports synchronous Response returns', async () => {
     serverAction('/api/sync', () => new Response('sync-ok'));
-    const res = await handleAction(new Request('https://example.com/api/sync'));
+    const res = await handleAction(new Request('https://example.com/api/sync', { method: 'POST' }));
     expect(await res?.text()).toBe('sync-ok');
+  });
+
+  it('rejects non-mutation methods (GET / HEAD / OPTIONS) — no CSRF surface', async () => {
+    // Server actions are POST-only per ADR 0012. Without the method
+    // gate, a `<a href="/api/save-todo">click</a>` from any page would
+    // trigger a write — a CSRF surface. Only POST/PUT/PATCH/DELETE
+    // reach the handler; everything else returns null so the caller
+    // can fall through to SSR (or render a 405 themselves).
+    let called = 0;
+    serverAction('/api/write', () => {
+      called++;
+      return new Response('written');
+    });
+    for (const method of ['GET', 'HEAD', 'OPTIONS']) {
+      const res = await handleAction(new Request('https://example.com/api/write', { method }));
+      expect(res, `${method} must not dispatch`).toBeNull();
+    }
+    expect(called).toBe(0);
+    // POST/PUT/PATCH/DELETE all dispatch:
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+      const res = await handleAction(new Request('https://example.com/api/write', { method }));
+      expect(res, `${method} must dispatch`).not.toBeNull();
+    }
+    expect(called).toBe(4);
   });
 
   it('propagates handler errors so the caller can wrap them', async () => {

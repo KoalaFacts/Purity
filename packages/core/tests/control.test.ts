@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { html } from '../src/compiler/compile.ts';
 import { mount, onDispose } from '../src/component.ts';
-import { each, match } from '../src/control.ts';
+import { each, list, match } from '../src/control.ts';
 import { state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
@@ -1143,5 +1143,198 @@ describe('each — SSR-context dispatch (ADR 0023)', () => {
     // the boundary-marker prefix proves the dispatch went through SSR.
     const result = inSSRContext(() => eachIso([1], (i) => `<li>${i()}</li>`));
     expect(ssrHtmlText(result)).toMatch(/^<!--e-->/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Audit regressions — Pass 1 HIGH/MED + Pass 3 MED fixes for control.ts.
+// Each block locks in the documented contract for the corresponding finding
+// so a future refactor can't silently regress.
+// ---------------------------------------------------------------------------
+
+describe('each() — duplicate keyFn warning (audit Pass 1 HIGH)', () => {
+  it('warns on reconcile when keyFn yields duplicate keys', async () => {
+    // Start with a unique-key render so the reconcile path is taken on the
+    // next update (the prevLen===0 first-render branch is intentionally
+    // light — duplicate detection lives in the reorder path where the
+    // duplicates actually corrupt the row mapping).
+    const items = state<{ id: number; t: string }[]>([{ id: 0, t: 'init' }]);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const c = document.createElement('ul');
+      c.appendChild(
+        each(
+          () => items(),
+          (item: () => { id: number; t: string }) => {
+            const li = document.createElement('li');
+            li.textContent = item().t;
+            return li;
+          },
+          (item: { id: number; t: string }) => item.id,
+        ),
+      );
+      await tick();
+      expect(warn).not.toHaveBeenCalled();
+
+      // Trigger reconcile with duplicate keys — the warning is documented.
+      items([
+        { id: 1, t: 'A' },
+        { id: 1, t: 'B' },
+        { id: 2, t: 'C' },
+      ]);
+      await tick();
+      expect(warn).toHaveBeenCalled();
+      const msg = warn.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(msg).toContain('duplicate key');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('list() — event handler rebind on key reuse (audit Pass 1 HIGH)', () => {
+  it('rebinds event handlers with fresh item when key is reused with new data', async () => {
+    type Row = { id: number; name: string };
+    const items = state<Row[]>([{ id: 1, name: 'first' }]);
+    const fired: string[] = [];
+    const c = document.createElement('ul');
+    c.appendChild(
+      list<Row>('li', () => items(), {
+        text: (r) => r.name,
+        events: {
+          click: (r) => () => fired.push(r.name),
+        },
+        key: (r) => r.id,
+      }),
+    );
+    await tick();
+
+    // First click → handler closes over name='first'.
+    (c.querySelector('li') as HTMLElement).click();
+    expect(fired).toEqual(['first']);
+
+    // Same id, new payload — entry should be reused but the handler must be
+    // re-bound against the fresh item, not the stale 'first' snapshot.
+    items([{ id: 1, name: 'second' }]);
+    await tick();
+    (c.querySelector('li') as HTMLElement).click();
+    expect(fired).toEqual(['first', 'second']);
+  });
+});
+
+describe('list() — null/undefined attr resolver matches SSR (audit Pass 1 MED)', () => {
+  it('omits the attribute when the resolver returns null/undefined', async () => {
+    type Row = { id: number; title: string | null };
+    const items = state<Row[]>([{ id: 1, title: 'hi' }]);
+    const c = document.createElement('ul');
+    c.appendChild(
+      list<Row>('li', () => items(), {
+        attrs: { title: (r) => r.title as string },
+        key: (r) => r.id,
+      }),
+    );
+    await tick();
+    const li = c.querySelector('li') as HTMLElement;
+    expect(li.getAttribute('title')).toBe('hi');
+
+    // Resolver returns null — attribute should be REMOVED on update, not set
+    // to the literal string "null" (which is what the unguarded setAttribute
+    // path produced before the fix).
+    items([{ id: 1, title: null }]);
+    await tick();
+    expect(li.hasAttribute('title')).toBe(false);
+  });
+});
+
+describe('list() — dispose releases event listeners (audit Pass 1 MED)', () => {
+  it('releases bound event handlers on owner unmount', async () => {
+    type Row = { id: number };
+    const items = state<Row[]>([{ id: 1 }]);
+    const fired: number[] = [];
+    const root = document.createElement('div');
+    const handle = mount(
+      () =>
+        html`${list<Row>('li', () => items(), {
+          text: (r) => String(r.id),
+          events: { click: (r) => () => fired.push(r.id) },
+          key: (r) => r.id,
+        })}`,
+      root,
+    );
+    await tick();
+    const li = root.querySelector('li') as HTMLElement;
+    li.click();
+    expect(fired).toEqual([1]);
+
+    // After unmount, the bound handler must be removed — a subsequent click
+    // on the still-rooted node should not fire (we re-attach to document so
+    // the click can dispatch).
+    handle.unmount();
+    document.body.appendChild(li);
+    try {
+      li.click();
+      expect(fired).toEqual([1]); // unchanged
+    } finally {
+      li.remove();
+    }
+  });
+});
+
+describe('list() — throwing attr/event resolver isolation (audit Pass 3 MED)', () => {
+  it('isolates a throwing getAttrs resolver from sibling attrs', async () => {
+    type Row = { id: number };
+    const items = state<Row[]>([{ id: 1 }]);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const c = document.createElement('ul');
+      c.appendChild(
+        list<Row>('li', () => items(), {
+          attrs: {
+            'data-bad': () => {
+              throw new Error('boom');
+            },
+            'data-good': () => 'ok',
+          },
+          key: (r) => r.id,
+        }),
+      );
+      await tick();
+      const li = c.querySelector('li') as HTMLElement;
+      // Sibling attr survives the throw.
+      expect(li.getAttribute('data-good')).toBe('ok');
+      expect(li.hasAttribute('data-bad')).toBe(false);
+      expect(err).toHaveBeenCalled();
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it('isolates a throwing getEvents resolver from sibling events', async () => {
+    type Row = { id: number };
+    const items = state<Row[]>([{ id: 1 }]);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fired: string[] = [];
+    try {
+      const c = document.createElement('ul');
+      c.appendChild(
+        list<Row>('li', () => items(), {
+          events: {
+            click: () => {
+              throw new Error('boom');
+            },
+            mouseenter: () => () => fired.push('mouseenter'),
+          },
+          key: (r) => r.id,
+        }),
+      );
+      await tick();
+      const li = c.querySelector('li') as HTMLElement;
+      // The throwing event resolver does NOT prevent the sibling from binding.
+      li.dispatchEvent(new Event('mouseenter'));
+      expect(fired).toEqual(['mouseenter']);
+      expect(err).toHaveBeenCalled();
+    } finally {
+      err.mockRestore();
+    }
   });
 });

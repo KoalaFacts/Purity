@@ -92,6 +92,104 @@ describe('computed', () => {
     const doubled = compute(() => count() * 2);
     expect(doubled.peek()).toBe(6);
   });
+
+  it('converges (no stale CLEAN) when its body writes a source it just read', () => {
+    // Regression: a compute reads S once (snapshotting S.version), then writes
+    // S mid-run WITHOUT re-reading it. The write bumps S.version and
+    // markDirty()s the running compute (it is an observer of S), demoting it to
+    // DIRTY. runComputed used to then unconditionally force status = CLEAN,
+    // clobbering that DIRTY and stranding the node CLEAN with a stale
+    // sourceVersions snapshot (still the pre-write version). The node then
+    // returned its stale value on every subsequent read without re-running,
+    // because CLEAN short-circuits the pull. The fix re-runs the compute to a
+    // fixed point so it settles CLEAN with a snapshot consistent with S.
+    const s = state(0);
+    let runs = 0;
+    const c = compute(() => {
+      runs++;
+      const v = s(); // read once, snapshot version
+      if (v < 1) s(v + 1); // self-write; do NOT re-read s in this body
+      return v;
+    });
+
+    // First read drives the self-write (s 0→1) and re-runs to the fixed point:
+    // second pass reads s=1, 1 is not < 1, returns 1. Value is the stable
+    // result, not the stale 0, and it took more than one evaluation.
+    expect(c()).toBe(1);
+    expect(s()).toBe(1);
+    expect(runs).toBeGreaterThan(1);
+
+    // The node is now CLEAN with a consistent snapshot — a repeat read is a
+    // cache hit (no further re-run, no further write).
+    const runsAfterSettle = runs;
+    expect(c()).toBe(1);
+    expect(runs).toBe(runsAfterSettle);
+  });
+
+  it('stays reactive to external writes after a self-write run (pull)', () => {
+    // The stranded-CLEAN bug also broke later external writes via the pull
+    // path: a node left CLEAN with a stale snapshot would, on the next pull,
+    // see snapshot===version and never re-run. After the fix the snapshot is
+    // consistent, so a genuine external write is observed.
+    const s = state(0);
+    const c = compute(() => {
+      const v = s();
+      if (v < 1) s(v + 1);
+      return v;
+    });
+    expect(c()).toBe(1); // settled fixed point
+    s(9); // external write
+    expect(c()).toBe(9); // re-runs and picks up the new value
+  });
+
+  it('stays reactive to external writes after a self-write run (effect)', async () => {
+    // Second-order check: an effect observing such a compute must still fire
+    // when the underlying state is later written from the outside.
+    const s = state(0);
+    const c = compute(() => {
+      const v = s();
+      if (v < 1) s(v + 1);
+      return v;
+    });
+    const seen: number[] = [];
+    watch(() => {
+      seen.push(c());
+    });
+    await tick();
+    s(9);
+    await tick();
+    expect(seen[seen.length - 1]).toBe(9);
+  });
+
+  it('does not hang when a compute keeps writing a strictly-changing dep', () => {
+    // A pathological/buggy compute that never stabilises must be bounded, not
+    // hang the thread. The fixpoint loop caps re-runs and settles CLEAN after
+    // logging, so the call returns.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = state(0);
+    const c = compute(() => {
+      const v = s();
+      s(v + 1); // always writes a new value — never converges
+      return v;
+    });
+    expect(() => c()).not.toThrow();
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it('does not overflow the stack when a compute reads itself', () => {
+    // Regression (MED): a self-referential compute used to recurse without
+    // bound — readNode saw status !== CLEAN and re-entered updateValue →
+    // runComputed → fn() → readNode → … → RangeError. runComputed now marks
+    // the node CLEAN before invoking fn(), so the recursive self-read takes
+    // the cache path (returns the previous value) instead of recursing.
+    let c: ReturnType<typeof compute<number>> | undefined;
+    c = compute(() => {
+      const prev = c ? c() : 0;
+      return prev + 1;
+    });
+    expect(() => c!()).not.toThrow();
+  });
 });
 
 describe('watch (auto-track)', () => {
@@ -285,6 +383,29 @@ describe('watch re-entrancy guard', () => {
     // multiple effects via shared state. A direct test of that scenario
     // lives in the "reactivity semantics" suite below.
     expect(true).toBe(true);
+  });
+
+  it('does not corrupt the depth counter when the guard trips (guard still works on later runs)', () => {
+    // Regression: the guard used to reset effectDepth = 0 before throwing.
+    // The throw escapes before this frame's finally runs, but every enclosing
+    // runComputed frame still decrements effectDepth as the stack unwinds.
+    // Resetting to 0 first therefore left the counter deeply negative after a
+    // ~100-deep unwind, so the SECOND deep recursion would never re-trip the
+    // guard — uncapped recursion silently allowed. The fix decrements only
+    // this frame's own increment, keeping the counter balanced.
+
+    // Nested watch() inside an effect body re-runs synchronously through
+    // _effect → updateValue → runComputed, so this drives effectDepth up.
+    const recur = (n: number): void => {
+      if (n > 0) watch(() => recur(n - 1));
+    };
+
+    // First deep recursion trips the guard and throws.
+    expect(() => watch(() => recur(150))).toThrow(/Maximum effect depth/);
+
+    // With a corrupted (negative) counter the second run would complete
+    // without throwing. A healthy counter re-trips the guard.
+    expect(() => watch(() => recur(150))).toThrow(/Maximum effect depth/);
   });
 });
 

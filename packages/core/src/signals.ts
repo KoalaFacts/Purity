@@ -303,7 +303,14 @@ function runComputed(node: ComputedNode): void {
   // a feedback loop and bail.
   if (node.isEffect) {
     if (++effectDepth > MAX_EFFECT_DEPTH) {
-      effectDepth = 0;
+      // Undo this frame's own increment. We throw BEFORE entering the
+      // try/finally below, so this frame's finally never runs and would not
+      // decrement. Every ENCLOSING runComputed frame, however, does run its
+      // finally as the stack unwinds and decrements its own increment. So we
+      // must balance exactly this one increment here — not reset to 0, which
+      // would leave the counter ~MAX_EFFECT_DEPTH negative after the unwind
+      // and silently disable the guard for all future runs.
+      effectDepth--;
       throw new Error(
         '[Purity] Maximum effect depth exceeded. ' +
           'A watch/effect callback is likely modifying the signal it depends on.',
@@ -313,28 +320,67 @@ function runComputed(node: ComputedNode): void {
 
   const prevListener = activeListener;
   const prevIdx = activeSourceIdx;
-  activeListener = node;
-  activeSourceIdx = 0;
 
   let nextValue: unknown;
-  try {
-    nextValue = node.fn();
-  } finally {
-    // Truncate stale source slots. Anything past activeSourceIdx is no
-    // longer read by this fn — drop the producer→consumer link.
-    const consumed = activeSourceIdx;
-    const sources = node.sources;
-    if (sources !== null && sources.length > consumed) {
-      for (let i = consumed; i < sources.length; i++) {
-        removeObserver(sources[i], node, i);
+  // Re-run-to-fixpoint loop. For a pure compute this runs exactly once.
+  //
+  // A compute that reads a source S and then writes S in the SAME fn body
+  // demotes itself: the write's markDirty() flips this node's status to DIRTY
+  // mid-run (the node is an observer of S). The old code then force-settled
+  // CLEAN, stranding the node with a sourceVersions snapshot that no longer
+  // matches S — permanently un-reactive (it never re-ran on a later pull, and
+  // returned a stale value). Instead we settle CLEAN optimistically before
+  // fn(), and if the body demoted us back to DIRTY we re-run to converge on a
+  // fixed point so the final snapshot is consistent with the value. Capped at
+  // MAX_EFFECT_DEPTH to bound a body that writes a strictly-changing source on
+  // every pass (a user bug — computes are meant to be pure).
+  let runGuard = 0;
+  for (;;) {
+    activeListener = node;
+    activeSourceIdx = 0;
+    // Optimistically CLEAN before running. A re-entrant self-write's
+    // markDirty() then observes us as CLEAN and demotes us to DIRTY, which we
+    // detect after fn() returns.
+    node.status = STATUS_CLEAN;
+
+    try {
+      nextValue = node.fn();
+    } finally {
+      // Truncate stale source slots. Anything past activeSourceIdx is no
+      // longer read by this fn — drop the producer→consumer link.
+      const consumed = activeSourceIdx;
+      const sources = node.sources;
+      if (sources !== null && sources.length > consumed) {
+        for (let i = consumed; i < sources.length; i++) {
+          removeObserver(sources[i], node, i);
+        }
+        sources.length = consumed;
+        node.sourceVersions!.length = consumed;
+        node.observerSlots!.length = consumed;
       }
-      sources.length = consumed;
-      node.sourceVersions!.length = consumed;
-      node.observerSlots!.length = consumed;
+      activeListener = prevListener;
+      activeSourceIdx = prevIdx;
+      // Decrement on every exit path of this iteration (including a throw out
+      // of fn()) so the depth counter stays balanced. Effects never loop here
+      // (they break right below), so this runs exactly once per effect run.
+      if (node.isEffect) effectDepth--;
     }
-    activeListener = prevListener;
-    activeSourceIdx = prevIdx;
-    if (node.isEffect) effectDepth--;
+
+    // Effects use markDirty's re-enqueue + the flush CLEAN-skip for their
+    // "run once on self-write" semantics, so they never loop here. A compute
+    // demoted mid-run must converge before it settles, so its snapshot stays
+    // consistent with the value it exposes.
+    if (node.isEffect || node.status === STATUS_CLEAN) break;
+    if (++runGuard > MAX_EFFECT_DEPTH) {
+      // Body keeps invalidating itself. Settle CLEAN to stop the loop and
+      // surface the misuse rather than hang.
+      node.status = STATUS_CLEAN;
+      console.error(
+        '[Purity] compute() did not stabilise: its body keeps writing a ' +
+          'source it reads. Computes must be pure (no writes to their own deps).',
+      );
+      break;
+    }
   }
 
   // Effect bodies may return a cleanup function; capture it and don't treat
@@ -348,7 +394,12 @@ function runComputed(node: ComputedNode): void {
 
   const changed = !Object.is(node.value, nextValue);
   node.value = nextValue;
-  node.status = STATUS_CLEAN;
+  // Effects: force CLEAN. An effect that synchronously writes its own dep was
+  // demoted to DIRTY and re-enqueued by markDirty; the designed semantics are
+  // "run once, the queued re-run is skipped because status is now CLEAN" (the
+  // MAX_EFFECT_DEPTH guard backstops genuine cross-effect feedback loops).
+  // Computes already converged to CLEAN in the loop above.
+  if (node.isEffect) node.status = STATUS_CLEAN;
   if (changed) {
     node.version++;
     // Direct observers reading us through the CHECK→CLEAN fast path were

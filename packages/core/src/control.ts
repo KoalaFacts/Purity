@@ -1629,6 +1629,15 @@ export function listSSR<T>(
   textOrOptions: ((item: T, index: number) => string) | ListSSROptions<T>,
   _keyFn?: (item: T, index: number) => unknown,
 ): SSRHtml {
+  // Validate the tag name. The codegen runs every literal tag through
+  // assertSafeName; the cycle-73 fix applied LIST_SAFE_ATTR_NAME to
+  // attrs-object keys. The `tag` parameter was the remaining gap —
+  // `listSSR(userTag, …)` with `userTag = 'div><script>alert(1)</script><div'`
+  // would escape the tag context and inject markup. Same regex shape.
+  if (!LIST_SAFE_ATTR_NAME.test(tag)) {
+    console.warn(`[Purity] listSSR: invalid tag name ${JSON.stringify(tag)}; emitting empty list.`);
+    return markSSRHtml('<!--l--><!--/l-->');
+  }
   const items = (typeof listAccessor === 'function' ? listAccessor() : listAccessor) || [];
   let getText: ((item: T, index: number) => string) | undefined;
   let getClass: ((item: T, index: number) => string) | undefined;

@@ -430,6 +430,22 @@ describe('SSR control flow', () => {
     // chars are escaped; in both cases the script tag literal is absent.
     expect(html).not.toContain('<script>alert(1)</script>');
   });
+
+  it('listSSR rejects hostile tag NAMES (no XSS via tag arg)', () => {
+    // Sibling to the attrs-key fix: the `tag` parameter was raw-
+    // interpolated into the opening + closing tag positions, so a
+    // hostile string escapes the tag context and injects markup.
+    // listSSR(userTag, …) is reachable when the tag comes from a
+    // dynamic dispatch / loop over manifest entries.
+    const out = listSSR('li><script>alert(1)</script><li', [{ id: 1 }], {
+      text: (item) => String(item.id),
+    });
+    const html = out.__purity_ssr_html__;
+    expect(html).not.toContain('<script>alert(1)</script>');
+    // The hostile tag must be dropped — emit empty list rather than
+    // half-rendered markup.
+    expect(html).toBe('<!--l--><!--/l-->');
+  });
 });
 
 describe('generateSSR — integration with control flow', () => {

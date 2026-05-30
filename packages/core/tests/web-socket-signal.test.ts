@@ -192,6 +192,32 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('redacts secrets in the URL before logging (no access_token / userinfo leak)', () => {
+    // SSE/WS auth via `?access_token=…` is common (they can't set
+    // headers). Pre-fix `label = String(url)` interpolated the full
+    // URL — including the token — into every console.warn. Production
+    // log sinks then captured it. Redact: keep protocol + host + path
+    // only.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sig = webSocketSignal<number>('ws://user:pw@host/api?access_token=SECRET', {
+      initialValue: 0,
+      validate: isNumber,
+    });
+    instances[0].fireOpen();
+    instances[0].fireMessage('"bad"');
+    expect(sig()).toBe(0);
+    // Logs must NOT contain the secret query string or userinfo.
+    for (const call of warnSpy.mock.calls) {
+      const line = call.map(String).join(' ');
+      expect(line).not.toContain('SECRET');
+      expect(line).not.toContain('access_token');
+      expect(line).not.toContain('user:pw');
+    }
+    // But the label should still be useful (protocol + host + path).
+    expect(warnSpy.mock.calls[0][0]).toContain('ws://host/api');
+    warnSpy.mockRestore();
+  });
+
   it('drops messages that fail to parse with a console.warn', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const sig = webSocketSignal<number>('/ws', { initialValue: 0, validate: isNumber });

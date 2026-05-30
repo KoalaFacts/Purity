@@ -21,6 +21,7 @@ import { getCurrentContext } from './component.ts';
 import {
   type LiveReconnectPolicy,
   type LiveValidator,
+  redactUrl,
   wireLiveReconnect,
 } from './event-source-signal.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
@@ -83,7 +84,9 @@ export function webSocketSignal<T>(
   const parse = options.parse ?? ((raw: MessageEvent['data']) => JSON.parse(raw as string));
   const reconnect = options.reconnect ?? 'on-visible';
   const validate = options.validate;
-  const label = String(url);
+  // Use the redacted label for ALL diagnostic console.warn paths so
+  // `?access_token=…` and `user:pw@` don't leak into log sinks.
+  const label = redactUrl(url);
 
   let ws: WebSocket | null = null;
   const onOpen = (): void => {

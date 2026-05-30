@@ -57,6 +57,44 @@ export interface EventSourceSignalOptions<T> {
 }
 
 /**
+ * Strip secrets from a URL before logging. SSE/WS commonly authenticate
+ * via `?access_token=…` (they can't set request headers per spec), and
+ * userinfo (`user:pw@`) is similarly sensitive. Every error path of
+ * eventSourceSignal / webSocketSignal funnels through `label` into
+ * `console.warn`, which then lands in dev consoles, log sinks, and
+ * sometimes monitoring backends — leaking auth past the trust boundary
+ * the validator predicate is supposed to enforce. Drop query, hash,
+ * and userinfo; keep protocol + host + path so the label is still
+ * useful for diagnosis.
+ *
+ * @internal
+ */
+export function redactUrl(url: string | URL): string {
+  // URL instance: always absolute by construction — redact directly.
+  if (typeof url !== 'string') {
+    return `${url.protocol}//${url.host}${url.pathname}`;
+  }
+  // For a string input, distinguish absolute from relative without
+  // letting a dummy base leak into the label:
+  //  - Absolute (has scheme://): parse and redact protocol+host+path.
+  //  - Relative (/path, ./path, no scheme): strip ?query and #hash
+  //    in-place so a `?access_token=…` is removed but the path stays.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) {
+    try {
+      const u = new URL(url);
+      return `${u.protocol}//${u.host}${u.pathname}`;
+    } catch {
+      return url;
+    }
+  }
+  // Relative: trim at the first `?` or `#`.
+  const q = url.indexOf('?');
+  const h = url.indexOf('#');
+  const cut = q === -1 ? h : h === -1 ? q : Math.min(q, h);
+  return cut === -1 ? url : url.slice(0, cut);
+}
+
+/**
  * Wire the standard "open while visible, refresh on bfcache" lifecycle.
  * Shared between eventSourceSignal and webSocketSignal so both honour
  * identical reconnect semantics.
@@ -129,7 +167,9 @@ export function eventSourceSignal<T>(
   const reconnect = options.reconnect ?? 'on-visible';
   const validate = options.validate;
   const withCredentials = options.withCredentials === true;
-  const label = String(url);
+  // Use the redacted label for ALL diagnostic console.warn paths so
+  // `?access_token=…` and `user:pw@` don't leak into log sinks.
+  const label = redactUrl(url);
 
   let es: EventSource | null = null;
   const onMessage = (e: MessageEvent): void => {

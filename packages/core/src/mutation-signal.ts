@@ -12,6 +12,7 @@
 // Apps observing short-lived nodes should use the raw API.
 // ---------------------------------------------------------------------------
 
+import { getCurrentContext } from './component.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
@@ -48,5 +49,12 @@ export function mutationSignal(
     inner(records);
   });
   observer.observe(target, options ?? { childList: true });
+  // MutationObserver holds a STRONG ref to its target (callout at top of
+  // file), so without this, calling mutationSignal() inside a component
+  // pinned the target node alive past component unmount. Auto-disconnect
+  // on the surrounding component's unmount; module-scope calls keep the
+  // documented "lifetime = page" semantics.
+  const ctx = getCurrentContext();
+  if (ctx) (ctx.disposers ??= []).push(() => observer.disconnect());
   return compute(() => inner());
 }

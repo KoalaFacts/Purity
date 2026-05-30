@@ -8,6 +8,7 @@
 //         from each entry's `contentRect`.
 // ---------------------------------------------------------------------------
 
+import { getCurrentContext } from './component.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
@@ -54,5 +55,10 @@ export function resizeSignal(
     if (entry) inner(entry.contentRect);
   });
   observer.observe(target, options);
+  // Auto-disconnect on the surrounding component's unmount; without this
+  // a resizeSignal() inside a component left the observer alive until the
+  // accessor was GC'd. Module-scope calls keep "lifetime = page" semantics.
+  const ctx = getCurrentContext();
+  if (ctx) (ctx.disposers ??= []).push(() => observer.disconnect());
   return compute(() => inner());
 }

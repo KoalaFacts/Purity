@@ -17,6 +17,7 @@
 // ---------------------------------------------------------------------------
 
 import { bfcacheRestoreSignal } from './bfcache-restore-signal.ts';
+import { getCurrentContext } from './component.ts';
 import { pageVisibilitySignal } from './page-visibility-signal.ts';
 import { compute, state, watch, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
@@ -185,5 +186,13 @@ export function eventSourceSignal<T>(
   };
 
   wireLiveReconnect(reconnect, open, close);
+  // Auto-close on the surrounding component's unmount. Without this, every
+  // eventSourceSignal() call inside a component opened a long-lived TCP
+  // connection that survived unmount (the `wireLiveReconnect` watches
+  // auto-dispose, but they only flip open/close on lifecycle changes —
+  // they don't close the socket on owner unmount). Module-scope callers
+  // keep "lifetime = page" semantics.
+  const ctx = getCurrentContext();
+  if (ctx) (ctx.disposers ??= []).push(close);
   return compute(() => inner());
 }

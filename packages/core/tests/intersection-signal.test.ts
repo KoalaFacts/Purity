@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { intersectionSignal, watch } from '../src/index.ts';
+import { intersectionSignal, mount, watch } from '../src/index.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';
 
@@ -139,5 +139,34 @@ describe('intersectionSignal — client (ADR 0040)', () => {
       {} as IntersectionObserver,
     );
     expect(sig()).toBe(true);
+  });
+
+  it('auto-disconnects the observer when the surrounding component unmounts', () => {
+    // intersectionSignal() called inside a component must register a
+    // disposer that disconnects the underlying IntersectionObserver on
+    // unmount. Without it the observer outlived the component and pinned
+    // the captured signal-graph closure until the accessor was GC'd.
+    let disconnects = 0;
+    const OrigMockIO = (globalThis as { IntersectionObserver: typeof MockIO }).IntersectionObserver;
+    class CountingIO extends OrigMockIO {
+      disconnect(): void {
+        disconnects++;
+        super.disconnect();
+      }
+    }
+    (globalThis as { IntersectionObserver: unknown }).IntersectionObserver = CountingIO;
+    try {
+      const target = document.createElement('div');
+      const host = document.createElement('div');
+      const { unmount } = mount(() => {
+        intersectionSignal(target);
+        return document.createComment('m');
+      }, host);
+      expect(disconnects).toBe(0);
+      unmount();
+      expect(disconnects).toBe(1);
+    } finally {
+      (globalThis as { IntersectionObserver: unknown }).IntersectionObserver = OrigMockIO;
+    }
   });
 });

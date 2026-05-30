@@ -9,6 +9,7 @@
 //         (which IntersectionObserver fires on observe()) updates it.
 // ---------------------------------------------------------------------------
 
+import { getCurrentContext } from './component.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
@@ -47,5 +48,13 @@ export function intersectionSignal(
     if (entry) inner(entry.isIntersecting);
   }, options);
   observer.observe(target);
+  // Without this, calling intersectionSignal() inside a component left the
+  // observer alive until the accessor itself was GC'd — and the accessor's
+  // sources retain the observer's closure indefinitely. Auto-disconnect on
+  // the surrounding component's unmount, matching how watch() + cycle-14
+  // localSignal auto-dispose. Module-scope calls have no ctx and keep the
+  // documented "lifetime = page" semantics.
+  const ctx = getCurrentContext();
+  if (ctx) (ctx.disposers ??= []).push(() => observer.disconnect());
   return compute(() => inner());
 }

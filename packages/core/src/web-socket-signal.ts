@@ -17,6 +17,7 @@
 // options.initialValue, with no-op send() and readyState() === 'closed'.
 // ---------------------------------------------------------------------------
 
+import { getCurrentContext } from './component.ts';
 import {
   type LiveReconnectPolicy,
   type LiveValidator,
@@ -160,6 +161,14 @@ export function webSocketSignal<T>(
   };
 
   wireLiveReconnect(reconnect, open, close);
+
+  // Auto-close on the surrounding component's unmount. Without this,
+  // every webSocketSignal() call inside a component opened a long-lived
+  // socket that survived unmount (wireLiveReconnect's watches handle
+  // lifecycle changes but don't close the socket on owner unmount).
+  // Module-scope callers keep "lifetime = page" semantics.
+  const ctx = getCurrentContext();
+  if (ctx) (ctx.disposers ??= []).push(close);
 
   const accessor = compute(() => inner()) as WebSocketSignal<T>;
   accessor.send = (data: string | Blob | BufferSource): void => {

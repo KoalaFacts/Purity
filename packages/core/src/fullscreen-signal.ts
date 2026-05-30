@@ -62,6 +62,24 @@ export function fullscreenSignal(): ComputedAccessor<Element | null> {
     return compute(() => null as Element | null);
   }
   if (singleton) return singleton;
+  // Defensive: if a prior bind left a stale handler reachable (the
+  // reset helper was not called between two `fullscreenSignal()`
+  // invocations from different test files, for example), strip it
+  // before we wire the new one so the document never has two live
+  // handlers feeding state at once.
+  if (onFullscreenChange) {
+    const stale = onFullscreenChange;
+    const staleEvents = boundEvents ?? FULLSCREEN_EVENTS;
+    for (let i = 0; i < staleEvents.length; i++) {
+      try {
+        document.removeEventListener(staleEvents[i], stale);
+      } catch {
+        /* noop */
+      }
+    }
+    onFullscreenChange = null;
+    boundEvents = null;
+  }
   const inner = state<Element | null>(readFullscreenElement());
   // Isolate listener throws — a userland Element subclass with a throwing
   // getter must not crash the event loop or leave the signal stuck.
@@ -79,15 +97,6 @@ export function fullscreenSignal(): ComputedAccessor<Element | null> {
   onFullscreenChange = handler;
   boundEvents = [];
   singleton = compute(() => inner());
-  // Defensive: if a prior partial bind left listeners attached under the
-  // same handler ref, remove them first so we never double-bind.
-  for (let i = 0; i < FULLSCREEN_EVENTS.length; i++) {
-    try {
-      document.removeEventListener(FULLSCREEN_EVENTS[i], handler);
-    } catch {
-      /* noop */
-    }
-  }
   try {
     for (let i = 0; i < FULLSCREEN_EVENTS.length; i++) {
       const name = FULLSCREEN_EVENTS[i];

@@ -910,6 +910,117 @@ describe('mountIslands() — audit-v2: matchMedia/requestIdleCallback this-bindi
   });
 });
 
+// ---------------------------------------------------------------------------
+// Bug #5 — IntersectionObserver leak on detached island wrappers
+// ---------------------------------------------------------------------------
+describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', () => {
+  // Pre-fix: visible-triggered islands installed an IntersectionObserver
+  // on the wrapper but never detected wrapper detachment. If the parent
+  // removed the wrapper before it scrolled into view, the IO target
+  // kept the element alive and the observer stayed armed forever — a
+  // leak. Post-fix: a MutationObserver on the parent unobserves the IO
+  // and disconnects both observers when the wrapper goes missing.
+
+  type Cb = (entries: { isIntersecting: boolean; target: Element }[], obs: unknown) => void;
+  type SpyIO = {
+    _cb: Cb;
+    observed: Element[];
+    unobserved: Element[];
+    disconnected: number;
+    observe(el: Element): void;
+    unobserve(el: Element): void;
+    disconnect(): void;
+  };
+  const ios: SpyIO[] = [];
+  let originalIO: typeof IntersectionObserver | undefined;
+
+  beforeEach(() => {
+    ios.length = 0;
+    originalIO = (globalThis as { IntersectionObserver?: typeof IntersectionObserver })
+      .IntersectionObserver;
+    (globalThis as Record<string, unknown>).IntersectionObserver = function (
+      this: unknown,
+      cb: Cb,
+    ): SpyIO {
+      const inst: SpyIO = {
+        _cb: cb,
+        observed: [],
+        unobserved: [],
+        disconnected: 0,
+        observe(el) {
+          this.observed.push(el);
+        },
+        unobserve(el) {
+          this.unobserved.push(el);
+        },
+        disconnect() {
+          this.disconnected++;
+        },
+      };
+      ios.push(inst);
+      return inst;
+    } as unknown as typeof IntersectionObserver;
+  });
+
+  afterEach(() => {
+    if (originalIO) {
+      (globalThis as Record<string, unknown>).IntersectionObserver = originalIO;
+    } else {
+      delete (globalThis as Record<string, unknown>).IntersectionObserver;
+    }
+    document.body.innerHTML = '';
+  });
+
+  it('unobserves + disconnects the IO when the wrapper is removed before intersecting', async () => {
+    const View = (): unknown => html`<span>x</span>`;
+    const host = makeWrapper(1, 'visible', '<span>x</span>');
+    mountIslands([island(View, { hydrate: 'visible' })]);
+    await tick();
+
+    const io = ios[0];
+    expect(io).toBeDefined();
+    const wrapper = host.querySelector('purity-island')!;
+    expect(io.observed).toContain(wrapper);
+    expect(io.disconnected).toBe(0);
+
+    // Detach the wrapper from its parent before any intersection fires.
+    wrapper.remove();
+    // jsdom MutationObservers fire on a microtask — flush.
+    for (let i = 0; i < 5; i++) await tick();
+
+    // The fix: unobserve was called for the wrapper AND the observer
+    // was disconnected (no more armed reference).
+    expect(io.unobserved).toContain(wrapper);
+    expect(io.disconnected).toBeGreaterThanOrEqual(1);
+    host.remove();
+  });
+
+  it('does not double-fire when the wrapper detaches AFTER it has already intersected', async () => {
+    // Make sure the detach-watcher's re-entrancy guard cooperates with
+    // the IO-callback path: an intersection that already disposed the
+    // observers must not be re-disposed when the wrapper is later
+    // removed (and the cleanup must not double-call run()).
+    const onMount = vi.fn();
+    const View = (): unknown => html`<span>x</span>`;
+    const host = makeWrapper(1, 'visible', '<span>x</span>');
+    mountIslands([island(View, { hydrate: 'visible' })], { onMount });
+    await tick();
+
+    const io = ios[0];
+    const wrapper = host.querySelector('purity-island')!;
+    io._cb([{ isIntersecting: true, target: wrapper }], io);
+    for (let i = 0; i < 3; i++) await tick();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    // Now detach — the MutationObserver fires, but the guard prevents
+    // a second tear-down round and (critically) does not re-run().
+    wrapper.remove();
+    for (let i = 0; i < 5; i++) await tick();
+    expect(onMount).toHaveBeenCalledTimes(1);
+    host.remove();
+  });
+});
+
 describe('mountIslands() — audit-v2: media re-entrant guard', () => {
   let host: HTMLElement | null = null;
   let originalMM: typeof matchMedia | undefined;

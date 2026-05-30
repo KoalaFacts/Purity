@@ -83,11 +83,21 @@ type Branded<V extends (...args: never[]) => unknown> = V & {
 // this audit-local (rather than recomputing from the type) means a bad
 // `options.hydrate` (e.g. from untrusted props JSON) can't slip a foreign
 // data-pi-trigger attribute through escAttr into the wrapper.
-const VALID_TRIGGERS: ReadonlySet<string> = new Set(['load', 'idle', 'visible', 'interact']);
+//
+// EXPORTED so the client-side `readTrigger` in `island-mount.ts` references
+// the SAME set instance — Bug #14: if SSR and client validators drift the
+// security boundary moves silently. Single source of truth eliminates that
+// risk by construction.
+export const ISLAND_TRIGGERS: ReadonlySet<string> = new Set([
+  'load',
+  'idle',
+  'visible',
+  'interact',
+]);
 
 function normalizeTrigger(raw: unknown): IslandTrigger {
   if (typeof raw !== 'string') return 'load';
-  if (VALID_TRIGGERS.has(raw)) return raw as IslandTrigger;
+  if (ISLAND_TRIGGERS.has(raw)) return raw as IslandTrigger;
   if (raw.startsWith('media:') && raw.length > 'media:'.length) return raw as IslandTrigger;
   return 'load';
 }

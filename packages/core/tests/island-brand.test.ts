@@ -11,7 +11,13 @@
 import { describe, expect, it } from 'vitest';
 import { html } from '../src/compiler/compile.ts';
 import { mount } from '../src/component.ts';
-import { getIslandBrand, island, isIsland, type IslandOptions } from '../src/island.ts';
+import {
+  getIslandBrand,
+  ISLAND_TRIGGERS,
+  island,
+  isIsland,
+  type IslandOptions,
+} from '../src/island.ts';
 import { state } from '../src/signals.ts';
 import {
   popSSRRenderContext,
@@ -292,5 +298,67 @@ describe('island() — Phase 1 CSR passthrough', () => {
     } finally {
       host.remove();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bug #14 — single source of truth for the trigger allow-list.
+// ---------------------------------------------------------------------------
+describe('island() — audit-v2 Bug #14: shared trigger allow-list', () => {
+  it('exports the allow-list as a frozen-ish ReadonlySet with the canonical literal triggers', () => {
+    // Literal triggers documented in the type union (sans the
+    // string-templated `media:${string}`) — these MUST be present in the
+    // exported allow-list so SSR + client agree.
+    expect(ISLAND_TRIGGERS.has('load')).toBe(true);
+    expect(ISLAND_TRIGGERS.has('idle')).toBe(true);
+    expect(ISLAND_TRIGGERS.has('visible')).toBe(true);
+    expect(ISLAND_TRIGGERS.has('interact')).toBe(true);
+  });
+
+  it('is referenced (not redefined) by island-mount.ts — single source of truth', async () => {
+    // Pre-fix: island-mount.ts had its own literal switch
+    // (`raw === 'load' || raw === 'idle' || …`) so a new trigger added
+    // to island.ts wouldn't be honoured on the client until the
+    // duplicate was updated too — the security boundary could drift.
+    // Post-fix: island-mount.ts imports ISLAND_TRIGGERS and dispatches
+    // via `.has(raw)`. We assert this structurally on the source so the
+    // duplicate can't quietly come back.
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const src = fs.readFileSync(
+      path.resolve(__dirname, '../src/island-mount.ts'),
+      'utf8',
+    );
+    // Imports the shared constant from island.ts.
+    expect(src).toMatch(/from '\.\/island\.ts'/);
+    expect(src).toMatch(/ISLAND_TRIGGERS/);
+    // No re-implementation of the literal allow-list inside readTrigger.
+    expect(src).not.toMatch(/raw === 'load' \|\| raw === 'idle'/);
+  });
+
+  it('extending ISLAND_TRIGGERS via SSR normalisation is visible to client readTrigger', async () => {
+    // Behavioural cross-check: the SSR-side `normalizeTrigger` accepts
+    // any value in the shared set. The client-side `readTrigger` (used
+    // when reading data-pi-trigger off the wrapper) MUST accept the
+    // same values without warning. Because both paths now read from
+    // ISLAND_TRIGGERS, all four canonical literals round-trip cleanly.
+    const { mountIslands } = await import('../src/island-mount.ts');
+    const View = () => html`<span>x</span>`;
+    const warn = (await import('vitest')).vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => {});
+    for (const t of ['load', 'idle', 'visible', 'interact'] as const) {
+      const host = document.createElement('div');
+      host.innerHTML = `<purity-island data-pi-id="1" data-pi-trigger="${t}" style="display:contents"><span>x</span></purity-island>`;
+      document.body.appendChild(host);
+      mountIslands([island(View, { hydrate: t })], { root: host });
+      host.remove();
+    }
+    // None of the canonical literal triggers should have warned about
+    // "unknown data-pi-trigger" — that warning indicates drift.
+    for (const call of warn.mock.calls) {
+      expect(String(call[0])).not.toContain('unknown data-pi-trigger');
+    }
+    warn.mockRestore();
   });
 });

@@ -42,7 +42,7 @@
 // ---------------------------------------------------------------------------
 
 import { hydrate } from './component.ts';
-import { getIslandBrand, type IslandTrigger } from './island.ts';
+import { getIslandBrand, ISLAND_TRIGGERS, type IslandTrigger } from './island.ts';
 
 const WRAPPER_SELECTOR = 'purity-island[data-pi-id]';
 
@@ -172,7 +172,12 @@ export function mountIslands(
 function readTrigger(el: Element): IslandTrigger {
   const raw = el.getAttribute('data-pi-trigger');
   if (raw == null || raw === '') return 'load';
-  if (raw === 'load' || raw === 'idle' || raw === 'visible' || raw === 'interact') return raw;
+  // Bug #14: reference the SAME allow-list `island.ts` uses for SSR
+  // normalisation. Pre-fix, both sides duplicated the literal list — a
+  // change on one side silently moved the security boundary. Importing
+  // ISLAND_TRIGGERS makes drift impossible: a new trigger added to the
+  // server allow-list is automatically honoured on the client.
+  if (ISLAND_TRIGGERS.has(raw)) return raw as IslandTrigger;
   // Require a non-empty media query suffix — mirrors `normalizeTrigger`
   // in island.ts, so a tampered `data-pi-trigger="media:"` (empty
   // query) can't reach `matchMedia('')` via this client path.
@@ -357,16 +362,48 @@ function waitForVisible(el: Element, run: () => void): void {
     waitForLoad(run);
     return;
   }
+  // Re-entrancy guard shared by the IO callback and the parent-detach
+  // watcher below: whichever wins races to fire still runs disposal once.
+  let fired = false;
+  let mo: MutationObserver | null = null;
   const obs = new Ctor((entries, observer) => {
     for (let i = 0; i < entries.length; i++) {
       if (entries[i].isIntersecting) {
+        if (fired) return;
+        fired = true;
         observer.disconnect();
+        if (mo) mo.disconnect();
         run();
         return;
       }
     }
   });
   obs.observe(el);
+
+  // Bug #5: without parent-detach detection, a `<purity-island>` removed
+  // from the DOM before it intersects leaks the IntersectionObserver
+  // target — the observer stays armed and the wrapper can't be GC'd.
+  // Watch the parent's childList; when our wrapper goes missing, tear
+  // the IO down. Use the parent (not the element itself) because once an
+  // element is detached its own MutationObserver fires nothing useful.
+  // If there is no parent (mount-before-attach), skip the watcher — the
+  // GC pressure isn't there until the element has lived in a tree.
+  const MO = (globalThis as { MutationObserver?: typeof MutationObserver }).MutationObserver;
+  const parent = el.parentNode;
+  if (typeof MO === 'function' && parent) {
+    mo = new MO(() => {
+      // Cheap identity check on every mutation batch beats walking the
+      // records — we only care that the wrapper is still parented here.
+      if (el.parentNode !== parent) {
+        if (fired) return;
+        fired = true;
+        obs.unobserve(el);
+        obs.disconnect();
+        if (mo) mo.disconnect();
+      }
+    });
+    mo.observe(parent, { childList: true });
+  }
 }
 
 function waitForIdle(run: () => void): void {

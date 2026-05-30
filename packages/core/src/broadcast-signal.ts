@@ -27,6 +27,11 @@ export type BroadcastValidator<T> = (value: unknown) => value is T;
 
 const instances: Map<string, StateAccessor<unknown>> = new Map();
 const initialDefaults: Map<string, unknown> = new Map();
+// Track the underlying BroadcastChannel for each cached instance so that
+// `_resetBroadcastSignalRegistry()` can close them — otherwise the listener
+// + native channel leak and a subsequent `broadcastSignal(name)` opens a
+// second channel for the same name (double-init listener storm).
+const channels: Map<string, BroadcastChannel> = new Map();
 
 /**
  * Cross-tab reactive state over `BroadcastChannel` (ADR 0039).
@@ -63,6 +68,19 @@ export function broadcastSignal<T>(
   defaultValue: T,
   validate: BroadcastValidator<T>,
 ): StateAccessor<T> {
+  // Fail fast on bad arguments — otherwise a non-function validator throws
+  // inside the message listener on every cross-tab post, which surfaces as
+  // an opaque "validator threw" warning storm.
+  if (typeof channel !== 'string' || channel.length === 0) {
+    throw new TypeError(
+      `[purity] broadcastSignal: 'channel' must be a non-empty string (got ${typeof channel}).`,
+    );
+  }
+  if (typeof validate !== 'function') {
+    throw new TypeError(
+      `[purity] broadcastSignal('${channel}'): 'validate' must be a type-predicate function. See ADR 0039.`,
+    );
+  }
   if (getSSRRenderContext() !== null) {
     return state(defaultValue);
   }
@@ -110,28 +128,47 @@ export function broadcastSignal<T>(
     }
   };
 
+  // Skip the post when the new value is identical to what we already hold
+  // (Object.is). The BroadcastChannel spec doesn't echo to the sender, but
+  // peer tabs would still forward this no-op back through their own writes,
+  // so a self-equal set on the hot path is pure cost — and a stream of
+  // them (e.g. mousemove → set) becomes a cross-tab message storm.
   const accessor = ((...args: [T | ((current: T) => T)] | []): T => {
     if (args.length === 0) return inner();
     const value = args[0];
-    const next =
-      typeof value === 'function' ? (value as (current: T) => T)(inner.peek()) : (value as T);
+    const prev = inner.peek();
+    const next = typeof value === 'function' ? (value as (current: T) => T)(prev) : (value as T);
     inner(next);
-    post(next);
+    if (!Object.is(prev, next)) post(next);
     return next;
   }) as StateAccessor<T>;
   (accessor as unknown as { get: () => T }).get = () => inner();
   (accessor as unknown as { set: (v: T) => void }).set = (v: T) => {
+    const prev = inner.peek();
     inner(v);
-    post(v);
+    if (!Object.is(prev, v)) post(v);
   };
   (accessor as unknown as { peek: () => T }).peek = () => inner.peek();
 
   instances.set(channel, accessor as StateAccessor<unknown>);
+  channels.set(channel, bc);
   return accessor;
 }
 
-/** @internal — test helper. Clears the per-channel instance cache. */
+/** @internal — test helper. Clears the per-channel instance cache and
+ *  closes every opened BroadcastChannel so the message listener doesn't
+ *  outlive its owning signal (and so the next `broadcastSignal(name)`
+ *  doesn't end up with two live native channels for the same name). */
 export function _resetBroadcastSignalRegistry(): void {
+  for (const bc of channels.values()) {
+    try {
+      bc.close();
+    } catch {
+      // close() on an already-closed channel can throw in some envs —
+      // swallow; we're discarding the channel anyway.
+    }
+  }
+  channels.clear();
   instances.clear();
   initialDefaults.clear();
 }

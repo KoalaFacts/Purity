@@ -75,11 +75,37 @@ function defaultScrollHandler(url: URL): void {
 export function manageNavScroll(options: ManageNavScrollOptions = {}): () => void {
   if (typeof window === 'undefined') return () => {};
   const handler = options.onNavigate ?? defaultScrollHandler;
-  return onNavigate((url, replace) => {
-    // Defer to a microtask so any DOM updates triggered by the same
-    // navigate() (signal subscribers re-rendering) have a chance to land
-    // before we scroll — otherwise a hash target that the router just
-    // mounted wouldn't exist yet.
-    queueMicrotask(() => handler(url, replace));
+  // Track torn-down state so a microtask queued by a final navigate() that
+  // resolves AFTER teardown doesn't sneak in a stray scroll — the
+  // onNavigate unsubscribe is synchronous but the handler is deferred to a
+  // microtask, opening a small window where teardown happens between the
+  // listener firing and the microtask draining.
+  let disposed = false;
+  const off = onNavigate((url, replace) => {
+    queueMicrotask(() => {
+      // Defer to a microtask so any DOM updates triggered by the same
+      // navigate() (signal subscribers re-rendering) have a chance to land
+      // before we scroll — otherwise a hash target that the router just
+      // mounted wouldn't exist yet.
+      if (disposed) return;
+      // Isolate handler throws — a user-supplied custom `onNavigate`
+      // (which the docs explicitly invite to "perform whatever scroll
+      // action you want") can throw arbitrary errors, and so can the
+      // default handler if a page's `scrollIntoView` is monkey-patched
+      // or replaced by an extension. Without this try/catch the throw
+      // surfaces as an unhandled microtask rejection, which (a) skips
+      // any future scroll-to-top for THIS nav, and (b) pollutes the
+      // global error channel with a stack the app can't intercept.
+      // Mirror the listener-isolation pattern in router.ts navigate().
+      try {
+        handler(url, replace);
+      } catch (err) {
+        console.error('[purity] manageNavScroll handler threw:', err);
+      }
+    });
   });
+  return () => {
+    disposed = true;
+    off();
+  };
 }

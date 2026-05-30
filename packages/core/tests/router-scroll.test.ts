@@ -199,4 +199,44 @@ describe('manageNavScroll() — custom handler', () => {
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });
+
+  it('isolates a throwing custom handler so it does not surface as an unhandled error', async () => {
+    // The docs invite users to "perform whatever scroll action you want"
+    // — a throwing handler must NOT escape as an unhandled microtask
+    // rejection. Without the in-handler try/catch the throw escapes the
+    // queueMicrotask and surfaces on the global error channel.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    teardown = manageNavScroll({
+      onNavigate: () => {
+        throw new Error('boom');
+      },
+    });
+    navigate('/whatever');
+    // Drain the microtask the handler is scheduled in.
+    await Promise.resolve();
+    // Give one more turn so any UNHANDLED rejection would have surfaced.
+    await Promise.resolve();
+    expect(errSpy).toHaveBeenCalledWith(
+      '[purity] manageNavScroll handler threw:',
+      expect.any(Error),
+    );
+    errSpy.mockRestore();
+  });
+
+  it('does not scroll when teardown happens before the deferred microtask drains', async () => {
+    // Race: navigate() fires the onNavigate listener synchronously, which
+    // queues a microtask. If teardown runs between the listener and the
+    // microtask, the unsubscribed instance must NOT scroll — the user has
+    // signalled "stop". Without the disposed guard the scroll leaks
+    // through.
+    teardown = manageNavScroll();
+    const spy = vi.spyOn(window, 'scrollTo');
+    navigate('/late');
+    // Synchronously tear down BEFORE the microtask handler runs.
+    teardown();
+    teardown = null;
+    await Promise.resolve();
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
 });

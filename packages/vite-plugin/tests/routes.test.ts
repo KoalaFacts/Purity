@@ -1175,4 +1175,48 @@ describe('purity({ routes: { emitTo } }) — buildStart eager-emit (ADR 0033)', 
       cleanup();
     }
   });
+
+  // Regression: when consumers import the on-disk emitted file directly
+  // (ADR 0033) rather than the virtual `purity:routes`, `load()` never
+  // re-runs in response to handleHotUpdate's invalidate. The emitted .ts
+  // / .d.ts go stale until the next full build. Refresh them in
+  // handleHotUpdate so the on-disk artefacts track filesystem changes
+  // regardless of which import path consumers use.
+  it('refreshes on-disk emit from handleHotUpdate when emitTo is set', () => {
+    const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
+    try {
+      const plugin = purity({
+        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+      });
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      (plugin as { buildStart: () => void }).buildStart();
+
+      const emittedPath = join(root, '.purity/routes.ts');
+      const before = readFileSync(emittedPath, 'utf8');
+      expect(before).toContain('pattern: "/"');
+      expect(before).not.toContain('pattern: "/about"');
+
+      // Add a new route file on disk — simulates the user creating it.
+      writeFileSync(join(root, 'pages/about.ts'), '// about');
+
+      // Fire handleHotUpdate. The test's moduleGraph reports the virtual
+      // module as NOT loaded (getModuleById returns null) — exactly the
+      // case where load() never runs in response to the invalidate.
+      const ctx = {
+        file: join(root, 'pages/about.ts'),
+        server: {
+          moduleGraph: {
+            getModuleById: () => null,
+            invalidateModule: () => {},
+          },
+        },
+      };
+      (plugin as { handleHotUpdate: (c: typeof ctx) => void }).handleHotUpdate(ctx);
+
+      const after = readFileSync(emittedPath, 'utf8');
+      expect(after).toContain('pattern: "/about"');
+    } finally {
+      cleanup();
+    }
+  });
 });

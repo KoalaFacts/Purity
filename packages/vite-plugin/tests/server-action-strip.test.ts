@@ -365,4 +365,24 @@ describe('stripServerActions plugin option — wired into transform', () => {
     // html`` compiled to DOM creation calls.
     expect(out).toContain('document.createElement');
   });
+
+  // Regression: when the file had no `html``` templates but the strip rewrote
+  // it, the plugin returned `map: null`. Downstream consumers fell back to an
+  // identity map against the *rewritten* code, breaking stack traces. Emit a
+  // v3 map (empty mappings) with the original sourcesContent instead.
+  it('returns a non-null source map when only the strip rewrote the file', () => {
+    const plugin = purity();
+    const code = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = serverAction('/api/a', async () => SECRET);`,
+    ].join('\n');
+    const result = plugin.transform(code, '/app/a.ts', { ssr: false });
+    expect(result).not.toBeNull();
+    const r = result as { code: string; map: unknown };
+    expect(r.map).not.toBeNull();
+    expect((r.map as { version: number }).version).toBe(3);
+    // sourcesContent carries the ORIGINAL (pre-strip) source so tools can
+    // resolve symbols back to the user's file.
+    expect((r.map as { sourcesContent: string[] }).sourcesContent[0]).toBe(code);
+  });
 });

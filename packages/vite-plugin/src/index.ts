@@ -217,6 +217,22 @@ export function purity(options?: PurityPluginOptions) {
       if (!file.startsWith(dir + '/')) return;
       const mod = ctx.server.moduleGraph.getModuleById(resolvedVirtualId);
       if (mod) ctx.server.moduleGraph.invalidateModule(mod);
+      // When `emitTo` is configured, consumers may import the on-disk
+      // file directly (ADR 0033) instead of the virtual module. In that
+      // case `load()` is never called on the virtual module after the
+      // invalidate above, so the emitted .ts/.d.ts go stale until the
+      // next full build. Re-run the emit here so the on-disk artefacts
+      // track filesystem changes regardless of which import path
+      // consumers use.
+      if (emitToAbs !== null) {
+        const { source, types } = generateManifestSources(this, routesAbsDir, routesExt);
+        const warn = (msg: string): void => {
+          if (this && typeof this.warn === 'function') this.warn(msg);
+          else console.warn(msg);
+        };
+        emitManifestToDisk(emitToAbs, source, warn);
+        emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
+      }
     },
 
     transform(this: any, code: string, id: string, transformOpts?: { ssr?: boolean }) {
@@ -264,7 +280,13 @@ export function purity(options?: PurityPluginOptions) {
 
       if (!workingCode.includes('html`')) {
         if (!strippedAny) return null;
-        return { code: workingCode, map: null };
+        // The serverAction strip shifted source positions relative to the
+        // original file. Returning `map: null` would let consumers fall
+        // back to an identity map against the *rewritten* code, breaking
+        // stack traces inside this file. Emit an empty-mappings v3 map
+        // that still carries `sourcesContent` so downstream tools at least
+        // know not to treat the output as 1:1.
+        return { code: workingCode, map: emptyV3Map(id, code) };
       }
 
       const result = compileTemplates(workingCode, id, transformOpts?.ssr === true);
@@ -280,7 +302,7 @@ export function purity(options?: PurityPluginOptions) {
       }
 
       if (!result.changed) {
-        if (strippedAny) return { code: workingCode, map: null };
+        if (strippedAny) return { code: workingCode, map: emptyV3Map(id, code) };
         return null;
       }
       return { code: result.code, map: result.map };
@@ -640,6 +662,40 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
  *
  * Uses indexOf-based scanning (no regex) to avoid ReDoS on untrusted input.
  */
+/**
+ * Skip whitespace AND `/* ... *​/` block comments / `// ...` line comments
+ * starting at `pos`. Returns the next non-trivia offset. Unterminated block
+ * comments fall through to the end of input — the caller's structural check
+ * will then bail naturally.
+ */
+function skipWsAndComments(code: string, pos: number): number {
+  let p = pos;
+  while (p < code.length) {
+    const c = code[p];
+    if (c === ' ' || c === '\t' || c === '\n' || c === '\r') {
+      p++;
+      continue;
+    }
+    if (c === '/' && p + 1 < code.length) {
+      const c2 = code[p + 1];
+      if (c2 === '*') {
+        const close = code.indexOf('*/', p + 2);
+        if (close === -1) return code.length;
+        p = close + 2;
+        continue;
+      }
+      if (c2 === '/') {
+        const nl = code.indexOf('\n', p + 2);
+        if (nl === -1) return code.length;
+        p = nl + 1;
+        continue;
+      }
+    }
+    break;
+  }
+  return p;
+}
+
 function findHtmlImportEdits(code: string): Edit[] {
   const edits: Edit[] = [];
   let pos = 0;
@@ -647,8 +703,7 @@ function findHtmlImportEdits(code: string): Edit[] {
     const idx = code.indexOf('import', pos);
     if (idx === -1) break;
 
-    let i = idx + 6; // skip 'import'
-    while (i < code.length && (code[i] === ' ' || code[i] === '\t' || code[i] === '\n')) i++;
+    let i = skipWsAndComments(code, idx + 6); // skip 'import' + whitespace/comments
     if (code[i] !== '{') {
       pos = idx + 6;
       continue;
@@ -657,14 +712,12 @@ function findHtmlImportEdits(code: string): Edit[] {
     const braceEnd = code.indexOf('}', braceStart);
     if (braceEnd === -1) break;
 
-    let j = braceEnd + 1;
-    while (j < code.length && (code[j] === ' ' || code[j] === '\t' || code[j] === '\n')) j++;
+    let j = skipWsAndComments(code, braceEnd + 1);
     if (code.slice(j, j + 4) !== 'from') {
       pos = idx + 6;
       continue;
     }
-    j += 4;
-    while (j < code.length && (code[j] === ' ' || code[j] === '\t' || code[j] === '\n')) j++;
+    j = skipWsAndComments(code, j + 4);
     const quote = code[j];
     if (quote !== "'" && quote !== '"') {
       pos = idx + 6;
@@ -714,6 +767,23 @@ function findHtmlImportEdits(code: string): Edit[] {
 // Coarser than magic-string, but enough for stack traces to land in the right
 // neighborhood.
 // ---------------------------------------------------------------------------
+
+/**
+ * Minimal v3 map with empty `mappings` — used when the plugin rewrote the
+ * source (e.g. via `stripServerActionBodies`) but didn't produce per-segment
+ * mapping info. Carrying `sourcesContent` keeps the original source available
+ * to downstream tools while preventing them from inferring an identity map
+ * against the rewritten code. ADR n/a — quality-of-life for stack traces.
+ */
+function emptyV3Map(id: string, sourceContent: string): PuritySourceMap {
+  return {
+    version: 3,
+    sources: [id],
+    sourcesContent: [sourceContent],
+    names: [],
+    mappings: '',
+  };
+}
 
 const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
@@ -899,47 +969,51 @@ function extractTemplateLiteral(source: string, backtickPos: number): ExtractedT
 }
 
 function extractExpression(source: string, start: number): { source: string; end: number } | null {
-  let depth = 1;
+  // We're scanning the expression that starts immediately after `${`. We must
+  // close on the matching `}` at the outer (expression) depth.
+  //
+  // Nested template literals re-enter expression mode at each inner `${...}`,
+  // and inner templates can themselves contain `}` characters that should NOT
+  // close the outer expression. A scalar `inTemplate` counter conflates the
+  // two and miscounts on inputs like ``a}b`` (the `}` is template content but
+  // gets read as a closing brace) or `` `x${ `y` }z` `` (the opening backtick
+  // of the inner template is read as closing the outer template).
+  //
+  // Track contexts explicitly: a stack of frames, each either an expression
+  // (with its own brace depth) or a template (no brace depth — `}` is content
+  // until we hit `${`, which pushes an expression).
+  type Frame = { kind: 'expr'; depth: number } | { kind: 'tpl' };
+  const stack: Frame[] = [{ kind: 'expr', depth: 1 }];
   let pos = start;
   let inString: number | null = null;
-  let inTemplate = 0;
 
-  while (pos < source.length && depth > 0) {
+  while (pos < source.length && stack.length > 0) {
     const ch = source.charCodeAt(pos);
 
-    if (ch === 92 && inString !== null) {
-      pos += 2;
-      continue;
-    }
-
     if (inString !== null) {
+      if (ch === 92) {
+        pos += 2;
+        continue;
+      }
       if (ch === inString) inString = null;
       pos++;
       continue;
     }
 
-    if (inTemplate > 0) {
+    const top = stack[stack.length - 1]!;
+
+    if (top.kind === 'tpl') {
+      if (ch === 92) {
+        pos += 2;
+        continue;
+      }
       if (ch === 96) {
-        inTemplate--;
+        stack.pop();
         pos++;
         continue;
       }
       if (ch === 36 && pos + 1 < source.length && source.charCodeAt(pos + 1) === 123) {
-        depth++;
-        pos += 2;
-        continue;
-      }
-      // Track closing braces inside nested template expressions:
-      // ${...} inside a template literal increments depth, so } must decrement it
-      if (ch === 125) {
-        depth--;
-        if (depth === 0) {
-          return { source: source.slice(start, pos), end: pos + 1 };
-        }
-        pos++;
-        continue;
-      }
-      if (ch === 92) {
+        stack.push({ kind: 'expr', depth: 1 });
         pos += 2;
         continue;
       }
@@ -947,27 +1021,36 @@ function extractExpression(source: string, start: number): { source: string; end
       continue;
     }
 
+    // top.kind === 'expr'
     if (ch === 34 || ch === 39) {
       inString = ch;
       pos++;
       continue;
     }
-
     if (ch === 96) {
-      inTemplate++;
+      stack.push({ kind: 'tpl' });
       pos++;
       continue;
     }
-
     if (ch === 123) {
-      depth++;
-    } else if (ch === 125) {
-      depth--;
-      if (depth === 0) {
-        return { source: source.slice(start, pos), end: pos + 1 };
-      }
+      top.depth++;
+      pos++;
+      continue;
     }
-
+    if (ch === 125) {
+      top.depth--;
+      if (top.depth === 0) {
+        stack.pop();
+        if (stack.length === 0) {
+          return { source: source.slice(start, pos), end: pos + 1 };
+        }
+        // Popped an inner ${...} — return to enclosing template context.
+        pos++;
+        continue;
+      }
+      pos++;
+      continue;
+    }
     pos++;
   }
 
@@ -977,27 +1060,21 @@ function extractExpression(source: string, start: number): { source: string; end
 function findLastImportEnd(code: string): number {
   // Track multi-line `import { ... } from '...';` statements: an import line
   // is followed by zero-or-more continuation lines until one ends with the
-  // quoted source (with or without a trailing semicolon). Inserting in the
-  // middle of a multi-line import would split the import and break parsing
-  // (regression: see plugin.test.ts "handles multi-line imports").
+  // quoted source (plus optional import-attributes clause / trailer).
+  // Inserting in the middle of a multi-line import would split the import
+  // and break parsing (regression: see plugin.test.ts "handles multi-line
+  // imports").
   const lines = code.split('\n');
   let lastEnd = -1;
   let offset = 0;
   let inImport = false;
-
-  // Matches the closing line of an import: either `… from '…';` or a
-  // side-effect import that's just `'…';` on its own line. The trailer
-  // is `[\s;]*` (single character class) rather than `\s*;?\s*` so the
-  // engine can't backtrack between adjacent `\s*` groups on long
-  // whitespace runs (CodeQL js/polynomial-redos).
-  const closesImport = /['"][^'"]*['"][\s;]*$/;
 
   for (const line of lines) {
     const trimmed = line.trimStart();
     if (!inImport && (trimmed.startsWith('import ') || trimmed.startsWith('import{'))) {
       inImport = true;
     }
-    if (inImport && closesImport.test(line)) {
+    if (inImport && lineClosesImport(line)) {
       lastEnd = offset + line.length + 1;
       inImport = false;
     }
@@ -1005,6 +1082,66 @@ function findLastImportEnd(code: string): number {
   }
 
   return lastEnd;
+}
+
+/**
+ * True if `line` contains the closing portion of an `import` statement —
+ * either a `from '…'` clause or a bare side-effect `'…';` — possibly
+ * followed by import attributes (`with { … }` / `assert { … }`), trailing
+ * semicolons, and inline / line comments.
+ *
+ * Scans left-to-right tracking outer-vs-brace context so the matched
+ * "module source" string is the one at outer scope (not a nested string
+ * inside a `with { … }` attribute clause). No regex backtracking —
+ * predictable on long inputs.
+ */
+function lineClosesImport(line: string): boolean {
+  let p = 0;
+  let depth = 0;
+  let lastOuterQuoteEnd = -1;
+  while (p < line.length) {
+    const c = line[p]!;
+    if (c === ' ' || c === '\t' || c === '\r') {
+      p++;
+      continue;
+    }
+    if (c === '/' && p + 1 < line.length && line[p + 1] === '/') {
+      // Line comment to EOL.
+      break;
+    }
+    if (c === '/' && p + 1 < line.length && line[p + 1] === '*') {
+      const close = line.indexOf('*/', p + 2);
+      if (close === -1) return false;
+      p = close + 2;
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      const quote = c;
+      p++;
+      while (p < line.length && line[p] !== quote) {
+        if (line[p] === '\\') p += 2;
+        else p++;
+      }
+      if (p >= line.length) return false;
+      p++;
+      if (depth === 0) lastOuterQuoteEnd = p;
+      continue;
+    }
+    if (c === '{') {
+      depth++;
+      p++;
+      continue;
+    }
+    if (c === '}') {
+      depth--;
+      p++;
+      continue;
+    }
+    p++;
+  }
+  // We close an import iff we saw an outer-scope quoted source string and
+  // ended at top brace depth.
+  return lastOuterQuoteEnd >= 0 && depth === 0;
 }
 
 export type { LayoutEntry, RouteEntry } from './routes.ts';

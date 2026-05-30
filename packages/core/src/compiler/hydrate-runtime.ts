@@ -32,21 +32,69 @@ export function enterHydration(): void {
   hydrating++;
 }
 
-/** Exit hydration mode. */
+/**
+ * Exit hydration mode. Defensive against underflow so a stray pop doesn't
+ * wrap the counter into a "permanently on" state. When warnings are enabled,
+ * underflow is surfaced as a console.warn to flag the imbalanced push/pop.
+ */
 export function exitHydration(): void {
-  if (hydrating > 0) hydrating--;
+  if (hydrating > 0) {
+    hydrating--;
+  } else if (warnMismatches) {
+    console.warn(
+      '[Purity] exitHydration() called without a matching enterHydration() — ' +
+        'push/pop imbalance; ignoring to avoid wraparound.',
+    );
+  }
+}
+
+/**
+ * Run `fn` with hydration mode entered, guaranteeing the counter is restored
+ * even if `fn` throws. Prefer this over manual `enterHydration()` /
+ * `exitHydration()` pairs to avoid a leaked flag on aborted hydrate paths.
+ */
+export function withHydration<T>(fn: () => T): T {
+  enterHydration();
+  try {
+    return fn();
+  } finally {
+    exitHydration();
+  }
+}
+
+/**
+ * Force the hydration counter back to zero. Intended for crash-recovery in
+ * the top-level `hydrate()` catch path — never for normal flow. Returns the
+ * pre-reset depth so callers can log/diagnose a leak.
+ * @internal
+ */
+export function resetHydration(): number {
+  const prev = hydrating;
+  hydrating = 0;
+  return prev;
 }
 
 export function isDeferred(v: unknown): v is DeferredTemplate {
-  return (
-    v != null &&
-    typeof v === 'object' &&
-    (v as { __purity_deferred__?: unknown }).__purity_deferred__ === true
-  );
+  if (v == null || typeof v !== 'object') return false;
+  const o = v as {
+    __purity_deferred__?: unknown;
+    strings?: unknown;
+    values?: unknown;
+  };
+  // Brand + shape check: the consumer (`inflateDeferred`) immediately reads
+  // `deferred.strings` and `deferred.values`, so a bare `{__purity_deferred__:
+  // true}` object would crash. Verifying the carrier shape here turns a hard
+  // crash into a clean "not deferred — treat as a normal value" path.
+  return o.__purity_deferred__ === true && Array.isArray(o.strings) && Array.isArray(o.values);
 }
 
 export function makeDeferred(strings: TemplateStringsArray, values: unknown[]): DeferredTemplate {
-  return { __purity_deferred__: true, strings, values };
+  // Freeze the carrier so the brand can't be flipped off and the strings/
+  // values references can't be hot-swapped after capture. The arrays
+  // themselves are shared by reference (the tag-array is interned by V8;
+  // values is the caller's array) — freezing only the carrier is cheap and
+  // closes the brand-bypass surface.
+  return Object.freeze({ __purity_deferred__: true, strings, values });
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +175,10 @@ export function checkHydrationCursor(
   expected: ExpectedKind,
   detail?: string,
 ): void {
-  let actual: string;
+  // Initialize defensively so an unhandled nodeType (e.g. DocumentFragment=11,
+  // CDATASection=4) still produces a sensible warning instead of an empty
+  // "got " in the log.
+  let actual = '<unknown>';
   let ok = false;
   if (!node) {
     actual = '<null>';

@@ -1,10 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { generate } from '../src/compiler/codegen.ts';
 import { html, inflateDeferred } from '../src/compiler/compile.ts';
 import {
+  checkHydrationCursor,
   type DeferredTemplate,
+  disableHydrationWarnings,
+  enableHydrationWarnings,
   enterHydration,
   exitHydration,
+  isDeferred,
+  isHydrating,
+  makeDeferred,
+  resetHydration,
+  withHydration,
 } from '../src/compiler/hydrate-runtime.ts';
 import { parse } from '../src/compiler/parser.ts';
 import { state } from '../src/signals.ts';
@@ -1143,5 +1151,121 @@ describe('compile.ts — inflateDeferred suspense marker stripping', () => {
     expect(comments).toContain('s:1abc');
     expect(comments).toContain('s:');
     expect(comments.some((d) => /^\/?s:\d+$/.test(d))).toBe(false);
+  });
+});
+
+describe('hydrate-runtime.ts — audit-v2 hardening', () => {
+  // Always start from a clean slate; resetHydration is the in-file crash-
+  // recovery escape hatch and also a convenient test prelude.
+  function reset() {
+    resetHydration();
+    disableHydrationWarnings();
+  }
+
+  it('withHydration restores the counter even when the body throws (leak guard)', () => {
+    reset();
+    expect(isHydrating()).toBe(false);
+    expect(() =>
+      withHydration(() => {
+        // The whole point: an exception inside a hydrating template must not
+        // leave isHydrating() stuck on for the rest of the process.
+        throw new Error('boom');
+      }),
+    ).toThrow('boom');
+    expect(isHydrating()).toBe(false);
+  });
+
+  it('withHydration nests correctly (refcount composes)', () => {
+    reset();
+    let inner = false;
+    withHydration(() => {
+      expect(isHydrating()).toBe(true);
+      withHydration(() => {
+        inner = isHydrating();
+      });
+      // Still hydrating after the inner pop — refcount, not boolean.
+      expect(isHydrating()).toBe(true);
+    });
+    expect(inner).toBe(true);
+    expect(isHydrating()).toBe(false);
+  });
+
+  it('exitHydration clamps at zero and warns on underflow when warnings are on', () => {
+    reset();
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      enableHydrationWarnings();
+      // No matching enterHydration — must not wrap into a negative / "stuck on"
+      // state and must surface the imbalance via the dev warning.
+      exitHydration();
+      expect(isHydrating()).toBe(false);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(String(spy.mock.calls[0][0])).toContain('push/pop imbalance');
+    } finally {
+      spy.mockRestore();
+      disableHydrationWarnings();
+    }
+  });
+
+  it('isDeferred rejects bare brand objects (shape check beyond the brand)', () => {
+    // Pre-fix: { __purity_deferred__: true } passed as a DeferredTemplate
+    // would slip through isDeferred and crash later in inflateDeferred at
+    // `deferred.strings`. The shape check makes this a clean rejection.
+    expect(isDeferred({ __purity_deferred__: true })).toBe(false);
+    expect(isDeferred({ __purity_deferred__: true, strings: [], values: 'no' })).toBe(false);
+    expect(isDeferred({ __purity_deferred__: true, strings: 'no', values: [] })).toBe(false);
+    expect(isDeferred(null)).toBe(false);
+    expect(isDeferred(undefined)).toBe(false);
+    expect(isDeferred('string')).toBe(false);
+    expect(isDeferred(42)).toBe(false);
+    // A genuine, well-shaped deferred (built via makeDeferred) is accepted.
+    const real = makeDeferred(['<p>'] as unknown as TemplateStringsArray, []);
+    expect(isDeferred(real)).toBe(true);
+  });
+
+  it('makeDeferred returns a frozen carrier (brand cannot be flipped off)', () => {
+    const d = makeDeferred(['x'] as unknown as TemplateStringsArray, [1, 2]);
+    expect(Object.isFrozen(d)).toBe(true);
+    // Strict-mode assignment to a frozen prop throws; loose mode silently
+    // ignores. Either way the brand and references must survive.
+    try {
+      // biome/ts-ignore: deliberate mutation attempt
+      (d as { __purity_deferred__: boolean }).__purity_deferred__ = false;
+    } catch {
+      /* swallow strict-mode TypeError */
+    }
+    expect(d.__purity_deferred__).toBe(true);
+    expect(d.values).toEqual([1, 2]);
+  });
+
+  it('checkHydrationCursor produces a sensible warning for unhandled nodeTypes', () => {
+    // Pre-fix: `actual` could be the literal string "undefined" in the warn
+    // when nodeType wasn't 1/3/8/null. With initialization it becomes the
+    // explicit `nodeType(N)` form, and never blank.
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // DocumentFragment has nodeType 11 — none of the kind branches match.
+      const frag = document.createDocumentFragment();
+      checkHydrationCursor(frag, 'open');
+      expect(spy).toHaveBeenCalled();
+      const msg = String(spy.mock.calls[0][0]);
+      expect(msg).toContain('nodeType(11)');
+      expect(msg).not.toContain('got <unknown>'); // initializer is replaced
+      expect(msg).not.toContain('got undefined');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('resetHydration reports and clears a leaked depth', () => {
+    reset();
+    enterHydration();
+    enterHydration();
+    enterHydration();
+    expect(isHydrating()).toBe(true);
+    expect(resetHydration()).toBe(3);
+    expect(isHydrating()).toBe(false);
+    // Idempotent — second reset reports zero.
+    expect(resetHydration()).toBe(0);
   });
 });

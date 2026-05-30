@@ -309,16 +309,19 @@ export function onFormStateRestore(
  * ```
  */
 export function hydrate(container: Element, component: ComponentFn): MountResult {
-  // Prime the resource cache from the JSON payload renderToString embedded.
-  // Done before any DOM manipulation so the script tag is still in place.
-  primeResourceHydrationCache(container);
-
   // Empty container — nothing to hydrate. Fall back to a fresh mount so
   // hydrate() works as a drop-in for mount() in dev/test setups that
-  // skipped the SSR step.
+  // skipped the SSR step. Checked before priming the resource cache: with
+  // no SSR DOM there's nothing to adopt, and priming here would leak the
+  // shell's cached values into a fresh render (and clobber another root's
+  // module-level cache) as a side effect.
   if (!container.firstChild) {
     return mount(component, container);
   }
+
+  // Prime the resource cache from the JSON payload renderToString embedded.
+  // Done before any DOM manipulation so the script tag is still in place.
+  primeResourceHydrationCache(container);
 
   const ctx = new ComponentContext();
   const parentCtx = getCurrentContext();
@@ -336,6 +339,12 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   } catch (err) {
     exitHydration();
     popContext();
+    // Drop the half-registered ctx from its parent so it isn't kept alive
+    // (and re-walked at no benefit) until the parent unmounts.
+    if (ctx.parent?.children) {
+      const idx = ctx.parent.children.indexOf(ctx);
+      if (idx !== -1) ctx.parent.children.splice(idx, 1);
+    }
     ctx._handleError(err);
     return { unmount: () => {} };
   }
@@ -357,10 +366,13 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
       // already have logged the divergence; here we recover by dropping the
       // SSR DOM and re-rendering fresh so the page keeps working.
       console.error('[Purity] Hydration walk failed; falling back to fresh mount:', err);
-      if (ctx.parent?.children) {
-        const idx = ctx.parent.children.indexOf(ctx);
-        if (idx !== -1) ctx.parent.children.splice(idx, 1);
-      }
+      // Tear down the abandoned context before re-rendering. The failed
+      // render may have registered disposers (live watch/resource
+      // subscriptions), onDestroy/onError handlers, and child contexts; left
+      // orphaned they keep running and leak. unmountContext drains them and
+      // removes ctx from parent.children itself. ctx.nodes is still null
+      // (set only on the success path below), so no DOM is touched here.
+      unmountContext(ctx);
       while (container.firstChild) container.removeChild(container.firstChild);
       return mount(component, container);
     }
@@ -439,9 +451,19 @@ function primeResourceHydrationCache(container: Element): void {
   // collide with the shell's index space, so we only support keyed
   // resources for streaming. Scan in document order so a later boundary's
   // entry wins on key collision (matches "later wins" everywhere else).
-  const boundaryScripts = doc.querySelectorAll(
-    `script[id^="${PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX}"]`,
-  );
+  //
+  // Prefer container scope: after `__purity_swap` runs, each boundary's
+  // `__purity_resources_N__` script lands inside the root it belongs to
+  // (insertBefore at the in-root boundary marker). Scoping to the container
+  // means a second `hydrate()` root keeps its own scripts instead of having
+  // the first root consume + delete every per-boundary script globally. Fall
+  // back to document scope only when the container holds none — the
+  // append-whole / non-streamed layouts that emit the scripts as siblings.
+  const boundarySelector = `script[id^="${PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX}"]`;
+  let boundaryScripts = container.querySelectorAll(boundarySelector);
+  if (boundaryScripts.length === 0) {
+    boundaryScripts = doc.querySelectorAll(boundarySelector);
+  }
   if (boundaryScripts.length > 0) {
     if (!merged) merged = { ordered: [], keyed: Object.create(null) };
     for (let i = 0; i < boundaryScripts.length; i++) {
@@ -510,6 +532,12 @@ export function mount(component: ComponentFn, container: Element): MountResult {
     fragment = component();
   } catch (err) {
     popContext();
+    // Drop the half-registered ctx from its parent so a thrown render leaves
+    // no stale child reachable through parent.children until parent unmount.
+    if (ctx.parent?.children) {
+      const idx = ctx.parent.children.indexOf(ctx);
+      if (idx !== -1) ctx.parent.children.splice(idx, 1);
+    }
     ctx._handleError(err);
     return { unmount: () => {} };
   }

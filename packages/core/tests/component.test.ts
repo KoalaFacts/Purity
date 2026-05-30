@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { html } from '../src/compiler/compile.ts';
-import { mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
+import { hydrate, mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
+import { resource } from '../src/resource.ts';
+import { primeHydrationCache } from '../src/ssr-context.ts';
+
+const tick = () => new Promise((r) => queueMicrotask(r));
 
 describe('mount', () => {
   it('mounts a component into a container', () => {
@@ -256,5 +260,164 @@ describe('lifecycle hooks', () => {
 
     outerUnmount();
     expect(innerOrder).toEqual(['inner-destroyed']);
+  });
+
+  it('a child mount() whose render throws is not retained by the parent (audit MED component.ts:509)', () => {
+    // Nested child throws during render: its error bubbles to the parent and
+    // the failed child ctx must not linger in parent.children. We can't peek
+    // the internal array, so assert the observable contract: the parent
+    // unmount only tears down the surviving good child once, and never throws
+    // re-processing a stale failed child.
+    const outer = document.createElement('div');
+    const order: string[] = [];
+    const errors: string[] = [];
+
+    const { unmount } = mount(() => {
+      onError((err: Error) => errors.push(err.message));
+      // Failed child — bubbles 'boom' to the parent's onError.
+      mount(() => {
+        onDestroy(() => order.push('bad-destroyed'));
+        throw new Error('boom');
+      }, document.createElement('div'));
+      // Surviving child.
+      mount(() => {
+        onDestroy(() => order.push('good-destroyed'));
+        return html`<p>good</p>`;
+      }, document.createElement('div'));
+      return html`<p>outer</p>`;
+    }, outer);
+
+    expect(errors).toEqual(['boom']);
+    expect(() => unmount()).not.toThrow();
+    // Only the good child's destroy ran — the failed child was dropped, not
+    // re-walked by the parent during teardown.
+    expect(order).toEqual(['good-destroyed']);
+  });
+});
+
+describe('hydrate — walker fallback cleanup (audit HIGH component.ts:359)', () => {
+  let host: HTMLElement;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    primeHydrationCache([]);
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    host.remove();
+    errorSpy.mockRestore();
+  });
+
+  it('runs the failed render disposers before falling back to fresh mount', async () => {
+    // SSR sent <p>plain</p> — no `<!--[-->` marker — but the template has a
+    // reactive slot, so inflateDeferred() crashes and the hydrator falls back
+    // to a fresh mount(). A disposer registered during the failed render must
+    // still fire; otherwise its (live watch/resource) subscription leaks.
+    host.innerHTML = '<p>plain</p>';
+    let disposed = false;
+    let destroyed = false;
+
+    hydrate(host, () => {
+      onDispose(() => {
+        disposed = true;
+      });
+      onDestroy(() => {
+        destroyed = true;
+      });
+      return html`<p>${() => 'client'}</p>`;
+    });
+
+    await tick();
+    // Recovery happened (fresh client content rendered).
+    expect(host.textContent).toBe('client');
+    // The orphaned render's disposers + destroy callbacks ran during teardown
+    // instead of leaking on the abandoned context.
+    expect(disposed).toBe(true);
+    expect(destroyed).toBe(true);
+  });
+
+  it('disposes the failed render context exactly once (no double teardown)', async () => {
+    host.innerHTML = '<p>plain</p>';
+    let disposeCount = 0;
+
+    hydrate(host, () => {
+      onDispose(() => {
+        disposeCount++;
+      });
+      return html`<p>${() => 'x'}</p>`;
+    });
+
+    await tick();
+    expect(disposeCount).toBe(1);
+  });
+});
+
+describe('hydrate — multi-root per-boundary cache scoping (audit HIGH component.ts:442)', () => {
+  let hostA: HTMLElement;
+  let hostB: HTMLElement;
+
+  beforeEach(() => {
+    hostA = document.createElement('div');
+    hostB = document.createElement('div');
+    document.body.append(hostA, hostB);
+    primeHydrationCache([]);
+  });
+
+  afterEach(() => {
+    hostA.remove();
+    hostB.remove();
+    primeHydrationCache([]);
+  });
+
+  it("keeps each root's in-container per-boundary script for its own hydrate()", async () => {
+    // Two independent islands. After streaming swap, each boundary's
+    // `__purity_resources_N__` script lands INSIDE the root it belongs to
+    // (purity_swap insertBefore at the in-root boundary marker). The first
+    // hydrate() must not consume/delete the second root's script.
+    hostA.innerHTML =
+      '<p><!--[-->A<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources_1__">{"keyed":{"a":"A-primed"}}</script>';
+    hostB.innerHTML =
+      '<p><!--[-->B<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources_2__">{"keyed":{"b":"B-primed"}}</script>';
+
+    let fetchesA = 0;
+    let fetchesB = 0;
+
+    hydrate(hostA, () => {
+      const r = resource(
+        () => {
+          fetchesA++;
+          return Promise.resolve('A-fetch');
+        },
+        { key: 'a' },
+      );
+      return html`<p>${() => r() ?? '?'}</p>`;
+    });
+
+    // The second root's script must survive the first hydrate().
+    expect(hostB.querySelector('script#__purity_resources_2__')).not.toBeNull();
+
+    hydrate(hostB, () => {
+      const r = resource(
+        () => {
+          fetchesB++;
+          return Promise.resolve('B-fetch');
+        },
+        { key: 'b' },
+      );
+      return html`<p>${() => r() ?? '?'}</p>`;
+    });
+
+    await tick();
+
+    // Each root primed from its own boundary script — no live fetches.
+    expect(hostA.textContent).toBe('A-primed');
+    expect(hostB.textContent).toBe('B-primed');
+    expect(fetchesA).toBe(0);
+    expect(fetchesB).toBe(0);
   });
 });

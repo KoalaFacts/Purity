@@ -421,4 +421,66 @@ describe('css', () => {
     expect(styleEl!.textContent).toContain(':host(.special)');
     expect(styleEl!.textContent).toContain(':host-context(.dark)');
   });
+
+  // ---------------------------------------------------------------------------
+  // Audit-v2 hardening regressions
+  // ---------------------------------------------------------------------------
+
+  it('neutralizes </style> smuggling in static interpolations', () => {
+    // An attacker-controlled value that contains `</style>` must not be
+    // serialized back as a real closing tag if the styleEl's outerHTML is
+    // later reflected into innerHTML (e.g., devtools, SSR-mirroring tools,
+    // or HTML serialization). Defensive: replace `</style` with an escaped
+    // form so the resulting style element is round-trippable.
+    const evil = '</style><script>alert(1)</script>';
+    const scope = css`
+      .x {
+        content: '${evil}';
+      }
+    `;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl).not.toBeNull();
+    // outerHTML must remain a single <style> element — no smuggled </style>.
+    const outer = styleEl!.outerHTML;
+    // Count of </style> in serialized form must be exactly one (the real
+    // closing tag at the end). If smuggled, count would be two.
+    const matches = outer.match(/<\/style/gi);
+    expect(matches!.length).toBe(1);
+  });
+
+  it('neutralizes </style> smuggling in reactive interpolations', async () => {
+    const v = state('safe');
+    const scope = css`
+      .x {
+        content: '${() => v()}';
+      }
+    `;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl).not.toBeNull();
+
+    v('</style><img onerror=alert(1)>');
+    await tick();
+    const outer = styleEl!.outerHTML;
+    const matches = outer.match(/<\/style/gi);
+    expect(matches!.length).toBe(1);
+  });
+
+  it('does not crash when document.head is briefly missing', () => {
+    // Defensive: installLayerOrder must not throw if document.head returns
+    // null transiently (rare but seen during page-unload or some test
+    // tear-downs). Patch the getter then restore.
+    const origHead = document.head;
+    Object.defineProperty(document, 'head', { configurable: true, get: () => null });
+    try {
+      expect(() => {
+        css`
+          .x {
+            color: red;
+          }
+        `;
+      }).not.toThrow();
+    } finally {
+      Object.defineProperty(document, 'head', { configurable: true, get: () => origHead });
+    }
+  });
 });

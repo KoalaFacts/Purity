@@ -61,7 +61,16 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
       raw += strings[i];
       if (i < values.length) {
         const val = values[i];
-        raw += String(typeof val === 'function' ? (val as () => unknown)() : (val ?? ''));
+        const resolved = typeof val === 'function' ? (val as () => unknown)() : (val ?? '');
+        // Defensive: neutralize `</style>` (and `</script>`) smuggled through
+        // an interpolation. textContent on a <style> element is parser-safe
+        // in the current DOM, but a smuggled closing tag becomes a real one
+        // when the element's outerHTML is later round-tripped through
+        // innerHTML (devtools paste, SSR mirror, error reporters that log
+        // outerHTML). Strings from `strings` (the template-literal raw parts)
+        // are authored statically and trusted; only interpolated values are
+        // sanitized.
+        raw += neutralizeClosingTags(String(resolved));
       }
     }
     return raw;
@@ -116,9 +125,14 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
   installLayerOrder();
 
   const scopeClass = `p-${scopeCounter++}`;
+  // Defensive: if `document.head` is missing (early-document, mid-unload,
+  // some jsdom resets), skip the DOM emit but still return a stable scope
+  // class so the caller's `className=` interpolation stays well-formed.
+  const head = document.head;
+  if (!head) return scopeClass;
   const styleEl = document.createElement('style');
   styleEl.setAttribute('data-purity-scope', scopeClass);
-  document.head.appendChild(styleEl);
+  head.appendChild(styleEl);
 
   const buildScoped = (): string => {
     const body = rewriteHostToScope(buildCss());
@@ -160,6 +174,15 @@ function rewriteHostToScope(cssText: string): string {
   return cssText.replace(/:host(?![-(\w])/g, ':scope');
 }
 
+// Defensive sanitiser for values interpolated into a css`` template. Splits
+// any literal `</style` or `</script` (case-insensitive) so the resulting
+// element's serialized form (outerHTML) survives a round-trip through
+// innerHTML without smuggling a closing tag. Authored template parts are
+// trusted; only interpolated unknowns flow through this.
+function neutralizeClosingTags(s: string): string {
+  return s.replace(/<\/(style|script)/gi, '<\\/$1');
+}
+
 // Install the layer-order declaration once per document. Prepending to
 // `<head>` keeps it lexically before any per-component `<style>` tag the
 // framework emits, which is what cascade-layers needs to establish order.
@@ -167,11 +190,16 @@ function rewriteHostToScope(cssText: string): string {
 function installLayerOrder(): void {
   /* v8 ignore next -- defensive; the non-Shadow path only runs in a browser */
   if (typeof document === 'undefined') return;
-  if (document.head.querySelector('style[data-purity-layers]')) return;
+  // Defensive: `document.head` can be null during early-document or
+  // unload-tear-down windows. Bail rather than throw — the caller's
+  // fallback path will also bail on the same check.
+  const head = document.head;
+  if (!head) return;
+  if (head.querySelector('style[data-purity-layers]')) return;
   const el = document.createElement('style');
   el.setAttribute('data-purity-layers', '');
   el.textContent = '@layer purity, user;';
-  document.head.prepend(el);
+  head.prepend(el);
 }
 
 let scopeCounter = 0;

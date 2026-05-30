@@ -1,8 +1,8 @@
 # Purity Framework — Copilot Instructions
 
-Purity is a minimal web framework with TC39-Signals-inspired reactivity (custom push-pull graph; the TC39 proposal is still Stage 1). No virtual DOM.
+Purity is a lite web framework with TC39-Signals-inspired reactivity (custom push-pull graph; the TC39 proposal is still Stage 1). No virtual DOM.
 
-## API (21 functions)
+## API
 
 ```ts
 state(init)              // reactive state: count(), count(5), count(v => v+1)

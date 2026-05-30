@@ -1364,3 +1364,258 @@ describe('resource — SSR keyed cache prototype safety', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Audit v2 regression suite.
+// ---------------------------------------------------------------------------
+
+// [HIGH] resource.ts SSR keyed-cache "alreadyResolved" path must NOT clobber
+// the user's initialValue with the `undefined` that pass-1 recorded alongside
+// an error. On pass 2 the errored resource should keep its seeded
+// initialValue as the visible fallback and surface only the error.
+describe('resource — SSR keyed-cache errored resource preserves initialValue', () => {
+  it('pass-2 errored keyed resource keeps initialValue and surfaces the error', async () => {
+    const ctx = makeSSRContext();
+    pushSSRRenderContext(ctx);
+    try {
+      // Pass 1 — fetcher rejects; pass-1 records undefined data + the error.
+      const r1 = resource(
+        () => 1,
+        () => Promise.reject(new Error('boom')),
+        {
+          key: 'k',
+          initialValue: 'fallback',
+        },
+      );
+      void r1;
+      await Promise.allSettled(ctx.pendingPromises);
+      expect(ctx.resolvedDataByKey.k).toBeUndefined();
+      expect(ctx.resolvedErrorsByKey.k).toBeInstanceOf(Error);
+
+      // Pass 2 — fresh resource, same key ⇒ alreadyResolved branch.
+      const r2 = resource(
+        () => 1,
+        () => Promise.reject(new Error('boom')),
+        {
+          key: 'k',
+          initialValue: 'fallback',
+        },
+      );
+      expect(r2.error()).toBeInstanceOf(Error);
+      // The bug clobbered data() to undefined; the fix keeps 'fallback'.
+      expect(r2()).toBe('fallback');
+    } finally {
+      popSSRRenderContext();
+    }
+  });
+
+  it('pass-2 errored unkeyed resource keeps initialValue and surfaces the error', async () => {
+    const ctx = makeSSRContext();
+    pushSSRRenderContext(ctx);
+    try {
+      const r1 = resource(
+        () => 1,
+        () => Promise.reject(new Error('boom')),
+        {
+          initialValue: 'fallback',
+        },
+      );
+      void r1;
+      await Promise.allSettled(ctx.pendingPromises);
+
+      // Reset the per-pass creation counter; the App reruns from scratch.
+      ctx.resourceCounter = 0;
+      const r2 = resource(
+        () => 1,
+        () => Promise.reject(new Error('boom')),
+        {
+          initialValue: 'fallback',
+        },
+      );
+      expect(r2.error()).toBeInstanceOf(Error);
+      expect(r2()).toBe('fallback');
+    } finally {
+      popSSRRenderContext();
+    }
+  });
+});
+
+// [MED] A user-supplied retry `delay` that returns NaN / Infinity / a negative
+// number must not reach setTimeout unclamped — that coerces to ~0 and turns
+// the retry into a tight loop hammering the server.
+describe('resource — retry delay is clamped to a finite non-negative ms', () => {
+  function withSetTimeoutSpy<R>(run: (seen: number[]) => Promise<R>): Promise<R> {
+    const orig = globalThis.setTimeout;
+    const seen: number[] = [];
+    (globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout = ((
+      fn: TimerHandler,
+      ms?: number,
+      ...rest: unknown[]
+    ) => {
+      seen.push(ms as number);
+      return (orig as (...a: unknown[]) => ReturnType<typeof setTimeout>)(fn, ms, ...rest);
+    }) as typeof setTimeout;
+    return run(seen).finally(() => {
+      (globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout = orig;
+    });
+  }
+
+  it('NaN delay never reaches setTimeout as NaN', async () => {
+    await withSetTimeoutSpy(async (seen) => {
+      const r = resource(() => Promise.reject(new Error('x')), {
+        retry: { count: 2, delay: () => NaN },
+      });
+      await new Promise((res) => globalThis.setTimeout(res, 80));
+      r.dispose();
+      expect(seen.some((x) => Number.isNaN(x))).toBe(false);
+    });
+  });
+
+  it('negative delay never reaches setTimeout as a negative number', async () => {
+    await withSetTimeoutSpy(async (seen) => {
+      const r = resource(() => Promise.reject(new Error('x')), {
+        retry: { count: 2, delay: () => -5000 },
+      });
+      await new Promise((res) => globalThis.setTimeout(res, 80));
+      r.dispose();
+      expect(seen.some((x) => x < 0)).toBe(false);
+    });
+  });
+
+  it('still retries the configured number of times under a clamped delay', async () => {
+    let calls = 0;
+    const r = resource(
+      () => {
+        calls++;
+        return Promise.reject(new Error('x'));
+      },
+      { retry: { count: 2, delay: () => 0 } },
+    );
+    await new Promise((res) => setTimeout(res, 80));
+    expect(calls).toBe(3); // 1 initial + 2 retries
+    expect(r.error()).toBeInstanceOf(Error);
+    r.dispose();
+  });
+});
+
+// [MED] pollInterval <= 0 (or non-finite) must be treated as "polling
+// disabled" rather than scheduling a setTimeout(0) hot loop after each settle.
+describe('resource — non-positive pollInterval disables polling', () => {
+  it('pollInterval:0 does not re-fire the fetcher after the first settle', async () => {
+    let calls = 0;
+    const r = resource(
+      () => {
+        calls++;
+        return Promise.resolve(calls);
+      },
+      { pollInterval: 0 },
+    );
+    await flushAll();
+    expect(calls).toBe(1);
+    // Give any rogue setTimeout(0) poll a chance to fire.
+    await new Promise((res) => setTimeout(res, 30));
+    expect(calls).toBe(1);
+    r.dispose();
+  });
+
+  it('negative pollInterval disables polling', async () => {
+    let calls = 0;
+    const r = resource(
+      () => {
+        calls++;
+        return Promise.resolve(calls);
+      },
+      { pollInterval: -100 },
+    );
+    await flushAll();
+    expect(calls).toBe(1);
+    await new Promise((res) => setTimeout(res, 30));
+    expect(calls).toBe(1);
+    r.dispose();
+  });
+
+  it('a positive pollInterval still polls', async () => {
+    let calls = 0;
+    const r = resource(
+      () => {
+        calls++;
+        return Promise.resolve(calls);
+      },
+      { pollInterval: 20 },
+    );
+    await flushAll();
+    expect(calls).toBe(1);
+    await new Promise((res) => setTimeout(res, 60));
+    expect(calls).toBeGreaterThan(1);
+    r.dispose();
+  });
+});
+
+// Invariant pin (audit 412-421 / 373-380 verdict: prior in-flight fetch is
+// aborted on source-key change and on a source going falsy — via the watch's
+// returned cleanup, not the bookkeeping assignment). These guard against a
+// future refactor that drops the cleanup and reintroduces a network leak.
+describe('resource — prior in-flight fetch is aborted on source change', () => {
+  it('changing the source key aborts the previous fetch signal', async () => {
+    const id = state(1);
+    const signals: AbortSignal[] = [];
+    const r = resource(
+      () => id(),
+      (_k, { signal }) => {
+        signals.push(signal);
+        return new Promise<number>(() => {}); // never resolves
+      },
+    );
+    await flushAll();
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(false);
+
+    id(2);
+    await flushAll();
+    expect(signals).toHaveLength(2);
+    expect(signals[0].aborted).toBe(true);
+    r.dispose();
+  });
+
+  it('a fast sync result wins over a slow prior async and aborts it', async () => {
+    const id = state<number>(1);
+    const signals: AbortSignal[] = [];
+    const r = resource(
+      () => id(),
+      (k, { signal }) => {
+        signals.push(signal);
+        if (k === 1) return new Promise<number>(() => {}); // never resolves
+        return 99; // sync
+      },
+    );
+    await flushAll();
+    expect(r.loading()).toBe(true);
+
+    id(2); // sync result
+    await flushAll();
+    expect(r()).toBe(99);
+    expect(r.loading()).toBe(false);
+    expect(signals[0].aborted).toBe(true);
+    r.dispose();
+  });
+
+  it('a source going falsy aborts the in-flight fetch and clears loading', async () => {
+    const id = state<number | null>(1);
+    const signals: AbortSignal[] = [];
+    const r = resource(
+      () => id(),
+      (_k, { signal }) => {
+        signals.push(signal);
+        return new Promise<number>(() => {});
+      },
+    );
+    await flushAll();
+    expect(r.loading()).toBe(true);
+
+    id(null);
+    await flushAll();
+    expect(r.loading()).toBe(false);
+    expect(signals[0].aborted).toBe(true);
+    r.dispose();
+  });
+});

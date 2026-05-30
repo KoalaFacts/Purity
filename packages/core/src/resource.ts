@@ -152,7 +152,12 @@ async function withRetry<T>(
       return await fn();
     } catch (err) {
       if (signal.aborted || attempt >= retry.count) throw err;
-      const ms = (retry.delay ?? DEFAULT_BACKOFF)(attempt);
+      // Sanitize the user-supplied delay: a `delay` that returns NaN,
+      // Infinity, or a negative number would otherwise reach setTimeout,
+      // which coerces those to ~0 and turns the retry into a tight loop that
+      // hammers the server. Clamp to a finite, non-negative ms.
+      const raw = (retry.delay ?? DEFAULT_BACKOFF)(attempt);
+      const ms = Number.isFinite(raw) ? Math.max(0, raw) : 0;
       attempt++;
       await abortableSleep(ms, signal);
     }
@@ -183,7 +188,12 @@ export function resource<T, K>(
   const options =
     (hasSource ? maybeOptions : (fetcherOrOptions as ResourceOptions<T> | undefined)) ?? {};
   const retry = normalizeRetry(options.retry);
-  const pollInterval = options.pollInterval;
+  // Treat a non-positive or non-finite pollInterval as "polling disabled".
+  // `pollInterval: 0` would otherwise `setTimeout(..., 0)` after every settle
+  // and re-fire the fetcher immediately — a runaway hot loop. `null` is the
+  // canonical "off" sentinel that `schedulePoll` already short-circuits on.
+  const rawPoll = options.pollInterval;
+  const pollInterval = rawPoll != null && Number.isFinite(rawPoll) && rawPoll > 0 ? rawPoll : null;
 
   // Client-side: if hydrate() primed a cache, consume the next value as the
   // initial data and skip the FIRST watch-driven fetch. This avoids the brief
@@ -261,10 +271,17 @@ export function resource<T, K>(
       // Errors are tracked separately because each pass allocates fresh
       // state signals; without this, an error from pass 1 would silently
       // disappear on pass 2.
-      const value = hasKey ? ssrCtx.resolvedDataByKey[userKey] : ssrCtx.resolvedData[idx];
-      data(() => value as T);
       const e = hasKey ? ssrCtx.resolvedErrorsByKey[userKey] : ssrCtx.resolvedErrors[idx];
-      if (e !== undefined) error(e);
+      if (e !== undefined) {
+        // Errored resource: the prior pass recorded `undefined` data alongside
+        // the error. Writing that `undefined` here would clobber the user's
+        // `initialValue` fallback, producing an SSR/CSR divergence. Leave
+        // `data` at its seeded `initialValue` and surface only the error.
+        error(e);
+      } else {
+        const value = hasKey ? ssrCtx.resolvedDataByKey[userKey] : ssrCtx.resolvedData[idx];
+        data(() => value as T);
+      }
     } else {
       // First pass for this resource. Resolve the source key, fire the
       // fetcher, push the promise onto pendingPromises so renderToString

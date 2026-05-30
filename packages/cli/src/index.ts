@@ -1,11 +1,41 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
 
 const args = process.argv.slice(2);
 const ssrMode = args.includes('--ssr');
 const positional = args.filter((a) => !a.startsWith('--'));
 const projectName = positional[0] || 'my-purity-app';
+
+// Reject names that would escape cwd or aren't safe slugs. Allowed: ASCII
+// letters, digits, `_`, `-`, `.` — i.e. a conservative subset of npm package
+// names. This blocks path traversal (`../`, absolute paths, backslash on
+// Windows), shell metacharacters (which would mangle the printed `cd` hint),
+// and HTML-significant characters (which would XSS the generated index.html
+// `<title>`).
+const SAFE_NAME = /^[A-Za-z0-9._-]+$/;
+if (
+  !SAFE_NAME.test(projectName) ||
+  projectName === '.' ||
+  projectName === '..' ||
+  projectName.startsWith('.') ||
+  isAbsolute(projectName)
+) {
+  console.error(
+    `\n  Invalid project name "${projectName}". Use only letters, digits, '-', '_', '.' (and not starting with '.').\n`,
+  );
+  process.exit(1);
+}
+
 const projectDir = resolve(process.cwd(), projectName);
+
+// Defense in depth: even after the slug check, ensure the resolved path is a
+// direct child of cwd. `relative()` returns '' for same-dir and starts with
+// '..' or is absolute on escape.
+const rel = relative(process.cwd(), projectDir);
+if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
+  console.error(`\n  Invalid project name "${projectName}".\n`);
+  process.exit(1);
+}
 
 if (existsSync(projectDir)) {
   console.error(`\n  Directory "${projectName}" already exists.\n`);
@@ -27,7 +57,7 @@ if (isLocal) console.log('  Using local packages from monorepo');
 console.log('');
 
 mkdirSync(projectDir, { recursive: true });
-mkdirSync(resolve(projectDir, 'src'));
+mkdirSync(resolve(projectDir, 'src'), { recursive: true });
 
 // package.json
 const scripts = ssrMode
@@ -77,8 +107,10 @@ writeFileSync(
 const coreSrcPath = resolve(coreDir, 'src/index.ts');
 const coreCompilerPath = resolve(coreDir, 'src/compiler/index.ts');
 const ssrSrcPath = resolve(ssrDir, 'src/index.ts');
+// Embed paths via `JSON.stringify` so Windows backslashes (and any other
+// JS-significant characters) are properly escaped inside the generated source.
 const pluginImport = isLocal
-  ? `import { purity } from '${resolve(pluginDir, 'src/index.ts')}';`
+  ? `import { purity } from ${JSON.stringify(resolve(pluginDir, 'src/index.ts'))};`
   : `import { purity } from '@purityjs/vite-plugin';`;
 
 // Alias block: SSR mode needs both `@purityjs/core/compiler` (more specific,
@@ -87,11 +119,11 @@ let aliasBlock = '';
 if (isLocal) {
   const aliases: string[] = [];
   if (ssrMode) {
-    aliases.push(`'@purityjs/core/compiler': '${coreCompilerPath}'`);
+    aliases.push(`'@purityjs/core/compiler': ${JSON.stringify(coreCompilerPath)}`);
   }
-  aliases.push(`'@purityjs/core': '${coreSrcPath}'`);
+  aliases.push(`'@purityjs/core': ${JSON.stringify(coreSrcPath)}`);
   if (ssrMode) {
-    aliases.push(`'@purityjs/ssr': '${ssrSrcPath}'`);
+    aliases.push(`'@purityjs/ssr': ${JSON.stringify(ssrSrcPath)}`);
   }
   aliasBlock = `\n  resolve: {\n    alias: {\n      ${aliases.join(',\n      ')},\n    },\n  },`;
 }
@@ -231,7 +263,9 @@ if (isProd) {
     try {
       const html = await mod.render(req.url ?? '/');
       res.setHeader('Content-Type', 'text/html');
-      res.end(template.replace('<!--ssr-outlet-->', html));
+      // Use split().join() so literal dollar signs in the rendered HTML
+      // are not interpreted by String.replace as $&, $1, etc.
+      res.end(template.split('<!--ssr-outlet-->').join(html));
     } catch (err) {
       sendError(res, err);
     }
@@ -249,7 +283,9 @@ if (isProd) {
         };
         const html = await mod.render(req.url ?? '/');
         res.setHeader('Content-Type', 'text/html');
-        res.end(template.replace('<!--ssr-outlet-->', html));
+        // Use split().join() so literal dollar signs in the rendered HTML
+        // are not interpreted by String.replace as $&, $1, etc.
+        res.end(template.split('<!--ssr-outlet-->').join(html));
       } catch (err) {
         vite.ssrFixStacktrace?.(err as Error);
         sendError(res, err);

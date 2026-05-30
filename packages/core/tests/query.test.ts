@@ -374,6 +374,132 @@ describe('query — SSR (ADR 0048)', () => {
   });
 });
 
+describe('query — key namespacing (audit Bug A)', () => {
+  it('does NOT collide a literal-string key with the JSON of an array key', async () => {
+    // Pre-fix: serializeKey returned the string verbatim for string keys and
+    // JSON.stringify(arr) for array keys. So `query({ key: '["x"]' })` and
+    // `query({ key: ['x'] })` both produced the cache string '["x"]' —
+    // one user's literal-string key would silently hijack another user's
+    // array-key entry, sharing data, in-flight requests, and config.
+    let arrCalls = 0;
+    let strCalls = 0;
+    const qArr = query({
+      key: ['x'],
+      fetcher: () => {
+        arrCalls++;
+        return Promise.resolve('FROM-ARRAY');
+      },
+    });
+    const qStr = query({
+      key: '["x"]',
+      fetcher: () => {
+        strCalls++;
+        return Promise.resolve('FROM-STRING');
+      },
+    });
+    // Two distinct accessors — no cache hit between the two namespaces.
+    expect(qArr).not.toBe(qStr);
+    await drain();
+    expect(qArr()).toBe('FROM-ARRAY');
+    expect(qStr()).toBe('FROM-STRING');
+    expect(arrCalls).toBe(1);
+    expect(strCalls).toBe(1);
+  });
+
+  it('invalidateQuery scopes to the right namespace', async () => {
+    let arrCalls = 0;
+    let strCalls = 0;
+    const qArr = query({
+      key: ['col'],
+      fetcher: () => {
+        arrCalls++;
+        return Promise.resolve(arrCalls);
+      },
+    });
+    const qStr = query({
+      key: '["col"]',
+      fetcher: () => {
+        strCalls++;
+        return Promise.resolve(strCalls);
+      },
+    });
+    await drain();
+    expect(qArr()).toBe(1);
+    expect(qStr()).toBe(1);
+
+    // Invalidating the string key must NOT refresh the array-key entry.
+    invalidateQuery('["col"]');
+    await drain();
+    expect(qStr()).toBe(2); // refreshed
+    expect(qArr()).toBe(1); // untouched — namespaces are isolated
+    expect(arrCalls).toBe(1);
+    expect(strCalls).toBe(2);
+  });
+});
+
+describe('query — stale resolution does not poison freshness (audit Bug B)', () => {
+  it('an aborted-but-late-resolving fetch must not stamp lastFetchedAt', async () => {
+    // Pre-fix: makeStampedFetcher stamped `lastFetchedAt = Date.now()` on
+    // every resolution, even ones whose AbortSignal had already fired. So
+    // a refresh() abort path — slow fetch A is in-flight, refresh() aborts
+    // it and starts fetch B (which never resolves in this test) — would
+    // STILL re-stamp lastFetchedAt when A's stale resolution landed. The
+    // entry then read as "fresh" within `staleTime` ms and subsequent
+    // lifecycle triggers (visibility, online, bfcache) would skip it.
+    //
+    // Repro: large staleTime; first fetch (slow A) resolves AFTER it has
+    // been aborted by refresh(); second fetch (B) stays in-flight forever
+    // so it can't stamp. A visibility trigger then must observe
+    // lastFetchedAt = 0 and revalidate — calling fetcher again. Pre-fix:
+    // A's stale resolution stamped, trigger sees "fresh", no refresh.
+    let resolveA: (v: number) => void = () => {};
+    let aborted = false;
+    let aCalls = 0;
+    let bCalls = 0;
+    const fetcher = (_key: unknown, info: { signal: AbortSignal }): Promise<number> => {
+      aCalls++;
+      if (aCalls === 1) {
+        info.signal.addEventListener('abort', () => {
+          aborted = true;
+        });
+        return new Promise<number>((res) => {
+          resolveA = res;
+        });
+      }
+      bCalls++;
+      // Subsequent fetches: never settle (until/unless a trigger fires).
+      return new Promise<number>(() => {});
+    };
+
+    const q = query({
+      key: 'stale-stamp',
+      fetcher,
+      staleTime: 60_000, // tight contract — any stamp by stale A skips the next trigger
+    });
+    // Fetch A is in-flight; refresh aborts A and starts B (B never resolves).
+    q.refresh();
+    await drain();
+    expect(aborted).toBe(true);
+
+    // Now A finally resolves AFTER being aborted. Pre-fix: this writes
+    // `lastFetchedAt = Date.now()` despite the abort signal. Post-fix:
+    // the abort gate makes this a no-op.
+    resolveA(1);
+    await drain();
+
+    // Trigger revalidation. lastFetchedAt must still be 0 (no fetch has
+    // ever successfully completed), so the trigger should fire a fresh
+    // fetch — but only if Bug B is fixed.
+    const callsBefore = aCalls + bCalls;
+    setVisibility('hidden');
+    await tick();
+    setVisibility('visible');
+    await drain();
+    const callsAfter = aCalls + bCalls;
+    expect(callsAfter).toBeGreaterThan(callsBefore);
+  });
+});
+
 describe('query — trigger-watch leak across resets (audit Bug C)', () => {
   it('_resetQueryCache disposes the lifecycle watches so a reset+rewire does not double-fire revalidation', async () => {
     // Wire round 1. This installs three watches on the lifecycle signals.

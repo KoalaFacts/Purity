@@ -60,9 +60,15 @@ let triggersWired = false;
 // signals and the next wire registers three fresh ones. Compounding leak.
 let triggerDisposes: Dispose[] = [];
 
-/** Serialize a QueryKey to a stable cache string. */
+/** Serialize a QueryKey to a stable cache string.
+ *
+ * Bug A — String vs array-key collision. Without a discriminator,
+ * `query({ key: '["x"]' })` and `query({ key: ['x'] })` both serialize to
+ * `'["x"]'` and share a cache entry — one user's string key silently
+ * hijacks another user's array key (and vice versa). Prefix each variant
+ * with a 1-char tag so the two namespaces can never collide. */
 function serializeKey(k: QueryKey): string {
-  return typeof k === 'string' ? k : JSON.stringify(k);
+  return typeof k === 'string' ? `s:${k}` : `a:${JSON.stringify(k)}`;
 }
 
 /** Refresh every cache entry whose trigger matches and whose stale window has elapsed. */
@@ -108,22 +114,59 @@ function wireRevalidationTriggers(): void {
   );
 }
 
-/** Wrap the user fetcher so each successful settle stamps `lastFetchedAt`. */
+/** Wrap the user fetcher so each successful settle stamps `lastFetchedAt`.
+ *
+ * Bug B — Stale-resolution stamp leak. Without the abort gate, a slow
+ * fetch that was superseded (by `refresh()`, `invalidateQuery`, or a
+ * source-key change) still runs its `.then()` when it eventually
+ * resolves, stamping `lastFetchedAt = Date.now()`. That stamp poisons
+ * staleTime in two ways:
+ *   (1) Concurrent fetches — if fetch A (slow) starts first, fetch B
+ *       (fast) supersedes it and stamps, then A resolves last and
+ *       overwrites the stamp with a wall-clock-newer-but-data-staler
+ *       timestamp. Subsequent triggers think the entry is fresh when
+ *       it really holds fetch B's data, still bounded by A's older
+ *       request time.
+ *   (2) Invalidate-while-loading — `invalidateQuery` zeroes
+ *       `lastFetchedAt` to force the next trigger to revalidate, then
+ *       the in-flight fetch's `.then()` lands and re-stamps it to
+ *       "now", silently undoing the invalidation.
+ * Resource() already drops stale resolutions via `myRun !== runId ||
+ * ac.signal.aborted` — gate this stamp on the same abort signal so a
+ * superseded fetch is a no-op all the way through.
+ *
+ * The wrapper also has to swallow rejections-after-abort. Without this,
+ * `fetch()` calls that lose their race throw `AbortError` from the
+ * fetcher (or from a slow user fetcher that misses its own signal) and
+ * resource() sees a rejected promise from a run it already wrote off —
+ * surfacing as `error()` on the accessor or as an
+ * unhandledRejection if the resource has already swapped out. */
 function makeStampedFetcher<T>(
   options: QueryOptions<T>,
   keyStr: string,
 ): (info: ResourceFetchInfo) => T | Promise<T> {
   return (info: ResourceFetchInfo) => {
     const result = options.fetcher(options.key, info);
+    const stampIfFresh = (): void => {
+      // Superseded fetches must not move the freshness stamp forward.
+      if (info.signal.aborted) return;
+      const e = cache.get(keyStr);
+      if (e) e.lastFetchedAt = Date.now();
+    };
     if (result && typeof (result as Promise<T>).then === 'function') {
-      return (result as Promise<T>).then((value) => {
-        const e = cache.get(keyStr);
-        if (e) e.lastFetchedAt = Date.now();
-        return value;
-      });
+      return (result as Promise<T>).then(
+        (value) => {
+          stampIfFresh();
+          return value;
+        },
+        (err) => {
+          // Don't stamp on failure — fetch produced no fresh data.
+          // Re-throw so resource() can surface the error via .error().
+          throw err;
+        },
+      );
     }
-    const e = cache.get(keyStr);
-    if (e) e.lastFetchedAt = Date.now();
+    stampIfFresh();
     return result;
   };
 }
@@ -214,8 +257,12 @@ function warnOnConfigMismatch<T>(
   ];
   for (const [name, n, e] of cases) {
     if (!Object.is(n, e)) {
+      // Strip the internal namespace prefix (`s:` for strings, `a:` for
+      // arrays — see Bug A in serializeKey) before surfacing to the user.
+      // Both prefixes are 2 chars wide, so a single slice handles both.
+      const displayKey = keyStr.slice(2);
       console.warn(
-        `[purity] query('${keyStr}') called again with a different ${name}; the first call's value wins.`,
+        `[purity] query('${displayKey}') called again with a different ${name}; the first call's value wins.`,
       );
       return;
     }

@@ -254,6 +254,123 @@ describe('stripServerActionBodies — scope-aware shadowing', () => {
   });
 });
 
+describe('stripServerActionBodies — extended shadowing patterns', () => {
+  it('does NOT strip when shadowed by a default param `serverAction = X`', () => {
+    // Default params surface as AssignmentPattern.left, not a bare Identifier.
+    // Before the audit fix, this leaked through scope-bindings and the inner
+    // call was incorrectly stripped.
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `function outer(serverAction = (url, fn) => fn) {`,
+      `  return serverAction('/api/x', async () => INNER_SECRET);`,
+      `}`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).toBeNull();
+  });
+
+  it('does NOT strip when shadowed by a rest param `...serverAction`', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `function outer(...serverAction) {`,
+      `  return serverAction[0]('/api/x', async () => INNER_SECRET);`,
+      `}`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).toBeNull();
+  });
+
+  it('does NOT strip when shadowed by a destructured param `{ serverAction }`', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `function outer({ serverAction }) {`,
+      `  return serverAction('/api/x', async () => INNER_SECRET);`,
+      `}`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).toBeNull();
+  });
+
+  it('does NOT strip when shadowed by `const { serverAction } = …`', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `function outer() {`,
+      `  const { serverAction } = somewhere;`,
+      `  return serverAction('/api/x', async () => INNER_SECRET);`,
+      `}`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).toBeNull();
+  });
+});
+
+describe('stripServerActionBodies — TypeScript type-only wrappers', () => {
+  it('strips an inline handler wrapped in `as any`', () => {
+    // Before the audit fix, the second arg was a TSAsExpression, not an
+    // ArrowFunctionExpression, so the type check at the top of the walker
+    // bailed and the handler body shipped to the client.
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = serverAction('/api/a', (async (req) => LEAKED_SECRET) as any);`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).not.toBeNull();
+    expect(result!.code).not.toContain('LEAKED_SECRET');
+    expect(result!.code).toContain(STUB_MARKER);
+  });
+
+  it('strips an inline handler wrapped in `satisfies`', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = serverAction('/api/a', (async () => LEAKED_SECRET) satisfies unknown);`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).not.toBeNull();
+    expect(result!.code).not.toContain('LEAKED_SECRET');
+  });
+
+  it('strips an inline handler wrapped in a `!` non-null assertion', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = serverAction('/api/a', (async () => LEAKED_SECRET)!);`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).not.toBeNull();
+    expect(result!.code).not.toContain('LEAKED_SECRET');
+  });
+
+  it('strips an inline handler wrapped in a `<T>` type assertion', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = serverAction('/api/a', <any>(async () => LEAKED_SECRET));`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).not.toBeNull();
+    expect(result!.code).not.toContain('LEAKED_SECRET');
+  });
+
+  it('strips when the callee is wrapped in `as any` — `(serverAction as any)(…)`', () => {
+    // Aggressive users sometimes cast away types to silence errors. The
+    // strip should still recognise the import-bound name behind the wrapper.
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = (serverAction as any)('/api/a', async () => LEAKED_SECRET);`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).not.toBeNull();
+    expect(result!.code).not.toContain('LEAKED_SECRET');
+  });
+});
+
 describe('stripServerActionBodies — type-only imports', () => {
   it('ignores `import type { serverAction }` (declaration is type-only)', () => {
     const src = [

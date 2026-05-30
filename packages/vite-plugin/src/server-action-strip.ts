@@ -156,28 +156,70 @@ function collectServerActionBindings(program: OxcNode): {
 }
 
 /**
+ * Recursively collect the Identifier-bound names introduced by a parameter
+ * pattern. Handles the realistic shapes that come up in user code:
+ *   - `serverAction`               → Identifier
+ *   - `serverAction = default`     → AssignmentPattern (default param)
+ *   - `...serverAction`            → RestElement
+ *   - `{ serverAction }`           → ObjectPattern → Property.value
+ *   - `{ serverAction: alias }`    → Property.value Identifier
+ *   - `[serverAction]`             → ArrayPattern element
+ *
+ * Anything we can't decode is silently ignored — the consequence of missing
+ * a binding is over-eager stripping, which is already gated behind the
+ * `*.server.ts` filename convention as defense-in-depth.
+ */
+function collectPatternIdentifiers(pattern: OxcNode | null | undefined, out: Set<string>): void {
+  if (!pattern) return;
+  switch (pattern.type) {
+    case 'Identifier':
+      if (pattern.name) out.add(pattern.name);
+      return;
+    case 'AssignmentPattern':
+      // `param = default` — only the `left` introduces a binding.
+      collectPatternIdentifiers(pattern.left, out);
+      return;
+    case 'RestElement':
+      collectPatternIdentifiers(pattern.argument, out);
+      return;
+    case 'ArrayPattern':
+      for (const el of pattern.elements ?? []) collectPatternIdentifiers(el, out);
+      return;
+    case 'ObjectPattern':
+      for (const prop of pattern.properties ?? []) {
+        if (prop.type === 'RestElement') {
+          collectPatternIdentifiers(prop.argument, out);
+        } else {
+          // Property: `{ key: value }` (shorthand has key === value as same Identifier).
+          collectPatternIdentifiers(prop.value, out);
+        }
+      }
+      return;
+  }
+}
+
+/**
  * Names locally declared at the top of `scope` (function params + body's
  * top-level `let/const/var/function/class` declarations). Used to prune
  * shadowed bindings before walking into the scope.
  *
- * Conservative — only catches the common shadowing shapes:
- *   - Identifier params (skips destructuring / rest patterns)
+ * Handles the common shadowing shapes:
+ *   - Identifier params, default params (`= x`), rest params (`...x`), and
+ *     destructured params (`{ x }`, `[x]`).
  *   - `function foo() {}` declarations
- *   - `var/let/const foo = …` with an identifier binding
+ *   - `var/let/const foo = …` with an identifier binding (and destructured
+ *     identifiers thereof)
  *   - `class Foo {}` declarations
  *
- * That covers the realistic "users shadow `serverAction` with a local
- * function or const" cases. Deeper shadowing (destructured aliases, TDZ
- * tricks) is rare enough that the false-positive risk is acceptable —
- * the worst case is over-eager stripping that the `*.server.ts` filename
- * convention already handles defensively.
+ * Deeper shadowing (TDZ tricks, block-scoped declarations inside nested
+ * if/for/try blocks) is rare enough that the false-positive risk is
+ * acceptable — the worst case is over-eager stripping that the `*.server.ts`
+ * filename convention already handles defensively.
  */
 function localScopeBindings(scope: OxcNode): Set<string> {
   const names = new Set<string>();
   if (Array.isArray(scope.params)) {
-    for (const p of scope.params) {
-      if (p?.type === 'Identifier' && p.name) names.add(p.name);
-    }
+    for (const p of scope.params) collectPatternIdentifiers(p, names);
   }
   let bodyStatements: OxcNode[] | null = null;
   const body = scope.body;
@@ -190,8 +232,9 @@ function localScopeBindings(scope: OxcNode): Set<string> {
         names.add(stmt.id.name);
       } else if (stmt.type === 'VariableDeclaration') {
         for (const d of (stmt.declarations as OxcNode[] | undefined) ?? []) {
-          const id = d.id;
-          if (id?.type === 'Identifier' && id.name) names.add(id.name);
+          // Decode the binding pattern so `const { serverAction } = …` and
+          // `const [serverAction] = …` also shadow.
+          collectPatternIdentifiers(d.id, names);
         }
       } else if (stmt.type === 'ClassDeclaration' && stmt.id?.name) {
         names.add(stmt.id.name);
@@ -252,12 +295,15 @@ function isServerActionCallee(
   namespaceNames: Set<string>,
 ): boolean {
   if (!callee) return false;
-  if (callee.type === 'Identifier' && callee.name && directNames.has(callee.name)) {
+  // `(serverAction as any)(...)` / `(serverAction)(...)` — peel the type-only
+  // wrappers so the user can't dodge stripping with a cast.
+  const target = unwrapTypeWrappers(callee);
+  if (target.type === 'Identifier' && target.name && directNames.has(target.name)) {
     return true;
   }
-  if (callee.type === 'MemberExpression' && !callee.computed) {
-    const obj = callee.object;
-    const prop = callee.property;
+  if (target.type === 'MemberExpression' && !target.computed) {
+    const obj = target.object ? unwrapTypeWrappers(target.object) : null;
+    const prop = target.property;
     if (
       obj?.type === 'Identifier' &&
       obj.name &&
@@ -275,6 +321,32 @@ interface Edit {
   start: number;
   end: number;
   replacement: string;
+}
+
+/**
+ * Peel off purely-syntactic wrappers that don't contribute to the runtime
+ * value of a CallExpression argument — TS casts (`as`, `satisfies`, `!`,
+ * `<T>x`) and parentheses. The wrapped expression IS the function we want
+ * to strip, so without this peel a `(async () => SECRET) as any` handler
+ * would slip through the `ArrowFunctionExpression` type check and leak its
+ * body into the client bundle.
+ *
+ * Returns the unwrapped node (always non-null when given non-null input).
+ */
+function unwrapTypeWrappers(node: OxcNode): OxcNode {
+  let cur: OxcNode = node;
+  while (
+    cur.type === 'TSAsExpression' ||
+    cur.type === 'TSSatisfiesExpression' ||
+    cur.type === 'TSNonNullExpression' ||
+    cur.type === 'TSTypeAssertion' ||
+    cur.type === 'ParenthesizedExpression'
+  ) {
+    const inner = cur.expression as OxcNode | null | undefined;
+    if (!inner) break;
+    cur = inner;
+  }
+  return cur;
 }
 
 /**
@@ -304,12 +376,17 @@ export function stripServerActionBodies(code: string, _id: string): StripResult 
     if (!isServerActionCallee(call.callee, active.direct, active.ns)) return;
     const args = call.arguments;
     if (!args || args.length < 2) return;
-    const handler = args[1]!;
+    const rawHandler = args[1]!;
+    // Strip purely-syntactic wrappers (TS casts, parens) before deciding —
+    // `(async () => SECRET) as any` is still an inline handler we must strip.
+    const handler = unwrapTypeWrappers(rawHandler);
     if (handler.type !== 'ArrowFunctionExpression' && handler.type !== 'FunctionExpression') {
       // Identifier reference / spread / object — leave alone (out of scope).
       return;
     }
-    edits.push({ start: handler.start, end: handler.end, replacement: STUB });
+    // Replace from the OUTER wrapper start to its end so we don't leave a
+    // stale `as any` trailer or stray parens behind the stub.
+    edits.push({ start: rawHandler.start, end: rawHandler.end, replacement: STUB });
   });
 
   if (edits.length === 0) return null;

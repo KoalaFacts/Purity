@@ -55,7 +55,14 @@ function focusElement(el: HTMLElement): void {
   }
   // preventScroll: true so manageNavScroll's scroll-to-top isn't undone
   // by focus auto-scrolling the page back to the landmark.
-  el.focus({ preventScroll: true });
+  // Isolate focus() throws — a detached element, a polyfilled element with
+  // a custom .focus override, or jsdom edge cases can throw. This runs in
+  // a microtask: uncaught → unhandled error, skips the rest of the page.
+  try {
+    el.focus({ preventScroll: true });
+  } catch (err) {
+    console.error('[purity] manageNavFocus: focus() threw:', err);
+  }
 }
 
 /**
@@ -103,19 +110,54 @@ export function manageNavFocus(options: ManageNavFocusOptions = {}): () => void 
           }
           const hashEl = document.getElementById(id);
           if (hashEl) {
-            focusElement(hashEl);
+            focusElement(hashEl as HTMLElement);
             return;
           }
         }
-        const el = document.querySelector(selector) as HTMLElement | null;
+        // querySelector throws SyntaxError on an invalid selector — and
+        // `selector` is user-supplied via options. A throw inside this
+        // microtask escapes as an unhandled error and skips focus on
+        // every subsequent nav until the user notices. Fail soft.
+        let el: HTMLElement | null = null;
+        try {
+          el = document.querySelector(selector) as HTMLElement | null;
+        } catch (err) {
+          console.error(
+            `[purity] manageNavFocus: invalid selector ${JSON.stringify(selector)}:`,
+            err,
+          );
+          return;
+        }
         if (el) focusElement(el);
       };
 
-  return onNavigate((url, replace) => {
+  // Active flag so teardown short-circuits any already-queued microtask.
+  // Without this, `navigate(); teardown();` still focuses the (possibly
+  // unmounted) landmark on the next tick — leaks focus into stale DOM
+  // during HMR / test cleanup and undermines the "teardown stops it"
+  // contract.
+  let active = true;
+  const unsubscribe = onNavigate((url, replace) => {
     // Microtask defer — same reasoning as manageNavScroll: route handlers
     // may mount the target element synchronously in response to the
     // reactive URL signal, but the DOM only flushes after the current
     // task. Deferring gives the new landmark a chance to exist.
-    queueMicrotask(() => handler(url, replace));
+    queueMicrotask(() => {
+      if (!active) return;
+      // Isolate handler throws — including a user-supplied custom handler.
+      // navigate()'s listener loop already isolates synchronous throws, but
+      // we deferred to a microtask: an uncaught throw escapes as an
+      // unhandled error and tears down the rest of the page. Logging here
+      // matches the listener-isolation pattern used elsewhere in the router.
+      try {
+        handler(url, replace);
+      } catch (err) {
+        console.error('[purity] manageNavFocus: handler threw:', err);
+      }
+    });
   });
+  return () => {
+    active = false;
+    unsubscribe();
+  };
 }

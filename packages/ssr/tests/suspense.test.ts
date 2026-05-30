@@ -340,6 +340,59 @@ describe('suspense() — client + hydration', () => {
     expect(out).toContain('<aside><!--[-->fast<!--]--></aside>');
   });
 
+  it('does not let a late-resolving resource mutate the SSR cache after its boundary times out', async () => {
+    // Regression: before the boundary-scoped abort guard, a resource()
+    // fired inside a `suspense({ timeout })` view that lost its deadline
+    // race still ran its `.then()` callback when the underlying fetch
+    // eventually settled — and that callback wrote into the shared
+    // `resolvedDataByKey` on the SSRRenderContext. If the late write
+    // landed *during* the same renderToString call (e.g. while the
+    // outer loop was awaiting a sibling boundary's resources), the
+    // next pass's `resource()` observed `userKey in resolvedDataByKey`
+    // as true and surfaced the late value — corrupting the rendered
+    // output and the serialized hydration cache.
+    //
+    // Driver: a 1ms boundary whose fetcher resolves at 15ms, alongside
+    // a 200ms sibling boundary whose fetcher resolves at 30ms. The
+    // first boundary's deadline fires immediately; the render then
+    // waits for the sibling — during that 30ms window the first
+    // boundary's late fetch settles. Without the guard, its `.then()`
+    // writes `LATE-VALUE` into `resolvedDataByKey['late']` and it
+    // leaks into the serialized __purity_resources__ payload.
+    const out = await renderToString(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            const r = resource(
+              () => new Promise<string>((resolve) => setTimeout(() => resolve('LATE-VALUE'), 15)),
+              { key: 'late' },
+            );
+            return ssrHtml`<aside>${() => r() ?? '...'}</aside>`;
+          },
+          () => ssrHtml`<aside class="loading">FB</aside>`,
+          { timeout: 1 },
+        )}${suspense(
+          () => {
+            const k = resource(
+              () => new Promise<string>((resolve) => setTimeout(() => resolve('SIB'), 30)),
+              { key: 'sibling' },
+            );
+            return ssrHtml`<aside>${() => k() ?? '...'}</aside>`;
+          },
+          () => ssrHtml`<aside>SIB-FB</aside>`,
+          { timeout: 200 },
+        )}</main>`,
+    );
+    // First boundary surrendered to its fallback…
+    expect(out).toContain('<aside class="loading">FB</aside>');
+    // …and the sibling resolved normally.
+    expect(out).toContain('<aside><!--[-->SIB<!--]--></aside>');
+    // Smoking gun: the late-arriving 'LATE-VALUE' must NOT appear in
+    // the rendered HTML or the serialized __purity_resources__ payload.
+    expect(out).not.toContain('LATE-VALUE');
+    expect(out).not.toContain('"late":"LATE-VALUE"');
+  });
+
   it('hydrates nested suspense boundaries with marker stripping at each level', async () => {
     const ssr = await renderToString(
       () =>

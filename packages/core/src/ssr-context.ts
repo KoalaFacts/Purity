@@ -70,6 +70,25 @@ export interface SSRRenderContext {
    */
   timedOutBoundaries: Set<number>;
   /**
+   * LIFO stack of boundary IDs currently being rendered. `suspense()`
+   * pushes its `id` before invoking `view()` and pops in a finally.
+   * `resource()` reads the top of the stack at fetcher-registration
+   * time and captures the id alongside the SSR `ssrCtx` reference; its
+   * settle path then bails when `ssrCtx.timedOutBoundaries.has(capturedId)`
+   * is true — i.e. the surrounding boundary surrendered to its fallback
+   * before the fetch settled. Without this, a late-resolving fetcher
+   * that wins after the boundary's deadline still mutates the shared
+   * `resolvedDataByKey` and corrupts the next pass's render.
+   *
+   * `timedOutBoundaries` is the same shared `Set` instance across all
+   * passes of a single `renderToString` call (declared once in
+   * `render-to-string.ts`, threaded onto each pass's ctx). That's why
+   * resource() observes the boundary's timeout even though the ctx it
+   * captured on pass 1 has been replaced by pass 2's ctx — the Set
+   * reference still points at the live timeout-tracker.
+   */
+  boundaryIdStack?: number[];
+  /**
    * When true, `suspense()` skips its inline `view()` rendering during
    * the SSR pass, emits the fallback in the shell, and registers the
    * `view` (+ its `fallback` for a re-render on timeout) into
@@ -139,6 +158,22 @@ export function popSSRRenderContext(): void {
   // `finally` running after a callee already popped the same frame). Was
   // previously a silent overwrite-to-null, which had the same effect.
   contextStack.pop();
+}
+
+/**
+ * Return the innermost active boundary id currently being rendered, or
+ * `null` when there is no SSR context or no active boundary. Used by
+ * `resource()` to capture the surrounding boundary id at fetcher
+ * registration time so its settle path can check
+ * `ctx.timedOutBoundaries.has(id)` and bail before mutating the shared
+ * resolved-data cache.
+ *
+ * @internal
+ */
+export function currentBoundaryId(): number | null {
+  const ctx = getSSRRenderContext();
+  if (!ctx || !ctx.boundaryIdStack || ctx.boundaryIdStack.length === 0) return null;
+  return ctx.boundaryIdStack[ctx.boundaryIdStack.length - 1];
 }
 
 // ---------------------------------------------------------------------------

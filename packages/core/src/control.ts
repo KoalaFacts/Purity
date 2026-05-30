@@ -1924,6 +1924,18 @@ export function suspense<T>(
     }
   }
 
+  // Track the active boundary so any `resource()` invoked inside
+  // `view()` can capture this id at fetcher-registration time. If the
+  // surrounding boundary later loses its deadline race, the renderer
+  // adds the id to the shared `timedOutBoundaries` Set; the resource's
+  // settle path observes that membership and short-circuits before
+  // mutating `resolvedDataByKey` — which would otherwise corrupt the
+  // hydration cache (and, when the late write lands during a sibling
+  // boundary's await window in the same render, the rendered HTML
+  // too). The stack is re-entrant-safe: nested suspense() boundaries
+  // each push their id and pop, so the innermost wraps the resource.
+  const idStack = (ssrCtx.boundaryIdStack ??= []);
+
   const onError = options?.onError;
   const reportError = (err: unknown, phase: SuspenseErrorPhase): void => {
     if (onError) {
@@ -2001,14 +2013,29 @@ export function suspense<T>(
       body = '';
     }
   } else {
+    // Push the boundary id around view() so resources opened inside it
+    // capture it; pop in `finally` so a synchronous throw doesn't leak
+    // a stale frame onto the stack.
+    idStack.push(id);
+    let viewThrew = false;
     try {
       body = valueToHtml(view());
     } catch (err) {
+      viewThrew = true;
       reportError(err, 'view');
       console.error(
         `[Purity] suspense() view threw during SSR (boundary ${id}); rendering fallback:`,
         err,
       );
+      // The fallback() runs AFTER the finally below pops the boundary
+      // id, so its own resources are scoped to the surrounding (outer)
+      // boundary, not this failed one. This matches the existing
+      // semantics for fallback resources.
+      body = '__pending_fallback__';
+    } finally {
+      if (idStack[idStack.length - 1] === id) idStack.pop();
+    }
+    if (viewThrew) {
       try {
         body = valueToHtml(fallback());
       } catch (fallbackErr) {

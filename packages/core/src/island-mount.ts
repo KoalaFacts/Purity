@@ -122,6 +122,13 @@ export interface MountIslandsOptions {
  * between the SSR render and the client entry — usually a re-ordered
  * import.
  */
+// Track which wrappers we've already scheduled hydration for. WeakSet
+// so wrappers removed from the DOM are auto-cleaned. Per-call guards
+// (e.g. mountIslands called twice during HMR or by user error) would
+// otherwise stack listeners on `interact` islands, double-observe
+// `visible` islands, and run `done()`/`onMount` twice each.
+const hydrated = new WeakSet<Element>();
+
 export function mountIslands(
   views: ReadonlyArray<IslandEntry>,
   options: MountIslandsOptions = {},
@@ -132,6 +139,13 @@ export function mountIslands(
   const wrappers = root.querySelectorAll(WRAPPER_SELECTOR);
   for (let i = 0; i < wrappers.length; i++) {
     const el = wrappers[i] as HTMLElement;
+    // Idempotency: a second mountIslands() call (HMR boot, user error,
+    // a manifest-scan in a parent shell that also covers a nested
+    // wrapper) must NOT re-arm hydration for an already-scheduled
+    // wrapper. Without this guard, `interact` islands accumulate
+    // listeners and `load` islands double-hydrate.
+    if (hydrated.has(el)) continue;
+    hydrated.add(el);
     const rawId = el.getAttribute('data-pi-id');
     const id = rawId != null ? Number(rawId) : NaN;
     if (!Number.isInteger(id) || id < 1) {

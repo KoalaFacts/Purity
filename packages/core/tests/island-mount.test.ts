@@ -92,6 +92,20 @@ describe('mountIslands() — load trigger', () => {
     expect(onMount).toHaveBeenCalledWith(1, expect.any(HTMLElement));
   });
 
+  it('a second mountIslands() call does NOT re-hydrate an already-scheduled wrapper', async () => {
+    // HMR or a user error that calls mountIslands() twice must not
+    // double-arm hydration. Pre-fix the same wrapper got hydrated
+    // twice — `interact` islands stacked listeners, `load` islands ran
+    // their view + onMount twice.
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'load', '<span>x</span>');
+    const onMount = vi.fn();
+    mountIslands([island(View)], { onMount });
+    mountIslands([island(View)], { onMount });
+    await tick();
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
+
   it('limits scanning to the `root` option', async () => {
     const View = (): unknown => html`<span>x</span>`;
     const outsideRoot = makeWrapper(1, 'load', '<span>x</span>');

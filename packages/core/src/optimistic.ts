@@ -128,16 +128,40 @@ export function optimistic<TArgs>(
         succeeded = false;
       }
       if (succeeded) {
+        // Resolve the keys list with one outer try (covers a throwing
+        // `invalidates` function or a non-iterable return), then isolate
+        // each `invalidateQuery(k)` call so one bad key (e.g. a value whose
+        // `toJSON` throws inside serializeKey) cannot skip the remaining
+        // keys — the SWR cache must be fully bust on success.
+        let keys: Iterable<QueryKey> | undefined;
         try {
           if (options.invalidates) {
-            const keys =
+            const raw =
               typeof options.invalidates === 'function'
                 ? options.invalidates(args, response)
                 : options.invalidates;
-            if (keys) for (const k of keys) invalidateQuery(k);
+            if (raw) {
+              if (typeof (raw as { [Symbol.iterator]?: unknown })[Symbol.iterator] !== 'function') {
+                console.error(
+                  '[purity] optimistic invalidates returned a non-iterable; skipping:',
+                  raw,
+                );
+              } else {
+                keys = raw as Iterable<QueryKey>;
+              }
+            }
           }
         } catch (err) {
           console.error('[purity] optimistic invalidates threw:', err);
+        }
+        if (keys) {
+          for (const k of keys) {
+            try {
+              invalidateQuery(k);
+            } catch (err) {
+              console.error('[purity] optimistic invalidateQuery threw for key; skipping:', err);
+            }
+          }
         }
       } else if (rollback) {
         try {

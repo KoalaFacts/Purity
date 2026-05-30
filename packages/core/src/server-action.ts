@@ -59,6 +59,46 @@ export interface ServerAction<H extends ServerActionHandler = ServerActionHandle
 
 const registry = new Map<string, ServerActionHandler>();
 
+// Scheme allow-list for serverAction() URLs. Anything else (javascript:,
+// data:, blob:, file:, vbscript:, ...) is rejected at registration time
+// because `action.invoke()` feeds the URL straight into `fetch()` — a
+// `javascript:` URL would be a script-execution vector in environments
+// that follow it, and `data:` / `blob:` URLs let an attacker who
+// controls the registration string short-circuit the network entirely.
+// Same-origin paths (starting with `/`) and absolute http(s) URLs are
+// the only shapes a real server action takes.
+function assertSafeActionUrl(url: string): void {
+  // Reject CR/LF/NUL — these enable response-splitting / header
+  // injection when concatenated into a URL or sent through fetch.
+  // (Modern fetch normalises some of this, but defense-in-depth.)
+  // Also reject tab and other C0 control chars per RFC 3986.
+  for (let i = 0; i < url.length; i++) {
+    const c = url.charCodeAt(i);
+    if (c < 0x20 || c === 0x7f) {
+      throw new TypeError(
+        '[Purity] serverAction(): url must not contain control characters (CR/LF/NUL/etc).',
+      );
+    }
+  }
+  // Path-style URLs are fine (most common case).
+  if (url.charCodeAt(0) === 47 /* '/' */) return;
+  // Otherwise it must parse as an absolute URL with an allow-listed scheme.
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new TypeError(
+      '[Purity] serverAction(): url must be a path starting with "/" or an absolute http(s) URL.',
+    );
+  }
+  const scheme = parsed.protocol;
+  if (scheme !== 'http:' && scheme !== 'https:') {
+    throw new TypeError(
+      `[Purity] serverAction(): url scheme "${scheme}" is not allowed. Use a path or http(s) URL.`,
+    );
+  }
+}
+
 /**
  * Register a server action at a stable URL. Returns a `ServerAction` whose
  * `.url` you wire into your `<form action="…">` or `fetch(url, …)` call.
@@ -103,6 +143,7 @@ export function serverAction<H extends ServerActionHandler>(
   if (typeof handler !== 'function') {
     throw new TypeError('[Purity] serverAction(): handler must be a function.');
   }
+  assertSafeActionUrl(url);
   registry.set(url, handler);
   return {
     url,
@@ -114,7 +155,17 @@ export function serverAction<H extends ServerActionHandler>(
             'On the server, call `action.handler(request)` directly.',
         );
       }
-      return fetch(url, { method: 'POST', body: body ?? null, ...init });
+      // Spread init FIRST so explicit defaults (method: POST, body) win
+      // over caller-supplied init only when the caller didn't provide
+      // them. Previously `...init` came last and could clobber the
+      // method default — documented as intentional, but it also meant
+      // an `init` without `method` still got POST. Preserve that: only
+      // fall back to POST / null body when caller omitted the field.
+      // Using `?? 'POST'` / `?? null` is robust against `method: undefined`.
+      const method = init?.method ?? 'POST';
+      const finalBody =
+        init && 'body' in init ? (init.body as BodyInit | null | undefined) : (body ?? null);
+      return fetch(url, { ...init, method, body: finalBody });
     },
   };
 }
@@ -128,7 +179,25 @@ export function serverAction<H extends ServerActionHandler>(
  * standard "find + invoke + return Response" flow, use {@link handleAction}.
  */
 export function findAction(request: Request): ServerActionHandler | null {
-  const pathname = new URL(request.url).pathname;
+  // `new URL()` throws on malformed inputs. A real `Request` always has
+  // a valid URL, but `findAction` accepts the structural `Request`
+  // shape — a duck-typed mock with `url: ''` (or a relative path)
+  // would crash the dispatch path. Catch + return null so the caller
+  // falls through to SSR cleanly instead of bubbling a TypeError.
+  let pathname: string;
+  try {
+    pathname = new URL(request.url).pathname;
+  } catch {
+    return null;
+  }
+  // Reject prototype-pollution-style keys defensively. Map.get on
+  // '__proto__' / 'constructor' is safe (Map keys are real keys, not
+  // property lookups), but if a downstream consumer ever swaps the
+  // registry for a plain object, this short-circuit keeps the
+  // contract identical. Cheap and unambiguous.
+  if (pathname === '__proto__' || pathname === 'constructor' || pathname === 'prototype') {
+    return null;
+  }
   return registry.get(pathname) ?? null;
 }
 
@@ -164,7 +233,20 @@ export async function handleAction(request: Request): Promise<Response | null> {
   }
   const handler = findAction(request);
   if (!handler) return null;
-  return handler(request);
+  const result = await handler(request);
+  // Response brand validation. A handler that returns `undefined` /
+  // `null` / a plain object (`{ status: 200 }`) would otherwise leak
+  // a non-Response value to the caller, who expects to be able to
+  // call `.headers` / `.status` / `.text()` on it. Detect the brand
+  // and throw a clear error instead of crashing downstream.
+  if (!(result instanceof Response)) {
+    throw new TypeError(
+      '[Purity] handleAction(): handler must return a Response (got ' +
+        (result === null ? 'null' : typeof result) +
+        ').',
+    );
+  }
+  return result;
 }
 
 /** @internal — clear the action registry. Used by tests; not exported. */

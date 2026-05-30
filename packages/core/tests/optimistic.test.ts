@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { optimistic, query, serverAction } from '../src/index.ts';
-import { _resetQueryCache } from '../src/query.ts';
+import { _resetQueryCache, type QueryKey } from '../src/query.ts';
 import { _resetPageVisibilitySignal } from '../src/page-visibility-signal.ts';
 import { _resetOnlineSignal } from '../src/online-signal.ts';
 import { _resetBfcacheRestoreSignal } from '../src/bfcache-restore-signal.ts';
@@ -448,4 +448,62 @@ describe('optimistic — user-hook throw isolation (audit Bug D)', () => {
     );
     errSpy.mockRestore();
   });
+});
+
+describe('optimistic — audit-v2 hardening', () => {
+  it('a throwing invalidate key does NOT skip subsequent keys (per-key isolation)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let goodKeyCalls = 0;
+    query({
+      key: 'good-key',
+      fetcher: () => {
+        goodKeyCalls++;
+        return Promise.resolve(null);
+      },
+    });
+    await drain();
+    expect(goodKeyCalls).toBe(1);
+
+    const act = makeFakeAction('/ok', () => new Response('', { status: 200 }));
+    const wrapped = optimistic<void>(act, {
+      body: () => null,
+      // First key has a `toString`/`JSON.stringify` that throws — must not skip 'good-key'.
+      invalidates: () => {
+        const bad = {
+          toJSON() {
+            throw new Error('bad key serialize');
+          },
+        } as unknown as string;
+        return [bad, 'good-key'];
+      },
+    });
+    await wrapped.invoke();
+    await drain();
+    // The good key MUST have been invalidated even though the bad key threw.
+    expect(goodKeyCalls).toBe(2);
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it('invalidates returning a non-iterable does not throw out of invoke()', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const act = makeFakeAction('/ok', () => new Response('', { status: 200 }));
+    let rollbackCalls = 0;
+    const wrapped = optimistic<void>(act, {
+      body: () => null,
+      apply: () => () => {
+        rollbackCalls++;
+      },
+      // Bad return — a plain object, not an array/iterable. Must be tolerated and
+      // logged, not crash out of invoke() (which would spuriously roll back).
+      invalidates: () => ({ not: 'iterable' }) as unknown as QueryKey[],
+    });
+    const res = await wrapped.invoke();
+    expect(res.status).toBe(200);
+    // Response succeeded → rollback must NOT fire just because invalidates was malformed.
+    expect(rollbackCalls).toBe(0);
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
 });

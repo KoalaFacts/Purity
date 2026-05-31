@@ -165,6 +165,148 @@ describe('renderStatic — composes routes via renderToString', () => {
     expect(files.size).toBe(4);
   });
 
+  it('isolates onRoute sink failures from render errors (separate bucket)', async () => {
+    // Audit: render-static.ts:140 — onRoute throws should NOT pollute `errors`
+    // (which is for render failures); the HTML is already in `files`. Keep
+    // sink failures in `onRouteErrors` so callers can distinguish them.
+    const { files, errors, onRouteErrors } = await renderStatic({
+      routes: ['/a', '/b'],
+      handler: () => () => ssrHtml`<p>ok</p>`,
+      shellTemplate: SHELL,
+      onRoute: (path) => {
+        if (path === '/a') throw new Error('disk full');
+      },
+    });
+    // The HTML is still in `files` even though the sink failed.
+    expect(files.has('/a')).toBe(true);
+    expect(files.has('/b')).toBe(true);
+    // Render `errors` is untouched — only the sink bucket carries the throw.
+    expect(errors.size).toBe(0);
+    expect(onRouteErrors.size).toBe(1);
+    expect(String(onRouteErrors.get('/a'))).toContain('disk full');
+  });
+
+  it('clones a user-supplied Request so its body survives repeated renders', async () => {
+    // Audit: render-static.ts:129 — `route.request` forwarded verbatim would
+    // make a re-rendered Request unusable (`TypeError: Body is unusable`)
+    // because `renderToString` / `getRequest()` consumers may read the body.
+    // The fix is to `.clone()` user-supplied Requests.
+    const customReq = new Request('http://localhost/p', {
+      method: 'POST',
+      body: 'payload',
+    });
+    // The handler runs synchronously inside renderToString and is the
+    // first place that observes the per-route Request. Read the body
+    // there so consumption order matches a real router.
+    const bodies: string[] = [];
+    const drainHandler = async (req: Request) => {
+      bodies.push(await req.text());
+    };
+    // Drain via handler — but renderStatic forwards `request` to the
+    // component too, so we just consume it once per render.
+    await renderStatic({
+      routes: [{ path: '/p', request: customReq }],
+      handler: (req) => {
+        // Fire-and-await before returning a thunk by hoisting into a
+        // promise the test then awaits via `bodies`.
+        void drainHandler(req);
+        return () => ssrHtml`<p></p>`;
+      },
+    });
+    // Re-render with the same Request: must not throw "Body is unusable".
+    await renderStatic({
+      routes: [{ path: '/p', request: customReq }],
+      handler: (req) => {
+        void drainHandler(req);
+        return () => ssrHtml`<p></p>`;
+      },
+    });
+    // Allow the drain microtasks to settle.
+    await new Promise<void>((r) => setTimeout(r, 0));
+    expect(bodies).toEqual(['payload', 'payload']);
+  });
+
+  it('rejects unsafe route paths (traversal, protocol-relative, scheme, control chars)', async () => {
+    // Audit: render-static.ts:129 — `baseUrl + route.path` is concatenated
+    // without normalisation; `..`, `//host`, `http://evil`, CR/LF flow into
+    // `new Request()` and downstream filesystem writers. Validate up-front.
+    const { files, errors } = await renderStatic({
+      routes: [
+        '/../../etc/passwd',
+        '//evil.example.com/admin',
+        'http://evil.example.com/',
+        '/ok',
+        '/with\r\ninjection',
+        '',
+        'no-leading-slash',
+      ],
+      handler: () => () => ssrHtml`<p>safe</p>`,
+    });
+    expect(files.has('/ok')).toBe(true);
+    expect(files.size).toBe(1);
+    for (const path of [
+      '/../../etc/passwd',
+      '//evil.example.com/admin',
+      'http://evil.example.com/',
+      '/with\r\ninjection',
+      '',
+      'no-leading-slash',
+    ]) {
+      expect(errors.has(path)).toBe(true);
+      expect(String(errors.get(path))).toContain('unsafe route path');
+    }
+  });
+
+  it('throws synchronously on an invalid baseUrl', async () => {
+    // Audit: render-static.ts — `baseUrl` is concatenated; a scheme-less or
+    // garbage value would produce N indistinguishable per-route TypeErrors.
+    // Validate once, up-front, with a clear message.
+    await expect(
+      renderStatic({
+        routes: ['/'],
+        baseUrl: 'not a url',
+        handler: () => () => ssrHtml`<p></p>`,
+      }),
+    ).rejects.toThrow(/invalid baseUrl/);
+  });
+
+  it('places doctype before the shell instead of inside {{body}}', async () => {
+    // Audit: render-static.ts — `renderToString` prepends `doctype` inside
+    // `body`, so when a `shellTemplate` is supplied the doctype lands
+    // *inside* the {{body}} splice (e.g. inside `<div id="app">`).
+    // Doctype must be the first bytes of the document.
+    const { files } = await renderStatic({
+      routes: ['/'],
+      handler: () => () => ssrHtml`<main>x</main>`,
+      doctype: '<!doctype html>',
+      shellTemplate: '<html><head>{{head}}</head><body><div id="app">{{body}}</div></body></html>',
+    });
+    const out = files.get('/')!;
+    expect(out.startsWith('<!doctype html><html>')).toBe(true);
+    // The doctype must not appear inside the app container.
+    expect(out).not.toContain('<div id="app"><!doctype');
+  });
+
+  it('does not expand a {{body}} literal that appears inside rendered head markup', async () => {
+    // Audit: applyShell spliced `{{head}}` first, then `{{body}}`, so a
+    // `{{body}}` literal in the head HTML would be double-injected. Splice
+    // both placeholders in a single pass to defuse cross-contamination.
+    const { files } = await renderStatic({
+      routes: ['/'],
+      handler: () => () => {
+        // Inject a head meta whose content contains the literal `{{body}}`.
+        head(ssrHtml`<meta name="x" content="{{body}}">`);
+        return ssrHtml`<main>REAL_BODY</main>`;
+      },
+      shellTemplate: SHELL,
+    });
+    const out = files.get('/')!;
+    // The literal `{{body}}` survives inside the meta (was not expanded).
+    expect(out).toContain('content="{{body}}"');
+    // The real body landed exactly once at the {{body}} placeholder.
+    expect(out.match(/REAL_BODY/g)?.length).toBe(1);
+  });
+
   it('handles a suspense() boundary inside an SSG render', async () => {
     const { files } = await renderStatic({
       routes: ['/'],

@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import { when } from './control.ts';
-import { popLoaderData, pushLoaderData } from './loader-data.ts';
+import { type LoaderDataToken, popLoaderData, pushLoaderData } from './loader-data.ts';
 import { lazyResource } from './resource.ts';
 import { getRequest } from './request-context.ts';
 import { currentPath } from './router.ts';
@@ -95,6 +95,49 @@ async function callLoader(mod: AsyncModule, ctx: LoaderContext): Promise<unknown
 }
 
 /**
+ * Resolve the route's error-boundary view, surfacing import failures while
+ * preserving the original loader/import error. Without this wrapper, an
+ * `errorBoundary.importFn()` that itself rejects (network blip, missing
+ * chunk, dev-time syntax error) would re-throw a fresh error that masks
+ * the underlying loader bug — and the user never sees the root cause.
+ * We re-throw an `AggregateError` so observers (Sentry, dev overlay) can
+ * walk `.errors` to reach both layers.
+ */
+async function loadErrorBoundary(
+  entry: AsyncRouteEntry,
+  originalErr: unknown,
+): Promise<((err: unknown) => unknown) | null> {
+  if (!entry.errorBoundary) return null;
+  let errMod: { default?: (e: unknown) => unknown };
+  try {
+    errMod = (await entry.errorBoundary.importFn()) as {
+      default?: (e: unknown) => unknown;
+    };
+  } catch (boundaryErr) {
+    // Boundary import rejected. We want both errors visible. AggregateError
+    // is the standard shape; consumers can `.errors[0]` for the loader
+    // failure and `.errors[1]` for the boundary import failure. `cause`
+    // also threads the boundary import failure for tools that walk it.
+    // eslint-disable-next-line preserve-caught-error -- AggregateError preserves both via `.errors[]` + `.cause`; lint pattern matches only `Error`-shaped constructors.
+    const agg = new AggregateError(
+      [originalErr, boundaryErr],
+      '[purity] asyncRoute: error boundary import failed; original loader error preserved in .errors[0]',
+      { cause: boundaryErr },
+    );
+    throw agg;
+  }
+  if (typeof errMod?.default !== 'function') {
+    // Boundary module loaded but exports nothing usable. Treat as if no
+    // boundary were configured — re-throw the ORIGINAL loader error so the
+    // consumer's outer fallback path runs. Crucially this is OUTSIDE the
+    // try/catch above so we don't wrap the original in an AggregateError
+    // with itself.
+    throw originalErr;
+  }
+  return errMod.default;
+}
+
+/**
  * Build the route's view-or-error-boundary as a sync factory. Returned
  * by `asyncRoute`'s lazyResource; on resolve, `() => …` is what the
  * `when()` branch invokes per render.
@@ -104,9 +147,22 @@ async function loadStack(
   params: Record<string, string>,
   request: Request,
 ): Promise<() => unknown> {
+  // Defensive shallow-freeze: loaders are user code, and a loader that
+  // mutates `ctx.params` (e.g. assigning `params.id = sanitized`) would
+  // race-corrupt the view's positional `routeMod.default(params, …)`
+  // read on the same object. Freezing surfaces the bug at the offending
+  // call site rather than letting a stale/clobbered slot reach the view.
+  // The original `params` object is left untouched — callers can keep
+  // mutating their own bag — but the loader sees a sealed snapshot.
+  const loaderParams = Object.freeze({ ...params });
   const ctx: LoaderContext = {
     request,
-    params,
+    params: loaderParams,
+    // Abort semantics: SSR never aborts (one-shot render), and the
+    // composer does not currently abort on client navigate-away. The
+    // signal is exposed for signature parity + future wiring; loaders
+    // can pass it to `fetch()` so adding cancellation later is a flip,
+    // not a contract change.
     signal: new AbortController().signal,
   };
 
@@ -128,17 +184,52 @@ async function loadStack(
       ),
     ]);
 
+    // Preload the error boundary's view function (if configured) so a
+    // render-time throw from a layout / route view can be routed through
+    // it synchronously. Without this preload, catching a synchronous
+    // render throw and then awaiting an import would force a re-render
+    // boundary the view layer doesn't have. `null` when no boundary is
+    // configured or its module import / shape check fails — render-time
+    // throws will then escape to the consumer's fallback path.
+    let errorView: ((e: unknown) => unknown) | null = null;
+    if (entry.errorBoundary) {
+      try {
+        const errMod = (await entry.errorBoundary.importFn()) as {
+          default?: (e: unknown) => unknown;
+        };
+        errorView = typeof errMod?.default === 'function' ? errMod.default : null;
+      } catch (importErr) {
+        // Boundary preload failed. Log so the dev sees the underlying
+        // bundler/network issue; render-time throws will escape via the
+        // consumer's outer fallback (typically the apex `errorBoundary`).
+        console.error('[purity] asyncRoute: error boundary preload failed:', importErr);
+        errorView = null;
+      }
+    }
+
+    const renderWithBoundary = (err: unknown): unknown => {
+      if (!errorView) throw err;
+      const token: LoaderDataToken = pushLoaderData(err);
+      try {
+        return errorView(err);
+      } finally {
+        popLoaderData(token);
+      }
+    };
+
     // reduceRight wraps each layout around the inner view, leaf → root.
-    // Each component invocation is bracketed by push/pop so `loaderData()`
-    // (ADR 0026) reads the calling view's own slot. Nested layouts +
-    // route compose correctly because pushes mirror the JS call stack.
+    // Each component invocation is bracketed by tokened push/pop so
+    // `loaderData()` (ADR 0026) reads the calling view's own slot, and
+    // an unbalanced user push escapes loudly instead of silently leaking
+    // data between scopes. Nested layouts + route compose correctly
+    // because pushes mirror the JS call stack.
     return (): unknown => {
       let view: () => unknown = () => {
-        pushLoaderData(routeData);
+        const token = pushLoaderData(routeData);
         try {
-          return routeMod.default(params, routeData);
+          return routeMod.default(loaderParams, routeData);
         } finally {
-          popLoaderData();
+          popLoaderData(token);
         }
       };
       for (let i = layoutMods.length - 1; i >= 0; i--) {
@@ -146,37 +237,45 @@ async function loadStack(
         const data = layoutsData[i];
         const inner = view;
         view = () => {
-          pushLoaderData(data);
+          const token = pushLoaderData(data);
           try {
             return layout.default(inner, data);
           } finally {
-            popLoaderData();
+            popLoaderData(token);
           }
         };
       }
-      return view();
+      // Render-time error isolation: a throw inside a layout's / route's
+      // synchronous `default()` would otherwise escape `when()` and
+      // crash the consumer's render. Route through the preloaded error
+      // boundary when present; re-throw otherwise so the consumer's
+      // outer fallback path can decide what to do.
+      try {
+        return view();
+      } catch (renderErr) {
+        return renderWithBoundary(renderErr);
+      }
     };
   } catch (err) {
     // Route-level error boundary (ADR 0021). Loaded on demand — most
     // routes never error so paying the import cost up front would be
-    // wasteful. The boundary itself shouldn't throw; if it does, the
-    // throw escapes to the consumer's fallback path. The boundary's
-    // loaderData slot is the caught error so `_error.ts` views can
-    // call `loaderData<{ error: unknown }>()` if they prefer.
-    if (entry.errorBoundary) {
-      const errMod = (await entry.errorBoundary.importFn()) as {
-        default: (e: unknown) => unknown;
-      };
-      return () => {
-        pushLoaderData(err);
-        try {
-          return errMod.default(err);
-        } finally {
-          popLoaderData();
-        }
-      };
-    }
-    throw err;
+    // wasteful. The boundary's loaderData slot is the caught error so
+    // `_error.ts` views can call `loaderData<{ error: unknown }>()` if
+    // they prefer.
+    //
+    // Boundary-import failure preserves the original error via
+    // AggregateError so the root cause isn't masked by the boundary
+    // load failure.
+    const errorView = await loadErrorBoundary(entry, err);
+    if (!errorView) throw err;
+    return () => {
+      const token = pushLoaderData(err);
+      try {
+        return errorView(err);
+      } finally {
+        popLoaderData(token);
+      }
+    };
   }
 }
 
@@ -230,8 +329,17 @@ function pickNotFoundForPath(
   for (const entry of chain) {
     const dir = entry.dir;
     if (dir === undefined || dir === '') return entry; // root entry / no dir = catches all
+    // Normalize the user-supplied `dir`: strip leading/trailing slashes so
+    // `dir: '/admin'`, `'admin/'`, `'/admin/'`, and `'admin'` all behave
+    // identically. The manifest plugin emits the canonical form, but
+    // hand-rolled callers and integration adapters routinely pass any of
+    // these — silently failing to match was a real footgun.
+    let norm = dir;
+    while (norm.length > 0 && norm.charCodeAt(0) === 47 /* '/' */) norm = norm.slice(1);
+    while (norm.length > 0 && norm.charCodeAt(norm.length - 1) === 47) norm = norm.slice(0, -1);
+    if (norm === '') return entry; // dir was effectively root after normalization
     // Match `/admin`, `/admin/`, `/admin/anything` but NOT `/administrator`.
-    const prefix = '/' + dir;
+    const prefix = '/' + norm;
     if (path === prefix || path.startsWith(prefix + '/')) return entry;
   }
   return null;
@@ -297,12 +405,16 @@ export function asyncNotFound(
     () => {
       // 404 has no loader data; push `undefined` so `loaderData()` inside
       // the page consistently returns undefined (vs. inheriting some
-      // outer push). Matches ADR 0026's documented behavior.
-      pushLoaderData(undefined);
+      // outer push). Tokened push/pop catches a misbehaving 404 view that
+      // pushes-without-popping — without the token, our `popLoaderData()`
+      // would silently remove that orphan frame and leak the leftover
+      // (undefined) frame upward instead. Matches ADR 0026's documented
+      // behavior.
+      const token = pushLoaderData(undefined);
       try {
         return (r() as () => unknown)();
       } finally {
-        popLoaderData();
+        popLoaderData(token);
       }
     },
     options?.fallback,

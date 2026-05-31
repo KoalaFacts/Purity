@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { optimistic, query, serverAction } from '../src/index.ts';
-import { _resetQueryCache } from '../src/query.ts';
+import { _resetQueryCache, type QueryKey } from '../src/query.ts';
 import { _resetPageVisibilitySignal } from '../src/page-visibility-signal.ts';
 import { _resetOnlineSignal } from '../src/online-signal.ts';
 import { _resetBfcacheRestoreSignal } from '../src/bfcache-restore-signal.ts';
@@ -302,5 +302,207 @@ describe('optimistic — options shape (ADR 0049)', () => {
       },
     });
     await expect(wrapped.invoke()).resolves.toBeInstanceOf(Response);
+  });
+
+  it('does NOT apply optimistic state when body() throws (no dirty UI strand)', async () => {
+    let applied = false;
+    let requested = false;
+    const act = makeFakeAction('/never', () => {
+      requested = true;
+      return new Response('ok');
+    });
+    const wrapped = optimistic<{ x: number }>(act, {
+      body: () => {
+        throw new Error('cannot serialize');
+      },
+      apply: () => {
+        applied = true;
+        return () => {};
+      },
+    });
+    await expect(wrapped.invoke({ x: 1 })).rejects.toThrow('cannot serialize');
+    // body threw before apply ran → no optimistic mutation, no request.
+    expect(applied).toBe(false);
+    expect(requested).toBe(false);
+  });
+
+  it('does NOT apply optimistic state when init() throws', async () => {
+    let applied = false;
+    const act = makeFakeAction('/never', () => new Response('ok'));
+    const wrapped = optimistic<void>(act, {
+      body: () => null,
+      init: () => {
+        throw new Error('bad init');
+      },
+      apply: () => {
+        applied = true;
+      },
+    });
+    await expect(wrapped.invoke()).rejects.toThrow('bad init');
+    expect(applied).toBe(false);
+  });
+});
+
+describe('optimistic — user-hook throw isolation (audit Bug D)', () => {
+  it('invalidates() throwing on success does NOT trigger rollback', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let rollbackCalls = 0;
+    const act = makeFakeAction('/ok', () => new Response('', { status: 200 }));
+    const wrapped = optimistic<{ id: number }>(act, {
+      body: () => null,
+      apply: () => () => {
+        rollbackCalls++;
+      },
+      invalidates: () => {
+        throw new Error('invalidates blew up');
+      },
+    });
+    // The action succeeded — invalidates throwing must NOT propagate, and
+    // must NOT roll back the optimistic state. The wrapper logs and returns
+    // the response.
+    const res = await wrapped.invoke({ id: 1 });
+    expect(res.status).toBe(200);
+    expect(rollbackCalls).toBe(0);
+    expect(errSpy).toHaveBeenCalledWith(
+      '[purity] optimistic invalidates threw:',
+      expect.any(Error),
+    );
+    errSpy.mockRestore();
+  });
+
+  it('onSettle() throwing on success does NOT trigger rollback', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let rollbackCalls = 0;
+    const act = makeFakeAction('/ok', () => new Response('', { status: 200 }));
+    const wrapped = optimistic<void>(act, {
+      body: () => null,
+      apply: () => () => {
+        rollbackCalls++;
+      },
+      onSettle: () => {
+        throw new Error('onSettle exploded');
+      },
+    });
+    const res = await wrapped.invoke();
+    expect(res.status).toBe(200);
+    expect(rollbackCalls).toBe(0);
+    expect(errSpy).toHaveBeenCalledWith('[purity] optimistic onSettle threw:', expect.any(Error));
+    errSpy.mockRestore();
+  });
+
+  it('onSettle() throwing on failure path does NOT swallow the error', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const networkErr = new Error('network down');
+    const act = makeFakeAction('/reject', () => Promise.reject(networkErr));
+    const wrapped = optimistic<void>(act, {
+      body: () => null,
+      onSettle: () => {
+        throw new Error('onSettle exploded');
+      },
+    });
+    // The original network error must propagate; the user's broken onSettle
+    // is logged and discarded.
+    await expect(wrapped.invoke()).rejects.toBe(networkErr);
+    expect(errSpy).toHaveBeenCalledWith('[purity] optimistic onSettle threw:', expect.any(Error));
+    errSpy.mockRestore();
+  });
+
+  it('a successful response is returned even when invalidates AND onSettle throw', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const act = makeFakeAction('/ok', () => new Response('body', { status: 200 }));
+    const wrapped = optimistic<void>(act, {
+      body: () => null,
+      invalidates: () => {
+        throw new Error('inv');
+      },
+      onSettle: () => {
+        throw new Error('settle');
+      },
+    });
+    const res = await wrapped.invoke();
+    expect(res.status).toBe(200);
+    expect(errSpy).toHaveBeenCalledTimes(2);
+    errSpy.mockRestore();
+  });
+
+  it('isSuccess throwing is treated as failure: rollback fires, response still returned', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let rolledBack = false;
+    const act = makeFakeAction('/ok', () => new Response('body', { status: 200 }));
+    const wrapped = optimistic<void>(act, {
+      body: () => null,
+      apply: () => () => {
+        rolledBack = true;
+      },
+      isSuccess: () => {
+        throw new Error('isSuccess exploded');
+      },
+      invalidates: ['x'], // must NOT fire (we're in the failure path)
+    });
+    const res = await wrapped.invoke();
+    expect(res.status).toBe(200);
+    expect(rolledBack).toBe(true);
+    expect(errSpy).toHaveBeenCalledWith(
+      '[purity] optimistic isSuccess threw; treating response as failure:',
+      expect.any(Error),
+    );
+    errSpy.mockRestore();
+  });
+});
+
+describe('optimistic — audit-v2 hardening', () => {
+  it('a throwing invalidate key does NOT skip subsequent keys (per-key isolation)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let goodKeyCalls = 0;
+    query({
+      key: 'good-key',
+      fetcher: () => {
+        goodKeyCalls++;
+        return Promise.resolve(null);
+      },
+    });
+    await drain();
+    expect(goodKeyCalls).toBe(1);
+
+    const act = makeFakeAction('/ok', () => new Response('', { status: 200 }));
+    const wrapped = optimistic<void>(act, {
+      body: () => null,
+      // First key has a `toString`/`JSON.stringify` that throws — must not skip 'good-key'.
+      invalidates: () => {
+        const bad = {
+          toJSON() {
+            throw new Error('bad key serialize');
+          },
+        } as unknown as string;
+        return [bad, 'good-key'];
+      },
+    });
+    await wrapped.invoke();
+    await drain();
+    // The good key MUST have been invalidated even though the bad key threw.
+    expect(goodKeyCalls).toBe(2);
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it('invalidates returning a non-iterable does not throw out of invoke()', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const act = makeFakeAction('/ok', () => new Response('', { status: 200 }));
+    let rollbackCalls = 0;
+    const wrapped = optimistic<void>(act, {
+      body: () => null,
+      apply: () => () => {
+        rollbackCalls++;
+      },
+      // Bad return — a plain object, not an array/iterable. Must be tolerated and
+      // logged, not crash out of invoke() (which would spuriously roll back).
+      invalidates: () => ({ not: 'iterable' }) as unknown as QueryKey[],
+    });
+    const res = await wrapped.invoke();
+    expect(res.status).toBe(200);
+    // Response succeeded → rollback must NOT fire just because invalidates was malformed.
+    expect(rollbackCalls).toBe(0);
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
   });
 });

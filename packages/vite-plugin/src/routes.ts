@@ -75,13 +75,52 @@ export interface RouteManifest {
  * Strip the file extension from a path, but only if it matches one of
  * `extensions`. Returns null when the file should be ignored (no matching
  * extension, or a reserved underscore-prefixed segment).
+ *
+ * Audit-v2 hardening: try longer extensions first so a configured
+ * `.test.ts` wins over a generic `.ts` (the previous left-to-right walk
+ * silently picked whichever extension the caller listed first, which
+ * silently stripped the wrong suffix for users whose extension list
+ * included overlapping suffixes). An empty-string extension is rejected
+ * outright — it would otherwise match every path and slice off zero
+ * characters, producing a manifest entry for arbitrary non-route files.
  */
 function stripExtension(filePath: string, extensions: string[]): string | null {
-  for (const ext of extensions) {
+  // Longest-first so overlapping suffixes resolve unambiguously. Stable
+  // alphabetical tiebreak keeps the iteration deterministic across calls.
+  const sorted = extensions
+    .filter((ext) => ext.length > 0)
+    .slice()
+    .sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0));
+  for (const ext of sorted) {
     if (filePath.endsWith(ext)) return filePath.slice(0, -ext.length);
   }
   return null;
 }
+
+/**
+ * Normalize a route-relative file path to POSIX separators. The codegen
+ * grammar, dirname helper, layout-chain walker, etc. all assume `/` as
+ * the segment separator. Vite ordinarily hands us POSIX paths, but the
+ * pure helpers in this module are reachable from tests + downstream
+ * callers that may pass a Windows-style path with backslashes — without
+ * this normalization a path like `users\[id].ts` would be treated as a
+ * single literal segment and emitted as the route `/users\[id]`. ADR
+ * 0019's grammar is POSIX-only, so the safe behaviour is to rewrite
+ * the separator before any segment analysis.
+ */
+function toPosixPath(filePath: string): string {
+  return filePath.indexOf('\\') === -1 ? filePath : filePath.replace(/\\+/g, '/');
+}
+
+/**
+ * Subset of identifier characters allowed inside a `[name]` / `[...name]`
+ * bracket segment. Mirrors what `matchRoute()` accepts as a parameter
+ * name — alphanumerics, underscore, dash. Anything else (colon, slash,
+ * splat, U+2028, control chars, …) would either break the route grammar
+ * downstream or smuggle a path-traversal-shaped pattern into the
+ * manifest, so we reject the file outright.
+ */
+const BRACKET_NAME_RE = /^[A-Za-z0-9_-]+$/;
 
 /**
  * Convert a single relative file path under the routes dir into a route
@@ -101,7 +140,11 @@ function stripExtension(filePath: string, extensions: string[]): string | null {
  * - `notes.md`         → null (extension)
  */
 export function fileToRoute(filePath: string, extensions: string[]): RouteEntry | null {
-  const stripped = stripExtension(filePath, extensions);
+  // Audit-v2: defensive POSIX normalization. Vite normally hands us
+  // forward slashes, but the helper also runs in tests + on downstream
+  // callers that may pass a Windows-shaped path.
+  const normalized = toPosixPath(filePath);
+  const stripped = stripExtension(normalized, extensions);
   if (stripped === null) return null;
 
   // Use forward slashes regardless of host OS; Vite normalizes to POSIX
@@ -112,6 +155,10 @@ export function fileToRoute(filePath: string, extensions: string[]): RouteEntry 
     const seg = segments[i];
     if (seg.length === 0) return null;
     if (seg.startsWith('_')) return null;
+    // Block `.` / `..` segments so a route filename can't smuggle a
+    // path-traversal-shaped pattern into the manifest (and from there
+    // into the dynamic-import specifier emitted by the codegen).
+    if (seg === '.' || seg === '..') return null;
   }
 
   const patternParts: string[] = [];
@@ -123,17 +170,23 @@ export function fileToRoute(filePath: string, extensions: string[]): RouteEntry 
     if (seg === 'index' && i === segments.length - 1) continue;
 
     // Splat: `[...rest]` → `*`. Must be the final segment (`matchRoute`
-    // grammar treats `*` as "remaining path").
+    // grammar treats `*` as "remaining path"). The splat name itself
+    // must be a valid identifier — `[...]` (empty), `[.../..]`,
+    // `[...a/b]` are rejected so the route grammar stays well-formed.
     if (seg.startsWith('[...') && seg.endsWith(']')) {
       if (i !== segments.length - 1) return null;
+      const splatName = seg.slice(4, -1);
+      if (splatName.length === 0 || !BRACKET_NAME_RE.test(splatName)) return null;
       patternParts.push('*');
       continue;
     }
 
-    // Dynamic: `[name]` → `:name`.
+    // Dynamic: `[name]` → `:name`. Name must be a plain identifier
+    // (alphanumerics + `_` + `-`) so we never produce a pattern like
+    // `:foo:bar` or `:a/b` that downstream `matchRoute` mis-parses.
     if (seg.startsWith('[') && seg.endsWith(']')) {
       const name = seg.slice(1, -1);
-      if (name.length === 0) return null;
+      if (name.length === 0 || !BRACKET_NAME_RE.test(name)) return null;
       patternParts.push(`:${name}`);
       continue;
     }
@@ -142,7 +195,7 @@ export function fileToRoute(filePath: string, extensions: string[]): RouteEntry 
   }
 
   const pattern = '/' + patternParts.join('/');
-  return { pattern, filePath, layouts: [] };
+  return { pattern, filePath: normalized, layouts: [] };
 }
 
 /**
@@ -166,10 +219,15 @@ function dirname(filePath: string): string {
  * root). Otherwise return null.
  */
 export function layoutDirOf(filePath: string, extensions: string[]): string | null {
+  // Defensive POSIX normalization — matches `fileToRoute`'s behaviour so
+  // a Windows-shaped path discovered via the filesystem walk is still
+  // recognised as a layout module.
+  const normalized = toPosixPath(filePath);
   for (const ext of extensions) {
+    if (ext.length === 0) continue;
     const target = LAYOUT_BASENAME + ext;
-    if (filePath === target) return '';
-    if (filePath.endsWith('/' + target)) return filePath.slice(0, -target.length - 1);
+    if (normalized === target) return '';
+    if (normalized.endsWith('/' + target)) return normalized.slice(0, -target.length - 1);
   }
   return null;
 }
@@ -208,10 +266,12 @@ const NOT_FOUND_BASENAME = '_404';
  * root). Otherwise return null. ADR 0021.
  */
 export function errorDirOf(filePath: string, extensions: string[]): string | null {
+  const normalized = toPosixPath(filePath);
   for (const ext of extensions) {
+    if (ext.length === 0) continue;
     const target = ERROR_BASENAME + ext;
-    if (filePath === target) return '';
-    if (filePath.endsWith('/' + target)) return filePath.slice(0, -target.length - 1);
+    if (normalized === target) return '';
+    if (normalized.endsWith('/' + target)) return normalized.slice(0, -target.length - 1);
   }
   return null;
 }
@@ -223,10 +283,12 @@ export function errorDirOf(filePath: string, extensions: string[]): string | nul
  * to root only.
  */
 export function notFoundDirOf(filePath: string, extensions: string[]): string | null {
+  const normalized = toPosixPath(filePath);
   for (const ext of extensions) {
+    if (ext.length === 0) continue;
     const target = NOT_FOUND_BASENAME + ext;
-    if (filePath === target) return '';
-    if (filePath.endsWith('/' + target)) return filePath.slice(0, -target.length - 1);
+    if (normalized === target) return '';
+    if (normalized.endsWith('/' + target)) return normalized.slice(0, -target.length - 1);
   }
   return null;
 }
@@ -237,8 +299,10 @@ export function notFoundDirOf(filePath: string, extensions: string[]): string | 
  * `_404` only; nested `_404` files yield null.
  */
 export function notFoundFileOf(filePath: string, extensions: string[]): string | null {
+  const normalized = toPosixPath(filePath);
   for (const ext of extensions) {
-    if (filePath === NOT_FOUND_BASENAME + ext) return filePath;
+    if (ext.length === 0) continue;
+    if (normalized === NOT_FOUND_BASENAME + ext) return normalized;
   }
   return null;
 }
@@ -277,22 +341,41 @@ export function nearestErrorDir(routeDir: string, errorDirs: Set<string>): strin
  * documented in the ADR.
  */
 export function detectLoaderExport(source: string): boolean {
+  // Strip block comments first so neither Form 1 nor Form 2 trips on
+  // an `export …` line that lives inside a `/* … */` block. The Form 1
+  // anchor only blocks `/* export … */` written on a single line — a
+  // multi-line block comment that puts `export const loader = …` on
+  // its own (uncommented-looking) line would otherwise match. The
+  // regex is non-greedy + global so adjacent comments don't merge.
+  const stripped = source.replace(/\/\*[\s\S]*?\*\//g, '');
   // Form 1: named declaration export. Allow optional async + the
   // var-style keywords. Identifier boundary `\b` so `loaderFoo` doesn't
   // match.
-  if (/^[ \t]*export[ \t]+(?:async[ \t]+)?(?:const|let|var|function)[ \t]+loader\b/m.test(source)) {
+  if (
+    /^[ \t]*export[ \t]+(?:async[ \t]+)?(?:const|let|var|function)[ \t]+loader\b/m.test(stripped)
+  ) {
     return true;
   }
-  // Form 2: re-export blocks. Match `export { … }`. Inside the braces
-  // accept either a bare `loader` or a renamed `something as loader`.
-  // Use a non-greedy body match capped at one line to avoid runaway
-  // backtracking on pathological input.
-  const reexport = /^[ \t]*export[ \t]*\{([^}\n]*)\}/gm;
+  // Form 2: re-export blocks. Match `export { … }` where the body MAY
+  // span multiple lines — real apps run Prettier and a long re-export
+  // list gets split across lines, so the previous newline-excluding
+  // body match (`[^}\n]*`) silently missed those forms and the route's
+  // loader was never flagged in the manifest. `[^}]*` is bounded by the
+  // closing brace; `{` doesn't appear inside an `export { … }` block, so
+  // greedy backtracking can't run away.
+  const reexport = /^[ \t]*export[ \t]*\{([^}]*)\}/gm;
   let m: RegExpExecArray | null;
-  while ((m = reexport.exec(source)) !== null) {
+  while ((m = reexport.exec(stripped)) !== null) {
     const body = m[1];
-    // Either `loader` as a standalone identifier or `... as loader`.
-    if (/(?:^|,)\s*loader(?:\s+as\s+\w+)?\s*(?:,|$)/.test(body)) return true;
+    // `loader` as a standalone identifier (no rename). A `loader as foo`
+    // entry re-exports under name `foo` — the module does NOT expose
+    // `loader` to consumers, so the previous regex
+    // `(?:^|,)\s*loader(?:\s+as\s+\w+)?\s*(?:,|$)` over-matched: it
+    // returned true for `export { loader as foo }` even though
+    // `import { loader }` would fail at the consumer.
+    if (/(?:^|,)\s*loader\s*(?:,|$)/.test(body)) return true;
+    // `... as loader` — a real export under the name `loader`. `\b` after
+    // `loader` so `loaderFoo` doesn't match.
     if (/\bas\s+loader\b/.test(body)) return true;
   }
   return false;

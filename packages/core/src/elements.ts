@@ -9,6 +9,64 @@ import {
 import { ComponentContext, getCurrentContext, popContext, pushContext } from './component.ts';
 import { watch } from './signals.ts';
 
+// Recursively tear down a non-custom-element child ComponentContext.
+//
+// Mirrors the canonical `unmountContext` in component.ts (which is private to
+// that module): child-first recursion, DOM removal, disposers, destroyed
+// callbacks, then parent unlink. The host custom element's own teardown lives
+// in `disconnectedCallback` and intentionally skips DOM removal (the browser
+// detaches the host, taking its shadow content with it) — but factory-rendered
+// child contexts created during the host's render are NOT custom elements, so
+// nothing else tears them down. Guarded by `_isDestroyed` so a child that was
+// already unmounted (e.g. a nested custom element whose own
+// `disconnectedCallback` already ran) is skipped rather than double-torn-down.
+function unmountChildContext(ctx: ComponentContext): void {
+  if (ctx._isDestroyed) return;
+
+  // Unmount children first (depth-first, reverse order to mirror unmountContext)
+  if (ctx.children) {
+    for (let i = ctx.children.length - 1; i >= 0; i--) {
+      unmountChildContext(ctx.children[i]);
+    }
+    ctx.children = null;
+  }
+
+  // Remove DOM
+  if (ctx.nodes) {
+    for (let i = 0; i < ctx.nodes.length; i++) {
+      const node = ctx.nodes[i];
+      if (node.parentNode) node.parentNode.removeChild(node);
+    }
+    ctx.nodes = null;
+  }
+
+  // Run disposers
+  if (ctx.disposers) {
+    for (let i = 0; i < ctx.disposers.length; i++) {
+      try {
+        ctx.disposers[i]();
+      } catch (err) {
+        console.error('[Purity] Error during disposal:', err);
+      }
+    }
+    ctx.disposers = null;
+  }
+
+  ctx._isDestroyed = true;
+  ctx._isMounted = false;
+
+  // Run destroy callbacks
+  runCallbacks(ctx.destroyed, ctx);
+  ctx.destroyed = null;
+
+  // Unlink from parent so a later parent teardown doesn't revisit this node.
+  if (ctx.parent?.children) {
+    const idx = ctx.parent.children.indexOf(ctx);
+    if (idx !== -1) ctx.parent.children.splice(idx, 1);
+  }
+  ctx.parent = null;
+}
+
 // Run callbacks safely
 function runCallbacks(arr: (() => void)[] | null, ctx?: ComponentContext): void {
   if (!arr) return;
@@ -312,6 +370,17 @@ function runRender<P, S>(
 // `customElements`, absent on Node).
 const componentRegistry = new Map<string, RenderFn<any, any>>();
 
+// Mirror of codegen's SAFE_NAME (not imported — keeping the compiler out of
+// the runtime bundle). A valid custom-element tag must also contain a hyphen,
+// which this regex requires. Used to gate registry writes so a string that
+// would inject raw bytes into the SSR shell (`<${tag}…>`) can never reach
+// `_renderComponentSSR` — that function only renders tags already registered.
+const SAFE_CE_TAG = /^[a-z][\w]*-[\w-]*$/;
+// Attribute names interpolated raw into the SSR host-attrs string. Same shape
+// as codegen's SAFE_NAME; used as a defensive filter for direct/SSR callers
+// of `_renderComponentSSR` that bypass the compiler's `assertSafeName`.
+const SAFE_ATTR_NAME = /^[a-zA-Z_][\w-]*$/;
+
 /** @internal — accessor used by `@purityjs/ssr` to look up registered render fns. */
 export function _getRegisteredComponent(
   tag: string,
@@ -352,6 +421,13 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
   const renderFn = componentRegistry.get(tag);
   if (!renderFn) return null;
 
+  // Defensive: `tag` is interpolated raw into the SSR shell (`<${tag}…>`).
+  // It should already be safe (registry writes go through `component()` which
+  // validates), but `_renderComponentSSR` is part of the public export surface
+  // — re-validate so a malformed registry key can never inject markup.
+  /* v8 ignore next -- belt-and-suspenders; component() rejects unsafe tags before registry write */
+  if (!SAFE_CE_TAG.test(tag)) return null;
+
   // Resolve attribute values into a props object — match the client's
   // "every non-event attribute is a prop" behavior. Functions are treated as
   // signal accessors and called once.
@@ -382,14 +458,29 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
 
   // Host-element attributes mirror what was declared in the parent template.
   // Hydration (PR 4) re-binds props by reading these back off the element.
+  // Attribute *names* are interpolated raw, so skip any key that isn't a safe
+  // name — the compiler asserts this upstream, but direct/SSR callers can pass
+  // arbitrary keys. Values are escaped by `valueToAttr`.
   let hostAttrs = '';
   for (const k of Object.keys(attrs)) {
+    if (!SAFE_ATTR_NAME.test(k)) continue;
     const av = valueToAttr(attrs[k]);
     if (av !== null) hostAttrs += av === '' ? ` ${k}` : ` ${k}="${av}"`;
   }
 
   const styles = (ctx as unknown as { _ssrStyles: string[] })._ssrStyles;
-  const styleBlock = styles.length > 0 ? `<style>${styles.join('\n')}</style>` : '';
+  // `<style>` is an HTML5 "raw text element" — its content runs verbatim
+  // until the parser sees a literal `</style` sequence. An interpolated
+  // CSS value containing `</style><script>...</script>` would otherwise
+  // close the style tag early and execute the injected script (XSS).
+  // Insert a backslash between `<` and `/style`: the HTML parser only
+  // matches the literal `</style` substring (the `<` followed by `\`
+  // bounces it back to raw-text state), but CSS treats `\/` as a literal
+  // `/` escape, so the rendered styling is unchanged.
+  const styleBlock =
+    styles.length > 0
+      ? `<style>${styles.join('\n').replace(/<\/style/gi, '<\\/style')}</style>`
+      : '';
   const inner = styleBlock + renderedHtml;
 
   return `<${tag}${hostAttrs}><template shadowrootmode="open">${inner}</template></${tag}>`;
@@ -435,6 +526,20 @@ export function component<
   renderFn: RenderFn<P, S>,
   options?: ComponentOptions,
 ): (props: P, children?: any) => Node | DocumentFragment {
+  // Validate before any side effects. Under Node SSR `customElements` is
+  // undefined, so the define() path below — which would otherwise reject an
+  // invalid name — is skipped; without this guard a malformed tag would enter
+  // the registry and become a raw-interpolation vector in `_renderComponentSSR`
+  // (`<${tag}…>`). A custom-element name must contain a hyphen and only safe
+  // name characters.
+  if (!SAFE_CE_TAG.test(tagName)) {
+    throw new Error(
+      `[Purity] component(): invalid custom element tag name "${tagName}".\n` +
+        '  Tag names must start with a lowercase letter, contain a hyphen, ' +
+        'and use only letters, digits, hyphens, or underscores (e.g. "p-card").',
+    );
+  }
+
   // Store in registry
   componentRegistry.set(tagName, renderFn);
 
@@ -447,6 +552,12 @@ export function component<
       _ctx: ComponentContext | null = null;
       _props: Record<string, unknown> = {};
       _mounted = false;
+      // True once this element has rendered at least one connectedCallback.
+      // Gates the DSD/SSR-hydration branch so it runs ONLY on the first
+      // connect (when shadow content came from the parser). On a later
+      // reconnect the shadow still holds our own prior render, which must be
+      // re-rendered fresh, not re-hydrated against marker-less DOM.
+      _hasRendered = false;
       _shadow: ShadowRoot;
       _internals: ElementInternals | null = null;
 
@@ -519,7 +630,13 @@ export function component<
         // run the renderer in hydration mode so `html\`\`` returns deferred
         // thunks, then inflate against the shadow's existing children.
         // Otherwise fall through to the standard fresh-render path.
-        const hasDSDContent = this._shadow.firstChild !== null;
+        //
+        // Gate on `!this._hasRendered`: only the FIRST connect can encounter
+        // parser-produced DSD content. On a reconnect (e.g. each() reorder
+        // remove-then-readd, or any manual detach/reattach) the shadow still
+        // holds our own prior render, which has no SSR hydration markers —
+        // inflating against it would crash. Treat reconnect as a fresh render.
+        const hasDSDContent = !this._hasRendered && this._shadow.firstChild !== null;
         let result: Node | DocumentFragment;
         if (hasDSDContent) {
           enterHydration();
@@ -541,6 +658,9 @@ export function component<
             result = renderResult.result;
           }
         } else {
+          // Fresh render. On a reconnect the shadow still holds the prior
+          // render's nodes — clear them first so we don't duplicate content.
+          while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
           result = runRender(render, allProps, slotAccessors, ctx).result;
         }
 
@@ -555,6 +675,7 @@ export function component<
 
         ctx._isMounted = true;
         this._mounted = true;
+        this._hasRendered = true;
 
         queueMicrotask(() => runCallbacks(ctx.mounted, ctx));
       }
@@ -572,6 +693,19 @@ export function component<
 
       disconnectedCallback() {
         if (this._ctx) {
+          if (this._ctx._isDestroyed) return;
+
+          // Tear down factory-rendered child contexts first. These are NOT
+          // custom elements, so the browser never dispatches their teardown —
+          // without this recursion their disposers / onDestroy callbacks would
+          // orphan. Mirrors the canonical `unmountContext` (component.ts).
+          if (this._ctx.children) {
+            for (let i = this._ctx.children.length - 1; i >= 0; i--) {
+              unmountChildContext(this._ctx.children[i]);
+            }
+            this._ctx.children = null;
+          }
+
           if (this._ctx.disposers) {
             for (let i = 0; i < this._ctx.disposers.length; i++) {
               try {
@@ -582,7 +716,6 @@ export function component<
             }
             this._ctx.disposers = null;
           }
-          this._ctx.children = null;
           this._ctx._isDestroyed = true;
           this._ctx._isMounted = false;
           runCallbacks(this._ctx.destroyed, this._ctx);
@@ -594,8 +727,15 @@ export function component<
       // callback exists on the prototype, so non-form components incur no
       // runtime cost. Each callback is a thin shim: it walks the matching
       // ctx array and invokes user handlers with the platform's argument.
+      //
+      // Each shim early-returns on a destroyed ctx: the spec can dispatch
+      // these for form disassociation / bfcache transitions that race a
+      // `disconnectedCallback`, and running user handlers (which may touch
+      // `internals()` on a detached host) against a torn-down context is
+      // unsafe.
       formAssociatedCallback(form: HTMLFormElement | null) {
-        const arr = this._ctx?._formAssociated;
+        if (!this._ctx || this._ctx._isDestroyed) return;
+        const arr = this._ctx._formAssociated;
         if (!arr) return;
         for (let i = 0; i < arr.length; i++) {
           try {
@@ -607,7 +747,8 @@ export function component<
       }
 
       formDisabledCallback(disabled: boolean) {
-        const arr = this._ctx?._formDisabled;
+        if (!this._ctx || this._ctx._isDestroyed) return;
+        const arr = this._ctx._formDisabled;
         if (!arr) return;
         for (let i = 0; i < arr.length; i++) {
           try {
@@ -619,7 +760,8 @@ export function component<
       }
 
       formResetCallback() {
-        const arr = this._ctx?._formReset;
+        if (!this._ctx || this._ctx._isDestroyed) return;
+        const arr = this._ctx._formReset;
         if (!arr) return;
         for (let i = 0; i < arr.length; i++) {
           try {
@@ -634,7 +776,8 @@ export function component<
         state: string | File | FormData | null,
         mode: 'restore' | 'autocomplete',
       ) {
-        const arr = this._ctx?._formStateRestore;
+        if (!this._ctx || this._ctx._isDestroyed) return;
+        const arr = this._ctx._formStateRestore;
         if (!arr) return;
         for (let i = 0; i < arr.length; i++) {
           try {
@@ -767,8 +910,16 @@ export function teleport(
   const anchor = document.createComment('teleport');
   let currentNodes: Node[] = [];
   let dispose: (() => void) | null = null;
+  // Setup is deferred a microtask (so the target exists), but the owning
+  // component's disposer runs synchronously on unmount. If the component
+  // unmounts before this microtask drains, `disposed` short-circuits the
+  // setup — otherwise we'd create a watch (which can't auto-register here,
+  // since the microtask runs outside any render context) and append
+  // teleported DOM that nothing ever tears down.
+  let disposed = false;
 
   queueMicrotask(() => {
+    if (disposed) return;
     const container = typeof target === 'string' ? document.querySelector(target) : target;
     if (!container) {
       console.error(
@@ -799,6 +950,7 @@ export function teleport(
   const ctx = getCurrentContext();
   if (ctx) {
     (ctx.disposers ??= []).push(() => {
+      disposed = true;
       if (dispose) dispose();
       for (let i = 0; i < currentNodes.length; i++) {
         const node = currentNodes[i];

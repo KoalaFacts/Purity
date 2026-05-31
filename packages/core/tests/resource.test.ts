@@ -1147,6 +1147,109 @@ describe('debounced', () => {
     const d = debounced(s, 50);
     expect((d as unknown as { set?: unknown }).set).toBe(undefined);
   });
+
+  // --- audit-v2 regressions -------------------------------------------------
+
+  it('rejects NaN / Infinity / negative ms up-front', () => {
+    const s = state(0);
+    expect(() => debounced(s, Number.NaN)).toThrow(RangeError);
+    expect(() => debounced(s, Number.POSITIVE_INFINITY)).toThrow(RangeError);
+    expect(() => debounced(s, -1)).toThrow(RangeError);
+    // sanity: zero is allowed (immediate flush after macrotask)
+    expect(() => debounced(s, 0).dispose()).not.toThrow();
+  });
+
+  it('dispose() is idempotent and clears any pending timer', async () => {
+    const s = state('a');
+    const d = debounced(s, 100);
+    s('b');
+    // Pending timer is now armed.
+    await tick();
+    d.dispose();
+    // Second dispose must not throw and must not write to the underlying state.
+    expect(() => d.dispose()).not.toThrow();
+    await vi.advanceTimersByTimeAsync(500);
+    // Post-dispose, value stays frozen at the last propagated value (init).
+    expect(d()).toBe('a');
+  });
+
+  it('does not write through after dispose even if the timer raced', async () => {
+    const s = state(0);
+    const d = debounced(s, 50);
+    s(1);
+    await tick();
+    // Simulate dispose happening right before the timer's queued task drains.
+    d.dispose();
+    // Advance enough that any leftover scheduled callback would fire.
+    await vi.advanceTimersByTimeAsync(1000);
+    // Internal state must remain at the initial value — no late write.
+    expect(d()).toBe(0);
+  });
+
+  it('isolates a throw from source() and keeps watching', async () => {
+    const trigger = state(0);
+    const explode = state(false);
+    const errs: unknown[] = [];
+    const origErr = console.error;
+    console.error = (...a) => errs.push(a[0]);
+    try {
+      const d = debounced(() => {
+        // Track both so the watcher re-runs on either change.
+        const t = trigger();
+        if (explode()) throw new Error('boom');
+        return t;
+      }, 50);
+      expect(d()).toBe(0);
+
+      // First: trigger a normal change and confirm propagation.
+      trigger(1);
+      await vi.advanceTimersByTimeAsync(60);
+      expect(d()).toBe(1);
+
+      // Now make source throw. The watcher must survive (log, no crash).
+      explode(true);
+      await tick();
+      await vi.advanceTimersByTimeAsync(60);
+      // Last good value preserved.
+      expect(d()).toBe(1);
+
+      // Recover: stop throwing, push a new value — propagation resumes.
+      explode(false);
+      trigger(2);
+      await vi.advanceTimersByTimeAsync(60);
+      expect(d()).toBe(2);
+
+      d.dispose();
+    } finally {
+      console.error = origErr;
+    }
+    // At least one source-throw was logged through console.error.
+    expect(errs.some((e) => String(e).includes('debounced'))).toBe(true);
+  });
+
+  it('a downstream watcher only fires once per debounce window (no double-fire)', async () => {
+    const s = state(0);
+    const d = debounced(s, 50);
+    let fires = 0;
+    const stop = watch(d, () => {
+      fires++;
+    });
+
+    // Burst of writes inside one window — must coalesce to a single notify.
+    for (let i = 1; i <= 5; i++) s(i);
+    await vi.advanceTimersByTimeAsync(60);
+    await tick();
+    expect(fires).toBe(1);
+
+    // Another window with a single write — exactly one more notify.
+    s(99);
+    await vi.advanceTimersByTimeAsync(60);
+    await tick();
+    expect(fires).toBe(2);
+
+    stop();
+    d.dispose();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1292,6 +1395,330 @@ describe('lazyResource — SSR multipass registration (ADR 0024)', () => {
     await flushAll();
     expect(fetcherCalls).toBe(1);
     expect(r()).toBe('v-1');
+    r.dispose();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SSR keyed-cache prototype safety (audit follow-up to the listener-leak fixes).
+//
+// `ssrCtx.resolvedDataByKey` is a Record<string, unknown>. Without a null
+// prototype, `key in resolvedDataByKey` returns true for inherited names
+// (`constructor`, `toString`, `__proto__`, `hasOwnProperty`, …) and a
+// developer who chooses one of those as a resource key picks up
+// Object.prototype's value instead of seeing a clean miss. The renderers
+// now construct these maps via Object.create(null); these tests pin that.
+// ---------------------------------------------------------------------------
+describe('resource — SSR keyed cache prototype safety', () => {
+  for (const reserved of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    it(`reserved key '${reserved}' on a fresh SSR ctx reports NOT cached on pass 1`, () => {
+      const ctx = makeSSRContext();
+      pushSSRRenderContext(ctx);
+      try {
+        let fetcherCalls = 0;
+        const r = lazyResource(
+          async () => {
+            fetcherCalls++;
+            return 'pass-1';
+          },
+          { key: reserved },
+        );
+        r.fetch();
+        // Fix: fresh ctx ⇒ key NOT present ⇒ pass-1 branch ⇒ fetcher fires.
+        // Leak: `reserved in ctx.resolvedDataByKey` would be true, taking
+        // the pass-2 branch and reading Object.prototype's value as the
+        // cached resource value.
+        expect(fetcherCalls).toBe(1);
+        expect(ctx.pendingPromises.length).toBe(1);
+      } finally {
+        popSSRRenderContext();
+      }
+    });
+  }
+
+  it('a real round-trip with a reserved key still works (write + read back)', async () => {
+    const ctx = makeSSRContext();
+    pushSSRRenderContext(ctx);
+    try {
+      const r1 = lazyResource(async (id: number) => `user-${id}`, { key: '__proto__' });
+      r1.fetch(7);
+      await Promise.all(ctx.pendingPromises);
+      // Pass-1 wrote into the keyed cache.
+      // Use Object.prototype.hasOwnProperty.call so this assertion itself
+      // is prototype-safe — we want to verify the value, not test `in`.
+      expect(Object.prototype.hasOwnProperty.call(ctx.resolvedDataByKey, '__proto__')).toBe(true);
+      expect((ctx.resolvedDataByKey as Record<string, unknown>)['__proto__']).toBe('user-7');
+
+      // Pass 2 with the same key should read the cached value via mutate().
+      ctx.pendingPromises.length = 0;
+      let fetcherCalls = 0;
+      const r2 = lazyResource(
+        async (id: number) => {
+          fetcherCalls++;
+          return `user-${id}`;
+        },
+        { key: '__proto__' },
+      );
+      r2.fetch(7);
+      expect(fetcherCalls).toBe(0);
+      expect(r2()).toBe('user-7');
+    } finally {
+      popSSRRenderContext();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Audit v2 regression suite.
+// ---------------------------------------------------------------------------
+
+// [HIGH] resource.ts SSR keyed-cache "alreadyResolved" path must NOT clobber
+// the user's initialValue with the `undefined` that pass-1 recorded alongside
+// an error. On pass 2 the errored resource should keep its seeded
+// initialValue as the visible fallback and surface only the error.
+describe('resource — SSR keyed-cache errored resource preserves initialValue', () => {
+  it('pass-2 errored keyed resource keeps initialValue and surfaces the error', async () => {
+    const ctx = makeSSRContext();
+    pushSSRRenderContext(ctx);
+    try {
+      // Pass 1 — fetcher rejects; pass-1 records undefined data + the error.
+      const r1 = resource(
+        () => 1,
+        () => Promise.reject(new Error('boom')),
+        {
+          key: 'k',
+          initialValue: 'fallback',
+        },
+      );
+      void r1;
+      await Promise.allSettled(ctx.pendingPromises);
+      expect(ctx.resolvedDataByKey.k).toBeUndefined();
+      expect(ctx.resolvedErrorsByKey.k).toBeInstanceOf(Error);
+
+      // Pass 2 — fresh resource, same key ⇒ alreadyResolved branch.
+      const r2 = resource(
+        () => 1,
+        () => Promise.reject(new Error('boom')),
+        {
+          key: 'k',
+          initialValue: 'fallback',
+        },
+      );
+      expect(r2.error()).toBeInstanceOf(Error);
+      // The bug clobbered data() to undefined; the fix keeps 'fallback'.
+      expect(r2()).toBe('fallback');
+    } finally {
+      popSSRRenderContext();
+    }
+  });
+
+  it('pass-2 errored unkeyed resource keeps initialValue and surfaces the error', async () => {
+    const ctx = makeSSRContext();
+    pushSSRRenderContext(ctx);
+    try {
+      const r1 = resource(
+        () => 1,
+        () => Promise.reject(new Error('boom')),
+        {
+          initialValue: 'fallback',
+        },
+      );
+      void r1;
+      await Promise.allSettled(ctx.pendingPromises);
+
+      // Reset the per-pass creation counter; the App reruns from scratch.
+      ctx.resourceCounter = 0;
+      const r2 = resource(
+        () => 1,
+        () => Promise.reject(new Error('boom')),
+        {
+          initialValue: 'fallback',
+        },
+      );
+      expect(r2.error()).toBeInstanceOf(Error);
+      expect(r2()).toBe('fallback');
+    } finally {
+      popSSRRenderContext();
+    }
+  });
+});
+
+// [MED] A user-supplied retry `delay` that returns NaN / Infinity / a negative
+// number must not reach setTimeout unclamped — that coerces to ~0 and turns
+// the retry into a tight loop hammering the server.
+describe('resource — retry delay is clamped to a finite non-negative ms', () => {
+  function withSetTimeoutSpy<R>(run: (seen: number[]) => Promise<R>): Promise<R> {
+    const orig = globalThis.setTimeout;
+    const seen: number[] = [];
+    (globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout = ((
+      fn: TimerHandler,
+      ms?: number,
+      ...rest: unknown[]
+    ) => {
+      seen.push(ms as number);
+      return (orig as (...a: unknown[]) => ReturnType<typeof setTimeout>)(fn, ms, ...rest);
+    }) as typeof setTimeout;
+    return run(seen).finally(() => {
+      (globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout = orig;
+    });
+  }
+
+  it('NaN delay never reaches setTimeout as NaN', async () => {
+    await withSetTimeoutSpy(async (seen) => {
+      const r = resource(() => Promise.reject(new Error('x')), {
+        retry: { count: 2, delay: () => NaN },
+      });
+      await new Promise((res) => globalThis.setTimeout(res, 80));
+      r.dispose();
+      expect(seen.some((x) => Number.isNaN(x))).toBe(false);
+    });
+  });
+
+  it('negative delay never reaches setTimeout as a negative number', async () => {
+    await withSetTimeoutSpy(async (seen) => {
+      const r = resource(() => Promise.reject(new Error('x')), {
+        retry: { count: 2, delay: () => -5000 },
+      });
+      await new Promise((res) => globalThis.setTimeout(res, 80));
+      r.dispose();
+      expect(seen.some((x) => x < 0)).toBe(false);
+    });
+  });
+
+  it('still retries the configured number of times under a clamped delay', async () => {
+    let calls = 0;
+    const r = resource(
+      () => {
+        calls++;
+        return Promise.reject(new Error('x'));
+      },
+      { retry: { count: 2, delay: () => 0 } },
+    );
+    await new Promise((res) => setTimeout(res, 80));
+    expect(calls).toBe(3); // 1 initial + 2 retries
+    expect(r.error()).toBeInstanceOf(Error);
+    r.dispose();
+  });
+});
+
+// [MED] pollInterval <= 0 (or non-finite) must be treated as "polling
+// disabled" rather than scheduling a setTimeout(0) hot loop after each settle.
+describe('resource — non-positive pollInterval disables polling', () => {
+  it('pollInterval:0 does not re-fire the fetcher after the first settle', async () => {
+    let calls = 0;
+    const r = resource(
+      () => {
+        calls++;
+        return Promise.resolve(calls);
+      },
+      { pollInterval: 0 },
+    );
+    await flushAll();
+    expect(calls).toBe(1);
+    // Give any rogue setTimeout(0) poll a chance to fire.
+    await new Promise((res) => setTimeout(res, 30));
+    expect(calls).toBe(1);
+    r.dispose();
+  });
+
+  it('negative pollInterval disables polling', async () => {
+    let calls = 0;
+    const r = resource(
+      () => {
+        calls++;
+        return Promise.resolve(calls);
+      },
+      { pollInterval: -100 },
+    );
+    await flushAll();
+    expect(calls).toBe(1);
+    await new Promise((res) => setTimeout(res, 30));
+    expect(calls).toBe(1);
+    r.dispose();
+  });
+
+  it('a positive pollInterval still polls', async () => {
+    let calls = 0;
+    const r = resource(
+      () => {
+        calls++;
+        return Promise.resolve(calls);
+      },
+      { pollInterval: 20 },
+    );
+    await flushAll();
+    expect(calls).toBe(1);
+    await new Promise((res) => setTimeout(res, 60));
+    expect(calls).toBeGreaterThan(1);
+    r.dispose();
+  });
+});
+
+// Invariant pin (audit 412-421 / 373-380 verdict: prior in-flight fetch is
+// aborted on source-key change and on a source going falsy — via the watch's
+// returned cleanup, not the bookkeeping assignment). These guard against a
+// future refactor that drops the cleanup and reintroduces a network leak.
+describe('resource — prior in-flight fetch is aborted on source change', () => {
+  it('changing the source key aborts the previous fetch signal', async () => {
+    const id = state(1);
+    const signals: AbortSignal[] = [];
+    const r = resource(
+      () => id(),
+      (_k, { signal }) => {
+        signals.push(signal);
+        return new Promise<number>(() => {}); // never resolves
+      },
+    );
+    await flushAll();
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(false);
+
+    id(2);
+    await flushAll();
+    expect(signals).toHaveLength(2);
+    expect(signals[0].aborted).toBe(true);
+    r.dispose();
+  });
+
+  it('a fast sync result wins over a slow prior async and aborts it', async () => {
+    const id = state<number>(1);
+    const signals: AbortSignal[] = [];
+    const r = resource(
+      () => id(),
+      (k, { signal }) => {
+        signals.push(signal);
+        if (k === 1) return new Promise<number>(() => {}); // never resolves
+        return 99; // sync
+      },
+    );
+    await flushAll();
+    expect(r.loading()).toBe(true);
+
+    id(2); // sync result
+    await flushAll();
+    expect(r()).toBe(99);
+    expect(r.loading()).toBe(false);
+    expect(signals[0].aborted).toBe(true);
+    r.dispose();
+  });
+
+  it('a source going falsy aborts the in-flight fetch and clears loading', async () => {
+    const id = state<number | null>(1);
+    const signals: AbortSignal[] = [];
+    const r = resource(
+      () => id(),
+      (_k, { signal }) => {
+        signals.push(signal);
+        return new Promise<number>(() => {});
+      },
+    );
+    await flushAll();
+    expect(r.loading()).toBe(true);
+
+    id(null);
+    await flushAll();
+    expect(r.loading()).toBe(false);
+    expect(signals[0].aborted).toBe(true);
     r.dispose();
   });
 });

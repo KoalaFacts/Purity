@@ -72,6 +72,45 @@ describe('manageTitle — SSR path (ADR 0030)', () => {
       popSSRRenderContext();
     }
   });
+
+  it('isolates throws from the title fn during SSR (no head entry added)', () => {
+    // Regression: a throw inside fn() under SSR must not propagate out and
+    // crash renderToString. Log via console.error and skip the entry,
+    // matching head()'s own thunk-error isolation.
+    const errors: unknown[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      errors.push(args);
+    };
+    const ctx = makeSSRContext();
+    pushSSRRenderContext(ctx);
+    try {
+      expect(() => {
+        manageTitle(() => {
+          throw new Error('boom-ssr');
+        });
+      }).not.toThrow();
+    } finally {
+      popSSRRenderContext();
+      console.error = origError;
+    }
+    expect((ctx.head ?? []).join('')).toBe('');
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('coerces non-string return values to a string when emitting <title>', () => {
+    // Regression: previously `escHtml` called `.replace` on the raw value;
+    // a non-string return from `fn()` (e.g. a number from a signal) crashed
+    // the SSR render. Should coerce safely.
+    const ctx = makeSSRContext();
+    pushSSRRenderContext(ctx);
+    try {
+      manageTitle(() => 7 as unknown as string);
+    } finally {
+      popSSRRenderContext();
+    }
+    expect(ctx.head?.join('') ?? '').toContain('<title>7</title>');
+  });
 });
 
 describe('manageTitle — client path (ADR 0030)', () => {
@@ -116,5 +155,76 @@ describe('manageTitle — client path (ADR 0030)', () => {
     teardown = null;
     // Documented: teardown stops updating but doesn't restore.
     expect(document.title).toBe('MANAGED');
+  });
+
+  it('isolates throws from the title fn on the initial client run', () => {
+    // Regression: a throw inside fn() must not propagate out of
+    // manageTitle on the synchronous initial run; the watch should
+    // be created and the throw logged via console.error.
+    const errors: unknown[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      errors.push(args);
+    };
+    document.title = 'PRE-THROW';
+    try {
+      expect(() => {
+        teardown = manageTitle(() => {
+          throw new Error('boom-client');
+        });
+      }).not.toThrow();
+    } finally {
+      console.error = origError;
+    }
+    // Title left untouched on throw.
+    expect(document.title).toBe('PRE-THROW');
+    // A teardown was still returned so the caller can clean up.
+    expect(typeof teardown).toBe('function');
+    // The error was surfaced via console.error (not silently swallowed).
+    expect(errors.length).toBeGreaterThan(0);
+  });
+
+  it('isolates throws from the title fn on subsequent reactive updates', async () => {
+    // Regression: after a successful first run, a later throw in fn()
+    // should be logged but must not break the watcher — once fn stops
+    // throwing the next dep change must still drive document.title.
+    const errors: unknown[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      errors.push(args);
+    };
+    try {
+      const mode = state<'ok' | 'bad'>('ok');
+      teardown = manageTitle(() => {
+        if (mode() === 'bad') throw new Error('boom-update');
+        return 'OK-TITLE';
+      });
+      expect(document.title).toBe('OK-TITLE');
+
+      mode('bad');
+      await tick();
+      // Title untouched after the throw.
+      expect(document.title).toBe('OK-TITLE');
+      expect(errors.length).toBeGreaterThan(0);
+
+      // Watcher must still be alive: fn returns clean again on next flip.
+      mode('ok');
+      await tick();
+      expect(document.title).toBe('OK-TITLE');
+    } finally {
+      console.error = origError;
+    }
+  });
+
+  it('coerces non-string return values to a string for document.title', async () => {
+    // Regression: passing a fn that returns a non-string (e.g. number from
+    // a count signal) should produce a string title, not the literal
+    // `"undefined"` from setting `document.title = undefined`.
+    const n = state(0);
+    teardown = manageTitle(() => n() as unknown as string);
+    expect(document.title).toBe('0');
+    n(42);
+    await tick();
+    expect(document.title).toBe('42');
   });
 });

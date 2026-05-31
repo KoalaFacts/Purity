@@ -81,37 +81,23 @@ export function optimistic<TArgs>(
   return {
     url: action.url,
     async invoke(args: TArgs): Promise<Response> {
-      // 1. Apply optimistic local state synchronously, capturing rollback.
-      const rollback = options.apply ? options.apply(args) : undefined;
+      // Compute the request payload FIRST. If `body`/`init` throws (a bad
+      // serializer, a circular structure), we bail before applying any
+      // optimistic mutation — so a serialization error can't strand the UI
+      // in an optimistic state with no rollback.
       const init = typeof options.init === 'function' ? options.init(args) : options.init;
       const body = options.body(args);
 
+      // Apply optimistic local state synchronously, capturing rollback.
+      const rollback = options.apply ? options.apply(args) : undefined;
+
+      let response: Response;
       try {
-        const response = await action.invoke(body, init);
-        if (isSuccess(response)) {
-          // Success path — invalidate listed queries.
-          if (options.invalidates) {
-            const keys =
-              typeof options.invalidates === 'function'
-                ? options.invalidates(args, response)
-                : options.invalidates;
-            if (keys) for (const k of keys) invalidateQuery(k);
-          }
-          options.onSettle?.(args, response, undefined);
-        } else {
-          // !isSuccess: treat as failure — rollback, settle, return response.
-          if (rollback) {
-            try {
-              rollback();
-            } catch (err) {
-              console.error('[purity] optimistic rollback threw:', err);
-            }
-          }
-          options.onSettle?.(args, response, undefined);
-        }
-        return response;
+        response = await action.invoke(body, init);
       } catch (error) {
-        // Network / abort error — rollback, settle, re-throw.
+        // Network / abort: rollback, settle, re-throw. Each user hook is
+        // isolated so a throwing rollback or onSettle can't swallow the
+        // original error.
         if (rollback) {
           try {
             rollback();
@@ -119,9 +105,77 @@ export function optimistic<TArgs>(
             console.error('[purity] optimistic rollback threw:', err);
           }
         }
-        options.onSettle?.(args, undefined, error);
+        try {
+          options.onSettle?.(args, undefined, error);
+        } catch (err) {
+          console.error('[purity] optimistic onSettle threw:', err);
+        }
         throw error;
       }
+
+      // The action settled with a Response. From here we MUST NOT let
+      // user-supplied hooks (`isSuccess`, `invalidates`, `onSettle`) throw
+      // out of this function — a throw would have been caught by the outer
+      // try and treated a successful server action as a network failure,
+      // firing a spurious rollback. Each hook is isolated.
+      // A throwing `isSuccess` can't decide pass-vs-fail; treat it as
+      // failure so rollback restores the pre-optimistic state.
+      let succeeded: boolean;
+      try {
+        succeeded = isSuccess(response);
+      } catch (err) {
+        console.error('[purity] optimistic isSuccess threw; treating response as failure:', err);
+        succeeded = false;
+      }
+      if (succeeded) {
+        // Resolve the keys list with one outer try (covers a throwing
+        // `invalidates` function or a non-iterable return), then isolate
+        // each `invalidateQuery(k)` call so one bad key (e.g. a value whose
+        // `toJSON` throws inside serializeKey) cannot skip the remaining
+        // keys — the SWR cache must be fully bust on success.
+        let keys: Iterable<QueryKey> | undefined;
+        try {
+          if (options.invalidates) {
+            const raw =
+              typeof options.invalidates === 'function'
+                ? options.invalidates(args, response)
+                : options.invalidates;
+            if (raw) {
+              if (typeof (raw as { [Symbol.iterator]?: unknown })[Symbol.iterator] !== 'function') {
+                console.error(
+                  '[purity] optimistic invalidates returned a non-iterable; skipping:',
+                  raw,
+                );
+              } else {
+                keys = raw as Iterable<QueryKey>;
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[purity] optimistic invalidates threw:', err);
+        }
+        if (keys) {
+          for (const k of keys) {
+            try {
+              invalidateQuery(k);
+            } catch (err) {
+              console.error('[purity] optimistic invalidateQuery threw for key; skipping:', err);
+            }
+          }
+        }
+      } else if (rollback) {
+        try {
+          rollback();
+        } catch (err) {
+          console.error('[purity] optimistic rollback threw:', err);
+        }
+      }
+      try {
+        options.onSettle?.(args, response, undefined);
+      } catch (err) {
+        console.error('[purity] optimistic onSettle threw:', err);
+      }
+      return response;
     },
   };
 }

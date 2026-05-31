@@ -149,4 +149,69 @@ describe('LoaderDataOfEntry<E> — single-entry helper (ADR 0034)', () => {
     const data: LoaderDataOfEntry<typeof layoutEntry> = undefined;
     expect(data).toBeUndefined();
   });
+
+  // audit-v2 — empty-layouts regression. `routes[i]['layouts'][number]`
+  // collapses to `never` when the tuple is empty `[]`; the helper must
+  // resolve `never` to `undefined`, not propagate `never` (which would
+  // make every downstream assignment fail to typecheck).
+  it('resolves to undefined when the entry type is `never`', () => {
+    const emptyLayouts = [] as const;
+    type EmptyEntry = (typeof emptyLayouts)[number]; // never
+    const data: LoaderDataOfEntry<EmptyEntry> = undefined;
+    expect(data).toBeUndefined();
+  });
+});
+
+// audit-v2 — additional edge cases on LoaderDataOf<P, R>.
+describe('LoaderDataOf<P, R> — audit-v2 edge cases', () => {
+  // (1) `never` indexing — when `routes` is `[]`, `R[number]` is `never`,
+  // and the helper should collapse to `undefined`, not `never`.
+  it('resolves to undefined for an empty routes tuple', () => {
+    const empty = [] as const;
+    const data: LoaderDataOf<'/', typeof empty> = undefined;
+    expect(data).toBeUndefined();
+  });
+
+  // (2) Optional `loader?` — when the route module declares the loader
+  // as optional (e.g. `export const loader?` ambient shape), the helper
+  // should yield `Awaited<Ret> | undefined`, not collapse to `undefined`.
+  it('handles optional `loader?` exports as `T | undefined`', () => {
+    interface OptionalLoaderModule {
+      loader?: () => Promise<{ x: number }>;
+      default: () => unknown;
+    }
+    const optRoutes = [
+      {
+        pattern: '/opt',
+        filePath: 'opt.ts',
+        importFn: (): Promise<OptionalLoaderModule> => Promise.resolve({} as OptionalLoaderModule),
+        layouts: [],
+      },
+    ] as const;
+    const present: LoaderDataOf<'/opt', typeof optRoutes> = { x: 1 };
+    const absent: LoaderDataOf<'/opt', typeof optRoutes> = undefined;
+    // Narrow `present` so `.x` is reachable under the new `T | undefined` shape.
+    if (present !== undefined) expect(present.x).toBe(1);
+    expect(absent).toBeUndefined();
+  });
+
+  // (3) Loader with required arguments — `(ctx: { params }) => Promise<T>`
+  // must still match the helper's `(...args: never[])` shape so that
+  // typed `loader` arguments don't accidentally fall through to `undefined`.
+  it('matches loaders whose signature requires arguments', () => {
+    interface CtxModule {
+      loader: (ctx: { params: { id: string } }) => Promise<{ y: number }>;
+      default: () => unknown;
+    }
+    const ctxRoutes = [
+      {
+        pattern: '/c',
+        filePath: 'c.ts',
+        importFn: (): Promise<CtxModule> => Promise.resolve({} as CtxModule),
+        layouts: [],
+      },
+    ] as const;
+    const data: LoaderDataOf<'/c', typeof ctxRoutes> = { y: 5 };
+    expect(data.y).toBe(5);
+  });
 });

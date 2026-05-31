@@ -73,16 +73,27 @@ export const HYDRATION_CLOSE = '<!--]-->';
  * - Functions are called once (signal accessor → current value).
  * - Branded SSR HTML wrappers concatenate raw.
  * - null / undefined / false render as empty string.
- * - Arrays recurse and concatenate.
+ * - Arrays recurse and concatenate. A WeakSet tracks visited arrays so a
+ *   cyclic structure (`const a:any=[]; a.push(a)`) renders as empty for the
+ *   repeat occurrence instead of stack-overflowing the SSR render.
  * - Everything else is String()'d and HTML-escaped.
  */
 export function valueToHtml(v: unknown): string {
+  return valueToHtmlInner(v, null);
+}
+
+function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null): string {
   if (typeof v === 'function') v = (v as () => unknown)();
   if (v == null || v === false) return '';
   if (isSSRHtml(v)) return v.__purity_ssr_html__;
   if (Array.isArray(v)) {
+    // Lazily allocate the visited set — non-cyclic input keeps the fast path
+    // allocation-free; only arrays pay the WeakSet add cost.
+    if (seen === null) seen = new WeakSet<object>();
+    if (seen.has(v)) return '';
+    seen.add(v);
     let s = '';
-    for (let i = 0; i < v.length; i++) s += valueToHtml(v[i]);
+    for (let i = 0; i < v.length; i++) s += valueToHtmlInner(v[i], seen);
     return s;
   }
   return escHtml(String(v));
@@ -126,10 +137,42 @@ export type SSRComponentRenderer = (
 
 let componentRenderer: SSRComponentRenderer | null = null;
 
-/** Install the SSR component renderer. Called by `@purityjs/ssr` on import. */
+/**
+ * Install the SSR component renderer. Called by `@purityjs/ssr` on import.
+ *
+ * Idempotent: re-installing the same function reference (or clearing to
+ * `null` when already cleared) is a silent no-op. This guards against
+ * harmless double-imports of `@purityjs/ssr` (test setup churn, bundler
+ * dedup glitches, ESM dual instantiation).
+ *
+ * Throws when called with a *different* non-null renderer while one is
+ * already installed — a real conflict between two SSR implementations
+ * surfaces loudly instead of silently last-write-wins. Pass `null`
+ * first to explicitly hand off.
+ */
 export function setSSRComponentRenderer(fn: SSRComponentRenderer | null): void {
+  if (componentRenderer === fn) return;
+  if (componentRenderer !== null && fn !== null) {
+    throw new Error(
+      'setSSRComponentRenderer: a different renderer is already installed. ' +
+        'This usually means `@purityjs/ssr` was loaded twice (e.g. ESM dual ' +
+        'instantiation or a bundler dedup glitch). Reset to null before ' +
+        'installing a new renderer.',
+    );
+  }
   componentRenderer = fn;
 }
+
+// HTML attribute / tag name shape used as a defense-in-depth filter on the
+// public `_h.element` entry point. The codegen path already runs every
+// attribute and tag name through assertSafeName at compile time, but
+// `ssrElement` is exported via `ssrHelpers` and a third-party
+// `SSRComponentRenderer` can fall through to `plainElement` with caller-
+// controlled keys (e.g. spread props from a fetched JSON payload). An
+// attacker-supplied key containing `=`, space, `/`, or `>` would otherwise
+// break out of the attribute name into raw HTML — silently skipping
+// non-conforming keys keeps the fallback safe regardless of who calls it.
+const SAFE_ATTR_NAME = /^[A-Za-z_][A-Za-z0-9_\-:.]*$/;
 
 /**
  * Plain element fallback — emits `<tag attr="…">slot</tag>` with proper escaping.
@@ -138,6 +181,7 @@ export function setSSRComponentRenderer(fn: SSRComponentRenderer | null): void {
 function plainElement(tag: string, attrs: Record<string, unknown>, slotHtml: string): string {
   let s = `<${tag}`;
   for (const k of Object.keys(attrs)) {
+    if (!SAFE_ATTR_NAME.test(k)) continue;
     const av = valueToAttr(attrs[k]);
     if (av !== null) s += av === '' ? ` ${k}` : ` ${k}="${av}"`;
   }

@@ -106,6 +106,17 @@ describe('manageNavFocus() — hash target priority', () => {
     await Promise.resolve();
     expect(document.activeElement).toBe(main);
   });
+
+  it('does not throw on a malformed-percent hash (falls back to selector)', async () => {
+    document.body.innerHTML = '<main></main>';
+    const main = document.querySelector('main')!;
+    teardown = manageNavFocus();
+    // `#%` makes decodeURIComponent throw; the handler must swallow it and
+    // still focus the landmark rather than leak an uncaught error.
+    navigate('/page#%');
+    await Promise.resolve();
+    expect(document.activeElement).toBe(main);
+  });
 });
 
 describe('manageNavFocus() — custom handler', () => {
@@ -126,6 +137,36 @@ describe('manageNavFocus() — custom handler', () => {
   });
 });
 
+describe('manageNavFocus() — audit-v2 fix #2: generation guard', () => {
+  it('cancels a stale microtask when a newer navigate() arrives', async () => {
+    // Repro: rapid double navigate(). Both onNavigate listeners queue a
+    // microtask. Without the generation guard, the OLDER nav's focus
+    // would race the NEWER nav's focus (last-writer-wins). After fix
+    // the older microtask short-circuits when it sees the generation
+    // has advanced.
+    document.body.innerHTML =
+      '<section id="first" tabindex="-1"></section><section id="second" tabindex="-1"></section>';
+    const first = document.getElementById('first')!;
+    const second = document.getElementById('second')!;
+    let firstFocused = 0;
+    let secondFocused = 0;
+    first.focus = function () {
+      firstFocused++;
+    } as typeof first.focus;
+    second.focus = function () {
+      secondFocused++;
+    } as typeof second.focus;
+    teardown = manageNavFocus();
+    // Two navs back-to-back, before any microtask drains.
+    navigate('/page#first');
+    navigate('/page#second');
+    await Promise.resolve();
+    // Only the newer nav's target gets focused — older cancelled.
+    expect(firstFocused).toBe(0);
+    expect(secondFocused).toBe(1);
+  });
+});
+
 describe('manageNavFocus() — lifecycle', () => {
   it('returns a teardown that stops handling future navs', async () => {
     document.body.innerHTML = '<main></main>';
@@ -143,5 +184,82 @@ describe('manageNavFocus() — lifecycle', () => {
     navigate('/second');
     await Promise.resolve();
     expect(calls).toBe(1);
+  });
+
+  it('does NOT run the handler when teardown fires before the deferred microtask', async () => {
+    document.body.innerHTML = '<main></main>';
+    const main = document.querySelector('main')! as HTMLElement;
+    let calls = 0;
+    main.focus = function () {
+      calls++;
+    } as typeof main.focus;
+    teardown = manageNavFocus();
+    navigate('/race');
+    // Teardown synchronously, BEFORE the queued microtask has had a chance
+    // to flush. Without listener-active gating, the microtask would still
+    // call focusElement on stale DOM (or worse, leak focus into a now-
+    // unmounted region during HMR).
+    teardown();
+    teardown = null;
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toBe(0);
+  });
+});
+
+describe('manageNavFocus() — error isolation', () => {
+  it('does not throw on an invalid CSS selector (swallows SyntaxError)', async () => {
+    document.body.innerHTML = '<main></main>';
+    // querySelector('::: ! invalid :::') throws DOMException SyntaxError.
+    // Running inside the microtask would otherwise escape as unhandled.
+    teardown = manageNavFocus({ selector: '::: ! invalid :::' });
+    expect(() => navigate('/x')).not.toThrow();
+    let unhandled: unknown = null;
+    const onErr = (e: ErrorEvent): void => {
+      unhandled = e.error ?? e.message;
+    };
+    window.addEventListener('error', onErr);
+    await Promise.resolve();
+    await Promise.resolve();
+    window.removeEventListener('error', onErr);
+    expect(unhandled).toBeNull();
+    // Body unfocused — handler bailed silently.
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('does not crash subsequent navs when the custom handler throws', async () => {
+    let count = 0;
+    teardown = manageNavFocus({
+      onNavigate: () => {
+        count++;
+        throw new Error('boom');
+      },
+    });
+    navigate('/first');
+    await Promise.resolve();
+    // Second nav must still reach the (throwing) handler — error isolation,
+    // not silent suppression of the subscription.
+    navigate('/second');
+    await Promise.resolve();
+    expect(count).toBe(2);
+  });
+
+  it('does not propagate when focusing throws (e.g. detached element)', async () => {
+    document.body.innerHTML = '<main></main>';
+    const main = document.querySelector('main')! as HTMLElement;
+    main.focus = function () {
+      throw new Error('focus failed');
+    } as typeof main.focus;
+    teardown = manageNavFocus();
+    let unhandled: unknown = null;
+    const onErr = (e: ErrorEvent): void => {
+      unhandled = e.error ?? e.message;
+    };
+    window.addEventListener('error', onErr);
+    navigate('/x');
+    await Promise.resolve();
+    await Promise.resolve();
+    window.removeEventListener('error', onErr);
+    expect(unhandled).toBeNull();
   });
 });

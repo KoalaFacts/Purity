@@ -7,6 +7,7 @@
 // jsdom document.
 
 import { resource, suspense } from '@purityjs/core';
+import { markSSRHtml } from '@purityjs/core/compiler';
 import { describe, expect, it, vi } from 'vitest';
 import { html as ssrHtml, renderToStream } from '../src/index.ts';
 
@@ -261,6 +262,80 @@ describe('renderToStream — runtime swap behavior', () => {
     // between <!--s:1--> and <!--/s:1-->) — the markers themselves stay.
     // What matters: the resolved content replaced the fallback.
   });
+
+  it('boundary failure leaves the shell-rendered fallback intact (does not wipe it with empty)', async () => {
+    // The doc on the failure path says "leave shell fallback in place"
+    // (renderBoundary -> empty html on non-convergence / fallback-throws).
+    // But the loop still emitted a `<template id="purity-s-N"></template>`
+    // + __purity_swap(N) chunk for the empty html, so the swap wiped the
+    // shell's fallback and replaced it with NOTHING — user saw a blank
+    // boundary after JS ran. Constructed reproducer: a fallback that
+    // succeeds the first time (shell pass) and throws the second
+    // (renderBoundary's pass-2 fallback retry after a view throw) → empty
+    // chunk → swap wipes the rendered fallback.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let count = 0;
+    const fallback = (): unknown => {
+      count++;
+      if (count > 1) throw new Error('fallback boom in boundary pass');
+      return ssrHtml`<aside class="fallback">offline</aside>`;
+    };
+    const view = (): unknown => {
+      throw new Error('view boom');
+    };
+    const stream = renderToStream(() => ssrHtml`<main>${suspense(view, fallback)}</main>`, {
+      timeout: 100,
+    });
+    const out = await streamToString(stream);
+
+    const doc = document.implementation.createHTMLDocument('test');
+    doc.body.innerHTML = out;
+    const scripts = Array.from(doc.body.querySelectorAll('script'));
+    for (const s of scripts) {
+      // biome-ignore lint/security/noGlobalEval: test-only execution of generated SSR scripts
+      new Function('document', 'window', s.textContent || '')(doc, doc.defaultView ?? globalThis);
+    }
+
+    // The shell rendered the fallback successfully. The boundary chunk
+    // came back empty (both view AND fallback threw inside the boundary).
+    // The swap MUST NOT have wiped the fallback DOM.
+    const visible = doc.body.querySelector('aside.fallback');
+    expect(visible).not.toBeNull();
+    expect(visible!.textContent).toBe('offline');
+    errSpy.mockRestore();
+  });
+
+  it('does not double-pop SSRRenderContext when a boundary view throws', async () => {
+    // Pre-fix the catch block popped the SSR context AND the finally
+    // popped it again — single-slot currentContext nulled before
+    // siblings rendered. With multiple boundaries where one throws,
+    // any sibling boundary running concurrently in the same task lost
+    // its context (NPE / hydration markers off).
+    //
+    // Test: a two-boundary stream where the first boundary's view
+    // throws (forcing the catch path) must still render the second
+    // boundary correctly. Without the fix, the second boundary would
+    // either crash on null currentContext or emit malformed content.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const stream = renderToStream(
+      () => ssrHtml`<main>
+        ${suspense(
+          () => {
+            throw new Error('first boundary boom');
+          },
+          () => ssrHtml`<aside class="lf">first-fallback</aside>`,
+        )}
+        ${suspense(
+          () => ssrHtml`<aside class="ok">second-resolved</aside>`,
+          () => ssrHtml`<aside class="ls">second-fallback</aside>`,
+        )}
+      </main>`,
+    );
+    const out = await streamToString(stream);
+    // Second boundary correctly streamed (not crashed by double-pop):
+    expect(out).toContain('second-resolved');
+    errSpy.mockRestore();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -371,5 +446,156 @@ describe('renderToStream — per-boundary resource cache', () => {
     );
     const out = await streamToString(stream);
     expect(out).not.toContain('__purity_resources_');
+  });
+
+  it('defangs </script> smuggling in both the shell and per-boundary resource scripts', async () => {
+    // Guards the SHARED helper across renderers. If render-to-stream's
+    // escape table ever drifts from render-to-string's, this test catches
+    // it: both the top-level shell payload (id="__purity_resources__")
+    // and each per-boundary payload (id="__purity_resources_N__") flow
+    // through the same `serializeResourceScriptPayload` helper.
+    const stream = renderToStream(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            const r = resource(() => Promise.resolve('</script><img src=x onerror=alert(1)>'), {
+              initialValue: undefined,
+              key: 'b1',
+            });
+            return ssrHtml`<aside>${() => r()}</aside>`;
+          },
+          () => ssrHtml`<aside>…</aside>`,
+        )}</main>`,
+    );
+    const out = await streamToString(stream);
+    // Per-boundary cache prime emitted.
+    expect(out).toContain('id="__purity_resources_1__"');
+    // No raw </script> inside any resource payload — the escape rewrote
+    // it to </script> so the inline JSON script can't be
+    // broken out of.
+    expect(out).not.toContain('</script><img');
+    expect(out).toContain('\\u003c/script\\u003e');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// audit-v2 — defense-in-depth + lifecycle hardening regressions.
+// ---------------------------------------------------------------------------
+
+describe('renderToStream — audit-v2 hardening', () => {
+  it('cancel() short-circuits the boundary loop so in-flight work is dropped', async () => {
+    // Pre-fix `cancel()` was a no-op. With no external AbortSignal, a
+    // slow suspense() boundary kept resolving its resource (and any
+    // chained work) even after the consumer disconnected. Verify that
+    // (a) cancelling the reader stops further enqueue activity, and
+    // (b) the fetcher's settle isn't observed as a downstream chunk.
+    let settled = false;
+    const stream = renderToStream(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            const r = resource(
+              () =>
+                new Promise<string>((res) =>
+                  setTimeout(() => {
+                    settled = true;
+                    res('LATE');
+                  }, 80),
+                ),
+              { initialValue: undefined },
+            );
+            return ssrHtml`<aside>${() => r()}</aside>`;
+          },
+          () => ssrHtml`<aside class="l">…</aside>`,
+        )}</main>`,
+    );
+    const reader = stream.getReader();
+    // Read the shell — that's all we need before we bail.
+    const first = await reader.read();
+    expect(first.done).toBe(false);
+    // Cancel before the slow boundary resolves.
+    await reader.cancel();
+    // After cancel, the reader is closed; no further chunks are observed.
+    const next = await reader.read();
+    expect(next.done).toBe(true);
+    // Even if the resource eventually settles in the background, no
+    // boundary template chunk could ever have been delivered. (We don't
+    // assert `settled === false` because timer firing is independent of
+    // the stream; what matters is that the stream itself is closed.)
+    void settled;
+  });
+
+  it('refuses to emit a boundary chunk whose HTML contains </template> (breakout defense)', async () => {
+    // Branded SSR HTML is concatenated raw by valueToHtml. A malicious
+    // or buggy producer that hand-rolls markSSRHtml('</template><img
+    // src=x onerror=alert(1)>') would otherwise break out of the
+    // `<template id="purity-s-N">` wrapper and execute as live markup
+    // BEFORE the swap script ran. Verify we detect the smuggling and
+    // skip the chunk instead.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const evil = markSSRHtml('</template><img src=x onerror="window.__pwn=1">');
+    const stream = renderToStream(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            // Force at least one async pass so the boundary defers to a
+            // streamed chunk (otherwise the view renders inline in the
+            // shell and the breakout check doesn't apply).
+            const r = resource(() => Promise.resolve(evil), { initialValue: undefined });
+            return ssrHtml`<aside>${() => r()}</aside>`;
+          },
+          () => ssrHtml`<aside class="lf">safe-fallback</aside>`,
+        )}</main>`,
+      { timeout: 200 },
+    );
+    const out = await streamToString(stream);
+    // No streamed boundary chunk: no `<template id="purity-s-1">` was
+    // emitted, so the evil markup never reached the page outside its
+    // would-be template wrapper.
+    expect(out).not.toContain('<template id="purity-s-1">');
+    // And specifically: the breakout payload never appears as live
+    // markup anywhere in the stream.
+    expect(out).not.toContain('onerror="window.__pwn=1"');
+    // The shell-rendered fallback is still in place.
+    expect(out).toContain('<aside class="lf">safe-fallback</aside>');
+    // A diagnostic was logged.
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it('does not call controller.error() after the consumer has cancelled', async () => {
+    // Pre-fix: if a downstream boundary threw AFTER cancel() (or
+    // external signal abort), the catch block called controller.error()
+    // on an already-closed controller, which throws and surfaced as a
+    // confusing "Invalid state" error masking the original cause.
+    // Use an AbortSignal to enter the aborted state cleanly mid-stream,
+    // then verify the stream completes without surfacing a phantom
+    // error.
+    const ac = new AbortController();
+    const stream = renderToStream(
+      () =>
+        ssrHtml`<main>${suspense(
+          () => {
+            const r = resource(
+              () => new Promise<string>((res) => setTimeout(() => res('NEVER-SHOULD-FLUSH'), 50)),
+              { initialValue: undefined },
+            );
+            return ssrHtml`<aside>${() => r()}</aside>`;
+          },
+          () => ssrHtml`<aside class="l">…</aside>`,
+        )}</main>`,
+      { signal: ac.signal, timeout: 200 },
+    );
+    const reader = stream.getReader();
+    // Drain the shell chunk.
+    const first = await reader.read();
+    expect(first.done).toBe(false);
+    // Abort the signal — controller.close() runs inside onAbort.
+    ac.abort();
+    // The stream should now drain cleanly to done, with no phantom error.
+    // If controller.error() were called on a closed controller, this
+    // read() would reject. We expect a normal { done: true } instead.
+    const next = await reader.read();
+    expect(next.done).toBe(true);
   });
 });

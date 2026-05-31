@@ -28,17 +28,46 @@ export function onlineSignal(): ComputedAccessor<boolean> {
   if (
     getSSRRenderContext() !== null ||
     typeof window === 'undefined' ||
-    typeof window.addEventListener !== 'function'
+    typeof window.addEventListener !== 'function' ||
+    typeof navigator === 'undefined'
   ) {
     return compute(() => true);
   }
   if (singleton) return singleton;
-  const inner = state(navigator.onLine);
-  onOnline = () => inner(true);
-  onOffline = () => inner(false);
-  window.addEventListener('online', onOnline);
-  window.addEventListener('offline', onOffline);
+  // Coerce — some environments expose `onLine` as undefined / non-boolean.
+  const inner = state(navigator.onLine === true);
+  const handlers = {
+    on: () => inner(true),
+    off: () => inner(false),
+  };
+  // Publish the singleton + handler refs BEFORE attaching listeners, so a
+  // throw from addEventListener cannot leave the module in a half-bound
+  // state (one listener attached, refs lost ⇒ leak on _resetOnlineSignal).
+  onOnline = handlers.on;
+  onOffline = handlers.off;
   singleton = compute(() => inner());
+  try {
+    window.addEventListener('online', handlers.on);
+    window.addEventListener('offline', handlers.off);
+  } catch (err) {
+    // Roll back so a partial bind doesn't leak listeners or pin a stale
+    // singleton that can never receive updates.
+    try {
+      window.removeEventListener('online', handlers.on);
+    } catch {
+      /* noop */
+    }
+    try {
+      window.removeEventListener('offline', handlers.off);
+    } catch {
+      /* noop */
+    }
+    onOnline = null;
+    onOffline = null;
+    singleton = null;
+    console.error('[purity] onlineSignal: failed to register listeners', err);
+    return compute(() => navigator.onLine === true);
+  }
   return singleton;
 }
 

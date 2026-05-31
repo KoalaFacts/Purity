@@ -30,6 +30,40 @@ describe('stripServerActionBodies — direct helper', () => {
     expect(result!.code).toContain('serverAction');
   });
 
+  it('handles a serverAction nested inside another serverAction handler', () => {
+    // A handler may itself call serverAction — producing nested (overlapping)
+    // edit ranges. Right-to-left application is only valid for disjoint
+    // edits; the inner edit shifts string length and corrupts the outer
+    // edit's stale end offset. The outer STUB subsumes the inner one, so
+    // the contained edit must be dropped. Output must stay valid.
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = serverAction('/api/outer', async (req) => {`,
+      `  const inner = serverAction('/api/inner', async (r) => new Response(INNER_SECRET));`,
+      `  await db.insert({ outer: OUTER_SECRET });`,
+      `  return new Response('ok');`,
+      `});`,
+      `export const tail = 42;`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).not.toBeNull();
+    // Both secrets gone (outer STUB subsumes the whole handler).
+    expect(result!.code).not.toContain('INNER_SECRET');
+    expect(result!.code).not.toContain('OUTER_SECRET');
+    expect(result!.code).not.toContain('db.insert');
+    // Code AFTER the outer handler must survive intact — corruption from a
+    // stale offset would drop or duplicate this.
+    expect(result!.code).toContain('export const tail = 42;');
+    expect(result!.code).toContain('/api/outer');
+    // The rewritten source must still be syntactically valid (no offset
+    // corruption). Strip module-level import/export keywords so `new
+    // Function` (which only parses script bodies) can parse it; any
+    // offset corruption would leave unbalanced braces and throw.
+    const asScript = result!.code.replace(/import .*?;/g, '').replace(/\bexport /g, '');
+    expect(() => new Function(asScript)).not.toThrow();
+  });
+
   it('replaces a block-bodied function expression handler', () => {
     const src = [
       `import { serverAction } from '@purityjs/core';`,
@@ -220,6 +254,123 @@ describe('stripServerActionBodies — scope-aware shadowing', () => {
   });
 });
 
+describe('stripServerActionBodies — extended shadowing patterns', () => {
+  it('does NOT strip when shadowed by a default param `serverAction = X`', () => {
+    // Default params surface as AssignmentPattern.left, not a bare Identifier.
+    // Before the audit fix, this leaked through scope-bindings and the inner
+    // call was incorrectly stripped.
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `function outer(serverAction = (url, fn) => fn) {`,
+      `  return serverAction('/api/x', async () => INNER_SECRET);`,
+      `}`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).toBeNull();
+  });
+
+  it('does NOT strip when shadowed by a rest param `...serverAction`', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `function outer(...serverAction) {`,
+      `  return serverAction[0]('/api/x', async () => INNER_SECRET);`,
+      `}`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).toBeNull();
+  });
+
+  it('does NOT strip when shadowed by a destructured param `{ serverAction }`', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `function outer({ serverAction }) {`,
+      `  return serverAction('/api/x', async () => INNER_SECRET);`,
+      `}`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).toBeNull();
+  });
+
+  it('does NOT strip when shadowed by `const { serverAction } = …`', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `function outer() {`,
+      `  const { serverAction } = somewhere;`,
+      `  return serverAction('/api/x', async () => INNER_SECRET);`,
+      `}`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).toBeNull();
+  });
+});
+
+describe('stripServerActionBodies — TypeScript type-only wrappers', () => {
+  it('strips an inline handler wrapped in `as any`', () => {
+    // Before the audit fix, the second arg was a TSAsExpression, not an
+    // ArrowFunctionExpression, so the type check at the top of the walker
+    // bailed and the handler body shipped to the client.
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = serverAction('/api/a', (async (req) => LEAKED_SECRET) as any);`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).not.toBeNull();
+    expect(result!.code).not.toContain('LEAKED_SECRET');
+    expect(result!.code).toContain(STUB_MARKER);
+  });
+
+  it('strips an inline handler wrapped in `satisfies`', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = serverAction('/api/a', (async () => LEAKED_SECRET) satisfies unknown);`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).not.toBeNull();
+    expect(result!.code).not.toContain('LEAKED_SECRET');
+  });
+
+  it('strips an inline handler wrapped in a `!` non-null assertion', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = serverAction('/api/a', (async () => LEAKED_SECRET)!);`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).not.toBeNull();
+    expect(result!.code).not.toContain('LEAKED_SECRET');
+  });
+
+  it('strips an inline handler wrapped in a `<T>` type assertion', () => {
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = serverAction('/api/a', <any>(async () => LEAKED_SECRET));`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).not.toBeNull();
+    expect(result!.code).not.toContain('LEAKED_SECRET');
+  });
+
+  it('strips when the callee is wrapped in `as any` — `(serverAction as any)(…)`', () => {
+    // Aggressive users sometimes cast away types to silence errors. The
+    // strip should still recognise the import-bound name behind the wrapper.
+    const src = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = (serverAction as any)('/api/a', async () => LEAKED_SECRET);`,
+    ].join('\n');
+
+    const result = stripServerActionBodies(src, '/app/a.ts');
+    expect(result).not.toBeNull();
+    expect(result!.code).not.toContain('LEAKED_SECRET');
+  });
+});
+
 describe('stripServerActionBodies — type-only imports', () => {
   it('ignores `import type { serverAction }` (declaration is type-only)', () => {
     const src = [
@@ -330,5 +481,25 @@ describe('stripServerActions plugin option — wired into transform', () => {
     expect(out).not.toContain('SECRET');
     // html`` compiled to DOM creation calls.
     expect(out).toContain('document.createElement');
+  });
+
+  // Regression: when the file had no `html``` templates but the strip rewrote
+  // it, the plugin returned `map: null`. Downstream consumers fell back to an
+  // identity map against the *rewritten* code, breaking stack traces. Emit a
+  // v3 map (empty mappings) with the original sourcesContent instead.
+  it('returns a non-null source map when only the strip rewrote the file', () => {
+    const plugin = purity();
+    const code = [
+      `import { serverAction } from '@purityjs/core';`,
+      `export const a = serverAction('/api/a', async () => SECRET);`,
+    ].join('\n');
+    const result = plugin.transform(code, '/app/a.ts', { ssr: false });
+    expect(result).not.toBeNull();
+    const r = result as { code: string; map: unknown };
+    expect(r.map).not.toBeNull();
+    expect((r.map as { version: number }).version).toBe(3);
+    // sourcesContent carries the ORIGINAL (pre-strip) source so tools can
+    // resolve symbols back to the user's file.
+    expect((r.map as { sourcesContent: string[] }).sourcesContent[0]).toBe(code);
   });
 });

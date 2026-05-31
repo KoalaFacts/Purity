@@ -496,12 +496,19 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
         setupParts.push(`_e.addEventListener(${qname},${val});`);
         break;
       case 'dynamic':
+        // Dynamic-attr value coercion MUST match valueToAttr() on the SSR
+        // side: true → bare name (empty value), false/null/undefined →
+        // omitted. The client previously emitted `name="true"` for a
+        // literal `true` while SSR emitted bare `name` — a hydration
+        // mismatch the runtime never warned about. Align both code paths
+        // (literal value setup + signal-returning-value reactive) on the
+        // same valueToAttr semantics.
         setupParts.push(
           `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
-          `if(!${fl}&&${av}!=null&&${av}!==false)_e.setAttribute(${qname},String(${av}));`,
+          `if(!${fl}&&${av}!=null&&${av}!==false)_e.setAttribute(${qname},${av}===true?'':String(${av}));`,
         );
         reactiveParts.push(
-          `if(${fl}){var v${id}=${av}();if(v${id}==null||v${id}===false)_e.removeAttribute(${qname});else _e.setAttribute(${qname},String(v${id}));}`,
+          `if(${fl}){var v${id}=${av}();if(v${id}==null||v${id}===false)_e.removeAttribute(${qname});else _e.setAttribute(${qname},v${id}===true?'':String(v${id}));}`,
         );
         break;
       case 'bool':
@@ -564,15 +571,22 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
       const xv = `_x${id}`;
       const tn = `_t${id}`;
       const fl = `_xf${id}`;
+      // Text-slot value coercion MUST match valueToHtml() on the SSR side
+      // (compiler/ssr-runtime.ts): null / undefined / false render as empty
+      // string, everything else stringifies. The previous client path
+      // skipped `=== false` in the reactive (function-call) branch AND in
+      // the array-item branch — so a signal returning `false` produced
+      // the literal text "false" on the client while SSR rendered nothing.
+      // Symmetric `==null||===false` filter at every text-emit site.
       setupParts.push(
         `var ${xv}=${val};var ${fl}=typeof ${xv}==='function';var ${tn};`,
         `if(${fl}){${tn}=document.createTextNode('');_e.appendChild(${tn});}`,
         `else if(${xv} instanceof Node)_e.appendChild(${xv});`,
-        `else if(Array.isArray(${xv})){for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++)_e.appendChild(${xv}[_ai${id}] instanceof Node?${xv}[_ai${id}]:document.createTextNode(String(${xv}[_ai${id}])));}`,
+        `else if(Array.isArray(${xv})){for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++){var _av${id}=${xv}[_ai${id}];if(_av${id}==null||_av${id}===false)continue;_e.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}}`,
         `else _e.appendChild(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));`,
       );
       reactiveParts.push(
-        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=r${id}==null?'':String(r${id});}}`,
+        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=(r${id}==null||r${id}===false)?'':String(r${id});}}`,
       );
     }
   }
@@ -876,17 +890,22 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
     `if(!${fl}){`,
     `if(typeof ${xv}==='object'){`,
     `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});${tn}=${xv};}`,
-    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++)_af${id}.appendChild(${xv}[_ai${id}] instanceof Node?${xv}[_ai${id}]:document.createTextNode(String(${xv}[_ai${id}])));${slotVar}.replaceWith(_af${id});}`,
+    // Array path: drop null/undefined/false items so SSR (valueToHtml
+    // recurses + concats with empty for falsy) matches the client.
+    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++){var _av${id}=${xv}[_ai${id}];if(_av${id}==null||_av${id}===false)continue;_af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}${slotVar}.replaceWith(_af${id});}`,
     `else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
     `}else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
     `}`,
   ].join('');
 
+  // Reactive: `r${id}===false` was missing from the falsy filter, so
+  // a signal returning false rendered "false" on the client while SSR
+  // emitted empty. Symmetric with the setup branch above.
   const reactive = [
     `if(${fl}){`,
     `var r${id}=${xv}();`,
     `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
-    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=r${id}==null?'':String(r${id});}`,
+    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=(r${id}==null||r${id}===false)?'':String(r${id});}`,
     `}`,
   ].join('');
 
@@ -1132,7 +1151,7 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
         return;
       }
       emitLit(ctx, `<${node.tag}`);
-      for (const a of node.attributes) emitSSRAttr(a, ctx);
+      for (const a of node.attributes) emitSSRAttr(a, ctx, node);
       if (VOID.has(node.tag)) {
         emitLit(ctx, '/>');
         return;
@@ -1165,10 +1184,18 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
     if (a.kind === 'event') continue;
     assertSafeName(a.name, 'attribute');
     if (a.kind === 'bool') {
-      // Boolean attribute: store the truthy/falsy raw value; the renderer
-      // calls valueToAttr which collapses null/undefined/false to omitted
-      // and `true` to bare-name form.
-      pushRaw(ctx, `${attrsVar}[${JSON.stringify(a.name)}]=_v[${a.index}];`);
+      // Boolean attribute: resolve any signal-accessor function and
+      // coerce to a real boolean BEFORE handing it to the renderer.
+      // valueToAttr only collapses `true → ''` (bare name); a truthy
+      // non-boolean (e.g. `?disabled=${'yes'}`) would otherwise SSR as
+      // `disabled="yes"` while the client setAttribute emits
+      // `disabled=""` — a silent hydration mismatch. With the !! coerce,
+      // both sides agree: truthy → bare name, falsy → omitted.
+      const bv = `_b${a.index}`;
+      pushRaw(
+        ctx,
+        `var ${bv}=_v[${a.index}];if(typeof ${bv}==='function')${bv}=${bv}();${attrsVar}[${JSON.stringify(a.name)}]=!!${bv};`,
+      );
     } else {
       pushRaw(ctx, `${attrsVar}[${JSON.stringify(a.name)}]=_v[${a.index}];`);
     }
@@ -1185,7 +1212,16 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
   pushRaw(ctx, `${ctx.out}+=_h.element(${JSON.stringify(node.tag)},${attrsVar},${slotVar});`);
 }
 
-function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx): void {
+// DOM properties that do NOT reflect to a same-named HTML attribute. For
+// `prop` / `reactive-prop` / `bind`, the client codegen assigns `_e[name]=value`
+// (or, for these, writes child content). Emitting `name="value"` server-side is
+// a no-op the browser never interprets as the property — worse for `innerHTML`,
+// where the markup is HTML-escaped into a dead attribute. Skip them during SSR;
+// the property assignment runs client-side at hydration. (Reflecting props such
+// as `value` / `checked` / `selected` keep their existing attribute emission.)
+const NON_REFLECTING_PROPS = new Set(['innerHTML', 'outerHTML', 'innerText', 'textContent']);
+
+function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx, node: import('./ast.ts').ElementNode): void {
   if (a.kind === 'static') {
     if (a.value) {
       emitLit(ctx, ` ${a.name}="${escapeAttr(a.value)}"`);
@@ -1215,18 +1251,33 @@ function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx): void {
     case 'prop':
     case 'reactive-prop':
     case 'bind': {
-      // All four read the current value (calling the accessor if it's a
-      // function) and emit it as a quoted attribute. `bind` skips the
+      // `::group=${signal}` is radio/checkbox group binding, not an attribute.
+      // The client sets `_e.checked` from `signal() === value` (radio) or
+      // `signal().includes(value)` (checkbox). SSR has no such branch and
+      // previously emitted a bogus `group="…"` attribute with no `checked`, so
+      // the prerendered group showed no selection. Resolve it to a `checked`
+      // attribute server-side using the element's static `type` + `value`.
+      if (a.kind === 'bind' && a.name === 'group') {
+        emitGroupBindSSR(a, ctx, node);
+        return;
+      }
+      // Non-reflecting DOM properties (`.innerHTML`, `.textContent`, …) are
+      // assigned as properties on the client; serializing them as attributes
+      // is a no-op (and escapes markup into a dead attribute). Skip server-side
+      // for the property-ish kinds — `dynamic` keeps true setAttribute semantics.
+      if (a.kind !== 'dynamic' && NON_REFLECTING_PROPS.has(a.name)) return;
+      // The remaining kinds read the current value (calling the accessor if
+      // it's a function) and emit it as a quoted attribute. `bind` skips the
       // listener install — that's a hydration-time concern.
       pushRaw(ctx, `var ${av}=_h.toAttr(${val});`);
-      pushRaw(ctx, `if(${av}!==null)_o+=${namePrefix}+(${av}===''?'':'="'+${av}+'"');`);
+      pushRaw(ctx, `if(${av}!==null)${ctx.out}+=${namePrefix}+(${av}===''?'':'="'+${av}+'"');`);
       return;
     }
 
     case 'bool': {
       // Boolean attribute: present (no value) when truthy, absent otherwise.
       pushRaw(ctx, `var ${av}=${val};if(typeof ${av}==='function')${av}=${av}();`);
-      pushRaw(ctx, `if(${av})_o+=${namePrefix};`);
+      pushRaw(ctx, `if(${av})${ctx.out}+=${namePrefix};`);
       return;
     }
 
@@ -1234,4 +1285,43 @@ function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx): void {
     default:
       return;
   }
+}
+
+/**
+ * SSR for `::group=${signal}` radio/checkbox binding. Mirrors the client setup
+ * (codegen.ts `bind` case, `name === 'group'`): emits a bare `checked`
+ * attribute when the signal currently selects this input, and never emits the
+ * non-existent `group` attribute. Radio vs checkbox is decided from the static
+ * `type` attribute, and the comparison value from the static `value` attribute.
+ * When either is dynamic / absent the server can't resolve selection — it omits
+ * `checked` and lets hydration set it client-side (no bogus attribute either way).
+ */
+function emitGroupBindSSR(
+  a: import('./ast.ts').BindAttribute,
+  ctx: SSRGenCtx,
+  node: import('./ast.ts').ElementNode,
+): void {
+  const staticAttr = (name: string): string | null => {
+    for (const attr of node.attributes) {
+      if (attr.name === name) return attr.kind === 'static' ? attr.value : null;
+    }
+    return null;
+  };
+  const type = staticAttr('type');
+  const value = staticAttr('value');
+  // Need a concrete value to compare the signal against. Checkbox membership and
+  // radio equality both read it; without it, defer entirely to client hydration.
+  if (value === null) return;
+
+  const id = ctx.counter++;
+  const gv = `_g${id}`;
+  const qval = JSON.stringify(value);
+  // Resolve the signal (call accessor if function) once.
+  pushRaw(ctx, `var ${gv}=${`_v[${a.index}]`};if(typeof ${gv}==='function')${gv}=${gv}();`);
+  const selected =
+    type === 'radio'
+      ? `${gv}===${qval}`
+      : // checkbox (default for ::group when not explicitly radio): membership.
+        `${gv}!=null&&typeof ${gv}.includes==='function'&&${gv}.includes(${qval})`;
+  pushRaw(ctx, `if(${selected})${ctx.out}+=" checked";`);
 }

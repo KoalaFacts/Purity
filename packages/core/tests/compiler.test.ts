@@ -1,6 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { generate } from '../src/compiler/codegen.ts';
-import { html } from '../src/compiler/compile.ts';
+import { html, inflateDeferred } from '../src/compiler/compile.ts';
+import {
+  checkHydrationCursor,
+  type DeferredTemplate,
+  disableHydrationWarnings,
+  enableHydrationWarnings,
+  enterHydration,
+  exitHydration,
+  isDeferred,
+  isHydrating,
+  makeDeferred,
+  resetHydration,
+  withHydration,
+} from '../src/compiler/hydrate-runtime.ts';
 import { parse } from '../src/compiler/parser.ts';
 import { state } from '../src/signals.ts';
 
@@ -104,6 +117,85 @@ describe('parser', () => {
     expect(el.attributes[1].index).toBe(0);
     expect(el.attributes[2].kind).toBe('event');
     expect(el.attributes[2].index).toBe(1);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Expression-boundary handling (audit-v2 HIGH fixes)
+  //
+  // Spread attributes, interpolated quoted attribute values, and dynamic
+  // content inside comments are NOT supported binding forms (there is no
+  // AST node for them). The contract is: the parser must not let the
+  // expression — or any structural delimiter after it (`>`, the closing
+  // quote, `-->`) — leak into the element's children. The interpolated
+  // value is dropped, but `exprIndex` still advances so later slots stay
+  // aligned with the runtime values array (which codegen indexes absolutely
+  // via `_v[N]`).
+  // ---------------------------------------------------------------------------
+
+  it('spread expression in open tag does not leak `>` into content', () => {
+    // html`<div ${spread}>hi</div>` → strings = ['<div ', '>hi</div>']
+    const ast = parse(['<div ', '>hi</div>']);
+    const el = ast.children[0];
+    expect(el.type).toBe('element');
+    expect(el.tag).toBe('div');
+    // The `>` must be consumed — children is just the text node, never `>hi`.
+    expect(el.children.length).toBe(1);
+    expect(el.children[0]).toEqual({ type: 'text', value: 'hi' });
+  });
+
+  it('preserves real attributes that follow a spread expression', () => {
+    // html`<div ${spread} id="x">` keeps the trailing static attribute.
+    const ast = parse(['<div ', ' id="x">y</div>']);
+    const el = ast.children[0];
+    expect(el.tag).toBe('div');
+    expect(el.attributes).toEqual([{ kind: 'static', name: 'id', value: 'x' }]);
+    expect(el.children).toEqual([{ type: 'text', value: 'y' }]);
+  });
+
+  it('keeps slot indices aligned after a dropped spread expression', () => {
+    // strings = ['<div ', ' class=', '>'] — spread is index 0 (dropped),
+    // class is index 1 and MUST stay index 1.
+    const ast = parse(['<div ', ' class=', '></div>']);
+    const el = ast.children[0];
+    const cls = el.attributes.find((a: any) => a.name === 'class');
+    expect(cls).toEqual({ kind: 'dynamic', name: 'class', index: 1 });
+  });
+
+  it('interpolated quoted attribute value does not leak into content', () => {
+    // html`<div class="x-${y}-z"></div>` → strings = ['<div class="x-', '-z"></div>']
+    const ast = parse(['<div class="x-', '-z"></div>']);
+    const el = ast.children[0];
+    // Single static attribute stitched from the literal segments; the
+    // interpolated value is dropped. No `-z">` text leaks into children.
+    expect(el.attributes).toEqual([{ kind: 'static', name: 'class', value: 'x--z' }]);
+    expect(el.children.length).toBe(0);
+  });
+
+  it('quoted single-expression attribute value is still dynamic (not regressed)', () => {
+    // html`<div class="${y}"></div>` must remain a dynamic binding.
+    const ast = parse(['<div class="', '"></div>']);
+    const el = ast.children[0];
+    expect(el.attributes).toEqual([{ kind: 'dynamic', name: 'class', index: 0 }]);
+    expect(el.children.length).toBe(0);
+  });
+
+  it('comment spanning an expression boundary stays a single comment', () => {
+    // html`<!-- debug: ${value} -->` → strings = ['<!-- debug: ', ' -->']
+    const ast = parse(['<!-- debug: ', ' -->']);
+    expect(ast.children.length).toBe(1);
+    expect(ast.children[0].type).toBe('comment');
+    // The expression is dropped; the trailing ` -->` is consumed, not leaked.
+    expect((ast.children[0] as any).value).toBe(' debug:  ');
+  });
+
+  it('uppercase void tag `<BR>` is treated as void (case-insensitive)', () => {
+    const ast = parse(['<BR>after']);
+    const br = ast.children[0];
+    expect(br.type).toBe('element');
+    expect(br.isVoid).toBe(true);
+    // `after` is a sibling text node, not swallowed as a child of <BR>.
+    expect(br.children.length).toBe(0);
+    expect(ast.children[1]).toEqual({ type: 'text', value: 'after' });
   });
 });
 
@@ -254,6 +346,54 @@ describe('compiled html``', () => {
     c2.appendChild(b);
     expect(c1.querySelector('p').textContent).toBe('cached');
     expect(c2.querySelector('p').textContent).toBe('cached');
+  });
+});
+
+describe('compiled html`` — SSR/client output parity (hydration mismatch class)', () => {
+  // The SSR codegen and client codegen MUST coerce values to the same
+  // HTML for every value kind; otherwise hydration leaves the DOM in
+  // a different state than what SSR rendered (silent UI drift, broken
+  // bindings).
+
+  it('dynamic-attribute literal `true` emits bare name (matches SSR `valueToAttr`)', () => {
+    // SSR: valueToAttr(true) → '' → bare ` name`.
+    // Client (pre-fix): setAttribute(name, 'true') → `name="true"`.
+    const frag = html`<input disabled=${true} />`;
+    const container = document.createElement('div');
+    container.appendChild(frag);
+    const el = container.querySelector('input')!;
+    // Attribute is PRESENT but has empty string value (bare form):
+    expect(el.hasAttribute('disabled')).toBe(true);
+    expect(el.getAttribute('disabled')).toBe('');
+  });
+
+  it('dynamic-attribute signal returning `true` emits bare name', () => {
+    const sig = state(true);
+    const frag = html`<input disabled=${() => sig()} />`;
+    const container = document.createElement('div');
+    container.appendChild(frag);
+    const el = container.querySelector('input')!;
+    expect(el.getAttribute('disabled')).toBe('');
+  });
+
+  it('text-slot signal returning `false` renders empty (matches SSR `valueToHtml`)', () => {
+    // SSR: valueToHtml(false) → ''.
+    // Client (pre-fix): `r==null?'':String(r)` → 'false'.
+    const sig = state<unknown>(false);
+    const frag = html`<p>${() => sig()}</p>`;
+    const container = document.createElement('div');
+    container.appendChild(frag);
+    expect(container.querySelector('p')!.textContent).toBe('');
+  });
+
+  it('text-slot array drops null/undefined/false items (matches SSR recursion)', () => {
+    // SSR: valueToHtml([null, 'a', undefined, false, 'b']) → 'ab'.
+    // Client (pre-fix): String() each → 'nullaundefinedfalseb'.
+    const arr: unknown[] = [null, 'a', undefined, false, 'b'];
+    const frag = html`<p>${arr}</p>`;
+    const container = document.createElement('div');
+    container.appendChild(frag);
+    expect(container.querySelector('p')!.textContent).toBe('ab');
   });
 });
 
@@ -920,5 +1060,212 @@ describe('compiled html`` performance', () => {
     const elapsed = performance.now() - start;
     console.log(`  1k compiled reactive renders: ${elapsed.toFixed(2)}ms`);
     expect(elapsed).toBeLessThan(200);
+  });
+});
+
+describe('compile.ts — inflateDeferred suspense marker stripping', () => {
+  function collectComments(root: Node): string[] {
+    const out: string[] = [];
+    let n = root.firstChild;
+    while (n) {
+      if (n.nodeType === 8) out.push((n as Comment).data);
+      n = n.nextSibling;
+    }
+    return out;
+  }
+
+  function withHydration<T>(fn: () => T): T {
+    enterHydration();
+    try {
+      return fn();
+    } finally {
+      exitHydration();
+    }
+  }
+
+  it('strips edge suspense markers wrapping the SSR view', () => {
+    const deferred = withHydration(() => html`<p>hi</p>`) as DeferredTemplate;
+    const target = document.createDocumentFragment();
+    target.appendChild(document.createComment('s:1'));
+    const p = document.createElement('p');
+    p.textContent = 'hi';
+    target.appendChild(p);
+    target.appendChild(document.createComment('/s:1'));
+    inflateDeferred(deferred, target);
+    expect(collectComments(target)).toEqual([]);
+  });
+
+  it('strips interior suspense markers between sibling roots (defense-in-depth)', () => {
+    // SSR drift / nested-boundary residue: an `<!--s:N-->`/`<!--/s:N-->`
+    // pair sitting BETWEEN the template's two structural roots. Edge-only
+    // strip would leave them, breaking the cursor walk on the second root.
+    const a = state('a');
+    const b = state('b');
+    const deferred = withHydration(
+      () =>
+        html`<p>${() => a()}</p>
+          <p>${() => b()}</p>`,
+    ) as DeferredTemplate;
+    const target = document.createDocumentFragment();
+    const p1 = document.createElement('p');
+    p1.appendChild(document.createComment('['));
+    p1.appendChild(document.createTextNode('a'));
+    p1.appendChild(document.createComment(']'));
+    target.appendChild(p1);
+    target.appendChild(document.createComment('s:2'));
+    target.appendChild(document.createComment('/s:2'));
+    const p2 = document.createElement('p');
+    p2.appendChild(document.createComment('['));
+    p2.appendChild(document.createTextNode('b'));
+    p2.appendChild(document.createComment(']'));
+    target.appendChild(p2);
+    inflateDeferred(deferred, target);
+    // No suspense markers should survive at the target's top level.
+    expect(collectComments(target).filter((d) => /^\/?s:\d+$/.test(d))).toEqual([]);
+    // Both <p> roots preserved in order.
+    const elems = Array.from(target.childNodes).filter((n) => n.nodeType === 1) as Element[];
+    expect(elems.length).toBe(2);
+    expect(elems[0].textContent).toBe('a');
+    expect(elems[1].textContent).toBe('b');
+  });
+
+  it('only strips comments whose data matches /^\\/?s:\\d+$/ — look-alikes survive', () => {
+    // ' s:1' (leading space), 'ms:1', 's:1abc', 's:' all fail the regex and
+    // must NOT be removed. A static-only template is a no-op past the strip
+    // step, so this isolates the strip behavior.
+    const staticDeferred = withHydration(() => html`<p>x</p>`) as DeferredTemplate;
+    const target = document.createDocumentFragment();
+    target.appendChild(document.createComment(' s:1'));
+    target.appendChild(document.createComment('ms:1'));
+    target.appendChild(document.createComment('s:1abc'));
+    target.appendChild(document.createComment('s:'));
+    const p = document.createElement('p');
+    p.textContent = 'x';
+    target.appendChild(p);
+    // And a genuine suspense marker at the trailing edge — should be stripped.
+    target.appendChild(document.createComment('/s:1'));
+    inflateDeferred(staticDeferred, target);
+    const comments = collectComments(target);
+    expect(comments).toContain(' s:1');
+    expect(comments).toContain('ms:1');
+    expect(comments).toContain('s:1abc');
+    expect(comments).toContain('s:');
+    expect(comments.some((d) => /^\/?s:\d+$/.test(d))).toBe(false);
+  });
+});
+
+describe('hydrate-runtime.ts — audit-v2 hardening', () => {
+  // Always start from a clean slate; resetHydration is the in-file crash-
+  // recovery escape hatch and also a convenient test prelude.
+  function reset() {
+    resetHydration();
+    disableHydrationWarnings();
+  }
+
+  it('withHydration restores the counter even when the body throws (leak guard)', () => {
+    reset();
+    expect(isHydrating()).toBe(false);
+    expect(() =>
+      withHydration(() => {
+        // The whole point: an exception inside a hydrating template must not
+        // leave isHydrating() stuck on for the rest of the process.
+        throw new Error('boom');
+      }),
+    ).toThrow('boom');
+    expect(isHydrating()).toBe(false);
+  });
+
+  it('withHydration nests correctly (refcount composes)', () => {
+    reset();
+    let inner = false;
+    withHydration(() => {
+      expect(isHydrating()).toBe(true);
+      withHydration(() => {
+        inner = isHydrating();
+      });
+      // Still hydrating after the inner pop — refcount, not boolean.
+      expect(isHydrating()).toBe(true);
+    });
+    expect(inner).toBe(true);
+    expect(isHydrating()).toBe(false);
+  });
+
+  it('exitHydration clamps at zero and warns on underflow when warnings are on', () => {
+    reset();
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      enableHydrationWarnings();
+      // No matching enterHydration — must not wrap into a negative / "stuck on"
+      // state and must surface the imbalance via the dev warning.
+      exitHydration();
+      expect(isHydrating()).toBe(false);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(String(spy.mock.calls[0][0])).toContain('push/pop imbalance');
+    } finally {
+      spy.mockRestore();
+      disableHydrationWarnings();
+    }
+  });
+
+  it('isDeferred rejects bare brand objects (shape check beyond the brand)', () => {
+    // Pre-fix: { __purity_deferred__: true } passed as a DeferredTemplate
+    // would slip through isDeferred and crash later in inflateDeferred at
+    // `deferred.strings`. The shape check makes this a clean rejection.
+    expect(isDeferred({ __purity_deferred__: true })).toBe(false);
+    expect(isDeferred({ __purity_deferred__: true, strings: [], values: 'no' })).toBe(false);
+    expect(isDeferred({ __purity_deferred__: true, strings: 'no', values: [] })).toBe(false);
+    expect(isDeferred(null)).toBe(false);
+    expect(isDeferred(undefined)).toBe(false);
+    expect(isDeferred('string')).toBe(false);
+    expect(isDeferred(42)).toBe(false);
+    // A genuine, well-shaped deferred (built via makeDeferred) is accepted.
+    const real = makeDeferred(['<p>'] as unknown as TemplateStringsArray, []);
+    expect(isDeferred(real)).toBe(true);
+  });
+
+  it('makeDeferred returns a frozen carrier (brand cannot be flipped off)', () => {
+    const d = makeDeferred(['x'] as unknown as TemplateStringsArray, [1, 2]);
+    expect(Object.isFrozen(d)).toBe(true);
+    // Strict-mode assignment to a frozen prop throws; loose mode silently
+    // ignores. Either way the brand and references must survive.
+    try {
+      // biome/ts-ignore: deliberate mutation attempt
+      (d as { __purity_deferred__: boolean }).__purity_deferred__ = false;
+    } catch {
+      /* swallow strict-mode TypeError */
+    }
+    expect(d.__purity_deferred__).toBe(true);
+    expect(d.values).toEqual([1, 2]);
+  });
+
+  it('checkHydrationCursor produces a sensible warning for unhandled nodeTypes', () => {
+    // Pre-fix: `actual` could be the literal string "undefined" in the warn
+    // when nodeType wasn't 1/3/8/null. With initialization it becomes the
+    // explicit `nodeType(N)` form, and never blank.
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // DocumentFragment has nodeType 11 — none of the kind branches match.
+      const frag = document.createDocumentFragment();
+      checkHydrationCursor(frag, 'open');
+      expect(spy).toHaveBeenCalled();
+      const msg = String(spy.mock.calls[0][0]);
+      expect(msg).toContain('nodeType(11)');
+      expect(msg).not.toContain('got <unknown>'); // initializer is replaced
+      expect(msg).not.toContain('got undefined');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('resetHydration reports and clears a leaked depth', () => {
+    reset();
+    enterHydration();
+    enterHydration();
+    enterHydration();
+    expect(isHydrating()).toBe(true);
+    expect(resetHydration()).toBe(3);
+    expect(isHydrating()).toBe(false);
+    // Idempotent — second reset reports zero.
+    expect(resetHydration()).toBe(0);
   });
 });

@@ -67,6 +67,44 @@ function optionsOf<T>(v: T | boolean | undefined): T | undefined {
 }
 
 /**
+ * Read an own-property off the options object. Inherited values from
+ * `Object.prototype` (e.g. `JSON.parse('{"__proto__":{"intercept":false}}')`)
+ * MUST NOT influence helper enablement — otherwise an attacker-controlled
+ * prototype could silently disable navigation helpers. We accept the
+ * defaults for any non-own key.
+ */
+function ownProp<K extends keyof ConfigureNavigationOptions>(
+  options: ConfigureNavigationOptions,
+  key: K,
+): ConfigureNavigationOptions[K] {
+  return Object.prototype.hasOwnProperty.call(options, key) ? options[key] : undefined;
+}
+
+/**
+ * Run every teardown, swallowing throws so a single misbehaving helper
+ * can't strand the rest. The first error (if any) is rethrown after all
+ * teardowns have run; subsequent errors are surfaced via `console.error`
+ * so they aren't silently dropped.
+ */
+function runTeardowns(teardowns: ReadonlyArray<() => void>): void {
+  let firstError: unknown;
+  let hasError = false;
+  for (let i = 0; i < teardowns.length; i++) {
+    try {
+      teardowns[i]();
+    } catch (err) {
+      if (!hasError) {
+        firstError = err;
+        hasError = true;
+      } else {
+        console.error(err);
+      }
+    }
+  }
+  if (hasError) throw firstError;
+}
+
+/**
  * One-shot setup for the canonical SPA navigation stack (ADR 0027).
  * Calls {@link interceptLinks}, {@link manageNavScroll},
  * {@link manageNavFocus}, and {@link manageNavTransitions} in order,
@@ -91,35 +129,81 @@ function optionsOf<T>(v: T | boolean | undefined): T | undefined {
  * ```
  */
 export function configureNavigation(options: ConfigureNavigationOptions = {}): () => void {
-  const teardowns: Array<() => void> = [];
-  if (isEnabled(options.intercept)) {
-    teardowns.push(interceptLinks(optionsOf<InterceptLinksOptions>(options.intercept)));
-  }
-  if (isEnabled(options.scroll)) {
-    teardowns.push(manageNavScroll(optionsOf<ManageNavScrollOptions>(options.scroll)));
-  }
-  if (isEnabled(options.focus)) {
-    teardowns.push(manageNavFocus(optionsOf<ManageNavFocusOptions>(options.focus)));
-  }
-  if (isEnabled(options.transitions)) {
-    teardowns.push(
-      manageNavTransitions(optionsOf<ManageNavTransitionsOptions>(options.transitions)),
+  // Read every key as an own-property up front so a tampered prototype
+  // (e.g. `JSON.parse('{"__proto__":{"intercept":false}}')`) can't silently
+  // disable a helper. Snapshotting also makes us immune to caller-side
+  // mutation of `options` after the call returns.
+  const intercept = ownProp(options, 'intercept');
+  const scroll = ownProp(options, 'scroll');
+  const focus = ownProp(options, 'focus');
+  const transitions = ownProp(options, 'transitions');
+  const announce = ownProp(options, 'announce');
+  const prefetch = ownProp(options, 'prefetch');
+
+  // ADR 0029: `prefetch: true` is documented as rejected — there's no
+  // useful default without a routes manifest. Catch it at runtime so a
+  // miswired call doesn't silently fall through to `routes: undefined`
+  // (which would crash inside prefetchManifestLinks). The TS union
+  // already forbids `true`; the `as unknown` cast acknowledges that
+  // this guard is for JS callers / `as any` escapes, not for
+  // type-checked code.
+  if ((prefetch as unknown) === true) {
+    throw new TypeError(
+      'configureNavigation: `prefetch: true` is not supported — pass `{ routes }` or omit the key.',
     );
   }
-  // ADR 0045: announce is opt-in (default off). Apps that prefer announce
-  // over focus-move pass `{ focus: false, announce: true }`.
-  if (options.announce !== undefined && options.announce !== false) {
-    teardowns.push(manageNavAnnounce(optionsOf<ManageNavAnnounceOptions>(options.announce)));
+
+  const teardowns: Array<() => void> = [];
+  // If any helper throws while installing, unwind every helper that
+  // already registered itself. Without this rollback, an earlier
+  // `interceptLinks` listener (or any helper before the throw) stays
+  // bound to the document forever — a real listener leak on every
+  // reconfigure-after-error.
+  try {
+    if (isEnabled(intercept)) {
+      teardowns.push(interceptLinks(optionsOf<InterceptLinksOptions>(intercept)));
+    }
+    if (isEnabled(scroll)) {
+      teardowns.push(manageNavScroll(optionsOf<ManageNavScrollOptions>(scroll)));
+    }
+    if (isEnabled(focus)) {
+      teardowns.push(manageNavFocus(optionsOf<ManageNavFocusOptions>(focus)));
+    }
+    if (isEnabled(transitions)) {
+      teardowns.push(manageNavTransitions(optionsOf<ManageNavTransitionsOptions>(transitions)));
+    }
+    // ADR 0045: announce is opt-in (default off). Apps that prefer
+    // announce over focus-move pass `{ focus: false, announce: true }`.
+    if (announce !== undefined && announce !== false) {
+      teardowns.push(manageNavAnnounce(optionsOf<ManageNavAnnounceOptions>(announce)));
+    }
+    // ADR 0029: opt-in by passing `{ prefetch: { routes } }`. Unlike the
+    // other keys, prefetch has no useful default — needs the manifest.
+    if (prefetch) {
+      // `prefetch` is narrowed to ConfigureNavigationPrefetch by the
+      // truthy guard (the `false` branch of the union falls through).
+      const { routes, ...rest } = prefetch;
+      teardowns.push(prefetchManifestLinks(routes, rest));
+    }
+  } catch (err) {
+    // Roll back any helper that already installed before the throw so
+    // we don't leak listeners. Best-effort — a teardown that itself
+    // throws is logged via runTeardowns and doesn't mask the original.
+    try {
+      runTeardowns(teardowns);
+    } catch (teardownErr) {
+      console.error(teardownErr);
+    }
+    throw err;
   }
-  // ADR 0029: opt-in by passing `{ prefetch: { routes } }`. Unlike the
-  // other keys, prefetch has no useful default — needs the manifest.
-  if (options.prefetch) {
-    // `options.prefetch` is narrowed to ConfigureNavigationPrefetch by the
-    // truthy guard (the `false` branch of the union falls through).
-    const { routes, ...rest } = options.prefetch;
-    teardowns.push(prefetchManifestLinks(routes, rest));
-  }
+
+  // Idempotent teardown — calling it twice MUST NOT call each helper's
+  // teardown twice (some helpers, e.g. transitions, do CAS-style cleanup
+  // that misbehaves on double-invoke). Latch on first call.
+  let torn = false;
   return () => {
-    for (const t of teardowns) t();
+    if (torn) return;
+    torn = true;
+    runTeardowns(teardowns);
   };
 }

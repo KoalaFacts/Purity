@@ -35,7 +35,31 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
 
 function ssrUrl(): URL | null {
   const ssrCtx = getSSRRenderContext();
-  return ssrCtx?.request ? new URL(ssrCtx.request.url) : null;
+  if (!ssrCtx?.request) return null;
+  // `new URL` throws TypeError on a malformed URL. SSR adapter code that
+  // surfaces an unvetted req.url (edge runtimes, hand-rolled handlers)
+  // would otherwise crash every component reading currentPath/Search/Hash,
+  // and currentSearch() re-throws on every call. Fall back to null so the
+  // hot path stays alive — components see "no request URL", same as the
+  // no-SSR-context branch.
+  try {
+    return new URL(ssrCtx.request.url);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Strip a trailing slash so `/app` and `/app/` canonicalize to the same
+ * form. Audit-v2 fix (#4): `currentPath()` and `matchRoute()` previously
+ * disagreed — matchRoute's `split('/').filter(Boolean)` silently coalesced
+ * trailing slashes, but currentPath returned the raw pathname, so a string
+ * compare `currentPath() === '/app'` failed on `/app/`. We normalize at
+ * the read site to the "no trailing slash except root" form so prefix
+ * and equality checks agree across every consumer.
+ */
+function stripTrailingSlash(p: string): string {
+  return p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p;
 }
 
 /**
@@ -49,9 +73,13 @@ function ssrUrl(): URL | null {
  * `window.location.pathname` and kept in sync with `popstate` /
  * `hashchange` events and {@link navigate} calls. Reading this from
  * inside a `watch()` / reactive template subscribes to changes.
+ *
+ * Trailing slashes are stripped (except the root `/`) so `/app` and
+ * `/app/` always read back as `/app` — matching the canonical form
+ * {@link matchRoute} compares against (audit-v2 fix #4).
  */
 export function currentPath(): string {
-  return (ssrUrl() ?? urlSignal()).pathname;
+  return stripTrailingSlash((ssrUrl() ?? urlSignal()).pathname);
 }
 
 /**
@@ -109,7 +137,21 @@ export interface NavigateOptions {
 /** Signature for {@link onNavigate} listeners. */
 export type NavigateListener = (url: URL, replace: boolean) => void;
 
-const navigateListeners = new Set<NavigateListener>();
+// Audit-v2 fix (#6): hoist the listener set onto globalThis so a Vite HMR
+// re-import doesn't create a fresh module-local Set and orphan the
+// previous one. Without the sentinel, every hot reload of any module that
+// imports router.ts would (a) lose the old subscribers' teardown identity
+// — `unsubscribe()` would call `.delete` on the new Set and silently miss
+// the stale entries, and (b) leak the previous listeners' closures (and
+// any DOM they reference) for the lifetime of the page. Sharing the same
+// Set across module incarnations keeps subscriber identity stable, so
+// teardown still works and there's no accumulation.
+interface PurityRouterGlobal {
+  __purityNavigateListeners?: Set<NavigateListener>;
+}
+const routerGlobal = globalThis as unknown as PurityRouterGlobal;
+const navigateListeners: Set<NavigateListener> = (routerGlobal.__purityNavigateListeners ??=
+  new Set());
 
 /**
  * Subscribe to programmatic `navigate()` calls. Listeners receive the new
@@ -174,28 +216,175 @@ export function onNavigate(fn: NavigateListener): () => void {
 export type NavigateWrapper = (url: URL, replace: boolean, update: () => void) => void;
 let navigateWrapper: NavigateWrapper | null = null;
 
-/** @internal — called by manageNavTransitions(). Pass `null` to clear. */
-export function _setNavigateWrapper(fn: NavigateWrapper | null): void {
+/**
+ * Opaque identity token returned by {@link _setNavigateWrapper}. Callers pass
+ * it back on teardown so we can CAS-clear only when our wrapper is still the
+ * installed one — preventing a stale teardown from clobbering a later caller.
+ *
+ * @internal
+ */
+export type NavigateWrapperToken = { readonly fn: NavigateWrapper | null };
+let activeToken: NavigateWrapperToken | null = null;
+
+/**
+ * @internal — called by manageNavTransitions(). Pass `null` to clear.
+ *
+ * Compare-and-swap install: the optional `expected` argument is the token
+ * returned by a prior install. When supplied, the swap only occurs if the
+ * currently active token still matches — otherwise another caller has since
+ * installed a different wrapper and we MUST NOT overwrite it. Without this
+ * guard, two independent callers each holding their own teardown would
+ * race: the earlier teardown would silently null out the later caller's
+ * wrapper (cross-file backlog item #15).
+ *
+ * Returns the newly active token on success, or the currently-active token
+ * when the CAS rejected the swap. The legacy unconditional set (no
+ * `expected`) is preserved for callers that haven't migrated yet.
+ */
+export function _setNavigateWrapper(
+  fn: NavigateWrapper | null,
+  expected?: NavigateWrapperToken | null,
+): NavigateWrapperToken | null {
+  // CAS guard: when `expected` is provided AND it doesn't match the current
+  // active token, leave state untouched. `undefined` (sentinel) preserves
+  // the legacy unconditional-set behavior for callers that don't opt in.
+  if (expected !== undefined && expected !== activeToken) {
+    return activeToken;
+  }
+  if (fn === null) {
+    navigateWrapper = null;
+    activeToken = null;
+    return null;
+  }
+  const token: NavigateWrapperToken = { fn };
   navigateWrapper = fn;
+  activeToken = token;
+  return token;
+}
+
+// Schemes we'll route through pushState. ADR-aligned with the link-intercept
+// allow-list (commit 64f1b43): `javascript:` / `data:` / `blob:` / `mailto:`
+// all parse via `new URL(href, origin)` to a `null` origin, and the
+// cross-origin check below catches them in the common case. But when the
+// document itself runs at an opaque/null origin (sandboxed iframe without
+// `allow-same-origin`, some `file://` deployments), `null === null` makes
+// the origin guard pass — at which point an attacker-crafted
+// `javascript:alert(document.cookie)` would land in `history.pushState`
+// and any onNavigate handler would see it as a "trusted" route. Defense
+// in depth: hard-cap the scheme to http(s).
+const ALLOWED_NAVIGATE_PROTOCOLS = new Set(['http:', 'https:']);
+
+// Audit-v2 fix (#3): in-flight guard. Rapid back-to-back `navigate()`
+// calls can fire while a view-transition wrapper is mid-DOM-swap, racing
+// the History/signal update against the in-progress transition. Behavior
+// chosen: no-op + warn on the second call (vs queue-after, which hides
+// the bug and can fire stale URLs after the user moved on). The flag is
+// cleared inside `update()` (the single-shot callback) so a wrapper that
+// runs update sync, deferred, or throws (fallback update() inside catch)
+// all converge on the same release point.
+let navigatePending = false;
+
+// Audit-v2 fix (#2): generation counter shared with router-focus and
+// router-scroll. Both helpers queue a microtask that reads `location.hash`
+// and races focus vs. scroll on the same target. When the user fires a
+// second `navigate()` before those microtasks drain, last-writer-wins
+// picked whichever queued most recently. Helpers capture the generation
+// when they enqueue, then short-circuit if the counter advanced — newer
+// navs cancel older microtasks. Counter only moves forward on actual
+// navigations (post-validation); blocked schemes / cross-origin
+// short-circuits don't burn a generation.
+let currentNavigationGeneration = 0;
+/** @internal — read by manageNavFocus + manageNavScroll. */
+export function _getNavigationGeneration(): number {
+  return currentNavigationGeneration;
 }
 
 export function navigate(href: string, options: NavigateOptions = {}): void {
   if (typeof window === 'undefined' || !window.history) return;
-  const url = new URL(href, window.location.origin);
+  // Audit-v2 fix (#3): rapid consecutive nav while a previous nav is
+  // mid-flight (e.g. inside a view-transition wrapper's DOM swap) races
+  // the History/signal update against the in-progress transition. No-op
+  // + warn so the bug is visible. Runs before parsing — a burst of
+  // identical clicks costs one branch.
+  if (navigatePending) {
+    console.warn(`[purity] navigate(): ignored — a previous nav is still pending:`, href);
+    return;
+  }
+  // `new URL` throws TypeError on a malformed href. navigate() is called
+  // from intercepted link clicks (where attackers can craft hostile
+  // hrefs), from user code, and from configureNavigation chains — any
+  // throw escapes to the caller and breaks the nav. Treat malformed as
+  // "no-op", same fail-safe shape as `matchRoute` / `safeDecode` /
+  // `ssrUrl` (cycles 1 and 5).
+  let url: URL;
+  try {
+    url = new URL(href, window.location.origin);
+  } catch {
+    console.warn(`[purity] navigate(): invalid href, ignored:`, href);
+    return;
+  }
+  // Scheme allow-list — see ALLOWED_NAVIGATE_PROTOCOLS doc above. Stops
+  // `javascript:` / `data:` / `blob:` from reaching pushState even when
+  // the host page has an opaque origin.
+  if (!ALLOWED_NAVIGATE_PROTOCOLS.has(url.protocol)) {
+    console.warn(`[purity] navigate(): blocked non-http(s) scheme, ignored:`, href);
+    return;
+  }
   // Don't navigate cross-origin via pushState — that produces a malformed
   // state. Callers should set `window.location` directly for full-page nav.
   if (url.origin !== window.location.origin) return;
   const replace = options.replace === true;
+  // Audit-v2 fix (#2): bump generation BEFORE listeners fire so the
+  // focus/scroll helpers (which subscribe via onNavigate) capture the
+  // new value when they enqueue their microtasks.
+  currentNavigationGeneration++;
+  // Audit-v2 fix (#3): latch the in-flight flag — cleared inside
+  // `update()` (single-shot) below.
+  navigatePending = true;
+  // Single-shot `update()` — a misbehaving navigateWrapper that calls
+  // update() twice (e.g. view-transition + sync fallback path) must not
+  // pushState the same URL twice or fan-out listeners twice.
+  let applied = false;
   const update = (): void => {
+    if (applied) return;
+    applied = true;
+    // Audit-v2 fix (#3): clear the in-flight flag before listeners fan
+    // out so a listener that synchronously calls `navigate()` again
+    // (e.g. redirect chain from an auth guard) isn't blocked by its
+    // own outer call.
+    navigatePending = false;
     if (replace) window.history.replaceState(null, '', url);
     else window.history.pushState(null, '', url);
     urlSignal(url);
     // Fire after the History API + signal update so listeners observe the
-    // post-nav state. Errors propagate to the caller.
-    for (const fn of navigateListeners) fn(url, replace);
+    // post-nav state. Isolate each listener so one bad subscriber can't
+    // abort the rest + the calling navigate() — same pattern as the
+    // scheduler flush, optimistic onSettle, suspense onError, configure
+    // teardown, lifecycle callbacks, validator-throws, …
+    for (const fn of navigateListeners) {
+      try {
+        fn(url, replace);
+      } catch (err) {
+        console.error('[purity] onNavigate listener threw:', err);
+      }
+    }
   };
-  if (navigateWrapper) navigateWrapper(url, replace, update);
-  else update();
+  if (navigateWrapper) {
+    // Isolate wrapper throws: a throwing view-transition wrapper otherwise
+    // (a) aborts the navigation entirely without applying the History API
+    // update, and (b) escapes to the navigate() caller — link-click
+    // handlers, deep import chains. Match the listener-isolation pattern
+    // above and fall back to an unwrapped update so the user lands on the
+    // requested page.
+    try {
+      navigateWrapper(url, replace, update);
+    } catch (err) {
+      console.error('[purity] navigate wrapper threw:', err);
+      update();
+    }
+  } else {
+    update();
+  }
 }
 
 /** Result of a successful {@link matchRoute} call. */
@@ -229,7 +418,15 @@ export function matchRoute(pattern: string, path?: string): RouteMatch | null {
   const p = path ?? currentPath();
   const patternParts = pattern.split('/').filter(Boolean);
   const pathParts = p.split('/').filter(Boolean);
-  const params: Record<string, string> = {};
+  // `Object.create(null)` so a pattern like `/u/:__proto__` can't poison
+  // params with an inherited `Object.prototype` slot — and so consumers
+  // doing `params.toString` / `params.hasOwnProperty` don't accidentally
+  // pick up the prototype's methods. Defense in depth: the named-segment
+  // write below also explicitly blocks `__proto__` / `constructor` /
+  // `prototype` keys (silent skip; the match still succeeds, but the
+  // dangerous slot is unset). Matches the same null-proto / reserved-key
+  // guard ssr-runtime + the hydration-cache merge use.
+  const params: Record<string, string> = Object.create(null);
 
   if (patternParts.length === 0) {
     return pathParts.length === 0 ? { params } : null;
@@ -238,16 +435,47 @@ export function matchRoute(pattern: string, path?: string): RouteMatch | null {
   for (let i = 0; i < patternParts.length; i++) {
     const seg = patternParts[i];
     if (seg === '*') {
-      params['*'] = pathParts.slice(i).join('/');
+      // Decode each splat segment so the captured tail matches the
+      // `:param` decoding behavior. Asymmetric was a real footgun:
+      // `/blog/:section/*` over `/blog/tech/Hello%20World` returned
+      // `{ section: 'tech', '*': 'Hello%20World' }`. safeDecode never
+      // throws (cycle-1 pattern), so malformed `%` falls back to raw.
+      params['*'] = pathParts.slice(i).map(safeDecode).join('/');
       return { params };
     }
     if (i >= pathParts.length) return null;
     if (seg.startsWith(':')) {
-      params[seg.slice(1)] = decodeURIComponent(pathParts[i]);
+      const name = seg.slice(1);
+      // Reject prototype-poisoning names. The params bag is null-proto
+      // already, but skipping these keys means even a downstream caller
+      // that copies `params` into a plain object (`{ ...params }`) can't
+      // be tricked into installing a `__proto__` slot.
+      if (name === '__proto__' || name === 'constructor' || name === 'prototype') {
+        continue;
+      }
+      params[name] = safeDecode(pathParts[i]);
       continue;
     }
     if (seg !== pathParts[i]) return null;
   }
   if (pathParts.length > patternParts.length) return null;
   return { params };
+}
+
+/**
+ * `decodeURIComponent` that never throws. A path segment is fully
+ * attacker-controllable (address bar, untrusted links), and a malformed
+ * percent-sequence like `/users/%` makes the native call raise a
+ * `URIError`. Letting that escape would crash route matching — and
+ * matchRoute() gates the whole render on both server and client. On a
+ * malformed segment we fall back to the raw (still-encoded) bytes so the
+ * route still matches and the param is non-empty; the view decides what to
+ * do with an undecodable value.
+ */
+function safeDecode(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
 }

@@ -39,37 +39,88 @@ export function pageLifecycleSignal(): ComputedAccessor<PageLifecycleState> {
     getSSRRenderContext() !== null ||
     typeof document === 'undefined' ||
     typeof window === 'undefined' ||
-    typeof window.addEventListener !== 'function'
+    typeof window.addEventListener !== 'function' ||
+    typeof document.addEventListener !== 'function'
   ) {
     return compute(() => 'active' as const);
   }
   if (singleton) return singleton;
   const inner = state<PageLifecycleState>(deriveState());
+  // `frozen` and `terminated` are terminal — only an explicit `resume` event
+  // (or `terminated`-superseding `pagehide`) may leave them. Non-resume
+  // events like blur/focus/visibilitychange must not silently roll back.
   const refresh = (): void => {
-    if (inner.peek() === 'terminated') return;
-    inner(deriveState());
+    try {
+      const cur = inner.peek();
+      if (cur === 'terminated' || cur === 'frozen') return;
+      inner(deriveState());
+    } catch (err) {
+      console.error('[pageLifecycleSignal] refresh failed', err);
+    }
+  };
+  const onResume = (): void => {
+    try {
+      // `resume` is the spec path out of `frozen`. Still honor `terminated`.
+      if (inner.peek() === 'terminated') return;
+      inner(deriveState());
+    } catch (err) {
+      console.error('[pageLifecycleSignal] resume failed', err);
+    }
   };
   const onFreeze = (): void => {
-    inner('frozen');
+    try {
+      if (inner.peek() === 'terminated') return;
+      inner('frozen');
+    } catch (err) {
+      console.error('[pageLifecycleSignal] freeze failed', err);
+    }
   };
   const onPagehide = (e: PageTransitionEvent): void => {
-    inner(e.persisted ? 'frozen' : 'terminated');
+    try {
+      // `terminated` is final — a later persisted=true pagehide must not
+      // demote it back to `frozen`.
+      if (inner.peek() === 'terminated') return;
+      inner(e.persisted ? 'frozen' : 'terminated');
+    } catch (err) {
+      console.error('[pageLifecycleSignal] pagehide failed', err);
+    }
   };
-  document.addEventListener('visibilitychange', refresh);
-  window.addEventListener('focus', refresh);
-  window.addEventListener('blur', refresh);
-  document.addEventListener('freeze', onFreeze);
-  document.addEventListener('resume', refresh);
-  window.addEventListener('pageshow', refresh);
-  window.addEventListener('pagehide', onPagehide);
+  // Bind incrementally so a mid-wire throw can roll back every prior listener
+  // without leaking handlers on document / window.
+  const bound: Array<() => void> = [];
+  try {
+    document.addEventListener('visibilitychange', refresh);
+    bound.push(() => document.removeEventListener('visibilitychange', refresh));
+    window.addEventListener('focus', refresh);
+    bound.push(() => window.removeEventListener('focus', refresh));
+    window.addEventListener('blur', refresh);
+    bound.push(() => window.removeEventListener('blur', refresh));
+    document.addEventListener('freeze', onFreeze);
+    bound.push(() => document.removeEventListener('freeze', onFreeze));
+    document.addEventListener('resume', onResume);
+    bound.push(() => document.removeEventListener('resume', onResume));
+    window.addEventListener('pageshow', refresh);
+    bound.push(() => window.removeEventListener('pageshow', refresh));
+    window.addEventListener('pagehide', onPagehide as EventListener);
+    bound.push(() => window.removeEventListener('pagehide', onPagehide as EventListener));
+  } catch (err) {
+    for (let i = bound.length - 1; i >= 0; i--) {
+      try {
+        bound[i]();
+      } catch {
+        // best-effort rollback; ignore secondary teardown failures.
+      }
+    }
+    throw err;
+  }
   teardown = () => {
-    document.removeEventListener('visibilitychange', refresh);
-    window.removeEventListener('focus', refresh);
-    window.removeEventListener('blur', refresh);
-    document.removeEventListener('freeze', onFreeze);
-    document.removeEventListener('resume', refresh);
-    window.removeEventListener('pageshow', refresh);
-    window.removeEventListener('pagehide', onPagehide as EventListener);
+    for (let i = bound.length - 1; i >= 0; i--) {
+      try {
+        bound[i]();
+      } catch {
+        // best-effort teardown.
+      }
+    }
   };
   singleton = compute(() => inner());
   return singleton;

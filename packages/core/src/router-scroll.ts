@@ -13,7 +13,7 @@
 // ~10 LOC including the teardown.
 // ---------------------------------------------------------------------------
 
-import { onNavigate } from './router.ts';
+import { _getNavigationGeneration, onNavigate } from './router.ts';
 
 /** Options for {@link manageNavScroll}. */
 export interface ManageNavScrollOptions {
@@ -29,7 +29,18 @@ export interface ManageNavScrollOptions {
 
 function defaultScrollHandler(url: URL): void {
   if (url.hash) {
-    const el = document.getElementById(decodeURIComponent(url.hash.slice(1)));
+    // The hash is attacker-controllable (e.g. `<a href="#%">`); a malformed
+    // percent-sequence makes decodeURIComponent throw. This runs in a
+    // microtask, so an uncaught throw would surface as an unhandled error
+    // and skip the scroll. Fall back to the raw fragment — getElementById
+    // on the undecoded id simply finds nothing and we scroll to top.
+    let id: string;
+    try {
+      id = decodeURIComponent(url.hash.slice(1));
+    } catch {
+      id = url.hash.slice(1);
+    }
+    const el = document.getElementById(id);
     if (el) {
       el.scrollIntoView();
       return;
@@ -64,11 +75,46 @@ function defaultScrollHandler(url: URL): void {
 export function manageNavScroll(options: ManageNavScrollOptions = {}): () => void {
   if (typeof window === 'undefined') return () => {};
   const handler = options.onNavigate ?? defaultScrollHandler;
-  return onNavigate((url, replace) => {
-    // Defer to a microtask so any DOM updates triggered by the same
-    // navigate() (signal subscribers re-rendering) have a chance to land
-    // before we scroll — otherwise a hash target that the router just
-    // mounted wouldn't exist yet.
-    queueMicrotask(() => handler(url, replace));
+  // Track torn-down state so a microtask queued by a final navigate() that
+  // resolves AFTER teardown doesn't sneak in a stray scroll — the
+  // onNavigate unsubscribe is synchronous but the handler is deferred to a
+  // microtask, opening a small window where teardown happens between the
+  // listener firing and the microtask draining.
+  let disposed = false;
+  const off = onNavigate((url, replace) => {
+    // Audit-v2 fix (#2): capture the router's navigation generation when
+    // we enqueue. If a SECOND navigate() fires before this microtask
+    // drains, the counter advances and we short-circuit — keeping the
+    // newer nav's focus / scroll target authoritative and preventing the
+    // older nav's microtask from racing the newer one. Mirrors the
+    // identical guard in manageNavFocus.
+    const generation = _getNavigationGeneration();
+    queueMicrotask(() => {
+      // Defer to a microtask so any DOM updates triggered by the same
+      // navigate() (signal subscribers re-rendering) have a chance to land
+      // before we scroll — otherwise a hash target that the router just
+      // mounted wouldn't exist yet.
+      if (disposed) return;
+      // Generation moved on — newer navigate() has happened; drop.
+      if (_getNavigationGeneration() !== generation) return;
+      // Isolate handler throws — a user-supplied custom `onNavigate`
+      // (which the docs explicitly invite to "perform whatever scroll
+      // action you want") can throw arbitrary errors, and so can the
+      // default handler if a page's `scrollIntoView` is monkey-patched
+      // or replaced by an extension. Without this try/catch the throw
+      // surfaces as an unhandled microtask rejection, which (a) skips
+      // any future scroll-to-top for THIS nav, and (b) pollutes the
+      // global error channel with a stack the app can't intercept.
+      // Mirror the listener-isolation pattern in router.ts navigate().
+      try {
+        handler(url, replace);
+      } catch (err) {
+        console.error('[purity] manageNavScroll handler threw:', err);
+      }
+    });
   });
+  return () => {
+    disposed = true;
+    off();
+  };
 }

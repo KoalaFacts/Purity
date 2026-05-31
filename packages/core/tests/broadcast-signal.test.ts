@@ -195,6 +195,23 @@ describe('broadcastSignal — validator (ADR 0039)', () => {
     expect(sig()).toBe(5);
   });
 
+  it('drops the message and logs when the validator THROWS (not just returns false)', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const throwing = ((v: unknown): v is number => {
+      if (typeof v !== 'number') throw new TypeError('validator hates this');
+      return true;
+    }) as (v: unknown) => v is number;
+    const sig = broadcastSignal<number>('validator-throws', 0, throwing);
+    const peer = new BroadcastChannel('validator-throws');
+    peer.postMessage({ poisoned: true });
+    await flushBC();
+    expect(sig()).toBe(0);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('validator threw');
+    peer.close();
+    warnSpy.mockRestore();
+  });
+
   it('uses the first call’s validator and ignores later validators per channel', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const strictNum = broadcastSignal<number>('first-wins', 0, isNumber);
@@ -213,5 +230,113 @@ describe('broadcastSignal — validator (ADR 0039)', () => {
     expect(warnSpy).toHaveBeenCalled();
     peer.close();
     warnSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// audit-v2 regression tests — argument validation, listener leak on reset,
+// no-op self-echo prevention.
+// ---------------------------------------------------------------------------
+
+describe('broadcastSignal — argument validation (audit-v2)', () => {
+  it('throws TypeError when validate is not a function', () => {
+    expect(() =>
+      broadcastSignal<number>('bad-validate', 0, null as unknown as (v: unknown) => v is number),
+    ).toThrow(TypeError);
+    expect(() =>
+      broadcastSignal<number>(
+        'bad-validate-2',
+        0,
+        undefined as unknown as (v: unknown) => v is number,
+      ),
+    ).toThrow(/validate.*must be a type-predicate function/);
+    expect(() =>
+      broadcastSignal<number>(
+        'bad-validate-3',
+        0,
+        'nope' as unknown as (v: unknown) => v is number,
+      ),
+    ).toThrow(TypeError);
+  });
+
+  it('throws TypeError when channel name is empty or wrong type', () => {
+    expect(() => broadcastSignal<number>('', 0, isNumber)).toThrow(/non-empty string/);
+    expect(() => broadcastSignal<number>(null as unknown as string, 0, isNumber)).toThrow(
+      /non-empty string/,
+    );
+    expect(() => broadcastSignal<number>(42 as unknown as string, 0, isNumber)).toThrow(
+      /non-empty string/,
+    );
+  });
+});
+
+describe('broadcastSignal — listener leak / double-init (audit-v2)', () => {
+  it('closes the underlying channel on registry reset (no leaked listener)', async () => {
+    // First incarnation: stash the signal, then reset.
+    let received = 0;
+    const before = broadcastSignal<number>('leak-check', 0, isNumber);
+    const offWatch = watch(() => {
+      // touch the signal to ensure tracking is wired
+      before();
+      received++;
+    });
+    // Reset — the previous BroadcastChannel must be closed so the
+    // next set() to a fresh same-named instance won't be forwarded
+    // back into the stale listener.
+    _resetBroadcastSignalRegistry();
+    offWatch();
+
+    // Brand-new incarnation under the same channel name.
+    const fresh = broadcastSignal<number>('leak-check', 0, isNumber);
+    expect(fresh).not.toBe(before); // proves we got a new signal, not the old one
+    const peer = new BroadcastChannel('leak-check');
+    peer.postMessage(99);
+    await flushBC();
+    expect(fresh()).toBe(99);
+    // The stale signal MUST NOT have updated — its channel is closed.
+    expect(before()).toBe(0);
+    peer.close();
+    // ensure no NaN noise from received
+    expect(received).toBeGreaterThanOrEqual(1);
+  });
+
+  it('_resetBroadcastSignalRegistry is idempotent (no throw on second call)', () => {
+    broadcastSignal<number>('idempotent-reset', 0, isNumber);
+    _resetBroadcastSignalRegistry();
+    expect(() => _resetBroadcastSignalRegistry()).not.toThrow();
+  });
+});
+
+describe('broadcastSignal — message storm / no-op writes (audit-v2)', () => {
+  it('does not post when set() writes the same value (Object.is equal)', async () => {
+    const sig = broadcastSignal<number>('no-op-set', 7, isNumber);
+    const received: number[] = [];
+    const peer = new BroadcastChannel('no-op-set');
+    peer.addEventListener('message', (e: MessageEvent) => {
+      received.push(e.data as number);
+    });
+    sig.set(7); // no-op vs default → must NOT post
+    sig.set(7); // no-op vs current → must NOT post
+    sig.set(8); // real change → must post
+    sig.set(8); // no-op vs current → must NOT post
+    await flushBC();
+    expect(received).toEqual([8]);
+    peer.close();
+  });
+
+  it('does not post when accessor() writes the same value', async () => {
+    const sig = broadcastSignal<number>('no-op-accessor', 0, isNumber);
+    const received: number[] = [];
+    const peer = new BroadcastChannel('no-op-accessor');
+    peer.addEventListener('message', (e: MessageEvent) => {
+      received.push(e.data as number);
+    });
+    sig(0); // no-op — default is 0
+    sig((v) => v); // identity updater — no change
+    sig(1); // change
+    sig((v) => v); // identity again — no post
+    await flushBC();
+    expect(received).toEqual([1]);
+    peer.close();
   });
 });

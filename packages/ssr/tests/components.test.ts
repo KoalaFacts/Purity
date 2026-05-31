@@ -51,6 +51,34 @@ describe('component SSR — Declarative Shadow DOM', () => {
     expect(out.indexOf('</style>')).toBeLessThan(tplEnd);
   });
 
+  it('does not allow </style> in interpolated CSS to break out of the <style> tag', async () => {
+    // <style> is a "raw text element" — content is parsed verbatim until
+    // the parser sees a literal `</style` substring (HTML5 RAWTEXT state).
+    // An attacker-controlled CSS interpolation containing
+    // `</style><script>...</script>` would otherwise escape the style
+    // raw-text element and execute as JS. The fix inserts a `\` between
+    // `<` and `/style` — CSS treats `\/` as a literal `/` (no rendering
+    // change) but the HTML parser only matches the literal `</style`
+    // substring (the `\` between bounces it back to RAWTEXT).
+    component('ssr-style-xss-1', () => {
+      const attackerString = '</style><script>window.__xss=1</script>';
+      css`
+        .box::before {
+          content: '${attackerString}';
+        }
+      `;
+      return html`<div class="box"></div>`;
+    });
+    const out = await renderToString(() => html`<ssr-style-xss-1></ssr-style-xss-1>`);
+    // The literal `</style>` followed by `<script>` MUST NOT appear in
+    // the output — that's the parser-matched substring that closes the
+    // style raw-text element and would execute the injected script.
+    expect(out).not.toMatch(/<\/style>\s*<script/i);
+    // The escaped form (`<\/style>`) is acceptable — the parser doesn't
+    // close the tag, and CSS treats it as a literal `/`.
+    expect(out).toMatch(/<\\\/style>/);
+  });
+
   it('captures multiple css() calls into a single <style> block', async () => {
     component('ssr-card-5', () => {
       css`

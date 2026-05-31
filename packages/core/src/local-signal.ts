@@ -12,6 +12,7 @@
 // don't throw — the in-memory state still updates.
 // ---------------------------------------------------------------------------
 
+import { getCurrentContext } from './component.ts';
 import { state, type StateAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
@@ -38,23 +39,52 @@ export interface LocalSignalOptions<T> {
 
 type Registration = (raw: string | null) => void;
 
-// storageKey -> set of subscribers listening for cross-tab updates
+// Registry key is `${storageKind}:${key}` so a `local`-backed and a
+// `session`-backed signal that happen to share the same key are isolated
+// — a localStorage event won't bleed into a sessionStorage-backed signal
+// and vice versa.
 const registry: Map<string, Set<Registration>> = new Map();
 let listenerInstalled = false;
+
+function makeRegistryKey(kind: 'local' | 'session', key: string): string {
+  return `${kind}:${key}`;
+}
 
 function installListener(): void {
   if (listenerInstalled) return;
   if (typeof window === 'undefined') return;
   listenerInstalled = true;
   window.addEventListener('storage', (e: StorageEvent) => {
+    // Storage events fire for BOTH localStorage and sessionStorage writes
+    // (the latter same-tab same-origin). Route to the matching storage's
+    // registrations only — without this filter, a localStorage event would
+    // (incorrectly) also mutate sessionStorage-backed signals that happen
+    // to share a key, and vice versa.
+    //
+    // Hardened: only act when `storageArea` is EXACTLY window.localStorage
+    // or window.sessionStorage. Synthetic / dispatched events with a null
+    // or unrecognised `storageArea` previously fell through to 'local',
+    // letting any code on the page (or a cross-origin iframe synth event)
+    // overwrite every local-backed signal. Now such events are ignored.
+    let areaKind: 'local' | 'session';
+    if (e.storageArea === window.localStorage) {
+      areaKind = 'local';
+    } else if (e.storageArea === window.sessionStorage) {
+      areaKind = 'session';
+    } else {
+      return;
+    }
+    const prefix = `${areaKind}:`;
     if (e.key === null) {
-      // The whole storage was cleared — reset every registration.
-      for (const set of registry.values()) {
+      // Whole storage was cleared — reset every registration belonging to
+      // that storage area only.
+      for (const [k, set] of registry) {
+        if (!k.startsWith(prefix)) continue;
         for (const apply of set) apply(null);
       }
       return;
     }
-    const set = registry.get(e.key);
+    const set = registry.get(prefix + e.key);
     if (!set) return;
     for (const apply of set) apply(e.newValue);
   });
@@ -79,13 +109,25 @@ function isEnvelope(v: unknown): v is EnvelopeShape {
   );
 }
 
+// `succeeded: false` means "we fell back to defaultValue because the
+// stored bytes were unreadable / unmigratable" — the caller MUST NOT
+// then write defaultValue back to storage, or one buggy migrate
+// function silently destroys user data across all their sessions /
+// tabs. `succeeded: true` means the value reflects either a successful
+// parse OR a successful migration; safe to persist.
+interface ParseResult<T> {
+  value: T;
+  succeeded: boolean;
+}
+
 function parseStored<T>(
   raw: string,
   defaultValue: T,
   deserialize: (raw: string) => T,
   version: number,
   migrate: ((old: unknown, oldVersion: number) => T) | undefined,
-): T {
+): ParseResult<T> {
+  const fallback: ParseResult<T> = { value: defaultValue, succeeded: false };
   // Versioned envelope path.
   if (version > 0) {
     let envelope: unknown;
@@ -95,46 +137,56 @@ function parseStored<T>(
       // Not JSON at all — treat as legacy unversioned value.
       try {
         const legacy = deserialize(raw);
-        return migrate ? migrate(legacy, 0) : defaultValue;
+        if (!migrate) return fallback;
+        try {
+          return { value: migrate(legacy, 0), succeeded: true };
+        } catch {
+          return fallback;
+        }
       } catch {
-        return defaultValue;
+        return fallback;
       }
     }
     if (isEnvelope(envelope)) {
       if (envelope.__pv === version) {
         try {
-          return deserialize(envelope.d);
+          return { value: deserialize(envelope.d), succeeded: true };
         } catch {
-          return defaultValue;
+          return fallback;
         }
       }
       if (migrate) {
         try {
           const old = deserialize(envelope.d);
-          return migrate(old, envelope.__pv);
+          return { value: migrate(old, envelope.__pv), succeeded: true };
         } catch {
           try {
-            return migrate(envelope.d, envelope.__pv);
+            return { value: migrate(envelope.d, envelope.__pv), succeeded: true };
           } catch {
-            return defaultValue;
+            return fallback;
           }
         }
       }
-      return defaultValue;
+      return fallback;
     }
     // No envelope wrapper — treat as legacy unversioned raw value.
     try {
       const legacy = deserialize(raw);
-      return migrate ? migrate(legacy, 0) : defaultValue;
+      if (!migrate) return fallback;
+      try {
+        return { value: migrate(legacy, 0), succeeded: true };
+      } catch {
+        return fallback;
+      }
     } catch {
-      return defaultValue;
+      return fallback;
     }
   }
   // Unversioned path — raw deserialize.
   try {
-    return deserialize(raw);
+    return { value: deserialize(raw), succeeded: true };
   } catch {
-    return defaultValue;
+    return fallback;
   }
 }
 
@@ -197,12 +249,15 @@ export function localSignal<T>(
     try {
       const raw = storage.getItem(key);
       if (raw !== null) {
-        // parseStored returns the post-migration value when version > 0
-        // and the stored envelope version doesn't match.
-        resolvedValue = parseStored(raw, defaultValue, deserialize, version, migrate);
-        // If the stored envelope's version didn't match, the migrated
-        // value hasn't been persisted yet — schedule a write-back below.
-        if (version > 0) {
+        // parseStored returns { value, succeeded }. `succeeded: false`
+        // means we fell back to defaultValue because the bytes were
+        // unreadable / unmigratable — we MUST NOT then write that
+        // default back, or a buggy migrate function silently destroys
+        // the original data across every session and cross-tab listener.
+        // Original bytes stay in storage so the developer can debug.
+        const parsed = parseStored(raw, defaultValue, deserialize, version, migrate);
+        resolvedValue = parsed.value;
+        if (parsed.succeeded && version > 0) {
           try {
             const obj = JSON.parse(raw);
             if (!isEnvelope(obj) || obj.__pv !== version) writeUpgrade = true;
@@ -234,10 +289,11 @@ export function localSignal<T>(
 
   // Register for cross-tab `storage` events.
   installListener();
-  let set = registry.get(key);
+  const registryKey = makeRegistryKey(storageKind, key);
+  let set = registry.get(registryKey);
   if (!set) {
     set = new Set();
-    registry.set(key, set);
+    registry.set(registryKey, set);
   }
   const apply: Registration = (raw: string | null) => {
     if (raw === null) {
@@ -245,9 +301,25 @@ export function localSignal<T>(
       inner(defaultValue);
       return;
     }
-    inner(parseStored(raw, defaultValue, deserialize, version, migrate));
+    inner(parseStored(raw, defaultValue, deserialize, version, migrate).value);
   };
   set.add(apply);
+
+  // Without this, every localSignal() call leaked one Registration (and
+  // the state node it captures) into the registry for the page lifetime —
+  // fine for module-scope usage, a real leak when called inside a
+  // component / each() row that may unmount many times. Auto-register the
+  // cleanup with the current component context, matching what watch() does.
+  const ctx = getCurrentContext();
+  if (ctx) {
+    const dispose = (): void => {
+      const s = registry.get(registryKey);
+      if (!s) return;
+      s.delete(apply);
+      if (s.size === 0) registry.delete(registryKey);
+    };
+    (ctx.disposers ??= []).push(dispose);
+  }
 
   const accessor = ((...args: [T | ((current: T) => T)] | []): T => {
     if (args.length === 0) return inner();
@@ -270,4 +342,11 @@ export function localSignal<T>(
 /** @internal — test helper. Resets module-level state between tests. */
 export function _resetLocalSignalRegistry(): void {
   registry.clear();
+}
+
+/** @internal — test helper. Returns the number of live registrations for a
+ * given (storageKind, key) pair. Lets lifecycle tests verify that unmount
+ * actually removes the apply from the registry. */
+export function _localSignalRegistrySize(kind: 'local' | 'session', key: string): number {
+  return registry.get(makeRegistryKey(kind, key))?.size ?? 0;
 }

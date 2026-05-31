@@ -69,6 +69,36 @@ describe('@purityjs/vite-plugin', () => {
     expect(injected).toBeGreaterThan(out.indexOf("from './other.ts'"));
   });
 
+  // Regression: findLastImportEnd's previous regex required the line to end
+  // immediately after the source string + `[\s;]*`, so a trailing line
+  // comment caused `lastEnd` to stay -1 and the runtime hoist landed at
+  // offset 0 — before the user import it depended on.
+  it('inserts watch import AFTER a final import with a trailing // comment', () => {
+    const code =
+      "import { html } from '@purityjs/core'; // last import on its own line\n" +
+      'const el = html`<p>x</p>`;';
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+    const out = result!.code;
+    const injected = out.indexOf("import { watch as __purity_w__ } from '@purityjs/core';");
+    expect(injected).toBeGreaterThanOrEqual(0);
+    expect(injected).toBeGreaterThan(out.indexOf('// last import on its own line'));
+  });
+
+  // Regression: same root cause — import-attributes clauses (`with { … }` /
+  // `assert { … }`) end the line with `}` + `;`, not a quote. Previous regex
+  // never matched, so the runtime hoist landed at the very top of the file.
+  it('inserts watch import AFTER a final import with attributes (`with { type: json }`)', () => {
+    const code =
+      "import data from './data.json' with { type: 'json' };\nconst el = html`<p>x</p>`;";
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+    const out = result!.code;
+    const injected = out.indexOf("import { watch as __purity_w__ } from '@purityjs/core';");
+    expect(injected).toBeGreaterThanOrEqual(0);
+    expect(injected).toBeGreaterThan(out.indexOf("from './data.json'"));
+  });
+
   it('removes html from imports', () => {
     const code = `import { html, state } from '@purityjs/core';\nconst el = html\`<p>Hi</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
@@ -77,6 +107,20 @@ describe('@purityjs/vite-plugin', () => {
     expect(result.code).not.toMatch(/import\s*\{[^}]*html[^}]*\}/);
     // state should remain
     expect(result.code).toContain('state');
+  });
+
+  // Regression: findHtmlImportEdits' whitespace eater previously stopped at
+  // `/`, so a block comment between `import` and `{` (or anywhere up to the
+  // quote) caused the import to be skipped — leaving an unused `html`
+  // binding in the output that breaks strict tree-shaking / noUnusedLocals.
+  it('removes html from an import that has a block comment between tokens', () => {
+    const code = "import /* legacy */ { html } from '@purityjs/core';\nconst el = html`<p>x</p>`;";
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+    // The original import line (which still contains the unstripped `html`
+    // binding) must be gone.
+    expect(result!.code).not.toContain('import /* legacy */ { html }');
+    expect(result!.code).not.toMatch(/import[^;]*\{[^}]*html[^}]*\}/);
   });
 
   it('compiles multiple templates', () => {
@@ -335,6 +379,35 @@ describe('@purityjs/vite-plugin', () => {
     const code = "import { html } from '@purityjs/core';\nconst el = html`<p>${`a\\`b`}</p>`;";
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
+  });
+
+  // Regression: extractExpression used a scalar `inTemplate` counter and
+  // misread `}` inside a nested plain template literal as a closing brace.
+  // Concretely the expression source got truncated at the first `}` inside
+  // `\`a}b\`` and the outer template's `</p>\`` leaked into the output.
+  it('handles literal } inside a plain template literal nested in ${...}', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: source under transformation
+    const code = "import { html } from '@purityjs/core';\nconst el = html`<p>${ `a}b` }</p>`;";
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+    expect(result!.code).toContain('`a}b`');
+    // No leftover html`` from a wrongly truncated extract.
+    expect(result!.code).not.toContain('html`');
+  });
+
+  // Regression: same root cause — a nested template containing its own
+  // `${...}` interpolation must re-enter expression mode (not stay in
+  // template mode) so braces inside the inner expression nest correctly.
+  it('handles nested template with inner expression (${...} inside `` inside ${...})', () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: source under transformation
+    const code =
+      "import { html } from '@purityjs/core';\n" +
+      "const x = 'a';\n" +
+      'const obj = { k: 1 };\n' +
+      'const el = html`<p>${ `pre${ obj.k + 1 }post` }</p>`;';
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+    expect(result!.code).toContain('`pre${ obj.k + 1 }post`');
   });
 });
 

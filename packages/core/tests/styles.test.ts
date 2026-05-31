@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { html } from '../src/compiler/compile.ts';
-import { mount } from '../src/component.ts';
+import { ComponentContext, mount, popContext, pushContext } from '../src/component.ts';
 import { state } from '../src/signals.ts';
 import { css } from '../src/styles.ts';
 
@@ -420,5 +420,175 @@ describe('css', () => {
     const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
     expect(styleEl!.textContent).toContain(':host(.special)');
     expect(styleEl!.textContent).toContain(':host-context(.dark)');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Audit-v2 hardening regressions
+  // ---------------------------------------------------------------------------
+
+  it('neutralizes </style> smuggling in static interpolations', () => {
+    // An attacker-controlled value that contains `</style>` must not be
+    // serialized back as a real closing tag if the styleEl's outerHTML is
+    // later reflected into innerHTML (e.g., devtools, SSR-mirroring tools,
+    // or HTML serialization). Defensive: replace `</style` with an escaped
+    // form so the resulting style element is round-trippable.
+    const evil = '</style><script>alert(1)</script>';
+    const scope = css`
+      .x {
+        content: '${evil}';
+      }
+    `;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl).not.toBeNull();
+    // outerHTML must remain a single <style> element — no smuggled </style>.
+    const outer = styleEl!.outerHTML;
+    // Count of </style> in serialized form must be exactly one (the real
+    // closing tag at the end). If smuggled, count would be two.
+    const matches = outer.match(/<\/style/gi);
+    expect(matches!.length).toBe(1);
+  });
+
+  it('neutralizes </style> smuggling in reactive interpolations', async () => {
+    const v = state('safe');
+    const scope = css`
+      .x {
+        content: '${() => v()}';
+      }
+    `;
+    const styleEl = document.querySelector(`style[data-purity-scope="${scope}"]`);
+    expect(styleEl).not.toBeNull();
+
+    v('</style><img onerror=alert(1)>');
+    await tick();
+    const outer = styleEl!.outerHTML;
+    const matches = outer.match(/<\/style/gi);
+    expect(matches!.length).toBe(1);
+  });
+
+  it('constructs CSSStyleSheet via the shadowRoot owner document, not the module realm', () => {
+    // Bug #10 regression: `new CSSStyleSheet()` used to be the module-realm
+    // constructor, so a shadowRoot adopted into a different document (multi-
+    // window, portal, popup) got a sheet from the wrong realm — leak +
+    // owner-document-mismatch errors. The fix routes through
+    // `shadowRoot.ownerDocument.defaultView.CSSStyleSheet`.
+    //
+    // Synthetic second document: createHTMLDocument() returns a Document with
+    // no defaultView in jsdom, so we attach a fake defaultView whose
+    // CSSStyleSheet is a marker subclass and verify the constructed sheet is
+    // an instance of THAT marker — proving the owner-realm path was taken.
+    const otherDoc = document.implementation.createHTMLDocument('other');
+    class MarkerSheet {
+      replaceSync(_text: string) {}
+    }
+    const fakeView = { CSSStyleSheet: MarkerSheet };
+    Object.defineProperty(otherDoc, 'defaultView', {
+      configurable: true,
+      get: () => fakeView,
+    });
+
+    // Attach a host element inside the other document and give it a shadow
+    // root so its ownerDocument === otherDoc.
+    const host = otherDoc.createElement('div');
+    otherDoc.body.appendChild(host);
+    const shadowRoot = host.attachShadow({ mode: 'open' });
+    // Sanity: the shadow root really belongs to the other document.
+    expect(shadowRoot.ownerDocument).toBe(otherDoc);
+
+    // Drive the Shadow DOM branch by pushing a synthetic ComponentContext
+    // whose `_shadowRoot` slot is the other-document shadow root. We bypass
+    // component() so the test stays focused on the css() realm-selection
+    // logic.
+    const ctx = new ComponentContext();
+    (ctx as unknown as { _shadowRoot: ShadowRoot })._shadowRoot = shadowRoot;
+
+    // Track adoptedStyleSheets on the shadowRoot (jsdom may not implement it).
+    let adopted: unknown[] = [];
+    Object.defineProperty(shadowRoot, 'adoptedStyleSheets', {
+      configurable: true,
+      get: () => adopted,
+      set: (v) => {
+        adopted = v;
+      },
+    });
+
+    pushContext(ctx);
+    try {
+      css`
+        .x {
+          color: red;
+        }
+      `;
+    } finally {
+      popContext();
+    }
+
+    expect(adopted.length).toBe(1);
+    // The KEY assertion: sheet was constructed via the owner doc's realm.
+    expect(adopted[0]).toBeInstanceOf(MarkerSheet);
+    // And NOT via the module-global CSSStyleSheet (no aliasing).
+    expect(
+      adopted[0] instanceof
+        (globalThis as unknown as { CSSStyleSheet: typeof CSSStyleSheet }).CSSStyleSheet,
+    ).toBe(false);
+  });
+
+  it('does not reset scope counter across module re-imports (HMR-safe)', async () => {
+    // Bug #11 regression: the counter used to be a module-level `let
+    // scopeCounter = 0`, so a Vite HMR re-import reset it to 0 — colliding
+    // with still-mounted `p-N` classes from the previous epoch. The fix
+    // stashes the counter on globalThis. Simulate HMR by deleting the
+    // styles.ts entry from the require cache and re-importing.
+    const firstScope = css`
+      .first {
+        color: red;
+      }
+    `;
+    const firstN = Number(firstScope.slice(2));
+
+    // Wipe the module from the cache to force a fresh module epoch (vitest's
+    // CJS require interop exposes the same cache shape as Node).
+    const modPath = require.resolve('../src/styles.ts');
+    delete require.cache[modPath];
+
+    // Re-import — fresh `let` bindings, but the counter must persist via
+    // globalThis.
+    const reimported = (await import(
+      '../src/styles.ts?hmr=' + Date.now()
+    )) as typeof import('../src/styles.ts');
+
+    const secondScope = reimported.css`
+      .second {
+        color: blue;
+      }
+    `;
+    const secondN = Number(secondScope.slice(2));
+
+    // The re-imported module's first emission MUST be strictly greater than
+    // the previous epoch's. A reset would yield 0 (or 1 if the layer-order
+    // install bumped it), which would collide with `p-0` from the first epoch.
+    expect(secondN).toBeGreaterThan(firstN);
+    expect(firstScope).not.toBe(secondScope);
+
+    // And the persisted globalThis slot is the source of truth.
+    expect((globalThis as any).__purityCssScopeCounter).toBeGreaterThan(secondN);
+  });
+
+  it('does not crash when document.head is briefly missing', () => {
+    // Defensive: installLayerOrder must not throw if document.head returns
+    // null transiently (rare but seen during page-unload or some test
+    // tear-downs). Patch the getter then restore.
+    const origHead = document.head;
+    Object.defineProperty(document, 'head', { configurable: true, get: () => null });
+    try {
+      expect(() => {
+        css`
+          .x {
+            color: red;
+          }
+        `;
+      }).not.toThrow();
+    } finally {
+      Object.defineProperty(document, 'head', { configurable: true, get: () => origHead });
+    }
   });
 });

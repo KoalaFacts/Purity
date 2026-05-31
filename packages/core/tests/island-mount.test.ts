@@ -92,6 +92,20 @@ describe('mountIslands() — load trigger', () => {
     expect(onMount).toHaveBeenCalledWith(1, expect.any(HTMLElement));
   });
 
+  it('a second mountIslands() call does NOT re-hydrate an already-scheduled wrapper', async () => {
+    // HMR or a user error that calls mountIslands() twice must not
+    // double-arm hydration. Pre-fix the same wrapper got hydrated
+    // twice — `interact` islands stacked listeners, `load` islands ran
+    // their view + onMount twice.
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'load', '<span>x</span>');
+    const onMount = vi.fn();
+    mountIslands([island(View)], { onMount });
+    mountIslands([island(View)], { onMount });
+    await tick();
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
+
   it('limits scanning to the `root` option', async () => {
     const View = (): unknown => html`<span>x</span>`;
     const outsideRoot = makeWrapper(1, 'load', '<span>x</span>');
@@ -647,5 +661,425 @@ describe('mountIslands() — visible trigger (IntersectionObserver)', () => {
     count(9);
     await tick();
     expect(host.textContent).toBe('9');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// audit-v2 regression tests
+// ---------------------------------------------------------------------------
+
+describe('mountIslands() — audit-v2: data-pi-trigger allow-list', () => {
+  let host: HTMLElement | null = null;
+  afterEach(() => {
+    if (host) host.remove();
+    host = null;
+  });
+
+  it('rejects an empty media-query suffix (data-pi-trigger="media:")', async () => {
+    // Pre-fix: `readTrigger` accepted any `media:`-prefixed string,
+    // including the bare `media:` with no query — which would then
+    // reach matchMedia('') in browsers that reject empty queries with
+    // an exception (handled, but a needless error-path round trip).
+    // Post-fix: `readTrigger` mirrors island.ts and rejects the bare
+    // prefix at parse time, falling through to 'load'.
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'media:', '<span>x</span>');
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const onMount = vi.fn();
+    mountIslands([island(View)], { onMount });
+    await tick();
+
+    expect(warn).toHaveBeenCalled();
+    expect(String(warn.mock.calls[0][0])).toContain('unknown data-pi-trigger');
+    // Falls back to 'load', so onMount still fires.
+    expect(onMount).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+});
+
+describe('mountIslands() — audit-v2: onMount throw isolation', () => {
+  let host: HTMLElement | null = null;
+  afterEach(() => {
+    if (host) host.remove();
+    host = null;
+  });
+
+  it('logs an onMount throw as onMount-specific, not as a resolve failure', async () => {
+    // Pre-fix: a throwing onMount escaped through the .then handler and
+    // landed in the outer .catch, which logged
+    // "failed to resolve island N" — a misleading false positive that
+    // pointed at the chunk loader rather than the user callback. It
+    // also masked the original onMount error stack.
+    // Post-fix: onMount is invoked through a safeDone wrapper that
+    // logs an onMount-specific message and swallows the throw.
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'load', '<span>x</span>');
+
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mountIslands([island(View)], {
+      onMount: (): void => {
+        throw new Error('onmount kaboom');
+      },
+    });
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(err).toHaveBeenCalled();
+    const messages = err.mock.calls.map((c) => String(c[0]));
+    // The new error logs say "onMount threw"; the pre-fix path would
+    // have said "failed to resolve island 1".
+    expect(messages.some((m) => m.includes('onMount threw for island 1'))).toBe(true);
+    expect(messages.every((m) => !m.includes('failed to resolve island'))).toBe(true);
+    err.mockRestore();
+  });
+
+  it('does not prevent sibling islands from hydrating when an earlier onMount throws', async () => {
+    // Pre-fix: a sync throw from onMount would not directly cross
+    // islands (they each have their own .then chain), but the
+    // misleading error logged through the .catch made debugging hard.
+    // This test pins the desired isolation: each island's hydration
+    // is independent.
+    const View = (): unknown => html`<span>x</span>`;
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = [
+      '<purity-island data-pi-id="1" data-pi-trigger="load" style="display:contents"><span>x</span></purity-island>',
+      '<purity-island data-pi-id="2" data-pi-trigger="load" style="display:contents"><span>x</span></purity-island>',
+    ].join('');
+    document.body.appendChild(wrapper);
+    host = wrapper;
+
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onMount = vi.fn().mockImplementationOnce(() => {
+      throw new Error('first island onMount throws');
+    });
+    mountIslands([island(View), island(View)], { onMount });
+    for (let i = 0; i < 5; i++) await tick();
+
+    // Both islands' onMount fire (the throwing one and the successful
+    // one); the throw is contained.
+    expect(onMount).toHaveBeenCalledTimes(2);
+    err.mockRestore();
+  });
+});
+
+describe('mountIslands() — audit-v2: unwrapModule prototype safety', () => {
+  let host: HTMLElement | null = null;
+  let pollutedKey: string | null = null;
+  afterEach(() => {
+    if (host) host.remove();
+    host = null;
+    if (pollutedKey) {
+      delete (Object.prototype as Record<string, unknown>)[pollutedKey];
+      pollutedKey = null;
+    }
+  });
+
+  it('ignores inherited "default" from a polluted Object.prototype', async () => {
+    // Pre-fix: `unwrapModule` checked `typeof mod.default === 'function'`
+    // without guarding for inherited properties. A page that ran in a
+    // prototype-polluted environment (e.g. an outdated dependency, or
+    // a CTF-style attack) where `Object.prototype.default` is a function
+    // could see the wrong view picked up for *every* plain-object
+    // thunk return value.
+    // Post-fix: the default lookup uses hasOwnProperty.
+    pollutedKey = 'default';
+    const evilDefault = vi.fn();
+    (Object.prototype as Record<string, unknown>).default = evilDefault;
+
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'load', '<span>x</span>');
+
+    const onMount = vi.fn();
+    // Synchronously-returned object with a single own named export —
+    // pre-fix would pick the polluted `default` over `Real`.
+    mountIslands([(): Record<string, unknown> => ({ Real: island(View) })], { onMount });
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(evilDefault).not.toHaveBeenCalled();
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores inherited function exports when counting named candidates', async () => {
+    // Pre-fix: `for (const k in mod)` enumerated inherited enumerable
+    // keys, so a polluted prototype with `Object.prototype.Other = fn`
+    // could push the function-export count to 2 — making
+    // unwrapModule refuse to pick the real export and skip hydration.
+    pollutedKey = '__purityAuditInjected__';
+    (Object.prototype as Record<string, unknown>)[pollutedKey] = (): void => {};
+
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'load', '<span>x</span>');
+
+    const onMount = vi.fn();
+    mountIslands([() => Promise.resolve({ Real: island(View) })], { onMount });
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mountIslands() — audit-v2: matchMedia/requestIdleCallback this-binding', () => {
+  // Pre-fix: `const mm = globalThis.matchMedia; mm(query)` and the
+  // analogous `ric(run, …)` invoke the cached builtin with
+  // `this === undefined` in strict mode. Real browsers throw
+  // "Illegal invocation" for `matchMedia`/`requestIdleCallback` when
+  // detached from `window`. Post-fix: we use `.call(g, …)` so the
+  // builtin sees the correct `this`. We simulate that contract here
+  // with a stub that throws when called with the wrong receiver.
+
+  let host: HTMLElement | null = null;
+  let originalMM: typeof matchMedia | undefined;
+  let originalRic: ((cb: () => void, opts?: object) => number) | undefined;
+
+  beforeEach(() => {
+    originalMM = (globalThis as { matchMedia?: typeof matchMedia }).matchMedia;
+    originalRic = (
+      globalThis as { requestIdleCallback?: (cb: () => void, opts?: object) => number }
+    ).requestIdleCallback;
+  });
+
+  afterEach(() => {
+    if (originalMM) (globalThis as Record<string, unknown>).matchMedia = originalMM;
+    else delete (globalThis as Record<string, unknown>).matchMedia;
+    if (originalRic) {
+      (globalThis as Record<string, unknown>).requestIdleCallback = originalRic;
+    } else {
+      delete (globalThis as Record<string, unknown>).requestIdleCallback;
+    }
+    if (host) host.remove();
+    host = null;
+  });
+
+  it('invokes matchMedia with `this === globalThis` (no Illegal invocation)', async () => {
+    const g = globalThis as Record<string, unknown>;
+    // Browser-faithful stub: throws if invoked with the wrong receiver.
+    function strictMatchMedia(this: unknown, query: string): MediaQueryList {
+      if (this !== g) {
+        throw new TypeError('Illegal invocation');
+      }
+      return {
+        matches: true,
+        media: query,
+        onchange: null,
+        addEventListener: (): void => {},
+        removeEventListener: (): void => {},
+        dispatchEvent: (): boolean => true,
+        addListener: (): void => {},
+        removeListener: (): void => {},
+      } as MediaQueryList;
+    }
+    g.matchMedia = strictMatchMedia;
+
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'media:(min-width: 1px)', '<span>x</span>');
+
+    const onMount = vi.fn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mountIslands([island(View, { hydrate: 'media:(min-width: 1px)' })], { onMount });
+    await tick();
+
+    // No "Illegal invocation" warn, onMount fires immediately (matches=true).
+    expect(warn).not.toHaveBeenCalled();
+    expect(onMount).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('invokes requestIdleCallback with `this === globalThis`', async () => {
+    const g = globalThis as Record<string, unknown>;
+    let receiverOK = false;
+    function strictRic(this: unknown, cb: () => void): number {
+      if (this !== g) {
+        throw new TypeError('Illegal invocation');
+      }
+      receiverOK = true;
+      // Run synchronously for test determinism.
+      cb();
+      return 1;
+    }
+    g.requestIdleCallback = strictRic;
+
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'idle', '<span>x</span>');
+
+    const onMount = vi.fn();
+    mountIslands([island(View, { hydrate: 'idle' })], { onMount });
+    await tick();
+
+    expect(receiverOK).toBe(true);
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bug #5 — IntersectionObserver leak on detached island wrappers
+// ---------------------------------------------------------------------------
+describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', () => {
+  // Pre-fix: visible-triggered islands installed an IntersectionObserver
+  // on the wrapper but never detected wrapper detachment. If the parent
+  // removed the wrapper before it scrolled into view, the IO target
+  // kept the element alive and the observer stayed armed forever — a
+  // leak. Post-fix: a MutationObserver on the parent unobserves the IO
+  // and disconnects both observers when the wrapper goes missing.
+
+  type Cb = (entries: { isIntersecting: boolean; target: Element }[], obs: unknown) => void;
+  type SpyIO = {
+    _cb: Cb;
+    observed: Element[];
+    unobserved: Element[];
+    disconnected: number;
+    observe(el: Element): void;
+    unobserve(el: Element): void;
+    disconnect(): void;
+  };
+  const ios: SpyIO[] = [];
+  let originalIO: typeof IntersectionObserver | undefined;
+
+  beforeEach(() => {
+    ios.length = 0;
+    originalIO = (globalThis as { IntersectionObserver?: typeof IntersectionObserver })
+      .IntersectionObserver;
+    (globalThis as Record<string, unknown>).IntersectionObserver = function (
+      this: unknown,
+      cb: Cb,
+    ): SpyIO {
+      const inst: SpyIO = {
+        _cb: cb,
+        observed: [],
+        unobserved: [],
+        disconnected: 0,
+        observe(el) {
+          this.observed.push(el);
+        },
+        unobserve(el) {
+          this.unobserved.push(el);
+        },
+        disconnect() {
+          this.disconnected++;
+        },
+      };
+      ios.push(inst);
+      return inst;
+    } as unknown as typeof IntersectionObserver;
+  });
+
+  afterEach(() => {
+    if (originalIO) {
+      (globalThis as Record<string, unknown>).IntersectionObserver = originalIO;
+    } else {
+      delete (globalThis as Record<string, unknown>).IntersectionObserver;
+    }
+    document.body.innerHTML = '';
+  });
+
+  it('unobserves + disconnects the IO when the wrapper is removed before intersecting', async () => {
+    const View = (): unknown => html`<span>x</span>`;
+    const host = makeWrapper(1, 'visible', '<span>x</span>');
+    mountIslands([island(View, { hydrate: 'visible' })]);
+    await tick();
+
+    const io = ios[0];
+    expect(io).toBeDefined();
+    const wrapper = host.querySelector('purity-island')!;
+    expect(io.observed).toContain(wrapper);
+    expect(io.disconnected).toBe(0);
+
+    // Detach the wrapper from its parent before any intersection fires.
+    wrapper.remove();
+    // jsdom MutationObservers fire on a microtask — flush.
+    for (let i = 0; i < 5; i++) await tick();
+
+    // The fix: unobserve was called for the wrapper AND the observer
+    // was disconnected (no more armed reference).
+    expect(io.unobserved).toContain(wrapper);
+    expect(io.disconnected).toBeGreaterThanOrEqual(1);
+    host.remove();
+  });
+
+  it('does not double-fire when the wrapper detaches AFTER it has already intersected', async () => {
+    // Make sure the detach-watcher's re-entrancy guard cooperates with
+    // the IO-callback path: an intersection that already disposed the
+    // observers must not be re-disposed when the wrapper is later
+    // removed (and the cleanup must not double-call run()).
+    const onMount = vi.fn();
+    const View = (): unknown => html`<span>x</span>`;
+    const host = makeWrapper(1, 'visible', '<span>x</span>');
+    mountIslands([island(View, { hydrate: 'visible' })], { onMount });
+    await tick();
+
+    const io = ios[0];
+    const wrapper = host.querySelector('purity-island')!;
+    io._cb([{ isIntersecting: true, target: wrapper }], io);
+    for (let i = 0; i < 3; i++) await tick();
+    expect(onMount).toHaveBeenCalledTimes(1);
+
+    // Now detach — the MutationObserver fires, but the guard prevents
+    // a second tear-down round and (critically) does not re-run().
+    wrapper.remove();
+    for (let i = 0; i < 5; i++) await tick();
+    expect(onMount).toHaveBeenCalledTimes(1);
+    host.remove();
+  });
+});
+
+describe('mountIslands() — audit-v2: media re-entrant guard', () => {
+  let host: HTMLElement | null = null;
+  let originalMM: typeof matchMedia | undefined;
+  const listeners: Array<(e: MediaQueryListEvent) => void> = [];
+
+  beforeEach(() => {
+    originalMM = (globalThis as { matchMedia?: typeof matchMedia }).matchMedia;
+    listeners.length = 0;
+  });
+  afterEach(() => {
+    if (originalMM) (globalThis as Record<string, unknown>).matchMedia = originalMM;
+    else delete (globalThis as Record<string, unknown>).matchMedia;
+    if (host) host.remove();
+    host = null;
+  });
+
+  it('only hydrates once even if `change` fires twice in the same tick', async () => {
+    // Pre-fix: the media handler removed itself on first match but had
+    // no `fired` guard, so two synchronous change dispatches in the
+    // same task — before `removeEventListener` was honored — could
+    // both reach `run()`, double-arming hydration.
+    let removed = false;
+    (globalThis as Record<string, unknown>).matchMedia = (query: string): MediaQueryList =>
+      ({
+        media: query,
+        matches: false,
+        onchange: null,
+        addEventListener: (
+          ev: string,
+          cb: ((e: MediaQueryListEvent) => void) | EventListenerOrEventListenerObject,
+        ): void => {
+          if (ev === 'change') listeners.push(cb as (e: MediaQueryListEvent) => void);
+        },
+        removeEventListener: (): void => {
+          // Simulate browsers that defer the removal until after the
+          // current event-dispatch loop — leaves the listener live for
+          // the duration of the synchronous burst below.
+          removed = true;
+        },
+        dispatchEvent: (): boolean => true,
+        addListener: (): void => {},
+        removeListener: (): void => {},
+      }) as MediaQueryList;
+
+    const View = (): unknown => html`<span>x</span>`;
+    host = makeWrapper(1, 'media:(min-width: 768px)', '<span>x</span>');
+
+    const onMount = vi.fn();
+    mountIslands([island(View, { hydrate: 'media:(min-width: 768px)' })], { onMount });
+    await tick();
+
+    expect(listeners).toHaveLength(1);
+    // Burst: two synchronous matches, then a no-op non-match.
+    listeners[0]({ matches: true } as MediaQueryListEvent);
+    listeners[0]({ matches: true } as MediaQueryListEvent);
+    listeners[0]({ matches: false } as MediaQueryListEvent);
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(removed).toBe(true);
+    expect(onMount).toHaveBeenCalledTimes(1);
   });
 });

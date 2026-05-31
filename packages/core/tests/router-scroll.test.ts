@@ -46,6 +46,23 @@ describe('onNavigate() — listener hook', () => {
     expect(seen2).toEqual(['/x']);
   });
 
+  it('isolates a throwing listener so siblings + navigate() still run', () => {
+    // Without per-listener try/catch, a single throwing onNavigate
+    // subscriber aborted the rest AND escaped to the navigate() caller.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const seen: string[] = [];
+    const t1 = onNavigate(() => {
+      throw new Error('boom');
+    });
+    const t2 = onNavigate((u) => seen.push(u.pathname));
+    expect(() => navigate('/iso')).not.toThrow();
+    expect(seen).toEqual(['/iso']);
+    expect(errSpy).toHaveBeenCalledWith('[purity] onNavigate listener threw:', expect.any(Error));
+    t1();
+    t2();
+    errSpy.mockRestore();
+  });
+
   it('teardown removes the listener', () => {
     const calls: string[] = [];
     const t = onNavigate((u) => calls.push(u.pathname));
@@ -68,6 +85,22 @@ describe('onNavigate() — listener hook', () => {
     teardown = onNavigate((u) => calls.push(u.pathname));
     navigate('https://other.example.com/');
     expect(calls).toEqual([]);
+  });
+
+  it('does not throw on a malformed href; logs and no-ops', () => {
+    // navigate() is called from intercepted clicks, where a crafted
+    // <a href> could be unparseable, and from user code under any
+    // circumstance. A bare `new URL(...)` throws TypeError — that
+    // would escape to navigate()'s caller and break the nav handler.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const calls: string[] = [];
+    teardown = onNavigate((u) => calls.push(u.pathname));
+    // These all throw on `new URL(href)` (invalid port / host):
+    expect(() => navigate('http://[::]:99999/')).not.toThrow();
+    expect(() => navigate('http://%')).not.toThrow();
+    expect(calls).toEqual([]);
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
 
@@ -114,6 +147,17 @@ describe('manageNavScroll() — default behavior', () => {
     expect(scrollSpy).toHaveBeenCalled();
   });
 
+  it('does not throw on a malformed-percent hash (falls back to top)', async () => {
+    teardown = manageNavScroll();
+    const spy = vi.spyOn(window, 'scrollTo');
+    // `#%` makes decodeURIComponent throw; the handler must swallow it and
+    // still scroll to top rather than leak an uncaught error.
+    navigate('/page#%');
+    await Promise.resolve();
+    expect(spy).toHaveBeenCalledWith(0, 0);
+    spy.mockRestore();
+  });
+
   it('fires on replace navs too', async () => {
     teardown = manageNavScroll();
     const spy = vi.spyOn(window, 'scrollTo');
@@ -152,6 +196,70 @@ describe('manageNavScroll() — custom handler', () => {
     await Promise.resolve();
     // Custom handler ran; default scroll-to-top did NOT.
     expect(seen).toEqual([['/whatever', false]]);
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('isolates a throwing custom handler so it does not surface as an unhandled error', async () => {
+    // The docs invite users to "perform whatever scroll action you want"
+    // — a throwing handler must NOT escape as an unhandled microtask
+    // rejection. Without the in-handler try/catch the throw escapes the
+    // queueMicrotask and surfaces on the global error channel.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    teardown = manageNavScroll({
+      onNavigate: () => {
+        throw new Error('boom');
+      },
+    });
+    navigate('/whatever');
+    // Drain the microtask the handler is scheduled in.
+    await Promise.resolve();
+    // Give one more turn so any UNHANDLED rejection would have surfaced.
+    await Promise.resolve();
+    expect(errSpy).toHaveBeenCalledWith(
+      '[purity] manageNavScroll handler threw:',
+      expect.any(Error),
+    );
+    errSpy.mockRestore();
+  });
+
+  it('audit-v2 fix #2: cancels stale microtask when a newer navigate() arrives', async () => {
+    // Repro: user clicks two links rapidly. Both navigate()s fire +
+    // queue microtasks targeting `location.hash`. Without the
+    // generation guard the OLDER nav's scroll races the NEWER nav's
+    // scroll (last-writer-wins). After fix the older microtask
+    // short-circuits when it sees the generation has advanced.
+    teardown = manageNavScroll();
+    document.body.innerHTML = '<section id="first"></section><section id="second"></section>';
+    const first = document.getElementById('first')!;
+    const second = document.getElementById('second')!;
+    const firstSpy = vi.fn();
+    const secondSpy = vi.fn();
+    (first as unknown as { scrollIntoView: () => void }).scrollIntoView = firstSpy;
+    (second as unknown as { scrollIntoView: () => void }).scrollIntoView = secondSpy;
+    // Two navs back-to-back, before any microtask drains.
+    navigate('/page#first');
+    navigate('/page#second');
+    // Drain.
+    await Promise.resolve();
+    // Only the newer nav's scroll target fires — older one cancelled.
+    expect(firstSpy).not.toHaveBeenCalled();
+    expect(secondSpy).toHaveBeenCalled();
+  });
+
+  it('does not scroll when teardown happens before the deferred microtask drains', async () => {
+    // Race: navigate() fires the onNavigate listener synchronously, which
+    // queues a microtask. If teardown runs between the listener and the
+    // microtask, the unsubscribed instance must NOT scroll — the user has
+    // signalled "stop". Without the disposed guard the scroll leaks
+    // through.
+    teardown = manageNavScroll();
+    const spy = vi.spyOn(window, 'scrollTo');
+    navigate('/late');
+    // Synchronously tear down BEFORE the microtask handler runs.
+    teardown();
+    teardown = null;
+    await Promise.resolve();
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });

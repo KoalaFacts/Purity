@@ -4,6 +4,9 @@ import { parse } from '../src/compiler/parser.ts';
 import {
   isSSRHtml,
   markSSRHtml,
+  type SSRComponentRenderer,
+  setSSRComponentRenderer,
+  ssrElement,
   ssrHelpers,
   valueToAttr,
   valueToHtml,
@@ -167,6 +170,51 @@ describe('generateSSR — dynamic attributes', () => {
     expect(compileSSR(['<input ?disabled=', ' />'], false)).toBe('<input/>');
   });
 
+  it('?bool attributes render as bare name for any truthy value (matches client setAttribute, no hydration drift)', () => {
+    // Boolean attributes have presence-only semantics per HTML spec, and
+    // the client codegen uses `truthy → setAttribute('')` regardless of
+    // the value's shape. The SSR side must agree — otherwise a truthy
+    // non-boolean value (e.g. `?disabled=${'yes'}`) renders as
+    // `disabled="yes"` on the server but `disabled=""` on the client, a
+    // silent hydration mismatch.
+    expect(compileSSR(['<input ?disabled=', ' />'], 'yes')).toBe('<input disabled/>');
+    expect(compileSSR(['<input ?disabled=', ' />'], 1)).toBe('<input disabled/>');
+    expect(compileSSR(['<input ?disabled=', ' />'], {})).toBe('<input disabled/>');
+    // Falsy non-boolean: omitted (matches removeAttribute on client).
+    expect(compileSSR(['<input ?disabled=', ' />'], 0)).toBe('<input/>');
+    expect(compileSSR(['<input ?disabled=', ' />'], '')).toBe('<input/>');
+    expect(compileSSR(['<input ?disabled=', ' />'], null)).toBe('<input/>');
+    expect(compileSSR(['<input ?disabled=', ' />'], undefined)).toBe('<input/>');
+  });
+
+  it('?bool attributes on custom elements also collapse to bare name for any truthy value', () => {
+    // Custom elements flow through emitCustomElement → plainElement →
+    // valueToAttr, which doesn't know about boolean semantics and would
+    // emit `disabled="yes"` for a truthy non-boolean. Client setAttribute
+    // emits `disabled=""`. Same hydration drift as above, just routed
+    // through a different code path.
+    expect(compileSSR(['<my-el ?disabled=', '></my-el>'], 'yes')).toBe('<my-el disabled></my-el>');
+    expect(compileSSR(['<my-el ?disabled=', '></my-el>'], 1)).toBe('<my-el disabled></my-el>');
+    expect(compileSSR(['<my-el ?disabled=', '></my-el>'], true)).toBe('<my-el disabled></my-el>');
+    expect(compileSSR(['<my-el ?disabled=', '></my-el>'], false)).toBe('<my-el></my-el>');
+    expect(compileSSR(['<my-el ?disabled=', '></my-el>'], null)).toBe('<my-el></my-el>');
+  });
+
+  it('emits a nested dynamic attr into the custom element slot, not the outer buffer (no fragment leak)', () => {
+    // emitCustomElement captures children into a per-instance `_slot<id>`
+    // buffer by swapping `ctx.out`. emitSSRAttr's dynamic/prop/bind + bool
+    // branches previously hardcoded the literal `_o` instead of `ctx.out`, so a
+    // nested element's attribute fragment leaked OUT of the slot and appeared
+    // before the custom element opened (audit codegen.ts:1230,1237). Both the
+    // quoted-attr and bool branches are exercised here.
+    expect(compileSSR(['<my-el><span :class=', '>x</span></my-el>'], 'red')).toBe(
+      '<my-el><span class="red">x</span></my-el>',
+    );
+    expect(compileSSR(['<my-el><input ?disabled=', ' /></my-el>'], true)).toBe(
+      '<my-el><input disabled/></my-el>',
+    );
+  });
+
   it('renders .prop attributes as quoted attribute on the server', () => {
     expect(compileSSR(['<input .value=', ' />'], 'hi')).toBe('<input value="hi"/>');
   });
@@ -190,6 +238,72 @@ describe('generateSSR — dynamic attributes', () => {
     expect(compileSSR(['<a href=', ' class="link" ?disabled=', '>Go</a>'], '/x', false)).toBe(
       '<a href="/x" class="link">Go</a>',
     );
+  });
+
+  // ::group is radio/checkbox group binding (client sets `_e.checked` from the
+  // signal), NOT a real attribute. SSR must resolve it to `checked` server-side
+  // — it previously emitted a bogus `group="…"` attribute with no `checked`, so
+  // a prerendered group showed no selection until hydration ran (audit
+  // codegen.ts:1229).
+  it('::group radio binding emits `checked` when the signal matches value (no `group` attr)', () => {
+    const out = compileSSR(['<input type="radio" name="g" value="a" ::group=', ' />'], () => 'a');
+    expect(out).toBe('<input type="radio" name="g" value="a" checked/>');
+    expect(out).not.toContain('group=');
+  });
+
+  it('::group radio binding omits `checked` when the signal does not match value', () => {
+    expect(compileSSR(['<input type="radio" name="g" value="a" ::group=', ' />'], () => 'b')).toBe(
+      '<input type="radio" name="g" value="a"/>',
+    );
+  });
+
+  it('::group checkbox binding emits `checked` when value is in the signal array', () => {
+    expect(
+      compileSSR(['<input type="checkbox" name="g" value="a" ::group=', ' />'], () => ['a', 'c']),
+    ).toBe('<input type="checkbox" name="g" value="a" checked/>');
+    expect(
+      compileSSR(['<input type="checkbox" name="g" value="a" ::group=', ' />'], () => ['c']),
+    ).toBe('<input type="checkbox" name="g" value="a"/>');
+  });
+
+  it('::group with no static value defers selection to the client (no `checked`, no `group`)', () => {
+    // Server can't resolve which input is selected without a concrete value to
+    // compare against — omit `checked` and let hydration set it, but never emit
+    // the bogus `group` attribute.
+    const out = compileSSR(['<input type="radio" name="g" ::group=', ' />'], () => 'a');
+    expect(out).toBe('<input type="radio" name="g"/>');
+    expect(out).not.toContain('group=');
+    expect(out).not.toContain('checked');
+  });
+
+  // Non-reflecting DOM properties (`.innerHTML`, `.textContent`, …) are assigned
+  // as properties on the client; serializing them as same-named attributes is a
+  // no-op the browser never interprets — and for `.innerHTML` the markup is
+  // HTML-escaped into a dead attribute. Skip them server-side (audit
+  // codegen.ts:1222-1232). The property assignment runs at hydration.
+  it('skips non-reflecting `.innerHTML` prop server-side (no dead escaped attribute)', () => {
+    expect(compileSSR(['<div .innerHTML=', '></div>'], '<b>x</b>')).toBe('<div></div>');
+  });
+
+  it('skips non-reflecting `.textContent` / `.innerText` / `.outerHTML` props server-side', () => {
+    expect(compileSSR(['<div .textContent=', '></div>'], 'hi')).toBe('<div></div>');
+    expect(compileSSR(['<div .innerText=', '></div>'], 'hi')).toBe('<div></div>');
+    expect(compileSSR(['<div .outerHTML=', '></div>'], '<i>x</i>')).toBe('<div></div>');
+  });
+
+  it('skips a non-reflecting prop via :reactive-prop and :: bind too', () => {
+    expect(compileSSR(['<div :innerHTML=', '></div>'], '<b>x</b>')).toBe('<div></div>');
+    expect(compileSSR(['<div ::innerHTML=', '></div>'], () => '<b>x</b>')).toBe('<div></div>');
+  });
+
+  it('still emits reflecting `.value` prop server-side (allowlist of skipped props is narrow)', () => {
+    expect(compileSSR(['<input .value=', ' />'], 'hi')).toBe('<input value="hi"/>');
+  });
+
+  it('keeps setAttribute semantics for a `dynamic` attr that happens to be named innerHTML', () => {
+    // Only the property-ish kinds (.prop / :reactive-prop / ::bind) skip
+    // non-reflecting names. A plain dynamic attr keeps true setAttribute output.
+    expect(compileSSR(['<div innerHTML=', '></div>'], 'x')).toBe('<div innerHTML="x"></div>');
   });
 });
 
@@ -256,12 +370,72 @@ describe('ssr-runtime helpers', () => {
     expect(valueToHtml(['a', 1, markSSRHtml('<b>!</b>')])).toBe('a1<b>!</b>');
   });
 
+  it('valueToHtml terminates on self-referential array (cycle guard)', () => {
+    // Regression: prior to the WeakSet guard, a cyclic array stack-overflowed
+    // the SSR render. Repeat occurrences of an already-visited array now
+    // render as empty so the surrounding render stays correct.
+    const a: unknown[] = ['x'];
+    a.push(a);
+    a.push('y');
+    expect(valueToHtml(a)).toBe('xy');
+  });
+
+  it('valueToHtml handles mutually recursive arrays without overflow', () => {
+    const a: unknown[] = ['a'];
+    const b: unknown[] = ['b', a];
+    a.push(b);
+    expect(() => valueToHtml(a)).not.toThrow();
+  });
+
   it('valueToAttr returns null for omitted, empty for boolean-true', () => {
     expect(valueToAttr(null)).toBe(null);
     expect(valueToAttr(undefined)).toBe(null);
     expect(valueToAttr(false)).toBe(null);
     expect(valueToAttr(true)).toBe('');
     expect(valueToAttr('a"b')).toBe('a&quot;b');
+  });
+
+  it('setSSRComponentRenderer is idempotent for the same function reference', () => {
+    // Regression: prior to the idempotency guard, re-importing @purityjs/ssr
+    // (test setup churn, ESM dual instantiation) would silently overwrite the
+    // renderer. Same-reference re-install is now a no-op so double-imports
+    // are harmless.
+    const renderer: SSRComponentRenderer = () => null;
+    setSSRComponentRenderer(null);
+    setSSRComponentRenderer(renderer);
+    expect(() => setSSRComponentRenderer(renderer)).not.toThrow();
+    // Cleanup so subsequent tests / other suites in this process see a clean slate.
+    setSSRComponentRenderer(null);
+  });
+
+  it('setSSRComponentRenderer throws on a conflicting renderer', () => {
+    // A real conflict (two different SSR implementations racing to register)
+    // must surface loudly instead of silent last-write-wins.
+    const a: SSRComponentRenderer = () => null;
+    const b: SSRComponentRenderer = () => null;
+    setSSRComponentRenderer(null);
+    setSSRComponentRenderer(a);
+    expect(() => setSSRComponentRenderer(b)).toThrow(/different renderer is already installed/);
+    // Cleanup — null is always accepted, and re-installing `a` is a no-op now.
+    setSSRComponentRenderer(null);
+  });
+
+  it('ssrElement skips attribute keys that would break out of the name', () => {
+    // Defense-in-depth on the public `_h.element` entry point: caller-
+    // controlled attr keys (e.g. spread from JSON) containing `=`, `>`, or
+    // whitespace would otherwise inject raw HTML via the plainElement
+    // fallback. They are now dropped instead of emitted.
+    const out = ssrElement(
+      'x-card',
+      {
+        'safe-attr': 'ok',
+        'evil onmouseover=alert(1) x': 'pwn',
+        'a">b': 'pwn',
+        'with space': 'pwn',
+      },
+      '',
+    );
+    expect(out).toBe('<x-card safe-attr="ok"></x-card>');
   });
 });
 
@@ -382,6 +556,39 @@ describe('SSR control flow', () => {
       events: { click: () => () => {} },
     });
     expect(out.__purity_ssr_html__).toBe('<!--l--><li data-id="1">1</li><!--/l-->');
+  });
+
+  it('listSSR rejects or escapes hostile attribute NAMES (no XSS via attrs key)', () => {
+    // The attrs object key was interpolated raw into the tag, so a hostile
+    // name like `foo"><script>alert(1)</script>` could break out of the
+    // opening tag. Validate that listSSR doesn't emit a tag-attribute name
+    // that contains characters which can terminate the tag context.
+    const out = listSSR('li', [{ id: 1 }], {
+      text: (item) => String(item.id),
+      attrs: { 'foo"><script>alert(1)</script>': () => 'x' },
+    });
+    const html = out.__purity_ssr_html__;
+    // The literal `"><script>` MUST NOT appear unescaped inside the tag.
+    expect(html).not.toMatch(/<li[^>]*"><script/);
+    // Either the bad name is skipped entirely or its quote/angle-bracket
+    // chars are escaped; in both cases the script tag literal is absent.
+    expect(html).not.toContain('<script>alert(1)</script>');
+  });
+
+  it('listSSR rejects hostile tag NAMES (no XSS via tag arg)', () => {
+    // Sibling to the attrs-key fix: the `tag` parameter was raw-
+    // interpolated into the opening + closing tag positions, so a
+    // hostile string escapes the tag context and injects markup.
+    // listSSR(userTag, …) is reachable when the tag comes from a
+    // dynamic dispatch / loop over manifest entries.
+    const out = listSSR('li><script>alert(1)</script><li', [{ id: 1 }], {
+      text: (item) => String(item.id),
+    });
+    const html = out.__purity_ssr_html__;
+    expect(html).not.toContain('<script>alert(1)</script>');
+    // The hostile tag must be dropped — emit empty list rather than
+    // half-rendered markup.
+    expect(html).toBe('<!--l--><!--/l-->');
   });
 });
 

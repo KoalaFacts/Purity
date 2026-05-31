@@ -128,11 +128,35 @@ function defaultMessage(url: URL): string {
  */
 export function manageNavAnnounce(options: ManageNavAnnounceOptions = {}): () => void {
   if (typeof document === 'undefined') return () => {};
+
+  // Active flag so teardown short-circuits any already-queued microtask.
+  // Without this, `navigate(); teardown();` still mutates the (possibly
+  // unmounted) region on the next tick — leaks announce text into stale
+  // DOM during HMR / test cleanup and undermines the "teardown stops it"
+  // contract. Matches manageNavFocus / manageNavScroll.
+  let active = true;
+
   const customHandler = options.onNavigate;
   if (customHandler) {
-    return onNavigate((url, replace) => {
-      queueMicrotask(() => customHandler(url, replace));
+    const unsubscribe = onNavigate((url, replace) => {
+      queueMicrotask(() => {
+        if (!active) return;
+        // Isolate handler throws — navigate()'s listener loop only isolates
+        // synchronous throws, but we deferred to a microtask: an uncaught
+        // throw escapes as an unhandled error and tears down the rest of
+        // the page (and skips every subsequent nav until the user
+        // notices). Matches manageNavFocus's listener-isolation pattern.
+        try {
+          customHandler(url, replace);
+        } catch (err) {
+          console.error('[purity] manageNavAnnounce: handler threw:', err);
+        }
+      });
     });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }
 
   const regionId = options.regionId ?? DEFAULT_REGION_ID;
@@ -146,23 +170,38 @@ export function manageNavAnnounce(options: ManageNavAnnounceOptions = {}): () =>
   // rapidly with mixed same/different text.
   let pending = 0;
 
-  return onNavigate((url, replace) => {
+  const unsubscribe = onNavigate((url, replace) => {
     // Microtask defer matches manageNavFocus + manageNavScroll. Route
     // handlers may update document.title (via manageTitle) or mount new
     // DOM synchronously in response to the reactive URL signal; deferring
     // gives those writes a chance to flush before we read.
     queueMicrotask(() => {
+      if (!active) return;
       const token = ++pending;
+      // Isolate message() throws — user-supplied function runs inside this
+      // microtask, an uncaught throw escapes as an unhandled error and
+      // skips every subsequent nav. Same shape as manageNavFocus's handler
+      // isolation. Compute text BEFORE creating the region so a throwing
+      // message() doesn't leave a stray sr-only div on the body.
+      let text: string;
+      try {
+        text = message(url, replace);
+      } catch (err) {
+        console.error('[purity] manageNavAnnounce: message() threw:', err);
+        return;
+      }
       const region = ensureRegion(regionId, live);
       // Setting textContent to the same value doesn't always re-announce
       // (browsers/ATs vary). Clear-then-set on a second microtask is the
       // documented workaround.
-      const text = message(url, replace);
       if (region.textContent === text) {
         region.textContent = '';
         queueMicrotask(() => {
           // Skip if a later navigation already ran — restoring our older
-          // text would clobber the newer announce.
+          // text would clobber the newer announce. Also skip after
+          // teardown so the region doesn't get a late write into stale
+          // DOM (HMR / test cleanup).
+          if (!active) return;
           if (token === pending) region.textContent = text;
         });
       } else {
@@ -170,4 +209,8 @@ export function manageNavAnnounce(options: ManageNavAnnounceOptions = {}): () =>
       }
     });
   });
+  return () => {
+    active = false;
+    unsubscribe();
+  };
 }

@@ -61,7 +61,16 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
       raw += strings[i];
       if (i < values.length) {
         const val = values[i];
-        raw += String(typeof val === 'function' ? (val as () => unknown)() : (val ?? ''));
+        const resolved = typeof val === 'function' ? (val as () => unknown)() : (val ?? '');
+        // Defensive: neutralize `</style>` (and `</script>`) smuggled through
+        // an interpolation. textContent on a <style> element is parser-safe
+        // in the current DOM, but a smuggled closing tag becomes a real one
+        // when the element's outerHTML is later round-tripped through
+        // innerHTML (devtools paste, SSR mirror, error reporters that log
+        // outerHTML). Strings from `strings` (the template-literal raw parts)
+        // are authored statically and trusted; only interpolated values are
+        // sanitized.
+        raw += neutralizeClosingTags(String(resolved));
       }
     }
     return raw;
@@ -79,7 +88,15 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
   // Shadow DOM path — native scoping, no regex, no class names
   /* v8 ignore start -- jsdom lacks CSSStyleSheet ctor + adoptedStyleSheets */
   if (shadowRoot) {
-    const sheet = new CSSStyleSheet();
+    // Construct the sheet via the OWNER document's realm — not the
+    // module-realm `CSSStyleSheet`. In multi-window / portal scenarios the
+    // shadowRoot may live in a different document, and a sheet from the
+    // wrong realm leaks across documents and triggers
+    // "Failed to construct 'CSSStyleSheet': Owner document mismatch"-style
+    // errors. Fall back to module-global only when ownerDocument.defaultView
+    // is unavailable (SSR, detached docs).
+    const Ctor = getCSSStyleSheetCtor(shadowRoot);
+    const sheet = new Ctor();
     sheet.replaceSync(buildCss());
 
     shadowRoot.adoptedStyleSheets = [...shadowRoot.adoptedStyleSheets, sheet];
@@ -115,10 +132,15 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
   // without `!important`.
   installLayerOrder();
 
-  const scopeClass = `p-${scopeCounter++}`;
+  const scopeClass = `p-${nextScopeId()}`;
+  // Defensive: if `document.head` is missing (early-document, mid-unload,
+  // some jsdom resets), skip the DOM emit but still return a stable scope
+  // class so the caller's `className=` interpolation stays well-formed.
+  const head = document.head;
+  if (!head) return scopeClass;
   const styleEl = document.createElement('style');
   styleEl.setAttribute('data-purity-scope', scopeClass);
-  document.head.appendChild(styleEl);
+  head.appendChild(styleEl);
 
   const buildScoped = (): string => {
     const body = rewriteHostToScope(buildCss());
@@ -160,6 +182,15 @@ function rewriteHostToScope(cssText: string): string {
   return cssText.replace(/:host(?![-(\w])/g, ':scope');
 }
 
+// Defensive sanitiser for values interpolated into a css`` template. Splits
+// any literal `</style` or `</script` (case-insensitive) so the resulting
+// element's serialized form (outerHTML) survives a round-trip through
+// innerHTML without smuggling a closing tag. Authored template parts are
+// trusted; only interpolated unknowns flow through this.
+function neutralizeClosingTags(s: string): string {
+  return s.replace(/<\/(style|script)/gi, '<\\/$1');
+}
+
 // Install the layer-order declaration once per document. Prepending to
 // `<head>` keeps it lexically before any per-component `<style>` tag the
 // framework emits, which is what cascade-layers needs to establish order.
@@ -167,11 +198,44 @@ function rewriteHostToScope(cssText: string): string {
 function installLayerOrder(): void {
   /* v8 ignore next -- defensive; the non-Shadow path only runs in a browser */
   if (typeof document === 'undefined') return;
-  if (document.head.querySelector('style[data-purity-layers]')) return;
+  // Defensive: `document.head` can be null during early-document or
+  // unload-tear-down windows. Bail rather than throw — the caller's
+  // fallback path will also bail on the same check.
+  const head = document.head;
+  if (!head) return;
+  if (head.querySelector('style[data-purity-layers]')) return;
   const el = document.createElement('style');
   el.setAttribute('data-purity-layers', '');
   el.textContent = '@layer purity, user;';
-  document.head.prepend(el);
+  head.prepend(el);
 }
 
-let scopeCounter = 0;
+// HMR-stable scope counter. Stashed on `globalThis` so a re-imported module
+// (Vite HMR, test re-imports) reuses the same monotonic counter instead of
+// resetting to 0 and colliding with still-mounted `p-N` classes from the
+// previous module epoch.
+const SCOPE_COUNTER_KEY = '__purityCssScopeCounter';
+function nextScopeId(): number {
+  const g = globalThis as unknown as Record<string, number>;
+  const n = (g[SCOPE_COUNTER_KEY] ?? 0) + 1;
+  g[SCOPE_COUNTER_KEY] = n;
+  return n - 1;
+}
+
+// Per-document CSSStyleSheet constructor cache. Keyed by the owner document
+// so the sheet is built in the same realm as the shadowRoot it gets adopted
+// into. Falls back to the module-global `CSSStyleSheet` when there's no
+// defaultView (SSR / detached docs / iframe edge cases).
+/* v8 ignore start -- jsdom path; covered by the owner-document test */
+const ctorCache = new WeakMap<Document, typeof CSSStyleSheet>();
+function getCSSStyleSheetCtor(shadowRoot: ShadowRoot): typeof CSSStyleSheet {
+  const owner = shadowRoot.ownerDocument;
+  if (!owner) return CSSStyleSheet;
+  const cached = ctorCache.get(owner);
+  if (cached) return cached;
+  const view = owner.defaultView as (Window & typeof globalThis) | null;
+  const Ctor = view?.CSSStyleSheet ?? CSSStyleSheet;
+  ctorCache.set(owner, Ctor);
+  return Ctor;
+}
+/* v8 ignore stop */

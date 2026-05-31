@@ -15,7 +15,7 @@
 
 import { bindComponentState } from './component.ts';
 import { batch, state, watch } from './signals.ts';
-import { consumeHydrationValue, getSSRRenderContext } from './ssr-context.ts';
+import { consumeHydrationValue, currentBoundaryId, getSSRRenderContext } from './ssr-context.ts';
 
 const abortError = () => new DOMException('aborted', 'AbortError');
 
@@ -152,7 +152,12 @@ async function withRetry<T>(
       return await fn();
     } catch (err) {
       if (signal.aborted || attempt >= retry.count) throw err;
-      const ms = (retry.delay ?? DEFAULT_BACKOFF)(attempt);
+      // Sanitize the user-supplied delay: a `delay` that returns NaN,
+      // Infinity, or a negative number would otherwise reach setTimeout,
+      // which coerces those to ~0 and turns the retry into a tight loop that
+      // hammers the server. Clamp to a finite, non-negative ms.
+      const raw = (retry.delay ?? DEFAULT_BACKOFF)(attempt);
+      const ms = Number.isFinite(raw) ? Math.max(0, raw) : 0;
       attempt++;
       await abortableSleep(ms, signal);
     }
@@ -183,7 +188,12 @@ export function resource<T, K>(
   const options =
     (hasSource ? maybeOptions : (fetcherOrOptions as ResourceOptions<T> | undefined)) ?? {};
   const retry = normalizeRetry(options.retry);
-  const pollInterval = options.pollInterval;
+  // Treat a non-positive or non-finite pollInterval as "polling disabled".
+  // `pollInterval: 0` would otherwise `setTimeout(..., 0)` after every settle
+  // and re-fire the fetcher immediately — a runaway hot loop. `null` is the
+  // canonical "off" sentinel that `schedulePoll` already short-circuits on.
+  const rawPoll = options.pollInterval;
+  const pollInterval = rawPoll != null && Number.isFinite(rawPoll) && rawPoll > 0 ? rawPoll : null;
 
   // Client-side: if hydrate() primed a cache, consume the next value as the
   // initial data and skip the FIRST watch-driven fetch. This avoids the brief
@@ -261,10 +271,17 @@ export function resource<T, K>(
       // Errors are tracked separately because each pass allocates fresh
       // state signals; without this, an error from pass 1 would silently
       // disappear on pass 2.
-      const value = hasKey ? ssrCtx.resolvedDataByKey[userKey] : ssrCtx.resolvedData[idx];
-      data(() => value as T);
       const e = hasKey ? ssrCtx.resolvedErrorsByKey[userKey] : ssrCtx.resolvedErrors[idx];
-      if (e !== undefined) error(e);
+      if (e !== undefined) {
+        // Errored resource: the prior pass recorded `undefined` data alongside
+        // the error. Writing that `undefined` here would clobber the user's
+        // `initialValue` fallback, producing an SSR/CSR divergence. Leave
+        // `data` at its seeded `initialValue` and surface only the error.
+        error(e);
+      } else {
+        const value = hasKey ? ssrCtx.resolvedDataByKey[userKey] : ssrCtx.resolvedData[idx];
+        data(() => value as T);
+      }
     } else {
       // First pass for this resource. Resolve the source key, fire the
       // fetcher, push the promise onto pendingPromises so renderToString
@@ -283,6 +300,21 @@ export function resource<T, K>(
       }
       if (!skip) {
         const ac = new AbortController();
+        // Snapshot the innermost `suspense()` boundary id at registration
+        // time. If that boundary later loses its deadline race and the
+        // outer render-to-string loop adds the id to the shared
+        // `timedOutBoundaries` Set, the settle callbacks below short-
+        // circuit before mutating the shared SSR cache. Without this
+        // guard, a late-resolving fetcher overwrites `resolvedDataByKey`
+        // after the boundary already surrendered to its fallback —
+        // corrupting the hydration cache (and, when the late write
+        // lands during a sibling boundary's await window in the same
+        // render, the rendered HTML too). `timedOutBoundaries` is the
+        // cross-pass-shared Set that `renderToString` declares once and
+        // threads onto every pass's ctx, so it's still the live tracker
+        // by the time the `.then()` callback fires even though the
+        // `ssrCtx` captured here is the pass-1 ctx that's been popped.
+        const boundaryId = currentBoundaryId();
         const callFetcher = (): T | Promise<T> =>
           sourceFn !== null
             ? (fetcher as (key: K, info: ResourceFetchInfo) => T | Promise<T>)(key as K, {
@@ -295,6 +327,7 @@ export function resource<T, K>(
           const result = retry.count > 0 ? withRetry(callFetcher, ac.signal, retry) : callFetcher();
           const promise = Promise.resolve(result).then(
             (value) => {
+              if (boundaryId !== null && ssrCtx.timedOutBoundaries.has(boundaryId)) return;
               if (hasKey) {
                 ssrCtx.resolvedDataByKey[userKey] = value;
                 ssrCtx.resolvedErrorsByKey[userKey] = undefined;
@@ -305,6 +338,7 @@ export function resource<T, K>(
               data(() => value);
             },
             (err) => {
+              if (boundaryId !== null && ssrCtx.timedOutBoundaries.has(boundaryId)) return;
               // Record undefined so the slot index doesn't shift in the next
               // pass; persist the error so pass 2's resource() can re-surface
               // it through the error() accessor.
@@ -550,13 +584,20 @@ export function lazyResource<T, A = void>(
       // for signature parity with the client path; SSR never aborts
       // mid-render.
       const ac = new AbortController();
+      // Same boundary-timeout guard as resource()'s SSR path — a
+      // lazyResource opened inside a `suspense()` whose boundary
+      // surrenders to its fallback must not write back to the shared
+      // SSR cache after the timeout fires.
+      const boundaryId = currentBoundaryId();
       const result = fetcher(a, { signal: ac.signal });
       const promise = Promise.resolve(result).then(
         (value) => {
+          if (boundaryId !== null && ssrCtx.timedOutBoundaries.has(boundaryId)) return;
           ssrCtx.resolvedDataByKey[userKey] = value;
           ssrCtx.resolvedErrorsByKey[userKey] = undefined;
         },
         (err) => {
+          if (boundaryId !== null && ssrCtx.timedOutBoundaries.has(boundaryId)) return;
           // Mirror resource()'s `resolvedDataByKey[key] = undefined` on
           // rejection so the slot is occupied; persist the error
           // separately for pass 2 to throw.

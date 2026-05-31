@@ -208,6 +208,103 @@ describe('manageNavAnnounce() — teardown', () => {
     expect(document.getElementById(DEFAULT_ID)).not.toBeNull();
     expect(document.getElementById(DEFAULT_ID)!.textContent).toBe('');
   });
+
+  it('does not run an already-queued microtask after teardown', async () => {
+    // navigate() fires the onNavigate listener synchronously, which queues a
+    // microtask that creates the region + writes the message. teardown()
+    // arriving before that microtask drains must short-circuit — without an
+    // active-flag guard, teardown is a footgun during HMR / route swaps.
+    teardown = manageNavAnnounce({ message: () => 'leaked' });
+    navigate('/a');
+    teardown!();
+    teardown = null;
+    await tick();
+    await tick();
+    // No region was created, no leaked text.
+    expect(document.getElementById(DEFAULT_ID)).toBeNull();
+  });
+
+  it('does not run a queued same-text restore after teardown', async () => {
+    teardown = manageNavAnnounce({ message: () => 'same' });
+    navigate('/a');
+    await tick();
+    const region = document.getElementById(DEFAULT_ID)!;
+    expect(region.textContent).toBe('same');
+    navigate('/b'); // queues outer MT; outer MT will queue inner restore MT
+    teardown!();
+    teardown = null;
+    await tick();
+    await tick();
+    await tick();
+    // The outer microtask cleared then queued a restore. Both must be
+    // suppressed by teardown — region remains whatever it was when
+    // teardown ran (either 'same' from before navigate, or '' if outer
+    // microtask got to clear before teardown). Either way, no late write
+    // to 'same' after teardown.
+    expect(['same', '']).toContain(region.textContent ?? '');
+    // Whatever the region holds at teardown is stable across further ticks.
+    const snapshot = region.textContent;
+    await tick();
+    await tick();
+    expect(region.textContent).toBe(snapshot);
+  });
+});
+
+describe('manageNavAnnounce() — throw isolation', () => {
+  it('isolates message() throws so subsequent navs still announce', async () => {
+    let count = 0;
+    const errors: unknown[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      errors.push(args);
+    };
+    try {
+      teardown = manageNavAnnounce({
+        message: () => {
+          count++;
+          if (count === 1) throw new Error('boom');
+          return 'recovered';
+        },
+      });
+      navigate('/a');
+      await tick();
+      // Bad first nav must not break the listener — second nav still
+      // creates the region and writes the recovered text.
+      navigate('/b');
+      await tick();
+      const region = document.getElementById(DEFAULT_ID);
+      expect(region).not.toBeNull();
+      expect(region!.textContent).toBe('recovered');
+      expect(errors.length).toBeGreaterThan(0);
+    } finally {
+      console.error = origError;
+    }
+  });
+
+  it('isolates custom onNavigate handler throws across subsequent navs', async () => {
+    const calls: string[] = [];
+    const errors: unknown[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => {
+      errors.push(args);
+    };
+    try {
+      teardown = manageNavAnnounce({
+        onNavigate: (url) => {
+          calls.push(url.pathname);
+          if (url.pathname === '/a') throw new Error('first-nav-throws');
+        },
+      });
+      navigate('/a');
+      await tick();
+      navigate('/b');
+      await tick();
+      expect(calls).toEqual(['/a', '/b']);
+      expect(errors.length).toBeGreaterThan(0);
+    } finally {
+      console.error = origError;
+    }
+  });
 });
 
 describe('manageNavAnnounce() — server', () => {

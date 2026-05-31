@@ -20,6 +20,21 @@ type SSRCompiledFn = (values: unknown[], helpers: SSRHelpers) => SSRHtml;
 
 const cache = new WeakMap<TemplateStringsArray, SSRCompiledFn>();
 
+// Defense-in-depth: snapshot the helper bundle at module load and freeze it,
+// so a downstream consumer that mutates `ssrHelpers.esc = (s) => s` (whether
+// by accident or as a deliberate XSS escalation) cannot strip escaping out
+// of templates compiled through this entry point. The bound references are
+// captured eagerly from the imported `ssrHelpers` object, then frozen.
+const FROZEN_HELPERS: SSRHelpers = Object.freeze({
+  esc: ssrHelpers.esc,
+  attr: ssrHelpers.attr,
+  toHtml: ssrHelpers.toHtml,
+  toAttr: ssrHelpers.toAttr,
+  isHtml: ssrHelpers.isHtml,
+  mark: ssrHelpers.mark,
+  element: ssrHelpers.element,
+}) as SSRHelpers;
+
 /**
  * Server-side counterpart of `@purityjs/core`'s `html` tag. Returns a
  * branded SSR HTML wrapper. The compiled factory itself wraps via
@@ -37,5 +52,5 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): SSRHt
     compiled = new Function(`return ${code}`)() as SSRCompiledFn;
     cache.set(strings, compiled);
   }
-  return compiled(values, ssrHelpers);
+  return compiled(values, FROZEN_HELPERS);
 }

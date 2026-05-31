@@ -126,13 +126,16 @@ cached entry and ignore their config. Mismatches log a
 
 ### SSR
 
-`query()` delegates to `resource()` on the server. The SSR
-streaming machinery (ADR 0006) already handles two-pass rendering
-and embedded payloads — `query()` adds no SSR-specific machinery
-of its own. The cache is per-request when called inside an SSR
-context (we hand the key off to `resource(..., { key })` so its
-existing per-context cache handles dedup); on the client, the
-cache is page-lifetime.
+In an SSR context, `query()` **bypasses the module-level cache
+entirely** and delegates straight to `resource(fetcher, { key })`.
+This is load-bearing for correctness: the module `Map` is
+process-global and lives across requests, so caching there would
+let one request's resolved data leak into another user's render.
+`resource()`'s own per-`SSRRenderContext` cache (keyed by the same
+`key`) handles dedup _within_ a single render and pairs the
+resolved value to the client for hydration. The revalidation
+triggers are not wired on the server (no `window`). On the client,
+the module cache is page-lifetime as described above.
 
 ### Explicit non-features
 

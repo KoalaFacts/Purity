@@ -85,6 +85,14 @@ export interface RenderStaticResult {
   files: Map<string, string>;
   /** Failed renders, keyed by route path. */
   errors: Map<string, unknown>;
+  /**
+   * Failures from the `onRoute` sink callback, keyed by route path. The
+   * HTML for these routes is still present in `files` — only the
+   * user-supplied side-effect (typically a disk write) threw. Kept
+   * separate from `errors` so callers can distinguish render failures
+   * from sink failures without double-bookkeeping.
+   */
+  onRouteErrors: Map<string, unknown>;
 }
 
 /**
@@ -115,31 +123,88 @@ export interface RenderStaticResult {
  */
 export async function renderStatic(options: RenderStaticOptions): Promise<RenderStaticResult> {
   const baseUrl = options.baseUrl ?? 'http://localhost';
+  // Validate `baseUrl` up-front so a malformed value (e.g. a path-only
+  // string, missing scheme, embedded markup) fails the whole batch with
+  // a clear error rather than producing N indistinguishable per-route
+  // `TypeError: Invalid URL` entries in `errors`.
+  try {
+    // `new URL(baseUrl)` throws on non-absolute / scheme-less inputs.
+    void new URL(baseUrl);
+  } catch {
+    throw new Error(
+      `[Purity] renderStatic: invalid baseUrl ${JSON.stringify(baseUrl)}. ` +
+        `Must be an absolute URL (e.g. 'http://localhost' or 'https://example.com').`,
+    );
+  }
   const shellTemplate = options.shellTemplate;
+  // When a shell template is supplied, the doctype must live at the very
+  // start of the final document — not embedded inside the `{{body}}`
+  // splice. We strip it from the renderToString options and prepend it
+  // around the spliced shell output instead. Callers who want the
+  // doctype inline in their shell can keep `options.doctype` undefined
+  // and write `<!doctype html>` directly into `shellTemplate`.
+  const doctype = options.doctype;
+  const innerDoctype = shellTemplate ? undefined : doctype;
   const renderOpts = options.renderOptions ?? {};
   const concurrency = options.concurrency ?? Number.POSITIVE_INFINITY;
   const onRoute = options.onRoute;
 
   const files = new Map<string, string>();
   const errors = new Map<string, unknown>();
+  const onRouteErrors = new Map<string, unknown>();
 
   const normalised = options.routes.map((r) => (typeof r === 'string' ? { path: r } : r));
 
   const renderOne = async (route: RenderStaticRoute): Promise<void> => {
-    const request = route.request ?? new Request(baseUrl + route.path);
+    // Reject paths that would let `baseUrl + path` escape the intended
+    // origin or trick downstream filesystem writes (the file-header
+    // example does `join('dist', route.replace(/^\//, ''), 'index.html')`,
+    // which would happily resolve `'../../etc/passwd'`). The check runs
+    // before `Request` construction so `onRoute` and `files`/`errors`
+    // bookkeeping never see a hostile path.
+    if (!isSafePath(route.path)) {
+      errors.set(
+        route.path,
+        new Error(
+          `[Purity] renderStatic: unsafe route path ${JSON.stringify(route.path)}. ` +
+            `Paths must start with '/', contain no '..' segments, scheme, ` +
+            `protocol-relative '//' prefix, or control characters.`,
+        ),
+      );
+      return;
+    }
+    // Clone any user-supplied Request so the second/third call to
+    // `renderStatic` (or a retry) doesn't see a consumed body. The
+    // synthesized Request is fresh per render and needs no clone.
+    const request = route.request ? route.request.clone() : new Request(baseUrl + route.path);
+    let final: string;
     try {
       const component = options.handler(request);
       const out = await renderToString(component, {
         ...renderOpts,
         extractHead: true,
         request,
-        doctype: options.doctype,
+        doctype: innerDoctype,
       });
-      const final = shellTemplate ? applyShell(shellTemplate, out.body, out.head) : out.body;
+      final = shellTemplate
+        ? (doctype ?? '') + applyShell(shellTemplate, out.body, out.head)
+        : out.body;
       files.set(route.path, final);
-      if (onRoute) await onRoute(route.path, final);
     } catch (err) {
       errors.set(route.path, err);
+      return;
+    }
+    // `onRoute` is the user's sink (typically disk write). Failures here
+    // are *not* render failures — the HTML is already in `files`. Keep
+    // them in a dedicated bucket so callers can distinguish "render
+    // failed" from "sink failed" and avoid the bookkeeping ambiguity of
+    // the same path appearing in both `files` and `errors`.
+    if (onRoute) {
+      try {
+        await onRoute(route.path, final);
+      } catch (err) {
+        onRouteErrors.set(route.path, err);
+      }
     }
   };
 
@@ -159,21 +224,55 @@ export async function renderStatic(options: RenderStaticOptions): Promise<Render
     await Promise.all(workers);
   }
 
-  return { files, errors };
+  return { files, errors, onRouteErrors };
+}
+
+/**
+ * Reject route paths that would let `baseUrl + path` escape the intended
+ * origin (`'//host'`, `'http://host'`), traverse out of the SSG output
+ * directory (`'../etc'`), or carry control characters that would break
+ * downstream tooling. Empty paths and paths not starting with `/` are
+ * also rejected so the synthesized URL is always well-formed.
+ */
+function isSafePath(path: string): boolean {
+  if (typeof path !== 'string' || path === '') return false;
+  if (!path.startsWith('/')) return false;
+  // Protocol-relative `//host/...` — `new Request(base + '//x')` would
+  // resolve to `//x` against `base`, escaping the origin.
+  if (path.startsWith('//')) return false;
+  // ASCII control + DEL — CR/LF would let a hostile path inject
+  // additional Request lines or break downstream filesystem tooling.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberate
+  if (/[ -]/.test(path)) return false;
+  // `..` as a path segment. Matches `/..`, `/../`, `/..?`, `/..#`.
+  for (const seg of path.split(/[/?#]/)) {
+    if (seg === '..') return false;
+  }
+  // Reject anything containing a `:` before the first `/` would be a
+  // scheme (`'http:/...'` after the leading `/` strip). Since we already
+  // required a leading `/`, a colon can still appear later (`/foo:bar`)
+  // which is harmless for URL resolution against an absolute base — so
+  // no further check here.
+  return true;
 }
 
 /**
  * Splice rendered `body` + `head` into the shell template. `{{body}}` is
  * required; `{{head}}` is optional — if it's absent and `head` is
  * non-empty, the head markup is prepended to the body so it isn't lost.
+ *
+ * Both placeholders are replaced in a single pass via a function
+ * replacer so that a `{{body}}` literal occurring inside the rendered
+ * `head` markup (e.g. a user-controlled `<meta>` content) is *not*
+ * subsequently expanded as a placeholder, and vice versa. The function
+ * replacer also sidesteps `String.prototype.replace`'s `$&` / `$1`
+ * substitution magic that would otherwise apply to a string replacement.
  */
 function applyShell(template: string, body: string, head: string): string {
-  let out = template;
-  if (out.includes('{{head}}')) {
-    out = out.split('{{head}}').join(head);
-  } else if (head) {
-    out = head + out;
-  }
-  out = out.split('{{body}}').join(body);
+  const hasHeadPlaceholder = template.includes('{{head}}');
+  const prefix = !hasHeadPlaceholder && head ? head : '';
+  const out = (prefix + template).replace(/\{\{(head|body)\}\}/g, (_, key) =>
+    key === 'head' ? head : body,
+  );
   return out;
 }

@@ -164,4 +164,110 @@ describe('permissionSignal (ADR 0042)', () => {
     expect(s()).toBe('prompt');
     installPermissionsMock();
   });
+
+  it('_resetPermissionSignalCache detaches the PermissionStatus change listener', async () => {
+    permissionSignal('camera');
+    await flush();
+    const status = statuses.get('camera')!;
+    expect(status.listeners.length).toBe(1);
+
+    _resetPermissionSignalCache();
+    expect(status.listeners.length).toBe(0);
+  });
+
+  it('_resetPermissionSignalCache racing an in-flight query never attaches a listener', async () => {
+    permissionSignal('camera'); // begins the async query
+    _resetPermissionSignalCache(); // reset BEFORE the query resolves
+    await flush();
+    const status = statuses.get('camera');
+    // The query did resolve into the mock, but the abort flag prevented
+    // the addEventListener call.
+    expect(status?.listeners.length ?? 0).toBe(0);
+  });
+
+  it('a STALE in-flight query resolving after reset+re-create does not attach an extra listener', async () => {
+    // Set up status A for first query.
+    const statusA: MockStatus = {
+      state: 'prompt',
+      listeners: [],
+      addEventListener(_t, cb) {
+        this.listeners.push(cb);
+      },
+      removeEventListener(_t, cb) {
+        this.listeners = this.listeners.filter((x) => x !== cb);
+      },
+      setState(next) {
+        this.state = next;
+        for (const l of this.listeners) l();
+      },
+    };
+    statuses.set('camera', statusA);
+
+    // Begin query A — promise resolves to statusA but stays pending.
+    permissionSignal('camera');
+
+    // Reset (clears cache + bumps generation). Then re-create under a
+    // fresh statusB.
+    _resetPermissionSignalCache();
+    const statusB: MockStatus = {
+      state: 'granted',
+      listeners: [],
+      addEventListener(_t, cb) {
+        this.listeners.push(cb);
+      },
+      removeEventListener(_t, cb) {
+        this.listeners = this.listeners.filter((x) => x !== cb);
+      },
+      setState(next) {
+        this.state = next;
+        for (const l of this.listeners) l();
+      },
+    };
+    statuses.set('camera', statusB);
+    const s = permissionSignal('camera'); // begins query B
+    await flush();
+    await flush();
+
+    // Query B's listener should be attached to statusB; statusA must
+    // NOT have a listener attached by the stale query A.
+    expect(statusA.listeners.length).toBe(0);
+    expect(statusB.listeners.length).toBe(1);
+    expect(s()).toBe('granted');
+  });
+
+  it('a synchronous throw from navigator.permissions.query is caught and the cache is evicted', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Replace .query with a function that throws synchronously (e.g.
+    // legacy WebKit on an unknown PermissionName).
+    const throwingQuery = vi.fn(() => {
+      throw new TypeError('illegal invocation');
+    });
+    Object.defineProperty(navigator, 'permissions', {
+      configurable: true,
+      value: { query: throwingQuery },
+    });
+
+    // Must not throw out of permissionSignal.
+    expect(() => permissionSignal('camera')).not.toThrow();
+    expect(errSpy).toHaveBeenCalled();
+
+    // Cache was evicted: restore the working mock and verify a later
+    // call goes through the real resolution path.
+    installPermissionsMock();
+    statuses.set('camera', {
+      state: 'granted',
+      listeners: [],
+      addEventListener(_t, cb) {
+        this.listeners.push(cb);
+      },
+      removeEventListener() {},
+      setState(s) {
+        this.state = s;
+      },
+    });
+    const s = permissionSignal('camera');
+    await flush();
+    expect(s()).toBe('granted');
+    errSpy.mockRestore();
+  });
 });

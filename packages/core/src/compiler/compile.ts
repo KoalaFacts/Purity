@@ -202,11 +202,17 @@ function isSuspenseMarker(node: Node): boolean {
 }
 
 function stripSuspenseMarkers(target: Node): void {
-  while (target.firstChild && isSuspenseMarker(target.firstChild)) {
-    target.removeChild(target.firstChild);
-  }
-  while (target.lastChild && isSuspenseMarker(target.lastChild)) {
-    target.removeChild(target.lastChild);
+  // Single linear sweep over direct children — removes any `<!--s:N-->` /
+  // `<!--/s:N-->` comments regardless of position. Today's emitters only
+  // wrap (edge markers), but interior pairs can arise from SSR drift or a
+  // nested boundary whose unwrap was lossy. Stripping them defends the
+  // cursor walk in the compiled hydrate factory (which would otherwise
+  // mis-step onto a suspense marker and either warn or break).
+  let n = target.firstChild;
+  while (n) {
+    const next = n.nextSibling;
+    if (isSuspenseMarker(n)) target.removeChild(n);
+    n = next;
   }
 }
 

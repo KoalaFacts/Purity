@@ -30,8 +30,8 @@ import {
   type SSRRenderContext,
 } from '@purityjs/core';
 import { valueToHtml } from '@purityjs/core/compiler';
+import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
 
-const RESOURCE_SCRIPT_ID = '__purity_resources__';
 const DEFAULT_TIMEOUT = 5000;
 const MAX_PASSES = 10;
 // Restrict CSP nonces to base64 / URL-safe characters so a hostile or
@@ -104,10 +104,18 @@ export function renderToStream(
   const request = options.request;
 
   const encoder = new TextEncoder();
+  // Mutable cancellation flag shared between start() and cancel(). Lets the
+  // boundary loop short-circuit when the consumer disconnects WITHOUT an
+  // external AbortSignal — previously cancel() was a no-op and the loop
+  // happily awaited every slow boundary, calling enqueue() into a closed
+  // controller each time (silently caught downstream, but the work still
+  // burned CPU / kept timers + fetches alive until they all settled).
+  const state = { cancelled: false };
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       const onAbort = (): void => {
+        state.cancelled = true;
         try {
           controller.close();
         } catch {
@@ -122,9 +130,17 @@ export function renderToStream(
         signal.addEventListener('abort', onAbort, { once: true });
       }
 
+      const isAborted = (): boolean => state.cancelled || signal?.aborted === true;
+
       const enqueue = (s: string): void => {
-        if (signal?.aborted) return;
-        controller.enqueue(encoder.encode(s));
+        if (isAborted()) return;
+        try {
+          controller.enqueue(encoder.encode(s));
+        } catch {
+          // Controller already closed (e.g. consumer cancelled mid-flush).
+          // Flip the cancel flag so subsequent boundary work bails out.
+          state.cancelled = true;
+        }
       };
 
       try {
@@ -132,6 +148,7 @@ export function renderToStream(
         // Multi-pass loop for top-level resources; suspense() defers its
         // view via streamingBoundaries instead of awaiting inline.
         const shell = await renderShell(component, timeout, request);
+        if (isAborted()) return;
 
         let head = prefix + shell.html;
         if (serialize) {
@@ -147,8 +164,43 @@ export function renderToStream(
 
         // ----- Boundary chunks ----------------------------------------------
         for (const [id, boundary] of shell.boundaries) {
-          if (signal?.aborted) break;
+          if (isAborted()) break;
+          // Defense-in-depth: even though `id` is typed as `number` from the
+          // Map, validate it's a finite non-negative integer before
+          // interpolating it into an inline `<script>__purity_swap(${id})`
+          // body. If a future refactor lets a non-numeric id slip in, this
+          // prevents code injection through the swap call site.
+          if (!Number.isSafeInteger(id) || id < 0) {
+            console.error(
+              `[Purity] renderToStream: refusing to emit chunk for non-integer boundary id ${String(
+                id,
+              )}; skipping.`,
+            );
+            continue;
+          }
           const result = await renderBoundary(id, boundary, timeout, request);
+          if (isAborted()) break;
+          // null signals "boundary couldn't produce content; leave the
+          // shell-rendered fallback in place." Without this skip, an
+          // empty <template> + __purity_swap(N) chunk wiped the rendered
+          // fallback DOM (the swap replaces everything between the
+          // markers with the template content — empty content = blank).
+          if (result === null) continue;
+          // Defense-in-depth: branded SSR HTML is supposed to never contain
+          // `</template>` (escHtml escapes `<` in user input, and the
+          // codegen doesn't emit raw `</template>`), but if a future
+          // compiler bug or hand-crafted markSSRHtml() value smuggled one
+          // in, it would break out of the `<template id="purity-s-N">`
+          // wrapper and execute as live markup before the swap script
+          // runs. Refuse to emit such a chunk and leave the shell
+          // fallback in place.
+          if (containsTemplateClose(result.html)) {
+            console.error(
+              `[Purity] renderToStream: boundary ${id} HTML contained </template>; ` +
+                'refusing to emit chunk to prevent <template> breakout. Leaving shell fallback in place.',
+            );
+            continue;
+          }
           let chunk = `<template id="purity-s-${id}">${result.html}</template>`;
           // Per-boundary resource cache prime (ADR 0006 Phase 6 second-half).
           // Only the keyed map is meaningful across boundaries — the
@@ -164,25 +216,44 @@ export function renderToStream(
           enqueue(chunk);
         }
 
-        controller.close();
-      } catch (err) {
         try {
-          controller.error(err);
+          controller.close();
         } catch {
-          // Already errored — ignore.
+          // Already closed by cancel() / signal abort — ignore.
+        }
+      } catch (err) {
+        // Don't error a stream the consumer already cancelled — calling
+        // controller.error() after close() throws, which would mask the
+        // original cause in unhandled-rejection logs.
+        if (!isAborted()) {
+          try {
+            controller.error(err);
+          } catch {
+            // Already errored — ignore.
+          }
         }
       } finally {
         if (signal) signal.removeEventListener('abort', onAbort);
       }
     },
     cancel() {
-      // Consumer disconnected. Nothing async to release here — the start()
-      // promise completes on its own; subsequent enqueue() guards on
-      // `signal?.aborted` inside the closure (when an external signal is
-      // wired up). For pure cancel-without-signal, we rely on enqueue
-      // throwing once the controller is closed.
+      // Consumer disconnected. Flip the shared cancel flag so the boundary
+      // loop in start() short-circuits on its next `isAborted()` check
+      // instead of awaiting every remaining slow boundary. Without this,
+      // a single suspense() with a 30s fetch would keep the renderer
+      // (and its timers + AbortSignals) alive even after the client gave
+      // up.
+      state.cancelled = true;
     },
   });
+}
+
+// Pre-compiled regex: case-insensitive `</template` followed by `>` or
+// whitespace (per HTML spec — `</template foo>` is still a closing tag).
+const TEMPLATE_CLOSE_RE = /<\/template[\s>/]/i;
+
+function containsTemplateClose(s: string): boolean {
+  return TEMPLATE_CLOSE_RE.test(s);
 }
 
 interface ShellResult {
@@ -207,8 +278,9 @@ async function renderShell(
   const start = Date.now();
   const resolvedData: unknown[] = [];
   const resolvedErrors: unknown[] = [];
-  const resolvedDataByKey: Record<string, unknown> = {};
-  const resolvedErrorsByKey: Record<string, unknown> = {};
+  // Null-prototype: see render-to-string.ts for rationale.
+  const resolvedDataByKey: Record<string, unknown> = Object.create(null);
+  const resolvedErrorsByKey: Record<string, unknown> = Object.create(null);
   const boundaryStartTimes = new Map<number, number>();
   const boundaryDeadlines = new Map<number, number>();
   const timedOutBoundaries = new Set<number>();
@@ -259,15 +331,24 @@ async function renderShell(
     }
 
     let timedOut = false;
-    await Promise.race([
-      Promise.all(ctx.pendingPromises),
-      new Promise<void>((resolve) => {
-        setTimeout(() => {
-          timedOut = true;
-          resolve();
-        }, remaining);
-      }),
-    ]);
+    // Clear the loser timer so it doesn't stay armed (and keep the event
+    // loop alive) for `remaining` ms after the resources already settled.
+    // try/finally so the clear happens even when Promise.all rejects —
+    // the post-await clear was previously skipped on the throw path.
+    let shellTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        Promise.all(ctx.pendingPromises),
+        new Promise<void>((resolve) => {
+          shellTimer = setTimeout(() => {
+            timedOut = true;
+            resolve();
+          }, remaining);
+        }),
+      ]);
+    } finally {
+      clearTimeout(shellTimer);
+    }
     if (timedOut) {
       throw new Error(
         `[Purity] renderToStream shell timed out after ${timeout}ms while ` +
@@ -293,12 +374,12 @@ async function renderBoundary(
   boundary: ShellResult['boundaries'] extends Map<number, infer V> ? V : never,
   timeout: number,
   request: Request | undefined,
-): Promise<BoundaryResult> {
+): Promise<BoundaryResult | null> {
   const start = Date.now();
   const resolvedData: unknown[] = [];
   const resolvedErrors: unknown[] = [];
-  const resolvedDataByKey: Record<string, unknown> = {};
-  const resolvedErrorsByKey: Record<string, unknown> = {};
+  const resolvedDataByKey: Record<string, unknown> = Object.create(null);
+  const resolvedErrorsByKey: Record<string, unknown> = Object.create(null);
   // Per-boundary deadline is just the supplied timeout — boundary timing
   // started the moment the shell registered it; we reuse that wall clock.
   const boundaryStartTimes = new Map<number, number>();
@@ -339,32 +420,51 @@ async function renderBoundary(
       // doesn't recursively stream sub-boundaries; that's a follow-up.
     };
     pushSSRRenderContext(ctx);
+    let viewThrewAndExhausted = false;
+    let viewThrewNeedsRetry = false;
     try {
       html = valueToHtml(viewTimedOut ? boundary.fallback() : boundary.view());
     } catch (err) {
       reportError(err, viewTimedOut ? 'fallback' : 'view');
       if (viewTimedOut) {
-        // Fallback also threw — emit empty resolved chunk; the shell
-        // already showed the fallback so the user still sees something.
+        // Fallback also threw inside the boundary. Return null so the
+        // streaming loop skips this boundary's chunk — the shell already
+        // rendered (its own pass-1 call to) the fallback, and replacing
+        // it with empty content would wipe what the user can see.
         console.error(
           `[Purity] renderToStream: boundary ${boundaryId} fallback threw; ` +
             'leaving the shell fallback in place.',
           err,
         );
-        popSSRRenderContext();
-        return { html: '', resolvedData, resolvedDataByKey };
+        viewThrewAndExhausted = true;
+      } else {
+        console.error(
+          `[Purity] renderToStream: boundary ${boundaryId} view threw; ` +
+            'rendering fallback for this boundary.',
+          err,
+        );
+        // Mark the boundary as cancelled so any resource() registered
+        // inside view() before the throw — whose fetcher is still in
+        // flight — has its `.then()` short-circuit instead of writing
+        // into the boundary-scoped `resolvedDataByKey` we'd otherwise
+        // serialize alongside the retry's fallback chunk. Mirrors the
+        // sync-SSR fix in `control.ts` so streaming and non-streaming
+        // agree on what "this boundary's resources are stale" means.
+        timedOutBoundaries.add(boundaryId);
+        viewTimedOut = true;
+        viewThrewNeedsRetry = true;
       }
-      console.error(
-        `[Purity] renderToStream: boundary ${boundaryId} view threw; ` +
-          'rendering fallback for this boundary.',
-        err,
-      );
-      viewTimedOut = true;
-      popSSRRenderContext();
-      continue;
     } finally {
+      // Single pop point. The previous code popped inside the catch
+      // before `return null` / `continue`, AND popped again in finally —
+      // a double-pop on every boundary throw. SSRRenderContext is a
+      // single-slot module-global, so a double-pop nulled the outer
+      // render's slot (or, with a future fix to stack-ify it, would
+      // pop the parent's frame off too).
       popSSRRenderContext();
     }
+    if (viewThrewAndExhausted) return null;
+    if (viewThrewNeedsRetry) continue;
 
     if (ctx.pendingPromises.length === 0) {
       return { html, resolvedData, resolvedDataByKey };
@@ -373,8 +473,10 @@ async function renderBoundary(
     const remaining = timeout - (Date.now() - start);
     if (remaining <= 0) {
       if (viewTimedOut) {
-        // Fallback itself timed out — emit empty rather than hanging.
-        return { html: '', resolvedData, resolvedDataByKey };
+        // Fallback's resources timed out too. Same reasoning as the
+        // catch-block null return above — leave the shell fallback in
+        // place rather than wipe it with an empty swap.
+        return null;
       }
       reportError(undefined, 'timeout');
       viewTimedOut = true;
@@ -382,28 +484,40 @@ async function renderBoundary(
     }
 
     let raceTimedOut = false;
-    await Promise.race([
-      Promise.all(ctx.pendingPromises),
-      new Promise<void>((resolve) => {
-        setTimeout(() => {
-          raceTimedOut = true;
-          resolve();
-        }, remaining);
-      }),
-    ]);
+    let boundaryTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        Promise.all(ctx.pendingPromises),
+        new Promise<void>((resolve) => {
+          boundaryTimer = setTimeout(() => {
+            raceTimedOut = true;
+            resolve();
+          }, remaining);
+        }),
+      ]);
+    } finally {
+      // try/finally so the clear runs even when Promise.all rejects.
+      clearTimeout(boundaryTimer);
+    }
     if (raceTimedOut) {
-      if (viewTimedOut) return { html: '', resolvedData, resolvedDataByKey };
+      // viewTimedOut means we're already in the fallback pass and IT
+      // timed out too — return null so the loop skips the chunk and the
+      // shell fallback survives.
+      if (viewTimedOut) return null;
       reportError(undefined, 'timeout');
       viewTimedOut = true;
     }
   }
 
-  // Didn't converge — give up gracefully and leave the shell fallback.
+  // Didn't converge — give up gracefully and leave the shell fallback in
+  // place. Returning null tells the streaming loop to skip this
+  // boundary's chunk entirely so the swap can't wipe what the shell
+  // already rendered.
   console.error(
     `[Purity] renderToStream: boundary ${boundaryId} did not converge within ${MAX_PASSES} passes; ` +
       'leaving shell fallback in place.',
   );
-  return { html: '', resolvedData, resolvedDataByKey };
+  return null;
 }
 
 // Per-boundary cache prime — only emitted when at least one keyed resource
@@ -418,14 +532,7 @@ function buildBoundaryResourceScript(
 ): string {
   const keys = Object.keys(keyed);
   if (keys.length === 0) return '';
-  const json = JSON.stringify({ keyed })
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
-  const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
-  return `<script type="application/json" id="__purity_resources_${boundaryId}__"${nonceAttr}>${json}</script>`;
+  return serializeResourceScriptPayload({ keyed }, `__purity_resources_${boundaryId}__`, nonce);
 }
 
 function scriptTag(body: string, nonce: string | undefined): string {
@@ -442,12 +549,5 @@ function buildResourceScript(
   const hasKeyed = Object.keys(keyed).length > 0;
   if (!hasOrdered && !hasKeyed) return '';
   const payload = hasKeyed ? { ordered, keyed } : ordered;
-  const json = JSON.stringify(payload)
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
-  const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
-  return `<script type="application/json" id="${RESOURCE_SCRIPT_ID}"${nonceAttr}>${json}</script>`;
+  return serializeResourceScriptPayload(payload, RESOURCE_SCRIPT_ID, nonce);
 }

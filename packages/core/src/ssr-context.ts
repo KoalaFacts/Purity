@@ -70,6 +70,25 @@ export interface SSRRenderContext {
    */
   timedOutBoundaries: Set<number>;
   /**
+   * LIFO stack of boundary IDs currently being rendered. `suspense()`
+   * pushes its `id` before invoking `view()` and pops in a finally.
+   * `resource()` reads the top of the stack at fetcher-registration
+   * time and captures the id alongside the SSR `ssrCtx` reference; its
+   * settle path then bails when `ssrCtx.timedOutBoundaries.has(capturedId)`
+   * is true — i.e. the surrounding boundary surrendered to its fallback
+   * before the fetch settled. Without this, a late-resolving fetcher
+   * that wins after the boundary's deadline still mutates the shared
+   * `resolvedDataByKey` and corrupts the next pass's render.
+   *
+   * `timedOutBoundaries` is the same shared `Set` instance across all
+   * passes of a single `renderToString` call (declared once in
+   * `render-to-string.ts`, threaded onto each pass's ctx). That's why
+   * resource() observes the boundary's timeout even though the ctx it
+   * captured on pass 1 has been replaced by pass 2's ctx — the Set
+   * reference still points at the live timeout-tracker.
+   */
+  boundaryIdStack?: number[];
+  /**
    * When true, `suspense()` skips its inline `view()` rendering during
    * the SSR pass, emits the fallback in the shell, and registers the
    * `view` (+ its `fallback` for a re-render on timeout) into
@@ -112,21 +131,49 @@ export interface SSRRenderContext {
   request?: Request;
 }
 
-let currentContext: SSRRenderContext | null = null;
+// A real LIFO stack — earlier versions held a single-slot `currentContext`,
+// so a nested `pushSSRRenderContext` from inside another render (e.g. a
+// streaming boundary re-entering a render pass, or any inner SSR call site
+// that pushes its own context) clobbered the outer caller's context and a
+// subsequent `popSSRRenderContext` unconditionally nulled it. The stack
+// shape preserves LIFO save/restore semantics so nested/concurrent SSR
+// scopes can coexist. `getSSRRenderContext` reads the top of the stack.
+const contextStack: SSRRenderContext[] = [];
 
 /** @internal */
 export function getSSRRenderContext(): SSRRenderContext | null {
-  return currentContext;
+  return contextStack.length === 0
+    ? null
+    : (contextStack[contextStack.length - 1] as SSRRenderContext);
 }
 
 /** @internal */
 export function pushSSRRenderContext(ctx: SSRRenderContext): void {
-  currentContext = ctx;
+  contextStack.push(ctx);
 }
 
 /** @internal */
 export function popSSRRenderContext(): void {
-  currentContext = null;
+  // No-op on an empty stack — defensive against stray pops (e.g. an outer
+  // `finally` running after a callee already popped the same frame). Was
+  // previously a silent overwrite-to-null, which had the same effect.
+  contextStack.pop();
+}
+
+/**
+ * Return the innermost active boundary id currently being rendered, or
+ * `null` when there is no SSR context or no active boundary. Used by
+ * `resource()` to capture the surrounding boundary id at fetcher
+ * registration time so its settle path can check
+ * `ctx.timedOutBoundaries.has(id)` and bail before mutating the shared
+ * resolved-data cache.
+ *
+ * @internal
+ */
+export function currentBoundaryId(): number | null {
+  const ctx = getSSRRenderContext();
+  if (!ctx || !ctx.boundaryIdStack || ctx.boundaryIdStack.length === 0) return null;
+  return ctx.boundaryIdStack[ctx.boundaryIdStack.length - 1];
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +195,15 @@ let hydrationCache: unknown[] | null = null;
 let hydrationCursor = 0;
 let hydrationCacheByKey: Record<string, unknown> | null = null;
 
+// Null-prototype copy so `key in hydrationCacheByKey` can't match prototype
+// methods (`constructor`, `toString`, `__proto__`, `hasOwnProperty`, …) for
+// a user-supplied `key`. JSON.parse always returns prototype-having objects.
+function intoNullProto(src: Record<string, unknown>): Record<string, unknown> {
+  const dst = Object.create(null) as Record<string, unknown>;
+  for (const k of Object.keys(src)) dst[k] = src[k];
+  return dst;
+}
+
 /**
  * Accept the legacy array shape (`[v0, v1, …]`) or the new object shape
  * (`{ ordered: [...], keyed: {...} }`). Older renderToString output is the
@@ -168,7 +224,9 @@ export function primeHydrationCache(data: unknown): void {
     const obj = data as { ordered?: unknown; keyed?: unknown };
     hydrationCache = Array.isArray(obj.ordered) ? obj.ordered : [];
     hydrationCacheByKey =
-      obj.keyed && typeof obj.keyed === 'object' ? (obj.keyed as Record<string, unknown>) : null;
+      obj.keyed && typeof obj.keyed === 'object'
+        ? intoNullProto(obj.keyed as Record<string, unknown>)
+        : null;
     return;
   }
   hydrationCache = null;

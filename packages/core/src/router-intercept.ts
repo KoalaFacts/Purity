@@ -31,17 +31,44 @@ export interface InterceptLinksOptions {
 }
 
 function defaultShouldIntercept(event: MouseEvent, a: HTMLAnchorElement): boolean {
+  // Already-prevented by another listener — bail. Checked first so the
+  // cheaper short-circuit beats every other property read; a downstream
+  // listener that called preventDefault() (modal close, custom widget,
+  // etc.) signals "I handled this click — keep your hands off."
+  if (event.defaultPrevented) return false;
   // Primary mouse button only — middle-click should still open in new tab.
-  if (event.button !== 0) return false;
+  // `button` defaults to 0; an undefined button reads as 0 too (jsdom
+  // sometimes synthesises events without one). Treat 0/undefined as
+  // primary.
+  if (event.button !== 0 && event.button !== undefined) return false;
   // Modifier keys: cmd / ctrl / shift / alt open in new tab/window/etc.
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+  // Anchor with no href: nothing to intercept; let the browser ignore it.
+  // (`a.href` reflects the resolved absolute URL — empty string when the
+  // attribute is absent. `a.protocol` would be `':'` in that case, which
+  // would also fail the scheme check below; bind it explicitly.)
+  if (!a.hasAttribute('href')) return false;
+  // Scheme allow-list: only intercept http(s) navigations. Other schemes
+  // shouldn't reach navigate() at all — `javascript:` runs as JS,
+  // `data:` / `blob:` / `vbscript:` / `file:` would push a non-http URL
+  // into history (silent SPA 404 + address-bar pollution), `mailto:` /
+  // `tel:` / `sms:` need their native handler. `a.origin === 'null'` for
+  // most of these happens to bounce them off the cross-origin check
+  // below, but only by accident; bind the contract explicitly.
+  if (a.protocol !== 'http:' && a.protocol !== 'https:') return false;
   // Per-link opt-out.
   if (a.hasAttribute('data-no-intercept')) return false;
-  // target="" / target="_self" are intercepted; anything else (_blank, etc.) is not.
+  // target="" / target="_self" are intercepted; anything else (_blank,
+  // _top, _parent, named frame, etc.) is not — those have meaningful
+  // browsing-context semantics we'd silently break.
   const target = a.getAttribute('target');
   if (target && target !== '_self') return false;
-  // Download links — let the browser handle the file.
+  // Download links — let the browser handle the file. `hasAttribute`
+  // catches both `download` and `download="filename"`.
   if (a.hasAttribute('download')) return false;
+  // `rel="external"` — author intent is "leave my SPA"; respect it.
+  const rel = a.getAttribute('rel');
+  if (rel && /\bexternal\b/.test(rel)) return false;
   // Cross-origin — full-page navigation is the safe default.
   if (typeof window !== 'undefined' && a.origin !== window.location.origin) return false;
   // Same-page hash-only links — let the browser scroll natively.
@@ -53,12 +80,15 @@ function defaultShouldIntercept(event: MouseEvent, a: HTMLAnchorElement): boolea
   ) {
     return false;
   }
-  // Already-prevented by another listener — bail.
-  if (event.defaultPrevented) return false;
   return true;
 }
 
 let activeListener: ((event: MouseEvent) => void) | null = null;
+// Document-side sentinel so an HMR-driven module re-init (which wipes
+// `activeListener` back to `null`) still detects the stale listener on
+// `document` and refuses to bind a second one. Without this, every save
+// during dev would leak a click listener.
+const LISTENER_FLAG = '__purityRouterInterceptBound';
 
 /**
  * Install a global click listener that converts qualifying internal `<a>`
@@ -85,7 +115,12 @@ export function interceptLinks(options: InterceptLinksOptions = {}): () => void 
   if (typeof document === 'undefined') {
     return () => {};
   }
-  if (activeListener) {
+  // HMR-safe dedupe: an HMR module re-eval resets `activeListener` to
+  // `null` but the previously-installed `click` listener is still
+  // attached to `document`. Without the document-side flag we'd happily
+  // bind a second listener every dev save — leaking one per HMR cycle
+  // and double-firing `navigate()` per click. Check the flag first.
+  if (activeListener || (document as unknown as Record<string, unknown>)[LISTENER_FLAG]) {
     console.warn(
       '[Purity] interceptLinks() called while a previous interception is active. ' +
         'Call the prior teardown first; this call is a no-op.',
@@ -94,22 +129,52 @@ export function interceptLinks(options: InterceptLinksOptions = {}): () => void 
   }
   const should = options.shouldIntercept ?? defaultShouldIntercept;
   const listener = (event: MouseEvent): void => {
-    const target = event.target as Element | null;
-    if (!target) return;
-    // `closest` finds the nearest <a> ancestor — works for clicks on nested
-    // <span>/<img> inside the link.
-    const anchor = target.closest('a') as HTMLAnchorElement | null;
-    if (!anchor) return;
-    if (!should(event, anchor)) return;
+    // `event.target` is typed `EventTarget | null` and can be a `Text`
+    // node, a `Document`, or in shadow-DOM-piercing cases a `Window`.
+    // `closest` only exists on `Element`, so guard via `instanceof`
+    // rather than a blind cast — a stray `Text`-target click would
+    // otherwise throw `target.closest is not a function` and escape
+    // into the browser's "unhandled error" reporter.
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    // `closest('a')` also matches `<a>` inside `<svg>` — but SVGAElement
+    // exposes `href` as an `SVGAnimatedString` (`href.baseVal`) and
+    // doesn't have `.origin` / `.pathname` / `.search` / `.protocol` on
+    // the same shape as HTMLAnchorElement. Treating one as the other
+    // would crash the predicate. Filter to HTML anchors only.
+    const anchor = target.closest('a');
+    if (!(anchor instanceof HTMLAnchorElement)) return;
+    let intercept: boolean;
+    try {
+      intercept = should(event, anchor);
+    } catch (err) {
+      // A throwing user-supplied predicate must not escape into the
+      // document-level click handler — same isolation pattern as
+      // `navigate()`'s wrapper / listener loops.
+      console.error('[Purity] interceptLinks predicate threw:', err);
+      return;
+    }
+    if (!intercept) return;
     event.preventDefault();
-    navigate(anchor.href);
+    try {
+      navigate(anchor.href);
+    } catch (err) {
+      // `navigate()` itself is fail-soft, but a misbehaving
+      // `navigateWrapper` or a user `onNavigate` listener could still
+      // surface. Don't let the throw reach the browser's global error
+      // path — log and move on. The link click is already prevented;
+      // the page state may be inconsistent, but the page survives.
+      console.error('[Purity] interceptLinks navigate() threw:', err);
+    }
   };
   document.addEventListener('click', listener);
   activeListener = listener;
+  (document as unknown as Record<string, unknown>)[LISTENER_FLAG] = true;
   return () => {
     if (activeListener === listener) {
       document.removeEventListener('click', listener);
       activeListener = null;
+      delete (document as unknown as Record<string, unknown>)[LISTENER_FLAG];
     }
   };
 }

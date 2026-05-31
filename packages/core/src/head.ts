@@ -53,8 +53,47 @@ import { getSSRRenderContext } from './ssr-context.ts';
 export function head(content: unknown): void {
   const ssrCtx = getSSRRenderContext();
   if (!ssrCtx) return;
-  const value = typeof content === 'function' ? (content as () => unknown)() : content;
-  const html = valueToHtml(value);
-  if (!html) return;
-  (ssrCtx.head ??= []).push(html);
+
+  // Thunk branch — call once. Isolate throws so a single broken `head()`
+  // call site never poisons the whole render pass; the other entries the
+  // caller appended before this throw remain intact, and any subsequent
+  // `head()` calls in the same pass still land in the accumulator.
+  let value: unknown;
+  if (typeof content === 'function') {
+    try {
+      value = (content as () => unknown)();
+    } catch (err) {
+      console.error('[purity] head() thunk threw — entry skipped:', err);
+      return;
+    }
+  } else {
+    value = content;
+  }
+
+  // A thunk that returns a Promise (or a Promise passed directly) is almost
+  // certainly a bug — `String(p)` is `"[object Promise]"`, which would land
+  // verbatim inside `<head>` and break the document. Drop with a warning
+  // instead. `head()` is sync-by-contract; for async head metadata, await
+  // upstream and then call head().
+  if (value && typeof (value as { then?: unknown }).then === 'function') {
+    console.error(
+      '[purity] head() received a Promise — entry skipped. head() is synchronous; ' +
+        'await the value first or read it through a resource() before calling head().',
+    );
+    return;
+  }
+
+  // Coerce via the shared SSR pipeline (branded SSRHtml passes through raw,
+  // strings get HTML-escaped, arrays recurse). Isolate throws — a malformed
+  // value should not crash the surrounding renderToString.
+  let htmlStr: string;
+  try {
+    htmlStr = valueToHtml(value);
+  } catch (err) {
+    console.error('[purity] head() value coercion threw — entry skipped:', err);
+    return;
+  }
+
+  if (!htmlStr) return;
+  (ssrCtx.head ??= []).push(htmlStr);
 }

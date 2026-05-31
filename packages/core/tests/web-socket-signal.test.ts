@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { webSocketSignal } from '../src/index.ts';
+import { mount, webSocketSignal } from '../src/index.ts';
 import { _resetPageVisibilitySignal } from '../src/page-visibility-signal.ts';
 import { _resetBfcacheRestoreSignal } from '../src/bfcache-restore-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
@@ -146,6 +146,33 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(sig.readyState()).toBe('closed');
   });
 
+  it('manual close transitions readyState through closing → closed (no stuck closing)', async () => {
+    // The close() helper detaches the WS close listener BEFORE invoking
+    // socket.close() (cycle-8 fix to stop late messages riding back in
+    // on reconnect). Side effect: the close-event-driven path that used
+    // to settle `closed` no longer runs — readyState stayed on 'closing'
+    // forever. Test via the cycle-1 ctx auto-close (mount + unmount).
+    const host = document.createElement('div');
+    let observed: 'connecting' | 'open' | 'closing' | 'closed' = 'connecting';
+    let sig: ReturnType<typeof webSocketSignal<number>> | null = null;
+    const { unmount } = mount(() => {
+      sig = webSocketSignal<number>('/ws', { initialValue: 0, validate: isNumber });
+      observed = sig.readyState();
+      return document.createComment('m');
+    }, host);
+    expect(sig).not.toBeNull();
+    instances[0].fireOpen();
+    expect(sig!.readyState()).toBe('open');
+    // Auto-close on unmount runs close() — pre-fix, readyState would
+    // stick on 'closing'.
+    unmount();
+    expect(sig!.readyState()).toBe('closing');
+    // After one microtask, the close path's queueMicrotask flush runs.
+    await new Promise<void>((r) => queueMicrotask(r));
+    expect(sig!.readyState()).toBe('closed');
+    void observed; // exercise the closure-capture, no-op assertion
+  });
+
   it('starts at initialValue and updates on validated message', () => {
     const sig = webSocketSignal<number>('/ws', { initialValue: 0, validate: isNumber });
     instances[0].fireOpen();
@@ -165,6 +192,32 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('redacts secrets in the URL before logging (no access_token / userinfo leak)', () => {
+    // SSE/WS auth via `?access_token=…` is common (they can't set
+    // headers). Pre-fix `label = String(url)` interpolated the full
+    // URL — including the token — into every console.warn. Production
+    // log sinks then captured it. Redact: keep protocol + host + path
+    // only.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sig = webSocketSignal<number>('ws://user:pw@host/api?access_token=SECRET', {
+      initialValue: 0,
+      validate: isNumber,
+    });
+    instances[0].fireOpen();
+    instances[0].fireMessage('"bad"');
+    expect(sig()).toBe(0);
+    // Logs must NOT contain the secret query string or userinfo.
+    for (const call of warnSpy.mock.calls) {
+      const line = call.map(String).join(' ');
+      expect(line).not.toContain('SECRET');
+      expect(line).not.toContain('access_token');
+      expect(line).not.toContain('user:pw');
+    }
+    // But the label should still be useful (protocol + host + path).
+    expect(warnSpy.mock.calls[0][0]).toContain('ws://host/api');
+    warnSpy.mockRestore();
+  });
+
   it('drops messages that fail to parse with a console.warn', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const sig = webSocketSignal<number>('/ws', { initialValue: 0, validate: isNumber });
@@ -173,6 +226,21 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(sig()).toBe(0);
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(warnSpy.mock.calls[0][0]).toContain('failed to parse');
+    warnSpy.mockRestore();
+  });
+
+  it('drops the message and logs when the validator THROWS', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const throwing = ((v: unknown): v is number => {
+      if (typeof v !== 'number') throw new TypeError('nope');
+      return true;
+    }) as (v: unknown) => v is number;
+    const sig = webSocketSignal<number>('/ws', { initialValue: 0, validate: throwing });
+    instances[0].fireOpen();
+    instances[0].fireMessage('"not-a-number"');
+    expect(sig()).toBe(0);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('validator threw');
     warnSpy.mockRestore();
   });
 
@@ -268,5 +336,142 @@ describe('webSocketSignal — client (ADR 0047)', () => {
       protocols: ['v1', 'v2'],
     });
     expect(instances[0].protocols).toEqual(['v1', 'v2']);
+  });
+
+  it('rejects non-ws/wss URL schemes pre-construction (no side effects, redacted warn)', () => {
+    // audit-v2: WebSocket only ever speaks ws:// or wss://. Without an
+    // explicit allow-list, passing `javascript:alert(1)` or a leaked
+    // `http://…?access_token=SECRET` reaches the browser constructor,
+    // which then surfaces an unredacted DOMException to the page's error
+    // reporter (and to any window.onerror sink) — leaking the secret
+    // past the trust boundary the redacted label is supposed to enforce.
+    // The pre-check collapses these into an inert accessor + a single
+    // redacted warn before any side effect fires.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sig = webSocketSignal<number>('http://host/api?access_token=SECRET', {
+      initialValue: 7,
+      validate: isNumber,
+    });
+    // No WebSocket constructed.
+    expect(instances).toEqual([]);
+    // Inert accessor: returns initialValue, readyState 'closed', send no-op.
+    expect(sig()).toBe(7);
+    expect(sig.readyState()).toBe('closed');
+    expect(() => sig.send('x')).not.toThrow();
+    // Warn fired once, with the redacted URL — no secret leaked.
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const line = warnSpy.mock.calls[0].map(String).join(' ');
+    expect(line).toContain('only ws:// and wss://');
+    expect(line).not.toContain('SECRET');
+    expect(line).not.toContain('access_token');
+    warnSpy.mockRestore();
+  });
+
+  it('rejects javascript: URLs even when passed via a URL instance', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sig = webSocketSignal<number>(new URL('https://host/api'), {
+      initialValue: 0,
+      validate: isNumber,
+    });
+    expect(instances).toEqual([]);
+    expect(sig.readyState()).toBe('closed');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
+  it('accepts ws:// and wss:// URLs (allow-list happy path)', () => {
+    const a = webSocketSignal<number>('ws://host/api', { initialValue: 0, validate: isNumber });
+    const b = webSocketSignal<number>('wss://host/api', { initialValue: 0, validate: isNumber });
+    expect(instances).toHaveLength(2);
+    void a;
+    void b;
+  });
+
+  it('accepts relative URLs (resolved against page origin by the platform)', () => {
+    // The platform resolves `/ws` against the current page's origin,
+    // upgrading http→ws / https→wss. We can't verify the final scheme
+    // pre-construction without inventing a base, so relative URLs skip
+    // the allow-list check.
+    webSocketSignal<number>('/ws', { initialValue: 0, validate: isNumber });
+    expect(instances).toHaveLength(1);
+  });
+
+  it('rejects subprotocols containing CR/LF or non-token bytes (header smuggling)', () => {
+    // audit-v2: Sec-WebSocket-Protocol values are echoed back by the
+    // server. Passing a string with embedded CR/LF / non-token bytes
+    // can let a misconfigured server smuggle headers through the echo,
+    // or — depending on the UA — trip the constructor into an
+    // unredacted DOMException. Reject anything outside RFC 7230 tchar
+    // pre-construction.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sig = webSocketSignal<number>('/ws', {
+      initialValue: 0,
+      validate: isNumber,
+      protocols: ['v1\r\nInjected-Header: yes'],
+    });
+    expect(instances).toEqual([]);
+    expect(sig.readyState()).toBe('closed');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('invalid subprotocol');
+    warnSpy.mockRestore();
+  });
+
+  it('rejects an empty subprotocol token (not a valid RFC 6455 token)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    webSocketSignal<number>('/ws', {
+      initialValue: 0,
+      validate: isNumber,
+      protocols: [''],
+    });
+    expect(instances).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
+  it('accepts well-formed subprotocol tokens (happy path)', () => {
+    webSocketSignal<number>('/ws', {
+      initialValue: 0,
+      validate: isNumber,
+      protocols: ['chat.v1', 'json.v2+ext'],
+    });
+    expect(instances).toHaveLength(1);
+    expect(instances[0].protocols).toEqual(['chat.v1', 'json.v2+ext']);
+  });
+
+  it('close() detaches the four listeners so a late message after reconnect cannot ride into the new state', async () => {
+    const sig = webSocketSignal<number>('/ws', {
+      initialValue: 0,
+      validate: isNumber,
+      reconnect: 'on-visible',
+    });
+    expect(instances).toHaveLength(1);
+    const first = instances[0];
+    first.fireOpen();
+    first.fireMessage(7);
+    expect(sig()).toBe(7);
+
+    // Trigger the close path via hidden visibility.
+    setVisibility('hidden');
+    await tick();
+
+    // All four of our listeners should be detached from the old socket.
+    expect(first.listeners.get('open')?.length ?? 0).toBe(0);
+    expect(first.listeners.get('close')?.length ?? 0).toBe(0);
+    expect(first.listeners.get('error')?.length ?? 0).toBe(0);
+    expect(first.listeners.get('message')?.length ?? 0).toBe(0);
+
+    // Reconnect: a NEW socket opens.
+    setVisibility('visible');
+    await tick();
+    expect(instances).toHaveLength(2);
+
+    // The OLD socket dispatches a late message (real-world: in-flight bytes
+    // arrive after close() but before the close handshake completes). With
+    // the leak, this would update the shared inner state to 99. With the
+    // fix the listeners are gone — the new socket's 42 wins.
+    first.fireMessage(99);
+    instances[1].fireOpen();
+    instances[1].fireMessage(42);
+    expect(sig()).toBe(42);
   });
 });

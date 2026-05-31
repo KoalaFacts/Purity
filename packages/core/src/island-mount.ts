@@ -42,7 +42,7 @@
 // ---------------------------------------------------------------------------
 
 import { hydrate } from './component.ts';
-import { getIslandBrand, type IslandTrigger } from './island.ts';
+import { getIslandBrand, ISLAND_TRIGGERS, type IslandTrigger } from './island.ts';
 
 const WRAPPER_SELECTOR = 'purity-island[data-pi-id]';
 
@@ -122,6 +122,13 @@ export interface MountIslandsOptions {
  * between the SSR render and the client entry — usually a re-ordered
  * import.
  */
+// Track which wrappers we've already scheduled hydration for. WeakSet
+// so wrappers removed from the DOM are auto-cleaned. Per-call guards
+// (e.g. mountIslands called twice during HMR or by user error) would
+// otherwise stack listeners on `interact` islands, double-observe
+// `visible` islands, and run `done()`/`onMount` twice each.
+const hydrated = new WeakSet<Element>();
+
 export function mountIslands(
   views: ReadonlyArray<IslandEntry>,
   options: MountIslandsOptions = {},
@@ -132,6 +139,13 @@ export function mountIslands(
   const wrappers = root.querySelectorAll(WRAPPER_SELECTOR);
   for (let i = 0; i < wrappers.length; i++) {
     const el = wrappers[i] as HTMLElement;
+    // Idempotency: a second mountIslands() call (HMR boot, user error,
+    // a manifest-scan in a parent shell that also covers a nested
+    // wrapper) must NOT re-arm hydration for an already-scheduled
+    // wrapper. Without this guard, `interact` islands accumulate
+    // listeners and `load` islands double-hydrate.
+    if (hydrated.has(el)) continue;
+    hydrated.add(el);
     const rawId = el.getAttribute('data-pi-id');
     const id = rawId != null ? Number(rawId) : NaN;
     if (!Number.isInteger(id) || id < 1) {
@@ -158,8 +172,18 @@ export function mountIslands(
 function readTrigger(el: Element): IslandTrigger {
   const raw = el.getAttribute('data-pi-trigger');
   if (raw == null || raw === '') return 'load';
-  if (raw === 'load' || raw === 'idle' || raw === 'visible' || raw === 'interact') return raw;
-  if (raw.startsWith('media:')) return raw as `media:${string}`;
+  // Bug #14: reference the SAME allow-list `island.ts` uses for SSR
+  // normalisation. Pre-fix, both sides duplicated the literal list — a
+  // change on one side silently moved the security boundary. Importing
+  // ISLAND_TRIGGERS makes drift impossible: a new trigger added to the
+  // server allow-list is automatically honoured on the client.
+  if (ISLAND_TRIGGERS.has(raw)) return raw as IslandTrigger;
+  // Require a non-empty media query suffix — mirrors `normalizeTrigger`
+  // in island.ts, so a tampered `data-pi-trigger="media:"` (empty
+  // query) can't reach `matchMedia('')` via this client path.
+  if (raw.startsWith('media:') && raw.length > 'media:'.length) {
+    return raw as `media:${string}`;
+  }
   console.warn(
     `[Purity] mountIslands: unknown data-pi-trigger=${JSON.stringify(raw)}, falling back to 'load'.`,
   );
@@ -173,11 +197,22 @@ function scheduleHydration(
   id: number,
   done: () => void,
 ): void {
+  // `done()` is user-supplied (onMount instrumentation). Isolate it so a
+  // throwing onMount doesn't surface as a "failed to resolve island"
+  // false positive via the outer `.catch`, and so it can't kill the
+  // hydration pipeline for *other* islands sharing the same tick.
+  const safeDone = (): void => {
+    try {
+      done();
+    } catch (err) {
+      console.error(`[Purity] mountIslands: onMount threw for island ${id}:`, err);
+    }
+  };
   const run = (): void => {
     resolveEntry(entry, id)
       .then((view) => {
         if (!view) {
-          done();
+          safeDone();
           return;
         }
         // Custom-element-rooted islands: the SSR-emitted element
@@ -197,7 +232,7 @@ function scheduleHydration(
           typeof customElements !== 'undefined' &&
           customElements.get(tag)
         ) {
-          done();
+          safeDone();
           return;
         }
         try {
@@ -205,11 +240,11 @@ function scheduleHydration(
         } catch (err) {
           console.error('[Purity] mountIslands: hydrate() threw for island', el, err);
         }
-        done();
+        safeDone();
       })
       .catch((err) => {
         console.error(`[Purity] mountIslands: failed to resolve island ${id}:`, err);
-        done();
+        safeDone();
       });
   };
   switch (trigger) {
@@ -274,11 +309,23 @@ function unwrapModule(value: unknown, id: number): View | null {
   if (typeof value === 'function') return value as View;
   if (value && typeof value === 'object') {
     const mod = value as ModuleLike;
-    if (typeof mod.default === 'function') return mod.default as View;
-    // Look for a single function export — covers `export const X = …`.
+    // Use hasOwnProperty so a prototype-polluted
+    // `Object.prototype.default = badFn` can't hijack module resolution
+    // for plain-object thunk returns (real ES module namespaces are
+    // null-proto, but synchronous test fixtures and user-supplied
+    // factories often return plain objects).
+    if (Object.prototype.hasOwnProperty.call(mod, 'default') && typeof mod.default === 'function') {
+      return mod.default as View;
+    }
+    // Look for a single function own-export — covers `export const X = …`.
+    // `Object.keys` skips inherited + non-enumerable keys, which keeps a
+    // patched prototype from contributing a phantom function export and
+    // making the count appear to be 1.
     let candidate: View | null = null;
     let count = 0;
-    for (const k in mod) {
+    const keys = Object.keys(mod);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
       if (k === 'default') continue;
       const v = mod[k];
       if (typeof v === 'function') {
@@ -315,23 +362,58 @@ function waitForVisible(el: Element, run: () => void): void {
     waitForLoad(run);
     return;
   }
+  // Re-entrancy guard shared by the IO callback and the parent-detach
+  // watcher below: whichever wins races to fire still runs disposal once.
+  let fired = false;
+  let mo: MutationObserver | null = null;
   const obs = new Ctor((entries, observer) => {
     for (let i = 0; i < entries.length; i++) {
       if (entries[i].isIntersecting) {
+        if (fired) return;
+        fired = true;
         observer.disconnect();
+        if (mo) mo.disconnect();
         run();
         return;
       }
     }
   });
   obs.observe(el);
+
+  // Bug #5: without parent-detach detection, a `<purity-island>` removed
+  // from the DOM before it intersects leaks the IntersectionObserver
+  // target — the observer stays armed and the wrapper can't be GC'd.
+  // Watch the parent's childList; when our wrapper goes missing, tear
+  // the IO down. Use the parent (not the element itself) because once an
+  // element is detached its own MutationObserver fires nothing useful.
+  // If there is no parent (mount-before-attach), skip the watcher — the
+  // GC pressure isn't there until the element has lived in a tree.
+  const MO = (globalThis as { MutationObserver?: typeof MutationObserver }).MutationObserver;
+  const parent = el.parentNode;
+  if (typeof MO === 'function' && parent) {
+    mo = new MO(() => {
+      // Cheap identity check on every mutation batch beats walking the
+      // records — we only care that the wrapper is still parented here.
+      if (el.parentNode !== parent) {
+        if (fired) return;
+        fired = true;
+        obs.unobserve(el);
+        obs.disconnect();
+        if (mo) mo.disconnect();
+      }
+    });
+    mo.observe(parent, { childList: true });
+  }
 }
 
 function waitForIdle(run: () => void): void {
-  const ric = (globalThis as { requestIdleCallback?: (cb: () => void, opts?: object) => number })
-    .requestIdleCallback;
+  const g = globalThis as { requestIdleCallback?: (cb: () => void, opts?: object) => number };
+  const ric = g.requestIdleCallback;
   if (typeof ric === 'function') {
-    ric(run, { timeout: 2000 });
+    // Invoke via `.call(g, ...)` so real browsers' `requestIdleCallback`
+    // (which requires `this === window`) doesn't throw
+    // "Illegal invocation" when we cached the function reference.
+    ric.call(g, run, { timeout: 2000 });
     return;
   }
   // Safari pre-17 lacks rIC. setTimeout(…, 1) is a close-enough proxy:
@@ -358,14 +440,18 @@ function waitForInteract(el: Element, run: () => void): void {
 }
 
 function waitForMedia(query: string, run: () => void): void {
-  const mm = (globalThis as { matchMedia?: (q: string) => MediaQueryList }).matchMedia;
+  const g = globalThis as { matchMedia?: (q: string) => MediaQueryList };
+  const mm = g.matchMedia;
   if (typeof mm !== 'function') {
     waitForLoad(run);
     return;
   }
   let mql: MediaQueryList;
   try {
-    mql = mm(query);
+    // `.call(g, ...)` so real-browser `matchMedia` (which requires
+    // `this === window`) doesn't throw "Illegal invocation" when the
+    // function reference is detached from the global.
+    mql = mm.call(g, query);
   } catch (err) {
     console.warn(`[Purity] mountIslands: invalid media query ${JSON.stringify(query)}:`, err);
     waitForLoad(run);
@@ -375,8 +461,15 @@ function waitForMedia(query: string, run: () => void): void {
     run();
     return;
   }
+  // Re-entrant guard: if `change` fires twice in the same tick (a
+  // browser quirk we've seen on focus/orientation flips) the listener
+  // body still only runs `run()` once. Without this, a slow
+  // resolveEntry path could hand the same wrapper to `hydrate()` twice
+  // before `removeEventListener` took effect.
+  let fired = false;
   const handler = (e: MediaQueryListEvent): void => {
-    if (!e.matches) return;
+    if (fired || !e.matches) return;
+    fired = true;
     mql.removeEventListener('change', handler);
     run();
   };

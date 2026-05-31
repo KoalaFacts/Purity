@@ -90,22 +90,16 @@ describe('localeSignal (ADR 0041)', () => {
     const removeSpy = vi.spyOn(window, 'removeEventListener');
     try {
       localeSignal();
-      const addsAfterFirst = addSpy.mock.calls.filter(
-        (c) => c[0] === 'languagechange',
-      ).length;
+      const addsAfterFirst = addSpy.mock.calls.filter((c) => c[0] === 'languagechange').length;
       expect(addsAfterFirst).toBe(1);
 
       _resetLocaleSignal();
-      const removes = removeSpy.mock.calls.filter(
-        (c) => c[0] === 'languagechange',
-      ).length;
+      const removes = removeSpy.mock.calls.filter((c) => c[0] === 'languagechange').length;
       expect(removes).toBe(1);
 
       // Re-binding after reset adds exactly one more listener — no drift.
       localeSignal();
-      const addsAfterSecond = addSpy.mock.calls.filter(
-        (c) => c[0] === 'languagechange',
-      ).length;
+      const addsAfterSecond = addSpy.mock.calls.filter((c) => c[0] === 'languagechange').length;
       expect(addsAfterSecond).toBe(2);
     } finally {
       addSpy.mockRestore();
@@ -127,9 +121,7 @@ describe('localeSignal (ADR 0041)', () => {
   });
 
   it('rolls back cleanly if `addEventListener` throws (no half-bound state)', () => {
-    const addSpy = vi.spyOn(window, 'addEventListener').mockImplementation(((
-      type: string,
-    ) => {
+    const addSpy = vi.spyOn(window, 'addEventListener').mockImplementation(((type: string) => {
       if (type === 'languagechange') throw new Error('boom');
     }) as unknown as typeof window.addEventListener);
     const consoleErr = vi.spyOn(console, 'error').mockImplementation(() => {});

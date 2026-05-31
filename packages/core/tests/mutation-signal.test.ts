@@ -81,9 +81,9 @@ describe('mutationSignal — audit-v2 hardening', () => {
     // error before construction so the call site is identifiable.
     const el = document.createElement('div');
     expect(() => mutationSignal(el, {} as MutationObserverInit)).toThrow(/mutationSignal/);
-    expect(() =>
-      mutationSignal(el, { subtree: true } as MutationObserverInit),
-    ).toThrow(/childList|attributes|characterData/);
+    expect(() => mutationSignal(el, { subtree: true } as MutationObserverInit)).toThrow(
+      /childList|attributes|characterData/,
+    );
   });
 
   it('disconnects the observer when the surrounding component unmounts', () => {

@@ -505,5 +505,4 @@ describe('optimistic — audit-v2 hardening', () => {
     expect(errSpy).toHaveBeenCalled();
     errSpy.mockRestore();
   });
-
 });

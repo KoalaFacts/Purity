@@ -48,8 +48,7 @@ export function mutationSignal(
   // attributes, or characterData is true. Validate up front so we surface
   // a useful message at the call site instead of a native TypeError that
   // points back into the observer callback registration.
-  const resolved: MutationObserverInit =
-    options === undefined ? { childList: true } : options;
+  const resolved: MutationObserverInit = options === undefined ? { childList: true } : options;
   if (!resolved.childList && !resolved.attributes && !resolved.characterData) {
     throw new TypeError(
       '[Purity] mutationSignal(target, options): at least one of childList, attributes, or characterData must be true.',

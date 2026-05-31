@@ -129,14 +129,12 @@ describe('pageVisibilitySignal — client (ADR 0039)', () => {
   it('returns a constant fallback when document.addEventListener is missing', () => {
     const original = document.addEventListener;
     // Simulate a broken document API surface.
-    (document as unknown as { addEventListener: unknown }).addEventListener =
-      undefined;
+    (document as unknown as { addEventListener: unknown }).addEventListener = undefined;
     try {
       const v = pageVisibilitySignal();
       expect(v()).toBe('visible');
     } finally {
-      (document as unknown as { addEventListener: typeof original }).addEventListener =
-        original;
+      (document as unknown as { addEventListener: typeof original }).addEventListener = original;
     }
   });
 });

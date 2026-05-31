@@ -22,11 +22,7 @@
 // thunk that resolves once the new route's data has settled.
 // ---------------------------------------------------------------------------
 
-import {
-  _setNavigateWrapper,
-  type NavigateWrapper,
-  type NavigateWrapperToken,
-} from './router.ts';
+import { _setNavigateWrapper, type NavigateWrapper, type NavigateWrapperToken } from './router.ts';
 
 /** Options for {@link manageNavTransitions}. */
 export interface ManageNavTransitionsOptions {

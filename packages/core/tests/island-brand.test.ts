@@ -325,10 +325,7 @@ describe('island() — audit-v2 Bug #14: shared trigger allow-list', () => {
     // duplicate can't quietly come back.
     const fs = await import('node:fs');
     const path = await import('node:path');
-    const src = fs.readFileSync(
-      path.resolve(__dirname, '../src/island-mount.ts'),
-      'utf8',
-    );
+    const src = fs.readFileSync(path.resolve(__dirname, '../src/island-mount.ts'), 'utf8');
     // Imports the shared constant from island.ts.
     expect(src).toMatch(/from '\.\/island\.ts'/);
     expect(src).toMatch(/ISLAND_TRIGGERS/);
@@ -344,9 +341,7 @@ describe('island() — audit-v2 Bug #14: shared trigger allow-list', () => {
     // ISLAND_TRIGGERS, all four canonical literals round-trip cleanly.
     const { mountIslands } = await import('../src/island-mount.ts');
     const View = () => html`<span>x</span>`;
-    const warn = (await import('vitest')).vi
-      .spyOn(console, 'warn')
-      .mockImplementation(() => {});
+    const warn = (await import('vitest')).vi.spyOn(console, 'warn').mockImplementation(() => {});
     for (const t of ['load', 'idle', 'visible', 'interact'] as const) {
       const host = document.createElement('div');
       host.innerHTML = `<purity-island data-pi-id="1" data-pi-trigger="${t}" style="display:contents"><span>x</span></purity-island>`;

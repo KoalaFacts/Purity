@@ -249,9 +249,7 @@ describe('resizeSignal — client (ADR 0040)', () => {
       }),
     });
     const sig = resizeSignal(el);
-    expect(() =>
-      instances[0].callback([], { } as ResizeObserver),
-    ).not.toThrow();
+    expect(() => instances[0].callback([], {} as ResizeObserver)).not.toThrow();
     expect(() =>
       instances[0].callback(
         [{ target: el } as unknown as ResizeObserverEntry],

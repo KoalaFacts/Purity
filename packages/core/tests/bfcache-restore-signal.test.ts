@@ -135,15 +135,13 @@ describe('bfcacheRestoreSignal (ADR 0039)', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const original = window.addEventListener.bind(window);
     // Patch only `pageshow` registrations so the rest of the env keeps working.
-    const spy = vi
-      .spyOn(window, 'addEventListener')
-      .mockImplementation(((
-        type: string,
-        ...rest: Parameters<typeof window.addEventListener>
-      ) => {
-        if (type === 'pageshow') throw new Error('addEventListener forbidden');
-        return original(type as keyof WindowEventMap, ...(rest as []));
-      }) as typeof window.addEventListener);
+    const spy = vi.spyOn(window, 'addEventListener').mockImplementation(((
+      type: string,
+      ...rest: Parameters<typeof window.addEventListener>
+    ) => {
+      if (type === 'pageshow') throw new Error('addEventListener forbidden');
+      return original(type as keyof WindowEventMap, ...(rest as []));
+    }) as typeof window.addEventListener);
 
     const s1 = bfcacheRestoreSignal();
     // Returned accessor still works (non-singleton fallback) and starts at 0.

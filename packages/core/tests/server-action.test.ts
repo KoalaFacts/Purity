@@ -244,9 +244,9 @@ describe('action.invoke() — client-side fetch helper', () => {
 
 describe('audit-v2: URL scheme allow-list', () => {
   it('rejects javascript: URLs at registration time', () => {
-    expect(() =>
-      serverAction('javascript:alert(1)', async () => new Response()),
-    ).toThrow(/scheme|allowed|path/);
+    expect(() => serverAction('javascript:alert(1)', async () => new Response())).toThrow(
+      /scheme|allowed|path/,
+    );
   });
 
   it('rejects data: URLs at registration time', () => {
@@ -256,12 +256,12 @@ describe('audit-v2: URL scheme allow-list', () => {
   });
 
   it('rejects blob: and file: URLs at registration time', () => {
-    expect(() =>
-      serverAction('blob:https://evil.example/abc', async () => new Response()),
-    ).toThrow(/scheme|allowed|path/);
-    expect(() =>
-      serverAction('file:///etc/passwd', async () => new Response()),
-    ).toThrow(/scheme|allowed|path/);
+    expect(() => serverAction('blob:https://evil.example/abc', async () => new Response())).toThrow(
+      /scheme|allowed|path/,
+    );
+    expect(() => serverAction('file:///etc/passwd', async () => new Response())).toThrow(
+      /scheme|allowed|path/,
+    );
   });
 
   it('accepts path-style URLs (the common case)', () => {
@@ -269,31 +269,29 @@ describe('audit-v2: URL scheme allow-list', () => {
   });
 
   it('accepts absolute http(s) URLs', () => {
-    expect(() => serverAction('https://api.example.com/save', async () => new Response())).not.toThrow();
-    expect(() => serverAction('http://localhost:3000/save', async () => new Response())).not.toThrow();
+    expect(() =>
+      serverAction('https://api.example.com/save', async () => new Response()),
+    ).not.toThrow();
+    expect(() =>
+      serverAction('http://localhost:3000/save', async () => new Response()),
+    ).not.toThrow();
   });
 });
 
 describe('audit-v2: header / response-splitting injection guard', () => {
   it('rejects URLs containing CR/LF (response-splitting)', () => {
-    expect(() =>
-      serverAction('/api/x\r\nHost: evil', async () => new Response()),
-    ).toThrow(/control characters/);
-    expect(() =>
-      serverAction('/api/x\nLocation: //evil', async () => new Response()),
-    ).toThrow(/control characters/);
+    expect(() => serverAction('/api/x\r\nHost: evil', async () => new Response())).toThrow(
+      /control characters/,
+    );
+    expect(() => serverAction('/api/x\nLocation: //evil', async () => new Response())).toThrow(
+      /control characters/,
+    );
   });
 
   it('rejects URLs containing NUL or other C0 control bytes', () => {
-    expect(() => serverAction('/api/ x', async () => new Response())).toThrow(
-      /control characters/,
-    );
-    expect(() => serverAction('/api/x', async () => new Response())).toThrow(
-      /control characters/,
-    );
-    expect(() => serverAction('/api/x', async () => new Response())).toThrow(
-      /control characters/,
-    );
+    expect(() => serverAction('/api/ x', async () => new Response())).toThrow(/control characters/);
+    expect(() => serverAction('/api/x', async () => new Response())).toThrow(/control characters/);
+    expect(() => serverAction('/api/x', async () => new Response())).toThrow(/control characters/);
   });
 });
 

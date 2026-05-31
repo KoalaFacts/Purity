@@ -104,7 +104,7 @@ export function optimistic<TArgs>(
             try {
               rollback();
             } catch (err) {
-              console.error('[purity] optimistic rollback threw:', err);
+              console.error('[Purity] optimistic rollback threw:', err);
             }
           }
           options.onSettle?.(args, response, undefined);
@@ -116,7 +116,7 @@ export function optimistic<TArgs>(
           try {
             rollback();
           } catch (err) {
-            console.error('[purity] optimistic rollback threw:', err);
+            console.error('[Purity] optimistic rollback threw:', err);
           }
         }
         options.onSettle?.(args, undefined, error);

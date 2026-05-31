@@ -224,7 +224,7 @@ export function localSignal<T>(
     try {
       storage.setItem(key, encode(value, serialize, version));
     } catch (err) {
-      console.error('[purity] localSignal failed to write', key, err);
+      console.error('[Purity] localSignal failed to write', key, err);
     }
   };
 

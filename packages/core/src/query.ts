@@ -189,7 +189,7 @@ function warnOnConfigMismatch<T>(
   for (const [name, n, e] of cases) {
     if (!Object.is(n, e)) {
       console.warn(
-        `[purity] query('${keyStr}') called again with a different ${name}; the first call's value wins.`,
+        `[Purity] query('${keyStr}') called again with a different ${name}; the first call's value wins.`,
       );
       return;
     }

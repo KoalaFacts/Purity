@@ -54,7 +54,7 @@ export function permissionSignal(
       status.addEventListener('change', () => inner(status.state));
     })
     .catch((err) => {
-      console.error('[purity] permissionSignal query failed for', key, err);
+      console.error('[Purity] permissionSignal query failed for', key, err);
       if (cache.get(key) === accessor) cache.delete(key);
     });
   return accessor;

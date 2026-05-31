@@ -99,12 +99,12 @@ export function webSocketSignal<T>(
     try {
       parsed = parse(e.data);
     } catch (err) {
-      console.warn(`[purity] webSocketSignal('${label}') failed to parse:`, err);
+      console.warn(`[Purity] webSocketSignal('${label}') failed to parse:`, err);
       return;
     }
     if (!validate(parsed)) {
       console.warn(
-        `[purity] webSocketSignal('${label}') dropped incoming message — failed validator`,
+        `[Purity] webSocketSignal('${label}') dropped incoming message — failed validator`,
       );
       return;
     }
@@ -117,7 +117,7 @@ export function webSocketSignal<T>(
     try {
       ws = new WebSocket(url, options.protocols);
     } catch (err) {
-      console.warn(`[purity] webSocketSignal('${label}') failed to open:`, err);
+      console.warn(`[Purity] webSocketSignal('${label}') failed to open:`, err);
       stateAccessor('closed');
       ws = null;
       return;
@@ -135,7 +135,7 @@ export function webSocketSignal<T>(
     try {
       closing.close();
     } catch (err) {
-      console.warn(`[purity] webSocketSignal('${label}') close failed:`, err);
+      console.warn(`[Purity] webSocketSignal('${label}') close failed:`, err);
     }
   };
 
@@ -144,13 +144,13 @@ export function webSocketSignal<T>(
   const accessor = compute(() => inner()) as WebSocketSignal<T>;
   accessor.send = (data: string | Blob | BufferSource): void => {
     if (!ws || stateAccessor.peek() !== 'open') {
-      console.warn(`[purity] webSocketSignal('${label}').send() — socket is not open; dropping`);
+      console.warn(`[Purity] webSocketSignal('${label}').send() — socket is not open; dropping`);
       return;
     }
     try {
       ws.send(data);
     } catch (err) {
-      console.warn(`[purity] webSocketSignal('${label}').send() failed:`, err);
+      console.warn(`[Purity] webSocketSignal('${label}').send() failed:`, err);
     }
   };
   accessor.readyState = () => stateAccessor();

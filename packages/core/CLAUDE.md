@@ -1,8 +1,8 @@
 # @purityjs/core
 
-Purity core framework — 53 functions, no virtual DOM, TC39-Signals-inspired reactivity.
+Purity core framework — no virtual DOM, TC39-Signals-inspired reactivity.
 
-## API (53 functions)
+## API
 
 ```ts
 state(initial)              // read: count(), write: count(5), update: count(v => v+1)

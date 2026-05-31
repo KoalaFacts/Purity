@@ -393,6 +393,61 @@ describe('suspense() — client + hydration', () => {
     expect(out).not.toContain('"late":"LATE-VALUE"');
   });
 
+  it('does not let a late-resolving resource mutate the SSR cache after its boundary view throws', async () => {
+    // Sibling of the timeout-path test above. The boundary-scoped abort
+    // fix only marked `timedOutBoundaries` on the deadline-race branch
+    // in render-to-string.ts; the throw branch in control.ts's
+    // suspense() also commits to a fallback but never marked the
+    // boundary, so a resource() registered inside view() before its
+    // synchronous throw would still mutate `resolvedDataByKey` when
+    // its fetcher settled later. Same corruption shape — late value
+    // leaks into __purity_resources__ and (in the sibling-await
+    // window) into the rendered HTML.
+    //
+    // Driver: a boundary whose view registers a resource then throws
+    // synchronously, alongside a sibling whose resource resolves at
+    // 30ms. The first boundary's throw fires immediately; the render
+    // waits for the sibling — during that window the first boundary's
+    // 15ms fetch settles. Without the guard, its `.then()` writes
+    // `LATE-VALUE` into `resolvedDataByKey['late-throw']` and it
+    // leaks into the serialized payload.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const out = await renderToString(
+        () =>
+          ssrHtml`<main>${suspense(
+            () => {
+              resource(
+                () => new Promise<string>((resolve) => setTimeout(() => resolve('LATE-VALUE'), 15)),
+                { key: 'late-throw' },
+              );
+              throw new Error('view boom');
+            },
+            () => ssrHtml`<aside class="loading">FB</aside>`,
+          )}${suspense(
+            () => {
+              const k = resource(
+                () => new Promise<string>((resolve) => setTimeout(() => resolve('SIB'), 30)),
+                { key: 'sibling-throw' },
+              );
+              return ssrHtml`<aside>${() => k() ?? '...'}</aside>`;
+            },
+            () => ssrHtml`<aside>SIB-FB</aside>`,
+            { timeout: 200 },
+          )}</main>`,
+      );
+      // First boundary fell through to its fallback…
+      expect(out).toContain('<aside class="loading">FB</aside>');
+      // …and the sibling resolved normally.
+      expect(out).toContain('<aside><!--[-->SIB<!--]--></aside>');
+      // Smoking gun: the late-arriving 'LATE-VALUE' must NOT appear.
+      expect(out).not.toContain('LATE-VALUE');
+      expect(out).not.toContain('"late-throw":"LATE-VALUE"');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('hydrates nested suspense boundaries with marker stripping at each level', async () => {
     const ssr = await renderToString(
       () =>

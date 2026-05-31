@@ -2027,6 +2027,15 @@ export function suspense<T>(
         `[Purity] suspense() view threw during SSR (boundary ${id}); rendering fallback:`,
         err,
       );
+      // Mark the boundary as cancelled so any resource() registered
+      // inside view() before the throw — whose fetcher is still in
+      // flight — has its `.then()` short-circuit instead of writing
+      // into the shared `resolvedDataByKey` after we've already
+      // committed to the fallback. Same semantic guarantee as the
+      // timeout path in render-to-string.ts; widens the Set's meaning
+      // from "boundary that lost its deadline race" to "boundary
+      // whose view will not be rendered, so its late writes are stale".
+      ssrCtx.timedOutBoundaries.add(id);
       // The fallback() runs AFTER the finally below pops the boundary
       // id, so its own resources are scoped to the surrounding (outer)
       // boundary, not this failed one. This matches the existing

@@ -443,6 +443,14 @@ async function renderBoundary(
             'rendering fallback for this boundary.',
           err,
         );
+        // Mark the boundary as cancelled so any resource() registered
+        // inside view() before the throw — whose fetcher is still in
+        // flight — has its `.then()` short-circuit instead of writing
+        // into the boundary-scoped `resolvedDataByKey` we'd otherwise
+        // serialize alongside the retry's fallback chunk. Mirrors the
+        // sync-SSR fix in `control.ts` so streaming and non-streaming
+        // agree on what "this boundary's resources are stale" means.
+        timedOutBoundaries.add(boundaryId);
         viewTimedOut = true;
         viewThrewNeedsRetry = true;
       }

@@ -144,8 +144,10 @@ export function configureNavigation(options: ConfigureNavigationOptions = {}): (
   // useful default without a routes manifest. Catch it at runtime so a
   // miswired call doesn't silently fall through to `routes: undefined`
   // (which would crash inside prefetchManifestLinks). The TS union
-  // already forbids `true`; this guards against JS callers / `as any`.
-  if (prefetch === true) {
+  // already forbids `true`; the `as unknown` cast acknowledges that
+  // this guard is for JS callers / `as any` escapes, not for
+  // type-checked code.
+  if ((prefetch as unknown) === true) {
     throw new TypeError(
       'configureNavigation: `prefetch: true` is not supported — pass `{ routes }` or omit the key.',
     );

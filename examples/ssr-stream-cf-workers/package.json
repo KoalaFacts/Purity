@@ -13,7 +13,7 @@
     "@purityjs/ssr": "*"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260527.1",
+    "@cloudflare/workers-types": "^4.20260604.1",
     "@purityjs/vite-plugin": "*",
     "vite": "^8.0.14",
     "wrangler": "^4.95.0"

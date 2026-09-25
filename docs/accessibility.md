@@ -1,9 +1,8 @@
 # Accessibility under Shadow DOM
 
-> **Status:** Working notes, not an audited guide. Purity has not yet been
-> tested at scale by accessibility engineers. The patterns below are
-> what's known to work in the platform; if you find a case that breaks
-> in a specific screen reader, please open an issue.
+> **Status:** Browser checks cover the fixtures below. NVDA and VoiceOver
+> behavior has not been verified, and this is not an application-wide
+> accessibility certification.
 
 Custom Elements with Shadow DOM (the default in `component()`) come with
 real accessibility constraints. This page covers the patterns we know
@@ -11,43 +10,56 @@ work and the ones we know don't.
 
 ## The fundamental constraint
 
-**ID references don't cross shadow boundaries.** Each shadow tree is its
-own ID scope. So this **does not work**:
+An ID reference in an ARIA attribute resolves in the element's own DOM scope.
+This reference on an input **inside** a shadow root does not reach the label
+outside it:
 
 ```html
 <!-- Light DOM -->
 <label id="full-name">Full name</label>
-<p-input aria-labelledby="full-name"></p-input>
-<!-- ❌ inside the input's shadow root, "full-name" is undefined -->
+<p-input></p-input>
+<!-- Inside p-input's shadow root: -->
+<input aria-labelledby="full-name" />
+<!-- The input cannot resolve full-name from here. -->
 ```
 
-The same applies in reverse — an `aria-controls` from inside a shadow
-root cannot point at an `id` in the light DOM.
+`<p-input aria-labelledby="full-name">` is different: the attribute is on
+the **host** in light DOM, so it can resolve the light-DOM label. That does
+not automatically give a focused `<input>` inside the shadow root an
+accessible name. Keep the control's own label inside its shadow root, or
+pass a text label into the component. Reflected element-reference properties
+can reference an ancestor DOM in supporting browsers, but need browser and
+assistive-technology verification.
 
 ## Patterns that work
 
-### 1. `aria-label` over `aria-labelledby` for cross-boundary cases
+### 1. Give the internal control a native label
 
-When the labeling element lives in a different scope, use the textual
-attribute instead of the ID reference:
+The most dependable pattern for a form control is a visible label and input
+in the same shadow root:
 
 ```ts
-component<{ label: string }>('p-input', ({ label }) => {
-  return html` <input aria-label=${label} /> `;
-});
+component<{ label: string }>(
+  'p-input',
+  ({ label }) => {
+    return html`<label>${label}<input /></label>`;
+  },
+  { delegatesFocus: true },
+);
 
-// Consumer just passes the label as a string:
+// The consumer supplies readable text, not a cross-root ID:
 html`<p-input :label=${'Full name'}></p-input>`;
 ```
 
-This costs a `string` instead of an ID reference, which is fine for
-short labels. For long descriptions, prefer pattern 2.
+If a visible internal label is unsuitable, set `aria-label` on the internal
+control from a component prop. Do not assume a label on the host is forwarded
+to its shadow descendants.
 
-### 2. Mirror ARIA on the host
+### 2. Keep host and internal semantics separate
 
-The host element is in the light DOM; ARIA attributes set on it ARE
-visible to the parent context. So you can expose a typed `aria-*` prop
-that the consumer writes on the host:
+The host element is in light DOM, so its own ARIA ID references can target
+light-DOM elements. A focused control inside the shadow root still needs
+its own accessible name:
 
 ```ts
 component<{ 'aria-label'?: string }>('p-toggle', ({ 'aria-label': ariaLabel }) => {
@@ -59,11 +71,8 @@ component<{ 'aria-label'?: string }>('p-toggle', ({ 'aria-label': ariaLabel }) =
 });
 ```
 
-In our testing this avoids the ID-scope problem that
-`aria-labelledby="…"` runs into across the boundary. We default to it in
-Purity examples for text inputs, buttons, and disclosure widgets — but
-the framework has not yet been a11y-audited at scale, so treat this as a
-working recommendation, not a guarantee.
+This example copies label text to the internal button. It does not copy an
+ID reference across the boundary.
 
 ### 3. ID references **inside** a single shadow root
 
@@ -97,8 +106,8 @@ tree.
 
 ## Focus management
 
-Custom Elements with Shadow DOM have a few focus-related affordances we
-should know about, even though Purity doesn't yet wire them automatically.
+Custom Elements with Shadow DOM have focus-related affordances. Purity
+exposes one of them as an option.
 
 ### `delegatesFocus`
 
@@ -106,10 +115,57 @@ Setting `attachShadow({ mode: 'open', delegatesFocus: true })` makes the
 host element forward focus to its first focusable descendant when the
 host is focused — useful for form-like wrappers around real inputs.
 
-**Purity currently does not enable `delegatesFocus`** ([elements.ts](../packages/core/src/elements.ts)
-attaches with `{ mode: 'open' }` only). If you need it, you'd have to
-write a Custom Element class manually for that component. We'll consider
-exposing this as a `component()` option pre-1.0 if there's demand.
+Enable it for components that should forward host focus into their shadow tree:
+
+```ts
+component('p-input', () => html`<input aria-label="Name" />`, {
+  delegatesFocus: true,
+});
+```
+
+Purity also emits `shadowrootdelegatesfocus` during SSR so the behavior is
+present before hydration. This only changes focus delegation; it does not
+associate labels or submit form values.
+
+## Form controls
+
+Opt in when a component wraps one native input, select, or textarea:
+
+```ts
+component('p-name-field', () => html`<label>Full name <input required /></label>`, {
+  formControl: true,
+});
+
+html`<form><p-name-field name="fullName"></p-name-field></form>`;
+```
+
+Purity makes the host a form-associated custom element and mirrors the
+internal control's submission value and validity through `ElementInternals`.
+It also handles input/change events, form reset, restored text state, and
+disabled forms or fieldsets. `formControl: true` selects the first native
+control; use a CSS selector such as `{ formControl: 'input.primary' }` when
+the component contains several. Focus delegation is enabled for these
+components unless `delegatesFocus: false` is explicit.
+The host exposes `.value` and, for checkable inputs, `.checked`; assigning
+these properties updates the internal control and form value.
+It also exposes `.form`, `.labels`, `.validity`, `.validationMessage`,
+`.willValidate`, `.checkValidity()`, and `.reportValidity()`.
+
+Use a visible native label inside the component when possible. If the
+internal control has no label, Purity copies the host's accessible name
+from `aria-labelledby`, `aria-label`, or an associated external `<label>`.
+This is a text fallback; keep the internal label when you can. The
+host's `name` attribute identifies the form value.
+
+The bridge follows native user `input` and `change` events. If code changes
+the **internal** control's `.value`, `.checked`, or selected options directly,
+dispatch the matching event so the host's form value and validity update.
+This is a current limitation for programmatic DOM writes, including some
+reactive property bindings. Composite controls with multiple independent
+values still need a dedicated design; use native controls in light DOM for
+those cases.
+Same-name radio components in the same form are mutually exclusive; the
+bridge clears the previous selection when another radio is checked.
 
 ### Tab order across boundaries
 
@@ -158,12 +214,14 @@ component<{ tabs: Tab[] }, { default: { tabId: string } }>(
     };
 
     return html`
-      <div role="tablist" @keydown=${onKey}>
+      <div role="tablist" aria-label="Sections" @keydown=${onKey}>
         ${each(
           () => tabs,
           (t) => html`
             <button
               role="tab"
+              id=${() => `tab-${t().id}`}
+              aria-controls="panel"
               data-tab-id=${() => t().id}
               :aria-selected=${() => (active() === t().id ? 'true' : 'false')}
               .tabIndex=${() => (active() === t().id ? 0 : -1)}
@@ -175,7 +233,7 @@ component<{ tabs: Tab[] }, { default: { tabId: string } }>(
           (t) => t.id,
         )}
       </div>
-      <div role="tabpanel" :aria-labelledby=${() => `tab-${active()}`}>
+      <div id="panel" role="tabpanel" :aria-labelledby=${() => `tab-${active()}`}>
         ${() => panel({ tabId: active() })}
       </div>
     `;
@@ -196,33 +254,83 @@ component<{ tabs: Tab[] }, { default: { tabId: string } }>(
 
 **Still rough / known caveats:**
 
-- No `aria-controls` linking each tab button to its panel. Single-panel
-  tabs (this example) can use `aria-labelledby` from the panel back to
-  the active tab; for multi-panel layouts, add `aria-controls` per tab
-  pointing at its panel ID.
-- The component does not enable `delegatesFocus`. If you need the host
-  itself to be focusable and forward to the active tab, you'd write a
-  manual Custom Element class today (see "Known gaps" below).
+- The example uses one panel. For multiple panels, give each tab and panel
+  matching `aria-controls`/`aria-labelledby` references in the same root.
+- To forward focus from the host to the active tab, set
+  `{ delegatesFocus: true }` when registering the component.
 
 ## Known gaps
 
 These are real limitations of the current implementation, not bugs:
 
-1. **No `delegatesFocus` option on `component()`.** Workaround: hand-roll
-   the Custom Element class. We may expose this as `component(tag, fn,
-{ delegatesFocus: true })` pre-1.0.
-2. **No Declarative Shadow DOM SSR.** Bots that don't run JS see empty
-   `<p-foo></p-foo>` tags. SEO-critical content should live in light
-   DOM (via `mount` + `html`) until SSR ships.
-3. **No automated a11y checks in the test suite.** We don't run `axe`
-   or `pa11y` against rendered components yet.
-4. **Form-associated custom elements not wired up.** `<input>` inside a
-   shadow root won't participate in the host `<form>`. Use light-DOM
-   `<input>` elements for form-heavy use cases.
+1. **SSR is a separate package.** `@purityjs/ssr` can render components
+   with Declarative Shadow DOM; the core package does not include a server
+   renderer. See the [SSR guide](../packages/ssr/README.md) for supported
+   rendering and hydration paths.
+2. **Automated checks are partial.** Run `npm run a11y -- <page-url> all`
+   from `benchmark` to scan Chromium, Firefox, and WebKit with axe-core.
+   `npm run a11y:matrix -- <benchmark-base-url>` checks the measurable
+   visual and complex-form scenarios. Actual browser zoom, operating-system
+   high contrast, and screen-reader behavior are not covered by those commands.
+3. **Form bridge scope.** `{ formControl: true }` supports one selected native
+   input, select, or textarea. Libraries that walk only light DOM still
+   cannot find the internal control. Programmatic DOM value writes need an
+   input/change event; composite controls need their own value mapping.
+
+## Browser audit (2026-09-25)
+
+The [short form](../benchmark/a11y/form.html),
+[SSR form](../benchmark/a11y/ssr-form.html), and
+[complex form](../benchmark/a11y/complex.html) were checked in Chromium
+148.0.7778.96, Firefox 150.0.2, and WebKit 26.4. The repeatable commands are
+documented in [benchmark tools](../benchmark/tools/README.md).
+
+| Measured check                                   | Result across three engines                                                                                                                                                                                                    |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Short form and SSR form                          | axe-core: zero violations and zero incomplete rules. Short form passed 28 rules; SSR form passed 21.                                                                                                                           |
+| Complex form                                     | axe-core: zero violations, 33 rules passed. WebKit left one `color-contrast` result incomplete for the native multiple-select.                                                                                                 |
+| 320 CSS pixel viewport                           | Zero page horizontal overflow; zero shadow controls outside the viewport.                                                                                                                                                      |
+| 200% root text-size simulation at 320 CSS pixels | Visible label and input font sizes doubled; zero horizontal overflow. This simulates text resizing, not browser zoom.                                                                                                          |
+| Emulated `forced-colors: active`                 | Mode active; first keyboard-focused control stayed in view with a nonzero outline (Chromium/Firefox 1px, WebKit 3px). This does not run the operating system's high-contrast setting.                                          |
+| Multiple-select computed colors                  | Text/background contrast ratio 18.88:1 in CSS in all three engines. This supplements, but does not resolve, WebKit axe's incomplete native-control result.                                                                     |
+| Complex form                                     | 3 invalid fields identified; focus moved to first invalid; invalid age/email constraints detected; 10 values submitted; 0 disabled values; 1 dynamic value; 1 radio value; 6 reset fields; removal excluded the dynamic value. |
+| SSR upgrade                                      | The Declarative Shadow DOM field continued submitting its edited value after client upgrade.                                                                                                                                   |
+
+The matrix reports **21 passed, 0 failed** for these fixtures. It records
+individual metrics as JSON and exits unsuccessfully on a failed scenario.
+These counts describe the listed fixture operations, not WCAG conformance of
+every Purity application. In particular, a 320 CSS pixel viewport is the
+reflow test size from [WCAG 1.4.10](https://www.w3.org/WAI/WCAG21/Understanding/reflow),
+but the text-size change and forced colors are browser simulations. Actual
+400% browser zoom, Windows High Contrast, NVDA, and VoiceOver have **not**
+been run.
+
+### Screen-reader acceptance criteria, specified but not verified
+
+For future NVDA and VoiceOver runs, use the complex form and record each
+browser/assistive-technology combination separately. A pass requires the
+user to finish the task with the assistive technology alone; exact spoken
+phrasing can differ between products.
+
+| Task                      | Expected behavior                                                                                                         | Status                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Find and enter each field | Name, role, required state, value, and group context are discoverable; keyboard navigation reaches every enabled control. | Not verified in NVDA or VoiceOver |
+| Submit invalid data       | Errors identify the affected fields; focus reaches the first error; the user can understand and correct each error.       | Not verified in NVDA or VoiceOver |
+| Complete mixed controls   | Radio choices are exclusive; multiple selections, file name, and dynamic field are understandable and operable.           | Not verified in NVDA or VoiceOver |
+| Reset and submit          | Updated state and result are perceivable without relying on sight or color alone.                                         | Not verified in NVDA or VoiceOver |
+
+These expectations follow the WAI guidance on
+[labels](https://www.w3.org/WAI/tutorials/forms/labels/),
+[groups](https://www.w3.org/WAI/tutorials/forms/grouping/),
+[instructions](https://www.w3.org/WAI/tutorials/forms/instructions/), and
+[validation](https://www.w3.org/WAI/tutorials/forms/validation/). Browser
+accessibility-tree checks and axe results are useful evidence, but they do
+not substitute for an actual NVDA or VoiceOver run.
 
 ## Linting / testing tips
 
-Until automated a11y is in the test suite, the practical advice:
+The browser scanner catches many common issues, but cannot prove full
+accessibility. Also check these interactions manually:
 
 - **Run `axe` manually** in your dev tools on each page. The "Issues"
   panel in Chrome / Firefox surfaces ARIA scope problems.

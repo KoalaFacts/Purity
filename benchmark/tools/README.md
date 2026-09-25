@@ -50,6 +50,29 @@ DOM deltas, and the top-N hot functions by self time.
 node tools/compare.ts <scenario>
 ```
 
+## Accessibility fixtures
+
+Run the benchmark development server, then scan the form fixtures in all
+three Playwright browser engines:
+
+```bash
+npm run dev
+npm run a11y -- http://localhost:5173/Purity/a11y/form.html all
+npm run a11y -- http://localhost:5173/Purity/a11y/ssr-form.html all
+npm run a11y -- http://localhost:5173/Purity/a11y/complex.html all
+npm run a11y:form -- http://localhost:5173/Purity/
+npm run a11y:matrix -- http://localhost:5173/Purity/
+```
+
+Install missing browser engines with `npx playwright install firefox webkit`.
+The scanner reports axe-core findings, including incomplete rules. The
+matrix prints per-scenario metrics as JSON and fails when an assertion fails.
+It uses a 320 CSS pixel viewport for reflow, 200% root font size as a text
+resize proxy, and browser-emulated forced colors. These do not verify actual
+browser zoom, operating-system high contrast, NVDA, or VoiceOver. See the
+[accessibility audit](../../docs/accessibility.md) for results and the
+screen-reader acceptance criteria that remain unverified.
+
 ## Functional sanity check
 
 ```bash

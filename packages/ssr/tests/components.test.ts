@@ -16,6 +16,19 @@ describe('component SSR — Declarative Shadow DOM', () => {
     );
   });
 
+  it('preserves focus delegation in Declarative Shadow DOM', async () => {
+    component('ssr-focus-1', () => html`<button>Action</button>`, { delegatesFocus: true });
+    const out = await renderToString(() => html`<ssr-focus-1></ssr-focus-1>`);
+    expect(out).toContain('<template shadowrootmode="open" shadowrootdelegatesfocus>');
+  });
+
+  it('delegates focus for a form control in Declarative Shadow DOM', async () => {
+    component('ssr-field-1', () => html`<label>Name<input /></label>`, { formControl: true });
+    const out = await renderToString(() => html`<ssr-field-1 name="person"></ssr-field-1>`);
+    expect(out).toContain('<template shadowrootmode="open" shadowrootdelegatesfocus>');
+    expect(out).toContain('<input');
+  });
+
   it('renders default slot content', async () => {
     component('ssr-card-2', (_props, { default: body }) => html`<div>${body()}</div>`);
     const out = await renderToString(() => html`<ssr-card-2><p>slot body</p></ssr-card-2>`);

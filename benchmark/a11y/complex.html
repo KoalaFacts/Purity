@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Purity complex form accessibility</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 1rem;
+      }
+      main {
+        max-width: 42rem;
+        margin: auto;
+      }
+      form {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1rem;
+      }
+      form > * {
+        min-width: 0;
+        max-width: 100%;
+      }
+      fieldset {
+        min-width: 0;
+      }
+      button {
+        padding: 0.5rem 0.75rem;
+      }
+      :focus-visible {
+        outline: 3px solid currentColor;
+        outline-offset: 2px;
+      }
+      @media (forced-colors: active) {
+        :focus-visible {
+          outline-color: Highlight;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Profile form</h1>
+      <p>Fields marked required must be completed before submitting.</p>
+      <form id="profile" novalidate>
+        <p-named-field name="fullName"></p-named-field>
+        <label for="email">Email (required)</label>
+        <p-email-field id="email" name="email"></p-email-field>
+        <p-age-field name="age"></p-age-field>
+        <p-notes-field name="notes"></p-notes-field>
+        <fieldset>
+          <legend>Preferred contact method</legend>
+          <p-contact-email name="contact"></p-contact-email>
+          <p-contact-phone name="contact"></p-contact-phone>
+        </fieldset>
+        <label for="colors">Colors</label>
+        <p-color-field id="colors" name="colors"></p-color-field>
+        <p-file-field name="attachment"></p-file-field>
+        <label for="agree">Agree to terms (required)</label>
+        <p-agree-field id="agree" name="agree"></p-agree-field>
+        <fieldset disabled>
+          <legend>Unavailable option</legend>
+          <p-extra-field name="disabledReference"></p-extra-field>
+        </fieldset>
+        <div id="dynamic-fields"></div>
+        <button type="button" id="add-reference">Add reference</button>
+        <button type="reset">Reset</button>
+        <button type="submit">Submit</button>
+      </form>
+      <div id="errors" role="alert" aria-atomic="true"></div>
+      <output id="result" aria-live="polite"></output>
+    </main>
+    <script type="module" src="./complex.ts"></script>
+  </body>
+</html>

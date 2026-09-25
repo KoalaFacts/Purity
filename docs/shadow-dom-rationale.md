@@ -72,20 +72,20 @@ A `<input>` inside a shadow root is _not_ a form-associated element from
 the host form's perspective. Native form submission won't include its
 value; React Hook Form (etc.) won't see it via DOM walking.
 
-The platform fix is [`ElementInternals`](https://developer.mozilla.org/en-US/docs/Web/API/ElementInternals)
-
-- `static formAssociated = true`. Purity does not yet wire this up for
-  you; you'd write a Custom Element class manually for that case.
-
-If you need tight form-library integration, prefer to compose plain
-`<input>` elements in light DOM (via `mount` + `html`) until form
-participation is first-class.
+For a component with one native input, select, or textarea, pass
+`{ formControl: true }` to `component()`. Purity uses
+[`ElementInternals`](https://developer.mozilla.org/en-US/docs/Web/API/ElementInternals)
+to submit its value and mirror validity, reset, and disabled state. The
+manual `{ formAssociated: true }` option remains available for controls
+that manage their own `ElementInternals` state. The internal control stays
+inside Shadow DOM, so libraries that only walk light DOM cannot inspect it.
 
 ### Accessibility across shadow boundaries
 
-`aria-labelledby="my-label"` from inside a shadow root cannot reference
-an element with `id="my-label"` in the light DOM, and vice versa. Each
-shadow tree is its own ID scope.
+An `aria-labelledby` ID on a control inside a shadow root cannot reference
+an element in light DOM, or vice versa. An ARIA attribute on the custom
+element host can reference another light-DOM element. That host label does
+not automatically name a control inside the shadow root.
 
 See [`accessibility.md`](./accessibility.md) for the patterns.
 
@@ -101,13 +101,11 @@ third-party tools should query hosts and dive in via `.shadowRoot`.
 ### Server-side rendering
 
 [Declarative Shadow DOM](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template/shadowrootmode)
-exists at the HTML level (`<template shadowrootmode="open">`), but
-**Purity does not yet ship a server renderer**. Today `component()` is
-client-render-only. SSR is on the post-1.0 roadmap; until then, content
-inside `component()` is invisible to bots that don't run JS.
-
-If SEO matters, render critical content in light DOM (via `mount` +
-`html`) and reserve `component()` for interactive widgets.
+is supported by the separate [`@purityjs/ssr`](../packages/ssr/README.md)
+package. It renders registered components on the server, and the core
+`hydrate()` API adopts compatible server-rendered DOM on the client. The core
+package itself remains client-side; install the SSR package when server
+rendering is part of the app.
 
 ### Platform name collisions
 

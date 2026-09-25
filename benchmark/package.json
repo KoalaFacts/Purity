@@ -10,7 +10,10 @@
     "profile": "node --conditions=development tools/profile.ts",
     "analyze": "node tools/analyze.ts",
     "compare": "node --conditions=development tools/compare.ts",
-    "sanity": "node --conditions=development tools/sanity.ts"
+    "sanity": "node --conditions=development tools/sanity.ts",
+    "a11y": "node --conditions=development tools/a11y.ts",
+    "a11y:form": "node --conditions=development tools/a11y-form-check.ts",
+    "a11y:matrix": "node --conditions=development tools/a11y-matrix.ts"
   },
   "dependencies": {
     "@purityjs/core": "*",
@@ -23,6 +26,7 @@
     "vue": "^3.6.0-beta.10"
   },
   "devDependencies": {
+    "axe-core": "4.13.0",
     "playwright": "^1.60.0",
     "tsx": "^4.22.3",
     "vite": "^8.0.14"

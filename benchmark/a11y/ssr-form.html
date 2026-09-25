@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Purity SSR form accessibility</title>
+  </head>
+  <body>
+    <main>
+      <h1>Server-rendered form control</h1>
+      <form>
+        <p-named-field name="fullName">
+          <template shadowrootmode="open" shadowrootdelegatesfocus>
+            <label>Full name <input required value="Ada" /></label>
+          </template>
+        </p-named-field>
+        <button type="submit">Submit</button>
+      </form>
+    </main>
+    <script type="module" src="./form-components.ts"></script>
+  </body>
+</html>

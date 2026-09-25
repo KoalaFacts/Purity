@@ -7,6 +7,7 @@ import {
   valueToHtml,
 } from './compiler/ssr-runtime.ts';
 import { ComponentContext, getCurrentContext, popContext, pushContext } from './component.ts';
+import { FormControlBridge } from './form-control.ts';
 import { watch } from './signals.ts';
 
 // Recursively tear down a non-custom-element child ComponentContext.
@@ -301,6 +302,10 @@ type RenderFn<P, S> = (
  * ```
  */
 export interface ComponentOptions {
+  /** Forward host focus to a focusable descendant in the shadow tree. */
+  delegatesFocus?: boolean;
+  /** Automatically bridge one native shadow control to form submission and validation. */
+  formControl?: true | string;
   /**
    * Opt the custom element into form participation. The host gets
    * `static formAssociated = true`, joins the containing `<form>`'s
@@ -369,6 +374,7 @@ function runRender<P, S>(
 // without depending on the Custom Element registration path (which requires
 // `customElements`, absent on Node).
 const componentRegistry = new Map<string, RenderFn<any, any>>();
+const componentOptions = new Map<string, ComponentOptions>();
 
 // Mirror of codegen's SAFE_NAME (not imported — keeping the compiler out of
 // the runtime bundle). A valid custom-element tag must also contain a hyphen,
@@ -482,8 +488,11 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
       ? `<style>${styles.join('\n').replace(/<\/style/gi, '<\\/style')}</style>`
       : '';
   const inner = styleBlock + renderedHtml;
+  const options = componentOptions.get(tag);
+  const focusAttr =
+    (options?.delegatesFocus ?? !!options?.formControl) ? ' shadowrootdelegatesfocus' : '';
 
-  return `<${tag}${hostAttrs}><template shadowrootmode="open">${inner}</template></${tag}>`;
+  return `<${tag}${hostAttrs}><template shadowrootmode="open"${focusAttr}>${inner}</template></${tag}>`;
 };
 
 /**
@@ -542,11 +551,12 @@ export function component<
 
   // Store in registry
   componentRegistry.set(tagName, renderFn);
+  componentOptions.set(tagName, options ?? {});
 
   // Register as Custom Element
   if (typeof customElements !== 'undefined' && !customElements.get(tagName)) {
     const render = renderFn;
-    const formAssociated = options?.formAssociated === true;
+    const formAssociated = options?.formAssociated === true || !!options?.formControl;
 
     class PurityElement extends HTMLElement {
       _ctx: ComponentContext | null = null;
@@ -560,6 +570,7 @@ export function component<
       _hasRendered = false;
       _shadow: ShadowRoot;
       _internals: ElementInternals | null = null;
+      _formBridge: FormControlBridge | null = null;
 
       constructor() {
         super();
@@ -567,7 +578,12 @@ export function component<
         // one (the SSR-then-hydrate path emits
         // `<tag><template shadowrootmode="open">…</template></tag>`).
         // Calling attachShadow a second time would throw, so check first.
-        this._shadow = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
+        this._shadow =
+          this.shadowRoot ??
+          this.attachShadow({
+            mode: 'open',
+            delegatesFocus: options?.delegatesFocus ?? !!options?.formControl,
+          });
         // ElementInternals is once-per-element. We claim it eagerly so
         // bindComponentState() and the public `internals()` accessor always
         // have a target. Older runtimes without attachInternals fall through
@@ -579,6 +595,27 @@ export function component<
           /* v8 ignore next -- defensive; modern engines all expose attachInternals */
           this._internals = null;
         }
+        if (options?.formControl && this._internals) {
+          this._formBridge = new FormControlBridge(
+            this,
+            this._shadow,
+            this._internals,
+            options.formControl,
+          );
+        }
+      }
+
+      static get observedAttributes(): string[] {
+        return options?.formControl
+          ? ['aria-label', 'aria-labelledby', 'id', 'name', 'value', 'checked']
+          : [];
+      }
+
+      attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null) {
+        if (name === 'value' && newValue !== null) this._formBridge?.setValue(newValue);
+        if (name === 'checked') this._formBridge?.setChecked(newValue !== null);
+        this._formBridge?.syncLabel();
+        this._formBridge?.sync();
       }
 
       connectedCallback() {
@@ -666,6 +703,7 @@ export function component<
 
         // Render into shadow DOM
         this._shadow.appendChild(result);
+        this._formBridge?.connect();
 
         if (result instanceof DocumentFragment) {
           ctx.nodes = Array.from(this._shadow.childNodes);
@@ -692,6 +730,7 @@ export function component<
       }
 
       disconnectedCallback() {
+        this._formBridge?.disconnect();
         if (this._ctx) {
           if (this._ctx._isDestroyed) return;
 
@@ -747,6 +786,7 @@ export function component<
       }
 
       formDisabledCallback(disabled: boolean) {
+        this._formBridge?.setDisabled(disabled);
         if (!this._ctx || this._ctx._isDestroyed) return;
         const arr = this._ctx._formDisabled;
         if (!arr) return;
@@ -760,6 +800,7 @@ export function component<
       }
 
       formResetCallback() {
+        this._formBridge?.reset();
         if (!this._ctx || this._ctx._isDestroyed) return;
         const arr = this._ctx._formReset;
         if (!arr) return;
@@ -776,6 +817,7 @@ export function component<
         state: string | File | FormData | null,
         mode: 'restore' | 'autocomplete',
       ) {
+        if (state !== null) this._formBridge?.restore(state);
         if (!this._ctx || this._ctx._isDestroyed) return;
         const arr = this._ctx._formStateRestore;
         if (!arr) return;
@@ -795,6 +837,62 @@ export function component<
     // same static surface as before.
     if (formAssociated) {
       Object.defineProperty(PurityElement, 'formAssociated', { value: true });
+    }
+
+    if (options?.formControl) {
+      Object.defineProperties(PurityElement.prototype, {
+        form: {
+          get(this: PurityElement) {
+            return this._formBridge?.form ?? null;
+          },
+        },
+        labels: {
+          get(this: PurityElement) {
+            return this._formBridge?.labels ?? null;
+          },
+        },
+        validity: {
+          get(this: PurityElement) {
+            return this._formBridge?.validity ?? null;
+          },
+        },
+        validationMessage: {
+          get(this: PurityElement) {
+            return this._formBridge?.validationMessage ?? '';
+          },
+        },
+        willValidate: {
+          get(this: PurityElement) {
+            return this._formBridge?.willValidate ?? false;
+          },
+        },
+        checkValidity: {
+          value(this: PurityElement) {
+            return this._formBridge?.checkValidity() ?? true;
+          },
+        },
+        reportValidity: {
+          value(this: PurityElement) {
+            return this._formBridge?.reportValidity() ?? true;
+          },
+        },
+        value: {
+          get(this: PurityElement) {
+            return this._formBridge?.value ?? '';
+          },
+          set(this: PurityElement, value: unknown) {
+            this._formBridge?.setValue(String(value));
+          },
+        },
+        checked: {
+          get(this: PurityElement) {
+            return this._formBridge?.checked ?? false;
+          },
+          set(this: PurityElement, value: unknown) {
+            this._formBridge?.setChecked(Boolean(value));
+          },
+        },
+      });
     }
 
     customElements.define(tagName, PurityElement);

@@ -385,23 +385,21 @@ opinionated choice — listing the costs honestly so you can decide:
   utility CSS works via [`adoptedStyleSheets`](https://developer.mozilla.org/en-US/docs/Web/API/Document/adoptedStyleSheets)
   — Tailwind needs explicit injection per shadow root. CSS variables _do_
   pierce, so design tokens declared on `:root` work normally.
-- **Form libraries / native form participation.** Custom Elements need
-  [`ElementInternals`](https://developer.mozilla.org/en-US/docs/Web/API/ElementInternals)
-  - form-associated declaration to participate in `<form>` submission. Most
-    third-party form libraries (React Hook Form, etc.) won't see your
-    components' values.
+- **Form libraries / native form participation.** For a component wrapping
+  one input, select, or textarea, use `{ formControl: true }`. Purity then
+  publishes its value and validity through
+  [`ElementInternals`](https://developer.mozilla.org/en-US/docs/Web/API/ElementInternals).
+  Libraries that only walk light DOM still cannot inspect the internal control.
 - **Accessibility across shadow boundaries.** `aria-labelledby` /
   `aria-describedby` cannot reference IDs across a shadow root. Use
   `aria-label` directly or expose explicit ARIA attributes on the host.
   See [`docs/accessibility.md`](../../docs/accessibility.md) for the
-  patterns we know work; the framework has not yet been a11y-audited at
-  scale.
+  browser checks and remaining manual acceptance criteria.
 - **Third-party DOM queries.** `document.querySelector('.my-class')` from
   outside a component will not find elements inside its shadow root. Inspect
   via the host element first.
-- **SSR.** Web Components serialize via [Declarative Shadow DOM](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template/shadowrootmode),
-  but Purity does not yet ship a server renderer. Today `component()` is
-  client-render only.
+- **SSR.** The separate `@purityjs/ssr` package serializes components with
+  [Declarative Shadow DOM](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template/shadowrootmode).
 - **Platform name collisions.** Custom-element tag names must contain a
   hyphen, but anything starting with `font-`, `annotation-xml`, etc. is
   reserved. The convention `p-yourname` keeps you clear.

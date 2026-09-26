@@ -8,7 +8,6 @@
 A minimal web framework with TC39-Signals-inspired reactivity and templates that compile to direct DOM operations.
 
 - **A tiny API** — that's the whole thing
-- **~5.8 kB gzipped** — with AOT compilation
 - **No virtual DOM** — signals drive DOM updates directly
 - **CSP-safe** — no `eval`, no `new Function` (with the Vite plugin)
 - **Zero runtime dependencies**
@@ -128,25 +127,11 @@ Scaffold with `npx @purityjs/cli my-app --ssr` or see
 
 See each package README for full API documentation.
 
-## How It Compares
+## Benchmarks
 
-|                     | Purity                                     | SolidJS                       | Svelte 5              | Vue Vapor                   |
-| ------------------- | ------------------------------------------ | ----------------------------- | --------------------- | --------------------------- |
-| **Approach**        | TC39-Signals-inspired + compiled templates | Custom signals + compiled JSX | Runes + full compiler | Proxy reactivity + compiler |
-| **Virtual DOM**     | No                                         | No                            | No                    | No                          |
-| **Bundle (gz)**¹    | 5.8 kB                                     | ~7 kB                         | ~2 kB + generated     | ~16 kB (beta³)              |
-| **Custom Elements** | Native                                     | Optional                      | Optional              | Optional                    |
-| **Shadow DOM**      | Default                                    | Via custom elements           | Via custom elements   | Via custom elements         |
-| **Two-way binding** | `::prop`                                   | Manual                        | `bind:`               | `v-model`                   |
-| **Async data**²     | `resource()` reactive primitive            | `createResource`              | `{#await}` template   | Userland                    |
-| **Dependencies**    | 0                                          | 0                             | 0                     | 0                           |
-
-¹ Purity measured locally with `vite build` on this branch; SolidJS / Svelte / Vue Vapor are each project's published runtime sizes — verify against bundlephobia for your specific imports.
-² "Reactive primitive" means a tracked accessor with `loading`/`error`/`refresh`/`mutate`. Svelte's `{#await}` is a template-level control flow over a promise (no reactive resource handle). Vue Vapor has `<Suspense>` as a coordination boundary but no resource primitive in core.
-³ Vue Vapor mode is in beta as of Vue 3.6 (May 2026); size and capabilities may change.
-
-**Runtime benchmarks** — automated in headless Chromium across 18 scenarios:
-[koalafacts.github.io/Purity](https://koalafacts.github.io/Purity/)
+Framework comparisons require current versions and equivalent, framework-native
+workloads. The [benchmark source](./benchmark) records the scenarios and run
+method; rerun it before quoting performance results.
 
 **Live demo** — a polling dashboard built end-to-end on Purity (state,
 compute, resource with retry+pollInterval, lazyResource, debounced,
@@ -155,34 +140,23 @@ each, mount): [koalafacts.github.io/Purity/dashboard](https://koalafacts.github.
 
 ## Status
 
-**Pre-1.0 (`0.1.0`).** The API may break between minor versions until 1.0.
+**Pre-1.0 (`0.2.0`).** The API may break between minor versions until 1.0.
 There is no public versioning policy yet, and we don't know of any production
 users. If you ship Purity to users, please open an issue so we can keep your
 use case in mind for the breaking-change discussions.
 
 ## What this framework does NOT do
 
-Knowing what's missing matters more than what's there. As of `0.1.0`:
+Knowing what's missing matters more than what's there. As of `0.2.0`:
 
-- **SSR is MVP-quality.** `renderToString` + `hydrate()` ship with
-  Declarative Shadow DOM and resource-aware two-pass rendering, but
-  hydration is currently **lossy**: the SSR DOM is discarded and the
-  component is re-rendered fresh on the client. Matching content
-  produces an invisible flash; mismatches produce a visible jump. The
-  hydration markers (`<!--[--><!--]-->`) are emitted in preparation for
-  a follow-up that preserves the existing DOM. Named / scoped slot SSR
-  and streaming output are not yet implemented.
-- **No router.** Not on the roadmap. Bring your own (the History API
-  is straightforward to use directly).
-- **No devtools panel.** Signal-graph inspection happens via
-  `console.log` today. A browser extension is being considered for
-  post-1.0; not committed.
+- **No devtools panel.** The built-in `__purity_inspect__` hook exposes the
+  reactive graph in the browser console; see the
+  [debugging guide](./docs/debugging.md).
 - **No production track record.** Pre-1.0; we know of zero production
   deployments. Treat as a serious side-project, not a battle-tested tool.
-- **No accessibility audit.** Shadow DOM defaults have a11y
-  implications (ARIA across boundaries, focus delegation). See
-  [`docs/accessibility.md`](./docs/accessibility.md) for working
-  patterns; nothing in the framework has been audited at scale.
+- **Accessibility needs application-level verification.** Browser fixtures
+  cover form and Shadow DOM patterns, but NVDA and VoiceOver behavior has
+  not been verified. See [the accessibility guide](./docs/accessibility.md).
 
 ## Docs
 

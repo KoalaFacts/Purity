@@ -13,6 +13,7 @@
 // the SSR variant for renderToString and the core variant for hydrate.
 
 import {
+  component,
   each,
   eachSSR,
   html as clientHtml,
@@ -121,6 +122,69 @@ describe('SSR → hydrate parity (marker-walking)', () => {
     await Promise.resolve();
     expect(host.firstChild).toBe(p);
     expect(host.textContent).toBe('X-Y');
+  });
+});
+
+describe('SSR custom-element props', () => {
+  it('prefers an assigned client property over its string attribute', () => {
+    component<{ count: number }>('client-typed-props-1', ({ count }) => {
+      return clientHtml`<span>${count}</span>`;
+    });
+
+    const element = document.createElement('client-typed-props-1');
+    element.setAttribute('count', '1');
+    (element as unknown as { count: number }).count = 2;
+    document.body.appendChild(element);
+    expect(element.shadowRoot!.textContent).toBe('2');
+    element.remove();
+  });
+
+  it('restores typed props before the DSD child hydrates', async () => {
+    let server = true;
+    let hydratedProps: unknown;
+    component<{
+      count: number;
+      enabled: boolean;
+      config: { step: number; note: string };
+      empty: null;
+      label: string;
+    }>('ssr-typed-props-1', ({ count, enabled, config, empty, label }) => {
+      if (!server) hydratedProps = { count, enabled, config, empty, label };
+      const current = state(count);
+      const tag = (server ? ssrHtml : clientHtml) as typeof clientHtml;
+      return tag`<button @click=${() => current((value) => value + config.step)}>${() => current()}</button><span>${String(enabled)}:${String(empty)}:${label}:${config.note}</span>`;
+    });
+
+    const props = {
+      count: 0,
+      enabled: false,
+      config: { step: 2, note: '</span><script>alert(1)</script>' },
+      empty: null,
+      label: '0',
+    };
+    const App = (tag: AnyHtml) =>
+      tag`<main><ssr-typed-props-1 :count=${props.count} :enabled=${props.enabled} :config=${props.config} :empty=${props.empty} :label=${props.label}></ssr-typed-props-1></main>`;
+    const markup = await renderToString(() => App(ssrHtml as AnyHtml));
+    expect(markup).not.toContain('<script>');
+
+    server = false;
+    const host = document.createElement('div');
+    host.innerHTML = markup;
+    const element = host.querySelector('ssr-typed-props-1')!;
+    const template = element.querySelector('template')!;
+    element.shadowRoot!.appendChild(template.content);
+    template.remove();
+    const button = element.shadowRoot!.querySelector('button')!;
+    document.body.appendChild(host);
+    hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+
+    expect(hydratedProps).toEqual(props);
+    expect(element.shadowRoot!.querySelector('button')).toBe(button);
+    expect(element.shadowRoot!.textContent).toContain('false:null:0:');
+    button.click();
+    await Promise.resolve();
+    expect(button.textContent).toBe('2');
+    host.remove();
   });
 });
 

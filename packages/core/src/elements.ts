@@ -3,6 +3,7 @@ import {
   markSSRHtml,
   type SSRComponentRenderer,
   type SSRHtml,
+  escAttr,
   valueToAttr,
   valueToHtml,
 } from './compiler/ssr-runtime.ts';
@@ -386,6 +387,37 @@ const SAFE_CE_TAG = /^[a-z][\w]*-[\w-]*$/;
 // as codegen's SAFE_NAME; used as a defensive filter for direct/SSR callers
 // of `_renderComponentSSR` that bypass the compiler's `assertSafeName`.
 const SAFE_ATTR_NAME = /^[a-zA-Z_][\w-]*$/;
+const SSR_PROPS_ATTR = 'data-purity-ssr-props';
+
+// HTML attributes only carry strings. Keep the original names and values of
+// JSON-compatible props so an upgraded DSD element can render before its
+// parent has rebound property bindings.
+function serializeSSRProps(props: Record<string, unknown>): string | null {
+  const entries: string[] = [];
+  for (const key of Object.keys(props)) {
+    const value = props[key];
+    if (
+      !SAFE_ATTR_NAME.test(key) ||
+      key === SSR_PROPS_ATTR ||
+      (typeof value === 'string' && key === key.toLowerCase())
+    ) {
+      continue;
+    }
+    try {
+      const json = JSON.stringify(value, (_name, nested) => {
+        if (typeof nested === 'number' && !Number.isFinite(nested)) {
+          throw new TypeError('Non-finite numbers cannot be serialized as SSR props');
+        }
+        return nested;
+      });
+      if (json !== undefined) entries.push(`[${JSON.stringify(key)},${json}]`);
+    } catch {
+      // Functions, symbols, BigInts, and cyclic values cannot cross HTML.
+      // The parent still supplies them through property bindings on hydrate.
+    }
+  }
+  return entries.length > 0 ? `[${entries.join(',')}]` : null;
+}
 
 /** @internal — accessor used by `@purityjs/ssr` to look up registered render fns. */
 export function _getRegisteredComponent(
@@ -437,7 +469,7 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
   // Resolve attribute values into a props object — match the client's
   // "every non-event attribute is a prop" behavior. Functions are treated as
   // signal accessors and called once.
-  const props: Record<string, unknown> = {};
+  const props: Record<string, unknown> = Object.create(null);
   for (const k of Object.keys(attrs)) {
     const v = attrs[k];
     props[k] = typeof v === 'function' ? (v as () => unknown)() : v;
@@ -463,15 +495,18 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
   const renderedHtml = valueToHtml(view);
 
   // Host-element attributes mirror what was declared in the parent template.
-  // Hydration (PR 4) re-binds props by reading these back off the element.
   // Attribute *names* are interpolated raw, so skip any key that isn't a safe
   // name — the compiler asserts this upstream, but direct/SSR callers can pass
   // arbitrary keys. Values are escaped by `valueToAttr`.
   let hostAttrs = '';
-  for (const k of Object.keys(attrs)) {
-    if (!SAFE_ATTR_NAME.test(k)) continue;
-    const av = valueToAttr(attrs[k]);
+  for (const k of Object.keys(props)) {
+    if (!SAFE_ATTR_NAME.test(k) || k === SSR_PROPS_ATTR) continue;
+    const av = valueToAttr(props[k]);
     if (av !== null) hostAttrs += av === '' ? ` ${k}` : ` ${k}="${av}"`;
+  }
+  const serializedProps = serializeSSRProps(props);
+  if (serializedProps !== null) {
+    hostAttrs += ` ${SSR_PROPS_ATTR}="${escAttr(serializedProps)}"`;
   }
 
   const styles = (ctx as unknown as { _ssrStyles: string[] })._ssrStyles;
@@ -619,7 +654,38 @@ export function component<
       }
 
       connectedCallback() {
-        const props = { ...this._props } as P;
+        const hasDSDContent = !this._hasRendered && this._shadow.firstChild !== null;
+        const props: Record<string, unknown> = Object.create(null);
+        for (const attr of this.attributes) {
+          if (attr.name !== SSR_PROPS_ATTR) props[attr.name] = attr.value;
+        }
+        if (hasDSDContent) {
+          const serializedProps = this.getAttribute(SSR_PROPS_ATTR);
+          if (serializedProps !== null) {
+            try {
+              const entries: unknown = JSON.parse(serializedProps);
+              if (Array.isArray(entries)) {
+                for (const entry of entries) {
+                  if (
+                    Array.isArray(entry) &&
+                    entry.length === 2 &&
+                    typeof entry[0] === 'string' &&
+                    SAFE_ATTR_NAME.test(entry[0]) &&
+                    entry[0] !== SSR_PROPS_ATTR
+                  ) {
+                    props[entry[0]] = entry[1];
+                  }
+                }
+              }
+            } catch {
+              // Invalid metadata falls back to the available HTML attributes.
+            }
+          }
+        }
+        Object.assign(props, this._props);
+        for (const key of Object.keys(this)) {
+          if (!key.startsWith('_')) props[key] = (this as any)[key];
+        }
 
         // Collect event handlers
         const eventProps: Record<string, unknown> = {};
@@ -673,8 +739,7 @@ export function component<
         // remove-then-readd, or any manual detach/reattach) the shadow still
         // holds our own prior render, which has no SSR hydration markers —
         // inflating against it would crash. Treat reconnect as a fresh render.
-        const hasDSDContent = !this._hasRendered && this._shadow.firstChild !== null;
-        let result: Node | DocumentFragment;
+        let result: Node | DocumentFragment | null;
         if (hasDSDContent) {
           enterHydration();
           let renderResult: { result: Node | DocumentFragment };
@@ -685,10 +750,10 @@ export function component<
           }
           const view = renderResult.result as unknown;
           if (isDeferred(view)) {
-            const frag = (this.ownerDocument ?? document).createDocumentFragment();
-            while (this._shadow.firstChild) frag.appendChild(this._shadow.firstChild);
-            inflateDeferred(view, frag);
-            result = frag;
+            // Keep the parsed shadow nodes connected while binding them.
+            // Detaching them would disconnect nested custom elements.
+            inflateDeferred(view, this._shadow);
+            result = null;
           } else {
             // Renderer returned a non-deferred node — clear and re-render.
             while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
@@ -702,10 +767,10 @@ export function component<
         }
 
         // Render into shadow DOM
-        this._shadow.appendChild(result);
+        if (result !== null) this._shadow.appendChild(result);
         this._formBridge?.connect();
 
-        if (result instanceof DocumentFragment) {
+        if (result === null || result instanceof DocumentFragment) {
           ctx.nodes = Array.from(this._shadow.childNodes);
         } else {
           ctx.nodes = [result];

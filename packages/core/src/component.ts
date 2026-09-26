@@ -352,14 +352,11 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   popContext();
 
   if (isDeferred(view)) {
-    // Move the SSR children into a fragment, inflate the template against
-    // them, then re-insert. Working through a fragment lets the hydrate
-    // factory walk siblings without worrying about live-DOM observers, and
-    // gives us a clean handle (frag.childNodes) for ctx.nodes after.
-    const frag = container.ownerDocument.createDocumentFragment();
-    while (container.firstChild) frag.appendChild(container.firstChild);
+    // Inflate in place. Moving SSR nodes through a fragment disconnects and
+    // reconnects nested custom elements, tearing down their hydrated shadow
+    // trees and rendering them a second time.
     try {
-      inflateDeferred(view, frag);
+      inflateDeferred(view, container);
     } catch (err) {
       // The walker hit a structural mismatch (cursor went off the rails on
       // null sibling / wrong nodeType). The opt-in mismatch warnings would
@@ -376,8 +373,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
       while (container.firstChild) container.removeChild(container.firstChild);
       return mount(component, container);
     }
-    ctx.nodes = Array.from(frag.childNodes);
-    container.appendChild(frag);
+    ctx.nodes = Array.from(container.childNodes);
   } else if (view instanceof Node) {
     // Component returned a non-deferred Node (e.g. user wrapped html`` in
     // something that bypassed deferral). Fall back to lossy: clear + insert.

@@ -27,11 +27,9 @@
 //   * 'visible'   — resolves when the wrapper enters the viewport, via
 //                   IntersectionObserver. Falls back to 'load' when the
 //                   platform lacks IntersectionObserver.
-//   * 'interact'  — resolves on first pointerdown / focusin / keydown
-//                   inside the wrapper. Listeners are { once: true,
-//                   capture: true } and all unhook themselves at first
-//                   fire so a slow click can still reach its real
-//                   handler after hydration completes.
+//   * 'interact'  — starts on first pointerdown / focusin / keydown.
+//                   A click or form submit arriving before hydration
+//                   finishes is held and activated once afterward.
 //   * media:(…)   — resolves when the media query matches. If already
 //                   matched at mount time, hydrates immediately; else
 //                   listens for change.
@@ -208,31 +206,38 @@ function scheduleHydration(
       console.error(`[Purity] mountIslands: onMount threw for island ${id}:`, err);
     }
   };
-  const run = (): void => {
+  const run = (onSettled?: () => void): void => {
+    const finish = (): void => {
+      if (onSettled) {
+        try {
+          onSettled();
+        } catch (err) {
+          console.error(`[Purity] mountIslands: interaction replay threw for island ${id}:`, err);
+        }
+      }
+      safeDone();
+    };
     resolveEntry(entry, id)
       .then((view) => {
         if (!view) {
-          safeDone();
+          finish();
           return;
         }
-        // Custom-element-rooted islands: the SSR-emitted element
-        // auto-upgrades the moment its class is registered. For lazy
-        // entries, registration happens during the `await import(...)`
-        // above — so the CE check MUST run after resolveEntry resolves,
-        // not before. Otherwise `customElements.get(tag)` returns
-        // undefined for lazy CE-rooted islands and we'd fall through to
-        // hydrate(el, view), which moves the just-upgraded CE through a
-        // DocumentFragment and triggers disconnect/reconnect — double
-        // hydration on an already-hydrated element.
+        // A registered custom element may already have rendered itself on
+        // upgrade. Purity elements with DSD instead wait for their parent
+        // to bind typed props, so they still need hydrate(el, view). That
+        // path inflates in place and then hydrates the shadow tree.
+        // Check after the import so the element has already upgraded.
         const first = el.firstElementChild;
         const tag = first?.tagName.toLowerCase();
         if (
           tag &&
           tag.includes('-') &&
           typeof customElements !== 'undefined' &&
-          customElements.get(tag)
+          customElements.get(tag) &&
+          (first as Element & { _pendingSSRHydration?: boolean })._pendingSSRHydration !== true
         ) {
-          safeDone();
+          finish();
           return;
         }
         try {
@@ -240,11 +245,11 @@ function scheduleHydration(
         } catch (err) {
           console.error('[Purity] mountIslands: hydrate() threw for island', el, err);
         }
-        safeDone();
+        finish();
       })
       .catch((err) => {
         console.error(`[Purity] mountIslands: failed to resolve island ${id}:`, err);
-        safeDone();
+        finish();
       });
   };
   switch (trigger) {
@@ -421,21 +426,219 @@ function waitForIdle(run: () => void): void {
   setTimeout(run, 1);
 }
 
-function waitForInteract(el: Element, run: () => void): void {
-  const events = ['pointerdown', 'focusin', 'keydown'] as const;
-  // Re-entrant guard — once one event fires we tear the others down to
-  // avoid double hydration if two events arrive in the same tick.
-  let fired = false;
-  const handler = (): void => {
-    if (fired) return;
-    fired = true;
-    for (let i = 0; i < events.length; i++) {
-      el.removeEventListener(events[i], handler, true);
+function interactionTarget(event: Event, island: Element): Element | null {
+  const path = event.composedPath();
+  for (let i = 0; i < path.length && path[i] !== island; i++) {
+    if (path[i] instanceof Element) return path[i] as Element;
+  }
+  return null;
+}
+
+function remainsInIsland(target: Node, island: Element): boolean {
+  let node: Node | null = target;
+  while (node) {
+    if (node === island) return true;
+    node = node.parentNode ?? (node instanceof ShadowRoot ? node.host : null);
+  }
+  return false;
+}
+
+function hasActivationRole(event: Event, island: Element, key: string): boolean {
+  const path = event.composedPath();
+  for (let i = 0; i < path.length && path[i] !== island; i++) {
+    const node = path[i];
+    if (!(node instanceof Element)) continue;
+    const role = node.getAttribute('role');
+    if (role === 'link' && key === 'Enter') return true;
+    if (
+      role === 'button' ||
+      role === 'checkbox' ||
+      role === 'radio' ||
+      role === 'switch' ||
+      role === 'menuitem' ||
+      role === 'menuitemcheckbox' ||
+      role === 'menuitemradio' ||
+      role === 'tab' ||
+      role === 'option'
+    ) {
+      return true;
     }
-    run();
+  }
+  return false;
+}
+
+function waitForInteract(el: Element, run: (onSettled: () => void) => void): void {
+  let started = false;
+  let pending: (() => void) | null = null;
+  const submitRoots: ShadowRoot[] = [];
+
+  const finish = (): void => {
+    el.removeEventListener('click', onClick, true);
+    el.removeEventListener('submit', onSubmit, true);
+    el.removeEventListener('keydown', onKeydown, true);
+    for (let i = 0; i < submitRoots.length; i++) {
+      submitRoots[i].removeEventListener('submit', onSubmit, true);
+    }
+    const replay = pending;
+    pending = null;
+    // hydrate() schedules mounted hooks as microtasks. Let those complete
+    // before delivering the first user action to its newly bound handler.
+    if (replay) {
+      queueMicrotask(() => {
+        try {
+          replay();
+        } catch (err) {
+          console.error('[Purity] mountIslands: interaction replay failed:', err);
+        }
+      });
+    }
   };
-  for (let i = 0; i < events.length; i++) {
-    el.addEventListener(events[i], handler, { capture: true });
+  const start = (): void => {
+    if (started) return;
+    started = true;
+    el.removeEventListener('pointerdown', start, true);
+    el.removeEventListener('focusin', start, true);
+    run(finish);
+  };
+  const onClick = (event: Event): void => {
+    const click = event as MouseEvent;
+    // Modified clicks and picker controls need the browser's original
+    // user activation. They still begin hydration, but are not replayed.
+    if (
+      !event.cancelable ||
+      (typeof click.button === 'number' && click.button !== 0) ||
+      click.altKey ||
+      click.ctrlKey ||
+      click.metaKey ||
+      click.shiftKey
+    ) {
+      start();
+      return;
+    }
+    const target = interactionTarget(event, el);
+    const label = target?.closest('label');
+    const picker =
+      target instanceof HTMLInputElement
+        ? target
+        : label instanceof HTMLLabelElement
+          ? label.control
+          : null;
+    if (
+      !target ||
+      (picker instanceof HTMLInputElement && /^(file|color)$/.test(picker.type)) ||
+      target.closest('a[target="_blank"], a[download]')
+    ) {
+      start();
+      return;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    // Keep only the first activation while a lazy chunk loads. This also
+    // avoids submitting a form twice when the user clicks repeatedly.
+    const replayInit: MouseEventInit = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      button: click.button,
+      buttons: click.buttons,
+      clientX: click.clientX,
+      clientY: click.clientY,
+      screenX: click.screenX,
+      screenY: click.screenY,
+      detail: click.detail,
+      altKey: click.altKey,
+      ctrlKey: click.ctrlKey,
+      metaKey: click.metaKey,
+      shiftKey: click.shiftKey,
+    };
+    pending ??= () => {
+      if (
+        el.isConnected &&
+        target.isConnected &&
+        remainsInIsland(target, el) &&
+        !target.closest(':disabled')
+      ) {
+        target.dispatchEvent(new MouseEvent('click', replayInit));
+      }
+    };
+    start();
+  };
+  const onSubmit = (event: Event): void => {
+    if (!event.cancelable || !(event.target instanceof HTMLFormElement)) {
+      start();
+      return;
+    }
+    const form = event.target;
+    const submitter = (event as SubmitEvent).submitter;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    pending ??= () => {
+      if (!el.isConnected || !form.isConnected || !remainsInIsland(form, el)) return;
+      form.requestSubmit(
+        (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) &&
+          submitter.isConnected &&
+          submitter.form === form
+          ? submitter
+          : undefined,
+      );
+    };
+    start();
+  };
+  const onKeydown = (event: Event): void => {
+    const key = event as KeyboardEvent;
+    const target = interactionTarget(event, el);
+    // Native controls turn Enter/Space into click or submit, captured
+    // above. Only explicit ARIA controls need their own keydown replay;
+    // ordinary focusable content retains its native keyboard behavior.
+    if (
+      event.cancelable &&
+      (key.key === 'Enter' || key.key === ' ') &&
+      !key.altKey &&
+      !key.ctrlKey &&
+      !key.metaKey &&
+      target &&
+      !(target instanceof HTMLElement && target.isContentEditable) &&
+      !target.closest('button, a[href], input, select, textarea, summary') &&
+      hasActivationRole(event, el, key.key)
+    ) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      pending ??= () => {
+        if (!el.isConnected || !target.isConnected || !remainsInIsland(target, el)) return;
+        target.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: key.key,
+            code: key.code,
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            altKey: key.altKey,
+            ctrlKey: key.ctrlKey,
+            metaKey: key.metaKey,
+            shiftKey: key.shiftKey,
+          }),
+        );
+      };
+    }
+    start();
+  };
+  el.addEventListener('pointerdown', start, { capture: true });
+  el.addEventListener('focusin', start, { capture: true });
+  el.addEventListener('keydown', onKeydown, { capture: true });
+  el.addEventListener('click', onClick, { capture: true });
+  el.addEventListener('submit', onSubmit, { capture: true });
+  // submit is not composed, so a wrapper cannot see a form inside DSD.
+  // Capture it in each open shadow root already rendered in the island.
+  const roots: ParentNode[] = [el];
+  for (let i = 0; i < roots.length; i++) {
+    const descendants = roots[i].querySelectorAll('*');
+    for (let j = 0; j < descendants.length; j++) {
+      const shadow = descendants[j].shadowRoot;
+      if (!shadow) continue;
+      shadow.addEventListener('submit', onSubmit, { capture: true });
+      submitRoots.push(shadow);
+      roots.push(shadow);
+    }
   }
 }
 

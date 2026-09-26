@@ -36,13 +36,12 @@ export function App(): unknown {
       <code>&lt;demo-expander&gt;</code> tag containing a
       <code>&lt;template shadowrootmode="open"&gt;</code> with scoped styles and the rendered shadow
       content. The browser renders the shadow tree immediately — before any JS loads — and the
-      element auto-upgrades the moment its chunk's <code>customElements.define</code> call runs. No
-      explicit <code>hydrate()</code> happens on this island; the upgrade does it via the Custom
-      Element's <code>connectedCallback</code>.
+      element auto-upgrades when its chunk loads. Purity then binds host properties and hydrates the
+      existing shadow content in place.
     </p>
     <p>
       This island uses <code>hydrate: 'interact'</code> — its chunk isn't requested until you click
-      or tab into it. Try clicking the toggle.
+      or tab into it. The first click on the toggle works after the chunk loads.
     </p>
 
     ${Expander()}

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 — 2026-09-26
+
+The CLI's SSR starter now runs `npm run preview` on Windows, loads the server
+bundle with a file URL, serves built client assets, and hydrates its counter
+without producing `NaN`. The public `html` return type no longer exposes the
+internal hydration template, so a scaffolded TypeScript project type-checks.
+Generated builds now run a TypeScript check before bundling.
+
 ## 0.2.1 — 2026-09-26
 
 This coordinated patch release verifies npm Trusted Publishing for all four

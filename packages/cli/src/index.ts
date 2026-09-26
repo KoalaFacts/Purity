@@ -48,9 +48,9 @@ const pluginDir = resolve(import.meta.dirname, '../../vite-plugin');
 const ssrDir = resolve(import.meta.dirname, '../../ssr');
 const isLocal = existsSync(resolve(coreDir, 'src/index.ts'));
 
-const coreDep = isLocal ? `file:${coreDir}` : '^0.2.1';
-const pluginDep = isLocal ? `file:${pluginDir}` : '^0.2.1';
-const ssrDep = isLocal ? `file:${ssrDir}` : '^0.2.1';
+const coreDep = isLocal ? `file:${coreDir}` : '^0.2.2';
+const pluginDep = isLocal ? `file:${pluginDir}` : '^0.2.2';
+const ssrDep = isLocal ? `file:${ssrDir}` : '^0.2.2';
 
 console.log(`\n  Creating ${projectName}${ssrMode ? ' (SSR)' : ''}...`);
 if (isLocal) console.log('  Using local packages from monorepo');
@@ -63,14 +63,16 @@ mkdirSync(resolve(projectDir, 'src'), { recursive: true });
 const scripts = ssrMode
   ? {
       dev: 'node --experimental-strip-types server.ts',
-      build: 'npm run build:client && npm run build:server',
+      typecheck: 'tsc --noEmit',
+      build: 'npm run typecheck && npm run build:client && npm run build:server',
       'build:client': 'vite build --outDir dist/client',
       'build:server': 'vite build --ssr src/entry.server.ts --outDir dist/server',
-      preview: 'NODE_ENV=production node --experimental-strip-types server.ts',
+      preview: 'node --experimental-strip-types server.ts --production',
     }
   : {
       dev: 'vite',
-      build: 'vite build',
+      typecheck: 'tsc --noEmit',
+      build: 'npm run typecheck && vite build',
       preview: 'vite preview',
     };
 
@@ -187,8 +189,8 @@ if (ssrMode) {
     resolve(projectDir, 'src/app.ts'),
     `import { component, html, state } from '@purityjs/core';
 
-component<{ count: number }>('p-counter', ({ count }) => {
-  const value = state(count);
+component('p-counter', () => {
+  const value = state(0);
   return html\`
     <div>
       <h1>Purity SSR</h1>
@@ -199,7 +201,7 @@ component<{ count: number }>('p-counter', ({ count }) => {
 });
 
 export function App() {
-  return html\`<main><p-counter :count=\${0}></p-counter></main>\`;
+  return html\`<main><p-counter></p-counter></main>\`;
 }
 `,
   );
@@ -237,12 +239,12 @@ if (root) hydrate(root, App);
   type IncomingMessage,
   type ServerResponse,
 } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFile, stat } from 'node:fs/promises';
+import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const isProd = process.env.NODE_ENV === 'production';
+const isProd = process.argv.includes('--production') || process.env.NODE_ENV === 'production';
 const port = Number(process.env.PORT ?? 3000);
 
 // Always log errors server-side; never leak stack traces or unescaped
@@ -255,12 +257,54 @@ function sendError(res: ServerResponse, err: unknown): void {
 }
 
 if (isProd) {
-  const template = await readFile(resolve(__dirname, 'dist/client/index.html'), 'utf-8');
-  const mod = (await import(resolve(__dirname, 'dist/server/entry.server.js'))) as {
+  const clientDir = resolve(__dirname, 'dist/client');
+  const template = await readFile(resolve(clientDir, 'index.html'), 'utf-8');
+  const mod = (await import(pathToFileURL(resolve(__dirname, 'dist/server/entry.server.js')).href)) as {
     render: (url: string) => Promise<string>;
+  };
+  const contentTypes: Record<string, string> = {
+    '.css': 'text/css', '.gif': 'image/gif', '.html': 'text/html',
+    '.ico': 'image/x-icon', '.jpeg': 'image/jpeg', '.jpg': 'image/jpeg',
+    '.js': 'text/javascript', '.json': 'application/json', '.mjs': 'text/javascript',
+    '.png': 'image/png', '.svg': 'image/svg+xml', '.txt': 'text/plain',
+    '.wasm': 'application/wasm', '.webp': 'image/webp',
+    '.woff': 'font/woff', '.woff2': 'font/woff2',
   };
   createHttpServer(async (req, res) => {
     try {
+      const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
+      let decodedPath: string;
+      try {
+        decodedPath = decodeURIComponent(pathname);
+      } catch {
+        res.statusCode = 400;
+        res.end('Bad Request');
+        return;
+      }
+      const assetPath = resolve(clientDir, '.' + decodedPath);
+      const assetRelative = relative(clientDir, assetPath);
+      if (assetRelative === '..' || assetRelative.startsWith('..' + sep) || isAbsolute(assetRelative)) {
+        res.statusCode = 400;
+        res.end('Bad Request');
+        return;
+      }
+      const staticRequest = (req.method === 'GET' || req.method === 'HEAD') &&
+        (decodedPath.startsWith('/assets/') || extname(decodedPath) !== '');
+      if (staticRequest && assetRelative && assetRelative !== 'index.html') {
+        const asset = await stat(assetPath).catch((err: NodeJS.ErrnoException) => {
+          if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
+          throw err;
+        });
+        if (asset?.isFile()) {
+          const contentType = contentTypes[extname(assetPath)] ?? 'application/octet-stream';
+          res.setHeader('Content-Type', contentType.startsWith('text/') || contentType === 'application/json' || contentType === 'image/svg+xml' ? contentType + '; charset=utf-8' : contentType);
+          res.end(req.method === 'HEAD' ? undefined : await readFile(assetPath));
+          return;
+        }
+        res.statusCode = 404;
+        res.end('Not Found');
+        return;
+      }
       const html = await mod.render(req.url ?? '/');
       res.setHeader('Content-Type', 'text/html');
       // Use split().join() so literal dollar signs in the rendered HTML

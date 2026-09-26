@@ -108,9 +108,10 @@ If a click or form submit reaches an `'interact'` island before its
 client chunk hydrates, Purity holds the first activation and replays it
 once after hydration. Repeated activations during the wait are ignored,
 so a submit button does not submit twice. Native keyboard activation
-flows through the same click/submit path; Enter or Space on a custom,
-non-editable control replays its `keydown`. Focus and text input are
-not intercepted while the chunk loads.
+flows through the same click/submit path; Enter or Space on a custom
+control with an activation ARIA role replays its `keydown`. Form submits
+inside open Declarative Shadow DOM roots are captured too. Focus and
+text input are not intercepted while the chunk loads.
 
 The replayed event is synthetic and cannot restore browser-granted user
 activation. File and color pickers, modified clicks, new-tab links, and

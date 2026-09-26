@@ -426,17 +426,55 @@ function waitForIdle(run: () => void): void {
   setTimeout(run, 1);
 }
 
+function interactionTarget(event: Event, island: Element): Element | null {
+  const path = event.composedPath();
+  for (let i = 0; i < path.length && path[i] !== island; i++) {
+    if (path[i] instanceof Element) return path[i] as Element;
+  }
+  return null;
+}
+
+function hasActivationRole(event: Event, island: Element, key: string): boolean {
+  const path = event.composedPath();
+  for (let i = 0; i < path.length && path[i] !== island; i++) {
+    const node = path[i];
+    if (!(node instanceof Element)) continue;
+    const role = node.getAttribute('role');
+    if (role === 'link' && key === 'Enter') return true;
+    if (
+      role === 'button' ||
+      role === 'checkbox' ||
+      role === 'radio' ||
+      role === 'switch' ||
+      role === 'menuitem' ||
+      role === 'menuitemcheckbox' ||
+      role === 'menuitemradio' ||
+      role === 'tab' ||
+      role === 'option'
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function waitForInteract(el: Element, run: (onSettled: () => void) => void): void {
   let started = false;
   let pending: (() => void) | null = null;
+  const submitRoots: ShadowRoot[] = [];
 
   const finish = (): void => {
     el.removeEventListener('click', onClick, true);
     el.removeEventListener('submit', onSubmit, true);
     el.removeEventListener('keydown', onKeydown, true);
+    for (let i = 0; i < submitRoots.length; i++) {
+      submitRoots[i].removeEventListener('submit', onSubmit, true);
+    }
     const replay = pending;
     pending = null;
-    if (replay) replay();
+    // hydrate() schedules mounted hooks as microtasks. Let those complete
+    // before delivering the first user action to its newly bound handler.
+    if (replay) queueMicrotask(replay);
   };
   const start = (): void => {
     if (started) return;
@@ -460,11 +498,14 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
       start();
       return;
     }
-    const target = event
-      .composedPath()
-      .find((node): node is HTMLElement => node instanceof HTMLElement && node !== el);
+    const target = interactionTarget(event, el);
     const label = target?.closest('label');
-    const picker = target instanceof HTMLInputElement ? target : label?.control;
+    const picker =
+      target instanceof HTMLInputElement
+        ? target
+        : label instanceof HTMLLabelElement
+          ? label.control
+          : null;
     if (
       !target ||
       (picker instanceof HTMLInputElement && /^(file|color)$/.test(picker.type)) ||
@@ -477,8 +518,26 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
     event.stopImmediatePropagation();
     // Keep only the first activation while a lazy chunk loads. This also
     // avoids submitting a form twice when the user clicks repeatedly.
+    const replayInit: MouseEventInit = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      button: click.button,
+      buttons: click.buttons,
+      clientX: click.clientX,
+      clientY: click.clientY,
+      screenX: click.screenX,
+      screenY: click.screenY,
+      detail: click.detail,
+      altKey: click.altKey,
+      ctrlKey: click.ctrlKey,
+      metaKey: click.metaKey,
+      shiftKey: click.shiftKey,
+    };
     pending ??= () => {
-      if (el.isConnected && target.isConnected) target.click();
+      if (el.isConnected && target.isConnected) {
+        target.dispatchEvent(new MouseEvent('click', replayInit));
+      }
     };
     start();
   };
@@ -504,11 +563,10 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
   };
   const onKeydown = (event: Event): void => {
     const key = event as KeyboardEvent;
-    const target = event
-      .composedPath()
-      .find((node): node is HTMLElement => node instanceof HTMLElement && node !== el);
+    const target = interactionTarget(event, el);
     // Native controls turn Enter/Space into click or submit, captured
-    // above. Preserve text editing and browser keyboard behavior.
+    // above. Only explicit ARIA controls need their own keydown replay;
+    // ordinary focusable content retains its native keyboard behavior.
     if (
       event.cancelable &&
       (key.key === 'Enter' || key.key === ' ') &&
@@ -516,8 +574,9 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
       !key.ctrlKey &&
       !key.metaKey &&
       target &&
-      !target.isContentEditable &&
-      !target.closest('button, a[href], input, select, textarea, summary')
+      !(target instanceof HTMLElement && target.isContentEditable) &&
+      !target.closest('button, a[href], input, select, textarea, summary') &&
+      hasActivationRole(event, el, key.key)
     ) {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -545,6 +604,19 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
   el.addEventListener('keydown', onKeydown, { capture: true });
   el.addEventListener('click', onClick, { capture: true });
   el.addEventListener('submit', onSubmit, { capture: true });
+  // submit is not composed, so a wrapper cannot see a form inside DSD.
+  // Capture it in each open shadow root already rendered in the island.
+  const roots: ParentNode[] = [el];
+  for (let i = 0; i < roots.length; i++) {
+    const descendants = roots[i].querySelectorAll('*');
+    for (let j = 0; j < descendants.length; j++) {
+      const shadow = descendants[j].shadowRoot;
+      if (!shadow) continue;
+      shadow.addEventListener('submit', onSubmit, { capture: true });
+      submitRoots.push(shadow);
+      roots.push(shadow);
+    }
+  }
 }
 
 function waitForMedia(query: string, run: () => void): void {

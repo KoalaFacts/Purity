@@ -15,7 +15,7 @@ const View = (): unknown =>
     <p>You've clicked this <strong>${() => count()}</strong> times.</p>
     <button
       @click=${() => {
-        count.update((n) => n + 1);
+        count((n) => n + 1);
       }}
     >
       Click me

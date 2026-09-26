@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 — 2026-09-26
+
+This coordinated patch release verifies npm Trusted Publishing for all four
+packages. It contains no framework API or runtime changes. The CLI now
+scaffolds projects with the 0.2.1 package versions.
+
 ## 0.2.0 — 2026-09-26
 
 Purity 0.2.0 is a coordinated release of `@purityjs/core`,

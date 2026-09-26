@@ -1,6 +1,6 @@
 {
   "name": "@purityjs/vite-plugin",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Vite plugin for AOT template compilation in Purity",
   "keywords": [
     "aot",
@@ -46,7 +46,7 @@
     "fast-check": "4.7.0"
   },
   "peerDependencies": {
-    "@purityjs/core": "^0.2.0",
+    "@purityjs/core": "^0.2.1",
     "vite": ">=6.0.0"
   }
 }

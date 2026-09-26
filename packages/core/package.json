@@ -1,6 +1,6 @@
 {
   "name": "@purityjs/core",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Minimal web framework with TC39-Signals-inspired reactivity, no virtual DOM",
   "keywords": [
     "framework",

@@ -155,9 +155,9 @@ Marker-walking hydration" is now done.
   brand. Code that captures and _manipulates_ the return value (e.g.
   appends it manually with `appendChild`) wouldn't work during
   hydration anyway, since it'd duplicate the SSR DOM.
-- The DSD-aware Custom Element constructor path is unchanged; only the
-  `connectedCallback` learns to enter hydration mode when the shadow
-  root already has children.
+- The DSD-aware Custom Element constructor reuses the parsed shadow root.
+  `connectedCallback` leaves it visible until the parent `hydrate()` binds
+  property values, then the component hydrates its shadow tree in place.
 
 ## Implementation summary
 
@@ -169,7 +169,7 @@ Single PR, scope:
 | `packages/core/src/compiler/codegen.ts`         | Added `generateHydrate(ast)` (cursor-walks the SSR DOM, mirrors client codegen's slot semantics)     |
 | `packages/core/src/compiler/compile.ts`         | Cache entry now holds AST + client factory + hydrate factory; `inflateDeferred` runtime entry        |
 | `packages/core/src/component.ts`                | `hydrate()` rewritten to inflate against existing children (with empty-container `mount()` fallback) |
-| `packages/core/src/elements.ts`                 | `connectedCallback` enters hydration mode when shadow root already has children                      |
+| `packages/core/src/elements.ts`                 | DSD components hydrate after parent property bindings, including empty shadow roots                  |
 | `packages/core/tests/hydrate.test.ts`           | Rewritten to assert SSR-DOM identity preservation across hydration                                   |
 | `packages/core/tests/hydrate-resource.test.ts`  | Updated SSR fixtures to include `<!--[--><!--]-->` markers                                           |
 | `packages/core/tests/hydrate-mismatch.test.ts`  | Covers `enableHydrationWarnings()` + the top-level catch + fresh-mount recovery path                 |

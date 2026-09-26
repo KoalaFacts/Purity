@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.3 — 2026-09-26
+
+Fixed typed component props during SSR hydration. The parent now binds
+properties before Declarative Shadow DOM children hydrate, preserving numbers,
+booleans, objects, and null without rebuilding their existing nodes. Object
+and function props are no longer reflected into SSR host attributes, avoiding
+accidental disclosure through string conversion.
+
 ## 0.2.2 — 2026-09-26
 
 The CLI's SSR starter now runs `npm run preview` on Windows, loads the server

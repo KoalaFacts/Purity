@@ -276,6 +276,16 @@ export function onFormStateRestore(
  *
  * @returns Object with `unmount()` to remove the component.
  */
+/** @internal — hydrate connected DSD elements after their parent bound props. */
+export function hydratePendingCustomElements(root: ParentNode): void {
+  const elements = root.querySelectorAll('*');
+  for (let i = 0; i < elements.length; i++) {
+    const element = elements[i];
+    const hydrateElement = (element as Element & { _hydrateSSR?: () => void })._hydrateSSR;
+    if (typeof hydrateElement === 'function') hydrateElement.call(element);
+  }
+}
+
 /**
  * Hydrate a server-rendered root: walk the existing SSR DOM, attach reactive
  * bindings to the existing nodes (no re-rendering), and return an unmount
@@ -286,8 +296,8 @@ export function onFormStateRestore(
  * SSR DOM it owns, walking `<!--[--><!--]-->` marker pairs to locate
  * expression slots without rebuilding nodes. Nested templates (`html\`<p>${
  * html\`<span>${name}</span>\`}</p>\``) inflate against their slot's subtree.
- * Custom Elements with DSD content hydrate their own shadow tree from
- * `connectedCallback`.
+ * Custom Elements with DSD content hydrate their own shadow tree after the
+ * parent has assigned their typed property bindings.
  *
  * Mismatch fallback — if the user's value at a slot is an Array or a Node
  * provided directly (rather than a deferred template / reactive accessor /
@@ -387,6 +397,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     }
   }
 
+  hydratePendingCustomElements(container);
   ctx._isMounted = true;
 
   if (ctx.mounted) {

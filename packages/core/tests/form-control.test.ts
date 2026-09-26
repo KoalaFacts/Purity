@@ -18,6 +18,36 @@ afterEach(() => {
 });
 
 describe('formControl component option', () => {
+  it('passes explicit value and checked assignments to the render function', () => {
+    const internals = {
+      labels: [] as HTMLLabelElement[],
+      setFormValue: vi.fn(),
+      setValidity: vi.fn(),
+    };
+    Object.defineProperty(HTMLElement.prototype, 'attachInternals', {
+      configurable: true,
+      value: () => internals,
+    });
+
+    const tag = name();
+    component<{ value: string; checked: boolean }>(
+      tag,
+      ({ value, checked }) => document.createTextNode(`${value}:${String(checked)}`),
+      { formControl: true },
+    );
+
+    const host = document.createElement(tag) as HTMLElement & {
+      value: string;
+      checked: boolean;
+    };
+    host.setAttribute('value', 'old');
+    host.setAttribute('checked', '');
+    host.value = 'new';
+    host.checked = false;
+    document.body.appendChild(host);
+    expect(host.shadowRoot!.textContent).toBe('new:false');
+  });
+
   it('mirrors input, validity, reset, disabled state, and external labels', async () => {
     const internals = {
       labels: [] as HTMLLabelElement[],

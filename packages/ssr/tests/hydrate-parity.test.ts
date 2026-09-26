@@ -139,17 +139,39 @@ describe('SSR custom-element props', () => {
     element.remove();
   });
 
+  it('waits for parent bindings even when the DSD shadow root is empty', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<ssr-empty-props-1 count="0"></ssr-empty-props-1>';
+    const element = host.firstElementChild as HTMLElement;
+    element.attachShadow({ mode: 'open' });
+    document.body.appendChild(host);
+
+    let received: unknown;
+    component<{ count: number }>('ssr-empty-props-1', ({ count }) => {
+      received = count;
+      return document.createDocumentFragment();
+    });
+    expect(received).toBeUndefined();
+
+    hydrate(host, () => clientHtml`<ssr-empty-props-1 :count=${0}></ssr-empty-props-1>`);
+    expect(received).toBe(0);
+    host.remove();
+  });
+
   it('restores typed props before the DSD child hydrates', async () => {
     let server = true;
     let hydratedProps: unknown;
     component<{
       count: number;
       enabled: boolean;
-      config: { step: number; note: string };
+      config: { step: number; note: string; authToken: string };
       empty: null;
       label: string;
-    }>('ssr-typed-props-1', ({ count, enabled, config, empty, label }) => {
-      if (!server) hydratedProps = { count, enabled, config, empty, label };
+      userId: string;
+      'data-purity-ssr-props': string;
+    }>('ssr-typed-props-1', (received) => {
+      const { count, enabled, config, empty, label } = received;
+      if (!server) hydratedProps = received;
       const current = state(count);
       const tag = (server ? ssrHtml : clientHtml) as typeof clientHtml;
       return tag`<button @click=${() => current((value) => value + config.step)}>${() => current()}</button><span>${String(enabled)}:${String(empty)}:${label}:${config.note}</span>`;
@@ -158,14 +180,25 @@ describe('SSR custom-element props', () => {
     const props = {
       count: 0,
       enabled: false,
-      config: { step: 2, note: '</span><script>alert(1)</script>' },
+      config: {
+        step: 2,
+        note: '</span><script>alert(1)</script>',
+        authToken: 'server-private-token',
+        toString() {
+          return this.authToken;
+        },
+      },
       empty: null,
       label: '0',
+      userId: 'user-1',
+      'data-purity-ssr-props': 'user-authored',
     };
     const App = (tag: AnyHtml) =>
-      tag`<main><ssr-typed-props-1 :count=${props.count} :enabled=${props.enabled} :config=${props.config} :empty=${props.empty} :label=${props.label}></ssr-typed-props-1></main>`;
+      tag`<main><ssr-typed-props-1 :count=${props.count} :enabled=${props.enabled} :config=${props.config} :empty=${props.empty} :label=${props.label} :userId=${props.userId} :data-purity-ssr-props=${props['data-purity-ssr-props']}></ssr-typed-props-1></main>`;
     const markup = await renderToString(() => App(ssrHtml as AnyHtml));
     expect(markup).not.toContain('<script>');
+    expect(markup).not.toContain('server-private-token');
+    expect(markup).toContain('data-purity-ssr-props="user-authored"');
 
     server = false;
     const host = document.createElement('div');

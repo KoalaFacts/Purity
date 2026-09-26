@@ -3,11 +3,16 @@ import {
   markSSRHtml,
   type SSRComponentRenderer,
   type SSRHtml,
-  escAttr,
   valueToAttr,
   valueToHtml,
 } from './compiler/ssr-runtime.ts';
-import { ComponentContext, getCurrentContext, popContext, pushContext } from './component.ts';
+import {
+  ComponentContext,
+  getCurrentContext,
+  hydratePendingCustomElements,
+  popContext,
+  pushContext,
+} from './component.ts';
 import { FormControlBridge } from './form-control.ts';
 import { watch } from './signals.ts';
 
@@ -387,37 +392,6 @@ const SAFE_CE_TAG = /^[a-z][\w]*-[\w-]*$/;
 // as codegen's SAFE_NAME; used as a defensive filter for direct/SSR callers
 // of `_renderComponentSSR` that bypass the compiler's `assertSafeName`.
 const SAFE_ATTR_NAME = /^[a-zA-Z_][\w-]*$/;
-const SSR_PROPS_ATTR = 'data-purity-ssr-props';
-
-// HTML attributes only carry strings. Keep the original names and values of
-// JSON-compatible props so an upgraded DSD element can render before its
-// parent has rebound property bindings.
-function serializeSSRProps(props: Record<string, unknown>): string | null {
-  const entries: string[] = [];
-  for (const key of Object.keys(props)) {
-    const value = props[key];
-    if (
-      !SAFE_ATTR_NAME.test(key) ||
-      key === SSR_PROPS_ATTR ||
-      (typeof value === 'string' && key === key.toLowerCase())
-    ) {
-      continue;
-    }
-    try {
-      const json = JSON.stringify(value, (_name, nested) => {
-        if (typeof nested === 'number' && !Number.isFinite(nested)) {
-          throw new TypeError('Non-finite numbers cannot be serialized as SSR props');
-        }
-        return nested;
-      });
-      if (json !== undefined) entries.push(`[${JSON.stringify(key)},${json}]`);
-    } catch {
-      // Functions, symbols, BigInts, and cyclic values cannot cross HTML.
-      // The parent still supplies them through property bindings on hydrate.
-    }
-  }
-  return entries.length > 0 ? `[${entries.join(',')}]` : null;
-}
 
 /** @internal — accessor used by `@purityjs/ssr` to look up registered render fns. */
 export function _getRegisteredComponent(
@@ -469,7 +443,7 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
   // Resolve attribute values into a props object — match the client's
   // "every non-event attribute is a prop" behavior. Functions are treated as
   // signal accessors and called once.
-  const props: Record<string, unknown> = Object.create(null);
+  const props: Record<string, unknown> = {};
   for (const k of Object.keys(attrs)) {
     const v = attrs[k];
     props[k] = typeof v === 'function' ? (v as () => unknown)() : v;
@@ -500,13 +474,13 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
   // arbitrary keys. Values are escaped by `valueToAttr`.
   let hostAttrs = '';
   for (const k of Object.keys(props)) {
-    if (!SAFE_ATTR_NAME.test(k) || k === SSR_PROPS_ATTR) continue;
+    if (!SAFE_ATTR_NAME.test(k)) continue;
+    // Object/function props are supplied by the parent during hydration.
+    // Reflecting them as strings is lossy and can expose server-only data.
+    if (props[k] !== null && (typeof props[k] === 'object' || typeof props[k] === 'function'))
+      continue;
     const av = valueToAttr(props[k]);
     if (av !== null) hostAttrs += av === '' ? ` ${k}` : ` ${k}="${av}"`;
-  }
-  const serializedProps = serializeSSRProps(props);
-  if (serializedProps !== null) {
-    hostAttrs += ` ${SSR_PROPS_ATTR}="${escAttr(serializedProps)}"`;
   }
 
   const styles = (ctx as unknown as { _ssrStyles: string[] })._ssrStyles;
@@ -603,12 +577,15 @@ export function component<
       // reconnect the shadow still holds our own prior render, which must be
       // re-rendered fresh, not re-hydrated against marker-less DOM.
       _hasRendered = false;
+      _hadDeclarativeShadowRoot = false;
+      _pendingSSRHydration = false;
       _shadow: ShadowRoot;
       _internals: ElementInternals | null = null;
       _formBridge: FormControlBridge | null = null;
 
       constructor() {
         super();
+        this._hadDeclarativeShadowRoot = this.shadowRoot !== null;
         // Reuse a Declarative Shadow DOM root if the parser already attached
         // one (the SSR-then-hydrate path emits
         // `<tag><template shadowrootmode="open">…</template></tag>`).
@@ -654,37 +631,40 @@ export function component<
       }
 
       connectedCallback() {
-        const hasDSDContent = !this._hasRendered && this._shadow.firstChild !== null;
+        if (this._isSSRRoot()) {
+          // The parent must assign typed property bindings first. The DSD
+          // content stays visible until hydrate() walks this element.
+          this._pendingSSRHydration = true;
+          return;
+        }
+        this._renderConnected();
+      }
+
+      _isSSRRoot(): boolean {
+        return (
+          !this._hasRendered && (this._hadDeclarativeShadowRoot || this._shadow.firstChild !== null)
+        );
+      }
+
+      _hydrateSSR(): void {
+        if (!this._pendingSSRHydration || !this.isConnected) return;
+        this._pendingSSRHydration = false;
+        this._renderConnected();
+        hydratePendingCustomElements(this._shadow);
+      }
+
+      _renderConnected(): void {
+        const hasDSDContent = this._isSSRRoot();
         const props: Record<string, unknown> = Object.create(null);
         for (const attr of this.attributes) {
-          if (attr.name !== SSR_PROPS_ATTR) props[attr.name] = attr.value;
-        }
-        if (hasDSDContent) {
-          const serializedProps = this.getAttribute(SSR_PROPS_ATTR);
-          if (serializedProps !== null) {
-            try {
-              const entries: unknown = JSON.parse(serializedProps);
-              if (Array.isArray(entries)) {
-                for (const entry of entries) {
-                  if (
-                    Array.isArray(entry) &&
-                    entry.length === 2 &&
-                    typeof entry[0] === 'string' &&
-                    SAFE_ATTR_NAME.test(entry[0]) &&
-                    entry[0] !== SSR_PROPS_ATTR
-                  ) {
-                    props[entry[0]] = entry[1];
-                  }
-                }
-              }
-            } catch {
-              // Invalid metadata falls back to the available HTML attributes.
-            }
-          }
+          props[attr.name] = attr.value;
         }
         Object.assign(props, this._props);
         for (const key of Object.keys(this)) {
-          if (!key.startsWith('_')) props[key] = (this as any)[key];
+          if (key.startsWith('_')) continue;
+          const lower = key.toLowerCase();
+          if (lower !== key && !Object.hasOwn(this, lower)) delete props[lower];
+          props[key] = (this as any)[key];
         }
 
         // Collect event handlers
@@ -946,6 +926,7 @@ export function component<
             return this._formBridge?.value ?? '';
           },
           set(this: PurityElement, value: unknown) {
+            this._props.value = value;
             this._formBridge?.setValue(String(value));
           },
         },
@@ -954,6 +935,7 @@ export function component<
             return this._formBridge?.checked ?? false;
           },
           set(this: PurityElement, value: unknown) {
+            this._props.checked = Boolean(value);
             this._formBridge?.setChecked(Boolean(value));
           },
         },

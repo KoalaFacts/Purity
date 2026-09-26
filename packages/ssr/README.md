@@ -111,7 +111,11 @@ The client-side `hydrate()` reads this script, calls `primeHydrationCache(...)`,
 </p-card>
 ```
 
-Browsers since 2024 (Chrome 124+, Safari 16.4+, Firefox 123+) parse the inline shadow root immediately. `connectedCallback` then hydrates against it. ADR [0004](../../docs/decisions/0004-ssr-mvp.md) covers the contract; pre-2024 browsers fall through to client-only render.
+Browsers since 2024 (Chrome 124+, Safari 16.4+, Firefox 123+) parse the inline shadow root immediately. The server-rendered content stays visible until `hydrate(container, App)` binds the parent's component properties and hydrates each shadow tree. Call `hydrate()` on the containing app root after registering components; Declarative Shadow DOM alone does not attach event handlers.
+
+Property bindings such as `:count=${count}` preserve numbers, booleans, objects, and null because the client provides those values before the child renders. The client app must produce the values again during hydration. Object and function props are not written into HTML attributes; primitive host attributes can still appear in page source, so do not pass secrets as SSR props.
+
+ADR [0004](../../docs/decisions/0004-ssr-mvp.md) covers the contract; pre-2024 browsers fall through to client-only render.
 
 ### `renderToStream(component, options?)`
 

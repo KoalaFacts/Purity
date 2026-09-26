@@ -121,6 +121,8 @@ ship as **Declarative Shadow DOM** (`<template shadowrootmode="open">`)
 so the browser parses a real shadow tree before any JS loads. Resources
 created during render are awaited; the resolved values are embedded as a
 JSON payload that `hydrate()` reads to skip the first refetch.
+Call `hydrate()` on the containing app root: it binds component properties
+before hydrating nested shadow trees, so typed props retain their values.
 
 Scaffold with `npx @purityjs/cli my-app --ssr` or see
 [`examples/ssr`](./examples/ssr) for a working setup.
@@ -140,7 +142,7 @@ each, mount): [koalafacts.github.io/Purity/dashboard](https://koalafacts.github.
 
 ## Status
 
-**Pre-1.0 (`0.2.2`).** The API may break between minor versions until 1.0.
+**Pre-1.0 (`0.2.3`).** The API may break between minor versions until 1.0.
 See the [changelog](./CHANGELOG.md) for upgrade notes.
 There is no public versioning policy yet, and we don't know of any production
 users. If you ship Purity to users, please open an issue so we can keep your
@@ -148,7 +150,7 @@ use case in mind for the breaking-change discussions.
 
 ## What this framework does NOT do
 
-Knowing what's missing matters more than what's there. As of `0.2.2`:
+Knowing what's missing matters more than what's there. As of `0.2.3`:
 
 - **No devtools panel.** The built-in `__purity_inspect__` hook exposes the
   reactive graph in the browser console; see the

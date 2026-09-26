@@ -27,11 +27,9 @@
 //   * 'visible'   — resolves when the wrapper enters the viewport, via
 //                   IntersectionObserver. Falls back to 'load' when the
 //                   platform lacks IntersectionObserver.
-//   * 'interact'  — resolves on first pointerdown / focusin / keydown
-//                   inside the wrapper. Listeners are { once: true,
-//                   capture: true } and all unhook themselves at first
-//                   fire so a slow click can still reach its real
-//                   handler after hydration completes.
+//   * 'interact'  — starts on first pointerdown / focusin / keydown.
+//                   A click or form submit arriving before hydration
+//                   finishes is held and activated once afterward.
 //   * media:(…)   — resolves when the media query matches. If already
 //                   matched at mount time, hydrates immediately; else
 //                   listens for change.
@@ -208,11 +206,21 @@ function scheduleHydration(
       console.error(`[Purity] mountIslands: onMount threw for island ${id}:`, err);
     }
   };
-  const run = (): void => {
+  const run = (onSettled?: () => void): void => {
+    const finish = (): void => {
+      if (onSettled) {
+        try {
+          onSettled();
+        } catch (err) {
+          console.error(`[Purity] mountIslands: interaction replay threw for island ${id}:`, err);
+        }
+      }
+      safeDone();
+    };
     resolveEntry(entry, id)
       .then((view) => {
         if (!view) {
-          safeDone();
+          finish();
           return;
         }
         // Custom-element-rooted islands: the SSR-emitted element
@@ -232,7 +240,7 @@ function scheduleHydration(
           typeof customElements !== 'undefined' &&
           customElements.get(tag)
         ) {
-          safeDone();
+          finish();
           return;
         }
         try {
@@ -240,11 +248,11 @@ function scheduleHydration(
         } catch (err) {
           console.error('[Purity] mountIslands: hydrate() threw for island', el, err);
         }
-        safeDone();
+        finish();
       })
       .catch((err) => {
         console.error(`[Purity] mountIslands: failed to resolve island ${id}:`, err);
-        safeDone();
+        finish();
       });
   };
   switch (trigger) {
@@ -421,22 +429,125 @@ function waitForIdle(run: () => void): void {
   setTimeout(run, 1);
 }
 
-function waitForInteract(el: Element, run: () => void): void {
-  const events = ['pointerdown', 'focusin', 'keydown'] as const;
-  // Re-entrant guard — once one event fires we tear the others down to
-  // avoid double hydration if two events arrive in the same tick.
-  let fired = false;
-  const handler = (): void => {
-    if (fired) return;
-    fired = true;
-    for (let i = 0; i < events.length; i++) {
-      el.removeEventListener(events[i], handler, true);
-    }
-    run();
+function waitForInteract(el: Element, run: (onSettled: () => void) => void): void {
+  let started = false;
+  let pending: (() => void) | null = null;
+
+  const finish = (): void => {
+    el.removeEventListener('click', onClick, true);
+    el.removeEventListener('submit', onSubmit, true);
+    el.removeEventListener('keydown', onKeydown, true);
+    const replay = pending;
+    pending = null;
+    if (replay) replay();
   };
-  for (let i = 0; i < events.length; i++) {
-    el.addEventListener(events[i], handler, { capture: true });
-  }
+  const start = (): void => {
+    if (started) return;
+    started = true;
+    el.removeEventListener('pointerdown', start, true);
+    el.removeEventListener('focusin', start, true);
+    run(finish);
+  };
+  const onClick = (event: Event): void => {
+    const click = event as MouseEvent;
+    // Modified clicks and picker controls need the browser's original
+    // user activation. They still begin hydration, but are not replayed.
+    if (
+      !event.cancelable ||
+      (typeof click.button === 'number' && click.button !== 0) ||
+      click.altKey ||
+      click.ctrlKey ||
+      click.metaKey ||
+      click.shiftKey
+    ) {
+      start();
+      return;
+    }
+    const target = event
+      .composedPath()
+      .find((node): node is HTMLElement => node instanceof HTMLElement && node !== el);
+    const label = target?.closest('label');
+    const picker = target instanceof HTMLInputElement ? target : label?.control;
+    if (
+      !target ||
+      (picker instanceof HTMLInputElement && /^(file|color)$/.test(picker.type)) ||
+      target.closest('a[target="_blank"], a[download]')
+    ) {
+      start();
+      return;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    // Keep only the first activation while a lazy chunk loads. This also
+    // avoids submitting a form twice when the user clicks repeatedly.
+    pending ??= () => {
+      if (el.isConnected && target.isConnected) target.click();
+    };
+    start();
+  };
+  const onSubmit = (event: Event): void => {
+    if (!event.cancelable || !(event.target instanceof HTMLFormElement)) {
+      start();
+      return;
+    }
+    const form = event.target;
+    const submitter = (event as SubmitEvent).submitter;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    pending ??= () => {
+      if (!el.isConnected || !form.isConnected) return;
+      form.requestSubmit(
+        (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) &&
+          submitter.isConnected
+          ? submitter
+          : undefined,
+      );
+    };
+    start();
+  };
+  const onKeydown = (event: Event): void => {
+    const key = event as KeyboardEvent;
+    const target = event
+      .composedPath()
+      .find((node): node is HTMLElement => node instanceof HTMLElement && node !== el);
+    // Native controls turn Enter/Space into click or submit, captured
+    // above. Preserve text editing and browser keyboard behavior.
+    if (
+      event.cancelable &&
+      (key.key === 'Enter' || key.key === ' ') &&
+      !key.altKey &&
+      !key.ctrlKey &&
+      !key.metaKey &&
+      target &&
+      !target.isContentEditable &&
+      !target.closest('button, a[href], input, select, textarea, summary')
+    ) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      pending ??= () => {
+        if (!el.isConnected || !target.isConnected) return;
+        target.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: key.key,
+            code: key.code,
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            altKey: key.altKey,
+            ctrlKey: key.ctrlKey,
+            metaKey: key.metaKey,
+            shiftKey: key.shiftKey,
+          }),
+        );
+      };
+    }
+    start();
+  };
+  el.addEventListener('pointerdown', start, { capture: true });
+  el.addEventListener('focusin', start, { capture: true });
+  el.addEventListener('keydown', onKeydown, { capture: true });
+  el.addEventListener('click', onClick, { capture: true });
+  el.addEventListener('submit', onSubmit, { capture: true });
 }
 
 function waitForMedia(query: string, run: () => void): void {

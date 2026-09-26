@@ -90,17 +90,33 @@ mountIslands([
 
 ## The trigger matrix
 
-| Trigger      | Hydrates when…                                                                 | Falls back to                       |
-| ------------ | ------------------------------------------------------------------------------ | ----------------------------------- |
-| `'load'`     | the next microtask after `mountIslands()` runs.                                | —                                   |
-| `'idle'`     | the browser is idle (`requestIdleCallback`, timeout 2 s).                      | `setTimeout(…, 1)` on Safari pre-17 |
-| `'visible'`  | the wrapper enters the viewport (`IntersectionObserver`).                      | `'load'` when the API is missing    |
-| `'interact'` | first `pointerdown` / `focusin` / `keydown` inside the wrapper, capture phase. | —                                   |
-| `media:(…)`  | the CSS media query matches (`matchMedia`).                                    | `'load'` when `matchMedia` missing  |
+| Trigger      | Hydrates when…                                                                       | Falls back to                       |
+| ------------ | ------------------------------------------------------------------------------------ | ----------------------------------- |
+| `'load'`     | the next microtask after `mountIslands()` runs.                                      | —                                   |
+| `'idle'`     | the browser is idle (`requestIdleCallback`, timeout 2 s).                            | `setTimeout(…, 1)` on Safari pre-17 |
+| `'visible'`  | the wrapper enters the viewport (`IntersectionObserver`).                            | `'load'` when the API is missing    |
+| `'interact'` | first `pointerdown` / `focusin` / `keydown` / `click` / `submit` inside the wrapper. | —                                   |
+| `media:(…)`  | the CSS media query matches (`matchMedia`).                                          | `'load'` when `matchMedia` missing  |
 
 Triggers are mutually exclusive in this release — one per island.
 Composite triggers (e.g. "whichever of `visible` or `interact` fires
 first") can be added later without breaking the API.
+
+### First interaction during lazy loading
+
+If a click or form submit reaches an `'interact'` island before its
+client chunk hydrates, Purity holds the first activation and replays it
+once after hydration. Repeated activations during the wait are ignored,
+so a submit button does not submit twice. Native keyboard activation
+flows through the same click/submit path; Enter or Space on a custom,
+non-editable control replays its `keydown`. Focus and text input keep
+their normal browser behavior while the chunk loads.
+
+The replayed event is synthetic and cannot restore browser-granted user
+activation. File and color pickers, modified clicks, new-tab links, and
+download links keep their native action instead of waiting for replay.
+For controls that need a trusted event or a transient user gesture, use
+`'load'` or `'visible'` hydration so their handler is ready beforehand.
 
 ## Cross-island state
 
@@ -134,10 +150,10 @@ would each have their own module-scope counter.
 - **Multi-rooted islands** (a view that returns a fragment with multiple
   sibling elements) hydrate through the single hydrate-walker path. If
   you hit issues, wrap the island content in a single element.
-- **First-interaction event replay** is not implemented. The click that
-  fires the `'interact'` trigger is the click that wires up the handler;
-  the next click is the first one your handler sees. Document this in
-  your UI if a click ever needs to be lost-free.
+- **Trusted event replay** is impossible after an asynchronous import.
+  The first ordinary activation is replayed synthetically, but browser
+  APIs requiring a trusted event or transient user activation still
+  need an already hydrated island.
 - **`island()` detection by the Vite plugin** is not automated yet. The
   user wires `mountIslands(…)` with explicit dynamic-import thunks. A
   future Vite plugin pass can transform `mountIslands([X, Y])` into the

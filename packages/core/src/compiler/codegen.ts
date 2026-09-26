@@ -823,18 +823,40 @@ interface BindingParts {
 }
 
 function genPositionalBindings(slots: Slot[]): string {
+  // Cache paths used by multiple slots so cloned instances traverse them once.
+  const prefixCounts = new Map<string, number>();
+  for (const slot of slots) {
+    let prefix = '';
+    for (const step of slot.path) {
+      prefix += step;
+      prefixCounts.set(prefix, (prefixCounts.get(prefix) ?? 0) + 1);
+    }
+  }
+
+  // Locate every slot before a binding can replace a placeholder with nodes.
+  const navigationParts: string[] = [];
+  const sharedPaths = new Map<string, string>();
   const setupParts: string[] = [];
   const reactiveParts: string[] = [];
 
   for (const slot of slots) {
-    const nodeVar = `_n${bindVarCounter++}`;
-
-    // Generate path navigation: _r.firstChild.nextSibling.firstChild...
+    let prefix = '';
     let nav = '_r';
     for (const step of slot.path) {
+      prefix += step;
       nav += step === 0 ? '.firstChild' : '.nextSibling';
+      if ((prefixCounts.get(prefix) ?? 0) > 1) {
+        let cached = sharedPaths.get(prefix);
+        if (cached === undefined) {
+          cached = `_n${bindVarCounter++}`;
+          navigationParts.push(`var ${cached}=${nav};`);
+          sharedPaths.set(prefix, cached);
+        }
+        nav = cached;
+      }
     }
-    setupParts.push(`var ${nodeVar}=${nav};`);
+    const nodeVar = sharedPaths.get(prefix) ?? `_n${bindVarCounter++}`;
+    if (!sharedPaths.has(prefix)) navigationParts.push(`var ${nodeVar}=${nav};`);
 
     if (slot.type === 'expr') {
       const { setup, reactive } = genExprBinding(nodeVar, slot.index, slot.textPlaceholder);
@@ -851,7 +873,7 @@ function genPositionalBindings(slots: Slot[]): string {
     }
   }
 
-  let result = setupParts.join('');
+  let result = navigationParts.join('') + setupParts.join('');
   if (reactiveParts.length > 0) {
     result += `_w(function(){${reactiveParts.join('')}});`;
   }

@@ -242,6 +242,18 @@ describe('codegen', () => {
 });
 
 describe('compiled html``', () => {
+  it('binds later nodes after an earlier array expands the fragment', () => {
+    const first = document.createElement('i');
+    const second = document.createElement('i');
+    const fragment = html`${[first, second]}<span class=${'target'}>done</span>`;
+    const container = document.createElement('div');
+    container.appendChild(fragment);
+
+    expect(container.children.length).toBe(3);
+    expect(container.querySelector('span')?.className).toBe('target');
+    expect(second.className).toBe('');
+  });
+
   it('renders a simple element', () => {
     const frag = html`<div class="box">Hello</div>`;
     const container = document.createElement('div');

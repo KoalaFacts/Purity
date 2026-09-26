@@ -434,6 +434,15 @@ function interactionTarget(event: Event, island: Element): Element | null {
   return null;
 }
 
+function remainsInIsland(target: Node, island: Element): boolean {
+  let node: Node | null = target;
+  while (node) {
+    if (node === island) return true;
+    node = node.parentNode ?? (node instanceof ShadowRoot ? node.host : null);
+  }
+  return false;
+}
+
 function hasActivationRole(event: Event, island: Element, key: string): boolean {
   const path = event.composedPath();
   for (let i = 0; i < path.length && path[i] !== island; i++) {
@@ -535,7 +544,12 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
       shiftKey: click.shiftKey,
     };
     pending ??= () => {
-      if (el.isConnected && target.isConnected) {
+      if (
+        el.isConnected &&
+        target.isConnected &&
+        remainsInIsland(target, el) &&
+        !target.closest(':disabled')
+      ) {
         target.dispatchEvent(new MouseEvent('click', replayInit));
       }
     };
@@ -551,7 +565,7 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
     event.preventDefault();
     event.stopImmediatePropagation();
     pending ??= () => {
-      if (!el.isConnected || !form.isConnected) return;
+      if (!el.isConnected || !form.isConnected || !remainsInIsland(form, el)) return;
       form.requestSubmit(
         (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) &&
           submitter.isConnected
@@ -581,7 +595,7 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
       event.preventDefault();
       event.stopImmediatePropagation();
       pending ??= () => {
-        if (!el.isConnected || !target.isConnected) return;
+        if (!el.isConnected || !target.isConnected || !remainsInIsland(target, el)) return;
         target.dispatchEvent(
           new KeyboardEvent('keydown', {
             key: key.key,

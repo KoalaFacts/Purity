@@ -2,8 +2,9 @@
 // island finishes resolving. The browser check controls when resolution ends.
 import { html, island, mountIslands } from '@purityjs/core';
 
-type FixtureKind = 'form' | 'shadow-form' | 'aria-button' | 'svg-click';
+type FixtureKind = 'form' | 'external-submitter' | 'shadow-form' | 'aria-button' | 'svg-click';
 let current: { release(): void; count(): number } | null = null;
+let lastSubmitter = '';
 
 export function setupInteractionFixture(kind: FixtureKind): void {
   current = mountInteractionFixture(kind);
@@ -17,16 +18,21 @@ export function interactionFixtureCount(): number {
   return current?.count() ?? 0;
 }
 
+export function interactionFixtureSubmitter(): string {
+  return lastSubmitter;
+}
+
 export function mountInteractionFixture(kind: FixtureKind): { release(): void; count(): number } {
   const container = document.createElement('section');
   const markup: Record<FixtureKind, string> = {
     form: '<form><input name="message" value="hello"><button type="submit">Send</button></form>',
+    'external-submitter': '<form id="external-form"><input name="message" value="hello"></form>',
     'shadow-form': '<div id="shadow-host"></div>',
     'aria-button': '<div role="button" tabindex="0">Activate</div>',
     'svg-click':
       '<button type="button"><svg width="30" height="30"><circle cx="15" cy="15" r="10"></circle></svg></button>',
   };
-  container.innerHTML = `<purity-island data-pi-id="1" data-pi-trigger="interact">${markup[kind]}</purity-island>`;
+  container.innerHTML = `<purity-island data-pi-id="1" data-pi-trigger="interact">${markup[kind]}</purity-island>${kind === 'external-submitter' ? '<button id="external-submit" type="submit" form="external-form" name="intent" value="save">Save</button>' : ''}`;
   document.body.appendChild(container);
 
   if (kind === 'shadow-form') {
@@ -35,6 +41,7 @@ export function mountInteractionFixture(kind: FixtureKind): { release(): void; c
   }
 
   let activations = 0;
+  lastSubmitter = '';
   const Form = (): unknown =>
     html`<form
       @submit=${(event: Event) => {
@@ -44,6 +51,17 @@ export function mountInteractionFixture(kind: FixtureKind): { release(): void; c
     >
       <input name="message" value="hello" /><button type="submit">Send</button>
     </form>`;
+  const ExternalForm = (): unknown => html`<form
+    id="external-form"
+    @submit=${(event: SubmitEvent) => {
+      event.preventDefault();
+      activations++;
+      const submitter = event.submitter as HTMLButtonElement | HTMLInputElement | null;
+      lastSubmitter = submitter ? `${submitter.name}:${submitter.value}` : '';
+    }}
+  >
+    <input name="message" value="hello" />
+  </form>`;
   const ShadowForm = (): unknown => html`<div id="shadow-host"></div>`;
   const AriaButton = (): unknown =>
     html`<div
@@ -60,6 +78,7 @@ export function mountInteractionFixture(kind: FixtureKind): { release(): void; c
   </button>`;
   const views = {
     form: Form,
+    'external-submitter': ExternalForm,
     'shadow-form': ShadowForm,
     'aria-button': AriaButton,
     'svg-click': SvgClick,

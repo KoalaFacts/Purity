@@ -6,7 +6,7 @@ import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium, firefox, webkit, type Browser, type Page } from 'playwright';
 
-type FixtureKind = 'form' | 'shadow-form' | 'aria-button' | 'svg-click';
+type FixtureKind = 'form' | 'external-submitter' | 'shadow-form' | 'aria-button' | 'svg-click';
 const fixtureModule = '/src/interaction-fixture.ts';
 
 async function freePort(): Promise<number> {
@@ -125,6 +125,17 @@ async function checkBrowser(name: string, browser: Browser, base: string): Promi
     await form.locator('purity-island form button').last().click();
     await releaseAndExpectOne(form);
 
+    const externalSubmitter = await open('external-submitter');
+    await externalSubmitter.locator('#external-submit').click();
+    await releaseAndExpectOne(externalSubmitter);
+    assert.equal(
+      await externalSubmitter.evaluate(
+        async (module) => (await import(module)).interactionFixtureSubmitter(),
+        fixtureModule,
+      ),
+      'intent:save',
+    );
+
     const shadowForm = await open('shadow-form');
     await shadowForm
       .locator('#shadow-host form')
@@ -144,7 +155,7 @@ async function checkBrowser(name: string, browser: Browser, base: string): Promi
 
     assert.deepEqual(errors, []);
     console.log(
-      `${name} ${browser.version()}: first click, keyboard, form, shadow form, and SVG passed`,
+      `${name} ${browser.version()}: first click, keyboard, forms, external submitter, and SVG passed`,
     );
   } finally {
     await Promise.all(pages.map((page) => page.close()));

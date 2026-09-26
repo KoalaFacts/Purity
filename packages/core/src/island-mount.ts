@@ -639,7 +639,11 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
       const liveForm = liveInteractionTarget(form, el, formPath);
       if (!(liveForm instanceof HTMLFormElement)) return;
       const liveSubmitter =
-        submitter instanceof Element ? liveInteractionTarget(submitter, el, submitterPath) : null;
+        submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement
+          ? submitter.isConnected && submitter.form === liveForm
+            ? submitter
+            : liveInteractionTarget(submitter, el, submitterPath)
+          : null;
       liveForm.requestSubmit(
         (liveSubmitter instanceof HTMLButtonElement || liveSubmitter instanceof HTMLInputElement) &&
           liveSubmitter.form === liveForm

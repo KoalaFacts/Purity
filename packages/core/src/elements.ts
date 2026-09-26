@@ -6,7 +6,13 @@ import {
   valueToAttr,
   valueToHtml,
 } from './compiler/ssr-runtime.ts';
-import { ComponentContext, getCurrentContext, popContext, pushContext } from './component.ts';
+import {
+  ComponentContext,
+  getCurrentContext,
+  hydratePendingCustomElements,
+  popContext,
+  pushContext,
+} from './component.ts';
 import { FormControlBridge } from './form-control.ts';
 import { watch } from './signals.ts';
 
@@ -463,14 +469,17 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
   const renderedHtml = valueToHtml(view);
 
   // Host-element attributes mirror what was declared in the parent template.
-  // Hydration (PR 4) re-binds props by reading these back off the element.
   // Attribute *names* are interpolated raw, so skip any key that isn't a safe
   // name — the compiler asserts this upstream, but direct/SSR callers can pass
   // arbitrary keys. Values are escaped by `valueToAttr`.
   let hostAttrs = '';
-  for (const k of Object.keys(attrs)) {
+  for (const k of Object.keys(props)) {
     if (!SAFE_ATTR_NAME.test(k)) continue;
-    const av = valueToAttr(attrs[k]);
+    // Object/function props are supplied by the parent during hydration.
+    // Reflecting them as strings is lossy and can expose server-only data.
+    if (props[k] !== null && (typeof props[k] === 'object' || typeof props[k] === 'function'))
+      continue;
+    const av = valueToAttr(props[k]);
     if (av !== null) hostAttrs += av === '' ? ` ${k}` : ` ${k}="${av}"`;
   }
 
@@ -568,12 +577,15 @@ export function component<
       // reconnect the shadow still holds our own prior render, which must be
       // re-rendered fresh, not re-hydrated against marker-less DOM.
       _hasRendered = false;
+      _hadDeclarativeShadowRoot = false;
+      _pendingSSRHydration = false;
       _shadow: ShadowRoot;
       _internals: ElementInternals | null = null;
       _formBridge: FormControlBridge | null = null;
 
       constructor() {
         super();
+        this._hadDeclarativeShadowRoot = this.shadowRoot !== null;
         // Reuse a Declarative Shadow DOM root if the parser already attached
         // one (the SSR-then-hydrate path emits
         // `<tag><template shadowrootmode="open">…</template></tag>`).
@@ -619,7 +631,41 @@ export function component<
       }
 
       connectedCallback() {
-        const props = { ...this._props } as P;
+        if (this._isSSRRoot()) {
+          // The parent must assign typed property bindings first. The DSD
+          // content stays visible until hydrate() walks this element.
+          this._pendingSSRHydration = true;
+          return;
+        }
+        this._renderConnected();
+      }
+
+      _isSSRRoot(): boolean {
+        return (
+          !this._hasRendered && (this._hadDeclarativeShadowRoot || this._shadow.firstChild !== null)
+        );
+      }
+
+      _hydrateSSR(): void {
+        if (!this._pendingSSRHydration || !this.isConnected) return;
+        this._pendingSSRHydration = false;
+        this._renderConnected();
+        hydratePendingCustomElements(this._shadow);
+      }
+
+      _renderConnected(): void {
+        const hasDSDContent = this._isSSRRoot();
+        const props: Record<string, unknown> = Object.create(null);
+        for (const attr of this.attributes) {
+          props[attr.name] = attr.value;
+        }
+        Object.assign(props, this._props);
+        for (const key of Object.keys(this)) {
+          if (key.startsWith('_')) continue;
+          const lower = key.toLowerCase();
+          if (lower !== key && !Object.hasOwn(this, lower)) delete props[lower];
+          props[key] = (this as any)[key];
+        }
 
         // Collect event handlers
         const eventProps: Record<string, unknown> = {};
@@ -673,8 +719,7 @@ export function component<
         // remove-then-readd, or any manual detach/reattach) the shadow still
         // holds our own prior render, which has no SSR hydration markers —
         // inflating against it would crash. Treat reconnect as a fresh render.
-        const hasDSDContent = !this._hasRendered && this._shadow.firstChild !== null;
-        let result: Node | DocumentFragment;
+        let result: Node | DocumentFragment | null;
         if (hasDSDContent) {
           enterHydration();
           let renderResult: { result: Node | DocumentFragment };
@@ -685,10 +730,10 @@ export function component<
           }
           const view = renderResult.result as unknown;
           if (isDeferred(view)) {
-            const frag = (this.ownerDocument ?? document).createDocumentFragment();
-            while (this._shadow.firstChild) frag.appendChild(this._shadow.firstChild);
-            inflateDeferred(view, frag);
-            result = frag;
+            // Keep the parsed shadow nodes connected while binding them.
+            // Detaching them would disconnect nested custom elements.
+            inflateDeferred(view, this._shadow);
+            result = null;
           } else {
             // Renderer returned a non-deferred node — clear and re-render.
             while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
@@ -702,10 +747,10 @@ export function component<
         }
 
         // Render into shadow DOM
-        this._shadow.appendChild(result);
+        if (result !== null) this._shadow.appendChild(result);
         this._formBridge?.connect();
 
-        if (result instanceof DocumentFragment) {
+        if (result === null || result instanceof DocumentFragment) {
           ctx.nodes = Array.from(this._shadow.childNodes);
         } else {
           ctx.nodes = [result];
@@ -881,6 +926,7 @@ export function component<
             return this._formBridge?.value ?? '';
           },
           set(this: PurityElement, value: unknown) {
+            this._props.value = value;
             this._formBridge?.setValue(String(value));
           },
         },
@@ -889,6 +935,7 @@ export function component<
             return this._formBridge?.checked ?? false;
           },
           set(this: PurityElement, value: unknown) {
+            this._props.checked = Boolean(value);
             this._formBridge?.setChecked(Boolean(value));
           },
         },

@@ -25,6 +25,7 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
       - run: npm ci
 
@@ -71,8 +72,7 @@ jobs:
         run: npm run build -w packages/cli
 
       # Publish in dependency order
-      # First publish: set NPM_TOKEN as environment secret on 'production'
-      # After trusted publishing is configured: remove all NODE_AUTH_TOKEN env lines
+      # Each package trusts this workflow and the production environment on npm.
       - name: Publish core
         run: |
           if npm view "@purityjs/core@$RELEASE_VERSION" version --prefer-online >/dev/null 2>&1; then
@@ -80,8 +80,6 @@ jobs:
           else
             npm publish -w packages/core
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish SSR
         run: |
@@ -90,8 +88,6 @@ jobs:
           else
             npm publish -w packages/ssr
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish vite-plugin
         run: |
@@ -100,8 +96,6 @@ jobs:
           else
             npm publish -w packages/vite-plugin
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish cli
         run: |
@@ -110,8 +104,6 @@ jobs:
           else
             npm publish -w packages/cli
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Tag the release
       - name: Create git tag

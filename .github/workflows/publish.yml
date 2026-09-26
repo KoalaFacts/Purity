@@ -16,6 +16,8 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     environment: production
+    env:
+      RELEASE_VERSION: ${{ github.event.inputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -25,6 +27,16 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - run: npm ci
+
+      - name: Verify requested version
+        run: |
+          for package_dir in . packages/core packages/ssr packages/vite-plugin packages/cli; do
+            package_version="$(node -p "require('./${package_dir}/package.json').version")"
+            if [ "$package_version" != "$RELEASE_VERSION" ]; then
+              echo "Version mismatch in $package_dir: $package_version != $RELEASE_VERSION" >&2
+              exit 1
+            fi
+          done
 
       # Full CI checks before publish
       - name: Format check (Oxfmt — Vite+)
@@ -62,27 +74,47 @@ jobs:
       # First publish: set NPM_TOKEN as environment secret on 'production'
       # After trusted publishing is configured: remove all NODE_AUTH_TOKEN env lines
       - name: Publish core
-        run: npm publish -w packages/core
+        run: |
+          if npm view "@purityjs/core@$RELEASE_VERSION" version --prefer-online >/dev/null 2>&1; then
+            echo "@purityjs/core@$RELEASE_VERSION is already published"
+          else
+            npm publish -w packages/core
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish SSR
-        run: npm publish -w packages/ssr
+        run: |
+          if npm view "@purityjs/ssr@$RELEASE_VERSION" version --prefer-online >/dev/null 2>&1; then
+            echo "@purityjs/ssr@$RELEASE_VERSION is already published"
+          else
+            npm publish -w packages/ssr
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish vite-plugin
-        run: npm publish -w packages/vite-plugin
+        run: |
+          if npm view "@purityjs/vite-plugin@$RELEASE_VERSION" version --prefer-online >/dev/null 2>&1; then
+            echo "@purityjs/vite-plugin@$RELEASE_VERSION is already published"
+          else
+            npm publish -w packages/vite-plugin
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish cli
-        run: npm publish -w packages/cli
+        run: |
+          if npm view "@purityjs/cli@$RELEASE_VERSION" version --prefer-online >/dev/null 2>&1; then
+            echo "@purityjs/cli@$RELEASE_VERSION is already published"
+          else
+            npm publish -w packages/cli
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Tag the release
       - name: Create git tag
         run: |
-          git tag v${{ github.event.inputs.version }}
-          git push origin v${{ github.event.inputs.version }}
+          git tag "v$RELEASE_VERSION"
+          git push origin "v$RELEASE_VERSION"

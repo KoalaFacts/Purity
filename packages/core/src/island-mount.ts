@@ -483,7 +483,15 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
     pending = null;
     // hydrate() schedules mounted hooks as microtasks. Let those complete
     // before delivering the first user action to its newly bound handler.
-    if (replay) queueMicrotask(replay);
+    if (replay) {
+      queueMicrotask(() => {
+        try {
+          replay();
+        } catch (err) {
+          console.error('[Purity] mountIslands: interaction replay failed:', err);
+        }
+      });
+    }
   };
   const start = (): void => {
     if (started) return;
@@ -568,7 +576,8 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
       if (!el.isConnected || !form.isConnected || !remainsInIsland(form, el)) return;
       form.requestSubmit(
         (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) &&
-          submitter.isConnected
+          submitter.isConnected &&
+          submitter.form === form
           ? submitter
           : undefined,
       );

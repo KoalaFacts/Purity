@@ -9,9 +9,9 @@
 //     block from css`` inlined into the shadow.
 //   - On the client, importing this file (via the lazy chunk in
 //     entry.client.ts) calls `customElements.define('demo-expander', …)`,
-//     which auto-upgrades the SSR-rendered element. mountIslands detects
-//     this and skips the explicit hydrate() call — the upgrade did the
-//     work via connectedCallback.
+//     which auto-upgrades the SSR-rendered element. mountIslands then
+//     hydrates the wrapper in place: it binds host props before the
+//     element hydrates its existing shadow content.
 //
 // The component pattern below uses a default slot so the surrounding
 // app.ts can pass arbitrary content per-instance. Each `<demo-expander>`
@@ -75,8 +75,8 @@ const View = (): unknown => html`<demo-expander>
   <p>
     When this island's chunk loads, <code>customElements.define()</code> registers the
     <code>&lt;demo-expander&gt;</code> class. The browser <em>auto-upgrades</em> this existing
-    element — no <code>hydrate()</code> call needed. The toggle button starts working without any
-    DOM reshuffling.
+    element. Purity then hydrates the wrapper and its shadow content in place. The toggle button
+    starts working without DOM reshuffling.
   </p>
 </demo-expander>`;
 

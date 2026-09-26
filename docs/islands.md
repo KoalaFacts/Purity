@@ -109,8 +109,8 @@ client chunk hydrates, Purity holds the first activation and replays it
 once after hydration. Repeated activations during the wait are ignored,
 so a submit button does not submit twice. Native keyboard activation
 flows through the same click/submit path; Enter or Space on a custom,
-non-editable control replays its `keydown`. Focus and text input keep
-their normal browser behavior while the chunk loads.
+non-editable control replays its `keydown`. Focus and text input are
+not intercepted while the chunk loads.
 
 The replayed event is synthetic and cannot restore browser-granted user
 activation. File and color pickers, modified clicks, new-tab links, and
@@ -142,7 +142,8 @@ would each have their own module-scope counter.
 - `island()` brand and SSR `<purity-island>` wrapper.
 - `mountIslands()` client runtime, all five trigger kinds.
 - Per-island chunk split via dynamic-import thunks.
-- Custom-element-rooted islands (auto-upgrade via DSD).
+- Custom-element-rooted islands (auto-upgrade via DSD, then in-place
+  hydration after host props are bound).
 - html-rooted islands (single-element root).
 
 ## Known limitations

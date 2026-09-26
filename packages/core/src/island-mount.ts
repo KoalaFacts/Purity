@@ -223,22 +223,19 @@ function scheduleHydration(
           finish();
           return;
         }
-        // Custom-element-rooted islands: the SSR-emitted element
-        // auto-upgrades the moment its class is registered. For lazy
-        // entries, registration happens during the `await import(...)`
-        // above — so the CE check MUST run after resolveEntry resolves,
-        // not before. Otherwise `customElements.get(tag)` returns
-        // undefined for lazy CE-rooted islands and we'd fall through to
-        // hydrate(el, view), which moves the just-upgraded CE through a
-        // DocumentFragment and triggers disconnect/reconnect — double
-        // hydration on an already-hydrated element.
+        // A registered custom element may already have rendered itself on
+        // upgrade. Purity elements with DSD instead wait for their parent
+        // to bind typed props, so they still need hydrate(el, view). That
+        // path inflates in place and then hydrates the shadow tree.
+        // Check after the import so the element has already upgraded.
         const first = el.firstElementChild;
         const tag = first?.tagName.toLowerCase();
         if (
           tag &&
           tag.includes('-') &&
           typeof customElements !== 'undefined' &&
-          customElements.get(tag)
+          customElements.get(tag) &&
+          (first as Element & { _pendingSSRHydration?: boolean })._pendingSSRHydration !== true
         ) {
           finish();
           return;

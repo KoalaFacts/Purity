@@ -39,6 +39,9 @@ jobs:
       - name: Test core
         run: npm test -w packages/core
 
+      - name: Test SSR
+        run: npm test -w packages/ssr
+
       - name: Test vite-plugin
         run: npm test -w packages/vite-plugin
 

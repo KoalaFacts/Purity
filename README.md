@@ -141,6 +141,7 @@ each, mount): [koalafacts.github.io/Purity/dashboard](https://koalafacts.github.
 ## Status
 
 **Pre-1.0 (`0.2.0`).** The API may break between minor versions until 1.0.
+See the [changelog](./CHANGELOG.md) for upgrade notes.
 There is no public versioning policy yet, and we don't know of any production
 users. If you ship Purity to users, please open an issue so we can keep your
 use case in mind for the breaking-change discussions.

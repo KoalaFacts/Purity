@@ -371,6 +371,14 @@ function waitForVisible(el: Element, run: () => void): void {
   // watcher below: whichever wins races to fire still runs disposal once.
   let fired = false;
   let mo: MutationObserver | null = null;
+  // SSR wrappers use display:contents and have no intersection box. Observe
+  // their rendered children so scrolling to a visible island starts loading.
+  const targets =
+    el instanceof HTMLElement && el.style.display === 'contents' ? Array.from(el.children) : [el];
+  if (targets.length === 0) {
+    waitForLoad(run);
+    return;
+  }
   const obs = new Ctor((entries, observer) => {
     for (let i = 0; i < entries.length; i++) {
       if (entries[i].isIntersecting) {
@@ -383,7 +391,7 @@ function waitForVisible(el: Element, run: () => void): void {
       }
     }
   });
-  obs.observe(el);
+  for (let i = 0; i < targets.length; i++) obs.observe(targets[i]);
 
   // Bug #5: without parent-detach detection, a `<purity-island>` removed
   // from the DOM before it intersects leaks the IntersectionObserver
@@ -402,7 +410,7 @@ function waitForVisible(el: Element, run: () => void): void {
       if (el.parentNode !== parent) {
         if (fired) return;
         fired = true;
-        obs.unobserve(el);
+        for (let i = 0; i < targets.length; i++) obs.unobserve(targets[i]);
         obs.disconnect();
         if (mo) mo.disconnect();
       }
@@ -441,6 +449,63 @@ function remainsInIsland(target: Node, island: Element): boolean {
     node = node.parentNode ?? (node instanceof ShadowRoot ? node.host : null);
   }
   return false;
+}
+
+interface InteractionPathStep {
+  ordinal: number;
+  tagName: string;
+  shadow: boolean;
+}
+
+// Hydration may replace an SSR node (including a DSD custom element). Keep
+// its element-only path so the first activation can reach the matching live
+// control after hydration. Abort when a matching tag/ordinal is missing.
+function interactionPath(target: Element, island: Element): InteractionPathStep[] | null {
+  const steps: InteractionPathStep[] = [];
+  let node: Element = target;
+  while (node !== island) {
+    const parent = node.parentNode;
+    if (!(parent instanceof Element) && !(parent instanceof ShadowRoot)) return null;
+    let ordinal = 0;
+    for (
+      let sibling = node.previousElementSibling;
+      sibling;
+      sibling = sibling.previousElementSibling
+    ) {
+      if (sibling.tagName === node.tagName) ordinal++;
+    }
+    steps.push({ ordinal, tagName: node.tagName, shadow: parent instanceof ShadowRoot });
+    node = parent instanceof ShadowRoot ? parent.host : parent;
+  }
+  return steps.reverse();
+}
+
+function liveInteractionTarget(
+  original: Element,
+  island: Element,
+  path: InteractionPathStep[] | null,
+): Element | null {
+  if (original.isConnected && remainsInIsland(original, island)) return original;
+  if (!path || !island.isConnected) return null;
+  let node = island;
+  for (let i = 0; i < path.length; i++) {
+    const step = path[i];
+    const parent = step.shadow ? node.shadowRoot : node;
+    if (!parent) return null;
+    let next: Element | null = null;
+    let ordinal = 0;
+    for (let j = 0; j < parent.children.length; j++) {
+      const candidate = parent.children.item(j);
+      if (candidate?.tagName !== step.tagName) continue;
+      if (ordinal++ === step.ordinal) {
+        next = candidate;
+        break;
+      }
+    }
+    if (!next) return null;
+    node = next;
+  }
+  return node;
 }
 
 function hasActivationRole(event: Event, island: Element, key: string): boolean {
@@ -531,6 +596,7 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
       start();
       return;
     }
+    const path = interactionPath(target, el);
     event.preventDefault();
     event.stopImmediatePropagation();
     // Keep only the first activation while a lazy chunk loads. This also
@@ -552,14 +618,9 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
       shiftKey: click.shiftKey,
     };
     pending ??= () => {
-      if (
-        el.isConnected &&
-        target.isConnected &&
-        remainsInIsland(target, el) &&
-        !target.closest(':disabled')
-      ) {
-        target.dispatchEvent(new MouseEvent('click', replayInit));
-      }
+      const live = liveInteractionTarget(target, el, path);
+      if (live && !live.closest(':disabled'))
+        live.dispatchEvent(new MouseEvent('click', replayInit));
     };
     start();
   };
@@ -570,15 +631,19 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
     }
     const form = event.target;
     const submitter = (event as SubmitEvent).submitter;
+    const formPath = interactionPath(form, el);
+    const submitterPath = submitter instanceof Element ? interactionPath(submitter, el) : null;
     event.preventDefault();
     event.stopImmediatePropagation();
     pending ??= () => {
-      if (!el.isConnected || !form.isConnected || !remainsInIsland(form, el)) return;
-      form.requestSubmit(
-        (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) &&
-          submitter.isConnected &&
-          submitter.form === form
-          ? submitter
+      const liveForm = liveInteractionTarget(form, el, formPath);
+      if (!(liveForm instanceof HTMLFormElement)) return;
+      const liveSubmitter =
+        submitter instanceof Element ? liveInteractionTarget(submitter, el, submitterPath) : null;
+      liveForm.requestSubmit(
+        (liveSubmitter instanceof HTMLButtonElement || liveSubmitter instanceof HTMLInputElement) &&
+          liveSubmitter.form === liveForm
+          ? liveSubmitter
           : undefined,
       );
     };
@@ -587,6 +652,7 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
   const onKeydown = (event: Event): void => {
     const key = event as KeyboardEvent;
     const target = interactionTarget(event, el);
+    const path = target ? interactionPath(target, el) : null;
     // Native controls turn Enter/Space into click or submit, captured
     // above. Only explicit ARIA controls need their own keydown replay;
     // ordinary focusable content retains its native keyboard behavior.
@@ -604,8 +670,9 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
       event.preventDefault();
       event.stopImmediatePropagation();
       pending ??= () => {
-        if (!el.isConnected || !target.isConnected || !remainsInIsland(target, el)) return;
-        target.dispatchEvent(
+        const live = liveInteractionTarget(target, el, path);
+        if (!live) return;
+        live.dispatchEvent(
           new KeyboardEvent('keydown', {
             key: key.key,
             code: key.code,

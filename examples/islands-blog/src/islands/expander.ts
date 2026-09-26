@@ -59,9 +59,7 @@ component('demo-expander', () => {
   `;
 
   return html`<div class="card">
-    <button @click=${() => open.update((v) => !v)}>
-      ${() => (open() ? '▾ Hide' : '▸ Show')} details
-    </button>
+    <button @click=${() => open((v) => !v)}>${() => (open() ? '▾ Hide' : '▸ Show')} details</button>
     <div class="body" ?hidden=${() => !open()}>${body()}</div>
   </div>`;
 });

@@ -13,7 +13,7 @@ const View = (): unknown =>
       Did you enjoy this post?
       <button
         @click=${() => {
-          liked.update((v) => !v);
+          liked((v) => !v);
         }}
       >
         ${() => (liked() ? '★ Liked' : '☆ Like')}

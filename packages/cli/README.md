@@ -15,6 +15,18 @@ npm install
 npm run dev
 ```
 
+For a server-rendered project, add `--ssr` when creating it. After building,
+`npm run preview` starts a Node server that renders pages and serves client
+assets. Set `PORT` to change the default port of 3000.
+
+```bash
+npx @purityjs/cli my-ssr-app --ssr
+cd my-ssr-app
+npm install
+npm run build
+npm run preview
+```
+
 ## What It Generates
 
 ```
@@ -45,11 +57,12 @@ A working counter component demonstrating `state`, `compute`, `html`, `css`, `co
 
 ## Scripts
 
-| Command           | Description               |
-| ----------------- | ------------------------- |
-| `npm run dev`     | Start Vite dev server     |
-| `npm run build`   | Production build with AOT |
-| `npm run preview` | Preview production build  |
+| Command             | Description                   |
+| ------------------- | ----------------------------- |
+| `npm run dev`       | Start Vite dev server         |
+| `npm run typecheck` | Check TypeScript types        |
+| `npm run build`     | Type-check and build with AOT |
+| `npm run preview`   | Preview production build      |
 
 ## Local Development
 

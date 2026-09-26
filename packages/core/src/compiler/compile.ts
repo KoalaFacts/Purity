@@ -111,12 +111,9 @@ function ensureHydrate(entry: CacheEntry, strings: TemplateStringsArray): Hydrat
  * result as a DOM Node is hydration-safe because it only stores the value
  * in a slot, where the hydrate factory recognizes and inflates it.
  */
-export function html(
-  strings: TemplateStringsArray,
-  ...values: unknown[]
-): DocumentFragment | Node | DeferredTemplate {
+export function html(strings: TemplateStringsArray, ...values: unknown[]): DocumentFragment | Node {
   if (isHydrating()) {
-    return makeDeferred(strings, values);
+    return makeDeferred(strings, values) as unknown as Node;
   }
   const entry = getOrInitEntry(strings);
   return ensureClient(entry, strings)(values, watch);

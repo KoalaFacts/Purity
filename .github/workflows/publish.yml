@@ -6,7 +6,7 @@ on:
       version:
         description: 'Explicit version to publish (e.g. 0.1.0, 0.2.0)'
         required: true
-        default: '0.1.0'
+        default: '0.2.0'
 
 permissions:
   contents: write
@@ -46,6 +46,9 @@ jobs:
       - name: Build core
         run: npm run build -w packages/core
 
+      - name: Build SSR
+        run: npm run build -w packages/ssr
+
       - name: Build vite-plugin
         run: npm run build -w packages/vite-plugin
 
@@ -57,6 +60,11 @@ jobs:
       # After trusted publishing is configured: remove all NODE_AUTH_TOKEN env lines
       - name: Publish core
         run: npm publish -w packages/core
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish SSR
+        run: npm publish -w packages/ssr
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

@@ -980,7 +980,8 @@ describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', (
     const io = ios[0];
     expect(io).toBeDefined();
     const wrapper = host.querySelector('purity-island')!;
-    expect(io.observed).toContain(wrapper);
+    const visibleChild = wrapper.firstElementChild!;
+    expect(io.observed).toContain(visibleChild);
     expect(io.disconnected).toBe(0);
 
     // Detach the wrapper from its parent before any intersection fires.
@@ -990,7 +991,7 @@ describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', (
 
     // The fix: unobserve was called for the wrapper AND the observer
     // was disconnected (no more armed reference).
-    expect(io.unobserved).toContain(wrapper);
+    expect(io.unobserved).toContain(visibleChild);
     expect(io.disconnected).toBeGreaterThanOrEqual(1);
     host.remove();
   });

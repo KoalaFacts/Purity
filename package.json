@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces",
-    "test": "npm run test --workspaces",
+    "test": "npm run test --workspaces --if-present",
     "test:browser:islands": "npm run build -w @purityjs/core && npm run build -w @purityjs/vite-plugin && node --experimental-strip-types examples/islands-blog/browser-check.ts",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",

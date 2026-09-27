@@ -17,6 +17,6 @@ npx @purityjs/cli my-app && cd my-app && npm install && npm run dev
 ## Commands
 
 ```bash
-npm test --workspaces     # all tests
+npm test                  # all workspace test scripts
 npm run check:fix         # format + lint (Vite+: oxfmt + oxlint)
 ```

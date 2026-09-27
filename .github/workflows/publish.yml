@@ -111,6 +111,22 @@ jobs:
             npm publish -w packages/cli
           fi
 
+      - name: Wait for published packages in npm registry
+        run: |
+          deadline=$((SECONDS + 600))
+          for package in @purityjs/core @purityjs/ssr @purityjs/vite-plugin @purityjs/cli; do
+            spec="$package@$RELEASE_VERSION"
+            until npm view "$spec" version --prefer-online --fetch-retries=0 --fetch-timeout=10000 >/dev/null 2>&1; do
+              if (( SECONDS >= deadline )); then
+                echo "::error::$spec was not visible in the npm registry within 10 minutes" >&2
+                exit 1
+              fi
+              echo "Waiting for $spec to become visible in the npm registry"
+              sleep 10
+            done
+            echo "$spec is visible in the npm registry"
+          done
+
       - name: Check published CLI projects
         run: npm run test:published-cli
         env:

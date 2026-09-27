@@ -15,7 +15,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, posix, resolve as resolvePath, sep as pathSep } from 'node:path';
 
-import { generate, generateSSR, parse } from '@purityjs/core/compiler';
+import { generate, generateHydrate, generateSSR, parse } from '@purityjs/core/compiler';
 
 import {
   attachLoaderInfo,
@@ -495,9 +495,8 @@ function compileNestedTemplates(source: string, ctx: CompileContext): string {
   const parts: string[] = [];
   let pos = 0;
   let changed = false;
-  // Pick codegen + runtime call shape based on the build mode. SSR templates
-  // emit string-builder factories `(_v, _h) => SSRHtml`; client templates
-  // emit DOM-builder factories `(_v, _w) => Node`.
+  // SSR templates emit string-builder factories; client templates emit both
+  // DOM factories and walkers for the existing server-rendered nodes.
   const genFn = ctx.ssr ? generateSSR : generate;
   const runtimeArg = ctx.ssr ? '__purity_h__' : '__purity_w__';
 
@@ -536,10 +535,15 @@ function compileNestedTemplates(source: string, ctx: CompileContext): string {
       const fnBody = genFn(ast);
       const tplVar = `__purity_tpl_${ctx.nextTplId++}`;
       ctx.hoists.push(`const ${tplVar} = ${fnBody};`);
+      if (!ctx.ssr) ctx.hoists.push(`const ${tplVar}_hydrate = ${generateHydrate(ast)};`);
       const compiledExprs = exprSources.map((expr) =>
         expr.includes('html`') ? compileNestedTemplates(expr, ctx) : expr,
       );
-      parts.push(`${tplVar}([${compiledExprs.join(', ')}], ${runtimeArg})`);
+      parts.push(
+        ctx.ssr
+          ? `${tplVar}([${compiledExprs.join(', ')}], ${runtimeArg})`
+          : `__purity_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${compiledExprs.join(', ')}])`,
+      );
       changed = true;
     } catch {
       ctx.failed = true;
@@ -600,6 +604,7 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
       // runs once per file — not per call from inside a loop or arrow fn.
       const tplVar = `__purity_tpl_${ctx.nextTplId++}`;
       ctx.hoists.push(`const ${tplVar} = ${fnBody};`);
+      if (!ssr) ctx.hoists.push(`const ${tplVar}_hydrate = ${generateHydrate(ast)};`);
 
       // Recursively compile any nested html`` templates inside expressions
       const compiledExprs = exprSources.map((expr) => {
@@ -612,7 +617,9 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
       edits.push({
         start: idx,
         end: extracted.end,
-        out: `${tplVar}([${compiledExprs.join(', ')}], ${runtimeArg})`,
+        out: ssr
+          ? `${tplVar}([${compiledExprs.join(', ')}], ${runtimeArg})`
+          : `__purity_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${compiledExprs.join(', ')}])`,
       });
     } catch (err) {
       ctx.failed = true;
@@ -635,7 +642,7 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   // track it alongside the html`` replacements.
   const runtimeImport = ssr
     ? `import { ssrHelpers as __purity_h__ } from '@purityjs/core/compiler';\nimport '@purityjs/ssr';\n`
-    : `import { watch as __purity_w__ } from '@purityjs/core';\n`;
+    : `import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/compiler';\n`;
   /* v8 ignore next -- edits.length > 0 implies at least one hoist was pushed */
   const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
   const insertAt = findLastImportEnd(source);

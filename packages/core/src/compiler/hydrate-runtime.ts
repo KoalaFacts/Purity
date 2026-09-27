@@ -10,15 +10,29 @@
 //
 // The mode is a module-scoped boolean (single-threaded JS, single hydrate
 // pass at a time). `enterHydration` / `exitHydration` toggle it; the
-// compiled hydrate factories are JIT-cached alongside the client factories.
+// JIT hydrate factories are cached alongside client factories; AOT callers
+// capture a precompiled walker in the deferred template instead.
 // ---------------------------------------------------------------------------
 
 /** A reified `html\`\`` call captured during hydration; inflated against an SSR subtree. */
 export interface DeferredTemplate {
   __purity_deferred__: true;
-  strings: TemplateStringsArray;
+  strings?: TemplateStringsArray;
+  hydrate?: HydrateFactory;
   values: unknown[];
 }
+
+/** A hydration walker emitted at build time or compiled on first JIT use. */
+export type HydrateFactory = (
+  values: unknown[],
+  watch: typeof import('../signals.ts').watch,
+  root: Node,
+  inflate: (deferred: DeferredTemplate, target: Node) => void,
+  check: ((node: Node | null, expected: string, detail?: string) => void) | undefined,
+  inflateEach: (deferred: unknown, contNodes: Node[], closeMarker: Node) => void,
+  inflateMatch: (deferred: unknown, contNodes: Node[], closeMarker: Node) => void,
+  firstNode?: Node | null,
+) => Node;
 
 let hydrating = 0;
 
@@ -79,13 +93,14 @@ export function isDeferred(v: unknown): v is DeferredTemplate {
   const o = v as {
     __purity_deferred__?: unknown;
     strings?: unknown;
+    hydrate?: unknown;
     values?: unknown;
   };
-  // Brand + shape check: the consumer (`inflateDeferred`) immediately reads
-  // `deferred.strings` and `deferred.values`, so a bare `{__purity_deferred__:
-  // true}` object would crash. Verifying the carrier shape here turns a hard
-  // crash into a clean "not deferred — treat as a normal value" path.
-  return o.__purity_deferred__ === true && Array.isArray(o.strings) && Array.isArray(o.values);
+  return (
+    o.__purity_deferred__ === true &&
+    Array.isArray(o.values) &&
+    (Array.isArray(o.strings) || typeof o.hydrate === 'function')
+  );
 }
 
 export function makeDeferred(strings: TemplateStringsArray, values: unknown[]): DeferredTemplate {
@@ -95,6 +110,11 @@ export function makeDeferred(strings: TemplateStringsArray, values: unknown[]): 
   // values is the caller's array) — freezing only the carrier is cheap and
   // closes the brand-bypass surface.
   return Object.freeze({ __purity_deferred__: true, strings, values });
+}
+
+/** Capture an AOT template without invoking the runtime parser or code generator. */
+export function makeCompiledDeferred(hydrate: HydrateFactory, values: unknown[]): DeferredTemplate {
+  return Object.freeze({ __purity_deferred__: true, hydrate, values });
 }
 
 // ---------------------------------------------------------------------------

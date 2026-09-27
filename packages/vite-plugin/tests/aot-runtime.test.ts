@@ -1,5 +1,13 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { state } from '@purityjs/core';
+import {
+  enterHydration,
+  exitHydration,
+  inflateDeferred,
+  isDeferred,
+  renderCompiledTemplate,
+} from '@purityjs/core/compiler';
 import { purity } from '../src/index.ts';
 
 describe('AOT output runs correctly under jsdom', () => {
@@ -13,12 +21,9 @@ describe('AOT output runs correctly under jsdom', () => {
       .replace(/^import .+$/gm, '')
       .replace(/^export /gm, '')
       .trim();
-    const fn = new Function('__purity_w__', 'document', `${body}\nreturn make;`);
+    const fn = new Function('__purity_renderCompiled__', 'document', `${body}\nreturn make;`);
     return {
-      make: fn((cb: () => void) => {
-        cb();
-        return () => {};
-      }, globalThis.document),
+      make: fn(renderCompiledTemplate, globalThis.document),
     };
   }
 
@@ -47,24 +52,46 @@ describe('AOT output runs correctly under jsdom', () => {
     expect((b.firstChild as HTMLElement).textContent).toBe('second');
   });
 
-  it('hoisted template with reactive expression invokes the watch import', () => {
-    const watches: Array<() => void> = [];
-    const result = plugin.transform(
+  it('hoisted template with reactive expression updates from a signal', async () => {
+    const { make } = evalAot(
       `import { html } from '@purityjs/core';\nconst make = (fn) => html\`<div><p>\${fn}</p></div>\`;`,
-      'app.ts',
     );
-    const body = result!.code
-      .replace(/^import .+$/gm, '')
-      .replace(/^export /gm, '')
-      .trim();
-    const factory = new Function('__purity_w__', 'document', `${body}\nreturn make;`);
-    const make = factory((cb: () => void) => {
-      watches.push(cb);
-      cb();
-      return () => {};
-    }, globalThis.document);
-    const el = make(() => 'reactive-text') as HTMLElement;
-    expect(watches.length).toBe(1);
+    const value = state('reactive-text');
+    const el = make(value) as HTMLElement;
     expect((el.querySelector('p') as HTMLElement).textContent).toBe('reactive-text');
+    value('updated');
+    await vi.waitFor(() =>
+      expect((el.querySelector('p') as HTMLElement).textContent).toBe('updated'),
+    );
+  });
+
+  it('hydrates the existing nodes without runtime code generation', () => {
+    const { make } = evalAot(
+      `import { html } from '@purityjs/core';\nconst make = (label) => html\`<p>\${label}</p>\`;`,
+    );
+    const root = document.createElement('div');
+    root.innerHTML = '<p><!--[-->hello<!--]--></p>';
+    const paragraph = root.firstChild;
+    const text = paragraph?.childNodes[1];
+    const originalFunction = globalThis.Function;
+    try {
+      globalThis.Function = (() => {
+        throw new Error('runtime code generation during AOT hydration');
+      }) as FunctionConstructor;
+      enterHydration();
+      let deferred: unknown;
+      try {
+        deferred = make('hello');
+      } finally {
+        exitHydration();
+      }
+      expect(isDeferred(deferred)).toBe(true);
+      inflateDeferred(deferred as Parameters<typeof inflateDeferred>[0], root);
+    } finally {
+      globalThis.Function = originalFunction;
+    }
+    expect(root.firstChild).toBe(paragraph);
+    expect(paragraph?.childNodes[1]).toBe(text);
+    expect(paragraph?.textContent).toBe('hello');
   });
 });

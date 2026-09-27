@@ -12,18 +12,14 @@ export default defineConfig({ plugins: [purity()] });
 
 ## What It Compiles
 
-```ts
+```text
 // Input
 html`<div @click=${fn}>${() => count()}</div>`;
 
-// Output
-const _e0 = document.createElement('div');
-_e0.addEventListener('click', fn);
-const _x0 = document.createTextNode('');
-__purity_w__(() => {
-  _x0.data = String(count());
-});
-_e0.appendChild(_x0);
+// Client output hoists both a DOM factory and a hydration walker.
+const __purity_tpl_0 = <precompiled DOM factory>;
+const __purity_tpl_0_hydrate = <precompiled hydration walker>;
+const view = __purity_renderCompiled__(__purity_tpl_0, __purity_tpl_0_hydrate, [fn, () => count()]);
 ```
 
 ## Options
@@ -36,4 +32,5 @@ purity({ include: ['.ts', '.js', '.tsx', '.jsx'] });
 
 - Only transforms user code, skips @purityjs/core internals
 - Removes `html` from imports after compilation
-- Auto-injects `watch as __purity_w__` import
+- Auto-injects `renderCompiledTemplate` from `@purityjs/core/compiler` in client builds
+- Uses the precompiled hydration walker against SSR nodes; hydration does not invoke the runtime parser or code generator

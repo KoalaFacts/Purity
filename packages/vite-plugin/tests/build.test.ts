@@ -60,9 +60,8 @@ describe('vite build pipeline', () => {
     expect(code).toContain('createElement');
     // The original html`` literal is gone.
     expect(code).not.toContain('html`');
-    // Some import from @purityjs/core remains (the watch alias, possibly
-    // renamed by the minifier).
-    expect(code).toMatch(/from\s*["']@purityjs\/core["']/);
+    // The client bundle calls the precompiled hydration-aware runtime.
+    expect(code).toMatch(/from\s*["']@purityjs\/core\/compiler["']/);
   }, 30000);
 
   it('emits a usable .map alongside the bundled output', async () => {

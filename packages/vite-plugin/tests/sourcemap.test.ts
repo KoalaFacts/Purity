@@ -38,7 +38,7 @@ describe('source map round-trip via source-map-js', () => {
     const r = transform(code);
     const consumer = new SourceMapConsumer(r.map!);
 
-    const { line, column } = findInOutput(r.code, '__purity_tpl_0([');
+    const { line, column } = findInOutput(r.code, '__purity_renderCompiled__(__purity_tpl_0');
     const orig = consumer.originalPositionFor({ line, column });
     expect(orig.source).toBe('app.ts');
     // The html`` on line 3 of source maps the compiled call back to line 3.

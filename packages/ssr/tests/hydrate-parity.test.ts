@@ -158,6 +158,36 @@ describe('SSR custom-element props', () => {
     host.remove();
   });
 
+  it('keeps a style authored in the component template at the hydration cursor', async () => {
+    let server = true;
+    let clicks = 0;
+    component('ssr-template-style-1', () => {
+      const tag = (server ? ssrHtml : clientHtml) as typeof clientHtml;
+      return tag`<style>.card { color: red }</style><button @click=${() => clicks++}>Go</button>`;
+    });
+
+    const markup = await renderToString(
+      () => ssrHtml`<ssr-template-style-1></ssr-template-style-1>`,
+    );
+    server = false;
+    const host = document.createElement('div');
+    host.innerHTML = markup;
+    const element = host.querySelector('ssr-template-style-1')!;
+    const template = element.querySelector('template')!;
+    element.shadowRoot!.appendChild(template.content);
+    template.remove();
+    const style = element.shadowRoot!.querySelector('style')!;
+    const button = element.shadowRoot!.querySelector('button')!;
+    document.body.appendChild(host);
+
+    hydrate(host, () => clientHtml`<ssr-template-style-1></ssr-template-style-1>`);
+    expect(element.shadowRoot!.querySelector('style')).toBe(style);
+    expect(element.shadowRoot!.querySelector('button')).toBe(button);
+    button.click();
+    expect(clicks).toBe(1);
+    host.remove();
+  });
+
   it('restores typed props before the DSD child hydrates', async () => {
     let server = true;
     let hydratedProps: unknown;

@@ -103,3 +103,6 @@ jobs:
 
       - name: 🧪 Check published CLI projects
         run: npm run test:published-cli
+
+      - name: 🧪 Check packaged SSR node retention
+        run: npm run test:browser:ssr-retention

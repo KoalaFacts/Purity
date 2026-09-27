@@ -6,7 +6,7 @@ on:
       version:
         description: 'Explicit version to publish (e.g. 0.1.0, 0.2.0)'
         required: true
-        default: '0.2.3'
+        default: '0.2.4'
 
 permissions:
   contents: write
@@ -71,6 +71,12 @@ jobs:
       - name: Build cli
         run: npm run build -w packages/cli
 
+      - name: Install browser engines
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Check packaged SSR node retention
+        run: npm run test:browser:ssr-retention
+
       # Publish in dependency order
       # Each package trusts this workflow and the production environment on npm.
       - name: Publish core
@@ -104,9 +110,6 @@ jobs:
           else
             npm publish -w packages/cli
           fi
-
-      - name: Install browser engines
-        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Check published CLI projects
         run: npm run test:published-cli

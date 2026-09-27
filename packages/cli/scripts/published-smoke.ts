@@ -118,14 +118,60 @@ async function stopProcessTree(child: ChildProcess, force = false): Promise<void
   }
 }
 
-async function checkBrowser(browserType: BrowserType, mode: Mode, url: string): Promise<void> {
+async function checkBrowser(
+  browserType: BrowserType,
+  mode: Mode,
+  url: string,
+  expectNodeRetention: boolean,
+): Promise<void> {
   const browser = await browserType.launch();
   try {
     const page = await browser.newPage();
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    const response = await page.goto(url, { waitUntil: 'networkidle' });
-    assert.equal(response?.status(), 200);
+    let releaseScripts: (() => void) | undefined;
+    if (expectNodeRetention) {
+      const scriptsReleased = new Promise<void>((resolve) => {
+        releaseScripts = resolve;
+      });
+      await page.route(
+        (requestUrl) => requestUrl.pathname.endsWith('.js'),
+        async (route) => {
+          await scriptsReleased;
+          await route.continue();
+        },
+      );
+    }
+    let originalHost;
+    let originalButton;
+    try {
+      const response = await page.goto(url, {
+        waitUntil: expectNodeRetention ? 'commit' : 'networkidle',
+      });
+      assert.equal(response?.status(), 200);
+      if (expectNodeRetention) {
+        originalHost = await page.locator('p-counter').elementHandle();
+        originalButton = await page.locator('p-counter button').elementHandle();
+        assert.ok(originalHost && originalButton, 'SSR must provide a button before hydration');
+      }
+    } finally {
+      releaseScripts?.();
+    }
+    if (expectNodeRetention) {
+      await page.waitForLoadState('networkidle');
+      assert.deepEqual(
+        await page.evaluate(
+          ({ host, button }) => ({
+            host: host === document.querySelector('p-counter'),
+            button:
+              button === document.querySelector('p-counter')?.shadowRoot?.querySelector('button'),
+          }),
+          { host: originalHost, button: originalButton },
+        ),
+        { host: true, button: true },
+        'hydration must retain the server-rendered host and button',
+      );
+    }
     const counter = page.locator('p-counter p');
     await counter.waitFor();
     assert.match((await counter.textContent()) ?? '', /Count:\s*0/);
@@ -210,8 +256,14 @@ async function checkProject(
       assert.match(html, /Count:\s*<!--\[-->0<!--\]-->/);
       assert.match(html, /<button[^>]*>\+1<\/button>/);
     }
+    // 0.2.3 predates the AOT DSD fix; releases from 0.2.4 must retain nodes.
+    const versionParts = /^(\d+)\.(\d+)\.(\d+)/.exec(versions.get('@purityjs/core')!);
+    assert.ok(versionParts);
+    const [, major, minor, patch] = versionParts.map(Number);
+    const expectNodeRetention =
+      mode === 'ssr' && (major > 0 || minor > 2 || (minor === 2 && patch >= 4));
     for (const browserType of [chromium, firefox, webkit]) {
-      await checkBrowser(browserType, mode, url);
+      await checkBrowser(browserType, mode, url, expectNodeRetention);
     }
   } finally {
     await stopProcessTree(preview);

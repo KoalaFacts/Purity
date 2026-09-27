@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.4 — 2026-09-27
+
+Ship the AOT hydration fix merged after 0.2.3: production SSR projects now
+retain server-rendered Custom Element hosts and Shadow DOM controls while
+attaching client behavior. The first interaction on lazy islands is also
+replayed against the live DOM target. Browser checks cover node retention and
+the first click in Chromium, Firefox, and WebKit.
+
 ## 0.2.3 — 2026-09-26
 
 Fixed typed component props during SSR hydration. The parent now binds

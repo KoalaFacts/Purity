@@ -22,6 +22,8 @@ export {
   isDeferred,
   isHydrating,
   makeDeferred,
+  makeCompiledDeferred,
+  renderCompiledTemplate,
 } from './hydrate-runtime.ts';
 export { parse } from './parser.ts';
 export type { SSRComponentRenderer, SSRHelpers, SSRHtml } from './ssr-runtime.ts';

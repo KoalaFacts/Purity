@@ -241,7 +241,7 @@ export function generateModule(ast: FragmentNode): string {
 // ---------------------------------------------------------------------------
 // generateHydrate(ast)
 //
-// Emits a factory `function (_v, _w, _r) { ...; return _r; }` that walks the
+// Emits a factory `function (_v, _w, _r, ..., _s) { ...; return _r; }` that walks the
 // SSR-rendered DOM subtree `_r`, attaching reactive bindings to existing
 // nodes instead of building new ones. Mirrors generate()'s slot semantics
 // against the marker-wrapped SSR layout: every `${...}` slot in the SSR
@@ -270,12 +270,12 @@ export function generateHydrate(ast: FragmentNode): string {
   ast = condenseWhitespace(ast) as FragmentNode;
 
   if (!hasDynamic(ast)) {
-    return 'function(_v,_w,_r,_i,_c,_e,_m){return _r;}';
+    return 'function(_v,_w,_r,_i,_c,_e,_m,_s){return _r;}';
   }
 
   const ctx: HydrateCtx = { setup: [], reactive: [], id: 0 };
   // Top-level cursor = first child of the SSR root container.
-  ctx.setup.push('var _c0=_r.firstChild;');
+  ctx.setup.push('var _c0=_s===undefined?_r.firstChild:_s;');
   emitHydrateChildren(ast.children, ctx, '_c0');
 
   let body = ctx.setup.join('');
@@ -291,8 +291,10 @@ export function generateHydrate(ast: FragmentNode): string {
   // inflateDeferredEach helper, and `_m` the inflateDeferredMatch helper —
   // all threaded through by compile.ts. See "Codegen safety contract"
   // near SAFE_NAME for the full audit.
-  // codeql[js/code-injection]
-  return `function(_v,_w,_r,_i,_c,_e,_m){${body}}`;
+  // Parsed indices are numeric; names are validated above and literal text
+  // is emitted with JSON.stringify.
+  // codeql[js/bad-code-sanitization]
+  return `function(_v,_w,_r,_i,_c,_e,_m,_s){${body}}`;
 }
 
 export function generateHydrateModule(ast: FragmentNode): string {

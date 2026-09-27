@@ -81,6 +81,16 @@ async function checkBrowser(name: string, browser: Browser, base: string): Promi
         await route.continue();
       });
       await page.goto(base, { waitUntil: 'networkidle' });
+      const original = await page.evaluateHandle(() => {
+        const host = document.querySelector('demo-expander');
+        const shadow = host?.shadowRoot;
+        return {
+          host,
+          shadow,
+          button: shadow?.querySelector('button'),
+          style: shadow?.querySelector('style'),
+        };
+      });
       const button = page.locator('demo-expander button');
       if (action === 'click') await button.click();
       else {
@@ -94,6 +104,19 @@ async function checkBrowser(name: string, browser: Browser, base: string): Promi
           ?.textContent?.includes('Hide'),
       );
       assert.equal((await button.textContent())?.trim(), '▾ Hide details');
+      assert.deepEqual(
+        await page.evaluate(({ host, shadow, button: oldButton, style }) => {
+          const current = document.querySelector('demo-expander');
+          return {
+            host: host === current,
+            shadow: shadow === current?.shadowRoot,
+            button: oldButton === current?.shadowRoot?.querySelector('button'),
+            style: !!style && style === current?.shadowRoot?.querySelector('style'),
+          };
+        }, original),
+        { host: true, shadow: true, button: true, style: true },
+        'hydration must preserve the SSR host, shadow, button, and scoped style',
+      );
       await button.click();
       await page.waitForFunction(() =>
         document
@@ -193,6 +216,7 @@ try {
   }
   assert.ok(ready, `islands demo server did not start:\n${serverOutput}`);
   for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
+    if (process.env.PURITY_BROWSER && process.env.PURITY_BROWSER !== name) continue;
     const browser = await engine.launch();
     try {
       await checkBrowser(name, browser, base);

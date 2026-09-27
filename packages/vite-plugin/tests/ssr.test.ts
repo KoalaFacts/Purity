@@ -22,13 +22,14 @@ describe('@purityjs/vite-plugin — SSR mode', () => {
     expect(result!.code).not.toContain('__purity_w__');
   });
 
-  it('emits the watch import in client builds', () => {
+  it('emits the compiled hydration runtime import in client builds', () => {
     const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>Hi</div>\`;`;
     const result = transform(code, 'app.ts', false);
     expect(result).not.toBeNull();
-    expect(result!.code).toContain('__purity_w__');
+    expect(result!.code).toContain('__purity_renderCompiled__');
+    expect(result!.code).toContain('__purity_tpl_0_hydrate');
     expect(result!.code).not.toContain('__purity_h__');
-    expect(result!.code).not.toContain('@purityjs/core/compiler');
+    expect(result!.code).toContain("from '@purityjs/core/compiler'");
   });
 
   it('compiled SSR factory produces a string-builder, not DOM calls', () => {

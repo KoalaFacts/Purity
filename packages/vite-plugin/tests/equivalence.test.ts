@@ -4,7 +4,8 @@
 // must match the DOM produced by the runtime `html\`\`` tag for the same
 // template + values.
 
-import { html, watch } from '@purityjs/core';
+import { html } from '@purityjs/core';
+import { renderCompiledTemplate } from '@purityjs/core/compiler';
 import { describe, expect, it } from 'vitest';
 import { purity } from '../src/index.ts';
 
@@ -17,9 +18,8 @@ function evalAot(userCode: string): { make: (...args: any[]) => Node } {
     .replace(/^import .+$/gm, '')
     .replace(/^export /gm, '')
     .trim();
-  const fn = new Function('__purity_w__', 'document', `${body}\nreturn make;`);
-  // Use the real `watch` from core so reactivity lines up with the runtime path.
-  return { make: fn(watch, globalThis.document) };
+  const fn = new Function('__purity_renderCompiled__', 'document', `${body}\nreturn make;`);
+  return { make: fn(renderCompiledTemplate, globalThis.document) };
 }
 
 function nodeShape(n: Node): string {

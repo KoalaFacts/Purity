@@ -30,9 +30,12 @@ export default defineConfig({
     // handled by the package's "development" conditional export (see
     // packages/core/package.json) — both bench and the AOT plugin pick it
     // up because we run scripts with `node --conditions=development`.
-    alias: {
-      '@purityjs/core': resolve(import.meta.dirname, '../packages/core/src/index.ts'),
-    },
+    alias: [
+      {
+        find: /^@purityjs\/core$/,
+        replacement: resolve(import.meta.dirname, '../packages/core/src/index.ts'),
+      },
+    ],
   },
   build: {
     outDir: 'dist',

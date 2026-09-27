@@ -721,6 +721,7 @@ export function component<
         // inflating against it would crash. Treat reconnect as a fresh render.
         let result: Node | DocumentFragment | null;
         if (hasDSDContent) {
+          const adoptedBefore = this._shadow.adoptedStyleSheets?.length ?? 0;
           enterHydration();
           let renderResult: { result: Node | DocumentFragment };
           try {
@@ -732,7 +733,15 @@ export function component<
           if (isDeferred(view)) {
             // Keep the parsed shadow nodes connected while binding them.
             // Detaching them would disconnect nested custom elements.
-            inflateDeferred(view, this._shadow);
+            // SSR places scoped CSS before the component template. Keep the
+            // style node and start the template walker at the next sibling.
+            const hasSSRStyle = (this._shadow.adoptedStyleSheets?.length ?? 0) > adoptedBefore;
+            inflateDeferred(view, this._shadow, hasSSRStyle);
+            if (hasSSRStyle && this._shadow.firstChild?.nodeName === 'STYLE') {
+              // css() now owns the live sheet. Retain the SSR node for DOM
+              // identity but remove its rules so obsolete selectors cannot win.
+              this._shadow.firstChild.textContent = '';
+            }
             result = null;
           } else {
             // Renderer returned a non-deferred node — clear and re-render.

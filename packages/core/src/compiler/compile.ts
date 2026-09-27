@@ -10,8 +10,10 @@ import { generate, generateHydrate } from './codegen.ts';
 import {
   checkHydrationCursor,
   type DeferredTemplate,
+  type HydrateFactory,
   hydrationTextRewriteEnabled,
   hydrationWarningsEnabled,
+  isDeferred,
   isHydrating,
   makeDeferred,
 } from './hydrate-runtime.ts';
@@ -22,20 +24,10 @@ type CompiledFn = (
   watch: typeof import('../signals.ts').watch,
 ) => Node | DocumentFragment;
 
-type HydrateFn = (
-  values: unknown[],
-  watch: typeof import('../signals.ts').watch,
-  root: Node,
-  inflate: (deferred: DeferredTemplate, target: Node) => void,
-  check: ((node: Node | null, expected: string, detail?: string) => void) | undefined,
-  inflateEach: (deferred: unknown, contNodes: Node[], closeMarker: Node) => void,
-  inflateMatch: (deferred: unknown, contNodes: Node[], closeMarker: Node) => void,
-) => Node;
-
 interface CacheEntry {
   ast: ReturnType<typeof parse> | null;
   client: CompiledFn | null;
-  hydrate: HydrateFn | null;
+  hydrate: HydrateFactory | null;
 }
 
 const compiledCache = new WeakMap<TemplateStringsArray, CacheEntry>();
@@ -58,12 +50,12 @@ function ensureClient(entry: CacheEntry, strings: TemplateStringsArray): Compile
   return entry.client;
 }
 
-function ensureHydrate(entry: CacheEntry, strings: TemplateStringsArray): HydrateFn {
+function ensureHydrate(entry: CacheEntry, strings: TemplateStringsArray): HydrateFactory {
   if (entry.hydrate) return entry.hydrate;
   const ast = entry.ast ?? parse(strings);
   entry.ast = ast;
   const code = generateHydrate(ast);
-  entry.hydrate = new Function(`return ${code}`)() as HydrateFn;
+  entry.hydrate = new Function(`return ${code}`)() as HydrateFactory;
   return entry.hydrate;
 }
 
@@ -135,10 +127,20 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Docum
  *
  * @internal
  */
-export function inflateDeferred(deferred: DeferredTemplate, target: Node): Node {
+export function inflateDeferred(
+  deferred: DeferredTemplate,
+  target: Node,
+  skipFirstNode = false,
+): Node {
   stripSuspenseMarkers(target);
-  const entry = getOrInitEntry(deferred.strings);
-  const fn = ensureHydrate(entry, deferred.strings);
+  const first = target.firstChild;
+  const firstNode = skipFirstNode && first?.nodeName === 'STYLE' ? first.nextSibling : first;
+  if (!firstNode && deferred.create) {
+    target.appendChild(createDeferred(deferred));
+    return target;
+  }
+  const fn =
+    deferred.hydrate ?? ensureHydrate(getOrInitEntry(deferred.strings!), deferred.strings!);
   // Pass the cursor checker if either warnings or text-rewrite is enabled —
   // the helper handles both behaviors and the codegen guard (`_c && _c(...)`)
   // makes this a single null check per cursor step when both are off.
@@ -152,7 +154,19 @@ export function inflateDeferred(deferred: DeferredTemplate, target: Node): Node 
     check,
     inflateDeferredEachThunk,
     inflateDeferredMatchThunk,
+    firstNode,
   );
+}
+
+function createDeferred(deferred: DeferredTemplate): Node | DocumentFragment {
+  // A missing SSR row needs fresh DOM. Its nested templates were also
+  // captured as deferred values, so materialize them before binding slots.
+  const values = deferred.values.map((value) =>
+    isDeferred(value) ? createDeferred(value) : value,
+  );
+  const create =
+    deferred.create ?? ensureClient(getOrInitEntry(deferred.strings!), deferred.strings!);
+  return create(values, watch);
 }
 
 // control.ts (the `each()` / `match()` runtimes) register their adoption

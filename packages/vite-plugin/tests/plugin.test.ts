@@ -43,12 +43,13 @@ describe('@purityjs/vite-plugin', () => {
     expect(result.code).toContain('addEventListener');
   });
 
-  it('adds watch import', () => {
+  it('adds the compiled hydration runtime import', () => {
     const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>Test</div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    expect(result.code).toContain('__purity_w__');
-    expect(result.code).toContain("from '@purityjs/core'");
+    expect(result.code).toContain('__purity_renderCompiled__');
+    expect(result.code).toContain('__purity_tpl_0_hydrate');
+    expect(result.code).toContain("from '@purityjs/core/compiler'");
   });
 
   it('handles multi-line imports without splitting them', () => {
@@ -58,13 +59,15 @@ describe('@purityjs/vite-plugin', () => {
       'const el = html`<p>Test</p>`;';
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    // The watch import must be inserted AFTER the multi-line import block,
+    // The runtime import must be inserted AFTER the multi-line import block,
     // not in the middle of it. Easiest invariant: the rewritten code must
     // be parseable by re-running the regex for any `import {` open without
     // an unmatched close before the next `import` keyword.
     const out = result.code;
     // The injected line should appear after both original imports.
-    const injected = out.indexOf("import { watch as __purity_w__ } from '@purityjs/core';");
+    const injected = out.indexOf(
+      "import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/compiler';",
+    );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf("from './other.ts'"));
   });
@@ -73,14 +76,16 @@ describe('@purityjs/vite-plugin', () => {
   // immediately after the source string + `[\s;]*`, so a trailing line
   // comment caused `lastEnd` to stay -1 and the runtime hoist landed at
   // offset 0 — before the user import it depended on.
-  it('inserts watch import AFTER a final import with a trailing // comment', () => {
+  it('inserts runtime import AFTER a final import with a trailing // comment', () => {
     const code =
       "import { html } from '@purityjs/core'; // last import on its own line\n" +
       'const el = html`<p>x</p>`;';
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     const out = result!.code;
-    const injected = out.indexOf("import { watch as __purity_w__ } from '@purityjs/core';");
+    const injected = out.indexOf(
+      "import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/compiler';",
+    );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf('// last import on its own line'));
   });
@@ -88,13 +93,15 @@ describe('@purityjs/vite-plugin', () => {
   // Regression: same root cause — import-attributes clauses (`with { … }` /
   // `assert { … }`) end the line with `}` + `;`, not a quote. Previous regex
   // never matched, so the runtime hoist landed at the very top of the file.
-  it('inserts watch import AFTER a final import with attributes (`with { type: json }`)', () => {
+  it('inserts runtime import AFTER a final import with attributes (`with { type: json }`)', () => {
     const code =
       "import data from './data.json' with { type: 'json' };\nconst el = html`<p>x</p>`;";
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     const out = result!.code;
-    const injected = out.indexOf("import { watch as __purity_w__ } from '@purityjs/core';");
+    const injected = out.indexOf(
+      "import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/compiler';",
+    );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf("from './data.json'"));
   });
@@ -208,7 +215,9 @@ describe('@purityjs/vite-plugin', () => {
     expect(result).not.toBeNull();
     // The arrow body should reference the hoisted tpl, NOT have its own IIFE
     expect(result.code).toContain('const __purity_tpl_0 = ');
-    expect(result.code).toMatch(/=> __purity_tpl_0\(\[item\], __purity_w__\)/);
+    expect(result.code).toMatch(
+      /=> __purity_renderCompiled__\(__purity_tpl_0, __purity_tpl_0_hydrate, \[item\]\)/,
+    );
     // Confirm no `(function(){...})()` IIFE remains in the arrow body
     const arrowBody = result.code.slice(result.code.indexOf('(item) =>'));
     expect(arrowBody.includes('(function()')).toBe(false);
@@ -223,7 +232,7 @@ describe('@purityjs/vite-plugin', () => {
     expect(decls).not.toBeNull();
     expect(decls!.length).toBe(1);
     // One usage in the arrow body
-    const usages = result.code.match(/__purity_tpl_0\(\[/g);
+    const usages = result.code.match(/__purity_renderCompiled__\(__purity_tpl_0,/g);
     expect(usages).not.toBeNull();
     expect(usages!.length).toBe(1);
   });
@@ -251,7 +260,7 @@ describe('@purityjs/vite-plugin', () => {
     expect(result).not.toBeNull();
     // Only the real html`` got compiled; the `xhtml` string literal stays
     expect(result!.code).toContain('xhtml`');
-    expect(result!.code.match(/__purity_tpl_/g)!.length).toBe(2); // const + usage
+    expect(result!.code.match(/const __purity_tpl_\d+ =/g)!.length).toBe(1);
   });
 
   it('leaves a malformed/unterminated html`` as-is', () => {
@@ -290,13 +299,12 @@ describe('@purityjs/vite-plugin', () => {
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     // The original `import { html } from '@purityjs/core'` is gone
-    // (only the new `__purity_w__` import remains for that module).
+    // (the new runtime import uses the compiler entry point).
     const purityImports = result!.code.match(
       /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core['"]/g,
     );
-    // Only the watch import should reference @purityjs/core
-    expect(purityImports).not.toBeNull();
-    expect(purityImports!.every((s) => s.includes('__purity_w__'))).toBe(true);
+    expect(purityImports).toBeNull();
+    expect(result!.code).toContain("from '@purityjs/core/compiler'");
   });
 
   it('handles double-quoted import paths (single AND double quotes)', () => {
@@ -477,7 +485,9 @@ describe('@purityjs/vite-plugin source maps', () => {
     const result = plugin.transform(code, 'app.ts')!;
     // Find the output line that contains the compiled call.
     const outLines = result.code.split('\n');
-    const compiledLineIdx = outLines.findIndex((l) => l.includes('__purity_tpl_0(['));
+    const compiledLineIdx = outLines.findIndex((l) =>
+      l.includes('__purity_renderCompiled__(__purity_tpl_0'),
+    );
     expect(compiledLineIdx).toBeGreaterThanOrEqual(0);
 
     // Decode the mapping to verify that line points back to source line 1
@@ -573,12 +583,12 @@ describe('@purityjs/vite-plugin compile errors', () => {
     try {
       const result = plugin.transform(code, 'app.ts')!;
       // Both the original `html` import (kept because of the failure) and the
-      // injected watch import should reference @purityjs/core.
+      // injected hydration runtime should reference the compiler entry point.
       const purityImports = result.code.match(
         /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core['"]/g,
       )!;
       expect(purityImports.some((s) => /\bhtml\b/.test(s))).toBe(true);
-      expect(purityImports.some((s) => s.includes('__purity_w__'))).toBe(true);
+      expect(result.code).toContain("from '@purityjs/core/compiler'");
     } finally {
       console.warn = orig;
     }
@@ -623,12 +633,12 @@ describe('@purityjs/vite-plugin compile errors', () => {
       expect(result.code).toContain('createElement');
       // Unterminated template left as runtime html``.
       expect(result.code).toContain('html`<div>broken');
-      // html import preserved alongside the watch import.
+      // html import preserved alongside the compiled hydration runtime.
       const purityImports = result.code.match(
         /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core['"]/g,
       )!;
       expect(purityImports.some((s) => /\bhtml\b/.test(s))).toBe(true);
-      expect(purityImports.some((s) => s.includes('__purity_w__'))).toBe(true);
+      expect(result.code).toContain("from '@purityjs/core/compiler'");
       // Warning surfaced with file:line:col.
       expect(warns.some((w) => w.includes('app.ts:3:') && w.includes('unterminated'))).toBe(true);
     } finally {

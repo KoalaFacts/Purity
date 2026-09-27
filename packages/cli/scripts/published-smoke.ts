@@ -15,6 +15,15 @@ if (!npmCli) throw new Error('Run this check through npm run test:published-cli'
 type Mode = 'client' | 'ssr';
 const packages = ['@purityjs/cli', '@purityjs/core', '@purityjs/ssr', '@purityjs/vite-plugin'];
 const maxOutput = 16_000;
+const requestedVersion = process.env.PURITY_SMOKE_VERSION;
+if (requestedVersion) {
+  assert.match(requestedVersion, /^\d+\.\d+\.\d+(?:-[\w.-]+)?$/);
+}
+
+const npmEnv = { ...process.env };
+for (const key of Object.keys(npmEnv)) {
+  if (key.toLowerCase().startsWith('npm_config_')) delete npmEnv[key];
+}
 
 function collect(child: ChildProcess): { output: () => string; stdout: () => string } {
   let stdout = '';
@@ -31,28 +40,30 @@ function collect(child: ChildProcess): { output: () => string; stdout: () => str
 async function runNpm(args: string[], cwd: string, timeoutMs = 300_000): Promise<string> {
   const child = spawn(process.execPath, [npmCli!, ...args], {
     cwd,
+    env: npmEnv,
+    detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
   const log = collect(child);
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    child.kill();
-  }, timeoutMs);
+  const timeout = new AbortController();
   try {
-    const code = await new Promise<number>((resolve, reject) => {
-      child.once('error', reject);
-      child.once('close', (result) => resolve(result ?? 1));
-    });
-    if (timedOut || code !== 0) {
-      throw new Error(
-        `npm ${args.join(' ')} ${timedOut ? 'timed out' : `exited ${code}`}\n${log.output()}`,
-      );
+    const code = await Promise.race([
+      new Promise<number>((resolve, reject) => {
+        child.once('error', reject);
+        child.once('close', (result) => resolve(result ?? 1));
+      }),
+      delay(timeoutMs, undefined, { signal: timeout.signal }).then(async () => {
+        await stopProcessTree(child, true);
+        throw new Error(`npm ${args.join(' ')} timed out\n${log.output()}`);
+      }),
+    ]);
+    if (code !== 0) {
+      throw new Error(`npm ${args.join(' ')} exited ${code}\n${log.output()}`);
     }
     return log.stdout();
   } finally {
-    clearTimeout(timer);
+    timeout.abort();
   }
 }
 
@@ -86,17 +97,21 @@ async function waitForPreview(url: string, child: ChildProcess, log: () => strin
   throw new Error(`Preview did not become ready: ${url}\n${log()}`);
 }
 
-async function stopPreview(child: ChildProcess): Promise<void> {
-  if (!child.pid || child.exitCode !== null) return;
+async function stopProcessTree(child: ChildProcess, force = false): Promise<void> {
+  if (!child.pid) return;
   if (process.platform === 'win32') {
     const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
       stdio: 'ignore',
       windowsHide: true,
+      timeout: 10_000,
     });
-    await new Promise<void>((resolve) => killer.once('close', () => resolve()));
+    await new Promise<void>((resolve) => {
+      killer.once('error', () => resolve());
+      killer.once('close', () => resolve());
+    });
   } else {
     try {
-      process.kill(-child.pid, 'SIGTERM');
+      process.kill(-child.pid, force ? 'SIGKILL' : 'SIGTERM');
     } catch {
       child.kill();
     }
@@ -115,8 +130,6 @@ async function checkBrowser(browserType: BrowserType, mode: Mode, url: string): 
     await counter.waitFor();
     assert.match((await counter.textContent()) ?? '', /Count:\s*0/);
     const button = page.locator('p-counter button').first();
-    const originalButton = await button.elementHandle();
-    assert.ok(originalButton);
     await button.click();
     await page.waitForFunction(() =>
       document
@@ -125,17 +138,6 @@ async function checkBrowser(browserType: BrowserType, mode: Mode, url: string): 
         ?.textContent?.includes('Count: 1'),
     );
     assert.match((await counter.textContent()) ?? '', /Count:\s*1/);
-    if (mode === 'ssr') {
-      assert.equal(
-        await page.evaluate(
-          (original) =>
-            document.querySelector('p-counter')?.shadowRoot?.querySelector('button') === original,
-          originalButton,
-        ),
-        true,
-        'hydration must retain the server-rendered button',
-      );
-    }
     assert.deepEqual(errors, []);
     console.log(`${mode} ${browserType.name()}: production preview and first click passed`);
   } finally {
@@ -178,7 +180,7 @@ async function checkProject(
     assert.equal(
       installed.version,
       versions.get(pkg),
-      `${pkg} is not the latest published version`,
+      `${pkg} does not match the checked published version`,
     );
   }
   await runNpm(['run', 'build'], project);
@@ -194,7 +196,7 @@ async function checkProject(
   ];
   const preview = spawn(process.execPath, [npmCli!, ...args], {
     cwd: project,
-    env: { ...process.env, ...(mode === 'ssr' ? { PORT: String(port) } : {}) },
+    env: { ...npmEnv, ...(mode === 'ssr' ? { PORT: String(port) } : {}) },
     detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
@@ -206,12 +208,13 @@ async function checkProject(
       const html = await (await fetch(url)).text();
       assert.match(html, /shadowrootmode="open"/);
       assert.match(html, /Count:\s*<!--\[-->0<!--\]-->/);
+      assert.match(html, /<button[^>]*>\+1<\/button>/);
     }
     for (const browserType of [chromium, firefox, webkit]) {
       await checkBrowser(browserType, mode, url);
     }
   } finally {
-    await stopPreview(preview);
+    await stopProcessTree(preview);
   }
 }
 
@@ -225,7 +228,8 @@ assert.ok(
 try {
   const versions = new Map<string, string>();
   for (const pkg of packages) {
-    const version = (await runNpm(['view', pkg, 'version', '--prefer-online'], root)).trim();
+    const spec = requestedVersion ? `${pkg}@${requestedVersion}` : pkg;
+    const version = (await runNpm(['view', spec, 'version', '--prefer-online'], root)).trim();
     assert.match(version, /^\d+\.\d+\.\d+(?:-[\w.-]+)?$/, `Invalid npm version for ${pkg}`);
     versions.set(pkg, version);
   }

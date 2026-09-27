@@ -105,6 +105,14 @@ jobs:
             npm publish -w packages/cli
           fi
 
+      - name: Install browser engines
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Check published CLI projects
+        run: npm run test:published-cli
+        env:
+          PURITY_SMOKE_VERSION: ${{ env.RELEASE_VERSION }}
+
       # Tag the release
       - name: Create git tag
         run: |

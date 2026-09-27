@@ -56,13 +56,9 @@ jobs:
         # Verifies TypeScript types compile without errors
         run: cd packages/core && npx tsc --noEmit
 
-      - name: 🧪 Test @purityjs/core (155 tests)
-        # Runs vitest on the core framework — signals, templates, components, control flow
-        run: npm test -w packages/core
-
-      - name: 🧪 Test @purityjs/vite-plugin (12 tests)
-        # Runs vitest on the AOT template compiler plugin
-        run: npm test -w packages/vite-plugin
+      - name: 🧪 Test workspaces
+        # Runs every workspace test script, including SSR parity tests.
+        run: npm test
 
       - name: 🏗️ Build @purityjs/core
         # Produces dist/ with ESM, CJS, and .d.ts type declarations

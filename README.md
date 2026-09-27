@@ -174,7 +174,7 @@ Long-form guides live in [`/docs`](./docs/README.md):
 ## Development
 
 ```bash
-npm test --workspaces   # all tests
+npm test                # all workspace test scripts
 npm run check           # format check + lint (oxfmt + oxlint)
 npm run check:fix       # auto-fix
 ```

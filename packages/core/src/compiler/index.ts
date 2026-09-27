@@ -7,7 +7,7 @@ export {
   generateSSR,
   generateSSRModule,
 } from './codegen.ts';
-export { html, inflateDeferred, renderCompiledTemplate } from './compile.ts';
+export { html, inflateDeferred } from './compile.ts';
 export type { DeferredTemplate } from './hydrate-runtime.ts';
 export {
   checkHydrationCursor,
@@ -23,6 +23,7 @@ export {
   isHydrating,
   makeDeferred,
   makeCompiledDeferred,
+  renderCompiledTemplate,
 } from './hydrate-runtime.ts';
 export { parse } from './parser.ts';
 export type { SSRComponentRenderer, SSRHelpers, SSRHtml } from './ssr-runtime.ts';

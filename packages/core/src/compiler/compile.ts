@@ -15,7 +15,6 @@ import {
   hydrationWarningsEnabled,
   isHydrating,
   makeDeferred,
-  makeCompiledDeferred,
 } from './hydrate-runtime.ts';
 import { parse } from './parser.ts';
 
@@ -109,17 +108,6 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Docum
   }
   const entry = getOrInitEntry(strings);
   return ensureClient(entry, strings)(values, watch);
-}
-
-/** Run an AOT DOM factory, or defer its precompiled walker during hydration. */
-export function renderCompiledTemplate(
-  create: CompiledFn,
-  hydrate: HydrateFactory,
-  values: unknown[],
-): Node | DocumentFragment {
-  return isHydrating()
-    ? (makeCompiledDeferred(hydrate, values) as unknown as Node)
-    : create(values, watch);
 }
 
 /**

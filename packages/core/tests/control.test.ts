@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { html } from '../src/compiler/compile.ts';
-import { mount, onDispose } from '../src/component.ts';
-import { each, list, match } from '../src/control.ts';
+import { ComponentContext, mount, onDispose, popContext, pushContext } from '../src/component.ts';
+import { each, inflateDeferredEach, list, match, type DeferredEach } from '../src/control.ts';
 import { state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
@@ -184,6 +184,347 @@ describe('each', () => {
     expect(lis[0].textContent).toBe('A');
     expect(lis[1].textContent).toBe('B');
     expect(lis[2].textContent).toBe('C');
+  });
+
+  it('renders only a small initial range when virtual rendering is enabled', async () => {
+    const items = state(Array.from({ length: 100 }, (_, index) => index));
+    const renderedIndices: number[] = [];
+    const fragment = each(
+      () => items(),
+      (item, index) => {
+        renderedIndices.push(index);
+        const li = document.createElement('li');
+        li.textContent = String(item());
+        return li;
+      },
+      { virtual: true },
+    );
+
+    expect(renderedIndices).toHaveLength(40);
+    expect(renderedIndices[0]).toBe(0);
+    expect(renderedIndices[39]).toBe(39);
+    expect(fragment.querySelectorAll('li')).toHaveLength(40);
+    expect(fragment.querySelectorAll('[data-purity-window-spacer]')).toHaveLength(2);
+    expect(
+      (fragment.querySelectorAll('[data-purity-window-spacer]')[1] as HTMLElement).style.height,
+    ).toBe('1920px');
+
+    items([...items(), 100]);
+    await tick();
+    expect(renderedIndices).toHaveLength(40);
+    expect(
+      (fragment.querySelectorAll('[data-purity-window-spacer]')[1] as HTMLElement).style.height,
+    ).toBe('1952px');
+  });
+
+  it('updates the rendered range from the nearest scroll container and cleans up on unmount', async () => {
+    const items = Array.from({ length: 100 }, (_, index) => index);
+    const renderedIndices: number[] = [];
+    const container = document.createElement('ul');
+    container.style.overflowY = 'auto';
+    container.style.height = '96px';
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 96 });
+    container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 96);
+
+    const mounted = mount(
+      () =>
+        each(
+          items,
+          (item, index) => {
+            renderedIndices.push(index);
+            const li = document.createElement('li');
+            li.textContent = String(index);
+            li.getBoundingClientRect = () =>
+              new DOMRect(0, index * 24 - container.scrollTop, 200, 24);
+            return li;
+          },
+          (item) => item,
+          { virtual: true },
+        ),
+      container,
+    );
+    await tick();
+    await tick();
+    const topSpacer = container.querySelector<HTMLElement>('[data-purity-window-spacer]')!;
+    expect(topSpacer.localName).toBe('li');
+    topSpacer.getBoundingClientRect = () => new DOMRect(0, -container.scrollTop, 200, 0);
+    expect(container.querySelectorAll('li:not([data-purity-window-spacer])')).toHaveLength(12);
+
+    container.scrollTop = 1200;
+    container.dispatchEvent(new Event('scroll'));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await tick();
+    await tick();
+    const rows = container.querySelectorAll('li:not([data-purity-window-spacer])');
+    expect(rows[0].textContent).toBe('42');
+    expect(rows[rows.length - 1].textContent).toBe('61');
+
+    mounted.unmount();
+    const renderCountAfterUnmount = renderedIndices.length;
+    container.scrollTop = 0;
+    container.dispatchEvent(new Event('scroll'));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(renderedIndices).toHaveLength(renderCountAfterUnmount);
+  });
+
+  it('keeps the scroll range accurate when row heights vary', async () => {
+    const items = Array.from({ length: 100 }, (_, index) => index);
+    const container = document.createElement('ul');
+    container.style.overflowY = 'auto';
+    container.style.height = '100px';
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 100 });
+    container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 100);
+    const rowOffset = (index: number) => Math.floor(index / 2) * 60 + (index % 2) * 20;
+
+    const mounted = mount(
+      () =>
+        each(
+          items,
+          (_item, index) => {
+            const li = document.createElement('li');
+            li.textContent = String(index);
+            const height = index % 2 === 0 ? 20 : 40;
+            li.getBoundingClientRect = () =>
+              new DOMRect(0, rowOffset(index) - container.scrollTop, 200, height);
+            return li;
+          },
+          (item) => item,
+          { virtual: true },
+        ),
+      container,
+    );
+    await tick();
+    await tick();
+
+    const topSpacer = container.querySelector<HTMLElement>('[data-purity-window-spacer]')!;
+    topSpacer.getBoundingClientRect = () => new DOMRect(0, -container.scrollTop, 200, 0);
+    container.scrollTop = rowOffset(20);
+    container.dispatchEvent(new Event('scroll'));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await tick();
+    await tick();
+
+    const rows = Array.from(container.querySelectorAll('li:not([data-purity-window-spacer])'));
+    const indices = rows.map((row) => Number(row.textContent));
+    expect(indices[0]).toBe(12);
+    expect(indices).toContain(20);
+    expect(indices.length).toBeLessThan(40);
+
+    mounted.unmount();
+  });
+
+  it('recalculates the visible range when reactive row content changes its height', async () => {
+    const items = state(Array.from({ length: 100 }, (_, id) => ({ id, label: 'x' })));
+    const container = document.createElement('ul');
+    container.style.overflowY = 'auto';
+    container.style.height = '100px';
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 100 });
+    container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 100);
+    const heightOf = (label: string) => (label.length > 1 ? 60 : 20);
+
+    const mounted = mount(
+      () =>
+        each(
+          () => items(),
+          (item) => {
+            const id = item().id;
+            const li = document.createElement('li');
+            li.dataset.row = String(id);
+            li.appendChild(html`<span>${() => item().label}</span>`);
+            li.getBoundingClientRect = () => {
+              const current = items();
+              const index = current.findIndex((row) => row.id === id);
+              let top = 0;
+              for (let i = 0; i < index; i++) top += heightOf(current[i].label);
+              return new DOMRect(0, top - container.scrollTop, 200, heightOf(current[index].label));
+            };
+            return li;
+          },
+          (item) => item.id,
+          { virtual: true },
+        ),
+      container,
+    );
+    await tick();
+    await tick();
+
+    const spacers = container.querySelectorAll<HTMLElement>('[data-purity-window-spacer]');
+    const topSpacer = spacers[0];
+    topSpacer.getBoundingClientRect = () => new DOMRect(0, -container.scrollTop, 200, 0);
+    container.scrollTop = 400;
+    container.dispatchEvent(new Event('scroll'));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await tick();
+    await tick();
+    const heightOfWindow = () => {
+      const rows = Array.from(container.querySelectorAll('li:not([data-purity-window-spacer])'));
+      return (
+        Number.parseFloat(spacers[0].style.height) +
+        rows.reduce((total, row) => total + row.getBoundingClientRect().height, 0) +
+        Number.parseFloat(spacers[1].style.height)
+      );
+    };
+    const initialHeight = heightOfWindow();
+    const targetId = Number(
+      container.querySelector('li:not([data-purity-window-spacer])')?.getAttribute('data-row'),
+    );
+
+    items(items().map((row) => (row.id === targetId ? { ...row, label: 'expanded' } : row)));
+    await tick();
+    expect(container.querySelector(`li[data-row="${targetId}"]`)?.textContent).toBe('expanded');
+    container.ownerDocument.defaultView!.dispatchEvent(new Event('resize'));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await tick();
+    await tick();
+
+    expect(heightOfWindow()).toBe(initialHeight + 40);
+    mounted.unmount();
+  });
+
+  it('renders newly inserted rows at the current scroll position', async () => {
+    const items = state(Array.from({ length: 100 }, (_, id) => id));
+    const container = document.createElement('ul');
+    container.style.overflowY = 'auto';
+    container.style.height = '100px';
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 100 });
+    container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 100);
+
+    const mounted = mount(
+      () =>
+        each(
+          () => items(),
+          (item) => {
+            const id = item();
+            const li = document.createElement('li');
+            li.dataset.row = String(id);
+            li.textContent = String(id);
+            li.getBoundingClientRect = () =>
+              new DOMRect(0, items().indexOf(id) * 20 - container.scrollTop, 200, 20);
+            return li;
+          },
+          (item) => item,
+          { virtual: true },
+        ),
+      container,
+    );
+    await tick();
+    await tick();
+
+    const topSpacer = container.querySelector<HTMLElement>('[data-purity-window-spacer]')!;
+    topSpacer.getBoundingClientRect = () => new DOMRect(0, -container.scrollTop, 200, 0);
+    container.scrollTop = 800;
+    container.dispatchEvent(new Event('scroll'));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await tick();
+    await tick();
+
+    items([...items().slice(0, 40), 100, 101, 102, ...items().slice(40)]);
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await tick();
+    await tick();
+
+    const renderedRows = Array.from(
+      container.querySelectorAll('li:not([data-purity-window-spacer])'),
+    );
+    const renderedIds = renderedRows.map((row) => Number(row.getAttribute('data-row')));
+    expect(renderedIds).toContain(100);
+    expect(renderedIds).toContain(40);
+    mounted.unmount();
+  });
+
+  it('keeps the scroll window aligned after visible rows are removed', async () => {
+    const items = state(Array.from({ length: 100 }, (_, id) => id));
+    const container = document.createElement('ul');
+    container.style.overflowY = 'auto';
+    container.style.height = '100px';
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 100 });
+    container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 100);
+
+    const mounted = mount(
+      () =>
+        each(
+          () => items(),
+          (item) => {
+            const id = item();
+            const li = document.createElement('li');
+            li.dataset.row = String(id);
+            li.textContent = String(id);
+            li.getBoundingClientRect = () =>
+              new DOMRect(0, items().indexOf(id) * 20 - container.scrollTop, 200, 20);
+            return li;
+          },
+          (item) => item,
+          { virtual: true },
+        ),
+      container,
+    );
+    await tick();
+    await tick();
+
+    const topSpacer = container.querySelector<HTMLElement>('[data-purity-window-spacer]')!;
+    topSpacer.getBoundingClientRect = () => new DOMRect(0, -container.scrollTop, 200, 0);
+    container.scrollTop = 800;
+    container.dispatchEvent(new Event('scroll'));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await tick();
+    await tick();
+
+    items(items().filter((id) => id < 40 || id > 42));
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await tick();
+    await tick();
+
+    const renderedRows = Array.from(
+      container.querySelectorAll('li:not([data-purity-window-spacer])'),
+    );
+    const renderedIds = renderedRows.map((row) => Number(row.getAttribute('data-row')));
+    expect(renderedIds).toContain(43);
+    expect(renderedIds).not.toContain(40);
+    expect(renderedIds).not.toContain(41);
+    expect(renderedIds).not.toContain(42);
+    mounted.unmount();
+  });
+
+  it('adopts SSR rows and windows them during hydration', async () => {
+    const items = Array.from({ length: 100 }, (_, index) => index);
+    const host = document.createElement('ul');
+    host.style.overflowY = 'auto';
+    host.style.height = '1024px';
+    Object.defineProperty(host, 'clientHeight', { configurable: true, value: 1024 });
+    const serverRows = items
+      .map((item) => `<!--er:${item}--><li><!--[-->${item}<!--]--></li><!--/er-->`)
+      .join('');
+    host.innerHTML = `<!--e-->${serverRows}<!--/e-->`;
+    document.body.appendChild(host);
+    const closeMarker = document.createComment('slot-close');
+    host.appendChild(closeMarker);
+    const context = new ComponentContext();
+    const deferred: DeferredEach<number> = {
+      __purity_deferred_each__: true,
+      listAccessor: items,
+      mapFn: (item) => html`<li>${item()}</li>`,
+      keyFn: (item) => item,
+      options: { virtual: true },
+    };
+
+    pushContext(context);
+    try {
+      inflateDeferredEach(deferred, Array.from(host.childNodes).slice(0, -1), closeMarker);
+    } finally {
+      popContext();
+    }
+    await tick();
+
+    expect(host.querySelectorAll('li[data-purity-window-spacer]')).toHaveLength(2);
+    const rows = host.querySelectorAll('li:not([data-purity-window-spacer])');
+    expect(rows).toHaveLength(40);
+    expect(rows[0].textContent).toBe('0');
+    expect(rows[39].textContent).toBe('39');
+
+    for (const dispose of context.disposers ?? []) dispose();
+    host.remove();
   });
 
   it('updates when list changes', async () => {
@@ -1125,6 +1466,19 @@ describe('each — SSR-context dispatch (ADR 0023)', () => {
     // eachSSR's per-row marker grammar.
     expect(html).toMatch(/<!--er:[^-]+-->/);
     expect(html).toContain('<!--/er-->');
+  });
+
+  it('keeps the complete list in SSR when virtual rendering is enabled', () => {
+    const result = inSSRContext(() =>
+      eachIso(
+        Array.from({ length: 100 }, (_, index) => index),
+        (item) => `<li>${item()}</li>`,
+        { virtual: true },
+      ),
+    );
+    const html = ssrHtmlText(result);
+    expect(html.match(/<!--er:/g)).toHaveLength(100);
+    expect(html).not.toContain('data-purity-window-spacer');
   });
 
   it('returns a DocumentFragment when called outside an SSR context', () => {

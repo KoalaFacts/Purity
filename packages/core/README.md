@@ -451,6 +451,23 @@ each(
 );
 ```
 
+For a long list, add `{ virtual: true }` and put it in a scrollable container:
+
+```ts
+html`<ul style="max-height: 24rem; overflow-y: auto">
+  ${each(
+    () => items(),
+    (item) => html`<li>${() => item().name}</li>`,
+    (item) => item.id,
+    { virtual: true },
+  )}
+</ul>`;
+```
+
+Purity manages the visible range, spacers, and row-height measurements. Supply
+stable keys when items can be inserted, removed, or reordered. SSR still renders
+the full list; hydration adopts those rows before windowing them.
+
 ### Teleport
 
 ```ts

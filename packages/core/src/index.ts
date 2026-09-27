@@ -26,7 +26,12 @@ export {
   onFormStateRestore,
   onMount,
 } from './component.ts';
-export type { SuspenseErrorInfo, SuspenseErrorPhase, SuspenseOptions } from './control.ts';
+export type {
+  EachOptions,
+  SuspenseErrorInfo,
+  SuspenseErrorPhase,
+  SuspenseOptions,
+} from './control.ts';
 // Control flow
 export {
   each,

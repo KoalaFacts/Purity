@@ -94,4 +94,41 @@ describe('AOT output runs correctly under jsdom', () => {
     expect(paragraph?.childNodes[1]).toBe(text);
     expect(paragraph?.textContent).toBe('hello');
   });
+
+  it('creates an AOT template and nested template when no SSR nodes exist', () => {
+    const { make } = evalAot(
+      `import { html } from '@purityjs/core';\nconst make = (label) => html\`<li><strong>\${html\`<span>\${label}</span>\`}</strong></li>\`;`,
+    );
+    enterHydration();
+    let deferred: unknown;
+    try {
+      deferred = make('new row');
+    } finally {
+      exitHydration();
+    }
+    const root = document.createDocumentFragment();
+    inflateDeferred(deferred as Parameters<typeof inflateDeferred>[0], root);
+    expect(root.querySelector('li strong span')?.textContent).toBe('new row');
+  });
+
+  it('starts after stripped suspense markers and the retained SSR style', () => {
+    const { make } = evalAot(
+      `import { html } from '@purityjs/core';\nconst make = (label) => html\`<button>\${label}</button>\`;`,
+    );
+    const root = document.createElement('div');
+    root.innerHTML =
+      '<!--s:0--><style>.x{color:red}</style><button><!--[-->Go<!--]--></button><!--/s:0-->';
+    const button = root.querySelector('button')!;
+    enterHydration();
+    let deferred: unknown;
+    try {
+      deferred = make('Go');
+    } finally {
+      exitHydration();
+    }
+    inflateDeferred(deferred as Parameters<typeof inflateDeferred>[0], root, true);
+    expect(root.querySelector('button')).toBe(button);
+    expect(root.firstChild?.nodeName).toBe('STYLE');
+    expect(root.querySelectorAll('button')).toHaveLength(1);
+  });
 });

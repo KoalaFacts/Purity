@@ -291,7 +291,8 @@ export function generateHydrate(ast: FragmentNode): string {
   // inflateDeferredEach helper, and `_m` the inflateDeferredMatch helper —
   // all threaded through by compile.ts. See "Codegen safety contract"
   // near SAFE_NAME for the full audit.
-  // codeql[js/code-injection]
+  // codeql[js/bad-code-sanitization] — parsed indices are numeric; names
+  // are validated above and literal text is emitted with JSON.stringify.
   return `function(_v,_w,_r,_i,_c,_e,_m,_s){${body}}`;
 }
 

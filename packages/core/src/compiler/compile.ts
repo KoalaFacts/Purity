@@ -13,6 +13,7 @@ import {
   type HydrateFactory,
   hydrationTextRewriteEnabled,
   hydrationWarningsEnabled,
+  isDeferred,
   isHydrating,
   makeDeferred,
 } from './hydrate-runtime.ts';
@@ -129,9 +130,15 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Docum
 export function inflateDeferred(
   deferred: DeferredTemplate,
   target: Node,
-  firstNode?: Node | null,
+  skipFirstNode = false,
 ): Node {
   stripSuspenseMarkers(target);
+  const first = target.firstChild;
+  const firstNode = skipFirstNode && first?.nodeName === 'STYLE' ? first.nextSibling : first;
+  if (!firstNode && deferred.create) {
+    target.appendChild(createDeferred(deferred));
+    return target;
+  }
   const fn =
     deferred.hydrate ?? ensureHydrate(getOrInitEntry(deferred.strings!), deferred.strings!);
   // Pass the cursor checker if either warnings or text-rewrite is enabled —
@@ -149,6 +156,17 @@ export function inflateDeferred(
     inflateDeferredMatchThunk,
     firstNode,
   );
+}
+
+function createDeferred(deferred: DeferredTemplate): Node | DocumentFragment {
+  // A missing SSR row needs fresh DOM. Its nested templates were also
+  // captured as deferred values, so materialize them before binding slots.
+  const values = deferred.values.map((value) =>
+    isDeferred(value) ? createDeferred(value) : value,
+  );
+  const create =
+    deferred.create ?? ensureClient(getOrInitEntry(deferred.strings!), deferred.strings!);
+  return create(values, watch);
 }
 
 // control.ts (the `each()` / `match()` runtimes) register their adoption

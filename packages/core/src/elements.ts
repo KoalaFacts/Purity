@@ -735,15 +735,13 @@ export function component<
             // Detaching them would disconnect nested custom elements.
             // SSR places scoped CSS before the component template. Keep the
             // style node and start the template walker at the next sibling.
-            const first = this._shadow.firstChild;
             const hasSSRStyle = (this._shadow.adoptedStyleSheets?.length ?? 0) > adoptedBefore;
-            inflateDeferred(
-              view,
-              this._shadow,
-              hasSSRStyle && first?.nodeType === 1 && (first as Element).tagName === 'STYLE'
-                ? first.nextSibling
-                : first,
-            );
+            inflateDeferred(view, this._shadow, hasSSRStyle);
+            if (hasSSRStyle && this._shadow.firstChild?.nodeName === 'STYLE') {
+              // css() now owns the live sheet. Retain the SSR node for DOM
+              // identity but remove its rules so obsolete selectors cannot win.
+              this._shadow.firstChild.textContent = '';
+            }
             result = null;
           } else {
             // Renderer returned a non-deferred node — clear and re-render.

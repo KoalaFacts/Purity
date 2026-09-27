@@ -21,8 +21,14 @@ export interface DeferredTemplate {
   __purity_deferred__: true;
   strings?: TemplateStringsArray;
   hydrate?: HydrateFactory;
+  create?: CompiledCreateFactory;
   values: unknown[];
 }
+
+type CompiledCreateFactory = (
+  values: unknown[],
+  watch: typeof import('../signals.ts').watch,
+) => Node | DocumentFragment;
 
 /** A hydration walker emitted at build time or compiled on first JIT use. */
 export type HydrateFactory = (
@@ -115,21 +121,22 @@ export function makeDeferred(strings: TemplateStringsArray, values: unknown[]): 
 }
 
 /** Capture an AOT template without invoking the runtime parser or code generator. */
-export function makeCompiledDeferred(hydrate: HydrateFactory, values: unknown[]): DeferredTemplate {
-  return Object.freeze({ __purity_deferred__: true, hydrate, values });
+export function makeCompiledDeferred(
+  create: CompiledCreateFactory,
+  hydrate: HydrateFactory,
+  values: unknown[],
+): DeferredTemplate {
+  return Object.freeze({ __purity_deferred__: true, create, hydrate, values });
 }
 
 /** Run an AOT DOM factory, or defer its precompiled walker during hydration. */
 export function renderCompiledTemplate(
-  create: (
-    values: unknown[],
-    watch: typeof import('../signals.ts').watch,
-  ) => Node | DocumentFragment,
+  create: CompiledCreateFactory,
   hydrate: HydrateFactory,
   values: unknown[],
 ): Node | DocumentFragment {
   return isHydrating()
-    ? (makeCompiledDeferred(hydrate, values) as unknown as Node)
+    ? (makeCompiledDeferred(create, hydrate, values) as unknown as Node)
     : create(values, watch);
 }
 

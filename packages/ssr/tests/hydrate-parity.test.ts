@@ -14,6 +14,7 @@
 
 import {
   component,
+  css,
   each,
   eachSSR,
   html as clientHtml,
@@ -186,6 +187,65 @@ describe('SSR custom-element props', () => {
     button.click();
     expect(clicks).toBe(1);
     host.remove();
+  });
+
+  it('retires SSR CSS after adopting the live sheet', async () => {
+    const color = state('red');
+    let server = true;
+    const sheets: Array<{ text: string }> = [];
+    const view = document.defaultView!;
+    const originalSheet = Object.getOwnPropertyDescriptor(view, 'CSSStyleSheet');
+    class Sheet {
+      text = '';
+      constructor() {
+        sheets.push(this);
+      }
+      replaceSync(text: string) {
+        this.text = text;
+      }
+    }
+    Object.defineProperty(view, 'CSSStyleSheet', { configurable: true, value: Sheet });
+    try {
+      component('ssr-reactive-css-1', () => {
+        css`
+          .card {
+            color: ${() => color()};
+          }
+        `;
+        const tag = (server ? ssrHtml : clientHtml) as typeof clientHtml;
+        return tag`<p class="card">Card</p>`;
+      });
+      const markup = await renderToString(() => ssrHtml`<ssr-reactive-css-1></ssr-reactive-css-1>`);
+      server = false;
+      const host = document.createElement('div');
+      host.innerHTML = markup;
+      const element = host.querySelector('ssr-reactive-css-1')!;
+      const template = element.querySelector('template')!;
+      element.shadowRoot!.appendChild(template.content);
+      template.remove();
+      const style = element.shadowRoot!.querySelector('style')!;
+      const paragraph = element.shadowRoot!.querySelector('p')!;
+      Object.defineProperty(element.shadowRoot!, 'adoptedStyleSheets', {
+        configurable: true,
+        writable: true,
+        value: [],
+      });
+      expect(style.textContent).toContain('red');
+      document.body.appendChild(host);
+
+      hydrate(host, () => clientHtml`<ssr-reactive-css-1></ssr-reactive-css-1>`);
+      expect(element.shadowRoot!.querySelector('style')).toBe(style);
+      expect(style.textContent).toBe('');
+      expect(element.shadowRoot!.querySelector('p')).toBe(paragraph);
+      expect(sheets.at(-1)?.text).toContain('red');
+      color('blue');
+      await Promise.resolve();
+      expect(sheets.at(-1)?.text).toContain('blue');
+      host.remove();
+    } finally {
+      if (originalSheet) Object.defineProperty(view, 'CSSStyleSheet', originalSheet);
+      else Reflect.deleteProperty(view, 'CSSStyleSheet');
+    }
   });
 
   it('restores typed props before the DSD child hydrates', async () => {

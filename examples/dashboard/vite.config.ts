@@ -10,9 +10,12 @@ export default defineConfig({
   base,
   plugins: [purity()],
   resolve: {
-    alias: {
-      '@purityjs/core': resolve(import.meta.dirname, '../../packages/core/src/index.ts'),
-    },
+    alias: [
+      {
+        find: /^@purityjs\/core$/,
+        replacement: resolve(import.meta.dirname, '../../packages/core/src/index.ts'),
+      },
+    ],
   },
   build: {
     outDir: 'dist',

@@ -1,13 +1,13 @@
 :root {
   font-family: 'IBM Plex Sans', sans-serif;
-  color: #172439;
+  color: #142135;
   background: #f7f9fc;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --ink: #172439;
+  --ink: #142135;
   --muted: #56667d;
-  --blue: #1746a2;
+  --blue: #1548af;
   --blue-soft: #e8efff;
   --line: #dce4ee;
   --paper: #ffffff;
@@ -77,23 +77,18 @@ input {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.1rem;
   color: var(--ink);
   font-size: 1.15rem;
   font-weight: 600;
   letter-spacing: -0.04em;
   text-decoration: none;
 }
-.brand-mark {
-  display: inline-grid;
-  place-items: center;
-  width: 29px;
+.brand-lockup {
+  display: block;
+  width: 104px;
   height: 29px;
-  border-radius: 7px;
-  background: var(--blue);
-  color: white;
-  font-size: 1.1rem;
-  letter-spacing: -0.08em;
+  flex: none;
 }
 .brand-docs {
   color: var(--muted);

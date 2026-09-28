@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 1610" role="img" aria-labelledby="title desc">
+  <title id="title">Purity logo directions</title>
+  <desc id="desc">Six abstract geometric symbol directions shown as wordmarks, reversed icons, and small browser icons.</desc>
+  <defs>
+    <symbol id="contour" viewBox="0 0 64 64">
+      <path d="M10 10h44v44H27V27h15v15" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="square" stroke-linejoin="miter"/>
+    </symbol>
+    <symbol id="assembly" viewBox="0 0 64 64">
+      <path d="M8 8h31v12H20v19H8V8Zm48 48H25V44h19V25h12v31Z" fill="currentColor"/>
+      <path d="M26 26h12v12H26z" fill="currentColor"/>
+    </symbol>
+    <symbol id="threshold" viewBox="0 0 64 64">
+      <path d="M8 9h48v12H8zM8 26h31v12H8zM25 43h31v12H25z" fill="currentColor"/>
+    </symbol>
+    <symbol id="cleave" viewBox="0 0 64 64">
+      <path d="M9 8h46v12H29l-9 9v26H9V8Zm46 18v29H26l12-12h5V26h12Z" fill="currentColor"/>
+    </symbol>
+    <symbol id="relay" viewBox="0 0 64 64">
+      <path d="M32 7a25 25 0 1 0 25 25H44a12 12 0 1 1-12-12V7Z" fill="currentColor"/>
+      <path d="M38 7h19v19H38z" fill="currentColor"/>
+    </symbol>
+    <symbol id="notch" viewBox="0 0 64 64">
+      <path d="M8 12h18l20 20-20 20H8l20-20L8 12Zm31-1h17v17H39V11Zm0 25h17v17H39V36Z" fill="currentColor"/>
+    </symbol>
+    <g id="card" fill="#fff" stroke="#dce4ee" stroke-width="1.5"><rect width="552" height="425" rx="16"/></g>
+  </defs>
+  <rect width="1200" height="1610" fill="#f3f6fa"/>
+  <text x="48" y="64" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="28" fill="#172439">PURITY / symbol directions</text>
+  <text x="48" y="94" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#56667d">One color first · abstract geometry · web header + 16 px icon</text>
+
+  <g transform="translate(48 124)">
+    <use xlink:href="#card"/>
+    <text x="28" y="38" font-family="Consolas, monospace" font-size="15" letter-spacing="1.8" fill="#56667d">01  /  CONTOUR</text>
+    <g color="#1746a2"><use xlink:href="#contour" x="40" y="85" width="88" height="88"/></g>
+    <text x="154" y="154" font-family="Segoe UI, Arial, sans-serif" font-size="56" font-weight="700" letter-spacing="-2.6" fill="#172439">purity</text>
+    <text x="40" y="219" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#56667d">One continuous route through nested bounds</text>
+    <rect x="40" y="258" width="212" height="125" rx="12" fill="#172439"/>
+    <g color="#fff"><use xlink:href="#contour" x="106" y="284" width="74" height="74"/></g>
+    <text x="282" y="280" font-family="Consolas, monospace" font-size="13" fill="#56667d">16 PX</text>
+    <g color="#1746a2"><use xlink:href="#contour" x="289" y="300" width="16" height="16"/><use xlink:href="#contour" x="336" y="294" width="28" height="28"/></g>
+    <text x="282" y="354" font-family="Consolas, monospace" font-size="13" fill="#56667d">32 PX</text>
+  </g>
+  <g transform="translate(600 124)">
+    <use xlink:href="#card"/>
+    <text x="28" y="38" font-family="Consolas, monospace" font-size="15" letter-spacing="1.8" fill="#56667d">02  /  ASSEMBLY</text>
+    <g color="#1746a2"><use xlink:href="#assembly" x="40" y="85" width="88" height="88"/></g>
+    <text x="154" y="154" font-family="Segoe UI, Arial, sans-serif" font-size="54" font-weight="600" letter-spacing="-1.8" fill="#172439">purity</text>
+    <text x="40" y="219" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#56667d">Two forms meet at a precise shared center</text>
+    <rect x="40" y="258" width="212" height="125" rx="12" fill="#172439"/>
+    <g color="#fff"><use xlink:href="#assembly" x="106" y="284" width="74" height="74"/></g>
+    <text x="282" y="280" font-family="Consolas, monospace" font-size="13" fill="#56667d">16 PX</text>
+    <g color="#1746a2"><use xlink:href="#assembly" x="289" y="300" width="16" height="16"/><use xlink:href="#assembly" x="336" y="294" width="28" height="28"/></g>
+    <text x="282" y="354" font-family="Consolas, monospace" font-size="13" fill="#56667d">32 PX</text>
+  </g>
+  <g transform="translate(48 571)">
+    <use xlink:href="#card"/>
+    <text x="28" y="38" font-family="Consolas, monospace" font-size="15" letter-spacing="1.8" fill="#56667d">03  /  PHASE</text>
+    <g color="#1746a2"><use xlink:href="#threshold" x="40" y="85" width="88" height="88"/></g>
+    <text x="154" y="154" font-family="Segoe UI, Arial, sans-serif" font-size="47" font-weight="650" letter-spacing="2" fill="#172439">PURITY</text>
+    <text x="40" y="219" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#56667d">Three steps, each carrying a different width</text>
+    <rect x="40" y="258" width="212" height="125" rx="12" fill="#172439"/>
+    <g color="#fff"><use xlink:href="#threshold" x="106" y="284" width="74" height="74"/></g>
+    <text x="282" y="280" font-family="Consolas, monospace" font-size="13" fill="#56667d">16 PX</text>
+    <g color="#1746a2"><use xlink:href="#threshold" x="289" y="300" width="16" height="16"/><use xlink:href="#threshold" x="336" y="294" width="28" height="28"/></g>
+    <text x="282" y="354" font-family="Consolas, monospace" font-size="13" fill="#56667d">32 PX</text>
+  </g>
+  <g transform="translate(600 571)">
+    <use xlink:href="#card"/>
+    <text x="28" y="38" font-family="Consolas, monospace" font-size="15" letter-spacing="1.8" fill="#56667d">04  /  CLEAVE</text>
+    <g color="#1746a2"><use xlink:href="#cleave" x="40" y="85" width="88" height="88"/></g>
+    <text x="154" y="154" font-family="Segoe UI, Arial, sans-serif" font-size="55" font-weight="700" letter-spacing="-2.6" fill="#172439">purity</text>
+    <text x="40" y="219" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#56667d">Offset planes joined by an angled passage</text>
+    <rect x="40" y="258" width="212" height="125" rx="12" fill="#172439"/>
+    <g color="#fff"><use xlink:href="#cleave" x="106" y="284" width="74" height="74"/></g>
+    <text x="282" y="280" font-family="Consolas, monospace" font-size="13" fill="#56667d">16 PX</text>
+    <g color="#1746a2"><use xlink:href="#cleave" x="289" y="300" width="16" height="16"/><use xlink:href="#cleave" x="336" y="294" width="28" height="28"/></g>
+    <text x="282" y="354" font-family="Consolas, monospace" font-size="13" fill="#56667d">32 PX</text>
+  </g>
+  <g transform="translate(48 1018)">
+    <use xlink:href="#card"/>
+    <text x="28" y="38" font-family="Consolas, monospace" font-size="15" letter-spacing="1.8" fill="#56667d">05  /  APERTURE</text>
+    <g color="#1746a2"><use xlink:href="#relay" x="40" y="85" width="88" height="88"/></g>
+    <text x="154" y="154" font-family="Segoe UI, Arial, sans-serif" font-size="47" font-weight="650" letter-spacing="2" fill="#172439">PURITY</text>
+    <text x="40" y="219" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#56667d">A round field resolved by one square cut</text>
+    <rect x="40" y="258" width="212" height="125" rx="12" fill="#172439"/>
+    <g color="#fff"><use xlink:href="#relay" x="106" y="284" width="74" height="74"/></g>
+    <text x="282" y="280" font-family="Consolas, monospace" font-size="13" fill="#56667d">16 PX</text>
+    <g color="#1746a2"><use xlink:href="#relay" x="289" y="300" width="16" height="16"/><use xlink:href="#relay" x="336" y="294" width="28" height="28"/></g>
+    <text x="282" y="354" font-family="Consolas, monospace" font-size="13" fill="#56667d">32 PX</text>
+  </g>
+  <g transform="translate(600 1018)">
+    <use xlink:href="#card"/>
+    <text x="28" y="38" font-family="Consolas, monospace" font-size="15" letter-spacing="1.8" fill="#56667d">06  /  FOLD</text>
+    <g color="#1746a2"><use xlink:href="#notch" x="40" y="85" width="88" height="88"/></g>
+    <text x="154" y="154" font-family="Segoe UI, Arial, sans-serif" font-size="54" font-weight="600" letter-spacing="-1.8" fill="#172439">purity</text>
+    <text x="40" y="219" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#56667d">A pointed form meets two fixed terminals</text>
+    <rect x="40" y="258" width="212" height="125" rx="12" fill="#172439"/>
+    <g color="#fff"><use xlink:href="#notch" x="106" y="284" width="74" height="74"/></g>
+    <text x="282" y="280" font-family="Consolas, monospace" font-size="13" fill="#56667d">16 PX</text>
+    <g color="#1746a2"><use xlink:href="#notch" x="289" y="300" width="16" height="16"/><use xlink:href="#notch" x="336" y="294" width="28" height="28"/></g>
+    <text x="282" y="354" font-family="Consolas, monospace" font-size="13" fill="#56667d">32 PX</text>
+  </g>
+  <text x="48" y="1508" font-family="Segoe UI, Arial, sans-serif" font-size="17" fill="#172439">Review sheet 01 · choose a structural direction before production refinement</text>
+  <text x="48" y="1538" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#56667d">These are exploratory vectors. Shape ownership and final optical tuning remain to be assessed.</text>
+</svg>

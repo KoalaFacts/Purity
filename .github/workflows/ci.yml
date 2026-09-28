@@ -101,6 +101,9 @@ jobs:
       - name: 🧪 Check first island interactions
         run: npm run test:browser:islands
 
+      - name: 🧪 Check visible-list rendering
+        run: npm run test:browser:virtual
+
       - name: 🧪 Check published CLI projects
         run: npm run test:published-cli
 

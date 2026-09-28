@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Purity Virtual List Benchmark</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 24px;
+      }
+
+      .controls {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+
+      .viewport {
+        border: 1px solid #aaa;
+        height: 320px;
+        overflow-y: auto;
+        width: 360px;
+      }
+
+      .row {
+        box-sizing: border-box;
+        border-bottom: 1px solid #ddd;
+        height: 32px;
+        line-height: 31px;
+        padding: 0 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Purity virtual list</h1>
+    <div class="controls">
+      <button id="create-full" type="button">Create 10,000 regular rows</button>
+      <button id="create-virtual" type="button">Create 10,000 virtual rows</button>
+      <button id="create-shadow" type="button">Create 10,000 shadow rows</button>
+      <button id="clear" type="button">Clear</button>
+    </div>
+    <div id="full-viewport" class="viewport" hidden></div>
+    <div id="virtual-viewport" class="viewport" hidden></div>
+    <div id="shadow-viewport" class="viewport" hidden></div>
+    <p id="mounted-count">0 mounted rows</p>
+    <script type="module" src="./virtual.ts"></script>
+  </body>
+</html>

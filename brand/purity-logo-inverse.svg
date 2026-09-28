@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 188 64" role="img" aria-labelledby="title">
-  <title id="title">Purity</title>
-  <path fill="#fff" d="M9 9h24c13 0 22 9 22 23S46 55 33 55h-6v-9h6c8 0 13-5 13-14s-5-14-13-14H18v37H9V9Z"/>
-  <path fill="none" stroke="#fff" stroke-linecap="round" stroke-width="5" d="M20 32h7"/>
-  <circle cx="35" cy="32" r="3.5" fill="#e49531"/>
-  <text x="72" y="45" fill="#fff" font-family="IBM Plex Sans, Arial, sans-serif" font-size="38" font-weight="600" letter-spacing="-1.4">Purity</text>
-</svg>

@@ -86,7 +86,6 @@ function hrefFor(slug: string): string {
 function headingId(text: string, ids: Map<string, number>): string {
   const baseId = text
     .toLowerCase()
-    .replace(/<[^>]*>/g, '')
     .replace(/[^\p{L}\p{N}\s-]/gu, '')
     .trim()
     .replace(/\s+/g, '-');

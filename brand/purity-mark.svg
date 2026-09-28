@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Purity</title>
+  <path fill="#1746a2" d="M9 9h24c13 0 22 9 22 23S46 55 33 55h-6v-9h6c8 0 13-5 13-14s-5-14-13-14H18v37H9V9Z"/>
+  <path fill="none" stroke="#1746a2" stroke-linecap="round" stroke-width="5" d="M20 32h7"/>
+  <circle cx="35" cy="32" r="3.5" fill="#e49531"/>
+</svg>

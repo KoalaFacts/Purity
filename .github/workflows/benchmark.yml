@@ -17,6 +17,10 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: purity-pages
+  cancel-in-progress: false
+
 jobs:
   benchmark:
     name: Run benchmark in headless Chromium
@@ -76,7 +80,10 @@ jobs:
           npm run build -w packages/vite-plugin
           npm run build -w examples/dashboard
 
-      - name: Generate GitHub Pages site (Purity report app + dashboard demo)
+      - name: Build documentation site
+        run: npm run build -w examples/docs-site
+
+      - name: Generate GitHub Pages site (report, dashboard, docs)
         # Injects benchmark JSON into the Vite-built Purity report app and
         # copies the dashboard demo build into /dashboard/.
         run: npx tsx benchmark/generate-pages.ts

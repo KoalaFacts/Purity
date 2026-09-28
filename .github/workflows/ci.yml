@@ -78,6 +78,9 @@ jobs:
         # land on main and surface only at next benchmark deploy.
         run: npm run build -w examples/dashboard
 
+      - name: 📚 Build documentation site
+        run: npm run build -w examples/docs-site
+
   browser-islands:
     name: Islands first interaction (Chromium, Firefox, WebKit)
     runs-on: ubuntu-latest

@@ -2,6 +2,8 @@
 
 Long-form guides that don't fit cleanly in a README.
 
+Read them on the [public documentation site](https://koalafacts.github.io/Purity/docs/), which is built with Purity and published from this repository.
+
 | Doc                                                    | What it covers                                                                                                               |
 | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | [`typescript.md`](./typescript.md)                     | Type inference for `state`/`compute`/`resource`, generic component props, scoped slots, `WatchSource<T>` for custom helpers  |

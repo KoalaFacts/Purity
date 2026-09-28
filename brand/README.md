@@ -2,7 +2,7 @@
 
 ![Purity horizontal logo](./purity-logo.png)
 
-The symbol is direction 05 from the [design study](./logo-directions.md): a rounded band with a separate square at its upper right. The symbol's geometry is unchanged from the review image.
+This is the approved Purity logo. It refines direction 05 from the [design study](./logo-directions.md): a rounded band with a separate square at its upper right, paired with a tighter and larger uppercase wordmark. The [approved visual study](./purity-approved-concept.png) records the selected proportions and applications. The SVG files are the production assets.
 
 | Asset                     | Use                                    |
 | ------------------------- | -------------------------------------- |
@@ -11,7 +11,7 @@ The symbol is direction 05 from the [design study](./logo-directions.md): a roun
 | `purity-logo-inverse.svg` | White lockup on dark surfaces          |
 | `purity-favicon.svg`      | Browser icon and compact square avatar |
 
-Each SVG has a matching PNG export. Prefer SVG for the website and other scalable placements. The uppercase wordmark is outlined from IBM Plex Sans Semibold, with a simplified `I`, so it renders consistently without loading a font. The standard blue is `#1746a2`; the standard ink is `#172439`.
+Each SVG has a matching PNG export. Prefer SVG for the website and other scalable placements. The uppercase wordmark is outlined from IBM Plex Sans Semibold, with a simplified `I`, so it renders consistently without loading a font. The production blue is `#1548af`; the ink is `#142135`.
 
 The favicon also has dedicated 16 px and 32 px PNG exports for tools that need raster icons.
 

@@ -2,11 +2,11 @@
 
 ![Six geometric logo directions, each shown as a lockup, a reversed symbol, and small icons](./logo-directions.png)
 
-Direction 05, Aperture, was selected. The original symbol in this sheet is the production geometry.
+Direction 05, Aperture, was selected for the symbol. Its proportions and wordmark were subsequently refined in the [approved visual study](./purity-approved-concept.png).
 
 ![Four aperture refinements, each shown as a lockup, a reversed symbol, and small icons](./aperture-studies.png)
 
-In the second sheet, **A / Original** is the selected symbol. B, C, and D were later explorations and were not adopted. A preliminary similarity search found a close visual relationship to [RevContent's mark](https://x.com/RevContent); this is recorded for review, not used to change the selected design.
+In the second sheet, **A / Original** supplies the selected symbol. B, C, and D were later explorations and were not adopted. A preliminary similarity search found a close visual relationship to [RevContent's mark](https://x.com/RevContent); this is recorded for review, not used to change the selected design.
 
 ## Brief
 
@@ -15,7 +15,7 @@ In the second sheet, **A / Original** is the selected symbol. B, C, and D were l
 - **Audience:** Developers encountering the brand in documentation, repository avatars, package listings, browser tabs, and presentation slides.
 - **Tone:** Precise, restrained, modern, and approachable. The mark should feel deliberately constructed rather than decorated.
 - **Constraint:** Abstract geometry; no stock circuit, atom, gradient, glowing node, or generic letter P. It must survive a single-color rendering and have a usable 16 px favicon form.
-- **Existing visual system:** `#1746a2` blue, `#172439` ink, IBM Plex Sans in the docs. The sheet uses system fonts as provisional stand-ins; typography is not final.
+- **Visual system:** `#1548af` blue, `#142135` ink, IBM Plex Sans in the docs. The exploratory sheet used system fonts as provisional stand-ins.
 
 The primary architecture is a symbol and wordmark lockup. The symbol stands alone in browser tabs, repository avatars, and square package listings. Three typographic registers were explored: compact lowercase, lighter lowercase, and spaced uppercase. The selected lockup uses spaced uppercase letters.
 
@@ -32,12 +32,12 @@ The primary architecture is a symbol and wordmark lockup. The symbol stands alon
 
 The similarity screen is an informal image search, not a trademark or design clearance. It surfaced square spiral marks, three-bar marks, and a broken ring with a detached square. The weaker directions remain on the sheet to show what was explored and rejected.
 
-## Production mark: 05 / Aperture, original geometry
+## Production mark: approved Aperture refinement
 
 - **Architecture:** Horizontal lockup for docs and other headers; symbol-only for browser tab, repository avatar, and compact navigation.
-- **Construction:** On a 64-unit square, the circular band and detached upper-right square use the same two paths as direction 05 in the review sheet. The shapes are one color and separated by a deliberate gap.
-- **Wordmark:** Uppercase outlined IBM Plex Sans Semibold, with spacing and a simplified `I` adjusted toward the review composition. The study used a provisional system font, so glyph details differ; the symbol itself is identical.
-- **Color:** Blue `#1746a2`, ink `#172439`, and white `#ffffff` for the reverse version. The shape also works in pure black.
+- **Construction:** On a 64-unit square, the circular band and detached upper-right square preserve direction 05's two paths. The shapes are one color and separated by a deliberate gap.
+- **Wordmark:** Uppercase outlined IBM Plex Sans Semibold, with a simplified `I`. The letterforms are enlarged and moved closer to the symbol to reproduce the selected visual study's balance. The image-generated study is a visual reference; the outlined SVG is the exact reusable artwork.
+- **Color:** Blue `#1548af`, ink `#142135`, and white `#ffffff` for the reverse version. The shape also works in pure black.
 - **Small sizes:** The dedicated favicon uses the white symbol on a blue square. The symbol remains recognizable at 16 and 32 px; use the symbol without the wordmark at those sizes.
 - **Clear space:** Leave at least one quarter of the symbol's height around the outside of a standalone mark or lockup.
 - **Motion:** If animated, draw the arc and reveal the square once. The static form is primary.

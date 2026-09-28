@@ -1,13 +1,13 @@
 :root {
   font-family: 'IBM Plex Sans', sans-serif;
-  color: #172439;
+  color: #142135;
   background: #f7f9fc;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --ink: #172439;
+  --ink: #142135;
   --muted: #56667d;
-  --blue: #1746a2;
+  --blue: #1548af;
   --blue-soft: #e8efff;
   --line: #dce4ee;
   --paper: #ffffff;
@@ -86,7 +86,7 @@ input {
 }
 .brand-lockup {
   display: block;
-  width: 105px;
+  width: 104px;
   height: 29px;
   flex: none;
 }

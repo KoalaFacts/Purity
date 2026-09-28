@@ -2,7 +2,7 @@
 // Exercise the generated SSR production app against tarballs packed from this checkout.
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -209,10 +209,17 @@ try {
     assert.equal(version, releaseVersion, `${pkg} installed at the wrong version`);
   }
   await run([npmCli, 'run', 'build'], project);
+  const deployDir = join(target, 'deployed');
+  await mkdir(deployDir);
+  await cp(join(project, 'dist'), join(deployDir, 'dist'), { recursive: true });
+  await cp(manifestPath, join(deployDir, 'package.json'));
+  await cp(join(project, 'package-lock.json'), join(deployDir, 'package-lock.json'));
+  await readFile(join(deployDir, 'dist/server.js'));
+  await run([npmCli, 'ci', '--omit=dev', '--no-audit', '--no-fund'], deployDir);
   const port = await freePort();
   const url = `http://127.0.0.1:${port}/`;
-  const preview = spawn(process.execPath, [npmCli, 'run', 'preview'], {
-    cwd: project,
+  const server = spawn(process.execPath, [npmCli, 'start'], {
+    cwd: deployDir,
     env: { ...npmEnv, PORT: String(port) },
     detached: process.platform !== 'win32',
     stdio: 'ignore',
@@ -231,12 +238,16 @@ try {
       }
       await delay(250);
     }
-    assert.ok(ready, 'Production preview did not become ready');
+    assert.ok(ready, 'Production server did not become ready');
+    const direct = await fetch(`${url}nested/page`);
+    assert.equal(direct.status, 200, 'Direct requests must render HTML');
+    assert.match(await direct.text(), /shadowrootmode="open"/);
+    assert.equal((await fetch(`${url}assets/missing.js`)).status, 404);
     for (const browserType of [chromium, firefox, webkit]) {
       await checkBrowser(browserType, url);
     }
   } finally {
-    if (preview.exitCode === null) await stop(preview);
+    if (server.exitCode === null) await stop(server);
   }
 } finally {
   await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });

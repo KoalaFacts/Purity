@@ -64,10 +64,14 @@ const scripts = ssrMode
   ? {
       dev: 'node --experimental-strip-types server.ts',
       typecheck: 'tsc --noEmit',
-      build: 'npm run typecheck && npm run build:client && npm run build:server',
+      build:
+        'npm run typecheck && npm run build:client && npm run build:server && npm run build:bootstrap',
       'build:client': 'vite build --outDir dist/client',
       'build:server': 'vite build --ssr src/entry.server.ts --outDir dist/server',
-      preview: 'node --experimental-strip-types server.ts --production',
+      'build:bootstrap':
+        'tsc --ignoreConfig server.ts --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node --outDir dist',
+      start: 'node dist/server.js --production',
+      preview: 'npm run start',
     }
   : {
       dev: 'vite',
@@ -229,9 +233,8 @@ if (root) hydrate(root, App);
 `,
   );
 
-  // Minimal Node SSR server — zero deps beyond Node + Vite (dev) or the
-  // pre-built bundles (production). Run with `node --experimental-strip-types
-  // server.ts` (Node 22.6+) or just `node server.ts` on Node 23.6+.
+  // Minimal Node SSR server. Development runs the TypeScript source with
+  // Vite middleware; the build emits dist/server.js for production.
   writeFileSync(
     resolve(projectDir, 'server.ts'),
     `import {
@@ -257,9 +260,9 @@ function sendError(res: ServerResponse, err: unknown): void {
 }
 
 if (isProd) {
-  const clientDir = resolve(__dirname, 'dist/client');
+  const clientDir = resolve(__dirname, 'client');
   const template = await readFile(resolve(clientDir, 'index.html'), 'utf-8');
-  const mod = (await import(pathToFileURL(resolve(__dirname, 'dist/server/entry.server.js')).href)) as {
+  const mod = (await import(pathToFileURL(resolve(__dirname, 'server/entry.server.js')).href)) as {
     render: (url: string) => Promise<string>;
   };
   const contentTypes: Record<string, string> = {
@@ -403,6 +406,39 @@ writeFileSync(
 dist
 `,
 );
+
+if (ssrMode) {
+  writeFileSync(
+    resolve(projectDir, 'README.md'),
+    `# ${projectName}
+
+## Develop
+
+\`\`\`bash
+npm install
+npm run dev
+\`\`\`
+
+## Run the production build
+
+Use Node.js 24 or newer. Set \`PORT\` to change the default port of 3000.
+
+\`\`\`bash
+npm run build
+npm start
+\`\`\`
+
+The production server is \`dist/server.js\`; it serves the built client assets
+and renders HTML on the server. It does not need TypeScript or Vite at runtime.
+
+For a Node host that builds the app, deploy the project and run \`npm ci\`,
+\`npm run build\`, then \`npm start\`. To build before deployment, copy
+\`dist/\`, \`package.json\`, and \`package-lock.json\` to the host, run
+\`npm ci --omit=dev\`, then \`npm start\`. Keep \`dist/client\`,
+\`dist/server\`, and \`dist/server.js\` together.
+`,
+  );
+}
 
 console.log(`  Done! Now run:\n`);
 console.log(`    cd ${projectName}`);

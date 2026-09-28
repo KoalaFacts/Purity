@@ -211,6 +211,7 @@ async function checkProject(
   );
   const project = join(root, name);
   const manifest = JSON.parse(await readFile(join(project, 'package.json'), 'utf8')) as {
+    scripts: Record<string, string>;
     dependencies: Record<string, string>;
     devDependencies: Record<string, string>;
   };
@@ -235,7 +236,7 @@ async function checkProject(
   const url = `http://127.0.0.1:${port}/`;
   const args = [
     'run',
-    'preview',
+    mode === 'ssr' && manifest.scripts.start ? 'start' : 'preview',
     ...(mode === 'client'
       ? ['--', '--host', '127.0.0.1', '--port', String(port), '--strictPort']
       : []),

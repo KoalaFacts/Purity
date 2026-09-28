@@ -90,6 +90,19 @@ the reactivity, codegen, or `each()` paths.
 
 Profiles all four frameworks back-to-back and prints a Markdown table.
 
+## Memory retention check
+
+`npm run test:browser:memory` builds a Purity-only production fixture and runs
+it in Chromium. CI repeats keyed-list updates and virtual-list scrolling across
+mount/unmount cycles, forces garbage collection between batches, and reports
+heap size, DOM nodes, and weakly referenced detached hosts, rows, and state
+accessors. It fails if retained objects exceed a small allowance or if heap
+growth after warmup exceeds 1.5 MB over 75 cycles. The heap limit is a
+regression guard, not proof that every
+possible resource is leak-free; other browser engines do not expose the same
+heap controls. A positive control deliberately retains 10 mounts to verify
+that the probe detects them. The result appears in the CI job summary.
+
 ## Caveats
 
 - CDP profiling adds ~3× overhead vs the raw bench. Use these numbers for

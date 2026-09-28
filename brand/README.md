@@ -4,12 +4,12 @@
 
 The mark combines a rounded contour with a square corner in one continuous shape. It is the refined version of direction 05 in the [design study](./logo-directions.md).
 
-| Asset | Use |
-| --- | --- |
-| `purity-mark.svg` | Symbol on light surfaces |
-| `purity-logo.svg` | Horizontal lockup on light surfaces |
-| `purity-logo-inverse.svg` | White lockup on dark surfaces |
-| `purity-favicon.svg` | Browser icon and compact square avatar |
+| Asset                     | Use                                    |
+| ------------------------- | -------------------------------------- |
+| `purity-mark.svg`         | Symbol on light surfaces               |
+| `purity-logo.svg`         | Horizontal lockup on light surfaces    |
+| `purity-logo-inverse.svg` | White lockup on dark surfaces          |
+| `purity-favicon.svg`      | Browser icon and compact square avatar |
 
 Each SVG has a matching PNG export. Prefer SVG for the website and other scalable placements. The wordmark is outlined from IBM Plex Sans Semibold, so it renders consistently without loading a font. The standard blue is `#1746a2`; the standard ink is `#172439`.
 

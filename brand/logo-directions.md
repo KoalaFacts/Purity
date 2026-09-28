@@ -21,14 +21,14 @@ The primary architecture is a symbol and wordmark lockup. The symbol stands alon
 
 ## Six explorations
 
-| # | Direction | Construction and intended signal | Screen result | Decision |
-| --- | --- | --- | --- | --- |
-| 01 | Contour | One continuous orthogonal route crosses nested bounds; suggests directness and a component boundary. | Works in one color, but the inner return becomes tight at 16 px. | Set aside. Square spirals are common in existing marks. |
-| 02 | Assembly | Two opposing corner pieces align around a central square; suggests composable parts. | The center survives at 32 px and is marginal at 16 px. | Set aside. Interlocking L shapes are familiar in technology branding. |
-| 03 | Phase | Three offset bars show a measured sequence; suggests incremental updates. | Crisp at 16 px, though the silhouette is commonplace. | Set aside. Too close to established three-bar marks. |
-| 04 | Cleave | Two offset planes are separated by a diagonal channel; suggests a direct path through a bounded surface. | Strong one-color and reversed silhouette. The diagonal still reads at 16 px. | Explored; not selected. |
-| 05 | Aperture | A circular band ends in a square piece; suggests a resolved state. | The round portion reads, but the detached square resembles an existing mark. | **Selected as a direction.** Revised into one continuous shape. |
-| 06 | Fold | A chevron meets two square terminals; suggests a path resolving into discrete DOM nodes. | Strong silhouette at 16 px, though the small terminal gap needs tuning. | Explored; not selected. |
+| #   | Direction | Construction and intended signal                                                                         | Screen result                                                                | Decision                                                              |
+| --- | --------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 01  | Contour   | One continuous orthogonal route crosses nested bounds; suggests directness and a component boundary.     | Works in one color, but the inner return becomes tight at 16 px.             | Set aside. Square spirals are common in existing marks.               |
+| 02  | Assembly  | Two opposing corner pieces align around a central square; suggests composable parts.                     | The center survives at 32 px and is marginal at 16 px.                       | Set aside. Interlocking L shapes are familiar in technology branding. |
+| 03  | Phase     | Three offset bars show a measured sequence; suggests incremental updates.                                | Crisp at 16 px, though the silhouette is commonplace.                        | Set aside. Too close to established three-bar marks.                  |
+| 04  | Cleave    | Two offset planes are separated by a diagonal channel; suggests a direct path through a bounded surface. | Strong one-color and reversed silhouette. The diagonal still reads at 16 px. | Explored; not selected.                                               |
+| 05  | Aperture  | A circular band ends in a square piece; suggests a resolved state.                                       | The round portion reads, but the detached square resembles an existing mark. | **Selected as a direction.** Revised into one continuous shape.       |
+| 06  | Fold      | A chevron meets two square terminals; suggests a path resolving into discrete DOM nodes.                 | Strong silhouette at 16 px, though the small terminal gap needs tuning.      | Explored; not selected.                                               |
 
 The similarity screen is an informal image search, not a trademark or design clearance. It surfaced square spiral marks, three-bar marks, and a broken ring with a detached square. The weaker directions remain on the sheet to show what was explored and rejected.
 

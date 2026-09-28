@@ -1,3 +1,4 @@
+import { statSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import MarkdownIt from 'markdown-it';
@@ -106,7 +107,7 @@ function rewriteLink(href: string, file: string, image = false): string {
   if (repoPath === '..' || repoPath.startsWith(`..${sep}`) || repoPath.startsWith('../')) {
     throw new Error(`Documentation link leaves the repository: ${href}`);
   }
-  const kind = path.endsWith('/') ? 'tree' : 'blob';
+  const kind = statSync(target, { throwIfNoEntry: false })?.isDirectory() ? 'tree' : 'blob';
   const origin = image ? 'https://raw.githubusercontent.com/KoalaFacts/Purity/main' : github;
   return image
     ? `${origin}/${repoPath}${hash ? `#${hash}` : ''}`

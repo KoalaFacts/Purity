@@ -19,6 +19,7 @@ permissions:
 
 concurrency:
   group: purity-pages
+  queue: max
   cancel-in-progress: false
 
 jobs:

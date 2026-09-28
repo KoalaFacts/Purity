@@ -16,16 +16,22 @@ npm run dev
 ```
 
 For a server-rendered project, add `--ssr` when creating it. After building,
-`npm run preview` starts a Node server that renders pages and serves client
-assets. Set `PORT` to change the default port of 3000.
+`npm start` runs the generated JavaScript server, which renders pages and
+serves client assets. Set `PORT` to change the default port of 3000.
 
 ```bash
 npx @purityjs/cli my-ssr-app --ssr
 cd my-ssr-app
 npm install
 npm run build
-npm run preview
+npm start
 ```
+
+On a Node 24+ host, deploy the generated project and run `npm ci`,
+`npm run build`, then `npm start`. If building before deployment, copy `dist/`,
+`package.json`, and `package-lock.json` to the host and run
+`npm ci --omit=dev` followed by `npm start`. The generated README has these
+steps too. `npm run preview` remains a local alias for the SSR start command.
 
 ## What It Generates
 
@@ -63,6 +69,7 @@ A working counter component demonstrating `state`, `compute`, `html`, `css`, `co
 | `npm run typecheck` | Check TypeScript types        |
 | `npm run build`     | Type-check and build with AOT |
 | `npm run preview`   | Preview production build      |
+| `npm start` (SSR)   | Run the built Node server     |
 
 ## Local Development
 

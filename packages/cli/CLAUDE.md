@@ -31,14 +31,16 @@ src/
 
 **SSR (`--ssr`):**
 
-- package.json (adds @purityjs/ssr dep, @types/node devDep, build:client/build:server/preview scripts)
+- package.json (adds @purityjs/ssr dep, @types/node devDep, build:client/build:server/build:bootstrap/start scripts)
 - vite.config.ts with `@purityjs/core/compiler` + `@purityjs/ssr` aliases for monorepo-local development
 - tsconfig.json with `types: ['node']` and `allowImportingTsExtensions`
 - index.html with `<!--ssr-outlet-->` marker
 - src/app.ts (shared by client + server)
 - src/entry.client.ts (calls `hydrate()`)
 - src/entry.server.ts (exports `render(url)`)
-- server.ts (zero-dep Node SSR server, run via `node --experimental-strip-types server.ts`)
+- server.ts (Node SSR source used with Vite in development)
+- dist/server.js (built production server started by `npm start`)
+- README.md (Node deployment steps)
 
 ## Local Development Detection
 

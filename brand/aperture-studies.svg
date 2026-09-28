@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 1020" role="img" aria-labelledby="title desc">
+  <title id="title">Purity aperture refinements</title>
+  <desc id="desc">Four refinements of the selected round and square geometric logo direction.</desc>
+  <defs>
+    <symbol id="original" viewBox="0 0 64 64">
+      <path d="M32 7a25 25 0 1 0 25 25H44a12 12 0 1 1-12-12V7Z" fill="currentColor"/>
+      <path d="M38 7h19v19H38z" fill="currentColor"/>
+    </symbol>
+    <symbol id="joined" viewBox="0 0 64 64">
+      <path d="M32 7a25 25 0 1 0 25 25H44a12 12 0 1 1-12-12V7Z" fill="currentColor"/>
+      <path d="M38 7h19v25H44V20h-6V7Z" fill="currentColor"/>
+    </symbol>
+    <symbol id="transition" viewBox="0 0 64 64">
+      <path d="M32 7H57V32A25 25 0 1 1 32 7ZM32 20H44V32A12 12 0 1 1 32 20Z" fill="currentColor" fill-rule="evenodd"/>
+    </symbol>
+    <symbol id="inset" viewBox="0 0 64 64">
+      <path d="M32 7a25 25 0 1 1 0 50 25 25 0 0 1 0-50ZM24 16v24h24V16H24Z" fill="currentColor" fill-rule="evenodd"/>
+    </symbol>
+  </defs>
+  <rect width="1200" height="1020" fill="#f3f6fa"/>
+  <text x="48" y="58" font-family="Segoe UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#172439">PURITY / aperture refinement</text>
+  <text x="48" y="87" font-family="Segoe UI, Arial, sans-serif" font-size="15" fill="#56667d">Selected direction 05 · the same round / square idea, four different constructions</text>
+  <g transform="translate(48 120)">
+    <rect width="552" height="405" rx="16" fill="#fff" stroke="#dce4ee"/>
+    <text x="30" y="39" font-family="Consolas, monospace" font-size="15" letter-spacing="1" fill="#56667d">A / ORIGINAL</text>
+    <g color="#1746a2"><use xlink:href="#original" x="40" y="77" width="93" height="93"/></g>
+    <text x="158" y="151" font-family="Segoe UI, Arial, sans-serif" font-size="55" font-weight="700" letter-spacing="-2" fill="#172439">purity</text>
+    <text x="40" y="209" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#56667d">Broken ring + detached square</text>
+    <rect x="40" y="246" width="206" height="120" rx="12" fill="#172439"/>
+    <g color="#fff"><use xlink:href="#original" x="110" y="270" width="72" height="72"/></g>
+    <text x="274" y="270" font-family="Consolas, monospace" font-size="13" fill="#56667d">16 / 32 PX</text>
+    <g color="#1746a2"><use xlink:href="#original" x="281" y="287" width="16" height="16"/><use xlink:href="#original" x="328" y="281" width="32" height="32"/></g>
+  </g>
+  <g transform="translate(600 120)">
+    <rect width="552" height="405" rx="16" fill="#fff" stroke="#dce4ee"/>
+    <text x="30" y="39" font-family="Consolas, monospace" font-size="15" letter-spacing="1" fill="#56667d">B / JOINED</text>
+    <g color="#1746a2"><use xlink:href="#joined" x="40" y="77" width="93" height="93"/></g>
+    <text x="158" y="151" font-family="Segoe UI, Arial, sans-serif" font-size="55" font-weight="700" letter-spacing="-2" fill="#172439">purity</text>
+    <text x="40" y="209" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#56667d">Square joins the curved band</text>
+    <rect x="40" y="246" width="206" height="120" rx="12" fill="#172439"/>
+    <g color="#fff"><use xlink:href="#joined" x="110" y="270" width="72" height="72"/></g>
+    <text x="274" y="270" font-family="Consolas, monospace" font-size="13" fill="#56667d">16 / 32 PX</text>
+    <g color="#1746a2"><use xlink:href="#joined" x="281" y="287" width="16" height="16"/><use xlink:href="#joined" x="328" y="281" width="32" height="32"/></g>
+  </g>
+  <g transform="translate(48 547)">
+    <rect width="552" height="405" rx="16" fill="#fff" stroke="#dce4ee"/>
+    <text x="30" y="39" font-family="Consolas, monospace" font-size="15" letter-spacing="1" fill="#56667d">C / TRANSITION</text>
+    <g color="#1746a2"><use xlink:href="#transition" x="40" y="77" width="93" height="93"/></g>
+    <text x="158" y="151" font-family="Segoe UI, Arial, sans-serif" font-size="55" font-weight="700" letter-spacing="-2" fill="#172439">purity</text>
+    <text x="40" y="209" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#56667d">Curve becomes a square in one piece</text>
+    <rect x="40" y="246" width="206" height="120" rx="12" fill="#172439"/>
+    <g color="#fff"><use xlink:href="#transition" x="110" y="270" width="72" height="72"/></g>
+    <text x="274" y="270" font-family="Consolas, monospace" font-size="13" fill="#56667d">16 / 32 PX</text>
+    <g color="#1746a2"><use xlink:href="#transition" x="281" y="287" width="16" height="16"/><use xlink:href="#transition" x="328" y="281" width="32" height="32"/></g>
+  </g>
+  <g transform="translate(600 547)">
+    <rect width="552" height="405" rx="16" fill="#fff" stroke="#dce4ee"/>
+    <text x="30" y="39" font-family="Consolas, monospace" font-size="15" letter-spacing="1" fill="#56667d">D / INSET</text>
+    <g color="#1746a2"><use xlink:href="#inset" x="40" y="77" width="93" height="93"/></g>
+    <text x="158" y="151" font-family="Segoe UI, Arial, sans-serif" font-size="55" font-weight="700" letter-spacing="-2" fill="#172439">purity</text>
+    <text x="40" y="209" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#56667d">Square window shifted inside a round field</text>
+    <rect x="40" y="246" width="206" height="120" rx="12" fill="#172439"/>
+    <g color="#fff"><use xlink:href="#inset" x="110" y="270" width="72" height="72"/></g>
+    <text x="274" y="270" font-family="Consolas, monospace" font-size="13" fill="#56667d">16 / 32 PX</text>
+    <g color="#1746a2"><use xlink:href="#inset" x="281" y="287" width="16" height="16"/><use xlink:href="#inset" x="328" y="281" width="32" height="32"/></g>
+  </g>
+</svg>

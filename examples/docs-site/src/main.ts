@@ -57,8 +57,8 @@ function Navigation() {
   return html`
     <header class="topbar">
       <a class="brand" href="/Purity/docs/" aria-label="Purity documentation home">
-        <span class="brand-mark" aria-hidden="true">P</span>
-        <span>Purity<span class="brand-docs">/docs</span></span>
+        <img class="brand-mark" src="/Purity/docs/purity-mark.svg" alt="" />
+        <span>purity<span class="brand-docs">/docs</span></span>
       </a>
       <div class="top-links">
         <a href="/Purity/dashboard/">Live demo</a>

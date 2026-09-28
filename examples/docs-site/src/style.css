@@ -85,15 +85,10 @@ input {
   text-decoration: none;
 }
 .brand-mark {
-  display: inline-grid;
-  place-items: center;
+  display: block;
   width: 29px;
   height: 29px;
-  border-radius: 7px;
-  background: var(--blue);
-  color: white;
-  font-size: 1.1rem;
-  letter-spacing: -0.08em;
+  flex: none;
 }
 .brand-docs {
   color: var(--muted);

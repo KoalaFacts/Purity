@@ -77,16 +77,16 @@ input {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.1rem;
   color: var(--ink);
   font-size: 1.15rem;
   font-weight: 600;
   letter-spacing: -0.04em;
   text-decoration: none;
 }
-.brand-mark {
+.brand-lockup {
   display: block;
-  width: 29px;
+  width: 105px;
   height: 29px;
   flex: none;
 }

@@ -1,9 +1,6 @@
 # Purity logo
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./purity-logo-inverse.svg">
-  <img src="./purity-logo.svg" alt="Purity logo" width="282">
-</picture>
+![Purity logo on light and dark backgrounds](./purity-preview.png)
 
 The mark is a geometric P. Its short inner line points toward an amber node, a small reference to Purity's signal-driven updates and direct DOM rendering.
 

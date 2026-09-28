@@ -104,6 +104,9 @@ jobs:
       - name: 🧪 Check visible-list rendering
         run: npm run test:browser:virtual
 
+      - name: 🧠 Check memory retention
+        run: npm run test:browser:memory
+
       - name: 🧪 Check published CLI projects
         run: npm run test:published-cli
 

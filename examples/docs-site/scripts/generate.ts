@@ -2,6 +2,7 @@ import { statSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import MarkdownIt from 'markdown-it';
+import { categories, categoryHref, type CategoryId } from '../src/categories.ts';
 
 const repo = resolve(import.meta.dirname, '../../..');
 const site = resolve(import.meta.dirname, '..');
@@ -11,7 +12,7 @@ const github = 'https://github.com/KoalaFacts/Purity';
 interface SourcePage {
   file: string;
   slug: string;
-  section: 'Start' | 'Guides' | 'Architecture';
+  category: CategoryId;
   navTitle?: string;
 }
 
@@ -28,28 +29,34 @@ interface RenderEnvironment extends Record<string, unknown> {
 }
 
 const sources: SourcePage[] = [
-  { file: join(site, 'content/index.md'), slug: '', section: 'Start', navTitle: 'Overview' },
+  { file: join(site, 'content/index.md'), slug: '', category: 'start', navTitle: 'Overview' },
   {
     file: join(site, 'content/getting-started.md'),
     slug: 'getting-started',
-    section: 'Start',
+    category: 'start',
     navTitle: 'Get started',
   },
-  { file: join(repo, 'docs/typescript.md'), slug: 'typescript', section: 'Guides' },
-  { file: join(repo, 'docs/islands.md'), slug: 'islands', section: 'Guides' },
-  { file: join(repo, 'docs/accessibility.md'), slug: 'accessibility', section: 'Guides' },
-  { file: join(repo, 'docs/debugging.md'), slug: 'debugging', section: 'Guides' },
+  { file: join(repo, 'docs/reactivity.md'), slug: 'reactivity', category: 'core' },
+  { file: join(repo, 'docs/typescript.md'), slug: 'typescript', category: 'core' },
+  { file: join(repo, 'docs/islands.md'), slug: 'islands', category: 'rendering' },
+  {
+    file: join(repo, 'docs/server-rendering.md'),
+    slug: 'server-rendering',
+    category: 'rendering',
+  },
   {
     file: join(repo, 'docs/shadow-dom-rationale.md'),
     slug: 'shadow-dom',
-    section: 'Guides',
+    category: 'rendering',
     navTitle: 'Shadow DOM',
   },
-  { file: join(repo, 'docs/migration.md'), slug: 'migration', section: 'Guides' },
+  { file: join(repo, 'docs/accessibility.md'), slug: 'accessibility', category: 'quality' },
+  { file: join(repo, 'docs/debugging.md'), slug: 'debugging', category: 'quality' },
+  { file: join(repo, 'docs/migration.md'), slug: 'migration', category: 'quality' },
   {
     file: join(repo, 'docs/decisions/README.md'),
     slug: 'decisions',
-    section: 'Architecture',
+    category: 'architecture',
     navTitle: 'Decision index',
   },
 ];
@@ -59,7 +66,7 @@ for (const name of (await readdir(join(repo, 'docs/decisions'))).sort()) {
     sources.push({
       file: join(repo, 'docs/decisions', name),
       slug: `decisions/${name.slice(0, -3)}`,
-      section: 'Architecture',
+      category: 'architecture',
     });
   }
 }
@@ -143,12 +150,12 @@ interface Page {
   href: string;
   title: string;
   navTitle: string;
-  section: SourcePage['section'];
+  category: CategoryId | null;
   description: string;
   search: string;
   html: string;
   headings: Heading[];
-  sourceUrl: string;
+  sourceUrl?: string;
 }
 
 async function loadPages(): Promise<Page[]> {
@@ -177,7 +184,7 @@ async function loadPages(): Promise<Page[]> {
       href: hrefFor(source.slug),
       title,
       navTitle: source.navTitle ?? title.replace(/^\d{4}:\s*/, ''),
-      section: source.section,
+      category: source.category,
       description,
       search: plain.toLowerCase().slice(0, 2800),
       html,
@@ -188,17 +195,69 @@ async function loadPages(): Promise<Page[]> {
   return pages;
 }
 
-const pages = await loadPages();
+function renderCategoryCards(contentPages: Page[]): string {
+  return `<div class="category-grid">${categories
+    .map((category) => {
+      const count = contentPages.filter((page) => page.category === category.id).length;
+      return `<a class="category-card" href="${categoryHref(category.id)}"><strong>${escapeHtml(category.title)}</strong><span>${escapeHtml(category.description)}</span><small>${count} ${count === 1 ? 'page' : 'pages'}</small></a>`;
+    })
+    .join('')}</div>`;
+}
+
+function categoryPages(contentPages: Page[]): Page[] {
+  const catalog: Page = {
+    slug: 'categories',
+    href: hrefFor('categories'),
+    title: 'Browse by category',
+    navTitle: 'Browse by category',
+    category: null,
+    description: 'Find Purity guides and architecture decisions by topic.',
+    search: '',
+    html: `<h1>Browse by category</h1><p>Choose a topic to find the guides and decisions that belong together.</p>${renderCategoryCards(contentPages)}`,
+    headings: [],
+  };
+  const details: Page[] = categories.map((category) => {
+    const members = contentPages.filter((page) => page.category === category.id);
+    const links = members
+      .map(
+        (page) =>
+          `<li><a href="${escapeHtml(page.href)}"><strong>${escapeHtml(page.navTitle)}</strong><span>${escapeHtml(page.description)}</span></a></li>`,
+      )
+      .join('');
+    return {
+      slug: `categories/${category.id}`,
+      href: categoryHref(category.id),
+      title: category.title,
+      navTitle: category.title,
+      category: category.id,
+      description: category.description,
+      search: '',
+      html: `<p class="category-back"><a href="${catalog.href}">All categories</a></p><h1>${escapeHtml(category.title)}</h1><p>${escapeHtml(category.description)}</p><ul class="category-page-list">${links}</ul>`,
+      headings: [],
+    };
+  });
+  return [catalog, ...details];
+}
+
+const contentPages = await loadPages();
+const home = contentPages.find((page) => page.slug === '');
+if (!home || !home.html.includes('<p>[BROWSE_CATEGORIES]</p>')) {
+  throw new Error('Docs home is missing the category browser placeholder');
+}
+home.html = home.html.replace('<p>[BROWSE_CATEGORIES]</p>', renderCategoryCards(contentPages));
+const pages = [...contentPages, ...categoryPages(contentPages)];
 if (process.argv.includes('--manifest')) {
-  const manifest = pages.map(({ slug, href, title, navTitle, section, description, search }) => ({
-    slug,
-    href,
-    title,
-    navTitle,
-    section,
-    description,
-    search,
-  }));
+  const manifest = contentPages.map(
+    ({ slug, href, title, navTitle, category, description, search }) => ({
+      slug,
+      href,
+      title,
+      navTitle,
+      category,
+      description,
+      search,
+    }),
+  );
   await writeFile(join(site, 'src/docs.generated.json'), `${JSON.stringify(manifest)}\n`);
   console.log(`Indexed ${manifest.length} documentation pages`);
 } else if (process.argv.includes('--pages')) {
@@ -212,7 +271,12 @@ if (process.argv.includes('--manifest')) {
           `<a class="toc-level-${heading.level}" href="#${escapeHtml(heading.id)}">${escapeHtml(heading.text)}</a>`,
       )
       .join('');
-    const article = `<article class="doc-article${page.slug ? '' : ' doc-home'}"><div class="article-meta">${escapeHtml(page.section)}</div>${page.html}<p class="edit-link"><a href="${escapeHtml(page.sourceUrl)}">Edit this page on GitHub</a></p></article>`;
+    const categoryTitle =
+      categories.find((category) => category.id === page.category)?.title ?? 'Browse';
+    const editLink = page.sourceUrl
+      ? `<p class="edit-link"><a href="${escapeHtml(page.sourceUrl)}">Edit this page on GitHub</a></p>`
+      : '';
+    const article = `<article class="doc-article${page.slug ? '' : ' doc-home'}"><div class="article-meta">${escapeHtml(categoryTitle)}</div>${page.html}${editLink}</article>`;
     const output = template
       .replace('__PURITY_DOC_TITLE__', escapeHtml(`${page.title} | Purity docs`))
       .replace('__PURITY_DOC_DESCRIPTION__', escapeHtml(page.description))

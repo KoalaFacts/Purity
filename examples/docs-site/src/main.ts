@@ -4,6 +4,7 @@ import '@fontsource/ibm-plex-sans/latin-600.css';
 import '@fontsource/ibm-plex-mono/latin-400.css';
 import '@fontsource/ibm-plex-mono/latin-500.css';
 import { compute, each, html, mount, onDispose, onMount, state } from '@purityjs/core';
+import { categories, categoryHref, type CategoryId } from './categories';
 import manifest from './docs.generated.json';
 import './style.css';
 
@@ -12,15 +13,16 @@ interface DocPage {
   href: string;
   title: string;
   navTitle: string;
-  section: 'Start' | 'Guides' | 'Architecture';
+  category: CategoryId;
   description: string;
   search: string;
 }
 
 const pages = manifest as DocPage[];
-const startPages = pages.filter((page) => page.section === 'Start');
-const guidePages = pages.filter((page) => page.section === 'Guides');
-const architecturePages = pages.filter((page) => page.section === 'Architecture');
+const navigationCategories = categories.map((category) => ({
+  ...category,
+  pages: pages.filter((page) => page.category === category.id),
+}));
 const search = state('');
 const menuOpen = state(false);
 const matches = compute(() => {
@@ -43,6 +45,36 @@ function pageLink(page: () => DocPage) {
   `;
 }
 
+function categoryGroup(group: () => (typeof navigationCategories)[number]) {
+  const current = group();
+  const categoryPath = categoryHref(current.id);
+  const categoryCurrent = window.location.pathname === categoryPath;
+  const architecture = current.id === 'architecture';
+  const visiblePages = architecture ? current.pages.slice(0, 1) : current.pages;
+  const decisions = architecture ? current.pages.slice(1) : [];
+
+  return html`
+    <div class="nav-group">
+      <h2>
+        <a
+          class="nav-category ${categoryCurrent ? 'is-current' : ''}"
+          href=${categoryPath}
+          aria-current=${categoryCurrent ? 'page' : 'false'}
+          >${current.title}</a
+        >
+        <span>${current.pages.length}</span>
+      </h2>
+      ${each(visiblePages, pageLink, (page) => page.href)}
+      ${architecture
+        ? html`<details class="decisions">
+            <summary>Show decisions <span>${decisions.length}</span></summary>
+            ${each(decisions, pageLink, (page) => page.href)}
+          </details>`
+        : null}
+    </div>
+  `;
+}
+
 function Navigation() {
   const focusSearch = (event: KeyboardEvent) => {
     if (event.key !== '/' || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -61,6 +93,7 @@ function Navigation() {
         <span class="brand-docs">/docs</span>
       </a>
       <div class="top-links">
+        <a href="/Purity/docs/categories/">Browse by category</a>
         <a href="/Purity/dashboard/">Live demo</a>
         <a href="https://github.com/KoalaFacts/Purity">GitHub</a>
       </div>
@@ -84,18 +117,14 @@ function Navigation() {
           <kbd>/</kbd>
         </div>
         <nav class=${() => (search().trim() ? 'is-hidden' : '')} aria-label="Documentation">
-          <div class="nav-group">
-            <h2>Start</h2>
-            ${each(startPages, pageLink, (page) => page.href)}
-          </div>
-          <div class="nav-group">
-            <h2>Guides</h2>
-            ${each(guidePages, pageLink, (page) => page.href)}
-          </div>
-          <details class="nav-group decisions">
-            <summary>Architecture decisions <span>${architecturePages.length}</span></summary>
-            ${each(architecturePages, pageLink, (page) => page.href)}
-          </details>
+          <a
+            class="browse-link ${window.location.pathname === '/Purity/docs/categories/'
+              ? 'is-current'
+              : ''}"
+            href="/Purity/docs/categories/"
+            >Browse all categories</a
+          >
+          ${each(navigationCategories, categoryGroup, (category) => category.id)}
         </nav>
         <div
           class=${() => (search().trim() ? 'search-results' : 'search-results is-hidden')}
@@ -106,7 +135,7 @@ function Navigation() {
           </p>
           ${each(matches, pageLink, (page) => page.href)}
           <p class=${() => (matches().length ? 'is-hidden' : 'no-results')}>
-            Try another term or browse the guides.
+            Try another term or browse by category.
           </p>
         </div>
       </div>

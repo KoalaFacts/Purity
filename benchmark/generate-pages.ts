@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generates the GitHub Pages benchmark dashboard.
+// Assembles the GitHub Pages benchmark report, dashboard demo, and docs site.
 //
 // 1. Parses benchmark-results.md + history/ into JSON
 // 2. Injects the JSON into the Vite-built Purity report app
@@ -189,4 +189,10 @@ const demoDist = 'examples/dashboard/dist';
 if (existsSync(demoDist)) {
   cpSync(demoDist, join(outDir, 'dashboard'), { recursive: true });
   console.log('Copied examples/dashboard/dist → gh-pages/dashboard/');
+}
+
+const docsDist = 'examples/docs-site/dist';
+if (existsSync(docsDist)) {
+  cpSync(docsDist, join(outDir, 'docs'), { recursive: true });
+  console.log('Copied examples/docs-site/dist → gh-pages/docs/');
 }

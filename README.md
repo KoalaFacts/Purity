@@ -165,6 +165,8 @@ Knowing what's missing matters more than what's there. As of `0.2.4`:
 
 Long-form guides live in [`/docs`](./docs/README.md):
 
+- [Public documentation site](https://koalafacts.github.io/Purity/docs/) — searchable guides and architecture decisions, built with Purity
+
 - [TypeScript guide](./docs/typescript.md)
 - [Islands — opt-in per-subtree hydration](./docs/islands.md)
 - [Why Shadow DOM by default](./docs/shadow-dom-rationale.md)

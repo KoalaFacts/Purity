@@ -31,6 +31,7 @@ vite.config.ts.timestamp-*
 
 # GitHub Actions
 gh-pages/
+examples/docs-site/src/docs.generated.json
 
 # AI
 .agent/

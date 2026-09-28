@@ -18,6 +18,7 @@ const fullViewport = document.getElementById('full-viewport')!;
 const virtualViewport = document.getElementById('virtual-viewport')!;
 const shadowViewport = document.getElementById('shadow-viewport')!;
 const shadowHost = document.createElement('div');
+shadowHost.style.overflowY = 'auto';
 const shadowRoot = shadowHost.attachShadow({ mode: 'open' });
 const shadowStyle = document.createElement('style');
 shadowStyle.textContent =

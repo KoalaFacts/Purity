@@ -217,6 +217,73 @@ describe('each', () => {
     ).toBe('1952px');
   });
 
+  it('starts observing when an unowned fragment is mounted after a delay', async () => {
+    const container = document.createElement('div');
+    container.style.cssText = 'height:96px;overflow-y:auto';
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 96 });
+    container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 96);
+    const fragment = each(
+      Array.from({ length: 100 }, (_, index) => index),
+      (_item, index) => {
+        const row = document.createElement('div');
+        row.textContent = String(index);
+        row.getBoundingClientRect = () => new DOMRect(0, index * 24 - container.scrollTop, 200, 24);
+        return row;
+      },
+      { virtual: true },
+    );
+
+    await tick();
+    document.body.appendChild(container);
+    container.appendChild(fragment);
+    await tick();
+    await tick();
+    const topSpacer = container.querySelector<HTMLElement>('[data-purity-window-spacer]')!;
+    topSpacer.getBoundingClientRect = () => new DOMRect(0, -container.scrollTop, 200, 0);
+    container.scrollTop = 1200;
+    container.dispatchEvent(new Event('scroll'));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(Array.from(container.children).some((row) => row.textContent === '50')).toBe(true);
+    container.remove();
+  });
+
+  it('includes rows matching the initial height estimate in the measured average', async () => {
+    const container = document.createElement('div');
+    container.style.cssText = 'height:96px;overflow-y:auto';
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 96 });
+    container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 96);
+    const mounted = mount(
+      () =>
+        each(
+          Array.from({ length: 100 }, (_, index) => index),
+          (_item, index) => {
+            const row = document.createElement('div');
+            row.dataset.row = String(index);
+            const height = index % 2 === 0 ? 32 : 64;
+            const top = Math.floor(index / 2) * 96 + (index % 2) * 32;
+            row.getBoundingClientRect = () => new DOMRect(0, top, 200, height);
+            return row;
+          },
+          { virtual: true },
+        ),
+      container,
+    );
+    await tick();
+    await tick();
+
+    const spacers = container.querySelectorAll<HTMLElement>('[data-purity-window-spacer]');
+    const renderedHeight = Array.from(container.querySelectorAll('[data-row]')).reduce(
+      (total, row) => total + row.getBoundingClientRect().height,
+      0,
+    );
+    const totalHeight =
+      Number.parseFloat(spacers[0].style.height) +
+      renderedHeight +
+      Number.parseFloat(spacers[1].style.height);
+    expect(totalHeight).toBe(4800);
+    mounted.unmount();
+  });
+
   it('updates the rendered range from the nearest scroll container and cleans up on unmount', async () => {
     const items = Array.from({ length: 100 }, (_, index) => index);
     const renderedIndices: number[] = [];
@@ -523,6 +590,38 @@ describe('each', () => {
     expect(rows[0].textContent).toBe('0');
     expect(rows[39].textContent).toBe('39');
 
+    for (const dispose of context.disposers ?? []) dispose();
+    host.remove();
+  });
+
+  it('places the hydration spacer before a row keyed by undefined', async () => {
+    const items = [undefined, ...Array.from({ length: 99 }, (_, index) => index + 1)];
+    const host = document.createElement('ul');
+    host.style.cssText = 'height:1024px;overflow-y:auto';
+    Object.defineProperty(host, 'clientHeight', { configurable: true, value: 1024 });
+    host.innerHTML = `<!--e-->${items
+      .map((item) => `<!--er:${item}--><li><!--[-->${item ?? ''}<!--]--></li><!--/er-->`)
+      .join('')}<!--/e-->`;
+    document.body.appendChild(host);
+    const closeMarker = document.createComment('slot-close');
+    host.appendChild(closeMarker);
+    const context = new ComponentContext();
+    const deferred: DeferredEach<number | undefined> = {
+      __purity_deferred_each__: true,
+      listAccessor: items,
+      mapFn: (item) => html`<li>${item()}</li>`,
+      options: { virtual: true },
+    };
+
+    pushContext(context);
+    try {
+      inflateDeferredEach(deferred, Array.from(host.childNodes).slice(0, -1), closeMarker);
+    } finally {
+      popContext();
+    }
+    await tick();
+    expect(host.firstElementChild?.hasAttribute('data-purity-window-spacer')).toBe(true);
+    expect(host.querySelectorAll('li:not([data-purity-window-spacer])')).toHaveLength(40);
     for (const dispose of context.disposers ?? []) dispose();
     host.remove();
   });

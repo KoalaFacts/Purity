@@ -815,28 +815,34 @@ class EachWindowHeightIndex {
     if (index === undefined || !Number.isFinite(value) || value <= 0) return false;
 
     const height = Math.max(1, value);
+    const wasMeasured = this.measured.has(key);
     const previous = this.measured.get(key) ?? this.estimatedHeight;
-    if (Math.abs(height - previous) < 0.5) return false;
+    if (wasMeasured && Math.abs(height - previous) < 0.5) return false;
     this.measured.set(key, height);
 
     let node = index + 1;
     const delta = height - previous;
-    while (node < this.tree.length) {
-      this.tree[node] += delta;
-      node += node & -node;
+    if (Math.abs(delta) >= 0.5) {
+      while (node < this.tree.length) {
+        this.tree[node] += delta;
+        node += node & -node;
+      }
     }
 
+    let estimateChanged = false;
     if (
       !this.estimateLocked &&
       this.measured.size >= Math.min(EACH_WINDOW_INITIAL_ROWS, this.length)
     ) {
       let total = 0;
       for (const measuredHeight of this.measured.values()) total += measuredHeight;
-      this.estimatedHeight = total / this.measured.size;
+      const nextEstimate = total / this.measured.size;
+      estimateChanged = Math.abs(nextEstimate - this.estimatedHeight) >= 0.5;
+      this.estimatedHeight = nextEstimate;
       this.estimateLocked = true;
-      this.rebuildTree();
+      if (estimateChanged) this.rebuildTree();
     }
-    return true;
+    return Math.abs(delta) >= 0.5 || estimateChanged;
   }
 }
 
@@ -875,8 +881,15 @@ function sizeEachSpacer(spacer: HTMLElement, height: number): void {
 function findEachScrollViewport(parent: Element, view: Window): EachScrollViewport {
   let current: Element | null = parent;
   while (current) {
-    const overflowY = view.getComputedStyle(current).overflowY;
-    if (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') {
+    const style = view.getComputedStyle(current);
+    const overflowY = style.overflowY;
+    const constrained =
+      (style.height !== '' && style.height !== 'auto') ||
+      (style.maxHeight !== '' && style.maxHeight !== 'none');
+    if (
+      (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') &&
+      (current.scrollHeight > current.clientHeight || constrained)
+    ) {
       return current as HTMLElement;
     }
     const root = current.getRootNode();
@@ -999,11 +1012,23 @@ function registerEachWindow<T>(
   let cancelled = false;
   let initialized = false;
   let cleanup: (() => void) | undefined;
+  let pendingObserver: MutationObserver | undefined;
 
   const initialize = () => {
     const parentNode = spacers.top.parentNode;
     if (cancelled || initialized || parentNode === null) return;
-    if (!ownerCtx && !spacers.top.isConnected) return;
+    if (!ownerCtx && !spacers.top.isConnected) {
+      if (!pendingObserver) {
+        const doc = spacers.top.ownerDocument;
+        const Observer = doc.defaultView?.MutationObserver;
+        if (Observer) {
+          pendingObserver = new Observer(initialize);
+          if (parentNode.nodeType === 11) pendingObserver.observe(parentNode, { childList: true });
+          pendingObserver.observe(doc, { childList: true, subtree: true });
+        }
+      }
+      return;
+    }
     const parent =
       parentNode.nodeType === 11 && 'host' in parentNode
         ? (parentNode.host as Element)
@@ -1011,6 +1036,8 @@ function registerEachWindow<T>(
           ? (parentNode as Element)
           : null;
     if (!parent) return;
+    pendingObserver?.disconnect();
+    pendingObserver = undefined;
     initialized = true;
     const doc = parent.ownerDocument;
     const view = doc.defaultView;
@@ -1107,6 +1134,7 @@ function registerEachWindow<T>(
 
   return () => {
     cancelled = true;
+    pendingObserver?.disconnect();
     cleanup?.();
   };
 }
@@ -1597,9 +1625,10 @@ export function inflateDeferredEach<T>(
     const doc = parent.ownerDocument ?? document;
     const top = createEachSpacer(doc, parent);
     const bottom = createEachSpacer(doc, parent);
-    const firstKey = eachState.prevKeys[0];
     const firstNode =
-      firstKey === undefined ? undefined : eachState.keyToEntry.get(firstKey)?.nodes[0];
+      eachState.prevKeys.length > 0
+        ? eachState.keyToEntry.get(eachState.prevKeys[0])?.nodes[0]
+        : undefined;
     parent.insertBefore(top, firstNode?.parentNode === parent ? firstNode : endMarker);
     parent.insertBefore(bottom, endMarker);
     spacers = { top, bottom };

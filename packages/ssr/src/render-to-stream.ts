@@ -77,6 +77,14 @@ export interface RenderToStreamOptions {
   request?: Request;
 }
 
+/** Shell metadata available before a streaming response is sent. */
+export interface RenderToStreamResponse {
+  body: ReadableStream<Uint8Array>;
+  head: string;
+  status?: number;
+  headers?: Headers;
+}
+
 /**
  * Render a Purity component to a streaming HTTP response.
  *
@@ -90,16 +98,57 @@ export function renderToStream(
   component: () => unknown,
   options: RenderToStreamOptions = {},
 ): ReadableStream<Uint8Array> {
-  const timeout = options.timeout ?? DEFAULT_TIMEOUT;
-  const serialize = options.serializeResources ?? true;
-  const prefix = options.doctype ?? '';
-  const nonce = options.nonce;
+  validateNonce(options.nonce);
+  return createStream(
+    () =>
+      renderShell(component, options.timeout ?? DEFAULT_TIMEOUT, options.request, options.signal),
+    options,
+  );
+}
+
+/**
+ * Finish the shell before returning its HTTP metadata and the progressive body.
+ * A loader's Web Response rejects this promise unchanged, so an adapter can
+ * return redirects or custom bodies before sending HTML headers.
+ */
+export async function renderToStreamResponse(
+  component: () => unknown,
+  options: RenderToStreamOptions = {},
+): Promise<RenderToStreamResponse> {
+  validateNonce(options.nonce);
+  const shell = await renderShell(
+    component,
+    options.timeout ?? DEFAULT_TIMEOUT,
+    options.request,
+    options.signal,
+  );
+  if (options.signal?.aborted) throw options.signal.reason;
+  const result: RenderToStreamResponse = {
+    body: createStream(() => Promise.resolve(shell), options),
+    head: shell.head,
+  };
+  if (shell.status !== undefined) result.status = shell.status;
+  if (shell.headers && [...shell.headers].length > 0) result.headers = new Headers(shell.headers);
+  return result;
+}
+
+function validateNonce(nonce: string | undefined): void {
   if (nonce !== undefined && !NONCE_PATTERN.test(nonce)) {
     throw new Error(
       `[Purity] renderToStream: invalid CSP nonce. Must match ` +
         `${NONCE_PATTERN.source} (base64 / URL-safe characters).`,
     );
   }
+}
+
+function createStream(
+  getShell: () => Promise<ShellResult>,
+  options: RenderToStreamOptions,
+): ReadableStream<Uint8Array> {
+  const timeout = options.timeout ?? DEFAULT_TIMEOUT;
+  const serialize = options.serializeResources ?? true;
+  const prefix = options.doctype ?? '';
+  const nonce = options.nonce;
   const signal = options.signal;
   const request = options.request;
 
@@ -147,7 +196,7 @@ export function renderToStream(
         // ----- Shell render --------------------------------------------------
         // Multi-pass loop for top-level resources; suspense() defers its
         // view via streamingBoundaries instead of awaiting inline.
-        const shell = await renderShell(component, timeout, request);
+        const shell = await getShell();
         if (isAborted()) return;
 
         let head = prefix + shell.html;
@@ -258,6 +307,9 @@ function containsTemplateClose(s: string): boolean {
 
 interface ShellResult {
   html: string;
+  head: string;
+  status?: number;
+  headers?: Headers;
   resolvedData: unknown[];
   resolvedDataByKey: Record<string, unknown>;
   boundaries: Map<
@@ -274,6 +326,7 @@ async function renderShell(
   component: () => unknown,
   timeout: number,
   request: Request | undefined,
+  signal: AbortSignal | undefined,
 ): Promise<ShellResult> {
   const start = Date.now();
   const resolvedData: unknown[] = [];
@@ -288,6 +341,7 @@ async function renderShell(
 
   let html = '';
   for (let pass = 0; pass < MAX_PASSES; pass++) {
+    if (signal?.aborted) throw signal.reason;
     // Reset the registered boundary set on each pass — only the LAST pass's
     // suspense() registrations describe the true wire order. (Earlier-pass
     // registrations come from the same suspense() calls and would just
@@ -308,6 +362,7 @@ async function renderShell(
       timedOutBoundaries,
       streamingMode: true,
       streamingBoundaries,
+      head: [],
       request,
     };
     pushSSRRenderContext(ctx);
@@ -317,8 +372,17 @@ async function renderShell(
       popSSRRenderContext();
     }
 
+    if (signal?.aborted) throw signal.reason;
     if (ctx.pendingPromises.length === 0) {
-      return { html, resolvedData, resolvedDataByKey, boundaries: streamingBoundaries };
+      return {
+        html,
+        head: (ctx.head ?? []).join(''),
+        status: ctx.routeResponse?.status,
+        headers: ctx.routeResponse?.headers,
+        resolvedData,
+        resolvedDataByKey,
+        boundaries: streamingBoundaries,
+      };
     }
 
     const remaining = timeout - (Date.now() - start);
@@ -336,8 +400,9 @@ async function renderShell(
     // try/finally so the clear happens even when Promise.all rejects —
     // the post-await clear was previously skipped on the throw path.
     let shellTimer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
     try {
-      await Promise.race([
+      const waits: Promise<unknown>[] = [
         Promise.all(ctx.pendingPromises),
         new Promise<void>((resolve) => {
           shellTimer = setTimeout(() => {
@@ -345,9 +410,20 @@ async function renderShell(
             resolve();
           }, remaining);
         }),
-      ]);
+      ];
+      if (signal) {
+        waits.push(
+          new Promise<never>((_, reject) => {
+            onAbort = () => reject(signal.reason);
+            signal.addEventListener('abort', onAbort, { once: true });
+            if (signal.aborted) onAbort();
+          }),
+        );
+      }
+      await Promise.race(waits);
     } finally {
       clearTimeout(shellTimer);
+      if (signal && onAbort) signal.removeEventListener('abort', onAbort);
     }
     if (timedOut) {
       throw new Error(

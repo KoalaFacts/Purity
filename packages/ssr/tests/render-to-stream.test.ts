@@ -6,10 +6,10 @@
 // end-to-end behavior when the swap script is actually executed against a
 // jsdom document.
 
-import { resource, suspense } from '@purityjs/core';
+import { asyncRoute, head, resource, routeData, suspense } from '@purityjs/core';
 import { markSSRHtml } from '@purityjs/core/compiler';
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { html as ssrHtml, renderToStream } from '../src/index.ts';
+import { html as ssrHtml, renderToStream, renderToStreamResponse } from '../src/index.ts';
 
 async function streamToString(stream: ReadableStream<Uint8Array>): Promise<string> {
   const reader = stream.getReader();
@@ -47,6 +47,72 @@ function slowResource<T>(value: T, delayMs: number) {
     initialValue: undefined,
   });
 }
+
+describe('renderToStreamResponse — HTTP metadata before flush', () => {
+  it('exposes the final shell head, status and headers with a progressive body', async () => {
+    const entry = {
+      pattern: '/missing',
+      filePath: 'missing.ts',
+      hasLoader: true as const,
+      layouts: [],
+      importFn: async () => ({
+        default: () => {
+          head(ssrHtml`<title>Missing</title>`);
+          return ssrHtml`<main>${suspense(
+            () => {
+              const r = slowResource('LATE', 30);
+              return ssrHtml`<p>${() => r()}</p>`;
+            },
+            () => ssrHtml`<p>Loading</p>`,
+          )}</main>`;
+        },
+        loader: () => routeData(null, { status: 404, headers: { 'Cache-Control': 'no-store' } }),
+      }),
+    };
+    const result = await renderToStreamResponse(() => asyncRoute(entry, {}), {
+      request: new Request('https://example.test/missing'),
+      serializeResources: false,
+    });
+    expect(result.head).toContain('<title>Missing</title>');
+    expect(result.status).toBe(404);
+    expect(result.headers?.get('Cache-Control')).toBe('no-store');
+
+    const chunks = await streamToChunks(result.body);
+    expect(chunks[0]).toContain('Loading');
+    expect(chunks[0]).not.toContain('LATE');
+    expect(chunks.slice(1).join('')).toContain('LATE');
+  });
+
+  it('rejects with a loader Response before creating an HTML stream', async () => {
+    const redirect = Response.redirect('https://example.test/login', 302);
+    const entry = {
+      pattern: '/private',
+      filePath: 'private.ts',
+      hasLoader: true as const,
+      layouts: [],
+      importFn: async () => ({ default: () => ssrHtml`<p>secret</p>`, loader: () => redirect }),
+    };
+    await expect(
+      renderToStreamResponse(() => asyncRoute(entry, {}), {
+        request: new Request('https://example.test/private'),
+      }),
+    ).rejects.toBe(redirect);
+  });
+
+  it('stops preparing the shell when the request is aborted', async () => {
+    const abort = new AbortController();
+    const pending = new Promise<string>(() => {});
+    const result = renderToStreamResponse(
+      () => {
+        const r = resource(() => pending);
+        return ssrHtml`<p>${() => r()}</p>`;
+      },
+      { signal: abort.signal, timeout: 1000 },
+    );
+    abort.abort();
+    await expect(result).rejects.toBe(abort.signal.reason);
+  });
+});
 
 describe('renderToStream — wire format', () => {
   it('emits the shell with fallback inline + swap helper for each boundary', async () => {

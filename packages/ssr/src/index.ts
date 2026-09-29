@@ -12,7 +12,12 @@ import './component.ts';
 
 export type { SSRHtml } from '@purityjs/core/compiler';
 export { html } from './html.ts';
-export { type RenderToStreamOptions, renderToStream } from './render-to-stream.ts';
+export {
+  type RenderToStreamOptions,
+  type RenderToStreamResponse,
+  renderToStream,
+  renderToStreamResponse,
+} from './render-to-stream.ts';
 export {
   type RenderStaticOptions,
   type RenderStaticResult,

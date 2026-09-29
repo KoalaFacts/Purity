@@ -21,6 +21,12 @@ unsafe output paths. The same app can use all three modes. A client-only page
 requires the Node server for direct navigation unless your static host serves
 the app shell for that path.
 
+Server pages use progressive SSR. The server resolves the page shell, status,
+headers, and `head()` content before sending HTTP headers, then streams the
+shell and any deferred `suspense()` regions. Put slow, independent content in
+`suspense()` to let the rest of the page arrive first. Static pages use buffered
+rendering during the build.
+
 ### Loader responses
 
 On a server-rendered page, a route or layout loader can return `routeData(value,

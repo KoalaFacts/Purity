@@ -41,7 +41,9 @@ npm start
 Set `renderMode` in each `src/pages/` module to `static`, `server`, or
 `client`. Dynamic static pages list their paths in `src/static-paths.ts`, which
 only runs during the build. `dist/client/` holds generated HTML and client
-assets; `dist/server.js` serves the complete app. A fully static app can deploy
+assets; `dist/server.js` serves the complete app. Server pages stream deferred
+`suspense()` content after the shell while preserving loader status, headers,
+and `head()` content. A fully static app can deploy
 `dist/client/` to a static host. See the generated README for details.
 
 On a Node 24+ host, deploy the generated project and run `npm ci`,

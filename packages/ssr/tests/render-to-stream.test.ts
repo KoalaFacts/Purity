@@ -549,6 +549,41 @@ describe('renderToStream — per-boundary resource cache', () => {
 // ---------------------------------------------------------------------------
 
 describe('renderToStream — audit-v2 hardening', () => {
+  it('clears an active boundary timeout promptly when the request aborts', async () => {
+    const abort = new AbortController();
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    try {
+      const stream = renderToStream(
+        () =>
+          ssrHtml`<main>${suspense(
+            () => {
+              const value = resource(() => new Promise<string>(() => {}), {
+                initialValue: undefined,
+              });
+              return ssrHtml`<aside>${() => value()}</aside>`;
+            },
+            () => ssrHtml`<aside>loading</aside>`,
+          )}</main>`,
+        { signal: abort.signal, timeout: 30_000 },
+      );
+      const reader = stream.getReader();
+      expect((await reader.read()).done).toBe(false);
+      const boundaryTimer = setTimeoutSpy.mock.results.find(
+        (result, index) =>
+          setTimeoutSpy.mock.calls[index]?.[1] === 30_000 && result.type === 'return',
+      )?.value;
+      expect(boundaryTimer).toBeDefined();
+
+      abort.abort();
+      expect((await reader.read()).done).toBe(true);
+      await vi.waitFor(() => expect(clearTimeoutSpy).toHaveBeenCalledWith(boundaryTimer));
+    } finally {
+      setTimeoutSpy.mockRestore();
+      clearTimeoutSpy.mockRestore();
+    }
+  });
+
   it('cancel() short-circuits the boundary loop so in-flight work is dropped', async () => {
     // Pre-fix `cancel()` was a no-op. With no external AbortSignal, a
     // slow suspense() boundary kept resolving its resource (and any

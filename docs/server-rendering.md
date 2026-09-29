@@ -49,7 +49,8 @@ npm run dev
 Pages in `src/pages/` default to server rendering. Set `renderMode` to
 `'static'` for build-time HTML or `'client'` for a browser-rendered page. The
 generated app uses normal document navigation so the browser receives each
-page's HTTP status and headers.
+page's HTTP status and headers. Server pages stream the shell first, then
+deferred `suspense()` regions. Static pages continue to render at build time.
 
 ### Status and headers from a loader
 

@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { randomBytes } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -8,9 +9,13 @@ import { pipeline } from 'node:stream/promises';
 type RouteInfo = { pattern: string; mode: 'static' | 'server' | 'client' } | null;
 type ServerEntry = {
   routeFor: (path: string) => Promise<RouteInfo>;
-  render: (
+  renderStream: (
     request: Request,
-  ) => Promise<{ body: string; head: string; status?: number; headers?: Headers } | Response>;
+    nonce: string,
+  ) => Promise<
+    | { body: ReadableStream<Uint8Array>; head: string; status?: number; headers?: Headers }
+    | Response
+  >;
 };
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -37,6 +42,37 @@ const contentTypes: Record<string, string> = {
 
 function shell(template: string, body: string, head: string): string {
   return template.split('<!--head-outlet-->').join(head).split('<!--ssr-outlet-->').join(body);
+}
+
+async function sendStreamedHtml(
+  res: ServerResponse,
+  template: string,
+  result: { body: ReadableStream<Uint8Array>; head: string; status?: number; headers?: Headers },
+  status: number,
+  head: boolean,
+): Promise<void> {
+  const marker = '<!--ssr-outlet-->';
+  const outlet = template.indexOf(marker);
+  if (outlet < 0) throw new Error('HTML template is missing the SSR outlet');
+  const prefix = template.slice(0, outlet).split('<!--head-outlet-->').join(result.head);
+  const suffix = template
+    .slice(outlet + marker.length)
+    .split('<!--head-outlet-->')
+    .join(result.head);
+  res.statusCode = result.status ?? status;
+  if (result.headers) copyHeaders(res, result.headers);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  if (head) {
+    await result.body.cancel();
+    res.end();
+    return;
+  }
+  async function* chunks(): AsyncGenerator<string | Uint8Array> {
+    yield prefix;
+    yield* Readable.fromWeb(result.body as Parameters<typeof Readable.fromWeb>[0]);
+    yield suffix;
+  }
+  await pipeline(Readable.from(chunks()), res);
 }
 
 function send(
@@ -89,7 +125,7 @@ async function sendWebResponse(
   await pipeline(Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]), res);
 }
 
-function requestFor(msg: IncomingMessage): Request {
+function requestFor(msg: IncomingMessage, signal: AbortSignal, nonce: string): Request {
   const trustedProxy = process.env.TRUST_PROXY === '1';
   const firstHeader = (value: string | string[] | undefined): string | undefined =>
     (Array.isArray(value) ? value[0] : value)?.split(',')[0]?.trim();
@@ -99,7 +135,15 @@ function requestFor(msg: IncomingMessage): Request {
   const host = forwardedHost || msg.headers.host || 'localhost';
   const origin = process.env.PUBLIC_ORIGIN || `${protocol}://${host}`;
   const url = new URL(msg.url ?? '/', origin);
-  return new Request(url, { method: msg.method ?? 'GET', headers: msg.headers as HeadersInit });
+  const headers = new Headers(msg.headers as HeadersInit);
+  // Replace any client-supplied value with the nonce used by this render.
+  // Loaders can read it when constructing their own strict CSP policy.
+  headers.set('X-Purity-CSP-Nonce', nonce);
+  return new Request(url, {
+    method: msg.method ?? 'GET',
+    headers,
+    signal,
+  });
 }
 
 async function start(): Promise<void> {
@@ -191,24 +235,38 @@ async function start(): Promise<void> {
       return;
     }
     const status = !route ? 404 : 200;
-    const result = await currentEntry.render(requestFor(req));
-    if (result instanceof Response) {
-      await sendWebResponse(res, result, head);
-      return;
+    const abort = new AbortController();
+    const onClose = () => {
+      if (!res.writableFinished) abort.abort();
+    };
+    res.once('close', onClose);
+    try {
+      const nonce = randomBytes(16).toString('base64');
+      const result = await currentEntry.renderStream(requestFor(req, abort.signal, nonce), nonce);
+      if (result instanceof Response) {
+        await sendWebResponse(res, result, head);
+        return;
+      }
+      await sendStreamedHtml(res, currentTemplate, result, status, head);
+    } finally {
+      res.off('close', onClose);
     }
-    send(
-      res,
-      result.status ?? status,
-      'text/html; charset=utf-8',
-      shell(currentTemplate, result.body, result.head),
-      head,
-      result.headers,
-    );
   }
 
   createServer((req, res) => {
     const run = () => {
       void handle(req, res).catch((error: unknown) => {
+        // A client that closes an in-flight stream causes pipeline() to
+        // reject after the response socket is gone. The render was already
+        // cancelled through the response's close signal.
+        const code = (error as NodeJS.ErrnoException)?.code;
+        if (
+          res.destroyed &&
+          (code === 'ERR_STREAM_PREMATURE_CLOSE' ||
+            code === 'ABORT_ERR' ||
+            (error as Error)?.name === 'AbortError')
+        )
+          return;
         console.error(error);
         if (!res.headersSent)
           send(

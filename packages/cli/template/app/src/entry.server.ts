@@ -1,5 +1,5 @@
 import { matchRoute } from '@purityjs/core';
-import { renderToString } from '@purityjs/ssr';
+import { renderToStreamResponse, renderToString, type RenderToStreamResponse } from '@purityjs/ssr';
 import { routes } from 'purity:routes';
 import { App } from './app.ts';
 
@@ -40,6 +40,18 @@ export async function render(
 ): Promise<{ body: string; head: string; status?: number; headers?: Headers } | Response> {
   try {
     return await renderToString(App, { request, extractHead: true });
+  } catch (error) {
+    if (error instanceof Response) return error;
+    throw error;
+  }
+}
+
+export async function renderStream(
+  request: Request,
+  nonce: string,
+): Promise<RenderToStreamResponse | Response> {
+  try {
+    return await renderToStreamResponse(App, { request, signal: request.signal, nonce });
   } catch (error) {
     if (error instanceof Response) return error;
     throw error;

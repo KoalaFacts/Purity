@@ -100,8 +100,7 @@ export function renderToStream(
 ): ReadableStream<Uint8Array> {
   validateNonce(options.nonce);
   return createStream(
-    () =>
-      renderShell(component, options.timeout ?? DEFAULT_TIMEOUT, options.request, options.signal),
+    (signal) => renderShell(component, options.timeout ?? DEFAULT_TIMEOUT, options.request, signal),
     options,
   );
 }
@@ -142,7 +141,7 @@ function validateNonce(nonce: string | undefined): void {
 }
 
 function createStream(
-  getShell: () => Promise<ShellResult>,
+  getShell: (signal: AbortSignal) => Promise<ShellResult>,
   options: RenderToStreamOptions,
 ): ReadableStream<Uint8Array> {
   const timeout = options.timeout ?? DEFAULT_TIMEOUT;
@@ -160,11 +159,13 @@ function createStream(
   // controller each time (silently caught downstream, but the work still
   // burned CPU / kept timers + fetches alive until they all settled).
   const state = { cancelled: false };
+  const workAbort = new AbortController();
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       const onAbort = (): void => {
         state.cancelled = true;
+        workAbort.abort();
         try {
           controller.close();
         } catch {
@@ -189,6 +190,7 @@ function createStream(
           // Controller already closed (e.g. consumer cancelled mid-flush).
           // Flip the cancel flag so subsequent boundary work bails out.
           state.cancelled = true;
+          workAbort.abort();
         }
       };
 
@@ -196,7 +198,7 @@ function createStream(
         // ----- Shell render --------------------------------------------------
         // Multi-pass loop for top-level resources; suspense() defers its
         // view via streamingBoundaries instead of awaiting inline.
-        const shell = await getShell();
+        const shell = await getShell(workAbort.signal);
         if (isAborted()) return;
 
         let head = prefix + shell.html;
@@ -227,7 +229,7 @@ function createStream(
             );
             continue;
           }
-          const result = await renderBoundary(id, boundary, timeout, request);
+          const result = await renderBoundary(id, boundary, timeout, request, workAbort.signal);
           if (isAborted()) break;
           // null signals "boundary couldn't produce content; leave the
           // shell-rendered fallback in place." Without this skip, an
@@ -293,6 +295,7 @@ function createStream(
       // (and its timers + AbortSignals) alive even after the client gave
       // up.
       state.cancelled = true;
+      workAbort.abort();
     },
   });
 }
@@ -450,6 +453,7 @@ async function renderBoundary(
   boundary: ShellResult['boundaries'] extends Map<number, infer V> ? V : never,
   timeout: number,
   request: Request | undefined,
+  signal: AbortSignal,
 ): Promise<BoundaryResult | null> {
   const start = Date.now();
   const resolvedData: unknown[] = [];
@@ -478,6 +482,7 @@ async function renderBoundary(
   let html = '';
   let viewTimedOut = false;
   for (let pass = 0; pass < MAX_PASSES; pass++) {
+    if (signal.aborted) return null;
     const ctx: SSRRenderContext = {
       pendingPromises: [],
       resolvedData,
@@ -539,6 +544,7 @@ async function renderBoundary(
       // pop the parent's frame off too).
       popSSRRenderContext();
     }
+    if (signal.aborted) return null;
     if (viewThrewAndExhausted) return null;
     if (viewThrewNeedsRetry) continue;
 
@@ -561,6 +567,7 @@ async function renderBoundary(
 
     let raceTimedOut = false;
     let boundaryTimer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
     try {
       await Promise.race([
         Promise.all(ctx.pendingPromises),
@@ -570,11 +577,18 @@ async function renderBoundary(
             resolve();
           }, remaining);
         }),
+        new Promise<void>((resolve) => {
+          onAbort = resolve;
+          signal.addEventListener('abort', onAbort, { once: true });
+          if (signal.aborted) onAbort();
+        }),
       ]);
     } finally {
       // try/finally so the clear runs even when Promise.all rejects.
       clearTimeout(boundaryTimer);
+      if (onAbort) signal.removeEventListener('abort', onAbort);
     }
+    if (signal.aborted) return null;
     if (raceTimedOut) {
       // viewTimedOut means we're already in the fallback pass and IT
       // timed out too — return null so the loop skips the chunk and the

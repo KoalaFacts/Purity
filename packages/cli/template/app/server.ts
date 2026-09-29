@@ -48,8 +48,15 @@ function send(
 }
 
 function requestFor(msg: IncomingMessage): Request {
-  const host = msg.headers.host ?? 'localhost';
-  const url = new URL(msg.url ?? '/', `http://${host}`);
+  const trustedProxy = process.env.TRUST_PROXY === '1';
+  const firstHeader = (value: string | string[] | undefined): string | undefined =>
+    (Array.isArray(value) ? value[0] : value)?.split(',')[0]?.trim();
+  const forwardedProto = trustedProxy ? firstHeader(msg.headers['x-forwarded-proto']) : undefined;
+  const forwardedHost = trustedProxy ? firstHeader(msg.headers['x-forwarded-host']) : undefined;
+  const protocol = forwardedProto === 'https' ? 'https' : 'http';
+  const host = forwardedHost || msg.headers.host || 'localhost';
+  const origin = process.env.PUBLIC_ORIGIN || `${protocol}://${host}`;
+  const url = new URL(msg.url ?? '/', origin);
   return new Request(url, { method: msg.method ?? 'GET', headers: msg.headers as HeadersInit });
 }
 
@@ -81,9 +88,13 @@ async function start(): Promise<void> {
       send(res, 405, 'text/plain; charset=utf-8', 'Method Not Allowed', head);
       return;
     }
-    let pathname: string;
+    let rawPathname: string;
+    let filePathname: string;
     try {
-      pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);
+      const rawUrl = req.url ?? '/';
+      if (!rawUrl.startsWith('/') || rawUrl.startsWith('//')) throw new URIError('Invalid path');
+      rawPathname = new URL(rawUrl, 'http://localhost').pathname;
+      filePathname = decodeURIComponent(rawPathname);
     } catch {
       send(res, 400, 'text/plain; charset=utf-8', 'Bad Request', head);
       return;
@@ -99,13 +110,13 @@ async function start(): Promise<void> {
       : entry;
     if (!currentEntry) throw new Error('Server entry is unavailable');
     if (production) {
-      const asset = resolve(clientDir, '.' + pathname);
+      const asset = resolve(clientDir, '.' + filePathname);
       const rel = relative(clientDir, asset);
       if (rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel)) {
         send(res, 400, 'text/plain; charset=utf-8', 'Bad Request', head);
         return;
       }
-      if (rel && (pathname.startsWith('/assets/') || extname(pathname))) {
+      if (rel) {
         const info = await stat(asset).catch((error: NodeJS.ErrnoException) => {
           if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null;
           throw error;
@@ -115,14 +126,10 @@ async function start(): Promise<void> {
           send(res, 200, type, head ? '' : await readFile(asset), head);
           return;
         }
-        if (pathname.startsWith('/assets/')) {
-          send(res, 404, 'text/plain; charset=utf-8', 'Not Found', head);
-          return;
-        }
       }
     }
     if (production) {
-      const key = pathname === '/' ? '/' : pathname.replace(/\/$/, '');
+      const key = rawPathname === '/' ? '/' : rawPathname.replace(/\/$/, '');
       if (staticPaths.has(key)) {
         const file =
           key === '/'
@@ -132,7 +139,7 @@ async function start(): Promise<void> {
         return;
       }
     }
-    const route = await currentEntry.routeFor(pathname);
+    const route = await currentEntry.routeFor(rawPathname);
     if (route?.mode === 'static' && production) {
       send(res, 404, 'text/plain; charset=utf-8', 'Not Found', head);
       return;

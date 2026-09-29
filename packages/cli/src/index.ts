@@ -69,9 +69,9 @@ mkdirSync(resolve(projectDir, 'src'), { recursive: true });
 const scripts = appMode
   ? {
       dev: 'node --experimental-strip-types server.ts',
-      typecheck: 'tsc --noEmit',
+      typecheck: 'node --experimental-strip-types prepare-types.ts && tsc --noEmit',
       build:
-        'npm run build:client && npm run typecheck && npm run build:server && npm run build:bootstrap && npm run build:static',
+        'npm run typecheck && npm run build:client && npm run build:server && npm run build:bootstrap && npm run build:static',
       'build:client': 'vite build --outDir dist/client',
       'build:server': 'vite build --ssr src/entry.server.ts --outDir dist/server',
       'build:bootstrap':
@@ -183,7 +183,11 @@ writeFileSync(
       },
       include:
         ssrMode || appMode
-          ? ['src', 'server.ts', ...(appMode ? ['build.ts', 'src/.purity/routes.d.ts'] : [])]
+          ? [
+              'src',
+              'server.ts',
+              ...(appMode ? ['build.ts', 'prepare-types.ts', 'src/.purity/routes.d.ts'] : []),
+            ]
           : ['src'],
     },
     null,

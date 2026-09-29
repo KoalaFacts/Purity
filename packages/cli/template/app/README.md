@@ -30,4 +30,6 @@ npm start
 contains the server-rendering bundle. `dist/server.js` serves all three modes.
 Deploy `dist/`, `package.json`, and the lockfile together, then install
 production dependencies and run `npm start` on a Node host. Set `PORT` to change
-the listening port.
+the listening port. Set `PUBLIC_ORIGIN` to the site's public URL when a reverse
+proxy terminates HTTPS. Alternatively, set `TRUST_PROXY=1` only behind a trusted
+proxy that supplies `X-Forwarded-Proto` and `X-Forwarded-Host`.

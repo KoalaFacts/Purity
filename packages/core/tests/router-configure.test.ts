@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0027 — configureNavigation() consolidator tests.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
 import {
   configureNavigation,

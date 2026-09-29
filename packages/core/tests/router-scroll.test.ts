@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Tests for onNavigate() + manageNavScroll(). ADR 0015.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { manageNavScroll, navigate, onNavigate } from '../src/index.ts';
 
 let teardown: (() => void) | null = null;

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { state } from '../src/signals.ts';
 

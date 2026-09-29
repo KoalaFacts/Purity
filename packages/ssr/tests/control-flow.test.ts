@@ -1,5 +1,5 @@
 import { eachSSR, listSSR, matchSSR, state, whenSSR } from '@purityjs/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { html, renderToString } from '../src/index.ts';
 
 describe('whenSSR + html', () => {

@@ -670,7 +670,7 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
  * Uses indexOf-based scanning (no regex) to avoid ReDoS on untrusted input.
  */
 /**
- * Skip whitespace AND `/* ... *​/` block comments / `// ...` line comments
+ * Skip whitespace, block comments, and line comments
  * starting at `pos`. Returns the next non-trivia offset. Unterminated block
  * comments fall through to the end of input — the caller's structural check
  * will then bail naturally.

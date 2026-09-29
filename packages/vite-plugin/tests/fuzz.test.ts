@@ -8,7 +8,7 @@
 // parser. Crashes there are tracked under the @purityjs/core suite.
 
 import * as fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
 const plugin = purity();

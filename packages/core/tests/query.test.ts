@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0048 — query() SWR helper tests.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { invalidateQuery, query, watch } from '../src/index.ts';
 import { _resetBfcacheRestoreSignal } from '../src/bfcache-restore-signal.ts';

@@ -2,7 +2,7 @@
 // ADR 0040 — resizeSignal tests.
 // jsdom doesn't ship ResizeObserver; we install a controllable mock.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
 import { mount, resizeSignal, watch } from '../src/index.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';

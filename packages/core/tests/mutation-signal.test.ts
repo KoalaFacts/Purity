@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0040 — mutationSignal tests. MutationObserver is native in jsdom.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import { mount, mutationSignal, watch } from '../src/index.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';

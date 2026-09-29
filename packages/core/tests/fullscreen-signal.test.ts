@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0041 — fullscreenSignal tests.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { fullscreenSignal } from '../src/index.ts';
 import { _resetFullscreenSignal } from '../src/fullscreen-signal.ts';

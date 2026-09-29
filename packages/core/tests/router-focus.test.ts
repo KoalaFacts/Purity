@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Tests for manageNavFocus() — ADR 0016.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { manageNavFocus, navigate } from '../src/index.ts';
 
 let teardown: (() => void) | null = null;

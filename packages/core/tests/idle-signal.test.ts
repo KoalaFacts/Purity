@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0042 — idleSignal tests.
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { component, idleSignal, type IdleDetectorLike, mount, watch } from '../src/index.ts';
 import { _evictIdleSignal } from '../src/idle-signal.ts';

@@ -51,7 +51,7 @@ thrower:
       '(stripped from client bundle by @purityjs/vite-plugin — ADR 0043). ' +
       'Call action.invoke() instead, or move the call to a *.server.ts module.',
   );
-} /* @purity stripped */;
+}; /* @purity stripped */
 ```
 
 The stub is a function expression in the same syntactic position the

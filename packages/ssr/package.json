@@ -36,8 +36,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vite build && tsc --emitDeclarationOnly",
-    "test": "vitest run"
+    "build": "vp build && tsc --emitDeclarationOnly",
+    "test": "vp test run"
   },
   "peerDependencies": {
     "@purityjs/core": "^0.2.4"

@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "NODE_OPTIONS='--conditions=development' vite",
-    "build": "NODE_OPTIONS='--conditions=development' vite build",
-    "preview": "NODE_OPTIONS='--conditions=development' vite preview",
+    "dev": "cross-env NODE_OPTIONS=--conditions=development vp dev",
+    "build": "cross-env NODE_OPTIONS=--conditions=development vp build",
+    "preview": "cross-env NODE_OPTIONS=--conditions=development vp preview",
     "profile": "node --conditions=development tools/profile.ts",
     "analyze": "node tools/analyze.ts",
     "compare": "node --conditions=development tools/compare.ts",
@@ -29,6 +29,6 @@
     "axe-core": "4.13.0",
     "playwright": "^1.60.0",
     "tsx": "^4.22.3",
-    "vite": "^8.3.1"
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0"
   }
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { generate } from '../src/compiler/codegen.ts';
 import { html, inflateDeferred } from '../src/compiler/compile.ts';
 import {

@@ -65,12 +65,14 @@ function categoryGroup(group: () => (typeof navigationCategories)[number]) {
         <span>${current.pages.length}</span>
       </h2>
       ${each(visiblePages, pageLink, (page) => page.href)}
-      ${architecture
-        ? html`<details class="decisions">
-            <summary>Show decisions <span>${decisions.length}</span></summary>
-            ${each(decisions, pageLink, (page) => page.href)}
-          </details>`
-        : null}
+      ${
+        architecture
+          ? html`<details class="decisions">
+              <summary>Show decisions <span>${decisions.length}</span></summary>
+              ${each(decisions, pageLink, (page) => page.href)}
+            </details>`
+          : null
+      }
     </div>
   `;
 }
@@ -118,9 +120,9 @@ function Navigation() {
         </div>
         <nav class=${() => (search().trim() ? 'is-hidden' : '')} aria-label="Documentation">
           <a
-            class="browse-link ${window.location.pathname === '/Purity/docs/categories/'
-              ? 'is-current'
-              : ''}"
+            class="browse-link ${
+              window.location.pathname === '/Purity/docs/categories/' ? 'is-current' : ''
+            }"
             href="/Purity/docs/categories/"
             >Browse all categories</a
           >

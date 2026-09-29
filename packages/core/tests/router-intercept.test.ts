@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Tests for interceptLinks() — ADR 0013.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { currentPath, interceptLinks, navigate } from '../src/index.ts';
 
 let teardown: (() => void) | null = null;

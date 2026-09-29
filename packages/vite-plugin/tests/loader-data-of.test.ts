@@ -9,7 +9,7 @@
 //   2. Using `@ts-expect-error` on intentionally-bad assignments to pin
 //      the negative case.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import type { LoaderDataOf, LoaderDataOfEntry } from '../src/loader-data-of.ts';
 

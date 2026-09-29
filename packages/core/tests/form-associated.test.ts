@@ -4,7 +4,7 @@
 // lifecycle methods exist on the prototype, and manually invoking them
 // (as the platform would) routes to the user's registered handlers.
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import {
   onError,
   onFormAssociated,

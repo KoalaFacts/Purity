@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { stripServerActionBodies } from '../src/server-action-strip.ts';
 import { purity } from '../src/index.ts';
 

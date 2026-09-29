@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { hydrate, mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
 import { resource } from '../src/resource.ts';

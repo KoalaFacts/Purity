@@ -23,7 +23,10 @@ export function makeSSRContext(): SSRRenderContext {
     resolvedDataByKey: Object.create(null),
     resolvedErrorsByKey: Object.create(null),
     suspenseCounter: 0,
+    islandCounter: 0,
     boundaryStartTimes: new Map(),
+    boundaryDeadlines: new Map(),
+    timedOutBoundaries: new Set(),
   };
 }
 

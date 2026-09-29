@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { batch, compute, state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));

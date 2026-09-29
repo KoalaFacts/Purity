@@ -2,7 +2,7 @@
 // Client-side tests for `getRequest()`. ADR 0009.
 // SSR coverage lives in `@purityjs/ssr`'s request-context.test.ts.
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { getRequest } from '../src/index.ts';
 import {
   popSSRRenderContext,

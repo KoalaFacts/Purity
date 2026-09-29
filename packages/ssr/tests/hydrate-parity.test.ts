@@ -25,7 +25,7 @@ import {
   when,
   whenSSR,
 } from '@purityjs/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { html as ssrHtml, renderToString } from '../src/index.ts';
 
 type AnyHtml = (strings: TemplateStringsArray, ...values: unknown[]) => unknown;

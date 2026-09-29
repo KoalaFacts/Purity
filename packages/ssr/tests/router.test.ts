@@ -4,7 +4,7 @@
 // `currentPath()` reading the request from getRequest() during render.
 
 import { currentPath, matchRoute } from '@purityjs/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { html as ssrHtml, renderToString } from '../src/index.ts';
 
 describe('currentPath() — SSR integration', () => {

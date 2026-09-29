@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0041 — prefersReducedMotionSignal tests.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
 import { prefersReducedMotionSignal } from '../src/index.ts';
 import { _resetMediaSignalCache } from '../src/media-signal.ts';

@@ -7,7 +7,7 @@
 // from source so a single `npm install` at the repo root is enough.
 import { resolve } from 'node:path';
 import { purity } from '@purityjs/vite-plugin';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vite-plus';
 
 export default defineConfig({
   plugins: [purity()],

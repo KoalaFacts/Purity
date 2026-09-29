@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0042 — batterySignal tests.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { batterySignal } from '../src/index.ts';
 import { _resetBatterySignal } from '../src/battery-signal.ts';
@@ -92,7 +92,9 @@ describe('batterySignal (ADR 0042)', () => {
 
   it('stays `null` when getBattery rejects', async () => {
     installBatteryMock(true);
-    const errSpy = (await import('vitest')).vi.spyOn(console, 'error').mockImplementation(() => {});
+    const errSpy = (await import('vite-plus/test')).vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
     const s = batterySignal();
     await flush();
     expect(s()).toBeNull();

@@ -11,7 +11,7 @@
 
 import { resolve } from 'node:path';
 import { purity } from '@purityjs/vite-plugin';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vite-plus';
 
 export default defineConfig({
   plugins: [

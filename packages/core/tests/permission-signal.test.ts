@@ -2,7 +2,7 @@
 // ADR 0042 — permissionSignal tests.
 // jsdom doesn't ship navigator.permissions; we install a controllable mock.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { permissionSignal } from '../src/index.ts';
 import { _resetPermissionSignalCache } from '../src/permission-signal.ts';

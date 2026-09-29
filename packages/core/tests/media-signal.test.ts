@@ -2,7 +2,7 @@
 // ADR 0040 — mediaSignal tests.
 // jsdom doesn't ship matchMedia; we install a controllable mock.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
 import { mediaSignal, watch } from '../src/index.ts';
 import { _resetMediaSignalCache } from '../src/media-signal.ts';

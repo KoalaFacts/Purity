@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { mount, onMount } from '../src/component.ts';
 import { debounced } from '../src/debounced.ts';
 import { lazyResource, resource } from '../src/resource.ts';

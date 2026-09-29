@@ -2,7 +2,7 @@
  * Type-level tests — if this file compiles, the types are correct.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { component, html } from '../src/index.ts';
 
 describe('slot types', () => {

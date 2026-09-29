@@ -4,7 +4,7 @@
 // tests verifying asyncRoute's composer pushes the right slot for each
 // component layer (route + each layout + error boundary + 404).
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 
 import { asyncNotFound, asyncRoute, type AsyncRouteEntry } from '../src/async-route.ts';
 import {

@@ -43,8 +43,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vite build && tsc --emitDeclarationOnly",
-    "test": "vitest run",
-    "bench": "vitest bench --run"
+    "build": "vp build && tsc --emitDeclarationOnly",
+    "test": "vp test run",
+    "bench": "vp test bench --run"
   }
 }

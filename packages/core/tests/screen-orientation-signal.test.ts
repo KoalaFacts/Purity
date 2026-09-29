@@ -2,7 +2,7 @@
 // ADR 0041 — screenOrientationSignal tests.
 // jsdom doesn't ship screen.orientation; we fall back to innerWidth/Height.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
 import { screenOrientationSignal } from '../src/index.ts';
 import { _resetScreenOrientationSignal } from '../src/screen-orientation-signal.ts';

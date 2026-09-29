@@ -1,5 +1,5 @@
 import { resource, state } from '@purityjs/core';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { html, renderToString } from '../src/index.ts';
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));

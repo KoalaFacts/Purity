@@ -5,7 +5,7 @@
 // records observed targets and exposes a `fire()` helper to drive
 // callbacks synchronously.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
 import { intersectionSignal, mount, watch } from '../src/index.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';

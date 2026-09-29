@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { purity } from '@purityjs/vite-plugin';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import vue from '@vitejs/plugin-vue';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vite-plus';
 import solid from 'vite-plugin-solid';
 
 // Discover all .html files in each framework's app directory

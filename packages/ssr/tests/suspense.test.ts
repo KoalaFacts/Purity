@@ -9,7 +9,7 @@
 //   * per-render `suspenseCounter` reset on each renderToString pass
 
 import { html as clientHtml, hydrate, resource, state, suspense } from '@purityjs/core';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html as ssrHtml, renderToString } from '../src/index.ts';
 
 type AnyHtml = (strings: TemplateStringsArray, ...values: unknown[]) => unknown;

@@ -4,7 +4,7 @@
 // jsdom doesn't ship EventSource in a controllable form; we install a
 // minimal mock that exposes a `fire(data)` helper and records open/close.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { eventSourceSignal } from '../src/index.ts';
 import { isSafeEventSourceUrl } from '../src/event-source-signal.ts';

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vite-plus/test';
 import { html, hydrate, resource, state } from '../src/index.ts';
 import { primeHydrationCache } from '../src/ssr-context.ts';
 import { tick } from './_helpers.ts';

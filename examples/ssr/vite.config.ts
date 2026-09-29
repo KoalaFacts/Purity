@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { purity } from '@purityjs/vite-plugin';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vite-plus';
 
 // SSR demo — both client and server builds use this config. The server build
 // is invoked separately via `vite build --ssr src/entry.server.ts`. The

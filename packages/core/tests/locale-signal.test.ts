@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0041 — localeSignal tests.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { localeSignal, watch } from '../src/index.ts';
 import { _resetLocaleSignal } from '../src/locale-signal.ts';

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0030 — manageTitle() tests.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
 import { manageTitle, state } from '../src/index.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';

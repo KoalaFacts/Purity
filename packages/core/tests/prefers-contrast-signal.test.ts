@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0041 — prefersContrastSignal tests.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { prefersContrastSignal } from '../src/index.ts';
 import { _resetMediaSignalCache } from '../src/media-signal.ts';

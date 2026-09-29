@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "NODE_OPTIONS='--conditions=development' vite build --logLevel info",
+    "build": "cross-env NODE_OPTIONS=--conditions=development vp build --logLevel info",
     "dev": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy"
   },
@@ -15,7 +15,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260527.1",
     "@purityjs/vite-plugin": "*",
-    "vite": "^8.3.1",
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
     "wrangler": "^4.141.0"
   }
 }

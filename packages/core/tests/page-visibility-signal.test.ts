@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0039 — pageVisibilitySignal tests.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { pageVisibilitySignal, watch } from '../src/index.ts';
 import { _resetPageVisibilitySignal } from '../src/page-visibility-signal.ts';

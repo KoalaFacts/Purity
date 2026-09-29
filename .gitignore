@@ -7,6 +7,9 @@ dist
 # Logs
 *.log
 
+# Tool lock files
+*.lock
+
 # Coverage
 coverage
 

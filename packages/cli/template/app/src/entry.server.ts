@@ -35,6 +35,13 @@ export async function staticRoutes(): Promise<
   return result;
 }
 
-export async function render(request: Request): Promise<{ body: string; head: string }> {
-  return renderToString(App, { request, extractHead: true });
+export async function render(
+  request: Request,
+): Promise<{ body: string; head: string; status?: number; headers?: Headers } | Response> {
+  try {
+    return await renderToString(App, { request, extractHead: true });
+  } catch (error) {
+    if (error instanceof Response) return error;
+    throw error;
+  }
 }

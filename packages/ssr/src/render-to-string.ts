@@ -46,6 +46,12 @@ export interface RenderToStringOptions {
    */
   extractHead?: boolean;
   /**
+   * Return `{ body, status?, headers? }` so a custom HTTP adapter can send
+   * metadata set by route loaders. `extractHead: true` includes these fields
+   * as well. Default false.
+   */
+  extractResponse?: boolean;
+  /**
    * The incoming HTTP `Request` that triggered this render. Exposed to
    * components via `getRequest()` so they can read URL / headers /
    * method / cookies and branch SSR output per-request. Standard Web
@@ -73,9 +79,17 @@ export interface RenderToStringOptions {
   signal?: AbortSignal;
 }
 
-/** Return shape for {@link renderToString} when `extractHead: true`. */
-export interface RenderToStringWithHead {
+/** Return shape for {@link renderToString} when `extractResponse: true`. */
+export interface RenderToStringWithResponse {
   body: string;
+  /** Set by `routeData()` in an SSR route loader, when supplied. */
+  status?: number;
+  /** Set by `routeData()` in an SSR route loader, when supplied. */
+  headers?: Headers;
+}
+
+/** Return shape for {@link renderToString} when `extractHead: true`. */
+export interface RenderToStringWithHead extends RenderToStringWithResponse {
   head: string;
 }
 
@@ -101,17 +115,22 @@ export function renderToString(
 ): Promise<RenderToStringWithHead>;
 export function renderToString(
   component: () => unknown,
+  options: RenderToStringOptions & { extractResponse: true },
+): Promise<RenderToStringWithResponse>;
+export function renderToString(
+  component: () => unknown,
   options?: RenderToStringOptions,
 ): Promise<string>;
 export async function renderToString(
   component: () => unknown,
   options: RenderToStringOptions = {},
-): Promise<string | RenderToStringWithHead> {
+): Promise<string | RenderToStringWithResponse | RenderToStringWithHead> {
   const timeout = options.timeout ?? DEFAULT_TIMEOUT;
   const serialize = options.serializeResources ?? true;
   const prefix = options.doctype ?? '';
   const nonce = options.nonce;
   const extractHead = options.extractHead === true;
+  const extractResponse = options.extractResponse === true;
   const request = options.request;
   const signal = options.signal;
   // Fail fast if the caller is already gone — no point pushing a context
@@ -198,8 +217,15 @@ export async function renderToString(
       // Quiescent — no pending fetches triggered during this pass.
       const cache = serialize ? buildResourceScript(resolvedData, resolvedDataByKey, nonce) : '';
       const body = prefix + html + cache;
-      if (extractHead) {
-        return { body, head: (lastHead ?? []).join('') };
+      if (extractHead || extractResponse) {
+        const result: RenderToStringWithResponse | RenderToStringWithHead = extractHead
+          ? { body, head: (lastHead ?? []).join('') }
+          : { body };
+        if (ctx.routeResponse?.status !== undefined) result.status = ctx.routeResponse.status;
+        if (ctx.routeResponse && [...ctx.routeResponse.headers].length > 0) {
+          result.headers = new Headers(ctx.routeResponse.headers);
+        }
+        return result;
       }
       return body;
     }

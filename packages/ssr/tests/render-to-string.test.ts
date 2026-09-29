@@ -1,4 +1,4 @@
-import { state } from '@purityjs/core';
+import { asyncRoute, routeData, state } from '@purityjs/core';
 import { isSSRHtml, markSSRHtml } from '@purityjs/core/compiler';
 import { resource } from '@purityjs/core';
 import { describe, expect, it } from 'vite-plus/test';
@@ -376,5 +376,70 @@ describe('renderToString — full document shell', () => {
     expect(out).toContain('<!doctype html>');
     expect(out).toContain('<title><!--[-->Welcome<!--]--></title>');
     expect(out).toContain('<h1><!--[-->Welcome<!--]--></h1>');
+  });
+});
+
+describe('renderToString — route responses', () => {
+  it('returns the final route status and headers with rendered HTML', async () => {
+    const entry = {
+      pattern: '/posts/missing',
+      filePath: 'posts.ts',
+      hasLoader: true as const,
+      layouts: [],
+      importFn: async () => ({
+        default: (_params: unknown, post: string | null) => html`<p>${post ?? 'Not found'}</p>`,
+        loader: () =>
+          routeData(null, {
+            status: 404,
+            headers: { 'Cache-Control': 'no-store' },
+          }),
+      }),
+    };
+    const result = await renderToString(() => asyncRoute(entry, {}), {
+      request: new Request('https://example.test/posts/missing'),
+      extractHead: true,
+      serializeResources: false,
+    });
+    expect(result.body).toContain('Not found');
+    expect(result.status).toBe(404);
+    expect(result.headers?.get('Cache-Control')).toBe('no-store');
+  });
+
+  it('exposes route metadata without requiring head extraction', async () => {
+    const entry = {
+      pattern: '/cached',
+      filePath: 'cached.ts',
+      hasLoader: true as const,
+      layouts: [],
+      importFn: async () => ({
+        default: () => html`<p>Cached</p>`,
+        loader: () => routeData(null, { headers: { 'Cache-Control': 'public, max-age=60' } }),
+      }),
+    };
+    const result = await renderToString(() => asyncRoute(entry, {}), {
+      request: new Request('https://example.test/cached'),
+      extractResponse: true,
+      serializeResources: false,
+    });
+    expect(result.body).toContain('Cached');
+    expect(result.headers?.get('Cache-Control')).toBe('public, max-age=60');
+    expect(result).not.toHaveProperty('head');
+  });
+
+  it('lets a loader Web Response escape the render without an HTML shell', async () => {
+    const redirect = Response.redirect('https://example.test/login', 302);
+    const entry = {
+      pattern: '/private',
+      filePath: 'private.ts',
+      hasLoader: true as const,
+      layouts: [],
+      importFn: async () => ({ default: () => html`<p>secret</p>`, loader: () => redirect }),
+    };
+    await expect(
+      renderToString(() => asyncRoute(entry, {}), {
+        request: new Request('https://example.test/private'),
+        extractHead: true,
+      }),
+    ).rejects.toBe(redirect);
   });
 });

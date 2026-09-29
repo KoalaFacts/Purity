@@ -33,3 +33,58 @@ If you build before deployment, copy `dist/`, `package.json`, and `package-lock.
 The server entry calls `renderToString()` from `@purityjs/ssr`. The client entry calls `hydrate()` from `@purityjs/core` against the rendered app root. Hydration attaches interactivity to the existing DOM. If a component uses Shadow DOM, the server emits Declarative Shadow DOM so its content can appear before client JavaScript runs.
 
 For mostly static pages with a few interactive regions, see [Islands](./islands.md). For the lower-level rendering API, resource serialization, and streaming, see the [`@purityjs/ssr` reference](../packages/ssr/README.md).
+
+## Mixed static and server pages
+
+The `--app` starter combines static generation, server rendering, and client
+rendering in one file-based router:
+
+```bash
+npx @purityjs/cli my-app --app
+cd my-app
+npm install
+npm run dev
+```
+
+Pages in `src/pages/` default to server rendering. Set `renderMode` to
+`'static'` for build-time HTML or `'client'` for a browser-rendered page. The
+generated app uses normal document navigation so the browser receives each
+page's HTTP status and headers.
+
+### Status and headers from a loader
+
+Use `routeData(value, { status, headers })` when a page should render with
+loader data and set HTTP metadata. The page receives only `value`:
+
+```ts
+import { html, routeData, type LoaderContext } from '@purityjs/core';
+
+const posts: Record<string, string> = { hello: 'Hello' };
+
+export function loader({ params }: LoaderContext) {
+  const post = posts[params.slug] ?? null;
+  return routeData(post, {
+    status: post ? 200 : 404,
+    headers: { 'Cache-Control': post ? 'public, max-age=60' : 'no-store' },
+  });
+}
+
+export default function Post(_params: Record<string, string>, post: string | null): unknown {
+  return html`<main><h1>${post ?? 'Post not found'}</h1></main>`;
+}
+```
+
+For a redirect or a complete response body, return a Web `Response` from the
+loader. For example, `Response.redirect(new URL('/login', request.url), 302)`
+sends a redirect without rendering the page. Layout response metadata is merged
+from outermost to innermost, then the page wins on duplicate headers or status;
+`Set-Cookie` values append. Unhandled loader errors render the route's error
+boundary with HTTP 500 when one exists.
+
+Custom Node or edge adapters can call `renderToString(App, { request,
+extractResponse: true })` and send the returned `body`, optional `status`, and
+optional `headers`. `extractHead: true` also includes the response metadata.
+
+Static pages must render with status 200 and no response headers. The build
+reports an error if a static loader returns a `Response` or sets status or
+headers. Use server mode for redirects, cookies, and request-time cache rules.

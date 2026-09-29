@@ -2,11 +2,15 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 type RouteInfo = { pattern: string; mode: 'static' | 'server' | 'client' } | null;
 type ServerEntry = {
   routeFor: (path: string) => Promise<RouteInfo>;
-  render: (request: Request) => Promise<{ body: string; head: string }>;
+  render: (
+    request: Request,
+  ) => Promise<{ body: string; head: string; status?: number; headers?: Headers } | Response>;
 };
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -41,10 +45,48 @@ function send(
   type: string,
   body: string | Buffer,
   head: boolean,
+  headers?: Headers,
 ): void {
   res.statusCode = status;
+  if (headers) copyHeaders(res, headers);
   res.setHeader('Content-Type', type);
   res.end(head ? undefined : body);
+}
+
+function copyHeaders(res: ServerResponse, headers: Headers): void {
+  headers.forEach((value, key) => {
+    // The rendered HTML body and Node transport determine these fields.
+    if (
+      key !== 'set-cookie' &&
+      key !== 'content-type' &&
+      key !== 'content-length' &&
+      key !== 'transfer-encoding'
+    )
+      res.setHeader(key, value);
+  });
+  const cookies = headers.getSetCookie();
+  if (cookies.length > 0) res.setHeader('Set-Cookie', cookies);
+}
+
+async function sendWebResponse(
+  res: ServerResponse,
+  response: Response,
+  head: boolean,
+): Promise<void> {
+  res.statusCode = response.status;
+  response.headers.forEach((value, key) => {
+    if (key !== 'set-cookie' && key !== 'content-length' && key !== 'transfer-encoding') {
+      res.setHeader(key, value);
+    }
+  });
+  const cookies = response.headers.getSetCookie();
+  if (cookies.length > 0) res.setHeader('Set-Cookie', cookies);
+  if (head || !response.body) {
+    if (response.body) await response.body.cancel();
+    res.end();
+    return;
+  }
+  await pipeline(Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]), res);
 }
 
 function requestFor(msg: IncomingMessage): Request {
@@ -150,12 +192,17 @@ async function start(): Promise<void> {
     }
     const status = !route ? 404 : 200;
     const result = await currentEntry.render(requestFor(req));
+    if (result instanceof Response) {
+      await sendWebResponse(res, result, head);
+      return;
+    }
     send(
       res,
-      status,
+      result.status ?? status,
       'text/html; charset=utf-8',
       shell(currentTemplate, result.body, result.head),
       head,
+      result.headers,
     );
   }
 

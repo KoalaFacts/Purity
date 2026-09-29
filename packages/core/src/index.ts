@@ -140,6 +140,9 @@ export {
   type AsyncRouteEntry,
   type AsyncRouteOptions,
   type LoaderContext,
+  routeData,
+  type RouteData,
+  type RouteResponseInit,
 } from './async-route.ts';
 // Loader-data accessor — ADR 0026.
 export { loaderData } from './loader-data.ts';

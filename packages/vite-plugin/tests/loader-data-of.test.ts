@@ -10,8 +10,35 @@
 //      the negative case.
 
 import { describe, expect, it } from 'vite-plus/test';
+import type { RouteData } from '@purityjs/core';
 
 import type { LoaderDataOf, LoaderDataOfEntry } from '../src/loader-data-of.ts';
+
+const responseRoutes = [
+  {
+    pattern: '/posts/:slug',
+    importFn: (): Promise<{
+      loader: () => Promise<RouteData<{ title: string } | null> | Response>;
+    }> =>
+      Promise.resolve(
+        {} as {
+          loader: () => Promise<RouteData<{ title: string } | null> | Response>;
+        },
+      ),
+  },
+] as const;
+
+describe('LoaderDataOf — route responses', () => {
+  it('unwraps routeData and excludes a short-circuit Response', () => {
+    const data: LoaderDataOf<'/posts/:slug', typeof responseRoutes> = { title: 'Hello' };
+    expect(data?.title).toBe('Hello');
+    const missing: LoaderDataOf<'/posts/:slug', typeof responseRoutes> = null;
+    expect(missing).toBeNull();
+    // @ts-expect-error — the page receives the value, not the RouteData wrapper.
+    const wrapped: LoaderDataOf<'/posts/:slug', typeof responseRoutes> = { value: data };
+    expect(wrapped).toHaveProperty('value');
+  });
+});
 
 // Fake route-module shapes — stand in for what `typeof import('./pages/...')`
 // would resolve to when the on-disk manifest's `() => import('/abs/path')`

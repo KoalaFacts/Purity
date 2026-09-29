@@ -34,11 +34,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build framework packages
-        run: |
-          npm run build -w @purityjs/core
-          npm run build -w @purityjs/vite-plugin
-
       - name: Build documentation, dashboard, and benchmark report
         run: |
           npm run build -w examples/docs-site

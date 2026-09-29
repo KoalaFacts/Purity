@@ -38,7 +38,9 @@ For a server-rendered project, create it with `--ssr`, then run `npm run build` 
 
 ## Go deeper
 
+- [Reactivity and templates](../../../docs/reactivity.md) explains state, derived values, bindings, and keyed lists.
 - [TypeScript](../../../docs/typescript.md) explains inferred and explicit types.
 - [Shadow DOM](../../../docs/shadow-dom-rationale.md) explains component styling and boundaries.
 - [Accessibility](../../../docs/accessibility.md) covers focus and form patterns.
+- [Server rendering](../../../docs/server-rendering.md) covers the generated SSR app and Node deployment.
 - [Architecture decisions](../../../docs/decisions/README.md) record why features work the way they do.

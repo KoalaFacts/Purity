@@ -99,21 +99,9 @@ Purity uses `html\`\``tagged template literals (compiled by the`@purityjs/vite-p
 | Boolean attr   | `?attr=${bool}`     | `<button ?disabled=${() => !valid()}>` |
 | DOM property   | `.prop=${value}`    | `<input .checked=${flag}>`             |
 
-## Things Purity doesn't have (yet)
+## Check the differences before migrating
 
-If your existing app relies on these, plan around their absence:
-
-- **No SSR / hydration.** No `renderToString`, no `getServerSideProps`,
-  no Astro-style islands. Client-only.
-- **No router.** Bring your own (the History API is straightforward to
-  use directly).
-- **No global state library.** `state()` modules are usable as singletons;
-  pattern roughly matches Zustand or Pinia. No devtools yet.
-- **No CSS-in-JS / styled-components.** Use the `css\`\`` template inside
-  components; outside components, use plain stylesheets.
-- **No JSX.** Tagged template literals (`html\`\``) only. The
-`@purityjs/vite-plugin` compiles them ahead-of-time so there's no
-  runtime parser.
-
-If those gaps disqualify the framework for your use case, the gaps are
-real — not yet bugs.
+- **Rendering:** Purity supports SSR and hydration through `@purityjs/ssr` and `hydrate()`. The CLI's `--ssr` starter supplies a Node server; [server rendering](./server-rendering.md) covers the path from project creation to deployment. [Islands](./islands.md) allow selected regions to hydrate.
+- **Routing:** `@purityjs/core` exports route and navigation primitives, including `currentPath()`, `matchRoute()`, and `navigate()`. Review their composition before replacing an app that relies on a framework-specific router.
+- **State:** Share `state()` from a module for app-wide values. Use `resource()` or `query()` when asynchronous data needs loading and error states.
+- **Styling and templates:** Purity uses `html` tagged templates rather than JSX. Use `css` tagged templates inside components and regular stylesheets elsewhere. The Vite plugin compiles templates ahead of time.

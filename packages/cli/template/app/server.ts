@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { randomBytes } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -10,6 +11,7 @@ type ServerEntry = {
   routeFor: (path: string) => Promise<RouteInfo>;
   renderStream: (
     request: Request,
+    nonce: string,
   ) => Promise<
     | { body: ReadableStream<Uint8Array>; head: string; status?: number; headers?: Headers }
     | Response
@@ -123,7 +125,7 @@ async function sendWebResponse(
   await pipeline(Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]), res);
 }
 
-function requestFor(msg: IncomingMessage, signal?: AbortSignal): Request {
+function requestFor(msg: IncomingMessage, signal: AbortSignal, nonce: string): Request {
   const trustedProxy = process.env.TRUST_PROXY === '1';
   const firstHeader = (value: string | string[] | undefined): string | undefined =>
     (Array.isArray(value) ? value[0] : value)?.split(',')[0]?.trim();
@@ -133,9 +135,13 @@ function requestFor(msg: IncomingMessage, signal?: AbortSignal): Request {
   const host = forwardedHost || msg.headers.host || 'localhost';
   const origin = process.env.PUBLIC_ORIGIN || `${protocol}://${host}`;
   const url = new URL(msg.url ?? '/', origin);
+  const headers = new Headers(msg.headers as HeadersInit);
+  // Replace any client-supplied value with the nonce used by this render.
+  // Loaders can read it when constructing their own strict CSP policy.
+  headers.set('X-Purity-CSP-Nonce', nonce);
   return new Request(url, {
     method: msg.method ?? 'GET',
-    headers: msg.headers as HeadersInit,
+    headers,
     signal,
   });
 }
@@ -230,10 +236,13 @@ async function start(): Promise<void> {
     }
     const status = !route ? 404 : 200;
     const abort = new AbortController();
-    const onClose = () => abort.abort();
+    const onClose = () => {
+      if (!res.writableFinished) abort.abort();
+    };
     res.once('close', onClose);
     try {
-      const result = await currentEntry.renderStream(requestFor(req, abort.signal));
+      const nonce = randomBytes(16).toString('base64');
+      const result = await currentEntry.renderStream(requestFor(req, abort.signal, nonce), nonce);
       if (result instanceof Response) {
         await sendWebResponse(res, result, head);
         return;

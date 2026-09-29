@@ -27,6 +27,28 @@ shell and any deferred `suspense()` regions. Put slow, independent content in
 `suspense()` to let the rest of the page arrive first. Static pages use buffered
 rendering during the build.
 
+For a strict Content Security Policy on server pages, the Node server creates
+a fresh nonce for each request and uses it on Purity's inline streaming
+scripts. A loader can read that nonce from its server-side `request` and put it
+in the policy it returns:
+
+```ts
+import { routeData } from '@purityjs/core';
+
+export function loader({ request }) {
+  const nonce = request.headers.get('X-Purity-CSP-Nonce');
+  return routeData(null, {
+    headers: {
+      'Content-Security-Policy': `script-src 'self' 'nonce-${nonce}'`,
+    },
+  });
+}
+```
+
+The generated server replaces any incoming `X-Purity-CSP-Nonce` value before
+the loader runs. Add the nonce to every applicable page or layout policy; a
+policy that allows only `'self'` blocks the deferred inline swap scripts.
+
 ### Loader responses
 
 On a server-rendered page, a route or layout loader can return `routeData(value,

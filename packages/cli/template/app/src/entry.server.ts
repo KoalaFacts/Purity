@@ -46,9 +46,12 @@ export async function render(
   }
 }
 
-export async function renderStream(request: Request): Promise<RenderToStreamResponse | Response> {
+export async function renderStream(
+  request: Request,
+  nonce: string,
+): Promise<RenderToStreamResponse | Response> {
   try {
-    return await renderToStreamResponse(App, { request, signal: request.signal });
+    return await renderToStreamResponse(App, { request, signal: request.signal, nonce });
   } catch (error) {
     if (error instanceof Response) return error;
     throw error;

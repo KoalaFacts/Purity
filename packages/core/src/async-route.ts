@@ -15,6 +15,102 @@ import { type LoaderDataToken, popLoaderData, pushLoaderData } from './loader-da
 import { lazyResource } from './resource.ts';
 import { getRequest } from './request-context.ts';
 import { currentPath } from './router.ts';
+import { getSSRRenderContext } from './ssr-context.ts';
+
+const ROUTE_DATA = Symbol.for('@purityjs/core/route-data');
+
+/** HTTP metadata for a rendered route. Use a `Response` to end the request. */
+export interface RouteResponseInit {
+  status?: number;
+  headers?: HeadersInit;
+}
+
+/** A loader value accompanied by HTTP metadata for its rendered page. */
+export interface RouteData<T> {
+  readonly value: T;
+  readonly status?: number;
+  readonly headers: Headers;
+  readonly [ROUTE_DATA]: true;
+}
+
+/**
+ * Attach a status or headers to loader data while still rendering the page.
+ * Layout metadata is applied root to leaf, then page metadata wins. Multiple
+ * Set-Cookie values are appended. Redirects and bodyless responses should
+ * instead return a Web `Response` from the loader.
+ *
+ * @example
+ * ```ts
+ * export function loader({ params }: LoaderContext) {
+ *   const post = findPost(params.slug);
+ *   return routeData(post, {
+ *     status: post ? 200 : 404,
+ *     headers: { 'Cache-Control': 'public, max-age=60' },
+ *   });
+ * }
+ * ```
+ */
+export function routeData<T>(value: T, init: RouteResponseInit = {}): RouteData<T> {
+  const status = init.status;
+  if (
+    status !== undefined &&
+    (!Number.isInteger(status) ||
+      status < 200 ||
+      status > 599 ||
+      (status >= 300 && status < 400) ||
+      status === 204 ||
+      status === 205)
+  ) {
+    throw new RangeError(
+      '[purity] routeData: status must allow an HTML response (200–599, excluding redirects and bodyless statuses).',
+    );
+  }
+  const headers = new Headers(init.headers);
+  for (const name of ['content-type', 'content-length', 'transfer-encoding']) {
+    if (headers.has(name)) {
+      throw new TypeError(`[purity] routeData: ${name} is managed by the HTML server response.`);
+    }
+  }
+  return { [ROUTE_DATA]: true, value, status, headers };
+}
+
+function isRouteData(value: unknown): value is RouteData<unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    ROUTE_DATA in value &&
+    (value as RouteData<unknown>)[ROUTE_DATA] === true
+  );
+}
+
+interface LoaderOutcome {
+  data: unknown;
+  status?: number;
+  headers?: Headers;
+}
+
+function mergeHeaders(target: Headers, source: Headers): void {
+  source.forEach((value, key) => {
+    if (key !== 'set-cookie') target.set(key, value);
+  });
+  const cookies =
+    typeof source.getSetCookie === 'function'
+      ? source.getSetCookie()
+      : [source.get('Set-Cookie')].filter((cookie): cookie is string => cookie !== null);
+  for (const cookie of cookies) target.append('Set-Cookie', cookie);
+}
+
+function applyRouteResponse(status: number | undefined, headers: Headers): void {
+  const ctx = getSSRRenderContext();
+  if (!ctx || (status === undefined && [...headers].length === 0)) return;
+  ctx.routeResponse = { status, headers: new Headers(headers) };
+}
+
+function markRouteError(): void {
+  const ctx = getSSRRenderContext();
+  if (ctx)
+    ctx.routeResponse = { status: 500, headers: ctx.routeResponse?.headers ?? new Headers() };
+}
 
 /**
  * Loader context passed to a route or layout's `loader()` named export
@@ -89,9 +185,14 @@ function defaultRequest(): Request {
   return new Request(href);
 }
 
-async function callLoader(mod: AsyncModule, ctx: LoaderContext): Promise<unknown> {
-  if (typeof mod.loader !== 'function') return undefined;
-  return await mod.loader(ctx);
+async function callLoader(mod: AsyncModule, ctx: LoaderContext): Promise<LoaderOutcome> {
+  if (typeof mod.loader !== 'function') return { data: undefined };
+  const result: unknown = await mod.loader(ctx);
+  if (result instanceof Response) throw result;
+  if (isRouteData(result)) {
+    return { data: result.value, status: result.status, headers: result.headers };
+  }
+  return { data: result };
 }
 
 /**
@@ -146,6 +247,7 @@ async function loadStack(
   entry: AsyncRouteEntry,
   params: Record<string, string>,
   request: Request,
+  serverRender: boolean,
 ): Promise<() => unknown> {
   // Defensive shallow-freeze: loaders are user code, and a loader that
   // mutates `ctx.params` (e.g. assigning `params.id = sanitized`) would
@@ -177,12 +279,24 @@ async function loadStack(
 
     // Loader calls. Routes + layouts that opted in via `hasLoader: true`
     // get their loader awaited in parallel; others resolve to undefined.
-    const [routeData, ...layoutsData] = await Promise.all([
-      entry.hasLoader ? callLoader(routeMod, ctx) : Promise.resolve(undefined),
+    const [routeResult, ...layoutResults] = await Promise.all([
+      entry.hasLoader
+        ? callLoader(routeMod, ctx)
+        : Promise.resolve<LoaderOutcome>({ data: undefined }),
       ...entry.layouts.map((l, i) =>
-        l.hasLoader ? callLoader(layoutMods[i], ctx) : Promise.resolve(undefined),
+        l.hasLoader
+          ? callLoader(layoutMods[i], ctx)
+          : Promise.resolve<LoaderOutcome>({ data: undefined }),
       ),
     ]);
+    const pageData = routeResult.data;
+    const layoutsData = layoutResults.map((result) => result.data);
+    const responseHeaders = new Headers();
+    let responseStatus: number | undefined;
+    for (const result of [...layoutResults, routeResult]) {
+      if (result.status !== undefined) responseStatus = result.status;
+      if (result.headers) mergeHeaders(responseHeaders, result.headers);
+    }
 
     // Preload the error boundary's view function (if configured) so a
     // render-time throw from a layout / route view can be routed through
@@ -224,10 +338,11 @@ async function loadStack(
     // data between scopes. Nested layouts + route compose correctly
     // because pushes mirror the JS call stack.
     return (): unknown => {
+      applyRouteResponse(responseStatus, responseHeaders);
       let view: () => unknown = () => {
-        const token = pushLoaderData(routeData);
+        const token = pushLoaderData(pageData);
         try {
-          return routeMod.default(loaderParams, routeData);
+          return routeMod.default(loaderParams, pageData);
         } finally {
           popLoaderData(token);
         }
@@ -253,10 +368,33 @@ async function loadStack(
       try {
         return view();
       } catch (renderErr) {
+        markRouteError();
         return renderWithBoundary(renderErr);
       }
     };
   } catch (err) {
+    // A loader's Web Response is an HTTP outcome, not an error-page input.
+    if (err instanceof Response) {
+      if (serverRender) throw err;
+      const location = err.headers.get('Location');
+      if (err.status >= 300 && err.status < 400 && location && typeof window !== 'undefined') {
+        window.location.assign(new URL(location, request.url).href);
+        return () => undefined;
+      }
+      const errorView = await loadErrorBoundary(entry, err);
+      if (errorView) {
+        return () => {
+          const token = pushLoaderData(err);
+          try {
+            return errorView(err);
+          } finally {
+            popLoaderData(token);
+          }
+        };
+      }
+      const message = await err.text();
+      return () => message || err.statusText || `HTTP ${err.status}`;
+    }
     // Route-level error boundary (ADR 0021). Loaded on demand — most
     // routes never error so paying the import cost up front would be
     // wasteful. The boundary's loaderData slot is the caught error so
@@ -269,6 +407,7 @@ async function loadStack(
     const errorView = await loadErrorBoundary(entry, err);
     if (!errorView) throw err;
     return () => {
+      markRouteError();
       const token = pushLoaderData(err);
       try {
         return errorView(err);
@@ -306,7 +445,8 @@ export function asyncRoute(
   options?: AsyncRouteOptions,
 ): unknown {
   const requestFn = options?.request ?? defaultRequest;
-  const stack = lazyResource(() => loadStack(entry, params, requestFn()), {
+  const serverRender = getSSRRenderContext() !== null;
+  const stack = lazyResource(() => loadStack(entry, params, requestFn(), serverRender), {
     key: (options?.keyPrefix ?? 'route:') + entry.pattern,
   });
   stack.fetch();

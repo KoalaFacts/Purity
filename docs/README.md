@@ -8,7 +8,7 @@ Read them on the [public documentation site](https://koalafacts.github.io/Purity
 | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | [`reactivity.md`](./reactivity.md)                     | State, computed values, template bindings, and keyed lists                                                                   |
 | [`typescript.md`](./typescript.md)                     | Type inference for `state`/`compute`/`resource`, generic component props, scoped slots, `WatchSource<T>` for custom helpers  |
-| [`server-rendering.md`](./server-rendering.md)         | CLI SSR starter, local build, Node deployment, and hydration                                                                 |
+| [`server-rendering.md`](./server-rendering.md)         | CLI SSR and mixed-mode starters, route responses, Node deployment, and hydration                                             |
 | [`islands.md`](./islands.md)                           | Opt-in hydration for interactive regions                                                                                     |
 | [`shadow-dom-rationale.md`](./shadow-dom-rationale.md) | Why `component()` uses Shadow DOM by default, when it pays, when it hurts, escape hatches, Tailwind / global-CSS integration |
 | [`accessibility.md`](./accessibility.md)               | ARIA across shadow boundaries, focus delegation, screen-reader-friendly slot patterns, a worked `p-tabs` example             |

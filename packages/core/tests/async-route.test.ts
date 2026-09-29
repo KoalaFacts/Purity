@@ -10,6 +10,7 @@ import {
   type AsyncNotFoundEntry,
   asyncRoute,
   type AsyncRouteEntry,
+  routeData,
 } from '../src/async-route.ts';
 import {
   popSSRRenderContext,
@@ -78,6 +79,80 @@ describe('asyncRoute — pass 1 registers the loadStack promise (ADR 0025)', () 
 });
 
 describe('asyncRoute — loader pipeline (ADR 0025 / 0022)', () => {
+  it('applies layout then page HTTP metadata and passes only the data to views', async () => {
+    const pageHeaders = new Headers({ 'Cache-Control': 'private', 'X-Page': 'yes' });
+    pageHeaders.append('Set-Cookie', 'page=1; Path=/');
+    const layoutHeaders = new Headers({ 'Cache-Control': 'public', 'X-Layout': 'yes' });
+    layoutHeaders.append('Set-Cookie', 'layout=1; Path=/');
+    const entry: AsyncRouteEntry = {
+      pattern: '/p',
+      filePath: 'p.ts',
+      hasLoader: true,
+      importFn: async () => ({
+        default: (_params: unknown, data: unknown) => `page:${data}`,
+        loader: () =>
+          routeData('post', {
+            status: 404,
+            headers: pageHeaders,
+          }),
+      }),
+      layouts: [
+        {
+          filePath: '_layout.ts',
+          hasLoader: true,
+          importFn: async () => ({
+            default: (children: () => unknown, data: unknown) => `${data}:${children()}`,
+            loader: () =>
+              routeData('layout', {
+                status: 202,
+                headers: layoutHeaders,
+              }),
+          }),
+        },
+      ],
+    };
+    const { ctx } = inSSRContext(() => asyncRoute(entry, {}));
+    await Promise.all(ctx.pendingPromises);
+    const factory = ctx.resolvedDataByKey['route:/p'] as () => unknown;
+    expect(inSSRContext(factory, ctx).result).toBe('layout:page:post');
+    expect(ctx.routeResponse?.status).toBe(404);
+    expect(ctx.routeResponse?.headers.get('Cache-Control')).toBe('private');
+    expect(ctx.routeResponse?.headers.get('X-Layout')).toBe('yes');
+    expect(ctx.routeResponse?.headers.get('X-Page')).toBe('yes');
+    expect(ctx.routeResponse?.headers.getSetCookie()).toEqual([
+      'layout=1; Path=/',
+      'page=1; Path=/',
+    ]);
+  });
+
+  it('rejects statuses that cannot accompany rendered HTML', () => {
+    expect(() => routeData(null, { status: 302 })).toThrow(RangeError);
+    expect(() => routeData(null, { status: 204 })).toThrow(RangeError);
+    expect(() => routeData(null, { status: 404 })).not.toThrow();
+    expect(() => routeData(null, { headers: { 'Content-Length': '1' } })).toThrow(TypeError);
+  });
+
+  it('passes a loader Response through without rendering an error boundary', async () => {
+    const redirect = Response.redirect('https://example.test/login', 302);
+    const entry: AsyncRouteEntry = {
+      pattern: '/private',
+      filePath: 'private.ts',
+      hasLoader: true,
+      importFn: async () => ({
+        default: () => 'never',
+        loader: () => redirect,
+      }),
+      layouts: [],
+      errorBoundary: {
+        filePath: '_error.ts',
+        importFn: async () => ({ default: () => 'boundary' }),
+      },
+    };
+    const { ctx } = inSSRContext(() => asyncRoute(entry, {}));
+    await Promise.all(ctx.pendingPromises);
+    expect(ctx.resolvedErrorsByKey['route:/private']).toBe(redirect);
+  });
+
   it('calls route + layout loaders in parallel when hasLoader is set', async () => {
     const log: string[] = [];
     const entry: AsyncRouteEntry = {
@@ -166,7 +241,8 @@ describe('asyncRoute — error boundary (ADR 0025 / 0021)', () => {
     const { ctx } = inSSRContext(() => asyncRoute(entry, {}));
     await Promise.all(ctx.pendingPromises);
     const factory = ctx.resolvedDataByKey['route:/p'] as () => unknown;
-    expect(factory()).toBe('boundary:loader exploded');
+    expect(inSSRContext(factory, ctx).result).toBe('boundary:loader exploded');
+    expect(ctx.routeResponse?.status).toBe(500);
   });
 
   it('rejects the lazyResource when no errorBoundary is configured', async () => {

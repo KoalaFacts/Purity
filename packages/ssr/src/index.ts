@@ -22,5 +22,6 @@ export {
 export {
   type RenderToStringOptions,
   type RenderToStringWithHead,
+  type RenderToStringWithResponse,
   renderToString,
 } from './render-to-string.ts';

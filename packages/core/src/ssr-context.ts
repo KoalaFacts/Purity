@@ -129,6 +129,8 @@ export interface SSRRenderContext {
    * Cloudflare Workers, and Vercel Edge identically. ADR 0009.
    */
   request?: Request;
+  /** HTTP metadata collected by the active route on the final render pass. */
+  routeResponse?: { status?: number; headers: Headers };
 }
 
 // A real LIFO stack — earlier versions held a single-slot `currentContext`,

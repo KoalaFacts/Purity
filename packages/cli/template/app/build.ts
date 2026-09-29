@@ -57,7 +57,23 @@ for (const route of routes) {
 await writeFile(resolve(root, 'dist/template.html'), template);
 await writeFile(resolve(root, 'dist/static-routes.json'), JSON.stringify(planned));
 for (const path of planned) {
-  const { body, head } = await entry.render(new Request(`http://localhost${path}`));
+  const rendered = await entry.render(new Request(`http://localhost${path}`));
+  if (rendered instanceof Response) {
+    throw new Error(
+      `Static route ${path} returned a Response (${rendered.status}); use server mode for request-time responses`,
+    );
+  }
+  if (rendered.status !== undefined && rendered.status !== 200) {
+    throw new Error(
+      `Static route ${path} rendered with status ${rendered.status}; static pages must return 200`,
+    );
+  }
+  if (rendered.headers && [...rendered.headers].length > 0) {
+    throw new Error(
+      `Static route ${path} set response headers; use server mode for request-time headers`,
+    );
+  }
+  const { body, head } = rendered;
   const html = template
     .split('<!--head-outlet-->')
     .join(head)

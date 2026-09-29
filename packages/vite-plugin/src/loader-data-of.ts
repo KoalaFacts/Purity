@@ -24,12 +24,16 @@
 // Type-only export. No runtime code; bundlers tree-shake to nothing.
 // ---------------------------------------------------------------------------
 
+import type { RouteData } from '@purityjs/core';
+
 /**
  * Derive the resolved loader-data shape for the route whose `pattern`
  * matches `P` in the routes array `R`.
  *
  * - When the route module exports `loader(): Promise<T>` (or `loader(): T`),
  *   resolves to `Awaited<T>`.
+ * - `routeData(value, init)` resolves to the type of `value`; a returned
+ *   `Response` ends the HTTP request and contributes no page data.
  * - When no loader is present, resolves to `undefined`.
  * - When `R` is typed as the generic `purity:routes` ambient (importFn:
  *   `() => Promise<unknown>`), resolves to `undefined` — apps wanting
@@ -74,12 +78,14 @@ type IsRequiredKey<M, K extends PropertyKey> = K extends keyof M
     : true
   : false;
 
+type LoaderValue<T> = T extends Response ? never : T extends RouteData<infer Data> ? Data : T;
+
 type LoaderShape<M> = 'loader' extends keyof M
   ? M extends { loader?: infer L }
     ? L extends (...args: never[]) => infer Ret
       ? IsRequiredKey<M, 'loader'> extends true
-        ? Awaited<Ret>
-        : Awaited<Ret> | undefined
+        ? LoaderValue<Awaited<Ret>>
+        : LoaderValue<Awaited<Ret>> | undefined
       : undefined
     : undefined
   : undefined;

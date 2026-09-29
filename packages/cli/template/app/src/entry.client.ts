@@ -1,5 +1,4 @@
-import { configureNavigation, hydrate, mount } from '@purityjs/core';
-import { routes } from 'purity:routes';
+import { hydrate, mount } from '@purityjs/core';
 import { App } from './app.ts';
 
 const root = document.getElementById('app');
@@ -8,4 +7,3 @@ if (root) {
   if (root.hasChildNodes()) hydrate(root, component);
   else mount(component, root);
 }
-configureNavigation({ prefetch: { routes } });

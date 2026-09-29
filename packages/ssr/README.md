@@ -23,15 +23,17 @@ npm install @purityjs/ssr
 
 ## Module surface
 
-| Export                                | Kind     | Purpose                                                                                                                                |
-| ------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `html`                                | function | Server counterpart of `@purityjs/core`'s `html` — returns a branded `SSRHtml` string instead of building DOM. Drop-in API replacement. |
-| `renderToString(component, options?)` | function | Buffered render. Returns `Promise<string>`, or `Promise<{ body, head }>` when `extractHead: true` is set.                              |
-| `renderToStream(component, options?)` | function | Progressive render. Returns `ReadableStream<Uint8Array>` that flushes the shell first, then per-`suspense()` boundary chunks.          |
-| `RenderToStringOptions`               | type     | Options for `renderToString` (timeout, doctype, nonce, serialize toggle, extractHead).                                                 |
-| `RenderToStringWithHead`              | type     | `{ body: string; head: string }` — return shape when `extractHead: true`.                                                              |
-| `RenderToStreamOptions`               | type     | Options for `renderToStream` (timeout, doctype, nonce, serialize toggle, AbortSignal).                                                 |
-| `SSRHtml`                             | type     | Branded string `{ __purity_ssr_html__: string }` — emitted by `html` and the `*SSR` control-flow helpers.                              |
+| Export                                        | Kind     | Purpose                                                                                                                                |
+| --------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `html`                                        | function | Server counterpart of `@purityjs/core`'s `html` — returns a branded `SSRHtml` string instead of building DOM. Drop-in API replacement. |
+| `renderToString(component, options?)`         | function | Buffered render. Returns `Promise<string>`, or `Promise<{ body, head }>` when `extractHead: true` is set.                              |
+| `renderToStream(component, options?)`         | function | Progressive render. Returns `ReadableStream<Uint8Array>` that flushes the shell first, then per-`suspense()` boundary chunks.          |
+| `renderToStreamResponse(component, options?)` | function | Prepares the shell and returns its head, status, headers, and progressive body before HTTP headers are sent.                           |
+| `RenderToStringOptions`                       | type     | Options for `renderToString` (timeout, doctype, nonce, serialize toggle, extractHead).                                                 |
+| `RenderToStringWithHead`                      | type     | `{ body: string; head: string }` — return shape when `extractHead: true`.                                                              |
+| `RenderToStreamOptions`                       | type     | Options for `renderToStream` (timeout, doctype, nonce, serialize toggle, AbortSignal).                                                 |
+| `RenderToStreamResponse`                      | type     | `{ body, head, status?, headers? }` returned after preparing the streaming shell.                                                      |
+| `SSRHtml`                                     | type     | Branded string `{ __purity_ssr_html__: string }` — emitted by `html` and the `*SSR` control-flow helpers.                              |
 
 `head()` itself is exported from `@purityjs/core` — see [Head / meta tags](#head--meta-tags-adr-0008) below for the call-site pattern.
 
@@ -39,14 +41,15 @@ Every export is re-exported from `@purityjs/ssr`'s root entry. There are no subp
 
 ## When to use which entry
 
-| Scenario                                                 | Entry            |
-| -------------------------------------------------------- | ---------------- |
-| Static prerender (build-time, sitemap)                   | `renderToString` |
-| Small response, no slow data                             | `renderToString` |
-| Edge function with one-shot HTML reply                   | `renderToString` |
-| Slow data behind a fast shell (dashboards, app listings) | `renderToStream` |
-| Multiple independent slow regions                        | `renderToStream` |
-| Want progressive paint on a slow connection              | `renderToStream` |
+| Scenario                                                 | Entry                    |
+| -------------------------------------------------------- | ------------------------ |
+| Static prerender (build-time, sitemap)                   | `renderToString`         |
+| Small response, no slow data                             | `renderToString`         |
+| Edge function with one-shot HTML reply                   | `renderToString`         |
+| Slow data behind a fast shell (dashboards, app listings) | `renderToStream`         |
+| Multiple independent slow regions                        | `renderToStream`         |
+| Want progressive paint on a slow connection              | `renderToStream`         |
+| Stream a route with loader status, headers, or `head()`  | `renderToStreamResponse` |
 
 ## API
 
@@ -162,6 +165,28 @@ interface RenderToStreamOptions {
 
 **Hydration timing.** The MVP defers `hydrate()` until the stream closes. Selective per-boundary hydration (React-style) is out of scope for now.
 
+### `renderToStreamResponse(component, options?)`
+
+Use this async entry when an HTTP adapter needs route metadata before sending headers. It runs the shell's resource passes, then returns `{ body, head, status?, headers? }`. The `body` remains a progressive stream: Suspense boundaries resolve after the shell. A loader that returns a Web `Response` rejects the preparation promise with that same response, so the adapter can send its redirect or custom body directly.
+
+```ts
+import { renderToStreamResponse } from '@purityjs/ssr';
+
+async function handle(request: Request): Promise<Response> {
+  try {
+    const rendered = await renderToStreamResponse(App, { request, signal: request.signal });
+    const headers = new Headers(rendered.headers);
+    headers.set('Content-Type', 'text/html; charset=utf-8');
+    return new Response(rendered.body, { status: rendered.status ?? 200, headers });
+  } catch (error) {
+    if (error instanceof Response) return error;
+    throw error;
+  }
+}
+```
+
+`head` contains `head()` calls made while preparing the shell. Insert it into your document template before streaming the body. Metadata generated only inside a deferred Suspense view arrives after the response begins and cannot change HTTP headers or the document head; put it in the route or shell instead. `renderToStream()` keeps its synchronous stream-returning API for pages that do not need metadata.
+
 ## End-to-end recipes
 
 ### Node 18+ HTTP server
@@ -264,7 +289,7 @@ Contract:
 - `head()` is **server-only in Phase 1** — it's a no-op on the client. The browser already shows the SSR-rendered `<head>`; reactive client-side head element management lands in a follow-up ADR.
 - `extractHead: false` (the default) preserves the legacy `Promise<string>` return — apps that don't use `head()` are unaffected.
 - The collected HTML is the **final render pass's** output, so resource-dependent values (`head(ssrHtml\`<title>${() => res()}</title>\`)`) show resolved values, not the loading placeholder.
-- `renderToStream` does **not** consume `head()` calls — the shell flushes before the head accumulator finishes. Stream-friendly head() is a follow-up.
+- `renderToStreamResponse()` returns shell-level `head()` output before the first byte is sent. The caller inserts it into the document template; deferred Suspense views cannot add to it.
 
 ### Request context (ADR 0009)
 

@@ -85,6 +85,15 @@ Custom Node or edge adapters can call `renderToString(App, { request,
 extractResponse: true })` and send the returned `body`, optional `status`, and
 optional `headers`. `extractHead: true` also includes the response metadata.
 
+For progressive SSR, `await renderToStreamResponse(App, { request })` returns
+`{ body, head, status?, headers? }` after the shell is ready and before any
+bytes are sent. An adapter can use the status and headers for the HTTP response,
+insert `head` into its document template, then stream `body`. A loader's Web
+`Response` is returned as a rejection before the stream begins; catch and send
+that response directly. Status, headers, and head content must be produced by
+the shell. Deferred Suspense views run after the first flush and cannot change
+the response metadata.
+
 Static pages must render with status 200 and no response headers. The build
 reports an error if a static loader returns a `Response` or sets status or
 headers. Use server mode for redirects, cookies, and request-time cache rules.

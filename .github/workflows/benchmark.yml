@@ -46,16 +46,16 @@ jobs:
 
       - name: Build core + vite-plugin
         run: |
-          cd packages/core && npx vite build
-          cd ../vite-plugin && npx vite build
+          npm run build -w packages/core
+          npm run build -w packages/vite-plugin
 
       - name: Build benchmark (AOT compiles Purity templates)
-        # Vite build with @purityjs/vite-plugin transforms html`` → direct DOM calls
+        # Vite+ build with @purityjs/vite-plugin transforms html`` → direct DOM calls
         # Also builds the Purity report app for GitHub Pages
-        run: cd benchmark && npx vite build
+        run: npm run build -w benchmark
 
       - name: Start production preview server
-        run: cd benchmark && npx vite preview --port 4173 &
+        run: npm run preview -w benchmark -- --port 4173 &
 
       - name: Wait for server to be ready
         run: sleep 3

@@ -41,10 +41,10 @@ jobs:
 
       # Full CI checks before publish
       - name: Format check (Oxfmt — Vite+)
-        run: npx oxfmt --check .
+        run: npm run format:check
 
       - name: Lint (Oxlint — Vite+)
-        run: npx oxlint
+        run: npm run lint
 
       - name: Type-check
         run: npx tsc --noEmit -p packages/core

@@ -31,6 +31,8 @@ export interface LayoutEntry {
 export interface RouteEntry {
   /** URL pattern in `matchRoute()` syntax (`:name`, `*` splat). */
   pattern: string;
+  /** Page rendering mode read from a literal `renderMode` export at build time. */
+  renderMode?: 'static' | 'server' | 'client';
   /** Path of the route module relative to the routes directory, with extension. */
   filePath: string;
   /**
@@ -50,6 +52,44 @@ export interface RouteEntry {
    * Always literal `true` when present; absent ≡ no loader detected.
    */
   hasLoader?: true;
+}
+
+/** Read route rendering mode without executing the page module in Node. */
+export function detectRenderModeExport(source: string): 'static' | 'server' | 'client' | undefined {
+  const stripped = source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/.*$/gm, '');
+  const declaration =
+    /^[ \t]*export[ \t]+(?:(?:const|let|var)[ \t]+renderMode\b|\{[^}]*\brenderMode\b)/m.exec(
+      stripped,
+    );
+  if (!declaration) return undefined;
+  const literal =
+    /^[ \t]*export[ \t]+const[ \t]+renderMode(?:[ \t]*:[ \t]*[A-Za-z_$][\w$]*)?[ \t]*=[ \t]*(['"])(static|server|client)\1(?:[ \t]+as[ \t]+const)?[ \t]*;?[ \t]*(?:\/\/.*)?$/m.exec(
+      stripped,
+    );
+  if (!literal) {
+    throw new Error('renderMode must be exported as a static, server, or client string literal');
+  }
+  return literal[2] as 'static' | 'server' | 'client';
+}
+
+/** Add page render modes to the manifest using source text only. */
+export function attachRenderModeInfo(
+  manifest: RouteManifest,
+  readSource: (filePath: string) => string | null,
+): RouteManifest {
+  for (const route of manifest.routes) {
+    const source = readSource(route.filePath);
+    if (source === null) throw new Error(`Cannot read route module ${route.filePath}`);
+    try {
+      const mode = detectRenderModeExport(source);
+      if (mode) route.renderMode = mode;
+    } catch (error) {
+      throw new Error(`Invalid renderMode in ${route.filePath}: ${(error as Error).message}`, {
+        cause: error,
+      });
+    }
+  }
+  return manifest;
 }
 
 /** Output of `buildRouteManifest` — routes plus 404 chain + back-compat root alias. */
@@ -641,9 +681,12 @@ export function generateRouteManifestTypes(
       ? `; readonly errorBoundary: ${entryTypeLiteral(e.errorBoundary, absPathFor)}`
       : '';
     const loaderPart = e.hasLoader ? '; readonly hasLoader: true' : '';
+    const renderModePart = e.renderMode
+      ? `; readonly renderMode: ${jsStringLiteral(e.renderMode)}`
+      : '';
     // codeql[js/bad-code-sanitization]
     lines.push(
-      `    { readonly pattern: ${pattern}; readonly filePath: ${filePath}; readonly importFn: () => Promise<typeof import(${abs})>; readonly layouts: readonly [${layouts}]${errorPart}${loaderPart} },`,
+      `    { readonly pattern: ${pattern}${renderModePart}; readonly filePath: ${filePath}; readonly importFn: () => Promise<typeof import(${abs})>; readonly layouts: readonly [${layouts}]${errorPart}${loaderPart} },`,
     );
   }
   lines.push('  ];');
@@ -681,9 +724,10 @@ export function generateRouteManifestSource(
       ? `, errorBoundary: ${entryLiteral(e.errorBoundary, absPathFor)}`
       : '';
     const loaderPart = e.hasLoader ? ', hasLoader: true' : '';
+    const renderModePart = e.renderMode ? `, renderMode: ${jsStringLiteral(e.renderMode)}` : '';
     // codeql[js/bad-code-sanitization]
     lines.push(
-      `  { pattern: ${pattern}, filePath: ${filePath}, importFn: () => import(${abs}), layouts: [${layouts}]${errorPart}${loaderPart} },`,
+      `  { pattern: ${pattern}${renderModePart}, filePath: ${filePath}, importFn: () => import(${abs}), layouts: [${layouts}]${errorPart}${loaderPart} },`,
     );
   }
   lines.push('];');

@@ -27,6 +27,23 @@ npm run build
 npm start
 ```
 
+For an app that chooses static HTML, per-request HTML, or browser rendering
+per page, use `--app`:
+
+```bash
+npx @purityjs/cli my-site --app
+cd my-site
+npm install
+npm run build
+npm start
+```
+
+Set `renderMode` in each `src/pages/` module to `static`, `server`, or
+`client`. Dynamic static pages list their paths in `src/static-paths.ts`, which
+only runs during the build. `dist/client/` holds generated HTML and client
+assets; `dist/server.js` serves the complete app. A fully static app can deploy
+`dist/client/` to a static host. See the generated README for details.
+
 On a Node 24+ host, deploy the generated project and run `npm ci`,
 `npm run build`, then `npm start`. If building before deployment, copy `dist/`,
 `package.json`, and `package-lock.json` to the host and run
@@ -70,6 +87,7 @@ A working counter component demonstrating `state`, `compute`, `html`, `css`, `co
 | `npm run build`     | Type-check and build with AOT |
 | `npm run preview`   | Preview production build      |
 | `npm start` (SSR)   | Run the built Node server     |
+| `npm start` (app)   | Serve all app rendering modes |
 
 ## Local Development
 

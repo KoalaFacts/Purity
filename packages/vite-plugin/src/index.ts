@@ -19,6 +19,7 @@ import { generate, generateHydrate, generateSSR, parse } from '@purityjs/core/co
 
 import {
   attachLoaderInfo,
+  attachRenderModeInfo,
   buildRouteManifest,
   generateRouteManifestSource,
   generateRouteManifestTypes,
@@ -358,14 +359,21 @@ function generateManifestSources(
   });
   // Detect named `loader` exports per ADR 0022. Reads each route +
   // layout file's contents once per build (cached internally).
-  attachLoaderInfo(manifest, (rel) => {
+  const sourceCache = new Map<string, string | null>();
+  const readRouteSource = (rel: string): string | null => {
+    if (sourceCache.has(rel)) return sourceCache.get(rel)!;
     const abs = resolvePath(dir, rel);
     try {
-      return readFileSync(abs, 'utf8');
+      const source = readFileSync(abs, 'utf8');
+      sourceCache.set(rel, source);
+      return source;
     } catch {
+      sourceCache.set(rel, null);
       return null;
     }
-  });
+  };
+  attachLoaderInfo(manifest, readRouteSource);
+  attachRenderModeInfo(manifest, readRouteSource);
   // Normalize the routes dir to POSIX separators before joining. On
   // Windows the dir is a backslash-separated absolute path; `posix.join`
   // alone would leave the backslashes intact, producing mixed-separator

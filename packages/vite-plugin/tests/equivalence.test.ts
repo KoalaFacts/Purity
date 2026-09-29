@@ -6,7 +6,7 @@
 
 import { html } from '@purityjs/core';
 import { renderCompiledTemplate } from '@purityjs/core/compiler';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
 const plugin = purity();

@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { purity } from '@purityjs/vite-plugin';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vite-plus';
 
 // Deployed at https://koalafacts.github.io/Purity/dashboard/
 // In dev (DEMO_BASE=/) the base resets so vite preview works locally.

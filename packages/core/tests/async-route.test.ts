@@ -3,7 +3,7 @@
 // Unit tests for the helper's pass-1 / pass-2 SSR behavior + the
 // loadStack composition (route + layouts + loaders + error boundary).
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import {
   asyncNotFound,

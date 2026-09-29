@@ -3,7 +3,7 @@
 // ADR 0009.
 
 import { getRequest, head, suspense } from '@purityjs/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { html as ssrHtml, renderToStream, renderToString } from '../src/index.ts';
 
 async function streamToString(stream: ReadableStream<Uint8Array>): Promise<string> {

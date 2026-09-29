@@ -8,7 +8,7 @@
 
 import { resource, suspense } from '@purityjs/core';
 import { markSSRHtml } from '@purityjs/core/compiler';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { html as ssrHtml, renderToStream } from '../src/index.ts';
 
 async function streamToString(stream: ReadableStream<Uint8Array>): Promise<string> {

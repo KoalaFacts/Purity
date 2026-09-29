@@ -15,24 +15,25 @@
     "test:browser:memory": "npm run build -w @purityjs/core && npm run build -w @purityjs/vite-plugin && node --conditions=development --experimental-strip-types benchmark/tools/memory-leak-check.ts",
     "test:published-cli": "node --experimental-strip-types packages/cli/scripts/published-smoke.ts",
     "test:browser:ssr-retention": "npm run build -w @purityjs/core && npm run build -w @purityjs/ssr && npm run build -w @purityjs/vite-plugin && npm run build -w @purityjs/cli && node --experimental-strip-types packages/ssr/tests/browser-retention.ts",
-    "format": "oxfmt .",
-    "format:check": "oxfmt --check .",
-    "lint": "oxlint --deny-warnings",
-    "lint:fix": "oxlint --fix --deny-warnings",
-    "check": "oxfmt --check . && oxlint --deny-warnings",
-    "check:fix": "oxfmt . && oxlint --fix --deny-warnings"
+    "format": "vp fmt .",
+    "format:check": "vp fmt --check .",
+    "lint": "vp lint --deny-warnings",
+    "lint:fix": "vp lint --fix --deny-warnings",
+    "check": "vp fmt --check . && vp lint --deny-warnings",
+    "check:fix": "vp fmt . && vp lint --fix --deny-warnings"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
-    "@vitest/coverage-v8": "4.1.7",
+    "@vitest/coverage-v8": "5.0.1",
+    "cross-env": "10.1.0",
     "fast-check": "4.8.0",
     "jsdom": "^29.1.1",
     "playwright": "^1.60.0",
     "source-map-js": "1.2.1",
     "typescript": "^6.0.3",
-    "vite": "^8.3.1",
-    "vite-plus": "^0.1.24",
-    "vitest": "^5.0.2"
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
+    "vite-plus": "1.0.0",
+    "vitest": "5.0.1"
   },
   "overrides": {
     "@tootallnate/once": "^2.0.1",
@@ -42,7 +43,16 @@
     "smol-toml": "^1.6.1",
     "srvx": "^0.11.16",
     "tar": "^7.5.22",
-    "undici": "^7.26.0"
+    "undici": "^7.26.0",
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
+    "vitest": "5.0.1"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "version": "^11.0.0 || ^12.0.0",
+      "onFail": "download"
+    }
   },
   "engines": {
     "node": ">=24"

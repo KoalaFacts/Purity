@@ -5,7 +5,7 @@
 // covers the client-side contract: when there's no SSRRenderContext on
 // the stack, head() is a no-op (the SSR-rendered <head> stays put).
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { head, html } from '../src/index.ts';
 import { markSSRHtml } from '../src/compiler/ssr-runtime.ts';
 import {

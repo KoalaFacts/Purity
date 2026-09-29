@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0041 — prefersColorSchemeSignal tests.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
 import { prefersColorSchemeSignal } from '../src/index.ts';
 import { _resetMediaSignalCache } from '../src/media-signal.ts';

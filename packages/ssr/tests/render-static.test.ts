@@ -5,7 +5,7 @@
 // check the returned `files` map.
 
 import { getRequest, head, resource, suspense } from '@purityjs/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { html as ssrHtml, renderStatic } from '../src/index.ts';
 
 const SHELL =

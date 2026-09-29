@@ -46,11 +46,11 @@ jobs:
 
       - name: 🔍 Format check (Oxfmt — Vite+)
         # Verifies all files are formatted; no modifications
-        run: npx oxfmt --check .
+        run: npm run format:check
 
       - name: 🔍 Lint (Oxlint — Vite+)
-        # Runs oxlint with rules from .oxlintrc.json
-        run: npx oxlint
+        # Uses the root Vite+ lint configuration.
+        run: npm run lint
 
       - name: 🔷 Type check @purityjs/core
         # Verifies TypeScript types compile without errors
@@ -69,9 +69,9 @@ jobs:
         run: npm run build -w packages/vite-plugin
 
       - name: 🏗️ Build benchmark (verifies AOT compilation)
-        # Runs vite build — proves the AOT plugin compiles html`` templates.
+        # Runs the workspace Vite+ build — proves the AOT plugin compiles html`` templates.
         # Benchmark is a workspace member so deps are already installed.
-        run: cd benchmark && npx vite build
+        run: npm run build -w benchmark
 
       - name: 🏗️ Build dashboard demo (smoke check)
         # Builds the live demo so regressions in examples/dashboard don't

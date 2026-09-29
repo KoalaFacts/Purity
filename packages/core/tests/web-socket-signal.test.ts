@@ -5,7 +5,7 @@
 // mock that records send() calls, fires open/close/error/message on
 // demand, and exposes the constructed instances.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { mount, webSocketSignal } from '../src/index.ts';
 import { _resetPageVisibilitySignal } from '../src/page-visibility-signal.ts';

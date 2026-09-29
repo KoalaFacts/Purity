@@ -172,8 +172,8 @@ any user code that already imports the SSR names (used in
 `examples/ssr/src/app.ts`'s old layout via `eachSSR`).
 
 **Compiler-time rewrite of `when` / `match` / `each` in user code
-(outside `html\`\`` templates) for SSR builds.** The Vite plugin
-already swaps codegen modes via `transformOpts.ssr`. Extending it to
+(outside `html\`\``templates) for SSR builds.** The Vite plugin
+already swaps codegen modes via`transformOpts.ssr`. Extending it to
 rewrite top-level user code calls would close the gap at build time.
 Rejected: the rewrite needs an AST parser pass to identify top-level
 vs. inside-template calls vs. references in dead code, and gives no

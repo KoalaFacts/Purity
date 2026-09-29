@@ -4,7 +4,7 @@
 // jsdom doesn't ship startViewTransition or matchMedia for prefers-
 // reduced-motion, so we stub them per-test to exercise each branch.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { manageNavTransitions, navigate } from '../src/index.ts';
 
 let teardown: (() => void) | null = null;

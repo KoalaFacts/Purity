@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0042 — networkInformationSignal tests.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
 import { networkInformationSignal } from '../src/index.ts';
 import { _resetNetworkInformationSignal } from '../src/network-information-signal.ts';

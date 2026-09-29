@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0041 — devicePixelRatioSignal tests.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
 import { devicePixelRatioSignal } from '../src/index.ts';
 import { _resetDevicePixelRatioSignal } from '../src/device-pixel-ratio-signal.ts';

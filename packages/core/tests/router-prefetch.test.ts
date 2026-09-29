@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0029 — prefetchManifestLinks() tests.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { configureNavigation, navigate, prefetchManifestLinks } from '../src/index.ts';
 

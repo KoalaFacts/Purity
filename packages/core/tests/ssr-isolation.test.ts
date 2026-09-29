@@ -13,7 +13,7 @@
 // covered in each primitive's own test file; here we assert the ONE rule
 // that, if upheld everywhere, makes SSR cross-request leakage impossible.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import {
   batterySignal,

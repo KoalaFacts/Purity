@@ -5,7 +5,7 @@
   "description": "Vite SSR-builds `src/serve.ts` to `dist/serve.js`; Deno runs the built artefact via `deno run --allow-net dist/serve.js`. The Vite build is needed to AOT-compile every `html\\`\\`` template into a string-builder factory (Deno has no `document`).",
   "type": "module",
   "scripts": {
-    "build": "NODE_OPTIONS='--conditions=development' vite build --logLevel info",
+    "build": "cross-env NODE_OPTIONS=--conditions=development vp build --logLevel info",
     "dev": "npm run build && deno run --allow-net dist/serve.js",
     "deploy": "echo 'Push dist/serve.js (built via npm run build) to Deno Deploy.'"
   },
@@ -15,6 +15,6 @@
   },
   "devDependencies": {
     "@purityjs/vite-plugin": "*",
-    "vite": "^8.3.1"
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0"
   }
 }

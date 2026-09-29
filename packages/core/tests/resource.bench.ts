@@ -6,7 +6,7 @@
 // time. Use these to track regressions, not as cross-framework claims.
 // ---------------------------------------------------------------------------
 
-import { bench, describe } from 'vitest';
+import { describe, test } from 'vite-plus/test';
 import { debounced, type DebouncedAccessor } from '../src/debounced.ts';
 import {
   lazyResource,
@@ -18,197 +18,223 @@ import { state, type StateAccessor, watch } from '../src/signals.ts';
 import { tick } from './_helpers.ts';
 
 describe('resource — construction', () => {
-  bench('construct + initial sync resolve', async () => {
-    const r = resource(() => 1);
-    r.dispose();
+  test('construct + initial sync resolve', async ({ bench }) => {
+    await bench('construct + initial sync resolve', async () => {
+      const r = resource(() => 1);
+      r.dispose();
+    }).run();
   });
 
-  bench('construct + initial async resolve', async () => {
-    const r = resource(() => Promise.resolve(1));
-    await tick();
-    await tick();
-    r.dispose();
+  test('construct + initial async resolve', async ({ bench }) => {
+    await bench('construct + initial async resolve', async () => {
+      const r = resource(() => Promise.resolve(1));
+      await tick();
+      await tick();
+      r.dispose();
+    }).run();
   });
 
-  bench('construct (source form) + dispose, no fetch', () => {
-    const r = resource(
-      () => null,
-      (k) => Promise.resolve(k),
-    );
-    r.dispose();
+  test('construct (source form) + dispose, no fetch', async ({ bench }) => {
+    await bench('construct (source form) + dispose, no fetch', () => {
+      const r = resource(
+        () => null,
+        (k) => Promise.resolve(k),
+      );
+      r.dispose();
+    }).run();
   });
 });
 
 describe('resource — fetch round-trip', () => {
-  let id: StateAccessor<number>;
-  let r: ResourceAccessor<number>;
-
-  bench(
-    '1 dep change → fetch → resolve',
-    async () => {
-      id(id.peek() + 1);
-      await tick();
-      await tick();
-    },
-    {
-      setup: async () => {
-        id = state(0);
-        r = resource(
-          () => id(),
-          (k) => Promise.resolve(k * 2),
-        );
+  test('1 dep change → fetch → resolve', async ({ bench }) => {
+    let id: StateAccessor<number>;
+    let r: ResourceAccessor<number>;
+    await bench(
+      '1 dep change → fetch → resolve',
+      {
+        beforeAll: async () => {
+          id = state(0);
+          r = resource(
+            () => id(),
+            (k) => Promise.resolve(k * 2),
+          );
+          await tick();
+        },
+        afterAll: () => r.dispose(),
+      },
+      async () => {
+        id(id.peek() + 1);
+        await tick();
         await tick();
       },
-      teardown: () => r.dispose(),
-    },
-  );
+    ).run();
+  });
 
-  bench(
-    '10 rapid dep changes → 1 winning resolve',
-    async () => {
-      for (let i = 1; i <= 10; i++) id(id.peek() + 1);
-      await tick();
-      await tick();
-    },
-    {
-      setup: async () => {
-        id = state(0);
-        r = resource(
-          () => id(),
-          (k) => Promise.resolve(k * 2),
-        );
+  test('10 rapid dep changes → 1 winning resolve', async ({ bench }) => {
+    let id: StateAccessor<number>;
+    let r: ResourceAccessor<number>;
+    await bench(
+      '10 rapid dep changes → 1 winning resolve',
+      {
+        beforeAll: async () => {
+          id = state(0);
+          r = resource(
+            () => id(),
+            (k) => Promise.resolve(k * 2),
+          );
+          await tick();
+        },
+        afterAll: () => r.dispose(),
+      },
+      async () => {
+        for (let i = 1; i <= 10; i++) id(id.peek() + 1);
+        await tick();
         await tick();
       },
-      teardown: () => r.dispose(),
-    },
-  );
+    ).run();
+  });
 });
 
 describe('resource — reactive read overhead', () => {
-  let r: ResourceAccessor<number>;
-  let stops: Array<() => void> = [];
-
-  bench(
-    '100 watchers on a resolved resource',
-    () => {
-      stops = [];
-      for (let i = 0; i < 100; i++) {
-        stops.push(
-          watch(() => {
-            r();
-            r.loading();
-            r.error();
-          }),
-        );
-      }
-      for (const s of stops) s();
-    },
-    {
-      setup: async () => {
-        r = resource(() => Promise.resolve(42));
-        await tick();
+  test('100 watchers on a resolved resource', async ({ bench }) => {
+    let r: ResourceAccessor<number>;
+    await bench(
+      '100 watchers on a resolved resource',
+      {
+        beforeAll: async () => {
+          r = resource(() => Promise.resolve(42));
+          await tick();
+        },
+        afterAll: () => r.dispose(),
       },
-      teardown: () => r.dispose(),
-    },
-  );
+      () => {
+        const stops: Array<() => void> = [];
+        for (let i = 0; i < 100; i++) {
+          stops.push(
+            watch(() => {
+              r();
+              r.loading();
+              r.error();
+            }),
+          );
+        }
+        for (const stop of stops) stop();
+      },
+    ).run();
+  });
 });
 
 describe('resource — mutate / refresh', () => {
-  let r: ResourceAccessor<number>;
+  test('mutate(value)', async ({ bench }) => {
+    let r: ResourceAccessor<number>;
+    await bench(
+      'mutate(value)',
+      {
+        beforeAll: async () => {
+          r = resource(() => Promise.resolve(0));
+          await tick();
+        },
+        afterAll: () => r.dispose(),
+      },
+      () => {
+        r.mutate(99);
+      },
+    ).run();
+  });
 
-  bench(
-    'mutate(value)',
-    () => {
-      r.mutate(99);
-    },
-    {
-      setup: async () => {
-        r = resource(() => Promise.resolve(0));
+  test('refresh() round-trip', async ({ bench }) => {
+    let r: ResourceAccessor<number>;
+    await bench(
+      'refresh() round-trip',
+      {
+        beforeAll: async () => {
+          r = resource(() => Promise.resolve(0));
+          await tick();
+        },
+        afterAll: () => r.dispose(),
+      },
+      async () => {
+        r.refresh();
+        await tick();
         await tick();
       },
-      teardown: () => r.dispose(),
-    },
-  );
-
-  bench(
-    'refresh() round-trip',
-    async () => {
-      r.refresh();
-      await tick();
-      await tick();
-    },
-    {
-      setup: async () => {
-        r = resource(() => Promise.resolve(0));
-        await tick();
-      },
-      teardown: () => r.dispose(),
-    },
-  );
+    ).run();
+  });
 });
 
 describe('lazyResource', () => {
-  bench('construct (no fetch)', () => {
-    const r = lazyResource((args: number) => Promise.resolve(args));
-    r.dispose();
+  test('construct (no fetch)', async ({ bench }) => {
+    await bench('construct (no fetch)', () => {
+      const r = lazyResource((args: number) => Promise.resolve(args));
+      r.dispose();
+    }).run();
   });
 
-  let r: LazyResourceAccessor<number, number>;
-  bench(
-    'fetch(args) → resolve',
-    async () => {
-      r.fetch(1);
-      await tick();
-      await tick();
-    },
-    {
-      setup: () => {
-        r = lazyResource((args: number) => Promise.resolve(args));
+  test('fetch(args) → resolve', async ({ bench }) => {
+    let r: LazyResourceAccessor<number, number>;
+    await bench(
+      'fetch(args) → resolve',
+      {
+        beforeAll: () => {
+          r = lazyResource((args: number) => Promise.resolve(args));
+        },
+        afterAll: () => r.dispose(),
       },
-      teardown: () => r.dispose(),
-    },
-  );
+      async () => {
+        r.fetch(1);
+        await tick();
+        await tick();
+      },
+    ).run();
+  });
 });
 
 describe('debounced', () => {
-  bench('construct + dispose (no updates)', () => {
-    const s = state(0);
-    const d = debounced(s, 100);
-    d.dispose();
+  test('construct + dispose (no updates)', async ({ bench }) => {
+    await bench('construct + dispose (no updates)', () => {
+      const s = state(0);
+      const d = debounced(s, 100);
+      d.dispose();
+    }).run();
   });
 
-  let s: StateAccessor<number>;
-  let d: DebouncedAccessor<number>;
-
-  bench(
-    '1 source update (timer scheduled)',
-    async () => {
-      s(s.peek() + 1);
-      await tick();
-    },
-    {
-      setup: () => {
-        s = state(0);
-        d = debounced(s, 100);
-        void d();
+  test('1 source update (timer scheduled)', async ({ bench }) => {
+    let s: StateAccessor<number>;
+    let d: DebouncedAccessor<number>;
+    await bench(
+      '1 source update (timer scheduled)',
+      {
+        beforeAll: () => {
+          s = state(0);
+          d = debounced(s, 100);
+          void d();
+        },
+        afterAll: () => d.dispose(),
       },
-      teardown: () => d.dispose(),
-    },
-  );
-
-  bench(
-    '100 rapid source updates (coalesced)',
-    async () => {
-      for (let i = 0; i < 100; i++) s(s.peek() + 1);
-      await tick();
-    },
-    {
-      setup: () => {
-        s = state(0);
-        d = debounced(s, 100);
-        void d();
+      async () => {
+        s(s.peek() + 1);
+        await tick();
       },
-      teardown: () => d.dispose(),
-    },
-  );
+    ).run();
+  });
+
+  test('100 rapid source updates (coalesced)', async ({ bench }) => {
+    let s: StateAccessor<number>;
+    let d: DebouncedAccessor<number>;
+    await bench(
+      '100 rapid source updates (coalesced)',
+      {
+        beforeAll: () => {
+          s = state(0);
+          d = debounced(s, 100);
+          void d();
+        },
+        afterAll: () => d.dispose(),
+      },
+      async () => {
+        for (let i = 0; i < 100; i++) s(s.peek() + 1);
+        await tick();
+      },
+    ).run();
+  });
 });

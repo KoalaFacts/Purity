@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
 // Tests for the *.server.{ts,js,tsx,jsx} client-bundle strip — ADR 0018.

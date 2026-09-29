@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0039 — pageLifecycleSignal tests.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
 import { pageLifecycleSignal } from '../src/index.ts';
 import { _resetPageLifecycleSignal } from '../src/page-lifecycle-signal.ts';

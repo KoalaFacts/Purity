@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Tests for manageNavAnnounce() — ADR 0045.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { manageNavAnnounce, navigate } from '../src/index.ts';
 
 const DEFAULT_ID = '__purity_announce__';

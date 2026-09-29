@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0041 — onlineSignal tests.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { onlineSignal, watch } from '../src/index.ts';
 import { _resetOnlineSignal } from '../src/online-signal.ts';

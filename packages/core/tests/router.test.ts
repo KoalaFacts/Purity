@@ -5,7 +5,7 @@
 // covers history integration; server-side path resolution from a Request is
 // covered in @purityjs/ssr's router test file.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import {
   currentHash,
   currentPath,
@@ -490,7 +490,7 @@ describe('navigate() — audit-v2 fix #3: in-flight no-op-and-warn', () => {
     // microtask is mid-flight when the user double-clicks a link.
     // Without the in-flight latch, the second call races the History/
     // signal update. Fix: second call no-ops + warns.
-    const { vi } = await import('vitest');
+    const { vi } = await import('vite-plus/test');
     // Establish a known baseline so we don't depend on prior-test state.
     navigate('/baseline');
     expect(currentPath()).toBe('/baseline');

@@ -9,7 +9,7 @@
 //      assignments — if the type is wrong, the suppression fails the
 //      compile.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 
 import type { RouteParams } from '../src/route-params.ts';
 

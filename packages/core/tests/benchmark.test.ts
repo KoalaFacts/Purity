@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { each, match, when } from '../src/control.ts';
 import { batch, compute, state, watch } from '../src/signals.ts';
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -284,9 +284,9 @@ describe('5. template rendering', () => {
 
   it('1k complex elements — runtime html() vs hoisted (AOT-equivalent)', () => {
     // Runtime path: html`` does WeakMap.get for the cached compiled fn, then invokes.
-    const runtimeElapsed = bench('1k complex via runtime html()', () => {
+    const runtimeWork = () => {
       for (let i = 0; i < 1000; i++) html`<div><span>Hello ${String(i)}</span></div>`;
-    });
+    };
 
     // AOT-equivalent: hoisted compiled fn invoked directly (what the Vite
     // plugin produces after the template-hoisting fix).
@@ -300,18 +300,25 @@ describe('5. template rendering', () => {
         return _r;
       };
     })();
-    const aotElapsed = bench('1k complex via hoisted (AOT-equivalent)', () => {
+    const aotWork = () => {
       for (let i = 0; i < 1000; i++) tplFactory([String(i)]);
-    });
+    };
 
-    console.log(
-      `    → runtime: ${(runtimeElapsed / 1000).toFixed(3)}ms/el | AOT: ${(aotElapsed / 1000).toFixed(3)}ms/el`,
-    );
+    // Pair measurements so one noisy CI timeslice cannot decide the result.
+    const ratios: number[] = [];
+    for (let sample = 0; sample < 5; sample++) {
+      const runtimeElapsed = bench('1k complex via runtime html()', runtimeWork);
+      const aotElapsed = bench('1k complex via hoisted (AOT-equivalent)', aotWork);
+      ratios.push(aotElapsed / runtimeElapsed);
+    }
+    ratios.sort((a, b) => a - b);
+    const medianRatio = ratios[2];
+    console.log(`    → median AOT/runtime ratio: ${medianRatio.toFixed(2)}x`);
     // AOT should be no slower than runtime path (runtime adds WeakMap.get + indirection).
     // Slack 2.5x because shared-CI runners + jsdom + cold-JIT make the
     // delta noisy; the regression we'd catch (AOT 5–10x slower than
     // runtime) still trips this comfortably.
-    expect(aotElapsed).toBeLessThan(runtimeElapsed * 2.5);
+    expect(medianRatio).toBeLessThan(2.5);
   });
 
   it('100 with reactive + event bindings', () => {
@@ -376,7 +383,7 @@ describe('6. list rendering', () => {
         () => items(),
         (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
-      ),
+      ) as DocumentFragment,
     );
     await tick();
 
@@ -396,7 +403,7 @@ describe('6. list rendering', () => {
         () => items(),
         (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
-      ),
+      ) as DocumentFragment,
     );
     await tick();
 
@@ -419,7 +426,7 @@ describe('6. list rendering', () => {
         () => items(),
         (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
-      ),
+      ) as DocumentFragment,
     );
     await tick();
 
@@ -439,7 +446,7 @@ describe('6. list rendering', () => {
         () => items(),
         (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
-      ),
+      ) as DocumentFragment,
     );
     await tick();
 
@@ -465,7 +472,7 @@ describe('6. list rendering', () => {
         () => items(),
         (item) => html`<li>${item().text}</li>`,
         (item) => item.id,
-      ),
+      ) as DocumentFragment,
     );
     await tick();
 

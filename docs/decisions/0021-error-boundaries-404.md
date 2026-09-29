@@ -125,7 +125,7 @@ async function loadStack(entry: (typeof routes)[number], params) {
 function App() {
   for (const entry of routes) {
     const m = matchRoute(entry.pattern);
-    if (m) return /* lazyResource around loadStack(entry, m.params) */;
+    if (m) return; /* lazyResource around loadStack(entry, m.params) */
   }
   // No route matched — render the manifest's notFound when present.
   if (notFound) {

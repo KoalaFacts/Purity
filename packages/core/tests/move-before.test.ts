@@ -14,7 +14,7 @@
 // Element.prototype before module init isn't workable through Vitest's
 // static import graph.
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { mount } from '../src/component.ts';
 import { each } from '../src/control.ts';
 import { component } from '../src/elements.ts';

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { ComponentContext, mount, onDispose, popContext, pushContext } from '../src/component.ts';
 import { each, inflateDeferredEach, list, match, type DeferredEach } from '../src/control.ts';

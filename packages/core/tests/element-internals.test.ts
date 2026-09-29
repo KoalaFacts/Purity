@@ -4,7 +4,7 @@
 // no `.states` — we polyfill it once per file with a plain `Set` (the spec
 // defines CustomStateSet as Set-like so the shape matches).
 
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { bindComponentState, mount, onDispose } from '../src/component.ts';
 import { component, internals } from '../src/elements.ts';
 import { html } from '../src/compiler/compile.ts';

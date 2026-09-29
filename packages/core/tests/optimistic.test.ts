@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0049 — optimistic() wrapper tests.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { optimistic, query, serverAction } from '../src/index.ts';
 import { _resetQueryCache, type QueryKey } from '../src/query.ts';

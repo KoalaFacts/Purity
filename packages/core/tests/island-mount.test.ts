@@ -6,7 +6,7 @@
 // hydration per the wrapper's data-pi-trigger. Phase 2 implements 'load'
 // and 'visible'; the other triggers fall back to 'load' until Phase 4.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { island } from '../src/island.ts';
 import { mountIslands } from '../src/island-mount.ts';

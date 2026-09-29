@@ -14,7 +14,7 @@
 //   - Re-running on the same id is a no-op (template already consumed)
 //   - Source string mirrors the typed function exactly
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { __purity_swap, PURITY_SWAP_SOURCE } from '../src/__purity_swap.ts';
 
 function setupBoundary(id: number, fallbackHTML: string, resolvedHTML: string): void {

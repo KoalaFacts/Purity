@@ -14,7 +14,7 @@
 //     pairing). HIGH from the deep audit; the invariant was previously
 //     uncovered.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
 import {
   consumeHydrationValue,

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0039 — broadcastSignal tests.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { broadcastSignal, watch } from '../src/index.ts';
 import { _resetBroadcastSignalRegistry } from '../src/broadcast-signal.ts';

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0039 — localSignal tests.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { localSignal, watch } from '../src/index.ts';
 import { _resetLocalSignalRegistry } from '../src/local-signal.ts';

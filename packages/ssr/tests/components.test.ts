@@ -1,5 +1,5 @@
 import { component, css, slot, state } from '@purityjs/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { html, renderToString } from '../src/index.ts';
 
 // Each test registers a component with a unique static tag so the parser can

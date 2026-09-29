@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ADR 0039 — bfcacheRestoreSignal tests.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { bfcacheRestoreSignal, watch } from '../src/index.ts';
 import { _resetBfcacheRestoreSignal } from '../src/bfcache-restore-signal.ts';

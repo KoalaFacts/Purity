@@ -38,3 +38,4 @@ examples/docs-site/src/docs.generated.json
 
 # AI
 .agent/
+.vitest/

@@ -37,6 +37,7 @@ jobs:
       - name: Build framework packages
         run: |
           npm run build -w @purityjs/core
+          npm run build -w @purityjs/ssr
           npm run build -w @purityjs/vite-plugin
 
       - name: Build documentation, dashboard, and benchmark report

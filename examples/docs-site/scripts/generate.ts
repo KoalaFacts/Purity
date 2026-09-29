@@ -1,6 +1,9 @@
 import { statSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+import { head } from '@purityjs/core';
+import { markSSRHtml } from '@purityjs/core/compiler';
+import { html, renderStatic } from '@purityjs/ssr';
 import MarkdownIt from 'markdown-it';
 import { categories, categoryHref, type CategoryId } from '../src/categories.ts';
 
@@ -158,6 +161,35 @@ interface Page {
   sourceUrl?: string;
 }
 
+function renderPage(page: Page) {
+  head(html`<meta name="description" content=${page.description} />`);
+  head(html`<title>${page.title} | Purity docs</title>`);
+
+  const categoryTitle =
+    categories.find((category) => category.id === page.category)?.title ?? 'Browse';
+  const toc = page.headings
+    .filter((heading) => heading.level === 2 || heading.level === 3)
+    .map(
+      (heading) =>
+        html`<a class=${`toc-level-${heading.level}`} href=${`#${heading.id}`}>${heading.text}</a>`,
+    );
+  const editLink = page.sourceUrl
+    ? html`<p class="edit-link"><a href=${page.sourceUrl}>Edit this page on GitHub</a></p>`
+    : null;
+
+  // MarkdownIt disables embedded HTML, and generated category markup escapes
+  // its inputs. Only that prepared content is intentionally treated as HTML.
+  return html`
+    <main id="content" tabindex="-1">
+      <article class=${`doc-article${page.slug ? '' : ' doc-home'}`}>
+        <div class="article-meta">${categoryTitle}</div>
+        ${markSSRHtml(page.html)}${editLink}
+      </article>
+    </main>
+    <aside class="toc" aria-label="On this page">${toc}</aside>
+  `;
+}
+
 async function loadPages(): Promise<Page[]> {
   const pages: Page[] = [];
   for (const source of sources) {
@@ -171,12 +203,15 @@ async function loadPages(): Promise<Page[]> {
       .replace(/\s+/g, ' ')
       .trim();
     const description = plain.replace(title, '').trim().slice(0, 170);
-    let html = markdown.render(
+    let renderedMarkdown = markdown.render(
       body,
       env as unknown as NonNullable<Parameters<typeof markdown.render>[1]>,
     );
     if (source.slug === '') {
-      html = html.replace('<p>[LIVE_EXAMPLE]</p>', '<div id="live-example"></div>');
+      renderedMarkdown = renderedMarkdown.replace(
+        '<p>[LIVE_EXAMPLE]</p>',
+        '<div id="live-example"></div>',
+      );
     }
     const repoPath = relative(repo, source.file).replaceAll('\\', '/');
     pages.push({
@@ -187,7 +222,7 @@ async function loadPages(): Promise<Page[]> {
       category: source.category,
       description,
       search: plain.toLowerCase().slice(0, 2800),
-      html,
+      html: renderedMarkdown,
       headings: env.headings,
       sourceUrl: `${github}/blob/main/${repoPath}`,
     });
@@ -263,40 +298,51 @@ if (process.argv.includes('--manifest')) {
 } else if (process.argv.includes('--pages')) {
   const dist = join(site, 'dist');
   const template = await readFile(join(dist, 'index.html'), 'utf8');
-  for (const page of pages) {
-    const toc = page.headings
-      .filter((heading) => heading.level === 2 || heading.level === 3)
-      .map(
-        (heading) =>
-          `<a class="toc-level-${heading.level}" href="#${escapeHtml(heading.id)}">${escapeHtml(heading.text)}</a>`,
-      )
-      .join('');
-    const categoryTitle =
-      categories.find((category) => category.id === page.category)?.title ?? 'Browse';
-    const editLink = page.sourceUrl
-      ? `<p class="edit-link"><a href="${escapeHtml(page.sourceUrl)}">Edit this page on GitHub</a></p>`
-      : '';
-    const article = `<article class="doc-article${page.slug ? '' : ' doc-home'}"><div class="article-meta">${escapeHtml(categoryTitle)}</div>${page.html}${editLink}</article>`;
-    const output = template
-      .replace('__PURITY_DOC_TITLE__', escapeHtml(`${page.title} | Purity docs`))
-      .replace('__PURITY_DOC_DESCRIPTION__', escapeHtml(page.description))
-      .replace('__PURITY_DOC_ARTICLE__', article)
-      .replace('__PURITY_DOC_TOC__', toc);
-    const path = join(dist, page.slug, 'index.html');
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, output);
+  const contentStart = template.indexOf('<main id="content"');
+  const contentEnd = template.indexOf('</aside>', contentStart) + '</aside>'.length;
+  if (contentStart < 0 || contentEnd < '</aside>'.length) {
+    throw new Error('Docs shell is missing its main and table of contents');
   }
-  await writeFile(
-    join(dist, '404.html'),
-    template
-      .replace('__PURITY_DOC_TITLE__', 'Page not found | Purity docs')
-      .replace('__PURITY_DOC_DESCRIPTION__', 'Return to the Purity documentation.')
-      .replace(
-        '__PURITY_DOC_ARTICLE__',
-        `<article class="doc-article"><h1>Page not found</h1><p>That documentation page is unavailable.</p><p><a href="${base}">Go to the docs home</a></p></article>`,
-      )
-      .replace('__PURITY_DOC_TOC__', ''),
-  );
+  const shellTemplate = template
+    .slice(0, contentStart)
+    .concat('{{body}}', template.slice(contentEnd))
+    .replace('<meta name="description" content="__PURITY_DOC_DESCRIPTION__" />', '{{head}}')
+    .replace('<title>__PURITY_DOC_TITLE__</title>', '');
+  if (!shellTemplate.includes('{{head}}')) throw new Error('Docs shell is missing its head slot');
+
+  const notFound: Page = {
+    slug: '404',
+    href: `${base}404/`,
+    title: 'Page not found',
+    navTitle: 'Page not found',
+    category: null,
+    description: 'Return to the Purity documentation.',
+    search: '',
+    html: `<h1>Page not found</h1><p>That documentation page is unavailable.</p><p><a href="${base}">Go to the docs home</a></p>`,
+    headings: [],
+  };
+  const byHref = new Map([...pages, notFound].map((page) => [page.href, page]));
+  const { errors } = await renderStatic({
+    routes: [...byHref.keys()],
+    baseUrl: 'https://koalafacts.github.io',
+    shellTemplate,
+    concurrency: 8,
+    handler: (request) => {
+      const page = byHref.get(new URL(request.url).pathname);
+      if (!page) throw new Error(`Missing documentation route: ${request.url}`);
+      return () => renderPage(page);
+    },
+    onRoute: async (route, output) => {
+      const page = byHref.get(route)!;
+      const path = page === notFound ? join(dist, '404.html') : join(dist, page.slug, 'index.html');
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, output);
+    },
+  });
+  if (errors.size) {
+    for (const [route, error] of errors) console.error(`Failed to render ${route}:`, error);
+    throw new Error(`${errors.size} documentation pages failed to render`);
+  }
   await writeFile(
     join(dist, 'sitemap.xml'),
     `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${pages.map((page) => `<url><loc>https://koalafacts.github.io${page.href}</loc></url>`).join('')}</urlset>`,

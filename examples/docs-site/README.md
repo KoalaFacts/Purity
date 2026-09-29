@@ -1,6 +1,6 @@
 # Purity documentation site
 
-The public site lives at [koalafacts.github.io/Purity/docs/](https://koalafacts.github.io/Purity/docs/). Purity renders the search, navigation, and live example. The build converts the repository's Markdown guides and architecture decisions into static HTML so direct links work without a client router.
+The public site lives at [koalafacts.github.io/Purity/docs/](https://koalafacts.github.io/Purity/docs/). The build converts the repository's Markdown guides and architecture decisions into HTML, then uses Purity SSR and `renderStatic()` to pre-render every route, including category pages and the 404 page. Direct links work without a client router. Purity renders the search, navigation, and live example in the browser.
 
 Run `npm run build -w examples/docs-site` from the repository root. The output is `examples/docs-site/dist/`. Run `npm run preview -w examples/docs-site` to inspect the build locally.
 

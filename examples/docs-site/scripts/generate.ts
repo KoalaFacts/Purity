@@ -163,7 +163,8 @@ interface Page {
 
 function renderPage(page: Page) {
   head(html`<meta name="description" content=${page.description} />`);
-  head(html`<title>${page.title} | Purity docs</title>`);
+  // <title> is RCDATA: SSR hydration markers would become visible title text.
+  head(markSSRHtml(`<title>${escapeHtml(page.title)} | Purity docs</title>`));
 
   const categoryTitle =
     categories.find((category) => category.id === page.category)?.title ?? 'Browse';
@@ -322,7 +323,7 @@ if (process.argv.includes('--manifest')) {
     headings: [],
   };
   const byHref = new Map([...pages, notFound].map((page) => [page.href, page]));
-  const { errors } = await renderStatic({
+  const { errors, onRouteErrors } = await renderStatic({
     routes: [...byHref.keys()],
     baseUrl: 'https://koalafacts.github.io',
     shellTemplate,
@@ -341,8 +342,14 @@ if (process.argv.includes('--manifest')) {
   });
   if (errors.size) {
     for (const [route, error] of errors) console.error(`Failed to render ${route}:`, error);
-    throw new Error(`${errors.size} documentation pages failed to render`);
   }
+  if (onRouteErrors.size) {
+    for (const [route, error] of onRouteErrors) console.error(`Failed to write ${route}:`, error);
+  }
+  if (errors.size || onRouteErrors.size)
+    throw new Error(
+      `${errors.size} documentation pages failed to render; ${onRouteErrors.size} failed to write`,
+    );
   await writeFile(
     join(dist, 'sitemap.xml'),
     `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${pages.map((page) => `<url><loc>https://koalafacts.github.io${page.href}</loc></url>`).join('')}</urlset>`,

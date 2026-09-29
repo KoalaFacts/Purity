@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node --experimental-strip-types scripts/generate.ts --manifest && tsc --noEmit && vite build && node --experimental-strip-types scripts/generate.ts --pages",
+    "build:framework": "npm run build -w @purityjs/core && npm run build -w @purityjs/ssr && npm run build -w @purityjs/vite-plugin",
+    "build": "npm run build:framework && node --experimental-strip-types scripts/generate.ts --manifest && tsc --noEmit && vite build && node --experimental-strip-types scripts/generate.ts --pages",
     "preview": "vite preview"
   },
   "dependencies": {

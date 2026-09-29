@@ -1,8 +1,14 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
+import { writeAppTemplate } from './app-template.ts';
 
 const args = process.argv.slice(2);
 const ssrMode = args.includes('--ssr');
+const appMode = args.includes('--app');
+if (ssrMode && appMode) {
+  console.error('\n  Choose either --app or --ssr.\n');
+  process.exit(1);
+}
 const positional = args.filter((a) => !a.startsWith('--'));
 const projectName = positional[0] || 'my-purity-app';
 
@@ -52,7 +58,7 @@ const coreDep = isLocal ? `file:${coreDir}` : '^0.2.4';
 const pluginDep = isLocal ? `file:${pluginDir}` : '^0.2.4';
 const ssrDep = isLocal ? `file:${ssrDir}` : '^0.2.4';
 
-console.log(`\n  Creating ${projectName}${ssrMode ? ' (SSR)' : ''}...`);
+console.log(`\n  Creating ${projectName}${appMode ? ' (app)' : ssrMode ? ' (SSR)' : ''}...`);
 if (isLocal) console.log('  Using local packages from monorepo');
 console.log('');
 
@@ -60,37 +66,50 @@ mkdirSync(projectDir, { recursive: true });
 mkdirSync(resolve(projectDir, 'src'), { recursive: true });
 
 // package.json
-const scripts = ssrMode
+const scripts = appMode
   ? {
       dev: 'node --experimental-strip-types server.ts',
-      typecheck: 'tsc --noEmit',
+      typecheck: 'node --experimental-strip-types prepare-types.ts && tsc --noEmit',
       build:
-        'npm run typecheck && npm run build:client && npm run build:server && npm run build:bootstrap',
+        'npm run typecheck && npm run build:client && npm run build:server && npm run build:bootstrap && npm run build:static',
       'build:client': 'vite build --outDir dist/client',
       'build:server': 'vite build --ssr src/entry.server.ts --outDir dist/server',
       'build:bootstrap':
         'tsc --ignoreConfig server.ts --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node --outDir dist',
+      'build:static': 'node --experimental-strip-types build.ts',
       start: 'node dist/server.js --production',
       preview: 'npm run start',
     }
-  : {
-      dev: 'vite',
-      typecheck: 'tsc --noEmit',
-      build: 'npm run typecheck && vite build',
-      preview: 'vite preview',
-    };
+  : ssrMode
+    ? {
+        dev: 'node --experimental-strip-types server.ts',
+        typecheck: 'tsc --noEmit',
+        build:
+          'npm run typecheck && npm run build:client && npm run build:server && npm run build:bootstrap',
+        'build:client': 'vite build --outDir dist/client',
+        'build:server': 'vite build --ssr src/entry.server.ts --outDir dist/server',
+        'build:bootstrap':
+          'tsc --ignoreConfig server.ts --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node --outDir dist',
+        start: 'node dist/server.js --production',
+        preview: 'npm run start',
+      }
+    : {
+        dev: 'vite',
+        typecheck: 'tsc --noEmit',
+        build: 'npm run typecheck && vite build',
+        preview: 'vite preview',
+      };
 
 const dependencies: Record<string, string> = { '@purityjs/core': coreDep };
-if (ssrMode) dependencies['@purityjs/ssr'] = ssrDep;
+if (ssrMode || appMode) dependencies['@purityjs/ssr'] = ssrDep;
 
 const devDependencies: Record<string, string> = {
   '@purityjs/vite-plugin': pluginDep,
-  vite: '^8.0.0',
-  typescript: '^6.0.0',
+  vite: '^8.3.1',
+  typescript: '^6.0.3',
 };
-// SSR mode adds `@types/node` for the server.ts boot script. Pinned to a
-// recent major; users can bump as needed.
-if (ssrMode) devDependencies['@types/node'] = '^25.0.0';
+// Server modes need Node types for their boot and build scripts.
+if (ssrMode || appMode) devDependencies['@types/node'] = '^25.9.1';
 
 writeFileSync(
   resolve(projectDir, 'package.json'),
@@ -119,16 +138,15 @@ const pluginImport = isLocal
   ? `import { purity } from ${JSON.stringify(resolve(pluginDir, 'src/index.ts'))};`
   : `import { purity } from '@purityjs/vite-plugin';`;
 
-// Alias block: SSR mode needs both `@purityjs/core/compiler` (more specific,
-// must come first) and `@purityjs/ssr`; client-only mode just aliases core.
+// Server modes need the compiler subpath before the core alias and the SSR alias.
 let aliasBlock = '';
 if (isLocal) {
   const aliases: string[] = [];
-  if (ssrMode) {
+  if (ssrMode || appMode) {
     aliases.push(`'@purityjs/core/compiler': ${JSON.stringify(coreCompilerPath)}`);
   }
   aliases.push(`'@purityjs/core': ${JSON.stringify(coreSrcPath)}`);
-  if (ssrMode) {
+  if (ssrMode || appMode) {
     aliases.push(`'@purityjs/ssr': ${JSON.stringify(ssrSrcPath)}`);
   }
   aliasBlock = `\n  resolve: {\n    alias: {\n      ${aliases.join(',\n      ')},\n    },\n  },`;
@@ -140,7 +158,7 @@ writeFileSync(
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  plugins: [purity()],${aliasBlock}
+  plugins: [purity(${appMode ? "{ routes: { dir: 'src/pages', emitTo: 'src/.purity/routes.ts' } }" : ''})],${aliasBlock}
 });
 `,
 );
@@ -157,18 +175,29 @@ writeFileSync(
         module: 'ESNext',
         moduleResolution: 'bundler',
         lib: ['ES2022', 'DOM', 'DOM.Iterable'],
-        ...(ssrMode ? { types: ['node'], allowImportingTsExtensions: true, noEmit: true } : {}),
+        ...(ssrMode || appMode
+          ? { types: ['node'], allowImportingTsExtensions: true, noEmit: true }
+          : {}),
         strict: true,
         skipLibCheck: true,
       },
-      include: ssrMode ? ['src', 'server.ts'] : ['src'],
+      include:
+        ssrMode || appMode
+          ? [
+              'src',
+              'server.ts',
+              ...(appMode ? ['build.ts', 'prepare-types.ts', 'src/.purity/routes.d.ts'] : []),
+            ]
+          : ['src'],
     },
     null,
     2,
   )}\n`,
 );
 
-if (ssrMode) {
+if (appMode) {
+  writeAppTemplate(projectDir, projectName);
+} else if (ssrMode) {
   // index.html with <!--ssr-outlet--> marker — server.ts replaces this with
   // the rendered HTML before sending the response.
   writeFileSync(
@@ -404,7 +433,8 @@ writeFileSync(
   resolve(projectDir, '.gitignore'),
   `node_modules
 dist
-`,
+*.lock
+${appMode ? 'src/.purity\n' : ''}`,
 );
 
 if (ssrMode) {

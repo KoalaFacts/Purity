@@ -182,6 +182,35 @@ actions return 404. API clients send `Origin` explicitly. Configure
 `PUBLIC_ORIGIN` or a trusted proxy for the deployment's public URL. The generated
 README describes validation responses and the request contract in more detail.
 
+### Loader cancellation
+
+Page and layout loaders share `LoaderContext.signal`. Pass it to operations
+that support cancellation:
+
+```ts
+import type { LoaderContext } from '@purityjs/core';
+
+export async function loader({ params, request, signal }: LoaderContext) {
+  const url = new URL(`/api/posts/${encodeURIComponent(params.slug)}`, request.url);
+  const response = await fetch(url, { signal });
+  return response.json();
+}
+```
+
+On the client, the signal aborts when the route's owning render scope is
+disposed, including `mount().unmount()`. A custom `asyncRoute` request's signal
+also cancels its loaders. Hiding a cached `when()` or `match()` branch does not
+dispose it and does not cancel its work.
+
+On the server, the signal is the supplied `Request.signal`. Adapters must wire
+request cancellation into that signal to propagate disconnects; a rendering
+timeout alone does not abort it.
+
+Cancellation stops the route pipeline from waiting and prevents late values,
+errors, or redirects from rendering or navigating. It cannot forcibly stop
+arbitrary promises or undo completed work. Forward the signal to `fetch` and
+other cancellable operations to stop their underlying work.
+
 ### Status and headers from a loader
 
 Use `routeData(value, { status, headers })` when a page should render with

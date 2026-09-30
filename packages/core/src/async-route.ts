@@ -121,7 +121,7 @@ export interface LoaderContext {
   request: Request;
   /** Route params from `matchRoute()` (ADR 0011). */
   params: Record<string, string>;
-  /** Abort signal — never aborts during SSR; client may abort on navigation in a future ADR. */
+  /** Cancels with the request or when the client route's render scope is disposed. */
   signal: AbortSignal;
 }
 
@@ -186,8 +186,10 @@ function defaultRequest(): Request {
 }
 
 async function callLoader(mod: AsyncModule, ctx: LoaderContext): Promise<LoaderOutcome> {
+  ctx.signal.throwIfAborted();
   if (typeof mod.loader !== 'function') return { data: undefined };
   const result: unknown = await mod.loader(ctx);
+  ctx.signal.throwIfAborted();
   if (result instanceof Response) throw result;
   if (isRouteData(result)) {
     return { data: result.value, status: result.status, headers: result.headers };
@@ -238,16 +240,59 @@ async function loadErrorBoundary(
   return errMod.default;
 }
 
-/**
- * Build the route's view-or-error-boundary as a sync factory. Returned
- * by `asyncRoute`'s lazyResource; on resolve, `() => …` is what the
- * `when()` branch invokes per render.
- */
+function clientRouteSignal(resourceSignal: AbortSignal, requestSignal: AbortSignal): AbortSignal {
+  // Forward across realms as well: custom Request objects may use a different
+  // AbortSignal implementation from the component's browser environment.
+  const controller = new AbortController();
+  const stop = () => {
+    resourceSignal.removeEventListener('abort', onResourceAbort);
+    requestSignal.removeEventListener('abort', onRequestAbort);
+  };
+  const onResourceAbort = () => {
+    stop();
+    controller.abort(resourceSignal.reason);
+  };
+  const onRequestAbort = () => {
+    stop();
+    controller.abort(requestSignal.reason);
+  };
+  resourceSignal.addEventListener('abort', onResourceAbort, { once: true });
+  requestSignal.addEventListener('abort', onRequestAbort, { once: true });
+  if (resourceSignal.aborted) onResourceAbort();
+  else if (requestSignal.aborted) onRequestAbort();
+  return controller.signal;
+}
+
+function waitForRoute<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener('abort', onAbort);
+      reject(signal.reason);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    // Keep rejection handlers attached even when cancellation wins, so late
+    // failures from imports or loaders cannot become unhandled rejections.
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
+    if (signal.aborted) onAbort();
+  });
+}
+
+/** Build the route's view-or-error-boundary factory for lazyResource. */
 async function loadStack(
   entry: AsyncRouteEntry,
   params: Record<string, string>,
   request: Request,
   serverRender: boolean,
+  resourceSignal: AbortSignal,
 ): Promise<() => unknown> {
   // Defensive shallow-freeze: loaders are user code, and a loader that
   // mutates `ctx.params` (e.g. assigning `params.id = sanitized`) would
@@ -257,38 +302,40 @@ async function loadStack(
   // The original `params` object is left untouched — callers can keep
   // mutating their own bag — but the loader sees a sealed snapshot.
   const loaderParams = Object.freeze({ ...params });
+  const signal = serverRender ? request.signal : clientRouteSignal(resourceSignal, request.signal);
   const ctx: LoaderContext = {
     request,
     params: loaderParams,
-    // Abort semantics: SSR never aborts (one-shot render), and the
-    // composer does not currently abort on client navigate-away. The
-    // signal is exposed for signature parity + future wiring; loaders
-    // can pass it to `fetch()` so adding cancellation later is a flip,
-    // not a contract change.
-    signal: new AbortController().signal,
+    signal,
   };
 
   try {
+    signal.throwIfAborted();
     // Parallel import: route module + every layout module. The plugin's
     // codegen wraps each in a static `() => import(absPath)` so Vite /
     // Rollup code-split per route.
-    const [routeMod, ...layoutMods] = (await Promise.all([
-      entry.importFn(),
-      ...entry.layouts.map((l) => l.importFn()),
-    ])) as [AsyncModule, ...AsyncModule[]];
+    const [routeMod, ...layoutMods] = (await waitForRoute(
+      Promise.all([entry.importFn(), ...entry.layouts.map((l) => l.importFn())]),
+      signal,
+    )) as [AsyncModule, ...AsyncModule[]];
+    signal.throwIfAborted();
 
     // Loader calls. Routes + layouts that opted in via `hasLoader: true`
     // get their loader awaited in parallel; others resolve to undefined.
-    const [routeResult, ...layoutResults] = await Promise.all([
-      entry.hasLoader
-        ? callLoader(routeMod, ctx)
-        : Promise.resolve<LoaderOutcome>({ data: undefined }),
-      ...entry.layouts.map((l, i) =>
-        l.hasLoader
-          ? callLoader(layoutMods[i], ctx)
+    const [routeResult, ...layoutResults] = await waitForRoute(
+      Promise.all([
+        entry.hasLoader
+          ? callLoader(routeMod, ctx)
           : Promise.resolve<LoaderOutcome>({ data: undefined }),
-      ),
-    ]);
+        ...entry.layouts.map((l, i) =>
+          l.hasLoader
+            ? callLoader(layoutMods[i], ctx)
+            : Promise.resolve<LoaderOutcome>({ data: undefined }),
+        ),
+      ]),
+      signal,
+    );
+    signal.throwIfAborted();
     const pageData = routeResult.data;
     const layoutsData = layoutResults.map((result) => result.data);
     const responseHeaders = new Headers();
@@ -308,11 +355,12 @@ async function loadStack(
     let errorView: ((e: unknown) => unknown) | null = null;
     if (entry.errorBoundary) {
       try {
-        const errMod = (await entry.errorBoundary.importFn()) as {
+        const errMod = (await waitForRoute(entry.errorBoundary.importFn(), signal)) as {
           default?: (e: unknown) => unknown;
         };
         errorView = typeof errMod?.default === 'function' ? errMod.default : null;
       } catch (importErr) {
+        signal.throwIfAborted();
         // Boundary preload failed. Log so the dev sees the underlying
         // bundler/network issue; render-time throws will escape via the
         // consumer's outer fallback (typically the apex `errorBoundary`).
@@ -338,8 +386,10 @@ async function loadStack(
     // data between scopes. Nested layouts + route compose correctly
     // because pushes mirror the JS call stack.
     return (): unknown => {
+      signal.throwIfAborted();
       applyRouteResponse(responseStatus, responseHeaders);
       let view: () => unknown = () => {
+        signal.throwIfAborted();
         const token = pushLoaderData(pageData);
         try {
           return routeMod.default(loaderParams, pageData);
@@ -352,6 +402,7 @@ async function loadStack(
         const data = layoutsData[i];
         const inner = view;
         view = () => {
+          signal.throwIfAborted();
           const token = pushLoaderData(data);
           try {
             return layout.default(inner, data);
@@ -368,11 +419,15 @@ async function loadStack(
       try {
         return view();
       } catch (renderErr) {
+        signal.throwIfAborted();
         markRouteError();
         return renderWithBoundary(renderErr);
       }
     };
   } catch (err) {
+    // Cancellation is control flow. Never feed it to an error boundary or
+    // let an abandoned loader's redirect navigate the current page.
+    signal.throwIfAborted();
     // A loader's Web Response is an HTTP outcome, not an error-page input.
     if (err instanceof Response) {
       if (serverRender) throw err;
@@ -381,9 +436,11 @@ async function loadStack(
         window.location.assign(new URL(location, request.url).href);
         return () => undefined;
       }
-      const errorView = await loadErrorBoundary(entry, err);
+      const errorView = await waitForRoute(loadErrorBoundary(entry, err), signal);
+      signal.throwIfAborted();
       if (errorView) {
         return () => {
+          signal.throwIfAborted();
           const token = pushLoaderData(err);
           try {
             return errorView(err);
@@ -392,8 +449,11 @@ async function loadStack(
           }
         };
       }
-      const message = await err.text();
-      return () => message || err.statusText || `HTTP ${err.status}`;
+      const message = await waitForRoute(err.text(), signal);
+      return () => {
+        signal.throwIfAborted();
+        return message || err.statusText || `HTTP ${err.status}`;
+      };
     }
     // Route-level error boundary (ADR 0021). Loaded on demand — most
     // routes never error so paying the import cost up front would be
@@ -404,9 +464,11 @@ async function loadStack(
     // Boundary-import failure preserves the original error via
     // AggregateError so the root cause isn't masked by the boundary
     // load failure.
-    const errorView = await loadErrorBoundary(entry, err);
+    const errorView = await waitForRoute(loadErrorBoundary(entry, err), signal);
+    signal.throwIfAborted();
     if (!errorView) throw err;
     return () => {
+      signal.throwIfAborted();
       markRouteError();
       const token = pushLoaderData(err);
       try {
@@ -446,9 +508,12 @@ export function asyncRoute(
 ): unknown {
   const requestFn = options?.request ?? defaultRequest;
   const serverRender = getSSRRenderContext() !== null;
-  const stack = lazyResource(() => loadStack(entry, params, requestFn(), serverRender), {
-    key: (options?.keyPrefix ?? 'route:') + entry.pattern,
-  });
+  const stack = lazyResource(
+    (_args, { signal }) => loadStack(entry, params, requestFn(), serverRender, signal),
+    {
+      key: (options?.keyPrefix ?? 'route:') + entry.pattern,
+    },
+  );
   stack.fetch();
   return when(
     () => stack() !== undefined,

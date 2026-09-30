@@ -49,6 +49,20 @@ The generated server replaces any incoming `X-Purity-CSP-Nonce` value before
 the loader runs. Add the nonce to every applicable page or layout policy; a
 policy that allows only `'self'` blocks the deferred inline swap scripts.
 
+### Loader cancellation
+
+Page and layout loaders receive a shared `signal`. Forward it to cancellable
+operations, for example `fetch(url, { signal })`. On the client it aborts when
+the route's owning render scope is disposed; a cached branch that is only
+hidden stays alive. A custom request's signal also cancels its loaders.
+
+During SSR, loaders use the supplied `Request.signal`. A custom adapter must
+connect request cancellation to that signal to propagate disconnects; the
+generated server does not currently provide that connection. Rendering timeouts
+alone do not abort loader work. Canceled routes ignore late values, errors, and
+redirects, but arbitrary promises and already completed operations cannot be
+undone.
+
 ### Loader responses
 
 On a server-rendered page, a route or layout loader can return `routeData(value,

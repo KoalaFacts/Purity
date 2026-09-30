@@ -424,9 +424,26 @@ async function checkBrowser(engine: BrowserType, origin: string): Promise<void> 
     assert.equal(await enhanced.getByRole('status').textContent(), 'Hello, Redirect!');
     assert.equal(await enhanced.getByLabel('Your name').inputValue(), 'Redirect');
     assert.equal(await enhanced.evaluate(() => document.body.dataset.documentProbe), undefined);
+    await enhanced.waitForLoadState('networkidle');
+    const slowRequest = enhanced.waitForRequest((request) =>
+      request.url().endsWith('/actions/slow-read'),
+    );
+    await enhanced.evaluate(() =>
+      (globalThis as typeof globalThis & { installRouteProbe: () => void }).installRouteProbe(),
+    );
+    await slowRequest;
+    const cancelled = enhanced.waitForEvent('requestfailed', {
+      predicate: (request) => request.url().endsWith('/actions/slow-read'),
+    });
+    await enhanced.getByRole('button', { name: 'Leave slow route' }).click();
+    await cancelled;
+    await enhanced.waitForFunction(
+      () => document.querySelector('#route-state')?.textContent === 'aborted',
+    );
+    assert.equal(await enhanced.locator('#route-host').textContent(), 'Next route');
     assert.deepEqual(errors, []);
     console.log(
-      `${engine.name()}: native no-JS forms, in-place validation/focus, pending/deduplication, network retry, removal, multipart JSON, action query invalidation, and enhanced redirect passed`,
+      `${engine.name()}: native no-JS forms, in-place validation/focus, pending/deduplication, network retry, removal, multipart JSON, action query invalidation, enhanced redirect, and route loader cancellation passed`,
     );
   } catch (error) {
     console.error(diagnostics.join('\n'));
@@ -522,11 +539,15 @@ export const redirectProbe = serverAction('/actions/redirect-probe', async (requ
   }
   return Response.redirect(destination, 303);
 });
+export const slowRead = serverAction('/actions/slow-read', async () => {
+  await new Promise((done) => setTimeout(done, 1000));
+  return Response.json({ value: 'Late route' });
+});
 `,
   );
   await writeFile(
     join(project, 'src/query-probe.ts'),
-    `import { query, watch } from '@purityjs/core';
+    `import { asyncRoute, mount, query, watch, type AsyncRouteEntry, type LoaderContext } from '@purityjs/core';
 export function installQueryProbe() {
   const section = document.createElement('section');
   section.innerHTML = '<form id="query-form" action="/actions/query-write" method="post" data-purity-enhance><label>Query value<input name="value"></label><button>Save query value</button><p data-purity-form-status></p></form><span id="query-value"></span><span id="query-reads"></span><span id="query-error"></span><span id="other-reads"></span>';
@@ -555,13 +576,36 @@ export function installQueryProbe() {
     section.querySelector('#other-reads')!.textContent = String(other() ?? '');
   });
 }
+export function installRouteProbe() {
+  const section = document.createElement('section');
+  section.innerHTML = '<button>Leave slow route</button><p id="route-state"></p><div id="route-host"></div>';
+  document.getElementById('app')!.append(section);
+  const entry: AsyncRouteEntry = {
+    pattern: '/slow-probe', filePath: 'slow-probe.ts', hasLoader: true, layouts: [],
+    importFn: async () => ({
+      default: () => document.createTextNode('Late route'),
+      loader: async ({ signal }: LoaderContext) => {
+        signal.addEventListener('abort', () => { section.querySelector('#route-state')!.textContent = 'aborted'; }, { once: true });
+        const response = await fetch('/actions/slow-read', { method: 'POST', signal });
+        return response.json();
+      },
+    }),
+  };
+  const host = section.querySelector('#route-host')!;
+  const mounted = mount(() => asyncRoute(entry, {}) as DocumentFragment, host);
+  section.querySelector('button')!.addEventListener('click', () => {
+    mounted.unmount();
+    host.textContent = 'Next route';
+  });
+}
 `,
   );
   const entryPath = join(project, 'src/entry.client.ts');
   await writeFile(
     entryPath,
-    "import { installQueryProbe } from './query-probe.ts';\n" +
+    "import { installQueryProbe, installRouteProbe } from './query-probe.ts';\n" +
       '(globalThis as typeof globalThis & { installQueryProbe?: () => void }).installQueryProbe = installQueryProbe;\n' +
+      '(globalThis as typeof globalThis & { installRouteProbe?: () => void }).installRouteProbe = installRouteProbe;\n' +
       (await readFile(entryPath, 'utf8')),
   );
   await run([npmCli!, 'install', '--no-audit', '--no-fund'], project);

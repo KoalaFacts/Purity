@@ -121,9 +121,50 @@ and can return any Web `Response`, including JSON, cookies, or redirects.
 Action modules and their imports stay in the server bundle. Put shared URL
 constants in ordinary modules, as the greeting example does.
 
-Use `<form action="/actions/save" method="POST">` for native submission. For
-an enhanced interaction, call the same endpoint with `fetch()`. The greeting
-action returns JSON when the request accepts it:
+Use `<form action="/actions/save" method="POST">` for native submission. Add
+`data-purity-enhance` to submit in place when JavaScript is available. The app
+entry enables `enhanceForms(root)` once; dynamically inserted marked forms also
+work. The greeting page uses this option, with no custom submit handler.
+
+```html
+<form action="/actions/greet" method="POST" data-purity-enhance>
+  <label for="name">Your name</label>
+  <input id="name" name="name" required />
+  <button>Send greeting</button>
+  <p data-purity-form-status role="status"></p>
+</form>
+```
+
+For enhanced requests (`Accept: application/json`), return JSON with an optional
+`message` and `fieldErrors` keyed by form control name. Use HTTP 422 for invalid
+input, and a successful HTTP status for success:
+
+```ts
+return Response.json(
+  { message: 'Check your name.', fieldErrors: { name: 'Enter a name.' } },
+  { status: 422 },
+);
+```
+
+The helper retains inputs, manages `aria-busy` and `data-purity-pending`, disables
+submit buttons while pending, and rejects duplicate submissions. It renders
+field errors as text, associates them with controls, focuses the first invalid
+field, and announces results in the status region (created if omitted). Network
+or malformed-response failures show a retry message; requests time out after
+30 seconds. Removed forms, removed roots, component disposal, and HMR abort
+pending requests and ignore late responses. Aborting a request does not undo a
+write already accepted by the server; handlers that need retry-safe writes must
+implement idempotency.
+
+Only marked same-origin POST forms targeting the current window with URL-encoded
+or multipart data are enhanced. Submitter URL, encoding, and named value are
+honored. Other forms retain native behavior. Enhanced handlers must return the
+JSON contract; redirects, HTML, and malformed JSON are reported as failures and
+are never automatically retried. For native requests, keep the existing page or
+303 redirect response. Calling `form.submit()` directly bypasses submit events;
+use `requestSubmit()` for programmatic submission.
+
+Custom clients can still call the endpoint with `fetch()`:
 
 ```ts
 const response = await fetch('/actions/greet', {

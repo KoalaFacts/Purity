@@ -162,6 +162,7 @@ async function checkHttp(origin: string): Promise<void> {
 
 async function checkBrowser(engine: BrowserType, origin: string): Promise<void> {
   const browser = await engine.launch();
+  const diagnostics: string[] = [];
   try {
     const native = await browser.newContext({ javaScriptEnabled: false });
     const page = await native.newPage();
@@ -188,7 +189,88 @@ async function checkBrowser(engine: BrowserType, origin: string): Promise<void> 
     const enhanced = await browser.newPage();
     const errors: string[] = [];
     enhanced.on('pageerror', (error) => errors.push(error.message));
+    enhanced.on('console', (message) => {
+      diagnostics.push(message.text());
+      if (diagnostics.length > 20) diagnostics.shift();
+    });
     await enhanced.goto(`${origin}/greeting`);
+    await enhanced.waitForLoadState('networkidle');
+    await enhanced.evaluate(() => {
+      document.body.dataset.documentProbe = 'same-document';
+    });
+    await enhanced.getByLabel('Your name').fill('   ');
+    const invalid = enhanced.waitForResponse(
+      (response) =>
+        response.url().endsWith('/actions/greet') && response.request().method() === 'POST',
+    );
+    await enhanced.getByRole('button', { name: 'Send greeting' }).click();
+    assert.equal((await invalid).status(), 422);
+    await enhanced.getByRole('alert').waitFor();
+    assert.equal(await enhanced.getByLabel('Your name').inputValue(), '   ');
+    assert.equal(await enhanced.getByLabel('Your name').getAttribute('aria-invalid'), 'true');
+    assert.equal(
+      await enhanced.getByLabel('Your name').evaluate((input) => input === document.activeElement),
+      true,
+    );
+    const errorId = (await enhanced.getByLabel('Your name').getAttribute('aria-describedby'))!
+      .split(' ')
+      .at(-1)!;
+    assert.equal(
+      await enhanced.locator(`[id="${errorId}"]`).textContent(),
+      'Enter a name between 1 and 80 characters.',
+    );
+    await enhanced.getByLabel('Your name').fill('Ada');
+    await enhanced.getByRole('button', { name: 'Send greeting' }).click();
+    await enhanced.waitForFunction(
+      () => document.querySelector('[data-purity-form-status]')?.textContent === 'Hello, Ada!',
+    );
+    assert.equal(await enhanced.getByLabel('Your name').getAttribute('aria-invalid'), null);
+    assert.equal(await enhanced.getByLabel('Your name').inputValue(), 'Ada');
+    assert.equal(await enhanced.getByRole('status').textContent(), 'Hello, Ada!');
+    assert.equal(
+      await enhanced.evaluate(() => document.body.dataset.documentProbe),
+      'same-document',
+    );
+
+    let release!: () => void;
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
+    let requests = 0;
+    await enhanced.route('**/actions/greet', async (route) => {
+      requests++;
+      await held;
+      await route.continue();
+    });
+    await enhanced.getByLabel('Your name').fill('Pending');
+    // Exercise implicit submission while holding the response to inspect state.
+    await enhanced.evaluate(() => document.querySelector('form')!.requestSubmit());
+    await enhanced.locator('form[data-purity-pending]').waitFor();
+    assert.equal(await enhanced.locator('form').getAttribute('aria-busy'), 'true');
+    assert.equal(await enhanced.getByRole('button', { name: 'Send greeting' }).isDisabled(), true);
+    await enhanced.evaluate(() => document.querySelector('form')!.requestSubmit());
+    assert.equal(await enhanced.getByRole('status').textContent(), 'Submitting…');
+    release();
+    await enhanced.waitForFunction(
+      () => document.querySelector('[data-purity-form-status]')?.textContent === 'Hello, Pending!',
+    );
+    assert.equal(requests, 1, 'A duplicate submission reached the server');
+    assert.equal(await enhanced.getByRole('button', { name: 'Send greeting' }).isDisabled(), false);
+    assert.equal(await enhanced.locator('form').getAttribute('aria-busy'), null);
+    await enhanced.unroute('**/actions/greet');
+
+    await enhanced.route('**/actions/greet', (route) => route.abort('failed'));
+    await enhanced.getByLabel('Your name').fill('Retry');
+    await enhanced.getByRole('button', { name: 'Send greeting' }).click();
+    await enhanced.getByRole('alert').waitFor();
+    assert.match((await enhanced.getByRole('alert').textContent())!, /try again/);
+    assert.equal(await enhanced.getByLabel('Your name').inputValue(), 'Retry');
+    await enhanced.unroute('**/actions/greet');
+    await enhanced.getByRole('button', { name: 'Send greeting' }).click();
+    await enhanced.waitForFunction(
+      () => document.querySelector('[data-purity-form-status]')?.textContent === 'Hello, Retry!',
+    );
+
     const results = await enhanced.evaluate(async () => {
       const submit = async (name: string) => {
         const body = new FormData();
@@ -210,14 +292,74 @@ async function checkBrowser(engine: BrowserType, origin: string): Promise<void> 
       valid: { status: 200, data: { message: 'Hello, Grace!' }, redirected: false },
       invalid: {
         status: 422,
-        data: { error: 'Enter a name between 1 and 80 characters.' },
+        data: {
+          message: 'Enter a name between 1 and 80 characters.',
+          fieldErrors: { name: 'Enter a name between 1 and 80 characters.' },
+        },
         redirected: false,
       },
     });
+    // A response arriving after route removal must never update the old form.
+    let finishLate!: () => void;
+    const late = new Promise<void>((done) => {
+      finishLate = done;
+    });
+    let started!: () => void;
+    const startedRequest = new Promise<void>((done) => {
+      started = done;
+    });
+    await enhanced.route('**/actions/greet', async (route) => {
+      started();
+      await late;
+      await route.fulfill({ contentType: 'application/json', body: '{"message":"Late response"}' });
+    });
+    await enhanced.getByLabel('Your name').fill('Removed');
+    await enhanced.evaluate(() => document.querySelector('form')!.requestSubmit());
+    await startedRequest;
+    await enhanced.evaluate(() => {
+      const form = document.querySelector('form')!;
+      form.remove();
+      // Retain only in this test so we can detect a late write to detached DOM.
+      (globalThis as typeof globalThis & { removedForm?: HTMLFormElement }).removedForm = form;
+    });
+    finishLate();
+    await enhanced.unrouteAll({ behavior: 'wait' });
+    await enhanced.waitForFunction(
+      () =>
+        !(
+          globalThis as typeof globalThis & { removedForm?: HTMLFormElement }
+        ).removedForm!.hasAttribute('aria-busy'),
+    );
+    assert.equal(
+      await enhanced.evaluate(() =>
+        (
+          globalThis as typeof globalThis & { removedForm?: HTMLFormElement }
+        ).removedForm!.textContent?.includes('Late response'),
+      ),
+      false,
+    );
+    assert.equal(
+      await enhanced.evaluate(() => document.body.dataset.documentProbe),
+      'same-document',
+    );
     assert.deepEqual(errors, []);
     console.log(
-      `${engine.name()}: native validation/retry without JS and multipart JSON fetch passed`,
+      `${engine.name()}: native no-JS forms, in-place validation/focus, pending/deduplication, network retry, removal, and multipart JSON passed`,
     );
+  } catch (error) {
+    console.error(diagnostics.join('\n'));
+    for (const context of browser.contexts()) {
+      for (const page of context.pages()) {
+        console.error(`${engine.name()} form probe failed at ${page.url()}`);
+        console.error(
+          await page
+            .locator('body')
+            .innerText()
+            .catch(() => 'Page unavailable'),
+        );
+      }
+    }
+    throw error;
   } finally {
     await browser.close();
   }

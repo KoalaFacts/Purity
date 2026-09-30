@@ -76,6 +76,48 @@ A native `<form action="/actions/save" method="POST">` uses the same handler
 as a browser `fetch()` call. Action modules are loaded only by the server entry;
 share URL constants from a separate ordinary module when the client needs them.
 
+For in-place submission, mark the form with `data-purity-enhance`. The generated
+client entry already calls `enhanceForms(root)`. Existing forms work without
+JavaScript and keep their native submission path.
+
+```ts
+import { enhanceForms } from '@purityjs/core';
+
+const forms = enhanceForms(document.getElementById('app')!);
+// When installing outside a component scope, dispose during application teardown.
+// forms.dispose();
+```
+
+```html
+<form action="/actions/save" method="POST" data-purity-enhance>
+  <label for="title">Title</label>
+  <input id="title" name="title" required />
+  <button>Save</button>
+  <p data-purity-form-status role="status"></p>
+</form>
+```
+
+When `Accept` includes `application/json`, the action returns JSON matching
+`FormActionResult`: `{ message?: string, fieldErrors?: Record<string, string> }`.
+For validation failures use HTTP 422 with errors keyed by control name; success
+uses a successful HTTP status. The enhancer preserves input, exposes reactive
+`forms.getState(form)()` (`idle`, `pending`, `success`, or `error`), disables
+submit buttons, blocks duplicate submissions, associates field errors, focuses
+the first invalid control, and announces results. The status region is created
+if absent. Localize default messages through `enhanceForms(root, { messages })`.
+
+Removed forms and roots, component teardown, or `forms.dispose()` abort requests
+and prevent stale updates. The default timeout is 30 seconds (configurable with
+`timeoutMs`). Aborting cannot roll back an accepted server write; use idempotency
+in handlers when retrying a write could duplicate it. Network failures and
+invalid responses preserve input for an explicit retry.
+
+Enhancement applies to same-origin POST forms targeting the current window,
+with URL-encoded or multipart data. Other forms keep native behavior. Enhanced
+responses must use the JSON contract; redirects and non-JSON responses show a
+failure without repeating the POST. Native requests still receive a page or 303
+redirect. Use `requestSubmit()` instead of `form.submit()` to trigger enhancement.
+
 The generated adapter requires `Origin` to match the public request origin and
 limits buffered bodies to 1 MiB (`MAX_ACTION_BODY_BYTES` can change the limit).
 Missing or mismatched origins return 403; oversized bodies return 413; unknown

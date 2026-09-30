@@ -154,6 +154,13 @@ export {
   type ServerActionHandler,
   serverAction,
 } from './server-action.ts';
+export {
+  enhanceForms,
+  type EnhancedForms,
+  type EnhancedFormState,
+  type EnhanceFormsOptions,
+  type FormActionResult,
+} from './enhance-forms.ts';
 
 // Scoped styles
 export { css } from './styles.ts';

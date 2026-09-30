@@ -175,6 +175,27 @@ write. Invalid hints and synchronous refresh errors are logged while other
 valid keys continue. This refreshes browser queries; route loader data and
 server caches have separate lifecycles.
 
+To open another page after a successful enhanced submission, return JSON with
+`redirect`. Native submissions can return HTTP 303 to the same destination:
+
+```ts
+const destination = new URL('/records?created=1', request.url);
+if (request.headers.get('accept')?.includes('application/json')) {
+  return Response.json({ message: 'Saved.', redirect: destination.href });
+}
+return Response.redirect(destination, 303);
+```
+
+The enhancer uses `location.assign` by default, so SSR destinations rerun their
+server loaders and static destinations load their prebuilt page. An installed
+SPA router can be connected through the
+optional `enhanceForms(root, { navigate })` adapter, which receives a validated
+absolute URL. Relative destinations resolve against the submitted action URL.
+Only same-origin HTTP(S) URLs without credentials are accepted. Validation
+errors, failed requests, disposal, and removal prevent navigation. Invalid hints
+and navigation errors are logged while the completed write remains successful.
+Pending UI is restored before navigation; declared queries invalidate first.
+
 Only marked same-origin POST forms targeting the current window with URL-encoded
 or multipart data are enhanced. Submitter URL, encoding, and named value are
 honored. Other forms retain native behavior. Enhanced handlers must return the

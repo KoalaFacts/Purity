@@ -61,6 +61,111 @@ async function finished(controller: EnhancedForms, form: HTMLFormElement) {
 }
 
 describe('enhanceForms', () => {
+  it.each(['/records?created=1#row', './done'])(
+    'navigates after success and restores pending UI: %s',
+    async (redirect) => {
+      const { root, form, button } = fixture();
+      form.setAttribute('action', '/actions/save');
+      const entry = cached('records');
+      await vi.waitFor(() => expect(entry.value()).toBe(1));
+      const refresh = vi.spyOn(entry.value, 'refresh');
+      const navigate = vi.fn(() => {
+        expect(form.hasAttribute('aria-busy')).toBe(false);
+        expect(button.disabled).toBe(false);
+        expect(refresh).toHaveBeenCalledTimes(1);
+      });
+      const controller = enhanceForms(root, {
+        navigate,
+        fetch: vi
+          .fn()
+          .mockResolvedValue(
+            Response.json({ message: 'Saved', redirect, invalidate: ['records'] }),
+          ),
+      });
+      cleanups.push(controller.dispose);
+      submit(form);
+      await finished(controller, form);
+      expect(navigate).toHaveBeenCalledExactlyOnceWith(
+        new URL(redirect, new URL('/actions/save', document.URL)).href,
+      );
+      expect(controller.getState(form)().status).toBe('success');
+    },
+  );
+
+  it.each([
+    { status: 422, fieldErrors: { name: 'Invalid' } },
+    { status: 500, fieldErrors: {} },
+    { status: 200, fieldErrors: { name: 'Invalid' } },
+  ])('does not navigate after rejected submission: $status', async ({ status, fieldErrors }) => {
+    const { root, form } = fixture();
+    const navigate = vi.fn();
+    const controller = enhanceForms(root, {
+      navigate,
+      fetch: vi
+        .fn()
+        .mockResolvedValue(Response.json({ redirect: '/records', fieldErrors }, { status })),
+    });
+    cleanups.push(controller.dispose);
+    submit(form);
+    await finished(controller, form);
+    expect(navigate).not.toHaveBeenCalled();
+    expect(controller.getState(form)().status).toBe('error');
+  });
+
+  it.each([
+    null,
+    42,
+    {},
+    '',
+    'http://[',
+    '//other.example/',
+    'https://other.example/',
+    'javascript:alert(1)',
+    'data:text/html,hello',
+    'ftp://localhost/records',
+    'credentials',
+  ])('ignores invalid redirects without failing a successful write: %s', async (hint) => {
+    const { root, form } = fixture();
+    const destination = new URL('/records', document.URL);
+    destination.username = 'user';
+    destination.password = 'pass';
+    const redirect = hint === 'credentials' ? destination.href : hint;
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const navigate = vi.fn();
+    const controller = enhanceForms(root, {
+      navigate,
+      fetch: vi.fn().mockResolvedValue(Response.json({ message: 'Saved', redirect })),
+    });
+    cleanups.push(controller.dispose);
+    submit(form);
+    await finished(controller, form);
+    expect(navigate).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(controller.getState(form)().status).toBe('success');
+    expect(form.querySelector('[role=status]')?.textContent).toBe('Saved');
+  });
+
+  it.each(['sync', 'async'])(
+    'isolates %s navigation failures from successful writes',
+    async (mode) => {
+      const { root, form } = fixture();
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const controller = enhanceForms(root, {
+        navigate: () => {
+          const error = new Error('Navigation failed');
+          if (mode === 'async') return Promise.reject(error);
+          throw error;
+        },
+        fetch: vi.fn().mockResolvedValue(Response.json({ message: 'Saved', redirect: '/records' })),
+      });
+      cleanups.push(controller.dispose);
+      submit(form);
+      await finished(controller, form);
+      await vi.waitFor(() => expect(log).toHaveBeenCalledTimes(1));
+      expect(controller.getState(form)().status).toBe('success');
+    },
+  );
+
   it('refreshes declared query keys exactly once after success, preserving unrelated entries', async () => {
     const { root, form } = fixture();
     const list = cached(['records']);
@@ -175,16 +280,42 @@ describe('enhanceForms', () => {
     expect(log).toHaveBeenCalled();
   });
 
-  it('does not invalidate when a successful response arrives after disposal', async () => {
+  it.each(['dispose', 'form', 'root'])(
+    'does not invalidate or navigate after %s removal/disposal',
+    async (mode) => {
+      const { root, form } = fixture();
+      const entry = cached('records');
+      await vi.waitFor(() => expect(entry.value()).toBe(1));
+      const transport = deferred();
+      const navigate = vi.fn();
+      const controller = enhanceForms(root, { fetch: transport.fetch, navigate });
+      cleanups.push(controller.dispose);
+      submit(form);
+      if (mode === 'form') form.remove();
+      else if (mode === 'root') root.remove();
+      else controller.dispose();
+      transport.resolve(Response.json({ invalidate: ['records'], redirect: '/records' }));
+      await new Promise((done) => setTimeout(done, 0));
+      expect(entry.fetcher).toHaveBeenCalledTimes(1);
+      expect(navigate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not navigate or invalidate a successful response received after timeout', async () => {
     const { root, form } = fixture();
     const entry = cached('records');
     await vi.waitFor(() => expect(entry.value()).toBe(1));
     const transport = deferred();
-    const controller = enhanceForms(root, { fetch: transport.fetch });
+    const navigate = vi.fn();
+    const controller = enhanceForms(root, { fetch: transport.fetch, navigate, timeoutMs: 1 });
+    cleanups.push(controller.dispose);
     submit(form);
-    controller.dispose();
-    transport.resolve(Response.json({ invalidate: ['records'] }));
-    await new Promise((done) => setTimeout(done, 0));
+    const signal = transport.fetch.mock.calls[0][1]!.signal!;
+    await vi.waitFor(() => expect(signal.aborted).toBe(true));
+    transport.resolve(Response.json({ redirect: '/records', invalidate: ['records'] }));
+    await finished(controller, form);
+    expect(controller.getState(form)().status).toBe('error');
+    expect(navigate).not.toHaveBeenCalled();
     expect(entry.fetcher).toHaveBeenCalledTimes(1);
   });
 

@@ -152,6 +152,13 @@ async function checkHttp(origin: string): Promise<void> {
     404,
   );
   assert.equal((await fetch(`${origin}/actions/probe`)).status, 404);
+  const redirect = await fetch(`${origin}/actions/redirect-probe`, {
+    method: 'POST',
+    headers: { Origin: origin },
+    redirect: 'manual',
+  });
+  assert.equal(redirect.status, 303);
+  assert.equal(redirect.headers.get('location'), `${origin}/greeting?name=Redirect&submitted=1`);
   const head = await fetch(`${origin}/greeting`, { method: 'HEAD' });
   assert.equal(head.status, 200);
   assert.equal(await head.text(), '');
@@ -395,8 +402,31 @@ async function checkBrowser(engine: BrowserType, origin: string): Promise<void> 
       'same-document',
     );
     assert.deepEqual(errors, []);
+    await enhanced
+      .locator('#query-form')
+      .evaluate((form) => form.setAttribute('action', '/actions/redirect-probe'));
+    await submitQuery('external');
+    assert.equal(await enhanced.getByRole('status').textContent(), 'Saved redirect.');
+    assert.equal(
+      await enhanced.evaluate(() => document.body.dataset.documentProbe),
+      'same-document',
+    );
+    const destination = enhanced.waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' &&
+        response.url().endsWith('/greeting?name=Redirect&submitted=1'),
+    );
+    await enhanced.getByLabel('Query value').fill('redirect');
+    await enhanced.getByRole('button', { name: 'Save query value' }).click();
+    assert.equal((await destination).status(), 200);
+    await enhanced.waitForURL(`${origin}/greeting?name=Redirect&submitted=1`);
+    await enhanced.getByRole('status').waitFor();
+    assert.equal(await enhanced.getByRole('status').textContent(), 'Hello, Redirect!');
+    assert.equal(await enhanced.getByLabel('Your name').inputValue(), 'Redirect');
+    assert.equal(await enhanced.evaluate(() => document.body.dataset.documentProbe), undefined);
+    assert.deepEqual(errors, []);
     console.log(
-      `${engine.name()}: native no-JS forms, in-place validation/focus, pending/deduplication, network retry, removal, multipart JSON, and action query invalidation passed`,
+      `${engine.name()}: native no-JS forms, in-place validation/focus, pending/deduplication, network retry, removal, multipart JSON, action query invalidation, and enhanced redirect passed`,
     );
   } catch (error) {
     console.error(diagnostics.join('\n'));
@@ -483,6 +513,14 @@ export const queryWrite = serverAction('/actions/query-write', async (request) =
   value++;
   failNextRead = input === 'failread';
   return Response.json({ message: 'Saved value.', invalidate: [['query-counter'], ['query-counter']] });
+});
+export const redirectProbe = serverAction('/actions/redirect-probe', async (request) => {
+  const destination = new URL('/greeting?name=Redirect&submitted=1', request.url);
+  if (request.headers.get('accept')?.includes('application/json')) {
+    const input = (await request.formData()).get('value');
+    return Response.json({ message: 'Saved redirect.', redirect: input === 'external' ? 'https://other.example/' : destination.href });
+  }
+  return Response.redirect(destination, 303);
 });
 `,
   );

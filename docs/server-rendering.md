@@ -98,7 +98,7 @@ const forms = enhanceForms(document.getElementById('app')!);
 ```
 
 When `Accept` includes `application/json`, the action returns JSON matching
-`FormActionResult`: `{ message?: string, fieldErrors?: Record<string, string>, invalidate?: readonly QueryKey[] }`.
+`FormActionResult`: `{ message?: string, fieldErrors?: Record<string, string>, invalidate?: readonly QueryKey[], redirect?: string }`.
 For validation failures use HTTP 422 with errors keyed by control name; success
 uses a successful HTTP status. The enhancer preserves input, exposes reactive
 `forms.getState(form)()` (`idle`, `pending`, `success`, or `error`), disables
@@ -135,6 +135,34 @@ isolated so other valid keys can still refresh. This updates the browser query
 cache; route loader data and external server caches require their own refresh
 strategy.
 
+#### Navigate after a successful write
+
+Return a JSON `redirect` when a successful enhanced submission should open a
+destination page. Native submissions can return HTTP 303 to the same destination:
+
+```ts
+const destination = new URL('/records?created=1', request.url);
+if (request.headers.get('accept')?.includes('application/json')) {
+  return Response.json({ message: 'Saved.', redirect: destination.href });
+}
+return Response.redirect(destination, 303);
+```
+
+Only successful responses without nonempty field errors navigate. Pending UI is
+restored first and any declared queries are invalidated before navigation.
+Relative destinations resolve against the submitted action URL, including
+submitter overrides. Targets must use HTTP(S), share the document's origin, and
+contain no URL credentials. Invalid hints are logged and skipped while retaining
+submission success. Disposed or removed forms and aborted requests cannot navigate.
+
+By default `location.assign` loads the destination. SSR destinations rerun their
+server loaders; static destinations load their prebuilt page.
+Applications with an installed SPA router may supply
+`enhanceForms(root, { navigate: (url) => router.navigate(url) })` instead. The
+adapter receives the validated absolute URL and may return a promise; thrown or
+rejected navigation errors are logged without repeating or failing the completed
+write. No destination means the existing in-place result behavior continues.
+
 Removed forms and roots, component teardown, or `forms.dispose()` abort requests
 and prevent stale updates. The default timeout is 30 seconds (configurable with
 `timeoutMs`). Aborting cannot roll back an accepted server write; use idempotency
@@ -143,7 +171,7 @@ invalid responses preserve input for an explicit retry.
 
 Enhancement applies to same-origin POST forms targeting the current window,
 with URL-encoded or multipart data. Other forms keep native behavior. Enhanced
-responses must use the JSON contract; redirects and non-JSON responses show a
+responses must use the JSON contract; HTTP redirects and non-JSON responses show a
 failure without repeating the POST. Native requests still receive a page or 303
 redirect. Use `requestSubmit()` instead of `form.submit()` to trigger enhancement.
 

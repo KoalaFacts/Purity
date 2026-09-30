@@ -8,6 +8,8 @@ export interface FormActionResult {
   fieldErrors?: Record<string, string>;
   /** Exact query keys to refresh after a successful submission. Duplicates are coalesced. */
   invalidate?: readonly QueryKey[];
+  /** Same-origin destination after success. Relative URLs resolve against the action URL. */
+  redirect?: string;
 }
 
 export interface EnhancedFormState {
@@ -19,6 +21,8 @@ export interface EnhancedFormState {
 export interface EnhanceFormsOptions {
   /** Supply a transport for testing or application-specific request handling. */
   fetch?: typeof globalThis.fetch;
+  /** Optional SPA navigation adapter. Defaults to loading the destination with location.assign. */
+  navigate?: (url: string) => void | Promise<void>;
   /** Request timeout in milliseconds. Defaults to 30 seconds. */
   timeoutMs?: number;
   messages?: Partial<{
@@ -107,7 +111,7 @@ function refreshQueries(keys: unknown): void {
  * Enhance ordinary `<form data-purity-enhance>` elements inside a root.
  * Marked same-origin POST forms submit JSON requests without replacing the page.
  * Unmarked forms and unsupported methods/targets/encodings keep native behavior.
- * Server actions return `{ message?, fieldErrors?, invalidate? }` for `Accept: application/json`
+ * Server actions return `{ message?, fieldErrors?, invalidate?, redirect? }` for `Accept: application/json`
  * and a normal page/303 redirect for native submissions. Never import handlers
  * into client code. This helper registers teardown with the current render scope;
  * outside a scope, call the returned `dispose()` when removing the root.
@@ -147,6 +151,36 @@ export function enhanceForms(
   let disposed = false;
   let nextErrorId = 0;
   const contains = (form: HTMLFormElement) => form.isConnected && scope.contains(form);
+
+  function followRedirect(value: unknown, action: URL): void {
+    let destination: URL;
+    try {
+      if (typeof value !== 'string' || !value.trim())
+        throw new TypeError('Expected a redirect URL');
+      destination = new URL(value, action);
+      if (
+        !['http:', 'https:'].includes(destination.protocol) ||
+        destination.origin !== view?.location.origin ||
+        destination.username ||
+        destination.password
+      )
+        throw new TypeError('Expected a same-origin HTTP redirect without credentials');
+    } catch (error) {
+      console.error('[purity] enhanceForms: ignored an invalid redirect:', error);
+      return;
+    }
+    try {
+      const navigation = options.navigate
+        ? options.navigate(destination.href)
+        : view!.location.assign(destination.href);
+      void Promise.resolve(navigation).catch((error) => {
+        console.error('[purity] enhanceForms: navigation failed:', error);
+      });
+    } catch (error) {
+      // The server write succeeded. Navigation failure must not invite a duplicate write.
+      console.error('[purity] enhanceForms: navigation failed:', error);
+    }
+  }
 
   function signalFor(form: HTMLFormElement) {
     let signal = signals.get(form);
@@ -356,6 +390,7 @@ export function enhanceForms(
     entry.timer = setTimeout(() => request.abort(), timeoutMs);
     const current = () =>
       !disposed && entries.get(form) === entry && entry.request === request && contains(form);
+    let redirect: unknown;
     try {
       const response = await (options.fetch ?? globalThis.fetch)(action.href, {
         method: 'POST',
@@ -368,13 +403,15 @@ export function enhanceForms(
       const type = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
       if (type !== 'application/json') throw new TypeError('Expected an application/json response');
       const result = resultFrom(await response.json());
-      if (current())
+      if (current()) {
         showResult(
           form,
           entry,
           request.signal.aborted ? { message: messages.network } : result,
           !request.signal.aborted && response.ok,
         );
+        if (entry.signal().status === 'success') redirect = result.redirect;
+      }
     } catch {
       // Removal/disposal already cancels and releases this entry. Never write stale DOM.
       if (current()) showResult(form, entry, { message: messages.network }, false);
@@ -385,6 +422,10 @@ export function enhanceForms(
         entry.restorePending = undefined;
         entry.request = undefined;
       }
+    }
+    // Release pending UI before invoking an adapter that may dispose this root.
+    if (redirect !== undefined && !disposed && entries.get(form) === entry && contains(form)) {
+      followRedirect(redirect, action);
     }
   }
 

@@ -288,6 +288,41 @@ SSR route loaders inherit the owning resource's cancellation through
 `LoaderContext.signal`, including loaders inside deferred boundaries. Cancellation
 cannot force an arbitrary promise to stop or roll back an accepted write.
 
+### Render timeout errors and HTTP responses
+
+`renderToString()` rejects with an exported `SSRTimeoutError` when pending
+resources exhaust its render budget. `renderToStreamResponse()` rejects with
+the same class when its shell budget expires before it returns HTTP metadata.
+For `renderToStream()`, consume the body to observe a shell timeout as a stream
+error. The error extends `Error` and exposes:
+
+- `code: 'PURITY_SSR_TIMEOUT'`
+- `phase: 'render' | 'shell'`
+- `timeout`: the configured budget in milliseconds (default 5000)
+
+Unfinished fetchers and route loaders receive that same error as their signal's
+abort reason. Caller cancellation preserves the caller's reason. Ordinary user
+errors remain unchanged; do not classify errors by matching their message or
+the string `name` alone.
+
+The `--app` server entry recognizes `error instanceof SSRTimeoutError` and
+returns HTTP 503 with `Cache-Control: no-store` and a generic text body. It logs
+the detailed error on the server. This is the template's policy for a render
+that cannot finish within its budget; applications can customize it in
+`src/entry.server.ts`. It does not set `Retry-After` because it cannot predict
+recovery. Existing loader Responses and redirects pass through unchanged;
+unhandled programming errors still produce HTTP 500. HEAD returns the same
+status and headers without a body. A local render budget does not identify an
+upstream gateway timeout; 504 has that separate meaning in
+[HTTP semantics](https://www.rfc-editor.org/rfc/rfc9110.html#name-504-gateway-timeout).
+
+Suspense boundary timeouts keep their existing `TimeoutError` cancellation and
+local fallback behavior. They do not reject the whole render or change a
+stream's HTTP status after the shell has been sent. Static builds still fail
+on a render timeout; the static generator does not convert it into a successful
+503 page. This budget bounds waiting for async resources, not synchronous CPU
+work that prevents timers from running.
+
 ### Status and headers from a loader
 
 Use `routeData(value, { status, headers })` when a page should render with

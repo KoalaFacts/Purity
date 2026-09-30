@@ -99,6 +99,17 @@ stream reader, render failures, global timeouts, and render/stream completion
 cancel unfinished resources. Late values and errors cannot enter the hydration
 cache. Settled resources remove their forwarding listeners.
 
+Global buffered and streaming-shell deadlines throw `SSRTimeoutError` from
+`@purityjs/ssr`, with `code: 'PURITY_SSR_TIMEOUT'`, `phase: 'render' | 'shell'`,
+and `timeout` in milliseconds. Pending resources and loaders are canceled with
+that same error. Caller abort reasons and ordinary user errors remain unchanged.
+The server entry handles this class with HTTP 503, `Cache-Control: no-store`,
+and a generic `Service Unavailable` body, while logging details on the server.
+HEAD returns the same status and headers without a body. Customize this policy
+in `src/entry.server.ts`; it does not assume an upstream gateway timeout or a
+known retry interval. Static builds still fail on timeout. A render budget bounds
+async waiting; it cannot interrupt synchronous CPU work.
+
 Pass `{ timeout: 1000 }` as the third argument to `suspense(view, fallback,
 options)` to cancel that view's unfinished resources immediately at its deadline
 and keep the fallback. Parent timeouts cancel nested view resources; child

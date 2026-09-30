@@ -2,9 +2,9 @@
 // Exercise a packaged --app project in development and production.
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
-import { request as httpRequest } from 'node:http';
-import { createServer } from 'node:net';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { Agent, request as httpRequest } from 'node:http';
+import { createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -164,6 +164,202 @@ async function checkHttp(origin: string): Promise<void> {
   assert.equal(await head.text(), '');
   console.log(
     'HTTP: direct registration, methods, cookies, origin checks, body limits, and HEAD passed',
+  );
+}
+
+type DisconnectState = Record<
+  string,
+  { started: boolean; aborted: boolean; completed: boolean; views: number }
+>;
+
+async function disconnectState(
+  origin: string,
+  id: string,
+  release = false,
+): Promise<DisconnectState> {
+  const response = await fetch(`${origin}/actions/disconnect-state`, {
+    method: 'POST',
+    headers: { Origin: origin },
+    body: new URLSearchParams({ id, release: String(release) }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+async function until(check: () => boolean | Promise<boolean>, message: string): Promise<void> {
+  for (let attempt = 0; !(await check()); attempt++) {
+    assert.ok(attempt < 100, message);
+    await delay(100);
+  }
+}
+
+function openRequest(url: string, agent: Agent | false = false) {
+  let body = '';
+  let disconnected = false;
+  let error: Error | undefined;
+  const request = httpRequest(url, { agent });
+  const ended = new Promise<void>((done) => {
+    request.on('response', (response) => {
+      response.on('data', (chunk: Buffer) => (body += chunk.toString()));
+      response.on('end', done);
+      response.on('error', (cause: Error) => {
+        if (!disconnected) error = cause;
+      });
+    });
+  });
+  const closed = new Promise<void>((done) => request.once('close', done));
+  request.on('error', (cause: Error) => {
+    if (!disconnected) error = cause;
+  });
+  request.end();
+  return {
+    request,
+    body: () => body,
+    error: () => error,
+    ended,
+    closed,
+    disconnect: () => {
+      disconnected = true;
+      request.destroy();
+    },
+  };
+}
+
+async function checkDisconnects(origin: string, output: () => string): Promise<void> {
+  const upload = httpRequest(`${origin}/actions/probe?partial=1`, {
+    method: 'POST',
+    headers: { Origin: origin, 'Content-Length': '100' },
+  });
+  upload.on('error', () => {}); // Destroying our partial upload intentionally resets its socket.
+  const uploadClosed = new Promise<void>((done) => upload.once('close', done));
+  try {
+    upload.write('partial');
+    await until(
+      () => output().includes('PURITY_UPLOAD:/actions/probe?partial=1'),
+      'Upload body reader did not start',
+    );
+    upload.destroy();
+    await uploadClosed;
+    await until(
+      () => output().includes('PURITY_DISCONNECT:/actions/probe?partial=1'),
+      'Incomplete upload did not cancel',
+    );
+  } finally {
+    upload.destroy();
+  }
+  // The test-only route lookup is gated, so close the actual TCP connection
+  // before rendering starts and observe the adapter's cancellation barrier.
+  const early = openRequest(`${origin}/disconnect/early?id=early`);
+  try {
+    await until(
+      async () => !!(await disconnectState(origin, 'early')).routing?.started,
+      'Route lookup did not start',
+    );
+    early.disconnect();
+    await early.closed;
+    await until(
+      () => output().includes('PURITY_DISCONNECT:/disconnect/early?id=early'),
+      'Early disconnect was not observed',
+    );
+    await disconnectState(origin, 'early', true);
+    await until(
+      async () => !!(await disconnectState(origin, 'early')).routing?.completed,
+      'Route lookup did not settle',
+    );
+    assert.equal(
+      (await disconnectState(origin, 'early')).page,
+      undefined,
+      'Rendering started after disconnect',
+    );
+  } finally {
+    early.disconnect();
+  }
+
+  for (const mode of ['shell', 'stream']) {
+    const id = `cancel-${mode}`;
+    const client = openRequest(`${origin}/disconnect/probe?id=${id}&mode=${mode}`);
+    try {
+      const phases = mode === 'shell' ? ['page', 'layout'] : ['boundary'];
+      await until(async () => {
+        const state = await disconnectState(origin, id);
+        return phases.every((phase) => state[phase]?.started);
+      }, `${mode} work did not start`);
+      if (mode === 'stream') {
+        await until(
+          () => client.body().includes('Waiting for deferred content'),
+          'SSR shell was not received',
+        );
+      } else assert.equal(client.body(), '', 'Shell should wait for page and layout loaders');
+      assert.equal(client.error(), undefined);
+      client.disconnect();
+      await client.closed;
+      await until(async () => {
+        const state = await disconnectState(origin, id);
+        return phases.every((phase) => state[phase]?.aborted && !state[phase].completed);
+      }, `${mode} work did not cancel`);
+      await disconnectState(origin, id, true);
+      const state = await disconnectState(origin, id);
+      assert.ok(phases.every((phase) => !state[phase].completed));
+      if (mode === 'shell') assert.equal(state.page.views, 0);
+    } finally {
+      client.disconnect();
+    }
+  }
+
+  const agent = new Agent({ keepAlive: true, maxSockets: 1 });
+  try {
+    let previousSocket: Socket | undefined;
+    for (const id of ['healthy', 'reused']) {
+      const client = openRequest(`${origin}/disconnect/probe?id=${id}&mode=shell`, agent);
+      await until(async () => {
+        const state = await disconnectState(origin, id);
+        return !!(state.page?.started && state.layout?.started);
+      }, 'Healthy request did not start');
+      const state = await disconnectState(origin, id);
+      assert.ok(
+        !state.page.aborted && !state.layout.aborted,
+        'Receiving the GET incorrectly canceled SSR',
+      );
+      if (previousSocket) assert.equal(client.request.socket, previousSocket);
+      previousSocket = client.request.socket ?? undefined;
+      await disconnectState(origin, id, true);
+      const timeout = new AbortController();
+      try {
+        await Promise.race([
+          client.ended,
+          delay(10_000, undefined, { signal: timeout.signal }).then(() => {
+            throw new Error('Healthy response did not end');
+          }),
+        ]);
+      } finally {
+        timeout.abort();
+      }
+      assert.equal(client.error(), undefined);
+      assert.match(client.body(), /Finished loader/);
+      const finished = await disconnectState(origin, id);
+      assert.ok(finished.page.completed && finished.layout.completed);
+      assert.ok(
+        !finished.page.aborted && !finished.layout.aborted,
+        'Successful response incorrectly canceled SSR',
+      );
+    }
+  } finally {
+    agent.destroy();
+  }
+  await assert.rejects(
+    fetch(`${origin}/actions/broken-stream`, {
+      method: 'POST',
+      headers: { Origin: origin },
+      signal: AbortSignal.timeout(10_000),
+    }),
+  );
+  await until(
+    () => output().includes('PURITY_EXPECTED_STREAM_FAILURE'),
+    'A genuine stream failure was swallowed',
+  );
+  console.log(
+    'HTTP disconnects: incomplete upload, early lookup, page/layout loaders, deferred stream, and healthy keep-alive reuse passed',
   );
 }
 
@@ -424,9 +620,26 @@ async function checkBrowser(engine: BrowserType, origin: string): Promise<void> 
     assert.equal(await enhanced.getByRole('status').textContent(), 'Hello, Redirect!');
     assert.equal(await enhanced.getByLabel('Your name').inputValue(), 'Redirect');
     assert.equal(await enhanced.evaluate(() => document.body.dataset.documentProbe), undefined);
+    await enhanced.waitForLoadState('networkidle');
+    const slowRequest = enhanced.waitForRequest((request) =>
+      request.url().endsWith('/actions/slow-read'),
+    );
+    await enhanced.evaluate(() =>
+      (globalThis as typeof globalThis & { installRouteProbe: () => void }).installRouteProbe(),
+    );
+    await slowRequest;
+    const cancelled = enhanced.waitForEvent('requestfailed', {
+      predicate: (request) => request.url().endsWith('/actions/slow-read'),
+    });
+    await enhanced.getByRole('button', { name: 'Leave slow route' }).click();
+    await cancelled;
+    await enhanced.waitForFunction(
+      () => document.querySelector('#route-state')?.textContent === 'aborted',
+    );
+    assert.equal(await enhanced.locator('#route-host').textContent(), 'Next route');
     assert.deepEqual(errors, []);
     console.log(
-      `${engine.name()}: native no-JS forms, in-place validation/focus, pending/deduplication, network retry, removal, multipart JSON, action query invalidation, and enhanced redirect passed`,
+      `${engine.name()}: native no-JS forms, in-place validation/focus, pending/deduplication, network retry, removal, multipart JSON, action query invalidation, enhanced redirect, and route loader cancellation passed`,
     );
   } catch (error) {
     console.error(diagnostics.join('\n'));
@@ -479,6 +692,26 @@ try {
     target,
   );
   const project = join(target, 'app');
+  const serverPath = join(project, 'server.ts');
+  const serverSource = await readFile(serverPath, 'utf8');
+  assert.ok(serverSource.includes('const abort = new AbortController();'));
+  assert.ok(
+    serverSource.includes(
+      'async function readActionBody(req: IncomingMessage): Promise<Uint8Array<ArrayBuffer> | null> {',
+    ),
+  );
+  await writeFile(
+    serverPath,
+    serverSource
+      .replace(
+        'const abort = new AbortController();',
+        "const abort = new AbortController();\n    abort.signal.addEventListener('abort', () => console.log('PURITY_DISCONNECT:' + req.url), { once: true });",
+      )
+      .replace(
+        'async function readActionBody(req: IncomingMessage): Promise<Uint8Array<ArrayBuffer> | null> {',
+        "async function readActionBody(req: IncomingMessage): Promise<Uint8Array<ArrayBuffer> | null> {\n  if (req.url?.includes('partial=1')) console.log('PURITY_UPLOAD:' + req.url);",
+      ),
+  );
   const manifestPath = join(project, 'package.json');
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   for (const pkg of ['@purityjs/core', '@purityjs/ssr', '@purityjs/vite-plugin']) {
@@ -486,6 +719,98 @@ try {
     deps[pkg] = `file:${tarballs.get(pkg)}`;
   }
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+  await writeFile(
+    join(project, 'src/disconnect-probe.ts'),
+    `
+type Work = { signal?: AbortSignal; completed: boolean; views: number; release: () => void };
+const records = new Map<string, Map<string, Work>>();
+export function waitForDisconnect(id: string, phase: string, signal?: AbortSignal): Promise<string> {
+  let phases = records.get(id);
+  if (!phases) records.set(id, phases = new Map());
+  return new Promise((resolve, reject) => {
+    const onAbort = () => { signal?.removeEventListener('abort', onAbort); reject(signal?.reason); };
+    const work: Work = { signal, completed: false, views: 0, release: () => {
+      if (signal?.aborted) return;
+      signal?.removeEventListener('abort', onAbort);
+      work.completed = true;
+      resolve('Finished loader');
+    } };
+    phases!.set(phase, work);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+  });
+}
+export function markView(id: string): void { const work = records.get(id)?.get('page'); if (work) work.views++; }
+export function inspectDisconnect(id: string, release: boolean) {
+  const phases = records.get(id);
+  if (release) for (const work of phases?.values() ?? []) work.release();
+  return Object.fromEntries(Array.from(phases ?? [], ([phase, work]) => [phase, {
+    started: true, aborted: work.signal?.aborted ?? false, completed: work.completed, views: work.views,
+  }]));
+}
+`,
+  );
+  await writeFile(
+    join(project, 'src/actions/disconnect.server.ts'),
+    `
+import { serverAction } from '@purityjs/core';
+import { inspectDisconnect } from '../disconnect-probe.ts';
+export const disconnectState = serverAction('/actions/disconnect-state', async (request) => {
+  const form = await request.formData();
+  return Response.json(inspectDisconnect(String(form.get('id')), form.get('release') === 'true'));
+});
+`,
+  );
+  await mkdir(join(project, 'src/pages/disconnect'), { recursive: true });
+  const disconnectPage = `
+import { getRequest, html, resource, suspense, type LoaderContext } from '@purityjs/core';
+import { markView, waitForDisconnect } from '../../disconnect-probe.ts';
+export async function loader({ request, signal }: LoaderContext) {
+  const url = new URL(request.url);
+  const id = url.searchParams.get('id')!;
+  const mode = url.searchParams.get('mode');
+  if (mode !== 'stream') await waitForDisconnect(id, 'page', signal);
+  return { id, mode };
+}
+export default function Probe(_params: unknown, data: { id: string; mode: string | null }) {
+  markView(data.id);
+  if (data.mode !== 'stream') return html\`<p>Finished loader</p>\`;
+  const signal = getRequest()!.signal;
+  return html\`<main>Stream shell \${suspense(() => {
+    const value = resource(() => waitForDisconnect(data.id, 'boundary', signal));
+    return html\`<p>\${() => value()}</p>\`;
+  }, () => html\`<p>Waiting for deferred content</p>\`)}</main>\`;
+}
+`;
+  await writeFile(join(project, 'src/pages/disconnect/probe.ts'), disconnectPage);
+  await writeFile(join(project, 'src/pages/disconnect/early.ts'), disconnectPage);
+  await writeFile(
+    join(project, 'src/pages/disconnect/_layout.ts'),
+    `
+import { type LoaderContext } from '@purityjs/core';
+import { waitForDisconnect } from '../../disconnect-probe.ts';
+export async function loader({ request, signal }: LoaderContext) {
+  const url = new URL(request.url);
+  if (url.searchParams.get('mode') !== 'stream') await waitForDisconnect(url.searchParams.get('id')!, 'layout', signal);
+}
+export default function Layout(children: () => unknown) { return children(); }
+`,
+  );
+  const serverEntryPath = join(project, 'src/entry.server.ts');
+  await writeFile(
+    serverEntryPath,
+    "import { waitForDisconnect } from './disconnect-probe.ts';\n" +
+      (await readFile(serverEntryPath, 'utf8')).replace(
+        'export async function routeFor(',
+        'async function originalRouteFor(',
+      ) +
+      `
+export async function routeFor(path: string) {
+  if (path === '/disconnect/early') await waitForDisconnect('early', 'routing');
+  return originalRouteFor(path);
+}
+`,
+  );
   await writeFile(
     join(project, 'src/actions/probe.server.ts'),
     "import { serverAction } from '@purityjs/core';\n" +
@@ -522,11 +847,18 @@ export const redirectProbe = serverAction('/actions/redirect-probe', async (requ
   }
   return Response.redirect(destination, 303);
 });
+export const slowRead = serverAction('/actions/slow-read', async () => {
+  await new Promise((done) => setTimeout(done, 1000));
+  return Response.json({ value: 'Late route' });
+});
+export const brokenStream = serverAction('/actions/broken-stream', () => new Response(new ReadableStream({
+  start(controller) { controller.error(new Error('PURITY_EXPECTED_STREAM_FAILURE')); },
+})));
 `,
   );
   await writeFile(
     join(project, 'src/query-probe.ts'),
-    `import { query, watch } from '@purityjs/core';
+    `import { asyncRoute, mount, query, watch, type AsyncRouteEntry, type LoaderContext } from '@purityjs/core';
 export function installQueryProbe() {
   const section = document.createElement('section');
   section.innerHTML = '<form id="query-form" action="/actions/query-write" method="post" data-purity-enhance><label>Query value<input name="value"></label><button>Save query value</button><p data-purity-form-status></p></form><span id="query-value"></span><span id="query-reads"></span><span id="query-error"></span><span id="other-reads"></span>';
@@ -555,13 +887,36 @@ export function installQueryProbe() {
     section.querySelector('#other-reads')!.textContent = String(other() ?? '');
   });
 }
+export function installRouteProbe() {
+  const section = document.createElement('section');
+  section.innerHTML = '<button>Leave slow route</button><p id="route-state"></p><div id="route-host"></div>';
+  document.getElementById('app')!.append(section);
+  const entry: AsyncRouteEntry = {
+    pattern: '/slow-probe', filePath: 'slow-probe.ts', hasLoader: true, layouts: [],
+    importFn: async () => ({
+      default: () => document.createTextNode('Late route'),
+      loader: async ({ signal }: LoaderContext) => {
+        signal.addEventListener('abort', () => { section.querySelector('#route-state')!.textContent = 'aborted'; }, { once: true });
+        const response = await fetch('/actions/slow-read', { method: 'POST', signal });
+        return response.json();
+      },
+    }),
+  };
+  const host = section.querySelector('#route-host')!;
+  const mounted = mount(() => asyncRoute(entry, {}) as DocumentFragment, host);
+  section.querySelector('button')!.addEventListener('click', () => {
+    mounted.unmount();
+    host.textContent = 'Next route';
+  });
+}
 `,
   );
   const entryPath = join(project, 'src/entry.client.ts');
   await writeFile(
     entryPath,
-    "import { installQueryProbe } from './query-probe.ts';\n" +
+    "import { installQueryProbe, installRouteProbe } from './query-probe.ts';\n" +
       '(globalThis as typeof globalThis & { installQueryProbe?: () => void }).installQueryProbe = installQueryProbe;\n' +
+      '(globalThis as typeof globalThis & { installRouteProbe?: () => void }).installRouteProbe = installRouteProbe;\n' +
       (await readFile(entryPath, 'utf8')),
   );
   await run([npmCli!, 'install', '--no-audit', '--no-fund'], project);
@@ -593,7 +948,12 @@ export function installQueryProbe() {
       }
       console.log(`Checking ${mode}`);
       await checkHttp(origin);
+      await checkDisconnects(origin, server.output);
       for (const engine of [chromium, firefox, webkit]) await checkBrowser(engine, origin);
+      assert.doesNotMatch(
+        server.output(),
+        /AbortError|ERR_STREAM_PREMATURE_CLOSE|ECONNRESET|Internal Server Error/,
+      );
       if (mode === 'dev') {
         await rm(join(project, 'src/actions/probe.server.ts'));
         for (let attempt = 0; ; attempt++) {

@@ -3,7 +3,9 @@
 // Unit tests for the helper's pass-1 / pass-2 SSR behavior + the
 // loadStack composition (route + layouts + loaders + error boundary).
 
-import { describe, expect, it } from 'vite-plus/test';
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
+import { mount } from '../src/component.ts';
+import { state, watch } from '../src/signals.ts';
 
 import {
   asyncNotFound,
@@ -18,6 +20,251 @@ import {
   type SSRRenderContext,
 } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';
+
+const cleanups: Array<() => void> = [];
+afterEach(() => {
+  for (const cleanup of cleanups.splice(0)) cleanup();
+  document.body.replaceChildren();
+  vi.restoreAllMocks();
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
+function mountRoute(entry: AsyncRouteEntry, request?: Request) {
+  const root = document.createElement('div');
+  document.body.append(root);
+  const active = state(true);
+  const mounted = mount(
+    () =>
+      asyncRoute(entry, {}, request ? { request: () => request } : undefined) as DocumentFragment,
+    root,
+  );
+  cleanups.push(mounted.unmount);
+  // A router replaces a mounted route scope. when()/match() intentionally
+  // cache hidden branches, so hiding one is not a lifecycle teardown.
+  cleanups.push(
+    watch(() => {
+      if (!active()) {
+        mounted.unmount();
+        root.textContent = 'Next route';
+      }
+    }),
+  );
+  return { root, active, ...mounted };
+}
+
+describe('asyncRoute — loader cancellation', () => {
+  it('shares cancellation between page/layout loaders when the route scope is replaced', async () => {
+    const signals: AbortSignal[] = [];
+    const work = deferred<string>();
+    const loader = ({ signal }: { signal: AbortSignal }) => {
+      signals.push(signal);
+      return work.promise;
+    };
+    const entry: AsyncRouteEntry = {
+      pattern: '/cancel',
+      filePath: 'cancel.ts',
+      hasLoader: true,
+      importFn: async () => ({ default: () => document.createTextNode('Old route'), loader }),
+      layouts: [
+        {
+          filePath: '_layout.ts',
+          hasLoader: true,
+          importFn: async () => ({ default: (children: () => unknown) => children(), loader }),
+        },
+      ],
+    };
+    const { root, active } = mountRoute(entry);
+    await vi.waitFor(() => expect(signals).toHaveLength(2));
+    expect(signals[0]).toBe(signals[1]);
+    active(false);
+    await vi.waitFor(() => expect(signals[0].aborted).toBe(true));
+    work.resolve('late');
+    await new Promise((done) => setTimeout(done, 0));
+    expect(root.textContent).toBe('Next route');
+  });
+
+  it('keeps the loader signal live after settlement and removes forwarding listeners on unmount', async () => {
+    const request = new Request('http://localhost/cancel');
+    const add = vi.spyOn(request.signal, 'addEventListener');
+    const remove = vi.spyOn(request.signal, 'removeEventListener');
+    let signal!: AbortSignal;
+    const entry: AsyncRouteEntry = {
+      pattern: '/cancel',
+      filePath: 'cancel.ts',
+      hasLoader: true,
+      layouts: [],
+      importFn: async () => ({
+        default: () => document.createTextNode('Ready'),
+        loader: (ctx: { signal: AbortSignal }) => {
+          signal = ctx.signal;
+          return 'done';
+        },
+      }),
+    };
+    const { root, unmount } = mountRoute(entry, request);
+    await vi.waitFor(() => expect(root.textContent).toBe('Ready'));
+    expect(signal.aborted).toBe(false);
+    unmount();
+    expect(signal.aborted).toBe(true);
+    expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0][1]);
+  });
+
+  it('does not start loaders after cancellation during module import', async () => {
+    const module = deferred<unknown>();
+    const loader = vi.fn();
+    const boundary = vi.fn(async () => ({ default: () => 'error' }));
+    const entry: AsyncRouteEntry = {
+      pattern: '/cancel',
+      filePath: 'cancel.ts',
+      hasLoader: true,
+      layouts: [],
+      importFn: () => module.promise,
+      errorBoundary: { filePath: '_error.ts', importFn: boundary },
+    };
+    const { unmount } = mountRoute(entry);
+    await new Promise((done) => setTimeout(done, 0));
+    unmount();
+    module.resolve({ default: () => 'old', loader });
+    await new Promise((done) => setTimeout(done, 0));
+    expect(loader).not.toHaveBeenCalled();
+    expect(boundary).not.toHaveBeenCalled();
+  });
+
+  it('ignores an abandoned loader redirect without inspecting or navigating to its target', async () => {
+    const work = deferred<string>();
+    const loader = vi.fn(() => work.promise);
+    const boundary = vi.fn(async () => ({ default: () => 'error' }));
+    const entry: AsyncRouteEntry = {
+      pattern: '/cancel',
+      filePath: 'cancel.ts',
+      hasLoader: true,
+      layouts: [],
+      importFn: async () => ({ default: () => 'old', loader }),
+      errorBoundary: { filePath: '_error.ts', importFn: boundary },
+    };
+    const { unmount } = mountRoute(entry);
+    await vi.waitFor(() => expect(loader).toHaveBeenCalled());
+    unmount();
+    const redirect = Response.redirect('http://localhost/late', 302);
+    const get = vi.spyOn(redirect.headers, 'get');
+    work.reject(redirect);
+    await new Promise((done) => setTimeout(done, 0));
+    expect(get).not.toHaveBeenCalled();
+    expect(boundary).not.toHaveBeenCalled();
+  });
+
+  it('forwards a custom client request abort without rendering an error boundary', async () => {
+    const controller = new AbortController();
+    const request = new Request('http://localhost/cancel', { signal: controller.signal });
+    const work = deferred<string>();
+    let signal!: AbortSignal;
+    const loader = vi.fn((ctx: { signal: AbortSignal }) => {
+      signal = ctx.signal;
+      return work.promise;
+    });
+    const boundary = vi.fn(async () => ({ default: () => 'error' }));
+    const entry: AsyncRouteEntry = {
+      pattern: '/cancel',
+      filePath: 'cancel.ts',
+      hasLoader: true,
+      layouts: [],
+      importFn: async () => ({ default: () => 'old', loader }),
+      errorBoundary: { filePath: '_error.ts', importFn: boundary },
+    };
+    mountRoute(entry, request);
+    await vi.waitFor(() => expect(loader).toHaveBeenCalled());
+    const reason = new Error('Request cancelled');
+    controller.abort(reason);
+    expect(signal.aborted).toBe(true);
+    expect(signal.reason).toBe(reason);
+    work.reject(new Error('Late error'));
+    await new Promise((done) => setTimeout(done, 0));
+    expect(boundary).not.toHaveBeenCalled();
+  });
+
+  it.each(['resolve', 'reject'])('ignores boundary preload %s after cancellation', async (mode) => {
+    const module = deferred<unknown>();
+    const boundary = vi.fn(() => module.promise);
+    const view = vi.fn(() => document.createTextNode('old'));
+    const errorView = vi.fn(() => 'error');
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const entry: AsyncRouteEntry = {
+      pattern: '/cancel',
+      filePath: 'cancel.ts',
+      layouts: [],
+      importFn: async () => ({ default: view }),
+      errorBoundary: { filePath: '_error.ts', importFn: boundary },
+    };
+    const { unmount } = mountRoute(entry);
+    await vi.waitFor(() => expect(boundary).toHaveBeenCalled());
+    unmount();
+    if (mode === 'resolve') module.resolve({ default: errorView });
+    else module.reject(new Error('Late import failure'));
+    await new Promise((done) => setTimeout(done, 0));
+    expect(view).not.toHaveBeenCalled();
+    expect(errorView).not.toHaveBeenCalled();
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('does not import a route for an already aborted SSR request', async () => {
+    const controller = new AbortController();
+    const reason = new Error('SSR cancelled');
+    controller.abort(reason);
+    const request = new Request('http://localhost/cancel', { signal: controller.signal });
+    const importFn = vi.fn(async () => ({ default: () => 'old' }));
+    const entry: AsyncRouteEntry = {
+      pattern: '/cancel',
+      filePath: 'cancel.ts',
+      layouts: [],
+      importFn,
+    };
+    const { ctx } = inSSRContext(() => asyncRoute(entry, {}, { request: () => request }));
+    await Promise.all(ctx.pendingPromises);
+    expect(importFn).not.toHaveBeenCalled();
+    expect(ctx.resolvedErrorsByKey['route:/cancel']).toBe(reason);
+  });
+
+  it('settles SSR cancellation promptly even when a loader ignores its signal', async () => {
+    const controller = new AbortController();
+    const request = new Request('http://localhost/cancel', { signal: controller.signal });
+    const work = deferred<string>();
+    let signal!: AbortSignal;
+    const loader = vi.fn((ctx: { signal: AbortSignal }) => {
+      signal = ctx.signal;
+      return work.promise;
+    });
+    const boundary = vi.fn(async () => ({ default: () => 'error' }));
+    const entry: AsyncRouteEntry = {
+      pattern: '/cancel',
+      filePath: 'cancel.ts',
+      hasLoader: true,
+      layouts: [],
+      importFn: async () => ({ default: () => 'old', loader }),
+      errorBoundary: { filePath: '_error.ts', importFn: boundary },
+    };
+    const { ctx } = inSSRContext(() => asyncRoute(entry, {}, { request: () => request }));
+    await vi.waitFor(() => expect(loader).toHaveBeenCalled());
+    expect(signal).toBe(request.signal);
+    const reason = new Error('SSR cancelled');
+    controller.abort(reason);
+    await vi.waitFor(() => expect(ctx.resolvedErrorsByKey['route:/cancel']).toBe(reason));
+    expect(ctx.resolvedDataByKey['route:/cancel']).toBeUndefined();
+    expect(boundary).not.toHaveBeenCalled();
+    work.resolve('late');
+    await Promise.all(ctx.pendingPromises);
+    await new Promise((done) => setTimeout(done, 0));
+    expect(ctx.resolvedDataByKey['route:/cancel']).toBeUndefined();
+  });
+});
 
 function inSSRContext<T>(
   fn: () => T,

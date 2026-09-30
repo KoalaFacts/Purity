@@ -182,6 +182,44 @@ actions return 404. API clients send `Origin` explicitly. Configure
 `PUBLIC_ORIGIN` or a trusted proxy for the deployment's public URL. The generated
 README describes validation responses and the request contract in more detail.
 
+### Loader cancellation
+
+Page and layout loaders share `LoaderContext.signal`. Pass it to operations
+that support cancellation:
+
+```ts
+import type { LoaderContext } from '@purityjs/core';
+
+export async function loader({ params, request, signal }: LoaderContext) {
+  const url = new URL(`/api/posts/${encodeURIComponent(params.slug)}`, request.url);
+  const response = await fetch(url, { signal });
+  return response.json();
+}
+```
+
+On the client, the signal aborts when the route's owning render scope is
+disposed, including `mount().unmount()`. A custom `asyncRoute` request's signal
+also cancels its loaders. Hiding a cached `when()` or `match()` branch does not
+dispose it and does not cancel its work.
+
+On the server, the signal is the supplied `Request.signal`. The generated Node
+adapter listens for disconnects before middleware, module loading, and route
+lookup begin. An incomplete upload or a response connection closed before
+completion aborts the request, its loaders, and streaming output. Fully receiving
+a GET or POST and successfully finishing its response do not cancel it; normal
+keep-alive reuse remains supported. The adapter removes its listeners on response
+completion or closure.
+
+Custom adapters must wire request cancellation into `Request.signal` to propagate
+disconnects. A rendering timeout alone does not abort that signal. Deferred
+`resource()` work can use `getRequest()!.signal` with cancellable operations to
+follow the same request lifetime.
+
+Cancellation stops the route pipeline from waiting and prevents late values,
+errors, or redirects from rendering or navigating. It cannot forcibly stop
+arbitrary promises or undo completed work. Forward the signal to `fetch` and
+other cancellable operations to stop their underlying work.
+
 ### Status and headers from a loader
 
 Use `routeData(value, { status, headers })` when a page should render with

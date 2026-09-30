@@ -27,6 +27,18 @@ shell and any deferred `suspense()` regions. Put slow, independent content in
 `suspense()` to let the rest of the page arrive first. Static pages use buffered
 rendering during the build.
 
+Progressive SSR follows reader demand automatically. Its internal Web Stream
+queue holds at most one transport chunk of up to 64 KiB, pausing later boundary
+renders while the consumer is slow. Node and network buffers have separate
+limits. Explicit Suspense deadlines keep their original shell clock, so a queued
+view can expire before it starts. Canceling or aborting a paused stream still
+cleans up request listeners and active loaders. Cancel streams you will not read;
+the renderer does not impose an overall connection deadline.
+
+Transport chunks can split HTML or UTF-8 characters. Use streaming decoding or
+`Response.text()` when consuming manually. The queue limit does not cap shell
+HTML, the current boundary's encoded output, or hydration data.
+
 For a strict Content Security Policy on server pages, the Node server creates
 a fresh nonce for each request and uses it on Purity's inline streaming
 scripts. A loader can read that nonce from its server-side `request` and put it

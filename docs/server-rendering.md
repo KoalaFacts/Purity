@@ -52,6 +52,31 @@ generated app uses normal document navigation so the browser receives each
 page's HTTP status and headers. Server pages stream the shell first, then
 deferred `suspense()` regions. Static pages continue to render at build time.
 
+### Slow readers and stream buffering
+
+`renderToStream()` and `renderToStreamResponse()` honor reader demand: their
+internal Web Stream queue holds at most one transport chunk of up to 64 KiB.
+When it is full, the renderer pauses and does not start subsequent deferred
+boundaries. Reading resumes production in declaration order. This follows the
+[Streams backpressure model](https://streams.spec.whatwg.org/#example-rs-push-backpressure)
+and requires no caller option. Node's response pipeline propagates downstream
+pressure; Node, socket, proxy, and browser buffers have their own limits.
+
+A boundary's explicit timeout still starts when the shell first encounters it.
+Waiting for a reader does not reset that deadline; an expired queued view is
+skipped and retains its fallback. Consumer cancellation and external request
+abort detach listeners and cancel active resource/loader work even while output
+is paused.
+
+Transport chunks can split HTML, scripts, and multibyte UTF-8 characters. When
+reading manually, use `TextDecoder.decode(chunk, { stream: true })` and flush
+with `decode()` at the end, or use `Response.text()`. Do not assume one chunk is
+a whole Suspense boundary. The queue bound does not bound total request memory:
+the renderer still constructs the shell, one current boundary's HTML and its
+encoded bytes, and resolved hydration data. An unconsumed stream stays open
+until its reader cancels or an external signal aborts; adapters own any overall
+connection deadline.
+
 ### Submit forms to server actions
 
 The app starter's `/greeting` page works with JavaScript disabled. Put action

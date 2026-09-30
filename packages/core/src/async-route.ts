@@ -121,7 +121,7 @@ export interface LoaderContext {
   request: Request;
   /** Route params from `matchRoute()` (ADR 0011). */
   params: Record<string, string>;
-  /** Cancels with the request, client disposal, or the owning SSR render/boundary. */
+  /** This loader's signal; follows request, client disposal, and SSR render/boundary cancellation. */
   signal: AbortSignal;
 }
 
@@ -185,16 +185,54 @@ function defaultRequest(): Request {
   return new Request(href);
 }
 
-async function callLoader(mod: AsyncModule, ctx: LoaderContext): Promise<LoaderOutcome> {
+interface LoaderGroup {
+  pending: Set<(reason: unknown) => void>;
+  detach: Set<() => void>;
+  serverRender: boolean;
+}
+
+async function callLoader(
+  mod: AsyncModule,
+  ctx: LoaderContext,
+  group: LoaderGroup,
+): Promise<LoaderOutcome> {
   ctx.signal.throwIfAborted();
   if (typeof mod.loader !== 'function') return { data: undefined };
-  const result: unknown = await mod.loader(ctx);
-  ctx.signal.throwIfAborted();
-  if (result instanceof Response) throw result;
-  if (isRouteData(result)) {
-    return { data: result.value, status: result.status, headers: result.headers };
+  const controller = new AbortController();
+  const signal = controller.signal;
+  const abort = (reason: unknown) => controller.abort(reason);
+  const detach = () => {
+    ctx.signal.removeEventListener('abort', forward);
+    group.detach.delete(detach);
+  };
+  const forward = () => abort(ctx.signal.reason);
+  const onAbort = () => {
+    group.pending.delete(abort);
+    detach();
+  };
+  group.pending.add(abort);
+  group.detach.add(detach);
+  signal.addEventListener('abort', onAbort, { once: true });
+  ctx.signal.addEventListener('abort', forward, { once: true });
+  if (ctx.signal.aborted) forward();
+  try {
+    signal.throwIfAborted();
+    const result = await waitForRoute(Promise.resolve(mod.loader({ ...ctx, signal })), signal);
+    signal.throwIfAborted();
+    if (result instanceof Response) throw result;
+    if (isRouteData(result)) {
+      return { data: result.value, status: result.status, headers: result.headers };
+    }
+    return { data: result };
+  } finally {
+    // Only unfinished peers can be canceled by another loader's outcome.
+    // A returned Response may still own a fetch body after headers settle.
+    group.pending.delete(abort);
+    if (group.serverRender || signal.aborted) {
+      signal.removeEventListener('abort', onAbort);
+      detach();
+    }
   }
-  return { data: result };
 }
 
 /**
@@ -304,21 +342,18 @@ async function loadStack(
   const loaderParams = Object.freeze({ ...params });
   const cancellation = routeCancellation(resourceSignal, request.signal);
   const signal = cancellation.signal;
-  // Loader work has a shorter lifetime on failure/HTTP outcomes than the
-  // route's error-view pipeline. Stop unfinished peers without canceling the
-  // error boundary import or invalidating its resulting view factory.
-  const loaderAbort = new AbortController();
-  const stopLoaders = (reason: unknown) => {
-    signal.removeEventListener('abort', onRouteAbort);
-    loaderAbort.abort(reason);
+  const loaders: LoaderGroup = {
+    pending: new Set(),
+    detach: new Set(),
+    serverRender,
   };
-  const onRouteAbort = () => stopLoaders(signal.reason);
-  signal.addEventListener('abort', onRouteAbort, { once: true });
-  if (signal.aborted) onRouteAbort();
+  const stopLoaders = (reason: unknown) => {
+    for (const abort of loaders.pending) abort(reason);
+  };
   const ctx: LoaderContext = {
     request,
     params: loaderParams,
-    signal: loaderAbort.signal,
+    signal,
   };
   const assertViewActive = () => {
     signal.throwIfAborted();
@@ -343,11 +378,11 @@ async function loadStack(
     const [routeResult, ...layoutResults] = await waitForRoute(
       Promise.all([
         entry.hasLoader
-          ? callLoader(routeMod, ctx)
+          ? callLoader(routeMod, ctx, loaders)
           : Promise.resolve<LoaderOutcome>({ data: undefined }),
         ...entry.layouts.map((l, i) =>
           l.hasLoader
-            ? callLoader(layoutMods[i], ctx)
+            ? callLoader(layoutMods[i], ctx, loaders)
             : Promise.resolve<LoaderOutcome>({ data: undefined }),
         ),
       ]),
@@ -501,7 +536,7 @@ async function loadStack(
     // route's additional request listener too, including failed/aborted loads.
     // Client routes keep forwarding until the owning resource is disposed.
     if (serverRender) {
-      signal.removeEventListener('abort', onRouteAbort);
+      for (const detach of loaders.detach) detach();
       cancellation.detach();
     }
   }

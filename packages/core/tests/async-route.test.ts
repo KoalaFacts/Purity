@@ -84,9 +84,11 @@ describe('asyncRoute — loader cancellation', () => {
     };
     const { root, active } = mountRoute(entry);
     await vi.waitFor(() => expect(signals).toHaveLength(2));
-    expect(signals[0]).toBe(signals[1]);
+    expect(signals[0]).not.toBe(signals[1]);
     active(false);
     await vi.waitFor(() => expect(signals[0].aborted).toBe(true));
+    expect(signals[1].aborted).toBe(true);
+    expect(signals[1].reason).toBe(signals[0].reason);
     work.resolve('late');
     await new Promise((done) => setTimeout(done, 0));
     expect(root.textContent).toBe('Next route');

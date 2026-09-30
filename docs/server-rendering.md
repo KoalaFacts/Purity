@@ -184,8 +184,8 @@ README describes validation responses and the request contract in more detail.
 
 ### Loader cancellation
 
-Page and layout loaders share `LoaderContext.signal`. Pass it to operations
-that support cancellation:
+Page and layout loaders follow a shared route cancellation scope. Each loader
+receives its own `LoaderContext.signal`. Pass it to operations that support cancellation:
 
 ```ts
 import type { LoaderContext } from '@purityjs/core';
@@ -212,6 +212,8 @@ their forwarding listeners; their loader signals are not canceled later.
 When a page or layout loader fails or returns a Web `Response`, unfinished peer
 loaders are canceled with that outcome as the reason. Error-boundary loading and
 HTTP response handling continue in the route's active scope.
+The loader returning a `Response` has already settled and keeps its signal live,
+so canceling unfinished peers does not cut off the winning response's fetch body.
 
 The generated Node adapter listens for disconnects before middleware, module
 loading, and route lookup begin. An incomplete upload or a response connection closed before

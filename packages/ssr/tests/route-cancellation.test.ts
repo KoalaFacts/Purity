@@ -1,3 +1,4 @@
+import { createServer, type ServerResponse } from 'node:http';
 import {
   asyncRoute,
   routeData,
@@ -79,12 +80,14 @@ describe.each(renderers)('SSR route cancellation — $name', ({ name, render }) 
     );
     await vi.advanceTimersByTimeAsync(0);
     expect(signals).toHaveLength(2);
-    expect(signals[0]).toBe(signals[1]);
+    expect(signals[0]).not.toBe(signals[1]);
     await vi.advanceTimersByTimeAsync(20);
     const error = await outcome;
     expect(error.message).toContain('timed out');
     expect(signals[0].aborted).toBe(true);
     expect(signals[0].reason).toBe(error);
+    expect(signals[1].aborted).toBe(true);
+    expect(signals[1].reason).toBe(error);
     expect(request.signal.aborted).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -121,6 +124,8 @@ describe.each(renderers)('SSR route cancellation — $name', ({ name, render }) 
       expect(await outcome).toBe(name === 'stream' && source !== 'custom request' ? '' : reason);
       expect(signals[0].aborted).toBe(true);
       expect(signals[0].reason).toBe(reason);
+      expect(signals[1].aborted).toBe(true);
+      expect(signals[1].reason).toBe(reason);
       expect(explicit.signal.aborted).toBe(source === 'explicit');
       expect(request.signal.aborted).toBe(source === 'request');
       for (const [type, listener] of add.mock.calls) {
@@ -164,9 +169,11 @@ describe.each(renderers)('SSR route cancellation — $name', ({ name, render }) 
       );
       await vi.advanceTimersByTimeAsync(20);
       expect(slowSignals).toHaveLength(2);
-      expect(slowSignals[0]).toBe(slowSignals[1]);
+      expect(slowSignals[0]).not.toBe(slowSignals[1]);
       expect(slowSignals[0].aborted).toBe(true);
       expect(slowSignals[0].reason.name).toBe('TimeoutError');
+      expect(slowSignals[1].aborted).toBe(true);
+      expect(slowSignals[1].reason).toBe(slowSignals[0].reason);
       expect(healthySignals).toHaveLength(2);
       expect(healthySignals[0].aborted).toBe(false);
       expect(request.signal.aborted).toBe(false);
@@ -315,7 +322,7 @@ describe.each(renderers)('SSR route cancellation — $name', ({ name, render }) 
       else if (mode === 'response') expect(output).toBe(response);
       else expect(output.message).toBe('EXPECTED');
       expect(signals).toHaveLength(2);
-      expect(signals[0].aborted).toBe(mode !== 'success');
+      expect(signals.every((signal) => !signal.aborted)).toBe(true);
       for (const [type, listener] of add.mock.calls) {
         if (type === 'abort') expect(remove).toHaveBeenCalledWith(type, listener);
       }
@@ -414,9 +421,66 @@ describe.each(['stream', 'stream response'])('SSR route reader cancellation — 
     await started.promise;
     const reason = new Error('consumer left');
     await reader.cancel(reason);
-    expect(signals[0]).toBe(signals[1]);
+    expect(signals[0]).not.toBe(signals[1]);
     expect(signals[0].aborted).toBe(true);
     expect(signals[0].reason).toBe(reason);
+    expect(signals[1].aborted).toBe(true);
+    expect(signals[1].reason).toBe(reason);
     expect(request.signal.aborted).toBe(false);
+  });
+});
+
+describe.each(renderers)('SSR loader Response transfer — $name', ({ render }) => {
+  it('keeps a real fetched body readable while canceling an unfinished peer', async () => {
+    let reply!: ServerResponse;
+    const server = createServer((_request, response) => {
+      reply = response;
+      response.writeHead(200, { 'Content-Type': 'text/plain' });
+      response.write('NETWORK ');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Expected a TCP listener');
+      let winnerSignal!: AbortSignal;
+      let peerSignal!: AbortSignal;
+      const entry: AsyncRouteEntry = {
+        pattern: '/response',
+        filePath: 'response.ts',
+        hasLoader: true,
+        importFn: async () => ({
+          default: () => 'unused',
+          loader: ({ signal }: LoaderContext) => {
+            winnerSignal = signal;
+            return fetch(`http://127.0.0.1:${address.port}/body`, { signal });
+          },
+        }),
+        layouts: [
+          {
+            filePath: '_layout.ts',
+            hasLoader: true,
+            importFn: async () => ({
+              default: (children: () => unknown) => children(),
+              loader: ({ signal }: LoaderContext) => {
+                peerSignal = signal;
+                return new Promise(() => {});
+              },
+            }),
+          },
+        ],
+      };
+      const request = new Request('https://example.test/response');
+      const result = await render(() => asyncRoute(entry, {}), { request }).catch((error) => error);
+      expect(result).toBeInstanceOf(Response);
+      expect(peerSignal.aborted).toBe(true);
+      expect(peerSignal.reason).toBe(result);
+      expect(winnerSignal.aborted).toBe(false);
+      expect(request.signal.aborted).toBe(false);
+      reply.end('BODY');
+      expect(await (result as Response).text()).toBe('NETWORK BODY');
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });

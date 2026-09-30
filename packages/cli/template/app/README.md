@@ -51,7 +51,8 @@ policy that allows only `'self'` blocks the deferred inline swap scripts.
 
 ### Loader cancellation
 
-Page and layout loaders receive a shared `signal`. Forward it to cancellable
+Page and layout loaders follow a shared route scope and receive individual
+`signal` values. Forward each signal to cancellable
 operations, for example `fetch(url, { signal })`. On the client it aborts when
 the route's owning render scope is disposed; a cached branch that is only
 hidden stays alive. A custom request's signal also cancels its loaders.
@@ -59,13 +60,15 @@ hidden stays alive. A custom request's signal also cancels its loaders.
 During SSR, loader signals combine the request and the route's owning resource
 operation. Render cancellation, failure, global timeout, stream reader
 cancellation, and enclosing Suspense deadlines cancel unfinished loaders. Page
-and layout loaders share that signal. Boundary timeouts leave the original
+and layout loaders follow the same route cancellation. Boundary timeouts leave the original
 request and neighboring routes active. Forward `LoaderContext.signal` instead
 of `request.signal` to make underlying work obey render deadlines. Successful
 route pipelines detach their forwarding listeners and are not canceled later.
 If a page or layout loader fails or returns a Web `Response`, unfinished peer
 loaders are canceled with the original outcome. The route can still load its
 error boundary or deliver the HTTP response.
+The settled loader returning a `Response` keeps its signal live, preserving its
+fetch body while unfinished peers are canceled.
 
 The Node server connects the request signal to incomplete uploads and response
 connections closed before completion, with listeners installed before middleware

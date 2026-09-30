@@ -34,6 +34,7 @@ import {
 import { valueToHtml } from '@purityjs/core/compiler';
 import { boundaryDeadline } from './boundary-deadline.ts';
 import { renderCancellation } from './render-cancellation.ts';
+import { SSRTimeoutError } from './timeout-error.ts';
 import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
 
 const DEFAULT_TIMEOUT = 5000;
@@ -423,7 +424,9 @@ async function renderShell(
 
     const remaining = timeout - (Date.now() - start);
     if (remaining <= 0) {
-      throw new Error(
+      throw new SSRTimeoutError(
+        'shell',
+        timeout,
         `[Purity] renderToStream shell timed out after ${timeout}ms with ` +
           `${ctx.pendingPromises.length} pending top-level resource(s). ` +
           'Wrap slow data in suspense() to keep the shell streaming.',
@@ -462,7 +465,9 @@ async function renderShell(
       if (signal && onAbort) signal.removeEventListener('abort', onAbort);
     }
     if (timedOut) {
-      throw new Error(
+      throw new SSRTimeoutError(
+        'shell',
+        timeout,
         `[Purity] renderToStream shell timed out after ${timeout}ms while ` +
           'awaiting top-level resources.',
       );

@@ -174,6 +174,9 @@ type DisconnectState = Record<
     aborted: boolean;
     requestAborted?: boolean;
     reasonName?: string;
+    reasonCode?: string;
+    reasonPhase?: string;
+    reasonTimeout?: number;
     completed: boolean;
     views: number;
   }
@@ -192,6 +195,40 @@ async function disconnectState(
   });
   assert.equal(response.status, 200);
   return response.json();
+}
+
+async function checkRenderTimeouts(origin: string): Promise<void> {
+  for (const method of ['GET', 'HEAD']) {
+    const id = `render-timeout-${method}`;
+    const response = await fetch(`${origin}/disconnect/probe?id=${id}&mode=render-timeout`, {
+      method,
+      signal: AbortSignal.timeout(10_000),
+    });
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(response.headers.get('content-type'), 'text/plain; charset=utf-8');
+    assert.equal(response.headers.get('retry-after'), null);
+    assert.equal(await response.text(), method === 'HEAD' ? '' : 'Service Unavailable');
+    const state = await disconnectState(origin, id);
+    for (const phase of ['page', 'layout']) {
+      assert.equal(state[phase].aborted, true);
+      assert.equal(state[phase].requestAborted, false);
+      assert.equal(state[phase].reasonName, 'SSRTimeoutError');
+      assert.equal(state[phase].reasonCode, 'PURITY_SSR_TIMEOUT');
+      assert.equal(state[phase].reasonPhase, 'shell');
+      assert.equal(state[phase].reasonTimeout, 100);
+      assert.equal(state[phase].completed, false);
+    }
+    await disconnectState(origin, id, true);
+    assert.equal((await disconnectState(origin, id)).page.completed, false);
+  }
+  const error = await fetch(`${origin}/timeout-lookalike`, { signal: AbortSignal.timeout(10_000) });
+  assert.equal(error.status, 500);
+  assert.equal(await error.text(), 'Internal Server Error');
+  assert.equal((await fetch(`${origin}/greeting`)).status, 200);
+  console.log(
+    'HTTP SSR deadlines: GET/HEAD 503, no-store, typed page/layout cancellation, no leaked details, ordinary error 500, and next-request recovery passed',
+  );
 }
 
 async function until(check: () => boolean | Promise<boolean>, message: string): Promise<void> {
@@ -783,7 +820,9 @@ export function inspectDisconnect(id: string, release: boolean) {
   if (release) for (const work of phases?.values() ?? []) work.release();
   return Object.fromEntries(Array.from(phases ?? [], ([phase, work]) => [phase, {
     started: true, aborted: work.signal?.aborted ?? false, requestAborted: work.requestSignal?.aborted,
-    reasonName: work.signal?.reason?.name, completed: work.completed, views: work.views,
+    reasonName: work.signal?.reason?.name, reasonCode: work.signal?.reason?.code,
+    reasonPhase: work.signal?.reason?.phase, reasonTimeout: work.signal?.reason?.timeout,
+    completed: work.completed, views: work.views,
   }]));
 }
 `,
@@ -807,7 +846,7 @@ export async function loader({ request, signal }: LoaderContext) {
   const url = new URL(request.url);
   const id = url.searchParams.get('id')!;
   const mode = url.searchParams.get('mode');
-  if (!['stream', 'boundary-timeout', 'loader-boundary-timeout'].includes(mode!)) await waitForDisconnect(id, 'page', signal);
+  if (!['stream', 'boundary-timeout', 'loader-boundary-timeout'].includes(mode!)) await waitForDisconnect(id, 'page', signal, request.signal);
   return { id, mode };
 }
 export default function Probe(_params: unknown, data: { id: string; mode: string | null }) {
@@ -856,7 +895,7 @@ import { type LoaderContext } from '@purityjs/core';
 import { waitForDisconnect } from '../../disconnect-probe.ts';
 export async function loader({ request, signal }: LoaderContext) {
   const url = new URL(request.url);
-  if (!['stream', 'boundary-timeout', 'loader-boundary-timeout'].includes(url.searchParams.get('mode')!)) await waitForDisconnect(url.searchParams.get('id')!, 'layout', signal);
+  if (!['stream', 'boundary-timeout', 'loader-boundary-timeout'].includes(url.searchParams.get('mode')!)) await waitForDisconnect(url.searchParams.get('id')!, 'layout', signal, request.signal);
 }
 export default function Layout(children: () => unknown) { return children(); }
 `,
@@ -865,14 +904,26 @@ export default function Layout(children: () => unknown) { return children(); }
   await writeFile(
     serverEntryPath,
     "import { waitForDisconnect } from './disconnect-probe.ts';\n" +
-      (await readFile(serverEntryPath, 'utf8')).replace(
-        'export async function routeFor(',
-        'async function originalRouteFor(',
-      ) +
+      (await readFile(serverEntryPath, 'utf8'))
+        .replace('export async function routeFor(', 'async function originalRouteFor(')
+        .replace(
+          '{ request, signal: request.signal, nonce }',
+          "{ request, signal: request.signal, nonce, timeout: new URL(request.url).searchParams.get('mode') === 'render-timeout' ? 100 : undefined }",
+        ) +
       `
 export async function routeFor(path: string) {
   if (path === '/disconnect/early') await waitForDisconnect('early', 'routing');
   return originalRouteFor(path);
+}
+`,
+  );
+  await writeFile(
+    join(project, 'src/pages/timeout-lookalike.ts'),
+    `
+export default function TimeoutLookalike(): never {
+  const error = new Error('PURITY_EXPECTED_LOOKALIKE: renderToStream shell timed out after 100ms');
+  error.name = 'SSRTimeoutError';
+  throw error;
 }
 `,
   );
@@ -1014,6 +1065,7 @@ export function installRouteProbe() {
       console.log(`Checking ${mode}`);
       await checkHttp(origin);
       await checkDisconnects(origin, server.output);
+      await checkRenderTimeouts(origin);
       for (const engine of [chromium, firefox, webkit]) await checkBrowser(engine, origin);
       assert.doesNotMatch(
         server.output(),

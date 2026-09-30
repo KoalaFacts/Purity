@@ -18,6 +18,7 @@ import { valueToHtml } from '@purityjs/core/compiler';
 import { boundaryDeadline } from './boundary-deadline.ts';
 import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
 import { renderCancellation } from './render-cancellation.ts';
+import { SSRTimeoutError } from './timeout-error.ts';
 
 export interface RenderToStringOptions {
   /** Maximum ms to wait for pending resources during render. Default 5000. */
@@ -254,7 +255,9 @@ async function renderString(
 
     const remaining = timeout - (Date.now() - start);
     if (remaining <= 0) {
-      throw new Error(
+      throw new SSRTimeoutError(
+        'render',
+        timeout,
         `[Purity] renderToString timed out after ${timeout}ms with ` +
           `${ctx.pendingPromises.length} pending resource(s).`,
       );
@@ -335,7 +338,9 @@ async function renderString(
       throw abortReason(signal as AbortSignal);
     }
     if (raceResult === 'global') {
-      throw new Error(
+      throw new SSRTimeoutError(
+        'render',
+        timeout,
         `[Purity] renderToString timed out after ${timeout}ms while ` +
           'awaiting pending resources.',
       );

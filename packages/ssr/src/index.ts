@@ -12,6 +12,7 @@ import './component.ts';
 
 export type { SSRHtml } from '@purityjs/core/compiler';
 export { html } from './html.ts';
+export { SSRTimeoutError } from './timeout-error.ts';
 export {
   type RenderToStreamOptions,
   type RenderToStreamResponse,

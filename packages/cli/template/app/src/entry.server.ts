@@ -1,5 +1,10 @@
 import { handleAction, matchRoute } from '@purityjs/core';
-import { renderToStreamResponse, renderToString, type RenderToStreamResponse } from '@purityjs/ssr';
+import {
+  SSRTimeoutError,
+  renderToStreamResponse,
+  renderToString,
+  type RenderToStreamResponse,
+} from '@purityjs/ssr';
 import { routes } from 'purity:routes';
 import { App } from './app.ts';
 
@@ -69,6 +74,7 @@ export async function render(
     return await renderToString(App, { request, extractHead: true });
   } catch (error) {
     if (error instanceof Response) return error;
+    if (error instanceof SSRTimeoutError) return timeoutResponse(error);
     throw error;
   }
 }
@@ -81,6 +87,17 @@ export async function renderStream(
     return await renderToStreamResponse(App, { request, signal: request.signal, nonce });
   } catch (error) {
     if (error instanceof Response) return error;
+    if (error instanceof SSRTimeoutError) return timeoutResponse(error);
     throw error;
   }
+}
+
+function timeoutResponse(error: SSRTimeoutError): Response {
+  console.error(error);
+  // The origin could not render within its budget. Do not cache the failure
+  // or invent a Retry-After interval: the application knows when to retry.
+  return new Response('Service Unavailable', {
+    status: 503,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
 }

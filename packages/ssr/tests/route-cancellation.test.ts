@@ -8,6 +8,7 @@ import {
 } from '@purityjs/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
+  SSRTimeoutError,
   html,
   renderToStream,
   renderToStreamResponse,
@@ -83,6 +84,10 @@ describe.each(renderers)('SSR route cancellation — $name', ({ name, render }) 
     expect(signals[0]).not.toBe(signals[1]);
     await vi.advanceTimersByTimeAsync(20);
     const error = await outcome;
+    expect(error).toBeInstanceOf(SSRTimeoutError);
+    expect(error.code).toBe('PURITY_SSR_TIMEOUT');
+    expect(error.phase).toBe(name === 'buffered' ? 'render' : 'shell');
+    expect(error.timeout).toBe(20);
     expect(error.message).toContain('timed out');
     expect(signals[0].aborted).toBe(true);
     expect(signals[0].reason).toBe(error);

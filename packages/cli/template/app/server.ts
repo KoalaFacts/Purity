@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises';
 
 type RouteInfo = { pattern: string; mode: 'static' | 'server' | 'client' } | null;
 type ServerEntry = {
+  dispatchAction: (request: Request) => Promise<Response | null>;
   routeFor: (path: string) => Promise<RouteInfo>;
   renderStream: (
     request: Request,
@@ -21,6 +22,10 @@ type ServerEntry = {
 const root = dirname(fileURLToPath(import.meta.url));
 const production = process.argv.includes('--production') || process.env.NODE_ENV === 'production';
 const port = Number(process.env.PORT ?? 3000);
+const maxActionBodyBytes = Number(process.env.MAX_ACTION_BODY_BYTES ?? 1_048_576);
+if (!Number.isSafeInteger(maxActionBodyBytes) || maxActionBodyBytes <= 0) {
+  throw new Error('MAX_ACTION_BODY_BYTES must be a positive safe integer');
+}
 const contentTypes: Record<string, string> = {
   '.css': 'text/css',
   '.gif': 'image/gif',
@@ -125,7 +130,12 @@ async function sendWebResponse(
   await pipeline(Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]), res);
 }
 
-function requestFor(msg: IncomingMessage, signal: AbortSignal, nonce: string): Request {
+function requestFor(
+  msg: IncomingMessage,
+  signal: AbortSignal,
+  nonce: string,
+  body?: Uint8Array<ArrayBuffer>,
+): Request {
   const trustedProxy = process.env.TRUST_PROXY === '1';
   const firstHeader = (value: string | string[] | undefined): string | undefined =>
     (Array.isArray(value) ? value[0] : value)?.split(',')[0]?.trim();
@@ -143,7 +153,28 @@ function requestFor(msg: IncomingMessage, signal: AbortSignal, nonce: string): R
     method: msg.method ?? 'GET',
     headers,
     signal,
+    body,
   });
+}
+
+async function readActionBody(req: IncomingMessage): Promise<Uint8Array<ArrayBuffer> | null> {
+  if (Number(req.headers['content-length']) > maxActionBodyBytes) {
+    req.resume();
+    return null;
+  }
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  // Keep the socket open on an early exit so the client can receive HTTP 413.
+  for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += buffer.length;
+    if (bytes > maxActionBodyBytes) {
+      req.resume();
+      return null;
+    }
+    chunks.push(buffer);
+  }
+  return new Uint8Array(Buffer.concat(chunks, bytes));
 }
 
 async function start(): Promise<void> {
@@ -170,7 +201,10 @@ async function start(): Promise<void> {
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const head = req.method === 'HEAD';
-    if (req.method !== 'GET' && !head) {
+    const actionMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method ?? '');
+    if (req.method !== 'GET' && !head && !actionMethod) {
+      req.resume();
+      res.setHeader('Allow', 'GET, HEAD, POST, PUT, PATCH, DELETE');
       send(res, 405, 'text/plain; charset=utf-8', 'Method Not Allowed', head);
       return;
     }
@@ -185,16 +219,47 @@ async function start(): Promise<void> {
       send(res, 400, 'text/plain; charset=utf-8', 'Bad Request', head);
       return;
     }
+    const currentEntry = vite
+      ? ((await vite.ssrLoadModule('/src/entry.server.ts')) as ServerEntry)
+      : entry;
+    if (!currentEntry) throw new Error('Server entry is unavailable');
+    if (actionMethod) {
+      const abort = new AbortController();
+      const onClose = () => {
+        if (!res.writableFinished) abort.abort();
+      };
+      res.once('close', onClose);
+      try {
+        const nonce = randomBytes(16).toString('base64');
+        const request = requestFor(req, abort.signal, nonce);
+        // Browser submissions must come from this origin. Non-browser clients
+        // also supply Origin; authentication belongs in the action handler.
+        if (request.headers.get('origin') !== new URL(request.url).origin) {
+          req.resume();
+          send(res, 403, 'text/plain; charset=utf-8', 'Forbidden request origin', false);
+          return;
+        }
+        const body = await readActionBody(req);
+        if (body === null) {
+          send(res, 413, 'text/plain; charset=utf-8', 'Request body too large', false);
+          return;
+        }
+        const response = await currentEntry.dispatchAction(
+          requestFor(req, abort.signal, nonce, body),
+        );
+        if (response) await sendWebResponse(res, response, false);
+        else send(res, 404, 'text/plain; charset=utf-8', 'Action Not Found', false);
+      } finally {
+        res.off('close', onClose);
+      }
+      return;
+    }
     const currentTemplate = vite
       ? await vite.transformIndexHtml(
           req.url ?? '/',
           await readFile(resolve(root, 'index.html'), 'utf8'),
         )
       : template;
-    const currentEntry = vite
-      ? ((await vite.ssrLoadModule('/src/entry.server.ts')) as ServerEntry)
-      : entry;
-    if (!currentEntry) throw new Error('Server entry is unavailable');
     if (production) {
       const asset = resolve(clientDir, '.' + filePathname);
       const rel = relative(clientDir, asset);
@@ -263,6 +328,7 @@ async function start(): Promise<void> {
         if (
           res.destroyed &&
           (code === 'ERR_STREAM_PREMATURE_CLOSE' ||
+            code === 'ECONNRESET' ||
             code === 'ABORT_ERR' ||
             (error as Error)?.name === 'AbortError')
         )

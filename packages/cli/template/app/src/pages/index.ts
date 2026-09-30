@@ -8,6 +8,7 @@ export default function Home(): unknown {
     <p>This page was generated at build time.</p>
     <nav>
       <a href="/about">About</a> · <a href="/time">Time</a> · <a href="/posts/hello">Post</a>
+      · <a href="/greeting">Greeting</a>
     </nav>
   </main>`;
 }

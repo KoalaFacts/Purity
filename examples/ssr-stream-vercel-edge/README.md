@@ -28,6 +28,15 @@ npm run deploy   # build + vercel deploy --prod
 `src/.purity/routes.ts`, `api/stream.js`, and `api/chunks/` are
 gitignored (per-machine paths + build artefacts).
 
+## Toolchain security
+
+The workspace root overrides Vercel's pinned `esbuild` and `js-yaml`
+dependencies with patched versions. The overrides apply only within the
+Vercel dependency tree; `js-yaml` stays on its supported 4.x release line.
+Keep these overrides until Vercel's dependency pins include the fixes.
+CI audits development dependencies as well as production dependencies
+and builds this example to catch dependency and build regressions.
+
 ## Files
 
 ```

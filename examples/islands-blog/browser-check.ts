@@ -80,9 +80,11 @@ async function checkBrowser(name: string, browser: Browser, base: string): Promi
         await delay(300);
         await route.continue();
       });
-      // Keep the chunk in flight until the user action has finished.
+      // Release the chunk only after the first action. A fixed delay can
+      // expire while a slower browser is still focusing the SSR button.
+      const expanderChunk = Promise.withResolvers<void>();
       await page.route('**/src/islands/expander.ts*', async (route) => {
-        await delay(300);
+        await expanderChunk.promise;
         await route.continue();
       });
       await page.goto(base, { waitUntil: 'networkidle' });
@@ -102,6 +104,7 @@ async function checkBrowser(name: string, browser: Browser, base: string): Promi
         await button.focus();
         await page.keyboard.press(action);
       }
+      expanderChunk.resolve();
       await page.waitForFunction(() =>
         document
           .querySelector('demo-expander')

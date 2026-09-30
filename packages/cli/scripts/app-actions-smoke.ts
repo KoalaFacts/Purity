@@ -763,7 +763,7 @@ export const disconnectState = serverAction('/actions/disconnect-state', async (
   );
   await mkdir(join(project, 'src/pages/disconnect'), { recursive: true });
   const disconnectPage = `
-import { getRequest, html, resource, suspense, type LoaderContext } from '@purityjs/core';
+import { html, resource, suspense, type LoaderContext } from '@purityjs/core';
 import { markView, waitForDisconnect } from '../../disconnect-probe.ts';
 export async function loader({ request, signal }: LoaderContext) {
   const url = new URL(request.url);
@@ -775,9 +775,8 @@ export async function loader({ request, signal }: LoaderContext) {
 export default function Probe(_params: unknown, data: { id: string; mode: string | null }) {
   markView(data.id);
   if (data.mode !== 'stream') return html\`<p>Finished loader</p>\`;
-  const signal = getRequest()!.signal;
   return html\`<main>Stream shell \${suspense(() => {
-    const value = resource(() => waitForDisconnect(data.id, 'boundary', signal));
+    const value = resource(({ signal }) => waitForDisconnect(data.id, 'boundary', signal));
     return html\`<p>\${() => value()}</p>\`;
   }, () => html\`<p>Waiting for deferred content</p>\`)}</main>\`;
 }

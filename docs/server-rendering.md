@@ -211,14 +211,43 @@ keep-alive reuse remains supported. The adapter removes its listeners on respons
 completion or closure.
 
 Custom adapters must wire request cancellation into `Request.signal` to propagate
-disconnects. A rendering timeout alone does not abort that signal. Deferred
-`resource()` work can use `getRequest()!.signal` with cancellable operations to
-follow the same request lifetime.
+disconnects. A rendering timeout alone does not abort that signal or the
+underlying loader operation.
 
 Cancellation stops the route pipeline from waiting and prevents late values,
 errors, or redirects from rendering or navigating. It cannot forcibly stop
 arbitrary promises or undo completed work. Forward the signal to `fetch` and
 other cancellable operations to stop their underlying work.
+
+### Resource cancellation during SSR
+
+`resource()` and keyed `lazyResource()` fetchers automatically receive a signal
+for their active SSR operation. Forward it to the underlying work, including
+inside deferred `suspense()` views:
+
+```ts
+const post = resource(
+  ({ signal }) => fetch(apiUrl, { signal }).then((response) => response.json()),
+  { key: 'post' },
+);
+```
+
+The signal follows both the render's `Request.signal` and its optional `signal`
+option. Canceling a returned stream with `reader.cancel(reason)` also cancels
+pending resource fetchers. A render failure, global timeout, or render/stream
+completion cancels unfinished resource work. Cancel reasons are forwarded and
+late results or errors are excluded from the hydration cache. SSR `query()`
+fetchers inherit the same behavior through `resource()`.
+
+Forwarding listeners are removed when each resource settles, so completed
+resource operations are not canceled later. A suspense boundary deadline keeps
+its fallback and discards late values; any remaining work is canceled when the
+whole render or stream ends. Independent boundary deadlines do not currently
+abort fetchers immediately.
+
+This signal belongs to the resource operation. SSR route loaders continue to
+receive the request signal described above. Cancellation cannot force an
+arbitrary promise to stop or roll back an accepted write.
 
 ### Status and headers from a loader
 

@@ -16,6 +16,7 @@
 import { popSSRRenderContext, pushSSRRenderContext, type SSRRenderContext } from '@purityjs/core';
 import { valueToHtml } from '@purityjs/core/compiler';
 import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
+import { renderCancellation } from './render-cancellation.ts';
 
 export interface RenderToStringOptions {
   /** Maximum ms to wait for pending resources during render. Default 5000. */
@@ -70,11 +71,8 @@ export interface RenderToStringOptions {
    * even though no one is listening — burning CPU / open sockets on
    * the server. Mirrors `renderToStream`'s `signal` option.
    *
-   * Late-arriving fetches that win the race after the abort still
-   * write to the shared resolved-data cache for their resource, but
-   * the renderToString promise has already rejected — those writes
-   * are harmless since the shared cache is GC-rooted only through the
-   * pending promises themselves.
+   * The supplied Request.signal also cancels the render. Pending
+   * resource fetchers receive cancellation and discard late cache writes.
    */
   signal?: AbortSignal;
 }
@@ -125,6 +123,22 @@ export async function renderToString(
   component: () => unknown,
   options: RenderToStringOptions = {},
 ): Promise<string | RenderToStringWithResponse | RenderToStringWithHead> {
+  const cancellation = renderCancellation(options.request, options.signal);
+  try {
+    return await renderString(component, options, cancellation.signal);
+  } catch (error) {
+    cancellation.abort(error);
+    throw error;
+  } finally {
+    cancellation.finish();
+  }
+}
+
+async function renderString(
+  component: () => unknown,
+  options: RenderToStringOptions,
+  signal: AbortSignal,
+): Promise<string | RenderToStringWithResponse | RenderToStringWithHead> {
   const timeout = options.timeout ?? DEFAULT_TIMEOUT;
   const serialize = options.serializeResources ?? true;
   const prefix = options.doctype ?? '';
@@ -132,7 +146,6 @@ export async function renderToString(
   const extractHead = options.extractHead === true;
   const extractResponse = options.extractResponse === true;
   const request = options.request;
-  const signal = options.signal;
   // Fail fast if the caller is already gone — no point pushing a context
   // or invoking the user component. Mirrors fetch's pre-flight abort
   // check. `signal.reason` defaults to a DOMException('…','AbortError')
@@ -179,6 +192,7 @@ export async function renderToString(
 
   let html = '';
   for (let pass = 0; pass < MAX_PASSES; pass++) {
+    signal.throwIfAborted();
     const ctx: SSRRenderContext = {
       pendingPromises: [],
       resolvedData,
@@ -193,6 +207,7 @@ export async function renderToString(
       timedOutBoundaries,
       head: [],
       request,
+      signal,
     };
     pushSSRRenderContext(ctx);
     try {
@@ -332,11 +347,9 @@ export async function renderToString(
     }
     if (raceResult === 'boundary' && nearestId >= 0) {
       timedOutBoundaries.add(nearestId);
-      // The next pass will render this boundary's fallback. The pending
-      // promise it owns is left running; resources have their own
-      // AbortControllers but we don't have a per-boundary handle to
-      // cancel them, so they finish in the background and the resolved
-      // values are simply ignored.
+      // The next pass renders this boundary's fallback and ignores late
+      // values. Its pending work is canceled when the whole render ends;
+      // individual boundaries do not yet own cancellation scopes.
     }
   }
 

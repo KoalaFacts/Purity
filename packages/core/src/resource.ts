@@ -15,12 +15,62 @@
 
 import { bindComponentState } from './component.ts';
 import { batch, state, watch } from './signals.ts';
-import { consumeHydrationValue, currentBoundaryId, getSSRRenderContext } from './ssr-context.ts';
+import {
+  consumeHydrationValue,
+  currentBoundaryId,
+  getSSRRenderContext,
+  type SSRRenderContext,
+} from './ssr-context.ts';
 
 const abortError = () => new DOMException('aborted', 'AbortError');
 
 export interface ResourceFetchInfo {
+  /** Cancels on client disposal/refetch or SSR request/render cancellation. */
   signal: AbortSignal;
+}
+
+function startSSRFetch<T>(
+  ctx: SSRRenderContext,
+  fetcher: (info: ResourceFetchInfo) => T | Promise<T>,
+) {
+  const controller = new AbortController();
+  const signal = controller.signal;
+  const parent = ctx.signal ?? ctx.request?.signal;
+  const forwardAbort = () => controller.abort(parent?.reason);
+  const detach = () => parent?.removeEventListener('abort', forwardAbort);
+  parent?.addEventListener('abort', forwardAbort, { once: true });
+  if (parent?.aborted) forwardAbort();
+  try {
+    signal.throwIfAborted();
+    const result = fetcher({ signal });
+    const promise = new Promise<T>((resolve, reject) => {
+      const cleanup = () => {
+        signal.removeEventListener('abort', onAbort);
+        detach();
+      };
+      const onAbort = () => {
+        cleanup();
+        reject(signal.reason);
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      // Observe late rejections even if user work ignores cancellation.
+      Promise.resolve(result).then(
+        (value) => {
+          cleanup();
+          resolve(value);
+        },
+        (error) => {
+          cleanup();
+          reject(error);
+        },
+      );
+      if (signal.aborted) onAbort();
+    });
+    return { promise, cancelled: () => signal.aborted || parent?.aborted === true };
+  } catch (error) {
+    detach();
+    throw error;
+  }
 }
 
 /** Per-attempt delay function. Receives 0-indexed attempt number. */
@@ -256,6 +306,7 @@ export function resource<T, K>(
   // reactive and DOM-bound, neither of which applies on the server.
   const ssrCtx = getSSRRenderContext();
   if (ssrCtx) {
+    (ssrCtx.signal ?? ssrCtx.request?.signal)?.throwIfAborted();
     // Pick storage: keyed map if the user supplied `key`, else the
     // creation-order array. Keyed entries are stable across passes even
     // when conditional logic reorders unkeyed neighbors. We only bump
@@ -299,7 +350,6 @@ export function resource<T, K>(
         }
       }
       if (!skip) {
-        const ac = new AbortController();
         // Snapshot the innermost `suspense()` boundary id at registration
         // time. If that boundary later loses its deadline race and the
         // outer render-to-string loop adds the id to the shared
@@ -315,18 +365,19 @@ export function resource<T, K>(
         // by the time the `.then()` callback fires even though the
         // `ssrCtx` captured here is the pass-1 ctx that's been popped.
         const boundaryId = currentBoundaryId();
-        const callFetcher = (): T | Promise<T> =>
+        const callFetcher = (info: ResourceFetchInfo): T | Promise<T> =>
           sourceFn !== null
-            ? (fetcher as (key: K, info: ResourceFetchInfo) => T | Promise<T>)(key as K, {
-                signal: ac.signal,
-              })
-            : (fetcher as (info: ResourceFetchInfo) => T | Promise<T>)({
-                signal: ac.signal,
-              });
+            ? (fetcher as (key: K, info: ResourceFetchInfo) => T | Promise<T>)(key as K, info)
+            : (fetcher as (info: ResourceFetchInfo) => T | Promise<T>)(info);
         try {
-          const result = retry.count > 0 ? withRetry(callFetcher, ac.signal, retry) : callFetcher();
-          const promise = Promise.resolve(result).then(
+          const work = startSSRFetch(ssrCtx, (info) =>
+            retry.count > 0
+              ? withRetry(() => callFetcher(info), info.signal, retry)
+              : callFetcher(info),
+          );
+          const promise = work.promise.then(
             (value) => {
+              if (work.cancelled()) return;
               if (boundaryId !== null && ssrCtx.timedOutBoundaries.has(boundaryId)) return;
               if (hasKey) {
                 ssrCtx.resolvedDataByKey[userKey] = value;
@@ -338,6 +389,7 @@ export function resource<T, K>(
               data(() => value);
             },
             (err) => {
+              if (work.cancelled()) return;
               if (boundaryId !== null && ssrCtx.timedOutBoundaries.has(boundaryId)) return;
               // Record undefined so the slot index doesn't shift in the next
               // pass; persist the error so pass 2's resource() can re-surface
@@ -567,6 +619,7 @@ export function lazyResource<T, A = void>(
     // the key option.
     const ssrCtx = getSSRRenderContext();
     if (ssrCtx && userKey !== undefined) {
+      (ssrCtx.signal ?? ssrCtx.request?.signal)?.throwIfAborted();
       if (userKey in ssrCtx.resolvedDataByKey) {
         // Pass 2 — cached value lives on the SSR context across passes.
         // Surface via mutate() so the synchronous render sees the
@@ -580,23 +633,22 @@ export function lazyResource<T, A = void>(
         return;
       }
       // Pass 1 — fire the fetcher and register the promise with the
-      // SSR multipass cycle. The AbortController's signal is included
-      // for signature parity with the client path; SSR never aborts
-      // mid-render.
-      const ac = new AbortController();
+      // SSR multipass cycle with request/render cancellation.
       // Same boundary-timeout guard as resource()'s SSR path — a
       // lazyResource opened inside a `suspense()` whose boundary
       // surrenders to its fallback must not write back to the shared
       // SSR cache after the timeout fires.
       const boundaryId = currentBoundaryId();
-      const result = fetcher(a, { signal: ac.signal });
-      const promise = Promise.resolve(result).then(
+      const work = startSSRFetch(ssrCtx, (info) => fetcher(a, info));
+      const promise = work.promise.then(
         (value) => {
+          if (work.cancelled()) return;
           if (boundaryId !== null && ssrCtx.timedOutBoundaries.has(boundaryId)) return;
           ssrCtx.resolvedDataByKey[userKey] = value;
           ssrCtx.resolvedErrorsByKey[userKey] = undefined;
         },
         (err) => {
+          if (work.cancelled()) return;
           if (boundaryId !== null && ssrCtx.timedOutBoundaries.has(boundaryId)) return;
           // Mirror resource()'s `resolvedDataByKey[key] = undefined` on
           // rejection so the slot is occupied; persist the error

@@ -37,6 +37,73 @@ describe.each(renderers)('SSR boundary retention — $name', ({ render }) => {
     return { stream, views, getBoundaries: () => boundaries };
   }
 
+  it.each([
+    { kind: 'ordered', serializeResources: true },
+    { kind: 'keyed', serializeResources: true },
+    { kind: 'ordered', serializeResources: false },
+    { kind: 'keyed', serializeResources: false },
+  ])(
+    'releases $kind shell snapshots with serialization=$serializeResources without losing accessor values',
+    async ({ kind, serializeResources }) => {
+      let context!: SSRRenderContext;
+      const fetcher = vi.fn(() => ({ label: 'SHELL-VALUE' }));
+      const stream = await render(
+        () => {
+          const data = resource(fetcher, kind === 'keyed' ? { key: 'shell-key' } : undefined);
+          context = getSSRRenderContext()!;
+          return html`<main>${() => data()?.label}${suspense(
+            () => html`<p>DEFERRED:${() => data()?.label}</p>`,
+            () => html`<p>WAITING</p>`,
+          )}</main>`;
+        },
+        { serializeResources, nonce: 'probe-nonce' },
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      // The snapshot is released even while the encoded shell is still queued.
+      expect(context.resolvedData).toEqual([]);
+      expect(Object.keys(context.resolvedDataByKey)).toEqual([]);
+      const output = await new Response(stream).text();
+      expect(output).toContain('DEFERRED:<!--[-->SHELL-VALUE');
+      expect(output).toContain('<script nonce="probe-nonce">');
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      const script = output.match(/id="__purity_resources__"[^>]*>([\s\S]*?)<\/script>/);
+      if (serializeResources) {
+        expect(script).not.toBeNull();
+        expect(JSON.parse(script![1])).toEqual(
+          kind === 'keyed'
+            ? { ordered: [], keyed: { 'shell-key': { label: 'SHELL-VALUE' } } }
+            : [{ label: 'SHELL-VALUE' }],
+        );
+      } else {
+        expect(script).toBeNull();
+      }
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it.each(['ordered', 'keyed'])(
+    'releases $kind shell snapshots after serialization errors',
+    async (kind) => {
+      let context!: SSRRenderContext;
+      const cyclic: { self?: unknown } = {};
+      cyclic.self = cyclic;
+      const stream = await render(() => {
+        resource(() => cyclic, kind === 'keyed' ? { key: 'shell-key' } : undefined);
+        context = getSSRRenderContext()!;
+        return html`<p>SHELL</p>`;
+      });
+      const reader = stream.getReader();
+      try {
+        await expect(reader.read()).rejects.toThrow(TypeError);
+        expect(context.resolvedData).toEqual([]);
+        expect(Object.keys(context.resolvedDataByKey)).toEqual([]);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  );
+
   it('removes consumed callbacks while preserving remaining boundary order', async () => {
     const { stream, views, getBoundaries } = fixture();
     const reader = (await stream).getReader();

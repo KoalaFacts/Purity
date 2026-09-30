@@ -178,6 +178,14 @@ on built Node packages that captured payloads from 32 completed boundaries can
 be collected while another boundary keeps the response open. This is a focused
 retention check, not a bound on total response memory.
 
+The shell's ordered/keyed resource snapshots are released once serialized
+into the output string, before encoding begins; disabling serialization or
+encountering a serialization error also releases them. Deferred views that
+capture resource accessors can still read their values, and boundaries keep
+independent caches. The renderer drops its shell HTML reference before encoding
+and its assembled shell string after draining it. The memory regression check
+covers shell snapshots with both cache forms and serialization settings.
+
 Wire fragments above can span multiple transport chunks, including splits
 inside HTML or scripts. Decode with `Response.text()` or a
 streaming `TextDecoder` and flush the decoder at the end. Explicit Suspense

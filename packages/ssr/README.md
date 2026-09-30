@@ -164,8 +164,14 @@ passes downstream pressure through, but Node, socket, proxy, and browser buffers
 have separate limits. Shell HTML, current boundary output, and hydration data
 still occupy memory outside this queue.
 
+Large output is encoded incrementally into independently owned UTF-8 buffers
+of at most 64 KiB, rather than allocating encoded bytes for the entire shell or
+boundary first. Encoding resumes with reader demand and stops on cancellation.
+Small output uses a single exact-sized allocation. Valid surrogate pairs are
+preserved; lone surrogates use standard `TextEncoder` replacement semantics.
+
 Wire fragments above can span multiple transport chunks, including splits
-inside HTML, scripts, or UTF-8 sequences. Decode with `Response.text()` or a
+inside HTML or scripts. Decode with `Response.text()` or a
 streaming `TextDecoder` and flush the decoder at the end. Explicit Suspense
 deadlines remain anchored to their first shell encounter while queued views wait.
 Cancel unread streams or supply a request/abort signal to release their listeners

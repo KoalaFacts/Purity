@@ -62,18 +62,25 @@ boundaries. Reading resumes production in declaration order. This follows the
 and requires no caller option. Node's response pipeline propagates downstream
 pressure; Node, socket, proxy, and browser buffers have their own limits.
 
+Large shell and boundary output is UTF-8 encoded incrementally into owned
+buffers of at most 64 KiB, as the reader requests more output. The renderer
+does not allocate a UTF-8 buffer for the entire HTML string before sending it.
+Small output keeps a single exact-sized encoding allocation. Valid surrogate
+pairs remain intact across encoding windows; lone surrogates follow standard
+`TextEncoder` replacement semantics.
+
 A boundary's explicit timeout still starts when the shell first encounters it.
 Waiting for a reader does not reset that deadline; an expired queued view is
 skipped and retains its fallback. Consumer cancellation and external request
 abort detach listeners and cancel active resource/loader work even while output
 is paused.
 
-Transport chunks can split HTML, scripts, and multibyte UTF-8 characters. When
+Transport chunks can split HTML and scripts. When
 reading manually, use `TextDecoder.decode(chunk, { stream: true })` and flush
 with `decode()` at the end, or use `Response.text()`. Do not assume one chunk is
 a whole Suspense boundary. The queue bound does not bound total request memory:
-the renderer still constructs the shell, one current boundary's HTML and its
-encoded bytes, and resolved hydration data. An unconsumed stream stays open
+the renderer still constructs the shell, one current boundary's HTML, and
+resolved hydration data. An unconsumed stream stays open
 until its reader cancels or an external signal aborts; adapters own any overall
 connection deadline.
 

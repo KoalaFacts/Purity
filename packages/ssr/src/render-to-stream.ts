@@ -181,15 +181,27 @@ function createStream(
   }
 
   function* encodeChunks(text: string): Generator<Uint8Array> {
-    const bytes = encoder.encode(text);
-    if (bytes.byteLength <= bufferBytes) {
-      yield bytes;
+    // UTF-8 needs at most three bytes per UTF-16 code unit, including lone
+    // surrogates. Keep the exact-sized fast path for small output.
+    if (text.length <= Math.floor(bufferBytes / 3)) {
+      yield encoder.encode(text);
       return;
     }
-    // Copy slices so a queued fragment cannot retain an entire large buffer.
-    // Transport chunks may split a UTF-8 sequence; consumers decode as a stream.
-    for (let offset = 0; offset < bytes.byteLength; offset += bufferBytes) {
-      yield bytes.slice(offset, offset + bufferBytes);
+    for (let offset = 0; offset < text.length;) {
+      // Bound the input window too, avoiding repeated copies of the remaining
+      // string. Never cut a valid surrogate pair at the window's end.
+      let end = Math.min(text.length, offset + bufferBytes);
+      if (end < text.length) {
+        const last = text.charCodeAt(end - 1);
+        const next = text.charCodeAt(end);
+        if (last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) end--;
+      }
+      // Each yield owns its buffer: reusing it would mutate chunks that the
+      // consumer still holds. encodeInto stops before an incomplete scalar.
+      const bytes = new Uint8Array(Math.min(bufferBytes, (end - offset) * 3));
+      const { read, written } = encoder.encodeInto(text.slice(offset, end), bytes);
+      offset += read;
+      yield bytes.subarray(0, written);
     }
   }
 

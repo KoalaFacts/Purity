@@ -156,6 +156,25 @@ pending requests and ignore late responses. Aborting a request does not undo a
 write already accepted by the server; handlers that need retry-safe writes must
 implement idempotency.
 
+After a successful write, include `invalidate` with the exact query keys that
+need fresh data. The marked form automatically refreshes matching `query()`
+entries, coalesces duplicate keys, and leaves other entries cached:
+
+```ts
+return Response.json({
+  message: 'Saved.',
+  invalidate: [['records'], ['record', recordId]],
+});
+```
+
+Only successful responses without nonempty field errors trigger invalidation.
+Missing query keys are no-ops. String keys and array keys are distinct. Reads
+refresh independently of submission success, so a read error is shown through
+that query's `error()` state and does not tell the user to repeat a successful
+write. Invalid hints and synchronous refresh errors are logged while other
+valid keys continue. This refreshes browser queries; route loader data and
+server caches have separate lifecycles.
+
 Only marked same-origin POST forms targeting the current window with URL-encoded
 or multipart data are enhanced. Submitter URL, encoding, and named value are
 honored. Other forms retain native behavior. Enhanced handlers must return the

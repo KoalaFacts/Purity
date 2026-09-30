@@ -342,9 +342,61 @@ async function checkBrowser(engine: BrowserType, origin: string): Promise<void> 
       await enhanced.evaluate(() => document.body.dataset.documentProbe),
       'same-document',
     );
+    await enhanced.evaluate(() =>
+      (globalThis as typeof globalThis & { installQueryProbe: () => void }).installQueryProbe(),
+    );
+    await enhanced.waitForFunction(
+      () => document.querySelector('#query-value')?.textContent !== '',
+    );
+    const baseline = Number(await enhanced.locator('#query-value').textContent());
+    assert.equal(await enhanced.locator('#query-reads').textContent(), '1');
+    assert.equal(await enhanced.locator('#other-reads').textContent(), '1');
+    const submitQuery = async (value: string) => {
+      await enhanced.getByLabel('Query value').fill(value);
+      await enhanced.getByRole('button', { name: 'Save query value' }).click();
+      await enhanced.waitForFunction(
+        () => !document.querySelector('#query-form')!.hasAttribute('aria-busy'),
+      );
+    };
+    await submitQuery('valid');
+    await enhanced.waitForFunction(
+      (value) => document.querySelector('#query-value')?.textContent === String(value),
+      baseline + 1,
+    );
+    assert.equal(await enhanced.locator('#query-reads').textContent(), '2');
+    assert.equal(await enhanced.getByRole('status').textContent(), 'Saved value.');
+    await submitQuery('invalid');
+    await enhanced.getByRole('alert').waitFor();
+    assert.equal(await enhanced.locator('#query-value').textContent(), String(baseline + 1));
+    assert.equal(await enhanced.locator('#query-reads').textContent(), '2');
+    assert.equal(
+      await enhanced
+        .getByLabel('Query value')
+        .evaluate((input) => input === document.activeElement),
+      true,
+    );
+    await submitQuery('failread');
+    await enhanced.waitForFunction(
+      () => document.querySelector('#query-error')?.textContent === 'Query read failed',
+    );
+    assert.equal(await enhanced.getByRole('status').textContent(), 'Saved value.');
+    assert.equal(await enhanced.locator('#query-value').textContent(), String(baseline + 1));
+    assert.equal(await enhanced.locator('#query-reads').textContent(), '3');
+    await submitQuery('recovery');
+    await enhanced.waitForFunction(
+      (value) => document.querySelector('#query-value')?.textContent === String(value),
+      baseline + 3,
+    );
+    assert.equal(await enhanced.locator('#query-error').textContent(), '');
+    assert.equal(await enhanced.locator('#query-reads').textContent(), '4');
+    assert.equal(await enhanced.locator('#other-reads').textContent(), '1');
+    assert.equal(
+      await enhanced.evaluate(() => document.body.dataset.documentProbe),
+      'same-document',
+    );
     assert.deepEqual(errors, []);
     console.log(
-      `${engine.name()}: native no-JS forms, in-place validation/focus, pending/deduplication, network retry, removal, and multipart JSON passed`,
+      `${engine.name()}: native no-JS forms, in-place validation/focus, pending/deduplication, network retry, removal, multipart JSON, and action query invalidation passed`,
     );
   } catch (error) {
     console.error(diagnostics.join('\n'));
@@ -412,7 +464,67 @@ try {
       "  headers.append('Set-Cookie', 'first=1; Path=/; HttpOnly');\n" +
       "  headers.append('Set-Cookie', 'second=2; Path=/; HttpOnly');\n" +
       '  return new Response(await request.text(), { headers });\n' +
-      '});\n',
+      '});\n' +
+      `let value = 0;
+let failNextRead = false;
+export const queryRead = serverAction('/actions/query-read', () => {
+  if (failNextRead) {
+    failNextRead = false;
+    return Response.json({ message: 'Query read failed' }, { status: 503 });
+  }
+  return Response.json({ value });
+});
+export const queryWrite = serverAction('/actions/query-write', async (request) => {
+  const input = (await request.formData()).get('value');
+  if (input === 'invalid') return Response.json({
+    message: 'Check value.', fieldErrors: { value: 'Invalid value' },
+    invalidate: [['query-counter']],
+  }, { status: 422 });
+  value++;
+  failNextRead = input === 'failread';
+  return Response.json({ message: 'Saved value.', invalidate: [['query-counter'], ['query-counter']] });
+});
+`,
+  );
+  await writeFile(
+    join(project, 'src/query-probe.ts'),
+    `import { query, watch } from '@purityjs/core';
+export function installQueryProbe() {
+  const section = document.createElement('section');
+  section.innerHTML = '<form id="query-form" action="/actions/query-write" method="post" data-purity-enhance><label>Query value<input name="value"></label><button>Save query value</button><p data-purity-form-status></p></form><span id="query-value"></span><span id="query-reads"></span><span id="query-error"></span><span id="other-reads"></span>';
+  document.getElementById('app')!.append(section);
+  let reads = 0;
+  const data = query({
+    key: ['query-counter'], staleTime: 60_000,
+    revalidateOnVisible: false, revalidateOnReconnect: false, revalidateOnBfcacheRestore: false,
+    fetcher: async (_params, { signal }) => {
+      section.querySelector('#query-reads')!.textContent = String(++reads);
+      const response = await fetch('/actions/query-read', { method: 'POST', signal });
+      if (!response.ok) throw new Error('Query read failed');
+      return (await response.json()).value as number;
+    },
+  });
+  let otherReads = 0;
+  const other = query({
+    key: 'query-other', staleTime: 60_000,
+    revalidateOnVisible: false, revalidateOnReconnect: false, revalidateOnBfcacheRestore: false,
+    fetcher: async () => ++otherReads,
+  });
+  watch(() => {
+    section.querySelector('#query-value')!.textContent = String(data() ?? '');
+    const error = data.error();
+    section.querySelector('#query-error')!.textContent = error instanceof Error ? error.message : '';
+    section.querySelector('#other-reads')!.textContent = String(other() ?? '');
+  });
+}
+`,
+  );
+  const entryPath = join(project, 'src/entry.client.ts');
+  await writeFile(
+    entryPath,
+    "import { installQueryProbe } from './query-probe.ts';\n" +
+      '(globalThis as typeof globalThis & { installQueryProbe?: () => void }).installQueryProbe = installQueryProbe;\n' +
+      (await readFile(entryPath, 'utf8')),
   );
   await run([npmCli!, 'install', '--no-audit', '--no-fund'], project);
   await run([npmCli!, 'run', 'build'], project);

@@ -1,10 +1,13 @@
 import { onDispose } from './component.ts';
+import { invalidateQuery, type QueryKey } from './query.ts';
 import { state, type StateAccessor } from './signals.ts';
 
 /** JSON response contract shared by an enhanced form and its server action. */
 export interface FormActionResult {
   message?: string;
   fieldErrors?: Record<string, string>;
+  /** Exact query keys to refresh after a successful submission. Duplicates are coalesced. */
+  invalidate?: readonly QueryKey[];
 }
 
 export interface EnhancedFormState {
@@ -74,11 +77,37 @@ function resultFrom(value: unknown): FormActionResult {
   return result as FormActionResult;
 }
 
+function refreshQueries(keys: unknown): void {
+  if (keys === undefined) return;
+  if (!Array.isArray(keys)) {
+    console.error('[purity] enhanceForms: invalidate must be an array of query keys.');
+    return;
+  }
+  const seen = new Set<string>();
+  for (const key of keys) {
+    if (typeof key !== 'string' && !Array.isArray(key)) {
+      console.error('[purity] enhanceForms: ignored an invalid query key.');
+      continue;
+    }
+    try {
+      // Same namespaces as query(): a literal string and an array key are distinct.
+      const identity = typeof key === 'string' ? `s:${key}` : `a:${JSON.stringify(key)}`;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      invalidateQuery(key);
+    } catch (error) {
+      // The write already succeeded. A refresh failure must not tell the user
+      // to repeat it, nor prevent other affected queries from being refreshed.
+      console.error('[purity] enhanceForms: query refresh failed:', error);
+    }
+  }
+}
+
 /**
  * Enhance ordinary `<form data-purity-enhance>` elements inside a root.
  * Marked same-origin POST forms submit JSON requests without replacing the page.
  * Unmarked forms and unsupported methods/targets/encodings keep native behavior.
- * Server actions return `{ message?, fieldErrors? }` for `Accept: application/json`
+ * Server actions return `{ message?, fieldErrors?, invalidate? }` for `Accept: application/json`
  * and a normal page/303 redirect for native submissions. Never import handlers
  * into client code. This helper registers teardown with the current render scope;
  * outside a scope, call the returned `dispose()` when removing the root.
@@ -240,6 +269,7 @@ export function enhanceForms(
     entry.region!.setAttribute('role', success ? 'status' : 'alert');
     entry.region!.textContent = message;
     if (firstField) firstField.focus();
+    if (success) refreshQueries(result.invalidate);
   }
 
   async function submit(event: Event): Promise<void> {

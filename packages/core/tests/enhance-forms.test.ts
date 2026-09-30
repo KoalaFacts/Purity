@@ -1,13 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
-import { enhanceForms, mount } from '../src/index.ts';
+import { enhanceForms, mount, query } from '../src/index.ts';
 import type { EnhancedForms } from '../src/enhance-forms.ts';
+import { _resetQueryCache } from '../src/query.ts';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
   document.body.replaceChildren();
+  _resetQueryCache();
   vi.restoreAllMocks();
 });
+
+function cached(key: string | readonly unknown[]) {
+  let reads = 0;
+  const fetcher = vi.fn(() => Promise.resolve(++reads));
+  const value = query({
+    key,
+    fetcher,
+    staleTime: 60_000,
+    revalidateOnVisible: false,
+    revalidateOnReconnect: false,
+    revalidateOnBfcacheRestore: false,
+  });
+  return { value, fetcher };
+}
 
 function fixture(marked = true) {
   const root = document.createElement('div');
@@ -45,6 +61,133 @@ async function finished(controller: EnhancedForms, form: HTMLFormElement) {
 }
 
 describe('enhanceForms', () => {
+  it('refreshes declared query keys exactly once after success, preserving unrelated entries', async () => {
+    const { root, form } = fixture();
+    const list = cached(['records']);
+    const detail = cached(['record', 42]);
+    const literal = cached('["records"]');
+    const other = cached('other');
+    await vi.waitFor(() => expect(list.value()).toBe(1));
+    const refresh = vi.spyOn(list.value, 'refresh');
+    const controller = enhanceForms(root, {
+      fetch: vi.fn().mockResolvedValue(
+        Response.json({
+          message: 'Saved',
+          invalidate: [['records'], ['records'], ['record', 42], '["records"]', 'absent'],
+        }),
+      ),
+    });
+    cleanups.push(controller.dispose);
+    submit(form);
+    await finished(controller, form);
+    await vi.waitFor(() => expect(list.value()).toBe(2));
+    expect(detail.value()).toBe(2);
+    expect(literal.value()).toBe(2);
+    expect(other.value()).toBe(1);
+    expect(list.fetcher).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(controller.getState(form)().status).toBe('success');
+  });
+
+  it.each([
+    { status: 422, body: { fieldErrors: { name: 'Invalid' }, invalidate: ['records'] } },
+    { status: 500, body: { message: 'Failed', invalidate: ['records'] } },
+    { status: 200, body: { fieldErrors: { name: 'Invalid' }, invalidate: ['records'] } },
+  ])('does not invalidate on rejected submission: $status', async ({ status, body }) => {
+    const { root, form } = fixture();
+    const entry = cached('records');
+    await vi.waitFor(() => expect(entry.value()).toBe(1));
+    const controller = enhanceForms(root, {
+      fetch: vi.fn().mockResolvedValue(Response.json(body, { status })),
+    });
+    cleanups.push(controller.dispose);
+    submit(form);
+    await finished(controller, form);
+    expect(entry.fetcher).toHaveBeenCalledTimes(1);
+    expect(controller.getState(form)().status).toBe('error');
+  });
+
+  it.each([null, 'records', [null, {}, 123, 'records']])(
+    'ignores malformed invalidation metadata without failing the successful write',
+    async (invalidate) => {
+      const { root, form } = fixture();
+      const entry = cached('records');
+      await vi.waitFor(() => expect(entry.value()).toBe(1));
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const controller = enhanceForms(root, {
+        fetch: vi.fn().mockResolvedValue(Response.json({ message: 'Saved', invalidate })),
+      });
+      cleanups.push(controller.dispose);
+      submit(form);
+      await finished(controller, form);
+      expect(controller.getState(form)().status).toBe('success');
+      expect(log).toHaveBeenCalled();
+      if (Array.isArray(invalidate)) await vi.waitFor(() => expect(entry.value()).toBe(2));
+      else expect(entry.fetcher).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('keeps submission success separate from asynchronous query read failures', async () => {
+    const { root, form } = fixture();
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce('old')
+      .mockRejectedValueOnce(new Error('Read failed'));
+    const value = query({
+      key: 'records',
+      fetcher,
+      revalidateOnVisible: false,
+      revalidateOnReconnect: false,
+      revalidateOnBfcacheRestore: false,
+    });
+    await vi.waitFor(() => expect(value()).toBe('old'));
+    const controller = enhanceForms(root, {
+      fetch: vi
+        .fn()
+        .mockResolvedValue(Response.json({ message: 'Saved', invalidate: ['records'] })),
+    });
+    cleanups.push(controller.dispose);
+    submit(form);
+    await finished(controller, form);
+    await vi.waitFor(() => expect(value.error()).toEqual(new Error('Read failed')));
+    expect(controller.getState(form)().status).toBe('success');
+    expect(form.querySelector('[role=status]')?.textContent).toBe('Saved');
+    expect(value()).toBe('old');
+  });
+
+  it('isolates a synchronous query refresh failure from the write and other queries', async () => {
+    const { root, form } = fixture();
+    const broken = cached('broken');
+    const working = cached('working');
+    await vi.waitFor(() => expect(working.value()).toBe(1));
+    vi.spyOn(broken.value, 'refresh').mockImplementation(() => {
+      throw new Error('Refresh failed');
+    });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const controller = enhanceForms(root, {
+      fetch: vi.fn().mockResolvedValue(Response.json({ invalidate: ['broken', 'working'] })),
+    });
+    cleanups.push(controller.dispose);
+    submit(form);
+    await finished(controller, form);
+    await vi.waitFor(() => expect(working.value()).toBe(2));
+    expect(controller.getState(form)().status).toBe('success');
+    expect(log).toHaveBeenCalled();
+  });
+
+  it('does not invalidate when a successful response arrives after disposal', async () => {
+    const { root, form } = fixture();
+    const entry = cached('records');
+    await vi.waitFor(() => expect(entry.value()).toBe(1));
+    const transport = deferred();
+    const controller = enhanceForms(root, { fetch: transport.fetch });
+    submit(form);
+    controller.dispose();
+    transport.resolve(Response.json({ invalidate: ['records'] }));
+    await new Promise((done) => setTimeout(done, 0));
+    expect(entry.fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it('submits in place, includes the submitter, exposes reactive state, and prevents duplicates', async () => {
     const { root, form, button, field } = fixture();
     const transport = deferred();

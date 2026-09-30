@@ -30,6 +30,7 @@ import {
   type SSRRenderContext,
 } from '@purityjs/core';
 import { valueToHtml } from '@purityjs/core/compiler';
+import { renderCancellation } from './render-cancellation.ts';
 import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
 
 const DEFAULT_TIMEOUT = 5000;
@@ -115,13 +116,22 @@ export async function renderToStreamResponse(
   options: RenderToStreamOptions = {},
 ): Promise<RenderToStreamResponse> {
   validateNonce(options.nonce);
-  const shell = await renderShell(
-    component,
-    options.timeout ?? DEFAULT_TIMEOUT,
-    options.request,
-    options.signal,
-  );
-  if (options.signal?.aborted) throw options.signal.reason;
+  const cancellation = renderCancellation(options.request, options.signal);
+  let shell: ShellResult;
+  try {
+    shell = await renderShell(
+      component,
+      options.timeout ?? DEFAULT_TIMEOUT,
+      options.request,
+      cancellation.signal,
+    );
+    cancellation.signal.throwIfAborted();
+  } catch (error) {
+    cancellation.abort(error);
+    throw error;
+  } finally {
+    cancellation.finish();
+  }
   const result: RenderToStreamResponse = {
     body: createStream(() => Promise.resolve(shell), options),
     head: shell.head,
@@ -148,7 +158,8 @@ function createStream(
   const serialize = options.serializeResources ?? true;
   const prefix = options.doctype ?? '';
   const nonce = options.nonce;
-  const signal = options.signal;
+  const cancellation = renderCancellation(options.request, options.signal);
+  const signal = cancellation.signal;
   const request = options.request;
 
   const encoder = new TextEncoder();
@@ -165,7 +176,7 @@ function createStream(
     async start(controller) {
       const onAbort = (): void => {
         state.cancelled = true;
-        workAbort.abort();
+        workAbort.abort(signal.reason);
         try {
           controller.close();
         } catch {
@@ -175,6 +186,7 @@ function createStream(
       if (signal) {
         if (signal.aborted) {
           onAbort();
+          cancellation.finish();
           return;
         }
         signal.addEventListener('abort', onAbort, { once: true });
@@ -273,6 +285,7 @@ function createStream(
           // Already closed by cancel() / signal abort — ignore.
         }
       } catch (err) {
+        workAbort.abort(err);
         // Don't error a stream the consumer already cancelled — calling
         // controller.error() after close() throws, which would mask the
         // original cause in unhandled-rejection logs.
@@ -285,9 +298,11 @@ function createStream(
         }
       } finally {
         if (signal) signal.removeEventListener('abort', onAbort);
+        workAbort.abort();
+        cancellation.finish();
       }
     },
-    cancel() {
+    cancel(reason) {
       // Consumer disconnected. Flip the shared cancel flag so the boundary
       // loop in start() short-circuits on its next `isAborted()` check
       // instead of awaiting every remaining slow boundary. Without this,
@@ -295,7 +310,7 @@ function createStream(
       // (and its timers + AbortSignals) alive even after the client gave
       // up.
       state.cancelled = true;
-      workAbort.abort();
+      workAbort.abort(reason);
     },
   });
 }
@@ -367,6 +382,7 @@ async function renderShell(
       streamingBoundaries,
       head: [],
       request,
+      signal,
     };
     pushSSRRenderContext(ctx);
     try {
@@ -496,6 +512,7 @@ async function renderBoundary(
       boundaryDeadlines,
       timedOutBoundaries,
       request,
+      signal,
       // Streaming mode is OFF inside a boundary render — nested suspense()
       // calls inside the view render inline. Phase 3 MVP intentionally
       // doesn't recursively stream sub-boundaries; that's a follow-up.

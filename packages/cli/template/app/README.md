@@ -60,13 +60,35 @@ During SSR, loaders use the supplied `Request.signal`. The Node server connects
 that signal to incomplete uploads and response connections closed before
 completion, with listeners installed before middleware or route loading. Normal
 GET/POST reception, completed responses, and keep-alive reuse do not cancel it.
-Listeners are removed when the response finishes or closes. Deferred `resource()`
-work can forward `getRequest()!.signal` to cancellable operations as well.
+Listeners are removed when the response finishes or closes.
 
 Custom adapters must connect request cancellation to `Request.signal` themselves.
 Rendering timeouts alone do not abort that signal. Canceled routes ignore late
 values, errors, and redirects, but arbitrary promises and already completed
 operations cannot be undone. Aborting an action does not roll back accepted writes.
+
+### SSR resource cancellation
+
+Use the fetcher's signal for deferred data as well:
+
+```ts
+const data = resource(
+  ({ signal }) => fetch(apiUrl, { signal }).then((response) => response.json()),
+  { key: 'page-data' },
+);
+```
+
+SSR `resource()`, keyed `lazyResource()`, and `query()` fetchers automatically
+follow request cancellation and the render's optional `signal`. Canceling the
+stream reader, render failures, global timeouts, and render/stream completion
+cancel unfinished resources. Late values and errors cannot enter the hydration
+cache. Settled resources remove their forwarding listeners.
+
+A suspense deadline discards late values and keeps the fallback; remaining work
+is canceled when the whole render or stream ends, rather than immediately at
+that boundary's deadline. Forward the fetcher's signal to cancellable operations;
+arbitrary promises cannot be forcibly stopped. SSR loaders still use
+`Request.signal`, so a rendering timeout alone does not stop their underlying work.
 
 ### Loader responses
 

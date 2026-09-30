@@ -1,8 +1,297 @@
-import { resource, state } from '@purityjs/core';
+import { lazyResource, resource, state, suspense } from '@purityjs/core';
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { html, renderToString } from '../src/index.ts';
+import {
+  html,
+  renderToStream,
+  renderToStreamResponse,
+  renderToString,
+  type RenderToStreamOptions,
+} from '../src/index.ts';
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
+
+describe('SSR resource cancellation', () => {
+  const renderers = [
+    {
+      name: 'buffered',
+      render: (view: () => unknown, options: RenderToStreamOptions) =>
+        renderToString(view, options),
+    },
+    {
+      name: 'stream',
+      render: (view: () => unknown, options: RenderToStreamOptions) =>
+        new Response(renderToStream(view, options)).text(),
+    },
+    {
+      name: 'stream response',
+      render: async (view: () => unknown, options: RenderToStreamOptions) =>
+        new Response((await renderToStreamResponse(view, options)).body).text(),
+    },
+  ];
+
+  describe.each(renderers)('$name', ({ name, render }) => {
+    it.each(['request', 'explicit'] as const)(
+      'forwards %s cancellation into the fetcher',
+      async (source) => {
+        const requestAbort = new AbortController();
+        const explicitAbort = new AbortController();
+        const request = new Request('https://example.test/', { signal: requestAbort.signal });
+        let fetchSignal!: AbortSignal;
+        const outcome = render(
+          () => {
+            resource(({ signal }) => {
+              fetchSignal = signal;
+              return new Promise(() => {});
+            });
+            return html`<p>waiting</p>`;
+          },
+          { request, signal: explicitAbort.signal },
+        ).then(
+          (value) => ({ value }),
+          (error) => ({ error }),
+        );
+        const reason = new Error('connection ended');
+        (source === 'request' ? requestAbort : explicitAbort).abort(reason);
+        const result = await outcome;
+        expect(fetchSignal.aborted).toBe(true);
+        expect(fetchSignal.reason).toBe(reason);
+        expect(source === 'request' ? explicitAbort.signal.aborted : request.signal.aborted).toBe(
+          false,
+        );
+        if (name === 'stream') expect(result).toEqual({ value: '' });
+        else expect(result).toEqual({ error: reason });
+      },
+    );
+
+    it('cancels unfinished resource work on a global timeout', async () => {
+      const request = new Request('https://example.test/');
+      let fetchSignal!: AbortSignal;
+      await expect(
+        render(
+          () => {
+            resource(({ signal }) => {
+              fetchSignal = signal;
+              return new Promise(() => {});
+            });
+            return html`<p>waiting</p>`;
+          },
+          { request, timeout: 10 },
+        ),
+      ).rejects.toThrow('timed out');
+      expect(fetchSignal.aborted).toBe(true);
+      expect(request.signal.aborted).toBe(false);
+    });
+
+    it('cancels resource work if the component throws', async () => {
+      const reason = new Error('component failure');
+      let fetchSignal!: AbortSignal;
+      await expect(
+        render(() => {
+          resource(({ signal }) => {
+            fetchSignal = signal;
+            return new Promise(() => {});
+          });
+          throw reason;
+        }, {}),
+      ).rejects.toBe(reason);
+      expect(fetchSignal.aborted).toBe(true);
+    });
+
+    it('detaches request and explicit listeners when the render completes', async () => {
+      const request = new Request('https://example.test/');
+      const controller = new AbortController();
+      const sources = [request.signal, controller.signal];
+      const listeners = sources.map((signal) => ({
+        add: vi.spyOn(signal, 'addEventListener'),
+        remove: vi.spyOn(signal, 'removeEventListener'),
+      }));
+      let fetchSignal!: AbortSignal;
+      const output = await render(
+        () => {
+          const value = resource(({ signal }) => {
+            fetchSignal = signal;
+            return Promise.resolve('ready');
+          });
+          return html`<p>${() => value()}</p>`;
+        },
+        { request, signal: controller.signal },
+      );
+      expect(output).toContain('ready');
+      for (const { add, remove } of listeners) {
+        for (const [type, listener] of add.mock.calls) {
+          if (type === 'abort') expect(remove).toHaveBeenCalledWith(type, listener);
+        }
+        add.mockRestore();
+        remove.mockRestore();
+      }
+      controller.abort();
+      expect(fetchSignal.aborted).toBe(false);
+    });
+
+    it('skips user code for an already aborted Request', async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const view = vi.fn(() => html`<p>unexpected</p>`);
+      const outcome = render(view, {
+        request: new Request('https://example.test/', { signal: controller.signal }),
+      });
+      if (name === 'stream') expect(await outcome).toBe('');
+      else await expect(outcome).rejects.toBe(controller.signal.reason);
+      expect(view).not.toHaveBeenCalled();
+    });
+
+    it('keeps settled operations independent with many concurrent resources', async () => {
+      let renderSignal!: AbortSignal;
+      const signals: AbortSignal[] = [];
+      const output = await render(
+        () => {
+          const values = Array.from({ length: 32 }, (_, index) =>
+            resource(
+              ({ signal }) => {
+                signals.push(signal);
+                return Promise.resolve(index);
+              },
+              { key: `item-${index}` },
+            ),
+          );
+          return html`<p>${() => values.map((value) => value()).join(',')}</p>`;
+        },
+        { signal: (renderSignal = new AbortController().signal) },
+      );
+      expect(output).toContain('30,31');
+      expect(signals).toHaveLength(32);
+      expect(signals.every((signal) => !signal.aborted)).toBe(true);
+      expect(renderSignal.aborted).toBe(false);
+    });
+  });
+
+  it.each(['resource', 'lazyResource'] as const)(
+    'reader.cancel stops deferred %s work and preserves the reason',
+    async (kind) => {
+      let fetchSignal!: AbortSignal;
+      const fetcher = ({ signal }: { signal: AbortSignal }) => {
+        fetchSignal = signal;
+        return new Promise<string>(() => {});
+      };
+      const body = renderToStream(
+        () =>
+          html`<main>${suspense(
+            () => {
+              if (kind === 'resource') resource(fetcher, { key: 'deferred' });
+              else
+                lazyResource((_arg: string, info) => fetcher(info), { key: 'deferred' }).fetch(
+                  'input',
+                );
+              return html`<p>loaded</p>`;
+            },
+            () => html`<p>fallback</p>`,
+          )}</main>`,
+      );
+      const reader = body.getReader();
+      expect((await reader.read()).done).toBe(false);
+      await vi.waitFor(() => expect(fetchSignal).toBeDefined());
+      const reason = new Error('reader left');
+      await reader.cancel(reason);
+      expect(fetchSignal.aborted).toBe(true);
+      expect(fetchSignal.reason).toBe(reason);
+    },
+  );
+
+  describe.each(['stream', 'stream response'] as const)('deferred %s', (renderer) => {
+    it.each(['request', 'explicit'] as const)(
+      'forwards %s cancellation after the shell is sent',
+      async (source) => {
+        const requestAbort = new AbortController();
+        const explicitAbort = new AbortController();
+        const request = new Request('https://example.test/', { signal: requestAbort.signal });
+        let fetchSignal!: AbortSignal;
+        const view = () =>
+          html`<main>${suspense(
+            () => {
+              resource(({ signal }) => {
+                fetchSignal = signal;
+                return new Promise(() => {});
+              });
+              return html`<p>loaded</p>`;
+            },
+            () => html`<p>fallback</p>`,
+          )}</main>`;
+        const options = { request, signal: explicitAbort.signal };
+        const body =
+          renderer === 'stream'
+            ? renderToStream(view, options)
+            : (await renderToStreamResponse(view, options)).body;
+        const reader = body.getReader();
+        const shell = await reader.read();
+        expect(new TextDecoder().decode(shell.value)).toContain('fallback');
+        await vi.waitFor(() => expect(fetchSignal).toBeDefined());
+        const reason = new Error('left after shell');
+        (source === 'request' ? requestAbort : explicitAbort).abort(reason);
+        expect((await reader.read()).done).toBe(true);
+        expect(fetchSignal.reason).toBe(reason);
+        expect(fetchSignal.aborted).toBe(true);
+      },
+    );
+  });
+
+  it.each(['buffered', 'stream'] as const)(
+    'cancels abandoned boundary work when %s rendering completes',
+    async (renderer) => {
+      let fetchSignal!: AbortSignal;
+      const view = () =>
+        html`<main>${suspense(
+          () => {
+            resource(
+              ({ signal }) => {
+                fetchSignal = signal;
+                return new Promise(() => {});
+              },
+              { key: 'unfinished' },
+            );
+            return html`<p>loaded</p>`;
+          },
+          () => html`<p>fallback</p>`,
+          { timeout: 10 },
+        )}</main>`;
+      const output =
+        renderer === 'buffered'
+          ? await renderToString(view)
+          : await new Response(renderToStream(view, { timeout: 10 })).text();
+      expect(output).toContain('fallback');
+      expect(output).not.toContain('"unfinished"');
+      expect(fetchSignal.aborted).toBe(true);
+    },
+  );
+
+  it('keeps concurrent renders isolated when they share a Request', async () => {
+    const request = new Request('https://example.test/');
+    const controller = new AbortController();
+    const signals: AbortSignal[] = [];
+    let release!: (value: string) => void;
+    const pending = new Promise<string>((resolve) => {
+      release = resolve;
+    });
+    const view = () => {
+      const value = resource(({ signal }) => {
+        signals.push(signal);
+        return pending;
+      });
+      return html`<p>${() => value()}</p>`;
+    };
+    const first = renderToString(view, { request, signal: controller.signal }).catch(
+      (error) => error,
+    );
+    const second = renderToString(view, { request });
+    const reason = new Error('first ended');
+    controller.abort(reason);
+    expect(await first).toBe(reason);
+    expect(signals[0].aborted).toBe(true);
+    expect(signals[1].aborted).toBe(false);
+    expect(request.signal.aborted).toBe(false);
+    release('second ready');
+    expect(await second).toContain('second ready');
+  });
+});
 
 describe('renderToString — resource awaiting', () => {
   it('awaits a single pending resource and renders the resolved value', async () => {

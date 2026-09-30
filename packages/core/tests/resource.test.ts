@@ -5,6 +5,140 @@ import { lazyResource, resource } from '../src/resource.ts';
 import { compute, state, watch } from '../src/signals.ts';
 import { flushAll, tick, makeSSRContext } from './_helpers.ts';
 
+describe.each(['resource', 'lazyResource'] as const)('SSR %s cancellation', (kind) => {
+  const start = (fetcher: (info: { signal: AbortSignal }) => Promise<string>) => {
+    if (kind === 'resource') return resource(fetcher, { key: 'cancel-test' });
+    const result = lazyResource((_args: string, info) => fetcher(info), { key: 'cancel-test' });
+    result.fetch('input');
+    return result;
+  };
+
+  it.each(['resolve', 'reject'] as const)(
+    'drops late %s after cancellation and settles pending work',
+    async (settlement) => {
+      const controller = new AbortController();
+      const ctx = makeSSRContext();
+      ctx.signal = controller.signal;
+      let fetchSignal!: AbortSignal;
+      let resolve!: (value: string) => void;
+      let reject!: (error: unknown) => void;
+      const pending = new Promise<string>((ok, fail) => {
+        resolve = ok;
+        reject = fail;
+      });
+      pushSSRRenderContext(ctx);
+      try {
+        start(({ signal }) => {
+          fetchSignal = signal;
+          return pending;
+        });
+      } finally {
+        popSSRRenderContext();
+      }
+      const reason = new Error('request ended');
+      controller.abort(reason);
+      await Promise.all(ctx.pendingPromises);
+      expect(fetchSignal.aborted).toBe(true);
+      expect(fetchSignal.reason).toBe(reason);
+      if (settlement === 'resolve') resolve('late');
+      else reject(new Error('late failure'));
+      await flushAll();
+      expect(ctx.resolvedDataByKey).not.toHaveProperty('cancel-test');
+      expect(ctx.resolvedErrorsByKey).not.toHaveProperty('cancel-test');
+    },
+  );
+
+  it('uses Request.signal when a manual SSR context has no render signal', async () => {
+    const controller = new AbortController();
+    const ctx = makeSSRContext();
+    ctx.request = new Request('https://example.test/', { signal: controller.signal });
+    let fetchSignal!: AbortSignal;
+    pushSSRRenderContext(ctx);
+    try {
+      start(({ signal }) => {
+        fetchSignal = signal;
+        return new Promise(() => {});
+      });
+    } finally {
+      popSSRRenderContext();
+    }
+    controller.abort();
+    await Promise.all(ctx.pendingPromises);
+    expect(fetchSignal.aborted).toBe(true);
+  });
+
+  it('drops a settled value when the render aborts before its cache write', async () => {
+    const controller = new AbortController();
+    const ctx = makeSSRContext();
+    ctx.signal = controller.signal;
+    pushSSRRenderContext(ctx);
+    try {
+      start(() => Promise.resolve('stale'));
+    } finally {
+      popSSRRenderContext();
+    }
+    // Fetch settlement detaches forwarding before the cache callback runs.
+    await Promise.resolve();
+    controller.abort();
+    await Promise.all(ctx.pendingPromises);
+    expect(ctx.resolvedDataByKey).not.toHaveProperty('cancel-test');
+  });
+
+  it('does not invoke the fetcher in an already canceled context', () => {
+    const controller = new AbortController();
+    const reason = new Error('already ended');
+    controller.abort(reason);
+    const ctx = makeSSRContext();
+    ctx.signal = controller.signal;
+    const fetcher = vi.fn(() => Promise.resolve('unexpected'));
+    pushSSRRenderContext(ctx);
+    try {
+      expect(() => start(fetcher)).toThrow(reason);
+    } finally {
+      popSSRRenderContext();
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(ctx.pendingPromises).toHaveLength(0);
+  });
+
+  it.each(['success', 'failure', 'throw', 'abort'] as const)(
+    'detaches the parent listener on %s',
+    async (outcome) => {
+      const controller = new AbortController();
+      const ctx = makeSSRContext();
+      ctx.signal = controller.signal;
+      const add = vi.spyOn(controller.signal, 'addEventListener');
+      const remove = vi.spyOn(controller.signal, 'removeEventListener');
+      let fetchSignal!: AbortSignal;
+      pushSSRRenderContext(ctx);
+      try {
+        const run = () =>
+          start(({ signal }) => {
+            fetchSignal = signal;
+            if (outcome === 'throw') throw new Error('sync failure');
+            if (outcome === 'failure') return Promise.reject(new Error('failure'));
+            if (outcome === 'abort') return new Promise(() => {});
+            return Promise.resolve('value');
+          });
+        if (outcome === 'throw' && kind === 'lazyResource') expect(run).toThrow('sync failure');
+        else run();
+      } finally {
+        popSSRRenderContext();
+      }
+      if (outcome === 'abort') controller.abort();
+      await Promise.all(ctx.pendingPromises);
+      const forwarding = add.mock.calls.find(([type]) => type === 'abort')![1];
+      expect(remove).toHaveBeenCalledWith('abort', forwarding);
+      if (outcome === 'success' || outcome === 'failure') {
+        controller.abort();
+        expect(fetchSignal.aborted).toBe(false);
+      }
+      add.mockRestore();
+      remove.mockRestore();
+    },
+  );
+});
+
 describe('resource — single-arg fetcher form', () => {
   it('resolves and surfaces data, error, and loading correctly', async () => {
     const r = resource(() => Promise.resolve(42));

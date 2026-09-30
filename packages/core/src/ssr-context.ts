@@ -14,6 +14,8 @@
 
 export interface SSRRenderContext {
   pendingPromises: Promise<unknown>[];
+  /** In-flight operations reused while another boundary triggers a new pass. @internal */
+  pendingResources?: Map<string, Promise<unknown>>;
   /** Resolved fetcher values, indexed by resource() creation order. */
   resolvedData: unknown[];
   /**
@@ -34,13 +36,19 @@ export interface SSRRenderContext {
   /** Errors keyed alongside resolvedDataByKey. */
   resolvedErrorsByKey: Record<string, unknown>;
   /**
-   * Monotonic per-render counter for `suspense()` boundary IDs. Reset to
-   * zero at the start of each pass so IDs are stable across the two-pass
-   * resource-resolution loop. Used by the boundary-marker grammar
+   * Highest `suspense()` ID encountered during this pass. Structural
+   * paths keep IDs stable across resource-resolution passes and separate
+   * view children from fallback children. Used by the boundary-marker grammar
    * `<!--s:N--><!--/s:N-->` so streaming (ADR 0006 Phase 3) can address
    * each boundary by its position-stable ID.
    */
   suspenseCounter: number;
+  /** IDs keyed by parent scope and sibling position, shared across passes. @internal */
+  boundaryIds?: Map<string, number>;
+  /** Active structural view/fallback path. @internal */
+  boundaryPath?: string;
+  /** Child positions per structural path, fresh for each render pass. @internal */
+  boundaryPositions?: Map<string, number>;
   /**
    * Monotonic per-render counter for `island()` IDs. Reset to zero at the
    * start of each pass so IDs are stable across the two-pass
@@ -88,6 +96,8 @@ export interface SSRRenderContext {
    * reference still points at the live timeout-tracker.
    */
   boundaryIdStack?: number[];
+  /** Active resource cancellation callbacks, shared across SSR passes. @internal */
+  boundaryAborts?: Map<number, Set<(reason: unknown) => void>>;
   /**
    * When true, `suspense()` skips its inline `view()` rendering during
    * the SSR pass, emits the fallback in the shell, and registers the
@@ -111,6 +121,8 @@ export interface SSRRenderContext {
     {
       view: () => unknown;
       fallback: () => unknown;
+      /** Absolute deadline anchored to the first shell pass. @internal */
+      deadline?: number;
       onError?: (err: unknown, info: { boundaryId: number; phase: string }) => void;
     }
   >;
@@ -178,6 +190,27 @@ export function currentBoundaryId(): number | null {
   const ctx = getSSRRenderContext();
   if (!ctx || !ctx.boundaryIdStack || ctx.boundaryIdStack.length === 0) return null;
   return ctx.boundaryIdStack[ctx.boundaryIdStack.length - 1];
+}
+
+/** Cancel a boundary's active resources, including descendants. @internal */
+export function cancelSSRBoundary(ctx: SSRRenderContext, id: number, reason: unknown): void {
+  ctx.timedOutBoundaries.add(id);
+  const callbacks = ctx.boundaryAborts?.get(id);
+  if (!callbacks) return;
+  ctx.boundaryAborts?.delete(id);
+  for (const abort of callbacks) abort(reason);
+}
+
+/** Earliest deadline with unfinished resource work. @internal */
+export function nextSSRBoundaryDeadline(
+  ctx: SSRRenderContext,
+): { id: number; deadline: number } | undefined {
+  let next: { id: number; deadline: number } | undefined;
+  for (const [id, deadline] of ctx.boundaryDeadlines) {
+    if (ctx.timedOutBoundaries.has(id) || !ctx.boundaryAborts?.get(id)?.size) continue;
+    if (!next || deadline < next.deadline) next = { id, deadline };
+  }
+  return next;
 }
 
 // ---------------------------------------------------------------------------

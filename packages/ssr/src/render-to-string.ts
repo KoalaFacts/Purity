@@ -15,6 +15,7 @@
 
 import { popSSRRenderContext, pushSSRRenderContext, type SSRRenderContext } from '@purityjs/core';
 import { valueToHtml } from '@purityjs/core/compiler';
+import { boundaryDeadline } from './boundary-deadline.ts';
 import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
 import { renderCancellation } from './render-cancellation.ts';
 
@@ -186,6 +187,9 @@ async function renderString(
   const boundaryStartTimes = new Map<number, number>();
   const boundaryDeadlines = new Map<number, number>();
   const timedOutBoundaries = new Set<number>();
+  const boundaryAborts: NonNullable<SSRRenderContext['boundaryAborts']> = new Map();
+  const pendingResources: NonNullable<SSRRenderContext['pendingResources']> = new Map();
+  const boundaryIds = new Map<string, number>();
   // head() collector. Reset per pass so later passes don't double-count;
   // we capture the final pass's value when the render becomes quiescent.
   let lastHead: string[] | undefined;
@@ -205,6 +209,9 @@ async function renderString(
       boundaryStartTimes,
       boundaryDeadlines,
       timedOutBoundaries,
+      boundaryAborts,
+      pendingResources,
+      boundaryIds,
       head: [],
       request,
       signal,
@@ -257,28 +264,16 @@ async function renderString(
     // remaining global budget, we race against it and mark the boundary
     // timed-out when it fires — letting the next pass render its
     // fallback while the rest of the page keeps progressing.
-    const now = Date.now();
-    let nearestId = -1;
-    let nearestDeadline = Number.POSITIVE_INFINITY;
-    for (const [id, deadline] of boundaryDeadlines) {
-      if (timedOutBoundaries.has(id)) continue;
-      if (deadline < nearestDeadline) {
-        nearestDeadline = deadline;
-        nearestId = id;
-      }
-    }
-    const boundaryWaitMs = nearestId >= 0 ? Math.max(0, nearestDeadline - now) : Infinity;
-    const waitMs = Math.min(remaining, boundaryWaitMs);
 
     // Each race branch resolves with its own discriminator so the winning
     // value is captured by the await. Mutating a shared `let` from inside
     // the inner promises bypasses TS's flow narrowing across the await.
     type RaceResult = 'settled' | 'boundary' | 'global' | 'aborted';
     // Capture the timer so we can clear it when the promises win the race.
-    // Otherwise a ref'd timer stays armed for the full `waitMs` after the
+    // Otherwise a ref'd timer stays armed until the deadline after the
     // render already finished — on every pass, accumulating under load and
     // keeping the event loop alive (notably on serverless/edge).
-    let raceTimer: ReturnType<typeof setTimeout> | undefined;
+    let clearDeadline: (() => void) | undefined;
     let onAbort: (() => void) | undefined;
     let raceResult: RaceResult;
     try {
@@ -300,9 +295,9 @@ async function renderString(
       const racers: Promise<RaceResult>[] = [
         settledPromise,
         new Promise<RaceResult>((resolve) => {
-          raceTimer = setTimeout(() => {
-            resolve(waitMs >= remaining ? 'global' : 'boundary');
-          }, waitMs);
+          clearDeadline = boundaryDeadline(ctx, start + timeout, (id) =>
+            resolve(id === undefined ? 'global' : 'boundary'),
+          );
         }),
       ];
       if (signal) {
@@ -323,10 +318,10 @@ async function renderString(
       // The cycle-4 fix cleared the timer on the happy path only; if
       // Promise.all rejected (a user fetcher errored), the await threw
       // and the post-await clear was skipped. The timer then stayed
-      // armed for the full `waitMs` — exactly the "ref'd timer keeps
+      // armed until the deadline — exactly the "ref'd timer keeps
       // the event loop alive on serverless/edge" hazard cycle 4 was
       // meant to close. try/finally guarantees cleanup on every path.
-      clearTimeout(raceTimer);
+      clearDeadline?.();
       // Detach the abort listener so the AbortSignal doesn't retain a
       // reference to this render's closure once we move on. Listeners
       // registered with `{ once: true }` self-detach on fire, but a
@@ -345,12 +340,7 @@ async function renderString(
           'awaiting pending resources.',
       );
     }
-    if (raceResult === 'boundary' && nearestId >= 0) {
-      timedOutBoundaries.add(nearestId);
-      // The next pass renders this boundary's fallback and ignores late
-      // values. Its pending work is canceled when the whole render ends;
-      // individual boundaries do not yet own cancellation scopes.
-    }
+    // A boundary timer cancels its resources before the next fallback pass.
   }
 
   throw new Error(

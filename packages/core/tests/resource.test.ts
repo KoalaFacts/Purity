@@ -107,6 +107,7 @@ describe.each(['resource', 'lazyResource'] as const)('SSR %s cancellation', (kin
       const controller = new AbortController();
       const ctx = makeSSRContext();
       ctx.signal = controller.signal;
+      ctx.boundaryIdStack = [1, 2];
       const add = vi.spyOn(controller.signal, 'addEventListener');
       const remove = vi.spyOn(controller.signal, 'removeEventListener');
       let fetchSignal!: AbortSignal;
@@ -127,6 +128,7 @@ describe.each(['resource', 'lazyResource'] as const)('SSR %s cancellation', (kin
       }
       if (outcome === 'abort') controller.abort();
       await Promise.all(ctx.pendingPromises);
+      expect(ctx.boundaryAborts?.size).toBe(0);
       const forwarding = add.mock.calls.find(([type]) => type === 'abort')![1];
       expect(remove).toHaveBeenCalledWith('abort', forwarding);
       if (outcome === 'success' || outcome === 'failure') {

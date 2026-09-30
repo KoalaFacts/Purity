@@ -240,10 +240,37 @@ late results or errors are excluded from the hydration cache. SSR `query()`
 fetchers inherit the same behavior through `resource()`.
 
 Forwarding listeners are removed when each resource settles, so completed
-resource operations are not canceled later. A suspense boundary deadline keeps
-its fallback and discards late values; any remaining work is canceled when the
-whole render or stream ends. Independent boundary deadlines do not currently
-abort fetchers immediately.
+resource operations are not canceled later. A suspense boundary's deadline
+immediately cancels its unfinished resources, including those in nested
+boundaries, and keeps its fallback. A child deadline leaves parent and sibling
+resources active. A view that throws also cancels its unfinished work using the
+original error as the reason. Fallback resources use a separate, active scope.
+
+```ts
+suspense(
+  () => {
+    const data = resource(
+      ({ signal }) => fetch(apiUrl, { signal }).then((response) => response.json()),
+      { key: 'sidebar-data' },
+    );
+    return html`<aside>${() => data()?.title ?? 'Loading'}</aside>`;
+  },
+  () => html`<aside>Sidebar unavailable</aside>`,
+  { timeout: 1000 },
+);
+```
+
+Boundary deadlines are anchored to their first SSR encounter, including the
+streaming shell; waiting for the shell or an earlier chunk does not reset them.
+A streaming view whose deadline has already passed is skipped. Timeout signals
+use a `TimeoutError` reason, while `onError` retains its existing
+`onError(undefined, { boundaryId, phase: 'timeout' })` contract. Completed
+boundaries do not expire while a slower neighbor is loading. A new render pass
+reuses the neighbor's in-flight operation, so it does not issue a duplicate
+request. Use stable resource keys for conditional or reordered resources.
+
+Streaming chunks still arrive in declaration order. This cancellation behavior
+does not change that order or forcibly stop promises that ignore their signal.
 
 This signal belongs to the resource operation. SSR route loaders continue to
 receive the request signal described above. Cancellation cannot force an

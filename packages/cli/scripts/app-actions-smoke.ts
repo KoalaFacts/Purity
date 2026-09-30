@@ -307,6 +307,31 @@ async function checkDisconnects(origin: string, output: () => string): Promise<v
     }
   }
 
+  const boundaryClient = openRequest(
+    `${origin}/disconnect/probe?id=boundary-timeout&mode=boundary-timeout`,
+  );
+  try {
+    await until(async () => {
+      const state = await disconnectState(origin, 'boundary-timeout');
+      return !!(state.expired?.aborted && state.neighbor?.started);
+    }, 'Boundary deadline did not cancel its work before the neighbor completed');
+    const state = await disconnectState(origin, 'boundary-timeout');
+    assert.ok(!state.expired.completed && !state.neighbor.aborted && !state.neighbor.completed);
+    await disconnectState(origin, 'boundary-timeout', true);
+    await until(
+      () => boundaryClient.body().includes('Finished loader'),
+      'Healthy neighbor did not stream its result',
+    );
+    await boundaryClient.ended;
+    assert.equal(boundaryClient.error(), undefined);
+    const finished = await disconnectState(origin, 'boundary-timeout');
+    assert.ok(
+      !finished.expired.completed && finished.neighbor.completed && !finished.neighbor.aborted,
+    );
+  } finally {
+    boundaryClient.disconnect();
+  }
+
   const agent = new Agent({ keepAlive: true, maxSockets: 1 });
   try {
     let previousSocket: Socket | undefined;
@@ -359,7 +384,7 @@ async function checkDisconnects(origin: string, output: () => string): Promise<v
     'A genuine stream failure was swallowed',
   );
   console.log(
-    'HTTP disconnects: incomplete upload, early lookup, page/layout loaders, deferred stream, and healthy keep-alive reuse passed',
+    'HTTP disconnects: incomplete upload, early lookup, page/layout loaders, deferred stream, isolated boundary timeout, and healthy keep-alive reuse passed',
   );
 }
 
@@ -769,11 +794,18 @@ export async function loader({ request, signal }: LoaderContext) {
   const url = new URL(request.url);
   const id = url.searchParams.get('id')!;
   const mode = url.searchParams.get('mode');
-  if (mode !== 'stream') await waitForDisconnect(id, 'page', signal);
+  if (mode !== 'stream' && mode !== 'boundary-timeout') await waitForDisconnect(id, 'page', signal);
   return { id, mode };
 }
 export default function Probe(_params: unknown, data: { id: string; mode: string | null }) {
   markView(data.id);
+  if (data.mode === 'boundary-timeout') return html\`<main>Boundary timeout shell \${suspense(() => {
+    const value = resource(({ signal }) => waitForDisconnect(data.id, 'expired', signal), { key: 'expired' });
+    return html\`<p>\${() => value()}</p>\`;
+  }, () => html\`<p>Timed boundary fallback</p>\`, { timeout: 100 })}\${suspense(() => {
+    const value = resource(({ signal }) => waitForDisconnect(data.id, 'neighbor', signal), { key: 'neighbor' });
+    return html\`<p>\${() => value()}</p>\`;
+  }, () => html\`<p>Healthy neighbor fallback</p>\`)}</main>\`;
   if (data.mode !== 'stream') return html\`<p>Finished loader</p>\`;
   return html\`<main>Stream shell \${suspense(() => {
     const value = resource(({ signal }) => waitForDisconnect(data.id, 'boundary', signal));
@@ -790,7 +822,7 @@ import { type LoaderContext } from '@purityjs/core';
 import { waitForDisconnect } from '../../disconnect-probe.ts';
 export async function loader({ request, signal }: LoaderContext) {
   const url = new URL(request.url);
-  if (url.searchParams.get('mode') !== 'stream') await waitForDisconnect(url.searchParams.get('id')!, 'layout', signal);
+  if (!['stream', 'boundary-timeout'].includes(url.searchParams.get('mode')!)) await waitForDisconnect(url.searchParams.get('id')!, 'layout', signal);
 }
 export default function Layout(children: () => unknown) { return children(); }
 `,

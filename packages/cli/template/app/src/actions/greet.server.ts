@@ -20,10 +20,13 @@ export const greet = serverAction(greetingActionUrl, async (request) => {
   const valid = name.length > 0 && name.length <= 80;
   const error = 'Enter a name between 1 and 80 characters.';
   if (request.headers.get('accept')?.includes('application/json')) {
-    return Response.json(valid ? { message: `Hello, ${name}!` } : { error }, {
-      status: valid ? 200 : 422,
-      headers: { 'Cache-Control': 'no-store' },
-    });
+    return Response.json(
+      valid ? { message: `Hello, ${name}!` } : { message: error, fieldErrors: { name: error } },
+      {
+        status: valid ? 200 : 422,
+        headers: { 'Cache-Control': 'no-store' },
+      },
+    );
   }
   const location = new URL('/greeting', request.url);
   location.searchParams.set('name', name.slice(0, 80));

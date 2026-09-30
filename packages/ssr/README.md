@@ -157,6 +157,22 @@ interface RenderToStreamOptions {
    ```
 6. The stream closes when the queue drains (or `signal` aborts).
 
+**Backpressure and transport chunks.** The Web Stream queues at most one chunk
+of up to 64 KiB. Its producer resumes only when the reader has room, pausing
+subsequent deferred boundary renders when output is queued. Node's pipeline
+passes downstream pressure through, but Node, socket, proxy, and browser buffers
+have separate limits. Shell HTML, current boundary output, and hydration data
+still occupy memory outside this queue.
+
+Wire fragments above can span multiple transport chunks, including splits
+inside HTML, scripts, or UTF-8 sequences. Decode with `Response.text()` or a
+streaming `TextDecoder` and flush the decoder at the end. Explicit Suspense
+deadlines remain anchored to their first shell encounter while queued views wait.
+Cancel unread streams or supply a request/abort signal to release their listeners
+and active work; there is no implicit overall connection deadline. A direct
+stream starts shell work on its first automatic pull; the prepared response
+entry still finishes shell rendering before resolving.
+
 `__purity_swap(N)` walks the document's comment nodes via `TreeWalker` to find the matching `<!--s:N-->` / `<!--/s:N-->` pair, removes the fallback nodes between them, and inserts the template's content in place. ADR [0006](../../docs/decisions/0006-streaming-suspense.md) Phase 3.
 
 **Per-boundary budgets.** Each boundary renders in its own `SSRRenderContext` with its own multi-pass loop and its own `{ timeout }` budget (the option is per-boundary, not per-response). When a boundary's deadline fires the renderer falls back to its `fallback()` HTML for the streamed chunk — siblings continue resolving normally. Use `suspense({ onError })` to observe view / fallback / timeout phases.

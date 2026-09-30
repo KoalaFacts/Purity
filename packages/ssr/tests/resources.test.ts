@@ -37,10 +37,15 @@ describe('SSR resource cancellation', () => {
         const explicitAbort = new AbortController();
         const request = new Request('https://example.test/', { signal: requestAbort.signal });
         let fetchSignal!: AbortSignal;
+        let markStarted!: () => void;
+        const started = new Promise<void>((resolve) => {
+          markStarted = resolve;
+        });
         const outcome = render(
           () => {
             resource(({ signal }) => {
               fetchSignal = signal;
+              markStarted();
               return new Promise(() => {});
             });
             return html`<p>waiting</p>`;
@@ -50,6 +55,9 @@ describe('SSR resource cancellation', () => {
           (value) => ({ value }),
           (error) => ({ error }),
         );
+        // Direct streams begin work on their first automatic pull. Verify
+        // cancellation of an active fetcher rather than assuming eager start.
+        await started;
         const reason = new Error('connection ended');
         (source === 'request' ? requestAbort : explicitAbort).abort(reason);
         const result = await outcome;

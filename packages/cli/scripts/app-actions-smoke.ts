@@ -226,6 +226,13 @@ async function checkRenderTimeouts(origin: string): Promise<void> {
   assert.equal(error.status, 500);
   assert.equal(await error.text(), 'Internal Server Error');
   assert.equal((await fetch(`${origin}/greeting`)).status, 200);
+  const large = await fetch(`${origin}/disconnect/probe?id=large-http&mode=large-chunks`);
+  assert.equal(large.status, 200);
+  const largeBody = await large.text();
+  assert.ok(largeBody.includes('中文🧪'.repeat(10_000)));
+  assert.ok(largeBody.includes('界🌏'.repeat(50_000)));
+  assert.ok(largeBody.includes('__purity_swap(1);'));
+  assert.ok(!largeBody.includes('\uFFFD'));
   console.log(
     'HTTP SSR deadlines: GET/HEAD 503, no-store, typed page/layout cancellation, no leaked details, ordinary error 500, and next-request recovery passed',
   );
@@ -461,6 +468,9 @@ async function checkBrowser(engine: BrowserType, origin: string): Promise<void> 
     assert.equal((await submission).status(), 303);
     await page.getByRole('status').waitFor();
     assert.equal(await page.getByRole('status').textContent(), 'Hello, Ada!');
+    await page.goto(`${origin}/disconnect/probe?id=large-native&mode=large-chunks`);
+    assert.equal(await page.locator('#large-shell').textContent(), '中文🧪'.repeat(10_000));
+    assert.equal(await page.locator('#large-fallback').isVisible(), true);
     await native.close();
 
     const enhanced = await browser.newPage();
@@ -711,9 +721,18 @@ async function checkBrowser(engine: BrowserType, origin: string): Promise<void> 
       () => document.querySelector('#route-state')?.textContent === 'aborted',
     );
     assert.equal(await enhanced.locator('#route-host').textContent(), 'Next route');
+    const large = await browser.newPage();
+    const largeErrors: string[] = [];
+    large.on('pageerror', (error) => largeErrors.push(error.message));
+    await large.goto(`${origin}/disconnect/probe?id=large-browser&mode=large-chunks`);
+    await large.locator('#large-boundary').waitFor();
+    assert.equal(await large.locator('#large-shell').textContent(), '中文🧪'.repeat(10_000));
+    assert.equal(await large.locator('#large-boundary').textContent(), '界🌏'.repeat(50_000));
+    assert.equal(await large.locator('#large-fallback').count(), 0);
+    assert.deepEqual(largeErrors, []);
     assert.deepEqual(errors, []);
     console.log(
-      `${engine.name()}: native no-JS forms, in-place validation/focus, pending/deduplication, network retry, removal, multipart JSON, action query invalidation, enhanced redirect, and route loader cancellation passed`,
+      `${engine.name()}: native no-JS forms, in-place validation/focus, pending/deduplication, network retry, removal, multipart JSON, action query invalidation, enhanced redirect, route loader cancellation, and large Unicode stream shell/boundary passed`,
     );
   } catch (error) {
     console.error(diagnostics.join('\n'));
@@ -846,11 +865,15 @@ export async function loader({ request, signal }: LoaderContext) {
   const url = new URL(request.url);
   const id = url.searchParams.get('id')!;
   const mode = url.searchParams.get('mode');
-  if (!['stream', 'boundary-timeout', 'loader-boundary-timeout'].includes(mode!)) await waitForDisconnect(id, 'page', signal, request.signal);
+  if (!['stream', 'boundary-timeout', 'loader-boundary-timeout', 'large-chunks'].includes(mode!)) await waitForDisconnect(id, 'page', signal, request.signal);
   return { id, mode };
 }
 export default function Probe(_params: unknown, data: { id: string; mode: string | null }) {
   markView(data.id);
+  if (data.mode === 'large-chunks') return html\`<main><p id="large-shell">\${'中文🧪'.repeat(10000)}</p>\${suspense(
+    () => html\`<section id="large-boundary">\${'界🌏'.repeat(50000)}</section>\`,
+    () => html\`<p id="large-fallback">Loading large section</p>\`,
+  )}</main>\`;
   if (data.mode === 'loader-boundary-timeout') {
     const entry: AsyncRouteEntry = {
       pattern: '/deferred-probe', filePath: 'deferred-probe.ts', hasLoader: true,
@@ -895,7 +918,7 @@ import { type LoaderContext } from '@purityjs/core';
 import { waitForDisconnect } from '../../disconnect-probe.ts';
 export async function loader({ request, signal }: LoaderContext) {
   const url = new URL(request.url);
-  if (!['stream', 'boundary-timeout', 'loader-boundary-timeout'].includes(url.searchParams.get('mode')!)) await waitForDisconnect(url.searchParams.get('id')!, 'layout', signal, request.signal);
+  if (!['stream', 'boundary-timeout', 'loader-boundary-timeout', 'large-chunks'].includes(url.searchParams.get('mode')!)) await waitForDisconnect(url.searchParams.get('id')!, 'layout', signal, request.signal);
 }
 export default function Layout(children: () => unknown) { return children(); }
 `,

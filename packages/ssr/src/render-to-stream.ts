@@ -165,165 +165,160 @@ function createStream(
   const cancellation = renderCancellation(options.request, options.signal);
   const signal = cancellation.signal;
   const request = options.request;
-
   const encoder = new TextEncoder();
-  // Mutable cancellation flag shared between start() and cancel(). Lets the
-  // boundary loop short-circuit when the consumer disconnects WITHOUT an
-  // external AbortSignal — previously cancel() was a no-op and the loop
-  // happily awaited every slow boundary, calling enqueue() into a closed
-  // controller each time (silently caught downstream, but the work still
-  // burned CPU / kept timers + fetches alive until they all settled).
-  const state = { cancelled: false };
+  const bufferBytes = 64 * 1024;
+  let cancelled = false;
   const workAbort = new AbortController();
+  let onAbort: (() => void) | undefined;
+  // finish() aborts the internal scope after success too; only a consumer or
+  // external signal cancellation should suppress the final close or error.
+  const isAborted = (): boolean => cancelled;
 
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const onAbort = (): void => {
-        state.cancelled = true;
-        workAbort.abort(signal.reason);
-        try {
-          controller.close();
-        } catch {
-          // Already closed — ignore.
-        }
-      };
-      if (signal) {
-        if (signal.aborted) {
-          onAbort();
-          cancellation.finish();
-          return;
-        }
-        signal.addEventListener('abort', onAbort, { once: true });
+  function finish(): void {
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+    workAbort.abort();
+    cancellation.finish();
+  }
+
+  function* encodeChunks(text: string): Generator<Uint8Array> {
+    const bytes = encoder.encode(text);
+    if (bytes.byteLength <= bufferBytes) {
+      yield bytes;
+      return;
+    }
+    // Copy slices so a queued fragment cannot retain an entire large buffer.
+    // Transport chunks may split a UTF-8 sequence; consumers decode as a stream.
+    for (let offset = 0; offset < bytes.byteLength; offset += bufferBytes) {
+      yield bytes.slice(offset, offset + bufferBytes);
+    }
+  }
+
+  async function* produce(): AsyncGenerator<Uint8Array, void> {
+    try {
+      // ----- Shell render --------------------------------------------------
+      // Multi-pass loop for top-level resources; suspense() defers its
+      // view via streamingBoundaries instead of awaiting inline.
+      const shell = await getShell(workAbort.signal);
+      if (isAborted()) return;
+
+      let head = prefix + shell.html;
+      if (serialize) {
+        const cache = buildResourceScript(shell.resolvedData, shell.resolvedDataByKey, nonce);
+        head += cache;
       }
+      // Inject __purity_swap inline, exactly once, immediately after the
+      // shell. Subsequent boundary chunks invoke it.
+      if (shell.boundaries.size > 0) {
+        head += scriptTag(PURITY_SWAP_SOURCE, nonce);
+      }
+      yield* encodeChunks(head);
 
-      const isAborted = (): boolean => state.cancelled || signal?.aborted === true;
-
-      const enqueue = (s: string): void => {
-        if (isAborted()) return;
-        try {
-          controller.enqueue(encoder.encode(s));
-        } catch {
-          // Controller already closed (e.g. consumer cancelled mid-flush).
-          // Flip the cancel flag so subsequent boundary work bails out.
-          state.cancelled = true;
-          workAbort.abort();
-        }
-      };
-
-      try {
-        // ----- Shell render --------------------------------------------------
-        // Multi-pass loop for top-level resources; suspense() defers its
-        // view via streamingBoundaries instead of awaiting inline.
-        const shell = await getShell(workAbort.signal);
-        if (isAborted()) return;
-
-        let head = prefix + shell.html;
-        if (serialize) {
-          const cache = buildResourceScript(shell.resolvedData, shell.resolvedDataByKey, nonce);
-          head += cache;
-        }
-        // Inject __purity_swap inline, exactly once, immediately after the
-        // shell. Subsequent boundary chunks invoke it.
-        if (shell.boundaries.size > 0) {
-          head += scriptTag(PURITY_SWAP_SOURCE, nonce);
-        }
-        enqueue(head);
-
-        // ----- Boundary chunks ----------------------------------------------
-        for (const [id, boundary] of shell.boundaries) {
-          if (isAborted()) break;
-          // Defense-in-depth: even though `id` is typed as `number` from the
-          // Map, validate it's a finite non-negative integer before
-          // interpolating it into an inline `<script>__purity_swap(${id})`
-          // body. If a future refactor lets a non-numeric id slip in, this
-          // prevents code injection through the swap call site.
-          if (!Number.isSafeInteger(id) || id < 0) {
-            console.error(
-              `[Purity] renderToStream: refusing to emit chunk for non-integer boundary id ${String(
-                id,
-              )}; skipping.`,
-            );
-            continue;
-          }
-          const result = await renderBoundary(
-            id,
-            boundary,
-            timeout,
-            request,
-            workAbort.signal,
-            shell.boundaryIds,
+      // ----- Boundary chunks ----------------------------------------------
+      for (const [id, boundary] of shell.boundaries) {
+        if (isAborted()) break;
+        // Defense-in-depth: even though `id` is typed as `number` from the
+        // Map, validate it's a finite non-negative integer before
+        // interpolating it into an inline `<script>__purity_swap(${id})`
+        // body. If a future refactor lets a non-numeric id slip in, this
+        // prevents code injection through the swap call site.
+        if (!Number.isSafeInteger(id) || id < 0) {
+          console.error(
+            `[Purity] renderToStream: refusing to emit chunk for non-integer boundary id ${String(
+              id,
+            )}; skipping.`,
           );
-          if (isAborted()) break;
-          // null signals "boundary couldn't produce content; leave the
-          // shell-rendered fallback in place." Without this skip, an
-          // empty <template> + __purity_swap(N) chunk wiped the rendered
-          // fallback DOM (the swap replaces everything between the
-          // markers with the template content — empty content = blank).
-          if (result === null) continue;
-          // Defense-in-depth: branded SSR HTML is supposed to never contain
-          // `</template>` (escHtml escapes `<` in user input, and the
-          // codegen doesn't emit raw `</template>`), but if a future
-          // compiler bug or hand-crafted markSSRHtml() value smuggled one
-          // in, it would break out of the `<template id="purity-s-N">`
-          // wrapper and execute as live markup before the swap script
-          // runs. Refuse to emit such a chunk and leave the shell
-          // fallback in place.
-          if (containsTemplateClose(result.html)) {
-            console.error(
-              `[Purity] renderToStream: boundary ${id} HTML contained </template>; ` +
-                'refusing to emit chunk to prevent <template> breakout. Leaving shell fallback in place.',
-            );
-            continue;
-          }
-          let chunk = `<template id="purity-s-${id}">${result.html}</template>`;
-          // Per-boundary resource cache prime (ADR 0006 Phase 6 second-half).
-          // Only the keyed map is meaningful across boundaries — the
-          // positional `ordered` array would collide with the shell's index
-          // space, so we drop it and document keyed resources as the
-          // recommended pattern inside `suspense(view)`. When there's
-          // nothing keyed, skip the script entirely.
-          if (serialize) {
-            const cache = buildBoundaryResourceScript(id, result.resolvedDataByKey, nonce);
-            if (cache) chunk += cache;
-          }
-          chunk += scriptTag(`__purity_swap(${id});`, nonce);
-          enqueue(chunk);
+          continue;
         }
-
-        try {
-          controller.close();
-        } catch {
-          // Already closed by cancel() / signal abort — ignore.
+        const result = await renderBoundary(
+          id,
+          boundary,
+          timeout,
+          request,
+          workAbort.signal,
+          shell.boundaryIds,
+        );
+        if (isAborted()) break;
+        // null signals "boundary couldn't produce content; leave the
+        // shell-rendered fallback in place." Without this skip, an
+        // empty <template> + __purity_swap(N) chunk wiped the rendered
+        // fallback DOM (the swap replaces everything between the
+        // markers with the template content — empty content = blank).
+        if (result === null) continue;
+        // Defense-in-depth: branded SSR HTML is supposed to never contain
+        // `</template>` (escHtml escapes `<` in user input, and the
+        // codegen doesn't emit raw `</template>`), but if a future
+        // compiler bug or hand-crafted markSSRHtml() value smuggled one
+        // in, it would break out of the `<template id="purity-s-N">`
+        // wrapper and execute as live markup before the swap script
+        // runs. Refuse to emit such a chunk and leave the shell
+        // fallback in place.
+        if (containsTemplateClose(result.html)) {
+          console.error(
+            `[Purity] renderToStream: boundary ${id} HTML contained </template>; ` +
+              'refusing to emit chunk to prevent <template> breakout. Leaving shell fallback in place.',
+          );
+          continue;
         }
-      } catch (err) {
-        workAbort.abort(err);
-        // Don't error a stream the consumer already cancelled — calling
-        // controller.error() after close() throws, which would mask the
-        // original cause in unhandled-rejection logs.
-        if (!isAborted()) {
-          try {
-            controller.error(err);
-          } catch {
-            // Already errored — ignore.
-          }
+        let chunk = `<template id="purity-s-${id}">${result.html}</template>`;
+        // Per-boundary resource cache prime (ADR 0006 Phase 6 second-half).
+        // Only the keyed map is meaningful across boundaries — the
+        // positional `ordered` array would collide with the shell's index
+        // space, so we drop it and document keyed resources as the
+        // recommended pattern inside `suspense(view)`. When there's
+        // nothing keyed, skip the script entirely.
+        if (serialize) {
+          const cache = buildBoundaryResourceScript(id, result.resolvedDataByKey, nonce);
+          if (cache) chunk += cache;
         }
-      } finally {
-        if (signal) signal.removeEventListener('abort', onAbort);
-        workAbort.abort();
-        cancellation.finish();
+        chunk += scriptTag(`__purity_swap(${id});`, nonce);
+        yield* encodeChunks(chunk);
       }
+    } catch (error) {
+      workAbort.abort(error);
+      if (!isAborted()) throw error;
+    } finally {
+      finish();
+    }
+  }
+
+  const output = produce();
+  return new ReadableStream<Uint8Array>(
+    {
+      start(controller) {
+        onAbort = () => {
+          cancelled = true;
+          workAbort.abort(signal.reason);
+          controller.close();
+          finish();
+          void output.return(undefined);
+        };
+        if (signal.aborted) onAbort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+      },
+      async pull(controller) {
+        // Only advance the producer when the stream has room. In particular,
+        // do not start the next boundary while queued output is backpressured.
+        try {
+          const next = await output.next();
+          if (isAborted()) return;
+          if (next.done) controller.close();
+          else controller.enqueue(next.value);
+        } catch (error) {
+          if (!isAborted()) controller.error(error);
+        }
+      },
+      cancel(reason) {
+        cancelled = true;
+        workAbort.abort(reason);
+        // Detach immediately, including when the generator has never started
+        // or is suspended at a yield rather than awaiting a cancellable resource.
+        finish();
+        return output.return(undefined).then(() => undefined);
+      },
     },
-    cancel(reason) {
-      // Consumer disconnected. Flip the shared cancel flag so the boundary
-      // loop in start() short-circuits on its next `isAborted()` check
-      // instead of awaiting every remaining slow boundary. Without this,
-      // a single suspense() with a 30s fetch would keep the renderer
-      // (and its timers + AbortSignals) alive even after the client gave
-      // up.
-      state.cancelled = true;
-      workAbort.abort(reason);
-    },
-  });
+    // One queued transport chunk, each capped at 64 KiB by encodeChunks().
+    { highWaterMark: 1 },
+  );
 }
 
 // Pre-compiled regex: case-insensitive `</template` followed by `>` or

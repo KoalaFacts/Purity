@@ -18,7 +18,7 @@
     "@purityjs/vite-plugin": "*",
     "@types/markdown-it": "^14.2.0",
     "markdown-it": "^15.0.2",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0"
   }
 }

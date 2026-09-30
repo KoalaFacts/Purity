@@ -171,6 +171,7 @@ function createStream(
   const workAbort = new AbortController();
   let onAbort: (() => void) | undefined;
   let pendingBoundaries: ShellResult['boundaries'] | undefined;
+  let activeShell: ShellResult | undefined;
   // finish() aborts the internal scope after success too; only a consumer or
   // external signal cancellation should suppress the final close or error.
   const isAborted = (): boolean => cancelled;
@@ -180,6 +181,7 @@ function createStream(
     workAbort.abort();
     cancellation.finish();
     pendingBoundaries?.clear();
+    if (activeShell) releaseShellResources(activeShell);
   }
 
   function* encodeChunks(text: string): Generator<Uint8Array> {
@@ -213,6 +215,7 @@ function createStream(
       // Multi-pass loop for top-level resources; suspense() defers its
       // view via streamingBoundaries instead of awaiting inline.
       const shell = await getShell(workAbort.signal);
+      activeShell = shell;
       pendingBoundaries = shell.boundaries;
       if (isAborted()) return;
 
@@ -226,7 +229,12 @@ function createStream(
       if (shell.boundaries.size > 0) {
         head += scriptTag(PURITY_SWAP_SOURCE, nonce);
       }
+      // The snapshot is now in the wire string. Deferred boundaries have
+      // separate caches; existing resource accessors retain their own values.
+      releaseShellResources(shell);
+      shell.html = '';
       yield* encodeChunks(head);
+      head = '';
 
       // ----- Boundary chunks ----------------------------------------------
       for (const [id, boundary] of shell.boundaries) {
@@ -337,6 +345,11 @@ function createStream(
     // One queued transport chunk, each capped at 64 KiB by encodeChunks().
     { highWaterMark: 1 },
   );
+}
+
+function releaseShellResources(shell: ShellResult): void {
+  shell.resolvedData.length = 0;
+  for (const key of Object.keys(shell.resolvedDataByKey)) delete shell.resolvedDataByKey[key];
 }
 
 // Pre-compiled regex: case-insensitive `</template` followed by `>` or

@@ -80,19 +80,30 @@ Its view and fallback are no longer kept in that map while later boundaries
 wait. Cancellation, errors, and normal completion clear the remaining map.
 The active boundary still owns its callbacks for the duration of its work.
 
+Once shell resource data has been serialized into the output string, its
+ordered and keyed server snapshots are cleared before encoding starts. They
+are also cleared when serialization is disabled or fails. Resource accessors
+captured by deferred views keep their own values; boundary rendering uses
+separate caches. The renderer drops its shell HTML reference before encoding
+and its assembled shell string after the shell has drained.
+
 `npm run test:ssr:memory` checks this on built packages under Node with forced
 GC: 32 completed boundaries each capture a 1 MiB payload, while a final
 boundary keeps the response open. All 32 payloads must become unreachable;
 the final boundary must remain active until explicit cancellation. This
 fixture checks callback retention, not total process memory or a throughput
-benchmark. CI also runs deterministic queue and cancellation regressions.
+benchmark. The check also creates 32 shell resource payloads and verifies that
+their snapshots are released while another boundary waits, for ordered/keyed
+caches with serialization enabled/disabled. CI runs deterministic snapshot,
+hydration, queue, cancellation, and error regressions too.
 
 Transport chunks can split HTML and scripts. When
 reading manually, use `TextDecoder.decode(chunk, { stream: true })` and flush
 with `decode()` at the end, or use `Response.text()`. Do not assume one chunk is
 a whole Suspense boundary. The queue bound does not bound total request memory:
 the renderer still constructs the shell, one current boundary's HTML, and
-resolved hydration data. An unconsumed stream stays open
+serialized hydration text while emitting them. Values captured by live accessors
+or application code may still occupy memory. An unconsumed stream stays open
 until its reader cancels or an external signal aborts; adapters own any overall
 connection deadline.
 

@@ -52,6 +52,37 @@ generated app uses normal document navigation so the browser receives each
 page's HTTP status and headers. Server pages stream the shell first, then
 deferred `suspense()` regions. Static pages continue to render at build time.
 
+### Submit forms to server actions
+
+The app starter's `/greeting` page works with JavaScript disabled. Put action
+modules under `src/actions/**/*.server.ts` and export registered handlers with
+`serverAction(url, handler)`. The server eagerly loads them before the first
+request, dispatches POST, PUT, PATCH, and DELETE before SSR, and sends the
+handler's Web `Response` with its status, headers, cookies, and body.
+
+```ts
+// src/actions/save.server.ts
+import { serverAction } from '@purityjs/core';
+
+export const save = serverAction('/actions/save', async (request) => {
+  const form = await request.formData();
+  // Validate input and authorize the write before saving.
+  await saveRecord(form);
+  return Response.redirect(new URL('/records', request.url), 303);
+});
+```
+
+A native `<form action="/actions/save" method="POST">` uses the same handler
+as a browser `fetch()` call. Action modules are loaded only by the server entry;
+share URL constants from a separate ordinary module when the client needs them.
+
+The generated adapter requires `Origin` to match the public request origin and
+limits buffered bodies to 1 MiB (`MAX_ACTION_BODY_BYTES` can change the limit).
+Missing or mismatched origins return 403; oversized bodies return 413; unknown
+actions return 404. API clients send `Origin` explicitly. Configure
+`PUBLIC_ORIGIN` or a trusted proxy for the deployment's public URL. The generated
+README describes validation responses and the request contract in more detail.
+
 ### Status and headers from a loader
 
 Use `routeData(value, { status, headers })` when a page should render with

@@ -46,6 +46,13 @@ assets; `dist/server.js` serves the complete app. Server pages stream deferred
 and `head()` content. A fully static app can deploy
 `dist/client/` to a static host. See the generated README for details.
 
+The app starter also includes a `/greeting` form that works without JavaScript.
+Export `serverAction()` handlers from `src/actions/**/*.server.ts`; the generated
+server registers them automatically and forwards bounded request bodies before
+page rendering. Actions require a matching `Origin` header and default to a
+1 MiB body limit (`MAX_ACTION_BODY_BYTES`). The generated README covers native
+forms, JSON responses, validation, and deployment behind a proxy.
+
 On a Node 24+ host, deploy the generated project and run `npm ci`,
 `npm run build`, then `npm start`. If building before deployment, copy `dist/`,
 `package.json`, and `package-lock.json` to the host and run

@@ -95,6 +95,60 @@ therefore receives the route's actual HTTP status and headers. Applications
 that implement reactive client-side route composition can opt into
 `configureNavigation()` separately.
 
+### Forms and server actions
+
+The `/greeting` page demonstrates a native form submission, server validation,
+and a 303 redirect back to the page. It works with JavaScript disabled. The
+example returns a greeting and does not persist data. Invalid input returns
+to the form with an accessible error message and HTTP 422.
+
+Export actions from `src/actions/**/*.server.ts` using `serverAction()`:
+
+```ts
+import { serverAction } from '@purityjs/core';
+
+export const save = serverAction('/actions/save', async (request) => {
+  const form = await request.formData();
+  // Validate the fields and authorize the operation here.
+  await saveRecord(form);
+  return Response.redirect(new URL('/records', request.url), 303);
+});
+```
+
+The server entry eagerly registers exported actions before handling requests,
+including a POST sent directly after startup. Actions run before page rendering
+and can return any Web `Response`, including JSON, cookies, or redirects.
+Action modules and their imports stay in the server bundle. Put shared URL
+constants in ordinary modules, as the greeting example does.
+
+Use `<form action="/actions/save" method="POST">` for native submission. For
+an enhanced interaction, call the same endpoint with `fetch()`. The greeting
+action returns JSON when the request accepts it:
+
+```ts
+const response = await fetch('/actions/greet', {
+  method: 'POST',
+  headers: { Accept: 'application/json' },
+  body: new FormData(form),
+});
+const result = await response.json(); // HTTP 200 or 422; no redirect.
+```
+
+The adapter dispatches POST, PUT, PATCH, and DELETE; handlers can restrict their
+own methods. An unknown action returns 404. Submissions require an `Origin`
+header equal to the request's public origin; missing, `null`, and cross-origin
+values return 403. Browser submissions normally supply this header. API clients
+must send it explicitly. Keep authorization in each handler. Policies that
+produce an opaque form origin, such as `Referrer-Policy: no-referrer`, are
+incompatible with this requirement.
+
+Request bodies are buffered up to 1 MiB before a handler runs. Both declared
+and chunked bodies above that limit return 413. Set `MAX_ACTION_BODY_BYTES` to a
+positive integer to change the limit. Form data (including multipart uploads),
+JSON, and text reach handlers through the standard `Request` parsing methods.
+Behind a proxy, configure the public origin as described below so browser
+submissions compare against the public URL.
+
 ```bash
 npm run build
 npm start

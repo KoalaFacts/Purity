@@ -1,7 +1,34 @@
-import { matchRoute } from '@purityjs/core';
+import { handleAction, matchRoute } from '@purityjs/core';
 import { renderToStreamResponse, renderToString, type RenderToStreamResponse } from '@purityjs/ssr';
 import { routes } from 'purity:routes';
 import { App } from './app.ts';
+
+// Register every action before the first request, including direct POSTs.
+const actionModules = import.meta.glob<Record<string, unknown>>('./actions/**/*.server.ts', {
+  eager: true,
+});
+const actionUrls = new Set<string>();
+for (const module of Object.values(actionModules)) {
+  for (const value of Object.values(module)) {
+    if (
+      value &&
+      typeof value === 'object' &&
+      'url' in value &&
+      typeof value.url === 'string' &&
+      'handler' in value &&
+      typeof value.handler === 'function'
+    ) {
+      actionUrls.add(value.url);
+    }
+  }
+}
+
+export async function dispatchAction(request: Request): Promise<Response | null> {
+  // The core registry survives Vite reloads; only dispatch currently exported
+  // actions so deleting or renaming a module also removes its old endpoint.
+  if (!actionUrls.has(new URL(request.url).pathname)) return null;
+  return handleAction(request);
+}
 
 export type RenderMode = 'static' | 'server' | 'client';
 

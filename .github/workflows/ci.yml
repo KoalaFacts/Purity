@@ -115,3 +115,6 @@ jobs:
 
       - name: 🧪 Check packaged SSR node retention
         run: npm run test:browser:ssr-retention
+
+      - name: 🧪 Check app forms and server actions
+        run: npm run test:browser:app-actions

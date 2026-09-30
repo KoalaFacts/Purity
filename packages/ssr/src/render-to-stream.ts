@@ -171,6 +171,7 @@ function createStream(
   const workAbort = new AbortController();
   let onAbort: (() => void) | undefined;
   let pendingBoundaries: ShellResult['boundaries'] | undefined;
+  let activeShell: ShellResult | undefined;
   // finish() aborts the internal scope after success too; only a consumer or
   // external signal cancellation should suppress the final close or error.
   const isAborted = (): boolean => cancelled;
@@ -180,6 +181,7 @@ function createStream(
     workAbort.abort();
     cancellation.finish();
     pendingBoundaries?.clear();
+    if (activeShell) releaseShellResources(activeShell);
   }
 
   function* encodeChunks(text: string): Generator<Uint8Array> {
@@ -207,26 +209,32 @@ function createStream(
     }
   }
 
+  function buildShellOutput(shell: ShellResult): string {
+    let head = prefix + shell.html;
+    if (serialize) {
+      head += buildResourceScript(shell.resolvedData, shell.resolvedDataByKey, nonce);
+    }
+    // Inject the swap helper once, immediately after the shell.
+    if (shell.boundaries.size > 0) head += scriptTag(PURITY_SWAP_SOURCE, nonce);
+    // The snapshot is now in the wire string. Deferred boundaries have
+    // separate caches; existing resource accessors retain their own values.
+    releaseShellResources(shell);
+    shell.html = '';
+    return head;
+  }
+
   async function* produce(): AsyncGenerator<Uint8Array, void> {
     try {
       // ----- Shell render --------------------------------------------------
       // Multi-pass loop for top-level resources; suspense() defers its
       // view via streamingBoundaries instead of awaiting inline.
       const shell = await getShell(workAbort.signal);
+      activeShell = shell;
       pendingBoundaries = shell.boundaries;
       if (isAborted()) return;
 
-      let head = prefix + shell.html;
-      if (serialize) {
-        const cache = buildResourceScript(shell.resolvedData, shell.resolvedDataByKey, nonce);
-        head += cache;
-      }
-      // Inject __purity_swap inline, exactly once, immediately after the
-      // shell. Subsequent boundary chunks invoke it.
-      if (shell.boundaries.size > 0) {
-        head += scriptTag(PURITY_SWAP_SOURCE, nonce);
-      }
-      yield* encodeChunks(head);
+      // The encoder owns the assembled string only while draining the shell.
+      yield* encodeChunks(buildShellOutput(shell));
 
       // ----- Boundary chunks ----------------------------------------------
       for (const [id, boundary] of shell.boundaries) {
@@ -337,6 +345,11 @@ function createStream(
     // One queued transport chunk, each capped at 64 KiB by encodeChunks().
     { highWaterMark: 1 },
   );
+}
+
+function releaseShellResources(shell: ShellResult): void {
+  shell.resolvedData.length = 0;
+  for (const key of Object.keys(shell.resolvedDataByKey)) delete shell.resolvedDataByKey[key];
 }
 
 // Pre-compiled regex: case-insensitive `</template` followed by `>` or

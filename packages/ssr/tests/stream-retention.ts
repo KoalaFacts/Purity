@@ -3,7 +3,12 @@
 import assert from 'node:assert/strict';
 import { setImmediate as nextJob } from 'node:timers/promises';
 import { resource, suspense } from '@purityjs/core';
-import { html, renderToStream, renderToStreamResponse } from '@purityjs/ssr';
+import {
+  html,
+  renderToStream,
+  renderToStreamResponse,
+  type RenderToStreamOptions,
+} from '@purityjs/ssr';
 
 const collect = globalThis.gc;
 assert.ok(collect, 'Run this check with --expose-gc');
@@ -23,12 +28,13 @@ function completedBoundary(refs: WeakRef<Uint8Array>[], index: number) {
 const renderers = [
   {
     name: 'direct stream',
-    render: async (view: () => unknown) => renderToStream(view, { timeout: 60_000 }),
+    render: async (view: () => unknown, options: RenderToStreamOptions = {}) =>
+      renderToStream(view, { timeout: 60_000, ...options }),
   },
   {
     name: 'prepared stream',
-    render: async (view: () => unknown) =>
-      (await renderToStreamResponse(view, { timeout: 60_000 })).body,
+    render: async (view: () => unknown, options: RenderToStreamOptions = {}) =>
+      (await renderToStreamResponse(view, { timeout: 60_000, ...options })).body,
   },
 ];
 
@@ -82,4 +88,83 @@ for (const { name, render } of renderers) {
     reader.releaseLock();
   }
   assert.equal(activeSignal.aborted, true, 'Cancel must stop the final boundary');
+}
+
+function shellPayload(refs: WeakRef<Uint8Array>[], index: number) {
+  const bytes = new Uint8Array(payloadBytes);
+  bytes.fill(index);
+  refs.push(new WeakRef(bytes));
+  return {
+    bytes,
+    label: `SHELL-${index}`,
+    toJSON() {
+      return { label: this.label };
+    },
+  };
+}
+
+for (const { name, render } of renderers) {
+  for (const kind of ['ordered', 'keyed'] as const) {
+    for (const serializeResources of [true, false]) {
+      const refs: WeakRef<Uint8Array>[] = [];
+      let started!: () => void;
+      const pendingStarted = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      let activeSignal!: AbortSignal;
+      const stream = await render(
+        () => {
+          const labels = Array.from(
+            { length: boundaryCount },
+            (_, index) =>
+              resource(
+                () => shellPayload(refs, index),
+                kind === 'keyed' ? { key: `shell-${index}` } : undefined,
+              )()?.label ?? 'WAITING',
+          );
+          return html`<main>${labels.join(',')}${suspense(
+            () => {
+              const data = resource(({ signal }) => {
+                activeSignal = signal;
+                started();
+                return new Promise<string>(() => {});
+              });
+              return html`<p>${() => data()}</p>`;
+            },
+            () => html`<p>STILL-WAITING</p>`,
+          )}</main>`;
+        },
+        { serializeResources },
+      );
+      const reader = stream.getReader();
+      try {
+        const shell = (await reader.read()).value!;
+        const output = new TextDecoder().decode(shell);
+        assert.ok(output.includes('SHELL-31'), 'The resolved shell must be emitted');
+        assert.equal(output.includes('__purity_resources__'), serializeResources);
+        await pendingStarted;
+        assert.equal(refs.length, boundaryCount);
+        let retained = boundaryCount;
+        for (let attempt = 0; attempt < 20 && retained > 0; attempt++) {
+          await nextJob();
+          collect();
+          await nextJob();
+          retained = refs.filter((ref) => ref.deref() !== undefined).length;
+        }
+        assert.equal(activeSignal.aborted, false);
+        console.log(
+          `${name}, ${kind}, serialize=${serializeResources}: ${retained}/${boundaryCount} shell payloads retained (${retained * payloadBytes} bytes) while the response remains open`,
+        );
+        assert.equal(
+          retained,
+          0,
+          'Serialized or omitted shell snapshots must release their payloads',
+        );
+      } finally {
+        await reader.cancel(new Error('shell retention check complete'));
+        reader.releaseLock();
+      }
+      assert.equal(activeSignal.aborted, true);
+    }
+  }
 }

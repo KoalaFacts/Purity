@@ -8,8 +8,15 @@
 
 import { mountIslands } from '@purityjs/core';
 
-mountIslands([
-  () => import('./islands/counter.ts').then((m) => m.Counter),
-  () => import('./islands/expander.ts').then((m) => m.Expander),
-  () => import('./islands/like.ts').then((m) => m.Like),
-]);
+mountIslands(
+  [
+    () => import('./islands/counter.ts').then((m) => m.Counter),
+    () => import('./islands/expander.ts').then((m) => m.Expander),
+    () => import('./islands/like.ts').then((m) => m.Like),
+  ],
+  {
+    // Browser checks wait for the hydration attempt to finish. Network
+    // idleness can precede the visibility callback that requests the chunk.
+    onMount: (_id, wrapper) => wrapper.setAttribute('data-pi-settled', ''),
+  },
+);

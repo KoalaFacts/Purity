@@ -75,6 +75,11 @@ async function checkBrowser(name: string, browser: Browser, base: string): Promi
   try {
     for (const action of ['click', 'Enter', 'Space'] as const) {
       const page = await open();
+      // Exercise visibility hydration with a chunk still in flight.
+      await page.route('**/src/islands/like.ts*', async (route) => {
+        await delay(300);
+        await route.continue();
+      });
       // Keep the chunk in flight until the user action has finished.
       await page.route('**/src/islands/expander.ts*', async (route) => {
         await delay(300);
@@ -134,7 +139,9 @@ async function checkBrowser(name: string, browser: Browser, base: string): Promi
         );
         const like = page.locator('purity-island[data-pi-trigger="visible"] button');
         await like.scrollIntoViewIfNeeded();
-        await page.waitForLoadState('networkidle');
+        await page
+          .locator('purity-island[data-pi-trigger="visible"][data-pi-settled]')
+          .waitFor({ state: 'attached' });
         await like.click();
         await page.waitForFunction(() =>
           document

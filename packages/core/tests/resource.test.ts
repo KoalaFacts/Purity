@@ -1683,6 +1683,9 @@ describe('resource — SSR keyed-cache errored resource preserves initialValue',
 // number must not reach setTimeout unclamped — that coerces to ~0 and turns
 // the retry into a tight loop hammering the server.
 describe('resource — retry delay is clamped to a finite non-negative ms', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
   function withSetTimeoutSpy<R>(run: (seen: number[]) => Promise<R>): Promise<R> {
     const orig = globalThis.setTimeout;
     const seen: number[] = [];
@@ -1704,7 +1707,7 @@ describe('resource — retry delay is clamped to a finite non-negative ms', () =
       const r = resource(() => Promise.reject(new Error('x')), {
         retry: { count: 2, delay: () => NaN },
       });
-      await new Promise((res) => globalThis.setTimeout(res, 80));
+      await vi.advanceTimersByTimeAsync(80);
       r.dispose();
       expect(seen.some((x) => Number.isNaN(x))).toBe(false);
     });
@@ -1715,7 +1718,7 @@ describe('resource — retry delay is clamped to a finite non-negative ms', () =
       const r = resource(() => Promise.reject(new Error('x')), {
         retry: { count: 2, delay: () => -5000 },
       });
-      await new Promise((res) => globalThis.setTimeout(res, 80));
+      await vi.advanceTimersByTimeAsync(80);
       r.dispose();
       expect(seen.some((x) => x < 0)).toBe(false);
     });
@@ -1730,10 +1733,13 @@ describe('resource — retry delay is clamped to a finite non-negative ms', () =
       },
       { retry: { count: 2, delay: () => 0 } },
     );
-    await new Promise((res) => setTimeout(res, 80));
-    expect(calls).toBe(3); // 1 initial + 2 retries
-    expect(r.error()).toBeInstanceOf(Error);
-    r.dispose();
+    try {
+      await vi.advanceTimersByTimeAsync(80);
+      expect(calls).toBe(3); // 1 initial + 2 retries
+      expect(r.error()).toBeInstanceOf(Error);
+    } finally {
+      r.dispose();
+    }
   });
 });
 

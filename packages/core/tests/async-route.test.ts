@@ -84,9 +84,11 @@ describe('asyncRoute — loader cancellation', () => {
     };
     const { root, active } = mountRoute(entry);
     await vi.waitFor(() => expect(signals).toHaveLength(2));
-    expect(signals[0]).toBe(signals[1]);
+    expect(signals[0]).not.toBe(signals[1]);
     active(false);
     await vi.waitFor(() => expect(signals[0].aborted).toBe(true));
+    expect(signals[1].aborted).toBe(true);
+    expect(signals[1].reason).toBe(signals[0].reason);
     work.resolve('late');
     await new Promise((done) => setTimeout(done, 0));
     expect(root.textContent).toBe('Next route');
@@ -253,9 +255,12 @@ describe('asyncRoute — loader cancellation', () => {
     };
     const { ctx } = inSSRContext(() => asyncRoute(entry, {}, { request: () => request }));
     await vi.waitFor(() => expect(loader).toHaveBeenCalled());
-    expect(signal).toBe(request.signal);
+    expect(signal).not.toBe(request.signal);
+    expect(signal.aborted).toBe(false);
     const reason = new Error('SSR cancelled');
     controller.abort(reason);
+    expect(signal.aborted).toBe(true);
+    expect(signal.reason).toBe(reason);
     await vi.waitFor(() => expect(ctx.resolvedErrorsByKey['route:/cancel']).toBe(reason));
     expect(ctx.resolvedDataByKey['route:/cancel']).toBeUndefined();
     expect(boundary).not.toHaveBeenCalled();
@@ -263,6 +268,34 @@ describe('asyncRoute — loader cancellation', () => {
     await Promise.all(ctx.pendingPromises);
     await new Promise((done) => setTimeout(done, 0));
     expect(ctx.resolvedDataByKey['route:/cancel']).toBeUndefined();
+  });
+
+  it('does not invoke a cached SSR view after its custom request aborts', async () => {
+    const controller = new AbortController();
+    const request = new Request('http://localhost/ready', { signal: controller.signal });
+    const view = vi.fn(() => 'READY');
+    let loaderSignal!: AbortSignal;
+    const entry: AsyncRouteEntry = {
+      pattern: '/ready',
+      filePath: 'ready.ts',
+      layouts: [],
+      hasLoader: true,
+      importFn: async () => ({
+        default: view,
+        loader: ({ signal }: { signal: AbortSignal }) => {
+          loaderSignal = signal;
+          return 'data';
+        },
+      }),
+    };
+    const { ctx } = inSSRContext(() => asyncRoute(entry, {}, { request: () => request }));
+    await Promise.all(ctx.pendingPromises);
+    const reason = new Error('Custom request ended after loading');
+    controller.abort(reason);
+    // Forwarding is finished, but view validity still checks the request.
+    expect(loaderSignal.aborted).toBe(false);
+    expect(() => (ctx.resolvedDataByKey['route:/ready'] as () => unknown)()).toThrow(reason);
+    expect(view).not.toHaveBeenCalled();
   });
 });
 

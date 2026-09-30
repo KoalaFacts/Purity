@@ -19,7 +19,7 @@
     "@purityjs/core": "*",
     "@purityjs/vite-plugin": "*",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "@vitejs/plugin-vue": "^6.0.7",
+    "@vitejs/plugin-vue": "^6.0.9",
     "solid-js": "^1.9.13",
     "svelte": "^5.55.9",
     "vite-plugin-solid": "^2.11.12",

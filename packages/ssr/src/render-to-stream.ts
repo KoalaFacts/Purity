@@ -170,6 +170,7 @@ function createStream(
   let cancelled = false;
   const workAbort = new AbortController();
   let onAbort: (() => void) | undefined;
+  let pendingBoundaries: ShellResult['boundaries'] | undefined;
   // finish() aborts the internal scope after success too; only a consumer or
   // external signal cancellation should suppress the final close or error.
   const isAborted = (): boolean => cancelled;
@@ -178,6 +179,7 @@ function createStream(
     if (onAbort) signal.removeEventListener('abort', onAbort);
     workAbort.abort();
     cancellation.finish();
+    pendingBoundaries?.clear();
   }
 
   function* encodeChunks(text: string): Generator<Uint8Array> {
@@ -211,6 +213,7 @@ function createStream(
       // Multi-pass loop for top-level resources; suspense() defers its
       // view via streamingBoundaries instead of awaiting inline.
       const shell = await getShell(workAbort.signal);
+      pendingBoundaries = shell.boundaries;
       if (isAborted()) return;
 
       let head = prefix + shell.html;
@@ -228,6 +231,9 @@ function createStream(
       // ----- Boundary chunks ----------------------------------------------
       for (const [id, boundary] of shell.boundaries) {
         if (isAborted()) break;
+        // The active boundary lives in this iteration. Remove its callbacks
+        // from the queue so completed views do not stay pinned by later work.
+        shell.boundaries.delete(id);
         // Defense-in-depth: even though `id` is typed as `number` from the
         // Map, validate it's a finite non-negative integer before
         // interpolating it into an inline `<script>__purity_swap(${id})`

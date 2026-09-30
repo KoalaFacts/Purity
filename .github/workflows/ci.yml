@@ -110,6 +110,9 @@ jobs:
       - name: 🧠 Check memory retention
         run: npm run test:browser:memory
 
+      - name: 🧠 Check SSR boundary memory retention
+        run: npm run test:ssr:memory
+
       - name: 🧪 Check published CLI projects
         run: npm run test:published-cli
 

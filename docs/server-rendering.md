@@ -75,6 +75,18 @@ skipped and retains its fallback. Consumer cancellation and external request
 abort detach listeners and cancel active resource/loader work even while output
 is paused.
 
+Each deferred boundary leaves the pending callback map when its render starts.
+Its view and fallback are no longer kept in that map while later boundaries
+wait. Cancellation, errors, and normal completion clear the remaining map.
+The active boundary still owns its callbacks for the duration of its work.
+
+`npm run test:ssr:memory` checks this on built packages under Node with forced
+GC: 32 completed boundaries each capture a 1 MiB payload, while a final
+boundary keeps the response open. All 32 payloads must become unreachable;
+the final boundary must remain active until explicit cancellation. This
+fixture checks callback retention, not total process memory or a throughput
+benchmark. CI also runs deterministic queue and cancellation regressions.
+
 Transport chunks can split HTML and scripts. When
 reading manually, use `TextDecoder.decode(chunk, { stream: true })` and flush
 with `decode()` at the end, or use `Response.text()`. Do not assume one chunk is

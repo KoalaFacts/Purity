@@ -170,6 +170,14 @@ boundary first. Encoding resumes with reader demand and stops on cancellation.
 Small output uses a single exact-sized allocation. Valid surrogate pairs are
 preserved; lone surrogates use standard `TextEncoder` replacement semantics.
 
+Consumed boundary callbacks are removed from the pending map as their render
+starts. The active boundary owns its callbacks until its work ends; completed
+callbacks do not remain in that map while later boundaries wait. Cancellation
+and renderer exit clear the remaining map. `npm run test:ssr:memory` verifies
+on built Node packages that captured payloads from 32 completed boundaries can
+be collected while another boundary keeps the response open. This is a focused
+retention check, not a bound on total response memory.
+
 Wire fragments above can span multiple transport chunks, including splits
 inside HTML or scripts. Decode with `Response.text()` or a
 streaming `TextDecoder` and flush the decoder at the end. Explicit Suspense

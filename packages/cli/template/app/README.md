@@ -56,15 +56,27 @@ operations, for example `fetch(url, { signal })`. On the client it aborts when
 the route's owning render scope is disposed; a cached branch that is only
 hidden stays alive. A custom request's signal also cancels its loaders.
 
-During SSR, loaders use the supplied `Request.signal`. The Node server connects
-that signal to incomplete uploads and response connections closed before
-completion, with listeners installed before middleware or route loading. Normal
+During SSR, loader signals combine the request and the route's owning resource
+operation. Render cancellation, failure, global timeout, stream reader
+cancellation, and enclosing Suspense deadlines cancel unfinished loaders. Page
+and layout loaders share that signal. Boundary timeouts leave the original
+request and neighboring routes active. Forward `LoaderContext.signal` instead
+of `request.signal` to make underlying work obey render deadlines. Successful
+route pipelines detach their forwarding listeners and are not canceled later.
+If a page or layout loader fails or returns a Web `Response`, unfinished peer
+loaders are canceled with the original outcome. The route can still load its
+error boundary or deliver the HTTP response.
+
+The Node server connects the request signal to incomplete uploads and response
+connections closed before completion, with listeners installed before middleware
+or route loading. Normal
 GET/POST reception, completed responses, and keep-alive reuse do not cancel it.
 Listeners are removed when the response finishes or closes.
 
 Custom adapters must connect request cancellation to `Request.signal` themselves.
-Rendering timeouts alone do not abort that signal. Canceled routes ignore late
-values, errors, and redirects, but arbitrary promises and already completed
+Rendering cancellation does not abort the original request signal. Custom
+`asyncRoute` request signals also participate in loader cancellation. Canceled
+routes ignore late values, errors, and redirects, but arbitrary promises and already completed
 operations cannot be undone. Aborting an action does not roll back accepted writes.
 
 ### SSR resource cancellation
@@ -98,8 +110,8 @@ load, and new render passes reuse unfinished requests. Streaming chunks retain
 declaration order. Give conditional resources stable keys.
 
 Forward the fetcher's signal to cancellable operations; arbitrary promises cannot
-be forcibly stopped. SSR loaders still use `Request.signal`, so a rendering or
-boundary timeout alone does not stop their underlying loader work.
+be forcibly stopped. SSR route loaders inherit these limits through
+`LoaderContext.signal`, including loaders inside deferred boundaries.
 
 ### Loader responses
 

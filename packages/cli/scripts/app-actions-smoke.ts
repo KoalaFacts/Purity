@@ -169,7 +169,14 @@ async function checkHttp(origin: string): Promise<void> {
 
 type DisconnectState = Record<
   string,
-  { started: boolean; aborted: boolean; completed: boolean; views: number }
+  {
+    started: boolean;
+    aborted: boolean;
+    requestAborted?: boolean;
+    reasonName?: string;
+    completed: boolean;
+    views: number;
+  }
 >;
 
 async function disconnectState(
@@ -307,29 +314,34 @@ async function checkDisconnects(origin: string, output: () => string): Promise<v
     }
   }
 
-  const boundaryClient = openRequest(
-    `${origin}/disconnect/probe?id=boundary-timeout&mode=boundary-timeout`,
-  );
-  try {
-    await until(async () => {
-      const state = await disconnectState(origin, 'boundary-timeout');
-      return !!(state.expired?.aborted && state.neighbor?.started);
-    }, 'Boundary deadline did not cancel its work before the neighbor completed');
-    const state = await disconnectState(origin, 'boundary-timeout');
-    assert.ok(!state.expired.completed && !state.neighbor.aborted && !state.neighbor.completed);
-    await disconnectState(origin, 'boundary-timeout', true);
-    await until(
-      () => boundaryClient.body().includes('Finished loader'),
-      'Healthy neighbor did not stream its result',
-    );
-    await boundaryClient.ended;
-    assert.equal(boundaryClient.error(), undefined);
-    const finished = await disconnectState(origin, 'boundary-timeout');
-    assert.ok(
-      !finished.expired.completed && finished.neighbor.completed && !finished.neighbor.aborted,
-    );
-  } finally {
-    boundaryClient.disconnect();
+  for (const mode of ['boundary-timeout', 'loader-boundary-timeout']) {
+    const phases = mode === 'boundary-timeout' ? ['expired'] : ['expired-page', 'expired-layout'];
+    const boundaryClient = openRequest(`${origin}/disconnect/probe?id=${mode}&mode=${mode}`);
+    try {
+      await until(async () => {
+        const state = await disconnectState(origin, mode);
+        return phases.every((phase) => state[phase]?.aborted) && !!state.neighbor?.started;
+      }, 'Boundary deadline did not cancel its work before the neighbor completed');
+      const state = await disconnectState(origin, mode);
+      for (const phase of phases) {
+        assert.ok(!state[phase].completed);
+        assert.equal(state[phase].reasonName, 'TimeoutError');
+        if (mode === 'loader-boundary-timeout') assert.equal(state[phase].requestAborted, false);
+      }
+      assert.ok(!state.neighbor.aborted && !state.neighbor.completed);
+      await disconnectState(origin, mode, true);
+      await until(
+        () => boundaryClient.body().includes('Finished loader'),
+        'Healthy neighbor did not stream its result',
+      );
+      await boundaryClient.ended;
+      assert.equal(boundaryClient.error(), undefined);
+      const finished = await disconnectState(origin, mode);
+      assert.ok(phases.every((phase) => !finished[phase].completed));
+      assert.ok(finished.neighbor.completed && !finished.neighbor.aborted);
+    } finally {
+      boundaryClient.disconnect();
+    }
   }
 
   const agent = new Agent({ keepAlive: true, maxSockets: 1 });
@@ -384,7 +396,7 @@ async function checkDisconnects(origin: string, output: () => string): Promise<v
     'A genuine stream failure was swallowed',
   );
   console.log(
-    'HTTP disconnects: incomplete upload, early lookup, page/layout loaders, deferred stream, isolated boundary timeout, and healthy keep-alive reuse passed',
+    'HTTP disconnects: incomplete upload, early lookup, page/layout loaders, deferred stream, isolated resource/loader boundary timeouts, and healthy keep-alive reuse passed',
   );
 }
 
@@ -747,14 +759,14 @@ try {
   await writeFile(
     join(project, 'src/disconnect-probe.ts'),
     `
-type Work = { signal?: AbortSignal; completed: boolean; views: number; release: () => void };
+type Work = { signal?: AbortSignal; requestSignal?: AbortSignal; completed: boolean; views: number; release: () => void };
 const records = new Map<string, Map<string, Work>>();
-export function waitForDisconnect(id: string, phase: string, signal?: AbortSignal): Promise<string> {
+export function waitForDisconnect(id: string, phase: string, signal?: AbortSignal, requestSignal?: AbortSignal): Promise<string> {
   let phases = records.get(id);
   if (!phases) records.set(id, phases = new Map());
   return new Promise((resolve, reject) => {
     const onAbort = () => { signal?.removeEventListener('abort', onAbort); reject(signal?.reason); };
-    const work: Work = { signal, completed: false, views: 0, release: () => {
+    const work: Work = { signal, requestSignal, completed: false, views: 0, release: () => {
       if (signal?.aborted) return;
       signal?.removeEventListener('abort', onAbort);
       work.completed = true;
@@ -770,7 +782,8 @@ export function inspectDisconnect(id: string, release: boolean) {
   const phases = records.get(id);
   if (release) for (const work of phases?.values() ?? []) work.release();
   return Object.fromEntries(Array.from(phases ?? [], ([phase, work]) => [phase, {
-    started: true, aborted: work.signal?.aborted ?? false, completed: work.completed, views: work.views,
+    started: true, aborted: work.signal?.aborted ?? false, requestAborted: work.requestSignal?.aborted,
+    reasonName: work.signal?.reason?.name, completed: work.completed, views: work.views,
   }]));
 }
 `,
@@ -788,17 +801,38 @@ export const disconnectState = serverAction('/actions/disconnect-state', async (
   );
   await mkdir(join(project, 'src/pages/disconnect'), { recursive: true });
   const disconnectPage = `
-import { html, resource, suspense, type LoaderContext } from '@purityjs/core';
+import { asyncRoute, html, resource, suspense, type AsyncRouteEntry, type LoaderContext } from '@purityjs/core';
 import { markView, waitForDisconnect } from '../../disconnect-probe.ts';
 export async function loader({ request, signal }: LoaderContext) {
   const url = new URL(request.url);
   const id = url.searchParams.get('id')!;
   const mode = url.searchParams.get('mode');
-  if (mode !== 'stream' && mode !== 'boundary-timeout') await waitForDisconnect(id, 'page', signal);
+  if (!['stream', 'boundary-timeout', 'loader-boundary-timeout'].includes(mode!)) await waitForDisconnect(id, 'page', signal);
   return { id, mode };
 }
 export default function Probe(_params: unknown, data: { id: string; mode: string | null }) {
   markView(data.id);
+  if (data.mode === 'loader-boundary-timeout') {
+    const entry: AsyncRouteEntry = {
+      pattern: '/deferred-probe', filePath: 'deferred-probe.ts', hasLoader: true,
+      importFn: async () => ({
+        default: (_params: unknown, value: string) => html\`<p>\${value}</p>\`,
+        loader: ({ signal, request }: LoaderContext) => waitForDisconnect(data.id, 'expired-page', signal, request.signal),
+      }),
+      layouts: [{
+        filePath: 'deferred-layout.ts', hasLoader: true,
+        importFn: async () => ({
+          default: (children: () => unknown) => children(),
+          loader: ({ signal, request }: LoaderContext) => waitForDisconnect(data.id, 'expired-layout', signal, request.signal),
+        }),
+      }],
+    };
+    return html\`<main>Loader boundary shell \${suspense(() => asyncRoute(entry, {}),
+      () => html\`<p>Timed loader fallback</p>\`, { timeout: 100 })}\${suspense(() => {
+      const value = resource(({ signal }) => waitForDisconnect(data.id, 'neighbor', signal), { key: 'neighbor' });
+      return html\`<p>\${() => value()}</p>\`;
+    }, () => html\`<p>Healthy neighbor fallback</p>\`)}</main>\`;
+  }
   if (data.mode === 'boundary-timeout') return html\`<main>Boundary timeout shell \${suspense(() => {
     const value = resource(({ signal }) => waitForDisconnect(data.id, 'expired', signal), { key: 'expired' });
     return html\`<p>\${() => value()}</p>\`;
@@ -822,7 +856,7 @@ import { type LoaderContext } from '@purityjs/core';
 import { waitForDisconnect } from '../../disconnect-probe.ts';
 export async function loader({ request, signal }: LoaderContext) {
   const url = new URL(request.url);
-  if (!['stream', 'boundary-timeout'].includes(url.searchParams.get('mode')!)) await waitForDisconnect(url.searchParams.get('id')!, 'layout', signal);
+  if (!['stream', 'boundary-timeout', 'loader-boundary-timeout'].includes(url.searchParams.get('mode')!)) await waitForDisconnect(url.searchParams.get('id')!, 'layout', signal);
 }
 export default function Layout(children: () => unknown) { return children(); }
 `,

@@ -202,17 +202,27 @@ disposed, including `mount().unmount()`. A custom `asyncRoute` request's signal
 also cancels its loaders. Hiding a cached `when()` or `match()` branch does not
 dispose it and does not cancel its work.
 
-On the server, the signal is the supplied `Request.signal`. The generated Node
-adapter listens for disconnects before middleware, module loading, and route
-lookup begin. An incomplete upload or a response connection closed before
+On the server, the signal combines the route's request with its owning SSR
+resource operation. Render cancellation, render failure, global timeout, stream
+reader cancellation, and an enclosing Suspense deadline cancel unfinished page
+and layout loaders. A boundary timeout leaves the original request and sibling
+routes active. Forward `LoaderContext.signal`, rather than `request.signal`, to
+make loader work obey these rendering limits. Successful route pipelines detach
+their forwarding listeners; their loader signals are not canceled later.
+When a page or layout loader fails or returns a Web `Response`, unfinished peer
+loaders are canceled with that outcome as the reason. Error-boundary loading and
+HTTP response handling continue in the route's active scope.
+
+The generated Node adapter listens for disconnects before middleware, module
+loading, and route lookup begin. An incomplete upload or a response connection closed before
 completion aborts the request, its loaders, and streaming output. Fully receiving
 a GET or POST and successfully finishing its response do not cancel it; normal
 keep-alive reuse remains supported. The adapter removes its listeners on response
 completion or closure.
 
 Custom adapters must wire request cancellation into `Request.signal` to propagate
-disconnects. A rendering timeout alone does not abort that signal or the
-underlying loader operation.
+disconnects. Rendering cancellation does not abort the original request signal.
+Custom `asyncRoute` requests also participate in the route's combined signal.
 
 Cancellation stops the route pipeline from waiting and prevents late values,
 errors, or redirects from rendering or navigating. It cannot forcibly stop
@@ -272,9 +282,9 @@ request. Use stable resource keys for conditional or reordered resources.
 Streaming chunks still arrive in declaration order. This cancellation behavior
 does not change that order or forcibly stop promises that ignore their signal.
 
-This signal belongs to the resource operation. SSR route loaders continue to
-receive the request signal described above. Cancellation cannot force an
-arbitrary promise to stop or roll back an accepted write.
+SSR route loaders inherit the owning resource's cancellation through
+`LoaderContext.signal`, including loaders inside deferred boundaries. Cancellation
+cannot force an arbitrary promise to stop or roll back an accepted write.
 
 ### Status and headers from a loader
 

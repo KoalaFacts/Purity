@@ -56,12 +56,17 @@ operations, for example `fetch(url, { signal })`. On the client it aborts when
 the route's owning render scope is disposed; a cached branch that is only
 hidden stays alive. A custom request's signal also cancels its loaders.
 
-During SSR, loaders use the supplied `Request.signal`. A custom adapter must
-connect request cancellation to that signal to propagate disconnects; the
-generated server does not currently provide that connection. Rendering timeouts
-alone do not abort loader work. Canceled routes ignore late values, errors, and
-redirects, but arbitrary promises and already completed operations cannot be
-undone.
+During SSR, loaders use the supplied `Request.signal`. The Node server connects
+that signal to incomplete uploads and response connections closed before
+completion, with listeners installed before middleware or route loading. Normal
+GET/POST reception, completed responses, and keep-alive reuse do not cancel it.
+Listeners are removed when the response finishes or closes. Deferred `resource()`
+work can forward `getRequest()!.signal` to cancellable operations as well.
+
+Custom adapters must connect request cancellation to `Request.signal` themselves.
+Rendering timeouts alone do not abort that signal. Canceled routes ignore late
+values, errors, and redirects, but arbitrary promises and already completed
+operations cannot be undone. Aborting an action does not roll back accepted writes.
 
 ### Loader responses
 

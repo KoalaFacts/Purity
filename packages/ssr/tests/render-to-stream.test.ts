@@ -569,11 +569,19 @@ describe('renderToStream — audit-v2 hardening', () => {
       );
       const reader = stream.getReader();
       expect((await reader.read()).done).toBe(false);
-      const boundaryTimer = setTimeoutSpy.mock.results.find(
-        (result, index) =>
-          setTimeoutSpy.mock.calls[index]?.[1] === 30_000 && result.type === 'return',
-      )?.value;
-      expect(boundaryTimer).toBeDefined();
+      // The shell can be read before the asynchronous boundary loop starts.
+      // Its timer uses the remaining deadline, which can be less than 30s.
+      // Exclude waitFor's own short timers when finding the boundary timer.
+      let boundaryTimer: ReturnType<typeof setTimeout> | undefined;
+      await vi.waitFor(() => {
+        boundaryTimer = setTimeoutSpy.mock.results.find(
+          (result, index) =>
+            (setTimeoutSpy.mock.calls[index]?.[1] ?? 0) > 1_000 &&
+            (setTimeoutSpy.mock.calls[index]?.[1] ?? 0) <= 30_000 &&
+            result.type === 'return',
+        )?.value;
+        expect(boundaryTimer).toBeDefined();
+      });
 
       abort.abort();
       expect((await reader.read()).done).toBe(true);

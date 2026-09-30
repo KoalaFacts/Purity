@@ -202,9 +202,18 @@ disposed, including `mount().unmount()`. A custom `asyncRoute` request's signal
 also cancels its loaders. Hiding a cached `when()` or `match()` branch does not
 dispose it and does not cancel its work.
 
-On the server, the signal is the supplied `Request.signal`. Adapters must wire
-request cancellation into that signal to propagate disconnects; a rendering
-timeout alone does not abort it.
+On the server, the signal is the supplied `Request.signal`. The generated Node
+adapter listens for disconnects before middleware, module loading, and route
+lookup begin. An incomplete upload or a response connection closed before
+completion aborts the request, its loaders, and streaming output. Fully receiving
+a GET or POST and successfully finishing its response do not cancel it; normal
+keep-alive reuse remains supported. The adapter removes its listeners on response
+completion or closure.
+
+Custom adapters must wire request cancellation into `Request.signal` to propagate
+disconnects. A rendering timeout alone does not abort that signal. Deferred
+`resource()` work can use `getRequest()!.signal` with cancellable operations to
+follow the same request lifetime.
 
 Cancellation stops the route pipeline from waiting and prevents late values,
 errors, or redirects from rendering or navigating. It cannot forcibly stop

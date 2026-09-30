@@ -55,7 +55,12 @@ async function sendStreamedHtml(
   result: { body: ReadableStream<Uint8Array>; head: string; status?: number; headers?: Headers },
   status: number,
   head: boolean,
+  signal: AbortSignal,
 ): Promise<void> {
+  if (signal.aborted) {
+    await result.body.cancel();
+    signal.throwIfAborted();
+  }
   const marker = '<!--ssr-outlet-->';
   const outlet = template.indexOf(marker);
   if (outlet < 0) throw new Error('HTML template is missing the SSR outlet');
@@ -69,15 +74,22 @@ async function sendStreamedHtml(
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   if (head) {
     await result.body.cancel();
+    signal.throwIfAborted();
     res.end();
     return;
   }
+  const body = Readable.fromWeb(result.body as Parameters<typeof Readable.fromWeb>[0]);
   async function* chunks(): AsyncGenerator<string | Uint8Array> {
     yield prefix;
-    yield* Readable.fromWeb(result.body as Parameters<typeof Readable.fromWeb>[0]);
+    yield* body;
     yield suffix;
   }
-  await pipeline(Readable.from(chunks()), res);
+  try {
+    await pipeline(Readable.from(chunks()), res, { signal });
+  } finally {
+    // Also cancel a body whose iterator never started before a disconnect.
+    body.destroy();
+  }
 }
 
 function send(
@@ -113,7 +125,12 @@ async function sendWebResponse(
   res: ServerResponse,
   response: Response,
   head: boolean,
+  signal: AbortSignal,
 ): Promise<void> {
+  if (signal.aborted) {
+    await response.body?.cancel();
+    signal.throwIfAborted();
+  }
   res.statusCode = response.status;
   response.headers.forEach((value, key) => {
     if (key !== 'set-cookie' && key !== 'content-length' && key !== 'transfer-encoding') {
@@ -124,10 +141,13 @@ async function sendWebResponse(
   if (cookies.length > 0) res.setHeader('Set-Cookie', cookies);
   if (head || !response.body) {
     if (response.body) await response.body.cancel();
+    signal.throwIfAborted();
     res.end();
     return;
   }
-  await pipeline(Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]), res);
+  await pipeline(Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]), res, {
+    signal,
+  });
 }
 
 function requestFor(
@@ -199,7 +219,12 @@ async function start(): Promise<void> {
     staticPaths = new Set();
   }
 
-  async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  async function handle(
+    req: IncomingMessage,
+    res: ServerResponse,
+    signal: AbortSignal,
+  ): Promise<void> {
+    signal.throwIfAborted();
     const head = req.method === 'HEAD';
     const actionMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method ?? '');
     if (req.method !== 'GET' && !head && !actionMethod) {
@@ -222,35 +247,29 @@ async function start(): Promise<void> {
     const currentEntry = vite
       ? ((await vite.ssrLoadModule('/src/entry.server.ts')) as ServerEntry)
       : entry;
+    signal.throwIfAborted();
     if (!currentEntry) throw new Error('Server entry is unavailable');
     if (actionMethod) {
-      const abort = new AbortController();
-      const onClose = () => {
-        if (!res.writableFinished) abort.abort();
-      };
-      res.once('close', onClose);
-      try {
-        const nonce = randomBytes(16).toString('base64');
-        const request = requestFor(req, abort.signal, nonce);
-        // Browser submissions must come from this origin. Non-browser clients
-        // also supply Origin; authentication belongs in the action handler.
-        if (request.headers.get('origin') !== new URL(request.url).origin) {
-          req.resume();
-          send(res, 403, 'text/plain; charset=utf-8', 'Forbidden request origin', false);
-          return;
-        }
-        const body = await readActionBody(req);
-        if (body === null) {
-          send(res, 413, 'text/plain; charset=utf-8', 'Request body too large', false);
-          return;
-        }
-        const response = await currentEntry.dispatchAction(
-          requestFor(req, abort.signal, nonce, body),
-        );
-        if (response) await sendWebResponse(res, response, false);
-        else send(res, 404, 'text/plain; charset=utf-8', 'Action Not Found', false);
-      } finally {
-        res.off('close', onClose);
+      const nonce = randomBytes(16).toString('base64');
+      const request = requestFor(req, signal, nonce);
+      // Browser submissions must come from this origin. Non-browser clients
+      // also supply Origin; authentication belongs in the action handler.
+      if (request.headers.get('origin') !== new URL(request.url).origin) {
+        req.resume();
+        send(res, 403, 'text/plain; charset=utf-8', 'Forbidden request origin', false);
+        return;
+      }
+      const body = await readActionBody(req);
+      signal.throwIfAborted();
+      if (body === null) {
+        send(res, 413, 'text/plain; charset=utf-8', 'Request body too large', false);
+        return;
+      }
+      const response = await currentEntry.dispatchAction(requestFor(req, signal, nonce, body));
+      if (response) await sendWebResponse(res, response, false, signal);
+      else {
+        signal.throwIfAborted();
+        send(res, 404, 'text/plain; charset=utf-8', 'Action Not Found', false);
       }
       return;
     }
@@ -260,6 +279,7 @@ async function start(): Promise<void> {
           await readFile(resolve(root, 'index.html'), 'utf8'),
         )
       : template;
+    signal.throwIfAborted();
     if (production) {
       const asset = resolve(clientDir, '.' + filePathname);
       const rel = relative(clientDir, asset);
@@ -291,6 +311,7 @@ async function start(): Promise<void> {
       }
     }
     const route = await currentEntry.routeFor(rawPathname);
+    signal.throwIfAborted();
     if (route?.mode === 'static' && production) {
       send(res, 404, 'text/plain; charset=utf-8', 'Not Found', head);
       return;
@@ -300,39 +321,39 @@ async function start(): Promise<void> {
       return;
     }
     const status = !route ? 404 : 200;
-    const abort = new AbortController();
-    const onClose = () => {
-      if (!res.writableFinished) abort.abort();
-    };
-    res.once('close', onClose);
-    try {
-      const nonce = randomBytes(16).toString('base64');
-      const result = await currentEntry.renderStream(requestFor(req, abort.signal, nonce), nonce);
-      if (result instanceof Response) {
-        await sendWebResponse(res, result, head);
-        return;
-      }
-      await sendStreamedHtml(res, currentTemplate, result, status, head);
-    } finally {
-      res.off('close', onClose);
+    const nonce = randomBytes(16).toString('base64');
+    const result = await currentEntry.renderStream(requestFor(req, signal, nonce), nonce);
+    if (result instanceof Response) {
+      await sendWebResponse(res, result, head, signal);
+      return;
     }
+    await sendStreamedHtml(res, currentTemplate, result, status, head, signal);
   }
 
   createServer((req, res) => {
+    // Install before Vite middleware, module loading, or route lookup can await.
+    const abort = new AbortController();
+    const cleanup = () => {
+      req.off('close', onRequestClose);
+      res.off('close', onResponseClose);
+      res.off('finish', cleanup);
+    };
+    const onRequestClose = () => {
+      // IncomingMessage close also fires for a fully received GET or POST.
+      // Only an incomplete upload is cancellation; the response owns GET lifetime.
+      if (!req.complete) abort.abort();
+    };
+    const onResponseClose = () => {
+      if (!res.writableFinished) abort.abort();
+      cleanup();
+    };
+    req.once('close', onRequestClose);
+    res.once('close', onResponseClose);
+    res.once('finish', cleanup);
     const run = () => {
-      void handle(req, res).catch((error: unknown) => {
-        // A client that closes an in-flight stream causes pipeline() to
-        // reject after the response socket is gone. The render was already
-        // cancelled through the response's close signal.
-        const code = (error as NodeJS.ErrnoException)?.code;
-        if (
-          res.destroyed &&
-          (code === 'ERR_STREAM_PREMATURE_CLOSE' ||
-            code === 'ECONNRESET' ||
-            code === 'ABORT_ERR' ||
-            (error as Error)?.name === 'AbortError')
-        )
-          return;
+      void handle(req, res, abort.signal).catch((error: unknown) => {
+        // A disconnected response cannot receive an error page.
+        if (abort.signal.aborted || res.destroyed) return;
         console.error(error);
         if (!res.headersSent)
           send(

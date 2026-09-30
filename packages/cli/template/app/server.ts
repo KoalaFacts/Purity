@@ -352,9 +352,20 @@ async function start(): Promise<void> {
     res.once('finish', cleanup);
     const run = () => {
       void handle(req, res, abort.signal).catch((error: unknown) => {
-        // A disconnected response cannot receive an error page.
-        if (abort.signal.aborted || res.destroyed) return;
+        // Suppress expected disconnect errors while preserving real stream
+        // failures, even when pipeline() has already destroyed the response.
+        const code = (error as NodeJS.ErrnoException)?.code;
+        if (
+          (abort.signal.aborted || res.destroyed) &&
+          (error === abort.signal.reason ||
+            code === 'ERR_STREAM_PREMATURE_CLOSE' ||
+            code === 'ECONNRESET' ||
+            code === 'ABORT_ERR' ||
+            (error as Error)?.name === 'AbortError')
+        )
+          return;
         console.error(error);
+        if (res.destroyed) return;
         if (!res.headersSent)
           send(
             res,

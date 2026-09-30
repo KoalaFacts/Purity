@@ -347,6 +347,17 @@ async function checkDisconnects(origin: string, output: () => string): Promise<v
   } finally {
     agent.destroy();
   }
+  await assert.rejects(
+    fetch(`${origin}/actions/broken-stream`, {
+      method: 'POST',
+      headers: { Origin: origin },
+      signal: AbortSignal.timeout(10_000),
+    }),
+  );
+  await until(
+    () => output().includes('PURITY_EXPECTED_STREAM_FAILURE'),
+    'A genuine stream failure was swallowed',
+  );
   console.log(
     'HTTP disconnects: incomplete upload, early lookup, page/layout loaders, deferred stream, and healthy keep-alive reuse passed',
   );
@@ -840,6 +851,9 @@ export const slowRead = serverAction('/actions/slow-read', async () => {
   await new Promise((done) => setTimeout(done, 1000));
   return Response.json({ value: 'Late route' });
 });
+export const brokenStream = serverAction('/actions/broken-stream', () => new Response(new ReadableStream({
+  start(controller) { controller.error(new Error('PURITY_EXPECTED_STREAM_FAILURE')); },
+})));
 `,
   );
   await writeFile(

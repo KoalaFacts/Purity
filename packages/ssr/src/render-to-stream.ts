@@ -209,6 +209,20 @@ function createStream(
     }
   }
 
+  function buildShellOutput(shell: ShellResult): string {
+    let head = prefix + shell.html;
+    if (serialize) {
+      head += buildResourceScript(shell.resolvedData, shell.resolvedDataByKey, nonce);
+    }
+    // Inject the swap helper once, immediately after the shell.
+    if (shell.boundaries.size > 0) head += scriptTag(PURITY_SWAP_SOURCE, nonce);
+    // The snapshot is now in the wire string. Deferred boundaries have
+    // separate caches; existing resource accessors retain their own values.
+    releaseShellResources(shell);
+    shell.html = '';
+    return head;
+  }
+
   async function* produce(): AsyncGenerator<Uint8Array, void> {
     try {
       // ----- Shell render --------------------------------------------------
@@ -219,22 +233,8 @@ function createStream(
       pendingBoundaries = shell.boundaries;
       if (isAborted()) return;
 
-      let head = prefix + shell.html;
-      if (serialize) {
-        const cache = buildResourceScript(shell.resolvedData, shell.resolvedDataByKey, nonce);
-        head += cache;
-      }
-      // Inject __purity_swap inline, exactly once, immediately after the
-      // shell. Subsequent boundary chunks invoke it.
-      if (shell.boundaries.size > 0) {
-        head += scriptTag(PURITY_SWAP_SOURCE, nonce);
-      }
-      // The snapshot is now in the wire string. Deferred boundaries have
-      // separate caches; existing resource accessors retain their own values.
-      releaseShellResources(shell);
-      shell.html = '';
-      yield* encodeChunks(head);
-      head = '';
+      // The encoder owns the assembled string only while draining the shell.
+      yield* encodeChunks(buildShellOutput(shell));
 
       // ----- Boundary chunks ----------------------------------------------
       for (const [id, boundary] of shell.boundaries) {

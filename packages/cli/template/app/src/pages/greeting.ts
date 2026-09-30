@@ -20,8 +20,7 @@ export default function Greeting(_params: Record<string, string>, data: Greeting
   return html`<main>
     <h1>Send a greeting</h1>
     <p>This form works with or without JavaScript. It does not store your name.</p>
-    ${data.submitted ? html`<p role="status">Hello, ${data.name}!</p>` : null}
-    <form action=${greetingActionUrl} method="POST">
+    <form action=${greetingActionUrl} method="POST" data-purity-enhance>
       <label for="name">Your name</label>
       <input
         id="name"
@@ -35,10 +34,11 @@ export default function Greeting(_params: Record<string, string>, data: Greeting
       <p id="name-help">Use 1 to 80 characters.</p>
       ${
         data.error
-          ? html`<p id="name-error" role="alert">Enter a name between 1 and 80 characters.</p>`
+          ? html`<p id="name-error" data-purity-field-error="name" role="alert">Enter a name between 1 and 80 characters.</p>`
           : null
       }
       <button type="submit">Send greeting</button>
+      <p data-purity-form-status role="status">${data.submitted ? `Hello, ${data.name}!` : ''}</p>
     </form>
     <a href="/">Home</a>
   </main>`;

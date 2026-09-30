@@ -31,14 +31,10 @@ jobs:
         # Installs all workspace dependencies from lockfile
         run: npm ci
 
-      - name: 🔐 Audit dependencies (production only)
-        # Only audit production deps — gates on real shipping risk for the
-        # publishable packages (@purityjs/core, @purityjs/ssr,
-        # @purityjs/vite-plugin, @purityjs/cli) without choking on
-        # vercel/wrangler/miniflare dev-tool transitives that surface from
-        # example app workspaces and are never bundled into a published
-        # artefact. Devops triages dev-tool advisories via Dependabot.
-        run: npm audit --omit=dev --audit-level=high
+      - name: 🔐 Audit all dependencies
+        # Include example build and deployment tools so vulnerable pinned
+        # transitives cannot pass CI while blocking Dependabot updates.
+        run: npm audit --audit-level=low
 
       - name: 🔐 Verify package provenance (non-blocking)
         # npm attestation API can be flaky; log results but don't gate CI
@@ -67,6 +63,9 @@ jobs:
       - name: 🏗️ Build @purityjs/vite-plugin
         # Produces dist/ with the compiled plugin
         run: npm run build -w packages/vite-plugin
+
+      - name: 🏗️ Build Vercel Edge example
+        run: npm run build -w examples/ssr-stream-vercel-edge
 
       - name: 🏗️ Build benchmark (verifies AOT compilation)
         # Runs the workspace Vite+ build — proves the AOT plugin compiles html`` templates.

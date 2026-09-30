@@ -75,9 +75,16 @@ async function checkBrowser(name: string, browser: Browser, base: string): Promi
   try {
     for (const action of ['click', 'Enter', 'Space'] as const) {
       const page = await open();
-      // Keep the chunk in flight until the user action has finished.
-      await page.route('**/src/islands/expander.ts*', async (route) => {
+      // Exercise visibility hydration with a chunk still in flight.
+      await page.route('**/src/islands/like.ts*', async (route) => {
         await delay(300);
+        await route.continue();
+      });
+      // Release the chunk only after the first action. A fixed delay can
+      // expire while a slower browser is still focusing the SSR button.
+      const expanderChunk = Promise.withResolvers<void>();
+      await page.route('**/src/islands/expander.ts*', async (route) => {
+        await expanderChunk.promise;
         await route.continue();
       });
       await page.goto(base, { waitUntil: 'networkidle' });
@@ -97,6 +104,7 @@ async function checkBrowser(name: string, browser: Browser, base: string): Promi
         await button.focus();
         await page.keyboard.press(action);
       }
+      expanderChunk.resolve();
       await page.waitForFunction(() =>
         document
           .querySelector('demo-expander')
@@ -134,7 +142,9 @@ async function checkBrowser(name: string, browser: Browser, base: string): Promi
         );
         const like = page.locator('purity-island[data-pi-trigger="visible"] button');
         await like.scrollIntoViewIfNeeded();
-        await page.waitForLoadState('networkidle');
+        await page
+          .locator('purity-island[data-pi-trigger="visible"][data-pi-settled]')
+          .waitFor({ state: 'attached' });
         await like.click();
         await page.waitForFunction(() =>
           document

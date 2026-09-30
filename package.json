@@ -44,7 +44,7 @@
     "smol-toml": "^1.6.1",
     "srvx": "^0.11.16",
     "tar": "^7.5.22",
-    "undici": "^7.26.0",
+    "undici": "^7.30.0",
     "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
     "vitest": "5.0.1"
   },

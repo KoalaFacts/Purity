@@ -36,10 +36,28 @@ function startSSRFetch<T>(
   const controller = new AbortController();
   const signal = controller.signal;
   const parent = ctx.signal ?? ctx.request?.signal;
+  const boundaries = [...(ctx.boundaryIdStack ?? [])];
+  const boundaryAborts = (ctx.boundaryAborts ??= new Map());
+  const abort = (reason: unknown) => controller.abort(reason);
+  for (const id of boundaries) {
+    let callbacks = boundaryAborts.get(id);
+    if (!callbacks) boundaryAborts.set(id, (callbacks = new Set()));
+    callbacks.add(abort);
+  }
   const forwardAbort = () => controller.abort(parent?.reason);
-  const detach = () => parent?.removeEventListener('abort', forwardAbort);
+  const detach = () => {
+    parent?.removeEventListener('abort', forwardAbort);
+    for (const id of boundaries) {
+      const callbacks = boundaryAborts.get(id);
+      callbacks?.delete(abort);
+      if (callbacks?.size === 0) boundaryAborts.delete(id);
+    }
+  };
   parent?.addEventListener('abort', forwardAbort, { once: true });
   if (parent?.aborted) forwardAbort();
+  if (boundaries.some((id) => ctx.timedOutBoundaries.has(id))) {
+    controller.abort(new DOMException('Suspense boundary ended', 'AbortError'));
+  }
   try {
     signal.throwIfAborted();
     const result = fetcher({ signal });
@@ -66,11 +84,33 @@ function startSSRFetch<T>(
       );
       if (signal.aborted) onAbort();
     });
-    return { promise, cancelled: () => signal.aborted || parent?.aborted === true };
+    return {
+      promise,
+      cancelled: () =>
+        signal.aborted ||
+        parent?.aborted === true ||
+        boundaries.some((id) => ctx.timedOutBoundaries.has(id)),
+    };
   } catch (error) {
     detach();
     throw error;
   }
+}
+
+function registerSSRResource(ctx: SSRRenderContext, key: string, promise: Promise<unknown>): void {
+  const pending = (ctx.pendingResources ??= new Map());
+  pending.set(key, promise);
+  const remove = () => {
+    if (pending.get(key) === promise) pending.delete(key);
+  };
+  void promise.then(remove, remove);
+  ctx.pendingPromises.push(promise);
+}
+
+function pendingSSRKey(ctx: SSRRenderContext, key: string | number): string {
+  // Reuse work only within the same owning boundary path. Shared query keys
+  // in independent siblings must not share a cancellation lifetime.
+  return JSON.stringify([key, ...(ctx.boundaryIdStack ?? [])]);
 }
 
 /** Per-attempt delay function. Receives 0-indexed attempt number. */
@@ -314,6 +354,8 @@ export function resource<T, K>(
     // leave a `null` hole in `ordered`.
     const hasKey = userKey !== undefined;
     const idx = hasKey ? -1 : ssrCtx.resourceCounter++;
+    const pendingKey = pendingSSRKey(ssrCtx, userKey ?? idx);
+    const pending = ssrCtx.pendingResources?.get(pendingKey);
     const alreadyResolved = hasKey
       ? userKey in ssrCtx.resolvedDataByKey
       : idx < ssrCtx.resolvedData.length;
@@ -333,6 +375,8 @@ export function resource<T, K>(
         const value = hasKey ? ssrCtx.resolvedDataByKey[userKey] : ssrCtx.resolvedData[idx];
         data(() => value as T);
       }
+    } else if (pending) {
+      ssrCtx.pendingPromises.push(pending);
     } else {
       // First pass for this resource. Resolve the source key, fire the
       // fetcher, push the promise onto pendingPromises so renderToString
@@ -404,7 +448,7 @@ export function resource<T, K>(
               error(err);
             },
           );
-          ssrCtx.pendingPromises.push(promise);
+          registerSSRResource(ssrCtx, pendingKey, promise);
         } catch (err) {
           error(err);
         }
@@ -632,6 +676,12 @@ export function lazyResource<T, A = void>(
         r.mutate(ssrCtx.resolvedDataByKey[userKey] as T);
         return;
       }
+      const pendingKey = pendingSSRKey(ssrCtx, userKey);
+      const pending = ssrCtx.pendingResources?.get(pendingKey);
+      if (pending) {
+        if (!ssrCtx.pendingPromises.includes(pending)) ssrCtx.pendingPromises.push(pending);
+        return;
+      }
       // Pass 1 — fire the fetcher and register the promise with the
       // SSR multipass cycle with request/render cancellation.
       // Same boundary-timeout guard as resource()'s SSR path — a
@@ -657,7 +707,7 @@ export function lazyResource<T, A = void>(
           ssrCtx.resolvedErrorsByKey[userKey] = err;
         },
       );
-      ssrCtx.pendingPromises.push(promise);
+      registerSSRResource(ssrCtx, pendingKey, promise);
       // Don't set argsState — the client-side watch path is moot during
       // SSR and writing to the signal here just queues a no-op microtask.
       return;

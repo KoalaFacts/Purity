@@ -25,11 +25,14 @@
 
 import {
   PURITY_SWAP_SOURCE,
+  cancelSSRBoundary,
+  nextSSRBoundaryDeadline,
   popSSRRenderContext,
   pushSSRRenderContext,
   type SSRRenderContext,
 } from '@purityjs/core';
 import { valueToHtml } from '@purityjs/core/compiler';
+import { boundaryDeadline } from './boundary-deadline.ts';
 import { renderCancellation } from './render-cancellation.ts';
 import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
 
@@ -241,7 +244,14 @@ function createStream(
             );
             continue;
           }
-          const result = await renderBoundary(id, boundary, timeout, request, workAbort.signal);
+          const result = await renderBoundary(
+            id,
+            boundary,
+            timeout,
+            request,
+            workAbort.signal,
+            shell.boundaryIds,
+          );
           if (isAborted()) break;
           // null signals "boundary couldn't produce content; leave the
           // shell-rendered fallback in place." Without this skip, an
@@ -330,11 +340,13 @@ interface ShellResult {
   headers?: Headers;
   resolvedData: unknown[];
   resolvedDataByKey: Record<string, unknown>;
+  boundaryIds: Map<string, number>;
   boundaries: Map<
     number,
     {
       view: () => unknown;
       fallback: () => unknown;
+      deadline?: number;
       onError?: (err: unknown, info: { boundaryId: number; phase: string }) => void;
     }
   >;
@@ -356,6 +368,8 @@ async function renderShell(
   const boundaryDeadlines = new Map<number, number>();
   const timedOutBoundaries = new Set<number>();
   const streamingBoundaries: ShellResult['boundaries'] = new Map();
+  const boundaryIds = new Map<string, number>();
+  const pendingResources: NonNullable<SSRRenderContext['pendingResources']> = new Map();
 
   let html = '';
   for (let pass = 0; pass < MAX_PASSES; pass++) {
@@ -380,6 +394,8 @@ async function renderShell(
       timedOutBoundaries,
       streamingMode: true,
       streamingBoundaries,
+      boundaryIds,
+      pendingResources,
       head: [],
       request,
       signal,
@@ -400,6 +416,7 @@ async function renderShell(
         headers: ctx.routeResponse?.headers,
         resolvedData,
         resolvedDataByKey,
+        boundaryIds,
         boundaries: streamingBoundaries,
       };
     }
@@ -470,17 +487,26 @@ async function renderBoundary(
   timeout: number,
   request: Request | undefined,
   signal: AbortSignal,
+  boundaryIds: Map<string, number>,
 ): Promise<BoundaryResult | null> {
   const start = Date.now();
   const resolvedData: unknown[] = [];
   const resolvedErrors: unknown[] = [];
   const resolvedDataByKey: Record<string, unknown> = Object.create(null);
   const resolvedErrorsByKey: Record<string, unknown> = Object.create(null);
-  // Per-boundary deadline is just the supplied timeout — boundary timing
-  // started the moment the shell registered it; we reuse that wall clock.
+  // View deadlines retain the shell's first-encounter clock. Fallbacks
+  // have the remaining renderer budget and never inherit a canceled view.
+  const renderDeadline = start + timeout;
+  const viewDeadline = Math.min(renderDeadline, boundary.deadline ?? Infinity);
   const boundaryStartTimes = new Map<number, number>();
   const boundaryDeadlines = new Map<number, number>();
   const timedOutBoundaries = new Set<number>();
+  const boundaryAborts: NonNullable<SSRRenderContext['boundaryAborts']> = new Map();
+  const pendingResources: NonNullable<SSRRenderContext['pendingResources']> = new Map();
+  // Zero and -1 are private operation groups in this boundary-local context;
+  // nested suspense() IDs are positive and share the stream's marker namespace.
+  boundaryDeadlines.set(0, viewDeadline);
+  boundaryDeadlines.set(-1, renderDeadline);
 
   const reportError = (err: unknown, phase: string): void => {
     if (boundary.onError) {
@@ -499,6 +525,11 @@ async function renderBoundary(
   let viewTimedOut = false;
   for (let pass = 0; pass < MAX_PASSES; pass++) {
     if (signal.aborted) return null;
+    const deadlineExpired = !viewTimedOut && Date.now() >= viewDeadline;
+    if (deadlineExpired) {
+      reportError(undefined, 'timeout');
+      viewTimedOut = true;
+    }
     const ctx: SSRRenderContext = {
       pendingPromises: [],
       resolvedData,
@@ -511,12 +542,20 @@ async function renderBoundary(
       boundaryStartTimes,
       boundaryDeadlines,
       timedOutBoundaries,
+      boundaryAborts,
+      boundaryIds,
+      boundaryPath: `stream:${boundaryId}/${viewTimedOut ? 'fallback' : 'view'}`,
+      pendingResources,
+      boundaryIdStack: [viewTimedOut ? -1 : 0],
       request,
       signal,
       // Streaming mode is OFF inside a boundary render — nested suspense()
       // calls inside the view render inline. Phase 3 MVP intentionally
       // doesn't recursively stream sub-boundaries; that's a follow-up.
     };
+    if (deadlineExpired) {
+      cancelSSRBoundary(ctx, 0, new DOMException('Suspense boundary timed out', 'TimeoutError'));
+    }
     pushSSRRenderContext(ctx);
     let viewThrewAndExhausted = false;
     let viewThrewNeedsRetry = false;
@@ -525,6 +564,7 @@ async function renderBoundary(
     } catch (err) {
       reportError(err, viewTimedOut ? 'fallback' : 'view');
       if (viewTimedOut) {
+        cancelSSRBoundary(ctx, -1, err);
         // Fallback also threw inside the boundary. Return null so the
         // streaming loop skips this boundary's chunk — the shell already
         // rendered (its own pass-1 call to) the fallback, and replacing
@@ -548,7 +588,7 @@ async function renderBoundary(
         // serialize alongside the retry's fallback chunk. Mirrors the
         // sync-SSR fix in `control.ts` so streaming and non-streaming
         // agree on what "this boundary's resources are stale" means.
-        timedOutBoundaries.add(boundaryId);
+        cancelSSRBoundary(ctx, 0, err);
         viewTimedOut = true;
         viewThrewNeedsRetry = true;
       }
@@ -569,8 +609,13 @@ async function renderBoundary(
       return { html, resolvedData, resolvedDataByKey };
     }
 
-    const remaining = timeout - (Date.now() - start);
+    const nearest = nextSSRBoundaryDeadline(ctx);
+    const deadline = Math.min(renderDeadline, nearest?.deadline ?? Infinity);
+    const remaining = deadline - Date.now();
     if (remaining <= 0) {
+      const id = nearest?.id ?? (viewTimedOut ? -1 : 0);
+      cancelSSRBoundary(ctx, id, new DOMException('Suspense boundary timed out', 'TimeoutError'));
+      if (id > 0) continue;
       if (viewTimedOut) {
         // Fallback's resources timed out too. Same reasoning as the
         // catch-block null return above — leave the shell fallback in
@@ -582,17 +627,25 @@ async function renderBoundary(
       continue;
     }
 
+    let expiredId: number | undefined;
     let raceTimedOut = false;
-    let boundaryTimer: ReturnType<typeof setTimeout> | undefined;
+    let clearDeadline: (() => void) | undefined;
     let onAbort: (() => void) | undefined;
     try {
       await Promise.race([
         Promise.all(ctx.pendingPromises),
         new Promise<void>((resolve) => {
-          boundaryTimer = setTimeout(() => {
+          clearDeadline = boundaryDeadline(ctx, renderDeadline, (id) => {
             raceTimedOut = true;
+            expiredId = id;
+            if (id === undefined)
+              cancelSSRBoundary(
+                ctx,
+                viewTimedOut ? -1 : 0,
+                new DOMException('Suspense boundary timed out', 'TimeoutError'),
+              );
             resolve();
-          }, remaining);
+          });
         }),
         new Promise<void>((resolve) => {
           onAbort = resolve;
@@ -602,11 +655,12 @@ async function renderBoundary(
       ]);
     } finally {
       // try/finally so the clear runs even when Promise.all rejects.
-      clearTimeout(boundaryTimer);
+      clearDeadline?.();
       if (onAbort) signal.removeEventListener('abort', onAbort);
     }
     if (signal.aborted) return null;
     if (raceTimedOut) {
+      if (expiredId !== undefined && expiredId > 0) continue;
       // viewTimedOut means we're already in the fallback pass and IT
       // timed out too — return null so the loop skips the chunk and the
       // shell fallback survives.

@@ -71,8 +71,10 @@ export { lazyResource, resource } from './resource.ts';
 // the package boundary, not for end users)
 export type { SSRRenderContext } from './ssr-context.ts';
 export {
+  cancelSSRBoundary,
   clearHydrationCache,
   getSSRRenderContext,
+  nextSSRBoundaryDeadline,
   popSSRRenderContext,
   primeHydrationCache,
   pushSSRRenderContext,

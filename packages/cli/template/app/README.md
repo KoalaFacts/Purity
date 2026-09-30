@@ -84,11 +84,22 @@ stream reader, render failures, global timeouts, and render/stream completion
 cancel unfinished resources. Late values and errors cannot enter the hydration
 cache. Settled resources remove their forwarding listeners.
 
-A suspense deadline discards late values and keeps the fallback; remaining work
-is canceled when the whole render or stream ends, rather than immediately at
-that boundary's deadline. Forward the fetcher's signal to cancellable operations;
-arbitrary promises cannot be forcibly stopped. SSR loaders still use
-`Request.signal`, so a rendering timeout alone does not stop their underlying work.
+Pass `{ timeout: 1000 }` as the third argument to `suspense(view, fallback,
+options)` to cancel that view's unfinished resources immediately at its deadline
+and keep the fallback. Parent timeouts cancel nested view resources; child
+timeouts leave parent and sibling work active. Fallback resources receive an
+active signal. A thrown view cancels its work with the original error.
+
+Deadlines start at the first SSR encounter, including the streaming shell.
+Queued views that have already expired are skipped. Timeout signals carry a
+`TimeoutError`; the existing `onError(undefined, { phase: 'timeout', boundaryId })`
+callback is unchanged. Completed boundaries stay complete while slower neighbors
+load, and new render passes reuse unfinished requests. Streaming chunks retain
+declaration order. Give conditional resources stable keys.
+
+Forward the fetcher's signal to cancellable operations; arbitrary promises cannot
+be forcibly stopped. SSR loaders still use `Request.signal`, so a rendering or
+boundary timeout alone does not stop their underlying loader work.
 
 ### Loader responses
 

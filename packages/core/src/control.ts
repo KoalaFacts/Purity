@@ -14,7 +14,7 @@ import { markSSRHtml, type SSRHtml, valueToHtml } from './compiler/ssr-runtime.t
 import { getCurrentContext, popContext, pushContext, type Scope } from './component.ts';
 import type { StateAccessor } from './signals.ts';
 import { state, watch } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { cancelSSRBoundary, getSSRRenderContext } from './ssr-context.ts';
 
 // ---------------------------------------------------------------------------
 // State-preserving DOM moves (ADR 0037)
@@ -2443,9 +2443,8 @@ const LIST_SAFE_ATTR_NAME = /^[A-Za-z_][\w:-]*$/;
 //     let `__purity_swap(N)` find and replace each boundary's content as
 //     it resolves over a `ReadableStream`.
 //
-// Per-boundary timeout / fallback-on-pending-resource is **not** in
-// Phase 1 — see ADR 0006 for the staged plan. Today, view's resources
-// share the outer renderToString resource-resolution loop.
+// SSR deadlines cancel a view's active resource subtree independently.
+// Fallback work stays in the surrounding active render scope.
 // ---------------------------------------------------------------------------
 
 /** Why `onError` was invoked. */
@@ -2470,10 +2469,10 @@ export interface SuspenseOptions {
   /**
    * Maximum ms `view()` may take before the boundary surrenders to its
    * fallback. Measured from the first SSR pass that encounters the
-   * boundary. When unset, the boundary is bound only by the outer
-   * renderToString timeout. The renderer races pending promises against
-   * the soonest deadline; when a boundary times out the next pass
-   * renders the fallback instead of the view.
+   * boundary, including the streaming shell. When unset, the renderer's
+   * timeout bounds the work. Expiry cancels unfinished view resources
+   * (including descendants) and renders the fallback. An expired queued
+   * streaming view is skipped. Other boundaries keep loading.
    */
   timeout?: number;
   /**
@@ -2517,7 +2516,24 @@ export function suspense<T>(
     // flight. For now it's unused.
     return view();
   }
-  const id = ++ssrCtx.suspenseCounter;
+  const parentPath = ssrCtx.boundaryPath ?? '';
+  const positions = (ssrCtx.boundaryPositions ??= new Map());
+  const position = positions.get(parentPath) ?? 0;
+  positions.set(parentPath, position + 1);
+  const path = `${parentPath}/${position}`;
+  const ids = (ssrCtx.boundaryIds ??= new Map());
+  let id = ids.get(path);
+  if (id === undefined) ids.set(path, (id = ids.size + 1));
+  ssrCtx.suspenseCounter = Math.max(ssrCtx.suspenseCounter, id);
+  const renderFallback = () => {
+    const previousPath = ssrCtx.boundaryPath;
+    ssrCtx.boundaryPath = `${path}/fallback`;
+    try {
+      return valueToHtml(fallback());
+    } finally {
+      ssrCtx.boundaryPath = previousPath;
+    }
+  };
 
   // Record the first-encounter time so deadlines stay anchored to pass 1
   // even when later passes re-execute view() with resolved data. If a
@@ -2572,14 +2588,14 @@ export function suspense<T>(
     if (isTimedOut) {
       reportError(undefined, 'timeout');
       try {
-        body = valueToHtml(fallback());
+        body = renderFallback();
       } catch (fallbackErr) {
         reportError(fallbackErr, 'fallback');
         body = '';
       }
     } else {
       try {
-        body = valueToHtml(fallback());
+        body = renderFallback();
       } catch (fallbackErr) {
         reportError(fallbackErr, 'fallback');
         console.error(
@@ -2593,6 +2609,7 @@ export function suspense<T>(
       ssrCtx.streamingBoundaries.set(id, {
         view: view as () => unknown,
         fallback: fallback as () => unknown,
+        deadline: ssrCtx.boundaryDeadlines.get(id),
         // The ssr-context types `phase` as `string` (variance-friendly for
         // the boundary table); our `onError` only ever fires with a
         // `SuspenseErrorPhase` literal at runtime. The cast bridges the
@@ -2609,7 +2626,7 @@ export function suspense<T>(
   if (isTimedOut) {
     reportError(undefined, 'timeout');
     try {
-      body = valueToHtml(fallback());
+      body = renderFallback();
     } catch (fallbackErr) {
       reportError(fallbackErr, 'fallback');
       console.error(
@@ -2623,6 +2640,8 @@ export function suspense<T>(
     // capture it; pop in `finally` so a synchronous throw doesn't leak
     // a stale frame onto the stack.
     idStack.push(id);
+    const previousPath = ssrCtx.boundaryPath;
+    ssrCtx.boundaryPath = `${path}/view`;
     let viewThrew = false;
     try {
       body = valueToHtml(view());
@@ -2641,18 +2660,19 @@ export function suspense<T>(
       // timeout path in render-to-string.ts; widens the Set's meaning
       // from "boundary that lost its deadline race" to "boundary
       // whose view will not be rendered, so its late writes are stale".
-      ssrCtx.timedOutBoundaries.add(id);
+      cancelSSRBoundary(ssrCtx, id, err);
       // The fallback() runs AFTER the finally below pops the boundary
       // id, so its own resources are scoped to the surrounding (outer)
       // boundary, not this failed one. This matches the existing
       // semantics for fallback resources.
       body = '__pending_fallback__';
     } finally {
+      ssrCtx.boundaryPath = previousPath;
       if (idStack[idStack.length - 1] === id) idStack.pop();
     }
     if (viewThrew) {
       try {
-        body = valueToHtml(fallback());
+        body = renderFallback();
       } catch (fallbackErr) {
         reportError(fallbackErr, 'fallback');
         // Fallback also threw — emit an empty boundary rather than blowing

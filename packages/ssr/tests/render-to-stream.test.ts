@@ -288,6 +288,40 @@ describe('renderToStream — wire format', () => {
 // ---------------------------------------------------------------------------
 
 describe('renderToStream — runtime swap behavior', () => {
+  it('keeps nested marker IDs distinct from later streamed siblings', async () => {
+    const out = await streamToString(
+      renderToStream(
+        () =>
+          ssrHtml`<main>${suspense(
+            () =>
+              ssrHtml`<section>${suspense(
+                () => ssrHtml`<p id="nested-a">INNER-A</p>`,
+                () => ssrHtml`<p>inner fallback</p>`,
+              )}${suspense(
+                () => ssrHtml`<p id="nested-b">INNER-B</p>`,
+                () => ssrHtml`<p>inner fallback</p>`,
+              )}</section>`,
+            () => ssrHtml`<section>outer fallback</section>`,
+          )}${suspense(
+            () => ssrHtml`<p id="outside">OUTSIDE</p>`,
+            () => ssrHtml`<p id="outside-fallback">outside fallback</p>`,
+          )}</main>`,
+      ),
+    );
+    const doc = document.implementation.createHTMLDocument('nested stream');
+    doc.body.innerHTML = out;
+    for (const script of Array.from(doc.body.querySelectorAll('script'))) {
+      if (script.type === 'application/json') continue;
+      new Function('document', 'window', script.textContent || '')(
+        doc,
+        doc.defaultView ?? globalThis,
+      );
+    }
+    expect(doc.getElementById('nested-a')?.textContent).toBe('INNER-A');
+    expect(doc.getElementById('nested-b')?.textContent).toBe('INNER-B');
+    expect(doc.getElementById('outside')?.textContent).toBe('OUTSIDE');
+    expect(doc.getElementById('outside-fallback')).toBeNull();
+  });
   it("__purity_swap(N) replaces the fallback nodes with the boundary's template content", async () => {
     const stream = renderToStream(
       () =>

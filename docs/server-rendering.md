@@ -98,13 +98,42 @@ const forms = enhanceForms(document.getElementById('app')!);
 ```
 
 When `Accept` includes `application/json`, the action returns JSON matching
-`FormActionResult`: `{ message?: string, fieldErrors?: Record<string, string> }`.
+`FormActionResult`: `{ message?: string, fieldErrors?: Record<string, string>, invalidate?: readonly QueryKey[] }`.
 For validation failures use HTTP 422 with errors keyed by control name; success
 uses a successful HTTP status. The enhancer preserves input, exposes reactive
 `forms.getState(form)()` (`idle`, `pending`, `success`, or `error`), disables
 submit buttons, blocks duplicate submissions, associates field errors, focuses
 the first invalid control, and announces results. The status region is created
 if absent. Localize default messages through `enhanceForms(root, { messages })`.
+
+#### Refresh queries after a successful write
+
+An enhanced action can declare the browser queries affected by a write:
+
+```ts
+// Server action, after validation, authorization, and a successful save.
+return Response.json({
+  message: 'Record saved.',
+  invalidate: [['records'], ['record', recordId]],
+});
+```
+
+Send JSON-safe keys matching the keys passed to `query({ key, fetcher })` in the client. The
+enhancer invokes `invalidateQuery` for each distinct key after a successful HTTP
+response with no nonempty field errors, even if the entry's `staleTime` has not
+expired. Matching is exact; string and array keys occupy distinct namespaces.
+Unknown keys are no-ops. Queries not named in the response retain their cache.
+Validation failures, failed requests, and responses ignored after disposal do
+not invalidate queries. Native submissions refresh their destination page as
+usual.
+
+Submission success is shown immediately; reads refresh independently. A failed
+read remains in that query's `error()` state while retaining its last value. It
+does not turn a successful write into a failed submission or repeat the write.
+Malformed invalidation hints and synchronous refresh exceptions are logged and
+isolated so other valid keys can still refresh. This updates the browser query
+cache; route loader data and external server caches require their own refresh
+strategy.
 
 Removed forms and roots, component teardown, or `forms.dispose()` abort requests
 and prevent stale updates. The default timeout is 30 seconds (configurable with

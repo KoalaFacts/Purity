@@ -17,7 +17,7 @@ export const categories = [
   {
     id: 'quality',
     title: 'Build with confidence',
-    description: 'Accessibility, debugging, and migration guidance.',
+    description: 'Capabilities and limits, accessibility, debugging, and migration.',
   },
   {
     id: 'architecture',

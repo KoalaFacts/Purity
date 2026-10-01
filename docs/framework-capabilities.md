@@ -1,0 +1,57 @@
+# Framework capabilities and limits
+
+This audit describes the repository at [main after PR #173](https://github.com/KoalaFacts/Purity/tree/40abd37bfe0b3282a523f44e7a4507123fd99087), reviewed on 2026-10-01. It covers source and existing verification paths, rather than certifying every application or deployment.
+
+**Implemented** means the feature has an implementation and an exported API or generated application path. Linked tests describe the available coverage; their presence alone does not prove a particular checkout passes them. Browser evidence is limited to the fixtures, engines, and runs recorded in the linked guides.
+
+## Implemented features
+
+| Area                     | What Purity provides                                                                                                                                                                | Evidence and limits                                                                                                                                                                                                                                                                                                       |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reactivity               | `state`, `compute`, `watch`, and `batch` on a custom push-pull graph.                                                                                                               | [Signal implementation](../packages/core/src/signals.ts), [tests](../packages/core/tests/signals.test.ts). Inspired by the TC39 proposal; not a native engine API.                                                                                                                                                        |
+| Templates                | Direct DOM templates and optional build-time compilation with `@purityjs/vite-plugin`.                                                                                              | [Compiler](../packages/core/src/compiler), [plugin tests](../packages/vite-plugin/tests/plugin.test.ts). AOT compilation is optional; failed transformations can fall back to runtime compilation.                                                                                                                        |
+| Lists                    | Keyed reconciliation, single-tag lists, and opt-in `{ virtual: true }` rendering with framework-managed measurement and spacers.                                                    | [Control flow](../packages/core/src/control.ts), [list tests](../packages/core/tests/list.test.ts), [windowing browser check](../benchmark/tools/virtual-browser-check.ts). Virtualization is an application option, not evidence of a faster ordinary list.                                                              |
+| Components               | Custom Elements, Shadow DOM, slots, teleport, `delegatesFocus`, and form participation.                                                                                             | [Components](../packages/core/src/elements.ts), [form tests](../packages/core/tests/form-control.test.ts), [Shadow DOM guide](./shadow-dom-rationale.md). The automatic form bridge supports one native control; cross-boundary labels still require deliberate component markup.                                         |
+| SSR and hydration        | String and streaming rendering, Declarative Shadow DOM, typed component-property restoration, and adoption of compatible server DOM.                                                | [SSR exports](../packages/ssr/src/index.ts), [hydration parity tests](../packages/ssr/tests/hydrate-parity.test.ts). Use `@purityjs/ssr` in server entries, not browser bundles.                                                                                                                                          |
+| SSG and mixed delivery   | Static generation and CLI starters for client rendering, Node SSR, and mixed static/server pages.                                                                                   | [Server rendering guide](./server-rendering.md), [static renderer](../packages/ssr/src/render-static.ts). The `--app` starter uses document navigation; it does not automatically turn every route into a SPA.                                                                                                            |
+| Routing                  | Navigation primitives, file-route manifests, layouts, error/404 boundaries, loaders, typed route parameters, and route status/header responses.                                     | [Route tests](../packages/vite-plugin/tests/routes.test.ts), [async route tests](../packages/core/tests/async-route.test.ts), [SSR router tests](../packages/ssr/tests/router.test.ts). Applications still supply their route views and server entry points.                                                              |
+| Server actions and forms | Native POST submission and opt-in `data-purity-enhance` forms with pending state, duplicate-submit prevention, field errors, input preservation, and timeout/teardown cancellation. | [Form guide](./server-rendering.md#submit-forms-to-server-actions), [enhancement tests](../packages/core/tests/enhance-forms.test.ts), [packaged app browser check](../packages/cli/scripts/app-actions-smoke.ts). Enhancement applies to supported same-origin forms; cancellation cannot undo an accepted server write. |
+| Query refresh            | Cached queries and successful-action invalidation, with optional same-origin redirects.                                                                                             | [Query implementation](../packages/core/src/query.ts), [form guide](./server-rendering.md#refresh-queries-after-a-successful-write). Application-specific write consistency and idempotency remain the application's responsibility.                                                                                      |
+| Request lifecycle        | Node disconnect signals, loader/resource cancellation, independent Suspense boundary deadlines, and bounded streaming output buffering.                                             | [SSR guide](./server-rendering.md), [route cancellation tests](../packages/ssr/tests/route-cancellation.test.ts), [backpressure tests](../packages/ssr/tests/stream-backpressure.test.ts). External operations must honor the supplied abort signal; output limits do not cap all application memory.                     |
+| Islands                  | Per-subtree hydration with load, idle, visibility, first-interaction, and media-query triggers.                                                                                     | [Islands guide](./islands.md), [browser check](../examples/islands-blog/browser-check.ts). Only explicitly marked regions use island hydration.                                                                                                                                                                           |
+| Debugging                | A console graph hook and an opt-in development panel showing nodes, previews, and dependencies.                                                                                     | [Debugging guide](./debugging.md), [DevTools browser check](../packages/vite-plugin/tests/devtools-browser.ts). No source locations, component hierarchy, or time travel. The panel is excluded from production builds and preview.                                                                                       |
+| Memory regression checks | Browser mount/unmount checks, SSR stream retention checks, and built ESM/CJS inspector registry checks with cleanup-disabled controls.                                              | [Inspector check](../packages/core/tests/inspect-retention.ts), [SSR check](../packages/ssr/tests/stream-retention.ts), [browser check](../benchmark/tools/memory-leak-check.ts). These detect regressions in selected workloads; they are not a universal leak detector.                                                 |
+
+## Accessibility evidence
+
+[The accessibility audit](./accessibility.md#browser-audit-2026-09-25) records keyboard, form, axe-core, text-size simulation, and emulated forced-colors checks for its fixtures in Chromium, Firefox, and WebKit. It also records an incomplete WebKit contrast result for a native multiple-select.
+
+NVDA, VoiceOver, actual browser zoom, and operating-system high-contrast behavior remain unverified. Automated checks do not establish application-wide accessibility. Enhanced forms manage error focus and status announcements; their actual screen-reader behavior still needs those acceptance runs.
+
+## Browser and deployment limits
+
+The [proposed 1.0 browser matrix](./decisions/0003-path-to-1.0.md#browser-support-matrix) is a source-derived target, not a promise that every listed minimum browser version was tested. Recent engine checks do not verify those old minimum versions.
+
+The [Node SSR path](./server-rendering.md#deploy-to-a-node-host) documents project creation, production builds, and server startup. Adapter examples exist for other hosts, but their presence does not prove a live deployment. The public docs site exercises Purity's own SSR/SSG and client runtime; it does not establish production adoption across arbitrary applications.
+
+## Performance and bundle measurements
+
+No current bundle-size figure or cross-framework ranking is certified by this audit. Build mode, imports, application markup, data generation, browser version, hardware, and sampling can change the result. The [benchmark harness](../benchmark) provides measurement paths, not a permanent framework ranking.
+
+For a new comparison:
+
+- Record the exact Purity commit, package versions, build mode, browser, and sampling settings.
+- Resolve the latest stable or explicitly selected prerelease versions at measurement time; distinguish the two.
+- Match native framework workloads, markup, and data. Any additional runtime helper changes the scope of the comparison.
+- Measure ordinary lists separately from opt-in windowing, and runtime timings separately from instrumented profiles or heap checks.
+- Compare the same application's production bundles with and without AOT before attributing size savings to the plugin.
+
+Historical figures need their original run artifacts and methodology before reuse. This page deliberately makes no fresh speed or size claim.
+
+## Remaining work
+
+1. Verify the declared minimum browser versions, or revise the proposed matrix with recorded evidence.
+2. Complete the specified screen-reader, actual zoom, and operating-system contrast acceptance runs.
+3. Add debugging source locations and component context if required by real debugging journeys.
+4. Record deployment evidence for each supported host and refresh controlled bundle/performance measurements.
+5. Review and adopt the [1.0 policy and checklist](./decisions/0003-path-to-1.0.md); this audit does not mark that Proposed ADR accepted.

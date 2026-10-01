@@ -5,12 +5,13 @@
 
 ## Context
 
-Purity is at `0.1.0`. The README correctly states the API may break
-between minor versions and there are no known production users. There
-is no documented versioning policy, no browser support matrix, no
-explicit "what blocks 1.0" checklist. Without these, it is impossible
-for a prospective user to evaluate whether the framework is a
-reasonable bet for their team.
+When this ADR was proposed, Purity was at `0.1.0`. The README states that
+the API may break between minor versions. This ADR proposes a versioning
+policy, browser target matrix, and explicit "what blocks 1.0" checklist.
+It remains Proposed; these proposals are not an adopted project policy.
+The minimum browser versions have not each been verified in an actual
+browser. See [the capability audit](../framework-capabilities.md) for the
+current implementation and evidence gaps.
 
 ## Decision
 
@@ -54,21 +55,22 @@ reasonable bet for their team.
 
 ### Browser support matrix
 
-Targets at 1.0. **Note:** these baselines are derived from
+Proposed targets at 1.0. **Note:** these baselines are derived from
 source-code review (every public API in `packages/core/src/**` was
 checked for the most-modern feature it requires). They have not yet
 been independently tested in each browser; verifying every cell is
 on the 1.0 checklist below.
 
-| Browser                 | Minimum | Why                                                                                                |
-| ----------------------- | ------- | -------------------------------------------------------------------------------------------------- |
-| Chrome / Edge           | 100+    | `adoptedStyleSheets` (Chrome 73+) + native ES2022 (Chrome 94+); 100 is a clean baseline above both |
-| Firefox                 | 105+    | `adoptedStyleSheets` (Firefox 101+) + native ES2022 (Firefox 105+)                                 |
-| Safari                  | 16.4+   | `adoptedStyleSheets` first shipped — Safari is the gating browser here                             |
-| Node (for tooling only) | 24+     | Tooling (`@purityjs/cli`, vite-plugin builds) — runtime is browser-only                            |
+| Browser                | Minimum | Why                                                                                                |
+| ---------------------- | ------- | -------------------------------------------------------------------------------------------------- |
+| Chrome / Edge          | 100+    | `adoptedStyleSheets` (Chrome 73+) + native ES2022 (Chrome 94+); 100 is a clean baseline above both |
+| Firefox                | 105+    | `adoptedStyleSheets` (Firefox 101+) + native ES2022 (Firefox 105+)                                 |
+| Safari                 | 16.4+   | `adoptedStyleSheets` first shipped — Safari is the gating browser here                             |
+| Node (tooling and SSR) | 24+     | Current tooling and generated Node SSR servers; client DOM APIs remain browser-only                |
 
-We **do not** target IE, Safari < 16.4, Firefox < 105, or Chrome < 100.
-No polyfills will be added to the core bundle.
+This proposal excludes IE, Safari < 16.4, Firefox < 105, and Chrome < 100,
+and proposes no core polyfills. Reassess the source-derived browser targets
+against current SSR and form features before adopting the matrix.
 
 ### "What blocks 1.0" checklist
 
@@ -126,8 +128,8 @@ true before we cut it:
 
 **Neutral:**
 
-- The browser matrix excludes some long-tail audiences (~3% of global
-  users on Safari < 16.4, < 1% on Chrome < 100 per usual stats).
+- The browser matrix excludes users of older browsers. Estimate the
+  impact from current application audience data before adopting it.
   Users with those audiences should pick a different framework.
 
 ## Alternatives considered
@@ -137,7 +139,7 @@ true before we cut it:
   semver is to make that question tractable.
 
 - **Aggressive 1.0 (cut now).** Tempting to anchor adoption, but
-  premature: there are no production users and several open ADRs.
+  premature: production adoption is unverified and several ADRs remain open.
   Cutting 1.0 now would either lock in current shape forever (bad) or
   burn 2.0 within a year (worse).
 

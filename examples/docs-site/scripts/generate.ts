@@ -53,6 +53,12 @@ const sources: SourcePage[] = [
     category: 'rendering',
     navTitle: 'Shadow DOM',
   },
+  {
+    file: join(repo, 'docs/framework-capabilities.md'),
+    slug: 'framework-capabilities',
+    category: 'quality',
+    navTitle: 'Capabilities and limits',
+  },
   { file: join(repo, 'docs/accessibility.md'), slug: 'accessibility', category: 'quality' },
   { file: join(repo, 'docs/debugging.md'), slug: 'debugging', category: 'quality' },
   { file: join(repo, 'docs/migration.md'), slug: 'migration', category: 'quality' },

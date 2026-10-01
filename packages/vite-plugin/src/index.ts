@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { dirname, posix, resolve as resolvePath, sep as pathSep } from 'node:path';
 
 import { generate, generateHydrate, generateSSR, parse } from '@purityjs/core/compiler';
+import { devtoolsClientSource } from './devtools-client.ts';
 
 import {
   attachLoaderInfo,
@@ -25,6 +26,9 @@ import {
   generateRouteManifestTypes,
 } from './routes.ts';
 import { stripServerActionBodies } from './server-action-strip.ts';
+
+const DEVTOOLS_ID = 'virtual:purity-devtools';
+const RESOLVED_DEVTOOLS_ID = '\0' + DEVTOOLS_ID;
 
 /**
  * File-system routing options. ADR 0019.
@@ -61,6 +65,8 @@ export interface RoutesOptions {
  * Configuration options for the Purity Vite plugin.
  */
 export interface PurityPluginOptions {
+  /** Show the reactive graph panel during Vite dev. Off by default; excluded from builds and preview. */
+  devtools?: boolean;
   /**
    * File extensions to process for `html` tagged template compilation.
    * @default ['.ts', '.js', '.tsx', '.jsx']
@@ -132,6 +138,9 @@ export function purity(options?: PurityPluginOptions) {
   const extensions = options?.include ?? ['.ts', '.js', '.tsx', '.jsx'];
   const stripServerModules = options?.stripServerModules !== false;
   const stripServerActions = options?.stripServerActions !== false;
+  let serveDevtools = false;
+  let isPreview = false;
+  let devtoolsBase = '/';
 
   const routesOpts = normaliseRoutesOption(options?.routes);
   // Resolved at configResolved time once Vite tells us the project root.
@@ -145,7 +154,14 @@ export function purity(options?: PurityPluginOptions) {
     name: 'purity',
     enforce: 'pre' as const,
 
-    configResolved(this: any, config: { root: string }) {
+    config(_config: unknown, env: { isPreview?: boolean }) {
+      isPreview = env.isPreview === true;
+    },
+
+    configResolved(this: any, config: { root: string; command?: string; base?: string }) {
+      serveDevtools = options?.devtools === true && config.command === 'serve' && !isPreview;
+      // Resolved Vite bases have a trailing slash; absolute bases use their path during dev.
+      devtoolsBase = config.base ? new URL(config.base, 'http://vite.local').pathname : '/';
       if (!routesOpts) return;
       routesAbsDir = resolvePath(config.root, routesOpts.dir);
       routesExt = routesOpts.extensions ?? ['.ts', '.tsx', '.js', '.jsx'];
@@ -178,12 +194,14 @@ export function purity(options?: PurityPluginOptions) {
     },
 
     resolveId(this: any, source: string) {
+      if (serveDevtools && source === DEVTOOLS_ID) return RESOLVED_DEVTOOLS_ID;
       if (!routesOpts) return null;
       if (source === virtualId) return resolvedVirtualId;
       return null;
     },
 
     load(this: any, id: string) {
+      if (serveDevtools && id === RESOLVED_DEVTOOLS_ID) return devtoolsClientSource;
       if (!routesOpts || id !== resolvedVirtualId) return null;
       // routesAbsDir is set in configResolved (always called before load).
       const { source, types } = generateManifestSources(this, routesAbsDir as string, routesExt);
@@ -201,6 +219,20 @@ export function purity(options?: PurityPluginOptions) {
         emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
       }
       return source;
+    },
+
+    transformIndexHtml(html: string) {
+      if (!serveDevtools) return html;
+      return {
+        html,
+        tags: [
+          {
+            tag: 'script',
+            attrs: { type: 'module', src: `${devtoolsBase}@id/__x00__${DEVTOOLS_ID}` },
+            injectTo: 'body' as const,
+          },
+        ],
+      };
     },
 
     handleHotUpdate(this: any, ctx: { file: string; server: { moduleGraph: any } }) {

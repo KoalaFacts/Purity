@@ -20,6 +20,29 @@ describe('vite build pipeline', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('excludes the opted-in DevTools client from production HTML and JavaScript', async () => {
+    writeFileSync(
+      join(dir, 'index.html'),
+      '<html><body><script type="module" src="/entry.ts"></script></body></html>',
+    );
+    writeFileSync(join(dir, 'entry.ts'), 'document.body.dataset.app = "production";');
+    const result = await build({
+      root: dir,
+      configFile: false,
+      logLevel: 'error',
+      plugins: [purity({ devtools: true })],
+      build: { write: false },
+    });
+    const output = (Array.isArray(result) ? result[0] : result).output;
+    expect(output.some((item) => item.fileName === 'index.html')).toBe(true);
+    for (const item of output) {
+      const content = item.type === 'chunk' ? item.code : String(item.source);
+      expect(content).not.toContain('purity-devtools');
+      expect(content).not.toContain('Purity DevTools');
+      expect(content).not.toContain('Filter reactive nodes');
+    }
+  }, 30000);
+
   it('builds a fixture using the plugin and emits compiled DOM calls', async () => {
     writeFileSync(
       join(dir, 'entry.ts'),

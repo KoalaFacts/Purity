@@ -103,6 +103,9 @@ jobs:
       - name: 🧪 Check first island interactions
         run: npm run test:browser:islands
 
+      - name: 🧪 Check DevTools panel and production exclusion
+        run: npm run test:browser:devtools -w @purityjs/vite-plugin
+
       - name: 🧪 Check visible-list rendering
         run: npm run test:browser:virtual
 

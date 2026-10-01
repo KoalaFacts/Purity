@@ -37,7 +37,8 @@
   },
   "scripts": {
     "build": "vp build && tsc --emitDeclarationOnly",
-    "test": "vp test run"
+    "test": "vp test run",
+    "test:browser:devtools": "node --experimental-strip-types tests/devtools-browser.ts"
   },
   "dependencies": {
     "oxc-parser": "0.151.0"

@@ -1,17 +1,46 @@
 # Debugging Purity apps
 
-> **Status:** working notes. There is no devtools panel yet (see
-> [ADR-0002](./decisions/0002-devtools.md)). The inspection hook
-> documented below is the supported pre-1.0 path; richer tooling is
-> on the post-1.0 roadmap.
+> **Status:** the Vite plugin offers an opt-in development panel (see
+> [ADR-0002](./decisions/0002-devtools.md)). The inspection hook below
+> remains available in every build.
+
+## Visual panel
+
+Enable the panel in `vite.config.ts`:
+
+```ts
+export default defineConfig({
+  plugins: [purity({ devtools: true })],
+});
+```
+
+Start `vite dev` and click the floating **Purity** button. Search the current
+state, computed and effect nodes by kind, status or value, then select a row
+to see its version and source/observer connections. Node numbers belong to
+the current snapshot, not permanent identities. Values are text previews;
+objects are not expanded or evaluated.
+
+The panel refreshes once a second while open. Refreshing pauses while a node
+row has keyboard focus to preserve its focus and details; use **Refresh**
+for an explicit new snapshot. **Close** or Escape returns focus to the
+trigger, clears the rows and stops polling. HMR disposal and host removal
+also clean up the panel. Snapshots are converted to text immediately so the
+panel does not retain inspected object values.
+
+The panel requires the version 1 inspection hook to be installed when the
+page finishes loading. It supports Vite's `base` path, adds no application
+runtime dependency, and is excluded from production builds and `vite preview`.
+It shows the reactive graph, without source locations, a component hierarchy
+or time travel. Use the console hook below for deeper inspection.
+
+## Console inspection
 
 When the UI doesn't behave the way the data says it should, you need
 to see the reactive graph. Purity ships a small global hook on
 `globalThis.__purity_inspect__` that exposes every live signal,
 computed, and effect with their current values, statuses, and
 relationships. The hook is always installed (no dev/prod build flag
-needed); the runtime cost is one `WeakRef` set + ~0.4 kB gzipped of
-conversion code.
+needed). Its current bundle contribution has not been freshly measured.
 
 ## Quick tour
 

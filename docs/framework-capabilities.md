@@ -53,7 +53,7 @@ Historical figures need their original run artifacts and methodology before reus
 1. Verify the declared minimum browser versions, or revise the proposed matrix with recorded evidence.
 2. Complete the specified screen-reader, actual zoom, and operating-system contrast acceptance runs.
 3. Add debugging source locations and component context if required by real debugging journeys.
-4. Record deployment evidence for each supported host and refresh controlled performance measurements. Production counter bundle measurement and CI budgets are implemented; broader application profiles and investigation of AOT payload growth remain open.
+4. Record deployment evidence for each supported host and refresh controlled performance measurements. Production counter bundle measurement and CI budgets are implemented. Unused each/match hydration registration was identified and removed from the counter payload; broader application profiles remain open.
 5. Review and adopt the [1.0 policy and checklist](./decisions/0003-path-to-1.0.md); this audit does not mark that Proposed ADR accepted.
 
 ### Execution checklist

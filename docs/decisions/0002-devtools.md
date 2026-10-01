@@ -1,7 +1,12 @@
 # 0002: Devtools approach
 
-**Status:** Proposed
+**Status:** Superseded for the development panel; inspector hook retained
 **Date:** 2026-05-09
+
+**2026-10-01 update:** `@purityjs/vite-plugin` now offers an opt-in in-page
+reactive graph panel through `purity({ devtools: true })` during `vite dev`.
+It reads the existing versioned inspection hook and is excluded from production
+builds and preview. The original decision and rationale below remain historical.
 
 ## Context
 

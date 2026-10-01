@@ -62,9 +62,15 @@ No runtime parsing. No `new Function()`. Direct DOM calls.
 
 ```ts
 purity({
+  devtools: true, // opt-in reactive graph panel during vite dev only (default: false)
   include: ['.ts', '.js', '.tsx', '.jsx'], // file extensions to transform (default)
 });
 ```
+
+The **Purity** button opens a searchable snapshot of state, computed and
+effect nodes, including versions and source/observer connections. Close or
+Escape stops polling and clears the snapshot. Production builds and preview
+exclude the panel. See [Debugging Purity apps](../../docs/debugging.md) for details.
 
 ## How It Works
 

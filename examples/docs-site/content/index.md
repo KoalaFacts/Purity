@@ -2,7 +2,7 @@
 
 Purity is a small web framework built around fine-grained reactive state, direct DOM templates, Custom Elements, and optional server rendering. This documentation site uses Purity for its search, navigation, and live example.
 
-Start with the [five-minute guide](./getting-started.md), then choose a topic below to explore the framework.
+Start with the [five-minute guide](./getting-started.md), then choose a topic below to explore the framework. Read [capabilities and limits](../../../docs/framework-capabilities.md) for implemented features, evidence, and remaining gaps.
 
 ## Browse by category
 

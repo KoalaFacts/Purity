@@ -2,7 +2,9 @@
 
 ## Overview
 
-Purity is a lite web framework. ~5.8 kB gzipped. TC39-Signals-inspired reactivity. No virtual DOM.
+Purity is a minimal web framework with TC39-Signals-inspired reactivity and no
+virtual DOM. See [the capability audit](../../docs/framework-capabilities.md);
+bundle size depends on the application and needs a current measured build.
 
 ## Setup
 

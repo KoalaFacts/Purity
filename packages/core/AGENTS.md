@@ -6,7 +6,8 @@ This file provides context for AI coding agents (OpenAI Codex, GPT, Copilot Work
 
 A minimal web framework with TC39-Signals-inspired reactivity (the framework's signals.ts is a custom push-pull graph; the TC39 proposal is still Stage 1).
 
-- ~5.8 kB gzipped (with AOT plugin)
+- Framework and bundle-size claims need a current measured build;
+  see [the capability audit](../../docs/framework-capabilities.md).
 - 21 core functions
 - No virtual DOM — signals drive DOM updates directly
 - Custom Elements with Shadow DOM

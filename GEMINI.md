@@ -1,6 +1,8 @@
 # Purity Monorepo — Gemini Context
 
-Lite web framework. ~5.8 kB gzipped.
+Minimal web framework. See [the capability audit](./docs/framework-capabilities.md)
+for implemented features and remaining work. Measure bundle size on the current
+application build before quoting figures.
 
 ## Packages
 

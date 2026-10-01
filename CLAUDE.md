@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # Purity Monorepo
 
-Lite web framework built on TC39-Signals-inspired reactivity. Templates compile to direct DOM operations — no virtual DOM. `@purityjs/core` is ~5.8 kB gzipped with zero runtime dependencies. Optional SSR via Declarative Shadow DOM. Pre-1.0 (`0.1.0`); the API may break between minor versions.
+Minimal web framework built on TC39-Signals-inspired reactivity. Templates compile to direct DOM operations — no virtual DOM. The core has zero runtime dependencies; optional SSR lives in `@purityjs/ssr`. Purity is pre-1.0; read package manifests for the checkout version. See [the capability audit](./docs/framework-capabilities.md) before quoting feature, bundle-size, or framework-comparison claims.
 
 ## Packages
 

@@ -1,6 +1,9 @@
 # Purity Monorepo — AI Agent Context
 
-Lite web framework. ~5.8 kB gzipped. TC39-Signals-inspired reactivity.
+Minimal web framework with TC39-Signals-inspired reactivity. See
+[`docs/framework-capabilities.md`](./docs/framework-capabilities.md) for the
+audited feature state; bundle and framework-comparison figures require a fresh
+measurement.
 
 ## Packages
 

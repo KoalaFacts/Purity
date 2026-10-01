@@ -1,0 +1,10 @@
+{
+  "counter-runtime": {
+    "gzipBytes": 14848,
+    "brotliBytes": 13312
+  },
+  "counter-aot": {
+    "gzipBytes": 15360,
+    "brotliBytes": 13824
+  }
+}

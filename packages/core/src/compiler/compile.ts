@@ -170,7 +170,8 @@ function createDeferred(deferred: DeferredTemplate): Node | DocumentFragment {
 }
 
 // control.ts (the `each()` / `match()` runtimes) register their adoption
-// helpers here at module load via setInflateDeferredEach / setInflateDeferredMatch.
+// helpers here when capturing a hydration handle via
+// setInflateDeferredEach / setInflateDeferredMatch.
 // The thunk indirection avoids a static `compile.ts → control.ts` import
 // cycle (control.ts already imports `inflateDeferred` from this module).
 type InflateDeferredFn = (deferred: unknown, contNodes: Node[], closeMarker: Node) => void;
@@ -178,18 +179,18 @@ type InflateDeferredFn = (deferred: unknown, contNodes: Node[], closeMarker: Nod
 let _inflateDeferredEach: InflateDeferredFn | null = null;
 let _inflateDeferredMatch: InflateDeferredFn | null = null;
 
-/** @internal — called once by control.ts during module init. */
+/** @internal — called by control.ts before returning an each() hydration handle. */
 export function setInflateDeferredEach(fn: InflateDeferredFn): void {
   _inflateDeferredEach = fn;
 }
 
-/** @internal — called once by control.ts during module init. */
+/** @internal — called by control.ts before returning a match() hydration handle. */
 export function setInflateDeferredMatch(fn: InflateDeferredFn): void {
   _inflateDeferredMatch = fn;
 }
 
 function inflateDeferredEachThunk(deferred: unknown, contNodes: Node[], closeMarker: Node): void {
-  /* v8 ignore start -- control.ts always registers before any hydrate runs */
+  /* v8 ignore start -- each() registers before returning a hydration handle */
   if (!_inflateDeferredEach) {
     throw new Error('[Purity] inflateDeferredEach not registered (control.ts not loaded)');
   }
@@ -198,7 +199,7 @@ function inflateDeferredEachThunk(deferred: unknown, contNodes: Node[], closeMar
 }
 
 function inflateDeferredMatchThunk(deferred: unknown, contNodes: Node[], closeMarker: Node): void {
-  /* v8 ignore start -- control.ts always registers before any hydrate runs */
+  /* v8 ignore start -- match() registers before returning a hydration handle */
   if (!_inflateDeferredMatch) {
     throw new Error('[Purity] inflateDeferredMatch not registered (control.ts not loaded)');
   }

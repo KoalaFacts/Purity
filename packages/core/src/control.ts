@@ -1389,6 +1389,9 @@ function makeDeferredEach<T>(
   keyFn?: (item: T, index: number) => unknown,
   options?: EachOptions,
 ): DeferredEach<T> {
+  // Register only when hydration captures an each() handle. A module-level
+  // registration makes the compiler retain list adoption in every application.
+  setInflateDeferredEach(inflateDeferredEach as (d: unknown, c: Node[], m: Node) => void);
   return { __purity_deferred_each__: true, listAccessor, mapFn, keyFn, options };
 }
 
@@ -1679,6 +1682,9 @@ function makeDeferredMatch<T extends string | number | boolean>(
   cases: MatchCases<T>,
   fallback?: MatchView,
 ): DeferredMatch<T> {
+  setInflateDeferredMatch(
+    inflateDeferredMatch as unknown as (d: unknown, c: Node[], m: Node) => void,
+  );
   return { __purity_deferred_match__: true, sourceFn, cases, fallback };
 }
 
@@ -1842,15 +1848,6 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
   const dispose = installMatchWatch(matchState, endMarker, sourceFn, cases, fallback);
   registerMatchAutoDispose(getCurrentContext(), dispose, matchState);
 }
-
-// Wire up the compiler's hydrate-runtime entry points. Compile.ts calls these
-// thunks when a hydrate factory encounters a deferred control-flow value in
-// an expression slot. Registering at module-top avoids static import cycles
-// (compile.ts already exports symbols control.ts imports above).
-setInflateDeferredEach(inflateDeferredEach as (d: unknown, c: Node[], m: Node) => void);
-setInflateDeferredMatch(
-  inflateDeferredMatch as unknown as (d: unknown, c: Node[], m: Node) => void,
-);
 
 // ---------------------------------------------------------------------------
 // list() — fastest possible list rendering

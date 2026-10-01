@@ -130,6 +130,9 @@ async function verifyCounters(): Promise<{ status: string; chromium?: string }> 
       response.end(payload);
     } else if (measurements.some((item) => path === `/${item.profile}/`)) {
       response.setHeader('content-type', 'text/html; charset=utf-8');
+      if (path === '/counter-aot/') {
+        response.setHeader('content-security-policy', "default-src 'self'; script-src 'self'");
+      }
       response.end(
         '<!doctype html><html><body><main id="app"></main><script type="module" src="entry.js"></script></body></html>',
       );

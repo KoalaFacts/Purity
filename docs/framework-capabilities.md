@@ -36,7 +36,7 @@ The [Node SSR path](./server-rendering.md#deploy-to-a-node-host) documents proje
 
 ## Performance and bundle measurements
 
-No current bundle-size figure or cross-framework ranking is certified by this audit. Build mode, imports, application markup, data generation, browser version, hardware, and sampling can change the result. The [benchmark harness](../benchmark) provides measurement paths, not a permanent framework ranking.
+No universal bundle-size figure or cross-framework ranking is certified by this audit. The [production counter measurement](../benchmark/bundle-size/README.md) builds the same application with and without AOT, records raw/gzip/Brotli sizes, and enforces compressed-size budgets in CI. Its optional Chromium check verifies both outputs. Those results describe that fixture and toolchain, not every application. Build mode, imports, application markup, data generation, browser version, hardware, and sampling can change the result. The [benchmark harness](../benchmark) provides measurement paths, not a permanent framework ranking.
 
 For a new comparison:
 
@@ -46,12 +46,24 @@ For a new comparison:
 - Measure ordinary lists separately from opt-in windowing, and runtime timings separately from instrumented profiles or heap checks.
 - Compare the same application's production bundles with and without AOT before attributing size savings to the plugin.
 
-Historical figures need their original run artifacts and methodology before reuse. This page deliberately makes no fresh speed or size claim.
+Historical figures need their original run artifacts and methodology before reuse. This page makes no universal speed or size claim; use the versioned counter reports for its specific bundle measurements.
 
 ## Remaining work
 
 1. Verify the declared minimum browser versions, or revise the proposed matrix with recorded evidence.
 2. Complete the specified screen-reader, actual zoom, and operating-system contrast acceptance runs.
 3. Add debugging source locations and component context if required by real debugging journeys.
-4. Record deployment evidence for each supported host and refresh controlled bundle/performance measurements.
+4. Record deployment evidence for each supported host and refresh controlled performance measurements. Production counter bundle measurement and CI budgets are implemented; broader application profiles and investigation of AOT payload growth remain open.
 5. Review and adopt the [1.0 policy and checklist](./decisions/0003-path-to-1.0.md); this audit does not mark that Proposed ADR accepted.
+
+### Execution checklist
+
+| Work                                     | Acceptance evidence                                                                                                                          | State                                                         |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Production counter bundle baseline       | Same source in runtime/AOT builds, complete chunk totals, versioned reports, enforcing gzip/Brotli budgets, and working production counters. | Automated measurement and CI checks implemented.              |
+| Minimum browser support                  | Actual runs on each declared minimum engine, or a revised matrix with feature and engine evidence.                                           | Open.                                                         |
+| Assistive technology and visual behavior | Recorded NVDA/VoiceOver, actual zoom, and operating-system contrast acceptance runs.                                                         | Criteria exist; not verified.                                 |
+| Debugging context                        | A real application stack/source location and component relationship can be followed from the inspector.                                      | Open.                                                         |
+| Host deployment                          | A built application starts and serves the documented SSR/action paths on each claimed host.                                                  | Node local checks exist; per-host live evidence remains open. |
+| Performance comparisons                  | Fresh matched workloads, exact current package versions, reproducible settings, and paired run artifacts.                                    | Refresh required.                                             |
+| 1.0 policy                               | Explicit adoption decision plus evidence for the release checklist.                                                                          | Proposed; not adopted.                                        |

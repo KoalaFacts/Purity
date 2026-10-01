@@ -4,6 +4,13 @@ CPU + memory + I/O profiling for the head-to-head bench scenarios. Use these
 tools to find bottlenecks once the bench has identified a regression you want
 to dig into.
 
+## Production bundle sizes
+
+Use `npm run check:bundle` from the repository root for matched runtime/AOT
+counter builds, compressed-size budgets, and CI reports. Add `-- --verify`
+to check both built counters in Chromium. See the
+[bundle measurement guide](../bundle-size/README.md) for the scope and limits.
+
 ## Prereqs
 
 The vite preview must be running on port 4173:

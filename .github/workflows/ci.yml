@@ -67,6 +67,18 @@ jobs:
         # Produces dist/ with the compiled plugin
         run: npm run build -w packages/vite-plugin
 
+      - name: Measure production JavaScript bundle sizes
+        id: bundle_size
+        run: node --experimental-strip-types benchmark/bundle-size/measure.ts
+
+      - name: Save bundle size evidence
+        if: ${{ !cancelled() && steps.bundle_size.outcome != 'skipped' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: purity-bundle-sizes-main-${{ github.run_attempt }}
+          path: benchmark/dist/bundle-size/report.*
+          if-no-files-found: error
+
       - name: 🏗️ Build Vercel Edge example
         run: npm run build -w examples/ssr-stream-vercel-edge
 
@@ -108,6 +120,18 @@ jobs:
 
       - name: 🧪 Check DevTools panel and production exclusion
         run: npm run test:browser:devtools -w @purityjs/vite-plugin
+
+      - name: Verify measured production counters
+        id: bundle_size
+        run: node --experimental-strip-types benchmark/bundle-size/measure.ts --verify
+
+      - name: Save verified bundle size evidence
+        if: ${{ !cancelled() && steps.bundle_size.outcome != 'skipped' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: purity-bundle-sizes-browser-${{ github.run_attempt }}
+          path: benchmark/dist/bundle-size/report.*
+          if-no-files-found: error
 
       - name: 🧪 Check visible-list rendering
         run: npm run test:browser:virtual

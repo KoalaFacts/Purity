@@ -215,6 +215,26 @@ exists in the bundle (about 200–300 bytes), but no one calls it and
 modern bundlers may DCE the dead reachable code on a subsequent
 build pass.
 
+## Inspector memory regression check
+
+Run `npm run test:inspector:memory` to build the core and exercise its ESM and
+CJS packages in separate Node processes. Each creates 600,000 transient signals
+over 12 cycles and measures retained heap after forced GC and event-loop turns.
+The inspector is never read: calling `nodes()` would prune dead entries and
+could conceal a broken automatic finalizer.
+
+After two warm-up cycles, the check compares later samples with the median of
+three early samples and rejects growth above 8 MiB. The same check must reject
+a test-only control with automatic cleanup disabled. An unexpected crash or
+timeout is an error, not successful leak detection. CI runs both controls and
+records the samples in its job summary.
+
+This is a repeatable regression workload, not proof that all applications are
+leak-free. Finalization timing and heap size vary by runtime. Without
+`FinalizationRegistry`, the supported fallback prunes dead entries when
+`nodes()` is read; automatic cleanup while the inspector is unopened requires
+`FinalizationRegistry`. Deterministic unit tests cover both paths.
+
 ## Compatibility note
 
 The hook's top-level `version` is `1`. Future framework releases

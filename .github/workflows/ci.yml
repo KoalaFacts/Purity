@@ -60,6 +60,9 @@ jobs:
         # Produces dist/ with ESM, CJS, and .d.ts type declarations
         run: npm run build -w packages/core
 
+      - name: 🧠 Check inspector registry retention and leak detection
+        run: node --experimental-strip-types packages/core/tests/inspect-retention.ts
+
       - name: 🏗️ Build @purityjs/vite-plugin
         # Produces dist/ with the compiled plugin
         run: npm run build -w packages/vite-plugin

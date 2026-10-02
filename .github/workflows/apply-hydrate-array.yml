@@ -1,0 +1,45 @@
+name: Apply and verify consumer hydration fix
+
+on:
+  pull_request:
+    types: [opened, reopened]
+    paths:
+      - 'patches/press-floor-hydrate-arrays.patch'
+      - '.github/workflows/apply-hydrate-array.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/template-array-hydration-20261002'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Apply only the reviewed patch
+        run: |
+          git apply --check patches/press-floor-hydrate-arrays.patch
+          git apply patches/press-floor-hydrate-arrays.patch
+          npx vp fmt packages/core/src/compiler/codegen.ts packages/core/src/compiler/compile.ts packages/core/tests/hydrate-array.test.ts
+      - run: npm test
+      - run: npm run lint
+      - name: Build changed framework
+        run: |
+          npm run build -w packages/core
+          npm run build -w packages/vite-plugin
+      - name: Commit source fix and remove one-use patch workflow
+        run: |
+          git rm patches/press-floor-hydrate-arrays.patch .github/workflows/apply-hydrate-array.yml
+          git add packages/core/src/compiler/codegen.ts packages/core/src/compiler/compile.ts packages/core/tests/hydrate-array.test.ts
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix(core): materialise template arrays during hydration'
+          git push origin HEAD:refs/heads/fix/template-array-hydration-20261002

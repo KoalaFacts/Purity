@@ -1,0 +1,47 @@
+name: Consumer verification kit
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/consumer-kit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kit:
+    name: Test and package consumer kit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Build framework packages
+        run: |
+          npm run build -w packages/core
+          npm run build -w packages/ssr
+          npm run build -w packages/vite-plugin
+      - name: Package versioned consumer dependencies
+        run: |
+          mkdir -p consumer-kit/packages consumer-kit/bin
+          npm pack --workspace packages/core --pack-destination consumer-kit/packages
+          npm pack --workspace packages/ssr --pack-destination consumer-kit/packages
+          npm pack --workspace packages/vite-plugin --pack-destination consumer-kit/packages
+          git rev-parse HEAD > consumer-kit/REVISION
+          node --version > consumer-kit/NODE_VERSION
+          cp "$(command -v node)" consumer-kit/bin/node
+          tar -czf consumer-kit/toolchain-linux-x64.tar.gz node_modules packages package.json package-lock.json
+          (cd consumer-kit && sha256sum packages/*.tgz toolchain-linux-x64.tar.gz bin/node > SHA256SUMS)
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: purity-consumer-kit-linux-x64
+          path: consumer-kit/
+          retention-days: 7
+          compression-level: 1
+          if-no-files-found: error

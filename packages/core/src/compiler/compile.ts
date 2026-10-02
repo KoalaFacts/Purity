@@ -131,11 +131,12 @@ export function inflateDeferred(
   deferred: DeferredTemplate,
   target: Node,
   skipFirstNode = false,
+  createIfEmpty = false,
 ): Node {
   stripSuspenseMarkers(target);
   const first = target.firstChild;
   const firstNode = skipFirstNode && first?.nodeName === 'STYLE' ? first.nextSibling : first;
-  if (!firstNode && deferred.create) {
+  if (!firstNode && (deferred.create || createIfEmpty)) {
     target.appendChild(createDeferred(deferred));
     return target;
   }

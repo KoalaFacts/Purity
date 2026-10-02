@@ -376,8 +376,20 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         `else if(typeof ${xv}.__purity_ssr_html__==='string'){}`,
         // Real Node provided directly — replace SSR slot contents with it.
         `else if(${xv} instanceof Node){for(var _ri${id}=0;_ri${id}<${cont}.length;_ri${id}++)${cont}[_ri${id}].parentNode.removeChild(${cont}[_ri${id}]);${close}.parentNode.insertBefore(${xv},${close});}`,
-        // Array — fall back to lossy replace for this slot only.
-        `else if(Array.isArray(${xv})){for(var _ai${id}=0;_ai${id}<${cont}.length;_ai${id}++)${cont}[_ai${id}].parentNode.removeChild(${cont}[_ai${id}]);var _af${id}=document.createDocumentFragment();for(var _aj${id}=0;_aj${id}<${xv}.length;_aj${id}++)_af${id}.appendChild(${xv}[_aj${id}] instanceof Node?${xv}[_aj${id}]:document.createTextNode(String(${xv}[_aj${id}])));${close}.parentNode.insertBefore(_af${id},${close});}`,
+        // Arrays keep the existing replace-only semantics, but templates in
+        // them are deferred during hydration and must be materialised.
+        `else if(Array.isArray(${xv})){`,
+        `for(var _ai${id}=0;_ai${id}<${cont}.length;_ai${id}++)${cont}[_ai${id}].parentNode.removeChild(${cont}[_ai${id}]);`,
+        `var _af${id}=document.createDocumentFragment();`,
+        `function _append${id}(_av){`,
+        `if(_av==null||_av===false)return;`,
+        `if(Array.isArray(_av)){for(var _j=0;_j<_av.length;_j++)_append${id}(_av[_j]);}`,
+        `else if(_av&&_av.__purity_deferred__===true){var _ad=document.createDocumentFragment();_i(_av,_ad,false,true);_af${id}.appendChild(_ad);}`,
+        `else{_af${id}.appendChild(_av instanceof Node?_av:document.createTextNode(String(_av)));}`,
+        `}`,
+        `for(var _aj${id}=0;_aj${id}<${xv}.length;_aj${id}++)_append${id}(${xv}[_aj${id}]);`,
+        `${close}.parentNode.insertBefore(_af${id},${close});}`,
+
         `}`,
         // Primitive — SSR text already correct (or correctly empty); no-op.
       );

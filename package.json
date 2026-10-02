@@ -14,7 +14,7 @@
     "test:browser:virtual": "npm run build -w @purityjs/core && npm run build -w @purityjs/vite-plugin && node --conditions=development --experimental-strip-types benchmark/tools/virtual-browser-check.ts",
     "test:browser:memory": "npm run build -w @purityjs/core && npm run build -w @purityjs/vite-plugin && node --conditions=development --experimental-strip-types benchmark/tools/memory-leak-check.ts",
     "test:ssr:memory": "npm run build -w @purityjs/core && npm run build -w @purityjs/ssr && node --expose-gc --experimental-strip-types packages/ssr/tests/stream-retention.ts",
-    "check:bundle": "npm run build -w @purityjs/core && npm run build -w @purityjs/vite-plugin && node --experimental-strip-types benchmark/bundle-size/measure.ts",
+    "check:bundle": "npm run build -w @purityjs/core && npm run build -w @purityjs/ssr && npm run build -w @purityjs/vite-plugin && node --experimental-strip-types benchmark/bundle-size/measure.ts",
     "test:inspector:memory": "npm run build -w @purityjs/core && node --experimental-strip-types packages/core/tests/inspect-retention.ts",
     "test:published-cli": "node --experimental-strip-types packages/cli/scripts/published-smoke.ts",
     "test:browser:ssr-retention": "npm run build -w @purityjs/core && npm run build -w @purityjs/ssr && npm run build -w @purityjs/vite-plugin && npm run build -w @purityjs/cli && node --experimental-strip-types packages/ssr/tests/browser-retention.ts",

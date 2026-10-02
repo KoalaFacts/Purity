@@ -2,11 +2,10 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { join, resolve } from 'node:path';
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 import { build, type Plugin } from 'vite';
+import { parseSync } from 'oxc-parser';
 import { purity } from '../../packages/vite-plugin/dist/index.js';
 
 interface Sizes {
@@ -16,11 +15,17 @@ interface Sizes {
 }
 interface Measurement extends Sizes {
   profile: string;
+  functionConstructorCalls: number;
   chunks: Array<Sizes & { file: string }>;
 }
 
 const root = resolve(import.meta.dirname, '../..');
-const fixture = join(import.meta.dirname, 'counter.ts');
+const scenarios = [
+  { name: 'counter', entry: 'counter.ts', templates: ['counter.ts'] },
+  { name: 'controls', entry: 'controls.ts', templates: ['controls-view.ts'] },
+  { name: 'form', entry: 'form.ts', templates: ['form.ts'] },
+  { name: 'hydration', entry: 'hydration.ts', templates: ['controls-view.ts'] },
+];
 const outputDir = join(root, 'benchmark/dist/bundle-size');
 const measureOnly = process.argv.includes('--measure-only');
 const verify = process.argv.includes('--verify');
@@ -47,14 +52,37 @@ function sizes(source: string): Sizes {
   };
 }
 
-async function measure(aot: boolean): Promise<Measurement> {
-  let fixtureSeen = false;
+function functionConstructorCalls(file: string, code: string): number {
+  const result = parseSync(file, code, { sourceType: 'module' });
+  assert.equal(result.errors.length, 0, 'Cannot inspect production JavaScript');
+  const pending: unknown[] = [result.program];
+  let calls = 0;
+  while (pending.length) {
+    const value = pending.pop();
+    if (!value || typeof value !== 'object') continue;
+    const node = value as Record<string, unknown>;
+    if (node.type === 'CallExpression' || node.type === 'NewExpression') {
+      const callee = node.callee as Record<string, unknown>;
+      if (callee.type === 'Identifier' && callee.name === 'Function') calls++;
+    }
+    for (const child of Object.values(node)) {
+      if (Array.isArray(child)) pending.push(...child);
+      else if (child && typeof child === 'object') pending.push(child);
+    }
+  }
+  return calls;
+}
+
+async function measure(scenario: (typeof scenarios)[number], aot: boolean): Promise<Measurement> {
+  const templates = new Set(scenario.templates.map((file) => join(import.meta.dirname, file)));
+  const seen = new Set<string>();
   const inspectTransform: Plugin = {
     name: 'purity-bundle-size-transform-proof',
     enforce: 'post',
     transform(code, id) {
-      if (resolve(id.split('?')[0]) !== fixture) return;
-      fixtureSeen = true;
+      const file = resolve(id.split('?')[0]);
+      if (!templates.has(file)) return;
+      seen.add(file);
       assert.equal(code.includes('__purity_tpl_'), aot, 'Unexpected fixture compilation path');
       assert.equal(/html`/.test(code), !aot, 'Unexpected runtime template path');
     },
@@ -72,10 +100,17 @@ async function measure(aot: boolean): Promise<Measurement> {
       minify: true,
       sourcemap: false,
       modulePreload: false,
-      rollupOptions: { input: fixture, output: { entryFileNames: 'entry.js' } },
+      rollupOptions: {
+        input: join(import.meta.dirname, scenario.entry),
+        output: { entryFileNames: 'entry.js' },
+      },
     },
   });
-  assert(fixtureSeen, 'Fixture did not pass through the build pipeline');
+  assert.equal(
+    seen.size,
+    templates.size,
+    'Fixture templates did not pass through the build pipeline',
+  );
   assert(!Array.isArray(result) && 'output' in result, 'Expected one production output');
   const chunks = result.output.filter((item) => item.type === 'chunk');
   assert(
@@ -105,7 +140,7 @@ async function measure(aot: boolean): Promise<Measurement> {
     !renderedModules.some((id) => id.includes('/packages/core/src/')),
     'Source export measured',
   );
-  const profile = aot ? 'counter-aot' : 'counter-runtime';
+  const profile = `${scenario.name}-${aot ? 'aot' : 'runtime'}`;
   for (const chunk of chunks) payloads.set(`/${profile}/${chunk.fileName}`, chunk.code);
   const measured = chunks.map((chunk) => ({ file: chunk.fileName, ...sizes(chunk.code) }));
   const total = measured.reduce(
@@ -116,67 +151,15 @@ async function measure(aot: boolean): Promise<Measurement> {
     }),
     { rawBytes: 0, gzipBytes: 0, brotliBytes: 0 },
   );
-  return { profile, ...total, chunks: measured };
-}
-
-async function verifyCounters(): Promise<{ status: string; chromium?: string }> {
-  if (!verify) return { status: 'not-run' };
-  const { chromium } = await import('playwright');
-  const server = createServer((request, response) => {
-    const path = new URL(request.url ?? '/', 'http://localhost').pathname;
-    const payload = payloads.get(path);
-    if (payload !== undefined) {
-      response.setHeader('content-type', 'text/javascript; charset=utf-8');
-      response.end(payload);
-    } else if (measurements.some((item) => path === `/${item.profile}/`)) {
-      response.setHeader('content-type', 'text/html; charset=utf-8');
-      if (path === '/counter-aot/') {
-        response.setHeader('content-security-policy', "default-src 'self'; script-src 'self'");
-      }
-      response.end(
-        '<!doctype html><html><body><main id="app"></main><script type="module" src="entry.js"></script></body></html>',
-      );
-    } else if (path === '/favicon.ico') {
-      response.writeHead(204).end();
-    } else response.writeHead(404).end();
-  });
-  await new Promise<void>((done, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', done);
-  });
-  try {
-    const browser = await chromium.launch();
-    try {
-      for (const item of measurements) {
-        const page = await browser.newPage();
-        try {
-          const errors: string[] = [];
-          page.on('pageerror', (error) => errors.push(error.message));
-          page.on('console', (message) => {
-            if (message.type() === 'error') errors.push(message.text());
-          });
-          await page.goto(
-            `http://127.0.0.1:${(server.address() as AddressInfo).port}/${item.profile}/`,
-          );
-          await page.getByRole('button', { name: 'Count: 0', exact: true }).waitFor();
-          for (let i = 0; i < 3; i++) {
-            await page.getByRole('button', { name: `Count: ${i}`, exact: true }).click();
-            await page.getByRole('button', { name: `Count: ${i + 1}`, exact: true }).waitFor();
-          }
-          assert.deepEqual(errors, [], `${item.profile} browser errors`);
-        } finally {
-          await page.close();
-        }
-      }
-      return { status: 'passed', chromium: browser.version() };
-    } finally {
-      await browser.close();
-    }
-  } finally {
-    await new Promise<void>((done, reject) =>
-      server.close((error) => (error ? reject(error) : done())),
-    );
-  }
+  return {
+    profile,
+    ...total,
+    chunks: measured,
+    functionConstructorCalls: chunks.reduce(
+      (sum, chunk) => sum + functionConstructorCalls(chunk.fileName, chunk.code),
+      0,
+    ),
+  };
 }
 
 async function packageVersion(path: string): Promise<string> {
@@ -186,13 +169,41 @@ async function packageVersion(path: string): Promise<string> {
 }
 
 const budgets = JSON.parse(await readFile(join(import.meta.dirname, 'budgets.json'), 'utf8'));
-const measurements = [await measure(false), await measure(true)];
-const verification = await verifyCounters();
+const measurements: Measurement[] = [];
+for (const scenario of scenarios) {
+  measurements.push(await measure(scenario, false), await measure(scenario, true));
+}
+let verification: {
+  status: string;
+  engines: Record<string, string>;
+  profiles?: string[];
+  ssrHtmlSha256?: string;
+} = { status: 'not-run', engines: {} };
+if (verify) {
+  try {
+    verification = await (
+      await import('./verify.ts')
+    ).verifyProfiles(
+      root,
+      outputDir,
+      measurements.map((item) => item.profile),
+      payloads,
+    );
+  } catch (error) {
+    // Preserve size evidence on browser failure. Diagnostics belong in the
+    // job log, keeping local paths out of the portable JSON report.
+    console.error(error);
+    verification = { status: 'failed', engines: {} };
+  }
+}
 const violations: string[] = [];
 for (const item of measurements) {
-  for (const metric of ['gzipBytes', 'brotliBytes'] as const) {
+  for (const metric of ['gzipBytes', 'brotliBytes', 'functionConstructorCalls'] as const) {
     const budget = budgets[item.profile]?.[metric];
-    assert(Number.isSafeInteger(budget) && budget > 0, 'Invalid size budget');
+    assert(
+      Number.isSafeInteger(budget) && budget >= (metric === 'functionConstructorCalls' ? 0 : 1),
+      'Invalid size budget',
+    );
     if (item[metric] > budget)
       violations.push(`${item.profile}: ${metric} ${item[metric]} > ${budget}`);
   }
@@ -200,7 +211,7 @@ for (const item of measurements) {
 const git = (...args: string[]) =>
   execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 const report = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   revision: git('rev-parse', 'HEAD'),
   dirty: git('status', '--porcelain', '--untracked-files=normal').length > 0,
   node: process.versions.node,
@@ -209,14 +220,33 @@ const report = {
   versions: {
     core: await packageVersion('packages/core'),
     plugin: await packageVersion('packages/vite-plugin'),
+    ssr: await packageVersion('packages/ssr'),
     vite: await packageVersion('node_modules/vite'),
+    parser: await packageVersion('node_modules/oxc-parser'),
   },
-  fixtureSha256: createHash('sha256')
-    .update((await readFile(fixture, 'utf8')).replaceAll('\r\n', '\n'))
-    .digest('hex'),
+  fixtureHashes: Object.fromEntries(
+    await Promise.all(
+      [
+        ...new Set([
+          ...scenarios.flatMap((scenario) => [scenario.entry, ...scenario.templates]),
+          'controls-server.ts',
+        ]),
+      ].map(async (file) => [
+        file,
+        createHash('sha256')
+          .update(
+            (await readFile(join(import.meta.dirname, file), 'utf8')).replaceAll('\r\n', '\n'),
+          )
+          .digest('hex'),
+      ]),
+    ),
+  ),
   artifactsSha256: {
     core: createHash('sha256')
       .update(await readFile(join(root, 'packages/core/dist/index.js')))
+      .digest('hex'),
+    ssr: createHash('sha256')
+      .update(await readFile(join(root, 'packages/ssr/dist/index.js')))
       .digest('hex'),
     plugin: createHash('sha256')
       .update(await readFile(join(root, 'packages/vite-plugin/dist/index.js')))
@@ -231,7 +261,7 @@ const report = {
     perFileCompression: true,
   },
   scope:
-    'Complete counter JavaScript payload from built packages; includes application code, excludes HTML and source maps.',
+    'Complete fixture JavaScript payload from built packages; includes application code, excludes HTML and source maps.',
   measurements,
   budgets,
   violations,
@@ -240,20 +270,21 @@ const report = {
 await mkdir(outputDir, { recursive: true });
 await writeFile(join(outputDir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
 const summary = [
-  '## Purity production counter bundle sizes',
+  '## Purity production feature bundle sizes',
   '',
   `Revision: ${report.revision}; dirty: ${report.dirty}; Node: ${report.node}`,
-  `Core: ${report.versions.core}; plugin: ${report.versions.plugin}; Vite: ${report.versions.vite}`,
+  `Core: ${report.versions.core}; SSR: ${report.versions.ssr}; plugin: ${report.versions.plugin}; Vite: ${report.versions.vite}; parser: ${report.versions.parser}`,
   '',
-  '| Profile | Raw bytes | gzip bytes | Brotli bytes |',
-  '| --- | ---: | ---: | ---: |',
+  '| Profile | Raw bytes | gzip bytes | Brotli bytes | Function constructor calls |',
+  '| --- | ---: | ---: | ---: | ---: |',
   ...measurements.map(
-    (item) => `| ${item.profile} | ${item.rawBytes} | ${item.gzipBytes} | ${item.brotliBytes} |`,
+    (item) =>
+      `| ${item.profile} | ${item.rawBytes} | ${item.gzipBytes} | ${item.brotliBytes} | ${item.functionConstructorCalls} |`,
   ),
   '',
   report.scope,
   'Compression is per emitted JavaScript file. These are fixture results, not a universal framework size.',
-  `Browser verification: ${verification.status}${verification.chromium ? ` (Chromium ${verification.chromium})` : ''}.`,
+  `Browser verification: ${verification.status}; engines: ${JSON.stringify(verification.engines)}.`,
   `Budget checks: ${measureOnly ? 'not enforced' : violations.length ? 'failed' : 'passed'}.`,
   ...violations,
   '',
@@ -261,4 +292,4 @@ const summary = [
 console.log(summary);
 await writeFile(join(outputDir, 'report.md'), summary);
 if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
-if (!measureOnly && violations.length) process.exitCode = 1;
+if ((!measureOnly && violations.length) || verification.status === 'failed') process.exitCode = 1;

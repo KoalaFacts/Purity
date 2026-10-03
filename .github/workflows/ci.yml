@@ -67,6 +67,9 @@ jobs:
         # Produces dist/ with the compiled plugin
         run: npm run build -w packages/vite-plugin
 
+      - name: Build SSR package for production feature evidence
+        run: npm run build -w @purityjs/ssr
+
       - name: Measure production JavaScript bundle sizes
         id: bundle_size
         run: node --experimental-strip-types benchmark/bundle-size/measure.ts
@@ -121,7 +124,10 @@ jobs:
       - name: 🧪 Check DevTools panel and production exclusion
         run: npm run test:browser:devtools -w @purityjs/vite-plugin
 
-      - name: Verify measured production counters
+      - name: Build SSR package for hydration verification
+        run: npm run build -w @purityjs/ssr
+
+      - name: Verify measured production features (Chromium, Firefox, WebKit)
         id: bundle_size
         run: node --experimental-strip-types benchmark/bundle-size/measure.ts --verify
 

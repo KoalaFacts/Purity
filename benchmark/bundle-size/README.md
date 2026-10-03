@@ -7,21 +7,20 @@ npm run check:bundle
 npm run check:bundle -- --verify
 ```
 
-The first command rebuilds the core and Vite plugin, builds the same
-[counter fixture](./counter.ts) with and without AOT, and checks the
-[compressed-size budgets](./budgets.json). The second also launches Chromium
-and verifies that both production buttons advance from 0 to 3 without browser
-errors. The AOT page also uses a Content Security Policy without `unsafe-eval`.
-Install the browser with `npx playwright install chromium` if needed.
+The first command rebuilds core, SSR, and the Vite plugin, builds four fixtures
+with and without AOT, and enforces the [budgets](./budgets.json). The second
+verifies all eight production builds in Chromium, Firefox, and WebKit. Every
+AOT page uses a Content Security Policy without `unsafe-eval`.
+Install engines with `npx playwright install chromium firefox webkit` if needed.
 
 CI runs measurement after building the shipped packages. The browser job also
-runs the interaction check. Both write a job summary and upload `report.json`
-and `report.md` as workflow artifacts, including when a size budget fails.
+runs the interaction checks. Both write a job summary and upload `report.json`
+and `report.md` as workflow artifacts, including on budget or browser failures.
 
 ## What is measured
 
 - Production ES2022, minified ESM JavaScript from built package exports.
-- Every emitted JavaScript chunk, including the counter application code.
+- Every emitted JavaScript chunk, including fixture application code.
 - Raw UTF-8 bytes, gzip at level 9, and Brotli at quality 11. Each file is
   compressed separately before adding its size, matching separate responses.
 - No HTML, source maps, HTTP headers, server bundle, or other framework.
@@ -31,10 +30,60 @@ fixture kept its template. It rejects missing entries, source-only package
 resolution, external imports, hidden dynamic chunks, and unexpected assets.
 It does not claim that AOT eliminates every runtime compiler path in the core.
 
-The report records the Git revision and dirty state, core/plugin/Vite versions,
-Node and compression-library versions, a normalized fixture hash, built entry
-hashes, settings, per-chunk sizes, budgets, and optional browser verification.
+Report schema version 2 records the Git revision and dirty state, package
+versions, Node and compression-library versions, normalized hashes for all
+fixture sources, built entry hashes, settings, per-chunk sizes, budgets, and
+optional browser verification with exact engine versions. A verified SSR
+body has its own hash. Verification failures retain the size report and exit
+nonzero; their diagnostics go to the job log.
 Machine names and absolute filesystem paths are excluded.
+
+## Feature profiles
+
+| Profile     | Included functionality                                                              | Browser acceptance                                                                     |
+| ----------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `counter`   | [Counter](./counter.ts), signal, template, click handler, mounting.                 | Count advances from 0 to 3.                                                            |
+| `controls`  | [Shared view](./controls-view.ts), keyed each, match, nested templates, mounting.   | Reverse keeps row identity; labels update; branch toggling reuses the original branch. |
+| `form`      | [Enhanced form](./form.ts), two-way input, enhanceForms, response/error handling.   | Empty submission focuses the error field; retry succeeds, keeps the input and URL.     |
+| `hydration` | [Hydration entry](./hydration.ts), the same controls view and server-rendered HTML. | Preserve SSR row identity, then perform the same controls interactions.                |
+
+Each profile's runtime/AOT pair uses the same entry and template source.
+Hydration HTML is generated from that shared view by an actual SSR build
+and `renderToString`, with shared built package imports. Before releasing the
+client script, the browser verifier records the existing SSR nodes; this
+verification instrumentation is outside the measured application payload.
+
+The form endpoint is a local verification transport returning action-result
+JSON, not a production Server Actions adapter or a deployment check. No
+framework-runtime helper or other framework is added to the measured bundles.
+These profiles do not certify every application, native submissions without
+JavaScript, assistive technology, network-failure paths, or rendering speed.
+
+### Expanded reference
+
+Main `bf3b241` with these fixtures, core/SSR/plugin `0.2.4`, Vite `1.0.0`,
+and Node `24.17.0` measured:
+
+| Profile       | Runtime gzip | AOT gzip | Runtime Brotli | AOT Brotli |
+| ------------- | -----------: | -------: | -------------: | ---------: |
+| Counter       |        7,305 |    3,505 |          6,531 |      3,129 |
+| Controls      |       14,899 |   16,755 |         13,333 |     14,796 |
+| Enhanced form |       10,127 |    6,602 |          9,077 |      5,860 |
+| Hydration     |       15,508 |   17,365 |         13,836 |     15,335 |
+
+All 24 browser/profile combinations passed with Chromium `148.0.7778.96`,
+Firefox `150.0.2`, and WebKit `26.4`. The controls AOT payload is about 12.5%
+larger than runtime; hydration AOT is about 12.0% larger. Counter and form
+AOT are smaller. Applying the counter's earlier savings to all applications
+would therefore be incorrect.
+
+The report also counts direct global `Function` call/constructor sites in
+emitted JavaScript using the installed parser. Controls/hydration AOT retain
+two such JIT fallback sites; counter/form AOT retain none. CSP verification
+shows these fallbacks were not executed by the recorded AOT interactions.
+This inventory is not a security audit or a count of compiler bytes: aliases,
+other dynamic-code mechanisms, and broader user paths are outside its scope.
+Removing unnecessary JIT dependencies from these controls is still open.
 
 ## Initial reference
 
@@ -74,7 +123,8 @@ a promise that applications using each/match remove those dependencies.
 
 Limits allow roughly 5% growth over the optimized measurements, rounded up
 to 256-byte boundaries.
-Both gzip and Brotli must remain within their profile's limit. A failure exits
+Both gzip and Brotli, and the direct `Function` call-site count, must remain
+within their profile's limit. A failure exits
 nonzero and records the measured value and limit; it never updates budgets
 automatically. Review the current report and the code/toolchain change before
 editing a budget.
@@ -85,7 +135,8 @@ For an investigation that deliberately exceeds a budget, use:
 npm run check:bundle -- --measure-only
 ```
 
-This records violations and explicitly marks the budget as unenforced. CI
+This records violations and explicitly marks the budget as unenforced. It
+does not suppress browser failures when combined with `--verify`. CI
 uses the enforcing mode. Sizes may change with the toolchain or compression
 library, so a budget failure requires investigation rather than automatically
 proving a framework regression.

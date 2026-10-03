@@ -271,7 +271,7 @@ if (root) hydrate(root, App);
   type IncomingMessage,
   type ServerResponse,
 } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -290,7 +290,13 @@ function sendError(res: ServerResponse, err: unknown): void {
 
 if (isProd) {
   const clientDir = resolve(__dirname, 'client');
-  const template = await readFile(resolve(clientDir, 'index.html'), 'utf-8');
+  const realClientDir = await realpath(clientDir);
+  const templatePath = await realpath(resolve(clientDir, 'index.html'));
+  const templateRelative = relative(realClientDir, templatePath);
+  if (templateRelative === '..' || templateRelative.startsWith('..' + sep) || isAbsolute(templateRelative)) {
+    throw new Error('SSR template must be inside the public root');
+  }
+  const template = await readFile(templatePath, 'utf-8');
   const mod = (await import(pathToFileURL(resolve(__dirname, 'server/entry.server.js')).href)) as {
     render: (url: string) => Promise<string>;
   };
@@ -304,7 +310,13 @@ if (isProd) {
   };
   createHttpServer(async (req, res) => {
     try {
-      const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
+      const rawUrl = req.url ?? '/';
+      if (!rawUrl.startsWith('/') || rawUrl.startsWith('//') || rawUrl.includes('\\\\')) {
+        res.statusCode = 400;
+        res.end('Bad Request');
+        return;
+      }
+      const pathname = new URL(rawUrl, 'http://localhost').pathname;
       let decodedPath: string;
       try {
         decodedPath = decodeURIComponent(pathname);
@@ -323,14 +335,24 @@ if (isProd) {
       const staticRequest = (req.method === 'GET' || req.method === 'HEAD') &&
         (decodedPath.startsWith('/assets/') || extname(decodedPath) !== '');
       if (staticRequest && assetRelative && assetRelative !== 'index.html') {
-        const asset = await stat(assetPath).catch((err: NodeJS.ErrnoException) => {
+        const file = await realpath(assetPath).catch((err: NodeJS.ErrnoException) => {
           if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return null;
           throw err;
         });
+        if (file) {
+          // Resolve symlinks/junctions before authorizing a public file read.
+          const realRelative = relative(realClientDir, file);
+          if (realRelative === '..' || realRelative.startsWith('..' + sep) || isAbsolute(realRelative)) {
+            res.statusCode = 400;
+            res.end('Bad Request');
+            return;
+          }
+        }
+        const asset = file ? await stat(file) : null;
         if (asset?.isFile()) {
           const contentType = contentTypes[extname(assetPath)] ?? 'application/octet-stream';
           res.setHeader('Content-Type', contentType.startsWith('text/') || contentType === 'application/json' || contentType === 'image/svg+xml' ? contentType + '; charset=utf-8' : contentType);
-          res.end(req.method === 'HEAD' ? undefined : await readFile(assetPath));
+          res.end(req.method === 'HEAD' ? undefined : await readFile(file as string));
           return;
         }
         res.statusCode = 404;

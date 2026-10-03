@@ -9,6 +9,89 @@ afterEach(() => {
   _clearActionRegistry();
 });
 
+describe('request-origin security boundary', () => {
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])(
+    'blocks a cross-origin %s before mutation',
+    async (method) => {
+      let writes = 0;
+      serverAction('/api/account', () => {
+        writes++;
+        return new Response('changed');
+      });
+      const response = await handleAction(
+        new Request('https://app.example/api/account', {
+          method,
+          headers: {
+            Origin: 'https://attacker.example',
+            Cookie: 'session=victim',
+            'Sec-Fetch-Site': 'same-site',
+          },
+          body: new URLSearchParams({ email: 'attacker@example.test' }),
+        }),
+      );
+      expect(response?.status).toBe(403);
+      expect(writes).toBe(0);
+    },
+  );
+
+  it.each([
+    undefined,
+    'null',
+    'https://app.example.evil.test',
+    'https://app.example/path',
+    'https://app.example:444',
+  ])('blocks an absent or invalid origin %s', async (origin) => {
+    let writes = 0;
+    serverAction('/api/account', () => {
+      writes++;
+      return new Response('changed');
+    });
+    const headers = new Headers();
+    if (origin !== undefined) headers.set('Origin', origin);
+    const response = await handleAction(
+      new Request('https://app.example/api/account', { method: 'POST', headers }),
+    );
+    expect(response?.status).toBe(403);
+    expect(writes).toBe(0);
+  });
+
+  it('blocks cross-site fetch metadata even with a matching Origin', async () => {
+    let writes = 0;
+    serverAction('/api/account', () => {
+      writes++;
+      return new Response('changed');
+    });
+    const response = await handleAction(
+      new Request('https://app.example/api/account', {
+        method: 'POST',
+        headers: { Origin: 'https://app.example', 'Sec-Fetch-Site': 'cross-site' },
+      }),
+    );
+    expect(response?.status).toBe(403);
+    expect(writes).toBe(0);
+  });
+
+  it('allows a matching Origin and retains unknown-route fallthrough', async () => {
+    serverAction('/api/account', () => new Response('changed'));
+    const response = await handleAction(
+      new Request('https://app.example/api/account', {
+        method: 'POST',
+        headers: { Origin: 'https://app.example' },
+      }),
+    );
+    expect(response?.status).toBe(200);
+    expect(
+      await handleAction(new Request('https://app.example/api/missing', { method: 'POST' })),
+    ).toBeNull();
+  });
+});
+
+function sameOriginRequest(url: string, init: RequestInit = {}): Request {
+  const headers = new Headers(init.headers);
+  headers.set('Origin', new URL(url).origin);
+  return new Request(url, { ...init, headers });
+}
+
 describe('serverAction() — registration', () => {
   it('returns the action with the supplied url + handler', () => {
     const handler = async () => new Response('ok');
@@ -31,7 +114,9 @@ describe('serverAction() — registration', () => {
   it('last call wins on duplicate URL (HMR-friendly)', async () => {
     serverAction('/api/dup', async () => new Response('first'));
     serverAction('/api/dup', async () => new Response('second'));
-    const res = await handleAction(new Request('https://example.com/api/dup', { method: 'POST' }));
+    const res = await handleAction(
+      sameOriginRequest('https://example.com/api/dup', { method: 'POST' }),
+    );
     expect(await res?.text()).toBe('second');
   });
 });
@@ -39,13 +124,13 @@ describe('serverAction() — registration', () => {
 describe('findAction() — lookup', () => {
   it('finds by url pathname (ignoring query/hash)', () => {
     const action = serverAction('/api/save', async () => new Response());
-    const handler = findAction(new Request('https://example.com/api/save?id=1#x'));
+    const handler = findAction(sameOriginRequest('https://example.com/api/save?id=1#x'));
     expect(handler).toBe(action.handler);
   });
 
   it('returns null when no handler matches', () => {
     serverAction('/api/save', async () => new Response());
-    const handler = findAction(new Request('https://example.com/api/missing'));
+    const handler = findAction(sameOriginRequest('https://example.com/api/missing'));
     expect(handler).toBeNull();
   });
 });
@@ -60,20 +145,22 @@ describe('handleAction() — dispatch', () => {
     const form = new FormData();
     form.set('name', 'Ada');
     const res = await handleAction(
-      new Request('https://example.com/api/echo', { method: 'POST', body: form }),
+      sameOriginRequest('https://example.com/api/echo', { method: 'POST', body: form }),
     );
     expect(res).not.toBeNull();
     expect(await res?.text()).toBe('hello, Ada');
   });
 
   it('returns null on unknown route so the caller can fall through to SSR', async () => {
-    const res = await handleAction(new Request('https://example.com/api/missing'));
+    const res = await handleAction(sameOriginRequest('https://example.com/api/missing'));
     expect(res).toBeNull();
   });
 
   it('supports synchronous Response returns', async () => {
     serverAction('/api/sync', () => new Response('sync-ok'));
-    const res = await handleAction(new Request('https://example.com/api/sync', { method: 'POST' }));
+    const res = await handleAction(
+      sameOriginRequest('https://example.com/api/sync', { method: 'POST' }),
+    );
     expect(await res?.text()).toBe('sync-ok');
   });
 
@@ -89,13 +176,17 @@ describe('handleAction() — dispatch', () => {
       return new Response('written');
     });
     for (const method of ['GET', 'HEAD', 'OPTIONS']) {
-      const res = await handleAction(new Request('https://example.com/api/write', { method }));
+      const res = await handleAction(
+        sameOriginRequest('https://example.com/api/write', { method }),
+      );
       expect(res, `${method} must not dispatch`).toBeNull();
     }
     expect(called).toBe(0);
     // POST/PUT/PATCH/DELETE all dispatch:
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
-      const res = await handleAction(new Request('https://example.com/api/write', { method }));
+      const res = await handleAction(
+        sameOriginRequest('https://example.com/api/write', { method }),
+      );
       expect(res, `${method} must dispatch`).not.toBeNull();
     }
     expect(called).toBe(4);
@@ -106,7 +197,7 @@ describe('handleAction() — dispatch', () => {
       throw new Error('boom');
     });
     await expect(
-      handleAction(new Request('https://example.com/api/boom', { method: 'POST' })),
+      handleAction(sameOriginRequest('https://example.com/api/boom', { method: 'POST' })),
     ).rejects.toThrow(/boom/);
   });
 });
@@ -119,7 +210,7 @@ describe('progressive form enhancement pattern', () => {
     });
 
     const res = await handleAction(
-      new Request('https://example.com/api/save', { method: 'POST', body: new FormData() }),
+      sameOriginRequest('https://example.com/api/save', { method: 'POST', body: new FormData() }),
     );
     expect(res?.status).toBe(303);
     expect(res?.headers.get('location')).toBe('https://example.com/?saved=1');
@@ -210,7 +301,7 @@ describe('action.invoke() — client-side fetch helper', () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (url: string, init: RequestInit) => {
       // Map the fetch call back into a real Request the handler accepts.
-      const req = new Request(`http://localhost${url}`, init);
+      const req = sameOriginRequest(`http://localhost${url}`, init);
       const res = await handleAction(req);
       return res ?? new Response('not found', { status: 404 });
     }) as typeof fetch;
@@ -326,7 +417,7 @@ describe('audit-v2: handleAction Response brand validation', () => {
       async () => ({ status: 200, body: 'oops' }),
     );
     await expect(
-      handleAction(new Request('https://example.com/api/bad-shape', { method: 'POST' })),
+      handleAction(sameOriginRequest('https://example.com/api/bad-shape', { method: 'POST' })),
     ).rejects.toThrow(/must return a Response/);
   });
 
@@ -337,7 +428,7 @@ describe('audit-v2: handleAction Response brand validation', () => {
       async () => undefined,
     );
     await expect(
-      handleAction(new Request('https://example.com/api/undef', { method: 'POST' })),
+      handleAction(sameOriginRequest('https://example.com/api/undef', { method: 'POST' })),
     ).rejects.toThrow(/must return a Response/);
   });
 
@@ -348,7 +439,7 @@ describe('audit-v2: handleAction Response brand validation', () => {
       async () => null,
     );
     await expect(
-      handleAction(new Request('https://example.com/api/null-resp', { method: 'POST' })),
+      handleAction(sameOriginRequest('https://example.com/api/null-resp', { method: 'POST' })),
     ).rejects.toThrow(/must return a Response/);
   });
 });

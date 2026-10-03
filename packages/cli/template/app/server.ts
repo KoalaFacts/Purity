@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Readable } from 'node:stream';
@@ -164,7 +164,9 @@ function requestFor(
   const protocol = forwardedProto === 'https' ? 'https' : 'http';
   const host = forwardedHost || msg.headers.host || 'localhost';
   const origin = process.env.PUBLIC_ORIGIN || `${protocol}://${host}`;
-  const url = new URL(msg.url ?? '/', origin);
+  const base = new URL(origin);
+  const url = new URL(msg.url ?? '/', base);
+  if (url.origin !== base.origin) throw new URIError('Invalid request origin');
   const headers = new Headers(msg.headers as HeadersInit);
   // Replace any client-supplied value with the nonce used by this render.
   // Loaders can read it when constructing their own strict CSP policy.
@@ -202,9 +204,11 @@ async function start(): Promise<void> {
   let entry: ServerEntry | undefined;
   let staticPaths: Set<string>;
   let clientDir: string;
+  let realClientDir = '';
   let vite: Awaited<ReturnType<(typeof import('vite'))['createServer']>> | undefined;
   if (production) {
     clientDir = resolve(root, 'client');
+    realClientDir = await realpath(clientDir);
     template = await readFile(resolve(root, 'template.html'), 'utf8');
     entry = (await import(
       pathToFileURL(resolve(root, 'server/entry.server.js')).href
@@ -217,6 +221,18 @@ async function start(): Promise<void> {
     const { createServer: createViteServer } = await import('vite');
     vite = await createViteServer({ server: { middlewareMode: true }, appType: 'custom' });
     staticPaths = new Set();
+  }
+
+  async function publicFile(candidate: string): Promise<string | null | false> {
+    const file = await realpath(candidate).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null;
+      throw error;
+    });
+    if (!file) return null;
+    // Lexical containment does not stop a symlink/junction from exposing server files.
+    const rel = relative(realClientDir, file);
+    if (rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel)) return false;
+    return file;
   }
 
   async function handle(
@@ -237,7 +253,8 @@ async function start(): Promise<void> {
     let filePathname: string;
     try {
       const rawUrl = req.url ?? '/';
-      if (!rawUrl.startsWith('/') || rawUrl.startsWith('//')) throw new URIError('Invalid path');
+      if (!rawUrl.startsWith('/') || rawUrl.startsWith('//') || rawUrl.includes('\\'))
+        throw new URIError('Invalid path');
       rawPathname = new URL(rawUrl, 'http://localhost').pathname;
       filePathname = decodeURIComponent(rawPathname);
     } catch {
@@ -288,13 +305,20 @@ async function start(): Promise<void> {
         return;
       }
       if (rel) {
-        const info = await stat(asset).catch((error: NodeJS.ErrnoException) => {
-          if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null;
-          throw error;
-        });
+        const file = await publicFile(asset);
+        if (file === false) {
+          send(res, 400, 'text/plain; charset=utf-8', 'Bad Request', head);
+          return;
+        }
+        const info = file
+          ? await stat(file).catch((error: NodeJS.ErrnoException) => {
+              if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return null;
+              throw error;
+            })
+          : null;
         if (info?.isFile()) {
           const type = contentTypes[extname(asset)] ?? 'application/octet-stream';
-          send(res, 200, type, head ? '' : await readFile(asset), head);
+          send(res, 200, type, head ? '' : await readFile(file as string), head);
           return;
         }
       }
@@ -302,10 +326,15 @@ async function start(): Promise<void> {
     if (production) {
       const key = rawPathname === '/' ? '/' : rawPathname.replace(/\/$/, '');
       if (staticPaths.has(key)) {
-        const file =
+        const candidate =
           key === '/'
             ? resolve(clientDir, 'index.html')
             : resolve(clientDir, '.' + key, 'index.html');
+        const file = await publicFile(candidate);
+        if (!file) {
+          send(res, file === false ? 400 : 404, 'text/plain; charset=utf-8', 'Not Found', head);
+          return;
+        }
         send(res, 200, 'text/html; charset=utf-8', head ? '' : await readFile(file), head);
         return;
       }

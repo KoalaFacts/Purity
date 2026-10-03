@@ -80,6 +80,9 @@ jobs:
       - name: Check rendering security
         run: npm run test:browser:security
 
+      - name: Check Node request and public file boundaries
+        run: npm run test:security:requests
+
       # Publish in dependency order
       # Each package trusts this workflow and the production environment on npm.
       - name: Publish core

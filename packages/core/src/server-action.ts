@@ -14,8 +14,8 @@
 // same URL — same handler, same shape.
 //
 // Phase 1 explicitly punts on:
-//   - CSRF token generation / verification (use SameSite cookies + double-
-//     submit or a focused helper library)
+//   - CSRF token generation / verification (use a focused helper library
+//     when tokens are required; handleAction enforces same-origin requests)
 //   - Auto-serialization (handler signature is `(Request) => Response`;
 //     parse formData/json/text yourself)
 //   - A client-side `action.invoke(formData)` helper (just call fetch)
@@ -205,6 +205,12 @@ export function findAction(request: Request): ServerActionHandler | null {
  * Dispatch the request to its registered handler if one exists. Returns the
  * handler's `Response`, or `null` when no handler matches the URL path so
  * the caller can fall through to SSR or another router.
+ * Matched mutations require an Origin header equal to the HTTP(S) request
+ * origin; missing/mismatched origins and cross-site Fetch Metadata return 403
+ * before the handler runs. Adapters must construct request.url from a trusted
+ * public origin. Authentication and authorization still belong in the handler.
+ * Non-browser callers supply Origin explicitly. Direct handler invocation and
+ * findAction() are lower-level APIs and do not apply this dispatch protection.
  *
  * @example
  * ```ts
@@ -217,12 +223,8 @@ export function findAction(request: Request): ServerActionHandler | null {
  * ```
  */
 export async function handleAction(request: Request): Promise<Response | null> {
-  // Method gate: server actions are POST-only by spec (ADR 0012 docs +
-  // the example `<form method="POST">` everywhere). Without an explicit
-  // check, a GET to /api/save-todo would still dispatch the mutation —
-  // a CSRF surface (a `<a href="/api/save-todo">click</a>` from any
-  // page could trigger a write). Reject non-POST/PUT/PATCH/DELETE so
-  // routing falls through to SSR (which can render a 405 or the page).
+  // Safe HTTP methods must never dispatch a mutation. The method gate alone
+  // cannot prevent a cross-origin HTML form POST carrying session cookies.
   if (
     request.method !== 'POST' &&
     request.method !== 'PUT' &&
@@ -233,6 +235,17 @@ export async function handleAction(request: Request): Promise<Response | null> {
   }
   const handler = findAction(request);
   if (!handler) return null;
+  const target = new URL(request.url);
+  if (
+    (target.protocol !== 'http:' && target.protocol !== 'https:') ||
+    request.headers.get('origin') !== target.origin ||
+    request.headers.get('sec-fetch-site') === 'cross-site'
+  ) {
+    return new Response('Forbidden request origin', {
+      status: 403,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+    });
+  }
   const result = await handler(request);
   // Response brand validation. A handler that returns `undefined` /
   // `null` / a plain object (`{ status: 200 }`) would otherwise leak

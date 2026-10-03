@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- Reject dynamic script source and script content property bindings in runtime,
+  AOT, SSR, and hydration compilation, including nested templates.
+- Enforce same-origin `Origin` and reject cross-site Fetch Metadata before
+  `handleAction()` executes a matched mutation. API clients must send Origin;
+  handlers remain responsible for authentication and authorization.
+- Generated Node adapters reject authority-changing request targets and static
+  symlink/junction reads outside the public client directory. Existing apps
+  must apply the adapter source changes and redeploy; a CLI upgrade alone
+  cannot update an already generated server.
+
+Evidence and migration boundaries: [security audit](docs/security-audit-2026-10-03.md).
+
 ## 0.3.2 — 2026-10-03
 
 Coordinated security patch for `@purityjs/core`, `@purityjs/ssr`,

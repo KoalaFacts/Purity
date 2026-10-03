@@ -7,6 +7,34 @@ const immediate = (fn: () => void) => fn();
 const factory = (code: string) => new Function(`return ${code}`)();
 
 describe('executable template bindings', () => {
+  it.each(['script', 'SCRIPT'])('rejects interpolated %s source in every compiler path', (tag) => {
+    const ast = parse([`<main><${tag}>`, `</${tag}></main>`]);
+    for (const compile of [generate, generateHydrate, generateSSR]) {
+      expect(() => compile(ast)).toThrow(/Unsafe dynamic binding in <script>/);
+    }
+  });
+
+  it.each([
+    '.text',
+    ':text',
+    '::text',
+    '.textContent',
+    ':textContent',
+    '::textContent',
+    '.innerHTML',
+  ])('rejects script content binding %s', (binding) => {
+    const ast = parse([`<script ${binding}=`, '></script>']);
+    for (const compile of [generate, generateHydrate, generateSSR]) {
+      expect(() => compile(ast)).toThrow(/Unsafe dynamic binding in <script>/);
+    }
+  });
+
+  it('retains static scripts and ordinary interpolated text', () => {
+    for (const compile of [generate, generateHydrate, generateSSR]) {
+      expect(() => compile(parse(['<script src="/app.js"></script>']))).not.toThrow();
+      expect(() => compile(parse(['<p>', '</p>']))).not.toThrow();
+    }
+  });
   it.each(['onclick', '?onclick', '.srcdoc'])(
     'rejects custom-element %s before SSR dispatch',
     (name) => {

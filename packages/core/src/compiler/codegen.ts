@@ -71,6 +71,30 @@ function assertSafeBinding(name: string, kind: string): void {
   }
 }
 
+function assertSafeScriptContent(node: ASTNode, inScript = false): void {
+  if (node.type === 'expression' && inScript) {
+    // HTML escaping cannot make data safe as JavaScript source in a raw-text element.
+    throw new Error(
+      '[Purity] Unsafe dynamic binding in <script>; keep code static and serialize data separately.',
+    );
+  }
+  if (node.type !== 'element' && node.type !== 'fragment') return;
+  const script = inScript || (node.type === 'element' && node.tag.toLowerCase() === 'script');
+  if (script && node.type === 'element') {
+    for (const attr of node.attributes) {
+      if (
+        attr.kind !== 'static' &&
+        /^(?:innerhtml|outerhtml|text|textcontent|innertext)$/i.test(attr.name)
+      ) {
+        throw new Error(
+          '[Purity] Unsafe dynamic binding in <script>; keep code static and serialize data separately.',
+        );
+      }
+    }
+  }
+  for (const child of node.children) assertSafeScriptContent(child, script);
+}
+
 const URL_BINDINGS = new Set([
   'href',
   'src',
@@ -194,6 +218,7 @@ export function condenseWhitespace(node: ASTNode): ASTNode {
 // ---------------------------------------------------------------------------
 
 export function generate(ast: FragmentNode): string {
+  assertSafeScriptContent(ast);
   // Strip pure-indentation text nodes from the entire tree (not just edges).
   // Indentation between sibling tags becomes real text nodes after innerHTML,
   // multiplying per-item DOM cost in each() — a row template with whitespace
@@ -299,6 +324,7 @@ interface HydrateCtx {
 }
 
 export function generateHydrate(ast: FragmentNode): string {
+  assertSafeScriptContent(ast);
   ast = condenseWhitespace(ast) as FragmentNode;
 
   if (!hasDynamic(ast)) {
@@ -1041,6 +1067,7 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
 // ---------------------------------------------------------------------------
 
 export function generateSSR(ast: FragmentNode): string {
+  assertSafeScriptContent(ast);
   ast = condenseWhitespace(ast) as FragmentNode;
   const ctx: SSRGenCtx = { parts: [], counter: 0, out: '_o', lastLitHtml: null };
   // Static-prefix optimization: if the entire tree is static AND contains no

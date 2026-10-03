@@ -1,4 +1,4 @@
-# Rendering security
+# Security boundaries
 
 ## Template data
 
@@ -17,6 +17,12 @@ different instance are treated as ordinary objects.
 Use `@click=${handler}` and other `@event` bindings with function references.
 Dynamic `on*` and `srcdoc` bindings are rejected during compilation, including
 property and boolean forms.
+
+Dynamic `<script>` content and script text/HTML property bindings are rejected
+in runtime, AOT, SSR, and hydration compilation. HTML escaping does not make
+an interpolated value safe as JavaScript source. Keep script code static;
+serialize resource data through the SSR renderer's JSON payload mechanism.
+This restriction also applies to templates nested inside other expressions.
 
 URL bindings reject `javascript:`, `vbscript:`, and executable `data:` values,
 including control characters that disguise the scheme. Relative URLs, ordinary
@@ -45,6 +51,34 @@ retain server modules.
 server files into client graphs and inspect both production chunks and assets.
 Never store credential literals in application source.
 
+## Server actions and Node adapters
+
+`handleAction()` requires a matching `Origin` header before executing a matched
+POST, PUT, PATCH, or DELETE handler. Missing, opaque (`null`), and foreign origins
+return 403, as does `Sec-Fetch-Site: cross-site`. Browser form submissions and
+fetches supply Origin; non-browser clients must send it explicitly. Unknown
+routes still return `null`, and safe HTTP methods never dispatch a mutation.
+
+This protects the dispatcher against cross-origin browser submissions; it is
+not authentication or authorization. A raw HTTP client can choose its headers.
+Validate the user's permissions in each handler. Direct `.handler()` invocation
+and `findAction()` bypass the dispatcher and require caller-owned protection.
+Applications needing CSRF tokens must also validate their chosen token scheme.
+
+Adapters must construct `Request.url` from the trusted public origin. Set
+`PUBLIC_ORIGIN` behind a reverse proxy; enable `TRUST_PROXY=1` only if the proxy
+overwrites forwarded headers and prevents direct access to the origin server.
+The generated production Node starters reject request targets that can replace the URL
+authority, including protocol-relative paths, absolute URLs, and backslashes.
+
+Production static files are authorized by their real filesystem paths. Links
+inside `client/` may target another public file inside that directory; links to
+server files or other directories are rejected for both GET and HEAD. Keep the
+deployed asset tree immutable: these checks do not sandbox an attacker who can
+concurrently modify the server filesystem. Existing generated applications need
+the adapter changes applied to their own server source; upgrading the CLI does
+not rewrite an existing project.
+
 ## Verification
 
 Run `npm run test:browser:security` for the built ESM/CommonJS and three-browser
@@ -52,3 +86,6 @@ rendering checks. Compiler tests cover runtime, AOT, hydration, reactive updates
 and allowed-value controls. Vite plugin tests inspect actual production outputs.
 CI and publishing both run the browser checks. Dependency audits and passing CI
 do not constitute a complete application security audit.
+
+Run `npm run test:security:requests` for generated Node adapter request-target,
+path traversal, and symlink/junction regressions. Both CI and publishing run it.

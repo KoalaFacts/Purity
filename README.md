@@ -142,7 +142,7 @@ each, mount): [koalafacts.github.io/Purity/dashboard](https://koalafacts.github.
 
 ## Status
 
-**Pre-1.0 (`0.2.4`).** The API may break between minor versions until 1.0.
+**Pre-1.0 (`0.3.0`).** The API may break between minor versions until 1.0.
 See the [changelog](./CHANGELOG.md) for upgrade notes.
 There is no public versioning policy yet, and we don't know of any production
 users. If you ship Purity to users, please open an issue so we can keep your
@@ -150,11 +150,11 @@ use case in mind for the breaking-change discussions.
 
 ## What this framework does NOT do
 
-Knowing what's missing matters more than what's there. As of `0.2.4`:
+Knowing what's missing matters more than what's there. As of `0.3.0`:
 
-- **No devtools panel.** The built-in `__purity_inspect__` hook exposes the
-  reactive graph in the browser console; see the
-  [debugging guide](./docs/debugging.md).
+- **DevTools has limited scope.** The opt-in development panel shows the
+  reactive graph, without source locations, a component hierarchy or time
+  travel; see the [debugging guide](./docs/debugging.md).
 - **No production track record.** Pre-1.0; we know of zero production
   deployments. Treat as a serious side-project, not a battle-tested tool.
 - **Accessibility needs application-level verification.** Browser fixtures

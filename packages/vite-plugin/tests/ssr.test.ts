@@ -15,7 +15,7 @@ const transform = (code: string, id: string, ssr: boolean) =>
 describe('@purityjs/vite-plugin — SSR mode', () => {
   it('brands static and nested AOT markup while rejecting forged JSON', () => {
     const result = transform(
-      "import { html } from '@purityjs/core'; const make = (value) => html`<div>${html`<span>safe</span>`}${value}</div>`;",
+      "import { html } from '@purityjs/core';\nconst make = (value) => html`<div>${html`<span>safe</span>`}${value}</div>`;",
       'app.ts',
       true,
     )!;

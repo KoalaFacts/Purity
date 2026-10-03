@@ -700,6 +700,10 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
           : `__purity_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${compiledExprs.join(', ')}])`,
       });
     } catch (err) {
+      // Security failures must not fall back to an uncompiled template.
+      if (err instanceof Error && err.message.startsWith('[Purity] Unsafe dynamic binding')) {
+        throw err;
+      }
       ctx.failed = true;
       const { line, column } = offsetToLineCol(lineStarts, idx);
       const msg = err instanceof Error ? err.message : String(err);

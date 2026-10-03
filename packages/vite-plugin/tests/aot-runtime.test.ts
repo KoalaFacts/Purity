@@ -49,7 +49,7 @@ describe('AOT output runs correctly under jsdom', () => {
 
   it('rejects executable URL values in AOT factories', () => {
     const { make } = evalAot(
-      "import { html } from '@purityjs/core'; const make = (url) => html`<a href=${url}>go</a>`;",
+      "import { html } from '@purityjs/core';\nconst make = (url) => html`<a href=${url}>go</a>`;",
     );
     expect(() => make('javascript:attack()')).toThrow(/Unsafe URL binding/);
     expect((make('/safe') as HTMLAnchorElement).getAttribute('href')).toBe('/safe');

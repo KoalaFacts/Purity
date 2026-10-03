@@ -14,6 +14,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, posix, resolve as resolvePath, sep as pathSep } from 'node:path';
+import { parseSync } from 'oxc-parser';
 
 import { generate, generateHydrate, generateSSR, parse } from '@purityjs/core/compiler';
 import { devtoolsClientSource } from './devtools-client.ts';
@@ -62,6 +63,57 @@ function rejectServerAsset(id: string): void {
       );
     }
   }
+}
+
+function rejectServerAssetPath(path: string): void {
+  if (isServerOnlyId(path.split('#')[0]!)) {
+    throw new Error('[Purity] Server-only modules cannot be imported as client assets or workers.');
+  }
+}
+
+// Vite's new-URL and CSS asset pipelines can read files without module load hooks.
+function checkAssetReferences(code: string, id: string): void {
+  if (/\.(?:css|scss|sass|less|styl|stylus)(?:\?|$)/.test(id)) {
+    for (const match of code.matchAll(/url\(\s*(['"]?)(.*?)\1\s*\)/gi)) {
+      const path = match[2]!
+        .trim()
+        .replace(/\\([\da-f]{1,6})\s?|\\(.)/gi, (_match, hex, char) =>
+          hex ? String.fromCodePoint(Number.parseInt(hex, 16)) : char,
+        );
+      rejectServerAssetPath(path);
+    }
+    return;
+  }
+  if (!/\.[cm]?[jt]sx?(?:\?|$)/.test(id) || !code.includes('URL') || !code.includes('import.meta'))
+    return;
+  const { program } = parseSync(id.split('?')[0]!, code);
+  const visit = (node: any): void => {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'NewExpression' && node.callee?.name === 'URL') {
+      const base = node.arguments?.[1];
+      if (
+        base?.type === 'MemberExpression' &&
+        base.property?.name === 'url' &&
+        base.object?.type === 'MetaProperty' &&
+        base.object.meta?.name === 'import'
+      ) {
+        const path = node.arguments[0];
+        if (typeof path?.value === 'string') rejectServerAssetPath(path.value);
+        // Vite expands dynamic template paths to an asset glob. The final quasi
+        // still identifies a server-only extension even when the stem varies.
+        if (path?.type === 'TemplateLiteral') {
+          rejectServerAssetPath(
+            path.quasis.map((q: any) => q.value.cooked ?? q.value.raw).join('*'),
+          );
+        }
+      }
+    }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) value.forEach(visit);
+      else if (value && typeof value === 'object') visit(value);
+    }
+  };
+  visit(program);
 }
 
 /**
@@ -175,6 +227,7 @@ export function purity(options?: PurityPluginOptions) {
   let serveDevtools = false;
   let isPreview = false;
   let devtoolsBase = '/';
+  let serverBuild = false;
 
   const routesOpts = normaliseRoutesOption(options?.routes);
   // Resolved at configResolved time once Vite tells us the project root.
@@ -192,7 +245,32 @@ export function purity(options?: PurityPluginOptions) {
       isPreview = env.isPreview === true;
     },
 
-    configResolved(this: any, config: { root: string; command?: string; base?: string }) {
+    configResolved(
+      this: any,
+      config: {
+        root: string;
+        command?: string;
+        base?: string;
+        build?: {
+          ssr?: unknown;
+          assetsInlineLimit?: number | ((file: string, content: Buffer) => boolean | undefined);
+        };
+      },
+    ) {
+      serverBuild = !!config.build?.ssr;
+      if (stripServerModules && !serverBuild && config.build) {
+        const limit = config.build.assetsInlineLimit;
+        config.build.assetsInlineLimit = (file, content) => {
+          rejectServerAssetPath(file);
+          return typeof limit === 'function'
+            ? limit(file, content)
+            : content.length < (limit ?? 4096) &&
+                !content
+                  .subarray(0, 40)
+                  .toString()
+                  .startsWith('version https://git-lfs.github.com');
+        };
+      }
       serveDevtools = options?.devtools === true && config.command === 'serve' && !isPreview;
       // Resolved Vite bases have a trailing slash; absolute bases use their path during dev.
       devtoolsBase = config.base ? new URL(config.base, 'http://vite.local').pathname : '/';
@@ -263,6 +341,14 @@ export function purity(options?: PurityPluginOptions) {
       return source;
     },
 
+    generateBundle(_options: unknown, bundle: Record<string, any>) {
+      if (!stripServerModules || serverBuild) return;
+      for (const output of Object.values(bundle)) {
+        if (output.type !== 'asset') continue;
+        for (const path of output.originalFileNames ?? []) rejectServerAssetPath(path);
+      }
+    },
+
     transformIndexHtml(html: string) {
       if (!serveDevtools) return html;
       return {
@@ -325,6 +411,7 @@ export function purity(options?: PurityPluginOptions) {
           map: null,
         };
       }
+      if (stripServerModules && transformOpts?.ssr !== true) checkAssetReferences(code, id);
 
       // Security boundaries apply even to framework paths. Only skip actual
       // framework directories when compiling templates, not consumer lookalikes.
@@ -623,7 +710,10 @@ function compileNestedTemplates(source: string, ctx: CompileContext): string {
           : `__purity_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${compiledExprs.join(', ')}])`,
       );
       changed = true;
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith('[Purity] Unsafe dynamic binding')) {
+        throw err;
+      }
       ctx.failed = true;
       parts.push(source.slice(idx, extracted.end));
     }

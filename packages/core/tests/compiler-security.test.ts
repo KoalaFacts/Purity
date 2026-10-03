@@ -7,6 +7,50 @@ const immediate = (fn: () => void) => fn();
 const factory = (code: string) => new Function(`return ${code}`)();
 
 describe('executable template bindings', () => {
+  it.each(['onclick', '?onclick', '.srcdoc'])(
+    'rejects custom-element %s before SSR dispatch',
+    (name) => {
+      const ast = parse([`<x-widget ${name}=`, '></x-widget>']);
+      expect(() => generateSSR(ast)).toThrow(/Unsafe dynamic binding/);
+    },
+  );
+
+  it('rejects unsafe custom-element attributes during SSR fallback', () => {
+    const ast = parse(['<x-widget href=', '></x-widget>']);
+    expect(() => factory(generateSSR(ast))([() => 'javascript:attack()'], ssrHelpers)).toThrow(
+      /Unsafe URL binding/,
+    );
+    expect(factory(generateSSR(ast))(['/safe'], ssrHelpers).__purity_ssr_html__).toContain(
+      'href="/safe"',
+    );
+  });
+
+  it.each(['data', 'href', 'src'])(
+    'preserves custom-element %s property objects in DOM, hydration and SSR',
+    (name) => {
+      for (const binding of [`.${name}`, `:${name}`, `::${name}`]) {
+        const ast = parse([`<my-chart ${binding}=`, '></my-chart>']);
+        const data = { rows: [1, 2] };
+        const value = binding.startsWith('.') ? data : () => data;
+        const node = factory(generate(ast))([value], immediate);
+        expect(node[name]).toBe(data);
+        const root = document.createElement('div');
+        root.innerHTML = '<my-chart></my-chart>';
+        factory(generateHydrate(ast))([value], immediate, root);
+        expect((root.firstChild as any)[name]).toBe(data);
+        let received: unknown;
+        factory(generateSSR(ast))([value], {
+          ...ssrHelpers,
+          element: (_tag: string, attrs: Record<string, unknown>) => {
+            received = attrs[name];
+            return '';
+          },
+        });
+        expect(typeof received === 'function' ? received() : received).toBe(data);
+      }
+    },
+  );
+
   it('rejects attribute names that could escape generated code or script tags', () => {
     for (const name of ['x</script><script>attack()</script>', 'x";attack();"', 'x.y']) {
       const ast = parse(['<input ::value=', '>']);

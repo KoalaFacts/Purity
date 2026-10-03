@@ -131,6 +131,7 @@ interface ExprSlot {
 
 interface AttrSlot {
   type: 'attr';
+  tag: string;
   attrs: AttributeNode[];
   path: PathStep[];
 }
@@ -453,7 +454,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
       // attribute is a no-op; props weren't set by SSR and need to be).
       for (const attr of node.attributes) {
         if (attr.kind !== 'static') {
-          const { setup, reactive } = genAttrBinding(el, attr);
+          const { setup, reactive } = genAttrBinding(el, attr, node.tag);
           if (setup) ctx.setup.push(setup);
           if (reactive) ctx.reactive.push(reactive);
         }
@@ -532,7 +533,7 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
 
   // Dynamic attributes — folded into the shared watch where possible
   for (const a of tpl.dynamicAttrs) {
-    const { setup, reactive } = genAttrBinding('_e', a);
+    const { setup, reactive } = genAttrBinding('_e', a, tpl.tag);
     if (setup) setupParts.push(setup);
     if (reactive) reactiveParts.push(reactive);
   }
@@ -728,7 +729,7 @@ function buildDynamicHtml(
       }
 
       if (dynamicAttrs.length > 0) {
-        slots.push({ type: 'attr', attrs: dynamicAttrs, path: [...currentPath] });
+        slots.push({ type: 'attr', tag: node.tag, attrs: dynamicAttrs, path: [...currentPath] });
       }
 
       if (VOID.has(node.tag)) return `${s}/>`;
@@ -842,7 +843,7 @@ function genPositionalBindings(slots: Slot[]): string {
     } else {
       for (const attr of slot.attrs) {
         if (attr.kind !== 'static') {
-          const { setup, reactive } = genAttrBinding(nodeVar, attr);
+          const { setup, reactive } = genAttrBinding(nodeVar, attr, slot.tag);
           setupParts.push(setup);
           if (reactive) reactiveParts.push(reactive);
         }
@@ -916,7 +917,7 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
 // Returns { setup, reactive }: same fold contract as genExprBinding.
 // ---------------------------------------------------------------------------
 
-function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
+function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingParts {
   if (attr.kind === 'static') return { setup: '', reactive: '' };
   assertSafeName(attr.name, 'attribute');
   assertSafeBinding(attr.name, attr.kind);
@@ -926,6 +927,9 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
   const fl = `_af${id}`;
   const val = `_v[${attr.index}]`;
   const qname = JSON.stringify(attr.name);
+  // Custom-element properties are typed component data, not native URL sinks.
+  const propertyValue = (expr: string): string =>
+    tag.includes('-') ? expr : safeBindingValue(attr.name, expr);
 
   switch (attr.kind) {
     case 'event':
@@ -966,9 +970,9 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
       const setup = [
         `var ${av}=${val};`,
         `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl})${el}[${qname}]=${safeBindingValue(attr.name, av)};`,
+        `if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
       ].join('');
-      const reactive = `if(${fl})${el}[${qname}]=${safeBindingValue(attr.name, `${av}()`)};`;
+      const reactive = `if(${fl})${el}[${qname}]=${propertyValue(`${av}()`)};`;
       return { setup, reactive };
     }
 
@@ -976,9 +980,9 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
       const setup = [
         `var ${av}=${val};`,
         `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl})${el}[${qname}]=${safeBindingValue(attr.name, av)};`,
+        `if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
       ].join('');
-      const reactive = `if(${fl})${el}[${qname}]=${safeBindingValue(attr.name, `${av}()`)};`;
+      const reactive = `if(${fl})${el}[${qname}]=${propertyValue(`${av}()`)};`;
       return { setup, reactive };
     }
 
@@ -1008,7 +1012,7 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
         // codeql[js/bad-code-sanitization] -- qname is restricted by assertSafeName
         // to identifier characters; el/val are compiler-generated references.
         // No URL value or arbitrary HTML is interpolated into this source.
-        setup: `if(typeof ${val}==='function'){_w(function(){${el}[${qname}]=${safeBindingValue(attr.name, `${val}()`)};});${el}.addEventListener(${qevt},function(){${val}(${readSrc});});}`,
+        setup: `if(typeof ${val}==='function'){_w(function(){${el}[${qname}]=${propertyValue(`${val}()`)};});${el}.addEventListener(${qevt},function(){${val}(${readSrc});});}`,
         reactive: '',
       };
     }
@@ -1186,6 +1190,7 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
     }
     if (a.kind === 'event') continue;
     assertSafeName(a.name, 'attribute');
+    assertSafeBinding(a.name, a.kind);
     if (a.kind === 'bool') {
       // Boolean attribute: resolve any signal-accessor function and
       // coerce to a real boolean BEFORE handing it to the renderer.
@@ -1200,7 +1205,12 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
         `var ${bv}=_v[${a.index}];if(typeof ${bv}==='function')${bv}=${bv}();${attrsVar}[${JSON.stringify(a.name)}]=!!${bv};`,
       );
     } else {
-      pushRaw(ctx, `${attrsVar}[${JSON.stringify(a.name)}]=_v[${a.index}];`);
+      const val = `_v[${a.index}]`;
+      const resolved =
+        a.kind === 'dynamic' && URL_BINDINGS.has(a.name.toLowerCase())
+          ? safeBindingValue(a.name, `(typeof ${val}==='function'?${val}():${val})`)
+          : val;
+      pushRaw(ctx, `${attrsVar}[${JSON.stringify(a.name)}]=${resolved};`);
     }
   }
 

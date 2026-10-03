@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 import { build } from 'vite';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // Tests for the *.server.{ts,js,tsx,jsx} client-bundle strip — ADR 0018.
 
@@ -132,6 +135,88 @@ describe('server-only production output boundary', () => {
   it('preserves server source in SSR builds and explicit opt-outs', async () => {
     expect(JSON.stringify(await bundle('safe/auth', '', true))).toContain(marker);
     expect(JSON.stringify(await bundle('safe/auth', '', false, false))).toContain(marker);
+  });
+
+  it.each([
+    ['URL', 0, false, ''],
+    ['URL', 100000, false, ''],
+    ['URL', 0, false, '?inline'],
+    ['URL', 0, false, '?no-inline'],
+    ['URL', 0, true, ''],
+    ['GLOB', 0, true, ''],
+    ['CSS', 0, false, ''],
+    ['CSS', 100000, false, ''],
+    ['CSS', 0, false, '?inline'],
+    ['CSS', 0, false, '?no-inline'],
+  ] as const)('rejects %s assets (limit=%s, lib=%s, query=%s)', async (kind, limit, lib, query) => {
+    const dir = mkdtempSync(join(tmpdir(), 'purity-security-assets-'));
+    try {
+      const entry = join(dir, 'main.js');
+      writeFileSync(join(dir, 'auth.server.ts'), `export const token = '${marker}';`);
+      writeFileSync(
+        join(dir, 'style.css'),
+        `.fixture { background: url('./auth.server.ts${query}'); }`,
+      );
+      writeFileSync(
+        entry,
+        kind.startsWith('CSS')
+          ? "import './style.css';"
+          : kind === 'GLOB'
+            ? 'const name = "auth.server.ts"; console.log(new URL(`./${name}`, import.meta.url).href);'
+            : `console.log(new URL('./auth.server.ts${query}', import.meta.url).href);`,
+      );
+      const run = (enabled: boolean) =>
+        build({
+          root: dir,
+          configFile: false,
+          logLevel: 'silent',
+          plugins: [purity({ stripServerModules: enabled })],
+          build: {
+            write: false,
+            minify: false,
+            assetsInlineLimit: limit,
+            lib: lib ? { entry, formats: ['es'], fileName: 'client' } : undefined,
+            rolldownOptions: { input: entry },
+          },
+        });
+      // Prove the fixture reaches the asset pipeline: absent protection the
+      // synthetic source appears either verbatim or encoded as a data URL.
+      const result = await run(false);
+      const outputs = Array.isArray(result) ? result : [result];
+      const control = outputs
+        .flatMap((output: any) => output.output)
+        .map((output: any) =>
+          output.type === 'chunk'
+            ? output.code
+            : typeof output.source === 'string'
+              ? output.source
+              : Buffer.from(output.source).toString(),
+        )
+        .join('\n');
+      expect(
+        control.includes(marker) ||
+          control.includes(Buffer.from(`export const token = '${marker}';`).toString('base64')),
+      ).toBe(true);
+      await expect(run(true)).rejects.toThrow(/Server-only modules cannot/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects dynamic new-URL globs and emitted server assets', () => {
+    const plugin = purity();
+    expect(() =>
+      plugin.transform('.x { background: url("auth.serv\\65 r.ts?inline"); }', 'style.css'),
+    ).toThrow(/Server-only modules cannot/);
+    expect(() =>
+      plugin.transform('const a = new URL(`./${name}.server.ts`, import.meta.url);', 'app.ts'),
+    ).toThrow(/Server-only modules cannot/);
+    expect(() =>
+      plugin.generateBundle(
+        {},
+        { secret: { type: 'asset', originalFileNames: ['auth.server.ts'] } },
+      ),
+    ).toThrow(/Server-only modules cannot/);
   });
 });
 

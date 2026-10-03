@@ -22,6 +22,9 @@ URL bindings reject `javascript:`, `vbscript:`, and executable `data:` values,
 including control characters that disguise the scheme. Relative URLs, ordinary
 web links, mail and phone links, and base64 raster-image data URLs continue to
 work. Rejected reactive updates fail before assigning the unsafe value.
+Custom-element property bindings preserve typed objects and accessors; they are
+component inputs. Components must validate these inputs before forwarding them
+to native URL sinks. Custom-element HTML attribute bindings use the URL checks.
 
 Literal template markup and explicit DOM APIs remain developer-controlled.
 Do not pass external HTML to `.innerHTML`, `insertAdjacentHTML`, or other raw
@@ -33,6 +36,8 @@ checks do not enforce an application's permitted hosts or prevent SSRF.
 With the default Vite plugin options, `*.server.{ts,tsx,js,jsx}` modules are
 stripped from client module graphs before loading and transformation. Client
 asset and worker imports of these modules are rejected before resource emission.
+This includes `new URL(..., import.meta.url)` and CSS `url(...)` references,
+with checks for both inlined content and emitted asset source paths.
 This rule also applies to paths resembling framework directories. SSR builds
 retain server modules.
 

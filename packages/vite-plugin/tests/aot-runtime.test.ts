@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { state } from '@purityjs/core';
+import { state, when } from '@purityjs/core';
 import {
   enterHydration,
   exitHydration,
@@ -21,9 +21,14 @@ describe('AOT output runs correctly under jsdom', () => {
       .replace(/^import .+$/gm, '')
       .replace(/^export /gm, '')
       .trim();
-    const fn = new Function('__purity_renderCompiled__', 'document', `${body}\nreturn make;`);
+    const fn = new Function(
+      '__purity_renderCompiled__',
+      'document',
+      'when',
+      `${body}\nreturn make;`,
+    );
     return {
-      make: fn(renderCompiledTemplate, globalThis.document),
+      make: fn(renderCompiledTemplate, globalThis.document, when),
     };
   }
 
@@ -110,6 +115,43 @@ describe('AOT output runs correctly under jsdom', () => {
     inflateDeferred(deferred as Parameters<typeof inflateDeferred>[0], root);
     expect(root.querySelector('li strong span')?.textContent).toBe('new row');
   });
+
+  it.each([false, true])(
+    'adopts fragment siblings around a nested %s match boundary',
+    async (initial) => {
+      const { make } = evalAot(
+        `import { html, when } from '@purityjs/core';\nconst make = (outer, inner, label) => html\`<section>\${when(outer, () => html\`<div>\${label}</div>\${when(inner, () => html\`<button>Details</button>\`)}<p>Tail</p>\`)}</section>\`;`,
+      );
+      const root = document.createElement('div');
+      root.innerHTML = `<section><!--[--><!--m:true--><div><!--[-->Member<!--]--></div><!--[--><!--m:${initial}-->${initial ? '<button>Details</button>' : ''}<!--/m--><!--]--><p>Tail</p><!--/m--><!--]--></section>`;
+      const section = root.firstChild;
+      const identity = root.querySelector('div');
+      const tail = root.querySelector('p');
+      const outer = state(true);
+      const inner = state(initial);
+      const label = state('Member');
+      enterHydration();
+      let deferred: unknown;
+      try {
+        deferred = make(outer, inner, label);
+      } finally {
+        exitHydration();
+      }
+      inflateDeferred(deferred as Parameters<typeof inflateDeferred>[0], root);
+      expect(root.firstChild).toBe(section);
+      expect(root.querySelector('div')).toBe(identity);
+      expect(root.querySelector('p')).toBe(tail);
+      inner(!initial);
+      label('Updated');
+      await vi.waitFor(() => expect(identity?.textContent).toBe('Updated'));
+      expect(!!root.querySelector('button')).toBe(!initial);
+      outer(false);
+      await vi.waitFor(() => expect(root.querySelector('div')).toBeNull());
+      outer(true);
+      await vi.waitFor(() => expect(root.querySelector('div')).toBe(identity));
+      expect(root.querySelector('p')).toBe(tail);
+    },
+  );
 
   it('starts after stripped suspense markers and the retained SSR style', () => {
     const { make } = evalAot(

@@ -579,6 +579,50 @@ describe('SSR → hydrate parity (each per-row reconciliation)', () => {
 // ---------------------------------------------------------------------------
 
 describe('SSR → hydrate parity (when/match per-case adoption)', () => {
+  it.each([false, true])(
+    'when(): adopts fragment siblings containing a nested %s branch',
+    async (initial) => {
+      const outer = state(true);
+      const inner = state(initial);
+      const label = state('Member');
+      const App = (h: AnyHtml) => {
+        const cond = h === (ssrHtml as AnyHtml) ? whenSSR : when;
+        return h`<section>${cond(
+          () => outer(),
+          () =>
+            h`<div class="identity">${() => label()}</div>${cond(
+              () => inner(),
+              () => h`<button>Details</button>`,
+            )}<p class="tail">Tail</p>`,
+        )}</section>`;
+      };
+      const host = document.createElement('div');
+      host.innerHTML = await renderToString(() => App(ssrHtml as AnyHtml));
+      const section = host.firstChild;
+      const identity = host.querySelector('.identity');
+      const tail = host.querySelector('.tail');
+      const button = host.querySelector('button');
+      hydrate(host, () => App(clientHtml as AnyHtml) as Node);
+      expect(host.firstChild).toBe(section);
+      expect(host.querySelector('.identity')).toBe(identity);
+      expect(host.querySelector('.tail')).toBe(tail);
+      if (initial) expect(host.querySelector('button')).toBe(button);
+      label('Updated');
+      inner(!initial);
+      await Promise.resolve();
+      expect(identity?.textContent).toBe('Updated');
+      expect(!!host.querySelector('button')).toBe(!initial);
+      inner(initial);
+      outer(false);
+      await Promise.resolve();
+      expect(host.querySelector('.identity')).toBeNull();
+      outer(true);
+      await Promise.resolve();
+      expect(host.querySelector('.identity')).toBe(identity);
+      expect(host.querySelector('.tail')).toBe(tail);
+    },
+  );
+
   it('when(): preserves the SSR-rendered branch DOM through hydration', async () => {
     const ok = state(true);
     const App = (h: AnyHtml) => {

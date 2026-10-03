@@ -1744,13 +1744,20 @@ function parseSSRMatchBoundary(contNodes: Node[]): SSRMatchBoundary {
     i++;
   }
 
+  let depth = 1;
   while (i < contNodes.length) {
     const n = contNodes[i];
-    if (n.nodeType === 8 && (n as Comment).data === '/m') {
-      endMarker = n as Comment;
-      boundaryNodes.push(n);
-      i++;
-      break;
+    if (n.nodeType === 8) {
+      const data = (n as Comment).data;
+      // Fragment views can contain nested match boundaries as siblings.
+      // Their markers belong to the inner view, including an empty case.
+      if (data === 'm' || data.startsWith('m:')) depth++;
+      else if (data === '/m' && --depth === 0) {
+        endMarker = n as Comment;
+        boundaryNodes.push(n);
+        i++;
+        break;
+      }
     }
     inner.push(n);
     i++;

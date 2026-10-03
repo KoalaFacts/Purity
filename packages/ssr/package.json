@@ -1,6 +1,6 @@
 {
   "name": "@purityjs/ssr",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Server-side rendering for Purity — renderToString + SSR html`` tag",
   "keywords": [
     "declarative-shadow-dom",

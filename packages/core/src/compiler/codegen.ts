@@ -334,6 +334,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
       const fl = `_xf${id}`;
       const tn = `_tn${id}`;
       const w = `_w${id}`;
+      const depth = `_depth${id}`;
       const val = `_v[${node.index}]`;
 
       // Cursor is on the open marker `<!--[-->`. Walk siblings until we hit
@@ -342,8 +343,9 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         `_c&&_c(${cursor},'open');`,
         `var ${open}=${cursor};`,
         `var ${cont}=[];`,
+        `var ${depth}=1;`,
         `var ${w}=${open}.nextSibling;`,
-        `while(${w}&&!(${w}.nodeType===8&&${w}.data===']')){${cont}.push(${w});${w}=${w}.nextSibling;}`,
+        `while(${w}){if(${w}.nodeType===8){if(${w}.data==='[')${depth}++;else if(${w}.data===']'&&--${depth}===0)break;}${cont}.push(${w});${w}=${w}.nextSibling;}`,
         `var ${close}=${w};`,
       );
 

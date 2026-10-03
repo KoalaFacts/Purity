@@ -69,6 +69,8 @@ describe('AOT output runs correctly under jsdom', () => {
       'html`<button onclick=${handler}>go</button>`',
       'html`<x-widget onclick=${handler}></x-widget>`',
       'html`<section>${html`<iframe srcdoc=${value}></iframe>`}</section>`',
+      'html`<script>${value}</script>`',
+      'html`<section>${html`<script>${value}</script>`}</section>`',
     ]) {
       expect(() =>
         plugin.transform(

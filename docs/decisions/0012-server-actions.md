@@ -30,6 +30,14 @@ be while still being useful.
 
 ## Decision
 
+**Security update (2026-10-03):** `handleAction()` now rejects matched mutations
+unless `Origin` equals the HTTP(S) request origin, and rejects cross-site Fetch
+Metadata. Missing origins fail closed with 403. API clients send Origin
+explicitly. Adapters construct the URL from a trusted public origin; handlers
+still own authentication and authorization. The initial Phase 1 deferral below
+applies to token generation/verification, not this default origin boundary.
+See [security boundaries](../security.md) for direct-invocation limitations.
+
 **Ship three exports in `@purityjs/core`: `serverAction(url, handler)`,
 `findAction(request)`, and `handleAction(request)`.** No CSRF
 machinery, no auto-serialization, no client-side `invoke` helper — just

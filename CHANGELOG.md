@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.3.2 — 2026-10-03
+
+Coordinated security patch for `@purityjs/core`, `@purityjs/ssr`,
+`@purityjs/vite-plugin`, and `@purityjs/cli`.
+
+### Security fixes
+
+- SSR HTML wrappers require private registration. JSON payloads, structural
+  copies, proxies, and prototype inheritance cannot grant raw HTML permission.
+- Dynamic inline event handlers and `srcdoc` bindings fail compilation,
+  including custom elements and nested AOT templates. URL attribute bindings
+  and native URL properties reject executable schemes before assignment.
+- Client builds reject server-only asset and worker imports, `new URL()` asset
+  references, and CSS URL references. Production regressions cover inline and
+  emitted assets, explicit query flags, library output, and dynamic URL globs.
+- CSS URL inspection uses a forward scanner to avoid regex backtracking on
+  long, malformed values.
+
+### Upgrade notes
+
+- Update the Purity packages together to 0.3.2, rebuild both client and server
+  artifacts, and redeploy. SSR and Vite plugin now require core `^0.3.2`;
+  newly scaffolded projects use the same version range.
+- Use `@event` listeners instead of dynamic `on*` bindings. Review any dynamic
+  `srcdoc` use and manual `__purity_ssr_html__` objects. `markSSRHtml()` is an
+  explicit trusted-markup API, not a sanitizer; wrappers remain module-instance
+  scoped.
+- Custom-element property bindings preserve typed objects and accessors.
+  Components must validate inputs before forwarding them to native URL or HTML
+  sinks. Literal templates and explicit raw DOM APIs remain application trust
+  boundaries. See [rendering security](docs/security.md) for the checked scope.
+
+## 0.3.1 — 2026-10-03
+
+- Balance nested fragment markers when hydrating template arrays so the built
+  SSR starter retains its existing nodes and first interaction.
+- Scaffold the matching package versions and verify published CLI projects.
+
 ## 0.3.0 — 2026-10-03
 
 Coordinated release of `@purityjs/core`, `@purityjs/ssr`,

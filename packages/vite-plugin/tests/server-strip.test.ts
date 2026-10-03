@@ -203,6 +203,12 @@ describe('server-only production output boundary', () => {
     }
   });
 
+  it('handles long unterminated CSS URLs without regex backtracking', () => {
+    expect(
+      purity().transform('.x { background: url(' + ' '.repeat(100000), 'style.css'),
+    ).toBeNull();
+  });
+
   it('rejects dynamic new-URL globs and emitted server assets', () => {
     const plugin = purity();
     expect(() =>

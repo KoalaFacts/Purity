@@ -74,8 +74,29 @@ function rejectServerAssetPath(path: string): void {
 // Vite's new-URL and CSS asset pipelines can read files without module load hooks.
 function checkAssetReferences(code: string, id: string): void {
   if (/\.(?:css|scss|sass|less|styl|stylus)(?:\?|$)/.test(id)) {
-    for (const match of code.matchAll(/url\(\s*(['"]?)(.*?)\1\s*\)/gi)) {
-      const path = match[2]!
+    // Advance past each URL once, including malformed or unterminated values.
+    const urls = /url\(/gi;
+    while (urls.exec(code)) {
+      let pos = urls.lastIndex;
+      while (pos < code.length && /\s/.test(code[pos]!)) pos++;
+      const quote = code[pos] === '"' || code[pos] === "'" ? code[pos++] : '';
+      const start = pos;
+      while (pos < code.length) {
+        if (code[pos] === '\\') {
+          pos += 2;
+          continue;
+        }
+        if (code[pos] === (quote || ')')) break;
+        pos++;
+      }
+      const raw = code.slice(start, pos);
+      if (quote && pos < code.length) {
+        pos++;
+        while (pos < code.length && /\s/.test(code[pos]!)) pos++;
+      }
+      urls.lastIndex = Math.min(pos + 1, code.length);
+      if (pos >= code.length || code[pos] !== ')') continue;
+      const path = raw
         .trim()
         .replace(/\\([\da-f]{1,6})\s?|\\(.)/gi, (_match, hex, char) =>
           hex ? String.fromCodePoint(Number.parseInt(hex, 16)) : char,

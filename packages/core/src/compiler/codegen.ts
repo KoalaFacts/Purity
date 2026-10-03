@@ -10,6 +10,17 @@
 
 import type { ASTNode, AttributeNode, FragmentNode } from './ast.ts';
 
+// JSON quoting protects JavaScript syntax; HTML delimiters must also be escaped
+// when a caller embeds generated code in an inline script. This only runs at
+// compile time, and evaluating the literal preserves the original string.
+function jsString(value: string): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
 function escapeHtml(s: string): string {
   // OWASP five-character set so the helper is safe in attribute contexts too.
   return s
@@ -43,18 +54,18 @@ function escapeAttr(s: string): string {
 //     identifier or single-quoted string — no dots, brackets, quotes,
 //     parentheses, semicolons, whitespace, or control chars. Anything
 //     non-conforming throws at compile time.
-//   * Names are additionally passed through JSON.stringify at every
+//   * Names are additionally passed through jsString at every
 //     emission site (qname / qevt / json-quoted tag), and used as
 //     bracket-notation property keys (`_e[${qname}]`) rather than dot
 //     access. Layered defense: even if the regex were ever loosened,
 //     the splices still produce well-formed string literals.
 //   * String LITERAL values (text content, attribute values) are
-//     JSON.stringify'd before splicing.
+//     JSON quoted and HTML-delimiter escaped by jsString before splicing.
 //   * Variables like `_v[N]`, `_av${id}`, `_n${id}` are framework-
 //     internal identifiers, not user data.
 //
-// CodeQL's data-flow analysis cannot follow the regex + JSON.stringify
-// reasoning, so the relevant return statements carry a per-line
+// CodeQL's code-injection analysis cannot follow the validated-name contract
+// in every emitter, so the relevant return statements carry a per-line
 // suppression directive pointing back here.
 // ---------------------------------------------------------------------------
 
@@ -258,7 +269,7 @@ export function generate(ast: FragmentNode): string {
   return [
     '(function(){',
     `var _t=document.createElement('template');`,
-    `_t.innerHTML=${JSON.stringify(html)};`,
+    `_t.innerHTML=${jsString(html)};`,
     templatePrep,
     'return function(_v,_w){',
     'var _r=_t.content.cloneNode(true);',
@@ -373,7 +384,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
       // same structural slot). Codegen safety: JSON.stringify of an AST
       // string literal — the same form used everywhere else in this file.
       ctx.setup.push(
-        `_c&&_c(${cursor},'text',${JSON.stringify(node.value)});`,
+        `_c&&_c(${cursor},'text',${jsString(node.value)});`,
         `${cursor}=${cursor}.nextSibling;`,
       );
       return;
@@ -471,7 +482,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
       assertSafeName(node.tag, 'tag');
       const id = ctx.id++;
       const el = `_el${id}`;
-      ctx.setup.push(`_c&&_c(${cursor},${JSON.stringify(node.tag.toLowerCase())});`);
+      ctx.setup.push(`_c&&_c(${cursor},${jsString(node.tag.toLowerCase())});`);
       ctx.setup.push(`var ${el}=${cursor};`);
 
       // Apply attribute bindings — events install listeners; dynamic/prop/
@@ -543,17 +554,15 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
   const setupParts: string[] = [];
   const reactiveParts: string[] = [];
 
-  setupParts.push(`var _e=document.createElement(${JSON.stringify(tpl.tag)});`);
+  setupParts.push(`var _e=document.createElement(${jsString(tpl.tag)});`);
 
   // Static attributes
   for (const a of tpl.staticAttrs) {
     if (a.name === 'id' || a.name === 'class') {
       const prop = a.name === 'class' ? 'className' : 'id';
-      setupParts.push(`_e.${prop}=${JSON.stringify(a.value)};`);
+      setupParts.push(`_e.${prop}=${jsString(a.value)};`);
     } else {
-      setupParts.push(
-        `_e.setAttribute(${JSON.stringify(a.name)},${JSON.stringify(a.value || '')});`,
-      );
+      setupParts.push(`_e.setAttribute(${jsString(a.name)},${jsString(a.value || '')});`);
     }
   }
 
@@ -567,7 +576,7 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
   for (const ch of tpl.children) {
     if (ch.type === 'text') {
       if (ch.value !== '') {
-        setupParts.push(`_e.appendChild(document.createTextNode(${JSON.stringify(ch.value)}));`);
+        setupParts.push(`_e.appendChild(document.createTextNode(${jsString(ch.value)}));`);
       }
     } else if (ch.type === 'expression') {
       const val = `_v[${ch.index}]`;
@@ -639,27 +648,27 @@ function genStaticDOM(
     case 'text': {
       const id = `_n${counter.n++}`;
       stmts.push(
-        `var ${id}=document.createTextNode(${JSON.stringify(node.value)});${parent}.appendChild(${id});`,
+        `var ${id}=document.createTextNode(${jsString(node.value)});${parent}.appendChild(${id});`,
       );
       break;
     }
     case 'comment': {
       const id = `_n${counter.n++}`;
       stmts.push(
-        `var ${id}=document.createComment(${JSON.stringify(node.value)});${parent}.appendChild(${id});`,
+        `var ${id}=document.createComment(${jsString(node.value)});${parent}.appendChild(${id});`,
       );
       break;
     }
     case 'element': {
       assertSafeName(node.tag, 'tag');
       const id = `_n${counter.n++}`;
-      stmts.push(`var ${id}=document.createElement(${JSON.stringify(node.tag)});`);
+      stmts.push(`var ${id}=document.createElement(${jsString(node.tag)});`);
       for (const a of node.attributes) {
         if (a.kind === 'static') {
           stmts.push(
             a.value
-              ? `${id}.setAttribute(${JSON.stringify(a.name)},${JSON.stringify(a.value)});`
-              : `${id}.setAttribute(${JSON.stringify(a.name)},'');`,
+              ? `${id}.setAttribute(${jsString(a.name)},${jsString(a.value)});`
+              : `${id}.setAttribute(${jsString(a.name)},'');`,
           );
         }
       }
@@ -952,7 +961,7 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
   const av = `_av${id}`;
   const fl = `_af${id}`;
   const val = `_v[${attr.index}]`;
-  const qname = JSON.stringify(attr.name);
+  const qname = jsString(attr.name);
   // Custom-element properties are typed component data, not native URL sinks.
   const propertyValue = (expr: string): string =>
     tag.includes('-') ? expr : safeBindingValue(attr.name, expr);
@@ -1018,7 +1027,7 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
       // The setup includes both. Folding doesn't help here because the
       // listener is per-input.
       const evt = attr.name === 'checked' || attr.name === 'group' ? 'change' : 'input';
-      const qevt = JSON.stringify(evt);
+      const qevt = jsString(evt);
       if (attr.name === 'group') {
         return {
           setup: [
@@ -1084,7 +1093,7 @@ export function generateSSR(ast: FragmentNode): string {
     // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
     return [
       '(function(){var _s;return function(_v,_h){return _s||(_s=_h.mark(',
-      JSON.stringify(html),
+      jsString(html),
       '));};})()',
     ].join('');
   }
@@ -1134,11 +1143,11 @@ function emitLit(ctx: SSRGenCtx, html: string): void {
   const prefix = `${ctx.out}+=`;
   if (ctx.lastLitHtml !== null) {
     const merged = ctx.lastLitHtml + html;
-    ctx.parts[ctx.parts.length - 1] = `${prefix}${JSON.stringify(merged)};`;
+    ctx.parts[ctx.parts.length - 1] = `${prefix}${jsString(merged)};`;
     ctx.lastLitHtml = merged;
     return;
   }
-  ctx.parts.push(`${prefix}${JSON.stringify(html)};`);
+  ctx.parts.push(`${prefix}${jsString(html)};`);
   ctx.lastLitHtml = html;
 }
 
@@ -1212,7 +1221,7 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
   pushRaw(ctx, `var ${attrsVar}={};`);
   for (const a of node.attributes) {
     if (a.kind === 'static') {
-      pushRaw(ctx, `${attrsVar}[${JSON.stringify(a.name)}]=${JSON.stringify(a.value)};`);
+      pushRaw(ctx, `${attrsVar}[${jsString(a.name)}]=${jsString(a.value)};`);
       continue;
     }
     if (a.kind === 'event') continue;
@@ -1229,7 +1238,7 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
       const bv = `_b${a.index}`;
       pushRaw(
         ctx,
-        `var ${bv}=_v[${a.index}];if(typeof ${bv}==='function')${bv}=${bv}();${attrsVar}[${JSON.stringify(a.name)}]=!!${bv};`,
+        `var ${bv}=_v[${a.index}];if(typeof ${bv}==='function')${bv}=${bv}();${attrsVar}[${jsString(a.name)}]=!!${bv};`,
       );
     } else {
       const val = `_v[${a.index}]`;
@@ -1237,7 +1246,7 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
         a.kind === 'dynamic' && URL_BINDINGS.has(a.name.toLowerCase())
           ? safeBindingValue(a.name, `(typeof ${val}==='function'?${val}():${val})`)
           : val;
-      pushRaw(ctx, `${attrsVar}[${JSON.stringify(a.name)}]=${resolved};`);
+      pushRaw(ctx, `${attrsVar}[${jsString(a.name)}]=${resolved};`);
     }
   }
 
@@ -1249,7 +1258,7 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
   for (const ch of node.children) buildSSRBody(ch, ctx);
   ctx.out = prevOut;
 
-  pushRaw(ctx, `${ctx.out}+=_h.element(${JSON.stringify(node.tag)},${attrsVar},${slotVar});`);
+  pushRaw(ctx, `${ctx.out}+=_h.element(${jsString(node.tag)},${attrsVar},${slotVar});`);
 }
 
 // DOM properties that do NOT reflect to a same-named HTML attribute. For
@@ -1279,7 +1288,7 @@ function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx, node: import('./ast.ts').
   // Pre-escape the leading space + name once at codegen time. The trailing
   // `="..."` is appended at runtime so we can omit the attribute when the
   // value resolves to null/false.
-  const namePrefix = JSON.stringify(` ${a.name}`);
+  const namePrefix = jsString(` ${a.name}`);
 
   switch (a.kind) {
     case 'event':
@@ -1359,7 +1368,7 @@ function emitGroupBindSSR(
 
   const id = ctx.counter++;
   const gv = `_g${id}`;
-  const qval = JSON.stringify(value);
+  const qval = jsString(value);
   // Resolve the signal (call accessor if function) once.
   pushRaw(ctx, `var ${gv}=${`_v[${a.index}]`};if(typeof ${gv}==='function')${gv}=${gv}();`);
   const selected =

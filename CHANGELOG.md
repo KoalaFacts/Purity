@@ -4,6 +4,8 @@
 
 ### Security
 
+- Escape HTML delimiters and Unicode line separators in generated JavaScript
+  string literals so inline embedding cannot terminate the enclosing script.
 - Reject dynamic script source and script content property bindings in runtime,
   AOT, SSR, and hydration compilation, including nested templates.
 - Enforce same-origin `Origin` and reject cross-site Fetch Metadata before

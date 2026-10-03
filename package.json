@@ -50,7 +50,8 @@
     "undici": "^7.30.0",
     "vercel": {
       "esbuild": "^0.28.2",
-      "js-yaml": "^4.3.2"
+      "js-yaml": "^4.3.2",
+      "ts-morph": "28.0.0"
     },
     "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
     "vitest": "5.0.2"

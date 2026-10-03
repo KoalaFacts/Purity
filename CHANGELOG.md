@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.3.0 — 2026-10-03
+
+Coordinated release of `@purityjs/core`, `@purityjs/ssr`,
+`@purityjs/vite-plugin`, and `@purityjs/cli`.
+
+### Added
+
+- A deployable `--app` starter with route render modes, SSR streaming, static
+  generation, route response metadata, and forms connected to Server Actions.
+- Progressive form enhancement with pending state, duplicate submission
+  prevention, field errors, cancellation, query refresh, and action redirects.
+- Automatic visible-row rendering for `each()` and an opt-in development
+  reactive graph panel through `purity({ devtools: true })`.
+- Reproducible production bundle budgets, browser checks, and memory retention
+  checks for the inspector, client components, and SSR boundaries.
+
+### Fixed and improved
+
+- Template arrays hydrate against existing server-rendered nodes. This includes
+  the fix required by source-linked consumers such as Press Floor.
+- Node client disconnects, render deadlines, and independent Suspense deadlines
+  cancel route loaders and async resources.
+- Streaming respects backpressure, encodes output incrementally, and releases
+  consumed boundary callbacks and shell snapshots.
+- WebSocket state survives back/forward cache reconnection, and control-flow
+  hydration callbacks register on demand.
+- The workspace toolchain uses Vite+ 1.0 and Vitest 5.
+
+### Upgrade notes
+
+- Update all four packages together to 0.3.0. The SSR and Vite plugin packages
+  now require `@purityjs/core` `^0.3.0`; generated projects use the same range.
+- The API remains pre-1.0. Review the route, form, SSR, and debugging guides
+  before adopting the new options.
+- Production bundle figures describe the checked fixtures. Control-flow and
+  hydration AOT bundles still retain JIT fallback dependencies; this release
+  does not claim a universal size or speed advantage.
+
 ## 0.2.4 — 2026-09-27
 
 Ship the AOT hydration fix merged after 0.2.3: production SSR projects now

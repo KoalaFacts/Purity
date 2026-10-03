@@ -54,9 +54,9 @@ const pluginDir = resolve(import.meta.dirname, '../../vite-plugin');
 const ssrDir = resolve(import.meta.dirname, '../../ssr');
 const isLocal = existsSync(resolve(coreDir, 'src/index.ts'));
 
-const coreDep = isLocal ? `file:${coreDir}` : '^0.2.4';
-const pluginDep = isLocal ? `file:${pluginDir}` : '^0.2.4';
-const ssrDep = isLocal ? `file:${ssrDir}` : '^0.2.4';
+const coreDep = isLocal ? `file:${coreDir}` : '^0.3.0';
+const pluginDep = isLocal ? `file:${pluginDir}` : '^0.3.0';
+const ssrDep = isLocal ? `file:${ssrDir}` : '^0.3.0';
 
 console.log(`\n  Creating ${projectName}${appMode ? ' (app)' : ssrMode ? ' (SSR)' : ''}...`);
 if (isLocal) console.log('  Using local packages from monorepo');

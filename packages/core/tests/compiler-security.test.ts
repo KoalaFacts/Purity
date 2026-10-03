@@ -7,6 +7,17 @@ const immediate = (fn: () => void) => fn();
 const factory = (code: string) => new Function(`return ${code}`)();
 
 describe('executable template bindings', () => {
+  it('keeps generated string literals inside an inline script boundary', () => {
+    const payload = '</script><script>globalThis.__purityLiteralAttack=1</script><!--';
+    const ast = parse([`<p title="${payload}">`, '</p>']);
+    for (const compile of [generate, generateHydrate, generateSSR]) {
+      const code = compile(ast);
+      expect(code).not.toMatch(/<\/script/i);
+      expect(typeof factory(code)).toBe('function');
+    }
+    expect(factory(generate(ast))(['safe'], immediate).getAttribute('title')).toBe(payload);
+  });
+
   it.each(['script', 'SCRIPT'])('rejects interpolated %s source in every compiler path', (tag) => {
     const ast = parse([`<main><${tag}>`, `</${tag}></main>`]);
     for (const compile of [generate, generateHydrate, generateSSR]) {

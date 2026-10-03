@@ -111,6 +111,8 @@ try {
   const ast = parse(['<a href=', '>go</a>']);
   const client = generate(ast);
   const hydrate = generateHydrate(ast);
+  const inlinePayload = '</script><script>globalThis.__purityLiteralAttack=1</script><!--';
+  const inlineFactory = generate(parse([`<p title="${inlinePayload}">`, '</p>']));
   for (const browserType of [chromium, firefox, webkit]) {
     const browser = await browserType.launch();
     try {
@@ -121,6 +123,26 @@ try {
         undefined,
       );
       assert.equal(await page.locator('strong').textContent(), 'safe');
+      await page.setContent(`<script>globalThis.__purityInlineFactory=${inlineFactory};</script>`);
+      assert.equal(
+        await page.evaluate(
+          () => (globalThis as { __purityLiteralAttack?: number }).__purityLiteralAttack,
+        ),
+        undefined,
+      );
+      const literalTitle = await page.evaluate(() => {
+        const render = (
+          globalThis as {
+            __purityInlineFactory?: (
+              values: unknown[],
+              watch: (fn: () => void) => void,
+            ) => HTMLElement;
+          }
+        ).__purityInlineFactory;
+        if (!render) throw new Error('Inline factory was not installed');
+        return render(['safe'], (fn) => fn()).getAttribute('title');
+      });
+      assert.equal(literalTitle, inlinePayload);
       const result = await page.evaluate(
         ({ client, hydrate }) => {
           const immediate = (fn: () => void) => fn();

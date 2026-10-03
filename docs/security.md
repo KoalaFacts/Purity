@@ -2,6 +2,11 @@
 
 ## Template data
 
+Generated JavaScript string literals escape HTML delimiters and Unicode line
+separators as well as quotes and backslashes. Embedding compiler output in an
+inline script cannot turn literal `</script>` data into an HTML closing tag.
+Applications must still control which executable code they embed and apply CSP.
+
 Interpolate validated data fields into text slots. Ordinary objects are rendered
 as text; a JSON property cannot grant permission to emit raw HTML. Framework
 templates and control flow produce privately registered, immutable HTML wrappers.

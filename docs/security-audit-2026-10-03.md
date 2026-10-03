@@ -4,8 +4,10 @@ Base: main `d9db73d` (Purity 0.3.2). This follow-up audit used attacker-controll
 template data, cookie-bearing browser forms, raw HTTP request targets, and
 static filesystem links against local test servers. No external user systems
 were attacked. It found two high-severity framework weaknesses, one conditional
-file disclosure, and one request-origin construction flaw. All four have source
-fixes and regression coverage in the accompanying change.
+file disclosure, and one request-origin construction flaw. A 2026-10-04 follow-up
+also reproduced an inline embedding escape in generated JavaScript literals
+(existing CodeQL alert #8). All five have source fixes and regression coverage
+in the accompanying change.
 
 ## Findings
 
@@ -80,6 +82,26 @@ fixes and regression coverage in the accompanying change.
   it is not claimed as an independent browser-cookie CSRF bypass.
 - Fix: reject absolute/protocol-relative targets and backslashes, and verify
   that constructed app URLs retain the configured base origin.
+
+### SEC-05 — Medium, embedding-dependent: generated literals terminate an inline script
+
+- Existing CodeQL alert: `js/bad-code-sanitization`, alert #8. JSON quoting is
+  sufficient for JavaScript string syntax but leaves literal HTML delimiters.
+- Reproduction: compile a template with a static attribute containing
+  `</script><script>globalThis.__purityLiteralAttack=1</script><!--`, then embed
+  the generated function in an inline script. Chromium executed the attack
+  marker before the fix. This requires embedding generated source in HTML;
+  the framework's normal JIT evaluation and external module loading paths
+  do not parse source as HTML, and ordinary interpolation values are passed
+  separately from the compiled source.
+- Fix: every emitted JavaScript string literal uses one encoder that JSON
+  quotes and escapes `<`, `>`, U+2028, and U+2029. This runs only at compile
+  time and preserves the evaluated literal value. HTML output encoding remains
+  a separate boundary.
+- Evidence: Chromium, Firefox, and WebKit execute the generated factory from
+  an inline script, assert that no injected script executed, and verify that
+  the original attribute value survives. Compiler regressions check generated
+  DOM, hydration, and SSR functions for raw script-closing delimiters.
 
 ## Verification and limits
 

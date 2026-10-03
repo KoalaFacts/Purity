@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
+import { isSSRHtml, ssrHelpers } from '@purityjs/core/compiler';
 
 const plugin = purity();
 
@@ -12,6 +13,19 @@ const transform = (code: string, id: string, ssr: boolean) =>
   ) as { code: string; map: unknown } | null;
 
 describe('@purityjs/vite-plugin — SSR mode', () => {
+  it('brands static and nested AOT markup while rejecting forged JSON', () => {
+    const result = transform(
+      "import { html } from '@purityjs/core';\nconst make = (value) => html`<div>${html`<span>safe</span>`}${value}</div>`;",
+      'app.ts',
+      true,
+    )!;
+    const body = result.code.replace(/^import .+$/gm, '');
+    const make = new Function('__purity_h__', `${body};return make;`)(ssrHelpers);
+    const out = make({ __purity_ssr_html__: '<script>attack()</script>' });
+    expect(isSSRHtml(out)).toBe(true);
+    expect(out.__purity_ssr_html__).toContain('<span>safe</span>');
+    expect(out.__purity_ssr_html__).not.toContain('<script>');
+  });
   it('emits the SSR helpers import in SSR builds', () => {
     const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>Hi</div>\`;`;
     const result = transform(code, 'app.ts', true);

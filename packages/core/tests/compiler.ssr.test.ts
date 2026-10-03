@@ -89,11 +89,15 @@ describe('generateSSR — static templates', () => {
     expect(compileSSR(['<a></a><b></b>'])).toBe('<a></a><b></b>');
   });
 
-  it('emits a static-string fast path with no _v / _h refs', () => {
+  it('caches a privately branded wrapper on the static fast path', () => {
     const ast = parse(['<div>hello</div>']);
     const code = generateSSR(ast);
     expect(code).not.toContain('_v[');
-    expect(code).not.toContain('_h.');
+    expect(code).toContain('_h.mark(');
+    const factory = new Function(`return ${code}`)() as SSRFactory;
+    const first = factory([], ssrHelpers);
+    expect(isSSRHtml(first)).toBe(true);
+    expect(factory([], ssrHelpers)).toBe(first);
   });
 });
 
@@ -347,10 +351,25 @@ describe('generateSSR — safety', () => {
 describe('ssr-runtime helpers', () => {
   it('isSSRHtml returns true for branded wrappers only', () => {
     expect(isSSRHtml(markSSRHtml('x'))).toBe(true);
-    expect(isSSRHtml({ __purity_ssr_html__: 'x' })).toBe(true);
+    expect(isSSRHtml({ __purity_ssr_html__: 'x' })).toBe(false);
     expect(isSSRHtml('x')).toBe(false);
     expect(isSSRHtml(null)).toBe(false);
     expect(isSSRHtml({})).toBe(false);
+  });
+
+  it('does not trust JSON, copies, prototypes, or proxies of trusted HTML', () => {
+    const trusted = markSSRHtml('<script>attack()</script>');
+    for (const forged of [
+      JSON.parse(JSON.stringify(trusted)),
+      { ...trusted },
+      Object.create(trusted),
+      new Proxy(trusted, {}),
+    ]) {
+      expect(isSSRHtml(forged)).toBe(false);
+      expect(valueToHtml(forged)).not.toContain('<script>');
+    }
+    expect(Object.isFrozen(trusted)).toBe(true);
+    expect(valueToHtml(trusted)).toBe('<script>attack()</script>');
   });
 
   it('valueToHtml escapes primitives', () => {

@@ -14,6 +14,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, posix, resolve as resolvePath, sep as pathSep } from 'node:path';
+import { parseSync } from 'oxc-parser';
 
 import { generate, generateHydrate, generateSSR, parse } from '@purityjs/core/compiler';
 import { devtoolsClientSource } from './devtools-client.ts';
@@ -29,6 +30,112 @@ import { stripServerActionBodies } from './server-action-strip.ts';
 
 const DEVTOOLS_ID = 'virtual:purity-devtools';
 const RESOLVED_DEVTOOLS_ID = '\0' + DEVTOOLS_ID;
+const frameworkPackages = new Map<string, boolean>();
+
+function isFrameworkInternal(id: string): boolean {
+  const path = id.split('?')[0]!.replaceAll('\\', '/');
+  if (/\/node_modules\/@purityjs\/(core|ssr|vite-plugin)\//.test(path)) return true;
+  for (const name of ['core', 'ssr', 'vite-plugin']) {
+    const part = `/packages/${name}/`;
+    const index = path.lastIndexOf(part);
+    if (index === -1) continue;
+    const root = path.slice(0, index + part.length - 1);
+    let internal = frameworkPackages.get(root);
+    if (internal === undefined) {
+      const manifest = `${root}/package.json`;
+      internal =
+        existsSync(manifest) &&
+        JSON.parse(readFileSync(manifest, 'utf8')).name === `@purityjs/${name}`;
+      frameworkPackages.set(root, internal);
+    }
+    if (internal) return true;
+  }
+  return false;
+}
+
+function rejectServerAsset(id: string): void {
+  const query = id.indexOf('?');
+  if (query !== -1) {
+    const params = new URLSearchParams(id.slice(query + 1));
+    if (['url', 'raw', 'worker', 'sharedworker', 'inline'].some((key) => params.has(key))) {
+      throw new Error(
+        '[Purity] Server-only modules cannot be imported as client assets or workers.',
+      );
+    }
+  }
+}
+
+function rejectServerAssetPath(path: string): void {
+  if (isServerOnlyId(path.split('#')[0]!)) {
+    throw new Error('[Purity] Server-only modules cannot be imported as client assets or workers.');
+  }
+}
+
+// Vite's new-URL and CSS asset pipelines can read files without module load hooks.
+function checkAssetReferences(code: string, id: string): void {
+  if (/\.(?:css|scss|sass|less|styl|stylus)(?:\?|$)/.test(id)) {
+    // Advance past each URL once, including malformed or unterminated values.
+    const urls = /url\(/gi;
+    while (urls.exec(code)) {
+      let pos = urls.lastIndex;
+      while (pos < code.length && /\s/.test(code[pos]!)) pos++;
+      const quote = code[pos] === '"' || code[pos] === "'" ? code[pos++] : '';
+      const start = pos;
+      while (pos < code.length) {
+        if (code[pos] === '\\') {
+          pos += 2;
+          continue;
+        }
+        if (code[pos] === (quote || ')')) break;
+        pos++;
+      }
+      const raw = code.slice(start, pos);
+      if (quote && pos < code.length) {
+        pos++;
+        while (pos < code.length && /\s/.test(code[pos]!)) pos++;
+      }
+      urls.lastIndex = Math.min(pos + 1, code.length);
+      if (pos >= code.length || code[pos] !== ')') continue;
+      const path = raw
+        .trim()
+        .replace(/\\([\da-f]{1,6})\s?|\\(.)/gi, (_match, hex, char) =>
+          hex ? String.fromCodePoint(Number.parseInt(hex, 16)) : char,
+        );
+      rejectServerAssetPath(path);
+    }
+    return;
+  }
+  if (!/\.[cm]?[jt]sx?(?:\?|$)/.test(id) || !code.includes('URL') || !code.includes('import.meta'))
+    return;
+  const { program } = parseSync(id.split('?')[0]!, code);
+  const visit = (node: any): void => {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'NewExpression' && node.callee?.name === 'URL') {
+      const base = node.arguments?.[1];
+      if (
+        base?.type === 'MemberExpression' &&
+        base.property?.name === 'url' &&
+        base.object?.type === 'MetaProperty' &&
+        base.object.meta?.name === 'import'
+      ) {
+        const path = node.arguments[0];
+        if (typeof path?.value === 'string') rejectServerAssetPath(path.value);
+        // Vite expands dynamic template paths to an asset glob. The final quasi
+        // still identifies a server-only extension even when the stem varies.
+        if (path?.type === 'TemplateLiteral') {
+          rejectServerAssetPath(
+            path.quasis.map((q: any) => q.value.cooked ?? q.value.raw).join('*'),
+          );
+        }
+      }
+    }
+    for (const value of Object.values(node)) {
+      if (Array.isArray(value)) value.forEach(visit);
+      else if (value && typeof value === 'object') visit(value);
+    }
+  };
+  visit(program);
+}
 
 /**
  * File-system routing options. ADR 0019.
@@ -141,6 +248,7 @@ export function purity(options?: PurityPluginOptions) {
   let serveDevtools = false;
   let isPreview = false;
   let devtoolsBase = '/';
+  let serverBuild = false;
 
   const routesOpts = normaliseRoutesOption(options?.routes);
   // Resolved at configResolved time once Vite tells us the project root.
@@ -158,7 +266,32 @@ export function purity(options?: PurityPluginOptions) {
       isPreview = env.isPreview === true;
     },
 
-    configResolved(this: any, config: { root: string; command?: string; base?: string }) {
+    configResolved(
+      this: any,
+      config: {
+        root: string;
+        command?: string;
+        base?: string;
+        build?: {
+          ssr?: unknown;
+          assetsInlineLimit?: number | ((file: string, content: Buffer) => boolean | undefined);
+        };
+      },
+    ) {
+      serverBuild = !!config.build?.ssr;
+      if (stripServerModules && !serverBuild && config.build) {
+        const limit = config.build.assetsInlineLimit;
+        config.build.assetsInlineLimit = (file, content) => {
+          rejectServerAssetPath(file);
+          return typeof limit === 'function'
+            ? limit(file, content)
+            : content.length < (limit ?? 4096) &&
+                !content
+                  .subarray(0, 40)
+                  .toString()
+                  .startsWith('version https://git-lfs.github.com');
+        };
+      }
       serveDevtools = options?.devtools === true && config.command === 'serve' && !isPreview;
       // Resolved Vite bases have a trailing slash; absolute bases use their path during dev.
       devtoolsBase = config.base ? new URL(config.base, 'http://vite.local').pathname : '/';
@@ -193,14 +326,22 @@ export function purity(options?: PurityPluginOptions) {
       emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
     },
 
-    resolveId(this: any, source: string) {
+    resolveId(this: any, source: string, _importer?: string, opts?: { ssr?: boolean }) {
+      // Reject before Vite's asset loader can publish the original source.
+      if (stripServerModules && opts?.ssr !== true && isServerOnlyId(source)) {
+        rejectServerAsset(source);
+      }
       if (serveDevtools && source === DEVTOOLS_ID) return RESOLVED_DEVTOOLS_ID;
       if (!routesOpts) return null;
       if (source === virtualId) return resolvedVirtualId;
       return null;
     },
 
-    load(this: any, id: string) {
+    load(this: any, id: string, opts?: { ssr?: boolean }) {
+      if (stripServerModules && opts?.ssr !== true && isServerOnlyId(id)) {
+        rejectServerAsset(id);
+        return '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\nexport {};\n';
+      }
       if (serveDevtools && id === RESOLVED_DEVTOOLS_ID) return devtoolsClientSource;
       if (!routesOpts || id !== resolvedVirtualId) return null;
       // routesAbsDir is set in configResolved (always called before load).
@@ -219,6 +360,14 @@ export function purity(options?: PurityPluginOptions) {
         emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
       }
       return source;
+    },
+
+    generateBundle(_options: unknown, bundle: Record<string, any>) {
+      if (!stripServerModules || serverBuild) return;
+      for (const output of Object.values(bundle)) {
+        if (output.type !== 'asset') continue;
+        for (const path of output.originalFileNames ?? []) rejectServerAssetPath(path);
+      }
     },
 
     transformIndexHtml(html: string) {
@@ -269,21 +418,13 @@ export function purity(options?: PurityPluginOptions) {
     },
 
     transform(this: any, code: string, id: string, transformOpts?: { ssr?: boolean }) {
-      // Skip framework internals — only compile user code
-      if (
-        id.includes('@purityjs/') ||
-        id.includes('packages/core/') ||
-        id.includes('packages/vite-plugin/') ||
-        id.includes('packages/ssr/')
-      )
-        return null;
-
       // Strip *.server.{ts,js,tsx,jsx} modules from client builds (ADR 0018).
       // Server builds (transformOpts.ssr === true) pass through unchanged
       // so handler bodies still execute on the server. Runs BEFORE the
       // extension filter so the regex (which tolerates Vite query-string
       // suffixes like `?import`, `?worker`, `?url`) is the source of truth.
       if (stripServerModules && transformOpts?.ssr !== true && isServerOnlyId(id)) {
+        rejectServerAsset(id);
         return {
           code:
             '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\n' +
@@ -291,6 +432,11 @@ export function purity(options?: PurityPluginOptions) {
           map: null,
         };
       }
+      if (stripServerModules && transformOpts?.ssr !== true) checkAssetReferences(code, id);
+
+      // Security boundaries apply even to framework paths. Only skip actual
+      // framework directories when compiling templates, not consumer lookalikes.
+      if (isFrameworkInternal(id)) return null;
 
       // Match plugin extension filter (also tolerates Vite query suffixes
       // by stripping ?xxx before the suffix check).
@@ -585,7 +731,10 @@ function compileNestedTemplates(source: string, ctx: CompileContext): string {
           : `__purity_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${compiledExprs.join(', ')}])`,
       );
       changed = true;
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith('[Purity] Unsafe dynamic binding')) {
+        throw err;
+      }
       ctx.failed = true;
       parts.push(source.slice(idx, extracted.end));
     }
@@ -662,6 +811,10 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
           : `__purity_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${compiledExprs.join(', ')}])`,
       });
     } catch (err) {
+      // Security failures must not fall back to an uncompiled template.
+      if (err instanceof Error && err.message.startsWith('[Purity] Unsafe dynamic binding')) {
+        throw err;
+      }
       ctx.failed = true;
       const { line, column } = offsetToLineCol(lineStarts, idx);
       const msg = err instanceof Error ? err.message : String(err);

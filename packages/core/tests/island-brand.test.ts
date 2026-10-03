@@ -1,3 +1,4 @@
+import { markSSRHtml } from '../src/compiler/ssr-runtime.ts';
 // @vitest-environment jsdom
 // Tests for `island(view, options)` — ADR 0038 Phase 1.
 //
@@ -118,9 +119,7 @@ describe('island() — SSR branch (synthetic context)', () => {
   }
 
   it('emits a <purity-island> wrapper around the rendered HTML', () => {
-    const View = (): { __purity_ssr_html__: string } => ({
-      __purity_ssr_html__: '<span>x</span>',
-    });
+    const View = () => markSSRHtml('<span>x</span>');
     const Wrapped = island(View);
     const result = withSsrCtx(() => Wrapped() as { __purity_ssr_html__: string });
     expect(result.__purity_ssr_html__).toBe(
@@ -129,18 +128,14 @@ describe('island() — SSR branch (synthetic context)', () => {
   });
 
   it('writes the option trigger into data-pi-trigger', () => {
-    const View = (): { __purity_ssr_html__: string } => ({
-      __purity_ssr_html__: '<i>x</i>',
-    });
+    const View = () => markSSRHtml('<i>x</i>');
     const Wrapped = island(View, { hydrate: 'visible' });
     const result = withSsrCtx(() => Wrapped() as { __purity_ssr_html__: string });
     expect(result.__purity_ssr_html__).toContain('data-pi-trigger="visible"');
   });
 
   it('escapes attribute-unsafe characters in media: triggers', () => {
-    const View = (): { __purity_ssr_html__: string } => ({
-      __purity_ssr_html__: 'x',
-    });
+    const View = () => markSSRHtml('x');
     // Real media queries don't contain `"`, but escAttr should still
     // neutralise the character should it appear.
     const Wrapped = island(View, { hydrate: 'media:(min-width: 768px) and ("foo")' });
@@ -149,9 +144,7 @@ describe('island() — SSR branch (synthetic context)', () => {
   });
 
   it('allocates a fresh ID per island and resets per render', () => {
-    const View = (): { __purity_ssr_html__: string } => ({
-      __purity_ssr_html__: 'x',
-    });
+    const View = () => markSSRHtml('x');
     const a = island(View);
     const b = island(View);
     const out = withSsrCtx(() => {
@@ -170,9 +163,7 @@ describe('island() — SSR branch (synthetic context)', () => {
     const Bad = (): { __purity_ssr_html__: string } => {
       throw new Error('boom');
     };
-    const Good = (): { __purity_ssr_html__: string } => ({
-      __purity_ssr_html__: '<span>ok</span>',
-    });
+    const Good = () => markSSRHtml('<span>ok</span>');
     const wrappedBad = island(Bad);
     const wrappedGood = island(Good);
     const ctx: SSRRenderContext = {

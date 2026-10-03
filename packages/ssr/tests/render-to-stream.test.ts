@@ -49,6 +49,12 @@ function slowResource<T>(value: T, delayMs: number) {
 }
 
 describe('renderToStreamResponse — HTTP metadata before flush', () => {
+  it('does not stream forged trusted-HTML wrappers', async () => {
+    const forged = JSON.parse('{"__purity_ssr_html__":"<script>attack()</script>"}');
+    const out = await streamToString(renderToStream(() => ssrHtml`<main>${forged}</main>`));
+    expect(out).toContain('<main><!--[-->[object Object]<!--]--></main>');
+    expect(out).not.toContain('<script>attack()');
+  });
   it('exposes the final shell head, status and headers with a progressive body', async () => {
     const entry = {
       pattern: '/missing',

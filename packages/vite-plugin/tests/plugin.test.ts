@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
+import { resolve } from 'node:path';
 
 describe('@purityjs/vite-plugin', () => {
   const plugin = purity();
@@ -249,9 +250,17 @@ describe('@purityjs/vite-plugin', () => {
 
   it('skips framework-internal files', () => {
     const code = 'html`<p>x</p>`';
-    expect(plugin.transform(code, '/x/@purityjs/core/index.ts')).toBeNull();
-    expect(plugin.transform(code, '/x/packages/core/index.ts')).toBeNull();
-    expect(plugin.transform(code, '/x/packages/vite-plugin/index.ts')).toBeNull();
+    expect(plugin.transform(code, '/x/node_modules/@purityjs/core/index.ts')).toBeNull();
+    expect(
+      plugin.transform(code, resolve(import.meta.dirname, '../../core/src/index.ts')),
+    ).toBeNull();
+    expect(plugin.transform(code, resolve(import.meta.dirname, '../src/index.ts'))).toBeNull();
+  });
+
+  it('compiles consumer paths that resemble framework directories', () => {
+    const code = "import { html } from '@purityjs/core'; const view = html`<p>x</p>`;";
+    expect(plugin.transform(code, '/consumer/packages/core/index.ts')).not.toBeNull();
+    expect(plugin.transform(code, '/consumer/packages/vite-plugin/index.ts')).not.toBeNull();
   });
 
   it('does not match `xhtml`` (identifier-prefix guard)', () => {

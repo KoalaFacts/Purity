@@ -11,26 +11,28 @@
 // `__purity_ssr_html__` brand: nested `html``, control-flow returns, and
 // component subtree results all carry this brand. valueToHtml() concatenates
 // branded values raw and escapes everything else, making HTML injection
-// impossible without explicit branding.
+// conditional on private provenance rather than a forgeable JSON property.
 // ---------------------------------------------------------------------------
 
 /** A string of pre-escaped, trusted HTML. Concatenated raw by valueToHtml. */
 export interface SSRHtml {
-  __purity_ssr_html__: string;
+  readonly __purity_ssr_html__: string;
 }
+
+// External JSON must never gain raw-HTML privileges by copying a public field.
+// Weak references allow wrappers to be collected after each render.
+const trustedHtml = new WeakSet<object>();
 
 /** Marks a string as already-escaped HTML safe to concatenate raw. */
 export function markSSRHtml(s: string): SSRHtml {
-  return { __purity_ssr_html__: s };
+  const wrapper = Object.freeze({ __purity_ssr_html__: s });
+  trustedHtml.add(wrapper);
+  return wrapper;
 }
 
 /** Type guard: true if x is a branded SSR HTML wrapper. */
 export function isSSRHtml(x: unknown): x is SSRHtml {
-  return (
-    x != null &&
-    typeof x === 'object' &&
-    typeof (x as { __purity_ssr_html__?: unknown }).__purity_ssr_html__ === 'string'
-  );
+  return x != null && typeof x === 'object' && trustedHtml.has(x);
 }
 
 /**

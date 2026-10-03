@@ -47,6 +47,41 @@ describe('AOT output runs correctly under jsdom', () => {
     expect(a).not.toBe(b);
   });
 
+  it('rejects executable URL values in AOT factories', () => {
+    const { make } = evalAot(
+      "import { html } from '@purityjs/core';\nconst make = (url) => html`<a href=${url}>go</a>`;",
+    );
+    expect(() => make('javascript:attack()')).toThrow(/Unsafe URL binding/);
+    expect((make('/safe') as HTMLAnchorElement).getAttribute('href')).toBe('/safe');
+  });
+
+  it('rejects dynamic inline handlers during AOT compilation', () => {
+    expect(() =>
+      plugin.transform(
+        "import { html } from '@purityjs/core'; const view = html`<button onclick=${handler}>go</button>`;",
+        'app.ts',
+      ),
+    ).toThrow(/Unsafe dynamic binding/);
+  });
+
+  it.each([false, true])('propagates nested unsafe bindings for SSR=%s', (ssr) => {
+    for (const nested of [
+      'html`<button onclick=${handler}>go</button>`',
+      'html`<x-widget onclick=${handler}></x-widget>`',
+      'html`<section>${html`<iframe srcdoc=${value}></iframe>`}</section>`',
+    ]) {
+      expect(() =>
+        plugin.transform(
+          "import { html } from '@purityjs/core'; const view = html`<div>${cond ? " +
+            nested +
+            ' : null}</div>`;',
+          'app.ts',
+          { ssr },
+        ),
+      ).toThrow(/Unsafe dynamic binding/);
+    }
+  });
+
   it('hoisted simple template (single element) still works', () => {
     const { make } = evalAot(
       `import { html } from '@purityjs/core';\nconst make = (text) => html\`<p>\${text}</p>\`;`,

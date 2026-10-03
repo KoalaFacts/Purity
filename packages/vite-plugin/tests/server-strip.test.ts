@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
+import { build } from 'vite';
 
 // Tests for the *.server.{ts,js,tsx,jsx} client-bundle strip — ADR 0018.
 
@@ -62,11 +63,75 @@ describe('server-module strip — default behavior', () => {
     expect((result as { code: string }).code).toContain('export {};');
   });
 
-  it('still skips framework internals even with .server.ts paths', () => {
-    // A file under @purityjs/ or packages/ssr/ keeps passing through unchanged
-    // (same precedence the existing template transform respects).
+  it('enforces the boundary before skipping framework or consumer paths', () => {
     const code = `import { foo } from 'x';`;
-    expect(transform(code, '/node_modules/@purityjs/ssr/dist/server-action.server.ts')).toBeNull();
+    for (const id of [
+      '/node_modules/@purityjs/ssr/dist/server-action.server.ts',
+      '/consumer/packages/core/auth.server.ts',
+      '/consumer/packages/ssr/auth.server.ts',
+      '/consumer/packages/vite-plugin/auth.server.ts',
+      '/node_modules/@purityjs/consumer/auth.server.ts',
+    ]) {
+      expect((transform(code, id) as { code: string }).code).toContain('export {};');
+    }
+  });
+});
+
+describe('server-only production output boundary', () => {
+  const marker = 'PURITY_SYNTHETIC_SERVER_SOURCE';
+  async function bundle(path: string, query = '', ssr = false, enabled = true) {
+    const entry = '/purity-security-fixture/main.js';
+    const server = `/purity-security-fixture/${path}.server.ts`;
+    const files = new Map([
+      [entry, `import ${JSON.stringify(server + query)}; console.log('client');`],
+      [server + query, `globalThis.__serverMarker = ${JSON.stringify(marker)};`],
+    ]);
+    return build({
+      configFile: false,
+      logLevel: 'silent',
+      plugins: [
+        purity({ stripServerModules: enabled }),
+        {
+          name: 'security-fixture',
+          resolveId: (id) =>
+            id.replaceAll('\\', '/').endsWith('/purity-security-fixture/main.js')
+              ? entry
+              : files.has(id)
+                ? id
+                : null,
+          load: (id) => files.get(id) ?? null,
+        },
+      ],
+      build: {
+        write: false,
+        minify: false,
+        ssr: ssr ? entry : false,
+        rolldownOptions: { input: entry },
+      },
+    });
+  }
+
+  it.each([
+    'safe/auth',
+    'packages/core/auth',
+    'packages/ssr/auth',
+    'packages/vite-plugin/auth',
+    'node_modules/@purityjs/consumer/auth',
+  ])('excludes server source from all chunks and assets for %s', async (path) => {
+    const result = await bundle(path);
+    expect(JSON.stringify(result)).not.toContain(marker);
+  });
+
+  it.each(['?url', '?raw', '?worker', '?sharedworker', '?worker&inline', '?import&url', '?%75rl'])(
+    'rejects %s before asset emission',
+    async (query) => {
+      await expect(bundle('safe/auth', query)).rejects.toThrow(/Server-only modules cannot/);
+    },
+  );
+
+  it('preserves server source in SSR builds and explicit opt-outs', async () => {
+    expect(JSON.stringify(await bundle('safe/auth', '', true))).toContain(marker);
+    expect(JSON.stringify(await bundle('safe/auth', '', false, false))).toContain(marker);
   });
 });
 

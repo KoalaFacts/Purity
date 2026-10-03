@@ -63,6 +63,37 @@ function assertSafeName(name: string, kind: string): void {
   if (!SAFE_NAME.test(name)) throw new Error(`[Purity] Invalid ${kind} name: "${name}"`);
 }
 
+function assertSafeBinding(name: string, kind: string): void {
+  if (kind !== 'event' && (/^on/i.test(name) || name.toLowerCase() === 'srcdoc')) {
+    throw new Error(
+      `[Purity] Unsafe dynamic binding "${name}"; use @event listeners or explicit DOM APIs for trusted HTML.`,
+    );
+  }
+}
+
+const URL_BINDINGS = new Set([
+  'href',
+  'src',
+  'action',
+  'formaction',
+  'poster',
+  'background',
+  'cite',
+  'data',
+  'codebase',
+  'manifest',
+  'longdesc',
+  'profile',
+  'usemap',
+]);
+
+function safeBindingValue(name: string, expr: string): string {
+  if (!URL_BINDINGS.has(name.toLowerCase())) return expr;
+  // Escape-only attribute binding does not stop executable URL schemes.
+  // Return the checked string so stateful toString() cannot change it later.
+  return `(function(v){if(v==null||v===false)return v;if(v===true)return '';var s=String(v),p=s.replace(/[\\u0000-\\u0020\\u007f]/g,'');if(/^(?:javascript|vbscript):/i.test(p)||(/^data:/i.test(p)&&!/^data:image\\/(?:png|jpeg|gif|webp|avif|bmp|x-icon);base64,/i.test(p)))throw new Error('[Purity] Unsafe URL binding');return s;})(${expr})`;
+}
+
 const VOID = new Set([
   'area',
   'base',
@@ -456,7 +487,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
 interface SimpleTemplate {
   tag: string;
   staticAttrs: { name: string; value: string }[];
-  dynamicAttrs: { kind: string; name: string; index: number }[];
+  dynamicAttrs: AttributeNode[];
   children: ASTNode[]; // text + expression nodes only
 }
 
@@ -474,7 +505,7 @@ function isSimpleTemplate(ast: FragmentNode): SimpleTemplate | null {
   const dynamicAttrs: SimpleTemplate['dynamicAttrs'] = [];
   for (const a of root.attributes) {
     if (a.kind === 'static') staticAttrs.push({ name: a.name, value: a.value });
-    else dynamicAttrs.push({ kind: a.kind, name: a.name, index: a.index });
+    else dynamicAttrs.push(a);
   }
 
   return { tag: root.tag, staticAttrs, dynamicAttrs, children: root.children };
@@ -501,81 +532,11 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
 
   // Dynamic attributes — folded into the shared watch where possible
   for (const a of tpl.dynamicAttrs) {
-    assertSafeName(a.name, 'attribute');
-    const id = bindVarCounter++;
-    const av = `_av${id}`;
-    const fl = `_af${id}`;
-    const val = `_v[${a.index}]`;
-    const qname = JSON.stringify(a.name);
-    switch (a.kind) {
-      case 'event':
-        setupParts.push(`_e.addEventListener(${qname},${val});`);
-        break;
-      case 'dynamic':
-        // Dynamic-attr value coercion MUST match valueToAttr() on the SSR
-        // side: true → bare name (empty value), false/null/undefined →
-        // omitted. The client previously emitted `name="true"` for a
-        // literal `true` while SSR emitted bare `name` — a hydration
-        // mismatch the runtime never warned about. Align both code paths
-        // (literal value setup + signal-returning-value reactive) on the
-        // same valueToAttr semantics.
-        setupParts.push(
-          `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
-          `if(!${fl}&&${av}!=null&&${av}!==false)_e.setAttribute(${qname},${av}===true?'':String(${av}));`,
-        );
-        reactiveParts.push(
-          `if(${fl}){var v${id}=${av}();if(v${id}==null||v${id}===false)_e.removeAttribute(${qname});else _e.setAttribute(${qname},v${id}===true?'':String(v${id}));}`,
-        );
-        break;
-      case 'bool':
-        setupParts.push(
-          `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
-          `if(!${fl}&&${av})_e.setAttribute(${qname},'');`,
-        );
-        reactiveParts.push(
-          `if(${fl}){if(${av}())_e.setAttribute(${qname},'');else _e.removeAttribute(${qname});}`,
-        );
-        break;
-      case 'prop':
-        setupParts.push(
-          `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
-          `if(!${fl})_e[${qname}]=${av};`,
-        );
-        reactiveParts.push(`if(${fl})_e[${qname}]=${av}();`);
-        break;
-      case 'reactive-prop':
-        setupParts.push(
-          `var ${av}=${val};var ${fl}=typeof ${av}==='function';`,
-          `if(!${fl})_e[${qname}]=${av};`,
-        );
-        reactiveParts.push(`if(${fl})_e[${qname}]=${av}();`);
-        break;
-      case 'bind': {
-        // Bind keeps its own watch (asymmetric: signal -> el and listener -> signal).
-        const evt = a.name === 'checked' || a.name === 'group' ? 'change' : 'input';
-        const qevt = JSON.stringify(evt);
-        if (a.name === 'group') {
-          setupParts.push(
-            `if(typeof ${val}==='function'){if(_e.type==='radio'){_w(function(){_e.checked=${val}()===_e.value;});_e.addEventListener('change',function(){if(_e.checked)${val}(_e.value);});}else{_w(function(){_e.checked=${val}().includes(_e.value);});_e.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(_e.value);if(_e.checked){if(i===-1)a.push(_e.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
-          );
-        } else {
-          const readSrc = a.name === 'checked' ? '_e.checked' : `_e[${qname}]`;
-          // codeql[js/code-injection] — qname/qevt are JSON.stringify'd and
-          // a.name has passed assertSafeName. `val` is `_v[${idx}]`, a
-          // framework-generated identifier. See "Codegen safety contract"
-          // near SAFE_NAME at the top of this file.
-          setupParts.push(
-            `if(typeof ${val}==='function'){_w(function(){_e[${qname}]=${val}();});_e.addEventListener(${qevt},function(){${val}(${readSrc});});}`,
-          );
-        }
-        break;
-      }
-    }
+    const { setup, reactive } = genAttrBinding('_e', a);
+    if (setup) setupParts.push(setup);
+    if (reactive) reactiveParts.push(reactive);
   }
 
-  // Children — text nodes + expressions, appended directly.
-  // condenseWhitespace already dropped pure-indentation text nodes; anything
-  // remaining (content text, single-space separators) is intentional.
   for (const ch of tpl.children) {
     if (ch.type === 'text') {
       if (ch.value !== '') {
@@ -958,6 +919,7 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
 function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
   if (attr.kind === 'static') return { setup: '', reactive: '' };
   assertSafeName(attr.name, 'attribute');
+  assertSafeBinding(attr.name, attr.kind);
 
   const id = bindVarCounter++;
   const av = `_av${id}`;
@@ -973,13 +935,13 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
       const setup = [
         `var ${av}=${val};`,
         `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl}&&${av}!=null&&${av}!==false)${el}.setAttribute(${qname},String(${av}));`,
+        `if(!${fl}&&${av}!=null&&${av}!==false)${el}.setAttribute(${qname},${av}===true?'':String(${safeBindingValue(attr.name, av)}));`,
       ].join('');
       const reactive = [
         `if(${fl}){`,
         `var v${id}=${av}();`,
         `if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});`,
-        `else ${el}.setAttribute(${qname},String(v${id}));`,
+        `else ${el}.setAttribute(${qname},v${id}===true?'':String(${safeBindingValue(attr.name, `v${id}`)}));`,
         `}`,
       ].join('');
       return { setup, reactive };
@@ -1004,9 +966,9 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
       const setup = [
         `var ${av}=${val};`,
         `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl})${el}[${qname}]=${av};`,
+        `if(!${fl})${el}[${qname}]=${safeBindingValue(attr.name, av)};`,
       ].join('');
-      const reactive = `if(${fl})${el}[${qname}]=${av}();`;
+      const reactive = `if(${fl})${el}[${qname}]=${safeBindingValue(attr.name, `${av}()`)};`;
       return { setup, reactive };
     }
 
@@ -1014,9 +976,9 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
       const setup = [
         `var ${av}=${val};`,
         `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl})${el}[${qname}]=${av};`,
+        `if(!${fl})${el}[${qname}]=${safeBindingValue(attr.name, av)};`,
       ].join('');
-      const reactive = `if(${fl})${el}[${qname}]=${av}();`;
+      const reactive = `if(${fl})${el}[${qname}]=${safeBindingValue(attr.name, `${av}()`)};`;
       return { setup, reactive };
     }
 
@@ -1043,7 +1005,7 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
       // generated identifiers (`_n${id}`, `_v[${idx}]`), never user data.
       // See "Codegen safety contract" near SAFE_NAME.
       return {
-        setup: `if(typeof ${val}==='function'){_w(function(){${el}[${qname}]=${val}();});${el}.addEventListener(${qevt},function(){${val}(${readSrc});});}`,
+        setup: `if(typeof ${val}==='function'){_w(function(){${el}[${qname}]=${safeBindingValue(attr.name, `${val}()`)};});${el}.addEventListener(${qevt},function(){${val}(${readSrc});});}`,
         reactive: '',
       };
     }
@@ -1087,9 +1049,9 @@ export function generateSSR(ast: FragmentNode): string {
     // contract" near SAFE_NAME at the top.
     // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
     return [
-      '(function(){var _s={__purity_ssr_html__:',
+      '(function(){var _s;return function(_v,_h){return _s||(_s=_h.mark(',
       JSON.stringify(html),
-      '};return function(){return _s;};})()',
+      '));};})()',
     ].join('');
   }
   buildSSRBody(ast, ctx);
@@ -1270,6 +1232,7 @@ function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx, node: import('./ast.ts').
   }
 
   assertSafeName(a.name, 'attribute');
+  assertSafeBinding(a.name, a.kind);
   const id = ctx.counter++;
   const av = `_av${id}`;
   const val = `_v[${a.index}]`;
@@ -1307,7 +1270,10 @@ function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx, node: import('./ast.ts').
       // The remaining kinds read the current value (calling the accessor if
       // it's a function) and emit it as a quoted attribute. `bind` skips the
       // listener install — that's a hydration-time concern.
-      pushRaw(ctx, `var ${av}=_h.toAttr(${val});`);
+      const resolved = URL_BINDINGS.has(a.name.toLowerCase())
+        ? safeBindingValue(a.name, `(typeof ${val}==='function'?${val}():${val})`)
+        : val;
+      pushRaw(ctx, `var ${av}=_h.toAttr(${resolved});`);
       pushRaw(ctx, `if(${av}!==null)${ctx.out}+=${namePrefix}+(${av}===''?'':'="'+${av}+'"');`);
       return;
     }

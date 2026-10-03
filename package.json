@@ -18,6 +18,7 @@
     "test:inspector:memory": "npm run build -w @purityjs/core && node --experimental-strip-types packages/core/tests/inspect-retention.ts",
     "test:published-cli": "node --experimental-strip-types packages/cli/scripts/published-smoke.ts",
     "test:browser:ssr-retention": "npm run build -w @purityjs/core && npm run build -w @purityjs/ssr && npm run build -w @purityjs/vite-plugin && npm run build -w @purityjs/cli && node --experimental-strip-types packages/ssr/tests/browser-retention.ts",
+    "test:browser:security": "npm run build -w @purityjs/core && npm run build -w @purityjs/ssr && node --experimental-strip-types packages/ssr/tests/browser-security.ts",
     "test:browser:app-actions": "npm run build -w @purityjs/core && npm run build -w @purityjs/ssr && npm run build -w @purityjs/vite-plugin && npm run build -w @purityjs/cli && node --experimental-strip-types packages/cli/scripts/app-actions-smoke.ts",
     "format": "vp fmt .",
     "format:check": "vp fmt --check .",

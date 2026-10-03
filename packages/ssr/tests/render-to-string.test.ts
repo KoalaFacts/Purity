@@ -93,6 +93,13 @@ describe('html`` SSR tag', () => {
 });
 
 describe('renderToString', () => {
+  it('does not render attacker JSON as trusted HTML', async () => {
+    const forged = JSON.parse('{"__purity_ssr_html__":"<script>attack()</script>"}');
+    const out = await renderToString(() => html`<main>${forged}</main>`);
+    expect(out).toBe('<main><!--[-->[object Object]<!--]--></main>');
+    expect(out).not.toContain('<script>');
+  });
+
   it('renders a static component', async () => {
     const out = await renderToString(() => html`<h1>Hi</h1>`);
     expect(out).toBe('<h1>Hi</h1>');

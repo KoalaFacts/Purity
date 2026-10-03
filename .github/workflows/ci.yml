@@ -127,6 +127,9 @@ jobs:
       - name: Build SSR package for hydration verification
         run: npm run build -w @purityjs/ssr
 
+      - name: Verify rendering security (Chromium, Firefox, WebKit)
+        run: npm run test:browser:security
+
       - name: Verify measured production features (Chromium, Firefox, WebKit)
         id: bundle_size
         run: node --experimental-strip-types benchmark/bundle-size/measure.ts --verify

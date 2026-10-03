@@ -29,6 +29,40 @@ import { stripServerActionBodies } from './server-action-strip.ts';
 
 const DEVTOOLS_ID = 'virtual:purity-devtools';
 const RESOLVED_DEVTOOLS_ID = '\0' + DEVTOOLS_ID;
+const frameworkPackages = new Map<string, boolean>();
+
+function isFrameworkInternal(id: string): boolean {
+  const path = id.split('?')[0]!.replaceAll('\\', '/');
+  if (/\/node_modules\/@purityjs\/(core|ssr|vite-plugin)\//.test(path)) return true;
+  for (const name of ['core', 'ssr', 'vite-plugin']) {
+    const part = `/packages/${name}/`;
+    const index = path.lastIndexOf(part);
+    if (index === -1) continue;
+    const root = path.slice(0, index + part.length - 1);
+    let internal = frameworkPackages.get(root);
+    if (internal === undefined) {
+      const manifest = `${root}/package.json`;
+      internal =
+        existsSync(manifest) &&
+        JSON.parse(readFileSync(manifest, 'utf8')).name === `@purityjs/${name}`;
+      frameworkPackages.set(root, internal);
+    }
+    if (internal) return true;
+  }
+  return false;
+}
+
+function rejectServerAsset(id: string): void {
+  const query = id.indexOf('?');
+  if (query !== -1) {
+    const params = new URLSearchParams(id.slice(query + 1));
+    if (['url', 'raw', 'worker', 'sharedworker', 'inline'].some((key) => params.has(key))) {
+      throw new Error(
+        '[Purity] Server-only modules cannot be imported as client assets or workers.',
+      );
+    }
+  }
+}
 
 /**
  * File-system routing options. ADR 0019.
@@ -193,14 +227,22 @@ export function purity(options?: PurityPluginOptions) {
       emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
     },
 
-    resolveId(this: any, source: string) {
+    resolveId(this: any, source: string, _importer?: string, opts?: { ssr?: boolean }) {
+      // Reject before Vite's asset loader can publish the original source.
+      if (stripServerModules && opts?.ssr !== true && isServerOnlyId(source)) {
+        rejectServerAsset(source);
+      }
       if (serveDevtools && source === DEVTOOLS_ID) return RESOLVED_DEVTOOLS_ID;
       if (!routesOpts) return null;
       if (source === virtualId) return resolvedVirtualId;
       return null;
     },
 
-    load(this: any, id: string) {
+    load(this: any, id: string, opts?: { ssr?: boolean }) {
+      if (stripServerModules && opts?.ssr !== true && isServerOnlyId(id)) {
+        rejectServerAsset(id);
+        return '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\nexport {};\n';
+      }
       if (serveDevtools && id === RESOLVED_DEVTOOLS_ID) return devtoolsClientSource;
       if (!routesOpts || id !== resolvedVirtualId) return null;
       // routesAbsDir is set in configResolved (always called before load).
@@ -269,21 +311,13 @@ export function purity(options?: PurityPluginOptions) {
     },
 
     transform(this: any, code: string, id: string, transformOpts?: { ssr?: boolean }) {
-      // Skip framework internals — only compile user code
-      if (
-        id.includes('@purityjs/') ||
-        id.includes('packages/core/') ||
-        id.includes('packages/vite-plugin/') ||
-        id.includes('packages/ssr/')
-      )
-        return null;
-
       // Strip *.server.{ts,js,tsx,jsx} modules from client builds (ADR 0018).
       // Server builds (transformOpts.ssr === true) pass through unchanged
       // so handler bodies still execute on the server. Runs BEFORE the
       // extension filter so the regex (which tolerates Vite query-string
       // suffixes like `?import`, `?worker`, `?url`) is the source of truth.
       if (stripServerModules && transformOpts?.ssr !== true && isServerOnlyId(id)) {
+        rejectServerAsset(id);
         return {
           code:
             '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\n' +
@@ -291,6 +325,10 @@ export function purity(options?: PurityPluginOptions) {
           map: null,
         };
       }
+
+      // Security boundaries apply even to framework paths. Only skip actual
+      // framework directories when compiling templates, not consumer lookalikes.
+      if (isFrameworkInternal(id)) return null;
 
       // Match plugin extension filter (also tolerates Vite query suffixes
       // by stripping ?xxx before the suffix check).

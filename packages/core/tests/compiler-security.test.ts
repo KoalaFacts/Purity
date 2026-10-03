@@ -14,15 +14,20 @@ describe('executable template bindings', () => {
     }
   });
 
-  it.each(['.textContent', ':textContent', '::textContent', '.innerHTML'])(
-    'rejects script content binding %s',
-    (binding) => {
-      const ast = parse([`<script ${binding}=`, '></script>']);
-      for (const compile of [generate, generateHydrate, generateSSR]) {
-        expect(() => compile(ast)).toThrow(/Unsafe dynamic binding in <script>/);
-      }
-    },
-  );
+  it.each([
+    '.text',
+    ':text',
+    '::text',
+    '.textContent',
+    ':textContent',
+    '::textContent',
+    '.innerHTML',
+  ])('rejects script content binding %s', (binding) => {
+    const ast = parse([`<script ${binding}=`, '></script>']);
+    for (const compile of [generate, generateHydrate, generateSSR]) {
+      expect(() => compile(ast)).toThrow(/Unsafe dynamic binding in <script>/);
+    }
+  });
 
   it('retains static scripts and ordinary interpolated text', () => {
     for (const compile of [generate, generateHydrate, generateSSR]) {

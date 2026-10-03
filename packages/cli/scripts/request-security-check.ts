@@ -165,6 +165,40 @@ export const dispatchAction = async (req) => new Response(req.url, { headers: { 
       child.kill();
       await closed;
     }
+    if (mode === 'ssr') {
+      // The startup shell must obey the same boundary as request-time assets.
+      await rm(join(client, 'index.html'));
+      let linkKind = 'file symlink';
+      try {
+        await symlink(join(privateDir, 'index.html'), join(client, 'index.html'), 'file');
+      } catch (error) {
+        if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EPERM') {
+          throw error;
+        }
+        // Windows without file-symlink privileges can still exercise the
+        // startup realpath boundary. Linux CI requires the actual file link.
+        await symlink(privateDir, join(client, 'index.html'), 'junction');
+        linkKind = 'directory junction (file-symlink privileges unavailable)';
+      }
+      const startup = spawnSync(
+        process.execPath,
+        ['--experimental-strip-types', 'server.ts', '--production'],
+        {
+          cwd: project,
+          windowsHide: true,
+          encoding: 'utf8',
+          timeout: 5_000,
+          env: { ...process.env, PORT: String(port) },
+        },
+      );
+      check(
+        startup.status !== null &&
+          startup.status !== 0 &&
+          startup.stderr.includes('SSR template must be inside the public root') &&
+          !startup.stdout.includes('http://localhost:'),
+        `ssr: rejects an external index.html ${linkKind} before listening`,
+      );
+    }
   }
   assert.deepEqual(failures, [], 'Node request/file security boundary failures');
 } finally {

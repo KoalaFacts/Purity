@@ -84,7 +84,7 @@ function assertSafeScriptContent(node: ASTNode, inScript = false): void {
     for (const attr of node.attributes) {
       if (
         attr.kind !== 'static' &&
-        /^(?:innerhtml|outerhtml|textcontent|innertext)$/i.test(attr.name)
+        /^(?:innerhtml|outerhtml|text|textcontent|innertext)$/i.test(attr.name)
       ) {
         throw new Error(
           '[Purity] Unsafe dynamic binding in <script>; keep code static and serialize data separately.',

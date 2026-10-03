@@ -70,6 +70,8 @@ describe('AOT output runs correctly under jsdom', () => {
       'html`<x-widget onclick=${handler}></x-widget>`',
       'html`<section>${html`<iframe srcdoc=${value}></iframe>`}</section>`',
       'html`<script>${value}</script>`',
+      'html`<script .text=${value}></script>`',
+      'html`<section>${html`<script .text=${value}></script>`}</section>`',
       'html`<section>${html`<script>${value}</script>`}</section>`',
     ]) {
       expect(() =>

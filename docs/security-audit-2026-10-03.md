@@ -61,7 +61,8 @@ fixes and regression coverage in the accompanying change.
   proven for a deployment without such a link.
 - Fix: resolve the public root and candidate to real paths, check containment,
   then serve the approved path. Apply this to direct assets, GET/HEAD, and
-  generated static page reads. Links within the public root remain supported.
+  generated static page reads and the SSR startup `index.html` template before
+  listening. Links within the public root remain supported.
 - Boundary: deployed assets must be immutable to attackers. Realpath checks do
   not sandbox a user with concurrent filesystem write access.
 

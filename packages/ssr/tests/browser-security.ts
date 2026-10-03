@@ -70,6 +70,7 @@ const attackerOrigin = await listen(attacker);
 try {
   for (const compile of [generate, generateHydrate, generateSSR]) {
     assert.throws(() => compile(parse(['<script>', '</script>'])), /Unsafe dynamic binding/);
+    assert.throws(() => compile(parse(['<script .text=', '></script>'])), /Unsafe dynamic binding/);
   }
   await assert.rejects(
     renderToString(() => html`<script>${'\nglobalThis.__purityAttack=1\n'}</script>`),

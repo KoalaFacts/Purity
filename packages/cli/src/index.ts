@@ -291,7 +291,12 @@ function sendError(res: ServerResponse, err: unknown): void {
 if (isProd) {
   const clientDir = resolve(__dirname, 'client');
   const realClientDir = await realpath(clientDir);
-  const template = await readFile(resolve(clientDir, 'index.html'), 'utf-8');
+  const templatePath = await realpath(resolve(clientDir, 'index.html'));
+  const templateRelative = relative(realClientDir, templatePath);
+  if (templateRelative === '..' || templateRelative.startsWith('..' + sep) || isAbsolute(templateRelative)) {
+    throw new Error('SSR template must be inside the public root');
+  }
+  const template = await readFile(templatePath, 'utf-8');
   const mod = (await import(pathToFileURL(resolve(__dirname, 'server/entry.server.js')).href)) as {
     render: (url: string) => Promise<string>;
   };

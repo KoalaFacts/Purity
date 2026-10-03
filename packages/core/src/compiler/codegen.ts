@@ -1005,6 +1005,9 @@ function genAttrBinding(el: string, attr: AttributeNode): BindingParts {
       // generated identifiers (`_n${id}`, `_v[${idx}]`), never user data.
       // See "Codegen safety contract" near SAFE_NAME.
       return {
+        // codeql[js/bad-code-sanitization] -- qname is restricted by assertSafeName
+        // to identifier characters; el/val are compiler-generated references.
+        // No URL value or arbitrary HTML is interpolated into this source.
         setup: `if(typeof ${val}==='function'){_w(function(){${el}[${qname}]=${safeBindingValue(attr.name, `${val}()`)};});${el}.addEventListener(${qevt},function(){${val}(${readSrc});});}`,
         reactive: '',
       };

@@ -7,6 +7,17 @@ const immediate = (fn: () => void) => fn();
 const factory = (code: string) => new Function(`return ${code}`)();
 
 describe('executable template bindings', () => {
+  it('rejects attribute names that could escape generated code or script tags', () => {
+    for (const name of ['x</script><script>attack()</script>', 'x";attack();"', 'x.y']) {
+      const ast = parse(['<input ::value=', '>']);
+      const element = ast.children[0];
+      if (element.type !== 'element') throw new Error('Expected input AST');
+      element.attributes[0].name = name;
+      for (const compile of [generate, generateHydrate, generateSSR]) {
+        expect(() => compile(ast)).toThrow(/Invalid attribute name/);
+      }
+    }
+  });
   it.each([
     'onclick',
     'onerror',

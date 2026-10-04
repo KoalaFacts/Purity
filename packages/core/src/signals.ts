@@ -203,6 +203,11 @@ function removeObserver(producer: AnyNode, consumer: ComputedNode, sourceSlot: n
   const obs = producer.observers;
   if (obs === null) return;
   const slot = consumer.observerSlots![sourceSlot];
+  // A removed source slot must no longer match a later swap's back-pointer.
+  // Repeated reads can be permuted by another consumer's removal; retaining
+  // the old index would then update an already detached slot instead of the
+  // moved live slot on this same consumer.
+  consumer.observerSlots![sourceSlot] = -1;
   const last = obs.length - 1;
   if (slot !== last) {
     const moved = obs[last];

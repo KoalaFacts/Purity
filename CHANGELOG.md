@@ -5,6 +5,12 @@
 Coordinated security patch for `@purityjs/core`, `@purityjs/ssr`,
 `@purityjs/vite-plugin`, and `@purityjs/cli`.
 
+### Fixed
+
+- Detach repeated signal reads correctly after nested bindings are removed.
+  Invalidate removed observer back-pointers before swap-and-pop so disposal
+  and dependency truncation cannot leave stale subscriptions or break later cleanup.
+
 ### Security
 
 - Escape HTML delimiters and Unicode line separators in generated JavaScript

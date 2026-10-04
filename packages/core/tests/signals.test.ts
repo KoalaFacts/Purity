@@ -813,6 +813,51 @@ describe('observer cleanup', () => {
     expect(runs).toBe(3);
   });
 
+  it.each(['dispose', 'truncate'] as const)(
+    'detaches repeated reads after an interleaved child is removed (%s)',
+    async (cleanup) => {
+      // Fused template bindings can create a child binding between their own
+      // reads. Removing that child permutes the parent's observer back-pointers.
+      const marker = {};
+      const shared = state(marker);
+      const active = state(true);
+      let disposeChild: () => void = () => {};
+      const disposeParent = watch(() => {
+        if (!active()) return;
+        for (let i = 0; i < 4; i++) shared();
+        disposeChild = watch(() => {
+          shared();
+        });
+        shared();
+        shared();
+      });
+      const inspector = (
+        globalThis as unknown as {
+          __purity_inspect__: { nodes(): Array<{ value: unknown; observers: unknown[] }> };
+        }
+      ).__purity_inspect__;
+      const observerCount = () =>
+        inspector.nodes().find((n) => n.value === marker)!.observers.length;
+      expect(observerCount()).toBe(7);
+      disposeChild();
+      expect(observerCount()).toBe(6);
+      if (cleanup === 'dispose') disposeParent();
+      else {
+        active(false);
+        await tick();
+      }
+      expect(observerCount()).toBe(0);
+      disposeParent();
+      // A later unrelated subscriber must still be detachable.
+      const disposeNext = watch(() => {
+        shared();
+      });
+      expect(observerCount()).toBe(1);
+      disposeNext();
+      expect(observerCount()).toBe(0);
+    },
+  );
+
   it('cleans up many observers on a shared signal in O(N) time', async () => {
     // Regression for the indexOf-based removeObserver O(N²) blow-up. Disposing
     // 5k watchers that share one signal must stay well under a second.

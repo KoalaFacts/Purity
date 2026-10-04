@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.3.3 — 2026-10-04
+
+Coordinated security patch for `@purityjs/core`, `@purityjs/ssr`,
+`@purityjs/vite-plugin`, and `@purityjs/cli`.
 
 ### Security
 
@@ -17,6 +20,18 @@
   cannot update an already generated server.
 
 Evidence and migration boundaries: [security audit](docs/security-audit-2026-10-03.md).
+
+### Migration
+
+- Upgrade the Purity packages together to 0.3.3, rebuild client and server
+  artifacts, and redeploy. SSR, Vite plugin peers, and CLI-generated projects
+  now require core `^0.3.3`.
+- Keep script source static and serialize data separately. Dynamic script
+  content, including `.text`, is rejected even in scripts declared as JSON.
+- Non-browser action clients must send an exact matching HTTP(S) Origin.
+  Authentication and authorization remain the application's responsibility.
+- Existing generated Node servers need the adapter source fixes applied.
+  Upgrading the CLI does not rewrite a previously scaffolded `server.ts`.
 
 ## 0.3.2 — 2026-10-03
 

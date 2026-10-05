@@ -107,13 +107,14 @@ in the accompanying change.
 
 - Follow-up: 2026-10-05; fix prepared after the 0.3.3 release.
 - Buffered SSR rejected `<!doctype html><script>…</script>`, but both streaming
-  entry points accepted the same prefix. Chromium executed an injected marker
+  entry points and SSG shell assembly accepted the same prefix. Chromium executed an injected marker
   in output from `renderToStream()` and `renderToStreamResponse()` before the fix.
 - Exploitation requires an application to pass attacker-controlled data as its
   doctype option. The default render path does not supply such data; this finding
   is a missing option validation boundary, not a default unauthenticated exploit.
-- Fix: all three renderers share doctype/nonce validation and copy options before
-  executing components. Invalid options cannot start component/resource work or
+- Fix: buffered, streaming, and static rendering share doctype/nonce validation
+  and read supported fields once, including inherited defaults and getters, before
+  executing components or route handlers. Invalid options cannot start component/resource work or
   install request cancellation listeners. Valid declarations retain their output.
 - Regressions cover invalid prefixes, allowed mixed-case declarations, option
   mutation during resource rendering, built ESM/CommonJS, and browser controls.

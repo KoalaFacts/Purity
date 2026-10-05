@@ -19,7 +19,7 @@ import { boundaryDeadline } from './boundary-deadline.ts';
 import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
 import { renderCancellation } from './render-cancellation.ts';
 import { SSRTimeoutError } from './timeout-error.ts';
-import { validateRenderOptions } from './render-options.ts';
+import { snapshotRenderOptions, validateRenderOptions } from './render-options.ts';
 
 export interface RenderToStringOptions {
   /** Maximum ms to wait for pending resources during render. Default 5000. */
@@ -126,7 +126,7 @@ export async function renderToString(
   component: () => unknown,
   options: RenderToStringOptions = {},
 ): Promise<string | RenderToStringWithResponse | RenderToStringWithHead> {
-  options = { ...options };
+  options = snapshotRenderOptions(options);
   validateRenderOptions(options, 'renderToString');
   const cancellation = renderCancellation(options.request, options.signal);
   try {

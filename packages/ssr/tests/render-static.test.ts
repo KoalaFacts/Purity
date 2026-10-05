@@ -5,13 +5,54 @@
 // check the returned `files` map.
 
 import { getRequest, head, resource, suspense } from '@purityjs/core';
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { html as ssrHtml, renderStatic } from '../src/index.ts';
 
 const SHELL =
   '<!doctype html><html><head>{{head}}</head><body><div id="app">{{body}}</div></body></html>';
 
 describe('renderStatic — composes routes via renderToString', () => {
+  it.each([undefined, '<html><body>{{body}}</body></html>'])(
+    'rejects doctype injection before handlers run (shell=%s)',
+    async (shellTemplate) => {
+      const handler = vi.fn(() => () => ssrHtml`<p>unexpected</p>`);
+      const onRoute = vi.fn();
+      await expect(
+        renderStatic({
+          routes: ['/', '/second'],
+          shellTemplate,
+          doctype: '<!doctype html><script>globalThis.__purityDoctypeAttack=1</script>',
+          handler,
+          onRoute,
+        }),
+      ).rejects.toThrow(/invalid doctype/);
+      expect(handler).not.toHaveBeenCalled();
+      expect(onRoute).not.toHaveBeenCalled();
+    },
+  );
+
+  it('snapshots inherited render defaults before route handlers can mutate them', async () => {
+    const defaults = { nonce: 'static_nonce', serializeResources: true };
+    const renderOptions = Object.create(defaults);
+    const output = await renderStatic({
+      routes: ['/'],
+      doctype: '<!DoCtYpE html>',
+      shellTemplate: '<html><body>{{body}}</body></html>',
+      renderOptions,
+      handler: () => {
+        defaults.nonce = 'x" onload="attack()';
+        return () => {
+          const data = resource(() => Promise.resolve('ready'));
+          return ssrHtml`<p>${() => data()}</p>`;
+        };
+      },
+    });
+    expect(output.errors.size).toBe(0);
+    expect(output.files.get('/')).toContain('nonce="static_nonce"');
+    expect(output.files.get('/')).not.toContain('onload=');
+    expect(output.files.get('/')).toMatch(/^<!DoCtYpE html><html>/);
+  });
+
   it('renders each route to its own HTML string', async () => {
     const { files, errors } = await renderStatic({
       routes: ['/', '/about', '/blog'],

@@ -36,7 +36,7 @@ import { boundaryDeadline } from './boundary-deadline.ts';
 import { renderCancellation } from './render-cancellation.ts';
 import { SSRTimeoutError } from './timeout-error.ts';
 import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
-import { validateRenderOptions } from './render-options.ts';
+import { snapshotRenderOptions, validateRenderOptions } from './render-options.ts';
 
 const DEFAULT_TIMEOUT = 5000;
 const MAX_PASSES = 10;
@@ -101,7 +101,7 @@ export function renderToStream(
   component: () => unknown,
   options: RenderToStreamOptions = {},
 ): ReadableStream<Uint8Array> {
-  options = { ...options };
+  options = snapshotRenderOptions(options);
   validateRenderOptions(options, 'renderToStream');
   return createStream(
     (signal) => renderShell(component, options.timeout ?? DEFAULT_TIMEOUT, options.request, signal),
@@ -118,7 +118,7 @@ export async function renderToStreamResponse(
   component: () => unknown,
   options: RenderToStreamOptions = {},
 ): Promise<RenderToStreamResponse> {
-  options = { ...options };
+  options = snapshotRenderOptions(options);
   validateRenderOptions(options, 'renderToStreamResponse');
   const cancellation = renderCancellation(options.request, options.signal);
   let shell: ShellResult;

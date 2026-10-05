@@ -1,4 +1,4 @@
-import { resource } from '@purityjs/core';
+import { getRequest, resource } from '@purityjs/core';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import {
   html,
@@ -78,4 +78,63 @@ describe.each(renderers)('$name render option boundaries', ({ render }) => {
     expect(result).not.toContain('__purityDoctypeAttack');
     expect(result).not.toContain('onload=');
   });
+
+  it.each(['prototype defaults', 'non-enumerable getters'])(
+    'preserves %s when snapshotting options',
+    async (kind) => {
+      const request = new Request('https://inherited.example.test/');
+      const defaults: RenderToStreamOptions = {
+        request,
+        signal: new AbortController().signal,
+        timeout: 500,
+        nonce: 'inherited_nonce',
+        doctype: '<!doctype html>',
+        serializeResources: false,
+      };
+      const options: RenderToStreamOptions = Object.create(
+        kind === 'prototype defaults' ? defaults : null,
+      );
+      const reads = new Map<string, number>();
+      if (kind === 'non-enumerable getters') {
+        for (const key of Object.keys(defaults) as Array<keyof RenderToStreamOptions>) {
+          Object.defineProperty(options, key, {
+            get: () => {
+              reads.set(key, (reads.get(key) ?? 0) + 1);
+              return defaults[key];
+            },
+          });
+        }
+      }
+      const output = await render(() => {
+        expect(getRequest()).toBe(request);
+        const data = resource(() => Promise.resolve('ready'));
+        return html`<p>${() => data()}</p>`;
+      }, options);
+      expect(output.startsWith('<!doctype html>')).toBe(true);
+      expect(output).not.toContain('__purity_resources__');
+      if (kind === 'non-enumerable getters') {
+        expect([...reads.values()]).toEqual(Array(Object.keys(defaults).length).fill(1));
+      }
+      // Streams always include their swap helper; buffered output has no
+      // script when serialization is disabled.
+      if (output.includes('<script')) expect(output).toContain('nonce="inherited_nonce"');
+    },
+  );
+
+  it('honors an inherited aborted signal without calling the view', async () => {
+    const abort = new AbortController();
+    const reason = new Error('inherited cancellation');
+    abort.abort(reason);
+    const options: RenderToStreamOptions = Object.create({ signal: abort.signal });
+    const view = vi.fn(() => html`<p>unexpected</p>`);
+    const outcome = await render(view, options).catch((error: unknown) => error);
+    expect(outcome === '' || outcome === reason).toBe(true);
+    expect(view).not.toHaveBeenCalled();
+  });
+});
+
+it('preserves inherited buffered HTTP metadata flags', async () => {
+  const options = Object.create({ extractHead: true, extractResponse: true });
+  const result = await renderToString(() => html`<p>ready</p>`, options);
+  expect(result).toMatchObject({ body: '<p>ready</p>', head: '' });
 });

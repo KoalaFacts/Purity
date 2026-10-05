@@ -4,9 +4,10 @@
 
 ### Security
 
-- Reject markup-injecting doctype options consistently in buffered and streaming
+- Reject markup-injecting doctype options consistently in buffered, streaming, and static
   SSR before starting components or request cancellation scopes. Snapshot validated
-  render options so component code cannot change the later streaming prefix or nonce.
+  render options, including inherited defaults and getters, so component code cannot
+  change the later streaming prefix or nonce.
 
 ## 0.3.3 — 2026-10-04
 

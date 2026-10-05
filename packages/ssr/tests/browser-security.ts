@@ -12,7 +12,13 @@ import {
   parse,
   valueToHtml,
 } from '@purityjs/core/compiler';
-import { html, renderToStream, renderToStreamResponse, renderToString } from '@purityjs/ssr';
+import {
+  html,
+  renderStatic,
+  renderToStream,
+  renderToStreamResponse,
+  renderToString,
+} from '@purityjs/ssr';
 
 async function listen(server: Server): Promise<string> {
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
@@ -71,10 +77,10 @@ try {
   const doctypeControls: string[] = [];
   const cjsSSR = createRequire(import.meta.url)('@purityjs/ssr') as typeof import('@purityjs/ssr');
   for (const runtime of [
-    { html, renderToStream, renderToStreamResponse, renderToString },
+    { html, renderStatic, renderToStream, renderToStreamResponse, renderToString },
     cjsSSR,
   ]) {
-    for (const mode of ['buffered', 'direct', 'prepared'] as const) {
+    for (const mode of ['buffered', 'direct', 'prepared', 'static-body', 'static-shell'] as const) {
       let viewCalls = 0;
       const render = async (doctype: string) => {
         const view = () => {
@@ -82,6 +88,17 @@ try {
           return runtime.html`<main>DOCTYPE-SAFE</main>`;
         };
         if (mode === 'buffered') return runtime.renderToString(view, { doctype });
+        if (mode === 'static-body' || mode === 'static-shell') {
+          const result = await runtime.renderStatic({
+            routes: ['/'],
+            handler: () => view,
+            doctype,
+            shellTemplate:
+              mode === 'static-shell' ? '<html><body>{{body}}</body></html>' : undefined,
+          });
+          assert.equal(result.errors.size, 0);
+          return result.files.get('/')!;
+        }
         const body =
           mode === 'direct'
             ? runtime.renderToStream(view, { doctype })

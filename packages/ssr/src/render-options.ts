@@ -1,3 +1,20 @@
+import type { RenderToStringOptions } from './render-to-string.ts';
+
+// Read supported fields explicitly: prototype defaults and non-enumerable
+// getters are valid structural options too. Each value is captured once.
+export function snapshotRenderOptions(options: RenderToStringOptions): RenderToStringOptions {
+  return {
+    timeout: options.timeout,
+    serializeResources: options.serializeResources,
+    doctype: options.doctype,
+    nonce: options.nonce,
+    extractHead: options.extractHead,
+    extractResponse: options.extractResponse,
+    request: options.request,
+    signal: options.signal,
+  };
+}
+
 // Render options are configuration, but must not become a raw markup escape
 // hatch when applications forward external values. Validate before user code
 // runs or cancellation listeners are installed.

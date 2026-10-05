@@ -13,6 +13,43 @@ import { purity } from '../src/index.ts';
 describe('AOT output runs correctly under jsdom', () => {
   const plugin = purity();
 
+  it('hydrates nested template arrays without runtime code generation or changing property data', async () => {
+    const { make } = evalAot(
+      "import { html } from '@purityjs/core';\nconst make = (label, click, payload) => html`<main>${[html`<section .payload=${payload}><header>Summary</header><div>${[html`<button @click=${click}>${label}</button>`, html`<span>source</span>`]}</div></section>`]}</main>`;",
+    );
+    const root = document.createElement('div');
+    root.innerHTML =
+      '<main><!--[--><section><header>Summary</header><div><button>one</button><span>source</span></div></section><!--]--></main>';
+    const label = state('one'),
+      payload = [['x']];
+    let clicks = 0;
+    const originalFunction = globalThis.Function;
+    try {
+      globalThis.Function = (() => {
+        throw new Error('runtime code generation during nested AOT hydration');
+      }) as FunctionConstructor;
+      enterHydration();
+      let deferred: unknown;
+      try {
+        deferred = make(label, () => clicks++, payload);
+      } finally {
+        exitHydration();
+      }
+      inflateDeferred(deferred as Parameters<typeof inflateDeferred>[0], root);
+    } finally {
+      globalThis.Function = originalFunction;
+    }
+    expect(root.querySelectorAll('button')).toHaveLength(1);
+    expect(root.textContent).toBe('Summaryonesource');
+    expect((root.querySelector('section') as HTMLElement & { payload: unknown }).payload).toBe(
+      payload,
+    );
+    root.querySelector('button')!.click();
+    expect(clicks).toBe(1);
+    label('two');
+    await vi.waitFor(() => expect(root.querySelector('button')?.textContent).toBe('two'));
+  });
+
   function evalAot(userCode: string): { make: (...args: any[]) => Node } {
     const result = plugin.transform(userCode, 'app.ts');
     if (!result) throw new Error('plugin returned null');

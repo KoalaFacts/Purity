@@ -28,6 +28,7 @@ export interface DeferredTemplate {
 type CompiledCreateFactory = (
   values: unknown[],
   watch: typeof import('../signals.ts').watch,
+  materializeChild?: (value: unknown) => unknown,
 ) => Node | DocumentFragment;
 
 /** A hydration walker emitted at build time or compiled on first JIT use. */

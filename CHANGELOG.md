@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.3.4 — 2026-10-05
+
+### Fixed
+
+- Materialise templates inside nested array slots when hydration recreates an
+  array item. Preserve real child nodes, event handlers and reactive bindings
+  instead of rendering `[object Object]`. Flatten mixed arrays without mutating
+  caller data and ignore cyclic repeats consistently with SSR.
 
 ### Security
 

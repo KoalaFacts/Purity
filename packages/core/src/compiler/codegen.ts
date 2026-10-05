@@ -271,7 +271,7 @@ export function generate(ast: FragmentNode): string {
     `var _t=document.createElement('template');`,
     `_t.innerHTML=${jsString(html)};`,
     templatePrep,
-    'return function(_v,_w){',
+    'return function(_v,_w,_d){',
     'var _r=_t.content.cloneNode(true);',
     bindCode,
     'return _r;',
@@ -592,7 +592,7 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
       // the literal text "false" on the client while SSR rendered nothing.
       // Symmetric `==null||===false` filter at every text-emit site.
       setupParts.push(
-        `var ${xv}=${val};var ${fl}=typeof ${xv}==='function';var ${tn};`,
+        `var ${xv}=_d?_d(${val}):${val};var ${fl}=typeof ${xv}==='function';var ${tn};`,
         `if(${fl}){${tn}=document.createTextNode('');_e.appendChild(${tn});}`,
         `else if(${xv} instanceof Node)_e.appendChild(${xv});`,
         `else if(Array.isArray(${xv})){for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++){var _av${id}=${xv}[_ai${id}];if(_av${id}==null||_av${id}===false)continue;_e.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}}`,
@@ -613,7 +613,7 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
   // SAFE_NAME / assertSafeName at the top of this file. All names and
   // values spliced into `body` are regex-validated and/or JSON.stringify'd
   // before reaching this point; user input cannot escape the literal.
-  return `function(_v,_w){${body}}`;
+  return `function(_v,_w,_d){${body}}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -919,7 +919,7 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
   const val = `_v[${index}]`;
 
   const setup = [
-    `var ${xv}=${val};`,
+    `var ${xv}=_d?_d(${val}):${val};`,
     `var ${fl}=typeof ${xv}==='function';`,
     `var ${tn}=${slotVar};`,
     `if(!${fl}){`,

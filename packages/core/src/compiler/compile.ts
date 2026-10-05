@@ -22,6 +22,7 @@ import { parse } from './parser.ts';
 type CompiledFn = (
   values: unknown[],
   watch: typeof import('../signals.ts').watch,
+  materializeChild?: (value: unknown) => unknown,
 ) => Node | DocumentFragment;
 
 interface CacheEntry {
@@ -161,13 +162,21 @@ export function inflateDeferred(
 
 function createDeferred(deferred: DeferredTemplate): Node | DocumentFragment {
   // A missing SSR row needs fresh DOM. Its nested templates were also
-  // captured as deferred values, so materialize them before binding slots.
-  const values = deferred.values.map((value) =>
-    isDeferred(value) ? createDeferred(value) : value,
-  );
+  // captured as deferred values, including templates inside array slots.
   const create =
     deferred.create ?? ensureClient(getOrInitEntry(deferred.strings!), deferred.strings!);
-  return create(values, watch);
+  return create(deferred.values, watch, materializeDeferredValue);
+}
+
+function materializeDeferredValue(value: unknown, seen: WeakSet<object> | null = null): unknown {
+  if (isDeferred(value)) return createDeferred(value);
+  if (!Array.isArray(value)) return value;
+  seen ??= new WeakSet<object>();
+  if (seen.has(value)) return [];
+  seen.add(value);
+  // Client factories accept flat arrays of Nodes/scalars. Flatten here while
+  // preserving null/false/zero semantics and avoiding cyclic-array recursion.
+  return value.flatMap((item: unknown) => materializeDeferredValue(item, seen));
 }
 
 // control.ts (the `each()` / `match()` runtimes) register their adoption

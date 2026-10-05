@@ -16,6 +16,56 @@ function fixture(markup: string) {
 }
 
 describe('hydrate arrays of templates', () => {
+  it('preserves array data identity and shape in recreated element properties', () => {
+    const host = fixture('<main><!--[--><section><div></div></section><!--]--></main>');
+    const payload = [['x']];
+    unmount = hydrate(
+      host,
+      () => html`<main>${[html`<section><div .payload=${payload}></div></section>`]}</main>`,
+    ).unmount;
+    expect((host.querySelector('div') as HTMLElement & { payload: unknown }).payload).toBe(payload);
+    expect(payload).toEqual([['x']]);
+  });
+
+  it('materialises template arrays inside a recreated array item', async () => {
+    const host = fixture(
+      '<main><!--[--><section><button>one</button><button>two</button></section><!--]--></main>',
+    );
+    const label = state('one');
+    let clicks = 0;
+    unmount = hydrate(
+      host,
+      () =>
+        html`<main>${[
+          html`<section>${[
+            html`<button @click=${() => clicks++}>${() => label()}</button>`,
+            html`<button>two</button>`,
+          ]}</section>`,
+        ]}</main>`,
+    ).unmount;
+    expect(host.querySelectorAll('section button')).toHaveLength(2);
+    expect(host.textContent).toBe('onetwo');
+    host.querySelector('button')!.click();
+    expect(clicks).toBe(1);
+    label('updated');
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(host.textContent).toBe('updatedtwo');
+  });
+
+  it('flattens nested mixed arrays when recreating an item and ignores cyclic repeats', () => {
+    const host = fixture(
+      '<main><!--[--><section>prefix<span>middle</span>0suffix</section><!--]--></main>',
+    );
+    const nested: unknown[] = ['prefix', [html`<span>middle</span>`, null, false, [0]], 'suffix'];
+    nested.push(nested);
+    unmount = hydrate(
+      host,
+      () => html`<main>${[html`<section>${nested}</section>`]}</main>`,
+    ).unmount;
+    expect(host.textContent).toBe('prefixmiddle0suffix');
+    expect(host.querySelectorAll('span')).toHaveLength(1);
+  });
+
   it('materialises deferred templates instead of stringifying them', () => {
     const host = fixture(
       '<main><!--[--><button>First</button><button>Second</button><!--]--></main>',

@@ -19,6 +19,7 @@ import { boundaryDeadline } from './boundary-deadline.ts';
 import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
 import { renderCancellation } from './render-cancellation.ts';
 import { SSRTimeoutError } from './timeout-error.ts';
+import { snapshotRenderOptions, validateRenderOptions } from './render-options.ts';
 
 export interface RenderToStringOptions {
   /** Maximum ms to wait for pending resources during render. Default 5000. */
@@ -125,6 +126,8 @@ export async function renderToString(
   component: () => unknown,
   options: RenderToStringOptions = {},
 ): Promise<string | RenderToStringWithResponse | RenderToStringWithHead> {
+  options = snapshotRenderOptions(options);
+  validateRenderOptions(options, 'renderToString');
   const cancellation = renderCancellation(options.request, options.signal);
   try {
     return await renderString(component, options, cancellation.signal);
@@ -154,25 +157,6 @@ async function renderString(
   // when AbortController.abort() is called without an argument.
   if (signal?.aborted) {
     throw abortReason(signal);
-  }
-  if (nonce !== undefined && !NONCE_PATTERN.test(nonce)) {
-    throw new Error(
-      `[Purity] renderToString: invalid CSP nonce. Must match ` +
-        `${NONCE_PATTERN.source} (base64 / URL-safe characters).`,
-    );
-  }
-  // doctype is concatenated verbatim into the response prefix. The only
-  // legitimate shapes are the HTML5 doctype and legacy XHTML/HTML4
-  // variants — anything else would emit attacker-controlled markup
-  // before the document. Reject anything that isn't a `<!doctype …>`
-  // declaration (case-insensitive on the keyword) with no embedded `<`
-  // — which would otherwise let `<!doctype><script>...</script>` slip
-  // through.
-  if (prefix !== '' && !DOCTYPE_PATTERN.test(prefix)) {
-    throw new Error(
-      `[Purity] renderToString: invalid doctype option. ` +
-        `Must be a single <!DOCTYPE …> declaration with no embedded markup.`,
-    );
   }
   const start = Date.now();
 
@@ -373,19 +357,6 @@ function abortReason(signal: AbortSignal): unknown {
   return err;
 }
 
-// CSP nonces in HTTP headers are base64 (RFC 4648) and frequently URL-safe
-// (RFC 4648 \u00a75). Restrict to that alphabet so a hostile / mistyped value
-// can't break out of the attribute. Length is left to the caller.
-const NONCE_PATTERN = /^[A-Za-z0-9+/=_-]+$/;
-
-// Accept a single `<!doctype \u2026>` declaration (case-insensitive on the
-// keyword) with no embedded `<` inside the body, so a hostile string
-// like `<!doctype html><script>alert(1)</script>` is rejected before
-// it can be concatenated into the response prefix. Optional internal
-// subset (`[\u2026]`) is excluded \u2014 apps shipping a DTD subset are vanishing
-// rare and can pre-stringify their shell.
-const DOCTYPE_PATTERN = /^<!(?:doctype|DOCTYPE)\s[^<>]*>$/;
-
 function buildResourceScript(
   ordered: unknown[],
   keyed: Record<string, unknown>,
@@ -399,7 +370,7 @@ function buildResourceScript(
   // payload format don't break. The new `{ ordered, keyed }` shape kicks
   // in only when at least one keyed resource exists.
   const payload = hasKeyed ? { ordered, keyed } : ordered;
-  // `nonce` was validated above (NONCE_PATTERN); safe to splice into the
+  // `nonce` was validated before rendering; safe to splice into the
   // attribute via the shared serializer. Emitted only when supplied so the
   // default output is byte-for-byte unchanged.
   return serializeResourceScriptPayload(payload, RESOURCE_SCRIPT_ID, nonce);

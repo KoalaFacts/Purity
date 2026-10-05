@@ -12,7 +12,13 @@ import {
   parse,
   valueToHtml,
 } from '@purityjs/core/compiler';
-import { html, renderToStream, renderToString } from '@purityjs/ssr';
+import {
+  html,
+  renderStatic,
+  renderToStream,
+  renderToStreamResponse,
+  renderToString,
+} from '@purityjs/ssr';
 
 async function listen(server: Server): Promise<string> {
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
@@ -68,6 +74,67 @@ const attacker = createServer((_req, res) => {
 const attackerOrigin = await listen(attacker);
 
 try {
+  const doctypeControls: string[] = [];
+  const cjsSSR = createRequire(import.meta.url)('@purityjs/ssr') as typeof import('@purityjs/ssr');
+  for (const runtime of [
+    { html, renderStatic, renderToStream, renderToStreamResponse, renderToString },
+    cjsSSR,
+  ]) {
+    for (const mode of ['buffered', 'direct', 'prepared', 'static-body', 'static-shell'] as const) {
+      let viewCalls = 0;
+      const render = async (doctype: string, nonce?: string) => {
+        const view = () => {
+          viewCalls++;
+          return runtime.html`<main>DOCTYPE-SAFE</main>`;
+        };
+        if (mode === 'buffered') return runtime.renderToString(view, { doctype, nonce });
+        if (mode === 'static-body' || mode === 'static-shell') {
+          const result = await runtime.renderStatic({
+            routes: ['/'],
+            handler: () => view,
+            doctype,
+            renderOptions: { nonce },
+            shellTemplate:
+              mode === 'static-shell' ? '<html><body>{{body}}</body></html>' : undefined,
+          });
+          assert.equal(result.errors.size, 0);
+          return result.files.get('/')!;
+        }
+        const body =
+          mode === 'direct'
+            ? runtime.renderToStream(view, { doctype, nonce })
+            : (await runtime.renderToStreamResponse(view, { doctype, nonce })).body;
+        return new Response(body).text();
+      };
+      await assert.rejects(
+        render('<!doctype html><script>globalThis.__purityDoctypeAttack=1</script>'),
+        /invalid doctype/,
+      );
+      assert.equal(viewCalls, 0, 'Invalid options must not start user code');
+      for (const field of ['doctype', 'nonce'] as const) {
+        let coercions = 0;
+        const value = {
+          [Symbol.toPrimitive]() {
+            return ++coercions === 1
+              ? field === 'doctype'
+                ? '<!doctype html>'
+                : 'safe_nonce'
+              : '<script>globalThis.__purityDoctypeAttack=1</script>';
+          },
+        } as unknown as string;
+        await assert.rejects(
+          field === 'doctype' ? render(value) : render('<!doctype html>', value),
+          field === 'doctype' ? /invalid doctype/ : /invalid CSP nonce/,
+        );
+        assert.equal(coercions, 0, 'Reject objects before coercion');
+        assert.equal(viewCalls, 0, 'Invalid options must not start user code');
+      }
+      const output = await render('<!DoCtYpE html>');
+      assert.ok(output.startsWith('<!DoCtYpE html>'));
+      doctypeControls.push(output);
+    }
+  }
+
   for (const compile of [generate, generateHydrate, generateSSR]) {
     assert.throws(() => compile(parse(['<script>', '</script>'])), /Unsafe dynamic binding/);
     assert.throws(() => compile(parse(['<script .text=', '></script>'])), /Unsafe dynamic binding/);
@@ -117,6 +184,16 @@ try {
     const browser = await browserType.launch();
     try {
       const page = await browser.newPage();
+      for (const output of doctypeControls) {
+        await page.setContent(output);
+        assert.equal(await page.locator('main').textContent(), 'DOCTYPE-SAFE');
+        assert.equal(
+          await page.evaluate(
+            () => (globalThis as { __purityDoctypeAttack?: number }).__purityDoctypeAttack,
+          ),
+          undefined,
+        );
+      }
       await page.setContent(markup);
       assert.equal(
         await page.evaluate(() => (globalThis as { __purityAttack?: number }).__purityAttack),
@@ -201,6 +278,9 @@ try {
           await formPage.goto(attackerOrigin);
           const [blocked] = await Promise.all([
             formPage.waitForResponse((response) => response.url() === `${victimOrigin}/account`),
+            // Response headers can arrive before WebKit commits the form
+            // navigation. Finish it before starting the same-origin control.
+            formPage.waitForURL(`${victimOrigin}/account`, { waitUntil: 'load' }),
             formPage.getByRole('button', { name: 'Submit' }).click(),
           ]);
           assert.equal(blocked.status(), 403);
@@ -209,6 +289,7 @@ try {
           await formPage.goto(victimOrigin);
           const [accepted] = await Promise.all([
             formPage.waitForResponse((response) => response.url() === `${victimOrigin}/account`),
+            formPage.waitForURL(`${victimOrigin}/account`, { waitUntil: 'load' }),
             formPage.getByRole('button', { name: 'Submit' }).click(),
           ]);
           assert.equal(accepted.status(), 200);

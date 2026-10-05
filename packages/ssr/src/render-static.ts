@@ -27,6 +27,7 @@
 // ---------------------------------------------------------------------------
 
 import { renderToString, type RenderToStringOptions } from './render-to-string.ts';
+import { snapshotRenderOptions, validateRenderOptions } from './render-options.ts';
 
 /** A single static route. The path is the URL path; `request` lets the user
  * supply a fully-constructed `Request` (custom headers, method, etc.) instead
@@ -145,7 +146,9 @@ export async function renderStatic(options: RenderStaticOptions): Promise<Render
   // and write `<!doctype html>` directly into `shellTemplate`.
   const doctype = options.doctype;
   const innerDoctype = shellTemplate ? undefined : doctype;
-  const renderOpts = options.renderOptions ?? {};
+  const renderOpts = snapshotRenderOptions(options.renderOptions ?? {}, 'static');
+  validateRenderOptions({ ...renderOpts, doctype }, 'renderStatic');
+  const handler = options.handler;
   const concurrency = options.concurrency ?? Number.POSITIVE_INFINITY;
   const onRoute = options.onRoute;
 
@@ -179,7 +182,7 @@ export async function renderStatic(options: RenderStaticOptions): Promise<Render
     const request = route.request ? route.request.clone() : new Request(baseUrl + route.path);
     let final: string;
     try {
-      const component = options.handler(request);
+      const component = handler(request);
       const out = await renderToString(component, {
         ...renderOpts,
         extractHead: true,

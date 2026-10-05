@@ -1,4 +1,4 @@
-import { lazyResource, resource, state, suspense } from '@purityjs/core';
+import { getRequest, lazyResource, resource, state, suspense } from '@purityjs/core';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import {
   html,
@@ -30,6 +30,86 @@ describe('SSR resource cancellation', () => {
   ];
 
   describe.each(renderers)('$name', ({ name, render }) => {
+    it.each(['resolve', 'reject'] as const)(
+      'isolates a canceled request from a same-key peer after late %s',
+      async (settlement) => {
+        const abort = new AbortController();
+        const firstRequest = new Request('https://first.example.test/private');
+        const secondRequest = new Request('https://second.example.test/private');
+        let finishFirst!: (value: string) => void;
+        let failFirst!: (error: Error) => void;
+        let finishSecond!: (value: string) => void;
+        let startFirst!: () => void;
+        let startSecond!: () => void;
+        const firstStarted = new Promise<void>((resolve) => {
+          startFirst = resolve;
+        });
+        const secondStarted = new Promise<void>((resolve) => {
+          startSecond = resolve;
+        });
+        const firstWork = new Promise<string>((resolve, reject) => {
+          finishFirst = resolve;
+          failFirst = reject;
+        });
+        const secondWork = new Promise<string>((resolve) => {
+          finishSecond = resolve;
+        });
+        let firstSignal!: AbortSignal;
+        let secondSignal!: AbortSignal;
+        let abandoned!: ReturnType<typeof resource<string>>;
+        const first = render(
+          () => {
+            expect(getRequest()).toBe(firstRequest);
+            abandoned = resource(
+              ({ signal }) => {
+                firstSignal = signal;
+                startFirst();
+                return firstWork;
+              },
+              { key: 'same-user' },
+            );
+            return html`<p>${() => abandoned()}</p>`;
+          },
+          { request: firstRequest, signal: abort.signal },
+        ).catch((error: unknown) => error);
+        const second = render(
+          () => {
+            expect(getRequest()).toBe(secondRequest);
+            const data = resource(
+              ({ signal }) => {
+                secondSignal = signal;
+                startSecond();
+                return secondWork;
+              },
+              { key: 'same-user' },
+            );
+            return html`<p>${() => data()}</p>`;
+          },
+          { request: secondRequest },
+        );
+        await Promise.all([firstStarted, secondStarted]);
+        const reason = new Error('first disconnected');
+        abort.abort(reason);
+        const firstResult = await first;
+        expect(firstResult).toBe(name === 'stream' ? '' : reason);
+        expect(firstSignal.aborted).toBe(true);
+        expect(secondSignal.aborted).toBe(false);
+        if (settlement === 'resolve') finishFirst('FIRST-PRIVATE');
+        else failFirst(new Error('FIRST-PRIVATE-ERROR'));
+        await tick();
+        await tick();
+        finishSecond('SECOND-PRIVATE');
+        const output = await second;
+        expect(output).toContain('SECOND-PRIVATE');
+        expect(output).not.toContain('FIRST-PRIVATE');
+        expect(abandoned.peek()).toBeUndefined();
+        expect(abandoned.error()).toBeUndefined();
+        expect(firstRequest.signal.aborted).toBe(false);
+        expect(secondRequest.signal.aborted).toBe(false);
+        expect(getRequest()).toBeNull();
+      },
+    );
+
     it.each(['request', 'explicit'] as const)(
       'forwards %s cancellation into the fetcher',
       async (source) => {

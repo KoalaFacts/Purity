@@ -36,12 +36,10 @@ import { boundaryDeadline } from './boundary-deadline.ts';
 import { renderCancellation } from './render-cancellation.ts';
 import { SSRTimeoutError } from './timeout-error.ts';
 import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
+import { validateRenderOptions } from './render-options.ts';
 
 const DEFAULT_TIMEOUT = 5000;
 const MAX_PASSES = 10;
-// Restrict CSP nonces to base64 / URL-safe characters so a hostile or
-// mistyped value can't escape the attribute. Same pattern as renderToString.
-const NONCE_PATTERN = /^[A-Za-z0-9+/=_-]+$/;
 
 export interface RenderToStreamOptions {
   /**
@@ -103,7 +101,8 @@ export function renderToStream(
   component: () => unknown,
   options: RenderToStreamOptions = {},
 ): ReadableStream<Uint8Array> {
-  validateNonce(options.nonce);
+  options = { ...options };
+  validateRenderOptions(options, 'renderToStream');
   return createStream(
     (signal) => renderShell(component, options.timeout ?? DEFAULT_TIMEOUT, options.request, signal),
     options,
@@ -119,7 +118,8 @@ export async function renderToStreamResponse(
   component: () => unknown,
   options: RenderToStreamOptions = {},
 ): Promise<RenderToStreamResponse> {
-  validateNonce(options.nonce);
+  options = { ...options };
+  validateRenderOptions(options, 'renderToStreamResponse');
   const cancellation = renderCancellation(options.request, options.signal);
   let shell: ShellResult;
   try {
@@ -143,15 +143,6 @@ export async function renderToStreamResponse(
   if (shell.status !== undefined) result.status = shell.status;
   if (shell.headers && [...shell.headers].length > 0) result.headers = new Headers(shell.headers);
   return result;
-}
-
-function validateNonce(nonce: string | undefined): void {
-  if (nonce !== undefined && !NONCE_PATTERN.test(nonce)) {
-    throw new Error(
-      `[Purity] renderToStream: invalid CSP nonce. Must match ` +
-        `${NONCE_PATTERN.source} (base64 / URL-safe characters).`,
-    );
-  }
 }
 
 function createStream(

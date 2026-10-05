@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- Reject markup-injecting doctype options consistently in buffered and streaming
+  SSR before starting components or request cancellation scopes. Snapshot validated
+  render options so component code cannot change the later streaming prefix or nonce.
+
 ## 0.3.3 — 2026-10-04
 
 Coordinated security patch for `@purityjs/core`, `@purityjs/ssr`,

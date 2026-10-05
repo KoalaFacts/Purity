@@ -42,6 +42,15 @@ Do not pass external HTML to `.innerHTML`, `insertAdjacentHTML`, or other raw
 HTML APIs without a sanitizer appropriate for the destination. URL scheme
 checks do not enforce an application's permitted hosts or prevent SSRF.
 
+## SSR render options
+
+All SSR renderers accept an empty doctype or a single case-insensitive doctype
+declaration without embedded markup. They reject invalid doctype and CSP nonce
+options before invoking components or installing request cancellation listeners.
+Render options are copied before validation so later caller mutations cannot
+change the emitted prefix or nonce. Keep these options application-controlled;
+they are not a way to prepend arbitrary HTML to a response.
+
 ## Server-only modules
 
 With the default Vite plugin options, `*.server.{ts,tsx,js,jsx}` modules are

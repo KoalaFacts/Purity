@@ -12,7 +12,7 @@ import {
   parse,
   valueToHtml,
 } from '@purityjs/core/compiler';
-import { html, renderToStream, renderToString } from '@purityjs/ssr';
+import { html, renderToStream, renderToStreamResponse, renderToString } from '@purityjs/ssr';
 
 async function listen(server: Server): Promise<string> {
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
@@ -68,6 +68,37 @@ const attacker = createServer((_req, res) => {
 const attackerOrigin = await listen(attacker);
 
 try {
+  const doctypeControls: string[] = [];
+  const cjsSSR = createRequire(import.meta.url)('@purityjs/ssr') as typeof import('@purityjs/ssr');
+  for (const runtime of [
+    { html, renderToStream, renderToStreamResponse, renderToString },
+    cjsSSR,
+  ]) {
+    for (const mode of ['buffered', 'direct', 'prepared'] as const) {
+      let viewCalls = 0;
+      const render = async (doctype: string) => {
+        const view = () => {
+          viewCalls++;
+          return runtime.html`<main>DOCTYPE-SAFE</main>`;
+        };
+        if (mode === 'buffered') return runtime.renderToString(view, { doctype });
+        const body =
+          mode === 'direct'
+            ? runtime.renderToStream(view, { doctype })
+            : (await runtime.renderToStreamResponse(view, { doctype })).body;
+        return new Response(body).text();
+      };
+      await assert.rejects(
+        render('<!doctype html><script>globalThis.__purityDoctypeAttack=1</script>'),
+        /invalid doctype/,
+      );
+      assert.equal(viewCalls, 0, 'Invalid options must not start user code');
+      const output = await render('<!DoCtYpE html>');
+      assert.ok(output.startsWith('<!DoCtYpE html>'));
+      doctypeControls.push(output);
+    }
+  }
+
   for (const compile of [generate, generateHydrate, generateSSR]) {
     assert.throws(() => compile(parse(['<script>', '</script>'])), /Unsafe dynamic binding/);
     assert.throws(() => compile(parse(['<script .text=', '></script>'])), /Unsafe dynamic binding/);
@@ -117,6 +148,16 @@ try {
     const browser = await browserType.launch();
     try {
       const page = await browser.newPage();
+      for (const output of doctypeControls) {
+        await page.setContent(output);
+        assert.equal(await page.locator('main').textContent(), 'DOCTYPE-SAFE');
+        assert.equal(
+          await page.evaluate(
+            () => (globalThis as { __purityDoctypeAttack?: number }).__purityDoctypeAttack,
+          ),
+          undefined,
+        );
+      }
       await page.setContent(markup);
       assert.equal(
         await page.evaluate(() => (globalThis as { __purityAttack?: number }).__purityAttack),

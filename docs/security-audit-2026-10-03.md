@@ -103,6 +103,24 @@ in the accompanying change.
   the original attribute value survives. Compiler regressions check generated
   DOM, hydration, and SSR functions for raw script-closing delimiters.
 
+### SEC-06 — markup injection through streaming doctype options
+
+- Follow-up: 2026-10-05; fix prepared after the 0.3.3 release.
+- Buffered SSR rejected `<!doctype html><script>…</script>`, but both streaming
+  entry points accepted the same prefix. Chromium executed an injected marker
+  in output from `renderToStream()` and `renderToStreamResponse()` before the fix.
+- Exploitation requires an application to pass attacker-controlled data as its
+  doctype option. The default render path does not supply such data; this finding
+  is a missing option validation boundary, not a default unauthenticated exploit.
+- Fix: all three renderers share doctype/nonce validation and copy options before
+  executing components. Invalid options cannot start component/resource work or
+  install request cancellation listeners. Valid declarations retain their output.
+- Regressions cover invalid prefixes, allowed mixed-case declarations, option
+  mutation during resource rendering, built ESM/CommonJS, and browser controls.
+- Concurrent cancellation tests share a resource key across two requests and
+  settle abandoned work afterward, checking both late resolution and rejection.
+  Those tests address their named paths and do not certify general DoS resistance.
+
 ## Verification and limits
 
 - `npm run test:browser:security`: production ESM/CJS rendering checks, rejected

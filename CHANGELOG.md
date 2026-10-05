@@ -6,8 +6,9 @@
 
 - Reject markup-injecting doctype options consistently in buffered, streaming, and static
   SSR before starting components or request cancellation scopes. Snapshot validated
-  render options, including inherited defaults and getters, so component code cannot
-  change the later streaming prefix or nonce.
+  supported render options, including inherited defaults and getters, so component
+  code cannot change the later streaming prefix or nonce. Reject non-string doctypes
+  and nonces without invoking potentially stateful string conversions.
 
 ## 0.3.3 — 2026-10-04
 

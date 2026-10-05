@@ -44,9 +44,11 @@ checks do not enforce an application's permitted hosts or prevent SSRF.
 
 ## SSR render options
 
-All SSR renderers accept an empty doctype or a single case-insensitive doctype
+All SSR renderers accept a primitive string containing an empty doctype or a single case-insensitive doctype
 declaration without embedded markup. They reject invalid doctype and CSP nonce
 options before invoking components or installing request cancellation listeners.
+Non-string doctypes and nonces are rejected without coercion. Each renderer reads
+only its supported fields, preserving inherited defaults and non-enumerable getters.
 Render options are copied before validation so later caller mutations cannot
 change the emitted prefix or nonce. Keep these options application-controlled;
 they are not a way to prepend arbitrary HTML to a response.

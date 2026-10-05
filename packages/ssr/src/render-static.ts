@@ -146,7 +146,7 @@ export async function renderStatic(options: RenderStaticOptions): Promise<Render
   // and write `<!doctype html>` directly into `shellTemplate`.
   const doctype = options.doctype;
   const innerDoctype = shellTemplate ? undefined : doctype;
-  const renderOpts = snapshotRenderOptions(options.renderOptions ?? {});
+  const renderOpts = snapshotRenderOptions(options.renderOptions ?? {}, 'static');
   validateRenderOptions({ ...renderOpts, doctype }, 'renderStatic');
   const handler = options.handler;
   const concurrency = options.concurrency ?? Number.POSITIVE_INFINITY;

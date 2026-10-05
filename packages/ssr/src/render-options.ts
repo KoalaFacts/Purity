@@ -2,17 +2,26 @@ import type { RenderToStringOptions } from './render-to-string.ts';
 
 // Read supported fields explicitly: prototype defaults and non-enumerable
 // getters are valid structural options too. Each value is captured once.
-export function snapshotRenderOptions(options: RenderToStringOptions): RenderToStringOptions {
-  return {
+export function snapshotRenderOptions(
+  options: RenderToStringOptions,
+  mode: 'buffered' | 'stream' | 'static' = 'buffered',
+): RenderToStringOptions {
+  const snapshot: RenderToStringOptions = {
     timeout: options.timeout,
     serializeResources: options.serializeResources,
-    doctype: options.doctype,
     nonce: options.nonce,
-    extractHead: options.extractHead,
-    extractResponse: options.extractResponse,
-    request: options.request,
     signal: options.signal,
   };
+  // Streaming does not support buffered metadata flags. Static rendering
+  // supplies its own doctype, request, and extractHead, so their nested
+  // accessors must not run either.
+  if (mode !== 'static') {
+    snapshot.doctype = options.doctype;
+    snapshot.request = options.request;
+  }
+  if (mode !== 'stream') snapshot.extractResponse = options.extractResponse;
+  if (mode === 'buffered') snapshot.extractHead = options.extractHead;
+  return snapshot;
 }
 
 // Render options are configuration, but must not become a raw markup escape
@@ -25,17 +34,23 @@ export function validateRenderOptions(
   options: { nonce?: string; doctype?: string },
   renderer: string,
 ): void {
-  if (options.nonce !== undefined && !NONCE_PATTERN.test(options.nonce)) {
+  if (
+    options.nonce !== undefined &&
+    (typeof options.nonce !== 'string' || !NONCE_PATTERN.test(options.nonce))
+  ) {
     throw new Error(
-      `[Purity] ${renderer}: invalid CSP nonce. Must match ` +
+      `[Purity] ${renderer}: invalid CSP nonce. Must be a string matching ` +
         `${NONCE_PATTERN.source} (base64 / URL-safe characters).`,
     );
   }
-  const prefix = options.doctype ?? '';
-  if (prefix !== '' && !DOCTYPE_PATTERN.test(prefix)) {
+  const prefix = options.doctype;
+  if (
+    prefix !== undefined &&
+    (typeof prefix !== 'string' || (prefix !== '' && !DOCTYPE_PATTERN.test(prefix)))
+  ) {
     throw new Error(
       `[Purity] ${renderer}: invalid doctype option. ` +
-        'Must be a single <!DOCTYPE …> declaration with no embedded markup.',
+        'Must be an empty string or a single <!DOCTYPE …> declaration with no embedded markup.',
     );
   }
 }

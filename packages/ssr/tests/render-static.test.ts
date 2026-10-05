@@ -13,6 +13,55 @@ const SHELL =
 
 describe('renderStatic — composes routes via renderToString', () => {
   it.each([undefined, '<html><body>{{body}}</body></html>'])(
+    'rejects stateful option coercion before handlers run (shell=%s)',
+    async (shellTemplate) => {
+      for (const field of ['doctype', 'nonce'] as const) {
+        const coercion = vi
+          .fn()
+          .mockReturnValueOnce(field === 'doctype' ? '<!doctype html>' : 'safe_nonce')
+          .mockReturnValue('<script>attack()</script>');
+        const value = { [Symbol.toPrimitive]: coercion } as unknown as string;
+        const handler = vi.fn(() => () => ssrHtml`<p>unexpected</p>`);
+        const onRoute = vi.fn();
+        await expect(
+          renderStatic({
+            routes: ['/'],
+            shellTemplate,
+            handler,
+            onRoute,
+            ...(field === 'doctype' ? { doctype: value } : { renderOptions: { nonce: value } }),
+          }),
+        ).rejects.toThrow(field === 'doctype' ? /invalid doctype/ : /invalid CSP nonce/);
+        expect(coercion).not.toHaveBeenCalled();
+        expect(handler).not.toHaveBeenCalled();
+        expect(onRoute).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it('does not evaluate overridden nested option getters', async () => {
+    const unsupported = vi.fn(() => {
+      throw new Error('Overridden getter evaluated');
+    });
+    const renderOptions = Object.defineProperties(
+      {},
+      {
+        request: { get: unsupported },
+        extractHead: { get: unsupported },
+        doctype: { get: unsupported },
+      },
+    );
+    const result = await renderStatic({
+      routes: ['/'],
+      renderOptions,
+      handler: () => () => ssrHtml`<p>ready</p>`,
+    });
+    expect(result.errors.size).toBe(0);
+    expect(result.files.get('/')).toBe('<p>ready</p>');
+    expect(unsupported).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, '<html><body>{{body}}</body></html>'])(
     'rejects doctype injection before handlers run (shell=%s)',
     async (shellTemplate) => {
       const handler = vi.fn(() => () => ssrHtml`<p>unexpected</p>`);

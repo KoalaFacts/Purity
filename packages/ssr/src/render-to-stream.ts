@@ -101,7 +101,7 @@ export function renderToStream(
   component: () => unknown,
   options: RenderToStreamOptions = {},
 ): ReadableStream<Uint8Array> {
-  options = snapshotRenderOptions(options);
+  options = snapshotRenderOptions(options, 'stream');
   validateRenderOptions(options, 'renderToStream');
   return createStream(
     (signal) => renderShell(component, options.timeout ?? DEFAULT_TIMEOUT, options.request, signal),
@@ -118,7 +118,7 @@ export async function renderToStreamResponse(
   component: () => unknown,
   options: RenderToStreamOptions = {},
 ): Promise<RenderToStreamResponse> {
-  options = snapshotRenderOptions(options);
+  options = snapshotRenderOptions(options, 'stream');
   validateRenderOptions(options, 'renderToStreamResponse');
   const cancellation = renderCancellation(options.request, options.signal);
   let shell: ShellResult;

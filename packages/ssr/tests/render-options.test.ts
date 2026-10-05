@@ -23,6 +23,33 @@ const renderers = [
 ];
 
 describe.each(renderers)('$name render option boundaries', ({ render }) => {
+  it.each(['doctype', 'nonce'] as const)(
+    'rejects stateful %s coercion without evaluating it',
+    async (field) => {
+      const coercion = vi
+        .fn()
+        .mockReturnValueOnce(field === 'doctype' ? '<!doctype html>' : 'safe_nonce')
+        .mockReturnValue('<script>globalThis.__purityDoctypeAttack=1</script>');
+      const value = { [Symbol.toPrimitive]: coercion } as unknown as string;
+      const view = vi.fn(() => html`<p>unexpected</p>`);
+      await expect(render(view, { [field]: value })).rejects.toThrow(
+        field === 'doctype' ? /invalid doctype/ : /invalid CSP nonce/,
+      );
+      expect(coercion).not.toHaveBeenCalled();
+      expect(view).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['doctype', 'nonce'] as const)('rejects non-string %s values', async (field) => {
+    for (const value of [null, 0, false, Symbol('option'), {}, Object('safe')]) {
+      const view = vi.fn(() => html`<p>unexpected</p>`);
+      await expect(render(view, { [field]: value as unknown as string })).rejects.toThrow(
+        field === 'doctype' ? /invalid doctype/ : /invalid CSP nonce/,
+      );
+      expect(view).not.toHaveBeenCalled();
+    }
+  });
+
   it.each([
     '<!doctype html><script>globalThis.__purityDoctypeAttack=1</script>',
     '<script>globalThis.__purityDoctypeAttack=1</script>',
@@ -137,4 +164,21 @@ it('preserves inherited buffered HTTP metadata flags', async () => {
   const options = Object.create({ extractHead: true, extractResponse: true });
   const result = await renderToString(() => html`<p>ready</p>`, options);
   expect(result).toMatchObject({ body: '<p>ready</p>', head: '' });
+});
+
+describe.each(renderers.slice(1))('$name supported option fields', ({ render }) => {
+  it('does not evaluate buffered-only option getters', async () => {
+    const unsupported = vi.fn(() => {
+      throw new Error('Unsupported getter evaluated');
+    });
+    const options = Object.defineProperties(
+      { doctype: '<!doctype html>' },
+      {
+        extractHead: { get: unsupported },
+        extractResponse: { get: unsupported },
+      },
+    );
+    expect(await render(() => html`<p>ready</p>`, options)).toContain('<p>ready</p>');
+    expect(unsupported).not.toHaveBeenCalled();
+  });
 });

@@ -16,6 +16,6 @@
     "@cloudflare/workers-types": "^4.20260527.1",
     "@purityjs/vite-plugin": "*",
     "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
-    "wrangler": "^4.141.0"
+    "wrangler": "^4.147.0"
   }
 }

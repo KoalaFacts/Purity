@@ -1,13 +1,13 @@
 // ---------------------------------------------------------------------------
 // prefersReducedMotionSignal() — boolean. ADR 0041.
 //
-// Composes on top of mediaSignal('(prefers-reduced-motion: reduce)').
+// Composes on top of mediaSignal('(prefers-reduced-motion: reduce)') via the
+// shared preferenceSignal() scaffolding.
 // Server returns a constant `false`.
 // ---------------------------------------------------------------------------
 
-import { mediaSignal } from './media-signal.ts';
-import { compute, type ComputedAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { preferenceSignal } from './preference-signal.ts';
+import type { ComputedAccessor } from './signals.ts';
 
 /**
  * Reactive `prefers-reduced-motion` (ADR 0041).
@@ -22,31 +22,12 @@ import { getSSRRenderContext } from './ssr-context.ts';
  * ```
  */
 export function prefersReducedMotionSignal(): ComputedAccessor<boolean> {
-  if (getSSRRenderContext() !== null) return compute(() => false);
-  // Throw isolation: a hostile global, malformed query injection, or a
-  // broken `mediaSignal` upgrade path must never crash the caller. Worst
-  // case we degrade to the SSR-equivalent constant `false`.
-  let mq: ComputedAccessor<boolean>;
-  try {
-    mq = mediaSignal('(prefers-reduced-motion: reduce)');
-  } catch (err) {
-    console.error(
-      '[purity] prefersReducedMotionSignal: mediaSignal threw, defaulting to false:',
-      err,
-    );
-    return compute(() => false);
-  }
-  // Strict boolean coercion. `mq()` is typed as boolean but the underlying
-  // `MediaQueryList.matches` is set by the platform (or, in tests, a mock)
-  // and engines have historically returned truthy/falsy non-bools. Callers
-  // rely on `typeof === 'boolean'` for CSS class flips and `:state()`.
-  return compute(() => {
-    try {
-      // `!!` not `=== true` — engines / mocks may yield truthy non-bools.
-      return !!mq();
-    } catch (err) {
-      console.error('[purity] prefersReducedMotionSignal: read threw, defaulting to false:', err);
-      return false;
-    }
-  });
+  return preferenceSignal(
+    ['(prefers-reduced-motion: reduce)'],
+    // `!!` not `=== true` — engines / mocks may yield truthy non-bools, and
+    // callers rely on `typeof === 'boolean'` for CSS class flips / `:state()`.
+    ([reduce]) => !!reduce,
+    false,
+    'prefersReducedMotionSignal',
+  );
 }

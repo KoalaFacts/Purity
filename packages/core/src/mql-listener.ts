@@ -79,7 +79,12 @@ export function attachMqlChange(
   onChange: MqlChangeListener,
   binding: MqlBinding,
 ): boolean {
-  if (isCompletePair(() => mql.addEventListener, () => mql.removeEventListener)) {
+  if (
+    isCompletePair(
+      () => mql.addEventListener,
+      () => mql.removeEventListener,
+    )
+  ) {
     binding.detach = () => mql.removeEventListener('change', onChange);
     mql.addEventListener('change', onChange);
     return true;
@@ -88,7 +93,12 @@ export function attachMqlChange(
     addListener?: (cb: MqlChangeListener) => void;
     removeListener?: (cb: MqlChangeListener) => void;
   };
-  if (isCompletePair(() => legacy.addListener, () => legacy.removeListener)) {
+  if (
+    isCompletePair(
+      () => legacy.addListener,
+      () => legacy.removeListener,
+    )
+  ) {
     binding.detach = () => legacy.removeListener!(onChange);
     legacy.addListener!(onChange);
     return true;

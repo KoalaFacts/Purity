@@ -116,7 +116,11 @@ function readNode<T>(node: StateNode<T> | ComputedNode): T {
     const c = node as ComputedNode;
     if (c.status !== STATUS_CLEAN) updateValue(c);
   }
-  if (activeListener !== null && !activeListener.disposed) {
+  // A disposed computed is a frozen snapshot, not a live reactive source: it
+  // can never become dirty again (its own sources were cut on dispose), so
+  // tracking it here would only create a dead observer edge.
+  const producerDisposed = node.fn !== null && (node as ComputedNode).disposed;
+  if (activeListener !== null && !activeListener.disposed && !producerDisposed) {
     track(node);
   }
   return node.value as T;
@@ -223,6 +227,16 @@ function removeObserver(producer: AnyNode, consumer: ComputedNode, sourceSlot: n
   }
   obs.pop();
   if (obs.length === 0) producer.observers = null;
+}
+
+// Detach a node from every producer it currently observes.
+function disconnectFromSources(node: ComputedNode): void {
+  const sources = node.sources;
+  if (sources === null) return;
+  for (let i = 0; i < sources.length; i++) removeObserver(sources[i], node, i);
+  node.sources = null;
+  node.sourceVersions = null;
+  node.observerSlots = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -608,6 +622,16 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
   };
   trackNode(node);
 
+  // Register with the current scope so a computed created inside a branch
+  // that unmounts is detached from its sources (no dangling observer links).
+  const dispose = (): void => {
+    if (node.disposed) return;
+    node.disposed = true;
+    disconnectFromSources(node);
+  };
+  const ctx = getCurrentContext();
+  if (ctx) (ctx.disposers ??= []).push(dispose);
+
   const accessor = (() => readNode<T>(node)) as ComputedAccessor<T>;
   (accessor as unknown as { get: () => T }).get = () => readNode<T>(node);
   (accessor as unknown as { peek: () => T }).peek = () => peekNode<T>(node);
@@ -652,14 +676,7 @@ function _effect(fn: () => undefined | Dispose): Dispose {
         console.error('[Purity] cleanup error:', e);
       }
     }
-    // Disconnect from each producer's observer list.
-    const sources = node.sources;
-    if (sources !== null) {
-      for (let i = 0; i < sources.length; i++) removeObserver(sources[i], node, i);
-      node.sources = null;
-      node.sourceVersions = null;
-      node.observerSlots = null;
-    }
+    disconnectFromSources(node);
   };
 
   // Auto-register with the current component/render context so reactive

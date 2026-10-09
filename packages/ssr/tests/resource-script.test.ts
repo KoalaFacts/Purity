@@ -15,24 +15,34 @@ import {
 // incidental, coverage.
 describe('escapeResourceJson — injection-prevention contract', () => {
   it('escapes "<" and ">" so a closing script tag cannot be smuggled in', () => {
-    const out = escapeResourceJson('</script><script>alert(1)</script>');
+    const original = '</script><script>alert(1)</script>';
+    const out = escapeResourceJson(original);
     expect(out).not.toContain('<');
     expect(out).not.toContain('>');
     expect(out).toContain('\\u003c/script\\u003e');
+    // Substring checks alone can't tell correct single-escaping from a
+    // double-escaping bug (e.g. emitting `\\u003c` instead of `\u003c`) —
+    // a doubled backslash would still contain the `\u003c` substring. Parse
+    // the result back and assert it equals the original value.
+    expect(JSON.parse(out)).toBe(original);
   });
 
   it('escapes "&" so an HTML entity cannot be reconstructed from adjacent text', () => {
-    const out = escapeResourceJson('a&b');
+    const original = 'a&b';
+    const out = escapeResourceJson(original);
     expect(out).toContain('\\u0026');
     expect(out).not.toContain('&');
+    expect(JSON.parse(out)).toBe(original);
   });
 
   it('escapes U+2028/U+2029, which are valid in JSON but illegal in script source', () => {
-    const out = escapeResourceJson('line\u2028sep\u2029para');
+    const original = 'line\u2028sep\u2029para';
+    const out = escapeResourceJson(original);
     expect(out).toContain('\\u2028');
     expect(out).toContain('\\u2029');
     expect(out).not.toContain('\u2028');
     expect(out).not.toContain('\u2029');
+    expect(JSON.parse(out)).toBe(original);
   });
 
   it('round-trips a payload with no dangerous characters unchanged (besides JSON quoting)', () => {
@@ -40,8 +50,10 @@ describe('escapeResourceJson — injection-prevention contract', () => {
   });
 
   it('escapes dangerous characters nested arbitrarily deep in the payload', () => {
-    const out = escapeResourceJson({ nested: { list: ['</script>', 'a&b\u2028c'] } });
+    const original = { nested: { list: ['</script>', 'a&b\u2028c'] } };
+    const out = escapeResourceJson(original);
     expect(out).not.toMatch(/[<>&\u2028\u2029]/);
+    expect(JSON.parse(out)).toEqual(original);
   });
 });
 

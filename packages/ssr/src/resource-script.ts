@@ -58,3 +58,28 @@ export function serializeResourceScriptPayload(
   const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
   return `<script type="application/json" id="${id}"${nonceAttr}>${json}</script>`;
 }
+
+/**
+ * Build the shell-level `<script id="__purity_resources__">` tag for the
+ * resolved top-level resource cache, or '' if there's nothing to prime.
+ * Shared by `renderToString` and `renderToStream` — both call this with
+ * identical shape/escaping requirements.
+ */
+export function buildResourceScript(
+  ordered: unknown[],
+  keyed: Record<string, unknown>,
+  nonce: string | undefined,
+): string {
+  const hasOrdered = ordered.length > 0;
+  const hasKeyed = Object.keys(keyed).length > 0;
+  if (!hasOrdered && !hasKeyed) return '';
+  // Backward-compat: when no resource opts into a key, emit the legacy
+  // array shape so existing caches and external consumers reading the
+  // payload format don't break. The new `{ ordered, keyed }` shape kicks
+  // in only when at least one keyed resource exists.
+  const payload = hasKeyed ? { ordered, keyed } : ordered;
+  // `nonce` was validated before rendering; safe to splice into the
+  // attribute via the shared serializer. Emitted only when supplied so the
+  // default output is byte-for-byte unchanged.
+  return serializeResourceScriptPayload(payload, RESOURCE_SCRIPT_ID, nonce);
+}

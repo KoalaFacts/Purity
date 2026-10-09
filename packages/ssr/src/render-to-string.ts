@@ -17,7 +17,7 @@ import { popSSRRenderContext, pushSSRRenderContext, type SSRRenderContext } from
 import { valueToHtml } from '@purityjs/core/compiler';
 import { boundaryDeadline } from './boundary-deadline.ts';
 import { ensureSSRComponentRendererInstalled } from './component.ts';
-import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
+import { buildResourceScript } from './resource-script.ts';
 import { renderCancellation } from './render-cancellation.ts';
 import { SSRTimeoutError } from './timeout-error.ts';
 import { snapshotRenderOptions, validateRenderOptions } from './render-options.ts';
@@ -358,24 +358,3 @@ function abortReason(signal: AbortSignal): unknown {
   (err as Error & { name: string }).name = 'AbortError';
   return err;
 }
-
-function buildResourceScript(
-  ordered: unknown[],
-  keyed: Record<string, unknown>,
-  nonce: string | undefined,
-): string {
-  const hasOrdered = ordered.length > 0;
-  const hasKeyed = Object.keys(keyed).length > 0;
-  if (!hasOrdered && !hasKeyed) return '';
-  // Backward-compat: when no resource opts into a key, emit the legacy
-  // array shape so existing caches and external consumers reading the
-  // payload format don't break. The new `{ ordered, keyed }` shape kicks
-  // in only when at least one keyed resource exists.
-  const payload = hasKeyed ? { ordered, keyed } : ordered;
-  // `nonce` was validated before rendering; safe to splice into the
-  // attribute via the shared serializer. Emitted only when supplied so the
-  // default output is byte-for-byte unchanged.
-  return serializeResourceScriptPayload(payload, RESOURCE_SCRIPT_ID, nonce);
-}
-
-export { RESOURCE_SCRIPT_ID };

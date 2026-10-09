@@ -946,3 +946,25 @@ describe('observer cleanup', () => {
     // No assertions on runs — the watchers should be fully detached.
   });
 });
+
+describe('deep dependency chains', () => {
+  it('propagates a root write through a 20,000-level chain built incrementally without overflowing the stack', () => {
+    // A long-lived derived chain grown one link at a time (each new link read
+    // immediately, so its own build only ever touches its already-CLEAN
+    // parent) never trips the recursive-read depth limit at construction
+    // time. But a later write to the root must still mark/resolve every
+    // link in one synchronous pass — that walk (markDirty -> markCheck,
+    // and updateValue's CHECK resolution) used to recurse one JS stack
+    // frame per link, so a sufficiently long chain built exactly this way
+    // overflowed on write even though it built up without incident.
+    const root = state(0);
+    let prev = root;
+    for (let i = 0; i < 20_000; i++) {
+      const p = prev;
+      prev = compute(() => p() + 1);
+      prev(); // force shallow, incremental resolution at build time
+    }
+    expect(() => root(1)).not.toThrow();
+    expect(prev()).toBe(20_001);
+  });
+});

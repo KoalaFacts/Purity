@@ -269,13 +269,25 @@ function markDirty(observers: ComputedNode[]): void {
   }
 }
 
+// Iterative (explicit stack) rather than recursive: a long-lived derived
+// chain grown one link at a time never trips a stack-depth limit while
+// building (each new link only touches its already-settled parent), but a
+// later write to the root still has to mark every link in one synchronous
+// pass. Pushing children in reverse index order preserves the same
+// pre-order visitation (and thus pendingEffects push order) the old
+// recursive version produced.
 function markCheck(observers: ComputedNode[]): void {
-  for (let i = 0; i < observers.length; i++) {
-    const o = observers[i];
+  const stack: ComputedNode[] = [];
+  for (let i = observers.length - 1; i >= 0; i--) stack.push(observers[i]);
+  while (stack.length > 0) {
+    const o = stack.pop()!;
     if (o.status !== STATUS_CLEAN) continue;
     o.status = STATUS_CHECK;
     if (o.isEffect) pendingEffects.push(o);
-    if (o.observers !== null) markCheck(o.observers);
+    const kids = o.observers;
+    if (kids !== null) {
+      for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]);
+    }
   }
 }
 
@@ -283,36 +295,81 @@ function markCheck(observers: ComputedNode[]): void {
 // updateValue — pull a node back to CLEAN
 // ---------------------------------------------------------------------------
 
-function updateValue(node: ComputedNode): void {
-  if (node.disposed) {
-    node.status = STATUS_CLEAN;
+interface CheckFrame {
+  node: ComputedNode;
+  sources: AnyNode[];
+  versions: number[];
+  idx: number;
+}
+
+// Iterative (explicit heap-allocated stack of frames) equivalent of the
+// natural recursive formulation: to resolve a CHECK node, first resolve each
+// CHECK/DIRTY source (depth-first), then compare versions and either settle
+// CLEAN or recompute. A long incrementally-built chain can be arbitrarily
+// deep — see the sibling comment on markCheck — so this walk must not grow
+// the JS call stack by one frame per link. Behavior (including the
+// first-changed-source short-circuit) is unchanged; only the mechanism is.
+function updateValue(startNode: ComputedNode): void {
+  if (startNode.disposed) {
+    startNode.status = STATUS_CLEAN;
     return;
   }
-  if (node.status === STATUS_CHECK) {
-    // Walk sources; if any actually changed (source.version differs from our
-    // snapshot), escalate to DIRTY. Otherwise we're unchanged and can stay
-    // CLEAN without re-running fn().
-    const sources = node.sources;
-    if (sources !== null) {
-      const versions = node.sourceVersions!;
-      for (let i = 0; i < sources.length; i++) {
-        const src = sources[i];
-        if (src.fn !== null) {
-          const sc = src as ComputedNode;
-          if (sc.status !== STATUS_CLEAN) updateValue(sc);
-        }
-        if (src.version !== versions[i]) {
-          node.status = STATUS_DIRTY;
+  if (startNode.status !== STATUS_CHECK) {
+    runComputed(startNode);
+    return;
+  }
+
+  const stack: CheckFrame[] = [
+    {
+      node: startNode,
+      sources: startNode.sources ?? [],
+      versions: startNode.sourceVersions ?? [],
+      idx: 0,
+    },
+  ];
+
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    const { node, sources, versions } = frame;
+    let descended = false;
+
+    while (frame.idx < sources.length) {
+      const src = sources[frame.idx];
+      if (src.fn !== null) {
+        const sc = src as ComputedNode;
+        if (sc.disposed) {
+          sc.status = STATUS_CLEAN;
+        } else if (sc.status === STATUS_CHECK) {
+          // Resolve sc before we can know whether it actually changed —
+          // push a frame for it instead of recursing into updateValue(sc).
+          stack.push({
+            node: sc,
+            sources: sc.sources ?? [],
+            versions: sc.sourceVersions ?? [],
+            idx: 0,
+          });
+          descended = true;
           break;
+        } else if (sc.status !== STATUS_CLEAN) {
+          runComputed(sc);
         }
       }
+      if (src.version !== versions[frame.idx]) {
+        node.status = STATUS_DIRTY;
+        break;
+      }
+      frame.idx++;
     }
+
+    if (descended) continue;
+
     if (node.status === STATUS_CHECK) {
       node.status = STATUS_CLEAN;
-      return;
+    } else {
+      runComputed(node);
     }
+    stack.pop();
   }
-  runComputed(node);
 }
 
 function runComputed(node: ComputedNode): void {

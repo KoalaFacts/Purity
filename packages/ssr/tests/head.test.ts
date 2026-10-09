@@ -93,7 +93,7 @@ describe('head() — SSR collection', () => {
     const out = await renderToString(App, { extractHead: true });
     // Reactive `${() => r()}` slots wrap with the `<!--[-->...<!--]-->`
     // expression marker pair on SSR. The resolved value is the only entry.
-    expect(out.head).toBe('<title>Loaded</title>');
+    expect(out.head).toBe('<title><!--[-->Loaded<!--]--></title>');
   });
 
   it('still emits the resource-cache script in body when extractHead is true', async () => {

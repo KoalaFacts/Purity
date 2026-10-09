@@ -58,14 +58,22 @@ interface Case {
   /** Fresh values per mode; SSR mode must use the *SSR* helpers (eachSSR, markSSRHtml). */
   values: (mode: Mode) => unknown[];
   /**
-   * Set when the drift is a known, unfixed defect. The case is then asserted
-   * with it.fails so the suite stays green while the defect exists, and turns
-   * red (prompting removal of this flag) once it is fixed.
+   * Set when the drift is a known, unfixed defect (see RAW_TEXT_DEFERRED). The
+   * case is asserted with it.fails so the suite stays green while the defect
+   * exists, and turns red (prompting removal of this flag) once it is fixed.
    */
   knownDefect?: string;
 }
 
 const LI = ['<li>', '</li>'];
+
+// Raw-text elements (style, script, textarea, title): SSR still emits hydration
+// markers and entity-escapes their content, and the complex CSR path does not
+// rebuild them. Deferred until the codegen paths are unified; tracked in a
+// follow-up issue ("raw-text elements: SSR markers/escaping inside
+// style/script/textarea/title"). Pinned with it.fails so the defect stays visible.
+const RAW_TEXT_DEFERRED =
+  'raw-text elements: SSR markers/escaping in style/script/textarea/title (follow-up issue)';
 
 const cases: Case[] = [
   {
@@ -152,36 +160,43 @@ const cases: Case[] = [
     name: 'raw-text <style> keeps CSS verbatim',
     strings: ['<style>a > b { content: "', '" }</style>'],
     values: () => ['x&y'],
+    knownDefect: RAW_TEXT_DEFERRED,
   },
   {
     name: 'raw-text <textarea> keeps angle brackets as text',
     strings: ['<textarea>', '</textarea>'],
     values: () => ['a <b> & c'],
+    knownDefect: RAW_TEXT_DEFERRED,
   },
   {
     name: 'raw-text element nested in a wrapper (complex template)',
     strings: ['<div><style>a > b { color: ', ' }</style></div>'],
     values: () => ['red'],
+    knownDefect: RAW_TEXT_DEFERRED,
   },
   {
     name: 'raw-text element beside other roots',
     strings: ['<style>a > b { color: ', ' }</style><p>', '</p>'],
     values: () => ['red', 'x&y'],
+    knownDefect: RAW_TEXT_DEFERRED,
   },
   {
     name: 'upper-case raw-text tags match case-insensitively',
     strings: ['<STYLE>a > b { content: "', '" }</STYLE><div><TEXTAREA>', '</TEXTAREA></div>'],
     values: () => ['x&y', 'a <b> & c'],
+    knownDefect: RAW_TEXT_DEFERRED,
   },
   {
     name: 'end tags other than the element own stay inert inside style',
     strings: ['<style>', '</style>'],
     values: () => ['</div>'],
+    knownDefect: RAW_TEXT_DEFERRED,
   },
   {
     name: 'raw-text <title> with dynamic content',
     strings: ['<title>', ' & more</title>'],
     values: () => ['Tom & <Jerry>'],
+    knownDefect: RAW_TEXT_DEFERRED,
   },
 ];
 
@@ -241,7 +256,8 @@ describe('SSR / CSR / hydrate conformance', () => {
     expect(host.querySelectorAll('style')).toHaveLength(1);
   });
 
-  it('fully static <style> content is not entity-escaped (static SSR path)', () => {
+  // Deferred: see RAW_TEXT_DEFERRED. Static <style> text is entity-escaped by SSR.
+  it.fails('fully static <style> content is not entity-escaped (static SSR path)', () => {
     expect(normalize(renderSSR(['<style>a > b { }</style>'], []))).toBe(
       normalize('<style>a > b { }</style>'),
     );

@@ -171,16 +171,7 @@ interface AttrSlot {
   path: PathStep[];
 }
 
-// A raw-text / RCDATA element with expression children. The HTML parser makes
-// its content a single text node, so the expressions cannot have positional
-// slots. The element gets one slot instead, and its text is rebuilt from parts.
-interface RawContentSlot {
-  type: 'raw';
-  parts: ({ text: string } | { index: number })[];
-  path: PathStep[];
-}
-
-type Slot = ExprSlot | AttrSlot | RawContentSlot;
+type Slot = ExprSlot | AttrSlot;
 
 // ---------------------------------------------------------------------------
 // condenseWhitespace — strip whitespace-only text nodes containing a newline
@@ -213,22 +204,9 @@ function isIndentation(n: ASTNode): boolean {
 // createTextNode + replaceWith pair.
 const EXPR_PLACEHOLDER = '​';
 
-// Raw-text elements: the HTML parser does not parse markup inside them.
-// RAWTEXT (style, script) does not decode entities either, so text is emitted
-// verbatim. RCDATA (textarea, title) decodes entities, so text is escaped.
-// Neither can carry hydration markers (they would become literal text), so
-// SSR omits them and hydrate rebuilds the element content from its parts.
-const RAWTEXT_TAGS = new Set(['style', 'script']);
-const RCDATA_TAGS = new Set(['textarea', 'title']);
-const RAW_CONTENT_TAGS = new Set([...RAWTEXT_TAGS, ...RCDATA_TAGS]);
-// Tag names are ASCII case-insensitive in HTML, so every lookup goes through
-// these predicates (the parser keeps the author's spelling, e.g. <STYLE>).
-const isRawTextTag = (tag: string): boolean => RAWTEXT_TAGS.has(tag.toLowerCase());
-const isRawContentTag = (tag: string): boolean => RAW_CONTENT_TAGS.has(tag.toLowerCase());
-
 export function condenseWhitespace(node: ASTNode): ASTNode {
   if (node.type === 'fragment' || node.type === 'element') {
-    if (node.type === 'element' && PRESERVE_WS_TAGS.has(node.tag.toLowerCase())) return node;
+    if (node.type === 'element' && PRESERVE_WS_TAGS.has(node.tag)) return node;
     let changed = false;
     const next: ASTNode[] = [];
     for (const ch of node.children) {
@@ -402,28 +380,6 @@ function emitHydrateChildren(children: ASTNode[], ctx: HydrateCtx, cursor: strin
   }
 }
 
-// Raw-text / RCDATA element with expression children. SSR emits its content as
-// one text node (no markers, no child elements), so bind a single watch that
-// writes the concatenated parts into that text node.
-function emitRawContentHydrate(
-  node: import('./ast.ts').ElementNode,
-  ctx: HydrateCtx,
-  el: string,
-  id: number,
-): void {
-  const t = `_rt${id}`;
-  ctx.setup.push(
-    `var ${t}=${el}.firstChild;`,
-    `if(!${t}){${t}=document.createTextNode('');${el}.appendChild(${t});}`,
-  );
-  const parts = node.children.map((ch) =>
-    ch.type === 'expression'
-      ? `__purity_tx__(_v[${ch.index}])`
-      : jsString(ch.type === 'text' ? ch.value : ''),
-  );
-  ctx.reactive.push(`${t}.data=${parts.join('+')};`);
-}
-
 function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
   switch (node.type) {
     case 'text': {
@@ -542,14 +498,10 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         }
       }
 
-      // Raw-text / RCDATA content with dynamic parts: SSR wrote no markers, so
-      // rebuild the element's text from its parts instead of walking children.
-      if (isRawContentTag(node.tag) && node.children.some((c) => c.type === 'expression')) {
-        emitRawContentHydrate(node, ctx, el, id);
-      } else if (!VOID.has(node.tag) && node.children.length > 0 && !node.tag.includes('-')) {
-        // Recurse into children. Hyphenated tags are Custom Elements — their
-        // shadow root is opaque to the outer hydrator; the element's own
-        // connectedCallback handles its interior. Skip walking children here.
+      // Recurse into children. Hyphenated tags are Custom Elements — their
+      // shadow root is opaque to the outer hydrator; the element's own
+      // connectedCallback handles its interior. Skip walking children here.
+      if (!VOID.has(node.tag) && node.children.length > 0 && !node.tag.includes('-')) {
         const child = `_ch${id}`;
         ctx.setup.push(`var ${child}=${el}.firstChild;`);
         emitHydrateChildren(node.children, ctx, child);
@@ -736,14 +688,12 @@ function genStaticDOM(
   }
 }
 
-function buildStaticHtml(node: ASTNode, rawParent: string | null = null): string {
+function buildStaticHtml(node: ASTNode): string {
   switch (node.type) {
     case 'text':
       // `raw: true` marks SGML declarations like `<!doctype html>` parsed
       // verbatim from the template; escaping would corrupt them.
-      return node.raw || (rawParent !== null && isRawTextTag(rawParent))
-        ? node.value
-        : escapeHtml(node.value);
+      return node.raw ? node.value : escapeHtml(node.value);
     case 'comment':
       return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
     case 'element': {
@@ -755,11 +705,11 @@ function buildStaticHtml(node: ASTNode, rawParent: string | null = null): string
       }
       if (VOID.has(node.tag)) return `${s}/>`;
       s += '>';
-      for (const ch of node.children) s += buildStaticHtml(ch, node.tag);
+      for (const ch of node.children) s += buildStaticHtml(ch);
       return `${s}</${node.tag}>`;
     }
     case 'fragment':
-      return node.children.map((ch) => buildStaticHtml(ch, rawParent)).join('');
+      return node.children.map(buildStaticHtml).join('');
     default:
       /* v8 ignore next -- defensive fallthrough; AST has no other types */
       return '';
@@ -820,21 +770,6 @@ function buildDynamicHtml(
 
       if (VOID.has(node.tag)) return `${s}/>`;
       s += '>';
-      if (isRawContentTag(node.tag) && node.children.some((c) => c.type === 'expression')) {
-        // Expressions inside raw-text / RCDATA content have no positional slots
-        // of their own (see RawContentSlot); the element's text is rebuilt.
-        const parts: ({ text: string } | { index: number })[] = [];
-        let staticText = '';
-        for (const ch of node.children) {
-          if (ch.type === 'expression') parts.push({ index: ch.index });
-          else if (ch.type === 'text') {
-            parts.push({ text: ch.value });
-            staticText += isRawTextTag(node.tag) ? ch.value : escapeHtml(ch.value);
-          }
-        }
-        slots.push({ type: 'raw', parts, path: [...currentPath] });
-        return `${s}${staticText}</${node.tag}>`;
-      }
       s += emitChildrenHtml(node.children, slots, currentPath);
       return `${s}</${node.tag}>`;
     }
@@ -941,10 +876,6 @@ function genPositionalBindings(slots: Slot[]): string {
       const { setup, reactive } = genExprBinding(nodeVar, slot.index, slot.textPlaceholder);
       setupParts.push(setup);
       if (reactive) reactiveParts.push(reactive);
-    } else if (slot.type === 'raw') {
-      const { setup, reactive } = genRawContentBinding(nodeVar, slot.parts);
-      setupParts.push(setup);
-      reactiveParts.push(reactive);
     } else {
       for (const attr of slot.attrs) {
         if (attr.kind !== 'static') {
@@ -961,19 +892,6 @@ function genPositionalBindings(slots: Slot[]): string {
     result += `_w(function(){${reactiveParts.join('')}});`;
   }
   return result;
-}
-
-// Raw-text / RCDATA element content: the element's single text node is written
-// from its parts on every change. Mirrors emitRawContentHydrate().
-function genRawContentBinding(nodeVar: string, parts: RawContentSlot['parts']): BindingParts {
-  const t = `_rt${bindVarCounter++}`;
-  const text = parts
-    .map((p) => ('text' in p ? jsString(p.text) : `__purity_tx__(_v[${p.index}])`))
-    .join('+');
-  return {
-    setup: `var ${t}=${nodeVar}.firstChild;if(!${t}){${t}=document.createTextNode('');${nodeVar}.appendChild(${t});}`,
-    reactive: `${t}.data=${text};`,
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1161,7 +1079,7 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
 export function generateSSR(ast: FragmentNode): string {
   assertSafeScriptContent(ast);
   ast = condenseWhitespace(ast) as FragmentNode;
-  const ctx: SSRGenCtx = { parts: [], counter: 0, out: '_o', lastLitHtml: null, rawParent: null };
+  const ctx: SSRGenCtx = { parts: [], counter: 0, out: '_o', lastLitHtml: null };
   // Static-prefix optimization: if the entire tree is static AND contains no
   // hyphenated tags (which require runtime component dispatch), emit a closure
   // returning the prebuilt string. Avoids per-call work and skips the _v / _h
@@ -1216,8 +1134,6 @@ interface SSRGenCtx {
   // polynomial-redos — keeping the unstringified value side-by-side sidesteps
   // both the perf risk and the alert.
   lastLitHtml: string | null;
-  // Tag of the enclosing raw-text / RCDATA element, or null.
-  rawParent: string | null;
 }
 
 // Append a JS literal that adds a static HTML chunk to the active output var.
@@ -1248,12 +1164,7 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
   switch (node.type) {
     case 'text':
       // `raw: true` declarations (DOCTYPE, etc.) bypass the escape.
-      emitLit(
-        ctx,
-        node.raw || (ctx.rawParent !== null && isRawTextTag(ctx.rawParent))
-          ? node.value
-          : escapeHtml(node.value),
-      );
+      emitLit(ctx, node.raw ? node.value : escapeHtml(node.value));
       return;
 
     case 'comment':
@@ -1261,14 +1172,6 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
       return;
 
     case 'expression': {
-      if (ctx.rawParent !== null) {
-        // Raw-text / RCDATA content: no hydration markers (see RAW_CONTENT_TAGS).
-        const helper = isRawTextTag(ctx.rawParent)
-          ? `_h.rawText(_v[${node.index}],${jsString(ctx.rawParent.toLowerCase())})`
-          : `_h.toHtml(_v[${node.index}])`;
-        pushRaw(ctx, `${ctx.out}+=${helper};`);
-        return;
-      }
       // Reactive slot: wrapped in hydration markers so PR 4 can locate it.
       // _h.toHtml handles signal-accessor calls, branded HTML, arrays, and
       // primitive escaping in one place.
@@ -1298,10 +1201,7 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
         return;
       }
       emitLit(ctx, '>');
-      const savedRawParent = ctx.rawParent;
-      ctx.rawParent = isRawContentTag(node.tag) ? node.tag : null;
       for (const ch of node.children) buildSSRBody(ch, ctx);
-      ctx.rawParent = savedRawParent;
       emitLit(ctx, `</${node.tag}>`);
       return;
     }

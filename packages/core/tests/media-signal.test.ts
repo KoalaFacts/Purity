@@ -228,6 +228,26 @@ describe('mediaSignal — audit-v2 hardening', () => {
     expect(legacy!.legacyListeners.length).toBe(0);
   });
 
+  it('swallows a throwing removeEventListener during reset (no crash; cache still clears)', () => {
+    // mediaSignal's detach contract: the caller of `_resetMediaSignalCache`
+    // must never see an exception from the underlying MediaQueryList, even
+    // on a hostile/legacy target whose remove call throws. This is the
+    // opposite contract from devicePixelRatioSignal's detach, which is
+    // allowed to throw so its rebind path can roll back a partial attach —
+    // the two must not be unified onto the same throw/swallow behavior.
+    mediaSignal('(min-width: 700px)');
+    const mql = mqlsByQuery.get('(min-width: 700px)')!;
+    expect(mql.listeners.length).toBe(1);
+    mql.removeEventListener = () => {
+      throw new Error('detach boom');
+    };
+    expect(() => _resetMediaSignalCache()).not.toThrow();
+    // Cache/listener registry clear unconditionally regardless of the
+    // failed detach, so a fresh call for the same query rewires cleanly.
+    const sig = mediaSignal('(min-width: 700px)');
+    expect(sig()).toBe(false);
+  });
+
   it('isolates a throwing addEventListener — accessor still returns initial matches', () => {
     // Hostile MQL: addEventListener blows up. The mediaSignal must
     // (a) not crash, (b) return a working accessor seeded at mql.matches,

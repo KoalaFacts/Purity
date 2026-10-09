@@ -33,6 +33,7 @@ import {
 } from '@purityjs/core';
 import { valueToHtml } from '@purityjs/core/compiler';
 import { boundaryDeadline } from './boundary-deadline.ts';
+import { ensureSSRComponentRendererInstalled } from './component.ts';
 import { renderCancellation } from './render-cancellation.ts';
 import { SSRTimeoutError } from './timeout-error.ts';
 import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
@@ -376,6 +377,7 @@ async function renderShell(
   request: Request | undefined,
   signal: AbortSignal | undefined,
 ): Promise<ShellResult> {
+  ensureSSRComponentRendererInstalled();
   const start = Date.now();
   const resolvedData: unknown[] = [];
   const resolvedErrors: unknown[] = [];

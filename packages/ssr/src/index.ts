@@ -6,10 +6,6 @@
 // lean by only loading it from your `entry.server.ts`.
 // ---------------------------------------------------------------------------
 
-// Side-effect import: registers the SSR component renderer hook so that
-// hyphenated tags in SSR templates dispatch to registered components.
-import './component.ts';
-
 export type { SSRHtml } from '@purityjs/core/compiler';
 export { html } from './html.ts';
 export { SSRTimeoutError } from './timeout-error.ts';

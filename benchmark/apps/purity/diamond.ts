@@ -67,7 +67,7 @@ function ButtonBar() {
         <div class="col-md-6">
           <div class="row">
             <div class="col-sm-6 smallpad">
-              <button type="button" class="btn btn-primary btn-block" id="setup" @click=${setup}>
+              <button type="button" class="btn btn-primary btn-block" id="setup" @click=${() => setup()}>
                 Setup 1000 Diamonds
               </button>
             </div>

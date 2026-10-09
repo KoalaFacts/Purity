@@ -485,18 +485,18 @@ function reconcileEach<T>(
   }
 
   if (prevLen === 0) {
-    const newKeys2: unknown[] = new Array(len);
+    const newKeys2: unknown[] = [];
     const frag = document.createDocumentFragment();
     for (let i = 0; i < len; i++) {
       const item = items[i];
       const key = getKey(item, i);
-      newKeys2[i] = key;
       // Duplicate key: keep the first row only. Rendering a second entry
       // would orphan the first one's DOM nodes and scope in keyToEntry.
       if (keyToEntry.has(key)) {
         warnDuplicateKey(key, i);
         continue;
       }
+      newKeys2.push(key);
       const data = state(item);
       const { entry, content } = runEntryMapFn(mapFn, data, i, ownerCtx);
       if (content instanceof DocumentFragment) {
@@ -518,14 +518,15 @@ function reconcileEach<T>(
     return;
   }
 
-  const newKeys: unknown[] = new Array(len);
+  // newKeys holds first occurrences only, so newLen (not len) is the row
+  // count used by every placement loop below.
+  const newKeys: unknown[] = [];
   const newEntries = new Map<unknown, EachEntry<T>>();
   let reuseCount = 0;
 
   for (let i = 0; i < len; i++) {
     const item = items[i];
     const key = getKey(item, i);
-    newKeys[i] = key;
 
     // Duplicate key: keys are documented as unique, so this only warns. The
     // first occurrence owns the entry; later occurrences reuse it without
@@ -536,6 +537,7 @@ function reconcileEach<T>(
       warnDuplicateKey(key, i);
       continue;
     }
+    newKeys.push(key);
 
     const _existing = keyToEntry.get(key) as EachEntry<T> | undefined;
     if (_existing) {
@@ -550,10 +552,12 @@ function reconcileEach<T>(
     }
   }
 
+  const newLen = newKeys.length;
+
   if (reuseCount === 0) {
     bulkClear(parent, prevKeys, keyToEntry, endMarker);
     const frag = document.createDocumentFragment();
-    for (let i = 0; i < len; i++) {
+    for (let i = 0; i < newLen; i++) {
       const entry = newEntries.get(newKeys[i])!;
       for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
     }
@@ -581,7 +585,7 @@ function reconcileEach<T>(
     }
   }
 
-  let isAppend = len > prevLen;
+  let isAppend = newLen > prevLen;
   if (isAppend) {
     for (let i = 0; i < prevLen; i++) {
       if (prevKeys[i] !== newKeys[i]) {
@@ -591,9 +595,9 @@ function reconcileEach<T>(
     }
   }
 
-  let isPrepend = !isAppend && len > prevLen;
+  let isPrepend = !isAppend && newLen > prevLen;
   if (isPrepend) {
-    const offset = len - prevLen;
+    const offset = newLen - prevLen;
     for (let i = 0; i < prevLen; i++) {
       if (prevKeys[i] !== newKeys[i + offset]) {
         isPrepend = false;
@@ -604,13 +608,13 @@ function reconcileEach<T>(
 
   if (isAppend) {
     const frag = document.createDocumentFragment();
-    for (let i = prevLen; i < len; i++) {
+    for (let i = prevLen; i < newLen; i++) {
       const entry = newEntries.get(newKeys[i])!;
       for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
     }
     parent.insertBefore(frag, endMarker);
   } else if (isPrepend) {
-    const newCount = len - prevLen;
+    const newCount = newLen - prevLen;
     const frag = document.createDocumentFragment();
     for (let i = 0; i < newCount; i++) {
       const entry = newEntries.get(newKeys[i])!;
@@ -620,11 +624,11 @@ function reconcileEach<T>(
     parent.insertBefore(frag, firstExisting);
   } else {
     let swapped = false;
-    if (len === prevLen && reuseCount === len) {
+    if (newLen === prevLen && reuseCount === newLen) {
       let sc = 0;
       let sa = -1;
       let sb = -1;
-      for (let i = 0; i < len; i++) {
+      for (let i = 0; i < newLen; i++) {
         if (prevKeys[i] !== newKeys[i]) {
           if (sc === 0) sa = i;
           else if (sc === 1) sb = i;
@@ -656,9 +660,9 @@ function reconcileEach<T>(
       for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
 
       const sources: number[] = [];
-      const newIndexToSource: number[] = new Array(len).fill(-1);
+      const newIndexToSource: number[] = new Array(newLen).fill(-1);
 
-      for (let i = 0; i < len; i++) {
+      for (let i = 0; i < newLen; i++) {
         const oldIdx = oldKeyIndex.get(newKeys[i]);
         if (oldIdx !== undefined) {
           sources.push(oldIdx);
@@ -675,7 +679,7 @@ function reconcileEach<T>(
         // moveBefore is O(1) per node, and pulling rows into a fragment
         // first would detach them and lose the preserved state.
         let nextSibling: Node = endMarker;
-        for (let i = len - 1; i >= 0; i--) {
+        for (let i = newLen - 1; i >= 0; i--) {
           const entry = newEntries.get(newKeys[i])!;
           const sourceIdx = newIndexToSource[i];
           const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
@@ -695,7 +699,7 @@ function reconcileEach<T>(
         let batch: Node[] | null = null;
         let batchTarget: Node = endMarker;
 
-        for (let i = len - 1; i >= 0; i--) {
+        for (let i = newLen - 1; i >= 0; i--) {
           const entry = newEntries.get(newKeys[i])!;
           const firstNode = entry.nodes[0];
           const sourceIdx = newIndexToSource[i];
@@ -1538,7 +1542,7 @@ export function inflateDeferredEach<T>(
 
   const ownerCtx = getCurrentContext();
   const items = getList() || [];
-  const eachState: EachState<T> = { keyToEntry: new Map(), prevKeys: new Array(items.length) };
+  const eachState: EachState<T> = { keyToEntry: new Map(), prevKeys: [] };
 
   // Adopt rows in items order. For each item, if a matching SSR row exists,
   // run mapFn under the entry scope (yielding a DeferredTemplate when the
@@ -1547,7 +1551,13 @@ export function inflateDeferredEach<T>(
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     const key = getKey(item, i);
-    eachState.prevKeys[i] = key;
+    // Duplicate key: first occurrence adopts the SSR row; later ones are
+    // skipped so prevKeys stays unique (see reconcileEach).
+    if (eachState.keyToEntry.has(key)) {
+      warnDuplicateKey(key, i);
+      continue;
+    }
+    eachState.prevKeys.push(key);
 
     // Items match SSR rows by `String(key)` — same coercion that eachSSR's
     // encoder applies (round-trip through encodeURIComponent / decode).
@@ -2082,18 +2092,18 @@ export function list<T>(
 
     // Fast path: all new (first render) — single pass, no Map lookups
     if (prevLen === 0) {
-      const newKeys2: unknown[] = new Array(len);
+      const newKeys2: unknown[] = [];
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) {
         const item = items[i];
         const key = getKey(item, i);
-        newKeys2[i] = key;
         // Duplicate key: first row wins (see each()). A second entry would
         // orphan the first one's node and scope in keyToEntry.
         if (keyToEntry.has(key)) {
           warnDuplicateKey(key, i);
           continue;
         }
+        newKeys2.push(key);
         const entry = createEntry(item, i);
         keyToEntry.set(key, entry);
         frag.appendChild(entry.node);
@@ -2103,7 +2113,9 @@ export function list<T>(
       return;
     }
 
-    const newKeys: unknown[] = new Array(len);
+    // newKeys holds first occurrences only, so newLen (not len) is the row
+    // count used by every placement loop below.
+    const newKeys: unknown[] = [];
     const newEntries = new Map<unknown, ListEntry>();
     let reuseCount = 0;
 
@@ -2111,13 +2123,13 @@ export function list<T>(
     for (let i = 0; i < len; i++) {
       const item = items[i];
       const key = getKey(item, i);
-      newKeys[i] = key;
 
       // Duplicate key: first occurrence owns the entry (see each()).
       if (newEntries.has(key)) {
         warnDuplicateKey(key, i);
         continue;
       }
+      newKeys.push(key);
 
       const _existing = keyToEntry.get(key);
       if (_existing) {
@@ -2130,6 +2142,8 @@ export function list<T>(
       }
     }
 
+    const newLen = newKeys.length;
+
     // Fast path: no reuse — bulk remove + bulk insert
     if (reuseCount === 0) {
       for (let i = 0; i < prevLen; i++) {
@@ -2140,7 +2154,7 @@ export function list<T>(
         releaseEntry(entry);
       }
       const frag = document.createDocumentFragment();
-      for (let i = 0; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
+      for (let i = 0; i < newLen; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
       parent.insertBefore(frag, endMarker);
       keyToEntry = newEntries;
       prevKeys = newKeys;
@@ -2161,8 +2175,8 @@ export function list<T>(
     }
 
     // Reorder — append-only / prepend-only fast paths or LIS
-    if (prevLen > 0 && len > 0) {
-      let isAppend = len > prevLen;
+    if (prevLen > 0 && newLen > 0) {
+      let isAppend = newLen > prevLen;
       if (isAppend) {
         for (let i = 0; i < prevLen; i++) {
           if (prevKeys[i] !== newKeys[i]) {
@@ -2172,9 +2186,9 @@ export function list<T>(
         }
       }
 
-      let isPrepend = !isAppend && len > prevLen;
+      let isPrepend = !isAppend && newLen > prevLen;
       if (isPrepend) {
-        const offset = len - prevLen;
+        const offset = newLen - prevLen;
         for (let i = 0; i < prevLen; i++) {
           if (prevKeys[i] !== newKeys[i + offset]) {
             isPrepend = false;
@@ -2185,11 +2199,11 @@ export function list<T>(
 
       if (isAppend) {
         const frag = document.createDocumentFragment();
-        for (let i = prevLen; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
+        for (let i = prevLen; i < newLen; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
         parent.insertBefore(frag, endMarker);
       } else if (isPrepend) {
         // Pure prepend — see each() for the reuseCount-equals-prevLen invariant.
-        const newCount = len - prevLen;
+        const newCount = newLen - prevLen;
         const frag = document.createDocumentFragment();
         for (let i = 0; i < newCount; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
         const firstExisting = newEntries.get(newKeys[newCount])!.node;
@@ -2200,8 +2214,8 @@ export function list<T>(
         for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
 
         const sources: number[] = [];
-        const srcMap: number[] = new Array(len).fill(-1);
-        for (let i = 0; i < len; i++) {
+        const srcMap: number[] = new Array(newLen).fill(-1);
+        for (let i = 0; i < newLen; i++) {
           const oi = oldKeyIndex.get(newKeys[i]);
           if (oi !== undefined) {
             sources.push(oi);
@@ -2211,7 +2225,7 @@ export function list<T>(
 
         const stableSet = new Set(lis(sources));
         let next: Node = endMarker;
-        for (let i = len - 1; i >= 0; i--) {
+        for (let i = newLen - 1; i >= 0; i--) {
           const entry = newEntries.get(newKeys[i])!;
           if (srcMap[i] === -1 || !stableSet.has(srcMap[i])) {
             parent.insertBefore(entry.node, next);
@@ -2219,11 +2233,11 @@ export function list<T>(
           next = entry.node;
         }
       }
-      /* v8 ignore start -- prevLen===0 caught by earlier fast path; len===0 caught above */
+      /* v8 ignore start -- prevLen===0 caught by earlier fast path; newLen===0 caught above */
     } else {
       // All new — batch insert
       const frag = document.createDocumentFragment();
-      for (let i = 0; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
+      for (let i = 0; i < newLen; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
       parent.insertBefore(frag, endMarker);
     }
     /* v8 ignore stop */

@@ -2003,3 +2003,74 @@ describe('list() — duplicate keys never leave stale rows', () => {
     }
   });
 });
+
+describe('each() / list() — duplicate keys render first-occurrence order', () => {
+  type Row = { id: number };
+  const firstOccurrence = (ids: number[]) => [...new Set(ids)];
+
+  const mounts: Array<[string, (items: () => Row[]) => HTMLElement]> = [
+    [
+      'each()',
+      (items) => {
+        const c = document.createElement('ul');
+        c.appendChild(
+          each(
+            () => items(),
+            (item: () => Row) => {
+              const li = document.createElement('li');
+              li.textContent = String(item().id);
+              return li;
+            },
+            (item: Row) => item.id,
+          ),
+        );
+        return c;
+      },
+    ],
+    [
+      'list()',
+      (items) => {
+        const c = document.createElement('ul');
+        c.appendChild(
+          list<Row>(
+            'li',
+            () => items(),
+            (r) => String(r.id),
+            (r) => r.id,
+          ),
+        );
+        return c;
+      },
+    ],
+  ];
+
+  for (const [name, mount] of mounts) {
+    it(`${name} renders keys in first-occurrence order across duplicate-key sequences`, async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const items = state<Row[]>([]);
+        const c = mount(items);
+        // Split into the three independent runs the bug report uses.
+        const runs = [
+          [[1, 2, 3], [1, 3, 1], [3, 1], [2, 1, 2, 3], []],
+          [[], [5, 5, 5], [5, 6, 5], [6, 5], [1, 2, 3, 4, 5, 6], [6, 2, 3, 4, 5, 1, 6]],
+          [
+            [1, 2, 3, 4, 5],
+            [1, 4, 3, 2, 5, 4],
+            [5, 4, 3, 2, 1],
+          ],
+        ];
+        for (const run of runs) {
+          for (const ids of run) {
+            items(ids.map((id) => ({ id })));
+            await tick();
+            const got = Array.from(c.querySelectorAll('li')).map((li) => li.textContent);
+            expect(got).toEqual(firstOccurrence(ids).map(String));
+          }
+        }
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  }
+});

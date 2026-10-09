@@ -167,7 +167,7 @@ when(
   geolocation a worse fit for `ComputedAccessor` than for the
   existing `resource()` shape. Apps that need a one-shot read
   use `resource(() => null, async (_, { signal }) =>
-new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej)))`.
+  new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej)))`.
   Apps that need a watch build a small `state()` + `watchPosition`
   pairing.
 - **No `permissionsSignal({ name, ... })` for descriptor-shaped

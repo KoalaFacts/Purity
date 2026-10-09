@@ -215,7 +215,7 @@ Concretely:
   compatibility is the user's responsibility (point at the source
   files, not the manifest).
 - No route-module shape contract. Apps doing `entry.importFn().then(m
-=> m.default(params))` will diverge from apps doing `m.Page(params)`.
+  => m.default(params))` will diverge from apps doing `m.Page(params)`.
   Phase 1 leaves that open intentionally — the right shape will fall
   out of the layouts ADR.
 

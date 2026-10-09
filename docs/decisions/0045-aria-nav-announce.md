@@ -74,7 +74,7 @@ Concretely:
   `url.pathname` when title is empty or whitespace-only.
 - **Default region** is created lazily on first navigate. Inline
   sr-only styles (`position:absolute; width:1px; height:1px; …
-clip:rect(0,0,0,0)`) keep it out of the visual layout. Default
+  clip:rect(0,0,0,0)`) keep it out of the visual layout. Default
   id `'__purity_announce__'`.
 - **`regionId` option** points at an existing element when the app
   ships its own region (with custom styles or placement). Existing

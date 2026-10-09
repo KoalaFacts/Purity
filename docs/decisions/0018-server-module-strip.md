@@ -89,8 +89,8 @@ Concretely:
 - **Order vs template compilation**: strip runs **before** the
   extension filter (so the strip regex is the source of truth for
   filenames) and **before** any `html\`\``-template compilation
-(no point compiling templates that won't ship). Framework-
-internals skip still wins — `\*.server.ts`files inside`@purityjs/`, `packages/core/`, etc. pass through unchanged.
+  (no point compiling templates that won't ship). Framework-
+  internals skip still wins — `\*.server.ts`files inside`@purityjs/`, `packages/core/`, etc. pass through unchanged.
 - **No false positives**: the regex requires `.server.<ext>` at
   end of path; `/server/index.ts`, `/myserver.ts`,
   `/server-utils.ts` are NOT stripped. Users opting into the

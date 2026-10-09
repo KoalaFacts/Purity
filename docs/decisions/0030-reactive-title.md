@@ -87,7 +87,7 @@ Concretely:
   produces something different (because some client-only state
   shifted between SSR and hydration), the title updates. This
   matches the documented "self-heal" behavior of `enableHydration
-TextRewrite` (ADR 0007).
+  TextRewrite` (ADR 0007).
 
 ### Explicit non-features
 
@@ -115,7 +115,7 @@ TextRewrite` (ADR 0007).
 - **No interaction with the `<title>` rendered by `head()`.**
   Both can coexist — a route can emit a static `<title>` via
   `head(html\`<title>X</title>\`)`and a reactive`<title>`via`manageTitle(() => …)`. The SSR emits both; the browser uses
-the last; the client's `manageTitle` then takes over.
+  the last; the client's `manageTitle` then takes over.
 
 ## Consequences
 
@@ -139,7 +139,7 @@ the last; the client's `manageTitle` then takes over.
 - Reactive head management is broader than `<title>` alone. Apps
   with reactive meta needs still write their own
   `watch(() => { document.querySelector('meta[name=description]')
-?.setAttribute('content', …) })`. Documented as a non-feature;
+  ?.setAttribute('content', …) })`. Documented as a non-feature;
   follow-up ADRs can extend.
 - The watch lifetime is the caller's responsibility outside a
   component context. Apps wiring `manageTitle` at module load

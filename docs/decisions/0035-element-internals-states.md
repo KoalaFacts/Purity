@@ -48,8 +48,8 @@ We expose two new public functions and auto-wire `resource()`:
 
 - **Auto-wire `resource()`** — every `resource()` call inside a
   `component()` context calls `bindComponentState('loading',
-r.loading)` and `bindComponentState('error', () => r.error() !==
-undefined)` at creation. No-op outside a component or when the
+  r.loading)` and `bindComponentState('error', () => r.error() !==
+  undefined)` at creation. No-op outside a component or when the
   runtime lacks `attachInternals`/`.states`.
 
 Implementation:

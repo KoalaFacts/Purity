@@ -120,7 +120,7 @@ README before landing.
 **Execution plan:**
 
 1. Replace the scope-class emission with `@scope (.p-N) { :scope { ... }
-.x { ... } }`.
+   .x { ... } }`.
 2. Delete `scopeSelectors`, `allPlaceholdersInBodies`,
    `precomputeScopedChunks`. The reactive path simplifies to "rebuild
    the body of the `@scope` block on signal change".
@@ -215,7 +215,7 @@ point (e.g. for future `delegatesFocus`).
 
 1. Draft ADR: "Form-associated components via options bag".
 2. Add `component(tag, fn, { formAssociated?: boolean, delegatesFocus?:
-boolean })` overload.
+   boolean })` overload.
 3. When `formAssociated`, set `static formAssociated = true` on the
    element class, call `attachInternals()` in the constructor.
 4. Add the four lifecycle hooks. Route to `_ctx` arrays parallel to
@@ -287,14 +287,14 @@ benefits.
 These came up in the research but are not on the action list yet:
 
 - **CSS Module Scripts** (`import sheet from './x.css' with { type:
-'css' }`) — Firefox gap as of May 2026. Re-evaluate quarterly.
+  'css' }`) — Firefox gap as of May 2026. Re-evaluate quarterly.
 - **`:host-context()`** — Chromium-only; WebKit explicitly declined.
   Do not expose as a documented styling hook.
 - **Cross-root ARIA / Reference Target** — Interop 2026 target, but
   only in a Chromium origin trial. Watch for Firefox + WebKit
   intent-to-ship signals.
 - **Serializable shadow roots** (`getHTML({ serializableShadowRoots:
-true })`) — useful in-browser, but Purity's SSR runs on Node where
+  true })`) — useful in-browser, but Purity's SSR runs on Node where
   this API isn't present. Revisit if a browser-side SSR target
   emerges.
 - **Scoped custom-element registries** — Chromium-only shipped path;

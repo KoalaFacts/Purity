@@ -38,12 +38,12 @@ The forces 0001 weighed have not changed:
 - **`@purityjs/ssr`** — new server-only package. Public API:
   `renderToString(component, options?): Promise<string>` and the SSR
   variant of the `html\`\`` tag. Components (`component()`) and the
-control-flow helpers (`each`/`when`/`match`/`list`) all have
-SSR-aware variants (`eachSSR`, `whenSSR`, `matchSSR`, `listSSR`)
-exported from `@purityjs/core`.
+  control-flow helpers (`each`/`when`/`match`/`list`) all have
+  SSR-aware variants (`eachSSR`, `whenSSR`, `matchSSR`, `listSSR`)
+  exported from `@purityjs/core`.
 - **Custom Elements via Declarative Shadow DOM.** Server emits
   `<my-tag><template shadowrootmode="open">…shadow content…</template>
-…light slot children…</my-tag>`. The Custom Element constructor
+  …light slot children…</my-tag>`. The Custom Element constructor
   reuses `this.shadowRoot` if present, so DSD parsing doesn't break
   client hydration.
 - **Resource awaiting via two-pass render.** `renderToString` runs the
@@ -95,7 +95,7 @@ it.
 - ~~**User-controllable `resource()` keys.** Cache priming uses
   creation-order indexing.~~ Resolved in a follow-up: pass `{ key: 'todos' }`
   to `resource()` and the SSR payload becomes `{ ordered: [...], keyed:
-{...} }`, with the keyed entries surviving conditional/reordered
+  {...} }`, with the keyed entries surviving conditional/reordered
   creation between server and client. The legacy creation-order
   indexing remains the default (and the array shape is still emitted
   when no resource uses a key).

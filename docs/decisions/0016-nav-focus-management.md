@@ -114,7 +114,7 @@ Concretely:
 
 - Closes the accessibility gap that ADR 0013 + 0015 both flagged.
   SPAs that pair `interceptLinks() + manageNavScroll() +
-manageNavFocus()` now announce route changes to screen readers
+  manageNavFocus()` now announce route changes to screen readers
   in the same way multi-page apps do.
 - Hash-target priority matches `manageNavScroll` so the two
   primitives operate on the same element. No fight; coherent UX.

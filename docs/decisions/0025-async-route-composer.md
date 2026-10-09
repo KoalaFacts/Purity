@@ -120,7 +120,7 @@ Concretely:
 - **`AsyncRouteOptions`** fields:
   - `fallback?: () => unknown` — view rendered while the loader
     pipeline resolves. Default: empty `html\`\``(no flash). Apps
-pass`() => html\`<p>loading…</p>\`` for a visible spinner.
+    pass`() => html\`<p>loading…</p>\`` for a visible spinner.
   - `keyPrefix?: string` — prepended to the route's `pattern` for
     the lazyResource key. Default `'route:'` for `asyncRoute`,
     `'notFound:'` for `asyncNotFound`. Override only when a single
@@ -156,7 +156,7 @@ pass`() => html\`<p>loading…</p>\`` for a visible spinner.
 
 - **No automatic `App()` wrapper.** Apps still write the
   `for (const entry of routes) {…}` loop. A `routerDispatch(routes,
-notFound?)` helper would shrink it further but locks app authors
+  notFound?)` helper would shrink it further but locks app authors
   out of pre-/post-route hooks (auth gates, logging, A/B routing).
   Keep the loop visible.
 - **No client-side route prefetch.** The composer fetches lazily

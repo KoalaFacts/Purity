@@ -52,7 +52,7 @@ Purity has the pieces to do it cleanly:
    passes the island's root element to `hydrate()` and the walker takes
    it from there.
 3. Custom Elements + Declarative Shadow DOM (`<template
-shadowrootmode="open">`) work in the browser _before_ the element's
+   shadowrootmode="open">`) work in the browser _before_ the element's
    JS class is registered — the DSD content renders as visual content
    immediately, and the element upgrades in place when
    `customElements.define()` is later called. This is the foundation
@@ -312,7 +312,7 @@ patterns handle the realistic cases without new API surface.
 Phases, each landable as its own PR:
 
 1. **`island()` brand + SSR codegen passthrough.** Ship `island(view,
-options)` as a no-op brand that records `{ trigger, view }` and
+   options)` as a no-op brand that records `{ trigger, view }` and
    delegates rendering to the wrapped view. SSR emits the wrapped
    view's HTML unchanged. No chunk split yet — the island's code still
    ships in the main bundle. Validates the brand mechanism end-to-end

@@ -77,10 +77,10 @@ Concretely:
   produces `{ id: string; postId: string }`.
 - **No params**: a pattern with no dynamic segments produces
   `Record<string, never>`. Callers writing `params: RouteParams
-<'/about'>` get a type with no keys — assignments other than
+  <'/about'>` get a type with no keys — assignments other than
   `{}` fail at compile.
 - **Strict-mode-friendly**: the derived type is `{ [K in Names]:
-string }`, not a `Partial`. Each named param is guaranteed
+  string }`, not a `Partial`. Each named param is guaranteed
   present by `matchRoute()`'s contract (a non-match returns
   `null`, not a partial-params object).
 - **Manual usage**: the route module imports `RouteParams` from
@@ -138,7 +138,7 @@ string }`, not a `Partial`. Each named param is guaranteed
   runtime delivers `{}`, which assigns cleanly. **TypeScript
   doesn't enforce excess-property checks on assignments to
   empty mapped types** — `const x: RouteParams<'/about'> = {
-foo: 'bar' }` compiles even though `foo` isn't a derived key.
+  foo: 'bar' }` compiles even though `foo` isn't a derived key.
   Documented; doesn't affect real apps because params-less
   route components never read those keys. The required-keys
   check still works correctly for patterns with at least one

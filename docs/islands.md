@@ -66,7 +66,7 @@ Each entry can be either:
 - an **eager** branded view: `mountIslands([Counter])` — ships with the
   shell;
 - a **lazy** dynamic-import thunk: `mountIslands([() =>
-import('./counter.ts').then((m) => m.Counter)])` — each island lands
+  import('./counter.ts').then((m) => m.Counter)])` — each island lands
   in its own Rollup-split chunk, requested only when the trigger fires.
 
 The lazy form is what delivers the headline byte savings. Use it

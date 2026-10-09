@@ -26,7 +26,7 @@ the loader on the server before render, threads the resolved
 data into the component, and avoids the two-pass cycle:
 
 - **Remix** — `export const loader = async ({ request, params })
-=> data`. Data is read in the component via `useLoaderData()`.
+  => data`. Data is read in the component via `useLoaderData()`.
   Layouts get their own loaders that run in parallel with the
   route's.
 - **SvelteKit** — `+page.ts` exports `load({ fetch, params })`.
@@ -141,7 +141,7 @@ Concretely:
   consumer's loadStack pattern threads loader data into the
   component however the app prefers — typically as a positional
   argument (`(params, data) => view` for routes; `(children,
-params, data) => view` for layouts). When apps converge on a
+  params, data) => view` for layouts). When apps converge on a
   shared pattern, a future ADR can ship a `loaderData()`
   context primitive. Not yet.
 - **Error boundaries + 404 do not get loaders** in Phase 1.
@@ -215,7 +215,7 @@ params, data) => view` for layouts). When apps converge on a
   triggers `hasLoader: true`; a loader assigned via re-export from
   a non-`loader`-named identifier (`export { foo as loader }` —
   detected, but `import { foo } from './x.ts'; const loader =
-foo; export { loader };` — not detected) escapes detection.
+  foo; export { loader };` — not detected) escapes detection.
   Documented; apps that need parser-grade accuracy can opt into a
   future ADR.
 - Component-data plumbing is user-land. Apps will converge slowly

@@ -97,7 +97,7 @@ want strong types should:
 1. Set `purity({ routes: { dir, emitTo: 'src/.purity/routes.ts' } })`
    (ADR 0032 + 0033 already document this).
 2. Import from the emitted file: `import { routes } from
-'./.purity/routes.ts'` instead of `from 'purity:routes'`.
+   './.purity/routes.ts'` instead of `from 'purity:routes'`.
 
 The runtime behaviour is identical — the emitted file's content IS
 the virtual module's content (per ADR 0032). The choice is purely a

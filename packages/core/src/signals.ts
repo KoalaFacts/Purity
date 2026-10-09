@@ -72,22 +72,33 @@ let effectDepth = 0;
 // Inspection registry
 //
 // Powers the `globalThis.__purity_inspect__` hook (see `docs/debugging.md`
-// and ADR-0002). Always present — the cost is small (a WeakRef Set + a few
-// hundred bytes of conversion code, ~0.4 kB gzipped) and keeping it in the
-// production bundle means consumers can debug live apps without rebuilding
-// for development.
-//
-// This is a deliberate trade-off, not something an app can opt out of
-// today: assigning `globalThis.__purity_inspect__ = undefined` at runtime,
-// after import, does not remove any of this code from the build — bundler
-// dead-code-elimination runs at build time against @purityjs/core's own
-// source, before any consuming app's runtime assignments exist to analyze.
-// Shrinking this out of a specific build would require a real build-time
-// flag (e.g. a `define`-gated branch in this package's own build), which
-// does not exist yet.
+// and ADR-0002) so consumers can debug live apps without rebuilding for
+// development. Gated on `__DEV__` (below) rather than always present: a
+// consuming app's own production build replaces `process.env.NODE_ENV` with
+// the literal "production" (standard behavior for Vite/esbuild/webpack app
+// builds — NOT this package's own library build, which leaves it
+// unresolved on purpose so the decision is the consumer's, at their build
+// time, not baked in here), which folds `__DEV__` to `false` and lets that
+// build's minifier drop every branch gated on it — this file's own
+// WeakRef/FinalizationRegistry bookkeeping and the whole inspector-hook
+// installation block at the end of this file.
 // ---------------------------------------------------------------------------
 
-const trackedNodes: Set<WeakRef<AnyNode>> = new Set();
+// A minimal local ambient type for the one Node-style global this
+// browser-targeting package reads, so it doesn't need to depend on
+// @types/node (which would otherwise pull in a whole browser-irrelevant
+// global surface) just for this. Deliberately unguarded by a
+// `typeof process !== 'undefined'` check: that check can't itself be
+// constant-folded by a bundler, which would leave `__DEV__` unresolvable at
+// build time and defeat the dead-code elimination this exists for. Same
+// assumption every other library using this pattern (React included)
+// makes: something in the build pipeline replaces `process.env.NODE_ENV`
+// before this code reaches a real browser.
+declare const process: { env: { NODE_ENV?: string } };
+
+const __DEV__ = process.env.NODE_ENV !== 'production';
+
+const trackedNodes: Set<WeakRef<AnyNode>> | null = __DEV__ ? new Set() : null;
 
 // Without this, `trackedNodes` grows by one WeakRef per signal/effect ever
 // created and only sheds dead entries when the inspector hook is manually
@@ -99,13 +110,14 @@ const trackedNodes: Set<WeakRef<AnyNode>> = new Set();
 // nodes. Feature-detected so non-supporting runtimes fall back to the lazy
 // prune in inspectorLiveNodes().
 const nodeFinalization: FinalizationRegistry<WeakRef<AnyNode>> | null =
-  typeof FinalizationRegistry !== 'undefined'
+  __DEV__ && typeof FinalizationRegistry !== 'undefined'
     ? new FinalizationRegistry<WeakRef<AnyNode>>((ref) => {
-        trackedNodes.delete(ref);
+        trackedNodes?.delete(ref);
       })
     : null;
 
 function trackNode(node: AnyNode): void {
+  if (trackedNodes === null) return;
   const ref = new WeakRef(node);
   trackedNodes.add(ref);
   nodeFinalization?.register(node, ref);
@@ -832,64 +844,71 @@ interface InspectorNode {
   observers: InspectorNode[];
 }
 
-const INSPECTOR_STATUS_LABELS: readonly InspectorStatus[] = ['clean', 'check', 'dirty'];
+// Everything below is dev-only: see the __DEV__ comment above trackedNodes.
+// A production build that folds __DEV__ to false can drop this entire block
+// — the inspector hook, its node-graph conversion, and the labels array —
+// since nothing outside this block (or outside development tooling) calls
+// any of it.
+if (__DEV__) {
+  const INSPECTOR_STATUS_LABELS: readonly InspectorStatus[] = ['clean', 'check', 'dirty'];
 
-function inspectorKindOf(n: AnyNode): InspectorKind {
-  if (n.fn === null) return 'state';
-  return (n as ComputedNode).isEffect ? 'effect' : 'computed';
-}
-
-function toInspectorNode(n: AnyNode, seen: Map<AnyNode, InspectorNode>): InspectorNode {
-  const cached = seen.get(n);
-  if (cached) return cached;
-  const out: InspectorNode = {
-    kind: inspectorKindOf(n),
-    version: n.version,
-    value: n.value,
-    sources: [],
-    observers: [],
+  const inspectorKindOf = (n: AnyNode): InspectorKind => {
+    if (n.fn === null) return 'state';
+    return (n as ComputedNode).isEffect ? 'effect' : 'computed';
   };
-  if (n.fn !== null) out.status = INSPECTOR_STATUS_LABELS[(n as ComputedNode).status];
-  seen.set(n, out);
-  if (n.fn !== null) {
-    const sources = (n as ComputedNode).sources;
-    if (sources !== null) {
-      for (let i = 0; i < sources.length; i++) {
-        out.sources.push(toInspectorNode(sources[i], seen));
+
+  const toInspectorNode = (n: AnyNode, seen: Map<AnyNode, InspectorNode>): InspectorNode => {
+    const cached = seen.get(n);
+    if (cached) return cached;
+    const out: InspectorNode = {
+      kind: inspectorKindOf(n),
+      version: n.version,
+      value: n.value,
+      sources: [],
+      observers: [],
+    };
+    if (n.fn !== null) out.status = INSPECTOR_STATUS_LABELS[(n as ComputedNode).status];
+    seen.set(n, out);
+    if (n.fn !== null) {
+      const sources = (n as ComputedNode).sources;
+      if (sources !== null) {
+        for (let i = 0; i < sources.length; i++) {
+          out.sources.push(toInspectorNode(sources[i], seen));
+        }
       }
     }
-  }
-  if (n.observers !== null) {
-    for (let i = 0; i < n.observers.length; i++) {
-      out.observers.push(toInspectorNode(n.observers[i], seen));
+    if (n.observers !== null) {
+      for (let i = 0; i < n.observers.length; i++) {
+        out.observers.push(toInspectorNode(n.observers[i], seen));
+      }
     }
-  }
-  return out;
-}
-
-function inspectorLiveNodes(): AnyNode[] {
-  const live: AnyNode[] = [];
-  for (const ref of trackedNodes) {
-    const n = ref.deref();
-    if (n) live.push(n);
-    else trackedNodes.delete(ref);
-  }
-  return live;
-}
-
-// Install the hook eagerly at module load. The assignment is a side
-// effect on globalThis that bundlers must preserve. `globalThis` works
-// in workers, sandboxed iframes, jsdom, etc. — falls back to a no-op if
-// somehow absent.
-/* v8 ignore next 2 -- defensive; globalThis exists everywhere we run */
-const inspectorTarget: { __purity_inspect__?: unknown } | null =
-  typeof globalThis !== 'undefined' ? (globalThis as { __purity_inspect__?: unknown }) : null;
-if (inspectorTarget !== null) {
-  inspectorTarget.__purity_inspect__ = {
-    version: 1 as const,
-    nodes(): InspectorNode[] {
-      const seen = new Map<AnyNode, InspectorNode>();
-      return inspectorLiveNodes().map((n) => toInspectorNode(n, seen));
-    },
+    return out;
   };
+
+  const inspectorLiveNodes = (): AnyNode[] => {
+    const live: AnyNode[] = [];
+    for (const ref of trackedNodes!) {
+      const n = ref.deref();
+      if (n) live.push(n);
+      else trackedNodes!.delete(ref);
+    }
+    return live;
+  };
+
+  // Install the hook eagerly at module load. The assignment is a side
+  // effect on globalThis that bundlers must preserve. `globalThis` works
+  // in workers, sandboxed iframes, jsdom, etc. — falls back to a no-op if
+  // somehow absent.
+  /* v8 ignore next 2 -- defensive; globalThis exists everywhere we run */
+  const inspectorTarget: { __purity_inspect__?: unknown } | null =
+    typeof globalThis !== 'undefined' ? (globalThis as { __purity_inspect__?: unknown }) : null;
+  if (inspectorTarget !== null) {
+    inspectorTarget.__purity_inspect__ = {
+      version: 1 as const,
+      nodes(): InspectorNode[] {
+        const seen = new Map<AnyNode, InspectorNode>();
+        return inspectorLiveNodes().map((n) => toInspectorNode(n, seen));
+      },
+    };
+  }
 }

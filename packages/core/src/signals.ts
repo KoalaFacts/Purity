@@ -69,6 +69,10 @@ let batchDepth = 0;
 let microtaskScheduled = false;
 const pendingEffects: ComputedNode[] = [];
 
+// Effect runs allowed in one flush. A legitimate flush runs each dirtied effect
+// about once, so this only trips on a cross-effect feedback loop (A writes what
+// B reads and vice versa), which would otherwise spin forever inside one flush.
+const MAX_FLUSH_RUNS = 100_000;
 const MAX_EFFECT_DEPTH = 100;
 let effectDepth = 0;
 
@@ -521,8 +525,8 @@ function runComputed(node: ComputedNode): void {
   }
   // Effects: force CLEAN. An effect that synchronously writes its own dep was
   // demoted to DIRTY and re-enqueued by markDirty; the designed semantics are
-  // "run once, the queued re-run is skipped because status is now CLEAN" (the
-  // MAX_EFFECT_DEPTH guard backstops genuine cross-effect feedback loops).
+  // "run once, the queued re-run is skipped because status is now CLEAN".
+  // Cross-effect feedback loops are bounded by MAX_FLUSH_RUNS in flush().
   // Computes already converged to CLEAN in the loop above.
   if (node.isEffect) node.status = STATUS_CLEAN;
   if (changed) {
@@ -562,11 +566,27 @@ function flush(): void {
   // codebase handle throws (resource error, optimistic onSettle, lifecycle
   // hooks, …). The outer try/finally guarantees the queue is cleared
   // regardless.
+  let runs = 0;
   try {
     let i = 0;
     while (i < pendingEffects.length) {
       const e = pendingEffects[i++];
       if (e.disposed || e.status === STATUS_CLEAN) continue;
+      if (++runs > MAX_FLUSH_RUNS) {
+        // Feedback loop: stop it here. Effects still queued were marked DIRTY
+        // or CHECK and would never be re-queued (markDirty skips them), so
+        // reset them to CLEAN so the next write to their sources enqueues them.
+        for (let j = i - 1; j < pendingEffects.length; j++) {
+          pendingEffects[j].status = STATUS_CLEAN;
+        }
+        console.error(
+          '[Purity] effect feedback loop detected: more than ' +
+            MAX_FLUSH_RUNS +
+            ' effect runs in one flush. Effects are writing signals that other ' +
+            'effects read in a cycle; the remaining queued effects did not run.',
+        );
+        break;
+      }
       try {
         updateValue(e);
       } catch (err) {

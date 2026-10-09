@@ -564,6 +564,73 @@ describe('watch flush — throw isolation across pending effects', () => {
   });
 });
 
+describe('flush — cross-effect feedback loops', () => {
+  // Effect A reads s1 and writes s2; effect B reads s2 and writes s1. Each
+  // write re-queues the other effect, so without a per-flush bound the loop
+  // never drains the queue.
+
+  it('terminates a two-effect ping-pong, reports it, and keeps the graph usable', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s1 = state(0);
+    const s2 = state(0);
+    // Probe cap far above the library's own per-flush cap. On code without a
+    // bound the loop never ends by itself, so the probe stops it here and the
+    // assertions below fail instead of hanging the test run.
+    const PROBE = 1_000_000;
+    let runs = 0;
+    const a = watch(() => {
+      const v = s1();
+      if (++runs > PROBE) return;
+      s2(v + 1);
+    });
+    const b = watch(() => {
+      const v = s2();
+      if (++runs > PROBE) return;
+      s1(v + 1);
+    });
+    await tick();
+    expect(runs).toBeLessThan(PROBE);
+    expect(errSpy.mock.calls.some(([msg]) => String(msg).includes('feedback loop'))).toBe(true);
+
+    // The graph recovers: the loop's effects are re-queued by later writes,
+    // and unrelated watchers still run normally.
+    errSpy.mockClear();
+    const u = state(0);
+    let seen = -1;
+    const c = watch(() => {
+      seen = u();
+    });
+    u(7);
+    await tick();
+    expect(seen).toBe(7);
+    expect(errSpy).not.toHaveBeenCalled();
+    a();
+    b();
+    c();
+    errSpy.mockRestore();
+  });
+
+  it('lets a long finite cascade (200 links, one write each) complete without tripping', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const LINKS = 200;
+    const chain = Array.from({ length: LINKS + 1 }, () => state(0));
+    const disposers: Array<() => void> = [];
+    for (let k = 0; k < LINKS; k++) {
+      disposers.push(
+        watch(() => {
+          chain[k + 1](chain[k]() + 1);
+        }),
+      );
+    }
+    chain[0](1000);
+    await tick();
+    expect(chain[LINKS]()).toBe(1000 + LINKS);
+    expect(errSpy).not.toHaveBeenCalled();
+    for (const d of disposers) d();
+    errSpy.mockRestore();
+  });
+});
+
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 // ---------------------------------------------------------------------------

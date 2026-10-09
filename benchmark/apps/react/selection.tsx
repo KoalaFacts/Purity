@@ -43,10 +43,7 @@ function App() {
   const [items, setItems] = useState<SelectItem[]>([]);
 
   const selectedCount = useMemo(() => items.filter((i) => i.selected).length, [items]);
-  const allSelected = useMemo(
-    () => items.length > 0 && items.every((i) => i.selected),
-    [items],
-  );
+  const allSelected = useMemo(() => items.length > 0 && items.every((i) => i.selected), [items]);
 
   return (
     <>
@@ -92,9 +89,7 @@ function App() {
                   type="button"
                   className="btn btn-primary btn-block"
                   id="toggle-all"
-                  onClick={() =>
-                    setItems((xs) => xs.map((i) => ({ ...i, selected: !i.selected })))
-                  }
+                  onClick={() => setItems((xs) => xs.map((i) => ({ ...i, selected: !i.selected })))}
                 >
                   Toggle All
                 </button>
@@ -127,9 +122,8 @@ function App() {
         </div>
       </div>
       <div id="stats">
-        Selected: <span id="count">{selectedCount}</span> /{' '}
-        <span id="total">{items.length}</span> | All:{' '}
-        <span id="all-selected">{allSelected ? 'Yes' : 'No'}</span>
+        Selected: <span id="count">{selectedCount}</span> / <span id="total">{items.length}</span> |
+        All: <span id="all-selected">{allSelected ? 'Yes' : 'No'}</span>
       </div>
       <div id="container">
         {items.map((item) => (

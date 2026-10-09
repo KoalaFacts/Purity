@@ -37,11 +37,7 @@ function App() {
       <button type="button" id="setup" onClick={() => setupChain(1000)}>
         Setup Chain (1000 levels)
       </button>
-      <button
-        type="button"
-        id="update"
-        onClick={() => setSource((Math.random() * 100) | 0)}
-      >
+      <button type="button" id="update" onClick={() => setSource((Math.random() * 100) | 0)}>
         Update Source
       </button>
       <button

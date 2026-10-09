@@ -134,9 +134,7 @@ function App() {
       <div id="container">
         {visible.map((node) => (
           <div key={node.id} className="tree-node" style={{ paddingLeft: `${node.depth * 20}px` }}>
-            <span className="toggle">
-              {node.hasChildren ? (node.expanded ? '▼' : '▶') : '  '}
-            </span>
+            <span className="toggle">{node.hasChildren ? (node.expanded ? '▼' : '▶') : '  '}</span>
             <span className="label">{node.label}</span>
           </div>
         ))}

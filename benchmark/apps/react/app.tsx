@@ -117,9 +117,7 @@ function App() {
   }
 
   function update() {
-    setData((d) =>
-      d.map((r, i) => (i % 10 === 0 ? { id: r.id, label: `${r.label} !!!` } : r)),
-    );
+    setData((d) => d.map((r, i) => (i % 10 === 0 ? { id: r.id, label: `${r.label} !!!` } : r)));
   }
 
   function swapRows() {

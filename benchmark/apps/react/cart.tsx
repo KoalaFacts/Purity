@@ -154,8 +154,7 @@ function App() {
       <div id="stats">
         <span id="item-count">{itemCount}</span> items | Subtotal: $
         <span id="subtotal">{subtotal.toFixed(2)}</span> | Tax: $
-        <span id="tax">{tax.toFixed(2)}</span> | Total: $
-        <span id="total">{total.toFixed(2)}</span>
+        <span id="tax">{tax.toFixed(2)}</span> | Total: $<span id="total">{total.toFixed(2)}</span>
       </div>
       <table className="table table-hover table-striped test-data">
         <tbody id="tbody">

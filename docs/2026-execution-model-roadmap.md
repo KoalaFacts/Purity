@@ -80,11 +80,23 @@ client is a thin terminal: user events go over a persistent connection
 sends back a DOM diff. No framework runtime logic executes
 client-side beyond applying diffs and forwarding events.
 
-**Why Purity doesn't have this:** Purity has no persistent-connection
-transport and no server-side "apply this diff to the live client DOM"
-protocol. `renderToStream`/`renderToString` produce a one-shot
-response; after that, interactivity is entirely local (plain
-hydration or islands) or absent (`renderStatic`).
+**Why Purity doesn't have this:** Purity already ships client-side
+persistent-connection primitives —
+[`eventSourceSignal`](../packages/core/src/event-source-signal.ts) and
+[`webSocketSignal`](../packages/core/src/web-socket-signal.ts) (the
+latter with `send`/`readyState`, reconnect handling) — but nothing on
+the server side turns a WebSocket into a live circuit: no server-held
+reactive graph per connection and no "apply this diff to the live
+client DOM" protocol. What's missing is that server-side circuit and
+diff protocol, not the transport layer itself; a design here should
+reuse the existing client transport rather than add a second one.
+`renderToStream`/`renderToString` produce a one-shot response; after
+that, interactivity is local (plain hydration or islands), or — for
+`renderStatic` output — whatever the app's own retained client entry
+provides (`renderStatic` only changes how the HTML is produced at
+build time, not whether the shipped page has a client entry; see
+[`examples/docs-site`](../examples/docs-site), which statically
+generates this way and still mounts reactive navigation).
 
 **Why this is a real gap:** This is a genuinely different
 latency/cost trade: every interaction pays a network round trip, but
@@ -95,13 +107,16 @@ offline-tolerant or latency-sensitive interactions. Purity's lineage
 model — the entire point of the current design is that updates
 propagate without a server round trip.
 
-**Rough scope if ever pursued:** A persistent transport (WebSocket or
-SSE-plus-POST), a server-side process holding one live reactive graph
-per connected client, a diffing/patch protocol, and explicit
-backpressure/reconnect/session-affinity handling for the
-scaling story (this is the operationally hardest part — it requires
-sticky sessions or a shared-state store, unlike the current stateless
-SSR model).
+**Rough scope if ever pursued:** Reusing `webSocketSignal`'s client
+transport — its bidirectional `send`/receive shape is what this needs,
+not `eventSourceSignal` (receive-only: a plain `ComputedAccessor<T>`
+with no way to forward a user event back to the server, see
+[`packages/core/src/event-source-signal.ts`](../packages/core/src/event-source-signal.ts));
+a server-side process holding one live reactive graph per connected
+client; a diffing/patch protocol; and explicit backpressure/reconnect/
+session-affinity handling for the scaling story (this is the
+operationally hardest part — it requires sticky sessions or a
+shared-state store, unlike the current stateless SSR model).
 
 **Needs brainstorming on:** whether this is in scope for Purity at all
 given it inverts the framework's core local-first premise; if pursued,
@@ -111,16 +126,33 @@ any prototype is worth building.
 
 ## Gap 3 — Hybrid start-server-then-upgrade (Blazor Interactive Auto's model)
 
-**What it is:** Starts in the server-driven mode above, then swaps to
-a fully client-resident mode once the client-side runtime finishes
-downloading in the background — trading an initial network-latency
-interaction cost for a smaller first payload, converging to local
-execution.
+**What it is:** Per-visit, not per-session: Blazor's Auto mode does
+_not_ hand a component already on the page off from server to client
+mid-session — the chosen mode stays fixed for as long as that page
+instance is live. The decision happens once, at the start of a new page
+instance, and depends on more than just bundle-cache presence —
+per Microsoft's own docs: "One factor in this initial decision is
+considering whether components already exist on the page with
+WebAssembly/Server interactivity. Auto mode prefers to select a render
+mode that matches the render mode of existing interactive components,"
+specifically to avoid spinning up a second interactive runtime that
+doesn't share state with one already running. So a first-ever visit
+renders in the server-driven mode above while the WebAssembly bundle
+downloads in the background; a later visit, once the bundle is cached
+AND no sibling component on the page is already pinned to Server mode,
+renders fully client-resident instead.
 
 **Why Purity doesn't have this:** This mode is downstream of Gap 2 —
-it requires the server-driven transport to exist as a starting state,
-then a handoff protocol to the existing client-local execution. It is
-not meaningfully separable from Gap 2.
+it requires the server-driven mode to exist as the first-visit
+fallback — but is otherwise simpler than Gap 2 itself: a per-page-instance
+decision (bundle-cache presence, reconciled against whichever mode any
+sibling interactive component already settled on) picking which mode a
+fresh page instance starts in, not a live state-transfer protocol
+between two running instances. Still, "simpler than Gap 2" undersells
+the decision surface — it needs its own render-mode/runtime-context
+model (what else is live on the page, not just "is the bundle
+cached"), not a single boolean check. Not meaningfully separable from
+Gap 2 regardless.
 
 **Needs brainstorming on:** not worth scoping independently until/unless
 Gap 2 is pursued and lands.

@@ -16,6 +16,7 @@
 import { popSSRRenderContext, pushSSRRenderContext, type SSRRenderContext } from '@purityjs/core';
 import { valueToHtml } from '@purityjs/core/compiler';
 import { boundaryDeadline } from './boundary-deadline.ts';
+import { ensureSSRComponentRendererInstalled } from './component.ts';
 import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
 import { renderCancellation } from './render-cancellation.ts';
 import { SSRTimeoutError } from './timeout-error.ts';
@@ -126,6 +127,7 @@ export async function renderToString(
   component: () => unknown,
   options: RenderToStringOptions = {},
 ): Promise<string | RenderToStringWithResponse | RenderToStringWithHead> {
+  ensureSSRComponentRendererInstalled();
   options = snapshotRenderOptions(options);
   validateRenderOptions(options, 'renderToString');
   const cancellation = renderCancellation(options.request, options.signal);

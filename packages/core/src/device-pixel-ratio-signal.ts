@@ -79,14 +79,22 @@ export function devicePixelRatioSignal(): ComputedAccessor<number> {
   let settling = false;
   let pendingRecheck = false;
 
+  // The DPR value read at the start of the most recent `attemptOnce()`
+  // call — `processChange` compares this against a fresh read to tell "a
+  // retry would hit the identical failure" from "DPR genuinely moved on
+  // to something new while this attempt was failing" (e.g. the failing
+  // target's own attach call changed DPR again before throwing).
+  let lastAttempted: number | null = null;
+
   // One rebind attempt. Returns whether it actually committed a new value
-  // (vs. a no-op or a failure) — `processChange` uses that to decide
-  // whether a deferred recheck is worth retrying.
+  // (vs. a no-op or a failure) — `processChange` uses that, together with
+  // `lastAttempted`, to decide whether a deferred recheck is worth retrying.
   const attemptOnce = (): boolean => {
     const next =
       typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 0
         ? window.devicePixelRatio
         : inner.peek();
+    lastAttempted = next;
     // No-op rebind guard: spurious `change` fires (or oscillation back to
     // the same DPR mid-handler) shouldn't churn through fresh MQL objects
     // or stack listeners on a cached MQL the runtime returns.
@@ -193,21 +201,35 @@ export function devicePixelRatioSignal(): ComputedAccessor<number> {
       // DPR changes on every SUCCESSFUL attach would otherwise grow the
       // call stack once per change via a nested `processChange()` call
       // and eventually overflow it, even though each individual change is
-      // handled correctly. A failed attempt still doesn't loop (see the
-      // `!progressed` branch) — retrying an identically-failing operation
-      // is never useful, iteratively or not.
+      // handled correctly.
       for (;;) {
         const progressed = attemptOnce();
         if (!pendingRecheck) return;
         pendingRecheck = false;
         if (!progressed) {
-          console.error(
-            '[purity] devicePixelRatioSignal: dropping a deferred recheck after a failed attempt (would otherwise retry the same failure indefinitely).',
-          );
-          return;
+          // A failed attempt only skips the retry when a retry would hit
+          // the IDENTICAL failure — i.e. DPR is still at the value this
+          // attempt just tried. If the failing target's own attach call
+          // changed DPR again before throwing, `pendingRecheck` represents
+          // that genuinely newer value, not a repeat of the same one, and
+          // dropping it could leave the signal stuck forever (the old
+          // query may never toggle again if DPR keeps moving to OTHER
+          // values). Only suppress the retry in the proven-useless case.
+          const current =
+            typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 0
+              ? window.devicePixelRatio
+              : inner.peek();
+          if (current === lastAttempted) {
+            console.error(
+              '[purity] devicePixelRatioSignal: dropping a deferred recheck targeting the same DPR as the failed attempt (would otherwise retry the identical failure indefinitely).',
+            );
+            return;
+          }
+          // else: DPR moved on to something new since the failed attempt
+          // started — worth trying again, iteratively.
         }
-        // else: loop again, iteratively, to process the deferred change
-        // that arrived during this attempt.
+        // else (progressed): loop again, iteratively, to process the
+        // deferred change that arrived during this attempt.
       }
     } finally {
       settling = false;

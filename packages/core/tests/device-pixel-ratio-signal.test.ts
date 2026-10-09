@@ -394,6 +394,49 @@ describe('devicePixelRatioSignal (ADR 0041)', () => {
     expect(oneDppx.listeners.length).toBe(1);
   });
 
+  it('retries with the newer DPR (does not drop it) when a failed attempt changed DPR again before throwing', () => {
+    // Distinct from the "always fails, same DPR" test above: here the
+    // failing attempt ALSO advances DPR to a genuinely different value
+    // before throwing. Dropping the deferred recheck just because THIS
+    // attempt failed would leave the signal stuck at the old value even
+    // though DPR has moved on — the old query may never toggle again if
+    // DPR keeps changing among other values that never pass through it.
+    setDpr(1);
+    const s = devicePixelRatioSignal();
+    expect(s()).toBe(1);
+    const oneDppx = mockMqls.get('(resolution: 1dppx)')!;
+
+    const originalMm = window.matchMedia;
+    (window as unknown as { matchMedia: (q: string) => MediaQueryList }).matchMedia = (
+      q: string,
+    ) => {
+      const m = originalMm(q);
+      if (q === '(resolution: 2dppx)') {
+        const origAdd = m.addEventListener.bind(m);
+        (m as unknown as { addEventListener: typeof m.addEventListener }).addEventListener = ((
+          t: 'change',
+          cb: (e: MediaQueryListEvent) => void,
+        ) => {
+          origAdd(t, cb);
+          setDpr(3); // DPR moves on to a genuinely new value...
+          cb({ matches: false, media: q } as MediaQueryListEvent);
+          throw new Error('fails anyway'); // ...but this attempt still fails
+        }) as typeof m.addEventListener;
+      }
+      return m;
+    };
+
+    setDpr(2);
+    expect(() => oneDppx.setMatches(false)).not.toThrow();
+    (window as unknown as { matchMedia: typeof window.matchMedia }).matchMedia = originalMm;
+
+    // The 2dppx attempt failed, but DPR had already moved to 3 by then —
+    // the deferred recheck must retry against 3, not get dropped as "the
+    // same failure".
+    expect(s()).toBe(3);
+    expect(mockMqls.has('(resolution: 3dppx)')).toBe(true);
+  });
+
   it('drains a long chain of successful synchronous DPR changes iteratively without a stack overflow', () => {
     // Distinct from the test above: here every attach SUCCEEDS, each one
     // synchronously triggering the next genuine DPR change. A `finally`

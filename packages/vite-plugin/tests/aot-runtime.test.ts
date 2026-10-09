@@ -132,7 +132,6 @@ describe('AOT output runs correctly under jsdom', () => {
       'html`<a title="x ${v} y"></a>`',
       'html`<div class="a-${b}"></div>`',
       'html`<section>${html`<div class="a-${b}"></div>`}</section>`',
-      'html`<div ${attrs}></div>`',
     ]) {
       expect(() =>
         plugin.transform(

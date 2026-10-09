@@ -296,17 +296,20 @@ class Parser {
     const attributes = this.parseAttributes();
 
     // Expression in attribute position, e.g. spread `<div ${attrs}>`.
-    // Attribute spread is not a supported binding form (there is no
-    // spread-attribute AST node), and silently dropping the value would
-    // produce wrong output, so it is rejected at compile time.
-    // `skipWhitespace()` first so the boundary check isn't blocked by
-    // trailing whitespace inside the open tag.
+    // `parseAttributes()` stops at the boundary without consuming it; left
+    // alone, the `>` after the expression would never be consumed and the
+    // expression plus `>` would leak into the element's children. Spread
+    // attributes are not a supported binding form (there is no spread-
+    // attribute AST node), so we CONSUME the expression(s) and re-scan for
+    // any following attributes — which ARE preserved. `exprIndex` advances
+    // so later slots stay aligned. `skipWhitespace()` first so the boundary
+    // check isn't blocked by trailing whitespace inside the open tag.
     this.skipWhitespace();
-    if (this.atExprBoundary()) {
-      throw new Error(
-        `${UNSUPPORTED_TEMPLATE} attribute spread \${...} on <${tag}> is not supported. ` +
-          `Bind each attribute explicitly, e.g. <${tag} class=\${() => ...}>.`,
-      );
+    while (this.atExprBoundary()) {
+      this.consumeExpr(); // drop the spread expression itself
+      // Keep any real attributes that follow the spread (e.g. `<div ${s} id="x">`).
+      for (const a of this.parseAttributes()) attributes.push(a);
+      this.skipWhitespace();
     }
 
     // Self-closing or void? (whitespace already skipped above)

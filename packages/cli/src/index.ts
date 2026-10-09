@@ -106,7 +106,7 @@ if (ssrMode || appMode) dependencies['@purityjs/ssr'] = ssrDep;
 const devDependencies: Record<string, string> = {
   '@purityjs/vite-plugin': pluginDep,
   vite: '^8.3.1',
-  typescript: '^6.0.3',
+  typescript: '^7.0.2',
 };
 // Server modes need Node types for their boot and build scripts.
 if (ssrMode || appMode) devDependencies['@types/node'] = '^25.9.1';

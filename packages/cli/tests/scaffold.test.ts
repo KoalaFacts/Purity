@@ -26,11 +26,10 @@ afterEach(() => {
 });
 
 function scaffold(args: string[]): string {
-  return execFileSync(
-    process.execPath,
-    ['--experimental-strip-types', cliEntry, ...args],
-    { cwd: dir, encoding: 'utf8' },
-  );
+  return execFileSync(process.execPath, ['--experimental-strip-types', cliEntry, ...args], {
+    cwd: dir,
+    encoding: 'utf8',
+  });
 }
 
 function scaffoldExpectFailure(args: string[]): string {
@@ -103,7 +102,8 @@ describe('scaffold — --ssr mode', () => {
     expect(pkg.scripts).toEqual({
       dev: 'node --experimental-strip-types server.ts',
       typecheck: 'tsc --noEmit',
-      build: 'npm run typecheck && npm run build:client && npm run build:server && npm run build:bootstrap',
+      build:
+        'npm run typecheck && npm run build:client && npm run build:server && npm run build:bootstrap',
       'build:client': 'vite build --outDir dist/client',
       'build:server': 'vite build --ssr src/entry.server.ts --outDir dist/server',
       'build:bootstrap':

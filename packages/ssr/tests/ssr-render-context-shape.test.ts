@@ -32,6 +32,20 @@ function slowResource<T>(value: T, delayMs: number) {
   });
 }
 
+// Covers both failure modes a plain `.toBeUndefined()` or a lone
+// `Object.hasOwn` check would each individually miss: `Object.hasOwn`
+// catches an own key present with value `undefined` (a future shared
+// context factory spreading in e.g. `streamingMode: undefined`); the plain
+// property read catches a field INHERITED via the prototype chain (a
+// factory that places defaults on a shared prototype) — consumers like
+// `suspense()` read these fields through ordinary property lookup, which
+// walks the prototype chain, so an inherited leak is just as real a bug as
+// an own one, and `Object.hasOwn` alone can't see it.
+function assertFieldAbsent(obj: object, field: string): void {
+  expect(Object.hasOwn(obj, field)).toBe(false);
+  expect((obj as Record<string, unknown>)[field]).toBeUndefined();
+}
+
 describe('SSRRenderContext shape — renderToString', () => {
   it('has head/boundaryAborts but no streaming-only or per-boundary fields', async () => {
     let captured: ReturnType<typeof getSSRRenderContext> = null;
@@ -42,14 +56,10 @@ describe('SSRRenderContext shape — renderToString', () => {
     expect(captured).not.toBeNull();
     expect(captured!.head).toEqual([]);
     expect(captured!.boundaryAborts).toBeDefined();
-    // `toBeUndefined()` can't tell "key absent" from "key present with value
-    // undefined" — a future shared-factory refactor could start spreading in
-    // `streamingMode: undefined` etc. and this would silently stop catching
-    // the leak it exists to catch. Assert on actual key presence instead.
-    expect(Object.hasOwn(captured!, 'streamingMode')).toBe(false);
-    expect(Object.hasOwn(captured!, 'streamingBoundaries')).toBe(false);
-    expect(Object.hasOwn(captured!, 'boundaryPath')).toBe(false);
-    expect(Object.hasOwn(captured!, 'boundaryIdStack')).toBe(false);
+    assertFieldAbsent(captured!, 'streamingMode');
+    assertFieldAbsent(captured!, 'streamingBoundaries');
+    assertFieldAbsent(captured!, 'boundaryPath');
+    assertFieldAbsent(captured!, 'boundaryIdStack');
   });
 });
 
@@ -66,9 +76,9 @@ describe('SSRRenderContext shape — renderToStream shell (top-level, outside an
     expect(captured!.streamingMode).toBe(true);
     expect(captured!.streamingBoundaries).toBeDefined();
     expect(captured!.head).toEqual([]);
-    expect(Object.hasOwn(captured!, 'boundaryAborts')).toBe(false);
-    expect(Object.hasOwn(captured!, 'boundaryPath')).toBe(false);
-    expect(Object.hasOwn(captured!, 'boundaryIdStack')).toBe(false);
+    assertFieldAbsent(captured!, 'boundaryAborts');
+    assertFieldAbsent(captured!, 'boundaryPath');
+    assertFieldAbsent(captured!, 'boundaryIdStack');
   });
 });
 
@@ -91,8 +101,8 @@ describe('SSRRenderContext shape — renderToStream suspense boundary (view rend
     expect(captured!.boundaryAborts).toBeDefined();
     expect(captured!.boundaryPath).toMatch(/^stream:\d+\/(view|fallback)$/);
     expect(captured!.boundaryIdStack).toEqual(expect.arrayContaining([expect.any(Number)]));
-    expect(Object.hasOwn(captured!, 'streamingMode')).toBe(false);
-    expect(Object.hasOwn(captured!, 'streamingBoundaries')).toBe(false);
-    expect(Object.hasOwn(captured!, 'head')).toBe(false);
+    assertFieldAbsent(captured!, 'streamingMode');
+    assertFieldAbsent(captured!, 'streamingBoundaries');
+    assertFieldAbsent(captured!, 'head');
   });
 });

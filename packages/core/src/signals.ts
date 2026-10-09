@@ -54,6 +54,10 @@ interface ComputedNode {
   /** True for watch effects (must re-run for side effects); false for compute (lazy). */
   isEffect: boolean;
   disposed: boolean;
+  /** Set when the last fn() run threw (computes only; effects rethrow to flush).
+   *  Boxed so a thrown `undefined`/`null` is still distinguishable from "no error".
+   *  Checked on the read path only when set; cleared by the next successful run. */
+  error: { value: unknown } | null;
 }
 
 type AnyNode = StateNode<unknown> | ComputedNode;
@@ -139,6 +143,12 @@ function readNode<T>(node: StateNode<T> | ComputedNode): T {
   if (activeListener !== null && !activeListener.disposed && !producerDisposed) {
     track(node);
   }
+  // Track before throwing so a consumer that catches the error still re-runs
+  // when a source of the failed compute changes.
+  if (node.fn !== null) {
+    const err = (node as ComputedNode).error;
+    if (err !== null) throw err.value;
+  }
   return node.value as T;
 }
 
@@ -146,6 +156,7 @@ function peekNode<T>(node: StateNode<T> | ComputedNode): T {
   if (node.fn !== null) {
     const c = node as ComputedNode;
     if (c.status !== STATUS_CLEAN) updateValue(c);
+    if (c.error !== null) throw c.error.value;
   }
   return node.value as T;
 }
@@ -427,6 +438,17 @@ function runComputed(node: ComputedNode): void {
   // MAX_EFFECT_DEPTH to bound a body that writes a strictly-changing source on
   // every pass (a user bug — computes are meant to be pure).
   let runGuard = 0;
+  // A compute whose fn throws caches the error (see ComputedNode.error) and
+  // settles CLEAN so it is not retried until a source changes. Effects keep
+  // propagating the throw to flush(), which reports it per effect.
+  let thrown = false;
+  let thrownValue: unknown;
+  // Suspend the cached error for the attempt: a self-read inside fn() sees the
+  // previous value (as it did before errors were cached) instead of rethrowing
+  // the old error, so a self-referential compute can recover. The outcome is
+  // reinstated below only if this attempt throws again.
+  const prevError = node.error;
+  node.error = null;
   for (;;) {
     activeListener = node;
     activeSourceIdx = 0;
@@ -437,6 +459,11 @@ function runComputed(node: ComputedNode): void {
 
     try {
       nextValue = node.fn();
+      thrown = false;
+    } catch (e) {
+      if (node.isEffect) throw e;
+      thrown = true;
+      thrownValue = e;
     } finally {
       // Truncate stale source slots. Anything past activeSourceIdx is no
       // longer read by this fn — drop the producer→consumer link.
@@ -484,8 +511,14 @@ function runComputed(node: ComputedNode): void {
     nextValue = undefined;
   }
 
-  const changed = !Object.is(node.value, nextValue);
-  node.value = nextValue;
+  let changed: boolean;
+  if (thrown) {
+    changed = prevError === null || !Object.is(prevError.value, thrownValue);
+    node.error = changed ? { value: thrownValue } : prevError;
+  } else {
+    changed = prevError !== null || !Object.is(node.value, nextValue);
+    node.value = nextValue;
+  }
   // Effects: force CLEAN. An effect that synchronously writes its own dep was
   // demoted to DIRTY and re-enqueued by markDirty; the designed semantics are
   // "run once, the queued re-run is skipped because status is now CLEAN" (the
@@ -692,6 +725,7 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
     cleanup: null,
     isEffect: false,
     disposed: false,
+    error: null,
   };
   trackNode(node);
 
@@ -729,13 +763,23 @@ function _effect(fn: () => undefined | Dispose): Dispose {
     cleanup: null,
     isEffect: true,
     disposed: false,
+    error: null,
   };
   trackNode(node);
 
   // Effects run their initial body eagerly (synchronous) — the templates
   // and tests rely on this to set up DOM bindings before the user code
   // continues.
-  updateValue(node);
+  // A throwing initial run never returns a disposer to the caller, so drop the
+  // sources it managed to read before the throw; otherwise the unreachable
+  // effect stays subscribed and re-runs on later writes.
+  try {
+    updateValue(node);
+  } catch (e) {
+    node.disposed = true;
+    disconnectFromSources(node);
+    throw e;
+  }
 
   const dispose = (): void => {
     if (node.disposed) return;

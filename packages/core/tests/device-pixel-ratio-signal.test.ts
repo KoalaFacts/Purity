@@ -144,6 +144,35 @@ describe('devicePixelRatioSignal (ADR 0041)', () => {
     expect(s()).toBe(2);
   });
 
+  it('rolls back the new attachment when detaching the previous MQL throws', () => {
+    // devicePixelRatioSignal's detach contract: a throwing detach must
+    // propagate to the rebind handler so it can roll back the
+    // already-attached new listener instead of ending up double-bound.
+    // This is the opposite contract from mediaSignal's detach, which
+    // always swallows — the two must not be unified onto one throw/swallow
+    // behavior even though the attach/detach branch-selection is shared.
+    setDpr(1);
+    const s = devicePixelRatioSignal();
+    expect(s()).toBe(1);
+    const oneDppx = mockMqls.get('(resolution: 1dppx)')!;
+    expect(oneDppx.listeners.length).toBe(1);
+
+    oneDppx.removeEventListener = () => {
+      throw new Error('detach boom');
+    };
+
+    setDpr(2);
+    expect(() => oneDppx.setMatches(false)).not.toThrow();
+
+    // Rebind aborted: value stays at the old DPR, old listener is still
+    // considered live (detach failed), and the new MQL's listener was
+    // rolled back (removed again) rather than left double-bound.
+    expect(s()).toBe(1);
+    expect(oneDppx.listeners.length).toBe(1);
+    const twoDppx = mockMqls.get('(resolution: 2dppx)')!;
+    expect(twoDppx.listeners.length).toBe(0);
+  });
+
   it('does not infinite-loop when the change handler re-enters synchronously', () => {
     setDpr(1);
     const s = devicePixelRatioSignal();

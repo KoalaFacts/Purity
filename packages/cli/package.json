@@ -28,6 +28,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vp build"
+    "build": "vp build",
+    "test": "vp test run"
   }
 }

@@ -149,7 +149,13 @@ describe('@purityjs/vite-plugin', () => {
 
   it('respects custom include option', () => {
     const custom = purity({ include: ['.vue'] });
-    expect(custom.transform('html`<div></div>`', 'app.vue')).not.toBeNull();
+    const sfc = [
+      '<script>',
+      "import { html } from '@purityjs/core';",
+      'export const v = html`<div></div>`;',
+      '</script>',
+    ].join('\n');
+    expect(custom.transform(sfc, 'app.vue')).not.toBeNull();
     expect(custom.transform('html`<div></div>`', 'app.ts')).toBeNull();
   });
 

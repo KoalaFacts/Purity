@@ -60,6 +60,45 @@ export const el = <div />;
     expect(result.code).not.toContain('html`<p>');
   });
 
+  describe('custom include formats (single-file components)', () => {
+    const vuePlugin: any = purity({ include: ['.vue', '.ts', '.tsx', '.js', '.jsx'] });
+
+    it('compiles html`` inside a <script> block of a .vue file', () => {
+      const code = [
+        '<template>',
+        '  <p>markup html`<b>not code</b>`</p>',
+        '</template>',
+        '<script setup lang="ts">',
+        IMPORT.trim(),
+        'export const view = (x: string) => html`<p>${x}</p>`;',
+        '</script>',
+      ].join('\n');
+      const result = vuePlugin.transform(code, 'Card.vue');
+      expect(result).not.toBeNull();
+      expect(result.code).not.toContain('html`<p>');
+      // Markup outside the script is never touched.
+      expect(result.code).toContain('<p>markup html`<b>not code</b>`</p>');
+    });
+
+    it('ignores html`` text in a comment inside the script block', () => {
+      const code = [
+        '<script>',
+        IMPORT.trim(),
+        '// ' + MIXED,
+        'export const view = (x) => html`<p>${x}</p>`;',
+        '</script>',
+      ].join('\n');
+      const result = vuePlugin.transform(code, 'Card.vue');
+      expect(result).not.toBeNull();
+      expect(result.code).toContain('// ' + MIXED);
+      expect(result.code).not.toContain('html`<p>');
+    });
+
+    it('leaves a .vue file without a script block unchanged', () => {
+      expect(vuePlugin.transform('<template><p>x</p></template>', 'Plain.vue')).toBeNull();
+    });
+  });
+
   it('still strips the html import only when every real template compiled', () => {
     const code = `${IMPORT}export const view = () => html\`<p>ok</p>\`;\n`;
     const result = plugin.transform(code, 'app.ts');

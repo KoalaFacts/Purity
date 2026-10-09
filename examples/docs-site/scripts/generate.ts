@@ -68,6 +68,12 @@ const sources: SourcePage[] = [
     category: 'architecture',
     navTitle: 'Decision index',
   },
+  {
+    file: join(repo, 'docs/2026-execution-model-roadmap.md'),
+    slug: 'execution-model-roadmap',
+    category: 'architecture',
+    navTitle: 'Execution-model roadmap',
+  },
 ];
 
 for (const name of (await readdir(join(repo, 'docs/decisions'))).sort()) {

@@ -118,6 +118,18 @@ class Parser {
     return this.pos >= this.strings[this.strIdx].length && this.strIdx < this.strings.length - 1;
   }
 
+  // `/>` directly after the current position, within the same string segment.
+  // A bare `/` starts literal text (e.g. `href=${base}/users`) and must not end
+  // an unquoted value.
+  private atSelfClosingSlash(): boolean {
+    const s = this.current();
+    return (
+      this.pos + 1 < s.length &&
+      s.charCodeAt(this.pos) === SLASH &&
+      s.charCodeAt(this.pos + 1) === GT
+    );
+  }
+
   // Consume the expression boundary, returning the expression index
   private consumeExpr(): number {
     const idx = this.exprIndex++;
@@ -447,7 +459,7 @@ class Parser {
       const next = this.peek(); // -1 at a segment end
       const closes = quoteChar
         ? next === quoteChar
-        : next === -1 || isWhitespace(next) || next === GT || next === SLASH;
+        : next === -1 || isWhitespace(next) || next === GT || this.atSelfClosingSlash();
       if (this.atExprBoundary() || !closes) throw interpolatedAttrError(name);
       if (quoteChar) this.advance();
 

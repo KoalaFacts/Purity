@@ -180,6 +180,21 @@ describe('parser', () => {
     expect(() => parse(['<div class=a-', '></div>'])).toThrow(/interpolated attribute "class"/);
   });
 
+  it('rejects an unquoted dynamic attribute followed by a path suffix', () => {
+    // html`<a href=${base}/users>Users</a>` — `/users` is literal text, not `/>`.
+    expect(() => parse(['<a href=', '/users>Users</a>'])).toThrow(/interpolated attribute "href"/);
+  });
+
+  it('keeps unquoted dynamic attributes closed by `/>` or whitespace', () => {
+    // html`<input value=${v}/>` and html`<img src=${s} />`
+    const input = parse(['<input value=', '/>']).children[0] as any;
+    expect(input.attributes).toEqual([{ kind: 'dynamic', name: 'value', index: 0 }]);
+    expect(input.isVoid).toBe(true);
+    const img = parse(['<img src=', ' />']).children[0] as any;
+    expect(img.attributes).toEqual([{ kind: 'dynamic', name: 'src', index: 0 }]);
+    expect(img.isVoid).toBe(true);
+  });
+
   it('error message suggests binding the whole value as a reactive function', () => {
     expect(() => parse(['<a title="x ', ' y"></a>'])).toThrow(
       /Bind the whole value instead, e\.g\. title=\$\{\(\) => `x \$\{v\(\)\} y`\}/,

@@ -1,8 +1,7 @@
-// Lifecycle benchmark — idiomatic Solid version.
-// Uses: createSignal, For, JSX onClick. Zero vanilla JS for UI wiring.
-
-import { createSignal, For } from 'solid-js';
-import { render } from '@solidjs/web';
+// Lifecycle benchmark — idiomatic React version.
+// Uses: useState, map over cards. Plain React, no signals.
+import { useState } from 'react';
+import { createRoot } from 'react-dom/client';
 
 // ---------------------------------------------------------------------------
 // Types and data generation
@@ -16,21 +15,18 @@ interface Card {
 let nextId = 1;
 function buildCards(n: number): Card[] {
   const d = new Array<Card>(n);
-  for (let i = 0; i < n; i++) d[i] = { id: nextId++, label: `Card ${nextId - 1}` };
+  for (let i = 0; i < n; i++) {
+    const id = nextId++;
+    d[i] = { id, label: `Card ${id}` };
+  }
   return d;
 }
-
-// ---------------------------------------------------------------------------
-// Module-level signals
-// ---------------------------------------------------------------------------
-
-const [cards, setCards] = createSignal<Card[]>([]);
 
 // ---------------------------------------------------------------------------
 // Hidden benchmark button helper
 // ---------------------------------------------------------------------------
 
-function HBtn(props: { id: string; onClick: () => void; children: any }) {
+function HBtn(props: { id: string; onClick: () => void; children: string }) {
   return (
     <button type="button" id={props.id} style={{ display: 'none' }} onClick={props.onClick}>
       {props.children}
@@ -43,49 +39,51 @@ function HBtn(props: { id: string; onClick: () => void; children: any }) {
 // ---------------------------------------------------------------------------
 
 function App() {
+  const [cards, setCards] = useState<Card[]>([]);
+
   return (
     <>
-      <div class="jumbotron">
-        <div class="row">
-          <div class="col-md-6">
-            <h1>Solid (Lifecycle)</h1>
+      <div className="jumbotron">
+        <div className="row">
+          <div className="col-md-6">
+            <h1>React (Lifecycle)</h1>
           </div>
-          <div class="col-md-6">
-            <div class="row">
-              <div class="col-sm-6 smallpad">
+          <div className="col-md-6">
+            <div className="row">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="create-1k"
                   onClick={() => setCards(buildCards(1000))}
                 >
                   Create 1k
                 </button>
               </div>
-              <div class="col-sm-6 smallpad">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="create-10k"
                   onClick={() => setCards(buildCards(10000))}
                 >
                   Create 10k
                 </button>
               </div>
-              <div class="col-sm-6 smallpad">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="destroy-all"
                   onClick={() => setCards([])}
                 >
                   Destroy All
                 </button>
               </div>
-              <div class="col-sm-6 smallpad">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="replace"
                   onClick={() => setCards(buildCards(1000))}
                 >
@@ -112,17 +110,15 @@ function App() {
         </div>
       </div>
       <div id="container">
-        <For each={cards()}>
-          {(card: Card) => (
-            <div class="card">
-              <span class="id">{card.id}</span>
-              <span class="label">{card.label}</span>
-            </div>
-          )}
-        </For>
+        {cards.map((card) => (
+          <div key={card.id} className="card">
+            <span className="id">{card.id}</span>
+            <span className="label">{card.label}</span>
+          </div>
+        ))}
       </div>
     </>
   );
 }
 
-render(App, document.getElementById('app')!);
+createRoot(document.getElementById('app')!).render(<App />);

@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const FRAMEWORKS = ['purity', 'solid', 'svelte', 'vue'] as const;
+const FRAMEWORKS = ['purity', 'solid', 'svelte', 'vue', 'react'] as const;
 type Framework = (typeof FRAMEWORKS)[number];
 
 const scenario = process.argv[2];
@@ -156,8 +156,8 @@ function row(label: string, key: keyof Result, fmt: (v: number) => string = (v) 
   return `${s}|`;
 }
 
-console.log(`|  | purity | solid | svelte | vue |`);
-console.log(`|---|---|---|---|---|`);
+console.log(`|  | purity | solid | svelte | vue | react |`);
+console.log(`|---|---|---|---|---|---|`);
 console.log(row('wall (ms)', 'wall', (v) => v.toFixed(0)));
 console.log(row('jsUser self (ms)', 'jsUser'));
 console.log(row('domOps native (ms)', 'domOps'));

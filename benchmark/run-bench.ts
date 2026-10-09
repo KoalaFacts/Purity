@@ -13,7 +13,7 @@ const WARMUP = parseInt(process.env.WARMUP || '3', 10);
 const ITERATIONS = parseInt(process.env.ITERATIONS || '7', 10);
 const MEM_ITERATIONS = parseInt(process.env.MEM_ITERATIONS || '3', 10);
 const DROP_OUTLIERS = 1; // drop N fastest + N slowest before computing median
-const ALL_FRAMEWORKS = ['purity', 'solid', 'svelte', 'vue'] as const;
+const ALL_FRAMEWORKS = ['purity', 'solid', 'svelte', 'vue', 'react'] as const;
 type Framework = (typeof ALL_FRAMEWORKS)[number];
 const FRAMEWORKS = selectFrameworks();
 
@@ -1088,6 +1088,9 @@ async function main() {
   console.log('\n### Notes\n');
   console.log(
     '- **Svelte computed-chain & diamond:** Svelte 5 `$derived()` is a compile-time rune and cannot be created dynamically. These scenarios use a `$effect` loop instead of 1000 actual reactive dependency nodes. Purity, Solid, and Vue create real reactive graphs for these tests, so Svelte results are not directly comparable.',
+  );
+  console.log(
+    '- **React computed-chain & diamond:** React has no fine-grained reactivity. The React versions recompute the chain/diamond totals in one `useMemo` over plain state and re-render through the VDOM diff, instead of building 1000 reactive nodes. These scenarios measure recomputation + re-render cost, not signal propagation, so React results are not directly comparable to Purity, Solid, or Vue on these two scenarios.',
   );
   console.log(
     '- **Memory results:** Heap usage measured via `performance.memory.usedJSHeapSize` with forced GC. "Used" = heap delta after creation. "Retained" = heap delta after destroy — indicates memory not released (closer to 0 = better cleanup).',

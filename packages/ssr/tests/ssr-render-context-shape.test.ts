@@ -42,10 +42,14 @@ describe('SSRRenderContext shape — renderToString', () => {
     expect(captured).not.toBeNull();
     expect(captured!.head).toEqual([]);
     expect(captured!.boundaryAborts).toBeDefined();
-    expect(captured!.streamingMode).toBeUndefined();
-    expect(captured!.streamingBoundaries).toBeUndefined();
-    expect(captured!.boundaryPath).toBeUndefined();
-    expect(captured!.boundaryIdStack).toBeUndefined();
+    // `toBeUndefined()` can't tell "key absent" from "key present with value
+    // undefined" — a future shared-factory refactor could start spreading in
+    // `streamingMode: undefined` etc. and this would silently stop catching
+    // the leak it exists to catch. Assert on actual key presence instead.
+    expect(Object.hasOwn(captured!, 'streamingMode')).toBe(false);
+    expect(Object.hasOwn(captured!, 'streamingBoundaries')).toBe(false);
+    expect(Object.hasOwn(captured!, 'boundaryPath')).toBe(false);
+    expect(Object.hasOwn(captured!, 'boundaryIdStack')).toBe(false);
   });
 });
 
@@ -62,9 +66,9 @@ describe('SSRRenderContext shape — renderToStream shell (top-level, outside an
     expect(captured!.streamingMode).toBe(true);
     expect(captured!.streamingBoundaries).toBeDefined();
     expect(captured!.head).toEqual([]);
-    expect(captured!.boundaryAborts).toBeUndefined();
-    expect(captured!.boundaryPath).toBeUndefined();
-    expect(captured!.boundaryIdStack).toBeUndefined();
+    expect(Object.hasOwn(captured!, 'boundaryAborts')).toBe(false);
+    expect(Object.hasOwn(captured!, 'boundaryPath')).toBe(false);
+    expect(Object.hasOwn(captured!, 'boundaryIdStack')).toBe(false);
   });
 });
 
@@ -87,8 +91,8 @@ describe('SSRRenderContext shape — renderToStream suspense boundary (view rend
     expect(captured!.boundaryAborts).toBeDefined();
     expect(captured!.boundaryPath).toMatch(/^stream:\d+\/(view|fallback)$/);
     expect(captured!.boundaryIdStack).toEqual(expect.arrayContaining([expect.any(Number)]));
-    expect(captured!.streamingMode).toBeUndefined();
-    expect(captured!.streamingBoundaries).toBeUndefined();
-    expect(captured!.head).toBeUndefined();
+    expect(Object.hasOwn(captured!, 'streamingMode')).toBe(false);
+    expect(Object.hasOwn(captured!, 'streamingBoundaries')).toBe(false);
+    expect(Object.hasOwn(captured!, 'head')).toBe(false);
   });
 });

@@ -14,6 +14,7 @@ Read them on the [public documentation site](https://koalafacts.github.io/Purity
 | [`shadow-dom-rationale.md`](./shadow-dom-rationale.md)     | Why `component()` uses Shadow DOM by default, when it pays, when it hurts, escape hatches, Tailwind / global-CSS integration |
 | [`accessibility.md`](./accessibility.md)                   | ARIA across shadow boundaries, focus delegation, screen-reader-friendly slot patterns, a worked `p-tabs` example             |
 | [`migration.md`](./migration.md)                           | Side-by-side cheatsheet: React / SolidJS / Vue / Svelte → Purity equivalents                                                 |
+| [`2026-execution-model-roadmap.md`](./2026-execution-model-roadmap.md) | Research note: execution modes (resumability, server-driven interactivity) that other frameworks ship and Purity doesn't yet |
 | [`debugging.md`](./debugging.md)                           | The `__purity_inspect__` hook — inspecting the reactive graph from the browser console                                       |
 | [`decisions/`](./decisions/)                               | Architecture Decision Records (ADRs) — SSR strategy, devtools approach, path to 1.0                                          |
 

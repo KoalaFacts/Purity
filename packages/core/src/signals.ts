@@ -77,10 +77,14 @@ let effectDepth = 0;
 // production bundle means consumers can debug live apps without rebuilding
 // for development.
 //
-// Apps that strictly need to remove it can do so via their bundler's tree-
-// shake / dead-code-elimination by setting
-// `globalThis.__purity_inspect__ = undefined` after import (or by
-// configuring `define` to false).
+// This is a deliberate trade-off, not something an app can opt out of
+// today: assigning `globalThis.__purity_inspect__ = undefined` at runtime,
+// after import, does not remove any of this code from the build — bundler
+// dead-code-elimination runs at build time against @purityjs/core's own
+// source, before any consuming app's runtime assignments exist to analyze.
+// Shrinking this out of a specific build would require a real build-time
+// flag (e.g. a `define`-gated branch in this package's own build), which
+// does not exist yet.
 // ---------------------------------------------------------------------------
 
 const trackedNodes: Set<WeakRef<AnyNode>> = new Set();

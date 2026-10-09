@@ -11,7 +11,6 @@
     "web-components"
   ],
   "license": "MIT",
-  "sideEffects": false,
   "author": "KoalaFacts",
   "repository": {
     "type": "git",
@@ -23,6 +22,7 @@
     "src"
   ],
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

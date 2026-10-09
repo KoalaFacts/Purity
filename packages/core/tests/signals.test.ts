@@ -968,3 +968,120 @@ describe('deep dependency chains', () => {
     expect(prev()).toBe(20_001);
   });
 });
+
+describe('compute — error caching', () => {
+  // A throwing compute() caches its error: every read rethrows the same error
+  // until a source changes, and recovers normally when fn stops throwing. The
+  // previous behaviour settled the node CLEAN with its old value, so the second
+  // read silently returned a stale value and the error was lost.
+
+  const captureError = (read: () => unknown): unknown => {
+    try {
+      read();
+    } catch (e) {
+      return e;
+    }
+    throw new Error('expected read to throw');
+  };
+
+  it('rethrows the same error on every read instead of the stale value', () => {
+    const src = state(1);
+    const boom = new Error('boom');
+    let calls = 0;
+    const c = compute(() => {
+      calls++;
+      if (src() === 2) throw boom;
+      return src() * 10;
+    });
+    expect(c()).toBe(10);
+    src(2);
+    expect(captureError(() => c())).toBe(boom);
+    const callsAfterFirstThrow = calls;
+    expect(captureError(() => c())).toBe(boom);
+    expect(calls).toBe(callsAfterFirstThrow);
+  });
+
+  it('recomputes and returns the new value once the source no longer throws', () => {
+    const src = state(1);
+    const c = compute(() => {
+      if (src() === 2) throw new Error('boom');
+      return src() * 10;
+    });
+    expect(c()).toBe(10);
+    src(2);
+    expect(() => c()).toThrow('boom');
+    src(3);
+    expect(c()).toBe(30);
+  });
+
+  it('watcher reading a throwing compute sees the throw, then recovers after the source fix', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const src = state(1);
+    const c = compute(() => {
+      if (src() === 2) throw new Error('boom');
+      return src() * 10;
+    });
+    const seen: unknown[] = [];
+    const dispose = watch(() => {
+      try {
+        seen.push(c());
+      } catch (e) {
+        seen.push(e instanceof Error ? `error:${e.message}` : e);
+      }
+    });
+    expect(seen).toEqual([10]);
+    src(2);
+    await tick();
+    expect(seen).toEqual([10, 'error:boom']);
+    src(1);
+    await tick();
+    expect(seen).toEqual([10, 'error:boom', 10]);
+    dispose();
+    errSpy.mockRestore();
+  });
+
+  it('keeps the watcher subscribed to sources read before the throw', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const src = state(1);
+    const c = compute(() => {
+      const v = src();
+      if (v === 2) throw new Error('boom');
+      return v;
+    });
+    let runs = 0;
+    const dispose = watch(() => {
+      runs++;
+      try {
+        c();
+      } catch {
+        // swallowed: only the re-run count matters here
+      }
+    });
+    src(2);
+    await tick();
+    expect(runs).toBe(2);
+    src(3);
+    await tick();
+    expect(runs).toBe(3);
+    dispose();
+    errSpy.mockRestore();
+  });
+
+  it('does not re-run downstream watchers when a compute recomputes to an unchanged value', async () => {
+    const src = state(1);
+    const parity = compute(() => src() % 2);
+    let runs = 0;
+    const dispose = watch(() => {
+      runs++;
+      parity();
+    });
+    expect(runs).toBe(1);
+    src(3);
+    await tick();
+    expect(runs).toBe(1);
+    src(4);
+    await tick();
+    expect(runs).toBe(2);
+    dispose();
+  });
+});

@@ -1,3 +1,6 @@
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { ComponentContext, popContext, pushContext } from '../src/component.ts';
 import { batch, compute, state, watch, type ComputedAccessor } from '../src/signals.ts';
@@ -561,6 +564,184 @@ describe('watch flush — throw isolation across pending effects', () => {
     expect(runs).toBe(2);
     dispose();
     errSpy.mockRestore();
+  });
+});
+
+describe('flush — cross-effect feedback loops', () => {
+  // Effect A reads s1 and writes s2; effect B reads s2 and writes s1. Each
+  // write re-queues the other effect, so without a per-flush bound the loop
+  // never drains the queue.
+
+  it('terminates a two-effect ping-pong, reports it, and keeps the graph usable', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s1 = state(0);
+    const s2 = state(0);
+    // Probe cap far above the library's own per-flush cap. On code without a
+    // bound the loop never ends by itself, so the probe stops it here and the
+    // assertions below fail instead of hanging the test run.
+    const PROBE = 1_000_000;
+    let runs = 0;
+    const a = watch(() => {
+      const v = s1();
+      if (++runs > PROBE) return;
+      s2(v + 1);
+    });
+    const b = watch(() => {
+      const v = s2();
+      if (++runs > PROBE) return;
+      s1(v + 1);
+    });
+    await tick();
+    expect(runs).toBeLessThan(PROBE);
+    expect(errSpy.mock.calls.some(([msg]) => String(msg).includes('feedback loop'))).toBe(true);
+
+    // The graph recovers: the loop's effects are re-queued by later writes,
+    // and unrelated watchers still run normally.
+    errSpy.mockClear();
+    const u = state(0);
+    let seen = -1;
+    const c = watch(() => {
+      seen = u();
+    });
+    u(7);
+    await tick();
+    expect(seen).toBe(7);
+    expect(errSpy).not.toHaveBeenCalled();
+    a();
+    b();
+    c();
+    errSpy.mockRestore();
+  });
+
+  it('lets a long finite cascade (200 links, one write each) complete without tripping', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const LINKS = 200;
+    const chain = Array.from({ length: LINKS + 1 }, () => state(0));
+    const disposers: Array<() => void> = [];
+    for (let k = 0; k < LINKS; k++) {
+      disposers.push(
+        watch(() => {
+          chain[k + 1](chain[k]() + 1);
+        }),
+      );
+    }
+    chain[0](1000);
+    await tick();
+    expect(chain[LINKS]()).toBe(1000 + LINKS);
+    expect(errSpy).not.toHaveBeenCalled();
+    for (const d of disposers) d();
+    errSpy.mockRestore();
+  });
+
+  it('does not treat a large fan-out of distinct watchers as a loop', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = state(0);
+    const N = 100_001;
+    let observed = 0;
+    const disposers: Array<() => void> = [];
+    for (let k = 0; k < N; k++) {
+      disposers.push(
+        watch(() => {
+          if (s() === 1) observed++;
+        }),
+      );
+    }
+    s(1);
+    await tick();
+    expect(observed).toBe(N);
+    expect(errSpy).not.toHaveBeenCalled();
+    for (const d of disposers) d();
+    errSpy.mockRestore();
+  });
+
+  it('keeps a watcher live after a loop through computed intermediaries is cut', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s1 = state(0);
+    const s2 = state(0);
+    const c1 = compute(() => s1());
+    // Same probe idea as above; `live` lets the test switch the loop off
+    // before the recovery write.
+    const PROBE = 1_000_000;
+    let runs = 0;
+    let live = true;
+    const step = (): boolean => live && ++runs < PROBE;
+    let seen = -1;
+    const a = watch(() => {
+      const v = c1();
+      seen = v;
+      if (step()) s2(v + 1);
+    });
+    const b = watch(() => {
+      const v = s2();
+      if (step()) s1(v + 1);
+    });
+    await tick();
+    expect(runs).toBeLessThan(PROBE);
+    expect(errSpy.mock.calls.some(([msg]) => String(msg).includes('feedback loop'))).toBe(true);
+
+    // A later write to s1 must reach A through c1 and re-run it.
+    live = false;
+    seen = -1;
+    s1(500);
+    await tick();
+    expect(seen).toBe(500);
+    a();
+    b();
+    errSpy.mockRestore();
+  });
+
+  it('a direct read of a self-referential computed returns after a loop through it is cut', () => {
+    // Runs in a child process so a hang fails this test at the timeout instead
+    // of blocking the test run. A self-referential compute lists itself as a
+    // source; once the loop cut demotes it to CHECK, a direct read must still
+    // resolve it.
+    const script = `
+      (async () => {
+        const { compute, state, watch } = await import(${JSON.stringify(
+          pathToFileURL(join(import.meta.dirname, '..', 'src', 'signals.ts')).href,
+        )});
+        const tick = () => new Promise((r) => queueMicrotask(r));
+        console.error = () => {};
+        const s1 = state(0);
+        const s2 = state(0);
+        let c;
+        c = compute(() => (c ? (c() ?? 0) : 0) * 0 + s1());
+        const PROBE = 1000000;
+        let runs = 0;
+        let live = true;
+        const step = () => live && ++runs < PROBE;
+        let seen = -1;
+        const a = watch(() => {
+          const v = c();
+          seen = v;
+          if (step()) s2(v + 1);
+        });
+        const b = watch(() => {
+          const v = s2();
+          if (step()) s1(v + 1);
+        });
+        await tick();
+        const cut = runs < PROBE;
+        live = false;
+        const direct = c();
+        const expected = s1.peek();
+        s1(500);
+        await tick();
+        process.stdout.write(JSON.stringify({ cut, direct, expected, seen }));
+        a();
+        b();
+      })();
+    `;
+    const res = spawnSync(process.execPath, ['--experimental-strip-types', '-e', script], {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    expect(res.error).toBeUndefined();
+    expect(res.signal).toBeNull();
+    const out = JSON.parse(res.stdout);
+    expect(out.cut).toBe(true);
+    expect(out.direct).toBe(out.expected);
+    expect(out.seen).toBe(500);
   });
 });
 

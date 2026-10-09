@@ -58,6 +58,9 @@ interface ComputedNode {
    *  Boxed so a thrown `undefined`/`null` is still distinguishable from "no error".
    *  Checked on the read path only when set; cleared by the next successful run. */
   error: { value: unknown } | null;
+  /** Effects: the flush that last counted a run of this node, and how many runs it has counted in that flush. */
+  flushId: number;
+  flushRuns: number;
 }
 
 type AnyNode = StateNode<unknown> | ComputedNode;
@@ -69,6 +72,14 @@ let batchDepth = 0;
 let microtaskScheduled = false;
 const pendingEffects: ComputedNode[] = [];
 
+// Re-runs allowed for one effect within one flush. A flush normally runs each
+// dirtied effect once; a second or third run comes from an upstream effect
+// writing again in the same cascade. 1000 is far beyond any such chain, and a
+// feedback loop reaches it in well under a millisecond per cycle, so it trips
+// quickly. Trade-off: one effect fed by more than 1000 separate writes inside a
+// single flush would trip; that is treated as a loop.
+const MAX_EFFECT_REPEATS = 1000;
+let flushSeq = 0;
 const MAX_EFFECT_DEPTH = 100;
 let effectDepth = 0;
 
@@ -338,6 +349,10 @@ function updateValue(startNode: ComputedNode): void {
       idx: 0,
     },
   ];
+  // Nodes with a frame on the stack. A self-referential computed lists itself
+  // as a source; descending into it again would push frames forever. Created
+  // lazily at the first descent, when the stack holds only startNode.
+  let onStack: Set<ComputedNode> | null = null;
 
   while (stack.length > 0) {
     const frame = stack[stack.length - 1];
@@ -351,16 +366,22 @@ function updateValue(startNode: ComputedNode): void {
         if (sc.disposed) {
           sc.status = STATUS_CLEAN;
         } else if (sc.status === STATUS_CHECK) {
-          // Resolve sc before we can know whether it actually changed —
-          // push a frame for it instead of recursing into updateValue(sc).
-          stack.push({
-            node: sc,
-            sources: sc.sources ?? [],
-            versions: sc.sourceVersions ?? [],
-            idx: 0,
-          });
-          descended = true;
-          break;
+          // A source already being resolved (a cycle) cannot be resolved again;
+          // compare its version as it stands instead of descending.
+          const onPath = onStack !== null ? onStack.has(sc) : sc === node;
+          if (!onPath) {
+            // Resolve sc before we can know whether it actually changed —
+            // push a frame for it instead of recursing into updateValue(sc).
+            (onStack ??= new Set(stack.map((f) => f.node))).add(sc);
+            stack.push({
+              node: sc,
+              sources: sc.sources ?? [],
+              versions: sc.sourceVersions ?? [],
+              idx: 0,
+            });
+            descended = true;
+            break;
+          }
         } else if (sc.status !== STATUS_CLEAN) {
           runComputed(sc);
         }
@@ -379,6 +400,7 @@ function updateValue(startNode: ComputedNode): void {
     } else {
       runComputed(node);
     }
+    onStack?.delete(node);
     stack.pop();
   }
 }
@@ -521,8 +543,8 @@ function runComputed(node: ComputedNode): void {
   }
   // Effects: force CLEAN. An effect that synchronously writes its own dep was
   // demoted to DIRTY and re-enqueued by markDirty; the designed semantics are
-  // "run once, the queued re-run is skipped because status is now CLEAN" (the
-  // MAX_EFFECT_DEPTH guard backstops genuine cross-effect feedback loops).
+  // "run once, the queued re-run is skipped because status is now CLEAN".
+  // Cross-effect feedback loops are bounded by MAX_EFFECT_REPEATS in flush().
   // Computes already converged to CLEAN in the loop above.
   if (node.isEffect) node.status = STATUS_CLEAN;
   if (changed) {
@@ -562,11 +584,26 @@ function flush(): void {
   // codebase handle throws (resource error, optimistic onSettle, lifecycle
   // hooks, …). The outer try/finally guarantees the queue is cleared
   // regardless.
+  const id = ++flushSeq;
   try {
     let i = 0;
     while (i < pendingEffects.length) {
       const e = pendingEffects[i++];
       if (e.disposed || e.status === STATUS_CLEAN) continue;
+      if (e.flushId !== id) {
+        e.flushId = id;
+        e.flushRuns = 0;
+      }
+      if (++e.flushRuns > MAX_EFFECT_REPEATS) {
+        console.error(
+          '[Purity] effect feedback loop detected: an effect re-ran more than ' +
+            MAX_EFFECT_REPEATS +
+            ' times in one flush. Effects are writing signals that other ' +
+            'effects read in a cycle; the remaining queued effects did not run.',
+        );
+        settleAfterLoop(i - 1);
+        break;
+      }
       try {
         updateValue(e);
       } catch (err) {
@@ -582,6 +619,33 @@ function flush(): void {
     }
   } finally {
     pendingEffects.length = 0;
+  }
+}
+
+// Called when flush() cuts a feedback loop. Drops the queued effects from
+// `from` onward and makes their upstream computeds re-checkable. markDirty
+// skips nodes already DIRTY, so a computed left DIRTY would swallow the next
+// write to its source and its watcher would stay stale for good. Demoting the
+// DIRTY/CHECK ancestors to CHECK (not CLEAN) keeps them correct: a read
+// re-verifies their sources, and a write re-invalidates them.
+function settleAfterLoop(from: number): void {
+  const stack: ComputedNode[] = [];
+  for (let j = from; j < pendingEffects.length; j++) {
+    const e = pendingEffects[j];
+    e.status = STATUS_CLEAN;
+    if (e.sources !== null) {
+      for (const src of e.sources) if (src.fn !== null) stack.push(src);
+    }
+  }
+  const seen = new Set<ComputedNode>();
+  while (stack.length > 0) {
+    const c = stack.pop()!;
+    if (c.status === STATUS_CLEAN || seen.has(c)) continue;
+    seen.add(c);
+    c.status = STATUS_CHECK;
+    if (c.sources !== null) {
+      for (const src of c.sources) if (src.fn !== null) stack.push(src);
+    }
   }
 }
 
@@ -726,6 +790,8 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
     isEffect: false,
     disposed: false,
     error: null,
+    flushId: 0,
+    flushRuns: 0,
   };
   trackNode(node);
 
@@ -764,6 +830,8 @@ function _effect(fn: () => undefined | Dispose): Dispose {
     isEffect: true,
     disposed: false,
     error: null,
+    flushId: 0,
+    flushRuns: 0,
   };
   trackNode(node);
 

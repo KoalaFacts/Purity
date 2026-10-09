@@ -65,43 +65,39 @@ console.log('');
 mkdirSync(projectDir, { recursive: true });
 mkdirSync(resolve(projectDir, 'src'), { recursive: true });
 
+// --ssr and --app both boot the same Node server and build the same
+// client/server/bootstrap outputs; --app layers typed routing and a
+// static-prerender step on top. Both need @purityjs/ssr, Node types, and
+// the server-only tsconfig/vite-alias fields that --app also needs.
+const serverMode = ssrMode || appMode;
+
 // package.json
-const scripts = appMode
+const scripts = serverMode
   ? {
       dev: 'node --experimental-strip-types server.ts',
-      typecheck: 'node --experimental-strip-types prepare-types.ts && tsc --noEmit',
-      build:
-        'npm run typecheck && npm run build:client && npm run build:server && npm run build:bootstrap && npm run build:static',
+      typecheck: appMode
+        ? 'node --experimental-strip-types prepare-types.ts && tsc --noEmit'
+        : 'tsc --noEmit',
+      build: appMode
+        ? 'npm run typecheck && npm run build:client && npm run build:server && npm run build:bootstrap && npm run build:static'
+        : 'npm run typecheck && npm run build:client && npm run build:server && npm run build:bootstrap',
       'build:client': 'vite build --outDir dist/client',
       'build:server': 'vite build --ssr src/entry.server.ts --outDir dist/server',
       'build:bootstrap':
         'tsc --ignoreConfig server.ts --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node --outDir dist',
-      'build:static': 'node --experimental-strip-types build.ts',
+      ...(appMode ? { 'build:static': 'node --experimental-strip-types build.ts' } : {}),
       start: 'node dist/server.js --production',
       preview: 'npm run start',
     }
-  : ssrMode
-    ? {
-        dev: 'node --experimental-strip-types server.ts',
-        typecheck: 'tsc --noEmit',
-        build:
-          'npm run typecheck && npm run build:client && npm run build:server && npm run build:bootstrap',
-        'build:client': 'vite build --outDir dist/client',
-        'build:server': 'vite build --ssr src/entry.server.ts --outDir dist/server',
-        'build:bootstrap':
-          'tsc --ignoreConfig server.ts --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck --types node --outDir dist',
-        start: 'node dist/server.js --production',
-        preview: 'npm run start',
-      }
-    : {
-        dev: 'vite',
-        typecheck: 'tsc --noEmit',
-        build: 'npm run typecheck && vite build',
-        preview: 'vite preview',
-      };
+  : {
+      dev: 'vite',
+      typecheck: 'tsc --noEmit',
+      build: 'npm run typecheck && vite build',
+      preview: 'vite preview',
+    };
 
 const dependencies: Record<string, string> = { '@purityjs/core': coreDep };
-if (ssrMode || appMode) dependencies['@purityjs/ssr'] = ssrDep;
+if (serverMode) dependencies['@purityjs/ssr'] = ssrDep;
 
 const devDependencies: Record<string, string> = {
   '@purityjs/vite-plugin': pluginDep,
@@ -109,7 +105,7 @@ const devDependencies: Record<string, string> = {
   typescript: '^7.0.2',
 };
 // Server modes need Node types for their boot and build scripts.
-if (ssrMode || appMode) devDependencies['@types/node'] = '^25.9.1';
+if (serverMode) devDependencies['@types/node'] = '^25.9.1';
 
 writeFileSync(
   resolve(projectDir, 'package.json'),
@@ -142,11 +138,11 @@ const pluginImport = isLocal
 let aliasBlock = '';
 if (isLocal) {
   const aliases: string[] = [];
-  if (ssrMode || appMode) {
+  if (serverMode) {
     aliases.push(`'@purityjs/core/compiler': ${JSON.stringify(coreCompilerPath)}`);
   }
   aliases.push(`'@purityjs/core': ${JSON.stringify(coreSrcPath)}`);
-  if (ssrMode || appMode) {
+  if (serverMode) {
     aliases.push(`'@purityjs/ssr': ${JSON.stringify(ssrSrcPath)}`);
   }
   aliasBlock = `\n  resolve: {\n    alias: {\n      ${aliases.join(',\n      ')},\n    },\n  },`;
@@ -175,20 +171,17 @@ writeFileSync(
         module: 'ESNext',
         moduleResolution: 'bundler',
         lib: ['ES2022', 'DOM', 'DOM.Iterable'],
-        ...(ssrMode || appMode
-          ? { types: ['node'], allowImportingTsExtensions: true, noEmit: true }
-          : {}),
+        ...(serverMode ? { types: ['node'], allowImportingTsExtensions: true, noEmit: true } : {}),
         strict: true,
         skipLibCheck: true,
       },
-      include:
-        ssrMode || appMode
-          ? [
-              'src',
-              'server.ts',
-              ...(appMode ? ['build.ts', 'prepare-types.ts', 'src/.purity/routes.d.ts'] : []),
-            ]
-          : ['src'],
+      include: serverMode
+        ? [
+            'src',
+            'server.ts',
+            ...(appMode ? ['build.ts', 'prepare-types.ts', 'src/.purity/routes.d.ts'] : []),
+          ]
+        : ['src'],
     },
     null,
     2,

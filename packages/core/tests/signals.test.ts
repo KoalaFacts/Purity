@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
+import { ComponentContext, popContext, pushContext } from '../src/component.ts';
 import { batch, compute, state, watch } from '../src/signals.ts';
 
 describe('state', () => {
@@ -857,6 +858,69 @@ describe('observer cleanup', () => {
       expect(observerCount()).toBe(0);
     },
   );
+
+  it('a computed created inside a disposed scope is detached from its sources', () => {
+    // A derived value built inside a branch that later unmounts must stop
+    // observing its sources, otherwise it keeps receiving dirty-marks forever.
+    const marker = {};
+    const source = state(marker);
+    const scope = new ComponentContext();
+    pushContext(scope);
+    let derived: () => unknown;
+    try {
+      derived = compute(() => source());
+    } finally {
+      popContext();
+    }
+    expect(derived()).toBe(marker);
+    const inspector = (
+      globalThis as unknown as {
+        __purity_inspect__: {
+          nodes(): Array<{ kind: string; value: unknown; observers: unknown[] }>;
+        };
+      }
+    ).__purity_inspect__;
+    const sourceObservers = () =>
+      inspector.nodes().find((n) => n.kind === 'state' && n.value === marker)!.observers.length;
+    expect(sourceObservers()).toBe(1);
+    for (const dispose of scope.disposers ?? []) dispose();
+    expect(sourceObservers()).toBe(0);
+  });
+
+  it('reading a disposed computed from an active watcher does not re-subscribe it', () => {
+    // A disposed compute() is a frozen snapshot, not a live reactive source.
+    // Reading its accessor from inside another active watcher must not add
+    // that watcher to the disposed node's observer list — there is nothing
+    // left to ever notify it, so the edge would be dead weight.
+    const marker = {};
+    const source = state(marker);
+    const scope = new ComponentContext();
+    pushContext(scope);
+    let derived: () => unknown;
+    try {
+      derived = compute(() => source());
+    } finally {
+      popContext();
+    }
+    expect(derived()).toBe(marker);
+    for (const dispose of scope.disposers ?? []) dispose();
+
+    const inspector = (
+      globalThis as unknown as {
+        __purity_inspect__: {
+          nodes(): Array<{ kind: string; value: unknown; observers: unknown[] }>;
+        };
+      }
+    ).__purity_inspect__;
+    const derivedObservers = () =>
+      inspector.nodes().find((n) => n.kind === 'computed' && n.value === marker)!.observers.length;
+
+    const dispose = watch(() => {
+      derived();
+    });
+    expect(derivedObservers()).toBe(0);
+    dispose();
+  });
 
   it('cleans up many observers on a shared signal in O(N) time', async () => {
     // Regression for the indexOf-based removeObserver O(N²) blow-up. Disposing

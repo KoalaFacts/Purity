@@ -36,7 +36,7 @@ import { boundaryDeadline } from './boundary-deadline.ts';
 import { ensureSSRComponentRendererInstalled } from './component.ts';
 import { renderCancellation } from './render-cancellation.ts';
 import { SSRTimeoutError } from './timeout-error.ts';
-import { RESOURCE_SCRIPT_ID, serializeResourceScriptPayload } from './resource-script.ts';
+import { buildResourceScript, serializeResourceScriptPayload } from './resource-script.ts';
 import { snapshotRenderOptions, validateRenderOptions } from './render-options.ts';
 
 const DEFAULT_TIMEOUT = 5000;
@@ -723,16 +723,4 @@ function buildBoundaryResourceScript(
 function scriptTag(body: string, nonce: string | undefined): string {
   const nonceAttr = nonce ? ` nonce="${nonce}"` : '';
   return `<script${nonceAttr}>${body}</script>`;
-}
-
-function buildResourceScript(
-  ordered: unknown[],
-  keyed: Record<string, unknown>,
-  nonce: string | undefined,
-): string {
-  const hasOrdered = ordered.length > 0;
-  const hasKeyed = Object.keys(keyed).length > 0;
-  if (!hasOrdered && !hasKeyed) return '';
-  const payload = hasKeyed ? { ordered, keyed } : ordered;
-  return serializeResourceScriptPayload(payload, RESOURCE_SCRIPT_ID, nonce);
 }

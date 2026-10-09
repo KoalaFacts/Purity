@@ -64,6 +64,18 @@ function isNameChar(c: number): boolean {
   return isAlphaNumeric(c) || c === DASH || c === DOT || c === 95 /* _ */ || c === COLON;
 }
 
+// Prefix for template shapes the compiler refuses instead of silently
+// dropping. The AOT plugin keys on this prefix to surface the error at build
+// time rather than falling back to the runtime compiler.
+const UNSUPPORTED_TEMPLATE = '[Purity] Unsupported template:';
+
+function interpolatedAttrError(name: string): Error {
+  return new Error(
+    `${UNSUPPORTED_TEMPLATE} interpolated attribute "${name}" mixes literal text with \${...}. ` +
+      `Bind the whole value instead, e.g. ${name}=\${() => \`x \${v()} y\`}.`,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // parse(strings) — parse template strings into AST
 //
@@ -284,20 +296,17 @@ class Parser {
     const attributes = this.parseAttributes();
 
     // Expression in attribute position, e.g. spread `<div ${attrs}>`.
-    // `parseAttributes()` stops at the boundary without consuming it; left
-    // alone, the `>` after the expression would never be consumed and the
-    // expression plus `>` would leak into the element's children. Spread
-    // attributes are not a supported binding form (there is no spread-
-    // attribute AST node), so we CONSUME the expression(s) and re-scan for
-    // any following attributes — which ARE preserved. `exprIndex` advances
-    // so later slots stay aligned. `skipWhitespace()` first so the boundary
-    // check isn't blocked by trailing whitespace inside the open tag.
+    // Attribute spread is not a supported binding form (there is no
+    // spread-attribute AST node), and silently dropping the value would
+    // produce wrong output, so it is rejected at compile time.
+    // `skipWhitespace()` first so the boundary check isn't blocked by
+    // trailing whitespace inside the open tag.
     this.skipWhitespace();
-    while (this.atExprBoundary()) {
-      this.consumeExpr(); // drop the spread expression itself
-      // Keep any real attributes that follow the spread (e.g. `<div ${s} id="x">`).
-      for (const a of this.parseAttributes()) attributes.push(a);
-      this.skipWhitespace();
+    if (this.atExprBoundary()) {
+      throw new Error(
+        `${UNSUPPORTED_TEMPLATE} attribute spread \${...} on <${tag}> is not supported. ` +
+          `Bind each attribute explicitly, e.g. <${tag} class=\${() => ...}>.`,
+      );
     }
 
     // Self-closing or void? (whitespace already skipped above)
@@ -429,10 +438,15 @@ class Parser {
     if (this.atExprBoundary()) {
       const exprIdx = this.consumeExpr();
 
-      // Skip closing quote if present
-      if (quoteChar && !this.atEnd() && !this.atExprBoundary() && this.peek() === quoteChar) {
-        this.advance();
-      }
+      // The value must end right after the expression (and the closing quote,
+      // when quoted). Anything else mixes literal text or a second expression
+      // into the value, e.g. `"${a} x"`, `"${a}${b}"` or `${a}x`.
+      const next = this.peek(); // -1 at a segment end
+      const closes = quoteChar
+        ? next === quoteChar
+        : next === -1 || isWhitespace(next) || next === GT || next === SLASH;
+      if (this.atExprBoundary() || !closes) throw interpolatedAttrError(name);
+      if (quoteChar) this.advance();
 
       return this.classifyDynamicAttr(prefix, name, exprIdx);
     }
@@ -441,20 +455,11 @@ class Parser {
     let value: string;
     if (quoteChar) {
       value = this.readUntil(quoteChar);
-      // Interpolated quoted value, e.g. `class="x-${y}-z"`. `readUntil`
-      // stopped at the expression boundary without reaching the closing
-      // quote. Without handling this, the parser would emit a truncated
-      // `static` attribute (`x-`) and leak the trailing `-z">` plus the
-      // expression into the element's children. Concatenated/interpolated
-      // attribute values are not a supported binding form (there is no
-      // concat-attribute AST node), so we CONSUME the expression(s),
-      // stitch the literal segments together, and emit a single static
-      // attribute. `exprIndex` still advances so later slots stay aligned.
-      while (this.atExprBoundary()) {
-        this.consumeExpr(); // drop interpolated value
-        value += this.readUntil(quoteChar);
-      }
-      if (!this.atEnd() && !this.atExprBoundary() && this.peek() === quoteChar) {
+      // Literal text followed by an expression, e.g. `class="x-${y}-z"`.
+      // There is no concatenated-attribute AST node, so this is rejected
+      // rather than emitting a truncated static attribute.
+      if (this.atExprBoundary()) throw interpolatedAttrError(name);
+      if (!this.atEnd() && this.peek() === quoteChar) {
         this.advance();
       }
     } else {
@@ -469,6 +474,8 @@ class Parser {
         this.pos++;
       }
       value = s.slice(start, this.pos);
+      // e.g. `class=a-${b}`: the value runs into an expression.
+      if (this.atExprBoundary()) throw interpolatedAttrError(name);
     }
 
     return { kind: 'static', name, value };

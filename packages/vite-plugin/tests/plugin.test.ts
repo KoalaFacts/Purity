@@ -187,7 +187,7 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('handles ternary with string literals in expression', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<span class="pill\${() => x() ? ' active' : ''}">\${label}</span>\`;`;
+    const code = `import { html } from '@purityjs/core';\nconst el = html\`<span class=\${() => x() ? 'pill active' : 'pill'}>\${label}</span>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result.code).toContain('pill');

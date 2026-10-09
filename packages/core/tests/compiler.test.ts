@@ -132,43 +132,66 @@ describe('parser', () => {
   // via `_v[N]`).
   // ---------------------------------------------------------------------------
 
-  it('spread expression in open tag does not leak `>` into content', () => {
+  it('rejects attribute spread `<div ${attrs}>` with a message naming the element', () => {
     // html`<div ${spread}>hi</div>` → strings = ['<div ', '>hi</div>']
-    const ast = parse(['<div ', '>hi</div>']);
-    const el = ast.children[0];
-    expect(el.type).toBe('element');
-    expect(el.tag).toBe('div');
-    // The `>` must be consumed — children is just the text node, never `>hi`.
-    expect(el.children.length).toBe(1);
-    expect(el.children[0]).toEqual({ type: 'text', value: 'hi' });
+    expect(() => parse(['<div ', '>hi</div>'])).toThrow(
+      /\[Purity\] Unsupported template: attribute spread .* on <div>/,
+    );
+    // Spread followed by a real attribute is rejected the same way.
+    expect(() => parse(['<div ', ' id="x">y</div>'])).toThrow(/on <div>/);
   });
 
-  it('preserves real attributes that follow a spread expression', () => {
-    // html`<div ${spread} id="x">` keeps the trailing static attribute.
-    const ast = parse(['<div ', ' id="x">y</div>']);
-    const el = ast.children[0];
-    expect(el.tag).toBe('div');
-    expect(el.attributes).toEqual([{ kind: 'static', name: 'id', value: 'x' }]);
-    expect(el.children).toEqual([{ type: 'text', value: 'y' }]);
-  });
-
-  it('keeps slot indices aligned after a dropped spread expression', () => {
-    // strings = ['<div ', ' class=', '>'] — spread is index 0 (dropped),
-    // class is index 1 and MUST stay index 1.
-    const ast = parse(['<div ', ' class=', '></div>']);
-    const el = ast.children[0];
-    const cls = el.attributes.find((a: any) => a.name === 'class');
-    expect(cls).toEqual({ kind: 'dynamic', name: 'class', index: 1 });
-  });
-
-  it('interpolated quoted attribute value does not leak into content', () => {
+  it('rejects an interpolated quoted attribute and names the attribute', () => {
     // html`<div class="x-${y}-z"></div>` → strings = ['<div class="x-', '-z"></div>']
-    const ast = parse(['<div class="x-', '-z"></div>']);
-    const el = ast.children[0];
-    // Single static attribute stitched from the literal segments; the
-    // interpolated value is dropped. No `-z">` text leaks into children.
-    expect(el.attributes).toEqual([{ kind: 'static', name: 'class', value: 'x--z' }]);
-    expect(el.children.length).toBe(0);
+    expect(() => parse(['<div class="x-', '-z"></div>'])).toThrow(
+      /\[Purity\] Unsupported template: interpolated attribute "class"/,
+    );
+  });
+
+  it('rejects an interpolated attribute whose expression is followed by literal text', () => {
+    // html`<a title="${a} x">` and html`<a title="x ${a}">` are both mixed values.
+    expect(() => parse(['<a title="', ' x"></a>'])).toThrow(/interpolated attribute "title"/);
+    expect(() => parse(['<a title="', '', '"></a>'])).toThrow(/interpolated attribute "title"/);
+    expect(() => parse(['<a title="x ', '"></a>'])).toThrow(/interpolated attribute "title"/);
+  });
+
+  it('rejects an unquoted attribute that mixes literal text with an expression', () => {
+    // html`<div class=a-${b}></div>`
+    expect(() => parse(['<div class=a-', '></div>'])).toThrow(/interpolated attribute "class"/);
+  });
+
+  it('error message suggests binding the whole value as a reactive function', () => {
+    expect(() => parse(['<a title="x ', ' y"></a>'])).toThrow(
+      /Bind the whole value instead, e\.g\. title=\$\{\(\) => `x \$\{v\(\)\} y`\}/,
+    );
+  });
+
+  it('keeps plain static quoted attributes unchanged', () => {
+    const el = parse(['<p class="a b" title=\'x\' data-n=7></p>']).children[0];
+    expect(el.attributes).toEqual([
+      { kind: 'static', name: 'class', value: 'a b' },
+      { kind: 'static', name: 'title', value: 'x' },
+      { kind: 'static', name: 'data-n', value: '7' },
+    ]);
+  });
+
+  it('keeps literal `$` and `{` characters in static attribute values', () => {
+    // A literal `${` cannot appear in a template segment except via escape,
+    // so the cooked segment already contains it as plain text.
+    const el = parse(['<p title="price $5 {ok} $ {x}" data-q="${x}"></p>']).children[0];
+    expect(el.attributes).toEqual([
+      { kind: 'static', name: 'title', value: 'price $5 {ok} $ {x}' },
+      { kind: 'static', name: 'data-q', value: '${x}' },
+    ]);
+  });
+
+  it('keeps full dynamic bindings (quoted and unquoted) unchanged', () => {
+    const quoted = parse(['<p title="', '"></p>']).children[0];
+    expect(quoted.attributes).toEqual([{ kind: 'dynamic', name: 'title', index: 0 }]);
+    const unquoted = parse(['<p title=', '></p>']).children[0];
+    expect(unquoted.attributes).toEqual([{ kind: 'dynamic', name: 'title', index: 0 }]);
+    const reactive = parse(['<p :title=', '></p>']).children[0];
+    expect(reactive.attributes).toEqual([{ kind: 'reactive-prop', name: 'title', index: 0 }]);
   });
 
   it('quoted single-expression attribute value is still dynamic (not regressed)', () => {
@@ -1279,5 +1302,20 @@ describe('hydrate-runtime.ts — audit-v2 hardening', () => {
     expect(isHydrating()).toBe(false);
     // Idempotent — second reset reports zero.
     expect(resetHydration()).toBe(0);
+  });
+});
+
+describe('compiled html`` — unsupported attribute interpolation', () => {
+  it('throws at runtime (JIT) for an interpolated quoted attribute', () => {
+    const v = 'x';
+    expect(() => html(['<a title="x ', ' y"></a>'] as any, v)).toThrow(
+      /Unsupported template: interpolated attribute "title"/,
+    );
+  });
+
+  it('still renders a full dynamic binding and a static quoted attribute', () => {
+    const el = html(['<a title="', '" class="kept"></a>'] as any, 'hi') as HTMLElement;
+    expect(el.getAttribute('title')).toBe('hi');
+    expect(el.getAttribute('class')).toBe('kept');
   });
 });

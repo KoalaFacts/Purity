@@ -251,7 +251,7 @@ const App = () => {
             (evt) => html`
               <li>
                 <span class="time">${() => time(evt().ts)}</span>
-                <span class="level ${() => evt().level}">${() => evt().level}</span>
+                <span class=${() => `level ${evt().level}`}>${() => evt().level}</span>
                 <span class="msg">${() => evt().message}</span>
               </li>
             `,

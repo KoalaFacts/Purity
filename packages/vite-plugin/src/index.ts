@@ -766,10 +766,14 @@ function renderSpan(
   return out + source.slice(pos, end);
 }
 
-// Security rejections must fail the build instead of falling back to the
-// runtime compiler.
+// Security rejections and unsupported template shapes must fail the build
+// instead of falling back to the runtime compiler.
 function isFatalTemplateError(err: unknown): boolean {
-  return err instanceof Error && err.message.startsWith('[Purity] Unsafe dynamic binding');
+  return (
+    err instanceof Error &&
+    (err.message.startsWith('[Purity] Unsafe dynamic binding') ||
+      err.message.startsWith('[Purity] Unsupported template'))
+  );
 }
 
 /**

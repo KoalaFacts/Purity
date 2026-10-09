@@ -37,7 +37,7 @@ function pageLink(page: () => DocPage) {
   const current = page();
   return html`
     <a
-      class="nav-link ${current.href === window.location.pathname ? 'is-current' : ''}"
+      class=${`nav-link ${current.href === window.location.pathname ? 'is-current' : ''}`}
       href=${current.href}
       aria-current=${current.href === window.location.pathname ? 'page' : 'false'}
       >${current.navTitle}</a
@@ -57,7 +57,7 @@ function categoryGroup(group: () => (typeof navigationCategories)[number]) {
     <div class="nav-group">
       <h2>
         <a
-          class="nav-category ${categoryCurrent ? 'is-current' : ''}"
+          class=${`nav-category ${categoryCurrent ? 'is-current' : ''}`}
           href=${categoryPath}
           aria-current=${categoryCurrent ? 'page' : 'false'}
           >${current.title}</a
@@ -120,9 +120,9 @@ function Navigation() {
         </div>
         <nav class=${() => (search().trim() ? 'is-hidden' : '')} aria-label="Documentation">
           <a
-            class="browse-link ${
+            class=${`browse-link ${
               window.location.pathname === '/Purity/docs/categories/' ? 'is-current' : ''
-            }"
+            }`}
             href="/Purity/docs/categories/"
             >Browse all categories</a
           >

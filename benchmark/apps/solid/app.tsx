@@ -1,8 +1,8 @@
 // Row rendering benchmark — idiomatic Solid version.
 // Uses: createSignal, For, batch, JSX onClick. Zero vanilla JS for UI wiring.
 
-import { type Accessor, batch, createSignal, For, type Setter } from 'solid-js';
-import { render } from 'solid-js/web';
+import { type Accessor, createSignal, For, type Setter } from 'solid-js';
+import { render } from '@solidjs/web';
 
 // ---------------------------------------------------------------------------
 // Data generation
@@ -99,10 +99,9 @@ const [selectedId, setSelectedId] = createSignal(0);
 // ---------------------------------------------------------------------------
 
 function run(n: number) {
-  batch(() => {
-    setData(mkData(n));
-    setSelectedId(0);
-  });
+  // v2 batches synchronous writes by default (microtask-scheduled flush) — no explicit batch() needed.
+  setData(mkData(n));
+  setSelectedId(0);
 }
 
 function add(n: number) {
@@ -134,10 +133,8 @@ function remove(id: number) {
 }
 
 function clear() {
-  batch(() => {
-    setData([]);
-    setSelectedId(0);
-  });
+  setData([]);
+  setSelectedId(0);
 }
 
 // ---------------------------------------------------------------------------

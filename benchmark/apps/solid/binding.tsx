@@ -2,7 +2,7 @@
 // Uses: createSignal, For, JSX value+onInput. Zero vanilla JS for UI wiring.
 
 import { type Accessor, createSignal, For, type Setter } from 'solid-js';
-import { render } from 'solid-js/web';
+import { render } from '@solidjs/web';
 
 // ---------------------------------------------------------------------------
 // Types

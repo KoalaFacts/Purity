@@ -18,14 +18,14 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
-type Framework = 'purity' | 'solid' | 'svelte' | 'vue';
+type Framework = 'purity' | 'solid' | 'svelte' | 'vue' | 'react';
 type Scenario = {
   page: string;
   setup: { click: string; wait: 'paint' }[];
   capture: { click: string; wait: 'paint' }[];
 };
 
-const FRAMEWORKS = new Set<Framework>(['purity', 'solid', 'svelte', 'vue']);
+const FRAMEWORKS = new Set<Framework>(['purity', 'solid', 'svelte', 'vue', 'react']);
 
 // scenario → (page, setup steps, capture step). Each step is a CSS selector to
 // click, with optional explicit waits. The capture step is the operation we

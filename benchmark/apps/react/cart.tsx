@@ -1,8 +1,7 @@
-// Shopping cart benchmark — idiomatic Solid version.
-// Uses: createSignal, createMemo, For, JSX onClick. Zero vanilla JS for UI wiring.
-
-import { createMemo, createSignal, For } from 'solid-js';
-import { render } from '@solidjs/web';
+// Shopping cart benchmark — idiomatic React version.
+// Uses: useState, useMemo, map. Plain React, no signals.
+import { useMemo, useState } from 'react';
+import { createRoot } from 'react-dom/client';
 
 // ---------------------------------------------------------------------------
 // Data generation
@@ -27,6 +26,7 @@ const NAMES = [
   'Implement',
   'Mechanism',
 ];
+
 let nextId = 1;
 let seed = 1;
 const rnd = (m: number) => {
@@ -49,21 +49,10 @@ function randomItems(n: number): CartItem[] {
 }
 
 // ---------------------------------------------------------------------------
-// Module-level signals
-// ---------------------------------------------------------------------------
-
-const [cart, setCart] = createSignal<CartItem[]>([]);
-
-const itemCount = createMemo(() => cart().reduce((s, i) => s + i.qty, 0));
-const subtotal = createMemo(() => cart().reduce((s, i) => s + i.price * i.qty, 0));
-const tax = createMemo(() => subtotal() * 0.08);
-const total = createMemo(() => subtotal() + tax());
-
-// ---------------------------------------------------------------------------
 // Hidden benchmark button helper
 // ---------------------------------------------------------------------------
 
-function HBtn(props: { id: string; onClick: () => void; children: any }) {
+function HBtn(props: { id: string; onClick: () => void; children: string }) {
   return (
     <button type="button" id={props.id} style={{ display: 'none' }} onClick={props.onClick}>
       {props.children}
@@ -76,69 +65,76 @@ function HBtn(props: { id: string; onClick: () => void; children: any }) {
 // ---------------------------------------------------------------------------
 
 function App() {
+  const [cart, setCart] = useState<CartItem[]>([]);
+
+  const itemCount = useMemo(() => cart.reduce((s, i) => s + i.qty, 0), [cart]);
+  const subtotal = useMemo(() => cart.reduce((s, i) => s + i.price * i.qty, 0), [cart]);
+  const tax = subtotal * 0.08;
+  const total = subtotal + tax;
+
   return (
     <>
-      <div class="jumbotron">
-        <div class="row">
-          <div class="col-md-6">
-            <h1>Solid (Cart)</h1>
+      <div className="jumbotron">
+        <div className="row">
+          <div className="col-md-6">
+            <h1>React (Cart)</h1>
           </div>
-          <div class="col-md-6">
-            <div class="row">
-              <div class="col-sm-6 smallpad">
+          <div className="col-md-6">
+            <div className="row">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="add-1"
                   onClick={() => setCart((c) => [...c, ...randomItems(1)])}
                 >
                   Add 1 Item
                 </button>
               </div>
-              <div class="col-sm-6 smallpad">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="add-100"
                   onClick={() => setCart((c) => [...c, ...randomItems(100)])}
                 >
                   Add 100 Items
                 </button>
               </div>
-              <div class="col-sm-6 smallpad">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="add-1000"
                   onClick={() => setCart((c) => [...c, ...randomItems(1000)])}
                 >
                   Add 1000 Items
                 </button>
               </div>
-              <div class="col-sm-6 smallpad">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="increment-all"
                   onClick={() => setCart((c) => c.map((i) => ({ ...i, qty: i.qty + 1 })))}
                 >
                   +1 All Quantities
                 </button>
               </div>
-              <div class="col-sm-6 smallpad">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="remove-first"
                   onClick={() => setCart((c) => c.slice(1))}
                 >
                   Remove First
                 </button>
               </div>
-              <div class="col-sm-6 smallpad">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="clear-cart"
                   onClick={() => setCart([])}
                 >
@@ -156,27 +152,24 @@ function App() {
         </div>
       </div>
       <div id="stats">
-        <span id="item-count">{itemCount()}</span> items | Subtotal: $
-        <span id="subtotal">{subtotal().toFixed(2)}</span> | Tax: $
-        <span id="tax">{tax().toFixed(2)}</span> | Total: $
-        <span id="total">{total().toFixed(2)}</span>
+        <span id="item-count">{itemCount}</span> items | Subtotal: $
+        <span id="subtotal">{subtotal.toFixed(2)}</span> | Tax: $
+        <span id="tax">{tax.toFixed(2)}</span> | Total: $<span id="total">{total.toFixed(2)}</span>
       </div>
-      <table class="table table-hover table-striped test-data">
+      <table className="table table-hover table-striped test-data">
         <tbody id="tbody">
-          <For each={cart()}>
-            {(item: CartItem) => (
-              <tr>
-                <td>{item.name}</td>
-                <td>${item.price}</td>
-                <td>{item.qty}</td>
-                <td>${item.price * item.qty}</td>
-              </tr>
-            )}
-          </For>
+          {cart.map((item) => (
+            <tr key={item.id}>
+              <td>{item.name}</td>
+              <td>${item.price}</td>
+              <td>{item.qty}</td>
+              <td>${item.price * item.qty}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </>
   );
 }
 
-render(App, document.getElementById('app')!);
+createRoot(document.getElementById('app')!).render(<App />);

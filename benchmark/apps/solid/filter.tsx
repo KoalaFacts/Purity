@@ -2,7 +2,7 @@
 // Uses: createSignal, createMemo, For, JSX onClick/onInput. Zero vanilla JS for UI wiring.
 
 import { createMemo, createSignal, For } from 'solid-js';
-import { render } from 'solid-js/web';
+import { render } from '@solidjs/web';
 
 // ---------------------------------------------------------------------------
 // Data generation

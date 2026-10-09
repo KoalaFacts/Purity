@@ -2,7 +2,7 @@
 // Uses: createSignal, For, JSX onClick. Zero vanilla JS for UI wiring.
 
 import { createSignal, For } from 'solid-js';
-import { render } from 'solid-js/web';
+import { render } from '@solidjs/web';
 
 // ---------------------------------------------------------------------------
 // Data generation

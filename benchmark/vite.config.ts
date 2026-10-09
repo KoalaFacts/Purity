@@ -2,12 +2,13 @@ import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { purity } from '@purityjs/vite-plugin';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import react from '@vitejs/plugin-react';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vite-plus';
-import solid from 'vite-plugin-solid';
+import solid from '@solidjs/vite-plugin';
 
 // Discover all .html files in each framework's app directory
-const frameworks = ['purity', 'solid', 'svelte', 'vue'];
+const frameworks = ['purity', 'solid', 'svelte', 'vue', 'react'];
 const inputs: Record<string, string> = {};
 for (const fw of frameworks) {
   const dir = resolve(import.meta.dirname, `apps/${fw}`);
@@ -21,7 +22,10 @@ export default defineConfig({
   plugins: [
     purity(),
     svelte({ compilerOptions: { runes: true } }),
-    solid({ extensions: ['.tsx'] }),
+    // Solid and React both use .tsx. Each JSX plugin is scoped to its own app
+    // directory so the two JSX transforms never see the same file.
+    solid({ extensions: ['.tsx'], exclude: ['**/apps/react/**'] }),
+    react({ include: /apps[\\/]react[\\/].*\.tsx$/ }),
     vue(),
   ],
   resolve: {

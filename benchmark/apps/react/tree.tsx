@@ -1,8 +1,7 @@
-// Recursive tree benchmark — idiomatic Solid version.
-// Uses: createSignal, createMemo, For, JSX onClick. Zero vanilla JS for UI wiring.
-
-import { createMemo, createSignal, For } from 'solid-js';
-import { render } from '@solidjs/web';
+// Recursive tree benchmark — idiomatic React version.
+// Uses: useState, useMemo, map over flattened visible nodes. Plain React, no signals.
+import { useMemo, useState } from 'react';
+import { createRoot } from 'react-dom/client';
 
 // ---------------------------------------------------------------------------
 // Types and tree generation
@@ -77,55 +76,53 @@ function toggleNode(nodes: TreeNode[], targetId: number): TreeNode[] {
 }
 
 // ---------------------------------------------------------------------------
-// Module-level signals
-// ---------------------------------------------------------------------------
-
-const [treeData, setTreeData] = createSignal<TreeNode[]>(generateTree());
-const visible = createMemo(() => flattenVisible(treeData()));
-
-// ---------------------------------------------------------------------------
 // App component
 // ---------------------------------------------------------------------------
 
 function App() {
+  const [treeData, setTreeData] = useState<TreeNode[]>(() => generateTree());
+  const visible = useMemo(() => flattenVisible(treeData), [treeData]);
+
   return (
     <>
-      <div class="jumbotron">
-        <div class="row">
-          <div class="col-md-6">
-            <h1>Solid (Tree)</h1>
+      <div className="jumbotron">
+        <div className="row">
+          <div className="col-md-6">
+            <h1>React (Tree)</h1>
           </div>
-          <div class="col-md-6">
-            <div class="row">
-              <div class="col-sm-6 smallpad">
+          <div className="col-md-6">
+            <div className="row">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="expand-all"
-                  onClick={() => setTreeData(setAllExpanded(treeData(), true))}
+                  onClick={() => setTreeData((t) => setAllExpanded(t, true))}
                 >
                   Expand All
                 </button>
               </div>
-              <div class="col-sm-6 smallpad">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="collapse-all"
-                  onClick={() => setTreeData(setAllExpanded(treeData(), false))}
+                  onClick={() => setTreeData((t) => setAllExpanded(t, false))}
                 >
                   Collapse All
                 </button>
               </div>
-              <div class="col-sm-6 smallpad">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="toggle-first"
-                  onClick={() => {
-                    const first = treeData()[0];
-                    if (first) setTreeData(toggleNode(treeData(), first.id));
-                  }}
+                  onClick={() =>
+                    setTreeData((t) => {
+                      const first = t[0];
+                      return first ? toggleNode(t, first.id) : t;
+                    })
+                  }
                 >
                   Toggle First
                 </button>
@@ -135,19 +132,15 @@ function App() {
         </div>
       </div>
       <div id="container">
-        <For each={visible()}>
-          {(node: FlatNode) => (
-            <div class="tree-node" style={{ 'padding-left': `${node.depth * 20}px` }}>
-              <span class="toggle">
-                {node.hasChildren ? (node.expanded ? '\u25BC' : '\u25B6') : '\u00A0\u00A0'}
-              </span>
-              <span class="label">{node.label}</span>
-            </div>
-          )}
-        </For>
+        {visible.map((node) => (
+          <div key={node.id} className="tree-node" style={{ paddingLeft: `${node.depth * 20}px` }}>
+            <span className="toggle">{node.hasChildren ? (node.expanded ? '▼' : '▶') : '  '}</span>
+            <span className="label">{node.label}</span>
+          </div>
+        ))}
       </div>
     </>
   );
 }
 
-render(App, document.getElementById('app')!);
+createRoot(document.getElementById('app')!).render(<App />);

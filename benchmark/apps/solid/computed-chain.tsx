@@ -2,7 +2,7 @@
 // Uses: createSignal, createMemo, JSX onClick. Zero vanilla JS for UI wiring.
 
 import { type Accessor, createMemo, createSignal } from 'solid-js';
-import { render } from 'solid-js/web';
+import { render } from '@solidjs/web';
 
 // ---------------------------------------------------------------------------
 // Module-level state for chain setup/teardown

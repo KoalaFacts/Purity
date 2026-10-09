@@ -1,8 +1,7 @@
-// Master-detail benchmark — idiomatic Solid version.
-// Uses: createSignal, createMemo, For, Show, JSX onClick. Zero vanilla JS for UI wiring.
-
-import { createMemo, createSignal, For, Show } from 'solid-js';
-import { render } from '@solidjs/web';
+// Master-detail benchmark — idiomatic React version.
+// Uses: useState, useMemo, map, conditional JSX. Plain React, no signals.
+import { useMemo, useState } from 'react';
+import { createRoot } from 'react-dom/client';
 
 // ---------------------------------------------------------------------------
 // Data generation
@@ -78,86 +77,78 @@ function generatePersons(count: number): Person[] {
 }
 
 // ---------------------------------------------------------------------------
-// Module-level signals
-// ---------------------------------------------------------------------------
-
-const [persons, setPersons] = createSignal<Person[]>([]);
-const [selectedId, setSelectedId] = createSignal<number | null>(null);
-
-const selectedPerson = createMemo(() => {
-  const id = selectedId();
-  if (id === null) return null;
-  return persons().find((p) => p.id === id) ?? null;
-});
-
-// ---------------------------------------------------------------------------
 // App component
 // ---------------------------------------------------------------------------
 
 function App() {
+  const [persons, setPersons] = useState<Person[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+
+  const selectedPerson = useMemo(() => {
+    if (selectedId === null) return null;
+    return persons.find((p) => p.id === selectedId) ?? null;
+  }, [persons, selectedId]);
+
   return (
     <>
-      <div class="jumbotron">
-        <div class="row">
-          <div class="col-md-6">
-            <h1>Solid (Master-Detail)</h1>
+      <div className="jumbotron">
+        <div className="row">
+          <div className="col-md-6">
+            <h1>React (Master-Detail)</h1>
           </div>
-          <div class="col-md-6">
-            <div class="row">
-              <div class="col-sm-6 smallpad">
+          <div className="col-md-6">
+            <div className="row">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="populate"
                   onClick={() => setPersons(generatePersons(100))}
                 >
                   Load 100 Persons
                 </button>
               </div>
-              <div class="col-sm-6 smallpad">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="select-first"
                   onClick={() => {
-                    const list = persons();
-                    if (list.length > 0) setSelectedId(list[0].id);
+                    if (persons.length > 0) setSelectedId(persons[0].id);
                   }}
                 >
                   Select First
                 </button>
               </div>
-              <div class="col-sm-6 smallpad">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="select-last"
                   onClick={() => {
-                    const list = persons();
-                    if (list.length > 0) setSelectedId(list[list.length - 1].id);
+                    if (persons.length > 0) setSelectedId(persons[persons.length - 1].id);
                   }}
                 >
                   Select Last
                 </button>
               </div>
-              <div class="col-sm-6 smallpad">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="select-none"
                   onClick={() => setSelectedId(null)}
                 >
                   Deselect
                 </button>
               </div>
-              <div class="col-sm-6 smallpad">
+              <div className="col-sm-6 smallpad">
                 <button
                   type="button"
-                  class="btn btn-primary btn-block"
+                  className="btn btn-primary btn-block"
                   id="cycle-10"
                   onClick={() => {
-                    const list = persons();
-                    for (let i = 0; i < 10 && i < list.length; i++) setSelectedId(list[i].id);
+                    for (let i = 0; i < 10 && i < persons.length; i++) setSelectedId(persons[i].id);
                   }}
                 >
                   Cycle 10
@@ -169,39 +160,35 @@ function App() {
       </div>
       <div style={{ display: 'flex' }}>
         <div id="list-panel" style={{ flex: '1' }}>
-          <For each={persons()}>
-            {(person: Person) => (
-              <div
-                role="button"
-                tabIndex={0}
-                class="list-item"
-                style={{ padding: '4px 8px', cursor: 'pointer' }}
-                classList={{ selected: person.id === selectedId() }}
-                onClick={() => setSelectedId(person.id)}
-              >
-                {person.name}
-              </div>
-            )}
-          </For>
+          {persons.map((person) => (
+            <div
+              key={person.id}
+              role="button"
+              tabIndex={0}
+              className={person.id === selectedId ? 'list-item selected' : 'list-item'}
+              style={{ padding: '4px 8px', cursor: 'pointer' }}
+              onClick={() => setSelectedId(person.id)}
+            >
+              {person.name}
+            </div>
+          ))}
         </div>
         <div id="detail-panel" style={{ flex: '1' }}>
-          <Show when={selectedPerson()}>
-            {(p) => (
-              <div class="detail">
-                <h2>{p().name}</h2>
-                <p>
-                  <strong>Email:</strong> {p().email}
-                </p>
-                <p>
-                  <strong>Bio:</strong> {p().bio}
-                </p>
-              </div>
-            )}
-          </Show>
+          {selectedPerson && (
+            <div className="detail">
+              <h2>{selectedPerson.name}</h2>
+              <p>
+                <strong>Email:</strong> {selectedPerson.email}
+              </p>
+              <p>
+                <strong>Bio:</strong> {selectedPerson.bio}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </>
   );
 }
 
-render(App, document.getElementById('app')!);
+createRoot(document.getElementById('app')!).render(<App />);

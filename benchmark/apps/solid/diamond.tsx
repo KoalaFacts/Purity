@@ -1,8 +1,8 @@
 // Diamond dependency benchmark — idiomatic Solid version.
 // Uses: createSignal, createMemo, batch, JSX onClick. Zero vanilla JS for UI wiring.
 
-import { type Accessor, batch, createMemo, createSignal, type Setter } from 'solid-js';
-import { render } from 'solid-js/web';
+import { type Accessor, createMemo, createSignal, type Setter } from 'solid-js';
+import { render } from '@solidjs/web';
 
 // ---------------------------------------------------------------------------
 // Module-level state for diamond setup/teardown
@@ -51,11 +51,10 @@ function App() {
         type="button"
         id="update-all"
         onClick={() => {
-          batch(() => {
-            for (let i = 0; i < sources.length; i++) {
-              sources[i](i + ((i * 17 + 23) % 100));
-            }
-          });
+          // v2 batches synchronous writes by default (microtask-scheduled flush) — no explicit batch() needed.
+          for (let i = 0; i < sources.length; i++) {
+            sources[i](i + ((i * 17 + 23) % 100));
+          }
         }}
       >
         Update All Sources

@@ -6,7 +6,7 @@
 //         `change` listener per query. Initial value is `mql.matches`.
 // ---------------------------------------------------------------------------
 
-import { attachMqlChange, detachMqlChange } from './mql-listener.ts';
+import { attachMqlChange, type MqlBinding } from './mql-listener.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
@@ -24,13 +24,15 @@ function bindMediaListener(
   mql: MediaQueryList,
   onChange: (e: MediaQueryListEvent) => void,
 ): () => void {
-  if (!attachMqlChange(mql, onChange)) {
-    // No subscription API — accessor will still return the initial `matches`.
+  const binding: MqlBinding = { detach: null };
+  if (!attachMqlChange(mql, onChange, binding)) {
+    // No complete subscription API — accessor will still return the
+    // initial `matches`.
     return () => {};
   }
   return () => {
     try {
-      detachMqlChange(mql, onChange);
+      binding.detach?.();
     } catch (err) {
       console.error('[purity] mediaSignal: detach failed:', err);
     }

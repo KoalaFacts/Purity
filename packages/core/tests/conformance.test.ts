@@ -159,6 +159,26 @@ const cases: Case[] = [
     values: () => ['a <b> & c'],
   },
   {
+    name: 'raw-text element nested in a wrapper (complex template)',
+    strings: ['<div><style>a > b { color: ', ' }</style></div>'],
+    values: () => ['red'],
+  },
+  {
+    name: 'raw-text element beside other roots',
+    strings: ['<style>a > b { color: ', ' }</style><p>', '</p>'],
+    values: () => ['red', 'x&y'],
+  },
+  {
+    name: 'upper-case raw-text tags match case-insensitively',
+    strings: ['<STYLE>a > b { content: "', '" }</STYLE><div><TEXTAREA>', '</TEXTAREA></div>'],
+    values: () => ['x&y', 'a <b> & c'],
+  },
+  {
+    name: 'end tags other than the element own stay inert inside style',
+    strings: ['<style>', '</style>'],
+    values: () => ['</div>'],
+  },
+  {
     name: 'raw-text <title> with dynamic content',
     strings: ['<title>', ' & more</title>'],
     values: () => ['Tom & <Jerry>'],
@@ -211,6 +231,14 @@ describe('SSR / CSR / hydrate conformance', () => {
     await tick();
     expect(host.querySelector('style')?.textContent).toBe('c > d');
     host.remove();
+  });
+
+  it('a mixed-case </STYLE> inside a dynamic style value cannot close it', () => {
+    const out = renderSSR(['<STYLE>', '</STYLE>'], ['</StYlE><b>x']);
+    const host = document.createElement('div');
+    host.innerHTML = out;
+    expect(host.querySelectorAll('b')).toHaveLength(0);
+    expect(host.querySelectorAll('style')).toHaveLength(1);
   });
 
   it('fully static <style> content is not entity-escaped (static SSR path)', () => {

@@ -81,20 +81,35 @@ export const HYDRATION_CLOSE = '<!--]-->';
  * - Everything else is String()'d and HTML-escaped.
  */
 export function valueToHtml(v: unknown): string {
-  return valueToHtmlInner(v, null, true);
+  return valueToHtmlInner(v, null, escHtml);
 }
+
+// End-tag openers that would close a raw-text element. Only the element's own
+// end tag matters: `</div>` inside <style> is inert text. Matching is ASCII
+// case-insensitive, as in the HTML parser.
+const RAW_TEXT_END_TAG: Record<string, RegExp> = {
+  style: /<\/(?=style)/gi,
+  script: /<\/(?=script)/gi,
+};
 
 /**
  * Same coercion as valueToHtml for a slot inside a raw-text element
  * (`<style>`, `<script>`): the value is emitted unescaped, because the HTML
- * parser does not decode entities there. A `</` sequence is neutralised so a
- * value cannot close the element early.
+ * parser does not decode entities there. Only `</` followed by the enclosing
+ * element's own name is neutralised (to `<\/`), so the value cannot close the
+ * element early. Such a value cannot round-trip through the HTML parser; every
+ * other value's textContent equals the CSR output.
  */
-export function valueToRawText(v: unknown): string {
-  return valueToHtmlInner(v, null, false);
+export function valueToRawText(v: unknown, tag: string): string {
+  const endTag = RAW_TEXT_END_TAG[tag.toLowerCase()];
+  return valueToHtmlInner(v, null, (s) => (endTag ? s.replace(endTag, '<\\/') : s));
 }
 
-function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null, escape: boolean): string {
+function valueToHtmlInner(
+  v: unknown,
+  seen: WeakSet<object> | null,
+  leaf: (s: string) => string,
+): string {
   if (typeof v === 'function') v = (v as () => unknown)();
   if (v == null || v === false) return '';
   if (isSSRHtml(v)) return v.__purity_ssr_html__;
@@ -105,10 +120,10 @@ function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null, escape: bool
     if (seen.has(v)) return '';
     seen.add(v);
     let s = '';
-    for (let i = 0; i < v.length; i++) s += valueToHtmlInner(v[i], seen, escape);
+    for (let i = 0; i < v.length; i++) s += valueToHtmlInner(v[i], seen, leaf);
     return s;
   }
-  return escape ? escHtml(String(v)) : String(v).replace(/<\//g, '<\\/');
+  return leaf(String(v));
 }
 
 /**

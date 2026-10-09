@@ -79,138 +79,138 @@ export function devicePixelRatioSignal(): ComputedAccessor<number> {
   let settling = false;
   let pendingRecheck = false;
 
-  const processChange = (): void => {
-    settling = true;
-    // Tracks whether THIS call actually committed a new value — only a
-    // call that progressed should trigger an automatic recheck afterward.
-    // Without this, a target that both fires onChange synchronously AND
-    // fails every attach attempt (setting `pendingRecheck` via the
-    // synchronous fire, then hitting a failure `return` below) would have
-    // its `finally` immediately retry the identical failing operation
-    // forever — a real stack overflow, not just a dropped update. Losing
-    // a deferred recheck specifically in the already-doubly-adversarial
-    // "fires synchronously AND the attach then fails" combination is an
-    // accepted, deliberate tradeoff against that crash.
-    let progressed = false;
+  // One rebind attempt. Returns whether it actually committed a new value
+  // (vs. a no-op or a failure) — `processChange` uses that to decide
+  // whether a deferred recheck is worth retrying.
+  const attemptOnce = (): boolean => {
+    const next =
+      typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 0
+        ? window.devicePixelRatio
+        : inner.peek();
+    // No-op rebind guard: spurious `change` fires (or oscillation back to
+    // the same DPR mid-handler) shouldn't churn through fresh MQL objects
+    // or stack listeners on a cached MQL the runtime returns.
+    if (next === inner.peek()) return false;
+
+    let nextMql: MediaQueryList;
     try {
-      const next =
-        typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 0
-          ? window.devicePixelRatio
-          : inner.peek();
-      // No-op rebind guard: spurious `change` fires (or oscillation back to
-      // the same DPR mid-handler) shouldn't churn through fresh MQL objects
-      // or stack listeners on a cached MQL the runtime returns.
-      if (next === inner.peek()) return;
+      nextMql = window.matchMedia(`(resolution: ${next}dppx)`);
+    } catch (err) {
+      // Can't bind a new MQL — keep the existing listener live so we don't
+      // lose future updates, and skip the state write so it stays in sync
+      // with the still-bound query.
+      console.error(
+        '[purity] devicePixelRatioSignal: matchMedia rebind failed; keeping previous binding:',
+        err,
+      );
+      return false;
+    }
 
-      let nextMql: MediaQueryList;
-      try {
-        nextMql = window.matchMedia(`(resolution: ${next}dppx)`);
-      } catch (err) {
-        // Can't bind a new MQL — keep the existing listener live so we don't
-        // lose future updates, and skip the state write so it stays in sync
-        // with the still-bound query.
-        console.error(
-          '[purity] devicePixelRatioSignal: matchMedia rebind failed; keeping previous binding:',
-          err,
-        );
-        return;
-      }
-
-      // If the runtime hands back the SAME MediaQueryList we're already on
-      // (real browsers cache per query string; jsdom may not), don't restack
-      // a listener on it — just commit the state.
-      if (nextMql === mql) {
-        progressed = true;
-        inner(next);
-        return;
-      }
-
-      // Snapshot the previous detach so a partial-failure rollback can
-      // restore exactly what was active before we touched anything —
-      // `binding.detach` is about to be overwritten by the attach below
-      // (synchronously, even if that attach ultimately fails/throws).
-      const prevDetach = binding.detach;
-      // Attach to the new MQL FIRST. If this throws we still have the old
-      // listener live — no observability gap.
-      let attached: boolean;
-      try {
-        attached = attachMqlListener(nextMql, onChange, binding);
-      } catch (err) {
-        // `binding.detach` may already have been overwritten to point at
-        // the new (possibly partially-registered) MQL before the throw
-        // (attachMqlChange writes it before subscribing). Restore the old
-        // one, but first best-effort-detach whatever got left behind —
-        // some hostile/buggy targets genuinely register the listener and
-        // THEN throw, and with nothing else tracking that registration,
-        // it would otherwise leak forever.
-        const maybePartial = binding.detach;
-        binding.detach = prevDetach;
-        if (maybePartial && maybePartial !== prevDetach) {
-          try {
-            maybePartial();
-          } catch (cleanupErr) {
-            // Never silently catch: the attach already failed, and now its
-            // best-effort cleanup failed too — log both so a leaked
-            // listener at least leaves a diagnostic trail.
-            console.error(
-              '[purity] devicePixelRatioSignal: cleanup of a partially-registered replacement also failed:',
-              cleanupErr,
-            );
-          }
-        }
-        console.error(
-          '[purity] devicePixelRatioSignal: attach to new MQL failed; keeping previous binding:',
-          err,
-        );
-        return;
-      }
-      if (!attached) {
-        // No complete subscription API on the new MQL — leave the old
-        // binding in place so we still observe future changes.
-        binding.detach = prevDetach;
-        console.error(
-          '[purity] devicePixelRatioSignal: new MQL exposes no listener API; keeping previous binding.',
-        );
-        return;
-      }
-      // Now safely detach the old listener (through the SAME API it was
-      // attached with — never re-derived).
-      try {
-        prevDetach?.();
-      } catch (err) {
-        // A throw here doesn't tell us whether the old listener actually
-        // got removed before the target threw — there's no way to observe
-        // that from the caller side. Rolling back (as if detach definitely
-        // failed) risks the worse outcome if it actually succeeded: NEITHER
-        // MQL ends up subscribed, freezing the signal on a stale value
-        // forever. Keeping the new binding risks only a listener leak on
-        // the old MQL in the opposite case — strictly less bad, since the
-        // signal keeps updating. So: log and keep going rather than revert.
-        console.error(
-          '[purity] devicePixelRatioSignal: detach from previous MQL failed; keeping new binding:',
-          err,
-        );
-      }
-      mql = nextMql;
-      progressed = true;
+    // If the runtime hands back the SAME MediaQueryList we're already on
+    // (real browsers cache per query string; jsdom may not), don't restack
+    // a listener on it — just commit the state.
+    if (nextMql === mql) {
       inner(next);
-    } finally {
-      settling = false;
-      if (pendingRecheck) {
-        pendingRecheck = false;
-        if (progressed) {
-          processChange();
-        } else {
-          // This attempt failed (matchMedia/attach threw, or no usable
-          // API) and a reentrant call arrived during it anyway. Retrying
-          // the identical failing operation immediately would recurse
-          // forever on a persistently-hostile target — see `progressed`'s
-          // doc comment. Log the drop rather than silently losing it.
+      return true;
+    }
+
+    // Snapshot the previous detach so a partial-failure rollback can
+    // restore exactly what was active before we touched anything —
+    // `binding.detach` is about to be overwritten by the attach below
+    // (synchronously, even if that attach ultimately fails/throws).
+    const prevDetach = binding.detach;
+    // Attach to the new MQL FIRST. If this throws we still have the old
+    // listener live — no observability gap.
+    let attached: boolean;
+    try {
+      attached = attachMqlListener(nextMql, onChange, binding);
+    } catch (err) {
+      // `binding.detach` may already have been overwritten to point at
+      // the new (possibly partially-registered) MQL before the throw
+      // (attachMqlChange writes it before subscribing). Restore the old
+      // one, but first best-effort-detach whatever got left behind —
+      // some hostile/buggy targets genuinely register the listener and
+      // THEN throw, and with nothing else tracking that registration,
+      // it would otherwise leak forever.
+      const maybePartial = binding.detach;
+      binding.detach = prevDetach;
+      if (maybePartial && maybePartial !== prevDetach) {
+        try {
+          maybePartial();
+        } catch (cleanupErr) {
+          // Never silently catch: the attach already failed, and now its
+          // best-effort cleanup failed too — log both so a leaked
+          // listener at least leaves a diagnostic trail.
           console.error(
-            '[purity] devicePixelRatioSignal: dropping a deferred recheck after a failed attempt (would otherwise retry the same failure indefinitely).',
+            '[purity] devicePixelRatioSignal: cleanup of a partially-registered replacement also failed:',
+            cleanupErr,
           );
         }
       }
+      console.error(
+        '[purity] devicePixelRatioSignal: attach to new MQL failed; keeping previous binding:',
+        err,
+      );
+      return false;
+    }
+    if (!attached) {
+      // No complete subscription API on the new MQL — leave the old
+      // binding in place so we still observe future changes.
+      binding.detach = prevDetach;
+      console.error(
+        '[purity] devicePixelRatioSignal: new MQL exposes no listener API; keeping previous binding.',
+      );
+      return false;
+    }
+    // Now safely detach the old listener (through the SAME API it was
+    // attached with — never re-derived).
+    try {
+      prevDetach?.();
+    } catch (err) {
+      // A throw here doesn't tell us whether the old listener actually
+      // got removed before the target threw — there's no way to observe
+      // that from the caller side. Rolling back (as if detach definitely
+      // failed) risks the worse outcome if it actually succeeded: NEITHER
+      // MQL ends up subscribed, freezing the signal on a stale value
+      // forever. Keeping the new binding risks only a listener leak on
+      // the old MQL in the opposite case — strictly less bad, since the
+      // signal keeps updating. So: log and keep going rather than revert.
+      console.error(
+        '[purity] devicePixelRatioSignal: detach from previous MQL failed; keeping new binding:',
+        err,
+      );
+    }
+    mql = nextMql;
+    inner(next);
+    return true;
+  };
+
+  const processChange = (): void => {
+    settling = true;
+    try {
+      // Drains deferred rechecks ITERATIVELY (a loop, not recursive
+      // self-calls): a target that keeps synchronously firing genuine new
+      // DPR changes on every SUCCESSFUL attach would otherwise grow the
+      // call stack once per change via a nested `processChange()` call
+      // and eventually overflow it, even though each individual change is
+      // handled correctly. A failed attempt still doesn't loop (see the
+      // `!progressed` branch) — retrying an identically-failing operation
+      // is never useful, iteratively or not.
+      for (;;) {
+        const progressed = attemptOnce();
+        if (!pendingRecheck) return;
+        pendingRecheck = false;
+        if (!progressed) {
+          console.error(
+            '[purity] devicePixelRatioSignal: dropping a deferred recheck after a failed attempt (would otherwise retry the same failure indefinitely).',
+          );
+          return;
+        }
+        // else: loop again, iteratively, to process the deferred change
+        // that arrived during this attempt.
+      }
+    } finally {
+      settling = false;
     }
   };
 

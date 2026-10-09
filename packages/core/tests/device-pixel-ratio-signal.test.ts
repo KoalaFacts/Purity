@@ -394,6 +394,50 @@ describe('devicePixelRatioSignal (ADR 0041)', () => {
     expect(oneDppx.listeners.length).toBe(1);
   });
 
+  it('drains a long chain of successful synchronous DPR changes iteratively without a stack overflow', () => {
+    // Distinct from the test above: here every attach SUCCEEDS, each one
+    // synchronously triggering the next genuine DPR change. A `finally`
+    // that drains deferred rechecks via a nested `processChange()` call
+    // (recursive) rather than a loop (iterative) would grow the call
+    // stack by one frame per change and eventually overflow — even
+    // though every individual change is handled correctly.
+    setDpr(1);
+    const s = devicePixelRatioSignal();
+    expect(s()).toBe(1);
+
+    const CHAIN_LENGTH = 50_000; // deep enough to overflow a real recursive stack
+    const originalMm = window.matchMedia;
+    (window as unknown as { matchMedia: (q: string) => MediaQueryList }).matchMedia = (
+      q: string,
+    ) => {
+      const m = originalMm(q);
+      const match = /\(resolution: (\d+)dppx\)/.exec(q);
+      const n = match ? Number(match[1]) : NaN;
+      if (!Number.isNaN(n) && n >= 2 && n < 2 + CHAIN_LENGTH) {
+        const origAdd = m.addEventListener.bind(m);
+        let fired = false;
+        (m as unknown as { addEventListener: typeof m.addEventListener }).addEventListener = ((
+          t: 'change',
+          cb: (e: MediaQueryListEvent) => void,
+        ) => {
+          origAdd(t, cb);
+          if (!fired) {
+            fired = true;
+            setDpr(n + 1);
+            cb({ matches: false, media: q } as MediaQueryListEvent);
+          }
+        }) as typeof m.addEventListener;
+      }
+      return m;
+    };
+
+    setDpr(2);
+    expect(() => mockMqls.get('(resolution: 1dppx)')!.setMatches(false)).not.toThrow();
+    (window as unknown as { matchMedia: typeof window.matchMedia }).matchMedia = originalMm;
+
+    expect(s()).toBe(2 + CHAIN_LENGTH);
+  });
+
   it('does not infinite-loop when the change handler re-enters synchronously', () => {
     setDpr(1);
     const s = devicePixelRatioSignal();

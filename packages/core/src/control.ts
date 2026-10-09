@@ -367,23 +367,34 @@ function warnDuplicateKey(key: unknown, index: number): void {
 }
 
 /**
- * Returns the items with later duplicates removed (first occurrence wins).
- * Returns the input array itself when no key repeats.
+ * Rows kept after removing later duplicate keys (first occurrence wins). Each
+ * retained row keeps the index and key it had in the source array, so keyFn
+ * and mapFn see the same indices as a non-virtual each().
  */
-function firstOccurrenceItems<T>(items: T[], getKey: (item: T, index: number) => unknown): T[] {
+interface FirstOccurrenceRows<T> {
+  items: T[];
+  indices: number[];
+  keys: unknown[];
+}
+
+function firstOccurrenceRows<T>(
+  items: T[],
+  getKey: (item: T, index: number) => unknown,
+): FirstOccurrenceRows<T> {
   const seen = new Set<unknown>();
-  let out: T[] | undefined;
+  const rows: FirstOccurrenceRows<T> = { items: [], indices: [], keys: [] };
   for (let i = 0; i < items.length; i++) {
     const key = getKey(items[i], i);
     if (seen.has(key)) {
       warnDuplicateKey(key, i);
-      out ??= items.slice(0, i);
       continue;
     }
     seen.add(key);
-    out?.push(items[i]);
+    rows.items.push(items[i]);
+    rows.indices.push(i);
+    rows.keys.push(key);
   }
-  return out ?? items;
+  return rows;
 }
 
 function canReplaceOwnedRange<T>(
@@ -786,14 +797,12 @@ class EachWindowHeightIndex {
     return this.keys.length;
   }
 
-  rebuild<T>(items: T[], getKey: (item: T, index: number) => unknown): void {
-    const keys = new Array<unknown>(items.length);
+  rebuild(keys: unknown[]): void {
     const positions = new Map<unknown, number>();
     const measured = new Map<unknown, number>();
 
-    for (let i = 0; i < items.length; i++) {
-      const key = getKey(items[i], i);
-      keys[i] = key;
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
       positions.set(key, i);
       const height = this.measured.get(key);
       if (height !== undefined) measured.set(key, height);
@@ -1204,12 +1213,13 @@ function registerEachAutoDispose<T>(
 function reconcileEachWindow<T>(
   eachState: EachState<T>,
   items: T[],
+  indices: number[],
+  keys: unknown[],
   parent: Node,
   spacers: EachWindowSpacers,
   requestedRange: EachWindowRange,
   heights: EachWindowHeightIndex,
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
-  getKey: (item: T, index: number) => unknown,
   ownerCtx: Scope | null,
 ): void {
   const start = Math.min(Math.max(0, requestedRange.start), items.length);
@@ -1229,8 +1239,8 @@ function reconcileEachWindow<T>(
     visible,
     parent,
     spacers.bottom,
-    (item, index) => mapFn(item, index + normalizedStart),
-    (item, index) => getKey(item, index + normalizedStart),
+    (item, index) => mapFn(item, indices[normalizedStart + index]),
+    (_item, index) => keys[normalizedStart + index],
     ownerCtx,
   );
 }
@@ -1249,12 +1259,17 @@ function createEachWindowController<T>(
   const range = state<EachWindowRange>({ start: 0, end: EACH_WINDOW_INITIAL_ROWS });
   const itemsVersion = state({});
   let items: T[] = [];
+  let indices: number[] = [];
+  let keys: unknown[] = [];
   let notifyRowsChanged = () => {};
   let requestEachWindowUpdate: (() => void) | undefined;
 
   const disposeItems = watch(() => {
-    items = firstOccurrenceItems(getList() || [], getKey);
-    heights.rebuild(items, getKey);
+    const rows = firstOccurrenceRows(getList() || [], getKey);
+    items = rows.items;
+    indices = rows.indices;
+    keys = rows.keys;
+    heights.rebuild(keys);
     itemsVersion({});
   });
 
@@ -1265,12 +1280,13 @@ function createEachWindowController<T>(
     reconcileEachWindow(
       eachState,
       items,
+      indices,
+      keys,
       parent,
       spacers,
       range(),
       heights,
       mapFn,
-      getKey,
       ownerCtx,
     );
     notifyRowsChanged();

@@ -2333,3 +2333,33 @@ describe('duplicate keys — review follow-ups (hydration, virtual, listSSR, dia
     }
   });
 });
+
+describe('each() — index-sensitive keys with a dropped duplicate', () => {
+  it('virtual each() passes original indices to keyFn and mapFn, matching non-virtual each()', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const values = ['a', 'a', 'b', 'c'];
+      // Keys depend on the index: positions 0 and 1 share key 'x', so the
+      // second 'a' is dropped. 'b' and 'c' must keep their original indices.
+      const keyFn = (_item: string, i: number) => (i < 2 ? 'x' : `k${i}`);
+      const mapFn = (item: () => string, index: number) => {
+        const li = document.createElement('li');
+        li.textContent = `${item()}@${index}`;
+        return li;
+      };
+      const expected = ['a@0', 'b@2', 'c@3'];
+
+      const plain = each(values, mapFn, keyFn);
+      const virtual = each(values, mapFn, keyFn, { virtual: true });
+
+      expect(Array.from(plain.querySelectorAll('li')).map((li) => li.textContent)).toEqual(
+        expected,
+      );
+      expect(Array.from(virtual.querySelectorAll('li')).map((li) => li.textContent)).toEqual(
+        expected,
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

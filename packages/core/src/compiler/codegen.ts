@@ -204,18 +204,6 @@ function isIndentation(n: ASTNode): boolean {
 // createTextNode + replaceWith pair.
 const EXPR_PLACEHOLDER = '​';
 
-// Client-side value coercion, emitted into every dynamic client factory (CSR
-// and hydrate). MUST mirror valueToHtml() in ssr-runtime.ts: functions are
-// called, null/undefined/false vanish, arrays flatten (a repeated array is
-// skipped, as SSR's visited-set does), everything else is String()'d.
-// `_fl` collects leaves; `_tx` renders a value as text.
-const VALUE_HELPERS =
-  'function _fl(v,o,s){if(typeof v==="function")v=v();if(v==null||v===false)return o;' +
-  'if(Array.isArray(v)){if(s.indexOf(v)>=0)return o;s.push(v);for(var i=0;i<v.length;i++)_fl(v[i],o,s);}' +
-  'else o.push(v);return o;}' +
-  'function _tx(v){if(v==null||v===false)return "";if(typeof v!=="object"&&typeof v!=="function")return String(v);' +
-  'var L=_fl(v,[],[]),t="";for(var i=0;i<L.length;i++)t+=String(L[i]);return t;}';
-
 // Raw-text elements: the HTML parser does not parse markup inside them.
 // RAWTEXT (style, script) does not decode entities either, so text is emitted
 // verbatim. RCDATA (textarea, title) decodes entities, so text is escaped.
@@ -292,7 +280,7 @@ export function generate(ast: FragmentNode): string {
     `var _t=document.createElement('template');`,
     `_t.innerHTML=${jsString(html)};`,
     templatePrep,
-    'return function(_v,_w,_d){' + VALUE_HELPERS,
+    'return function(_v,_w,_d){',
     'var _r=_t.content.cloneNode(true);',
     bindCode,
     'return _r;',
@@ -323,8 +311,12 @@ function genTemplateCommentToTextConversion(slots: Slot[]): string {
   return stmts.join('');
 }
 
+// Standalone modules import the coercion helpers the generated code references.
+const VALUE_HELPER_IMPORT =
+  "import { flattenValue as __purity_fl__, valueText as __purity_tx__ } from '@purityjs/core/compiler';\n";
+
 export function generateModule(ast: FragmentNode): string {
-  return `export default ${generate(ast)}`;
+  return `${VALUE_HELPER_IMPORT}export default ${generate(ast)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -368,7 +360,7 @@ export function generateHydrate(ast: FragmentNode): string {
   ctx.setup.push('var _c0=_s===undefined?_r.firstChild:_s;');
   emitHydrateChildren(ast.children, ctx, '_c0');
 
-  let body = VALUE_HELPERS + ctx.setup.join('');
+  let body = ctx.setup.join('');
   if (ctx.reactive.length > 0) {
     body += `_w(function(){${ctx.reactive.join('')}});`;
   }
@@ -388,7 +380,7 @@ export function generateHydrate(ast: FragmentNode): string {
 }
 
 export function generateHydrateModule(ast: FragmentNode): string {
-  return `export default ${generateHydrate(ast)}`;
+  return `${VALUE_HELPER_IMPORT}export default ${generateHydrate(ast)}`;
 }
 
 function emitHydrateChildren(children: ASTNode[], ctx: HydrateCtx, cursor: string): void {
@@ -413,7 +405,7 @@ function emitRawContentHydrate(
   );
   const parts = node.children.map((ch) =>
     ch.type === 'expression'
-      ? `_tx(_v[${ch.index}])`
+      ? `__purity_tx__(_v[${ch.index}])`
       : jsString(ch.type === 'text' ? ch.value : ''),
   );
   ctx.reactive.push(`${t}.data=${parts.join('+')};`);
@@ -495,7 +487,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         `else if(Array.isArray(${xv})){`,
         `for(var _ai${id}=0;_ai${id}<${cont}.length;_ai${id}++)${cont}[_ai${id}].parentNode.removeChild(${cont}[_ai${id}]);`,
         `var _af${id}=document.createDocumentFragment();`,
-        `var _L${id}=_fl(${xv},[],[]);`,
+        `var _L${id}=__purity_fl__(${xv},[],[]);`,
         `for(var _aj${id}=0;_aj${id}<_L${id}.length;_aj${id}++){var _av${id}=_L${id}[_aj${id}];`,
         `if(_av${id}&&_av${id}.__purity_deferred__===true){var _ad${id}=document.createDocumentFragment();_i(_av${id},_ad${id},false,true);_af${id}.appendChild(_ad${id});}`,
         `else _af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}`,
@@ -509,7 +501,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         `if(${fl}){`,
         `var r${id}=${xv}();`,
         `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
-        `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=_tx(r${id});}`,
+        `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=__purity_tx__(r${id});}`,
         `}`,
       );
 
@@ -639,16 +631,16 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
         `var ${xv}=_d?_d(${val}):${val};var ${fl}=typeof ${xv}==='function';var ${tn};`,
         `if(${fl}){${tn}=document.createTextNode('');_e.appendChild(${tn});}`,
         `else if(${xv} instanceof Node)_e.appendChild(${xv});`,
-        `else if(Array.isArray(${xv})){var _L${id}=_fl(${xv},[],[]);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_e.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}}`,
-        `else _e.appendChild(document.createTextNode(_tx(${xv})));`,
+        `else if(Array.isArray(${xv})){var _L${id}=__purity_fl__(${xv},[],[]);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_e.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}}`,
+        `else _e.appendChild(document.createTextNode(__purity_tx__(${xv})));`,
       );
       reactiveParts.push(
-        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=_tx(r${id});}}`,
+        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=__purity_tx__(r${id});}}`,
       );
     }
   }
 
-  let body = VALUE_HELPERS + setupParts.join('');
+  let body = setupParts.join('');
   if (reactiveParts.length > 0) {
     body += `_w(function(){${reactiveParts.join('')}});`;
   }
@@ -973,9 +965,9 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
     `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});${tn}=${xv};}`,
     // Array path: drop null/undefined/false items so SSR (valueToHtml
     // recurses + concats with empty for falsy) matches the client.
-    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();var _L${id}=_fl(${xv},[],[]);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}${slotVar}.replaceWith(_af${id});}`,
-    `else{${slotVar}.data=_tx(${xv});}`,
-    `}else{${slotVar}.data=_tx(${xv});}`,
+    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();var _L${id}=__purity_fl__(${xv},[],[]);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}${slotVar}.replaceWith(_af${id});}`,
+    `else{${slotVar}.data=__purity_tx__(${xv});}`,
+    `}else{${slotVar}.data=__purity_tx__(${xv});}`,
     `}`,
   ].join('');
 
@@ -986,7 +978,7 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
     `if(${fl}){`,
     `var r${id}=${xv}();`,
     `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
-    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=_tx(r${id});}`,
+    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=__purity_tx__(r${id});}`,
     `}`,
   ].join('');
 

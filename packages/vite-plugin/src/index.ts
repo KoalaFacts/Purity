@@ -897,7 +897,7 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   // track it alongside the html`` replacements.
   const runtimeImport = ssr
     ? `import { ssrHelpers as __purity_h__ } from '@purityjs/core/compiler';\nimport '@purityjs/ssr';\n`
-    : `import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/compiler';\n`;
+    : `import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, valueText as __purity_tx__ } from '@purityjs/core/compiler';\n`;
   /* v8 ignore next -- edits.length > 0 implies at least one hoist was pushed */
   const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
   const insertAt = findLastImportEnd(source);

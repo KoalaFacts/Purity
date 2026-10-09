@@ -18,6 +18,11 @@ import {
   makeDeferred,
 } from './hydrate-runtime.ts';
 import { parse } from './parser.ts';
+import { flattenValue, valueText } from './value-helpers.ts';
+
+// Generated code references the coercion helpers as free names; bind them here.
+const bindHelpers = (code: string) =>
+  new Function('__purity_fl__', '__purity_tx__', `return ${code}`)(flattenValue, valueText);
 
 type CompiledFn = (
   values: unknown[],
@@ -47,7 +52,7 @@ function ensureClient(entry: CacheEntry, strings: TemplateStringsArray): Compile
   const ast = entry.ast ?? parse(strings);
   entry.ast = ast;
   const code = generate(ast);
-  entry.client = new Function(`return ${code}`)() as CompiledFn;
+  entry.client = bindHelpers(code) as CompiledFn;
   return entry.client;
 }
 
@@ -56,7 +61,7 @@ function ensureHydrate(entry: CacheEntry, strings: TemplateStringsArray): Hydrat
   const ast = entry.ast ?? parse(strings);
   entry.ast = ast;
   const code = generateHydrate(ast);
-  entry.hydrate = new Function(`return ${code}`)() as HydrateFactory;
+  entry.hydrate = bindHelpers(code) as HydrateFactory;
   return entry.hydrate;
 }
 

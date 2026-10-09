@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vite-plus/test';
 import { generate, generateHydrate, generateSSR } from '../src/compiler/codegen.ts';
 import { parse } from '../src/compiler/parser.ts';
 import { ssrHelpers } from '../src/compiler/ssr-runtime.ts';
+import { flattenValue, valueText } from '../src/compiler/value-helpers.ts';
 
 const immediate = (fn: () => void) => fn();
-const factory = (code: string) => new Function(`return ${code}`)();
+const factory = (code: string) =>
+  new Function('__purity_fl__', '__purity_tx__', `return ${code}`)(flattenValue, valueText);
 
 describe('executable template bindings', () => {
   it('keeps generated string literals inside an inline script boundary', () => {

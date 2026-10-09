@@ -81,10 +81,20 @@ export const HYDRATION_CLOSE = '<!--]-->';
  * - Everything else is String()'d and HTML-escaped.
  */
 export function valueToHtml(v: unknown): string {
-  return valueToHtmlInner(v, null);
+  return valueToHtmlInner(v, null, true);
 }
 
-function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null): string {
+/**
+ * Same coercion as valueToHtml for a slot inside a raw-text element
+ * (`<style>`, `<script>`): the value is emitted unescaped, because the HTML
+ * parser does not decode entities there. A `</` sequence is neutralised so a
+ * value cannot close the element early.
+ */
+export function valueToRawText(v: unknown): string {
+  return valueToHtmlInner(v, null, false);
+}
+
+function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null, escape: boolean): string {
   if (typeof v === 'function') v = (v as () => unknown)();
   if (v == null || v === false) return '';
   if (isSSRHtml(v)) return v.__purity_ssr_html__;
@@ -95,10 +105,10 @@ function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null): string {
     if (seen.has(v)) return '';
     seen.add(v);
     let s = '';
-    for (let i = 0; i < v.length; i++) s += valueToHtmlInner(v[i], seen);
+    for (let i = 0; i < v.length; i++) s += valueToHtmlInner(v[i], seen, escape);
     return s;
   }
-  return escHtml(String(v));
+  return escape ? escHtml(String(v)) : String(v).replace(/<\//g, '<\\/');
 }
 
 /**
@@ -206,6 +216,7 @@ export const ssrHelpers = {
   esc: escHtml,
   attr: escAttr,
   toHtml: valueToHtml,
+  rawText: valueToRawText,
   toAttr: valueToAttr,
   isHtml: isSSRHtml,
   mark: markSSRHtml,

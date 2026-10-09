@@ -204,6 +204,27 @@ function isIndentation(n: ASTNode): boolean {
 // createTextNode + replaceWith pair.
 const EXPR_PLACEHOLDER = '​';
 
+// Client-side value coercion, emitted into every dynamic client factory (CSR
+// and hydrate). MUST mirror valueToHtml() in ssr-runtime.ts: functions are
+// called, null/undefined/false vanish, arrays flatten (a repeated array is
+// skipped, as SSR's visited-set does), everything else is String()'d.
+// `_fl` collects leaves; `_tx` renders a value as text.
+const VALUE_HELPERS =
+  'function _fl(v,o,s){if(typeof v==="function")v=v();if(v==null||v===false)return o;' +
+  'if(Array.isArray(v)){if(s.indexOf(v)>=0)return o;s.push(v);for(var i=0;i<v.length;i++)_fl(v[i],o,s);}' +
+  'else o.push(v);return o;}' +
+  'function _tx(v){if(v==null||v===false)return "";if(typeof v!=="object"&&typeof v!=="function")return String(v);' +
+  'var L=_fl(v,[],[]),t="";for(var i=0;i<L.length;i++)t+=String(L[i]);return t;}';
+
+// Raw-text elements: the HTML parser does not parse markup inside them.
+// RAWTEXT (style, script) does not decode entities either, so text is emitted
+// verbatim. RCDATA (textarea, title) decodes entities, so text is escaped.
+// Neither can carry hydration markers (they would become literal text), so
+// SSR omits them and hydrate rebuilds the element content from its parts.
+const RAWTEXT_TAGS = new Set(['style', 'script']);
+const RCDATA_TAGS = new Set(['textarea', 'title']);
+const RAW_CONTENT_TAGS = new Set([...RAWTEXT_TAGS, ...RCDATA_TAGS]);
+
 export function condenseWhitespace(node: ASTNode): ASTNode {
   if (node.type === 'fragment' || node.type === 'element') {
     if (node.type === 'element' && PRESERVE_WS_TAGS.has(node.tag)) return node;
@@ -271,7 +292,7 @@ export function generate(ast: FragmentNode): string {
     `var _t=document.createElement('template');`,
     `_t.innerHTML=${jsString(html)};`,
     templatePrep,
-    'return function(_v,_w,_d){',
+    'return function(_v,_w,_d){' + VALUE_HELPERS,
     'var _r=_t.content.cloneNode(true);',
     bindCode,
     'return _r;',
@@ -347,7 +368,7 @@ export function generateHydrate(ast: FragmentNode): string {
   ctx.setup.push('var _c0=_s===undefined?_r.firstChild:_s;');
   emitHydrateChildren(ast.children, ctx, '_c0');
 
-  let body = ctx.setup.join('');
+  let body = VALUE_HELPERS + ctx.setup.join('');
   if (ctx.reactive.length > 0) {
     body += `_w(function(){${ctx.reactive.join('')}});`;
   }
@@ -374,6 +395,28 @@ function emitHydrateChildren(children: ASTNode[], ctx: HydrateCtx, cursor: strin
   for (const ch of children) {
     emitHydrate(ch, ctx, cursor);
   }
+}
+
+// Raw-text / RCDATA element with expression children. SSR emits its content as
+// one text node (no markers, no child elements), so bind a single watch that
+// writes the concatenated parts into that text node.
+function emitRawContentHydrate(
+  node: import('./ast.ts').ElementNode,
+  ctx: HydrateCtx,
+  el: string,
+  id: number,
+): void {
+  const t = `_rt${id}`;
+  ctx.setup.push(
+    `var ${t}=${el}.firstChild;`,
+    `if(!${t}){${t}=document.createTextNode('');${el}.appendChild(${t});}`,
+  );
+  const parts = node.children.map((ch) =>
+    ch.type === 'expression'
+      ? `_tx(_v[${ch.index}])`
+      : jsString(ch.type === 'text' ? ch.value : ''),
+  );
+  ctx.reactive.push(`${t}.data=${parts.join('+')};`);
 }
 
 function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
@@ -452,13 +495,10 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         `else if(Array.isArray(${xv})){`,
         `for(var _ai${id}=0;_ai${id}<${cont}.length;_ai${id}++)${cont}[_ai${id}].parentNode.removeChild(${cont}[_ai${id}]);`,
         `var _af${id}=document.createDocumentFragment();`,
-        `function _append${id}(_av){`,
-        `if(_av==null||_av===false)return;`,
-        `if(Array.isArray(_av)){for(var _j=0;_j<_av.length;_j++)_append${id}(_av[_j]);}`,
-        `else if(_av&&_av.__purity_deferred__===true){var _ad=document.createDocumentFragment();_i(_av,_ad,false,true);_af${id}.appendChild(_ad);}`,
-        `else{_af${id}.appendChild(_av instanceof Node?_av:document.createTextNode(String(_av)));}`,
-        `}`,
-        `for(var _aj${id}=0;_aj${id}<${xv}.length;_aj${id}++)_append${id}(${xv}[_aj${id}]);`,
+        `var _L${id}=_fl(${xv},[],[]);`,
+        `for(var _aj${id}=0;_aj${id}<_L${id}.length;_aj${id}++){var _av${id}=_L${id}[_aj${id}];`,
+        `if(_av${id}&&_av${id}.__purity_deferred__===true){var _ad${id}=document.createDocumentFragment();_i(_av${id},_ad${id},false,true);_af${id}.appendChild(_ad${id});}`,
+        `else _af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}`,
         `${close}.parentNode.insertBefore(_af${id},${close});}`,
 
         `}`,
@@ -469,7 +509,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         `if(${fl}){`,
         `var r${id}=${xv}();`,
         `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
-        `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=r${id}==null?'':String(r${id});}`,
+        `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=_tx(r${id});}`,
         `}`,
       );
 
@@ -497,10 +537,14 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         }
       }
 
-      // Recurse into children. Hyphenated tags are Custom Elements — their
-      // shadow root is opaque to the outer hydrator; the element's own
-      // connectedCallback handles its interior. Skip walking children here.
-      if (!VOID.has(node.tag) && node.children.length > 0 && !node.tag.includes('-')) {
+      // Raw-text / RCDATA content with dynamic parts: SSR wrote no markers, so
+      // rebuild the element's text from its parts instead of walking children.
+      if (RAW_CONTENT_TAGS.has(node.tag) && node.children.some((c) => c.type === 'expression')) {
+        emitRawContentHydrate(node, ctx, el, id);
+      } else if (!VOID.has(node.tag) && node.children.length > 0 && !node.tag.includes('-')) {
+        // Recurse into children. Hyphenated tags are Custom Elements — their
+        // shadow root is opaque to the outer hydrator; the element's own
+        // connectedCallback handles its interior. Skip walking children here.
         const child = `_ch${id}`;
         ctx.setup.push(`var ${child}=${el}.firstChild;`);
         emitHydrateChildren(node.children, ctx, child);
@@ -595,16 +639,16 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
         `var ${xv}=_d?_d(${val}):${val};var ${fl}=typeof ${xv}==='function';var ${tn};`,
         `if(${fl}){${tn}=document.createTextNode('');_e.appendChild(${tn});}`,
         `else if(${xv} instanceof Node)_e.appendChild(${xv});`,
-        `else if(Array.isArray(${xv})){for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++){var _av${id}=${xv}[_ai${id}];if(_av${id}==null||_av${id}===false)continue;_e.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}}`,
-        `else _e.appendChild(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));`,
+        `else if(Array.isArray(${xv})){var _L${id}=_fl(${xv},[],[]);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_e.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}}`,
+        `else _e.appendChild(document.createTextNode(_tx(${xv})));`,
       );
       reactiveParts.push(
-        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=(r${id}==null||r${id}===false)?'':String(r${id});}}`,
+        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=_tx(r${id});}}`,
       );
     }
   }
 
-  let body = setupParts.join('');
+  let body = VALUE_HELPERS + setupParts.join('');
   if (reactiveParts.length > 0) {
     body += `_w(function(){${reactiveParts.join('')}});`;
   }
@@ -687,12 +731,14 @@ function genStaticDOM(
   }
 }
 
-function buildStaticHtml(node: ASTNode): string {
+function buildStaticHtml(node: ASTNode, rawParent: string | null = null): string {
   switch (node.type) {
     case 'text':
       // `raw: true` marks SGML declarations like `<!doctype html>` parsed
       // verbatim from the template; escaping would corrupt them.
-      return node.raw ? node.value : escapeHtml(node.value);
+      return node.raw || (rawParent !== null && RAWTEXT_TAGS.has(rawParent))
+        ? node.value
+        : escapeHtml(node.value);
     case 'comment':
       return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
     case 'element': {
@@ -704,11 +750,11 @@ function buildStaticHtml(node: ASTNode): string {
       }
       if (VOID.has(node.tag)) return `${s}/>`;
       s += '>';
-      for (const ch of node.children) s += buildStaticHtml(ch);
+      for (const ch of node.children) s += buildStaticHtml(ch, node.tag);
       return `${s}</${node.tag}>`;
     }
     case 'fragment':
-      return node.children.map(buildStaticHtml).join('');
+      return node.children.map((ch) => buildStaticHtml(ch, rawParent)).join('');
     default:
       /* v8 ignore next -- defensive fallthrough; AST has no other types */
       return '';
@@ -927,9 +973,9 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
     `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});${tn}=${xv};}`,
     // Array path: drop null/undefined/false items so SSR (valueToHtml
     // recurses + concats with empty for falsy) matches the client.
-    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++){var _av${id}=${xv}[_ai${id}];if(_av${id}==null||_av${id}===false)continue;_af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}${slotVar}.replaceWith(_af${id});}`,
-    `else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
-    `}else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
+    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();var _L${id}=_fl(${xv},[],[]);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}${slotVar}.replaceWith(_af${id});}`,
+    `else{${slotVar}.data=_tx(${xv});}`,
+    `}else{${slotVar}.data=_tx(${xv});}`,
     `}`,
   ].join('');
 
@@ -940,7 +986,7 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
     `if(${fl}){`,
     `var r${id}=${xv}();`,
     `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
-    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=(r${id}==null||r${id}===false)?'':String(r${id});}`,
+    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=_tx(r${id});}`,
     `}`,
   ].join('');
 
@@ -1078,7 +1124,7 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
 export function generateSSR(ast: FragmentNode): string {
   assertSafeScriptContent(ast);
   ast = condenseWhitespace(ast) as FragmentNode;
-  const ctx: SSRGenCtx = { parts: [], counter: 0, out: '_o', lastLitHtml: null };
+  const ctx: SSRGenCtx = { parts: [], counter: 0, out: '_o', lastLitHtml: null, rawParent: null };
   // Static-prefix optimization: if the entire tree is static AND contains no
   // hyphenated tags (which require runtime component dispatch), emit a closure
   // returning the prebuilt string. Avoids per-call work and skips the _v / _h
@@ -1133,6 +1179,8 @@ interface SSRGenCtx {
   // polynomial-redos — keeping the unstringified value side-by-side sidesteps
   // both the perf risk and the alert.
   lastLitHtml: string | null;
+  // Tag of the enclosing raw-text / RCDATA element, or null.
+  rawParent: string | null;
 }
 
 // Append a JS literal that adds a static HTML chunk to the active output var.
@@ -1163,7 +1211,12 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
   switch (node.type) {
     case 'text':
       // `raw: true` declarations (DOCTYPE, etc.) bypass the escape.
-      emitLit(ctx, node.raw ? node.value : escapeHtml(node.value));
+      emitLit(
+        ctx,
+        node.raw || (ctx.rawParent !== null && RAWTEXT_TAGS.has(ctx.rawParent))
+          ? node.value
+          : escapeHtml(node.value),
+      );
       return;
 
     case 'comment':
@@ -1171,6 +1224,12 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
       return;
 
     case 'expression': {
+      if (ctx.rawParent !== null) {
+        // Raw-text / RCDATA content: no hydration markers (see RAW_CONTENT_TAGS).
+        const helper = RAWTEXT_TAGS.has(ctx.rawParent) ? '_h.rawText' : '_h.toHtml';
+        pushRaw(ctx, `${ctx.out}+=${helper}(_v[${node.index}]);`);
+        return;
+      }
       // Reactive slot: wrapped in hydration markers so PR 4 can locate it.
       // _h.toHtml handles signal-accessor calls, branded HTML, arrays, and
       // primitive escaping in one place.
@@ -1200,7 +1259,10 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
         return;
       }
       emitLit(ctx, '>');
+      const savedRawParent = ctx.rawParent;
+      ctx.rawParent = RAW_CONTENT_TAGS.has(node.tag) ? node.tag : null;
       for (const ch of node.children) buildSSRBody(ch, ctx);
+      ctx.rawParent = savedRawParent;
       emitLit(ctx, `</${node.tag}>`);
       return;
     }

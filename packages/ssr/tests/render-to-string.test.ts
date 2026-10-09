@@ -381,7 +381,7 @@ describe('renderToString — full document shell', () => {
     `;
     const out = await renderToString(App, { doctype: '<!doctype html>' });
     expect(out).toContain('<!doctype html>');
-    expect(out).toContain('<title><!--[-->Welcome<!--]--></title>');
+    expect(out).toContain('<title>Welcome</title>');
     expect(out).toContain('<h1><!--[-->Welcome<!--]--></h1>');
   });
 });

@@ -41,10 +41,10 @@
     "test:browser:devtools": "node --experimental-strip-types tests/devtools-browser.ts"
   },
   "dependencies": {
-    "oxc-parser": "0.151.0"
+    "oxc-parser": "0.153.0"
   },
   "devDependencies": {
-    "fast-check": "4.7.0"
+    "fast-check": "4.10.2"
   },
   "peerDependencies": {
     "@purityjs/core": "^0.3.4",

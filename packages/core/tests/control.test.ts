@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { ComponentContext, mount, onDispose, popContext, pushContext } from '../src/component.ts';
-import { each, inflateDeferredEach, list, match, type DeferredEach } from '../src/control.ts';
+import {
+  each,
+  eachSSR,
+  inflateDeferredEach,
+  list,
+  listSSR,
+  match,
+  type DeferredEach,
+} from '../src/control.ts';
 import { state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
@@ -2073,4 +2081,126 @@ describe('each() / list() — duplicate keys render first-occurrence order', () 
       }
     });
   }
+});
+
+describe('duplicate keys — initial render, SSR and hydration', () => {
+  type Row = { id: number; v: string };
+  const warnSpy = () => vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+  for (const name of ['each()', 'list()'] as const) {
+    it(`${name} keeps the first occurrence's data after a same-key update that follows a duplicate initial render`, async () => {
+      const warn = warnSpy();
+      try {
+        const items = state<Row[]>([
+          { id: 1, v: 'a' },
+          { id: 1, v: 'b' },
+        ]);
+        const c = document.createElement('ul');
+        if (name === 'each()') {
+          c.appendChild(
+            each(
+              () => items(),
+              (item: () => Row) => html`<li>${() => item().v}</li>`,
+              (item: Row) => item.id,
+            ),
+          );
+        } else {
+          c.appendChild(
+            list<Row>(
+              'li',
+              () => items(),
+              (r) => r.v,
+              (r) => r.id,
+            ),
+          );
+        }
+        await tick();
+        expect(Array.from(c.querySelectorAll('li')).map((li) => li.textContent)).toEqual(['a']);
+
+        items([
+          { id: 1, v: 'c' },
+          { id: 1, v: 'd' },
+        ]);
+        await tick();
+        expect(Array.from(c.querySelectorAll('li')).map((li) => li.textContent)).toEqual(['c']);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  }
+
+  it('eachSSR emits one row per unique key, first occurrence wins', () => {
+    const warn = warnSpy();
+    try {
+      const out = eachSSR(
+        [
+          { id: 1, v: 'a' },
+          { id: 1, v: 'b' },
+          { id: 2, v: 'c' },
+        ],
+        (item) => item().v,
+        (item) => item.id,
+      );
+      expect(out.__purity_ssr_html__).toBe(
+        '<!--e--><!--er:1-->a<!--/er--><!--er:2-->c<!--/er--><!--/e-->',
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('listSSR emits one row per unique key, first occurrence wins', () => {
+    const warn = warnSpy();
+    try {
+      const out = listSSR(
+        'li',
+        [
+          { id: 1, v: 'a' },
+          { id: 1, v: 'b' },
+          { id: 2, v: 'c' },
+        ],
+        (r: Row) => r.v,
+        (r: Row) => r.id,
+      );
+      expect(out.__purity_ssr_html__).toBe('<!--l--><li>a</li><li>c</li><!--/l-->');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('hydration leaves no stale DOM for duplicate SSR rows', async () => {
+    const warn = warnSpy();
+    try {
+      const host = document.createElement('ul');
+      host.innerHTML =
+        '<!--e--><!--er:1--><li><!--[-->stale<!--]--></li><!--/er-->' +
+        '<!--er:1--><li><!--[-->1<!--]--></li><!--/er--><!--er:2--><li><!--[-->2<!--]--></li><!--/er--><!--/e-->';
+      document.body.appendChild(host);
+      const closeMarker = document.createComment('slot-close');
+      host.appendChild(closeMarker);
+      const context = new ComponentContext();
+      const deferred: DeferredEach<number> = {
+        __purity_deferred_each__: true,
+        listAccessor: [1, 2],
+        mapFn: (item) => html`<li>${item()}</li>`,
+        keyFn: (item) => item,
+        options: {},
+      };
+      pushContext(context);
+      try {
+        inflateDeferredEach(deferred, Array.from(host.childNodes).slice(0, -1), closeMarker);
+      } finally {
+        popContext();
+      }
+      await tick();
+      expect(Array.from(host.querySelectorAll('li')).map((li) => li.textContent)).toEqual([
+        '1',
+        '2',
+      ]);
+      for (const dispose of context.disposers ?? []) dispose();
+      host.remove();
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });

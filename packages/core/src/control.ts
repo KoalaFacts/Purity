@@ -1539,6 +1539,7 @@ export function inflateDeferredEach<T>(
 
   const ssrByKey = new Map<string, SSRRow>();
   for (let i = 0; i < ssrRows.length; i++) ssrByKey.set(ssrRows[i].key, ssrRows[i]);
+  const adoptedRows = new Set<SSRRow>();
 
   const ownerCtx = getCurrentContext();
   const items = getList() || [];
@@ -1562,6 +1563,7 @@ export function inflateDeferredEach<T>(
     // Items match SSR rows by `String(key)` — same coercion that eachSSR's
     // encoder applies (round-trip through encodeURIComponent / decode).
     const ssrRow = ssrByKey.get(String(key));
+    if (ssrRow) adoptedRows.add(ssrRow);
     const data = state(item);
     const ctx: Scope = { disposers: null };
     pushContext(ctx);
@@ -1623,14 +1625,15 @@ export function inflateDeferredEach<T>(
     }
 
     eachState.keyToEntry.set(key, { nodes, data, ctx });
-    ssrByKey.delete(String(key));
   }
 
-  // Detach any SSR rows that didn't match a current key (rare — implies the
-  // data changed between SSR and hydration).
-  for (const stale of ssrByKey.values()) {
-    for (let j = 0; j < stale.nodes.length; j++) {
-      const n = stale.nodes[j];
+  // Detach every SSR row that was not adopted: rows whose key no longer
+  // exists (data changed between SSR and hydration) and duplicate-key rows
+  // (ssrByKey keeps only the last row per key, so they are not in it).
+  for (const row of ssrRows) {
+    if (adoptedRows.has(row)) continue;
+    for (let j = 0; j < row.nodes.length; j++) {
+      const n = row.nodes[j];
       if (n.parentNode) n.parentNode.removeChild(n);
     }
   }
@@ -2331,13 +2334,20 @@ export function eachSSR<T>(
   const items = (typeof listAccessor === 'function' ? listAccessor() : listAccessor) || [];
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
   let inner = '';
+  const seenKeys = new Set<unknown>();
   for (let i = 0; i < items.length; i++) {
     // Pass a frozen accessor so user code that calls `item()` works the same
     // shape as the client. No reactivity — the value is captured at render.
     const value = items[i];
+    const key = getKey(value, i);
+    // Duplicate key: emit only the first row, matching the client render.
+    if (seenKeys.has(key)) {
+      warnDuplicateKey(key, i);
+      continue;
+    }
+    seenKeys.add(key);
     const accessor = () => value;
-    const keyHex = encodeRowKey(getKey(value, i));
-    inner += `<!--er:${keyHex}-->${valueToHtml(mapFn(accessor, i))}<!--/er-->`;
+    inner += `<!--er:${encodeRowKey(key)}-->${valueToHtml(mapFn(accessor, i))}<!--/er-->`;
   }
   return markSSRHtml(`<!--e-->${inner}<!--/e-->`);
 }
@@ -2368,6 +2378,12 @@ export function listSSR<T>(
     return markSSRHtml('<!--l--><!--/l-->');
   }
   const items = (typeof listAccessor === 'function' ? listAccessor() : listAccessor) || [];
+  // Same key resolution as list(); used only to drop duplicate rows.
+  const getKey =
+    _keyFn ??
+    (typeof textOrOptions === 'function' ? undefined : textOrOptions.key) ??
+    ((item: T) => item as unknown);
+  const seenKeys = new Set<unknown>();
   let getText: ((item: T, index: number) => string) | undefined;
   let getClass: ((item: T, index: number) => string) | undefined;
   let getStyle: ((item: T, index: number) => string) | undefined;
@@ -2386,6 +2402,13 @@ export function listSSR<T>(
   let inner = '';
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
+    // Duplicate key: emit only the first row, matching the client render.
+    const key = getKey(item, i);
+    if (seenKeys.has(key)) {
+      warnDuplicateKey(key, i);
+      continue;
+    }
+    seenKeys.add(key);
     let attrs = '';
     if (getClass) {
       const cls = getClass(item, i);

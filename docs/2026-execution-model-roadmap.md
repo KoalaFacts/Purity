@@ -108,9 +108,12 @@ model — the entire point of the current design is that updates
 propagate without a server round trip.
 
 **Rough scope if ever pursued:** Reusing `webSocketSignal`'s client
-transport (or `eventSourceSignal` for a one-way variant), a server-side
-process holding one live reactive graph per connected client, a
-diffing/patch protocol, and explicit backpressure/reconnect/
+transport — its bidirectional `send`/receive shape is what this needs,
+not `eventSourceSignal` (receive-only: a plain `ComputedAccessor<T>`
+with no way to forward a user event back to the server, see
+[`packages/core/src/event-source-signal.ts`](../packages/core/src/event-source-signal.ts));
+a server-side process holding one live reactive graph per connected
+client; a diffing/patch protocol; and explicit backpressure/reconnect/
 session-affinity handling for the scaling story (this is the
 operationally hardest part — it requires sticky sessions or a
 shared-state store, unlike the current stateless SSR model).
@@ -126,20 +129,30 @@ any prototype is worth building.
 **What it is:** Per-visit, not per-session: Blazor's Auto mode does
 _not_ hand a component already on the page off from server to client
 mid-session — the chosen mode stays fixed for as long as that page
-instance is live. On a first visit, the component renders in the
-server-driven mode above while the WebAssembly bundle downloads in the
-background; on a _later_ visit (navigation or reload), once the bundle
-is cached, the component instead renders fully client-resident. So the
-"upgrade" is a cache-presence check made at the start of each new page
-instance, not a live, in-place handoff of running state.
+instance is live. The decision happens once, at the start of a new page
+instance, and depends on more than just bundle-cache presence —
+per Microsoft's own docs: "One factor in this initial decision is
+considering whether components already exist on the page with
+WebAssembly/Server interactivity. Auto mode prefers to select a render
+mode that matches the render mode of existing interactive components,"
+specifically to avoid spinning up a second interactive runtime that
+doesn't share state with one already running. So a first-ever visit
+renders in the server-driven mode above while the WebAssembly bundle
+downloads in the background; a later visit, once the bundle is cached
+AND no sibling component on the page is already pinned to Server mode,
+renders fully client-resident instead.
 
 **Why Purity doesn't have this:** This mode is downstream of Gap 2 —
 it requires the server-driven mode to exist as the first-visit
-fallback — but is otherwise comparatively simple on top of it: a
-cache-presence check (has the client bundle been fetched before?)
-picking which mode a fresh page instance starts in, not a live
-state-transfer protocol between two running instances. It is not
-meaningfully separable from Gap 2 regardless.
+fallback — but is otherwise simpler than Gap 2 itself: a per-page-instance
+decision (bundle-cache presence, reconciled against whichever mode any
+sibling interactive component already settled on) picking which mode a
+fresh page instance starts in, not a live state-transfer protocol
+between two running instances. Still, "simpler than Gap 2" undersells
+the decision surface — it needs its own render-mode/runtime-context
+model (what else is live on the page, not just "is the bundle
+cached"), not a single boolean check. Not meaningfully separable from
+Gap 2 regardless.
 
 **Needs brainstorming on:** not worth scoping independently until/unless
 Gap 2 is pursued and lands.

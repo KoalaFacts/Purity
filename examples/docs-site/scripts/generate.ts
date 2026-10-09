@@ -69,9 +69,16 @@ const sources: SourcePage[] = [
     navTitle: 'Decision index',
   },
   {
+    // NOT 'architecture': that category is special-cased in the docs-site
+    // nav (see examples/docs-site/src/main.ts's categoryGroup()) to show
+    // only its first page directly and bury every other page in it inside
+    // a collapsed "Show decisions" disclosure, unconditionally labeled as
+    // ADRs. This doc's own header says "not an ADR" — filing it there
+    // would both hide it by default and mislabel it. 'quality' already
+    // holds framework-capabilities.md, a similar gap/limits inventory.
     file: join(repo, 'docs/2026-execution-model-roadmap.md'),
     slug: 'execution-model-roadmap',
-    category: 'architecture',
+    category: 'quality',
     navTitle: 'Execution-model roadmap',
   },
 ];

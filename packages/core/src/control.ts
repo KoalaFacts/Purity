@@ -1395,15 +1395,6 @@ function makeDeferredEach<T>(
   return { __purity_deferred_each__: true, listAccessor, mapFn, keyFn, options };
 }
 
-/** Type guard for {@link DeferredEach}. @internal */
-export function isDeferredEach(v: unknown): v is DeferredEach {
-  return (
-    v != null &&
-    typeof v === 'object' &&
-    (v as { __purity_deferred_each__?: unknown }).__purity_deferred_each__ === true
-  );
-}
-
 // Encode an arbitrary key into a comment-data-safe string. encodeURIComponent
 // escapes everything except `A-Za-z0-9-_.!~*'()`; we additionally rewrite `-`
 // to `%2D` so two consecutive dashes can never appear in the encoded form
@@ -1686,15 +1677,6 @@ function makeDeferredMatch<T extends string | number | boolean>(
     inflateDeferredMatch as unknown as (d: unknown, c: Node[], m: Node) => void,
   );
   return { __purity_deferred_match__: true, sourceFn, cases, fallback };
-}
-
-/** Type guard for {@link DeferredMatch}. @internal */
-export function isDeferredMatch(v: unknown): v is DeferredMatch {
-  return (
-    v != null &&
-    typeof v === 'object' &&
-    (v as { __purity_deferred_match__?: unknown }).__purity_deferred_match__ === true
-  );
 }
 
 // Locate the `<!--m:KEY-->...<!--/m-->` boundary inside a slot's content

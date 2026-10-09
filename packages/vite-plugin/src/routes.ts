@@ -253,23 +253,30 @@ function dirname(filePath: string): string {
   return idx === -1 ? '' : filePath.slice(0, idx);
 }
 
+// Shared by layoutDirOf/errorDirOf/notFoundDirOf: all three recognise a
+// fixed basename (`_layout`, `_error`, `_404`) with one of the configured
+// extensions and return its containing directory ('' for the routes-dir
+// root), or null if filePath doesn't match. Defensive POSIX normalization —
+// matches `fileToRoute`'s behaviour so a Windows-shaped path discovered via
+// the filesystem walk is still recognised.
+function dirOfBasename(filePath: string, extensions: string[], basename: string): string | null {
+  const normalized = toPosixPath(filePath);
+  for (const ext of extensions) {
+    if (ext.length === 0) continue;
+    const target = basename + ext;
+    if (normalized === target) return '';
+    if (normalized.endsWith('/' + target)) return normalized.slice(0, -target.length - 1);
+  }
+  return null;
+}
+
 /**
  * If `filePath` is a `_layout.<ext>` (with one of the configured
  * extensions), return its containing directory ('' for the routes-dir
  * root). Otherwise return null.
  */
 export function layoutDirOf(filePath: string, extensions: string[]): string | null {
-  // Defensive POSIX normalization — matches `fileToRoute`'s behaviour so
-  // a Windows-shaped path discovered via the filesystem walk is still
-  // recognised as a layout module.
-  const normalized = toPosixPath(filePath);
-  for (const ext of extensions) {
-    if (ext.length === 0) continue;
-    const target = LAYOUT_BASENAME + ext;
-    if (normalized === target) return '';
-    if (normalized.endsWith('/' + target)) return normalized.slice(0, -target.length - 1);
-  }
-  return null;
+  return dirOfBasename(filePath, extensions, LAYOUT_BASENAME);
 }
 
 /**
@@ -306,14 +313,7 @@ const NOT_FOUND_BASENAME = '_404';
  * root). Otherwise return null. ADR 0021.
  */
 export function errorDirOf(filePath: string, extensions: string[]): string | null {
-  const normalized = toPosixPath(filePath);
-  for (const ext of extensions) {
-    if (ext.length === 0) continue;
-    const target = ERROR_BASENAME + ext;
-    if (normalized === target) return '';
-    if (normalized.endsWith('/' + target)) return normalized.slice(0, -target.length - 1);
-  }
-  return null;
+  return dirOfBasename(filePath, extensions, ERROR_BASENAME);
 }
 
 /**
@@ -323,28 +323,7 @@ export function errorDirOf(filePath: string, extensions: string[]): string | nul
  * to root only.
  */
 export function notFoundDirOf(filePath: string, extensions: string[]): string | null {
-  const normalized = toPosixPath(filePath);
-  for (const ext of extensions) {
-    if (ext.length === 0) continue;
-    const target = NOT_FOUND_BASENAME + ext;
-    if (normalized === target) return '';
-    if (normalized.endsWith('/' + target)) return normalized.slice(0, -target.length - 1);
-  }
-  return null;
-}
-
-/**
- * Legacy helper preserved for backwards compat with existing tests + the
- * `notFound` top-level field (ADR 0021). Returns the file path for a root
- * `_404` only; nested `_404` files yield null.
- */
-export function notFoundFileOf(filePath: string, extensions: string[]): string | null {
-  const normalized = toPosixPath(filePath);
-  for (const ext of extensions) {
-    if (ext.length === 0) continue;
-    if (normalized === NOT_FOUND_BASENAME + ext) return normalized;
-  }
-  return null;
+  return dirOfBasename(filePath, extensions, NOT_FOUND_BASENAME);
 }
 
 /**

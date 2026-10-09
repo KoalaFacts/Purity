@@ -15,7 +15,6 @@ import {
   layoutChainFor,
   layoutDirOf,
   nearestErrorDir,
-  notFoundFileOf,
   sortRoutes,
 } from '../src/routes.ts';
 
@@ -274,24 +273,6 @@ describe('errorDirOf — recognising _error files (ADR 0021)', () => {
     expect(errorDirOf('_layout.ts', EXTS)).toBeNull();
     expect(errorDirOf('_errors.ts', EXTS)).toBeNull();
     expect(errorDirOf('users/_error-handler.ts', EXTS)).toBeNull();
-  });
-});
-
-describe('notFoundFileOf — recognising root _404 (ADR 0021)', () => {
-  it('detects a root _404 with any allowed extension', () => {
-    expect(notFoundFileOf('_404.ts', EXTS)).toBe('_404.ts');
-    expect(notFoundFileOf('_404.tsx', EXTS)).toBe('_404.tsx');
-  });
-
-  it('returns null for nested _404 files (Phase 1: root-only)', () => {
-    expect(notFoundFileOf('admin/_404.ts', EXTS)).toBeNull();
-    expect(notFoundFileOf('users/[id]/_404.ts', EXTS)).toBeNull();
-  });
-
-  it('returns null for non-404 files', () => {
-    expect(notFoundFileOf('_404.md', EXTS)).toBeNull();
-    expect(notFoundFileOf('_500.ts', EXTS)).toBeNull();
-    expect(notFoundFileOf('_404abc.ts', EXTS)).toBeNull();
   });
 });
 

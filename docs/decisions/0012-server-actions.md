@@ -13,7 +13,7 @@ edge function, and pass the action URL into components as a prop.
 That works but produces three recurring frustrations:
 
 - **Boilerplate.** Every action is `if (req.url === '/api/foo' &&
-req.method === 'POST') { … }`. Each app reinvents the dispatch.
+  req.method === 'POST') { … }`. Each app reinvents the dispatch.
 - **Co-location.** The action handler and the `<form action="…">`
   that targets it live in different files, often different packages.
   Easy to drift; hard to refactor.
@@ -88,14 +88,14 @@ Concretely:
   invoke + await. Returns the handler's `Response` on hit, `null`
   on miss so the caller can fall through to SSR or another router.
 - **Handler signature: `(request: Request) => Promise<Response> |
-Response`.** Pure Web Platform. Parse `formData()` / `json()` /
+  Response`.** Pure Web Platform. Parse `formData()` / `json()` /
   `text()` yourself. Return any `Response` — redirect, JSON, HTML, 204. Handlers can read cookies, set headers, anything `Response`
   supports.
 - **Progressive enhancement.** `<form action="/api/save" method="POST">`
   posts FormData natively. The handler returns a 303 redirect; the
   browser does a GET to the Location. Works without JS. JS apps
   intercept the submit and call `fetch(url, { method: 'POST', body:
-formData })` for SPA UX; both call the same handler.
+  formData })` for SPA UX; both call the same handler.
 
 ### Explicit non-features
 

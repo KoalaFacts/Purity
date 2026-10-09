@@ -103,7 +103,7 @@ Concretely:
 
 - **No transition styling helpers.** Style is CSS, not framework
   code. Apps add `::view-transition-old(*)` / `::view-transition-
-new(*)` rules and `view-transition-name` properties on their
+  new(*)` rules and `view-transition-name` properties on their
   elements; the framework just calls the API.
 - **No async-aware transitions.** Returning a Promise from the
   callback to await async work (per the View Transitions spec)

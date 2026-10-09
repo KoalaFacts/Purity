@@ -217,7 +217,7 @@ calls don't pay it.
   response. Needs a clear `onBoundaryError` hook so users can log
   per-region failures.
 - The Custom Element + DSD interaction needs care: a `<template
-shadowrootmode>` inside a streamed Suspense boundary is parsed by the
+  shadowrootmode>` inside a streamed Suspense boundary is parsed by the
   browser when the swap inserts it, not when the original shell parses.
   Browsers handle this correctly per the DSD spec (the shadow root is
   attached when the host element is parsed), but the timing differs from
@@ -247,7 +247,7 @@ Phases, each landable as its own PR:
    client `inflateDeferred` strips those markers before walking the
    inner template. Validates the marker grammar end-to-end.
 2. ✅ **Per-boundary timeouts.** Shipped. `suspense(view, fallback,
-{ timeout })` records a wall-clock deadline anchored to the first
+   { timeout })` records a wall-clock deadline anchored to the first
    pass that encounters the boundary; the renderer's await loop races
    pending promises against the soonest deadline and marks the
    boundary timed-out when its deadline fires first. The next pass
@@ -268,7 +268,7 @@ Phases, each landable as its own PR:
    flushes, the renderer drains the queue in declaration order: each
    boundary renders in its own SSRRenderContext + multi-pass loop with
    its own `{ timeout }` budget, then emits a `<template id="purity-s-N">
-resolved</template><script>__purity_swap(N)</script>` chunk. The
+   resolved</template><script>__purity_swap(N)</script>` chunk. The
    ~330-byte swap helper inlines exactly once at the shell tail when
    any boundaries are queued. Hydration timing remains "defer until
    stream close" per the original plan; selective per-boundary
@@ -294,7 +294,7 @@ resolved</template><script>__purity_swap(N)</script>` chunk. The
    `<script>` we emit (resource cache, swap helper, per-boundary swap
    calls, per-boundary cache primes). Per-boundary cache emits as
    `<script type="application/json" id="__purity_resources_N__">
-{"keyed":{...}}</script>` next to each `<template id="purity-s-N">`.
+   {"keyed":{...}}</script>` next to each `<template id="purity-s-N">`.
    Only the keyed map is serialised — positional indices inside a
    boundary collide with the shell's index space, so streamed
    boundaries' resources should opt into `resource(..., { key })`. The

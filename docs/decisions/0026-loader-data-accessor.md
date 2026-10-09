@@ -184,7 +184,7 @@ Concretely:
     the view itself doesn't `await`**.
   - The framework's component model doesn't support top-level
     `await` inside a view today — components are sync `(args) =>
-view`. Reactive `resource()` / `lazyResource` calls use signal
+    view`. Reactive `resource()` / `lazyResource` calls use signal
     accessors, not awaits. So the mitigation holds.
   - Future async-component support would need a per-request
     AsyncLocalStorage in Node or per-isolate request scope in

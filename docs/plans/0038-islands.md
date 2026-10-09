@@ -31,7 +31,7 @@ diverged.
   (P3) deliver the same byte savings.
 - **P3 delivered chunk splitting via user-side lazy thunks, not via
   the Vite plugin.** Each `() => import('./island.ts').then(m =>
-m.View)` entry is one Rollup dynamic import; Rollup's default
+  m.View)` entry is one Rollup dynamic import; Rollup's default
   chunk-splitting puts each in its own file. The auto-detection-via-
   plugin path from the original plan is a future enhancement that
   would just rewrite `mountIslands([X, Y])` calls into the lazy form.
@@ -365,11 +365,11 @@ small, specialised inline script. No new architecture.
 - `'idle'`: `requestIdleCallback(() => import(...), { timeout: 2000 })`,
   fallback `setTimeout(() => import(...), 1)` for Safari pre-17.
 - `'interact'`: `['pointerdown','focusin','keydown'].forEach(e =>
-el.addEventListener(e, h, { once: true, capture: true }))`, handler
+  el.addEventListener(e, h, { once: true, capture: true }))`, handler
   removes the other listeners and triggers the import.
 - `'media:(min-width: 768px)'`: `const mq = matchMedia('(min-width:
-768px)'); if (mq.matches) import(...); else mq.addEventListener(
-'change', e => e.matches && import(...), { once: true })`.
+  768px)'); if (mq.matches) import(...); else mq.addEventListener(
+  'change', e => e.matches && import(...), { once: true })`.
 
 **Acceptance.**
 
@@ -449,5 +449,5 @@ These don't gate any phase but should land alongside the work:
   changing the surface.
 - A `client:only` equivalent — the user can already produce this
   by wrapping the view in a `when(typeof window !== 'undefined',
-...)` gate inside the island. If real apps need an ergonomic
+  ...)` gate inside the island. If real apps need an ergonomic
   shortcut, file a follow-up.

@@ -96,7 +96,7 @@ Concretely:
     is preserved). Wrap in `Promise.resolve(…)` so sync returns
     are handled. Push the promise onto `pendingPromises`. The
     promise's `.then` writes `ssrCtx.resolvedDataByKey[key] =
-value` (and the `Errors` mirror on rejection).
+    value` (and the `Errors` mirror on rejection).
   - **Pass 2** — key present in `ssrCtx.resolvedDataByKey`. Call
     `r.mutate(value)` immediately so the lazyResource's `data`
     accessor returns the resolved value within the synchronous
@@ -125,7 +125,7 @@ value` (and the `Errors` mirror on rejection).
   pass, no promise is registered. That matches the lazy contract
   — the framework can't fetch on the user's behalf.
 - **No streaming-fetcher support.** The fetcher returns `T |
-Promise<T>`. Async iterators / ReadableStreams aren't recognised.
+  Promise<T>`. Async iterators / ReadableStreams aren't recognised.
   Apps that need streaming use `suspense()` (ADR 0006) inside the
   component, not loader-style pre-fetch.
 - **No cross-resource dependency tracking.** Each lazyResource is
@@ -157,7 +157,7 @@ Promise<T>`. Async iterators / ReadableStreams aren't recognised.
   data + `lazyResource` for imperative refetch without a
   different SSR story.
 - Composes with ADR 0023. The user's `when(() => stack.data(),
-…)` pattern (made SSR-safe by 0023) now sees `stack.data()`
+  …)` pattern (made SSR-safe by 0023) now sees `stack.data()`
   return real values on pass 2; the SSR markup includes the
   resolved view, not the suspense fallback.
 - ~30 LOC of new code; one new code path inside `r.fetch()`. No

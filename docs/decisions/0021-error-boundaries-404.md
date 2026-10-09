@@ -252,7 +252,7 @@ Concretely:
   surface is one field bigger.
 - `errorBoundary` is shipped as `LayoutEntry` (not its own type)
   because the shape is structurally identical (`{ filePath,
-importFn }`). Reads cleanly; risks a future divergence if
+  importFn }`). Reads cleanly; risks a future divergence if
   boundary entries grow extra metadata. Re-evaluate if so.
 
 **Neutral:**

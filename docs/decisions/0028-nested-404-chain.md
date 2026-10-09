@@ -82,13 +82,13 @@ Concretely:
   is walked by URL-prefix match.
 - **Per-entry shape**: each chain entry needs to carry the
   directory it covers. The plugin emits `{ filePath, importFn,
-dir }` where `dir` is the routes-relative directory (`''` for the
+  dir }` where `dir` is the routes-relative directory (`''` for the
   root `_404`). The existing `LayoutEntry` type widens with an
   optional `dir?: string` field; non-404 layout entries continue to
   omit it.
 - **Top-level `notFound`**: stays in the manifest output for
   backwards compatibility. When the chain has a root entry (`dir
-=== ''`), `notFound` is that entry (without the `dir` field for
+  === ''`), `notFound` is that entry (without the `dir` field for
   shape parity with ADR 0021's emission). When no root `_404`
   exists, both `notFoundChain` may still be non-empty (nested 404s
   without a root) and `notFound` is undefined.
@@ -96,7 +96,7 @@ dir }` where `dir` is the routes-relative directory (`''` for the
   - `asyncNotFound(entry: AsyncNotFoundEntry, options?)` — existing
     single-entry form, unchanged.
   - `asyncNotFound(chain: ReadonlyArray<AsyncNotFoundEntry>,
-options?)` — new chain form. Walks the chain in order; picks the
+    options?)` — new chain form. Walks the chain in order; picks the
     first entry whose `dir` is a prefix of the current path
     (`currentPath()`). Empty chain returns nothing (renders the
     fallback option if supplied, else nothing).

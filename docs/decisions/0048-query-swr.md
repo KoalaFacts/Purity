@@ -186,7 +186,7 @@ the module cache is page-lifetime as described above.
 **Negative:**
 
 - Module-level cache means tests need a reset hook (`@internal
-_resetQueryCache()` — same pattern as other module-state
+  _resetQueryCache()` — same pattern as other module-state
   signals).
 - First-call-wins on config is a footgun. Mitigated by dev-time
   warn on mismatch (same pattern as `broadcastSignal`).

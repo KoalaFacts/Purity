@@ -169,7 +169,7 @@ user decision. A six-line user loop closes the I/O side.
 
 - `concurrency: 1` deserialises the renders, matching what users
   expect for debugging or CI memory caps. `concurrency:
-Infinity` (the default) is fast for typical sites (< 1 000 routes)
+  Infinity` (the default) is fast for typical sites (< 1 000 routes)
   and easy to override.
 - Shell template uses `{{body}}` / `{{head}}` placeholders rather
   than HTML comment markers. Pragma: build-time templating is the

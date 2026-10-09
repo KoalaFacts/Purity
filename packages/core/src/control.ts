@@ -350,6 +350,12 @@ function disposeEntry<T>(entry: EachEntry<T>): void {
   entry.ctx.disposers = null;
 }
 
+function warnDuplicateKey(key: unknown, index: number): void {
+  console.warn(
+    `[Purity] each() duplicate key ${JSON.stringify(String(key))} at index ${index}; only the first row for this key is rendered. Ensure keyFn returns a unique value per item.`,
+  );
+}
+
 function canReplaceOwnedRange<T>(
   parent: Node,
   prevKeys: unknown[],
@@ -483,7 +489,14 @@ function reconcileEach<T>(
     const frag = document.createDocumentFragment();
     for (let i = 0; i < len; i++) {
       const item = items[i];
-      newKeys2[i] = getKey(item, i);
+      const key = getKey(item, i);
+      newKeys2[i] = key;
+      // Duplicate key: keep the first row only. Rendering a second entry
+      // would orphan the first one's DOM nodes and scope in keyToEntry.
+      if (keyToEntry.has(key)) {
+        warnDuplicateKey(key, i);
+        continue;
+      }
       const data = state(item);
       const { entry, content } = runEntryMapFn(mapFn, data, i, ownerCtx);
       if (content instanceof DocumentFragment) {
@@ -498,7 +511,7 @@ function reconcileEach<T>(
         entry.nodes = [tn];
         frag.appendChild(tn);
       }
-      keyToEntry.set(newKeys2[i], entry);
+      keyToEntry.set(key, entry);
     }
     parent.insertBefore(frag, endMarker);
     eachState.prevKeys = newKeys2;
@@ -514,17 +527,14 @@ function reconcileEach<T>(
     const key = getKey(item, i);
     newKeys[i] = key;
 
-    // Duplicate-key detection. When two items resolve to the same key, the
-    // second `newEntries.set` overwrites the first, the same entry's nodes
-    // get adopted by both insert points in the reorder loop, and a row
-    // visually disappears. The reuseCount also gets inflated past prevLen,
-    // throwing off the append/prepend heuristics. Warn once per render with
-    // the offending key so the caller can fix their keyFn — full dedupe
-    // would change semantics (the documented contract is "keys are unique").
+    // Duplicate key: keys are documented as unique, so this only warns. The
+    // first occurrence owns the entry; later occurrences reuse it without
+    // creating or reusing a second one. That keeps reuseCount counting
+    // distinct keys and means no entry is created and then orphaned in
+    // newEntries (its nodes and scope would otherwise leak).
     if (newEntries.has(key)) {
-      console.warn(
-        `[Purity] each() duplicate key ${JSON.stringify(String(key))} at index ${i}; rows after the first occurrence may corrupt. Ensure keyFn returns a unique value per item.`,
-      );
+      warnDuplicateKey(key, i);
+      continue;
     }
 
     const _existing = keyToEntry.get(key) as EachEntry<T> | undefined;
@@ -553,11 +563,12 @@ function reconcileEach<T>(
     return;
   }
 
-  if (reuseCount < prevLen) {
-    const newKeySet = new Set(newKeys);
+  // reuseCount counts distinct reused keys, so it is below keyToEntry.size
+  // exactly when some previous key was dropped.
+  if (reuseCount < keyToEntry.size) {
     for (let i = 0; i < prevLen; i++) {
       const key = prevKeys[i];
-      if (!newKeySet.has(key)) {
+      if (!newEntries.has(key)) {
         const entry = keyToEntry.get(key);
         if (entry) {
           for (let j = 0; j < entry.nodes.length; j++) {
@@ -2075,9 +2086,16 @@ export function list<T>(
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) {
         const item = items[i];
-        newKeys2[i] = getKey(item, i);
+        const key = getKey(item, i);
+        newKeys2[i] = key;
+        // Duplicate key: first row wins (see each()). A second entry would
+        // orphan the first one's node and scope in keyToEntry.
+        if (keyToEntry.has(key)) {
+          warnDuplicateKey(key, i);
+          continue;
+        }
         const entry = createEntry(item, i);
-        keyToEntry.set(newKeys2[i], entry);
+        keyToEntry.set(key, entry);
         frag.appendChild(entry.node);
       }
       parent.insertBefore(frag, endMarker);
@@ -2094,6 +2112,12 @@ export function list<T>(
       const item = items[i];
       const key = getKey(item, i);
       newKeys[i] = key;
+
+      // Duplicate key: first occurrence owns the entry (see each()).
+      if (newEntries.has(key)) {
+        warnDuplicateKey(key, i);
+        continue;
+      }
 
       const _existing = keyToEntry.get(key);
       if (_existing) {
@@ -2123,11 +2147,11 @@ export function list<T>(
       return;
     }
 
-    // Remove deleted
-    if (reuseCount < prevLen) {
-      const newKeySet = new Set(newKeys);
+    // Remove deleted. reuseCount counts distinct reused keys, so it is below
+    // keyToEntry.size exactly when some previous key was dropped.
+    if (reuseCount < keyToEntry.size) {
       for (let i = 0; i < prevLen; i++) {
-        if (!newKeySet.has(prevKeys[i])) {
+        if (!newEntries.has(prevKeys[i])) {
           const entry = keyToEntry.get(prevKeys[i]);
           if (!entry) continue;
           if (entry.node.parentNode) entry.node.parentNode.removeChild(entry.node);

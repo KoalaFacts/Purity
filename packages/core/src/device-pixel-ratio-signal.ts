@@ -11,6 +11,10 @@
 // Client: lazy singleton with the re-bind dance described above.
 // ---------------------------------------------------------------------------
 
+import {
+  attachMqlChange as attachMqlListener,
+  detachMqlChange as detachMqlListener,
+} from './mql-listener.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
@@ -18,35 +22,6 @@ let singleton: ComputedAccessor<number> | null = null;
 // Captured so reset can detach the listener from the currently-bound mql.
 let activeMql: MediaQueryList | null = null;
 let activeOnChange: (() => void) | null = null;
-
-// Legacy Safari (< 14) / Edge Legacy expose addListener/removeListener on
-// MediaQueryList but not the standard addEventListener('change', …). Bind
-// whichever the runtime advertises and return a detach() that does the same.
-function attachMqlListener(mql: MediaQueryList, onChange: () => void): boolean {
-  if (typeof mql.addEventListener === 'function') {
-    mql.addEventListener('change', onChange);
-    return true;
-  }
-  const legacy = mql as unknown as {
-    addListener?: (cb: () => void) => void;
-  };
-  if (typeof legacy.addListener === 'function') {
-    legacy.addListener(onChange);
-    return true;
-  }
-  return false;
-}
-
-function detachMqlListener(mql: MediaQueryList, onChange: () => void): void {
-  if (typeof mql.removeEventListener === 'function') {
-    mql.removeEventListener('change', onChange);
-    return;
-  }
-  const legacy = mql as unknown as {
-    removeListener?: (cb: () => void) => void;
-  };
-  legacy.removeListener?.(onChange);
-}
 
 /**
  * Reactive `window.devicePixelRatio` (ADR 0041).

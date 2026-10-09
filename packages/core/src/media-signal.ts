@@ -6,6 +6,7 @@
 //         `change` listener per query. Initial value is `mql.matches`.
 // ---------------------------------------------------------------------------
 
+import { attachMqlChange, detachMqlChange } from './mql-listener.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
@@ -16,41 +17,24 @@ const cache: Map<string, ComputedAccessor<boolean>> = new Map();
 // listener on the same target — leak.
 const listeners: Map<string, [MediaQueryList, () => void]> = new Map();
 
-// Legacy Safari (< 14) & Edge Legacy expose addListener/removeListener on
-// MediaQueryList but not addEventListener('change', …). Bind whichever the
-// runtime advertises; we never fall through both ways.
+// mediaSignal's detach must never throw — `_resetMediaSignalCache` stores
+// and calls it well after the originating `mediaSignal()` call, with no
+// caller left to react to a failure, so swallow it here instead.
 function bindMediaListener(
   mql: MediaQueryList,
   onChange: (e: MediaQueryListEvent) => void,
 ): () => void {
-  if (typeof mql.addEventListener === 'function') {
-    mql.addEventListener('change', onChange);
-    return () => {
-      try {
-        mql.removeEventListener('change', onChange);
-      } catch (err) {
-        console.error('[purity] mediaSignal: removeEventListener failed:', err);
-      }
-    };
+  if (!attachMqlChange(mql, onChange)) {
+    // No subscription API — accessor will still return the initial `matches`.
+    return () => {};
   }
-  // Legacy fallback. `addListener` is deprecated but lives forever on the
-  // platform so older browsers still need it.
-  const legacy = mql as unknown as {
-    addListener?: (cb: (e: MediaQueryListEvent) => void) => void;
-    removeListener?: (cb: (e: MediaQueryListEvent) => void) => void;
+  return () => {
+    try {
+      detachMqlChange(mql, onChange);
+    } catch (err) {
+      console.error('[purity] mediaSignal: detach failed:', err);
+    }
   };
-  if (typeof legacy.addListener === 'function') {
-    legacy.addListener(onChange);
-    return () => {
-      try {
-        legacy.removeListener?.(onChange);
-      } catch (err) {
-        console.error('[purity] mediaSignal: removeListener failed:', err);
-      }
-    };
-  }
-  // No subscription API — accessor will still return the initial `matches`.
-  return () => {};
 }
 
 /**

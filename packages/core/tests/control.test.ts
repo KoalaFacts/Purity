@@ -2204,3 +2204,132 @@ describe('duplicate keys — initial render, SSR and hydration', () => {
     }
   });
 });
+
+describe('duplicate keys — review follow-ups (hydration, virtual, listSSR, diagnostics)', () => {
+  type Row = { id: number; v: string };
+  const warnSpy = () => vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+  it('hydration adopts an SSR row at most once when distinct keys share a string form', async () => {
+    const warn = warnSpy();
+    try {
+      const host = document.createElement('ul');
+      host.innerHTML = '<!--e--><!--er:1--><li><!--[-->num<!--]--></li><!--/er--><!--/e-->';
+      document.body.appendChild(host);
+      const closeMarker = document.createComment('slot-close');
+      host.appendChild(closeMarker);
+      const context = new ComponentContext();
+      const items = [
+        { k: 1, t: 'num' },
+        { k: '1', t: 'str' },
+      ];
+      const deferred: DeferredEach<{ k: unknown; t: string }> = {
+        __purity_deferred_each__: true,
+        listAccessor: items,
+        mapFn: (item) => html`<li>${() => item().t}</li>`,
+        keyFn: (item) => item.k,
+        options: {},
+      };
+      pushContext(context);
+      try {
+        inflateDeferredEach(deferred, Array.from(host.childNodes).slice(0, -1), closeMarker);
+      } finally {
+        popContext();
+      }
+      await tick();
+      expect(Array.from(host.querySelectorAll('li')).map((li) => li.textContent)).toEqual([
+        'num',
+        'str',
+      ]);
+      for (const dispose of context.disposers ?? []) dispose();
+      host.remove();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('virtual each() never renders a later duplicate whose first occurrence is offscreen', async () => {
+    const warn = warnSpy();
+    try {
+      // Index 70 duplicates key 10, whose first occurrence (index 10) is far
+      // above the viewport. Scrolling to row 50 brings index 70 into the
+      // window; it must not render (the first occurrence owns the key).
+      const items: Row[] = Array.from({ length: 100 }, (_, i) => ({ id: i, v: String(i) }));
+      items[70] = { id: 10, v: '70' };
+      const container = document.createElement('div');
+      container.style.cssText = 'height:96px;overflow-y:auto';
+      Object.defineProperty(container, 'clientHeight', { configurable: true, value: 96 });
+      container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 96);
+      const fragment = each(
+        items,
+        (item: () => Row) => {
+          const row = document.createElement('div');
+          row.textContent = item().v;
+          return row;
+        },
+        (item: Row) => item.id,
+        { virtual: true },
+      );
+      document.body.appendChild(container);
+      container.appendChild(fragment);
+      await tick();
+      await tick();
+      const topSpacer = container.querySelector<HTMLElement>('[data-purity-window-spacer]')!;
+      topSpacer.getBoundingClientRect = () => new DOMRect(0, -container.scrollTop, 200, 0);
+      container.scrollTop = 32 * 66; // EACH_WINDOW_ESTIMATED_ROW_HEIGHT rows
+      container.dispatchEvent(new Event('scroll'));
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      const rowTexts = Array.from(container.children)
+        .filter((el) => !el.hasAttribute('data-purity-window-spacer'))
+        .map((el) => el.textContent);
+      // Key 10 is only in the window through the later duplicate, so it must
+      // not appear; the unique sequence continues with the original 71.
+      expect(rowTexts).toContain('66');
+      expect(rowTexts).toContain('71');
+      expect(rowTexts).not.toContain('10');
+      expect(rowTexts).not.toContain('70');
+      container.remove();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('listSSR uses the options key (not the 4th argument) when an options object is passed, like list()', () => {
+    const warn = warnSpy();
+    try {
+      const out = listSSR(
+        'li',
+        [
+          { id: 1, k: 'x', v: 'a' },
+          { id: 2, k: 'x', v: 'b' },
+        ],
+        { text: (r: Row) => r.v, key: (r: Row) => r.id },
+        (r: { k: string }) => r.k,
+      );
+      expect(out.__purity_ssr_html__).toBe('<!--l--><li>a</li><li>b</li><!--/l-->');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('a duplicate key that is not String()-convertible warns without aborting the render', () => {
+    const warn = warnSpy();
+    try {
+      const key = Object.create(null) as object;
+      const items = state<object[]>([key, key]);
+      const c = document.createElement('ul');
+      expect(() =>
+        c.appendChild(
+          each(
+            () => items(),
+            () => document.createElement('li'),
+          ),
+        ),
+      ).not.toThrow();
+      expect(c.querySelectorAll('li')).toHaveLength(1);
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

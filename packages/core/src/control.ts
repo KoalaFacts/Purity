@@ -350,10 +350,40 @@ function disposeEntry<T>(entry: EachEntry<T>): void {
   entry.ctx.disposers = null;
 }
 
+function describeKey(key: unknown): string {
+  // String(key) throws for null-prototype objects; a diagnostic must not abort
+  // the render, so fall back to the type name.
+  try {
+    return JSON.stringify(String(key));
+  } catch {
+    return `<${typeof key}>`;
+  }
+}
+
 function warnDuplicateKey(key: unknown, index: number): void {
   console.warn(
-    `[Purity] each() duplicate key ${JSON.stringify(String(key))} at index ${index}; only the first row for this key is rendered. Ensure keyFn returns a unique value per item.`,
+    `[Purity] each() duplicate key ${describeKey(key)} at index ${index}; only the first row for this key is rendered. Ensure keyFn returns a unique value per item.`,
   );
+}
+
+/**
+ * Returns the items with later duplicates removed (first occurrence wins).
+ * Returns the input array itself when no key repeats.
+ */
+function firstOccurrenceItems<T>(items: T[], getKey: (item: T, index: number) => unknown): T[] {
+  const seen = new Set<unknown>();
+  let out: T[] | undefined;
+  for (let i = 0; i < items.length; i++) {
+    const key = getKey(items[i], i);
+    if (seen.has(key)) {
+      warnDuplicateKey(key, i);
+      out ??= items.slice(0, i);
+      continue;
+    }
+    seen.add(key);
+    out?.push(items[i]);
+  }
+  return out ?? items;
 }
 
 function canReplaceOwnedRange<T>(
@@ -1223,7 +1253,7 @@ function createEachWindowController<T>(
   let requestEachWindowUpdate: (() => void) | undefined;
 
   const disposeItems = watch(() => {
-    items = getList() || [];
+    items = firstOccurrenceItems(getList() || [], getKey);
     heights.rebuild(items, getKey);
     itemsVersion({});
   });
@@ -1563,7 +1593,12 @@ export function inflateDeferredEach<T>(
     // Items match SSR rows by `String(key)` — same coercion that eachSSR's
     // encoder applies (round-trip through encodeURIComponent / decode).
     const ssrRow = ssrByKey.get(String(key));
-    if (ssrRow) adoptedRows.add(ssrRow);
+    if (ssrRow) {
+      adoptedRows.add(ssrRow);
+      // Consume the row: a distinct key with the same string form must not
+      // adopt the same DOM a second time.
+      ssrByKey.delete(String(key));
+    }
     const data = state(item);
     const ctx: Scope = { disposers: null };
     pushContext(ctx);
@@ -1607,7 +1642,9 @@ export function inflateDeferredEach<T>(
         // factory builds fresh DOM under that fragment via the same path
         // used for top-level mismatched-slot recovery; we then move it in.
         const frag = document.createDocumentFragment();
-        inflateDeferred(content as DeferredTemplate, frag);
+        // createIfEmpty: the fragment is empty, so build fresh DOM instead of
+        // hydrating against nothing.
+        inflateDeferred(content as DeferredTemplate, frag, false, true);
         nodes = Array.from(frag.childNodes);
         parent.insertBefore(frag, endMarker);
       } else if (content instanceof DocumentFragment) {
@@ -2378,11 +2415,12 @@ export function listSSR<T>(
     return markSSRHtml('<!--l--><!--/l-->');
   }
   const items = (typeof listAccessor === 'function' ? listAccessor() : listAccessor) || [];
-  // Same key resolution as list(); used only to drop duplicate rows.
-  const getKey =
-    _keyFn ??
-    (typeof textOrOptions === 'function' ? undefined : textOrOptions.key) ??
-    ((item: T) => item as unknown);
+  // Same key resolution as list(): an options object supplies its own key and
+  // ignores the 4th argument.
+  const getKey: (item: T, index: number) => unknown =
+    typeof textOrOptions === 'function'
+      ? (_keyFn ?? ((item: T) => item as unknown))
+      : (textOrOptions.key ?? ((item: T) => item as unknown));
   const seenKeys = new Set<unknown>();
   let getText: ((item: T, index: number) => string) | undefined;
   let getClass: ((item: T, index: number) => string) | undefined;

@@ -27,7 +27,8 @@ import { getSSRRenderContext } from './ssr-context.ts';
  *   const req = getRequest();
  *   if (!req) return; // client-side render
  *   const url = new URL(req.url);
- *   head(html`<link rel="canonical" href="${url.origin}${url.pathname}">`);
+ *   const canonical = url.origin + url.pathname;
+ *   head(html`<link rel="canonical" href="${canonical}">`);
  *
  *   const lang = req.headers.get('accept-language')?.split(',')[0] ?? 'en';
  *   head(html`<meta http-equiv="content-language" content="${lang}">`);

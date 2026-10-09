@@ -144,6 +144,21 @@ describe('AOT output runs correctly under jsdom', () => {
     }
   });
 
+  it.each([false, true])(
+    'compiles a whole-value binding example kept in a dependency JSDoc (ssr=%s)',
+    (ssr) => {
+      // Dev pre-bundles keep JSDoc, so the plugin sees examples from library comments.
+      const code = [
+        "import { html } from '@purityjs/core';",
+        '/**',
+        ' * head(html`<link rel="canonical" href="${canonical}">`);',
+        ' */',
+        'export const view = (canonical) => html`<p>ok</p>`;',
+      ].join('\n');
+      expect(() => plugin.transform(code, 'dep.js', { ssr })).not.toThrow();
+    },
+  );
+
   it.each([false, true])('keeps full dynamic attribute bindings compiling (ssr=%s)', (ssr) => {
     const result = plugin.transform(
       'import { html } from \'@purityjs/core\'; const view = html`<a title=${t} class="x y" data-q="${q}"></a>`;',

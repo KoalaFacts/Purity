@@ -11,6 +11,7 @@
     "web-components"
   ],
   "license": "MIT",
+  "sideEffects": false,
   "author": "KoalaFacts",
   "repository": {
     "type": "git",

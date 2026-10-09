@@ -352,6 +352,48 @@ describe('devicePixelRatioSignal (ADR 0041)', () => {
     expect(mockMqls.has('(resolution: 3dppx)')).toBe(true);
   });
 
+  it('does not recurse into a stack overflow when a persistently-failing replacement also fires onChange synchronously', () => {
+    // Combines two adversarial behaviors from the SAME attach call: the
+    // replacement fires onChange synchronously (deferring via
+    // settling/pendingRecheck, per the test above) AND then throws. DPR
+    // never actually changes between attempts here and this mql always
+    // fails the same way — a `finally` that unconditionally retried on
+    // `pendingRecheck` would retry the identical failing attach forever.
+    setDpr(1);
+    const s = devicePixelRatioSignal();
+    expect(s()).toBe(1);
+    const oneDppx = mockMqls.get('(resolution: 1dppx)')!;
+
+    const originalMm = window.matchMedia;
+    (window as unknown as { matchMedia: (q: string) => MediaQueryList }).matchMedia = (
+      q: string,
+    ) => {
+      const m = originalMm(q);
+      if (q === '(resolution: 2dppx)') {
+        const origAdd = m.addEventListener.bind(m);
+        (m as unknown as { addEventListener: typeof m.addEventListener }).addEventListener = ((
+          t: 'change',
+          cb: (e: MediaQueryListEvent) => void,
+        ) => {
+          origAdd(t, cb);
+          cb({ matches: false, media: q } as MediaQueryListEvent);
+          throw new Error('always fails');
+        }) as typeof m.addEventListener;
+      }
+      return m;
+    };
+
+    setDpr(2);
+    expect(() => oneDppx.setMatches(false)).not.toThrow();
+    (window as unknown as { matchMedia: typeof window.matchMedia }).matchMedia = originalMm;
+
+    // Rebind never succeeds (2dppx always throws): value stays at the old
+    // DPR, old listener stays live, and the deferred recheck triggered by
+    // the synchronous fire must not retry the identical failing attach.
+    expect(s()).toBe(1);
+    expect(oneDppx.listeners.length).toBe(1);
+  });
+
   it('does not infinite-loop when the change handler re-enters synchronously', () => {
     setDpr(1);
     const s = devicePixelRatioSignal();

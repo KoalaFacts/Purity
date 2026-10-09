@@ -59,10 +59,14 @@ export interface MqlBinding {
  * but a throw from EITHER property read (a throwing getter, not just a
  * throwing method call) resolves to `false` instead of propagating — see
  * point 4 above. */
-function isCompletePair(getAdd: () => unknown, getRemove: () => unknown): boolean {
+function isCompletePair(label: string, getAdd: () => unknown, getRemove: () => unknown): boolean {
   try {
     return typeof getAdd() === 'function' && typeof getRemove() === 'function';
-  } catch {
+  } catch (err) {
+    console.error(
+      `[purity] mql-listener: ${label} API detection threw, treating as unavailable:`,
+      err,
+    );
     return false;
   }
 }
@@ -81,6 +85,7 @@ export function attachMqlChange(
 ): boolean {
   if (
     isCompletePair(
+      'modern',
       () => mql.addEventListener,
       () => mql.removeEventListener,
     )
@@ -95,6 +100,7 @@ export function attachMqlChange(
   };
   if (
     isCompletePair(
+      'legacy',
       () => legacy.addListener,
       () => legacy.removeListener,
     )

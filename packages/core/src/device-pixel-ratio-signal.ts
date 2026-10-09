@@ -81,6 +81,17 @@ export function devicePixelRatioSignal(): ComputedAccessor<number> {
 
   const processChange = (): void => {
     settling = true;
+    // Tracks whether THIS call actually committed a new value — only a
+    // call that progressed should trigger an automatic recheck afterward.
+    // Without this, a target that both fires onChange synchronously AND
+    // fails every attach attempt (setting `pendingRecheck` via the
+    // synchronous fire, then hitting a failure `return` below) would have
+    // its `finally` immediately retry the identical failing operation
+    // forever — a real stack overflow, not just a dropped update. Losing
+    // a deferred recheck specifically in the already-doubly-adversarial
+    // "fires synchronously AND the attach then fails" combination is an
+    // accepted, deliberate tradeoff against that crash.
+    let progressed = false;
     try {
       const next =
         typeof window.devicePixelRatio === 'number' && window.devicePixelRatio > 0
@@ -109,6 +120,7 @@ export function devicePixelRatioSignal(): ComputedAccessor<number> {
       // (real browsers cache per query string; jsdom may not), don't restack
       // a listener on it — just commit the state.
       if (nextMql === mql) {
+        progressed = true;
         inner(next);
         return;
       }
@@ -136,8 +148,14 @@ export function devicePixelRatioSignal(): ComputedAccessor<number> {
         if (maybePartial && maybePartial !== prevDetach) {
           try {
             maybePartial();
-          } catch {
-            /* best-effort cleanup of a possibly-partial registration */
+          } catch (cleanupErr) {
+            // Never silently catch: the attach already failed, and now its
+            // best-effort cleanup failed too — log both so a leaked
+            // listener at least leaves a diagnostic trail.
+            console.error(
+              '[purity] devicePixelRatioSignal: cleanup of a partially-registered replacement also failed:',
+              cleanupErr,
+            );
           }
         }
         console.error(
@@ -174,12 +192,24 @@ export function devicePixelRatioSignal(): ComputedAccessor<number> {
         );
       }
       mql = nextMql;
+      progressed = true;
       inner(next);
     } finally {
       settling = false;
       if (pendingRecheck) {
         pendingRecheck = false;
-        processChange();
+        if (progressed) {
+          processChange();
+        } else {
+          // This attempt failed (matchMedia/attach threw, or no usable
+          // API) and a reentrant call arrived during it anyway. Retrying
+          // the identical failing operation immediately would recurse
+          // forever on a persistently-hostile target — see `progressed`'s
+          // doc comment. Log the drop rather than silently losing it.
+          console.error(
+            '[purity] devicePixelRatioSignal: dropping a deferred recheck after a failed attempt (would otherwise retry the same failure indefinitely).',
+          );
+        }
       }
     }
   };

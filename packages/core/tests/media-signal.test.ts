@@ -279,6 +279,65 @@ describe('mediaSignal — audit-v2 hardening', () => {
     expect(modernRemoveCalls).toBe(0);
   });
 
+  it('falls back to a complete legacy pair when the modern pair is incomplete', () => {
+    // Partial polyfill: exposes modern `addEventListener` but NOT
+    // `removeEventListener`, alongside a complete legacy `addListener`/
+    // `removeListener` pair. Choosing the modern branch just because
+    // `addEventListener` exists would attach successfully but return a
+    // detach that throws (`removeEventListener` isn't a function) when
+    // finally called — the branch choice must require the WHOLE pair to be
+    // callable, not just the add half.
+    let legacyListeners: ((e: MediaQueryListEvent) => void)[] = [];
+    let modernAddCalls = 0;
+    const partialMql = {
+      media: '(min-width: 500px)',
+      matches: false,
+      addEventListener() {
+        modernAddCalls++;
+      },
+      addListener(cb: (e: MediaQueryListEvent) => void) {
+        legacyListeners.push(cb);
+      },
+      removeListener(cb: (e: MediaQueryListEvent) => void) {
+        legacyListeners = legacyListeners.filter((x) => x !== cb);
+      },
+    };
+    (window as unknown as { matchMedia: (q: string) => unknown }).matchMedia = () => partialMql;
+    mediaSignal('(min-width: 500px)');
+    expect(modernAddCalls).toBe(0);
+    expect(legacyListeners.length).toBe(1);
+    expect(() => _resetMediaSignalCache()).not.toThrow();
+    expect(legacyListeners.length).toBe(0);
+  });
+
+  it('falls back to a working legacy pair when a modern property is a throwing getter', () => {
+    // Detection itself (not just a subsequent call) can be hostile: a
+    // throwing GETTER on `addEventListener` makes even `typeof
+    // mql.addEventListener` throw, not just a call to it. Detection must
+    // swallow that and still find the complete legacy pair underneath,
+    // rather than letting the probe's own exception propagate and leave
+    // the signal entirely unbound.
+    let legacyListeners: ((e: MediaQueryListEvent) => void)[] = [];
+    const hostileMql = {
+      media: '(min-width: 500px)',
+      matches: false,
+      get addEventListener(): never {
+        throw new Error('hostile getter');
+      },
+      addListener(cb: (e: MediaQueryListEvent) => void) {
+        legacyListeners.push(cb);
+      },
+      removeListener(cb: (e: MediaQueryListEvent) => void) {
+        legacyListeners = legacyListeners.filter((x) => x !== cb);
+      },
+    };
+    (window as unknown as { matchMedia: (q: string) => unknown }).matchMedia = () => hostileMql;
+    expect(() => mediaSignal('(min-width: 500px)')).not.toThrow();
+    expect(legacyListeners.length).toBe(1);
+    expect(() => _resetMediaSignalCache()).not.toThrow();
+    expect(legacyListeners.length).toBe(0);
+  });
+
   it('isolates a throwing addEventListener — accessor still returns initial matches', () => {
     // Hostile MQL: addEventListener blows up. The mediaSignal must
     // (a) not crash, (b) return a working accessor seeded at mql.matches,

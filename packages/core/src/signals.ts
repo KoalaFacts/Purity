@@ -349,6 +349,10 @@ function updateValue(startNode: ComputedNode): void {
       idx: 0,
     },
   ];
+  // Nodes with a frame on the stack. A self-referential computed lists itself
+  // as a source; descending into it again would push frames forever. Created
+  // lazily at the first descent, when the stack holds only startNode.
+  let onStack: Set<ComputedNode> | null = null;
 
   while (stack.length > 0) {
     const frame = stack[stack.length - 1];
@@ -362,16 +366,22 @@ function updateValue(startNode: ComputedNode): void {
         if (sc.disposed) {
           sc.status = STATUS_CLEAN;
         } else if (sc.status === STATUS_CHECK) {
-          // Resolve sc before we can know whether it actually changed —
-          // push a frame for it instead of recursing into updateValue(sc).
-          stack.push({
-            node: sc,
-            sources: sc.sources ?? [],
-            versions: sc.sourceVersions ?? [],
-            idx: 0,
-          });
-          descended = true;
-          break;
+          // A source already being resolved (a cycle) cannot be resolved again;
+          // compare its version as it stands instead of descending.
+          const onPath = onStack !== null ? onStack.has(sc) : sc === node;
+          if (!onPath) {
+            // Resolve sc before we can know whether it actually changed —
+            // push a frame for it instead of recursing into updateValue(sc).
+            (onStack ??= new Set(stack.map((f) => f.node))).add(sc);
+            stack.push({
+              node: sc,
+              sources: sc.sources ?? [],
+              versions: sc.sourceVersions ?? [],
+              idx: 0,
+            });
+            descended = true;
+            break;
+          }
         } else if (sc.status !== STATUS_CLEAN) {
           runComputed(sc);
         }
@@ -390,6 +400,7 @@ function updateValue(startNode: ComputedNode): void {
     } else {
       runComputed(node);
     }
+    onStack?.delete(node);
     stack.pop();
   }
 }

@@ -1,3 +1,6 @@
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { ComponentContext, popContext, pushContext } from '../src/component.ts';
 import { batch, compute, state, watch, type ComputedAccessor } from '../src/signals.ts';
@@ -685,6 +688,60 @@ describe('flush — cross-effect feedback loops', () => {
     a();
     b();
     errSpy.mockRestore();
+  });
+
+  it('a direct read of a self-referential computed returns after a loop through it is cut', () => {
+    // Runs in a child process so a hang fails this test at the timeout instead
+    // of blocking the test run. A self-referential compute lists itself as a
+    // source; once the loop cut demotes it to CHECK, a direct read must still
+    // resolve it.
+    const script = `
+      (async () => {
+        const { compute, state, watch } = await import(${JSON.stringify(
+          pathToFileURL(join(import.meta.dirname, '..', 'src', 'signals.ts')).href,
+        )});
+        const tick = () => new Promise((r) => queueMicrotask(r));
+        console.error = () => {};
+        const s1 = state(0);
+        const s2 = state(0);
+        let c;
+        c = compute(() => (c ? (c() ?? 0) : 0) * 0 + s1());
+        const PROBE = 1000000;
+        let runs = 0;
+        let live = true;
+        const step = () => live && ++runs < PROBE;
+        let seen = -1;
+        const a = watch(() => {
+          const v = c();
+          seen = v;
+          if (step()) s2(v + 1);
+        });
+        const b = watch(() => {
+          const v = s2();
+          if (step()) s1(v + 1);
+        });
+        await tick();
+        const cut = runs < PROBE;
+        live = false;
+        const direct = c();
+        const expected = s1.peek();
+        s1(500);
+        await tick();
+        process.stdout.write(JSON.stringify({ cut, direct, expected, seen }));
+        a();
+        b();
+      })();
+    `;
+    const res = spawnSync(process.execPath, ['--experimental-strip-types', '-e', script], {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    expect(res.error).toBeUndefined();
+    expect(res.signal).toBeNull();
+    const out = JSON.parse(res.stdout);
+    expect(out.cut).toBe(true);
+    expect(out.direct).toBe(out.expected);
+    expect(out.seen).toBe(500);
   });
 });
 

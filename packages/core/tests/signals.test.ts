@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { ComponentContext, popContext, pushContext } from '../src/component.ts';
-import { batch, compute, state, watch } from '../src/signals.ts';
+import { batch, compute, state, watch, type ComputedAccessor } from '../src/signals.ts';
 
 describe('state', () => {
   it('reads the initial value', () => {
@@ -1065,6 +1065,58 @@ describe('compute — error caching', () => {
     expect(runs).toBe(3);
     dispose();
     errSpy.mockRestore();
+  });
+
+  it('recovers a self-referential compute once the failing source is fixed', () => {
+    const fail = state(true);
+    const boom = new Error('boom');
+    let c: ComputedAccessor<number> | undefined;
+    c = compute(() => {
+      if (fail()) throw boom;
+      // Self-read during recompute sees the previous value, not the cached error.
+      return (c?.() ?? 0) + 1;
+    });
+    expect(() => c!()).toThrow(boom);
+    fail(false);
+    expect(c!()).toBe(1);
+  });
+
+  it('a watch() whose initial run throws is disposed and never re-runs', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const src = state(1);
+    const boom = new Error('boom');
+    const c = compute(() => {
+      if (src() === 1) throw boom;
+      return src();
+    });
+    let runs = 0;
+    expect(() =>
+      watch(() => {
+        runs++;
+        c();
+      }),
+    ).toThrow(boom);
+    expect(runs).toBe(1);
+    src(2);
+    await tick();
+    expect(runs).toBe(1);
+    errSpy.mockRestore();
+  });
+
+  it('a watch() whose initial run throws directly is disposed and never re-runs', async () => {
+    const src = state(0);
+    let runs = 0;
+    expect(() =>
+      watch(() => {
+        runs++;
+        src();
+        throw new Error('boom');
+      }),
+    ).toThrow('boom');
+    expect(runs).toBe(1);
+    src(1);
+    await tick();
+    expect(runs).toBe(1);
   });
 
   it('does not re-run downstream watchers when a compute recomputes to an unchanged value', async () => {

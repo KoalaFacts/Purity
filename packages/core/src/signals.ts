@@ -443,6 +443,12 @@ function runComputed(node: ComputedNode): void {
   // propagating the throw to flush(), which reports it per effect.
   let thrown = false;
   let thrownValue: unknown;
+  // Suspend the cached error for the attempt: a self-read inside fn() sees the
+  // previous value (as it did before errors were cached) instead of rethrowing
+  // the old error, so a self-referential compute can recover. The outcome is
+  // reinstated below only if this attempt throws again.
+  const prevError = node.error;
+  node.error = null;
   for (;;) {
     activeListener = node;
     activeSourceIdx = 0;
@@ -507,11 +513,10 @@ function runComputed(node: ComputedNode): void {
 
   let changed: boolean;
   if (thrown) {
-    changed = node.error === null || !Object.is(node.error.value, thrownValue);
-    if (changed) node.error = { value: thrownValue };
+    changed = prevError === null || !Object.is(prevError.value, thrownValue);
+    node.error = changed ? { value: thrownValue } : prevError;
   } else {
-    changed = node.error !== null || !Object.is(node.value, nextValue);
-    node.error = null;
+    changed = prevError !== null || !Object.is(node.value, nextValue);
     node.value = nextValue;
   }
   // Effects: force CLEAN. An effect that synchronously writes its own dep was
@@ -765,7 +770,16 @@ function _effect(fn: () => undefined | Dispose): Dispose {
   // Effects run their initial body eagerly (synchronous) — the templates
   // and tests rely on this to set up DOM bindings before the user code
   // continues.
-  updateValue(node);
+  // A throwing initial run never returns a disposer to the caller, so drop the
+  // sources it managed to read before the throw; otherwise the unreachable
+  // effect stays subscribed and re-runs on later writes.
+  try {
+    updateValue(node);
+  } catch (e) {
+    node.disposed = true;
+    disconnectFromSources(node);
+    throw e;
+  }
 
   const dispose = (): void => {
     if (node.disposed) return;

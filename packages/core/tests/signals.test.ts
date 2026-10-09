@@ -629,6 +629,63 @@ describe('flush — cross-effect feedback loops', () => {
     for (const d of disposers) d();
     errSpy.mockRestore();
   });
+
+  it('does not treat a large fan-out of distinct watchers as a loop', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = state(0);
+    const N = 100_001;
+    let observed = 0;
+    const disposers: Array<() => void> = [];
+    for (let k = 0; k < N; k++) {
+      disposers.push(
+        watch(() => {
+          if (s() === 1) observed++;
+        }),
+      );
+    }
+    s(1);
+    await tick();
+    expect(observed).toBe(N);
+    expect(errSpy).not.toHaveBeenCalled();
+    for (const d of disposers) d();
+    errSpy.mockRestore();
+  });
+
+  it('keeps a watcher live after a loop through computed intermediaries is cut', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s1 = state(0);
+    const s2 = state(0);
+    const c1 = compute(() => s1());
+    // Same probe idea as above; `live` lets the test switch the loop off
+    // before the recovery write.
+    const PROBE = 1_000_000;
+    let runs = 0;
+    let live = true;
+    const step = (): boolean => live && ++runs < PROBE;
+    let seen = -1;
+    const a = watch(() => {
+      const v = c1();
+      seen = v;
+      if (step()) s2(v + 1);
+    });
+    const b = watch(() => {
+      const v = s2();
+      if (step()) s1(v + 1);
+    });
+    await tick();
+    expect(runs).toBeLessThan(PROBE);
+    expect(errSpy.mock.calls.some(([msg]) => String(msg).includes('feedback loop'))).toBe(true);
+
+    // A later write to s1 must reach A through c1 and re-run it.
+    live = false;
+    seen = -1;
+    s1(500);
+    await tick();
+    expect(seen).toBe(500);
+    a();
+    b();
+    errSpy.mockRestore();
+  });
 });
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));

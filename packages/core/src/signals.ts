@@ -58,6 +58,9 @@ interface ComputedNode {
    *  Boxed so a thrown `undefined`/`null` is still distinguishable from "no error".
    *  Checked on the read path only when set; cleared by the next successful run. */
   error: { value: unknown } | null;
+  /** Effects: the flush that last counted a run of this node, and how many runs it has counted in that flush. */
+  flushId: number;
+  flushRuns: number;
 }
 
 type AnyNode = StateNode<unknown> | ComputedNode;
@@ -69,10 +72,14 @@ let batchDepth = 0;
 let microtaskScheduled = false;
 const pendingEffects: ComputedNode[] = [];
 
-// Effect runs allowed in one flush. A legitimate flush runs each dirtied effect
-// about once, so this only trips on a cross-effect feedback loop (A writes what
-// B reads and vice versa), which would otherwise spin forever inside one flush.
-const MAX_FLUSH_RUNS = 100_000;
+// Re-runs allowed for one effect within one flush. A flush normally runs each
+// dirtied effect once; a second or third run comes from an upstream effect
+// writing again in the same cascade. 1000 is far beyond any such chain, and a
+// feedback loop reaches it in well under a millisecond per cycle, so it trips
+// quickly. Trade-off: one effect fed by more than 1000 separate writes inside a
+// single flush would trip; that is treated as a loop.
+const MAX_EFFECT_REPEATS = 1000;
+let flushSeq = 0;
 const MAX_EFFECT_DEPTH = 100;
 let effectDepth = 0;
 
@@ -526,7 +533,7 @@ function runComputed(node: ComputedNode): void {
   // Effects: force CLEAN. An effect that synchronously writes its own dep was
   // demoted to DIRTY and re-enqueued by markDirty; the designed semantics are
   // "run once, the queued re-run is skipped because status is now CLEAN".
-  // Cross-effect feedback loops are bounded by MAX_FLUSH_RUNS in flush().
+  // Cross-effect feedback loops are bounded by MAX_EFFECT_REPEATS in flush().
   // Computes already converged to CLEAN in the loop above.
   if (node.isEffect) node.status = STATUS_CLEAN;
   if (changed) {
@@ -566,25 +573,24 @@ function flush(): void {
   // codebase handle throws (resource error, optimistic onSettle, lifecycle
   // hooks, …). The outer try/finally guarantees the queue is cleared
   // regardless.
-  let runs = 0;
+  const id = ++flushSeq;
   try {
     let i = 0;
     while (i < pendingEffects.length) {
       const e = pendingEffects[i++];
       if (e.disposed || e.status === STATUS_CLEAN) continue;
-      if (++runs > MAX_FLUSH_RUNS) {
-        // Feedback loop: stop it here. Effects still queued were marked DIRTY
-        // or CHECK and would never be re-queued (markDirty skips them), so
-        // reset them to CLEAN so the next write to their sources enqueues them.
-        for (let j = i - 1; j < pendingEffects.length; j++) {
-          pendingEffects[j].status = STATUS_CLEAN;
-        }
+      if (e.flushId !== id) {
+        e.flushId = id;
+        e.flushRuns = 0;
+      }
+      if (++e.flushRuns > MAX_EFFECT_REPEATS) {
         console.error(
-          '[Purity] effect feedback loop detected: more than ' +
-            MAX_FLUSH_RUNS +
-            ' effect runs in one flush. Effects are writing signals that other ' +
+          '[Purity] effect feedback loop detected: an effect re-ran more than ' +
+            MAX_EFFECT_REPEATS +
+            ' times in one flush. Effects are writing signals that other ' +
             'effects read in a cycle; the remaining queued effects did not run.',
         );
+        settleAfterLoop(i - 1);
         break;
       }
       try {
@@ -602,6 +608,33 @@ function flush(): void {
     }
   } finally {
     pendingEffects.length = 0;
+  }
+}
+
+// Called when flush() cuts a feedback loop. Drops the queued effects from
+// `from` onward and makes their upstream computeds re-checkable. markDirty
+// skips nodes already DIRTY, so a computed left DIRTY would swallow the next
+// write to its source and its watcher would stay stale for good. Demoting the
+// DIRTY/CHECK ancestors to CHECK (not CLEAN) keeps them correct: a read
+// re-verifies their sources, and a write re-invalidates them.
+function settleAfterLoop(from: number): void {
+  const stack: ComputedNode[] = [];
+  for (let j = from; j < pendingEffects.length; j++) {
+    const e = pendingEffects[j];
+    e.status = STATUS_CLEAN;
+    if (e.sources !== null) {
+      for (const src of e.sources) if (src.fn !== null) stack.push(src);
+    }
+  }
+  const seen = new Set<ComputedNode>();
+  while (stack.length > 0) {
+    const c = stack.pop()!;
+    if (c.status === STATUS_CLEAN || seen.has(c)) continue;
+    seen.add(c);
+    c.status = STATUS_CHECK;
+    if (c.sources !== null) {
+      for (const src of c.sources) if (src.fn !== null) stack.push(src);
+    }
   }
 }
 
@@ -746,6 +779,8 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
     isEffect: false,
     disposed: false,
     error: null,
+    flushId: 0,
+    flushRuns: 0,
   };
   trackNode(node);
 
@@ -784,6 +819,8 @@ function _effect(fn: () => undefined | Dispose): Dispose {
     isEffect: true,
     disposed: false,
     error: null,
+    flushId: 0,
+    flushRuns: 0,
   };
   trackNode(node);
 

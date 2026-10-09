@@ -248,6 +248,37 @@ describe('mediaSignal — audit-v2 hardening', () => {
     expect(sig()).toBe(false);
   });
 
+  it('detaches through the SAME API chosen at attach time, not whichever remove method also exists', () => {
+    // Hostile/partial MQL: exposes legacy `addListener` (no `addEventListener`,
+    // so attach goes through the legacy branch) AND a callable modern
+    // `removeEventListener` alongside legacy `removeListener`. A detach that
+    // re-derives its own branch (e.g. "prefer removeEventListener if it
+    // exists") would call the API that was never actually subscribed to,
+    // leaving the real legacy listener attached forever — this pins that
+    // detach instead uses the branch paired with the attach that ran.
+    let legacyListeners: ((e: MediaQueryListEvent) => void)[] = [];
+    let modernRemoveCalls = 0;
+    const hostileMql = {
+      media: '(min-width: 500px)',
+      matches: false,
+      addListener(cb: (e: MediaQueryListEvent) => void) {
+        legacyListeners.push(cb);
+      },
+      removeListener(cb: (e: MediaQueryListEvent) => void) {
+        legacyListeners = legacyListeners.filter((x) => x !== cb);
+      },
+      removeEventListener() {
+        modernRemoveCalls++;
+      },
+    };
+    (window as unknown as { matchMedia: (q: string) => unknown }).matchMedia = () => hostileMql;
+    mediaSignal('(min-width: 500px)');
+    expect(legacyListeners.length).toBe(1);
+    _resetMediaSignalCache();
+    expect(legacyListeners.length).toBe(0);
+    expect(modernRemoveCalls).toBe(0);
+  });
+
   it('isolates a throwing addEventListener — accessor still returns initial matches', () => {
     // Hostile MQL: addEventListener blows up. The mediaSignal must
     // (a) not crash, (b) return a working accessor seeded at mql.matches,

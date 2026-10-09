@@ -11,17 +11,15 @@
 // Client: lazy singleton with the re-bind dance described above.
 // ---------------------------------------------------------------------------
 
-import {
-  attachMqlChange as attachMqlListener,
-  detachMqlChange as detachMqlListener,
-} from './mql-listener.ts';
+import { attachMqlChange as attachMqlListener } from './mql-listener.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
 let singleton: ComputedAccessor<number> | null = null;
-// Captured so reset can detach the listener from the currently-bound mql.
-let activeMql: MediaQueryList | null = null;
-let activeOnChange: (() => void) | null = null;
+// The detach closure paired with whichever mql/API attach actually used —
+// never re-derived from `mql` independently (that would risk picking the
+// wrong API on a hostile/partial polyfill that exposes a mismatched pair).
+let activeDetach: (() => void) | null = null;
 
 /**
  * Reactive `window.devicePixelRatio` (ADR 0041).
@@ -100,12 +98,12 @@ export function devicePixelRatioSignal(): ComputedAccessor<number> {
 
       // Snapshot the previous binding so a partial-failure rollback can
       // restore exactly what was active before we touched anything.
-      const prev = mql;
+      const prevDetach = activeDetach!;
       // Attach to the new MQL FIRST. If this throws we still have the old
       // listener live — no observability gap.
-      let attached = false;
+      let newDetach: (() => void) | null;
       try {
-        attached = attachMqlListener(nextMql, onChange);
+        newDetach = attachMqlListener(nextMql, onChange);
       } catch (err) {
         console.error(
           '[purity] devicePixelRatioSignal: attach to new MQL failed; keeping previous binding:',
@@ -113,7 +111,7 @@ export function devicePixelRatioSignal(): ComputedAccessor<number> {
         );
         return;
       }
-      if (!attached) {
+      if (!newDetach) {
         // No subscription API on the new MQL — leave the old binding in place
         // so we still observe future changes.
         console.error(
@@ -121,32 +119,34 @@ export function devicePixelRatioSignal(): ComputedAccessor<number> {
         );
         return;
       }
-      // Now safely detach the old listener. If detach throws, undo the new
+      // Now safely detach the old listener (through the SAME API it was
+      // attached with — never re-derived). If detach throws, undo the new
       // attach so we don't end up double-bound on a runtime that returns the
       // same MQL across rebinds (cached identity).
       try {
-        detachMqlListener(prev, onChange);
+        prevDetach();
       } catch (err) {
         console.error(
           '[purity] devicePixelRatioSignal: detach from previous MQL failed; rolling back:',
           err,
         );
         try {
-          detachMqlListener(nextMql, onChange);
+          newDetach();
         } catch {
           /* best-effort rollback */
         }
         return;
       }
       mql = nextMql;
-      activeMql = nextMql;
+      activeDetach = newDetach;
       inner(next);
     } finally {
       rebinding = false;
     }
   };
 
-  if (!attachMqlListener(mql, onChange)) {
+  const detach = attachMqlListener(mql, onChange);
+  if (!detach) {
     // No listener API available — accessor still works, frozen at initial DPR.
     console.error(
       '[purity] devicePixelRatioSignal: MediaQueryList exposes no listener API; accessor frozen at initial DPR.',
@@ -154,8 +154,7 @@ export function devicePixelRatioSignal(): ComputedAccessor<number> {
     singleton = compute(() => inner());
     return singleton;
   }
-  activeMql = mql;
-  activeOnChange = onChange;
+  activeDetach = detach;
   singleton = compute(() => inner());
   return singleton;
 }
@@ -163,14 +162,13 @@ export function devicePixelRatioSignal(): ComputedAccessor<number> {
 /** @internal — test helper. Clears the cached singleton and detaches the
  * listener from the currently-bound media query so tests start clean. */
 export function _resetDevicePixelRatioSignal(): void {
-  if (activeMql && activeOnChange) {
+  if (activeDetach) {
     try {
-      detachMqlListener(activeMql, activeOnChange);
+      activeDetach();
     } catch (err) {
       console.error('[purity] devicePixelRatioSignal: detach during reset failed:', err);
     }
   }
-  activeMql = null;
-  activeOnChange = null;
+  activeDetach = null;
   singleton = null;
 }

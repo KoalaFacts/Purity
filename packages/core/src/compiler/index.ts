@@ -2,6 +2,8 @@ export type * from './ast.ts';
 export {
   generate,
   generateHydrate,
+  generateHydrateLinked,
+  generateLinked,
   generateHydrateModule,
   generateModule,
   generateSSR,
@@ -26,6 +28,7 @@ export {
   renderCompiledTemplate,
 } from './hydrate-runtime.ts';
 export { parse } from './parser.ts';
+export { flattenValue, valueText } from './value-helpers.ts';
 export type { SSRComponentRenderer, SSRHelpers, SSRHtml } from './ssr-runtime.ts';
 export {
   escAttr,

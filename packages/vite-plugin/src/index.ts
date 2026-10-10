@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { dirname, posix, resolve as resolvePath, sep as pathSep } from 'node:path';
 import { parseSync } from 'oxc-parser';
 
-import { generate, generateHydrate, generateSSR, parse } from '@purityjs/core/compiler';
+import { generateHydrateLinked, generateLinked, generateSSR, parse } from '@purityjs/core/compiler';
 import { devtoolsClientSource } from './devtools-client.ts';
 
 import {
@@ -787,8 +787,8 @@ function renderTemplate(
   let hydrateBody: string | null = null;
   try {
     const ast = parse(quasis.map((q) => q.value.raw));
-    fnBody = (ctx.ssr ? generateSSR : generate)(ast);
-    if (!ctx.ssr) hydrateBody = generateHydrate(ast);
+    fnBody = (ctx.ssr ? generateSSR : generateLinked)(ast);
+    if (!ctx.ssr) hydrateBody = generateHydrateLinked(ast);
   } catch (err) {
     // Security failures must not fall back to an uncompiled template.
     if (isFatalTemplateError(err)) throw err;
@@ -897,7 +897,7 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   // track it alongside the html`` replacements.
   const runtimeImport = ssr
     ? `import { ssrHelpers as __purity_h__ } from '@purityjs/core/compiler';\nimport '@purityjs/ssr';\n`
-    : `import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/compiler';\n`;
+    : `import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, valueText as __purity_tx__ } from '@purityjs/core/compiler';\n`;
   /* v8 ignore next -- edits.length > 0 implies at least one hoist was pushed */
   const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
   const insertAt = findLastImportEnd(source);

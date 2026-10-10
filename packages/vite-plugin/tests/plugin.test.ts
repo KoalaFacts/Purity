@@ -67,7 +67,7 @@ describe('@purityjs/vite-plugin', () => {
     const out = result.code;
     // The injected line should appear after both original imports.
     const injected = out.indexOf(
-      "import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/compiler';",
+      "import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, valueText as __purity_tx__ } from '@purityjs/core/compiler';",
     );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf("from './other.ts'"));
@@ -85,7 +85,7 @@ describe('@purityjs/vite-plugin', () => {
     expect(result).not.toBeNull();
     const out = result!.code;
     const injected = out.indexOf(
-      "import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/compiler';",
+      "import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, valueText as __purity_tx__ } from '@purityjs/core/compiler';",
     );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf('// last import on its own line'));
@@ -101,7 +101,7 @@ describe('@purityjs/vite-plugin', () => {
     expect(result).not.toBeNull();
     const out = result!.code;
     const injected = out.indexOf(
-      "import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/compiler';",
+      "import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, valueText as __purity_tx__ } from '@purityjs/core/compiler';",
     );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf("from './data.json'"));

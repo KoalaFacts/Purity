@@ -228,7 +228,12 @@ export function condenseWhitespace(node: ASTNode): ASTNode {
 // generate(ast)
 // ---------------------------------------------------------------------------
 
-export function generate(ast: FragmentNode): string {
+/**
+ * Client factory source that references `__purity_fl__` / `__purity_tx__` as
+ * free names. Host code must bind them: compile.ts for JIT, an import for AOT
+ * modules. Static templates reference neither.
+ */
+export function generateLinked(ast: FragmentNode): string {
   assertSafeScriptContent(ast);
   // Strip pure-indentation text nodes from the entire tree (not just edges).
   // Indentation between sibling tags becomes real text nodes after innerHTML,
@@ -302,8 +307,12 @@ function genTemplateCommentToTextConversion(slots: Slot[]): string {
   return stmts.join('');
 }
 
+// Standalone modules import the coercion helpers the generated code references.
+const VALUE_HELPER_IMPORT =
+  "import { flattenValue as __purity_fl__, valueText as __purity_tx__ } from '@purityjs/core/compiler';\n";
+
 export function generateModule(ast: FragmentNode): string {
-  return `export default ${generate(ast)}`;
+  return `${VALUE_HELPER_IMPORT}export default ${generateLinked(ast)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -334,7 +343,8 @@ interface HydrateCtx {
   id: number;
 }
 
-export function generateHydrate(ast: FragmentNode): string {
+/** Hydrate factory source with the same free-name contract as generateLinked. */
+export function generateHydrateLinked(ast: FragmentNode): string {
   assertSafeScriptContent(ast);
   ast = condenseWhitespace(ast) as FragmentNode;
 
@@ -366,8 +376,35 @@ export function generateHydrate(ast: FragmentNode): string {
   return `function(_v,_w,_r,_i,_c,_e,_m,_s){${body}}`;
 }
 
+// Standalone helper definitions, equivalent to flattenValue / valueText in
+// value-helpers.ts (a parity test keeps the two in sync). Used only to make the
+// public generate()/generateHydrate() output evaluable on its own.
+const VALUE_HELPER_DEFS =
+  'var __purity_fl__=function(v,o,s){if(typeof v==="function")v=v();if(v==null||v===false)return o;' +
+  'if(Array.isArray(v)){if(s===null)s=new WeakSet();if(s.has(v))return o;s.add(v);' +
+  'for(var i=0;i<v.length;i++)__purity_fl__(v[i],o,s);}else o.push(v);return o;};' +
+  'var __purity_tx__=function(v){if(v==null||v===false)return "";if(!Array.isArray(v))return String(v);' +
+  'var L=__purity_fl__(v,[],null),t="";for(var i=0;i<L.length;i++)t+=String(L[i]);return t;};';
+
+// Wrap linked source so it evaluates on its own, binding the helpers once per
+// factory. Output without helper references is returned unchanged.
+function standalone(code: string): string {
+  if (!code.includes('__purity_fl__') && !code.includes('__purity_tx__')) return code;
+  return `(function(){${VALUE_HELPER_DEFS}return ${code};})()`;
+}
+
+/** Public: standalone client factory source, evaluable with `new Function`. */
+export function generate(ast: FragmentNode): string {
+  return standalone(generateLinked(ast));
+}
+
+/** Public: standalone hydrate factory source, evaluable with `new Function`. */
+export function generateHydrate(ast: FragmentNode): string {
+  return standalone(generateHydrateLinked(ast));
+}
+
 export function generateHydrateModule(ast: FragmentNode): string {
-  return `export default ${generateHydrate(ast)}`;
+  return `${VALUE_HELPER_IMPORT}export default ${generateHydrateLinked(ast)}`;
 }
 
 function emitHydrateChildren(children: ASTNode[], ctx: HydrateCtx, cursor: string): void {
@@ -452,13 +489,10 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         `else if(Array.isArray(${xv})){`,
         `for(var _ai${id}=0;_ai${id}<${cont}.length;_ai${id}++)${cont}[_ai${id}].parentNode.removeChild(${cont}[_ai${id}]);`,
         `var _af${id}=document.createDocumentFragment();`,
-        `function _append${id}(_av){`,
-        `if(_av==null||_av===false)return;`,
-        `if(Array.isArray(_av)){for(var _j=0;_j<_av.length;_j++)_append${id}(_av[_j]);}`,
-        `else if(_av&&_av.__purity_deferred__===true){var _ad=document.createDocumentFragment();_i(_av,_ad,false,true);_af${id}.appendChild(_ad);}`,
-        `else{_af${id}.appendChild(_av instanceof Node?_av:document.createTextNode(String(_av)));}`,
-        `}`,
-        `for(var _aj${id}=0;_aj${id}<${xv}.length;_aj${id}++)_append${id}(${xv}[_aj${id}]);`,
+        `var _L${id}=__purity_fl__(${xv},[],null);`,
+        `for(var _aj${id}=0;_aj${id}<_L${id}.length;_aj${id}++){var _av${id}=_L${id}[_aj${id}];`,
+        `if(_av${id}&&_av${id}.__purity_deferred__===true){var _ad${id}=document.createDocumentFragment();_i(_av${id},_ad${id},false,true);_af${id}.appendChild(_ad${id});}`,
+        `else _af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}`,
         `${close}.parentNode.insertBefore(_af${id},${close});}`,
 
         `}`,
@@ -469,7 +503,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         `if(${fl}){`,
         `var r${id}=${xv}();`,
         `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
-        `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=r${id}==null?'':String(r${id});}`,
+        `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=__purity_tx__(r${id});}`,
         `}`,
       );
 
@@ -595,11 +629,11 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
         `var ${xv}=_d?_d(${val}):${val};var ${fl}=typeof ${xv}==='function';var ${tn};`,
         `if(${fl}){${tn}=document.createTextNode('');_e.appendChild(${tn});}`,
         `else if(${xv} instanceof Node)_e.appendChild(${xv});`,
-        `else if(Array.isArray(${xv})){for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++){var _av${id}=${xv}[_ai${id}];if(_av${id}==null||_av${id}===false)continue;_e.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}}`,
-        `else _e.appendChild(document.createTextNode(${xv}==null||${xv}===false?'':String(${xv})));`,
+        `else if(Array.isArray(${xv})){var _L${id}=__purity_fl__(${xv},[],null);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_e.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}}`,
+        `else _e.appendChild(document.createTextNode(__purity_tx__(${xv})));`,
       );
       reactiveParts.push(
-        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=(r${id}==null||r${id}===false)?'':String(r${id});}}`,
+        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=__purity_tx__(r${id});}}`,
       );
     }
   }
@@ -927,9 +961,9 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
     `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});${tn}=${xv};}`,
     // Array path: drop null/undefined/false items so SSR (valueToHtml
     // recurses + concats with empty for falsy) matches the client.
-    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();for(var _ai${id}=0;_ai${id}<${xv}.length;_ai${id}++){var _av${id}=${xv}[_ai${id}];if(_av${id}==null||_av${id}===false)continue;_af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}${slotVar}.replaceWith(_af${id});}`,
-    `else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
-    `}else{${slotVar}.data=${xv}==null||${xv}===false?'':String(${xv});}`,
+    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();var _L${id}=__purity_fl__(${xv},[],null);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}${slotVar}.replaceWith(_af${id});}`,
+    `else{${slotVar}.data=__purity_tx__(${xv});}`,
+    `}else{${slotVar}.data=__purity_tx__(${xv});}`,
     `}`,
   ].join('');
 
@@ -940,7 +974,7 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
     `if(${fl}){`,
     `var r${id}=${xv}();`,
     `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
-    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=(r${id}==null||r${id}===false)?'':String(r${id});}`,
+    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=__purity_tx__(r${id});}`,
     `}`,
   ].join('');
 

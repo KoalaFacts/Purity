@@ -4,6 +4,8 @@ import { state, when } from '@purityjs/core';
 import {
   enterHydration,
   exitHydration,
+  flattenValue,
+  valueText,
   inflateDeferred,
   isDeferred,
   renderCompiledTemplate,
@@ -60,12 +62,14 @@ describe('AOT output runs correctly under jsdom', () => {
       .trim();
     const fn = new Function(
       '__purity_renderCompiled__',
+      '__purity_fl__',
+      '__purity_tx__',
       'document',
       'when',
       `${body}\nreturn make;`,
     );
     return {
-      make: fn(renderCompiledTemplate, globalThis.document, when),
+      make: fn(renderCompiledTemplate, flattenValue, valueText, globalThis.document, when),
     };
   }
 

@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { watch } from '../signals.ts';
-import { generate, generateHydrate } from './codegen.ts';
+import { generateHydrateLinked, generateLinked } from './codegen.ts';
 import {
   checkHydrationCursor,
   type DeferredTemplate,
@@ -18,6 +18,11 @@ import {
   makeDeferred,
 } from './hydrate-runtime.ts';
 import { parse } from './parser.ts';
+import { flattenValue, valueText } from './value-helpers.ts';
+
+// Generated code references the coercion helpers as free names; bind them here.
+const bindHelpers = (code: string) =>
+  new Function('__purity_fl__', '__purity_tx__', `return ${code}`)(flattenValue, valueText);
 
 type CompiledFn = (
   values: unknown[],
@@ -46,8 +51,8 @@ function ensureClient(entry: CacheEntry, strings: TemplateStringsArray): Compile
   if (entry.client) return entry.client;
   const ast = entry.ast ?? parse(strings);
   entry.ast = ast;
-  const code = generate(ast);
-  entry.client = new Function(`return ${code}`)() as CompiledFn;
+  const code = generateLinked(ast);
+  entry.client = bindHelpers(code) as CompiledFn;
   return entry.client;
 }
 
@@ -55,8 +60,8 @@ function ensureHydrate(entry: CacheEntry, strings: TemplateStringsArray): Hydrat
   if (entry.hydrate) return entry.hydrate;
   const ast = entry.ast ?? parse(strings);
   entry.ast = ast;
-  const code = generateHydrate(ast);
-  entry.hydrate = new Function(`return ${code}`)() as HydrateFactory;
+  const code = generateHydrateLinked(ast);
+  entry.hydrate = bindHelpers(code) as HydrateFactory;
   return entry.hydrate;
 }
 

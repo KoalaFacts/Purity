@@ -1,4 +1,4 @@
-import { getCurrentContext } from './component.ts';
+import { disposeScope, getCurrentContext, popContext, pushContext } from './component.ts';
 
 // ---------------------------------------------------------------------------
 // Reactivity core
@@ -49,8 +49,11 @@ interface ComputedNode {
    *  do O(1) swap-and-pop instead of an indexOf scan over a possibly-huge list. */
   observerSlots: number[] | null;
   observers: ComputedNode[] | null;
-  /** Function returned from a watch fn body; runs before next re-run and on dispose. */
-  cleanup: (() => void) | null;
+  /** Effects: disposers of reactive work created during the last run (nested
+   *  watches, template bindings, computes), ending with the cleanup function
+   *  the body returned. An effect is the current scope while it runs, so this
+   *  is its `Scope.disposers`. Released before the next run and on dispose. */
+  disposers: (() => void)[] | null;
   /** True for watch effects (must re-run for side effects); false for compute (lazy). */
   isEffect: boolean;
   disposed: boolean;
@@ -405,18 +408,21 @@ function updateValue(startNode: ComputedNode): void {
   }
 }
 
+// Release what an effect's previous run created, ending with its returned
+// cleanup. Reads made here must not subscribe whoever triggered the release
+// (an outer effect re-running, or user code calling a dispose function), so
+// this runs untracked. disposeScope catches each disposer's throw.
+function releaseRun(node: ComputedNode): void {
+  const prevListener = activeListener;
+  activeListener = null;
+  disposeScope(node);
+  activeListener = prevListener;
+}
+
 function runComputed(node: ComputedNode): void {
-  // Cleanup runs before fn re-evaluates, so the user's cleanup closure can
-  // still see the values from the run that produced it.
-  if (node.cleanup !== null) {
-    const c = node.cleanup;
-    node.cleanup = null;
-    try {
-      c();
-    } catch (e) {
-      console.error('[Purity] cleanup error:', e);
-    }
-  }
+  // Release the previous run before fn re-evaluates; the user's cleanup
+  // closure still sees the values from the run that produced it.
+  if (node.disposers !== null) releaseRun(node);
   if (node.disposed) {
     node.status = STATUS_CLEAN;
     return;
@@ -479,6 +485,10 @@ function runComputed(node: ComputedNode): void {
     // detect after fn() returns.
     node.status = STATUS_CLEAN;
 
+    // An effect owns the reactive work its body creates: while it runs it is
+    // the current scope, so nested watches and template bindings register
+    // their disposers on it (released by releaseRun before the next run).
+    if (node.isEffect) pushContext(node);
     try {
       nextValue = node.fn();
       thrown = false;
@@ -487,6 +497,7 @@ function runComputed(node: ComputedNode): void {
       thrown = true;
       thrownValue = e;
     } finally {
+      if (node.isEffect) popContext();
       // Truncate stale source slots. Anything past activeSourceIdx is no
       // longer read by this fn — drop the producer→consumer link.
       const consumed = activeSourceIdx;
@@ -524,11 +535,12 @@ function runComputed(node: ComputedNode): void {
     }
   }
 
-  // Effect bodies may return a cleanup function; capture it and don't treat
-  // it as a value (effects produce no observable value).
+  // Effect bodies may return a cleanup function; register it as the run's
+  // last disposer and don't treat it as a value (effects produce no
+  // observable value).
   if (node.isEffect) {
     if (typeof nextValue === 'function') {
-      node.cleanup = nextValue as () => void;
+      (node.disposers ??= []).push(nextValue as () => void);
     }
     nextValue = undefined;
   }
@@ -786,7 +798,7 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
     sourceVersions: null,
     observerSlots: null,
     observers: null,
-    cleanup: null,
+    disposers: null,
     isEffect: false,
     disposed: false,
     error: null,
@@ -826,7 +838,7 @@ function _effect(fn: () => undefined | Dispose): Dispose {
     sourceVersions: null,
     observerSlots: null,
     observers: null,
-    cleanup: null,
+    disposers: null,
     isEffect: true,
     disposed: false,
     error: null,
@@ -845,6 +857,7 @@ function _effect(fn: () => undefined | Dispose): Dispose {
     updateValue(node);
   } catch (e) {
     node.disposed = true;
+    releaseRun(node);
     disconnectFromSources(node);
     throw e;
   }
@@ -852,15 +865,7 @@ function _effect(fn: () => undefined | Dispose): Dispose {
   const dispose = (): void => {
     if (node.disposed) return;
     node.disposed = true;
-    if (node.cleanup !== null) {
-      const c = node.cleanup;
-      node.cleanup = null;
-      try {
-        c();
-      } catch (e) {
-        console.error('[Purity] cleanup error:', e);
-      }
-    }
+    releaseRun(node);
     disconnectFromSources(node);
   };
 

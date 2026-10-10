@@ -8,6 +8,7 @@ import {
 } from './compiler/ssr-runtime.ts';
 import {
   ComponentContext,
+  disposeScope,
   getCurrentContext,
   hydratePendingCustomElements,
   popContext,
@@ -47,17 +48,7 @@ function unmountChildContext(ctx: ComponentContext): void {
     ctx.nodes = null;
   }
 
-  // Run disposers
-  if (ctx.disposers) {
-    for (let i = 0; i < ctx.disposers.length; i++) {
-      try {
-        ctx.disposers[i]();
-      } catch (err) {
-        console.error('[Purity] Error during disposal:', err);
-      }
-    }
-    ctx.disposers = null;
-  }
+  disposeScope(ctx);
 
   ctx._isDestroyed = true;
   ctx._isMounted = false;
@@ -799,16 +790,7 @@ export function component<
             this._ctx.children = null;
           }
 
-          if (this._ctx.disposers) {
-            for (let i = 0; i < this._ctx.disposers.length; i++) {
-              try {
-                this._ctx.disposers[i]();
-              } catch (e) {
-                console.error('[Purity]', e);
-              }
-            }
-            this._ctx.disposers = null;
-          }
+          disposeScope(this._ctx);
           this._ctx._isDestroyed = true;
           this._ctx._isMounted = false;
           runCallbacks(this._ctx.destroyed, this._ctx);

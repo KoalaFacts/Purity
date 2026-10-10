@@ -254,8 +254,10 @@ export async function loader({ params, request, signal }: LoaderContext) {
 
 On the client, the signal aborts when the route's owning render scope is
 disposed, including `mount().unmount()`. A custom `asyncRoute` request's signal
-also cancels its loaders. Hiding a cached `when()` or `match()` branch does not
-dispose it and does not cancel its work.
+also cancels its loaders. Hiding a `when()` or `match()` branch disposes the
+branch's scope: its watchers stop and its resources stop re-fetching, but a
+request already in flight is not aborted. Showing the branch again renders it
+fresh.
 
 On the server, the signal combines the route's request with its owning SSR
 resource operation. Render cancellation, render failure, global timeout, stream

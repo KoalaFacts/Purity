@@ -48,12 +48,12 @@ Machine names and absolute filesystem paths are excluded.
 
 ## Feature profiles
 
-| Profile     | Included functionality                                                              | Browser acceptance                                                                     |
-| ----------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `counter`   | [Counter](./counter.ts), signal, template, click handler, mounting.                 | Count advances from 0 to 3.                                                            |
-| `controls`  | [Shared view](./controls-view.ts), keyed each, match, nested templates, mounting.   | Reverse keeps row identity; labels update; branch toggling reuses the original branch. |
-| `form`      | [Enhanced form](./form.ts), two-way input, enhanceForms, response/error handling.   | Empty submission focuses the error field; retry succeeds, keeps the input and URL.     |
-| `hydration` | [Hydration entry](./hydration.ts), the same controls view and server-rendered HTML. | Preserve SSR row identity, then perform the same controls interactions.                |
+| Profile     | Included functionality                                                              | Browser acceptance                                                                 |
+| ----------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `counter`   | [Counter](./counter.ts), signal, template, click handler, mounting.                 | Count advances from 0 to 3.                                                        |
+| `controls`  | [Shared view](./controls-view.ts), keyed each, match, nested templates, mounting.   | Reverse keeps row identity; labels update; a toggled-back branch renders fresh.    |
+| `form`      | [Enhanced form](./form.ts), two-way input, enhanceForms, response/error handling.   | Empty submission focuses the error field; retry succeeds, keeps the input and URL. |
+| `hydration` | [Hydration entry](./hydration.ts), the same controls view and server-rendered HTML. | Preserve SSR row identity, then perform the same controls interactions.            |
 
 Each profile's runtime/AOT pair uses the same entry and template source.
 Hydration HTML is generated from that shared view by an actual SSR build

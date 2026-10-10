@@ -116,6 +116,20 @@ export function popContext(): Scope | undefined {
   return contextStack.pop();
 }
 
+/** Run and clear a scope's disposers; one throwing disposer doesn't stop the rest. @internal */
+export function disposeScope(scope: Scope): void {
+  const disposers = scope.disposers;
+  if (!disposers) return;
+  scope.disposers = null;
+  for (let i = 0; i < disposers.length; i++) {
+    try {
+      disposers[i]();
+    } catch (err) {
+      console.error('[Purity] Error during disposal:', err);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Lifecycle hooks — only 3 + error
 // ---------------------------------------------------------------------------
@@ -692,17 +706,7 @@ function unmountContext(ctx: ComponentContext): void {
     ctx.nodes = null;
   }
 
-  // Run disposers
-  if (ctx.disposers) {
-    for (let i = 0; i < ctx.disposers.length; i++) {
-      try {
-        ctx.disposers[i]();
-      } catch (err) {
-        console.error('[Purity] Error during disposal:', err);
-      }
-    }
-    ctx.disposers = null;
-  }
+  disposeScope(ctx);
 
   ctx._isDestroyed = true;
   ctx._isMounted = false;

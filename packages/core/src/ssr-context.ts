@@ -12,6 +12,8 @@
 //                       within the current pass; the index into resolvedData
 // ---------------------------------------------------------------------------
 
+import { disposeScope, popContext, pushContext, type Scope } from './component.ts';
+
 export interface SSRRenderContext {
   pendingPromises: Promise<unknown>[];
   /** In-flight operations reused while another boundary triggers a new pass. @internal */
@@ -163,9 +165,18 @@ export function getSSRRenderContext(): SSRRenderContext | null {
     : (contextStack[contextStack.length - 1] as SSRRenderContext);
 }
 
+// One reactive scope per SSR pass, parallel to contextStack. Watches and
+// computes created while rendering register on it and are disposed when the
+// pass ends; otherwise every request left them subscribed to module-level
+// state on the server.
+const scopeStack: Scope[] = [];
+
 /** @internal */
 export function pushSSRRenderContext(ctx: SSRRenderContext): void {
   contextStack.push(ctx);
+  const scope: Scope = { disposers: null };
+  scopeStack.push(scope);
+  pushContext(scope);
 }
 
 /** @internal */
@@ -173,7 +184,10 @@ export function popSSRRenderContext(): void {
   // No-op on an empty stack — defensive against stray pops (e.g. an outer
   // `finally` running after a callee already popped the same frame). Was
   // previously a silent overwrite-to-null, which had the same effect.
+  if (contextStack.length === 0) return;
   contextStack.pop();
+  popContext();
+  disposeScope(scopeStack.pop()!);
 }
 
 /**

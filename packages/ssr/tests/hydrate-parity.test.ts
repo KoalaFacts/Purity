@@ -616,10 +616,16 @@ describe('SSR → hydrate parity (when/match per-case adoption)', () => {
       outer(false);
       await Promise.resolve();
       expect(host.querySelector('.identity')).toBeNull();
+      // Hiding disposed the branch; showing it again renders a fresh, live view.
       outer(true);
       await Promise.resolve();
-      expect(host.querySelector('.identity')).toBe(identity);
-      expect(host.querySelector('.tail')).toBe(tail);
+      const shown = host.querySelector('.identity');
+      expect(shown).not.toBeNull();
+      expect(shown).not.toBe(identity);
+      expect(host.querySelector('.tail')).not.toBe(tail);
+      label('Again');
+      await Promise.resolve();
+      expect(shown?.textContent).toBe('Again');
     },
   );
 
@@ -647,7 +653,7 @@ describe('SSR → hydrate parity (when/match per-case adoption)', () => {
     expect(host.textContent).toContain('yes');
   });
 
-  it('when(): reactive update toggles to else branch and back to cached then', async () => {
+  it('when(): reactive update toggles to else branch and back to a fresh then', async () => {
     const ok = state(true);
     const App = (h: AnyHtml) => {
       const cond = h === (ssrHtml as AnyHtml) ? whenSSR : when;
@@ -670,11 +676,13 @@ describe('SSR → hydrate parity (when/match per-case adoption)', () => {
     expect(host.querySelector('p.yes')).toBeNull();
     expect(host.querySelector('p.no')).not.toBeNull();
 
-    // Toggle back — the original SSR-derived <p.yes> should be reused from
-    // the per-case cache (matches the existing client match() behavior).
+    // Toggle back — the hidden branch was disposed, so the then-branch
+    // renders fresh rather than reattaching the SSR-derived node.
     ok(true);
     await Promise.resolve();
-    expect(host.querySelector('p.yes')).toBe(ssrYes);
+    expect(host.querySelector('p.yes')).not.toBeNull();
+    expect(host.querySelector('p.yes')).not.toBe(ssrYes);
+    expect(host.querySelector('p.no')).toBeNull();
   });
 
   it('when(): event handler binds to the adopted SSR element', async () => {
@@ -728,8 +736,10 @@ describe('SSR → hydrate parity (when/match per-case adoption)', () => {
 
     status('ready');
     await Promise.resolve();
-    // Adopted SSR node returns from the cache.
-    expect(host.querySelector('p.ready')).toBe(ssrReady);
+    // The adopted case was disposed when hidden; it renders fresh.
+    expect(host.querySelector('p.ready')).not.toBeNull();
+    expect(host.querySelector('p.ready')).not.toBe(ssrReady);
+    expect(host.querySelector('p.error')).toBeNull();
   });
 
   it('match(): reactive text in adopted view updates against SSR text node', async () => {

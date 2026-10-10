@@ -11,7 +11,13 @@ import {
   isHydrating,
 } from './compiler/hydrate-runtime.ts';
 import { markSSRHtml, type SSRHtml, valueToHtml } from './compiler/ssr-runtime.ts';
-import { getCurrentContext, popContext, pushContext, type Scope } from './component.ts';
+import {
+  disposeScope,
+  getCurrentContext,
+  popContext,
+  pushContext,
+  type Scope,
+} from './component.ts';
 import type { StateAccessor } from './signals.ts';
 import { state, watch } from './signals.ts';
 import { cancelSSRBoundary, getSSRRenderContext } from './ssr-context.ts';
@@ -56,7 +62,8 @@ function moveOrInsert(parent: Node, node: Node, ref: Node | null): void {
 
 // ---------------------------------------------------------------------------
 // match(sourceFn, cases, fallback?) — reactive pattern matching
-// NOW CACHES DOM per case key — toggling reuses nodes instead of recreating
+// The active case renders under its own scope. Switching cases disposes that
+// scope (its bindings and watchers stop) and renders the new case fresh.
 // ---------------------------------------------------------------------------
 
 // Branch views can return arbitrary user code: a Node / DocumentFragment for
@@ -69,7 +76,28 @@ type MatchCases<T extends string | number | boolean> = Partial<Record<`${T}`, Ma
 interface MatchState {
   currentNodes: Node[];
   prevKey: string | undefined;
-  cache: Map<string, Node[]>;
+  /** Scope owning the active case's reactive work; disposed on case switch. */
+  branch: Scope | null;
+}
+
+// Run a case view under a fresh branch scope so its bindings register there,
+// not on match()'s own watch (which re-runs on every selector change).
+function renderBranch(matchState: MatchState, render: () => unknown): unknown {
+  const scope: Scope = { disposers: null };
+  matchState.branch = scope;
+  pushContext(scope);
+  try {
+    return render();
+  } finally {
+    popContext();
+  }
+}
+
+function disposeBranch(matchState: MatchState): void {
+  const scope = matchState.branch;
+  if (scope === null) return;
+  matchState.branch = null;
+  disposeScope(scope);
 }
 
 // Insert the result of viewFn() before endMarker and update matchState. Shared
@@ -96,8 +124,8 @@ function insertMatchView(
   }
 }
 
-// Detach current nodes, archive them in the per-case cache (so toggling back
-// reuses them), then render the new key. Reused by client + hydration paths.
+// Detach and dispose the current case, then render the new key. Reused by
+// client + hydration paths.
 function reconcileMatch<T extends string | number | boolean>(
   matchState: MatchState,
   parent: Node,
@@ -111,24 +139,15 @@ function reconcileMatch<T extends string | number | boolean>(
     /* v8 ignore next -- defensive guard; nodes always have parent here */
     if (node.parentNode) node.parentNode.removeChild(node);
   }
-  if (matchState.prevKey !== undefined && matchState.currentNodes.length > 0) {
-    matchState.cache.set(matchState.prevKey, matchState.currentNodes);
-  }
+  disposeBranch(matchState);
   matchState.prevKey = key;
-
-  const cached = matchState.cache.get(key);
-  if (cached) {
-    matchState.currentNodes = cached;
-    for (let i = 0; i < cached.length; i++) parent.insertBefore(cached[i], endMarker);
-    return;
-  }
 
   const viewFn = cases[key as `${T}`] ?? fallback;
   if (!viewFn) {
     matchState.currentNodes = [];
     return;
   }
-  insertMatchView(matchState, parent, endMarker, viewFn());
+  insertMatchView(matchState, parent, endMarker, renderBranch(matchState, viewFn));
 }
 
 function installMatchWatch<T extends string | number | boolean>(
@@ -156,14 +175,15 @@ function registerMatchAutoDispose(
   if (!ownerCtx) return;
   (ownerCtx.disposers ??= []).push(() => {
     dispose();
-    matchState.cache.clear();
+    disposeBranch(matchState);
     matchState.currentNodes = [];
   });
 }
 
 /**
  * Reactive pattern matching. Renders different content based on a signal value.
- * **Caches DOM** per case — switching back reuses the previous DOM, no recreation.
+ * Only the active case is live: switching cases disposes the previous case's
+ * bindings and watchers and renders the new case fresh.
  *
  * @example
  * ```ts
@@ -181,8 +201,8 @@ export function match<T extends string | number | boolean>(
 ): DocumentFragment | DeferredMatch<T> | SSRHtml {
   // Hydration mode: defer DOM creation. The hydrate factory sees the handle,
   // routes through inflateDeferredMatch, which adopts the SSR-rendered case in
-  // place and seeds the per-case cache so toggling back reuses it. Closes the
-  // when()/match() half of the ADR 0005 control-flow lossy gap.
+  // place. Closes the when()/match() half of the ADR 0005 control-flow lossy
+  // gap.
   if (isHydrating()) return makeDeferredMatch(sourceFn, cases, fallback);
 
   // SSR-context dispatch (ADR 0023). Inside a `renderToString` /
@@ -195,13 +215,13 @@ export function match<T extends string | number | boolean>(
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
-  const matchState: MatchState = { currentNodes: [], prevKey: undefined, cache: new Map() };
+  const matchState: MatchState = { currentNodes: [], prevKey: undefined, branch: null };
 
   const initKey = String(sourceFn()) as `${T}`;
   const initView = cases[initKey] ?? fallback;
   if (initView) {
     matchState.prevKey = initKey;
-    insertMatchView(matchState, fragment, endMarker, initView());
+    insertMatchView(matchState, fragment, endMarker, renderBranch(matchState, initView));
   }
 
   const dispose = installMatchWatch(matchState, endMarker, sourceFn, cases, fallback);
@@ -210,12 +230,12 @@ export function match<T extends string | number | boolean>(
 }
 
 // ---------------------------------------------------------------------------
-// when — boolean conditional, delegates to match with caching
+// when — boolean conditional, delegates to match
 // ---------------------------------------------------------------------------
 
 /**
  * Conditional rendering. Shorthand for boolean `match()`.
- * **Caches both branches** — toggling reuses DOM, no recreation.
+ * The hidden branch is disposed; showing it again renders it fresh.
  *
  * @example
  * ```ts
@@ -338,16 +358,7 @@ function runEntryMapFn<T>(
 }
 
 function disposeEntry<T>(entry: EachEntry<T>): void {
-  const disposers = entry.ctx.disposers;
-  if (!disposers) return;
-  for (let i = 0; i < disposers.length; i++) {
-    try {
-      disposers[i]();
-    } catch (e) {
-      console.error('[Purity] Error during each() entry dispose:', e);
-    }
-  }
-  entry.ctx.disposers = null;
+  disposeScope(entry.ctx);
 }
 
 function describeKey(key: unknown): string {
@@ -1735,8 +1746,7 @@ export function inflateDeferredEach<T>(
 // match() on the client). During hydration `match()` returns a handle
 // instead of building a fresh DOM tree; the hydrate factory's expression-
 // slot dispatch routes it through inflateDeferredMatch, which adopts the
-// SSR-rendered case in place and seeds the per-case cache so toggling back
-// reuses the SSR-derived nodes.
+// SSR-rendered case in place under the active case's branch scope.
 // ---------------------------------------------------------------------------
 
 /** A reified `match()` call captured during hydration. */
@@ -1835,9 +1845,8 @@ function parseSSRMatchBoundary(contNodes: Node[]): SSRMatchBoundary {
 
 /**
  * Adopt the SSR-rendered case for a `match()` / `when()` slot. Inflates the
- * matching case's deferred template against the SSR boundary content, seeds
- * the per-case cache so toggling back reuses adopted DOM, and installs the
- * reactive watch.
+ * matching case's deferred template against the SSR boundary content under
+ * the case's branch scope, and installs the reactive watch.
  *
  * Called from compiled hydrate factories when an expression slot's value is
  * a {@link DeferredMatch} handle.
@@ -1867,7 +1876,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
     if (n.parentNode) n.parentNode.removeChild(n);
   }
 
-  const matchState: MatchState = { currentNodes: [], prevKey: undefined, cache: new Map() };
+  const matchState: MatchState = { currentNodes: [], prevKey: undefined, branch: null };
   const initKey = String(sourceFn()) as `${T}`;
   const ssrKey = boundary.key;
   const initView = cases[initKey] ?? fallback;
@@ -1875,18 +1884,26 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
   if (ssrKey === initKey && initView && boundary.inner.length > 0) {
     // Keys match — run the view under hydration mode so html`` produces a
     // DeferredTemplate, then inflate against the boundary's existing nodes.
-    enterHydration();
-    let content: unknown;
-    try {
-      content = initView();
-    } finally {
-      exitHydration();
-    }
+    // Both steps create the case's bindings, so both run in its branch scope.
+    const content = renderBranch(matchState, () => {
+      enterHydration();
+      try {
+        return initView();
+      } finally {
+        exitHydration();
+      }
+    });
 
     if (isDeferred(content)) {
       const frag = document.createDocumentFragment();
       for (let i = 0; i < boundary.inner.length; i++) frag.appendChild(boundary.inner[i]);
-      inflateDeferred(content as DeferredTemplate, frag);
+      const scope = matchState.branch!;
+      pushContext(scope);
+      try {
+        inflateDeferred(content as DeferredTemplate, frag);
+      } finally {
+        popContext();
+      }
       matchState.currentNodes = Array.from(frag.childNodes);
       parent.insertBefore(frag, endMarker);
     } else {
@@ -1909,7 +1926,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
     }
     if (initView) {
       matchState.prevKey = initKey;
-      insertMatchView(matchState, parent, endMarker, initView());
+      insertMatchView(matchState, parent, endMarker, renderBranch(matchState, initView));
     }
   }
 

@@ -105,7 +105,8 @@ async function verifyControls(page: Page, hydration: boolean): Promise<void> {
   await page.getByText('Details visible', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Toggle details', exact: true }).click();
   await page.getByText('Details hidden', { exact: true }).waitFor();
-  assert(await page.evaluate(() => (window as Snapshot).bundleDetails?.isConnected === true));
+  // A hidden match() case is disposed, so toggling back renders it fresh.
+  assert(await page.evaluate(() => (window as Snapshot).bundleDetails?.isConnected === false));
 }
 
 async function captureNodes(page: Page): Promise<void> {

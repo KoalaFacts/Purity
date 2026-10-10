@@ -1,0 +1,5 @@
+# Store and check out text as LF everywhere, overriding each machine's core.autocrlf,
+# so the formatter (LF) and Git agree and Windows checkouts show no phantom diffs.
+* text=auto eol=lf
+
+*.png binary

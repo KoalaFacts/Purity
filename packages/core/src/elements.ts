@@ -456,6 +456,10 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
   let view: unknown;
   try {
     view = renderFn(props, createSSRSlotAccessors({ default: slotHtml }));
+  } catch (e) {
+    // No shell will be serialized: release what the render created.
+    disposeScope(ctx);
+    throw e;
   } finally {
     popContext();
   }

@@ -360,6 +360,73 @@ describe('late branches and failed renders', () => {
     expect(mounted).toBe(1);
   });
 
+  it('does not track reads made by an outgoing case cleanup into the selector', async () => {
+    const mode = state<'a' | 'b'>('a');
+    const unrelated = state(0);
+    let selectorRuns = 0;
+    mount(
+      () =>
+        html`<div>${match(
+          () => {
+            selectorRuns++;
+            return mode();
+          },
+          {
+            a: () => {
+              onDispose(() => unrelated());
+              return html`<i>a</i>`;
+            },
+            b: () => html`<i>b</i>`,
+          },
+        )}</div>`,
+      document.createElement('div'),
+    );
+    mode('b');
+    await tick();
+    selectorRuns = 0;
+    unrelated(1);
+    await tick();
+    expect(selectorRuns).toBe(0);
+  });
+
+  it('lets errors bubble once a branch-scoped onError is removed', async () => {
+    const show = state(true);
+    const host = new ComponentContext();
+    pushContext(host);
+    try {
+      document.createElement('div').appendChild(
+        when(
+          () => show(),
+          () => {
+            onError(() => {});
+            return html`<i>b</i>`;
+          },
+        ) as Node,
+      );
+    } finally {
+      popContext();
+    }
+    show(false);
+    await tick();
+    expect(() => host._handleError(new Error('late'))).toThrow('late');
+  });
+
+  it('skips a late onMount when its component unmounted first', async () => {
+    let ran = 0;
+    let stop = (): void => {};
+    stop = mount(() => {
+      onMount(() => {
+        onMount(() => ran++);
+        stop();
+      });
+      return html`<p>x</p>`;
+    }, document.createElement('div')).unmount;
+    await tick();
+    await tick();
+    await tick();
+    expect(ran).toBe(0);
+  });
+
   it('skips a late onMount whose branch was hidden in the same flush', async () => {
     const show = state(false);
     const hidden = state(false);

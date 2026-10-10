@@ -419,21 +419,21 @@ function updateValue(startNode: ComputedNode): void {
   }
 }
 
-// Release what an effect's previous run created, ending with its returned
-// cleanup. Reads made here must not subscribe whoever triggered the release
-// (an outer effect re-running, or user code calling a dispose function), so
-// this runs untracked. disposeScope catches each disposer's throw.
-function releaseRun(node: ComputedNode): void {
+/** Run fn without subscribing the active listener to what it reads. @internal */
+export function untracked<T>(fn: () => T): T {
   const prevListener = activeListener;
   activeListener = null;
-  disposeScope(node);
-  activeListener = prevListener;
+  try {
+    return fn();
+  } finally {
+    activeListener = prevListener;
+  }
 }
 
 function runComputed(node: ComputedNode): void {
   // Release the previous run before fn re-evaluates; the user's cleanup
   // closure still sees the values from the run that produced it.
-  if (node.disposers !== null) releaseRun(node);
+  if (node.disposers !== null) disposeScope(node);
   if (node.disposed) {
     node.status = STATUS_CLEAN;
     return;
@@ -498,7 +498,7 @@ function runComputed(node: ComputedNode): void {
 
     // An effect owns the reactive work its body creates: while it runs it is
     // the current scope, so nested watches and template bindings register
-    // their disposers on it (released by releaseRun before the next run).
+    // their disposers on it (released by disposeScope before the next run).
     if (node.isEffect) pushContext(node);
     try {
       nextValue = node.fn();
@@ -640,7 +640,7 @@ function flush(): void {
         // the next markDirty needs to re-queue. Release what the failed run
         // created before throwing; no later run is guaranteed to.
         e.status = STATUS_CLEAN;
-        releaseRun(e);
+        disposeScope(e);
         console.error('[Purity] watch/effect threw:', err);
       }
     }
@@ -874,7 +874,7 @@ function _effect(fn: () => undefined | Dispose): Dispose {
     updateValue(node);
   } catch (e) {
     node.disposed = true;
-    releaseRun(node);
+    disposeScope(node);
     disconnectFromSources(node);
     throw e;
   }
@@ -882,7 +882,7 @@ function _effect(fn: () => undefined | Dispose): Dispose {
   const dispose = (): void => {
     if (node.disposed) return;
     node.disposed = true;
-    releaseRun(node);
+    disposeScope(node);
     disconnectFromSources(node);
     // A retained stop handle must not keep an unmounted component alive.
     node.component = null;

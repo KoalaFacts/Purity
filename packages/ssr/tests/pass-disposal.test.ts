@@ -61,6 +61,25 @@ describe('SSR render pass disposal', () => {
     expect(out).not.toContain('changed');
   });
 
+  it('stops watchers created by a server component whose render threw', async () => {
+    const shared = state(0);
+    let runs = 0;
+    component('ssr-throwing-render', () => {
+      watch(() => {
+        runs++;
+        shared();
+      });
+      throw new Error('render failed');
+    });
+    await renderToString(() => html`<div><ssr-throwing-render></ssr-throwing-render></div>`).catch(
+      () => {},
+    );
+    runs = 0;
+    shared(1);
+    await tick();
+    expect(runs).toBe(0);
+  });
+
   it('still renders values derived during the pass', async () => {
     const shared = state(2);
     const App = () => {

@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { enterHydration, exitHydration, inflateDeferred, isDeferred } from './compiler/compile.ts';
-import { watch } from './signals.ts';
+import { untracked, watch } from './signals.ts';
 import { primeHydrationCache } from './ssr-context.ts';
 
 /**
@@ -85,7 +85,8 @@ export class ComponentContext implements Scope {
     | null = null;
 
   _handleError(err: unknown): void {
-    if (this.errorHandlers) {
+    // Scoped onError removal can leave an empty array; treat it as no handler.
+    if (this.errorHandlers?.length) {
       for (let i = 0; i < this.errorHandlers.length; i++) {
         try {
           this.errorHandlers[i](err);
@@ -159,13 +160,17 @@ export function disposeScope(scope: Scope): void {
   const disposers = scope.disposers;
   if (!disposers) return;
   scope.disposers = null;
-  for (let i = 0; i < disposers.length; i++) {
-    try {
-      disposers[i]();
-    } catch (err) {
-      console.error('[Purity] Error during disposal:', err);
+  // Cleanup reads must not subscribe whatever is running the disposal (an
+  // effect re-running, a match() switching cases, a list removing rows).
+  untracked(() => {
+    for (let i = 0; i < disposers.length; i++) {
+      try {
+        disposers[i]();
+      } catch (err) {
+        console.error('[Purity] Error during disposal:', err);
+      }
     }
-  }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -217,7 +222,7 @@ export function onMount(fn: () => void): void {
   let cancelled = false;
   if (owner !== ctx) (owner.disposers ??= []).push(() => (cancelled = true));
   queueMicrotask(() => {
-    if (cancelled) return;
+    if (cancelled || ctx._isDestroyed) return;
     pushContext(owner);
     try {
       fn();
@@ -486,12 +491,15 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
 
   if (ctx.mounted) {
     queueMicrotask(() => {
-      if (!ctx.mounted) return;
+      const mounted = ctx.mounted;
+      if (!mounted) return;
       pushContext(ctx);
       try {
-        for (let i = 0; i < ctx.mounted.length; i++) {
+        // A callback may unmount the component (which clears ctx.mounted);
+        // stop running the rest once it is destroyed.
+        for (let i = 0; i < mounted.length && !ctx._isDestroyed; i++) {
           try {
-            ctx.mounted[i]();
+            mounted[i]();
           } catch (err) {
             ctx._handleError(err);
           }
@@ -645,15 +653,18 @@ export function mount(component: ComponentFn, container: Element): MountResult {
 
   if (ctx.mounted) {
     queueMicrotask(() => {
-      if (!ctx.mounted) return;
+      const mounted = ctx.mounted;
+      if (!mounted) return;
       // Make the component context active during onMount callbacks so
       // onDispose() / onError() registered inside them attach to this
       // component instead of silently no-oping.
       pushContext(ctx);
       try {
-        for (let i = 0; i < ctx.mounted.length; i++) {
+        // A callback may unmount the component (which clears ctx.mounted);
+        // stop running the rest once it is destroyed.
+        for (let i = 0; i < mounted.length && !ctx._isDestroyed; i++) {
           try {
-            ctx.mounted[i]();
+            mounted[i]();
           } catch (err) {
             ctx._handleError(err);
           }

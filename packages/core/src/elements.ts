@@ -52,9 +52,10 @@ function unmountChildContext(ctx: ComponentContext): void {
     ctx.nodes = null;
   }
 
-  disposeScope(ctx);
-
+  // Mark destroyed before disposers run: lean scopes released by this teardown
+  // must not unregister their callbacks from a component that is going away.
   ctx._isDestroyed = true;
+  disposeScope(ctx);
   ctx._isMounted = false;
 
   // Run destroy callbacks
@@ -794,8 +795,8 @@ export function component<
           // orphan. Mirrors the canonical `unmountContext` (component.ts).
           unmountChildren(this._ctx);
 
-          disposeScope(this._ctx);
           this._ctx._isDestroyed = true;
+          disposeScope(this._ctx);
           this._ctx._isMounted = false;
           runCallbacks(this._ctx.destroyed, this._ctx);
         }

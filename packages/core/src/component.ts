@@ -172,6 +172,22 @@ export function disposeScope(scope: Scope): void {
 // Lifecycle hooks — only 3 + error
 // ---------------------------------------------------------------------------
 
+// Add a component callback registered from the current owner. A lean scope
+// (branch, row, re-running effect) removes it again when disposed, so hidden
+// branches don't leave callbacks on the long-lived component.
+function addCallback<T>(ctx: ComponentContext, list: T[], fn: T): void {
+  list.push(fn);
+  const owner = getCurrentContext();
+  if (owner && owner !== ctx) {
+    (owner.disposers ??= []).push(() => {
+      // The component's own teardown keeps it: it runs with the component.
+      if (ctx._isDestroyed) return;
+      const i = list.indexOf(fn);
+      if (i >= 0) list.splice(i, 1);
+    });
+  }
+}
+
 /**
  * Register a callback that runs after the component is inserted into the DOM.
  * Runs as a microtask — DOM is guaranteed to be ready.
@@ -192,13 +208,16 @@ export function onMount(fn: () => void): void {
   const ctx = getCurrentComponent();
   if (!ctx) return;
   if (!ctx._isMounted) {
-    (ctx.mounted ??= []).push(fn);
+    addCallback(ctx, (ctx.mounted ??= []), fn);
     return;
   }
   // Registered by a branch first shown after the component mounted: the
   // mount drain already ran, so schedule this one under the current owner.
   const owner = getCurrentContext()!;
+  let cancelled = false;
+  if (owner !== ctx) (owner.disposers ??= []).push(() => (cancelled = true));
   queueMicrotask(() => {
+    if (cancelled) return;
     pushContext(owner);
     try {
       fn();
@@ -223,7 +242,7 @@ export function onMount(fn: () => void): void {
  */
 export function onDestroy(fn: () => void): void {
   const ctx = getCurrentComponent();
-  if (ctx) (ctx.destroyed ??= []).push(fn);
+  if (ctx) addCallback(ctx, (ctx.destroyed ??= []), fn);
 }
 
 /**
@@ -267,7 +286,7 @@ export function onDispose(fn: () => void): void {
  */
 export function onError(fn: (err: unknown) => void): void {
   const ctx = getCurrentComponent();
-  if (ctx) (ctx.errorHandlers ??= []).push(fn);
+  if (ctx) addCallback(ctx, (ctx.errorHandlers ??= []), fn);
 }
 
 // ---------------------------------------------------------------------------
@@ -287,7 +306,7 @@ export function onError(fn: (err: unknown) => void): void {
  */
 export function onFormAssociated(fn: (form: HTMLFormElement | null) => void): void {
   const ctx = getCurrentComponent();
-  if (ctx) (ctx._formAssociated ??= []).push(fn);
+  if (ctx) addCallback(ctx, (ctx._formAssociated ??= []), fn);
 }
 
 /**
@@ -297,7 +316,7 @@ export function onFormAssociated(fn: (form: HTMLFormElement | null) => void): vo
  */
 export function onFormDisabled(fn: (disabled: boolean) => void): void {
   const ctx = getCurrentComponent();
-  if (ctx) (ctx._formDisabled ??= []).push(fn);
+  if (ctx) addCallback(ctx, (ctx._formDisabled ??= []), fn);
 }
 
 /**
@@ -307,7 +326,7 @@ export function onFormDisabled(fn: (disabled: boolean) => void): void {
  */
 export function onFormReset(fn: () => void): void {
   const ctx = getCurrentComponent();
-  if (ctx) (ctx._formReset ??= []).push(fn);
+  if (ctx) addCallback(ctx, (ctx._formReset ??= []), fn);
 }
 
 /**
@@ -322,7 +341,7 @@ export function onFormStateRestore(
   fn: (state: string | File | FormData | null, mode: 'restore' | 'autocomplete') => void,
 ): void {
   const ctx = getCurrentComponent();
-  if (ctx) (ctx._formStateRestore ??= []).push(fn);
+  if (ctx) addCallback(ctx, (ctx._formStateRestore ??= []), fn);
 }
 
 // ---------------------------------------------------------------------------
@@ -756,9 +775,10 @@ function unmountContext(ctx: ComponentContext): void {
     ctx.nodes = null;
   }
 
-  disposeScope(ctx);
-
+  // Mark destroyed before disposers run: lean scopes released by this teardown
+  // must not unregister their callbacks from a component that is going away.
   ctx._isDestroyed = true;
+  disposeScope(ctx);
   ctx._isMounted = false;
 
   // Run destroy callbacks

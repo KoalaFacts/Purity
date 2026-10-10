@@ -884,6 +884,8 @@ function _effect(fn: () => undefined | Dispose): Dispose {
     node.disposed = true;
     releaseRun(node);
     disconnectFromSources(node);
+    // A retained stop handle must not keep an unmounted component alive.
+    node.component = null;
   };
 
   // Auto-register with the current component/render context so reactive

@@ -360,6 +360,55 @@ describe('late branches and failed renders', () => {
     expect(mounted).toBe(1);
   });
 
+  it('skips a late onMount whose branch was hidden in the same flush', async () => {
+    const show = state(false);
+    const hidden = state(false);
+    let mounted = 0;
+    mount(
+      () =>
+        html`<div>${when(
+          () => show() && !hidden(),
+          () => {
+            onMount(() => mounted++);
+            return html`<i>late</i>`;
+          },
+        )}</div>`,
+      document.createElement('div'),
+    );
+    watch(() => {
+      if (show()) hidden(true);
+    });
+    await tick();
+    show(true);
+    await tick();
+    await tick();
+    expect(mounted).toBe(0);
+  });
+
+  it('runs onDestroy only for the branch instance still shown at unmount', async () => {
+    const show = state(true);
+    let destroyed = 0;
+    const { unmount } = mount(
+      () =>
+        html`<div>${when(
+          () => show(),
+          () => {
+            onDestroy(() => destroyed++);
+            return html`<i>b</i>`;
+          },
+        )}</div>`,
+      document.createElement('div'),
+    );
+    for (let i = 0; i < 3; i++) {
+      show(false);
+      await tick();
+      show(true);
+      await tick();
+    }
+    unmount();
+    expect(destroyed).toBe(1);
+  });
+
   it('removes a branch light-DOM style when the branch is hidden', async () => {
     const show = state(true);
     let scopeClass = '';

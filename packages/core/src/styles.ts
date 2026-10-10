@@ -1,4 +1,4 @@
-import { getCurrentContext } from './component.ts';
+import { getCurrentComponent } from './component.ts';
 import { watch } from './signals.ts';
 
 // ---------------------------------------------------------------------------
@@ -51,7 +51,7 @@ import { watch } from './signals.ts';
  * @returns Scope class name (when used outside a component). Empty string inside components.
  */
 export function css(strings: TemplateStringsArray, ...values: unknown[]): string {
-  const ctx = getCurrentContext();
+  const ctx = getCurrentComponent();
   const shadowRoot = ctx ? ((ctx as any)._shadowRoot as ShadowRoot | undefined) : undefined;
   const hasReactive = values.some((v) => typeof v === 'function');
 

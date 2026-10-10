@@ -1,4 +1,4 @@
-import { compute, state, watch } from '@purityjs/core';
+import { component, compute, state, watch } from '@purityjs/core';
 import { describe, expect, it } from 'vite-plus/test';
 import { html, renderToString } from '../src/index.ts';
 
@@ -20,6 +20,26 @@ describe('SSR render pass disposal', () => {
     };
     for (let i = 0; i < 5; i++) await renderToString(App);
     expect(runs).toBe(5);
+
+    runs = 0;
+    shared(1);
+    await tick();
+    expect(runs).toBe(0);
+  });
+
+  it('stops watchers created inside a custom component rendered on the server', async () => {
+    const shared = state(0);
+    let runs = 0;
+    component('ssr-owned-watch', () => {
+      watch(() => {
+        runs++;
+        shared();
+      });
+      return html`<span>c</span>`;
+    });
+    const App = () => html`<div><ssr-owned-watch></ssr-owned-watch></div>`;
+    for (let i = 0; i < 3; i++) await renderToString(App);
+    expect(runs).toBe(3);
 
     runs = 0;
     shared(1);

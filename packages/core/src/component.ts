@@ -108,6 +108,20 @@ export function getCurrentContext(): Scope | null {
   return contextStack[contextStack.length - 1] || null;
 }
 
+/**
+ * Nearest enclosing component render context. Lean scopes pushed above it
+ * (each() rows, match() branches, running effects) own disposal but must not
+ * hide the component from component-only APIs (lifecycle hooks, css(),
+ * internals, custom states). @internal
+ */
+export function getCurrentComponent(): ComponentContext | null {
+  for (let i = contextStack.length - 1; i >= 0; i--) {
+    const ctx = contextStack[i];
+    if (ctx instanceof ComponentContext) return ctx;
+  }
+  return null;
+}
+
 export function pushContext(ctx: Scope): void {
   contextStack.push(ctx);
 }
@@ -151,8 +165,8 @@ export function disposeScope(scope: Scope): void {
  * ```
  */
 export function onMount(fn: () => void): void {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) (ctx.mounted ??= []).push(fn);
+  const ctx = getCurrentComponent();
+  if (ctx) (ctx.mounted ??= []).push(fn);
 }
 
 /**
@@ -167,8 +181,8 @@ export function onMount(fn: () => void): void {
  * ```
  */
 export function onDestroy(fn: () => void): void {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) (ctx.destroyed ??= []).push(fn);
+  const ctx = getCurrentComponent();
+  if (ctx) (ctx.destroyed ??= []).push(fn);
 }
 
 /**
@@ -211,8 +225,8 @@ export function onDispose(fn: () => void): void {
  * ```
  */
 export function onError(fn: (err: unknown) => void): void {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) (ctx.errorHandlers ??= []).push(fn);
+  const ctx = getCurrentComponent();
+  if (ctx) (ctx.errorHandlers ??= []).push(fn);
 }
 
 // ---------------------------------------------------------------------------
@@ -231,8 +245,8 @@ export function onError(fn: (err: unknown) => void): void {
  * @param fn Receives the new form (or `null` when disassociated).
  */
 export function onFormAssociated(fn: (form: HTMLFormElement | null) => void): void {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) (ctx._formAssociated ??= []).push(fn);
+  const ctx = getCurrentComponent();
+  if (ctx) (ctx._formAssociated ??= []).push(fn);
 }
 
 /**
@@ -241,8 +255,8 @@ export function onFormAssociated(fn: (form: HTMLFormElement | null) => void): vo
  * components declared with `{ formAssociated: true }`.
  */
 export function onFormDisabled(fn: (disabled: boolean) => void): void {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) (ctx._formDisabled ??= []).push(fn);
+  const ctx = getCurrentComponent();
+  if (ctx) (ctx._formDisabled ??= []).push(fn);
 }
 
 /**
@@ -251,8 +265,8 @@ export function onFormDisabled(fn: (disabled: boolean) => void): void {
  * declared with `{ formAssociated: true }`.
  */
 export function onFormReset(fn: () => void): void {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) (ctx._formReset ??= []).push(fn);
+  const ctx = getCurrentComponent();
+  if (ctx) (ctx._formReset ??= []).push(fn);
 }
 
 /**
@@ -266,8 +280,8 @@ export function onFormReset(fn: () => void): void {
 export function onFormStateRestore(
   fn: (state: string | File | FormData | null, mode: 'restore' | 'autocomplete') => void,
 ): void {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) (ctx._formStateRestore ??= []).push(fn);
+  const ctx = getCurrentComponent();
+  if (ctx) (ctx._formStateRestore ??= []).push(fn);
 }
 
 // ---------------------------------------------------------------------------
@@ -633,8 +647,8 @@ export function mount(component: ComponentFn, container: Element): MountResult {
  * ```
  */
 export function bindComponentState(name: string, accessor: () => unknown): void {
-  const ctx = getCurrentContext();
-  if (!(ctx instanceof ComponentContext)) return;
+  const ctx = getCurrentComponent();
+  if (!ctx) return;
   const internals = ctx._internals;
   const states = internals?.states as
     | { add: (s: string) => void; delete: (s: string) => void }

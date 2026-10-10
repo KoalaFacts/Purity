@@ -624,8 +624,10 @@ function flush(): void {
         // already-DIRTY short-circuit would skip the effect on every
         // subsequent write — the watcher would silently never run
         // again. CLEAN restores the normal CLEAN→DIRTY transition that
-        // the next markDirty needs to re-queue.
+        // the next markDirty needs to re-queue. Release what the failed run
+        // created before throwing; no later run is guaranteed to.
         e.status = STATUS_CLEAN;
+        releaseRun(e);
         console.error('[Purity] watch/effect threw:', err);
       }
     }

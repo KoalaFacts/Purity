@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { mount, onDestroy, onDispose } from '../src/component.ts';
 import { each, match, when } from '../src/control.ts';
-import { component } from '../src/elements.ts';
+import { component, slot } from '../src/elements.ts';
 import { state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
@@ -87,6 +87,35 @@ describe('effect-owned reactive work', () => {
     await tick();
     expect(outerRuns).toBe(0);
     stop();
+  });
+
+  it('releases work an effect created before its re-run threw', async () => {
+    const trigger = state(0);
+    const x = state(0);
+    let innerRuns = 0;
+    const errors: unknown[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => errors.push(args);
+    try {
+      const stop = watch(() => {
+        if (trigger() === 0) return;
+        watch(() => {
+          innerRuns++;
+          x();
+        });
+        throw new Error('boom');
+      });
+      trigger(1);
+      await tick();
+      expect(errors.length).toBe(1);
+      innerRuns = 0;
+      x(1);
+      await tick();
+      expect(innerRuns).toBe(0);
+      stop();
+    } finally {
+      console.error = original;
+    }
   });
 
   it('keeps an outer-created template live when a binding re-runs and returns it again', async () => {
@@ -194,6 +223,27 @@ describe('when()/match() branch disposal edge cases', () => {
       await tick();
     }
     expect(destroyed).toBe(3);
+  });
+
+  it('keeps the enclosing component visible to component-only APIs inside a branch', () => {
+    let slotError: unknown = null;
+    const Host = component(
+      `p-branch-host-${Date.now()}`,
+      () =>
+        html`<div>${when(
+          () => true,
+          () => {
+            try {
+              slot();
+            } catch (e) {
+              slotError = e;
+            }
+            return html`<i>in branch</i>`;
+          },
+        )}</div>`,
+    );
+    mount(() => Host({}), document.createElement('div'));
+    expect(slotError).toBeNull();
   });
 
   it('renders the case the selector holds after an outgoing case wrote it during disposal', async () => {

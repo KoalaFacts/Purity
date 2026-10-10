@@ -9,6 +9,7 @@ import {
 import {
   ComponentContext,
   disposeScope,
+  getCurrentComponent,
   getCurrentContext,
   hydratePendingCustomElements,
   popContext,
@@ -194,8 +195,8 @@ function resolveContent(content: unknown): Node | null {
  * @param name Slot name. Defaults to `'default'`.
  */
 export function slot<E = void>(name?: string): SlotAccessor<E> {
-  const ctx = getCurrentContext();
-  if (!(ctx instanceof ComponentContext))
+  const ctx = getCurrentComponent();
+  if (!ctx)
     throw new Error(
       'slot() must be called inside a component() render function.\n' +
         '  Example: component("my-el", (props, { default: body }) => body())',
@@ -245,9 +246,7 @@ export function slot<E = void>(name?: string): SlotAccessor<E> {
  * ```
  */
 export function internals(): ElementInternals | null {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) return ctx._internals;
-  return null;
+  return getCurrentComponent()?._internals ?? null;
 }
 
 function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node | null {
@@ -460,6 +459,9 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
   }
 
   const renderedHtml = valueToHtml(view);
+  // Server output is final once serialized: release the component's watches
+  // and computes so requests don't leave them subscribed to shared state.
+  disposeScope(ctx);
 
   // Host-element attributes mirror what was declared in the parent template.
   // Attribute *names* are interpolated raw, so skip any key that isn't a safe

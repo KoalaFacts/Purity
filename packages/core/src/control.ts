@@ -356,14 +356,14 @@ function describeKey(key: unknown): string {
   try {
     return JSON.stringify(String(key));
   } catch (e) {
-    console.error('[Purity] Could not format duplicate key for diagnostics:', e);
+    console.error('[Purity] key format:', e);
     return `<${typeof key}>`;
   }
 }
 
 function warnDuplicateKey(key: unknown, index: number, api = 'each()'): void {
   console.warn(
-    `[Purity] ${api} duplicate key ${describeKey(key)} at index ${index}; only the first row for this key is rendered. Ensure keyFn returns a unique value per item.`,
+    `[Purity] ${api} duplicate key ${describeKey(key)} at index ${index}; only the first row renders. keyFn must be unique.`,
   );
 }
 

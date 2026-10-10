@@ -656,6 +656,11 @@ interface CompileResult {
 interface CompileContext {
   hoists: string[];
   nextTplId: number;
+  id: string;
+  lineStarts: number[];
+  warnings: string[];
+  // Templates that compiled. A file with none is left untouched.
+  compiled: number;
   // Flipped on any compile failure (top-level OR nested). When true, we
   // must NOT strip the `html` import — the failed template stays in the
   // output and references it at runtime.
@@ -674,159 +679,216 @@ interface Edit {
 }
 
 /**
- * Compile html`` templates inside expression sources only (no import rewriting).
- * Used for recursive compilation of nested templates inside ${...} expressions.
+ * A parsed `html` tagged template. Only real TaggedTemplateExpression nodes
+ * from the module AST are represented, so text inside comments or string
+ * literals can never be compiled.
  */
-function compileNestedTemplates(source: string, ctx: CompileContext): string {
-  const parts: string[] = [];
-  let pos = 0;
-  let changed = false;
-  // SSR templates emit string-builder factories; client templates emit both
-  // DOM factories and walkers for the existing server-rendered nodes.
-  const genFn = ctx.ssr ? generateSSR : generate;
-  const runtimeArg = ctx.ssr ? '__purity_h__' : '__purity_w__';
+interface HtmlTemplateNode {
+  start: number;
+  end: number;
+  quasi: {
+    quasis: Array<{ start: number; end: number; value: { raw: string } }>;
+    expressions: Array<{ start: number; end: number }>;
+  };
+}
 
-  while (pos < source.length) {
-    const idx = source.indexOf('html`', pos);
-    if (idx === -1) {
-      parts.push(source.slice(pos));
-      break;
-    }
+// AST keys holding TypeScript type nodes. They cannot contain html`` templates.
+const TYPE_ONLY_KEYS = new Set([
+  'typeAnnotation',
+  'returnType',
+  'typeArguments',
+  'typeParameters',
+  'superTypeArguments',
+]);
 
-    if (idx > 0) {
-      const before = source.charCodeAt(idx - 1);
-      if (
-        (before >= 65 && before <= 90) ||
-        (before >= 97 && before <= 122) ||
-        (before >= 48 && before <= 57) ||
-        before === 95
-      ) {
-        parts.push(source.slice(pos, idx + 5));
-        pos = idx + 5;
-        continue;
-      }
+function collectHtmlTemplates(root: unknown): HtmlTemplateNode[] {
+  const found: HtmlTemplateNode[] = [];
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child);
+      return;
     }
+    if (!node || typeof node !== 'object') return;
+    const n = node as Record<string, any>;
+    if (
+      n.type === 'TaggedTemplateExpression' &&
+      n.tag?.type === 'Identifier' &&
+      n.tag.name === 'html'
+    ) {
+      found.push({ start: n.start, end: n.end, quasi: n.quasi });
+    }
+    for (const key of Object.keys(n)) {
+      // Type positions never contain runtime expressions, so skip them.
+      if (TYPE_ONLY_KEYS.has(key)) continue;
+      const value = n[key];
+      if (value && typeof value === 'object') visit(value);
+    }
+  };
+  visit(root);
+  // Sort by start so the binary search in renderSpan holds regardless of the
+  // key order the parser uses for sibling nodes.
+  found.sort((a, b) => a.start - b.start);
+  return found;
+}
 
-    parts.push(source.slice(pos, idx));
-    const extracted = extractTemplateLiteral(source, idx + 4);
-    if (!extracted) {
-      // Re-raise to the outer compileTemplates catch — leaving 'html`' in the
-      // expression source would emit invalid JS in the compiled call.
-      throw new Error('unterminated nested html`` template');
-    }
+// Index of the first node whose start is >= pos.
+function lowerBound(nodes: HtmlTemplateNode[], pos: number): number {
+  let lo = 0;
+  let hi = nodes.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (nodes[mid]!.start < pos) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
 
-    try {
-      const { strings, exprSources } = extracted;
-      const ast = parse(strings);
-      const fnBody = genFn(ast);
-      const tplVar = `__purity_tpl_${ctx.nextTplId++}`;
-      ctx.hoists.push(`const ${tplVar} = ${fnBody};`);
-      if (!ctx.ssr) ctx.hoists.push(`const ${tplVar}_hydrate = ${generateHydrate(ast)};`);
-      const compiledExprs = exprSources.map((expr) =>
-        expr.includes('html`') ? compileNestedTemplates(expr, ctx) : expr,
-      );
-      parts.push(
-        ctx.ssr
-          ? `${tplVar}([${compiledExprs.join(', ')}], ${runtimeArg})`
-          : `__purity_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${compiledExprs.join(', ')}])`,
-      );
-      changed = true;
-    } catch (err) {
-      if (err instanceof Error && err.message.startsWith('[Purity] Unsafe dynamic binding')) {
-        throw err;
-      }
-      ctx.failed = true;
-      parts.push(source.slice(idx, extracted.end));
-    }
-    pos = extracted.end;
+/**
+ * Source text in [start, end) with every html template inside it compiled.
+ * Templates nested in another template in the span are rendered by that
+ * template, so they are skipped here.
+ */
+function renderSpan(
+  source: string,
+  start: number,
+  end: number,
+  nodes: HtmlTemplateNode[],
+  ctx: CompileContext,
+): string {
+  let out = '';
+  let pos = start;
+  for (let i = lowerBound(nodes, start); i < nodes.length && nodes[i]!.start < end; i++) {
+    const node = nodes[i]!;
+    if (node.start < pos) continue;
+    out += source.slice(pos, node.start) + renderTemplate(node, source, nodes, ctx);
+    pos = node.end;
+  }
+  return out + source.slice(pos, end);
+}
+
+// Security rejections must fail the build instead of falling back to the
+// runtime compiler.
+function isFatalTemplateError(err: unknown): boolean {
+  return err instanceof Error && err.message.startsWith('[Purity] Unsafe dynamic binding');
+}
+
+/**
+ * Compile one html`` template to its runtime factory call. A template whose
+ * parse or codegen fails is left as written and the file is marked failed.
+ */
+function renderTemplate(
+  node: HtmlTemplateNode,
+  source: string,
+  nodes: HtmlTemplateNode[],
+  ctx: CompileContext,
+): string {
+  const { quasis, expressions } = node.quasi;
+  let fnBody: string;
+  let hydrateBody: string | null = null;
+  try {
+    const ast = parse(quasis.map((q) => q.value.raw));
+    fnBody = (ctx.ssr ? generateSSR : generate)(ast);
+    if (!ctx.ssr) hydrateBody = generateHydrate(ast);
+  } catch (err) {
+    // Security failures must not fall back to an uncompiled template.
+    if (isFatalTemplateError(err)) throw err;
+    ctx.failed = true;
+    const { line, column } = offsetToLineCol(ctx.lineStarts, node.start);
+    const msg = err instanceof Error ? err.message : String(err);
+    ctx.warnings.push(
+      `[purity] ${ctx.id}:${line + 1}:${column + 1} — failed to compile html\`\`: ${msg}`,
+    );
+    return source.slice(node.start, node.end);
   }
 
-  return changed ? parts.join('') : source;
+  // Hoist the compiled-template factory to module scope so the IIFE (and its
+  // document.createElement('template') / innerHTML parse) only runs once per
+  // file, not per call from inside a loop or arrow fn.
+  ctx.compiled++;
+  const tplVar = `__purity_tpl_${ctx.nextTplId++}`;
+  ctx.hoists.push(`const ${tplVar} = ${fnBody};`);
+  if (hydrateBody !== null) ctx.hoists.push(`const ${tplVar}_hydrate = ${hydrateBody};`);
+
+  // Slot i lies between quasis[i] (which ends after `${`) and quasis[i+1]
+  // (which starts at `}`).
+  const slots: string[] = [];
+  for (let i = 0; i < expressions.length; i++) {
+    slots.push(renderSpan(source, quasis[i]!.end, quasis[i + 1]!.start, nodes, ctx));
+  }
+  return ctx.ssr
+    ? `${tplVar}([${slots.join(', ')}], __purity_h__)`
+    : `__purity_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${slots.join(', ')}])`;
+}
+
+type ModuleLang = 'ts' | 'tsx' | 'jsx';
+
+const MODULE_LANG_BY_EXT: Record<string, ModuleLang> = {
+  '.ts': 'ts',
+  '.mts': 'ts',
+  '.cts': 'ts',
+  '.tsx': 'tsx',
+  '.js': 'jsx',
+  '.mjs': 'jsx',
+  '.cjs': 'jsx',
+  '.jsx': 'jsx',
+};
+
+// Grammar for a module id, or undefined when the id is a raw non-JS container.
+//
+// JS/TS files are modules by extension. Other formats (for example a Vue
+// single-file component) reach this transform as raw source. A container
+// plugin such as @vitejs/plugin-vue then emits each script as a virtual
+// submodule, e.g. `Card.vue?vue&type=script&setup=true&lang.ts`, and that
+// pure-JS submodule is the only code purity compiles.
+function moduleLangOf(id: string): ModuleLang | undefined {
+  const q = id.indexOf('?');
+  const filename = q === -1 ? id : id.slice(0, q);
+  const dot = filename.lastIndexOf('.');
+  const ext = dot === -1 ? '' : filename.slice(dot).toLowerCase();
+  const moduleLang = MODULE_LANG_BY_EXT[ext];
+  if (moduleLang) return moduleLang;
+  if (q === -1) return undefined;
+  const params = id.slice(q + 1).split('&');
+  if (!params.includes('type=script')) return undefined;
+  const lang = params.find((p) => p.startsWith('lang.'))?.slice('lang.'.length);
+  return lang === 'ts' ? 'ts' : lang === 'tsx' ? 'tsx' : 'jsx';
 }
 
 function compileTemplates(source: string, id: string, ssr: boolean): CompileResult {
-  const ctx: CompileContext = { hoists: [], nextTplId: 0, failed: false, ssr };
-  const edits: Edit[] = [];
   const warnings: string[] = [];
   const lineStarts = buildLineStarts(source);
-  const genFn = ssr ? generateSSR : generate;
-  const runtimeArg = ssr ? '__purity_h__' : '__purity_w__';
-  let pos = 0;
+  const filename = id.split('?')[0]!;
 
-  while (pos < source.length) {
-    const idx = source.indexOf('html`', pos);
-    if (idx === -1) break;
-
-    // Check it's actually the html tag (not part of another word)
-    if (idx > 0) {
-      const before = source.charCodeAt(idx - 1);
-      if (
-        (before >= 65 && before <= 90) ||
-        (before >= 97 && before <= 122) ||
-        (before >= 48 && before <= 57) ||
-        before === 95
-      ) {
-        pos = idx + 5;
-        continue;
-      }
-    }
-
-    const extracted = extractTemplateLiteral(source, idx + 4);
-    if (!extracted) {
-      // Unterminated template — preserve the html import so the runtime
-      // tagged-template path still has something to call. Surface as a
-      // warning so the user knows why no AOT happened here.
-      ctx.failed = true;
-      const { line, column } = offsetToLineCol(lineStarts, idx);
-      warnings.push(`[purity] ${id}:${line + 1}:${column + 1} — unterminated html\`\` template`);
-      pos = idx + 5;
-      continue;
-    }
-
-    try {
-      const { strings, exprSources } = extracted;
-      const ast = parse(strings);
-      const fnBody = genFn(ast);
-
-      // Hoist the compiled-template factory to module scope so the IIFE
-      // (and its document.createElement('template') / innerHTML parse) only
-      // runs once per file — not per call from inside a loop or arrow fn.
-      const tplVar = `__purity_tpl_${ctx.nextTplId++}`;
-      ctx.hoists.push(`const ${tplVar} = ${fnBody};`);
-      if (!ssr) ctx.hoists.push(`const ${tplVar}_hydrate = ${generateHydrate(ast)};`);
-
-      // Recursively compile any nested html`` templates inside expressions
-      const compiledExprs = exprSources.map((expr) => {
-        if (expr.includes('html`')) {
-          return compileNestedTemplates(expr, ctx);
-        }
-        return expr;
-      });
-
-      edits.push({
-        start: idx,
-        end: extracted.end,
-        out: ssr
-          ? `${tplVar}([${compiledExprs.join(', ')}], ${runtimeArg})`
-          : `__purity_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${compiledExprs.join(', ')}])`,
-      });
-    } catch (err) {
-      // Security failures must not fall back to an uncompiled template.
-      if (err instanceof Error && err.message.startsWith('[Purity] Unsafe dynamic binding')) {
-        throw err;
-      }
-      ctx.failed = true;
-      const { line, column } = offsetToLineCol(lineStarts, idx);
-      const msg = err instanceof Error ? err.message : String(err);
-      warnings.push(
-        `[purity] ${id}:${line + 1}:${column + 1} — failed to compile html\`\`: ${msg}`,
-      );
-    }
-
-    pos = extracted.end;
+  const lang = moduleLangOf(id);
+  if (lang === undefined) return { changed: false, code: source, map: null, warnings };
+  const { program, errors } = parseSync(filename, source, { lang, preserveParens: false });
+  if (errors.length > 0) {
+    // Syntax errors are reported by Vite itself. Do not guess at templates.
+    warnings.push(`[purity] ${id} — could not parse module; html\`\` templates were not compiled`);
+    return { changed: false, code: source, map: null, warnings };
   }
 
-  if (edits.length === 0) {
+  const nodes = collectHtmlTemplates(program);
+  const ctx: CompileContext = {
+    hoists: [],
+    nextTplId: 0,
+    failed: false,
+    ssr,
+    id,
+    lineStarts,
+    warnings,
+    compiled: 0,
+  };
+  const edits: Edit[] = [];
+  let lastEnd = -1;
+  for (const node of nodes) {
+    // Templates nested in an outer one are rendered by that outer template.
+    if (node.start < lastEnd) continue;
+    edits.push({ start: node.start, end: node.end, out: renderTemplate(node, source, nodes, ctx) });
+    lastEnd = node.end;
+  }
+
+  if (ctx.compiled === 0) {
     return { changed: false, code: source, map: null, warnings };
   }
 
@@ -843,9 +905,8 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   edits.push({ start: insertPos, end: insertPos, out: runtimeImport + hoistsBlock });
 
   // Removing `html` from `@purityjs/core` import statements — but ONLY when
-  // every template compiled. If any failed (top-level or nested), the failed
-  // `html\`\`` is left in the output as runtime code and still needs the
-  // import to resolve.
+  // every template compiled. If any failed, the failed `html\`\`` is left in
+  // the output as runtime code and still needs the import to resolve.
   if (!ctx.failed) edits.push(...findHtmlImportEdits(source));
 
   // Sort: by start ASC, then by length ASC (insertions before replacements at
@@ -1116,145 +1177,6 @@ function applyEdits(
       mappings,
     },
   };
-}
-
-// ---------------------------------------------------------------------------
-// Template literal extraction
-// ---------------------------------------------------------------------------
-
-interface ExtractedTemplate {
-  strings: string[];
-  exprSources: string[];
-  end: number;
-}
-
-function extractTemplateLiteral(source: string, backtickPos: number): ExtractedTemplate | null {
-  let pos = backtickPos + 1;
-  const strings: string[] = [];
-  const exprSources: string[] = [];
-  let current = '';
-
-  while (pos < source.length) {
-    const ch = source.charCodeAt(pos);
-
-    if (ch === 96) {
-      strings.push(current);
-      return { strings, exprSources, end: pos + 1 };
-    }
-
-    if (ch === 92) {
-      current += source[pos] + (source[pos + 1] ?? '');
-      pos += 2;
-      continue;
-    }
-
-    if (ch === 36 && pos + 1 < source.length && source.charCodeAt(pos + 1) === 123) {
-      strings.push(current);
-      current = '';
-      pos += 2;
-
-      const exprResult = extractExpression(source, pos);
-      if (!exprResult) return null;
-
-      exprSources.push(exprResult.source);
-      pos = exprResult.end;
-      continue;
-    }
-
-    current += source[pos];
-    pos++;
-  }
-
-  return null;
-}
-
-function extractExpression(source: string, start: number): { source: string; end: number } | null {
-  // We're scanning the expression that starts immediately after `${`. We must
-  // close on the matching `}` at the outer (expression) depth.
-  //
-  // Nested template literals re-enter expression mode at each inner `${...}`,
-  // and inner templates can themselves contain `}` characters that should NOT
-  // close the outer expression. A scalar `inTemplate` counter conflates the
-  // two and miscounts on inputs like ``a}b`` (the `}` is template content but
-  // gets read as a closing brace) or `` `x${ `y` }z` `` (the opening backtick
-  // of the inner template is read as closing the outer template).
-  //
-  // Track contexts explicitly: a stack of frames, each either an expression
-  // (with its own brace depth) or a template (no brace depth — `}` is content
-  // until we hit `${`, which pushes an expression).
-  type Frame = { kind: 'expr'; depth: number } | { kind: 'tpl' };
-  const stack: Frame[] = [{ kind: 'expr', depth: 1 }];
-  let pos = start;
-  let inString: number | null = null;
-
-  while (pos < source.length && stack.length > 0) {
-    const ch = source.charCodeAt(pos);
-
-    if (inString !== null) {
-      if (ch === 92) {
-        pos += 2;
-        continue;
-      }
-      if (ch === inString) inString = null;
-      pos++;
-      continue;
-    }
-
-    const top = stack[stack.length - 1]!;
-
-    if (top.kind === 'tpl') {
-      if (ch === 92) {
-        pos += 2;
-        continue;
-      }
-      if (ch === 96) {
-        stack.pop();
-        pos++;
-        continue;
-      }
-      if (ch === 36 && pos + 1 < source.length && source.charCodeAt(pos + 1) === 123) {
-        stack.push({ kind: 'expr', depth: 1 });
-        pos += 2;
-        continue;
-      }
-      pos++;
-      continue;
-    }
-
-    // top.kind === 'expr'
-    if (ch === 34 || ch === 39) {
-      inString = ch;
-      pos++;
-      continue;
-    }
-    if (ch === 96) {
-      stack.push({ kind: 'tpl' });
-      pos++;
-      continue;
-    }
-    if (ch === 123) {
-      top.depth++;
-      pos++;
-      continue;
-    }
-    if (ch === 125) {
-      top.depth--;
-      if (top.depth === 0) {
-        stack.pop();
-        if (stack.length === 0) {
-          return { source: source.slice(start, pos), end: pos + 1 };
-        }
-        // Popped an inner ${...} — return to enclosing template context.
-        pos++;
-        continue;
-      }
-      pos++;
-      continue;
-    }
-    pos++;
-  }
-
-  return null;
 }
 
 function findLastImportEnd(code: string): number {

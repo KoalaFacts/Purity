@@ -149,7 +149,16 @@ describe('@purityjs/vite-plugin', () => {
 
   it('respects custom include option', () => {
     const custom = purity({ include: ['.vue'] });
-    expect(custom.transform('html`<div></div>`', 'app.vue')).not.toBeNull();
+    const sfc = [
+      '<script>',
+      "import { html } from '@purityjs/core';",
+      'export const v = html`<div></div>`;',
+      '</script>',
+    ].join('\n');
+    // A raw container is not compiled; its script submodule is.
+    expect(custom.transform(sfc, 'app.vue')).toBeNull();
+    const submodule = "import { html } from '@purityjs/core';\nexport const v = html`<div></div>`;";
+    expect(custom.transform(submodule, 'app.vue?vue&type=script&lang.js')).not.toBeNull();
     expect(custom.transform('html`<div></div>`', 'app.ts')).toBeNull();
   });
 
@@ -625,34 +634,23 @@ describe('@purityjs/vite-plugin compile errors', () => {
     }
   });
 
-  it('warns and preserves the `html` import on a top-level unterminated template', () => {
-    // Valid template first so the unterminated one truly has no closing
-    // backtick (otherwise the extractor would consume the next `` ` `` as
-    // a closer). The valid template should still AOT-compile, and the
-    // html import must stay so the unterminated literal still has a
-    // runtime tag to call.
-    const code = `import { html } from '@purityjs/core';\nconst ok = html\`<p>good</p>\`;\nconst bad = html\`<div>broken`;
+  it('leaves a module with a syntax error untouched and warns', () => {
+    // An unterminated html`` is a syntax error in the module. AST discovery
+    // cannot see templates in an unparseable file, so nothing is compiled.
+    const code = [
+      "import { html } from '@purityjs/core';",
+      'const ok = html`<p>good</p>`;',
+      'const bad = html`<div>broken;',
+    ].join('\n');
     const warns: string[] = [];
     const orig = console.warn;
     console.warn = (msg: any) => warns.push(String(msg));
     try {
-      const result = plugin.transform(code, 'app.ts')!;
-      expect(result).not.toBeNull();
-      // Valid template compiled.
-      expect(result.code).toContain('createElement');
-      // Unterminated template left as runtime html``.
-      expect(result.code).toContain('html`<div>broken');
-      // html import preserved alongside the compiled hydration runtime.
-      const purityImports = result.code.match(
-        /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core['"]/g,
-      )!;
-      expect(purityImports.some((s) => /\bhtml\b/.test(s))).toBe(true);
-      expect(result.code).toContain("from '@purityjs/core/compiler'");
-      // Warning surfaced with file:line:col.
-      expect(warns.some((w) => w.includes('app.ts:3:') && w.includes('unterminated'))).toBe(true);
+      expect(plugin.transform(code, 'app.ts')).toBeNull();
     } finally {
       console.warn = orig;
     }
+    expect(warns.some((w) => w.includes('app.ts') && w.includes('could not parse'))).toBe(true);
   });
 
   it('reports a nested unterminated template via the outer template warning', () => {

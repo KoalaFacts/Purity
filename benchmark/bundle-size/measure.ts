@@ -162,6 +162,66 @@ async function measure(scenario: (typeof scenarios)[number], aot: boolean): Prom
   };
 }
 
+// Published entry points whose full size is budgeted. Each is measured as
+// everything it exports (`export * from …`), minified, from the built dist.
+// Other Purity packages and Node built-ins are external, so each figure is
+// that package's own code. The Vite plugin and CLI are build-time Node tools
+// and are not budgeted.
+const packageEntries = [
+  { name: 'core', specifier: '@purityjs/core', dist: 'packages/core/dist/' },
+  { name: 'core-compiler', specifier: '@purityjs/core/compiler', dist: 'packages/core/dist/' },
+  { name: 'ssr', specifier: '@purityjs/ssr', dist: 'packages/ssr/dist/' },
+];
+
+interface PackageMeasurement extends Sizes {
+  entry: string;
+}
+
+async function measurePackage(entry: (typeof packageEntries)[number]): Promise<PackageMeasurement> {
+  const virtualId = '\0purity-package-entry';
+  const result = await build({
+    root,
+    configFile: false,
+    mode: 'production',
+    logLevel: 'error',
+    resolve: { conditions: ['module', 'browser', 'production'] },
+    plugins: [
+      {
+        name: 'purity-package-entry',
+        resolveId: (id) => (id === 'purity-package-entry' ? virtualId : undefined),
+        load: (id) => (id === virtualId ? `export * from '${entry.specifier}';` : undefined),
+      },
+    ],
+    build: {
+      write: false,
+      target: 'es2022',
+      minify: true,
+      sourcemap: false,
+      modulePreload: false,
+      rollupOptions: {
+        input: 'purity-package-entry',
+        // App builds drop entry exports by default; keep every export of the entry.
+        preserveEntrySignatures: 'strict',
+        external: (id) =>
+          id.startsWith('node:') ||
+          (id.startsWith('@purityjs/') &&
+            !id.startsWith(entry.specifier.split('/').slice(0, 2).join('/'))),
+        output: { entryFileNames: 'entry.js', codeSplitting: false },
+      },
+    },
+  });
+  assert(!Array.isArray(result) && 'output' in result, 'Expected one production output');
+  const chunks = result.output.filter((item) => item.type === 'chunk');
+  assert.equal(chunks.length, 1, 'Package entry must measure as one payload');
+  const rendered = Object.keys(chunks[0].modules).map((id) => id.replaceAll('\\', '/'));
+  assert(
+    rendered.some((id) => id.includes(`/${entry.dist}`)),
+    `Missing built ${entry.specifier}`,
+  );
+  assert(!rendered.some((id) => id.includes('/src/')), 'Source export measured');
+  return { entry: entry.name, ...sizes(chunks[0].code) };
+}
+
 async function packageVersion(path: string): Promise<string> {
   const pkg = JSON.parse(await readFile(join(root, path, 'package.json'), 'utf8'));
   assert.equal(typeof pkg.version, 'string');
@@ -169,6 +229,8 @@ async function packageVersion(path: string): Promise<string> {
 }
 
 const budgets = JSON.parse(await readFile(join(import.meta.dirname, 'budgets.json'), 'utf8'));
+const packageMeasurements: PackageMeasurement[] = [];
+for (const entry of packageEntries) packageMeasurements.push(await measurePackage(entry));
 const measurements: Measurement[] = [];
 for (const scenario of scenarios) {
   measurements.push(await measure(scenario, false), await measure(scenario, true));
@@ -196,22 +258,30 @@ if (verify) {
     verification = { status: 'failed', engines: {} };
   }
 }
+// Size budgets apply to the published packages. Fixture apps are size-reported
+// only; their Function-constructor count stays enforced because AOT output
+// must keep working under a CSP without unsafe-eval.
 const violations: string[] = [];
-for (const item of measurements) {
-  for (const metric of ['gzipBytes', 'brotliBytes', 'functionConstructorCalls'] as const) {
-    const budget = budgets[item.profile]?.[metric];
-    assert(
-      Number.isSafeInteger(budget) && budget >= (metric === 'functionConstructorCalls' ? 0 : 1),
-      'Invalid size budget',
-    );
+for (const item of packageMeasurements) {
+  for (const metric of ['gzipBytes', 'brotliBytes'] as const) {
+    const budget = budgets.packages?.[item.entry]?.[metric];
+    assert(Number.isSafeInteger(budget) && budget >= 1, 'Invalid package size budget');
     if (item[metric] > budget)
-      violations.push(`${item.profile}: ${metric} ${item[metric]} > ${budget}`);
+      violations.push(`${item.entry}: ${metric} ${item[metric]} > ${budget}`);
   }
+}
+for (const item of measurements) {
+  const budget = budgets.fixtures?.[item.profile]?.functionConstructorCalls;
+  assert(Number.isSafeInteger(budget) && budget >= 0, 'Invalid fixture budget');
+  if (item.functionConstructorCalls > budget)
+    violations.push(
+      `${item.profile}: functionConstructorCalls ${item.functionConstructorCalls} > ${budget}`,
+    );
 }
 const git = (...args: string[]) =>
   execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 const report = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   revision: git('rev-parse', 'HEAD'),
   dirty: git('status', '--porcelain', '--untracked-files=normal').length > 0,
   node: process.versions.node,
@@ -245,6 +315,9 @@ const report = {
     core: createHash('sha256')
       .update(await readFile(join(root, 'packages/core/dist/index.js')))
       .digest('hex'),
+    coreCompiler: createHash('sha256')
+      .update(await readFile(join(root, 'packages/core/dist/compiler/index.js')))
+      .digest('hex'),
     ssr: createHash('sha256')
       .update(await readFile(join(root, 'packages/ssr/dist/index.js')))
       .digest('hex'),
@@ -261,7 +334,8 @@ const report = {
     perFileCompression: true,
   },
   scope:
-    'Complete fixture JavaScript payload from built packages; includes application code, excludes HTML and source maps.',
+    'Packages: every export of each published entry, minified, from built dist; other Purity packages and Node built-ins external. Fixtures: complete fixture JavaScript payload, reported only.',
+  packages: packageMeasurements,
   measurements,
   budgets,
   violations,
@@ -270,10 +344,19 @@ const report = {
 await mkdir(outputDir, { recursive: true });
 await writeFile(join(outputDir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
 const summary = [
-  '## Purity production feature bundle sizes',
+  '## Purity package and fixture bundle sizes',
   '',
   `Revision: ${report.revision}; dirty: ${report.dirty}; Node: ${report.node}`,
   `Core: ${report.versions.core}; SSR: ${report.versions.ssr}; plugin: ${report.versions.plugin}; Vite: ${report.versions.vite}; parser: ${report.versions.parser}`,
+  '',
+  '| Package entry | Raw bytes | gzip bytes | Brotli bytes | gzip budget | Brotli budget |',
+  '| --- | ---: | ---: | ---: | ---: | ---: |',
+  ...packageMeasurements.map(
+    (item) =>
+      `| ${item.entry} | ${item.rawBytes} | ${item.gzipBytes} | ${item.brotliBytes} | ${budgets.packages[item.entry].gzipBytes} | ${budgets.packages[item.entry].brotliBytes} |`,
+  ),
+  '',
+  'Fixture apps (size reported only):',
   '',
   '| Profile | Raw bytes | gzip bytes | Brotli bytes | Function constructor calls |',
   '| --- | ---: | ---: | ---: | ---: |',
@@ -283,7 +366,7 @@ const summary = [
   ),
   '',
   report.scope,
-  'Compression is per emitted JavaScript file. These are fixture results, not a universal framework size.',
+  'Compression is per emitted JavaScript file. Fixture results are examples, not a universal framework size.',
   `Browser verification: ${verification.status}; engines: ${JSON.stringify(verification.engines)}.`,
   `Budget checks: ${measureOnly ? 'not enforced' : violations.length ? 'failed' : 'passed'}.`,
   ...violations,

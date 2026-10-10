@@ -350,6 +350,54 @@ function disposeEntry<T>(entry: EachEntry<T>): void {
   entry.ctx.disposers = null;
 }
 
+function describeKey(key: unknown): string {
+  // String(key) throws for null-prototype objects; a diagnostic must not abort
+  // the render, so report the conversion error and fall back to the type name.
+  try {
+    return JSON.stringify(String(key));
+  } catch (e) {
+    console.error('[Purity] key format:', e);
+    return `<${typeof key}>`;
+  }
+}
+
+function warnDuplicateKey(key: unknown, index: number, api = 'each()'): void {
+  console.warn(
+    `[Purity] ${api} duplicate key ${describeKey(key)} at index ${index}; only the first row renders. keyFn must be unique.`,
+  );
+}
+
+/**
+ * Rows kept after removing later duplicate keys (first occurrence wins). Each
+ * retained row keeps the index and key it had in the source array, so keyFn
+ * and mapFn see the same indices as a non-virtual each().
+ */
+interface FirstOccurrenceRows<T> {
+  items: T[];
+  indices: number[];
+  keys: unknown[];
+}
+
+function firstOccurrenceRows<T>(
+  items: T[],
+  getKey: (item: T, index: number) => unknown,
+): FirstOccurrenceRows<T> {
+  const seen = new Set<unknown>();
+  const rows: FirstOccurrenceRows<T> = { items: [], indices: [], keys: [] };
+  for (let i = 0; i < items.length; i++) {
+    const key = getKey(items[i], i);
+    if (seen.has(key)) {
+      warnDuplicateKey(key, i);
+      continue;
+    }
+    seen.add(key);
+    rows.items.push(items[i]);
+    rows.indices.push(i);
+    rows.keys.push(key);
+  }
+  return rows;
+}
+
 function canReplaceOwnedRange<T>(
   parent: Node,
   prevKeys: unknown[],
@@ -479,11 +527,18 @@ function reconcileEach<T>(
   }
 
   if (prevLen === 0) {
-    const newKeys2: unknown[] = new Array(len);
+    const newKeys2: unknown[] = [];
     const frag = document.createDocumentFragment();
     for (let i = 0; i < len; i++) {
       const item = items[i];
-      newKeys2[i] = getKey(item, i);
+      const key = getKey(item, i);
+      // Duplicate key: keep the first row only. Rendering a second entry
+      // would orphan the first one's DOM nodes and scope in keyToEntry.
+      if (keyToEntry.has(key)) {
+        warnDuplicateKey(key, i);
+        continue;
+      }
+      newKeys2.push(key);
       const data = state(item);
       const { entry, content } = runEntryMapFn(mapFn, data, i, ownerCtx);
       if (content instanceof DocumentFragment) {
@@ -498,34 +553,33 @@ function reconcileEach<T>(
         entry.nodes = [tn];
         frag.appendChild(tn);
       }
-      keyToEntry.set(newKeys2[i], entry);
+      keyToEntry.set(key, entry);
     }
     parent.insertBefore(frag, endMarker);
     eachState.prevKeys = newKeys2;
     return;
   }
 
-  const newKeys: unknown[] = new Array(len);
+  // newKeys holds first occurrences only, so newLen (not len) is the row
+  // count used by every placement loop below.
+  const newKeys: unknown[] = [];
   const newEntries = new Map<unknown, EachEntry<T>>();
   let reuseCount = 0;
 
   for (let i = 0; i < len; i++) {
     const item = items[i];
     const key = getKey(item, i);
-    newKeys[i] = key;
 
-    // Duplicate-key detection. When two items resolve to the same key, the
-    // second `newEntries.set` overwrites the first, the same entry's nodes
-    // get adopted by both insert points in the reorder loop, and a row
-    // visually disappears. The reuseCount also gets inflated past prevLen,
-    // throwing off the append/prepend heuristics. Warn once per render with
-    // the offending key so the caller can fix their keyFn — full dedupe
-    // would change semantics (the documented contract is "keys are unique").
+    // Duplicate key: keys are documented as unique, so this only warns. The
+    // first occurrence owns the entry; later occurrences reuse it without
+    // creating or reusing a second one. That keeps reuseCount counting
+    // distinct keys and means no entry is created and then orphaned in
+    // newEntries (its nodes and scope would otherwise leak).
     if (newEntries.has(key)) {
-      console.warn(
-        `[Purity] each() duplicate key ${JSON.stringify(String(key))} at index ${i}; rows after the first occurrence may corrupt. Ensure keyFn returns a unique value per item.`,
-      );
+      warnDuplicateKey(key, i);
+      continue;
     }
+    newKeys.push(key);
 
     const _existing = keyToEntry.get(key) as EachEntry<T> | undefined;
     if (_existing) {
@@ -540,10 +594,12 @@ function reconcileEach<T>(
     }
   }
 
+  const newLen = newKeys.length;
+
   if (reuseCount === 0) {
     bulkClear(parent, prevKeys, keyToEntry, endMarker);
     const frag = document.createDocumentFragment();
-    for (let i = 0; i < len; i++) {
+    for (let i = 0; i < newLen; i++) {
       const entry = newEntries.get(newKeys[i])!;
       for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
     }
@@ -553,11 +609,12 @@ function reconcileEach<T>(
     return;
   }
 
-  if (reuseCount < prevLen) {
-    const newKeySet = new Set(newKeys);
+  // reuseCount counts distinct reused keys, so it is below keyToEntry.size
+  // exactly when some previous key was dropped.
+  if (reuseCount < keyToEntry.size) {
     for (let i = 0; i < prevLen; i++) {
       const key = prevKeys[i];
-      if (!newKeySet.has(key)) {
+      if (!newEntries.has(key)) {
         const entry = keyToEntry.get(key);
         if (entry) {
           for (let j = 0; j < entry.nodes.length; j++) {
@@ -570,7 +627,7 @@ function reconcileEach<T>(
     }
   }
 
-  let isAppend = len > prevLen;
+  let isAppend = newLen > prevLen;
   if (isAppend) {
     for (let i = 0; i < prevLen; i++) {
       if (prevKeys[i] !== newKeys[i]) {
@@ -580,9 +637,9 @@ function reconcileEach<T>(
     }
   }
 
-  let isPrepend = !isAppend && len > prevLen;
+  let isPrepend = !isAppend && newLen > prevLen;
   if (isPrepend) {
-    const offset = len - prevLen;
+    const offset = newLen - prevLen;
     for (let i = 0; i < prevLen; i++) {
       if (prevKeys[i] !== newKeys[i + offset]) {
         isPrepend = false;
@@ -593,13 +650,13 @@ function reconcileEach<T>(
 
   if (isAppend) {
     const frag = document.createDocumentFragment();
-    for (let i = prevLen; i < len; i++) {
+    for (let i = prevLen; i < newLen; i++) {
       const entry = newEntries.get(newKeys[i])!;
       for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
     }
     parent.insertBefore(frag, endMarker);
   } else if (isPrepend) {
-    const newCount = len - prevLen;
+    const newCount = newLen - prevLen;
     const frag = document.createDocumentFragment();
     for (let i = 0; i < newCount; i++) {
       const entry = newEntries.get(newKeys[i])!;
@@ -609,11 +666,11 @@ function reconcileEach<T>(
     parent.insertBefore(frag, firstExisting);
   } else {
     let swapped = false;
-    if (len === prevLen && reuseCount === len) {
+    if (newLen === prevLen && reuseCount === newLen) {
       let sc = 0;
       let sa = -1;
       let sb = -1;
-      for (let i = 0; i < len; i++) {
+      for (let i = 0; i < newLen; i++) {
         if (prevKeys[i] !== newKeys[i]) {
           if (sc === 0) sa = i;
           else if (sc === 1) sb = i;
@@ -645,9 +702,9 @@ function reconcileEach<T>(
       for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
 
       const sources: number[] = [];
-      const newIndexToSource: number[] = new Array(len).fill(-1);
+      const newIndexToSource: number[] = new Array(newLen).fill(-1);
 
-      for (let i = 0; i < len; i++) {
+      for (let i = 0; i < newLen; i++) {
         const oldIdx = oldKeyIndex.get(newKeys[i]);
         if (oldIdx !== undefined) {
           sources.push(oldIdx);
@@ -664,7 +721,7 @@ function reconcileEach<T>(
         // moveBefore is O(1) per node, and pulling rows into a fragment
         // first would detach them and lose the preserved state.
         let nextSibling: Node = endMarker;
-        for (let i = len - 1; i >= 0; i--) {
+        for (let i = newLen - 1; i >= 0; i--) {
           const entry = newEntries.get(newKeys[i])!;
           const sourceIdx = newIndexToSource[i];
           const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
@@ -684,7 +741,7 @@ function reconcileEach<T>(
         let batch: Node[] | null = null;
         let batchTarget: Node = endMarker;
 
-        for (let i = len - 1; i >= 0; i--) {
+        for (let i = newLen - 1; i >= 0; i--) {
           const entry = newEntries.get(newKeys[i])!;
           const firstNode = entry.nodes[0];
           const sourceIdx = newIndexToSource[i];
@@ -741,14 +798,12 @@ class EachWindowHeightIndex {
     return this.keys.length;
   }
 
-  rebuild<T>(items: T[], getKey: (item: T, index: number) => unknown): void {
-    const keys = new Array<unknown>(items.length);
+  rebuild(keys: unknown[]): void {
     const positions = new Map<unknown, number>();
     const measured = new Map<unknown, number>();
 
-    for (let i = 0; i < items.length; i++) {
-      const key = getKey(items[i], i);
-      keys[i] = key;
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
       positions.set(key, i);
       const height = this.measured.get(key);
       if (height !== undefined) measured.set(key, height);
@@ -1159,12 +1214,13 @@ function registerEachAutoDispose<T>(
 function reconcileEachWindow<T>(
   eachState: EachState<T>,
   items: T[],
+  indices: number[],
+  keys: unknown[],
   parent: Node,
   spacers: EachWindowSpacers,
   requestedRange: EachWindowRange,
   heights: EachWindowHeightIndex,
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
-  getKey: (item: T, index: number) => unknown,
   ownerCtx: Scope | null,
 ): void {
   const start = Math.min(Math.max(0, requestedRange.start), items.length);
@@ -1184,8 +1240,8 @@ function reconcileEachWindow<T>(
     visible,
     parent,
     spacers.bottom,
-    (item, index) => mapFn(item, index + normalizedStart),
-    (item, index) => getKey(item, index + normalizedStart),
+    (item, index) => mapFn(item, indices[normalizedStart + index]),
+    (_item, index) => keys[normalizedStart + index],
     ownerCtx,
   );
 }
@@ -1204,12 +1260,17 @@ function createEachWindowController<T>(
   const range = state<EachWindowRange>({ start: 0, end: EACH_WINDOW_INITIAL_ROWS });
   const itemsVersion = state({});
   let items: T[] = [];
+  let indices: number[] = [];
+  let keys: unknown[] = [];
   let notifyRowsChanged = () => {};
   let requestEachWindowUpdate: (() => void) | undefined;
 
   const disposeItems = watch(() => {
-    items = getList() || [];
-    heights.rebuild(items, getKey);
+    const rows = firstOccurrenceRows(getList() || [], getKey);
+    items = rows.items;
+    indices = rows.indices;
+    keys = rows.keys;
+    heights.rebuild(keys);
     itemsVersion({});
   });
 
@@ -1220,12 +1281,13 @@ function createEachWindowController<T>(
     reconcileEachWindow(
       eachState,
       items,
+      indices,
+      keys,
       parent,
       spacers,
       range(),
       heights,
       mapFn,
-      getKey,
       ownerCtx,
     );
     notifyRowsChanged();
@@ -1524,10 +1586,11 @@ export function inflateDeferredEach<T>(
 
   const ssrByKey = new Map<string, SSRRow>();
   for (let i = 0; i < ssrRows.length; i++) ssrByKey.set(ssrRows[i].key, ssrRows[i]);
+  const adoptedRows = new Set<SSRRow>();
 
   const ownerCtx = getCurrentContext();
   const items = getList() || [];
-  const eachState: EachState<T> = { keyToEntry: new Map(), prevKeys: new Array(items.length) };
+  const eachState: EachState<T> = { keyToEntry: new Map(), prevKeys: [] };
 
   // Adopt rows in items order. For each item, if a matching SSR row exists,
   // run mapFn under the entry scope (yielding a DeferredTemplate when the
@@ -1536,11 +1599,23 @@ export function inflateDeferredEach<T>(
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     const key = getKey(item, i);
-    eachState.prevKeys[i] = key;
+    // Duplicate key: first occurrence adopts the SSR row; later ones are
+    // skipped so prevKeys stays unique (see reconcileEach).
+    if (eachState.keyToEntry.has(key)) {
+      warnDuplicateKey(key, i);
+      continue;
+    }
+    eachState.prevKeys.push(key);
 
     // Items match SSR rows by `String(key)` — same coercion that eachSSR's
     // encoder applies (round-trip through encodeURIComponent / decode).
     const ssrRow = ssrByKey.get(String(key));
+    if (ssrRow) {
+      adoptedRows.add(ssrRow);
+      // Consume the row: a distinct key with the same string form must not
+      // adopt the same DOM a second time.
+      ssrByKey.delete(String(key));
+    }
     const data = state(item);
     const ctx: Scope = { disposers: null };
     pushContext(ctx);
@@ -1584,7 +1659,9 @@ export function inflateDeferredEach<T>(
         // factory builds fresh DOM under that fragment via the same path
         // used for top-level mismatched-slot recovery; we then move it in.
         const frag = document.createDocumentFragment();
-        inflateDeferred(content as DeferredTemplate, frag);
+        // createIfEmpty: the fragment is empty, so build fresh DOM instead of
+        // hydrating against nothing.
+        inflateDeferred(content as DeferredTemplate, frag, false, true);
         nodes = Array.from(frag.childNodes);
         parent.insertBefore(frag, endMarker);
       } else if (content instanceof DocumentFragment) {
@@ -1602,14 +1679,16 @@ export function inflateDeferredEach<T>(
     }
 
     eachState.keyToEntry.set(key, { nodes, data, ctx });
-    ssrByKey.delete(String(key));
   }
 
-  // Detach any SSR rows that didn't match a current key (rare — implies the
-  // data changed between SSR and hydration).
-  for (const stale of ssrByKey.values()) {
-    for (let j = 0; j < stale.nodes.length; j++) {
-      const n = stale.nodes[j];
+  // Detach every SSR row that was not adopted: rows whose key no longer
+  // exists (data changed between SSR and hydration) and duplicate-key rows
+  // (ssrByKey keeps only the last row per key, so they are not in it).
+  for (let i = 0; i < ssrRows.length; i++) {
+    const row = ssrRows[i];
+    if (adoptedRows.has(row)) continue;
+    for (let j = 0; j < row.nodes.length; j++) {
+      const n = row.nodes[j];
       if (n.parentNode) n.parentNode.removeChild(n);
     }
   }
@@ -2071,13 +2150,20 @@ export function list<T>(
 
     // Fast path: all new (first render) — single pass, no Map lookups
     if (prevLen === 0) {
-      const newKeys2: unknown[] = new Array(len);
+      const newKeys2: unknown[] = [];
       const frag = document.createDocumentFragment();
       for (let i = 0; i < len; i++) {
         const item = items[i];
-        newKeys2[i] = getKey(item, i);
+        const key = getKey(item, i);
+        // Duplicate key: first row wins (see each()). A second entry would
+        // orphan the first one's node and scope in keyToEntry.
+        if (keyToEntry.has(key)) {
+          warnDuplicateKey(key, i, 'list()');
+          continue;
+        }
+        newKeys2.push(key);
         const entry = createEntry(item, i);
-        keyToEntry.set(newKeys2[i], entry);
+        keyToEntry.set(key, entry);
         frag.appendChild(entry.node);
       }
       parent.insertBefore(frag, endMarker);
@@ -2085,7 +2171,9 @@ export function list<T>(
       return;
     }
 
-    const newKeys: unknown[] = new Array(len);
+    // newKeys holds first occurrences only, so newLen (not len) is the row
+    // count used by every placement loop below.
+    const newKeys: unknown[] = [];
     const newEntries = new Map<unknown, ListEntry>();
     let reuseCount = 0;
 
@@ -2093,7 +2181,13 @@ export function list<T>(
     for (let i = 0; i < len; i++) {
       const item = items[i];
       const key = getKey(item, i);
-      newKeys[i] = key;
+
+      // Duplicate key: first occurrence owns the entry (see each()).
+      if (newEntries.has(key)) {
+        warnDuplicateKey(key, i, 'list()');
+        continue;
+      }
+      newKeys.push(key);
 
       const _existing = keyToEntry.get(key);
       if (_existing) {
@@ -2106,6 +2200,8 @@ export function list<T>(
       }
     }
 
+    const newLen = newKeys.length;
+
     // Fast path: no reuse — bulk remove + bulk insert
     if (reuseCount === 0) {
       for (let i = 0; i < prevLen; i++) {
@@ -2116,18 +2212,18 @@ export function list<T>(
         releaseEntry(entry);
       }
       const frag = document.createDocumentFragment();
-      for (let i = 0; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
+      for (let i = 0; i < newLen; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
       parent.insertBefore(frag, endMarker);
       keyToEntry = newEntries;
       prevKeys = newKeys;
       return;
     }
 
-    // Remove deleted
-    if (reuseCount < prevLen) {
-      const newKeySet = new Set(newKeys);
+    // Remove deleted. reuseCount counts distinct reused keys, so it is below
+    // keyToEntry.size exactly when some previous key was dropped.
+    if (reuseCount < keyToEntry.size) {
       for (let i = 0; i < prevLen; i++) {
-        if (!newKeySet.has(prevKeys[i])) {
+        if (!newEntries.has(prevKeys[i])) {
           const entry = keyToEntry.get(prevKeys[i]);
           if (!entry) continue;
           if (entry.node.parentNode) entry.node.parentNode.removeChild(entry.node);
@@ -2137,8 +2233,8 @@ export function list<T>(
     }
 
     // Reorder — append-only / prepend-only fast paths or LIS
-    if (prevLen > 0 && len > 0) {
-      let isAppend = len > prevLen;
+    if (prevLen > 0 && newLen > 0) {
+      let isAppend = newLen > prevLen;
       if (isAppend) {
         for (let i = 0; i < prevLen; i++) {
           if (prevKeys[i] !== newKeys[i]) {
@@ -2148,9 +2244,9 @@ export function list<T>(
         }
       }
 
-      let isPrepend = !isAppend && len > prevLen;
+      let isPrepend = !isAppend && newLen > prevLen;
       if (isPrepend) {
-        const offset = len - prevLen;
+        const offset = newLen - prevLen;
         for (let i = 0; i < prevLen; i++) {
           if (prevKeys[i] !== newKeys[i + offset]) {
             isPrepend = false;
@@ -2161,11 +2257,11 @@ export function list<T>(
 
       if (isAppend) {
         const frag = document.createDocumentFragment();
-        for (let i = prevLen; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
+        for (let i = prevLen; i < newLen; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
         parent.insertBefore(frag, endMarker);
       } else if (isPrepend) {
         // Pure prepend — see each() for the reuseCount-equals-prevLen invariant.
-        const newCount = len - prevLen;
+        const newCount = newLen - prevLen;
         const frag = document.createDocumentFragment();
         for (let i = 0; i < newCount; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
         const firstExisting = newEntries.get(newKeys[newCount])!.node;
@@ -2176,8 +2272,8 @@ export function list<T>(
         for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
 
         const sources: number[] = [];
-        const srcMap: number[] = new Array(len).fill(-1);
-        for (let i = 0; i < len; i++) {
+        const srcMap: number[] = new Array(newLen).fill(-1);
+        for (let i = 0; i < newLen; i++) {
           const oi = oldKeyIndex.get(newKeys[i]);
           if (oi !== undefined) {
             sources.push(oi);
@@ -2187,7 +2283,7 @@ export function list<T>(
 
         const stableSet = new Set(lis(sources));
         let next: Node = endMarker;
-        for (let i = len - 1; i >= 0; i--) {
+        for (let i = newLen - 1; i >= 0; i--) {
           const entry = newEntries.get(newKeys[i])!;
           if (srcMap[i] === -1 || !stableSet.has(srcMap[i])) {
             parent.insertBefore(entry.node, next);
@@ -2195,11 +2291,11 @@ export function list<T>(
           next = entry.node;
         }
       }
-      /* v8 ignore start -- prevLen===0 caught by earlier fast path; len===0 caught above */
+      /* v8 ignore start -- prevLen===0 caught by earlier fast path; newLen===0 caught above */
     } else {
       // All new — batch insert
       const frag = document.createDocumentFragment();
-      for (let i = 0; i < len; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
+      for (let i = 0; i < newLen; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
       parent.insertBefore(frag, endMarker);
     }
     /* v8 ignore stop */
@@ -2293,13 +2389,20 @@ export function eachSSR<T>(
   const items = (typeof listAccessor === 'function' ? listAccessor() : listAccessor) || [];
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
   let inner = '';
+  const seenKeys = new Set<unknown>();
   for (let i = 0; i < items.length; i++) {
     // Pass a frozen accessor so user code that calls `item()` works the same
     // shape as the client. No reactivity — the value is captured at render.
     const value = items[i];
+    const key = getKey(value, i);
+    // Duplicate key: emit only the first row, matching the client render.
+    if (seenKeys.has(key)) {
+      warnDuplicateKey(key, i);
+      continue;
+    }
+    seenKeys.add(key);
     const accessor = () => value;
-    const keyHex = encodeRowKey(getKey(value, i));
-    inner += `<!--er:${keyHex}-->${valueToHtml(mapFn(accessor, i))}<!--/er-->`;
+    inner += `<!--er:${encodeRowKey(key)}-->${valueToHtml(mapFn(accessor, i))}<!--/er-->`;
   }
   return markSSRHtml(`<!--e-->${inner}<!--/e-->`);
 }
@@ -2330,6 +2433,13 @@ export function listSSR<T>(
     return markSSRHtml('<!--l--><!--/l-->');
   }
   const items = (typeof listAccessor === 'function' ? listAccessor() : listAccessor) || [];
+  // Same key resolution as list(): an options object supplies its own key and
+  // ignores the 4th argument.
+  const getKey: (item: T, index: number) => unknown =
+    typeof textOrOptions === 'function'
+      ? (_keyFn ?? ((item: T) => item as unknown))
+      : (textOrOptions.key ?? ((item: T) => item as unknown));
+  const seenKeys = new Set<unknown>();
   let getText: ((item: T, index: number) => string) | undefined;
   let getClass: ((item: T, index: number) => string) | undefined;
   let getStyle: ((item: T, index: number) => string) | undefined;
@@ -2348,6 +2458,13 @@ export function listSSR<T>(
   let inner = '';
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
+    // Duplicate key: emit only the first row, matching the client render.
+    const key = getKey(item, i);
+    if (seenKeys.has(key)) {
+      warnDuplicateKey(key, i, 'listSSR()');
+      continue;
+    }
+    seenKeys.add(key);
     let attrs = '';
     if (getClass) {
       const cls = getClass(item, i);

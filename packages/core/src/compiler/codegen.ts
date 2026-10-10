@@ -1,14 +1,16 @@
 // ---------------------------------------------------------------------------
 // Purity Compiler — Code Generator
 //
-// ALL templates use cloneNode. Dynamic parts use positional paths
-// (firstChild/nextSibling) instead of TreeWalker — zero search overhead.
-//
-// Static: innerHTML + cloneNode(true) — zero JS per render
-// Dynamic: innerHTML with markers + cloneNode + positional path navigation
+// Client templates take one of two paths:
+//   Simple (one element whose children are text/expressions): createElement
+//     per instance, with text-only update code (measurably faster updates).
+//   Everything else, static or dynamic: innerHTML with markers parsed once into
+//     a <template>, cloneNode per instance, then positional paths
+//     (firstChild/nextSibling) to reach dynamic parts — no TreeWalker search.
 // ---------------------------------------------------------------------------
 
 import type { ASTNode, AttributeNode, FragmentNode } from './ast.ts';
+import { VOID_TAGS as VOID } from './parser.ts';
 
 // JSON quoting protects JavaScript syntax; HTML delimiters must also be escaped
 // when a caller embeds generated code in an inline script. This only runs at
@@ -82,12 +84,13 @@ function assertSafeBinding(name: string, kind: string): void {
   }
 }
 
+const UNSAFE_SCRIPT_BINDING =
+  '[Purity] Unsafe dynamic binding in <script>; keep code static and serialize data separately.';
+
 function assertSafeScriptContent(node: ASTNode, inScript = false): void {
   if (node.type === 'expression' && inScript) {
     // HTML escaping cannot make data safe as JavaScript source in a raw-text element.
-    throw new Error(
-      '[Purity] Unsafe dynamic binding in <script>; keep code static and serialize data separately.',
-    );
+    throw new Error(UNSAFE_SCRIPT_BINDING);
   }
   if (node.type !== 'element' && node.type !== 'fragment') return;
   const script = inScript || (node.type === 'element' && node.tag.toLowerCase() === 'script');
@@ -97,9 +100,7 @@ function assertSafeScriptContent(node: ASTNode, inScript = false): void {
         attr.kind !== 'static' &&
         /^(?:innerhtml|outerhtml|text|textcontent|innertext)$/i.test(attr.name)
       ) {
-        throw new Error(
-          '[Purity] Unsafe dynamic binding in <script>; keep code static and serialize data separately.',
-        );
+        throw new Error(UNSAFE_SCRIPT_BINDING);
       }
     }
   }
@@ -128,23 +129,6 @@ function safeBindingValue(name: string, expr: string): string {
   // Return the checked string so stateful toString() cannot change it later.
   return `(function(v){if(v==null||v===false)return v;if(v===true)return '';var s=String(v),p=s.replace(/[\\u0000-\\u0020\\u007f]/g,'');if(/^(?:javascript|vbscript):/i.test(p)||(/^data:/i.test(p)&&!/^data:image\\/(?:png|jpeg|gif|webp|avif|bmp|x-icon);base64,/i.test(p)))throw new Error('[Purity] Unsafe URL binding');return s;})(${expr})`;
 }
-
-const VOID = new Set([
-  'area',
-  'base',
-  'br',
-  'col',
-  'embed',
-  'hr',
-  'img',
-  'input',
-  'link',
-  'meta',
-  'param',
-  'source',
-  'track',
-  'wbr',
-]);
 
 // ---------------------------------------------------------------------------
 // Positional path: encode the DOM position of each dynamic part
@@ -240,18 +224,6 @@ export function generateLinked(ast: FragmentNode): string {
   // multiplying per-item DOM cost in each() — a row template with whitespace
   // between 5 sibling tags adds 5 text nodes per row.
   ast = condenseWhitespace(ast) as FragmentNode;
-
-  if (!hasDynamic(ast)) {
-    const html = buildStaticHtml(ast);
-    if (!html.trim()) return 'function(){return document.createDocumentFragment();}';
-    // Generate DOM API calls instead of innerHTML to prevent code injection
-    const stmts: string[] = ["var _t=document.createElement('template');"];
-    const counter = { n: 0 };
-    genStaticDOM(ast, '_t.content', stmts, counter);
-    stmts.push('return function(){return _t.content.cloneNode(true);};');
-    // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
-    return `(function(){${stmts.join('')}})()`;
-  }
 
   // Fast path: simple template (1 element with only text/expression children)
   // Use direct createElement — faster than cloneNode for small templates
@@ -388,6 +360,28 @@ const VALUE_HELPER_DEFS =
 
 // Wrap linked source so it evaluates on its own, binding the helpers once per
 // factory. Output without helper references is returned unchanged.
+// Shared generated-code fragments for dynamic text/node slots. Each was
+// emitted from several generator paths; keeping one copy keeps the runtime
+// compiler small and the paths from drifting.
+
+// Re-render a slot from its accessor: swap in a returned Node, otherwise make
+// sure the slot holds a text node and write the coerced text.
+function slotUpdate(xv: string, tn: string, id: number | string): string {
+  return (
+    `var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}` +
+    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}` +
+    `${tn}.data=__purity_tx__(r${id});}`
+  );
+}
+
+// Flatten an array value and append each item to `target` as a node.
+function appendFlat(xv: string, id: number | string, target: string): string {
+  return (
+    `var _L${id}=__purity_fl__(${xv},[],null);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++)` +
+    `{var _av${id}=_L${id}[_ai${id}];${target}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}`
+  );
+}
+
 function standalone(code: string): string {
   if (!code.includes('__purity_fl__') && !code.includes('__purity_tx__')) return code;
   return `(function(){${VALUE_HELPER_DEFS}return ${code};})()`;
@@ -499,13 +493,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         // Primitive — SSR text already correct (or correctly empty); no-op.
       );
 
-      ctx.reactive.push(
-        `if(${fl}){`,
-        `var r${id}=${xv}();`,
-        `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
-        `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=__purity_tx__(r${id});}`,
-        `}`,
-      );
+      ctx.reactive.push(`if(${fl}){`, slotUpdate(xv, tn, id), `}`);
 
       // Advance cursor past the close marker.
       ctx.setup.push(`${cursor}=${close}.nextSibling;`);
@@ -629,12 +617,10 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
         `var ${xv}=_d?_d(${val}):${val};var ${fl}=typeof ${xv}==='function';var ${tn};`,
         `if(${fl}){${tn}=document.createTextNode('');_e.appendChild(${tn});}`,
         `else if(${xv} instanceof Node)_e.appendChild(${xv});`,
-        `else if(Array.isArray(${xv})){var _L${id}=__purity_fl__(${xv},[],null);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_e.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}}`,
+        `else if(Array.isArray(${xv})){${appendFlat(xv, id, '_e')}}`,
         `else _e.appendChild(document.createTextNode(__purity_tx__(${xv})));`,
       );
-      reactiveParts.push(
-        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=__purity_tx__(r${id});}}`,
-      );
+      reactiveParts.push(`if(${fl}){${slotUpdate(xv, tn, id)}}`);
     }
   }
 
@@ -667,59 +653,6 @@ function hasDynamic(node: ASTNode): boolean {
 // ---------------------------------------------------------------------------
 // buildStaticHtml (no markers)
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// genStaticDOM — generate DOM API calls for static templates (no innerHTML)
-// ---------------------------------------------------------------------------
-
-function genStaticDOM(
-  node: ASTNode,
-  parent: string,
-  stmts: string[],
-  counter: { n: number },
-): void {
-  switch (node.type) {
-    case 'text': {
-      const id = `_n${counter.n++}`;
-      stmts.push(
-        `var ${id}=document.createTextNode(${jsString(node.value)});${parent}.appendChild(${id});`,
-      );
-      break;
-    }
-    case 'comment': {
-      const id = `_n${counter.n++}`;
-      stmts.push(
-        `var ${id}=document.createComment(${jsString(node.value)});${parent}.appendChild(${id});`,
-      );
-      break;
-    }
-    case 'element': {
-      assertSafeName(node.tag, 'tag');
-      const id = `_n${counter.n++}`;
-      stmts.push(`var ${id}=document.createElement(${jsString(node.tag)});`);
-      for (const a of node.attributes) {
-        if (a.kind === 'static') {
-          stmts.push(
-            a.value
-              ? `${id}.setAttribute(${jsString(a.name)},${jsString(a.value)});`
-              : `${id}.setAttribute(${jsString(a.name)},'');`,
-          );
-        }
-      }
-      for (const ch of node.children) {
-        genStaticDOM(ch, id, stmts, counter);
-      }
-      stmts.push(`${parent}.appendChild(${id});`);
-      break;
-    }
-    case 'fragment': {
-      for (const ch of node.children) {
-        genStaticDOM(ch, parent, stmts, counter);
-      }
-      break;
-    }
-  }
-}
 
 function buildStaticHtml(node: ASTNode): string {
   switch (node.type) {
@@ -767,12 +700,8 @@ function buildDynamicHtml(
 ): string {
   switch (node.type) {
     case 'text':
-      // `raw: true` marks SGML declarations like `<!doctype html>` parsed
-      // verbatim from the template — escaping would corrupt the doctype.
-      return node.raw ? node.value : escapeHtml(node.value);
-
     case 'comment':
-      return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
+      return buildStaticHtml(node);
 
     case 'expression': {
       slots.push({
@@ -961,7 +890,7 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
     `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});${tn}=${xv};}`,
     // Array path: drop null/undefined/false items so SSR (valueToHtml
     // recurses + concats with empty for falsy) matches the client.
-    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();var _L${id}=__purity_fl__(${xv},[],null);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}${slotVar}.replaceWith(_af${id});}`,
+    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();${appendFlat(xv, id, `_af${id}`)}${slotVar}.replaceWith(_af${id});}`,
     `else{${slotVar}.data=__purity_tx__(${xv});}`,
     `}else{${slotVar}.data=__purity_tx__(${xv});}`,
     `}`,
@@ -970,13 +899,7 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
   // Reactive: `r${id}===false` was missing from the falsy filter, so
   // a signal returning false rendered "false" on the client while SSR
   // emitted empty. Symmetric with the setup branch above.
-  const reactive = [
-    `if(${fl}){`,
-    `var r${id}=${xv}();`,
-    `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
-    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=__purity_tx__(r${id});}`,
-    `}`,
-  ].join('');
+  const reactive = [`if(${fl}){`, slotUpdate(xv, tn, id), `}`].join('');
 
   return { setup, reactive };
 }

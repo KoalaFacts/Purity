@@ -12,8 +12,8 @@
 
 import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from './ast.ts';
 
-// Void elements that cannot have children
-const VOID_TAGS = new Set([
+// Void elements that cannot have children. Shared with codegen.
+export const VOID_TAGS = new Set([
   'area',
   'base',
   'br',

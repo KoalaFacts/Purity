@@ -258,29 +258,47 @@ describe('parser', () => {
 });
 
 describe('codegen', () => {
-  it('generates template-cloning code for static element', () => {
-    const ast = parse(['<div></div>']);
-    const code = generate(ast);
-    // Static templates use DOM API calls + cloneNode (no innerHTML)
-    expect(code).toContain('template');
-    expect(code).toContain('cloneNode');
-    expect(code).toContain('createElement("div")');
+  // Static templates render through the shared paths (a single element takes
+  // the createElement fast path; anything else clones a template).
+  const renderStatic = (strings: string[]): Element => {
+    const factory = new Function(`return ${generate(parse(strings))}`)() as () => Node;
+    const out = factory();
+    return (out instanceof DocumentFragment ? out.firstChild : out) as Element;
+  };
+
+  it('renders a static element and returns a fresh copy per instance', () => {
+    const a = renderStatic(['<div></div>']);
+    const b = renderStatic(['<div></div>']);
+    expect(a.nodeName).toBe('DIV');
+    expect(a).not.toBe(b);
   });
 
-  it('generates code with text content in HTML', () => {
-    const ast = parse(['<p>Hello</p>']);
-    const code = generate(ast);
-    expect(code).toContain('createElement("p")');
-    expect(code).toContain('createTextNode("Hello")');
-    expect(code).toContain('cloneNode');
+  it('renders a multi-node static template by cloning', () => {
+    const factory = new Function(`return ${generate(parse(['<p>a</p><p>b</p>']))}`)() as () => Node;
+    const a = factory() as DocumentFragment;
+    const b = factory() as DocumentFragment;
+    expect(a.childNodes.length).toBe(2);
+    expect(a.textContent).toBe('ab');
+    expect(a.firstChild).not.toBe(b.firstChild);
   });
 
-  it('generates code with static attributes in HTML', () => {
-    const ast = parse(['<div class="box"></div>']);
-    const code = generate(ast);
-    expect(code).toContain('setAttribute');
-    expect(code).toContain('class');
-    expect(code).toContain('box');
+  it('keeps special characters in attributes on the cloning path', () => {
+    const factory = new Function(
+      `return ${generate(parse(['<p title="a & <b> &quot;" class="x">1</p><p>2</p>']))}`,
+    )() as () => DocumentFragment;
+    const first = factory().firstChild as HTMLElement;
+    expect(first.getAttribute('title')).toBe('a & <b> &quot;');
+    expect(first.querySelector('b')).toBeNull();
+  });
+
+  it('renders static text content', () => {
+    expect(renderStatic(['<p>Hello</p>']).outerHTML).toBe('<p>Hello</p>');
+  });
+
+  it('renders static attributes with special characters intact', () => {
+    const el = renderStatic(['<div class="box" title="a & <b>"></div>']);
+    expect(el.getAttribute('class')).toBe('box');
+    expect(el.getAttribute('title')).toBe('a & <b>');
   });
 
   it('generates code for event binding', () => {

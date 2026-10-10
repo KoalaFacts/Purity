@@ -456,7 +456,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         `else if(Array.isArray(${xv})){`,
         `for(var _ai${id}=0;_ai${id}<${cont}.length;_ai${id}++)${cont}[_ai${id}].parentNode.removeChild(${cont}[_ai${id}]);`,
         `var _af${id}=document.createDocumentFragment();`,
-        `var _L${id}=__purity_fl__(${xv},[],[]);`,
+        `var _L${id}=__purity_fl__(${xv},[],null);`,
         `for(var _aj${id}=0;_aj${id}<_L${id}.length;_aj${id}++){var _av${id}=_L${id}[_aj${id}];`,
         `if(_av${id}&&_av${id}.__purity_deferred__===true){var _ad${id}=document.createDocumentFragment();_i(_av${id},_ad${id},false,true);_af${id}.appendChild(_ad${id});}`,
         `else _af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}`,
@@ -596,7 +596,7 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
         `var ${xv}=_d?_d(${val}):${val};var ${fl}=typeof ${xv}==='function';var ${tn};`,
         `if(${fl}){${tn}=document.createTextNode('');_e.appendChild(${tn});}`,
         `else if(${xv} instanceof Node)_e.appendChild(${xv});`,
-        `else if(Array.isArray(${xv})){var _L${id}=__purity_fl__(${xv},[],[]);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_e.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}}`,
+        `else if(Array.isArray(${xv})){var _L${id}=__purity_fl__(${xv},[],null);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_e.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}}`,
         `else _e.appendChild(document.createTextNode(__purity_tx__(${xv})));`,
       );
       reactiveParts.push(
@@ -928,7 +928,7 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
     `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});${tn}=${xv};}`,
     // Array path: drop null/undefined/false items so SSR (valueToHtml
     // recurses + concats with empty for falsy) matches the client.
-    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();var _L${id}=__purity_fl__(${xv},[],[]);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}${slotVar}.replaceWith(_af${id});}`,
+    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();var _L${id}=__purity_fl__(${xv},[],null);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}${slotVar}.replaceWith(_af${id});}`,
     `else{${slotVar}.data=__purity_tx__(${xv});}`,
     `}else{${slotVar}.data=__purity_tx__(${xv});}`,
     `}`,

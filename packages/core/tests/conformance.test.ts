@@ -131,6 +131,21 @@ const cases: Case[] = [
       'reactive binding stringifies Node items ("[object DocumentFragment]"); needs range reconciliation',
   },
   {
+    name: 'signal returning a function renders it once, as SSR does',
+    strings: ['<p>', '</p>'],
+    values: () => [() => () => 'inner'],
+  },
+  {
+    name: 'cyclic and repeated arrays render each array once',
+    strings: ['<p>', '</p>'],
+    values: () => {
+      const a: unknown[] = ['x'];
+      a.push(a);
+      const b = ['y'];
+      return [[a, b, b], 'z'];
+    },
+  },
+  {
     name: 'nested templates render their own output',
     strings: ['<ul>', '</ul>'],
     values: (mode) => [mode === 'csr' ? html(tpl(LI), 'a') : markSSRHtml(renderSSR(LI, ['a']))],
@@ -216,7 +231,12 @@ describe('SSR / CSR / hydrate conformance', () => {
       const host = document.createElement('div');
       document.body.appendChild(host);
       host.innerHTML = renderSSR(c.strings, c.values('ssr'));
+      // hydrate() falls back to a fresh mount when adoption throws, which would
+      // hide a broken walker behind equal innerHTML. Require the SSR elements to
+      // survive, i.e. adoption happened in place.
+      const ssrElements = Array.from(host.querySelectorAll('*'));
       hydrate(host, () => html(tpl(c.strings), ...c.values('csr')) as Node);
+      for (const el of ssrElements) expect(host.contains(el)).toBe(true);
       expect(normalize(host.innerHTML)).toBe(csr);
       host.remove();
     });

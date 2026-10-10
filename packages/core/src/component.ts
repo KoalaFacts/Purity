@@ -190,7 +190,24 @@ export function disposeScope(scope: Scope): void {
  */
 export function onMount(fn: () => void): void {
   const ctx = getCurrentComponent();
-  if (ctx) (ctx.mounted ??= []).push(fn);
+  if (!ctx) return;
+  if (!ctx._isMounted) {
+    (ctx.mounted ??= []).push(fn);
+    return;
+  }
+  // Registered by a branch first shown after the component mounted: the
+  // mount drain already ran, so schedule this one under the current owner.
+  const owner = getCurrentContext()!;
+  queueMicrotask(() => {
+    pushContext(owner);
+    try {
+      fn();
+    } catch (err) {
+      ctx._handleError(err);
+    } finally {
+      popContext();
+    }
+  });
 }
 
 /**

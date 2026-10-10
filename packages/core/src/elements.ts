@@ -459,45 +459,49 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
     popContext();
   }
 
-  const renderedHtml = valueToHtml(view);
-  // Server output is final once serialized: release the component's watches
-  // and computes so requests don't leave them subscribed to shared state.
-  disposeScope(ctx);
+  try {
+    const renderedHtml = valueToHtml(view);
 
-  // Host-element attributes mirror what was declared in the parent template.
-  // Attribute *names* are interpolated raw, so skip any key that isn't a safe
-  // name — the compiler asserts this upstream, but direct/SSR callers can pass
-  // arbitrary keys. Values are escaped by `valueToAttr`.
-  let hostAttrs = '';
-  for (const k of Object.keys(props)) {
-    if (!SAFE_ATTR_NAME.test(k)) continue;
-    // Object/function props are supplied by the parent during hydration.
-    // Reflecting them as strings is lossy and can expose server-only data.
-    if (props[k] !== null && (typeof props[k] === 'object' || typeof props[k] === 'function'))
-      continue;
-    const av = valueToAttr(props[k]);
-    if (av !== null) hostAttrs += av === '' ? ` ${k}` : ` ${k}="${av}"`;
+    // Host-element attributes mirror what was declared in the parent template.
+    // Attribute *names* are interpolated raw, so skip any key that isn't a safe
+    // name — the compiler asserts this upstream, but direct/SSR callers can pass
+    // arbitrary keys. Values are escaped by `valueToAttr`.
+    let hostAttrs = '';
+    for (const k of Object.keys(props)) {
+      if (!SAFE_ATTR_NAME.test(k)) continue;
+      // Object/function props are supplied by the parent during hydration.
+      // Reflecting them as strings is lossy and can expose server-only data.
+      if (props[k] !== null && (typeof props[k] === 'object' || typeof props[k] === 'function'))
+        continue;
+      const av = valueToAttr(props[k]);
+      if (av !== null) hostAttrs += av === '' ? ` ${k}` : ` ${k}="${av}"`;
+    }
+
+    const styles = (ctx as unknown as { _ssrStyles: string[] })._ssrStyles;
+    // `<style>` is an HTML5 "raw text element" — its content runs verbatim
+    // until the parser sees a literal `</style` sequence. An interpolated
+    // CSS value containing `</style><script>...</script>` would otherwise
+    // close the style tag early and execute the injected script (XSS).
+    // Insert a backslash between `<` and `/style`: the HTML parser only
+    // matches the literal `</style` substring (the `<` followed by `\`
+    // bounces it back to raw-text state), but CSS treats `\/` as a literal
+    // `/` escape, so the rendered styling is unchanged.
+    const styleBlock =
+      styles.length > 0
+        ? `<style>${styles.join('\n').replace(/<\/style/gi, '<\\/style')}</style>`
+        : '';
+    const inner = styleBlock + renderedHtml;
+    const options = componentOptions.get(tag);
+    const focusAttr =
+      (options?.delegatesFocus ?? !!options?.formControl) ? ' shadowrootdelegatesfocus' : '';
+
+    return `<${tag}${hostAttrs}><template shadowrootmode="open"${focusAttr}>${inner}</template></${tag}>`;
+  } finally {
+    // Server output is final once the shell is serialized: release the
+    // component's watches and computes so requests don't leave them
+    // subscribed to shared state.
+    disposeScope(ctx);
   }
-
-  const styles = (ctx as unknown as { _ssrStyles: string[] })._ssrStyles;
-  // `<style>` is an HTML5 "raw text element" — its content runs verbatim
-  // until the parser sees a literal `</style` sequence. An interpolated
-  // CSS value containing `</style><script>...</script>` would otherwise
-  // close the style tag early and execute the injected script (XSS).
-  // Insert a backslash between `<` and `/style`: the HTML parser only
-  // matches the literal `</style` substring (the `<` followed by `\`
-  // bounces it back to raw-text state), but CSS treats `\/` as a literal
-  // `/` escape, so the rendered styling is unchanged.
-  const styleBlock =
-    styles.length > 0
-      ? `<style>${styles.join('\n').replace(/<\/style/gi, '<\\/style')}</style>`
-      : '';
-  const inner = styleBlock + renderedHtml;
-  const options = componentOptions.get(tag);
-  const focusAttr =
-    (options?.delegatesFocus ?? !!options?.formControl) ? ' shadowrootdelegatesfocus' : '';
-
-  return `<${tag}${hostAttrs}><template shadowrootmode="open"${focusAttr}>${inner}</template></${tag}>`;
 };
 
 /**

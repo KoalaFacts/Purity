@@ -88,6 +88,11 @@ function renderBranch(matchState: MatchState, render: () => unknown): unknown {
   pushContext(scope);
   try {
     return render();
+  } catch (e) {
+    // Nothing will render this case, so release what it created before throwing.
+    matchState.branch = null;
+    disposeScope(scope);
+    throw e;
   } finally {
     popContext();
   }

@@ -13,6 +13,7 @@ import {
 } from '../src/component.ts';
 import { each, match, when } from '../src/control.ts';
 import { component, slot } from '../src/elements.ts';
+import { css } from '../src/styles.ts';
 import { state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
@@ -302,6 +303,97 @@ describe('lean scopes keep their component', () => {
     show(false);
     await tick();
     expect(states.has('busy')).toBe(false);
+  });
+});
+
+describe('late branches and failed renders', () => {
+  it('releases work a case created before its renderer threw', async () => {
+    const mode = state<'a' | 'b'>('a');
+    const x = state(0);
+    let runs = 0;
+    const original = console.error;
+    console.error = () => {};
+    try {
+      mount(
+        () =>
+          html`<div>${match(() => mode(), {
+            a: () => html`<i>a</i>`,
+            b: () => {
+              watch(() => {
+                runs++;
+                x();
+              });
+              throw new Error('boom');
+            },
+          })}</div>`,
+        document.createElement('div'),
+      );
+      mode('b');
+      await tick();
+      runs = 0;
+      x(1);
+      await tick();
+      expect(runs).toBe(0);
+    } finally {
+      console.error = original;
+    }
+  });
+
+  it('runs onMount from a branch first shown after the component mounted', async () => {
+    const show = state(false);
+    let mounted = 0;
+    mount(
+      () =>
+        html`<div>${when(
+          () => show(),
+          () => {
+            onMount(() => mounted++);
+            return html`<i>late</i>`;
+          },
+        )}</div>`,
+      document.createElement('div'),
+    );
+    await tick();
+    show(true);
+    await tick();
+    await tick();
+    expect(mounted).toBe(1);
+  });
+
+  it('removes a branch shadow stylesheet when the branch is hidden', async () => {
+    const g = globalThis as { CSSStyleSheet?: unknown };
+    const hadSheet = 'CSSStyleSheet' in g;
+    const prev = g.CSSStyleSheet;
+    g.CSSStyleSheet = class {
+      replaceSync(): void {}
+    };
+    try {
+      const host = new ComponentContext();
+      const shadow = { adoptedStyleSheets: [] as unknown[], ownerDocument: null };
+      (host as unknown as { _shadowRoot: unknown })._shadowRoot = shadow;
+      const show = state(true);
+      pushContext(host);
+      try {
+        document.createElement('div').appendChild(
+          when(
+            () => show(),
+            () => {
+              css`p { color: red; }`;
+              return html`<p>x</p>`;
+            },
+          ) as Node,
+        );
+      } finally {
+        popContext();
+      }
+      expect(shadow.adoptedStyleSheets.length).toBe(1);
+      show(false);
+      await tick();
+      expect(shadow.adoptedStyleSheets.length).toBe(0);
+    } finally {
+      if (hadSheet) g.CSSStyleSheet = prev;
+      else delete g.CSSStyleSheet;
+    }
   });
 });
 

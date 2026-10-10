@@ -1,4 +1,4 @@
-import { component, compute, state, watch } from '@purityjs/core';
+import { component, compute, onDispose, state, watch } from '@purityjs/core';
 import { describe, expect, it } from 'vite-plus/test';
 import { html, renderToString } from '../src/index.ts';
 
@@ -45,6 +45,20 @@ describe('SSR render pass disposal', () => {
     shared(1);
     await tick();
     expect(runs).toBe(0);
+  });
+
+  it('builds host attributes before running component cleanups', async () => {
+    component('ssr-dispose-order', (props: { label?: string }) => {
+      onDispose(() => {
+        props.label = 'changed';
+      });
+      return html`<span>${props.label}</span>`;
+    });
+    const out = await renderToString(
+      () => html`<ssr-dispose-order label="orig"></ssr-dispose-order>`,
+    );
+    expect(out).toContain('label="orig"');
+    expect(out).not.toContain('changed');
   });
 
   it('still renders values derived during the pass', async () => {

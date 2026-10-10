@@ -1,4 +1,4 @@
-import { getCurrentComponent } from './component.ts';
+import { getCurrentComponent, getCurrentContext } from './component.ts';
 import { watch } from './signals.ts';
 
 // ---------------------------------------------------------------------------
@@ -100,18 +100,25 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
     sheet.replaceSync(buildCss());
 
     shadowRoot.adoptedStyleSheets = [...shadowRoot.adoptedStyleSheets, sheet];
+    // A lean scope (branch, row, re-running effect) outlives only its own
+    // render: drop the sheet with it. A component owner drops it with the root.
+    const owner = getCurrentContext();
+    if (owner && owner !== ctx) {
+      (owner.disposers ??= []).push(() => {
+        shadowRoot.adoptedStyleSheets = shadowRoot.adoptedStyleSheets.filter((x) => x !== sheet);
+      });
+    }
 
     if (hasReactive) {
       let prevCss = '';
-      const dispose = watch(() => {
+      // Disposed with the current owner, which watch() registers with.
+      watch(() => {
         const newCss = buildCss();
         if (newCss !== prevCss) {
           prevCss = newCss;
           sheet.replaceSync(newCss);
         }
       });
-      // Auto-dispose on unmount
-      if (ctx) (ctx.disposers ??= []).push(dispose);
     }
 
     // No scope class needed — Shadow DOM scopes it

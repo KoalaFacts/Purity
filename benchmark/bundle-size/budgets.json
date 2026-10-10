@@ -1,7 +1,7 @@
 {
   "counter-runtime": {
-    "gzipBytes": 7808,
-    "brotliBytes": 7040,
+    "gzipBytes": 7936,
+    "brotliBytes": 7168,
     "functionConstructorCalls": 1
   },
   "counter-aot": {
@@ -11,16 +11,16 @@
   },
   "controls-runtime": {
     "gzipBytes": 15872,
-    "brotliBytes": 14080,
+    "brotliBytes": 14208,
     "functionConstructorCalls": 2
   },
   "controls-aot": {
-    "gzipBytes": 17664,
-    "brotliBytes": 15616,
+    "gzipBytes": 17792,
+    "brotliBytes": 15744,
     "functionConstructorCalls": 2
   },
   "form-runtime": {
-    "gzipBytes": 10752,
+    "gzipBytes": 10880,
     "brotliBytes": 9728,
     "functionConstructorCalls": 1
   },
@@ -30,13 +30,13 @@
     "functionConstructorCalls": 0
   },
   "hydration-runtime": {
-    "gzipBytes": 16384,
-    "brotliBytes": 14592,
+    "gzipBytes": 16512,
+    "brotliBytes": 14720,
     "functionConstructorCalls": 2
   },
   "hydration-aot": {
     "gzipBytes": 18432,
-    "brotliBytes": 16128,
+    "brotliBytes": 16256,
     "functionConstructorCalls": 2
   }
 }

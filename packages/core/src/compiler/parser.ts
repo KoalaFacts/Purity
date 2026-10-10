@@ -64,6 +64,23 @@ function isNameChar(c: number): boolean {
   return isAlphaNumeric(c) || c === DASH || c === DOT || c === 95 /* _ */ || c === COLON;
 }
 
+// Prefix for template shapes the compiler refuses instead of silently
+// dropping. The AOT plugin keys on this prefix to surface the error at build
+// time rather than falling back to the runtime compiler.
+const UNSUPPORTED_TEMPLATE = '[Purity] Unsupported template:';
+
+// Replaced by the consumer's bundler (same pattern as signals.ts); the example
+// in the error message is dropped from production bundles.
+declare const process: { env: { NODE_ENV?: string } };
+
+function interpolatedAttrError(name: string): Error {
+  return new Error(
+    `${UNSUPPORTED_TEMPLATE} interpolated attribute "${name}"; bind the whole value` +
+      (process.env.NODE_ENV !== 'production' ? `, e.g. ${name}=\${() => \`x \${v()} y\`}` : '') +
+      '.',
+  );
+}
+
 // ---------------------------------------------------------------------------
 // parse(strings) — parse template strings into AST
 //
@@ -104,6 +121,18 @@ class Parser {
   // Are we at the boundary between two template strings (expression position)?
   private atExprBoundary(): boolean {
     return this.pos >= this.strings[this.strIdx].length && this.strIdx < this.strings.length - 1;
+  }
+
+  // `/>` directly after the current position, within the same string segment.
+  // A bare `/` starts literal text (e.g. `href=${base}/users`) and must not end
+  // an unquoted value.
+  private atSelfClosingSlash(): boolean {
+    const s = this.current();
+    return (
+      this.pos + 1 < s.length &&
+      s.charCodeAt(this.pos) === SLASH &&
+      s.charCodeAt(this.pos + 1) === GT
+    );
   }
 
   // Consume the expression boundary, returning the expression index
@@ -429,10 +458,15 @@ class Parser {
     if (this.atExprBoundary()) {
       const exprIdx = this.consumeExpr();
 
-      // Skip closing quote if present
-      if (quoteChar && !this.atEnd() && !this.atExprBoundary() && this.peek() === quoteChar) {
-        this.advance();
-      }
+      // The value must end right after the expression (and the closing quote,
+      // when quoted). Anything else mixes literal text or a second expression
+      // into the value, e.g. `"${a} x"`, `"${a}${b}"` or `${a}x`.
+      const next = this.peek(); // -1 at a segment end
+      const closes = quoteChar
+        ? next === quoteChar
+        : next === -1 || isWhitespace(next) || next === GT || this.atSelfClosingSlash();
+      if (this.atExprBoundary() || !closes) throw interpolatedAttrError(name);
+      if (quoteChar) this.advance();
 
       return this.classifyDynamicAttr(prefix, name, exprIdx);
     }
@@ -441,20 +475,11 @@ class Parser {
     let value: string;
     if (quoteChar) {
       value = this.readUntil(quoteChar);
-      // Interpolated quoted value, e.g. `class="x-${y}-z"`. `readUntil`
-      // stopped at the expression boundary without reaching the closing
-      // quote. Without handling this, the parser would emit a truncated
-      // `static` attribute (`x-`) and leak the trailing `-z">` plus the
-      // expression into the element's children. Concatenated/interpolated
-      // attribute values are not a supported binding form (there is no
-      // concat-attribute AST node), so we CONSUME the expression(s),
-      // stitch the literal segments together, and emit a single static
-      // attribute. `exprIndex` still advances so later slots stay aligned.
-      while (this.atExprBoundary()) {
-        this.consumeExpr(); // drop interpolated value
-        value += this.readUntil(quoteChar);
-      }
-      if (!this.atEnd() && !this.atExprBoundary() && this.peek() === quoteChar) {
+      // Literal text followed by an expression, e.g. `class="x-${y}-z"`.
+      // There is no concatenated-attribute AST node, so this is rejected
+      // rather than emitting a truncated static attribute.
+      if (this.atExprBoundary()) throw interpolatedAttrError(name);
+      if (!this.atEnd() && this.peek() === quoteChar) {
         this.advance();
       }
     } else {
@@ -469,6 +494,8 @@ class Parser {
         this.pos++;
       }
       value = s.slice(start, this.pos);
+      // e.g. `class=a-${b}`: the value runs into an expression.
+      if (this.atExprBoundary()) throw interpolatedAttrError(name);
     }
 
     return { kind: 'static', name, value };

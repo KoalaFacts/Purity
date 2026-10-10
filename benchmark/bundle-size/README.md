@@ -135,6 +135,22 @@ helpers (`flattenValue` / `valueText`) that keep client array and text output
 identical to SSR, enforced by the cross-path conformance suite. No other budget
 changed.
 
+Recorded change (rejecting interpolated attribute values): every profile that
+ships the template parser grows by about 130 bytes gzip. The parser now raises
+an error for `attr="x ${v} y"` instead of silently compiling a wrong static
+value. The copy-paste example in that error is development-only. Limits were
+raised to the next 128-byte boundary above the measurement, matching the
+change above:
+
+| Profile           | gzip           | Brotli         |
+| ----------------- | -------------- | -------------- |
+| counter-runtime   | 7808 to 7936   | 7040 to 7168   |
+| controls-runtime  | unchanged      | 14080 to 14208 |
+| controls-aot      | 17664 to 17792 | 15616 to 15744 |
+| form-runtime      | 10752 to 10880 | unchanged      |
+| hydration-runtime | 16384 to 16512 | 14592 to 14720 |
+| hydration-aot     | unchanged      | 16128 to 16256 |
+
 For an investigation that deliberately exceeds a budget, use:
 
 ```bash

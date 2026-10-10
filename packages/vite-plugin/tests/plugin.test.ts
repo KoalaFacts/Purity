@@ -155,7 +155,10 @@ describe('@purityjs/vite-plugin', () => {
       'export const v = html`<div></div>`;',
       '</script>',
     ].join('\n');
-    expect(custom.transform(sfc, 'app.vue')).not.toBeNull();
+    // A raw container is not compiled; its script submodule is.
+    expect(custom.transform(sfc, 'app.vue')).toBeNull();
+    const submodule = "import { html } from '@purityjs/core';\nexport const v = html`<div></div>`;";
+    expect(custom.transform(submodule, 'app.vue?vue&type=script&lang.js')).not.toBeNull();
     expect(custom.transform('html`<div></div>`', 'app.ts')).toBeNull();
   });
 

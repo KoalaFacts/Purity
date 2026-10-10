@@ -701,8 +701,7 @@ const TYPE_ONLY_KEYS = new Set([
   'superTypeArguments',
 ]);
 
-// `shift` moves offsets from a script region into the whole-file coordinates.
-function collectHtmlTemplates(root: unknown, shift = 0): HtmlTemplateNode[] {
+function collectHtmlTemplates(root: unknown): HtmlTemplateNode[] {
   const found: HtmlTemplateNode[] = [];
   const visit = (node: unknown): void => {
     if (Array.isArray(node)) {
@@ -716,21 +715,7 @@ function collectHtmlTemplates(root: unknown, shift = 0): HtmlTemplateNode[] {
       n.tag?.type === 'Identifier' &&
       n.tag.name === 'html'
     ) {
-      found.push({
-        start: n.start + shift,
-        end: n.end + shift,
-        quasi: {
-          quasis: n.quasi.quasis.map((q: any) => ({
-            start: q.start + shift,
-            end: q.end + shift,
-            value: q.value,
-          })),
-          expressions: n.quasi.expressions.map((e: any) => ({
-            start: e.start + shift,
-            end: e.end + shift,
-          })),
-        },
-      });
+      found.push({ start: n.start, end: n.end, quasi: n.quasi });
     }
     for (const key of Object.keys(n)) {
       // Type positions never contain runtime expressions, so skip them.
@@ -835,16 +820,9 @@ function renderTemplate(
     : `__purity_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${slots.join(', ')}])`;
 }
 
-type ScriptLang = 'ts' | 'tsx' | 'jsx';
+type ModuleLang = 'ts' | 'tsx' | 'jsx';
 
-interface ScriptRegion {
-  // Offsets of the script text inside the original file.
-  start: number;
-  end: number;
-  lang: ScriptLang;
-}
-
-const SCRIPT_LANG_BY_EXT: Record<string, ScriptLang> = {
+const MODULE_LANG_BY_EXT: Record<string, ModuleLang> = {
   '.ts': 'ts',
   '.mts': 'ts',
   '.cts': 'ts',
@@ -855,44 +833,28 @@ const SCRIPT_LANG_BY_EXT: Record<string, ScriptLang> = {
   '.jsx': 'jsx',
 };
 
-// The `lang` attribute of a <script> tag. Absent or unknown means JavaScript,
-// which the `jsx` grammar also parses.
-function scriptLangOf(attrs: string): ScriptLang {
-  const lang = /(?:^|\s)lang\s*=\s*["']?([\w-]+)/.exec(attrs)?.[1]?.toLowerCase();
-  return lang === 'ts' ? 'ts' : lang === 'tsx' ? 'tsx' : 'jsx';
-}
+// Containers already warned about, so a project gets one notice per extension.
+const rawContainerWarned = new Set<string>();
 
-// The script text to parse. A JS/TS module is one region. Any other file (for
-// example a Vue single-file component) contributes the body of each <script>
-// block, so comments and strings outside scripts are never considered.
-function scriptRegions(source: string, filename: string): ScriptRegion[] {
+// Grammar for a module id, or undefined when the id is a raw non-JS container.
+//
+// JS/TS files are modules by extension. Other formats (for example a Vue
+// single-file component) reach this transform as raw source. A container
+// plugin such as @vitejs/plugin-vue then emits each script as a virtual
+// submodule, e.g. `Card.vue?vue&type=script&setup=true&lang.ts`, and that
+// pure-JS submodule is the only code purity compiles.
+function moduleLangOf(id: string): ModuleLang | undefined {
+  const q = id.indexOf('?');
+  const filename = q === -1 ? id : id.slice(0, q);
   const dot = filename.lastIndexOf('.');
-  const moduleLang = SCRIPT_LANG_BY_EXT[dot === -1 ? '' : filename.slice(dot).toLowerCase()];
-  if (moduleLang) return [{ start: 0, end: source.length, lang: moduleLang }];
-
-  const regions: ScriptRegion[] = [];
-  let pos = 0;
-  for (;;) {
-    const open = source.indexOf('<script', pos);
-    if (open === -1) break;
-    const after = source.charCodeAt(open + 7);
-    // Only a real `<script` tag: `<scripts>` or `<script-x>` are other elements.
-    if (after !== 32 && after !== 9 && after !== 10 && after !== 13 && after !== 62) {
-      pos = open + 7;
-      continue;
-    }
-    const tagEnd = source.indexOf('>', open);
-    if (tagEnd === -1) break;
-    const close = source.indexOf('</script', tagEnd + 1);
-    if (close === -1) break;
-    regions.push({
-      start: tagEnd + 1,
-      end: close,
-      lang: scriptLangOf(source.slice(open + 7, tagEnd)),
-    });
-    pos = close + 8;
-  }
-  return regions;
+  const ext = dot === -1 ? '' : filename.slice(dot).toLowerCase();
+  const moduleLang = MODULE_LANG_BY_EXT[ext];
+  if (moduleLang) return moduleLang;
+  if (q === -1) return undefined;
+  const params = id.slice(q + 1).split('&');
+  if (!params.includes('type=script')) return undefined;
+  const lang = params.find((p) => p.startsWith('lang.'))?.slice('lang.'.length);
+  return lang === 'ts' ? 'ts' : lang === 'tsx' ? 'tsx' : 'jsx';
 }
 
 function compileTemplates(source: string, id: string, ssr: boolean): CompileResult {
@@ -900,25 +862,26 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   const lineStarts = buildLineStarts(source);
   const filename = id.split('?')[0]!;
 
-  const regions = scriptRegions(source, filename);
-  const parsed: ScriptRegion[] = [];
-  const nodes: HtmlTemplateNode[] = [];
-  for (const region of regions) {
-    const { program, errors } = parseSync(filename, source.slice(region.start, region.end), {
-      lang: region.lang,
-      preserveParens: false,
-    });
-    if (errors.length > 0) {
-      // Syntax errors are reported by Vite itself. Do not guess at templates.
+  const lang = moduleLangOf(id);
+  if (lang === undefined) {
+    const ext = filename.slice(filename.lastIndexOf('.'));
+    if (source.includes('html`') && !rawContainerWarned.has(ext)) {
+      rawContainerWarned.add(ext);
       warnings.push(
-        `[purity] ${id} — could not parse module; html\`\` templates were not compiled`,
+        `[purity] ${id}: html\`\` in a raw container is not compiled. Purity compiles the script submodules that a container plugin emits (for example @vitejs/plugin-vue).`,
       );
-      continue;
     }
-    parsed.push(region);
-    nodes.push(...collectHtmlTemplates(program, region.start));
+    return { changed: false, code: source, map: null, warnings };
   }
 
+  const { program, errors } = parseSync(filename, source, { lang, preserveParens: false });
+  if (errors.length > 0) {
+    // Syntax errors are reported by Vite itself. Do not guess at templates.
+    warnings.push(`[purity] ${id} — could not parse module; html\`\` templates were not compiled`);
+    return { changed: false, code: source, map: null, warnings };
+  }
+
+  const nodes = collectHtmlTemplates(program);
   const ctx: CompileContext = {
     hoists: [],
     nextTplId: 0,
@@ -931,48 +894,33 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   };
   const edits: Edit[] = [];
   let lastEnd = -1;
-  let insertRegion: ScriptRegion | undefined;
   for (const node of nodes) {
     // Templates nested in an outer one are rendered by that outer template.
     if (node.start < lastEnd) continue;
-    const compiledBefore = ctx.compiled;
     edits.push({ start: node.start, end: node.end, out: renderTemplate(node, source, nodes, ctx) });
     lastEnd = node.end;
-    if (insertRegion === undefined && ctx.compiled > compiledBefore) {
-      insertRegion = regions.find((r) => node.start >= r.start && node.start < r.end);
-    }
   }
 
-  if (ctx.compiled === 0 || insertRegion === undefined) {
+  if (ctx.compiled === 0) {
     return { changed: false, code: source, map: null, warnings };
   }
 
-  // Runtime import + hoists go at the top of the first script that compiled a
-  // template, after its existing imports. Modeled as a zero-length insertion
-  // edit so the source-map builder can track it alongside the replacements.
+  // Runtime import + hoists are inserted at module top, after existing imports.
+  // Modeled as a zero-length insertion edit so the source-map builder can
+  // track it alongside the html`` replacements.
   const runtimeImport = ssr
     ? `import { ssrHelpers as __purity_h__ } from '@purityjs/core/compiler';\nimport '@purityjs/ssr';\n`
     : `import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/compiler';\n`;
   /* v8 ignore next -- edits.length > 0 implies at least one hoist was pushed */
   const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
-  const insertAt = findLastImportEnd(source.slice(insertRegion.start, insertRegion.end));
-  const insertPos = insertRegion.start + (insertAt === -1 ? 0 : insertAt);
+  const insertAt = findLastImportEnd(source);
+  const insertPos = insertAt === -1 ? 0 : insertAt;
   edits.push({ start: insertPos, end: insertPos, out: runtimeImport + hoistsBlock });
 
   // Removing `html` from `@purityjs/core` import statements — but ONLY when
   // every template compiled. If any failed, the failed `html\`\`` is left in
   // the output as runtime code and still needs the import to resolve.
-  if (!ctx.failed) {
-    for (const region of parsed) {
-      for (const edit of findHtmlImportEdits(source.slice(region.start, region.end))) {
-        edits.push({
-          start: edit.start + region.start,
-          end: edit.end + region.start,
-          out: edit.out,
-        });
-      }
-    }
-  }
+  if (!ctx.failed) edits.push(...findHtmlImportEdits(source));
 
   // Sort: by start ASC, then by length ASC (insertions before replacements at
   // the same offset). Stable order for same-start same-length is fine.

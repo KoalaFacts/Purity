@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
 const IMPORT = "import { html } from '@purityjs/core';\n";
@@ -60,41 +60,72 @@ export const el = <div />;
     expect(result.code).not.toContain('html`<p>');
   });
 
-  describe('custom include formats (single-file components)', () => {
-    const vuePlugin: any = purity({ include: ['.vue', '.ts', '.tsx', '.js', '.jsx'] });
+  describe('container submodules (single-file components)', () => {
+    const vuePlugin: any = purity({ include: ['.vue', '.svelte', '.ts', '.tsx', '.js', '.jsx'] });
+    // Container plugins such as @vitejs/plugin-vue hand purity each script as a
+    // pure-JS virtual module with its language in the `lang.*` query.
+    const SUB = 'Card.vue?vue&type=script&setup=true&lang.ts';
 
-    it('compiles html`` inside a <script> block of a .vue file', () => {
-      const code = [
-        '<template>',
-        '  <p>markup html`<b>not code</b>`</p>',
-        '</template>',
-        '<script setup lang="ts">',
-        IMPORT.trim(),
-        'export const view = (x: string) => html`<p>${x}</p>`;',
-        '</script>',
-      ].join('\n');
-      const result = vuePlugin.transform(code, 'Card.vue');
+    it('compiles html`` in a container script submodule', () => {
+      const code = `${IMPORT}export const view = (x: string) => html\`<p>\${x}</p>\`;\n`;
+      const result = vuePlugin.transform(code, SUB);
       expect(result).not.toBeNull();
-      expect(result.code).not.toContain('html`<p>');
-      // Markup outside the script is never touched.
-      expect(result.code).toContain('<p>markup html`<b>not code</b>`</p>');
-    });
-
-    it('ignores html`` text in a comment inside the script block', () => {
-      const code = [
-        '<script>',
-        IMPORT.trim(),
-        '// ' + MIXED,
-        'export const view = (x) => html`<p>${x}</p>`;',
-        '</script>',
-      ].join('\n');
-      const result = vuePlugin.transform(code, 'Card.vue');
-      expect(result).not.toBeNull();
-      expect(result.code).toContain('// ' + MIXED);
       expect(result.code).not.toContain('html`<p>');
     });
 
-    it('leaves a .vue file without a script block unchanged', () => {
+    it('ignores html`` text in a comment of a container script submodule', () => {
+      const code = `${IMPORT}// ${MIXED}\nexport const view = (x) => html\`<p>\${x}</p>\`;\n`;
+      const result = vuePlugin.transform(code, SUB);
+      expect(result).not.toBeNull();
+      expect(result.code).toContain(`// ${MIXED}`);
+      expect(result.code).not.toContain('html`<p>');
+    });
+
+    it('compiles each script submodule of one container independently', () => {
+      const a = vuePlugin.transform(`${IMPORT}export const a = () => html\`<i>a</i>\`;\n`, SUB);
+      const b = vuePlugin.transform(
+        `${IMPORT}export const b = () => html\`<u>b</u>\`;\n`,
+        'Card.vue?vue&type=script&lang.ts',
+      );
+      expect(a.code).toContain('__purity_renderCompiled__');
+      expect(b.code).toContain('__purity_renderCompiled__');
+      expect(a.code).not.toContain('html`<i>');
+      expect(b.code).not.toContain('html`<u>');
+    });
+
+    it('does not compile templates in a raw container', () => {
+      // The raw file has markup and a script with a generic attribute and a
+      // `</scripture>` string. Raw containers are never parsed by purity.
+      const raw = [
+        '<template><p>markup</p></template>',
+        '<script lang="ts" generic="T extends Record<string, unknown>">',
+        IMPORT.trim(),
+        "const s = '</scripture>';",
+        'export const view = () => html`<p>x</p>`;',
+        '</script>',
+      ].join('\n');
+      expect(vuePlugin.transform(raw, 'Raw.vue')).toBeNull();
+    });
+
+    it('warns once per container extension about a raw container with html``', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        vuePlugin.transform(
+          `<script>${IMPORT.trim()} const v = html\`<p>x</p>\`;</script>`,
+          'One.svelte',
+        );
+        vuePlugin.transform(
+          `<script>${IMPORT.trim()} const v = html\`<p>x</p>\`;</script>`,
+          'Two.svelte',
+        );
+        const notices = warn.mock.calls.filter((c) => String(c[0]).includes('raw container'));
+        expect(notices.length).toBe(1);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('leaves a container with no html`` unchanged', () => {
       expect(vuePlugin.transform('<template><p>x</p></template>', 'Plain.vue')).toBeNull();
     });
   });

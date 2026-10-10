@@ -129,6 +129,12 @@ nonzero and records the measured value and limit; it never updates budgets
 automatically. Review the current report and the code/toolchain change before
 editing a budget.
 
+Recorded change: `counter-runtime` gzip 7680 to 7808 and Brotli 6912 to 7040
+(+128 bytes each). The increase pays for the shared SSR/CSR value-coercion
+helpers (`flattenValue` / `valueText`) that keep client array and text output
+identical to SSR, enforced by the cross-path conformance suite. No other budget
+changed.
+
 For an investigation that deliberately exceeds a budget, use:
 
 ```bash

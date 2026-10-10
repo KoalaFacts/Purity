@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { watch } from '../signals.ts';
-import { generate, generateHydrate } from './codegen.ts';
+import { generateHydrateLinked, generateLinked } from './codegen.ts';
 import {
   checkHydrationCursor,
   type DeferredTemplate,
@@ -51,7 +51,7 @@ function ensureClient(entry: CacheEntry, strings: TemplateStringsArray): Compile
   if (entry.client) return entry.client;
   const ast = entry.ast ?? parse(strings);
   entry.ast = ast;
-  const code = generate(ast);
+  const code = generateLinked(ast);
   entry.client = bindHelpers(code) as CompiledFn;
   return entry.client;
 }
@@ -60,7 +60,7 @@ function ensureHydrate(entry: CacheEntry, strings: TemplateStringsArray): Hydrat
   if (entry.hydrate) return entry.hydrate;
   const ast = entry.ast ?? parse(strings);
   entry.ast = ast;
-  const code = generateHydrate(ast);
+  const code = generateHydrateLinked(ast);
   entry.hydrate = bindHelpers(code) as HydrateFactory;
   return entry.hydrate;
 }

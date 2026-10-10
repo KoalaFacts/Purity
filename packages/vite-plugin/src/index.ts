@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { dirname, posix, resolve as resolvePath, sep as pathSep } from 'node:path';
 import { parseSync } from 'oxc-parser';
 
-import { generate, generateHydrate, generateSSR, parse } from '@purityjs/core/compiler';
+import { generateHydrateLinked, generateLinked, generateSSR, parse } from '@purityjs/core/compiler';
 import { devtoolsClientSource } from './devtools-client.ts';
 
 import {
@@ -787,8 +787,8 @@ function renderTemplate(
   let hydrateBody: string | null = null;
   try {
     const ast = parse(quasis.map((q) => q.value.raw));
-    fnBody = (ctx.ssr ? generateSSR : generate)(ast);
-    if (!ctx.ssr) hydrateBody = generateHydrate(ast);
+    fnBody = (ctx.ssr ? generateSSR : generateLinked)(ast);
+    if (!ctx.ssr) hydrateBody = generateHydrateLinked(ast);
   } catch (err) {
     // Security failures must not fall back to an uncompiled template.
     if (isFatalTemplateError(err)) throw err;

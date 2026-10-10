@@ -9,7 +9,7 @@
 // must match exactly.
 
 import { describe, expect, it } from 'vite-plus/test';
-import { generateSSR } from '../src/compiler/codegen.ts';
+import { generate, generateModule, generateSSR } from '../src/compiler/codegen.ts';
 import { parse } from '../src/compiler/parser.ts';
 import { markSSRHtml, ssrHelpers } from '../src/compiler/ssr-runtime.ts';
 import { eachSSR } from '../src/control.ts';
@@ -264,13 +264,17 @@ describe('SSR / CSR / hydrate conformance', () => {
     const css = state('a > b');
     host.innerHTML = renderSSR(['<style>', '</style>'], [() => css()]);
     const ssrStyle = host.querySelector('style');
-    hydrate(host, () => html(tpl(['<style>', '</style>']), () => css()) as Node);
-    expect(ssrStyle !== null && host.contains(ssrStyle)).toBe(true);
-    expect(host.querySelector('style')?.textContent).toBe('a > b');
-    css('c > d');
-    await tick();
-    expect(host.querySelector('style')?.textContent).toBe('c > d');
-    host.remove();
+    const mounted = hydrate(host, () => html(tpl(['<style>', '</style>']), () => css()) as Node);
+    try {
+      expect(ssrStyle !== null && host.contains(ssrStyle)).toBe(true);
+      expect(host.querySelector('style')?.textContent).toBe('a > b');
+      css('c > d');
+      await tick();
+      expect(host.querySelector('style')?.textContent).toBe('c > d');
+    } finally {
+      mounted.unmount();
+      host.remove();
+    }
   });
 
   it('a mixed-case </STYLE> inside a dynamic style value cannot close it', () => {
@@ -296,5 +300,28 @@ describe('SSR / CSR / hydrate conformance', () => {
     host.innerHTML = out;
     expect(host.querySelectorAll('script')).toHaveLength(0);
     expect(host.querySelectorAll('style')).toHaveLength(1);
+  });
+});
+
+describe('public generate() output', () => {
+  // Public generate()/generateHydrate() return source that evaluates on its own.
+  // The AOT path imports the helpers instead of inlining them.
+  it('evaluates standalone and renders dynamic text and array bindings', () => {
+    const ast = parse(tpl(['<p>', '|', '</p>']));
+    const factory = new Function(`return ${generate(ast)}`)() as (
+      values: unknown[],
+      watch: (fn: () => void) => void,
+    ) => Node;
+    const root = factory(['x', ['a', 'b']], (fn) => fn());
+    const host = document.createElement('div');
+    host.appendChild(root);
+    expect(host.innerHTML).toBe('<p>x|ab</p>');
+  });
+
+  it('AOT module output imports the coercion helpers rather than inlining them', () => {
+    const out = generateModule(parse(tpl(['<p>', '</p>'])));
+    expect(out).toContain('flattenValue as __purity_fl__');
+    expect(out).not.toContain('var __purity_fl__=');
+    expect(out).not.toContain('var __purity_tx__=');
   });
 });

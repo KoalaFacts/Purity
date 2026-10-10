@@ -2,6 +2,8 @@ export type * from './ast.ts';
 export {
   generate,
   generateHydrate,
+  generateHydrateLinked,
+  generateLinked,
   generateHydrateModule,
   generateModule,
   generateSSR,

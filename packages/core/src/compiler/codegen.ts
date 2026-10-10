@@ -228,7 +228,12 @@ export function condenseWhitespace(node: ASTNode): ASTNode {
 // generate(ast)
 // ---------------------------------------------------------------------------
 
-export function generate(ast: FragmentNode): string {
+/**
+ * Client factory source that references `__purity_fl__` / `__purity_tx__` as
+ * free names. Host code must bind them: compile.ts for JIT, an import for AOT
+ * modules. Static templates reference neither.
+ */
+export function generateLinked(ast: FragmentNode): string {
   assertSafeScriptContent(ast);
   // Strip pure-indentation text nodes from the entire tree (not just edges).
   // Indentation between sibling tags becomes real text nodes after innerHTML,
@@ -307,7 +312,7 @@ const VALUE_HELPER_IMPORT =
   "import { flattenValue as __purity_fl__, valueText as __purity_tx__ } from '@purityjs/core/compiler';\n";
 
 export function generateModule(ast: FragmentNode): string {
-  return `${VALUE_HELPER_IMPORT}export default ${generate(ast)}`;
+  return `${VALUE_HELPER_IMPORT}export default ${generateLinked(ast)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -338,7 +343,8 @@ interface HydrateCtx {
   id: number;
 }
 
-export function generateHydrate(ast: FragmentNode): string {
+/** Hydrate factory source with the same free-name contract as generateLinked. */
+export function generateHydrateLinked(ast: FragmentNode): string {
   assertSafeScriptContent(ast);
   ast = condenseWhitespace(ast) as FragmentNode;
 
@@ -370,8 +376,35 @@ export function generateHydrate(ast: FragmentNode): string {
   return `function(_v,_w,_r,_i,_c,_e,_m,_s){${body}}`;
 }
 
+// Standalone helper definitions, equivalent to flattenValue / valueText in
+// value-helpers.ts (a parity test keeps the two in sync). Used only to make the
+// public generate()/generateHydrate() output evaluable on its own.
+const VALUE_HELPER_DEFS =
+  'var __purity_fl__=function(v,o,s){if(typeof v==="function")v=v();if(v==null||v===false)return o;' +
+  'if(Array.isArray(v)){if(s===null)s=new WeakSet();if(s.has(v))return o;s.add(v);' +
+  'for(var i=0;i<v.length;i++)__purity_fl__(v[i],o,s);}else o.push(v);return o;};' +
+  'var __purity_tx__=function(v){if(v==null||v===false)return "";if(!Array.isArray(v))return String(v);' +
+  'var L=__purity_fl__(v,[],null),t="";for(var i=0;i<L.length;i++)t+=String(L[i]);return t;};';
+
+// Wrap linked source so it evaluates on its own, binding the helpers once per
+// factory. Output without helper references is returned unchanged.
+function standalone(code: string): string {
+  if (!code.includes('__purity_fl__') && !code.includes('__purity_tx__')) return code;
+  return `(function(){${VALUE_HELPER_DEFS}return ${code};})()`;
+}
+
+/** Public: standalone client factory source, evaluable with `new Function`. */
+export function generate(ast: FragmentNode): string {
+  return standalone(generateLinked(ast));
+}
+
+/** Public: standalone hydrate factory source, evaluable with `new Function`. */
+export function generateHydrate(ast: FragmentNode): string {
+  return standalone(generateHydrateLinked(ast));
+}
+
 export function generateHydrateModule(ast: FragmentNode): string {
-  return `${VALUE_HELPER_IMPORT}export default ${generateHydrate(ast)}`;
+  return `${VALUE_HELPER_IMPORT}export default ${generateHydrateLinked(ast)}`;
 }
 
 function emitHydrateChildren(children: ASTNode[], ctx: HydrateCtx, cursor: string): void {

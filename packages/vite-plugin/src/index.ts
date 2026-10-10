@@ -859,13 +859,14 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   const lineStarts = buildLineStarts(source);
   const filename = id.split('?')[0]!;
 
-  const lang = moduleLangOf(id);
-  if (lang === undefined) {
-    return { changed: false, code: source, map: null, warnings };
-  }
-
+  // A non-JS id with no submodule marker may still hold JS: a compiler plugin
+  // such as vite-plugin-svelte returns compiled JS under the unchanged id. Try
+  // to parse it as JS. Raw markup fails to parse and is skipped silently.
+  const declared = moduleLangOf(id);
+  const lang: ModuleLang = declared ?? 'jsx';
   const { program, errors } = parseSync(filename, source, { lang, preserveParens: false });
   if (errors.length > 0) {
+    if (declared === undefined) return { changed: false, code: source, map: null, warnings };
     // Syntax errors are reported by Vite itself. Do not guess at templates.
     warnings.push(`[purity] ${id} — could not parse module; html\`\` templates were not compiled`);
     return { changed: false, code: source, map: null, warnings };

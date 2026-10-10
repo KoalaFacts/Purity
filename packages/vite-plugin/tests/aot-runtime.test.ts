@@ -268,9 +268,12 @@ describe('AOT output runs correctly under jsdom', () => {
       expect(!!root.querySelector('button')).toBe(!initial);
       outer(false);
       await vi.waitFor(() => expect(root.querySelector('div')).toBeNull());
+      // The hidden branch was disposed; showing it again renders fresh DOM.
       outer(true);
-      await vi.waitFor(() => expect(root.querySelector('div')).toBe(identity));
-      expect(root.querySelector('p')).toBe(tail);
+      await vi.waitFor(() => expect(root.querySelector('div')).not.toBeNull());
+      expect(root.querySelector('div')).not.toBe(identity);
+      expect(root.querySelector('div')?.textContent).toBe('Updated');
+      expect(root.querySelector('p')).not.toBe(tail);
     },
   );
 

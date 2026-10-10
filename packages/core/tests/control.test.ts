@@ -882,10 +882,12 @@ describe('each', () => {
 });
 
 describe('match — extra coverage', () => {
-  it('caches and reuses DOM for previously-seen keys', async () => {
+  it('renders a previously-seen key fresh instead of reattaching disposed DOM', async () => {
     const status = state('a');
+    let aRenders = 0;
     const fragment = match(() => status(), {
       a: () => {
+        aRenders++;
         const el = document.createElement('p');
         el.className = 'a';
         return el;
@@ -907,8 +909,10 @@ describe('match — extra coverage', () => {
 
     status('a');
     await tick();
-    // Same node was cached and reattached
-    expect(container.querySelector('.a')).toBe(aEl);
+    // The hidden case was disposed, so showing it again renders a new view.
+    expect(aRenders).toBe(2);
+    expect(container.querySelector('.a')).not.toBeNull();
+    expect(container.querySelector('.a')).not.toBe(aEl);
   });
 
   it('handles each() mapFn returning a raw Node (not fragment)', async () => {

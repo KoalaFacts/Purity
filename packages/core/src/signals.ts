@@ -1,4 +1,11 @@
-import { getCurrentContext } from './component.ts';
+import {
+  type ComponentContext,
+  disposeScope,
+  getCurrentComponent,
+  getCurrentContext,
+  popContext,
+  pushContext,
+} from './component.ts';
 
 // ---------------------------------------------------------------------------
 // Reactivity core
@@ -49,8 +56,15 @@ interface ComputedNode {
    *  do O(1) swap-and-pop instead of an indexOf scan over a possibly-huge list. */
   observerSlots: number[] | null;
   observers: ComputedNode[] | null;
-  /** Function returned from a watch fn body; runs before next re-run and on dispose. */
-  cleanup: (() => void) | null;
+  /** Effects: disposers of reactive work created during the last run (nested
+   *  watches, template bindings, computes), ending with the cleanup function
+   *  the body returned. An effect is the current scope while it runs, so this
+   *  is its `Scope.disposers`. Released before the next run and on dispose. */
+  disposers: (() => void)[] | null;
+  /** Effects: the component they were created under. An effect is the current
+   *  scope when it re-runs in a later flush, after that component rendered;
+   *  this keeps component-only APIs called from the body working. */
+  component: ComponentContext | null;
   /** True for watch effects (must re-run for side effects); false for compute (lazy). */
   isEffect: boolean;
   disposed: boolean;
@@ -405,18 +419,21 @@ function updateValue(startNode: ComputedNode): void {
   }
 }
 
-function runComputed(node: ComputedNode): void {
-  // Cleanup runs before fn re-evaluates, so the user's cleanup closure can
-  // still see the values from the run that produced it.
-  if (node.cleanup !== null) {
-    const c = node.cleanup;
-    node.cleanup = null;
-    try {
-      c();
-    } catch (e) {
-      console.error('[Purity] cleanup error:', e);
-    }
+/** Run fn without subscribing the active listener to what it reads. @internal */
+export function untracked<T>(fn: () => T): T {
+  const prevListener = activeListener;
+  activeListener = null;
+  try {
+    return fn();
+  } finally {
+    activeListener = prevListener;
   }
+}
+
+function runComputed(node: ComputedNode): void {
+  // Release the previous run before fn re-evaluates; the user's cleanup
+  // closure still sees the values from the run that produced it.
+  if (node.disposers !== null) disposeScope(node);
   if (node.disposed) {
     node.status = STATUS_CLEAN;
     return;
@@ -437,8 +454,8 @@ function runComputed(node: ComputedNode): void {
       // and silently disable the guard for all future runs.
       effectDepth--;
       throw new Error(
-        '[Purity] Maximum effect depth exceeded. ' +
-          'A watch/effect callback is likely modifying the signal it depends on.',
+        '[Purity] Maximum effect depth exceeded.' +
+          (__DEV__ ? ' A watch/effect callback is likely modifying the signal it depends on.' : ''),
       );
     }
   }
@@ -479,6 +496,10 @@ function runComputed(node: ComputedNode): void {
     // detect after fn() returns.
     node.status = STATUS_CLEAN;
 
+    // An effect owns the reactive work its body creates: while it runs it is
+    // the current scope, so nested watches and template bindings register
+    // their disposers on it (released by disposeScope before the next run).
+    if (node.isEffect) pushContext(node);
     try {
       nextValue = node.fn();
       thrown = false;
@@ -487,6 +508,7 @@ function runComputed(node: ComputedNode): void {
       thrown = true;
       thrownValue = e;
     } finally {
+      if (node.isEffect) popContext();
       // Truncate stale source slots. Anything past activeSourceIdx is no
       // longer read by this fn — drop the producer→consumer link.
       const consumed = activeSourceIdx;
@@ -517,18 +539,19 @@ function runComputed(node: ComputedNode): void {
       // surface the misuse rather than hang.
       node.status = STATUS_CLEAN;
       console.error(
-        '[Purity] compute() did not stabilise: its body keeps writing a ' +
-          'source it reads. Computes must be pure (no writes to their own deps).',
+        '[Purity] compute() did not stabilise.' +
+          (__DEV__ ? ' Its body keeps writing a source it reads; computes must be pure.' : ''),
       );
       break;
     }
   }
 
-  // Effect bodies may return a cleanup function; capture it and don't treat
-  // it as a value (effects produce no observable value).
+  // Effect bodies may return a cleanup function; register it as the run's
+  // last disposer and don't treat it as a value (effects produce no
+  // observable value).
   if (node.isEffect) {
     if (typeof nextValue === 'function') {
-      node.cleanup = nextValue as () => void;
+      (node.disposers ??= []).push(nextValue as () => void);
     }
     nextValue = undefined;
   }
@@ -596,10 +619,12 @@ function flush(): void {
       }
       if (++e.flushRuns > MAX_EFFECT_REPEATS) {
         console.error(
-          '[Purity] effect feedback loop detected: an effect re-ran more than ' +
-            MAX_EFFECT_REPEATS +
-            ' times in one flush. Effects are writing signals that other ' +
-            'effects read in a cycle; the remaining queued effects did not run.',
+          '[Purity] effect feedback loop detected.' +
+            (__DEV__
+              ? ` An effect re-ran more than ${MAX_EFFECT_REPEATS} times in one flush: ` +
+                'effects write signals that other effects read in a cycle. ' +
+                'The remaining queued effects did not run.'
+              : ''),
         );
         settleAfterLoop(i - 1);
         break;
@@ -612,8 +637,10 @@ function flush(): void {
         // already-DIRTY short-circuit would skip the effect on every
         // subsequent write — the watcher would silently never run
         // again. CLEAN restores the normal CLEAN→DIRTY transition that
-        // the next markDirty needs to re-queue.
+        // the next markDirty needs to re-queue. Release what the failed run
+        // created before throwing; no later run is guaranteed to.
         e.status = STATUS_CLEAN;
+        disposeScope(e);
         console.error('[Purity] watch/effect threw:', err);
       }
     }
@@ -786,7 +813,8 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
     sourceVersions: null,
     observerSlots: null,
     observers: null,
-    cleanup: null,
+    disposers: null,
+    component: null,
     isEffect: false,
     disposed: false,
     error: null,
@@ -826,7 +854,8 @@ function _effect(fn: () => undefined | Dispose): Dispose {
     sourceVersions: null,
     observerSlots: null,
     observers: null,
-    cleanup: null,
+    disposers: null,
+    component: getCurrentComponent(),
     isEffect: true,
     disposed: false,
     error: null,
@@ -845,6 +874,7 @@ function _effect(fn: () => undefined | Dispose): Dispose {
     updateValue(node);
   } catch (e) {
     node.disposed = true;
+    disposeScope(node);
     disconnectFromSources(node);
     throw e;
   }
@@ -852,16 +882,10 @@ function _effect(fn: () => undefined | Dispose): Dispose {
   const dispose = (): void => {
     if (node.disposed) return;
     node.disposed = true;
-    if (node.cleanup !== null) {
-      const c = node.cleanup;
-      node.cleanup = null;
-      try {
-        c();
-      } catch (e) {
-        console.error('[Purity] cleanup error:', e);
-      }
-    }
+    disposeScope(node);
     disconnectFromSources(node);
+    // A retained stop handle must not keep an unmounted component alive.
+    node.component = null;
   };
 
   // Auto-register with the current component/render context so reactive

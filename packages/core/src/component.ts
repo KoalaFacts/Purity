@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { enterHydration, exitHydration, inflateDeferred, isDeferred } from './compiler/compile.ts';
-import { watch } from './signals.ts';
+import { untracked, watch } from './signals.ts';
 import { primeHydrationCache } from './ssr-context.ts';
 
 /**
@@ -52,6 +52,9 @@ export interface MountResult {
 
 export interface Scope {
   disposers: (() => void)[] | null;
+  /** Lean scopes that run after their component rendered (an effect re-running
+   *  in a later flush) record the component they belong to. */
+  component?: ComponentContext | null;
 }
 
 export class ComponentContext implements Scope {
@@ -82,7 +85,8 @@ export class ComponentContext implements Scope {
     | null = null;
 
   _handleError(err: unknown): void {
-    if (this.errorHandlers) {
+    // Scoped onError removal can leave an empty array; treat it as no handler.
+    if (this.errorHandlers?.length) {
       for (let i = 0; i < this.errorHandlers.length; i++) {
         try {
           this.errorHandlers[i](err);
@@ -108,6 +112,41 @@ export function getCurrentContext(): Scope | null {
   return contextStack[contextStack.length - 1] || null;
 }
 
+/**
+ * Nearest enclosing component render context. Lean scopes pushed above it
+ * (each() rows, match() branches, running effects) own disposal but must not
+ * hide the component from component-only APIs (lifecycle hooks, css(),
+ * internals, custom states). @internal
+ */
+export function getCurrentComponent(): ComponentContext | null {
+  for (let i = contextStack.length - 1; i >= 0; i--) {
+    const ctx = contextStack[i];
+    if (ctx instanceof ComponentContext) return ctx;
+    if (ctx.component) return ctx.component;
+  }
+  return null;
+}
+
+/**
+ * Attach a new child context to the current owner. A component owner tracks it
+ * as a child (and is its error parent). A lean scope (row, branch, effect)
+ * disposes it, and the nearest component becomes its error parent.
+ * @internal
+ */
+export function attachToOwner(
+  ctx: ComponentContext,
+  unmount: (ctx: ComponentContext) => void,
+): void {
+  const owner = getCurrentContext();
+  if (owner instanceof ComponentContext) {
+    ctx.parent = owner;
+    (owner.children ??= []).push(ctx);
+  } else if (owner) {
+    ctx.parent = getCurrentComponent();
+    (owner.disposers ??= []).push(() => unmount(ctx));
+  }
+}
+
 export function pushContext(ctx: Scope): void {
   contextStack.push(ctx);
 }
@@ -116,9 +155,43 @@ export function popContext(): Scope | undefined {
   return contextStack.pop();
 }
 
+/** Run and clear a scope's disposers; one throwing disposer doesn't stop the rest. @internal */
+export function disposeScope(scope: Scope): void {
+  const disposers = scope.disposers;
+  if (!disposers) return;
+  scope.disposers = null;
+  // Cleanup reads must not subscribe whatever is running the disposal (an
+  // effect re-running, a match() switching cases, a list removing rows).
+  untracked(() => {
+    for (let i = 0; i < disposers.length; i++) {
+      try {
+        disposers[i]();
+      } catch (err) {
+        console.error('[Purity] Error during disposal:', err);
+      }
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Lifecycle hooks — only 3 + error
 // ---------------------------------------------------------------------------
+
+// Add a component callback registered from the current owner. A lean scope
+// (branch, row, re-running effect) removes it again when disposed, so hidden
+// branches don't leave callbacks on the long-lived component.
+function addCallback<T>(ctx: ComponentContext, list: T[], fn: T): void {
+  list.push(fn);
+  const owner = getCurrentContext();
+  if (owner && owner !== ctx) {
+    (owner.disposers ??= []).push(() => {
+      // The component's own teardown keeps it: it runs with the component.
+      if (ctx._isDestroyed) return;
+      const i = list.indexOf(fn);
+      if (i >= 0) list.splice(i, 1);
+    });
+  }
+}
 
 /**
  * Register a callback that runs after the component is inserted into the DOM.
@@ -137,8 +210,28 @@ export function popContext(): Scope | undefined {
  * ```
  */
 export function onMount(fn: () => void): void {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) (ctx.mounted ??= []).push(fn);
+  const ctx = getCurrentComponent();
+  if (!ctx) return;
+  if (!ctx._isMounted) {
+    addCallback(ctx, (ctx.mounted ??= []), fn);
+    return;
+  }
+  // Registered by a branch first shown after the component mounted: the
+  // mount drain already ran, so schedule this one under the current owner.
+  const owner = getCurrentContext()!;
+  let cancelled = false;
+  if (owner !== ctx) (owner.disposers ??= []).push(() => (cancelled = true));
+  queueMicrotask(() => {
+    if (cancelled || ctx._isDestroyed) return;
+    pushContext(owner);
+    try {
+      fn();
+    } catch (err) {
+      ctx._handleError(err);
+    } finally {
+      popContext();
+    }
+  });
 }
 
 /**
@@ -153,8 +246,8 @@ export function onMount(fn: () => void): void {
  * ```
  */
 export function onDestroy(fn: () => void): void {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) (ctx.destroyed ??= []).push(fn);
+  const ctx = getCurrentComponent();
+  if (ctx) addCallback(ctx, (ctx.destroyed ??= []), fn);
 }
 
 /**
@@ -197,8 +290,8 @@ export function onDispose(fn: () => void): void {
  * ```
  */
 export function onError(fn: (err: unknown) => void): void {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) (ctx.errorHandlers ??= []).push(fn);
+  const ctx = getCurrentComponent();
+  if (ctx) addCallback(ctx, (ctx.errorHandlers ??= []), fn);
 }
 
 // ---------------------------------------------------------------------------
@@ -217,8 +310,8 @@ export function onError(fn: (err: unknown) => void): void {
  * @param fn Receives the new form (or `null` when disassociated).
  */
 export function onFormAssociated(fn: (form: HTMLFormElement | null) => void): void {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) (ctx._formAssociated ??= []).push(fn);
+  const ctx = getCurrentComponent();
+  if (ctx) addCallback(ctx, (ctx._formAssociated ??= []), fn);
 }
 
 /**
@@ -227,8 +320,8 @@ export function onFormAssociated(fn: (form: HTMLFormElement | null) => void): vo
  * components declared with `{ formAssociated: true }`.
  */
 export function onFormDisabled(fn: (disabled: boolean) => void): void {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) (ctx._formDisabled ??= []).push(fn);
+  const ctx = getCurrentComponent();
+  if (ctx) addCallback(ctx, (ctx._formDisabled ??= []), fn);
 }
 
 /**
@@ -237,8 +330,8 @@ export function onFormDisabled(fn: (disabled: boolean) => void): void {
  * declared with `{ formAssociated: true }`.
  */
 export function onFormReset(fn: () => void): void {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) (ctx._formReset ??= []).push(fn);
+  const ctx = getCurrentComponent();
+  if (ctx) addCallback(ctx, (ctx._formReset ??= []), fn);
 }
 
 /**
@@ -252,8 +345,8 @@ export function onFormReset(fn: () => void): void {
 export function onFormStateRestore(
   fn: (state: string | File | FormData | null, mode: 'restore' | 'autocomplete') => void,
 ): void {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) (ctx._formStateRestore ??= []).push(fn);
+  const ctx = getCurrentComponent();
+  if (ctx) addCallback(ctx, (ctx._formStateRestore ??= []), fn);
 }
 
 // ---------------------------------------------------------------------------
@@ -334,11 +427,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   primeResourceHydrationCache(container);
 
   const ctx = new ComponentContext();
-  const parentCtx = getCurrentContext();
-  if (parentCtx instanceof ComponentContext) {
-    ctx.parent = parentCtx;
-    (parentCtx.children ??= []).push(ctx);
-  }
+  attachToOwner(ctx, unmountContext);
 
   pushContext(ctx);
   enterHydration();
@@ -402,12 +491,15 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
 
   if (ctx.mounted) {
     queueMicrotask(() => {
-      if (!ctx.mounted) return;
+      const mounted = ctx.mounted;
+      if (!mounted) return;
       pushContext(ctx);
       try {
-        for (let i = 0; i < ctx.mounted.length; i++) {
+        // A callback may unmount the component (which clears ctx.mounted);
+        // stop running the rest once it is destroyed.
+        for (let i = 0; i < mounted.length && !ctx._isDestroyed; i++) {
           try {
-            ctx.mounted[i]();
+            mounted[i]();
           } catch (err) {
             ctx._handleError(err);
           }
@@ -526,11 +618,7 @@ function normalizeCachePayload(parsed: unknown): {
 
 export function mount(component: ComponentFn, container: Element): MountResult {
   const ctx = new ComponentContext();
-  const parentCtx = getCurrentContext();
-  if (parentCtx instanceof ComponentContext) {
-    ctx.parent = parentCtx;
-    (parentCtx.children ??= []).push(ctx);
-  }
+  attachToOwner(ctx, unmountContext);
 
   pushContext(ctx);
 
@@ -565,15 +653,18 @@ export function mount(component: ComponentFn, container: Element): MountResult {
 
   if (ctx.mounted) {
     queueMicrotask(() => {
-      if (!ctx.mounted) return;
+      const mounted = ctx.mounted;
+      if (!mounted) return;
       // Make the component context active during onMount callbacks so
       // onDispose() / onError() registered inside them attach to this
       // component instead of silently no-oping.
       pushContext(ctx);
       try {
-        for (let i = 0; i < ctx.mounted.length; i++) {
+        // A callback may unmount the component (which clears ctx.mounted);
+        // stop running the rest once it is destroyed.
+        for (let i = 0; i < mounted.length && !ctx._isDestroyed; i++) {
           try {
-            ctx.mounted[i]();
+            mounted[i]();
           } catch (err) {
             ctx._handleError(err);
           }
@@ -619,8 +710,8 @@ export function mount(component: ComponentFn, container: Element): MountResult {
  * ```
  */
 export function bindComponentState(name: string, accessor: () => unknown): void {
-  const ctx = getCurrentContext();
-  if (!(ctx instanceof ComponentContext)) return;
+  const ctx = getCurrentComponent();
+  if (!ctx) return;
   const internals = ctx._internals;
   const states = internals?.states as
     | { add: (s: string) => void; delete: (s: string) => void }
@@ -653,7 +744,10 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
     }
   });
 
-  (ctx.disposers ??= []).push(() => {
+  // Release with the current disposal owner (a hidden branch, a removed row),
+  // not the host: the host outlives them.
+  const owner = getCurrentContext()!;
+  (owner.disposers ??= []).push(() => {
     dispose();
     // Release this binder's ref if it was contributing at dispose time.
     if (prevOn) {
@@ -692,19 +786,10 @@ function unmountContext(ctx: ComponentContext): void {
     ctx.nodes = null;
   }
 
-  // Run disposers
-  if (ctx.disposers) {
-    for (let i = 0; i < ctx.disposers.length; i++) {
-      try {
-        ctx.disposers[i]();
-      } catch (err) {
-        console.error('[Purity] Error during disposal:', err);
-      }
-    }
-    ctx.disposers = null;
-  }
-
+  // Mark destroyed before disposers run: lean scopes released by this teardown
+  // must not unregister their callbacks from a component that is going away.
   ctx._isDestroyed = true;
+  disposeScope(ctx);
   ctx._isMounted = false;
 
   // Run destroy callbacks

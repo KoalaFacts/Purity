@@ -7,7 +7,10 @@ import {
   valueToHtml,
 } from './compiler/ssr-runtime.ts';
 import {
+  attachToOwner,
   ComponentContext,
+  disposeScope,
+  getCurrentComponent,
   getCurrentContext,
   hydratePendingCustomElements,
   popContext,
@@ -15,6 +18,15 @@ import {
 } from './component.ts';
 import { FormControlBridge } from './form-control.ts';
 import { watch } from './signals.ts';
+
+// Unmount a context's child contexts, depth-first in reverse order (mirrors
+// unmountContext in component.ts).
+function unmountChildren(ctx: ComponentContext): void {
+  const children = ctx.children;
+  if (!children) return;
+  for (let i = children.length - 1; i >= 0; i--) unmountChildContext(children[i]);
+  ctx.children = null;
+}
 
 // Recursively tear down a non-custom-element child ComponentContext.
 //
@@ -29,14 +41,7 @@ import { watch } from './signals.ts';
 // `disconnectedCallback` already ran) is skipped rather than double-torn-down.
 function unmountChildContext(ctx: ComponentContext): void {
   if (ctx._isDestroyed) return;
-
-  // Unmount children first (depth-first, reverse order to mirror unmountContext)
-  if (ctx.children) {
-    for (let i = ctx.children.length - 1; i >= 0; i--) {
-      unmountChildContext(ctx.children[i]);
-    }
-    ctx.children = null;
-  }
+  unmountChildren(ctx);
 
   // Remove DOM
   if (ctx.nodes) {
@@ -47,19 +52,10 @@ function unmountChildContext(ctx: ComponentContext): void {
     ctx.nodes = null;
   }
 
-  // Run disposers
-  if (ctx.disposers) {
-    for (let i = 0; i < ctx.disposers.length; i++) {
-      try {
-        ctx.disposers[i]();
-      } catch (err) {
-        console.error('[Purity] Error during disposal:', err);
-      }
-    }
-    ctx.disposers = null;
-  }
-
+  // Mark destroyed before disposers run: lean scopes released by this teardown
+  // must not unregister their callbacks from a component that is going away.
   ctx._isDestroyed = true;
+  disposeScope(ctx);
   ctx._isMounted = false;
 
   // Run destroy callbacks
@@ -201,8 +197,8 @@ function resolveContent(content: unknown): Node | null {
  * @param name Slot name. Defaults to `'default'`.
  */
 export function slot<E = void>(name?: string): SlotAccessor<E> {
-  const ctx = getCurrentContext();
-  if (!(ctx instanceof ComponentContext))
+  const ctx = getCurrentComponent();
+  if (!ctx)
     throw new Error(
       'slot() must be called inside a component() render function.\n' +
         '  Example: component("my-el", (props, { default: body }) => body())',
@@ -252,9 +248,7 @@ export function slot<E = void>(name?: string): SlotAccessor<E> {
  * ```
  */
 export function internals(): ElementInternals | null {
-  const ctx = getCurrentContext();
-  if (ctx instanceof ComponentContext) return ctx._internals;
-  return null;
+  return getCurrentComponent()?._internals ?? null;
 }
 
 function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node | null {
@@ -462,46 +456,57 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
   let view: unknown;
   try {
     view = renderFn(props, createSSRSlotAccessors({ default: slotHtml }));
+  } catch (e) {
+    // No shell will be serialized: release what the render created.
+    disposeScope(ctx);
+    throw e;
   } finally {
     popContext();
   }
 
-  const renderedHtml = valueToHtml(view);
+  try {
+    const renderedHtml = valueToHtml(view);
 
-  // Host-element attributes mirror what was declared in the parent template.
-  // Attribute *names* are interpolated raw, so skip any key that isn't a safe
-  // name — the compiler asserts this upstream, but direct/SSR callers can pass
-  // arbitrary keys. Values are escaped by `valueToAttr`.
-  let hostAttrs = '';
-  for (const k of Object.keys(props)) {
-    if (!SAFE_ATTR_NAME.test(k)) continue;
-    // Object/function props are supplied by the parent during hydration.
-    // Reflecting them as strings is lossy and can expose server-only data.
-    if (props[k] !== null && (typeof props[k] === 'object' || typeof props[k] === 'function'))
-      continue;
-    const av = valueToAttr(props[k]);
-    if (av !== null) hostAttrs += av === '' ? ` ${k}` : ` ${k}="${av}"`;
+    // Host-element attributes mirror what was declared in the parent template.
+    // Attribute *names* are interpolated raw, so skip any key that isn't a safe
+    // name — the compiler asserts this upstream, but direct/SSR callers can pass
+    // arbitrary keys. Values are escaped by `valueToAttr`.
+    let hostAttrs = '';
+    for (const k of Object.keys(props)) {
+      if (!SAFE_ATTR_NAME.test(k)) continue;
+      // Object/function props are supplied by the parent during hydration.
+      // Reflecting them as strings is lossy and can expose server-only data.
+      if (props[k] !== null && (typeof props[k] === 'object' || typeof props[k] === 'function'))
+        continue;
+      const av = valueToAttr(props[k]);
+      if (av !== null) hostAttrs += av === '' ? ` ${k}` : ` ${k}="${av}"`;
+    }
+
+    const styles = (ctx as unknown as { _ssrStyles: string[] })._ssrStyles;
+    // `<style>` is an HTML5 "raw text element" — its content runs verbatim
+    // until the parser sees a literal `</style` sequence. An interpolated
+    // CSS value containing `</style><script>...</script>` would otherwise
+    // close the style tag early and execute the injected script (XSS).
+    // Insert a backslash between `<` and `/style`: the HTML parser only
+    // matches the literal `</style` substring (the `<` followed by `\`
+    // bounces it back to raw-text state), but CSS treats `\/` as a literal
+    // `/` escape, so the rendered styling is unchanged.
+    const styleBlock =
+      styles.length > 0
+        ? `<style>${styles.join('\n').replace(/<\/style/gi, '<\\/style')}</style>`
+        : '';
+    const inner = styleBlock + renderedHtml;
+    const options = componentOptions.get(tag);
+    const focusAttr =
+      (options?.delegatesFocus ?? !!options?.formControl) ? ' shadowrootdelegatesfocus' : '';
+
+    return `<${tag}${hostAttrs}><template shadowrootmode="open"${focusAttr}>${inner}</template></${tag}>`;
+  } finally {
+    // Server output is final once the shell is serialized: release the
+    // component's watches and computes so requests don't leave them
+    // subscribed to shared state.
+    disposeScope(ctx);
   }
-
-  const styles = (ctx as unknown as { _ssrStyles: string[] })._ssrStyles;
-  // `<style>` is an HTML5 "raw text element" — its content runs verbatim
-  // until the parser sees a literal `</style` sequence. An interpolated
-  // CSS value containing `</style><script>...</script>` would otherwise
-  // close the style tag early and execute the injected script (XSS).
-  // Insert a backslash between `<` and `/style`: the HTML parser only
-  // matches the literal `</style` substring (the `<` followed by `\`
-  // bounces it back to raw-text state), but CSS treats `\/` as a literal
-  // `/` escape, so the rendered styling is unchanged.
-  const styleBlock =
-    styles.length > 0
-      ? `<style>${styles.join('\n').replace(/<\/style/gi, '<\\/style')}</style>`
-      : '';
-  const inner = styleBlock + renderedHtml;
-  const options = componentOptions.get(tag);
-  const focusAttr =
-    (options?.delegatesFocus ?? !!options?.formControl) ? ' shadowrootdelegatesfocus' : '';
-
-  return `<${tag}${hostAttrs}><template shadowrootmode="open"${focusAttr}>${inner}</template></${tag}>`;
 };
 
 /**
@@ -792,24 +797,10 @@ export function component<
           // custom elements, so the browser never dispatches their teardown —
           // without this recursion their disposers / onDestroy callbacks would
           // orphan. Mirrors the canonical `unmountContext` (component.ts).
-          if (this._ctx.children) {
-            for (let i = this._ctx.children.length - 1; i >= 0; i--) {
-              unmountChildContext(this._ctx.children[i]);
-            }
-            this._ctx.children = null;
-          }
+          unmountChildren(this._ctx);
 
-          if (this._ctx.disposers) {
-            for (let i = 0; i < this._ctx.disposers.length; i++) {
-              try {
-                this._ctx.disposers[i]();
-              } catch (e) {
-                console.error('[Purity]', e);
-              }
-            }
-            this._ctx.disposers = null;
-          }
           this._ctx._isDestroyed = true;
+          disposeScope(this._ctx);
           this._ctx._isMounted = false;
           runCallbacks(this._ctx.destroyed, this._ctx);
         }
@@ -957,11 +948,7 @@ export function component<
   // Also return a programmatic factory (for non-template usage)
   return (props: P, children?: any) => {
     const ctx = new ComponentContext();
-    const parentCtx = getCurrentContext();
-    if (parentCtx instanceof ComponentContext) {
-      ctx.parent = parentCtx;
-      (parentCtx.children ??= []).push(ctx);
-    }
+    attachToOwner(ctx, unmountChildContext);
 
     ctx._slotContent = children;
     const registry = createRegistry();

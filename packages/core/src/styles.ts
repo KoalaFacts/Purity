@@ -1,4 +1,4 @@
-import { getCurrentContext } from './component.ts';
+import { getCurrentComponent, getCurrentContext } from './component.ts';
 import { watch } from './signals.ts';
 
 // ---------------------------------------------------------------------------
@@ -51,7 +51,7 @@ import { watch } from './signals.ts';
  * @returns Scope class name (when used outside a component). Empty string inside components.
  */
 export function css(strings: TemplateStringsArray, ...values: unknown[]): string {
-  const ctx = getCurrentContext();
+  const ctx = getCurrentComponent();
   const shadowRoot = ctx ? ((ctx as any)._shadowRoot as ShadowRoot | undefined) : undefined;
   const hasReactive = values.some((v) => typeof v === 'function');
 
@@ -100,18 +100,25 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
     sheet.replaceSync(buildCss());
 
     shadowRoot.adoptedStyleSheets = [...shadowRoot.adoptedStyleSheets, sheet];
+    // A lean scope (branch, row, re-running effect) outlives only its own
+    // render: drop the sheet with it. A component owner drops it with the root.
+    const owner = getCurrentContext();
+    if (owner && owner !== ctx) {
+      (owner.disposers ??= []).push(() => {
+        shadowRoot.adoptedStyleSheets = shadowRoot.adoptedStyleSheets.filter((x) => x !== sheet);
+      });
+    }
 
     if (hasReactive) {
       let prevCss = '';
-      const dispose = watch(() => {
+      // Disposed with the current owner, which watch() registers with.
+      watch(() => {
         const newCss = buildCss();
         if (newCss !== prevCss) {
           prevCss = newCss;
           sheet.replaceSync(newCss);
         }
       });
-      // Auto-dispose on unmount
-      if (ctx) (ctx.disposers ??= []).push(dispose);
     }
 
     // No scope class needed — Shadow DOM scopes it
@@ -149,7 +156,8 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
 
   if (hasReactive) {
     let prevCss = '';
-    const dispose = watch(() => {
+    // Disposed with the current owner, which watch() registers with.
+    watch(() => {
       const newCss = buildScoped();
       /* v8 ignore next -- newCss==prevCss only when state writes the same value, which the reactivity layer already skips before we get here */
       if (newCss !== prevCss) {
@@ -157,18 +165,13 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
         styleEl.textContent = newCss;
       }
     });
-    if (ctx) {
-      (ctx.disposers ??= []).push(() => {
-        dispose();
-        styleEl.remove();
-      });
-    }
   } else {
     styleEl.textContent = buildScoped();
-    if (ctx) {
-      (ctx.disposers ??= []).push(() => styleEl.remove());
-    }
   }
+  // The style lives as long as the scope that created it (component, row,
+  // branch or re-running effect), not the enclosing component.
+  const owner = getCurrentContext();
+  if (owner) (owner.disposers ??= []).push(() => styleEl.remove());
 
   return scopeClass;
 }

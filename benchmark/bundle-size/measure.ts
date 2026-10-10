@@ -315,6 +315,9 @@ const report = {
     core: createHash('sha256')
       .update(await readFile(join(root, 'packages/core/dist/index.js')))
       .digest('hex'),
+    coreCompiler: createHash('sha256')
+      .update(await readFile(join(root, 'packages/core/dist/compiler/index.js')))
+      .digest('hex'),
     ssr: createHash('sha256')
       .update(await readFile(join(root, 'packages/ssr/dist/index.js')))
       .digest('hex'),

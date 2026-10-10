@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
 const IMPORT = "import { html } from '@purityjs/core';\n";
@@ -105,24 +105,6 @@ export const el = <div />;
         '</script>',
       ].join('\n');
       expect(vuePlugin.transform(raw, 'Raw.vue')).toBeNull();
-    });
-
-    it('warns once per container extension about a raw container with html``', () => {
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      try {
-        vuePlugin.transform(
-          `<script>${IMPORT.trim()} const v = html\`<p>x</p>\`;</script>`,
-          'One.svelte',
-        );
-        vuePlugin.transform(
-          `<script>${IMPORT.trim()} const v = html\`<p>x</p>\`;</script>`,
-          'Two.svelte',
-        );
-        const notices = warn.mock.calls.filter((c) => String(c[0]).includes('raw container'));
-        expect(notices.length).toBe(1);
-      } finally {
-        warn.mockRestore();
-      }
     });
 
     it('leaves a container with no html`` unchanged', () => {

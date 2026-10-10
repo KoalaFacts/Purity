@@ -833,9 +833,6 @@ const MODULE_LANG_BY_EXT: Record<string, ModuleLang> = {
   '.jsx': 'jsx',
 };
 
-// Containers already warned about, so a project gets one notice per extension.
-const rawContainerWarned = new Set<string>();
-
 // Grammar for a module id, or undefined when the id is a raw non-JS container.
 //
 // JS/TS files are modules by extension. Other formats (for example a Vue
@@ -864,13 +861,6 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
 
   const lang = moduleLangOf(id);
   if (lang === undefined) {
-    const ext = filename.slice(filename.lastIndexOf('.'));
-    if (source.includes('html`') && !rawContainerWarned.has(ext)) {
-      rawContainerWarned.add(ext);
-      warnings.push(
-        `[purity] ${id}: html\`\` in a raw container is not compiled. Purity compiles the script submodules that a container plugin emits (for example @vitejs/plugin-vue).`,
-      );
-    }
     return { changed: false, code: source, map: null, warnings };
   }
 

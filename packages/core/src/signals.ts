@@ -443,8 +443,10 @@ function runComputed(node: ComputedNode): void {
       // and silently disable the guard for all future runs.
       effectDepth--;
       throw new Error(
-        '[Purity] Maximum effect depth exceeded. ' +
-          'A watch/effect callback is likely modifying the signal it depends on.',
+        '[Purity] Maximum effect depth exceeded.' +
+          (__DEV__
+            ? ' A watch/effect callback is likely modifying the signal it depends on.'
+            : ''),
       );
     }
   }
@@ -528,8 +530,10 @@ function runComputed(node: ComputedNode): void {
       // surface the misuse rather than hang.
       node.status = STATUS_CLEAN;
       console.error(
-        '[Purity] compute() did not stabilise: its body keeps writing a ' +
-          'source it reads. Computes must be pure (no writes to their own deps).',
+        '[Purity] compute() did not stabilise.' +
+          (__DEV__
+            ? ' Its body keeps writing a source it reads; computes must be pure.'
+            : ''),
       );
       break;
     }
@@ -608,10 +612,12 @@ function flush(): void {
       }
       if (++e.flushRuns > MAX_EFFECT_REPEATS) {
         console.error(
-          '[Purity] effect feedback loop detected: an effect re-ran more than ' +
-            MAX_EFFECT_REPEATS +
-            ' times in one flush. Effects are writing signals that other ' +
-            'effects read in a cycle; the remaining queued effects did not run.',
+          '[Purity] effect feedback loop detected.' +
+            (__DEV__
+              ? ` An effect re-ran more than ${MAX_EFFECT_REPEATS} times in one flush: ` +
+                'effects write signals that other effects read in a cycle. ' +
+                'The remaining queued effects did not run.'
+              : ''),
         );
         settleAfterLoop(i - 1);
         break;

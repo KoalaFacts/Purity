@@ -360,6 +360,30 @@ describe('late branches and failed renders', () => {
     expect(mounted).toBe(1);
   });
 
+  it('removes a branch light-DOM style when the branch is hidden', async () => {
+    const show = state(true);
+    let scopeClass = '';
+    const hasStyle = () =>
+      Array.from(document.head.querySelectorAll('style')).some((el) =>
+        el.textContent?.includes(scopeClass),
+      );
+    mount(
+      () =>
+        html`<div>${when(
+          () => show(),
+          () => {
+            scopeClass = css`p { color: red; }`;
+            return html`<p>x</p>`;
+          },
+        )}</div>`,
+      document.createElement('div'),
+    );
+    expect(hasStyle()).toBe(true);
+    show(false);
+    await tick();
+    expect(hasStyle()).toBe(false);
+  });
+
   it('removes a branch shadow stylesheet when the branch is hidden', async () => {
     const g = globalThis as { CSSStyleSheet?: unknown };
     const hadSheet = 'CSSStyleSheet' in g;

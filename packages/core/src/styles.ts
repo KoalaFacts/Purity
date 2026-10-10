@@ -156,7 +156,8 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
 
   if (hasReactive) {
     let prevCss = '';
-    const dispose = watch(() => {
+    // Disposed with the current owner, which watch() registers with.
+    watch(() => {
       const newCss = buildScoped();
       /* v8 ignore next -- newCss==prevCss only when state writes the same value, which the reactivity layer already skips before we get here */
       if (newCss !== prevCss) {
@@ -164,18 +165,13 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
         styleEl.textContent = newCss;
       }
     });
-    if (ctx) {
-      (ctx.disposers ??= []).push(() => {
-        dispose();
-        styleEl.remove();
-      });
-    }
   } else {
     styleEl.textContent = buildScoped();
-    if (ctx) {
-      (ctx.disposers ??= []).push(() => styleEl.remove());
-    }
   }
+  // The style lives as long as the scope that created it (component, row,
+  // branch or re-running effect), not the enclosing component.
+  const owner = getCurrentContext();
+  if (owner) (owner.disposers ??= []).push(() => styleEl.remove());
 
   return scopeClass;
 }

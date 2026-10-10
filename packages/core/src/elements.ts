@@ -17,6 +17,15 @@ import {
 import { FormControlBridge } from './form-control.ts';
 import { watch } from './signals.ts';
 
+// Unmount a context's child contexts, depth-first in reverse order (mirrors
+// unmountContext in component.ts).
+function unmountChildren(ctx: ComponentContext): void {
+  const children = ctx.children;
+  if (!children) return;
+  for (let i = children.length - 1; i >= 0; i--) unmountChildContext(children[i]);
+  ctx.children = null;
+}
+
 // Recursively tear down a non-custom-element child ComponentContext.
 //
 // Mirrors the canonical `unmountContext` in component.ts (which is private to
@@ -30,14 +39,7 @@ import { watch } from './signals.ts';
 // `disconnectedCallback` already ran) is skipped rather than double-torn-down.
 function unmountChildContext(ctx: ComponentContext): void {
   if (ctx._isDestroyed) return;
-
-  // Unmount children first (depth-first, reverse order to mirror unmountContext)
-  if (ctx.children) {
-    for (let i = ctx.children.length - 1; i >= 0; i--) {
-      unmountChildContext(ctx.children[i]);
-    }
-    ctx.children = null;
-  }
+  unmountChildren(ctx);
 
   // Remove DOM
   if (ctx.nodes) {
@@ -783,12 +785,7 @@ export function component<
           // custom elements, so the browser never dispatches their teardown —
           // without this recursion their disposers / onDestroy callbacks would
           // orphan. Mirrors the canonical `unmountContext` (component.ts).
-          if (this._ctx.children) {
-            for (let i = this._ctx.children.length - 1; i >= 0; i--) {
-              unmountChildContext(this._ctx.children[i]);
-            }
-            this._ctx.children = null;
-          }
+          unmountChildren(this._ctx);
 
           disposeScope(this._ctx);
           this._ctx._isDestroyed = true;
@@ -943,6 +940,10 @@ export function component<
     if (parentCtx instanceof ComponentContext) {
       ctx.parent = parentCtx;
       (parentCtx.children ??= []).push(ctx);
+    } else if (parentCtx) {
+      // A lean scope (each() row, match() branch, running effect) can't hold
+      // child contexts; tear this one down when that scope is disposed.
+      (parentCtx.disposers ??= []).push(() => unmountChildContext(ctx));
     }
 
     ctx._slotContent = children;

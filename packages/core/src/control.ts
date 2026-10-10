@@ -124,13 +124,13 @@ function insertMatchView(
   }
 }
 
-// Detach and dispose the current case, then render the new key. Reused by
-// client + hydration paths.
+// Detach and dispose the current case, then render the selector's current key.
+// Reused by client + hydration paths.
 function reconcileMatch<T extends string | number | boolean>(
   matchState: MatchState,
   parent: Node,
   endMarker: Node,
-  key: string,
+  sourceFn: () => T,
   cases: MatchCases<T>,
   fallback?: MatchView,
 ): void {
@@ -140,6 +140,9 @@ function reconcileMatch<T extends string | number | boolean>(
     if (node.parentNode) node.parentNode.removeChild(node);
   }
   disposeBranch(matchState);
+  // Read the selector after disposal: an outgoing case's cleanup may have
+  // written it, and that write can't re-run this watch (it is mid-run).
+  const key = String(sourceFn());
   matchState.prevKey = key;
 
   const viewFn = cases[key as `${T}`] ?? fallback;
@@ -163,7 +166,7 @@ function installMatchWatch<T extends string | number | boolean>(
     const parent = endMarker.parentNode;
     /* v8 ignore next -- defensive; if endMarker is detached, watch is disposed */
     if (!parent) return;
-    reconcileMatch(matchState, parent, endMarker, key, cases, fallback);
+    reconcileMatch(matchState, parent, endMarker, sourceFn, cases, fallback);
   });
 }
 
@@ -1883,38 +1886,34 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
 
   if (ssrKey === initKey && initView && boundary.inner.length > 0) {
     // Keys match — run the view under hydration mode so html`` produces a
-    // DeferredTemplate, then inflate against the boundary's existing nodes.
-    // Both steps create the case's bindings, so both run in its branch scope.
+    // DeferredTemplate, then inflate it against the boundary's existing
+    // nodes. Both steps create the case's bindings, so both run in its
+    // branch scope.
+    let adopted = false;
     const content = renderBranch(matchState, () => {
+      let view: unknown;
       enterHydration();
       try {
-        return initView();
+        view = initView();
       } finally {
         exitHydration();
       }
-    });
-
-    if (isDeferred(content)) {
+      if (!isDeferred(view)) return view;
+      adopted = true;
       const frag = document.createDocumentFragment();
       for (let i = 0; i < boundary.inner.length; i++) frag.appendChild(boundary.inner[i]);
-      const scope = matchState.branch!;
-      pushContext(scope);
-      try {
-        inflateDeferred(content as DeferredTemplate, frag);
-      } finally {
-        popContext();
-      }
-      matchState.currentNodes = Array.from(frag.childNodes);
-      parent.insertBefore(frag, endMarker);
-    } else {
+      inflateDeferred(view as DeferredTemplate, frag);
+      return frag;
+    });
+    if (!adopted) {
       // View returned a non-deferred value (raw Node, string, etc.) — can't
       // adopt; lossy-replace the boundary content with the new value.
       for (let i = 0; i < boundary.inner.length; i++) {
         const n = boundary.inner[i];
         if (n.parentNode) n.parentNode.removeChild(n);
       }
-      insertMatchView(matchState, parent, endMarker, content as Node | DocumentFragment | string);
     }
+    insertMatchView(matchState, parent, endMarker, content);
     matchState.prevKey = initKey;
   } else {
     // Either no view was rendered server-side (key === undefined / no inner

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
-import { mount } from '../src/component.ts';
+import { mount, onDestroy, onDispose } from '../src/component.ts';
 import { each, match, when } from '../src/control.ts';
+import { component } from '../src/elements.ts';
 import { state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
@@ -167,6 +168,53 @@ describe('when()/match() branch lifecycle', () => {
     x(5);
     await tick();
     expect(host.textContent).toBe('5');
+  });
+});
+
+describe('when()/match() branch disposal edge cases', () => {
+  it('unmounts a component() factory instance when its branch is hidden', async () => {
+    const show = state(true);
+    let destroyed = 0;
+    const Child = component(`p-owned-child-${Date.now()}`, () => {
+      onDestroy(() => destroyed++);
+      return html`<span>child</span>`;
+    });
+    mount(
+      () =>
+        html`<div>${when(
+          () => show(),
+          () => Child({}),
+        )}</div>`,
+      document.createElement('div'),
+    );
+    for (let i = 0; i < 3; i++) {
+      show(false);
+      await tick();
+      show(true);
+      await tick();
+    }
+    expect(destroyed).toBe(3);
+  });
+
+  it('renders the case the selector holds after an outgoing case wrote it during disposal', async () => {
+    const mode = state<'a' | 'b' | 'c'>('a');
+    const host = document.createElement('div');
+    mount(
+      () =>
+        html`<div>${match(() => mode(), {
+          a: () => {
+            onDispose(() => mode('c'));
+            return html`<p>a</p>`;
+          },
+          b: () => html`<p>b</p>`,
+          c: () => html`<p>c</p>`,
+        })}</div>`,
+      host,
+    );
+    mode('b');
+    await tick();
+    await tick();
+    expect(host.textContent).toBe('c');
   });
 });
 

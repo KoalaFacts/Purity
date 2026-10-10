@@ -1,42 +1,42 @@
 {
-  "counter-runtime": {
-    "gzipBytes": 7936,
-    "brotliBytes": 7168,
-    "functionConstructorCalls": 1
+  "packages": {
+    "core": {
+      "gzipBytes": 46080,
+      "brotliBytes": 40704
+    },
+    "core-compiler": {
+      "gzipBytes": 11008,
+      "brotliBytes": 9728
+    },
+    "ssr": {
+      "gzipBytes": 5376,
+      "brotliBytes": 4864
+    }
   },
-  "counter-aot": {
-    "gzipBytes": 3840,
-    "brotliBytes": 3328,
-    "functionConstructorCalls": 0
-  },
-  "controls-runtime": {
-    "gzipBytes": 15872,
-    "brotliBytes": 14208,
-    "functionConstructorCalls": 2
-  },
-  "controls-aot": {
-    "gzipBytes": 17792,
-    "brotliBytes": 15744,
-    "functionConstructorCalls": 2
-  },
-  "form-runtime": {
-    "gzipBytes": 10880,
-    "brotliBytes": 9728,
-    "functionConstructorCalls": 1
-  },
-  "form-aot": {
-    "gzipBytes": 7168,
-    "brotliBytes": 6400,
-    "functionConstructorCalls": 0
-  },
-  "hydration-runtime": {
-    "gzipBytes": 16512,
-    "brotliBytes": 14720,
-    "functionConstructorCalls": 2
-  },
-  "hydration-aot": {
-    "gzipBytes": 18432,
-    "brotliBytes": 16256,
-    "functionConstructorCalls": 2
+  "fixtures": {
+    "counter-runtime": {
+      "functionConstructorCalls": 1
+    },
+    "counter-aot": {
+      "functionConstructorCalls": 0
+    },
+    "controls-runtime": {
+      "functionConstructorCalls": 1
+    },
+    "controls-aot": {
+      "functionConstructorCalls": 1
+    },
+    "form-runtime": {
+      "functionConstructorCalls": 1
+    },
+    "form-aot": {
+      "functionConstructorCalls": 0
+    },
+    "hydration-runtime": {
+      "functionConstructorCalls": 1
+    },
+    "hydration-aot": {
+      "functionConstructorCalls": 1
+    }
   }
 }

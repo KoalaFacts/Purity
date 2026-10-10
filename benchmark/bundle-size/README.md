@@ -7,8 +7,9 @@ npm run check:bundle
 npm run check:bundle -- --verify
 ```
 
-The first command rebuilds core, SSR, and the Vite plugin, builds four fixtures
-with and without AOT, and enforces the [budgets](./budgets.json). The second
+The first command rebuilds core, SSR, and the Vite plugin, measures each
+published package entry against its [budget](./budgets.json), and builds four
+fixture apps with and without AOT, whose sizes are reported. The second
 verifies all eight production builds in Chromium, Firefox, and WebKit. Every
 AOT page uses a Content Security Policy without `unsafe-eval`.
 Install engines with `npx playwright install chromium firefox webkit` if needed.
@@ -19,7 +20,14 @@ and `report.md` as workflow artifacts, including on budget or browser failures.
 
 ## What is measured
 
-- Production ES2022, minified ESM JavaScript from built package exports.
+- **Package entries (budgeted):** `@purityjs/core`, `@purityjs/core/compiler`,
+  and `@purityjs/ssr`. Each is built as `export * from <entry>`, so every export
+  is kept, then minified from the built dist into one payload. Other Purity
+  packages and Node built-ins are external, so each figure is that package's
+  own code. The Vite plugin and CLI are build-time Node tools and are not
+  budgeted.
+- **Fixture apps (reported):** production ES2022, minified ESM JavaScript from
+  built package exports.
 - Every emitted JavaScript chunk, including fixture application code.
 - Raw UTF-8 bytes, gzip at level 9, and Brotli at quality 11. Each file is
   compressed separately before adding its size, matching separate responses.
@@ -30,7 +38,7 @@ fixture kept its template. It rejects missing entries, source-only package
 resolution, external imports, hidden dynamic chunks, and unexpected assets.
 It does not claim that AOT eliminates every runtime compiler path in the core.
 
-Report schema version 2 records the Git revision and dirty state, package
+Report schema version 3 records the package entry sizes and, as before, the Git revision and dirty state, package
 versions, Node and compression-library versions, normalized hashes for all
 fixture sources, built entry hashes, settings, per-chunk sizes, budgets, and
 optional browser verification with exact engine versions. A verified SSR
@@ -121,35 +129,14 @@ a promise that applications using each/match remove those dependencies.
 
 ## Budget changes
 
-Limits allow roughly 5% growth over the optimized measurements, rounded up
-to 256-byte boundaries.
-Both gzip and Brotli, and the direct `Function` call-site count, must remain
-within their profile's limit. A failure exits
+Budgets are per published package entry: gzip and Brotli must stay within the
+limit, which allows roughly 5% growth over the measurement and is rounded up to
+a 256-byte boundary. Fixture app sizes are not budgeted. Each fixture's direct
+`Function` call-site count stays enforced, because AOT output must keep
+working under a Content Security Policy without `unsafe-eval`. A failure exits
 nonzero and records the measured value and limit; it never updates budgets
 automatically. Review the current report and the code/toolchain change before
 editing a budget.
-
-Recorded change: `counter-runtime` gzip 7680 to 7808 and Brotli 6912 to 7040
-(+128 bytes each). The increase pays for the shared SSR/CSR value-coercion
-helpers (`flattenValue` / `valueText`) that keep client array and text output
-identical to SSR, enforced by the cross-path conformance suite. No other budget
-changed.
-
-Recorded change (rejecting interpolated attribute values): every profile that
-ships the template parser grows by about 130 bytes gzip. The parser now raises
-an error for `attr="x ${v} y"` instead of silently compiling a wrong static
-value. The copy-paste example in that error is development-only. Limits were
-raised to the next 128-byte boundary above the measurement, matching the
-change above:
-
-| Profile           | gzip           | Brotli         |
-| ----------------- | -------------- | -------------- |
-| counter-runtime   | 7808 to 7936   | 7040 to 7168   |
-| controls-runtime  | unchanged      | 14080 to 14208 |
-| controls-aot      | 17664 to 17792 | 15616 to 15744 |
-| form-runtime      | 10752 to 10880 | unchanged      |
-| hydration-runtime | 16384 to 16512 | 14592 to 14720 |
-| hydration-aot     | unchanged      | 16128 to 16256 |
 
 For an investigation that deliberately exceeds a budget, use:
 

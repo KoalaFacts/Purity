@@ -139,23 +139,31 @@ function reconcileMatch<T extends string | number | boolean>(
   cases: MatchCases<T>,
   fallback?: MatchView,
 ): void {
-  for (let i = 0; i < matchState.currentNodes.length; i++) {
-    const node = matchState.currentNodes[i];
-    /* v8 ignore next -- defensive guard; nodes always have parent here */
-    if (node.parentNode) node.parentNode.removeChild(node);
-  }
-  disposeBranch(matchState);
-  // Read the selector after disposal: an outgoing case's cleanup may have
-  // written it, and that write can't re-run this watch (it is mid-run).
-  const key = String(sourceFn());
-  matchState.prevKey = key;
+  // Loop until the selector settles: an outgoing case's cleanup or an incoming
+  // case's render may write it, and that write can't re-run this watch (it is
+  // mid-run, and an effect's self-queued re-run is skipped).
+  for (let runs = 0; ;) {
+    for (let i = 0; i < matchState.currentNodes.length; i++) {
+      const node = matchState.currentNodes[i];
+      /* v8 ignore next -- defensive guard; nodes always have parent here */
+      if (node.parentNode) node.parentNode.removeChild(node);
+    }
+    disposeBranch(matchState);
+    const key = String(sourceFn());
+    matchState.prevKey = key;
 
-  const viewFn = cases[key as `${T}`] ?? fallback;
-  if (!viewFn) {
-    matchState.currentNodes = [];
-    return;
+    const viewFn = cases[key as `${T}`] ?? fallback;
+    if (!viewFn) {
+      matchState.currentNodes = [];
+      return;
+    }
+    insertMatchView(matchState, parent, endMarker, renderBranch(matchState, viewFn));
+    if (String(sourceFn()) === key) return;
+    if (++runs > 100) {
+      console.error('[Purity] match() selector did not settle.');
+      return;
+    }
   }
-  insertMatchView(matchState, parent, endMarker, renderBranch(matchState, viewFn));
 }
 
 function installMatchWatch<T extends string | number | boolean>(

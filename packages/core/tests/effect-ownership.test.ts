@@ -603,6 +603,61 @@ describe('when()/match() branch disposal edge cases', () => {
     await tick();
     expect(host.textContent).toBe('c');
   });
+
+  it('renders the case the selector holds after an incoming case wrote it while rendering', async () => {
+    const mode = state<'a' | 'b' | 'c'>('a');
+    const host = document.createElement('div');
+    mount(
+      () =>
+        html`<div>${match(() => mode(), {
+          a: () => html`<p>a</p>`,
+          b: () => {
+            watch(() => {
+              mode('c');
+            });
+            return html`<p>b</p>`;
+          },
+          c: () => html`<p>c</p>`,
+        })}</div>`,
+      host,
+    );
+    mode('b');
+    await tick();
+    await tick();
+    expect(host.textContent).toBe('c');
+  });
+
+  it('stops reconciling when incoming cases keep flipping the selector', async () => {
+    const mode = state<'a' | 'b' | 'c'>('a');
+    const host = document.createElement('div');
+    const errors: unknown[] = [];
+    const prevError = console.error;
+    console.error = (...args: unknown[]) => errors.push(args[0]);
+    try {
+      mount(
+        () =>
+          html`<div>${match(() => mode(), {
+            a: () => html`<p>a</p>`,
+            b: () => {
+              mode('c');
+              return html`<p>b</p>`;
+            },
+            c: () => {
+              mode('b');
+              return html`<p>c</p>`;
+            },
+          })}</div>`,
+        host,
+      );
+      mode('b');
+      await tick();
+      await tick();
+    } finally {
+      console.error = prevError;
+    }
+    expect(errors).toContain('[Purity] match() selector did not settle.');
+    expect(host.querySelectorAll('p')).toHaveLength(1);
+  });
 });
 
 describe('each() rows are unaffected', () => {

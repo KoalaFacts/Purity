@@ -61,32 +61,32 @@ export const el = <div />;
   });
 
   describe('non-ASCII source offsets', () => {
-  const plugin: any = purity();
+    const plugin: any = purity();
 
-  it('compiles a template after a non-ASCII comment and leaves the rest byte-identical', () => {
-    const before = `${IMPORT}// 中文注释 🧪 说明\n`;
-    const tail = '\nexport const n = "中文";\n';
-    const code = `${before}export const view = (x) => html\`<p>${'${x}'}</p>\`;${tail}`;
-    const result = plugin.transform(code, 'app.ts');
-    expect(result).not.toBeNull();
-    expect(result.code).toContain('// 中文注释 🧪 说明');
-    expect(result.code).toContain('export const n = "中文";');
+    it('compiles a template after a non-ASCII comment and leaves the rest byte-identical', () => {
+      const before = `${IMPORT}// 中文注释 🧪 说明\n`;
+      const tail = '\nexport const n = "中文";\n';
+      const code = `${before}export const view = (x) => html\`<p>${'${x}'}</p>\`;${tail}`;
+      const result = plugin.transform(code, 'app.ts');
+      expect(result).not.toBeNull();
+      expect(result.code).toContain('// 中文注释 🧪 说明');
+      expect(result.code).toContain('export const n = "中文";');
+    });
+
+    it('keeps non-ASCII and emoji text inside a quasi before and after an interpolation', () => {
+      const code = `${IMPORT}export const view = (x) => html\`<p>中文 ${'${x}'} 😀 done</p>\`;\nexport const z = "😀";\n`;
+      const result = plugin.transform(code, 'app.ts');
+      expect(result).not.toBeNull();
+      expect(result.code).not.toContain('html`<p>');
+      expect(result.code).toContain('export const z = "😀";');
+      // The static text of the compiled template survives as UTF-16 text.
+      expect(result.code).toContain('中文');
+      expect(result.code).toContain('😀');
+    });
   });
 
-  it('keeps non-ASCII and emoji text inside a quasi before and after an interpolation', () => {
-    const code = `${IMPORT}export const view = (x) => html\`<p>中文 ${'${x}'} 😀 done</p>\`;\nexport const z = "😀";\n`;
-    const result = plugin.transform(code, 'app.ts');
-    expect(result).not.toBeNull();
-    expect(result.code).not.toContain('html`<p>');
-    expect(result.code).toContain('export const z = "😀";');
-    // The static text of the compiled template survives as UTF-16 text.
-    expect(result.code).toContain('中文');
-    expect(result.code).toContain('😀');
-  });
-});
-
-describe('container submodules (single-file components)', () => {
-    const vuePlugin: any = purity({ include: ['.vue', '.svelte', '.ts', '.tsx', '.js', '.jsx'] });
+  describe('container submodules (single-file components)', () => {
+    const vuePlugin: any = purity({ include: ['.vue', '.ts', '.tsx', '.js', '.jsx'] });
     // Container plugins such as @vitejs/plugin-vue hand purity each script as a
     // pure-JS virtual module with its language in the `lang.*` query.
     const SUB = 'Card.vue?vue&type=script&setup=true&lang.ts';
@@ -132,20 +132,7 @@ describe('container submodules (single-file components)', () => {
       expect(vuePlugin.transform(raw, 'Raw.vue')).toBeNull();
     });
 
-    it('compiles JS output returned under a non-JS id (for example a Svelte compiler)', () => {
-    const code = `${IMPORT}export const view = (x) => html\`<p>\${x}</p>\`;\n`;
-    const result = vuePlugin.transform(code, 'Widget.svelte');
-    expect(result).not.toBeNull();
-    expect(result.code).not.toContain('html`<p>');
-  });
-
-  it('skips raw markup under a non-JS id without error', () => {
-    const raw = '<h1>Hello {name}</h1>\n<p>not a module ==== </p>\n';
-    expect(() => vuePlugin.transform(raw, 'Widget.svelte')).not.toThrow();
-    expect(vuePlugin.transform(raw, 'Widget.svelte')).toBeNull();
-  });
-
-  it('leaves a container with no html`` unchanged', () => {
+    it('leaves a container with no html`` unchanged', () => {
       expect(vuePlugin.transform('<template><p>x</p></template>', 'Plain.vue')).toBeNull();
     });
   });

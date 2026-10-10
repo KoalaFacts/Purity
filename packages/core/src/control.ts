@@ -352,17 +352,18 @@ function disposeEntry<T>(entry: EachEntry<T>): void {
 
 function describeKey(key: unknown): string {
   // String(key) throws for null-prototype objects; a diagnostic must not abort
-  // the render, so fall back to the type name.
+  // the render, so report the conversion error and fall back to the type name.
   try {
     return JSON.stringify(String(key));
-  } catch {
+  } catch (e) {
+    console.error('[Purity] Could not format duplicate key for diagnostics:', e);
     return `<${typeof key}>`;
   }
 }
 
-function warnDuplicateKey(key: unknown, index: number): void {
+function warnDuplicateKey(key: unknown, index: number, api = 'each()'): void {
   console.warn(
-    `[Purity] each() duplicate key ${describeKey(key)} at index ${index}; only the first row for this key is rendered. Ensure keyFn returns a unique value per item.`,
+    `[Purity] ${api} duplicate key ${describeKey(key)} at index ${index}; only the first row for this key is rendered. Ensure keyFn returns a unique value per item.`,
   );
 }
 
@@ -1683,7 +1684,8 @@ export function inflateDeferredEach<T>(
   // Detach every SSR row that was not adopted: rows whose key no longer
   // exists (data changed between SSR and hydration) and duplicate-key rows
   // (ssrByKey keeps only the last row per key, so they are not in it).
-  for (const row of ssrRows) {
+  for (let i = 0; i < ssrRows.length; i++) {
+    const row = ssrRows[i];
     if (adoptedRows.has(row)) continue;
     for (let j = 0; j < row.nodes.length; j++) {
       const n = row.nodes[j];
@@ -2156,7 +2158,7 @@ export function list<T>(
         // Duplicate key: first row wins (see each()). A second entry would
         // orphan the first one's node and scope in keyToEntry.
         if (keyToEntry.has(key)) {
-          warnDuplicateKey(key, i);
+          warnDuplicateKey(key, i, 'list()');
           continue;
         }
         newKeys2.push(key);
@@ -2182,7 +2184,7 @@ export function list<T>(
 
       // Duplicate key: first occurrence owns the entry (see each()).
       if (newEntries.has(key)) {
-        warnDuplicateKey(key, i);
+        warnDuplicateKey(key, i, 'list()');
         continue;
       }
       newKeys.push(key);
@@ -2459,7 +2461,7 @@ export function listSSR<T>(
     // Duplicate key: emit only the first row, matching the client render.
     const key = getKey(item, i);
     if (seenKeys.has(key)) {
-      warnDuplicateKey(key, i);
+      warnDuplicateKey(key, i, 'listSSR()');
       continue;
     }
     seenKeys.add(key);

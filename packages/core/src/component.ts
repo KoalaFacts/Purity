@@ -52,6 +52,9 @@ export interface MountResult {
 
 export interface Scope {
   disposers: (() => void)[] | null;
+  /** Lean scopes that run after their component rendered (an effect re-running
+   *  in a later flush) record the component they belong to. */
+  component?: ComponentContext | null;
 }
 
 export class ComponentContext implements Scope {
@@ -118,8 +121,29 @@ export function getCurrentComponent(): ComponentContext | null {
   for (let i = contextStack.length - 1; i >= 0; i--) {
     const ctx = contextStack[i];
     if (ctx instanceof ComponentContext) return ctx;
+    if (ctx.component) return ctx.component;
   }
   return null;
+}
+
+/**
+ * Attach a new child context to the current owner. A component owner tracks it
+ * as a child (and is its error parent). A lean scope (row, branch, effect)
+ * disposes it, and the nearest component becomes its error parent.
+ * @internal
+ */
+export function attachToOwner(
+  ctx: ComponentContext,
+  unmount: (ctx: ComponentContext) => void,
+): void {
+  const owner = getCurrentContext();
+  if (owner instanceof ComponentContext) {
+    ctx.parent = owner;
+    (owner.children ??= []).push(ctx);
+  } else if (owner) {
+    ctx.parent = getCurrentComponent();
+    (owner.disposers ??= []).push(() => unmount(ctx));
+  }
 }
 
 export function pushContext(ctx: Scope): void {
@@ -362,11 +386,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   primeResourceHydrationCache(container);
 
   const ctx = new ComponentContext();
-  const parentCtx = getCurrentContext();
-  if (parentCtx instanceof ComponentContext) {
-    ctx.parent = parentCtx;
-    (parentCtx.children ??= []).push(ctx);
-  }
+  attachToOwner(ctx, unmountContext);
 
   pushContext(ctx);
   enterHydration();
@@ -554,11 +574,7 @@ function normalizeCachePayload(parsed: unknown): {
 
 export function mount(component: ComponentFn, container: Element): MountResult {
   const ctx = new ComponentContext();
-  const parentCtx = getCurrentContext();
-  if (parentCtx instanceof ComponentContext) {
-    ctx.parent = parentCtx;
-    (parentCtx.children ??= []).push(ctx);
-  }
+  attachToOwner(ctx, unmountContext);
 
   pushContext(ctx);
 
@@ -681,7 +697,10 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
     }
   });
 
-  (ctx.disposers ??= []).push(() => {
+  // Release with the current disposal owner (a hidden branch, a removed row),
+  // not the host: the host outlives them.
+  const owner = getCurrentContext()!;
+  (owner.disposers ??= []).push(() => {
     dispose();
     // Release this binder's ref if it was contributing at dispose time.
     if (prevOn) {

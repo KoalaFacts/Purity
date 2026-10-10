@@ -1,4 +1,11 @@
-import { disposeScope, getCurrentContext, popContext, pushContext } from './component.ts';
+import {
+  type ComponentContext,
+  disposeScope,
+  getCurrentComponent,
+  getCurrentContext,
+  popContext,
+  pushContext,
+} from './component.ts';
 
 // ---------------------------------------------------------------------------
 // Reactivity core
@@ -54,6 +61,10 @@ interface ComputedNode {
    *  the body returned. An effect is the current scope while it runs, so this
    *  is its `Scope.disposers`. Released before the next run and on dispose. */
   disposers: (() => void)[] | null;
+  /** Effects: the component they were created under. An effect is the current
+   *  scope when it re-runs in a later flush, after that component rendered;
+   *  this keeps component-only APIs called from the body working. */
+  component: ComponentContext | null;
   /** True for watch effects (must re-run for side effects); false for compute (lazy). */
   isEffect: boolean;
   disposed: boolean;
@@ -444,9 +455,7 @@ function runComputed(node: ComputedNode): void {
       effectDepth--;
       throw new Error(
         '[Purity] Maximum effect depth exceeded.' +
-          (__DEV__
-            ? ' A watch/effect callback is likely modifying the signal it depends on.'
-            : ''),
+          (__DEV__ ? ' A watch/effect callback is likely modifying the signal it depends on.' : ''),
       );
     }
   }
@@ -531,9 +540,7 @@ function runComputed(node: ComputedNode): void {
       node.status = STATUS_CLEAN;
       console.error(
         '[Purity] compute() did not stabilise.' +
-          (__DEV__
-            ? ' Its body keeps writing a source it reads; computes must be pure.'
-            : ''),
+          (__DEV__ ? ' Its body keeps writing a source it reads; computes must be pure.' : ''),
       );
       break;
     }
@@ -807,6 +814,7 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
     observerSlots: null,
     observers: null,
     disposers: null,
+    component: null,
     isEffect: false,
     disposed: false,
     error: null,
@@ -847,6 +855,7 @@ function _effect(fn: () => undefined | Dispose): Dispose {
     observerSlots: null,
     observers: null,
     disposers: null,
+    component: getCurrentComponent(),
     isEffect: true,
     disposed: false,
     error: null,

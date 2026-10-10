@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
-import { mount, onDestroy, onDispose } from '../src/component.ts';
+import {
+  bindComponentState,
+  ComponentContext,
+  mount,
+  onDestroy,
+  onDispose,
+  onError,
+  onMount,
+  popContext,
+  pushContext,
+} from '../src/component.ts';
 import { each, match, when } from '../src/control.ts';
 import { component, slot } from '../src/elements.ts';
 import { state, watch } from '../src/signals.ts';
@@ -197,6 +207,101 @@ describe('when()/match() branch lifecycle', () => {
     x(5);
     await tick();
     expect(host.textContent).toBe('5');
+  });
+});
+
+describe('lean scopes keep their component', () => {
+  it('lets a case shown again in a later flush reach its component', async () => {
+    const show = state(true);
+    const errors: unknown[] = [];
+    const Host = component(
+      `p-reshow-host-${Date.now()}`,
+      () =>
+        html`<div>${when(
+          () => show(),
+          () => {
+            try {
+              slot();
+            } catch (e) {
+              errors.push(e);
+            }
+            return html`<i>b</i>`;
+          },
+        )}</div>`,
+    );
+    mount(() => Host({}), document.createElement('div'));
+    show(false);
+    await tick();
+    show(true);
+    await tick();
+    expect(errors).toEqual([]);
+  });
+
+  it('routes a branch child component error to the enclosing onError', async () => {
+    const caught: unknown[] = [];
+    const boom = new Error('boom');
+    const Child = component(`p-err-child-${Date.now()}`, () => {
+      onMount(() => {
+        throw boom;
+      });
+      return html`<span>c</span>`;
+    });
+    const Host = component(`p-err-host-${Date.now()}`, () => {
+      onError((e) => caught.push(e));
+      return html`<div>${when(
+        () => true,
+        () => Child({}),
+      )}</div>`;
+    });
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    mount(() => Host({}), host);
+    await tick();
+    await tick();
+    expect(caught).toContain(boom);
+    host.remove();
+  });
+
+  it('unmounts a root mounted from an effect when the host unmounts', () => {
+    let destroyed = 0;
+    const { unmount } = mount(() => {
+      watch(() => {
+        mount(() => {
+          onDestroy(() => destroyed++);
+          return html`<i>nested</i>`;
+        }, document.createElement('div'));
+      });
+      return html`<p>host</p>`;
+    }, document.createElement('div'));
+    unmount();
+    expect(destroyed).toBe(1);
+  });
+
+  it('releases a branch custom-state contribution when the branch is hidden', async () => {
+    const states = new Set<string>();
+    const host = new ComponentContext();
+    host._internals = {
+      states: { add: (s: string) => states.add(s), delete: (s: string) => states.delete(s) },
+    } as unknown as ElementInternals;
+    const show = state(true);
+    pushContext(host);
+    try {
+      document.createElement('div').appendChild(
+        when(
+          () => show(),
+          () => {
+            bindComponentState('busy', () => true);
+            return html`<i>busy</i>`;
+          },
+        ) as Node,
+      );
+    } finally {
+      popContext();
+    }
+    expect(states.has('busy')).toBe(true);
+    show(false);
+    await tick();
+    expect(states.has('busy')).toBe(false);
   });
 });
 

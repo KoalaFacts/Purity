@@ -7,6 +7,7 @@ import {
   valueToHtml,
 } from './compiler/ssr-runtime.ts';
 import {
+  attachToOwner,
   ComponentContext,
   disposeScope,
   getCurrentComponent,
@@ -938,15 +939,7 @@ export function component<
   // Also return a programmatic factory (for non-template usage)
   return (props: P, children?: any) => {
     const ctx = new ComponentContext();
-    const parentCtx = getCurrentContext();
-    if (parentCtx instanceof ComponentContext) {
-      ctx.parent = parentCtx;
-      (parentCtx.children ??= []).push(ctx);
-    } else if (parentCtx) {
-      // A lean scope (each() row, match() branch, running effect) can't hold
-      // child contexts; tear this one down when that scope is disposed.
-      (parentCtx.disposers ??= []).push(() => unmountChildContext(ctx));
-    }
+    attachToOwner(ctx, unmountChildContext);
 
     ctx._slotContent = children;
     const registry = createRegistry();

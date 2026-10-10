@@ -69,11 +69,11 @@ const LI = ['<li>', '</li>'];
 
 // Raw-text elements (style, script, textarea, title): SSR still emits hydration
 // markers and entity-escapes their content, and the complex CSR path does not
-// rebuild them. Deferred until the codegen paths are unified; tracked in a
-// follow-up issue ("raw-text elements: SSR markers/escaping inside
+// rebuild them. Deferred until the codegen paths are unified; tracked in #222
+// ("raw-text elements: SSR markers/escaping inside
 // style/script/textarea/title"). Pinned with it.fails so the defect stays visible.
 const RAW_TEXT_DEFERRED =
-  'raw-text elements: SSR markers/escaping in style/script/textarea/title (follow-up issue)';
+  'raw-text elements: SSR markers/escaping in style/script/textarea/title (#222)';
 
 const cases: Case[] = [
   {
@@ -255,12 +255,17 @@ describe('SSR / CSR / hydrate conformance', () => {
     host.remove();
   });
 
-  it('dynamic <style> content stays live after hydrate adoption', async () => {
+  // Deferred: see RAW_TEXT_DEFERRED. SSR markers inside <style> parse as text,
+  // so the walker throws and hydrate() falls back to a fresh mount; the SSR
+  // <style> node is replaced instead of adopted.
+  it.fails('dynamic <style> SSR node is adopted by hydrate and stays live', async () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const css = state('a > b');
     host.innerHTML = renderSSR(['<style>', '</style>'], [() => css()]);
+    const ssrStyle = host.querySelector('style');
     hydrate(host, () => html(tpl(['<style>', '</style>']), () => css()) as Node);
+    expect(ssrStyle !== null && host.contains(ssrStyle)).toBe(true);
     expect(host.querySelector('style')?.textContent).toBe('a > b');
     css('c > d');
     await tick();

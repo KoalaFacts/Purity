@@ -69,10 +69,15 @@ function isNameChar(c: number): boolean {
 // time rather than falling back to the runtime compiler.
 const UNSUPPORTED_TEMPLATE = '[Purity] Unsupported template:';
 
+// Replaced by the consumer's bundler (same pattern as signals.ts); the example
+// in the error message is dropped from production bundles.
+declare const process: { env: { NODE_ENV?: string } };
+
 function interpolatedAttrError(name: string): Error {
   return new Error(
-    `${UNSUPPORTED_TEMPLATE} interpolated attribute "${name}" mixes literal text with \${...}. ` +
-      `Bind the whole value instead, e.g. ${name}=\${() => \`x \${v()} y\`}.`,
+    `${UNSUPPORTED_TEMPLATE} interpolated attribute "${name}"; bind the whole value` +
+      (process.env.NODE_ENV !== 'production' ? `, e.g. ${name}=\${() => \`x \${v()} y\`}` : '') +
+      '.',
   );
 }
 

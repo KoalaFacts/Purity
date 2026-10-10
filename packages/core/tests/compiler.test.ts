@@ -197,7 +197,7 @@ describe('parser', () => {
 
   it('error message suggests binding the whole value as a reactive function', () => {
     expect(() => parse(['<a title="x ', ' y"></a>'])).toThrow(
-      /Bind the whole value instead, e\.g\. title=\$\{\(\) => `x \$\{v\(\)\} y`\}/,
+      /bind the whole value, e\.g\. title=\$\{\(\) => `x \$\{v\(\)\} y`\}/,
     );
   });
 

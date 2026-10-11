@@ -473,15 +473,37 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
       i = end === -1 ? html.length : end + 1;
       continue;
     }
-    // Trusted callers can supply literal angle brackets in quoted attributes.
+    // Attribute tokenization distinguishes a slash in an unquoted value from
+    // the self-closing flag. Quotes only begin values after '='.
     let gt = lt + 1;
     let quote = '';
+    // tag name, before/name/value, unquoted, quoted, self-closing slash.
+    let state = 0;
+    if (html[gt] === '/') gt++;
     for (; gt < html.length; gt++) {
       const c = html[gt];
-      if (quote) {
-        if (c === quote) quote = '';
-      } else if (c === '"' || c === "'") quote = c;
-      else if (c === '>') break;
+      if (state === 5) {
+        if (c === quote) state = 1;
+        continue;
+      }
+      if (c === '>') break;
+      const space = /[\t\n\f\r ]/.test(c);
+      if (state === 6) {
+        state = 1;
+        gt--;
+      } else if (state === 4) {
+        if (space) state = 1;
+      } else if (state === 3) {
+        if (!space) {
+          if (c === '"' || c === "'") {
+            quote = c;
+            state = 5;
+          } else state = 4;
+        }
+      } else if (c === '/') state = 6;
+      else if (space) state = 1;
+      else if (c === '=' && state !== 0) state = 3;
+      else if (state === 1) state = 2;
     }
     if (gt === html.length) break;
     i = gt + 1;
@@ -489,7 +511,7 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
     if (!m) continue;
     const tag = m[2].toLowerCase();
     const close = m[1] === '/';
-    const selfClosing = html[gt - 1] === '/';
+    const selfClosing = state === 6;
     const attrs =
       tag === 'font' || tag === 'annotation-xml'
         ? htmlAttributes(html.slice(lt + m[0].length, gt))

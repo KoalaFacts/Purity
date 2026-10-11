@@ -2497,7 +2497,8 @@ export function listSSR<T>(
     // events skipped on the server — listeners attach during client hydration
   }
 
-  let inner = '';
+  let inner = '<!--l-->';
+  const spans: RawTextSpan[] = [];
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     // Duplicate key: emit only the first row, matching the client render.
@@ -2533,10 +2534,13 @@ export function listSSR<T>(
         if (v != null) attrs += ` ${k}="${escapeAttrLocal(v)}"`;
       }
     }
-    const text = getText ? escapeHtmlLocal(getText(item, i)) : '';
-    inner += `<${tag}${attrs}>${text}</${tag}>`;
+    const rawText = getText ? getText(item, i) : '';
+    const text = escapeHtmlLocal(rawText);
+    inner += `<${tag}${attrs}>`;
+    if (text) spans.push([inner.length, inner.length + text.length, rawText]);
+    inner += `${text}</${tag}>`;
   }
-  return markSSRHtml(`<!--l-->${inner}<!--/l-->`);
+  return markSSRHtml(`${inner}<!--/l-->`, spans);
 }
 
 // HTML attribute name grammar — letters, digits, hyphen, colon, underscore.

@@ -13,8 +13,8 @@ import { generate, generateHydrate, generateModule, generateSSR } from '../src/c
 import { parse } from '../src/compiler/parser.ts';
 import { namedReferences } from '../src/compiler/character-references.ts';
 import { isSSRHtml, markSSRHtml, rawEnd, ssrHelpers } from '../src/compiler/ssr-runtime.ts';
-import { eachSSR, matchSSR, whenSSR } from '../src/control.ts';
-import { each, html, hydrate, mount, state, when } from '../src/index.ts';
+import { eachSSR, listSSR, matchSSR, whenSSR } from '../src/control.ts';
+import { each, html, hydrate, list, mount, state, when } from '../src/index.ts';
 import { tick } from './_helpers.ts';
 
 type Mode = 'csr' | 'ssr';
@@ -509,6 +509,42 @@ describe('SSR / CSR / hydrate conformance', () => {
     expect(ssrHelpers.rawText([markSSRHtml('<svg><template>x</template></svg>visible')], 1)).toBe(
       'xvisible',
     );
+  });
+  it('trusted foreign self-closing flags exclude unquoted value slashes', () => {
+    for (const attr of ['x=y/', 'x=y//', 'x=/', 'x = y/']) {
+      const source = `<svg><foreignObject ${attr}><style><b>x</b></style></foreignObject></svg>`;
+      expect(ssrHelpers.rawText([markSSRHtml(source)], 1)).toBe('&lt;b&gt;x&lt;/b&gt;');
+    }
+    for (const attr of ['x=y /', 'x="y"/', "x='y'/", '/']) {
+      const source = `<svg><foreignObject ${attr}><style><b>x</b></style></foreignObject></svg>`;
+      expect(ssrHelpers.rawText([markSSRHtml(source)], 1)).toBe('x');
+    }
+  });
+
+  it('list row text provenance survives raw-content coercion', () => {
+    const rows = [
+      { id: 1, text: 'a\rb' },
+      { id: 2, text: 'c\r\nd' },
+      { id: 1, text: 'ignored' },
+    ];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const tag of ['textarea', 'title']) {
+        const strings = [`<${tag}>`, `</${tag}>`];
+        for (const options of [false, true]) {
+          const text = (item: (typeof rows)[number]) => item.text;
+          const key = (item: (typeof rows)[number]) => item.id;
+          const source = options ? { text, key, attrs: { title: text } } : text;
+          const server = document.createElement('div');
+          server.innerHTML = renderSSR(strings, [listSSR('li', rows, source, key)]);
+          const client = html(tpl(strings), list('li', rows, source, key)) as Node;
+          expect(server.querySelector(tag)?.textContent).toBe('a\rbc\r\nd');
+          expect(server.querySelector(tag)?.textContent).toBe(client.textContent);
+        }
+      }
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('trusted declarations and bogus comments end without interpreting quotes', () => {

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
-import { component, handleAction, resource, serverAction, suspense } from '@purityjs/core';
+import { component, handleAction, listSSR, resource, serverAction, suspense } from '@purityjs/core';
 import { flattenValue, valueText } from '@purityjs/core/compiler';
 import { chromium, firefox, webkit } from 'playwright';
 import {
@@ -217,6 +218,13 @@ try {
   const references =
     '&copy;&NotEqualTilde;&CounterClockwiseContourIntegral;&AMP;&amP;&notit;&copy= &#128 &#x80; &#0; &#xD800; &unknown; &amp;copy;';
   const opaqueCases: { tag: string; markup: string; hydrate: string; expected: string }[] = [];
+  const listCases: {
+    tag: string;
+    options: boolean;
+    markup: string;
+    client: string;
+    hydrate: string;
+  }[] = [];
   for (const tag of ['xmp', 'iframe', 'noembed', 'noframes', 'noscript', 'plaintext']) {
     for (const inner of ['pre', 'listing', 'textarea']) {
       const content = `<${inner}>\ntext</${inner}>`;
@@ -232,8 +240,35 @@ try {
   for (const tag of ['textarea', 'title']) {
     const strings = [`<${tag}>`, `</${tag}>`];
     const tree = parse(strings);
+    for (const options of [false, true]) {
+      const rows = [
+        { id: 1, text: 'a\rb' },
+        { id: 2, text: 'c\r\nd<>&' },
+      ];
+      const text = (item: (typeof rows)[number]) => item.text;
+      const key = (item: (typeof rows)[number]) => item.id;
+      listCases.push({
+        tag,
+        options,
+        markup: await renderToString(() =>
+          html(
+            strings as unknown as TemplateStringsArray,
+            listSSR('li', rows, options ? { text, key, attrs: { title: text } } : text, key),
+          ),
+        ),
+        client: generate(tree),
+        hydrate: generateHydrate(tree),
+      });
+    }
     const nested = `<b>${references}</b>`;
     const trustedCases: [string, string][] = [
+      ['<svg><foreignObject x=y/><style><b>x</b></style></foreignObject></svg>', '<b>x</b>'],
+      ['<svg><foreignObject x=y /><style><b>x</b></style></foreignObject></svg>', 'x'],
+      ['<svg><foreignObject x="y"/><style><b>x</b></style></foreignObject></svg>', 'x'],
+      ['<select><style><b>x</b></style></select>', '<b>x</b>'],
+      ['<select><textarea><b>x</b></textarea></select>', '<b>x</b>'],
+      ['<select><script><b>x</b></script></select>', '<b>x</b>'],
+      ['<select><template><style>x</style></template>visible</select>', 'visible'],
       ['<template><svg></template>visible', 'visible'],
       ['<template><math></template>visible', 'visible'],
       ['<template><svg><template>x</template></template>visible', 'visible'],
@@ -543,6 +578,79 @@ try {
   for (const browserType of [chromium, firefox, webkit]) {
     const browser = await browserType.launch();
     try {
+      const listPage = await browser.newPage();
+      await listPage.route('https://purity.test/runtime/*.js', async (route) => {
+        const name = new URL(route.request().url()).pathname.split('/').pop()!;
+        await route.fulfill({
+          contentType: 'text/javascript',
+          headers: { 'Access-Control-Allow-Origin': '*' },
+          // The published module expects the consumer bundler's production define.
+          body:
+            'const process={env:{NODE_ENV:"production"}};\n' +
+            (await readFile(new URL(name, import.meta.resolve('@purityjs/core')), 'utf8')),
+        });
+      });
+      for (const fixture of listCases) {
+        const result = await listPage.evaluate(
+          async ({ fixture, helpers }) => {
+            const runtime = await import('https://purity.test/runtime/index.js');
+            const rows = runtime.state([
+              { id: 1, text: 'a\rb' },
+              { id: 2, text: 'c\r\nd<>&' },
+            ]);
+            const text = (item: { id: number; text: string }) => item.text;
+            const key = (item: { id: number; text: string }) => item.id;
+            const values = [
+              runtime.list(
+                'li',
+                rows,
+                fixture.options ? { text, key, attrs: { title: text } } : text,
+                key,
+              ),
+            ];
+            const H = new Function(`return ${helpers}`)();
+            const bind = (code: string) =>
+              new Function('__purity_fl__', '__purity_tx__', `return ${code}`)(
+                H.flattenValue,
+                H.valueText,
+              );
+            const immediate = (fn: () => void) => fn();
+            const client = bind(fixture.client)(values, immediate) as Element;
+            const host = document.createElement('div');
+            host.innerHTML = fixture.markup;
+            const adopted = host.querySelector(fixture.tag)!;
+            const before = adopted.textContent;
+            bind(fixture.hydrate)(values, immediate, host);
+            const initial = [
+              client.textContent,
+              before,
+              adopted.textContent,
+              adopted === host.querySelector(fixture.tag),
+            ];
+            rows([
+              { id: 1, text: 'e\r\nf' },
+              { id: 2, text: 'g\rh' },
+            ]);
+            await new Promise((done) => setTimeout(done, 0));
+            return [
+              initial,
+              client.textContent,
+              adopted.textContent,
+              adopted === host.querySelector(fixture.tag),
+              host.querySelector('img') === null,
+            ];
+          },
+          { fixture, helpers: helperSource },
+        );
+        assert.deepEqual(result, [
+          ['a\rbc\r\nd<>&', 'a\rbc\r\nd<>&', 'a\rbc\r\nd<>&', true],
+          'e\r\nfg\rh',
+          'e\r\nfg\rh',
+          true,
+          true,
+        ]);
+      }
+      await listPage.close();
       const page = await browser.newPage();
       await page.setContent(colonMarkup);
       const colonAttrs = await page.evaluate(

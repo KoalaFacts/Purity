@@ -258,29 +258,86 @@ describe('parser', () => {
 });
 
 describe('codegen', () => {
-  it('generates template-cloning code for static element', () => {
-    const ast = parse(['<div></div>']);
-    const code = generate(ast);
-    // Static templates use DOM API calls + cloneNode (no innerHTML)
-    expect(code).toContain('template');
-    expect(code).toContain('cloneNode');
-    expect(code).toContain('createElement("div")');
+  // Static templates render through the shared paths (a single element takes
+  // the createElement fast path; anything else clones a template).
+  const renderStatic = (strings: string[]): Element => {
+    const factory = new Function(`return ${generate(parse(strings))}`)() as () => Node;
+    const out = factory();
+    return (out instanceof DocumentFragment ? out.firstChild : out) as Element;
+  };
+
+  it('renders a static element and returns a fresh copy per instance', () => {
+    const a = renderStatic(['<div></div>']);
+    const b = renderStatic(['<div></div>']);
+    expect(a.nodeName).toBe('DIV');
+    expect(a).not.toBe(b);
   });
 
-  it('generates code with text content in HTML', () => {
-    const ast = parse(['<p>Hello</p>']);
-    const code = generate(ast);
-    expect(code).toContain('createElement("p")');
-    expect(code).toContain('createTextNode("Hello")');
-    expect(code).toContain('cloneNode');
+  it('renders a multi-node static template by cloning', () => {
+    const factory = new Function(`return ${generate(parse(['<p>a</p><p>b</p>']))}`)() as () => Node;
+    const a = factory() as DocumentFragment;
+    const b = factory() as DocumentFragment;
+    expect(a.childNodes.length).toBe(2);
+    expect(a.textContent).toBe('ab');
+    expect(a.firstChild).not.toBe(b.firstChild);
   });
 
-  it('generates code with static attributes in HTML', () => {
-    const ast = parse(['<div class="box"></div>']);
-    const code = generate(ast);
-    expect(code).toContain('setAttribute');
-    expect(code).toContain('class');
-    expect(code).toContain('box');
+  it('keeps special characters in attributes on the cloning path', () => {
+    const factory = new Function(
+      `return ${generate(parse(['<p title="a & <b> &quot;" class="x">1</p><p>2</p>']))}`,
+    )() as () => DocumentFragment;
+    const first = factory().firstChild as HTMLElement;
+    expect(first.getAttribute('title')).toBe('a & <b> &quot;');
+    expect(first.querySelector('b')).toBeNull();
+  });
+
+  it('keeps static raw-text content verbatim on the cloning path', () => {
+    const factory = new Function(
+      `return ${generate(parse(['<div><style>a > b { }</style><SCRIPT>if (a > b) {}</SCRIPT></div><p>x & y</p>']))}`,
+    )() as () => DocumentFragment;
+    const div = factory().firstChild as HTMLElement;
+    expect(div.querySelector('style')?.textContent).toBe('a > b { }');
+    expect(div.querySelector('script')?.textContent).toBe('if (a > b) {}');
+  });
+
+  it('builds static templates without innerHTML (Trusted Types)', () => {
+    // Under `require-trusted-types-for 'script'`, assigning a string to
+    // innerHTML throws. Static templates must render without that sink.
+    const desc = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')!;
+    Object.defineProperty(Element.prototype, 'innerHTML', {
+      ...desc,
+      set() {
+        throw new TypeError('This document requires TrustedHTML assignment.');
+      },
+    });
+    try {
+      const factory = new Function(
+        `return ${generate(parse(['<div><pre>\nline</pre><script>go()</script></div><p>a > b</p>']))}`,
+      )() as () => DocumentFragment;
+      const root = factory();
+      expect(root.querySelector('pre')?.textContent).toBe('\nline');
+      expect(root.querySelector('script')?.textContent).toBe('go()');
+      expect(root.querySelector('p')?.textContent).toBe('a > b');
+    } finally {
+      Object.defineProperty(Element.prototype, 'innerHTML', desc);
+    }
+  });
+
+  it('serializes upper-case void tags without a closing tag', () => {
+    const factory = new Function(
+      `return ${generate(parse(['<div><BR>after</div><p>x</p>']))}`,
+    )() as () => DocumentFragment;
+    expect(factory().querySelectorAll('br')).toHaveLength(1);
+  });
+
+  it('renders static text content', () => {
+    expect(renderStatic(['<p>Hello</p>']).outerHTML).toBe('<p>Hello</p>');
+  });
+
+  it('renders static attributes with special characters intact', () => {
+    const el = renderStatic(['<div class="box" title="a & <b>"></div>']);
+    expect(el.getAttribute('class')).toBe('box');
+    expect(el.getAttribute('title')).toBe('a & <b>');
   });
 
   it('generates code for event binding', () => {

@@ -1,14 +1,18 @@
 // ---------------------------------------------------------------------------
 // Purity Compiler — Code Generator
 //
-// ALL templates use cloneNode. Dynamic parts use positional paths
-// (firstChild/nextSibling) instead of TreeWalker — zero search overhead.
-//
-// Static: innerHTML + cloneNode(true) — zero JS per render
-// Dynamic: innerHTML with markers + cloneNode + positional path navigation
+// Client templates take one of three paths:
+//   Static: built once with DOM APIs into a <template> (no innerHTML, so no
+//     Trusted Types sink and no parser rewrites), cloneNode per instance.
+//   Simple (one element whose children are text/expressions): createElement
+//     per instance, with text-only update code (measurably faster updates).
+//   Dynamic: innerHTML with markers parsed once into a <template>, cloneNode
+//     per instance, then positional paths (firstChild/nextSibling) to reach
+//     dynamic parts — no TreeWalker search.
 // ---------------------------------------------------------------------------
 
 import type { ASTNode, AttributeNode, FragmentNode } from './ast.ts';
+import { VOID_TAGS as VOID } from './parser.ts';
 
 // JSON quoting protects JavaScript syntax; HTML delimiters must also be escaped
 // when a caller embeds generated code in an inline script. This only runs at
@@ -82,12 +86,13 @@ function assertSafeBinding(name: string, kind: string): void {
   }
 }
 
+const UNSAFE_SCRIPT_BINDING =
+  '[Purity] Unsafe dynamic binding in <script>; keep code static and serialize data separately.';
+
 function assertSafeScriptContent(node: ASTNode, inScript = false): void {
   if (node.type === 'expression' && inScript) {
     // HTML escaping cannot make data safe as JavaScript source in a raw-text element.
-    throw new Error(
-      '[Purity] Unsafe dynamic binding in <script>; keep code static and serialize data separately.',
-    );
+    throw new Error(UNSAFE_SCRIPT_BINDING);
   }
   if (node.type !== 'element' && node.type !== 'fragment') return;
   const script = inScript || (node.type === 'element' && node.tag.toLowerCase() === 'script');
@@ -97,9 +102,7 @@ function assertSafeScriptContent(node: ASTNode, inScript = false): void {
         attr.kind !== 'static' &&
         /^(?:innerhtml|outerhtml|text|textcontent|innertext)$/i.test(attr.name)
       ) {
-        throw new Error(
-          '[Purity] Unsafe dynamic binding in <script>; keep code static and serialize data separately.',
-        );
+        throw new Error(UNSAFE_SCRIPT_BINDING);
       }
     }
   }
@@ -128,23 +131,6 @@ function safeBindingValue(name: string, expr: string): string {
   // Return the checked string so stateful toString() cannot change it later.
   return `(function(v){if(v==null||v===false)return v;if(v===true)return '';var s=String(v),p=s.replace(/[\\u0000-\\u0020\\u007f]/g,'');if(/^(?:javascript|vbscript):/i.test(p)||(/^data:/i.test(p)&&!/^data:image\\/(?:png|jpeg|gif|webp|avif|bmp|x-icon);base64,/i.test(p)))throw new Error('[Purity] Unsafe URL binding');return s;})(${expr})`;
 }
-
-const VOID = new Set([
-  'area',
-  'base',
-  'br',
-  'col',
-  'embed',
-  'hr',
-  'img',
-  'input',
-  'link',
-  'meta',
-  'param',
-  'source',
-  'track',
-  'wbr',
-]);
 
 // ---------------------------------------------------------------------------
 // Positional path: encode the DOM position of each dynamic part
@@ -388,6 +374,28 @@ const VALUE_HELPER_DEFS =
 
 // Wrap linked source so it evaluates on its own, binding the helpers once per
 // factory. Output without helper references is returned unchanged.
+// Shared generated-code fragments for dynamic text/node slots. Each was
+// emitted from several generator paths; keeping one copy keeps the runtime
+// compiler small and the paths from drifting.
+
+// Re-render a slot from its accessor: swap in a returned Node, otherwise make
+// sure the slot holds a text node and write the coerced text.
+function slotUpdate(xv: string, tn: string, id: number | string): string {
+  return (
+    `var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}` +
+    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}` +
+    `${tn}.data=__purity_tx__(r${id});}`
+  );
+}
+
+// Flatten an array value and append each item to `target` as a node.
+function appendFlat(xv: string, id: number | string, target: string): string {
+  return (
+    `var _L${id}=__purity_fl__(${xv},[],null);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++)` +
+    `{var _av${id}=_L${id}[_ai${id}];${target}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}`
+  );
+}
+
 function standalone(code: string): string {
   if (!code.includes('__purity_fl__') && !code.includes('__purity_tx__')) return code;
   return `(function(){${VALUE_HELPER_DEFS}return ${code};})()`;
@@ -499,13 +507,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         // Primitive — SSR text already correct (or correctly empty); no-op.
       );
 
-      ctx.reactive.push(
-        `if(${fl}){`,
-        `var r${id}=${xv}();`,
-        `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
-        `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=__purity_tx__(r${id});}`,
-        `}`,
-      );
+      ctx.reactive.push(`if(${fl}){`, slotUpdate(xv, tn, id), `}`);
 
       // Advance cursor past the close marker.
       ctx.setup.push(`${cursor}=${close}.nextSibling;`);
@@ -534,7 +536,11 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
       // Recurse into children. Hyphenated tags are Custom Elements — their
       // shadow root is opaque to the outer hydrator; the element's own
       // connectedCallback handles its interior. Skip walking children here.
-      if (!VOID.has(node.tag) && node.children.length > 0 && !node.tag.includes('-')) {
+      if (
+        !VOID.has(node.tag.toLowerCase()) &&
+        node.children.length > 0 &&
+        !node.tag.includes('-')
+      ) {
         const child = `_ch${id}`;
         ctx.setup.push(`var ${child}=${el}.firstChild;`);
         emitHydrateChildren(node.children, ctx, child);
@@ -629,12 +635,10 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
         `var ${xv}=_d?_d(${val}):${val};var ${fl}=typeof ${xv}==='function';var ${tn};`,
         `if(${fl}){${tn}=document.createTextNode('');_e.appendChild(${tn});}`,
         `else if(${xv} instanceof Node)_e.appendChild(${xv});`,
-        `else if(Array.isArray(${xv})){var _L${id}=__purity_fl__(${xv},[],null);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_e.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}}`,
+        `else if(Array.isArray(${xv})){${appendFlat(xv, id, '_e')}}`,
         `else _e.appendChild(document.createTextNode(__purity_tx__(${xv})));`,
       );
-      reactiveParts.push(
-        `if(${fl}){var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=__purity_tx__(r${id});}}`,
-      );
+      reactiveParts.push(`if(${fl}){${slotUpdate(xv, tn, id)}}`);
     }
   }
 
@@ -667,6 +671,41 @@ function hasDynamic(node: ASTNode): boolean {
 // ---------------------------------------------------------------------------
 // buildStaticHtml (no markers)
 // ---------------------------------------------------------------------------
+
+// Raw-text elements: the HTML parser never decodes character references inside
+// them, so their text must be emitted verbatim. Tag names are ASCII
+// case-insensitive; the parser keeps the author's spelling.
+const isRawTextTag = (tag: string): boolean => /^(?:style|script)$/i.test(tag);
+
+// `rawParent` is true inside a raw-text element.
+function buildStaticHtml(node: ASTNode, rawParent = false): string {
+  switch (node.type) {
+    case 'text':
+      // `raw: true` marks SGML declarations like `<!doctype html>` parsed
+      // verbatim from the template; escaping would corrupt them.
+      return node.raw || rawParent ? node.value : escapeHtml(node.value);
+    case 'comment':
+      return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
+    case 'element': {
+      assertSafeName(node.tag, 'tag');
+      let s = `<${node.tag}`;
+      for (const a of node.attributes) {
+        if (a.kind === 'static')
+          s += a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
+      }
+      if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
+      s += '>';
+      const raw = isRawTextTag(node.tag);
+      for (const ch of node.children) s += buildStaticHtml(ch, raw);
+      return `${s}</${node.tag}>`;
+    }
+    case 'fragment':
+      return node.children.map((ch) => buildStaticHtml(ch)).join('');
+    default:
+      /* v8 ignore next -- defensive fallthrough; AST has no other types */
+      return '';
+  }
+}
 
 // ---------------------------------------------------------------------------
 // genStaticDOM — generate DOM API calls for static templates (no innerHTML)
@@ -721,34 +760,6 @@ function genStaticDOM(
   }
 }
 
-function buildStaticHtml(node: ASTNode): string {
-  switch (node.type) {
-    case 'text':
-      // `raw: true` marks SGML declarations like `<!doctype html>` parsed
-      // verbatim from the template; escaping would corrupt them.
-      return node.raw ? node.value : escapeHtml(node.value);
-    case 'comment':
-      return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
-    case 'element': {
-      assertSafeName(node.tag, 'tag');
-      let s = `<${node.tag}`;
-      for (const a of node.attributes) {
-        if (a.kind === 'static')
-          s += a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
-      }
-      if (VOID.has(node.tag)) return `${s}/>`;
-      s += '>';
-      for (const ch of node.children) s += buildStaticHtml(ch);
-      return `${s}</${node.tag}>`;
-    }
-    case 'fragment':
-      return node.children.map(buildStaticHtml).join('');
-    default:
-      /* v8 ignore next -- defensive fallthrough; AST has no other types */
-      return '';
-  }
-}
-
 // ---------------------------------------------------------------------------
 // buildDynamicHtml — build HTML + record positional paths for each slot
 //
@@ -767,12 +778,8 @@ function buildDynamicHtml(
 ): string {
   switch (node.type) {
     case 'text':
-      // `raw: true` marks SGML declarations like `<!doctype html>` parsed
-      // verbatim from the template — escaping would corrupt the doctype.
-      return node.raw ? node.value : escapeHtml(node.value);
-
     case 'comment':
-      return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
+      return buildStaticHtml(node);
 
     case 'expression': {
       slots.push({
@@ -801,9 +808,13 @@ function buildDynamicHtml(
         slots.push({ type: 'attr', tag: node.tag, attrs: dynamicAttrs, path: [...currentPath] });
       }
 
-      if (VOID.has(node.tag)) return `${s}/>`;
+      if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
       s += '>';
-      s += emitChildrenHtml(node.children, slots, currentPath);
+      if (isRawTextTag(node.tag) && !node.children.some((c) => c.type === 'expression')) {
+        for (const ch of node.children) s += buildStaticHtml(ch, true);
+      } else {
+        s += emitChildrenHtml(node.children, slots, currentPath);
+      }
       return `${s}</${node.tag}>`;
     }
 
@@ -961,7 +972,7 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
     `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});${tn}=${xv};}`,
     // Array path: drop null/undefined/false items so SSR (valueToHtml
     // recurses + concats with empty for falsy) matches the client.
-    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();var _L${id}=__purity_fl__(${xv},[],null);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++){var _av${id}=_L${id}[_ai${id}];_af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}${slotVar}.replaceWith(_af${id});}`,
+    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();${appendFlat(xv, id, `_af${id}`)}${slotVar}.replaceWith(_af${id});}`,
     `else{${slotVar}.data=__purity_tx__(${xv});}`,
     `}else{${slotVar}.data=__purity_tx__(${xv});}`,
     `}`,
@@ -970,13 +981,7 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
   // Reactive: `r${id}===false` was missing from the falsy filter, so
   // a signal returning false rendered "false" on the client while SSR
   // emitted empty. Symmetric with the setup branch above.
-  const reactive = [
-    `if(${fl}){`,
-    `var r${id}=${xv}();`,
-    `if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}`,
-    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}${tn}.data=__purity_tx__(r${id});}`,
-    `}`,
-  ].join('');
+  const reactive = [`if(${fl}){`, slotUpdate(xv, tn, id), `}`].join('');
 
   return { setup, reactive };
 }
@@ -1229,7 +1234,7 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
       }
       emitLit(ctx, `<${node.tag}`);
       for (const a of node.attributes) emitSSRAttr(a, ctx, node);
-      if (VOID.has(node.tag)) {
+      if (VOID.has(node.tag.toLowerCase())) {
         emitLit(ctx, '/>');
         return;
       }

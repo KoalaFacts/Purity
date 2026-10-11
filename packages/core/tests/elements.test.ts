@@ -759,13 +759,23 @@ describe('component as custom element — lifecycle', () => {
     component(name, () => html`<span>x</span>`);
     const out = _renderComponentSSR(
       name,
-      { title: 'ok', 'bad"><script>': 'evil', 'data-x': 'y' },
+      {
+        title: 'ok',
+        'bad"><script>': 'evil',
+        'data-x': 'y',
+        'xml:lang': 'en',
+        'data:label': 'a"b<c',
+        'bad:two:colons': 'evil',
+        'bad:><script>': 'evil',
+      },
       '',
     );
     expect(out).not.toBeNull();
     // Safe attr names survive; the injected key is dropped entirely.
     expect(out).toContain(' title="ok"');
     expect(out).toContain(' data-x="y"');
+    expect(out).toContain(' xml:lang="en"');
+    expect(out).toContain(' data:label="a&quot;b&lt;c"');
     expect(out).not.toContain('<script>');
     expect(out).not.toContain('bad');
   });

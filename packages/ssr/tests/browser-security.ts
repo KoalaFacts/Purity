@@ -216,11 +216,34 @@ try {
   }[] = [];
   const references =
     '&copy;&NotEqualTilde;&CounterClockwiseContourIntegral;&AMP;&amP;&notit;&copy= &#128 &#x80; &#0; &#xD800; &unknown; &amp;copy;';
+  const opaqueCases: { tag: string; markup: string; hydrate: string; expected: string }[] = [];
+  for (const tag of ['xmp', 'iframe', 'noembed', 'noframes', 'noscript', 'plaintext']) {
+    for (const inner of ['pre', 'listing', 'textarea']) {
+      const content = `<${inner}>\ntext</${inner}>`;
+      const strings = [`<${tag}>${content}</${tag}>`];
+      opaqueCases.push({
+        tag,
+        markup: await renderToString(() => html(strings as unknown as TemplateStringsArray)),
+        hydrate: generateHydrate(parse(strings)),
+        expected: content + (tag === 'plaintext' ? '</plaintext>' : ''),
+      });
+    }
+  }
   for (const tag of ['textarea', 'title']) {
     const strings = [`<${tag}>`, `</${tag}>`];
     const tree = parse(strings);
     const nested = `<b>${references}</b>`;
     const trustedCases: [string, string][] = [
+      ['<template><svg></template>visible', 'visible'],
+      ['<template><math></template>visible', 'visible'],
+      ['<template><svg><template>x</template></template>visible', 'visible'],
+      ['<svg><template>x</template></svg>visible', 'xvisible'],
+      ['<div><template></div>hidden</template>visible', 'visible'],
+      ['<!x ">visible', 'visible'],
+      ["<?x '>visible", 'visible'],
+      ['<![CDATA[x ">visible', 'visible'],
+      ['</1 ">visible', 'visible'],
+      ['<!DOCTYPE html PUBLIC "a>b" "c>d">visible', 'b" "c>d">visible'],
       ['<style/><b>x</b></style>', '<b>x</b>'],
       ['<template/>secret', ''],
       ['<svg><style/><text>x</text></svg>', 'x'],
@@ -309,6 +332,25 @@ try {
       nested,
       expected: '©≂̸∳&&amP;¬it;©= € € � � &unknown; &copy;',
     });
+    for (const opaque of ['xmp', 'iframe', 'noembed', 'noframes', 'noscript', 'plaintext']) {
+      for (const inner of ['pre', 'listing', 'textarea']) {
+        const content = `<${inner}>\ntext</${inner}>`;
+        const child = [`<${opaque}>${content}</${opaque}>`];
+        rawCases.push({
+          client: generate(tree),
+          hydrate: generateHydrate(tree),
+          markup: await renderToString(() =>
+            html(
+              strings as unknown as TemplateStringsArray,
+              html(child as unknown as TemplateStringsArray),
+            ),
+          ),
+          tag,
+          child: { code: generate(parse(child)), values: [] },
+          expected: '\ntext',
+        });
+      }
+    }
     for (const inner of [
       ['<div data-x=', '><span>a\rb\r\nc</span></div>'],
       ['<span>a\rb\r\nc</span>'],
@@ -477,6 +519,17 @@ try {
     () =>
       html`<textarea>${html`<browser-light-text-1><p>x</p><style>${'p{content:"\\3c <i>"}'}</style></browser-light-text-1>`}</textarea>`,
   );
+  component('browser-colon-attrs-1', () => html`<b>shadow</b>`);
+  const colonStrings = [
+    '<browser-colon-attrs-1 xml:lang="en" data:label=',
+    '></browser-colon-attrs-1>',
+  ];
+  const colonTree = parse(colonStrings);
+  const colonClient = generate(colonTree);
+  const colonHydrate = generateHydrate(colonTree);
+  const colonMarkup = await renderToString(() =>
+    html(colonStrings as unknown as TemplateStringsArray, 'a"b<c'),
+  );
   const deep = (depth: number): unknown =>
     depth
       ? suspense(
@@ -491,6 +544,52 @@ try {
     const browser = await browserType.launch();
     try {
       const page = await browser.newPage();
+      await page.setContent(colonMarkup);
+      const colonAttrs = await page.evaluate(
+        ({ client, hydrate }) => {
+          const attrs = (node: Element) => [
+            node.getAttribute('xml:lang'),
+            node.getAttribute('data:label'),
+          ];
+          const immediate = (fn: () => void) => fn();
+          const values = ['a"b<c'];
+          const host = document.querySelector('browser-colon-attrs-1')!;
+          const before = attrs(host);
+          const shadow = host.shadowRoot?.textContent;
+          const node = new Function(`return ${client}`)()(values, immediate) as
+            | Element
+            | DocumentFragment;
+          const csr = attrs(
+            node instanceof Element ? node : node.querySelector('browser-colon-attrs-1')!,
+          );
+          new Function(`return ${hydrate}`)()(values, immediate, document.body);
+          return [
+            before,
+            csr,
+            attrs(host),
+            host === document.querySelector('browser-colon-attrs-1'),
+            shadow,
+          ];
+        },
+        { client: colonClient, hydrate: colonHydrate },
+      );
+      assert.deepEqual(colonAttrs, [
+        ['en', 'a"b<c'],
+        ['en', 'a"b<c'],
+        ['en', 'a"b<c'],
+        true,
+        'shadow',
+      ]);
+      for (const fixture of opaqueCases) {
+        await page.setContent(fixture.markup);
+        const result = await page.evaluate(({ tag, hydrate }) => {
+          const node = document.querySelector(tag)!;
+          const before = node.textContent;
+          new Function(`return ${hydrate}`)()([], (fn: () => void) => fn(), document.body);
+          return [before, node.textContent, node === document.querySelector(tag)];
+        }, fixture);
+        assert.deepEqual(result, [fixture.expected, fixture.expected, true]);
+      }
       const parseSensitive = await page.evaluate(
         ({ annotationCode, annotationHydrate, annotationTrueMarkup, fontCode, fontMarkup }) => {
           const immediate = (fn: () => void) => fn();
@@ -698,7 +797,11 @@ try {
           },
           { fixture, helpers: helperSource },
         );
-        assert.deepEqual(result, [fixture.expected, fixture.expected, fixture.expected, true]);
+        assert.deepEqual(
+          result,
+          [fixture.expected, fixture.expected, fixture.expected, true],
+          fixture.child?.code ?? fixture.nested,
+        );
       }
       await page.setContent(lightMarkup);
       assert.equal(await page.locator('textarea').textContent(), 'xp{content:"\\3c <i>"}');

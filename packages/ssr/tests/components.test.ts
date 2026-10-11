@@ -8,6 +8,15 @@ import { html, renderToStream, renderToString } from '../src/index.ts';
 // fixed tags per test.
 
 describe('component SSR — Declarative Shadow DOM', () => {
+  it('preserves colon-qualified attributes on registered component hosts', async () => {
+    component('ssr-colon-attrs-1', () => html`<b>shadow</b>`);
+    const out = await renderToString(
+      () => html`<ssr-colon-attrs-1 xml:lang="en" data:label=${'a"b<c'}></ssr-colon-attrs-1>`,
+    );
+    expect(out).toContain(' xml:lang="en"');
+    expect(out).toContain(' data:label="a&quot;b&lt;c"');
+    expect(out).toContain('<template shadowrootmode="open"><b>shadow</b></template>');
+  });
   it('coerces a detached component using its original light-DOM slot text', async () => {
     component(
       'ssr-light-text-1',

@@ -499,6 +499,55 @@ describe('SSR / CSR / hydrate conformance', () => {
     expect(ssrHelpers.rawText([markSSRHtml('<b>&#x110000;&#0;</b>')])).toBe('��');
   });
 
+  it('trusted HTML template closures unwind unclosed foreign content', () => {
+    for (const source of [
+      '<template><svg></template>visible',
+      '<template><math></template>visible',
+      '<template><svg><template>x</template></template>visible',
+    ])
+      expect(ssrHelpers.rawText([markSSRHtml(source)], 1)).toBe('visible');
+    expect(ssrHelpers.rawText([markSSRHtml('<svg><template>x</template></svg>visible')], 1)).toBe(
+      'xvisible',
+    );
+  });
+
+  it('trusted declarations and bogus comments end without interpreting quotes', () => {
+    for (const source of [
+      '<!x ">visible',
+      "<?x '>visible",
+      '<![CDATA[x ">visible',
+      '</1 ">visible',
+    ])
+      expect(ssrHelpers.rawText([markSSRHtml(source)], 1)).toBe('visible');
+    expect(ssrHelpers.rawText([markSSRHtml('<!DOCTYPE html PUBLIC "a>b" "c>d">visible')], 1)).toBe(
+      'b&quot; &quot;c&gt;d&quot;&gt;visible',
+    );
+    expect(ssrHelpers.rawText([markSSRHtml('<span title="a>b">visible</span>')], 1)).toBe(
+      'visible',
+    );
+  });
+
+  it('opaque HTML content does not compensate tag-shaped leading newlines', () => {
+    for (const outer of ['xmp', 'iframe', 'noembed', 'noframes', 'noscript', 'plaintext']) {
+      for (const inner of ['pre', 'listing', 'textarea']) {
+        const strings = [`<${outer}><${inner}>\ntext</${inner}></${outer}>`];
+        expect(renderCSR(strings, [])).toBe(normalize(renderSSR(strings, [])));
+      }
+    }
+  });
+  it('static opaque fragments retain their directly-created DOM text when nested', () => {
+    const child = ['<xmp><pre>\ntext</pre></xmp>'];
+    for (const tag of ['textarea', 'title']) {
+      const strings = [`<${tag}>`, `</${tag}>`];
+      const nested = new Function(`return ${generateSSR(parse(child))}`)()([], ssrHelpers);
+      const server = document.createElement('div');
+      server.innerHTML = renderSSR(strings, [nested]);
+      const client = html(tpl(strings), html(tpl(child))) as Node;
+      expect(server.querySelector(tag)?.textContent).toBe(client.textContent);
+      expect(client.textContent).toBe('\ntext');
+    }
+  });
+
   it('trusted HTML ignores self-closing flags only on HTML elements', () => {
     expect(ssrHelpers.rawText([markSSRHtml('<style/><b>x</b></style>')], 1)).toBe(
       '&lt;b&gt;x&lt;/b&gt;',

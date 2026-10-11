@@ -386,9 +386,9 @@ const componentOptions = new Map<string, ComponentOptions>();
 // `_renderComponentSSR` — that function only renders tags already registered.
 const SAFE_CE_TAG = /^[a-z][\w]*-[\w-]*$/;
 // Attribute names interpolated raw into the SSR host-attrs string. Same shape
-// as codegen's SAFE_NAME; used as a defensive filter for direct/SSR callers
+// as codegen's SAFE_ATTRIBUTE; used as a defensive filter for direct/SSR callers
 // of `_renderComponentSSR` that bypass the compiler's `assertSafeName`.
-const SAFE_ATTR_NAME = /^[a-zA-Z_][\w-]*$/;
+const SAFE_ATTR_NAME = /^[a-zA-Z_][\w-]*(?::[a-zA-Z_][\w-]*)?$/;
 
 /** @internal — accessor used by `@purityjs/ssr` to look up registered render fns. */
 export function _getRegisteredComponent(

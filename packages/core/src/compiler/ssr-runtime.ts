@@ -462,6 +462,17 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
       i = close === -1 ? html.length : close + 3;
       continue;
     }
+    // Bogus comments and declarations end at the first '>', even within quotes.
+    // Real comments and foreign CDATA were handled above.
+    if (
+      html[lt + 1] === '!' ||
+      html[lt + 1] === '?' ||
+      (html[lt + 1] === '/' && !/[A-Za-z>]/.test(html.charAt(lt + 2)))
+    ) {
+      const end = html.indexOf('>', lt + 2);
+      i = end === -1 ? html.length : end + 1;
+      continue;
+    }
     // Trusted callers can supply literal angle brackets in quoted attributes.
     let gt = lt + 1;
     let quote = '';
@@ -494,9 +505,19 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
     if (close) {
       // Pop up to the matching open element, if any.
       let at = stack.length - 1;
-      while (at >= 0 && stack[at][0] !== tag) at--;
-      if (at >= 0) stack.length = at;
-      else if (tag === 'template' && ns === 'html') hidden = Math.max(hiddenBase, hidden - 1);
+      while (at >= 0 && stack[at][0] !== tag) {
+        // Other end tags cannot escape an HTML template's scope.
+        if (stack[at][0] === 'template' && stack[at][2] === 'html') {
+          at = -1;
+          break;
+        }
+        at--;
+      }
+      if (at >= 0) {
+        if (tag === 'template' && stack[at][2] === 'html')
+          hidden = Math.max(hiddenBase, hidden - 1);
+        stack.length = at;
+      }
       continue;
     }
     const parent = stack[stack.length - 1];
@@ -505,6 +526,7 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
     if (selfClosing && namespace !== 'html') continue;
     if (tag === 'template' && namespace === 'html') {
       hidden++;
+      stack.push([tag, 'html', 'html', []]);
       continue;
     }
     const encoding =

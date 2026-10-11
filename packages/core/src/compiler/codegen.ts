@@ -732,8 +732,8 @@ function hasDynamic(node: ASTNode, customElements = false): boolean {
 // buildStaticHtml (no markers)
 // ---------------------------------------------------------------------------
 
-// Static client factories create Text nodes directly. Preserve their original
-// text when a CR-bearing fragment is later coerced to raw content on the server.
+// Static client factories create DOM nodes directly. Preserve their textContent
+// when a fragment is later coerced to raw content instead of reparsing its HTML.
 function staticText(node: ASTNode): string {
   if (node.type === 'text') return node.value;
   if (node.type !== 'element' && node.type !== 'fragment') return '';
@@ -1229,7 +1229,7 @@ export function generateSSR(ast: FragmentNode): string {
     return [
       '(function(){var _s;return function(_v,_h){return _s||(_s=_h.mark(',
       jsString(html),
-      html.includes('\r') ? `,[[0,${html.length},${jsString(staticText(ast))}]]` : '',
+      `,[[0,${html.length},${jsString(staticText(ast))}]]`,
       '));};})()',
     ].join('');
   }

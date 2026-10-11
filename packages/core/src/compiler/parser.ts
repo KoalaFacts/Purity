@@ -520,7 +520,7 @@ class Parser {
     const element: ElementNode = { type: 'element', tag, attributes, children, isVoid };
     if (namespace !== 'html') element.ns = namespace;
     if (raw) element.raw = raw;
-    if (this.ns === 'html' && /^(?:textarea|pre|listing)$/.test(lower)) {
+    if (namespace === 'html' && this.opaque === 0 && /^(?:textarea|pre|listing)$/.test(lower)) {
       element.preserveLeadingNewline = true;
     }
     return element;

@@ -223,10 +223,14 @@ function htmlText(html: string): string {
     if (ns === 'html') {
       // The parser drops one newline right after these start tags.
       if ((tag === 'textarea' || tag === 'pre' || tag === 'listing') && html[i] === '\n') i++;
-      if (/^(?:style|script|textarea|title)$/.test(tag)) {
+      // Raw text (as a scripting-enabled browser parses it) and RCDATA.
+      if (/^(?:style|script|xmp|iframe|noembed|noframes|noscript|textarea|title)$/.test(tag)) {
         const end = rawEnd(html, i, tag);
-        const text = html.slice(i, end);
-        if (!hidden) out += tag === 'style' || tag === 'script' ? text : decodeRefs(text);
+        let text = html.slice(i, end);
+        if (tag === 'textarea' || tag === 'title') text = decodeRefs(text);
+        // Undo the CSS escape valueToRawText writes for `<`.
+        else if (tag === 'style') text = text.split('\\3c ').join('<');
+        if (!hidden) out += text;
         i = end;
       }
     }
@@ -252,7 +256,13 @@ export function valueToRawText(parts: unknown[], rcdata?: unknown): string {
   // cycle tracking does not carry across slots, then escape the joined text.
   let text = '';
   for (let i = 0; i < parts.length; i++) text += valueToHtmlInner(parts[i], null, false);
-  return rcdata ? escHtml(text) : text.replace(/</g, '\\3c ');
+  if (rcdata) return escHtml(text);
+  // An odd run of backslashes before `<` already escapes it in CSS (`\<` is
+  // `<`): drop that backslash so the escape is not itself escaped.
+  return text.replace(
+    /(\\*)</g,
+    (_, slashes: string) => `${slashes.length % 2 ? slashes.slice(1) : slashes}\\3c `,
+  );
 }
 
 // `html` false: text mode for raw content (no escaping; nested SSR HTML

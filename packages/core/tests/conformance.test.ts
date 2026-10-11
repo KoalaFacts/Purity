@@ -615,6 +615,23 @@ describe('SSR / CSR / hydrate conformance', () => {
     }
   });
 
+  it('the CSS escape keeps a backslash-escaped < meaning <', () => {
+    // CSS `\<` is `<`; a run of an odd number of backslashes escapes the `<`.
+    expect(ssrHelpers.rawText(['a\\<b'])).toBe('a\\3c b');
+    expect(ssrHelpers.rawText(['a\\\\<b'])).toBe('a\\\\\\3c b');
+  });
+
+  it('nested text reads opaque raw-text elements and undoes the style CSS escape', () => {
+    const opaque = markSSRHtml(
+      '<div><iframe><b>x</b></iframe><xmp><i>y</i></xmp><noembed>&amp;</noembed></div>',
+    );
+    expect(ssrHelpers.rawText([opaque], 1)).toBe(
+      '&lt;b&gt;x&lt;/b&gt;&lt;i&gt;y&lt;/i&gt;&amp;amp;',
+    );
+    const style = markSSRHtml(renderSSR(['<style>', '</style>'], ['<i>']));
+    expect(ssrHelpers.rawText([style], 1)).toBe('&lt;i&gt;');
+  });
+
   it('a <style> value cannot break out of a raw-text ancestor', () => {
     for (const tag of ['xmp', 'iframe', 'noembed', 'noframes', 'noscript']) {
       const out = renderSSR([`<${tag}><style>`, `</style></${tag}>`], [`</${tag}><img src=x>`]);

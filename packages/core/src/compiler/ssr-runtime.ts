@@ -365,6 +365,21 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
       if (text.startsWith('\n')) text = text.slice(1);
       dropLF = false;
     }
+    // Column-group whitespace stays in place. Its first non-whitespace token
+    // closes the group and is reprocessed in table mode, including its suffix.
+    if (
+      characters &&
+      stack[stack.length - 1]?.[0] === 'colgroup' &&
+      stack[stack.length - 1][2] === 'html' &&
+      table()
+    ) {
+      const at = text.search(/[^\t\n\f\r ]/);
+      if (at !== -1) {
+        if (!hidden && at) group().push(text.slice(0, at));
+        stack.pop();
+        text = text.slice(at);
+      }
+    }
     if (hidden || !text) return;
     const current = stack[stack.length - 1];
     const foster =
@@ -477,7 +492,7 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
     // the self-closing flag. Quotes only begin values after '='.
     let gt = lt + 1;
     let quote = '';
-    // tag name, before/name/value, unquoted, quoted, self-closing slash.
+    // tag name, before/name/value, unquoted, quoted, slash, after name.
     let state = 0;
     if (html[gt] === '/') gt++;
     for (; gt < html.length; gt++) {
@@ -501,9 +516,11 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
           } else state = 4;
         }
       } else if (c === '/') state = 6;
-      else if (space) state = 1;
-      else if (c === '=' && state !== 0) state = 3;
-      else if (state === 1) state = 2;
+      else if (space) {
+        if (state === 2) state = 7;
+        else if (state !== 7) state = 1;
+      } else if (c === '=' && (state === 2 || state === 7)) state = 3;
+      else if (state === 1 || state === 7) state = 2;
     }
     if (gt === html.length) break;
     i = gt + 1;
@@ -511,6 +528,17 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
     if (!m) continue;
     const tag = m[2].toLowerCase();
     const close = m[1] === '/';
+    // Comments, col, html and template keep column-group mode. Other tokens
+    // close it before normal table processing; an end-col token is ignored.
+    if (
+      stack[stack.length - 1]?.[0] === 'colgroup' &&
+      stack[stack.length - 1][2] === 'html' &&
+      table()
+    ) {
+      if (close && tag === 'col') continue;
+      if (close ? tag !== 'colgroup' && tag !== 'template' : !/^(?:html|col|template)$/.test(tag))
+        stack.pop();
+    }
     const selfClosing = state === 6;
     const attrs =
       tag === 'font' || tag === 'annotation-xml'

@@ -521,6 +521,30 @@ describe('SSR / CSR / hydrate conformance', () => {
     }
   });
 
+  it('trusted leading equals signs start names without losing spaced value assignments', () => {
+    for (const attr of ['=x/', '=/', 'x="y"="z/', "x='y'='z/"]) {
+      const source = `<svg><foreignObject ${attr}><style><b>x</b></style></foreignObject></svg>`;
+      expect(ssrHelpers.rawText([markSSRHtml(source)], 1)).toBe('x');
+    }
+    for (const attr of ['x = y/', '=x=y/', 'x\t=\n"y/"']) {
+      const source = `<svg><foreignObject ${attr}><style><b>x</b></style></foreignObject></svg>`;
+      expect(ssrHelpers.rawText([markSSRHtml(source)], 1)).toBe('&lt;b&gt;x&lt;/b&gt;');
+    }
+  });
+
+  it('trusted colgroup preserves leading whitespace before reprocessing table content', () => {
+    for (const [source, expected] of [
+      ['<table><colgroup> a </colgroup></table>', 'a  '],
+      ['<table><colgroup> ab c </colgroup></table>', 'ab c  '],
+      ['<table><colgroup> &#97; </colgroup></table>', 'a  '],
+      ['<table><colgroup> \n </colgroup><tr><td>x</td></tr></table>', ' \n x'],
+      ['<table><colgroup> <b>x</b> </colgroup><tr><td>y</td></tr></table>', 'x  y'],
+      ['<table><colgroup> <template>hidden</template> a </colgroup></table>', 'a   '],
+      ['<svg><colgroup> a </colgroup></svg>', ' a '],
+    ])
+      expect(ssrHelpers.rawText([markSSRHtml(source)], 1)).toBe(expected);
+  });
+
   it('list row text provenance survives raw-content coercion', () => {
     const rows = [
       { id: 1, text: 'a\rb' },

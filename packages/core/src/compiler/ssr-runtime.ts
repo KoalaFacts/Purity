@@ -189,7 +189,7 @@ export function rawEnd(html: string, from: number, tag: string): number {
 // and raw-text / RCDATA element content is read up to its own end tag (so a
 // `<i>` inside a nested <style> stays text). The input is framework output,
 // whose attribute values are escaped, so a tag never contains a bare `>`.
-function htmlText(html: string, spans?: readonly RawTextSpan[]): string {
+function htmlText(html: string, spans: readonly RawTextSpan[]): string {
   let out = '';
   let i = 0;
   let spanIndex = 0;
@@ -270,11 +270,9 @@ function htmlText(html: string, spans?: readonly RawTextSpan[]): string {
         else if (tag === 'style') {
           // Serialization appends spans in output order. Advance once through
           // them, including spans in hidden/foreign content that we skipped.
-          if (spans) {
-            while (spanIndex < spans.length && spans[spanIndex][0] < i) spanIndex++;
-            const span = spans[spanIndex];
-            if (span?.[0] === i && span[1] === end) text = span[2];
-          }
+          while (spanIndex < spans.length && spans[spanIndex][0] < i) spanIndex++;
+          const span = spans[spanIndex];
+          if (span?.[0] === i && span[1] === end) text = span[2];
         }
         if (!hidden) out += text;
         i = end;

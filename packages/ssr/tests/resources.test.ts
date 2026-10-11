@@ -10,6 +10,15 @@ import {
 
 const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
+function resourcePayload(out: string): string | null {
+  const marker = '<script type="application/json" id="__purity_resources__">';
+  const open = out.indexOf(marker);
+  if (open === -1) return null;
+  const start = open + marker.length;
+  const end = out.indexOf('</script>', start);
+  return end === -1 ? null : out.slice(start, end);
+}
+
 describe('SSR resource cancellation', () => {
   const renderers = [
     {
@@ -527,12 +536,10 @@ describe('client hydration cache priming', () => {
       const c = resource(() => Promise.resolve('gamma'));
       return html`<p>${() => a() ?? ''}-${() => b() ?? ''}-${() => c() ?? ''}</p>`;
     });
-    const match = out.match(
-      /<script type="application\/json" id="__purity_resources__">(.+?)<\/script>/,
-    );
-    expect(match).not.toBeNull();
+    const payload = resourcePayload(out);
+    expect(payload).not.toBeNull();
     // Decode the payload — undo the < > & escapes from buildResourceScript.
-    const decoded = match![1]
+    const decoded = payload!
       .replace(/\\u003c/g, '<')
       .replace(/\\u003e/g, '>')
       .replace(/\\u0026/g, '&');
@@ -556,11 +563,9 @@ describe('client hydration cache priming', () => {
 
 describe('renderToString — keyed resources', () => {
   function decodePayload(out: string): unknown {
-    const match = out.match(
-      /<script type="application\/json" id="__purity_resources__">(.+?)<\/script>/,
-    );
-    if (!match) return null;
-    const decoded = match[1]
+    const payload = resourcePayload(out);
+    if (payload === null) return null;
+    const decoded = payload
       .replace(/\\u003c/g, '<')
       .replace(/\\u003e/g, '>')
       .replace(/\\u0026/g, '&');

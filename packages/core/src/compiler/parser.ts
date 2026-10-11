@@ -253,6 +253,13 @@ class Parser {
             this.pos = end < 0 ? s.length : end + 1;
             continue;
           }
+          // An HTML script uses the raw parser for its own end tag. In normal
+          // HTML content a stray script end tag is ignored, not a parent close.
+          if (tag === 'script' && this.ns === 'html' && this.opaque === 0) {
+            const end = s.indexOf('>', this.pos);
+            this.pos = end < 0 ? s.length : end + 1;
+            continue;
+          }
           break;
         }
 

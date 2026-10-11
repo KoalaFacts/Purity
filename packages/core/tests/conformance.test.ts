@@ -356,6 +356,17 @@ describe('SSR / CSR / hydrate conformance', () => {
     expect(host.querySelector('script')?.textContent).toBe('<!--<script></script>-->');
   });
 
+  it('keeps double-escape dash endings and ignores stray HTML script end tags', () => {
+    const source = '<script><!--<script>--></script><p>x</p></script><b>tail</b>';
+    const host = document.createElement('div');
+    host.innerHTML = renderSSR([source], []);
+    expect(host.querySelector('script')?.textContent).toBe('<!--<script>-->');
+    expect(host.querySelector('p')?.textContent).toBe('x');
+    expect(host.querySelector('b')?.textContent).toBe('tail');
+    expect(renderCSR([source], [])).toBe(normalize(host.innerHTML));
+    expect(rawEnd('<!--<script>--></script>', 0, 'script')).toBe(15);
+  });
+
   for (const c of cases) {
     // A known defect is pinned with it.fails: the assertion must keep failing.
     const check = c.knownDefect ? it.fails : it;
@@ -670,6 +681,21 @@ describe('SSR / CSR / hydrate conformance', () => {
       ],
       ['<table><style>x</style><tr><td>a</td></tr>y</table>', 'yxa'],
       ['<template><table>x<tr><td>a</td></tr></table></template>tail', 'tail'],
+    ])
+      expect(ssrHelpers.rawText([markSSRHtml(source)], 1)).toBe(expected);
+  });
+
+  it('trusted table peer starts close cells rows captions and sections in table scope', () => {
+    for (const [source, expected] of [
+      ['<table><tr><td>a<tr>b</table>', 'ba'],
+      ['<table><tr><th>a<tr>b</table>', 'ba'],
+      ['<table><tbody><tr><td>a<tbody>b</table>', 'ba'],
+      ['<table><tr><td>a<td>b<tr>c</table>', 'cab'],
+      ['<table><tr><td><b>a<tr>b</table>', 'ba'],
+      ['<table><caption>a<tr>b</table>', 'ba'],
+      ['<table><tr><td>a<table><tr><td>x<tr>y</table>z</table>', 'ayxz'],
+      ['<table><tr><td>a<template><tr>hidden</template>b</table>', 'ab'],
+      ['<svg><tr><td>a<tr>b</svg>', 'ab'],
     ])
       expect(ssrHelpers.rawText([markSSRHtml(source)], 1)).toBe(expected);
   });

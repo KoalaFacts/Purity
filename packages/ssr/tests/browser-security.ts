@@ -12,6 +12,7 @@ import {
   isSSRHtml,
   markSSRHtml,
   parse,
+  ssrHelpers,
   valueToHtml,
 } from '@purityjs/core/compiler';
 import {
@@ -188,6 +189,21 @@ try {
   const foreignTemplates = ['svg', 'math'].map((tag) =>
     generate(parse([`<${tag}><template>x</template></${tag}>`])),
   );
+  const scriptSources = [
+    '<script><!--<script>--></script><p>x</p></script><b>tail</b>',
+    '<script><!--<script></script>--></script><p>x</p><b>tail</b>',
+    '<script><!--<script></script></script><p>x</p>',
+  ];
+  const scriptCases = scriptSources.map((source) => {
+    const tree = parse([source]);
+    return {
+      source,
+      client: generate(tree),
+      hydrate: generateHydrate(tree),
+      markup: new Function(`return ${generateSSR(tree)}`)()([], ssrHelpers)
+        .__purity_ssr_html__ as string,
+    };
+  });
   const rawStreamMarkup = await new Response(
     renderToStream(
       () =>
@@ -299,6 +315,15 @@ try {
       ['<!--x--!->hidden-->visible', 'visible'],
       ['<style><!--x--!>visible</style>', '<!--x--!>visible'],
       ['<table><tr><td>a</td></tr>x</table>', 'xa'],
+      ['<table><tr><td>a<tr>b</table>', 'ba'],
+      ['<table><tr><th>a<tr>b</table>', 'ba'],
+      ['<table><tbody><tr><td>a<tbody>b</table>', 'ba'],
+      ['<table><tr><td>a<td>b<tr>c</table>', 'cab'],
+      ['<table><tr><td><b>a<tr>b</table>', 'ba'],
+      ['<table><caption>a<tr>b</table>', 'ba'],
+      ['<table><tr><td>a<table><tr><td>x<tr>y</table>z</table>', 'ayxz'],
+      ['<table><tr><td>a<template><tr>hidden</template>b</table>', 'ab'],
+      ['<svg><tr><td>a<tr>b</svg>', 'ab'],
       ['<table><tr><td>a</td></tr> x </table>', ' x a'],
       ['<table><tr><td>a</td></tr>\n </table>', 'a\n '],
       ['<table><div>x</div><tr><td>a</td></tr>y</table>', 'xya'],
@@ -881,6 +906,33 @@ try {
         'second',
         true,
       ]);
+      for (const fixture of scriptCases) {
+        const result = await page.evaluate((fixture) => {
+          const native = document.createElement('div');
+          native.innerHTML = fixture.source;
+          const client = document.createElement('div');
+          client.appendChild(
+            new Function(`return ${fixture.client}`)()([], (fn: () => void) => fn()),
+          );
+          const host = document.createElement('div');
+          host.innerHTML = fixture.markup;
+          const adopted = host.querySelector('script');
+          const before = host.innerHTML;
+          new Function(`return ${fixture.hydrate}`)()([], (fn: () => void) => fn(), host);
+          return [
+            native.innerHTML,
+            client.innerHTML,
+            before,
+            host.innerHTML,
+            adopted === host.querySelector('script'),
+          ];
+        }, fixture);
+        assert.deepEqual(
+          result,
+          [result[0], result[0], result[0], result[0], true],
+          fixture.source,
+        );
+      }
       for (const fixture of rawCases) {
         const result = await page.evaluate(
           ({ fixture, helpers }) => {

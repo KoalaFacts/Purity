@@ -570,6 +570,22 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
       }
       continue;
     }
+    // Table peer starts imply closing cells/captions, then rows and sections.
+    // Stop at the nearest table or template so nested tables and hidden
+    // fragments cannot close an enclosing cell. Foreign peers stay foreign.
+    if (ns === 'html' && /^(?:caption|col|colgroup|tbody|tfoot|thead|tr|td|th)$/.test(tag)) {
+      for (let at = stack.length - 1; at >= 0; at--) {
+        const frame = stack[at];
+        if (frame[2] !== 'html') continue;
+        if (frame[0] === 'table' || frame[0] === 'template') break;
+        if (
+          /^(?:td|th|caption)$/.test(frame[0]) ||
+          (frame[0] === 'tr' && tag !== 'td' && tag !== 'th') ||
+          (/^(?:tbody|tfoot|thead)$/.test(frame[0]) && !/^(?:tr|td|th)$/.test(tag))
+        )
+          stack.length = at;
+      }
+    }
     const parent = stack[stack.length - 1];
     const namespace = elementNamespace(ns, tag, parent?.[0], parent?.[2]);
     // HTML ignores this flag on non-void elements; foreign elements honor it.

@@ -194,6 +194,16 @@ const cases: Case[] = [
     values: () => ['</div>'],
   },
   {
+    name: 'end tags that only start with the element name stay intact inside style',
+    strings: ['<style>', '</style>'],
+    values: () => ['</stylesheet></scripture>'],
+  },
+  {
+    name: 'a comment sequence inside raw content is kept as text',
+    strings: ['<div><textarea><!-- prefix -->', '</textarea></div>'],
+    values: () => ['x'],
+  },
+  {
     name: 'raw-text <title> with dynamic content',
     strings: ['<title>', ' & more</title>'],
     values: () => ['Tom & <Jerry>'],
@@ -259,6 +269,30 @@ describe('SSR / CSR / hydrate conformance', () => {
       mounted.unmount();
       host.remove();
     }
+  });
+
+  it('a nested template inside <textarea> hydrates to its text', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const strings = ['<div><textarea>', '</textarea></div>'];
+    host.innerHTML = renderSSR(strings, [markSSRHtml('plain text')]);
+    const textarea = host.querySelector('textarea');
+    const mounted = hydrate(host, () => html(tpl(strings), html(tpl(['plain text']))) as Node);
+    try {
+      expect(host.querySelector('textarea')).toBe(textarea);
+      expect(textarea?.textContent).toBe('plain text');
+    } finally {
+      mounted.unmount();
+      host.remove();
+    }
+  });
+
+  it('an end tag split across adjacent values cannot close <style>', () => {
+    const out = renderSSR(['<style>', '', '</style>'], ['</sty', 'le><script>x()</script>']);
+    const host = document.createElement('div');
+    host.innerHTML = out;
+    expect(host.querySelectorAll('script')).toHaveLength(0);
+    expect(host.querySelectorAll('style')).toHaveLength(1);
   });
 
   it('a mixed-case </STYLE> inside a dynamic style value cannot close it', () => {

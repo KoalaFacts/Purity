@@ -29,11 +29,12 @@ const FROZEN_HELPERS: SSRHelpers = Object.freeze({
   esc: ssrHelpers.esc,
   attr: ssrHelpers.attr,
   toHtml: ssrHelpers.toHtml,
+  rawText: ssrHelpers.rawText,
   toAttr: ssrHelpers.toAttr,
   isHtml: ssrHelpers.isHtml,
   mark: ssrHelpers.mark,
   element: ssrHelpers.element,
-}) as SSRHelpers;
+});
 
 /**
  * Server-side counterpart of `@purityjs/core`'s `html` tag. Returns a

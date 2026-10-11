@@ -132,9 +132,10 @@ function htmlText(html: string): string {
   // Open <template> elements: their contents (declarative shadow roots
   // included) live in a separate fragment and are not part of textContent.
   let hidden = 0;
-  // Open <svg>/<math> elements: style/script/title/textarea there are foreign
-  // and their content is markup, not raw text.
-  let foreign = 0;
+  // Namespace transitions, innermost last: [tag, foreign]. Inside foreign
+  // content (svg/math, outside HTML integration points) style/script/title/
+  // textarea content is markup, not raw text.
+  const ns: [string, boolean][] = [];
   while (i < html.length) {
     const lt = html.indexOf('<', i);
     if (!hidden) out += decodeRefs(html.slice(i, lt === -1 ? html.length : lt));
@@ -155,10 +156,22 @@ function htmlText(html: string): string {
     if (tag === 'template') {
       if (close) hidden = Math.max(0, hidden - 1);
       else if (!selfClosing) hidden++;
-    } else if (tag === 'svg' || tag === 'math') {
-      if (close) foreign = Math.max(0, foreign - 1);
-      else if (!selfClosing) foreign++;
-    } else if (!close && !foreign) {
+      continue;
+    }
+    const foreign = ns.length > 0 && ns[ns.length - 1][1];
+    if (close) {
+      if (ns.length > 0 && ns[ns.length - 1][0] === tag) ns.pop();
+      continue;
+    }
+    if (!selfClosing) {
+      if (tag === 'svg' || tag === 'math' || tag === 'mglyph' || tag === 'malignmark') {
+        ns.push([tag, true]);
+      } else if (foreign && /^(?:foreignobject|desc|title|mi|mo|mn|ms|mtext)$/.test(tag)) {
+        ns.push([tag, false]);
+        continue;
+      }
+    }
+    if (!foreign) {
       // The parser drops one newline right after these start tags.
       if ((tag === 'textarea' || tag === 'pre' || tag === 'listing') && html[i] === '\n') i++;
       if (/^(?:style|script|textarea|title)$/.test(tag)) {

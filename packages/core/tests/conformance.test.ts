@@ -445,6 +445,11 @@ describe('SSR / CSR / hydrate conformance', () => {
     expect(ssrHelpers.rawText([css], 1)).toBe('light');
     // SVG <title> is foreign: its content is markup, not RCDATA.
     expect(ssrHelpers.rawText([markSSRHtml('<svg><title><b>T</b></title></svg>')], 1)).toBe('T');
+    // foreignObject is an HTML integration point: its <style> is raw text again.
+    const fo = markSSRHtml(
+      '<svg><foreignObject><style>p{content:"<i>"}</style></foreignObject></svg>',
+    );
+    expect(ssrHelpers.rawText([fo], 1)).toBe('p{content:&quot;&lt;i&gt;&quot;}');
   });
 
   it('nested text drops a nested textarea leading newline like the HTML parser', () => {
@@ -489,6 +494,14 @@ describe('SSR / CSR / hydrate conformance', () => {
     host.innerHTML = out;
     expect(host.querySelectorAll('script')).toHaveLength(0);
     expect(host.querySelector('style')?.textContent).toBe('<script>x()</script>');
+  });
+
+  it('MathML mglyph stays foreign inside a text integration point', () => {
+    const out = renderSSR(
+      ['<math><mtext><mglyph><style>', '</style></mglyph></mtext></math>'],
+      ['<img src=x>'],
+    );
+    expect(out).not.toContain('<img');
   });
 
   it('an SVG <title> keeps markup children', () => {

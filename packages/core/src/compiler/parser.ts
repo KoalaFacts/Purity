@@ -367,7 +367,11 @@ class Parser {
     let children: ASTNode[] = [];
     if (!isVoid) {
       const outer = this.foreign;
-      if (lower === 'svg' || lower === 'math') this.foreign = true;
+      // mglyph/malignmark stay MathML even inside a MathML text integration
+      // point; outside MathML, treating them as foreign only means escaping.
+      if (lower === 'svg' || lower === 'math' || lower === 'mglyph' || lower === 'malignmark') {
+        this.foreign = true;
+      }
       // HTML integration points: SVG foreignObject/desc/title and MathML text
       // integration points parse their children as HTML.
       else if (outer && /^(?:foreignobject|desc|title|mi|mo|mn|ms|mtext)$/.test(lower)) {

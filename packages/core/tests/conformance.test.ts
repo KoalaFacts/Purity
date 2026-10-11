@@ -11,6 +11,7 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { generate, generateModule, generateSSR } from '../src/compiler/codegen.ts';
 import { parse } from '../src/compiler/parser.ts';
+import { namedReferences } from '../src/compiler/character-references.ts';
 import { markSSRHtml, rawEnd, ssrHelpers } from '../src/compiler/ssr-runtime.ts';
 import { eachSSR, matchSSR, whenSSR } from '../src/control.ts';
 import { each, html, hydrate, mount, state, when } from '../src/index.ts';
@@ -500,6 +501,92 @@ describe('SSR / CSR / hydrate conformance', () => {
 
   it('nested text drops a nested textarea leading newline like the HTML parser', () => {
     expect(ssrHelpers.rawText([markSSRHtml('<textarea>\n\nfoo</textarea>')], 1)).toBe('\nfoo');
+  });
+
+  it('nested text decodes named and numeric references like the HTML tokenizer', () => {
+    const references =
+      '&copy;&NotEqualTilde;&CounterClockwiseContourIntegral;&AMP;&amP;&notit;&copy= &#128 &#x80; &#0; &#xD800; &#x110000; &unknown; &amp;copy;';
+    const source = `<b>${references}</b>`;
+    const native = document.createElement('template');
+    native.innerHTML = source;
+    const expected = native.content.textContent;
+    for (const tag of ['textarea', 'title']) {
+      const strings = [`<${tag}>`, `</${tag}>`];
+      const host = document.createElement('div');
+      host.innerHTML = renderSSR(strings, [markSSRHtml(source)]);
+      expect(host.querySelector(tag)?.textContent).toBe(expected);
+      const adopted = host.querySelector(tag);
+      const mounted = hydrate(
+        host,
+        () => html(tpl(strings), native.content.cloneNode(true)) as Node,
+      );
+      expect(host.querySelector(tag)).toBe(adopted);
+      expect(adopted?.textContent).toBe(expected);
+      mounted.unmount();
+    }
+  });
+
+  it('every standard named reference and numeric replacement matches native text parsing', () => {
+    const references =
+      Object.keys(namedReferences)
+        .map((name) => `&${name}`)
+        .join('|') +
+      '|' +
+      Array.from({ length: 32 }, (_, i) => `&#${128 + i};`).join('|') +
+      '|&constructor;&toString;&__proto;';
+    const native = document.createElement('template');
+    native.innerHTML = `<b>${references}</b>`;
+    expect(ssrHelpers.rawText([markSSRHtml(`<b>${references}</b>`)])).toBe(
+      native.content.textContent,
+    );
+  });
+
+  it('dynamic styles preserve top-level CSS CDO semantics without tag-opening bytes', () => {
+    const original = '<!-- .x { color: red } -->';
+    const factory = new Function(
+      `return ${generateSSR(parse(tpl(['<style>', '</style>'])))}`,
+    )() as SSRFactory;
+    const wrapper = factory([original], ssrHelpers);
+    expect(wrapper.__purity_ssr_html__).toContain('/**/ .x { color: red } -->');
+    expect(wrapper.__purity_ssr_html__).not.toContain('<!--');
+    expect(ssrHelpers.rawText([wrapper], 1)).toBe('&lt;!-- .x { color: red } --&gt;');
+    // Only a CDO between top-level rules is discarded. In a quoted string
+    // or a selector prelude the less-than sign must retain CSS token meaning.
+    expect(ssrHelpers.rawText(['.x::before{content:"<!--"}'])).toContain('"\\3c !--"');
+    expect(ssrHelpers.rawText(['.x<!-- {color:red}'])).toContain('.x\\3c !--');
+    expect(
+      ssrHelpers.rawText(['/* <!-- */ <!-- .x{color:red} --> <!-- .y{color:blue} -->']),
+    ).toContain('/**/ .y');
+  });
+
+  it('foreign paragraph end tags close an in-scope HTML paragraph', async () => {
+    for (const outer of ['svg', 'math']) {
+      for (const nested of ['', '<span>']) {
+        const prefix = `<p>${nested}<${outer}><g></p><b>`;
+        const strings = [prefix, '</b><textarea>', '</textarea>'];
+        const native = document.createElement('div');
+        native.innerHTML = prefix + 'tail</b><textarea>x</textarea>';
+        const host = document.createElement('div');
+        const tail = state('tail');
+        host.innerHTML = renderSSR(strings, [tail, 'x']);
+        expect(normalize(host.innerHTML)).toBe(normalize(native.innerHTML));
+        expect(renderCSR(strings, [tail, 'x'])).toBe(normalize(native.innerHTML));
+        const adopted = host.querySelector('b');
+        const mounted = hydrate(host, () => html(tpl(strings), tail, 'x') as Node);
+        expect(host.querySelector('b')).toBe(adopted);
+        tail('updated');
+        await tick();
+        expect(adopted?.textContent).toBe('updated');
+        mounted.unmount();
+      }
+    }
+    // A button is a paragraph-scope boundary: the outer paragraph must not
+    // be closed by a foreign end tag inside it.
+    const strings = ['<p><button><svg></p><b>tail</b></button></p>'];
+    const native = document.createElement('div');
+    native.innerHTML = strings[0];
+    expect(renderCSR(strings, [])).toBe(normalize(native.innerHTML));
+    expect(normalize(renderSSR(strings, []))).toBe(normalize(native.innerHTML));
   });
 
   it('disconnects the raw-content observer when the owner is torn down', () => {

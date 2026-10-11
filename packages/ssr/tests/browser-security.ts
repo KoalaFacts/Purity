@@ -210,8 +210,40 @@ try {
     tag: string;
     expected: string;
     values?: string[];
+    nested?: string;
   }[] = [];
+  const references =
+    '&copy;&NotEqualTilde;&CounterClockwiseContourIntegral;&AMP;&amP;&notit;&copy= &#128 &#x80; &#0; &#xD800; &unknown; &amp;copy;';
+  for (const tag of ['textarea', 'title']) {
+    const strings = [`<${tag}>`, `</${tag}>`];
+    const tree = parse(strings);
+    const nested = `<b>${references}</b>`;
+    rawCases.push({
+      client: generate(tree),
+      hydrate: generateHydrate(tree),
+      markup: await renderToString(() =>
+        html(strings as unknown as TemplateStringsArray, markSSRHtml(nested)),
+      ),
+      tag,
+      nested,
+      expected: '©≂̸∳&&amP;¬it;©= € € � � &unknown; &copy;',
+    });
+  }
   for (const outer of ['svg', 'math']) {
+    for (const inner of ['', '<span>']) {
+      const strings = [`<p>${inner}<${outer}><g></p><b>`, '</b>'];
+      const tree = parse(strings);
+      rawCases.push({
+        client: generate(tree),
+        hydrate: generateHydrate(tree),
+        markup: await renderToString(() =>
+          html(strings as unknown as TemplateStringsArray, 'tail'),
+        ),
+        tag: 'b',
+        values: ['tail'],
+        expected: 'tail',
+      });
+    }
     for (const tag of ['input', 'area', 'source', 'link', 'track', 'wbr']) {
       const strings = [
         `<${outer}><${tag}><circle>`,
@@ -394,7 +426,11 @@ try {
                 H.valueText,
               );
             const immediate = (fn: () => void) => fn();
-            const values = fixture.values ?? [fixture.tag === 'style' ? 'p{color:red}' : 'x'];
+            const nested = document.createElement('template');
+            if (fixture.nested) nested.innerHTML = fixture.nested;
+            const values = fixture.nested
+              ? [nested.content]
+              : (fixture.values ?? [fixture.tag === 'style' ? 'p{color:red}' : 'x']);
             const client = bind(fixture.client)(values, immediate) as DocumentFragment;
             const host = document.createElement('div');
             host.innerHTML = fixture.markup;
@@ -427,6 +463,30 @@ try {
         );
       }
       await page.setViewportSize({ width: 500, height: 400 });
+      for (const before of ['<!-- ', '/*comment*/ <!-- ', '.other{color:blue} --> <!-- ']) {
+        const strings = [
+          `<style>${before}#css-cdo { color: `,
+          ' } --></style><p id="css-cdo">CDO compatibility</p>',
+        ] as unknown as TemplateStringsArray;
+        const output = await renderToString(() => html(strings, 'rgb(255, 0, 0)'));
+        await page.setContent(output);
+        assert.equal(
+          await page.locator('#css-cdo').evaluate((node) => getComputedStyle(node).color),
+          'rgb(255, 0, 0)',
+          `${browserType.name()}: CSS CDO rule must apply before hydration`,
+        );
+      }
+      const reusedCDO = await renderToString(
+        () =>
+          html`<svg>${html`<style><!-- .x { color: ${'red'} } -->${'<img src=x onerror="globalThis.__purityCDOAttack=1">'}</style>`}</svg><p id="cdo-tail">safe</p>`,
+      );
+      await page.setContent(reusedCDO);
+      assert.equal(await page.locator('img').count(), 0);
+      assert.equal(await page.locator('#cdo-tail').textContent(), 'safe');
+      assert.equal(
+        await page.evaluate(() => (globalThis as { __purityCDOAttack?: number }).__purityCDOAttack),
+        undefined,
+      );
       for (const comparison of ['< 600px', '<600px', '<=600px']) {
         const strings = [
           `<style>@media (width ${comparison}) { #css-range { color: `,

@@ -16,6 +16,7 @@
 
 import { getSSRRenderContext } from '../ssr-context.ts';
 import { VOID_TAGS } from './ast.ts';
+import { namedReferences } from './character-references.ts';
 
 /** A string of pre-escaped, trusted HTML. Concatenated raw by valueToHtml. */
 export interface SSRHtml {
@@ -105,24 +106,93 @@ export function valueToHtml(v: unknown, spans?: RawTextSpan[], offset = 0): stri
   return valueToHtmlInner(v, null, true, spans, offset);
 }
 
-const NAMED_ENTITIES: Record<string, string> = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
-  nbsp: '\u00a0',
-};
+// HTML's numeric-reference replacement table (the Windows-1252 range).
+const numericReplacements = [
+  8364, 129, 8218, 402, 8222, 8230, 8224, 8225, 710, 8240, 352, 8249, 338, 141, 381, 143, 144, 8216,
+  8217, 8220, 8221, 8226, 8211, 8212, 732, 8482, 353, 8250, 339, 157, 382, 376,
+];
 
 function decodeRefs(text: string): string {
-  return text.replace(/&(?:#(\d+)|#x([\da-f]+)|([a-z]+));/gi, (m, dec, hex, name) => {
-    if (!dec && !hex) return NAMED_ENTITIES[name.toLowerCase()] ?? m;
-    const cp = dec ? +dec : parseInt(hex, 16);
-    // As the HTML parser: NUL, surrogates and out-of-range values become U+FFFD.
-    return cp === 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)
-      ? '\uFFFD'
-      : String.fromCodePoint(cp);
-  });
+  return text.replace(
+    /&(?:#(\d+);?|#[xX]([\da-fA-F]+);?|([A-Za-z][A-Za-z\d]{0,31};?))/g,
+    (m, dec, hex, name: string | undefined) => {
+      if (name) {
+        // Longest case-sensitive match, including legacy semicolonless names.
+        // The bounded search cannot retry arbitrary input-length prefixes.
+        for (let end = name.length; end > 0; end--) {
+          const key = name.slice(0, end);
+          if (Object.hasOwn(namedReferences, key)) return namedReferences[key] + name.slice(end);
+        }
+        return m;
+      }
+      const cp = dec ? +dec : parseInt(hex, 16);
+      // As the HTML parser: NUL, surrogates and out-of-range values become U+FFFD.
+      return cp === 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)
+        ? '\uFFFD'
+        : String.fromCodePoint(cp >= 128 && cp <= 159 ? numericReplacements[cp - 128] : cp);
+    },
+  );
+}
+
+// Only CDO tokens between top-level CSS rules are ignored by the CSS parser.
+// Replacing those with a comment preserves token boundaries without emitting
+// an HTML comment opener when a style fragment is reused in foreign content.
+function cssCDO(text: string): Set<number> {
+  const positions = new Set<number>();
+  let quote = '',
+    comment = false,
+    blocks = 0,
+    groups = 0,
+    betweenRules = true;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (comment) {
+      if (c === '*' && text[i + 1] === '/') {
+        comment = false;
+        i++;
+      }
+      continue;
+    }
+    if (c === '\\') {
+      i++;
+      if (!quote && !blocks) betweenRules = false;
+      continue;
+    }
+    if (quote) {
+      if (c === quote) quote = '';
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      comment = true;
+      i++;
+      continue;
+    }
+    if (!blocks && !groups && betweenRules) {
+      if (text.startsWith('<!--', i)) {
+        positions.add(i);
+        i += 3;
+        continue;
+      }
+      if (text.startsWith('-->', i)) {
+        i += 2;
+        continue;
+      }
+    }
+    if (c === '"' || c === "'") quote = c;
+    else if (c === '(' || c === '[') groups++;
+    else if (c === ')' || c === ']') groups = Math.max(0, groups - 1);
+    else if (!groups && c === '{') blocks++;
+    else if (!groups && c === '}') {
+      blocks = Math.max(0, blocks - 1);
+      if (!blocks) betweenRules = true;
+      continue;
+    } else if (!blocks && !groups && c === ';') {
+      betweenRules = true;
+      continue;
+    }
+    if (!blocks && !/[\t\n\f\r ]/.test(c)) betweenRules = false;
+  }
+  return positions;
 }
 
 /** Namespace an element's children are parsed in. */
@@ -374,7 +444,8 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
  * (`<textarea>`, `<title>`, `rcdata` set) the text is HTML-escaped. For
  * raw-text (`<style>`; dynamic `<script>` content is rejected) entities are not
  * decoded, so tag-opening `<` prefixes are written as the CSS escape `\3c `.
- * CSS comparison delimiters remain literal. The output cannot form a tag in
+ * CSS comparison delimiters remain literal; top-level CDO tokens become CSS
+ * comments, preserving their ignored-token semantics. The output cannot form a tag in
  * contexts such as raw text, foreign (SVG/MathML) content, or an ancestor
  * such as <xmp> or <noscript> that this element was nested in, including a
  * parent template it is spliced into at runtime. CSS reads `\3c ` as `<` in
@@ -396,6 +467,7 @@ export function valueToRawText(
   // Each prefix and adjacent slash run is visited once; an unanchored regex
   // would retry a long slash run at every starting position when no `<` follows.
   const chunks: string[] = [];
+  const cdo = text.includes('<!--') ? cssCDO(text) : undefined;
   let start = 0;
   for (let end = text.indexOf('<'); end !== -1; end = text.indexOf('<', end + 1)) {
     // Only tag-opening prefixes can become markup when this fragment is
@@ -404,8 +476,8 @@ export function valueToRawText(
     if (!/[A-Za-z/!?]/.test(text.charAt(end + 1))) continue;
     let slashes = 0;
     for (let i = end - 1; i >= start && text.charCodeAt(i) === 92; i--) slashes++;
-    chunks.push(text.slice(start, end - (slashes % 2)), '\\3c ');
-    start = end + 1;
+    chunks.push(text.slice(start, end - (slashes % 2)), cdo?.has(end) ? '/**/' : '\\3c ');
+    start = end + (cdo?.has(end) ? 4 : 1);
   }
   if (start === 0) return text;
   chunks.push(text.slice(start));

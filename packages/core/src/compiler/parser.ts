@@ -96,6 +96,7 @@ class Parser {
   // title/textarea are foreign elements whose content is markup.
   private ns: Namespace = 'html';
   private parent: [string, Namespace] | undefined;
+  private ancestors: [string, Namespace][] = [];
   // Set once an end tag does not match the element it closes. The browser may
   // then keep an element (e.g. <svg>) open that this parser closed, so later
   // namespace decisions cannot be trusted: no element is treated as raw text
@@ -191,6 +192,18 @@ class Parser {
     return { type: 'fragment', children };
   }
 
+  private paragraphInScope(): boolean {
+    for (let i = this.ancestors.length - 1; i >= 0; i--) {
+      const [tag, ns] = this.ancestors[i];
+      if (ns === 'html') {
+        if (tag === 'p') return true;
+        if (/^(?:applet|caption|html|table|td|th|marquee|object|template|button)$/.test(tag))
+          return false;
+      } else if (childNamespace(ns, tag) === 'html' || tag === 'annotation-xml') return false;
+    }
+    return false;
+  }
+
   private parseChildren(): ASTNode[] {
     const children: ASTNode[] = [];
 
@@ -215,6 +228,10 @@ class Parser {
             break;
           }
           if (this.breakingOut && (tag === 'p' || tag === 'br')) {
+            if (tag === 'p' && this.paragraphInScope()) {
+              if (this.parent?.[0] === 'p' && this.parent[1] === 'html') this.breakingOut = false;
+              break;
+            }
             children.push({
               type: 'element',
               tag,
@@ -468,10 +485,12 @@ class Parser {
         encoding?.kind === 'static' ? encoding.value : undefined,
       );
       this.parent = [lower, namespace];
+      this.ancestors.push(this.parent);
       const opaque =
         namespace === 'html' && /^(?:xmp|iframe|noembed|noframes|noscript|plaintext)$/.test(lower);
       if (opaque) this.opaque++;
       children = raw ? this.parseRawChildren(lower) : this.parseChildren();
+      this.ancestors.pop();
       if (opaque) this.opaque--;
       this.ns = outer;
       this.parent = parent;

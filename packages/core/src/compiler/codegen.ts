@@ -101,7 +101,7 @@ const URL_BINDINGS = new Set(
 
 function safeBindingValue(name: string, expr: string, parseSensitiveEncoding = false): string {
   if (parseSensitiveEncoding)
-    return `(function(v){if(v==null||v===false)return v;var s=String(v);if(/^(?:text\\/html|application\\/xhtml\\+xml)$/i.test(s))throw new Error('[Purity] Unsafe dynamic annotation-xml encoding; use a static HTML encoding.');return s;})(${expr})`;
+    return `(function(v){if(v==null||v===false)return v;if(v===true)return '';var s=String(v);if(/^(?:text\\/html|application\\/xhtml\\+xml)$/i.test(s))throw new Error('[Purity] Unsafe dynamic annotation-xml encoding; use a static HTML encoding.');return s;})(${expr})`;
   if (!URL_BINDINGS.has(name.toLowerCase())) return expr;
   // Escape-only attribute binding does not stop executable URL schemes.
   // Return the checked string so stateful toString() cannot change it later.

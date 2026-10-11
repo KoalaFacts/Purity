@@ -1190,6 +1190,30 @@ describe('SSR / CSR / hydrate conformance', () => {
     );
   });
 
+  it('dynamic annotation encodings preserve boolean and string attribute values', () => {
+    const strings = [
+      '<math><annotation-xml encoding=',
+      '><style>safe</style></annotation-xml></math>',
+    ];
+    for (const [resolved, expected] of [
+      [true, ''],
+      [false, null],
+      [null, null],
+      ['true', 'true'],
+    ] as const) {
+      for (const value of [resolved, () => resolved]) {
+        const host = document.createElement('div');
+        host.innerHTML = renderSSR(strings, [value]);
+        const annotation = host.querySelector('annotation-xml');
+        expect(annotation?.getAttribute('encoding')).toBe(expected);
+        expect(renderCSR(strings, [value])).toBe(normalize(host.innerHTML));
+        hydrate(host, () => html(tpl(strings), value));
+        expect(host.querySelector('annotation-xml')).toBe(annotation);
+        expect(annotation?.getAttribute('encoding')).toBe(expected);
+      }
+    }
+  });
+
   it('trusted quoted attribute delimiters do not become raw content text', () => {
     for (const markup of ['<span title="a>b<c">x</span>', "<span title='a>b<c'>x</span>"]) {
       for (const tag of ['textarea', 'title']) {

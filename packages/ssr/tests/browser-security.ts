@@ -360,6 +360,14 @@ try {
       /dynamic annotation-xml encoding/,
     );
   const annotationCode = generate(annotationTree);
+  const annotationHydrate = generateHydrate(annotationTree);
+  const annotationTrueMarkup: string[] = [];
+  for (const value of [true, () => true])
+    annotationTrueMarkup.push(
+      await renderToString(() =>
+        html(annotationStrings as unknown as TemplateStringsArray, value, 'safe'),
+      ),
+    );
   const fontStrings = ['<svg><font @color=', '><circle>kept</circle></font></svg>'];
   const fontTree = parse(fontStrings);
   const fontCode = generate(fontTree);
@@ -425,7 +433,7 @@ try {
     try {
       const page = await browser.newPage();
       const parseSensitive = await page.evaluate(
-        ({ annotationCode, fontCode, fontMarkup }) => {
+        ({ annotationCode, annotationHydrate, annotationTrueMarkup, fontCode, fontMarkup }) => {
           const immediate = (fn: () => void) => fn();
           const make = new Function(`return ${annotationCode}`)();
           const rejected = ['text/html', 'APPLICATION/XHTML+XML'].map((value) => {
@@ -436,11 +444,28 @@ try {
               return /dynamic annotation-xml encoding/.test(String(error));
             }
           });
+          const adopt = new Function(`return ${annotationHydrate}`)();
+          const encodings = annotationTrueMarkup.map((markup, index) => {
+            const values = [index === 0 ? true : () => true, 'safe'];
+            const client = make(values, immediate);
+            const server = document.createElement('div');
+            server.innerHTML = markup;
+            const identity = server.querySelector('annotation-xml');
+            const before = identity?.getAttribute('encoding');
+            adopt(values, immediate, server);
+            return [
+              client.querySelector('annotation-xml')?.getAttribute('encoding'),
+              before,
+              identity?.getAttribute('encoding'),
+              identity === server.querySelector('annotation-xml'),
+            ];
+          });
           const client = new Function(`return ${fontCode}`)()([() => {}], immediate);
           const server = document.createElement('div');
           server.innerHTML = fontMarkup;
           return {
             rejected,
+            encodings,
             fonts: [client, server].map((root) => [
               root.querySelector('font')?.namespaceURI,
               root.querySelector('font')?.parentElement?.localName,
@@ -449,10 +474,14 @@ try {
             ]),
           };
         },
-        { annotationCode, fontCode, fontMarkup },
+        { annotationCode, annotationHydrate, annotationTrueMarkup, fontCode, fontMarkup },
       );
       assert.deepEqual(parseSensitive, {
         rejected: [true, true],
+        encodings: [
+          ['', '', '', true],
+          ['', '', '', true],
+        ],
         fonts: Array(2).fill([
           'http://www.w3.org/2000/svg',
           'svg',

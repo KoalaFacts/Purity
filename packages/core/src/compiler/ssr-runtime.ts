@@ -22,11 +22,22 @@ export interface SSRHtml {
 // External JSON must never gain raw-HTML privileges by copying a public field.
 // Weak references allow wrappers to be collected after each render.
 const trustedHtml = new WeakSet<object>();
+interface RawTextSpan {
+  start: number;
+  end: number;
+  text: string;
+}
+const rawTextSpans = new WeakMap<object, readonly RawTextSpan[]>();
 
 /** Marks a string as already-escaped HTML safe to concatenate raw. */
-export function markSSRHtml(s: string): SSRHtml {
+export function markSSRHtml(s: string, spans?: readonly RawTextSpan[]): SSRHtml {
   const wrapper = Object.freeze({ __purity_ssr_html__: s });
   trustedHtml.add(wrapper);
+  if (spans?.length)
+    rawTextSpans.set(
+      wrapper,
+      spans.map((span) => ({ ...span })),
+    );
   return wrapper;
 }
 
@@ -80,8 +91,8 @@ export const HYDRATION_CLOSE = '<!--]-->';
  *   repeat occurrence instead of stack-overflowing the SSR render.
  * - Everything else is String()'d and HTML-escaped.
  */
-export function valueToHtml(v: unknown): string {
-  return valueToHtmlInner(v, null, true);
+export function valueToHtml(v: unknown, spans?: RawTextSpan[], offset = 0): string {
+  return valueToHtmlInner(v, null, true, spans, offset);
 }
 
 const NAMED_ENTITIES: Record<string, string> = {
@@ -168,7 +179,7 @@ export function rawEnd(html: string, from: number, tag: string): number {
 // and raw-text / RCDATA element content is read up to its own end tag (so a
 // `<i>` inside a nested <style> stays text). The input is framework output,
 // whose attribute values are escaped, so a tag never contains a bare `>`.
-function htmlText(html: string): string {
+function htmlText(html: string, spans?: readonly RawTextSpan[]): string {
   let out = '';
   let i = 0;
   // Open HTML <template> elements: their contents (declarative shadow roots
@@ -221,6 +232,10 @@ function htmlText(html: string): string {
       stack.push([tag, inner]);
     }
     if (ns === 'html') {
+      if (tag === 'plaintext') {
+        if (!hidden) out += html.slice(i);
+        break;
+      }
       // The parser drops one newline right after these start tags.
       if ((tag === 'textarea' || tag === 'pre' || tag === 'listing') && html[i] === '\n') i++;
       // Raw text (as a scripting-enabled browser parses it) and RCDATA.
@@ -228,8 +243,12 @@ function htmlText(html: string): string {
         const end = rawEnd(html, i, tag);
         let text = html.slice(i, end);
         if (tag === 'textarea' || tag === 'title') text = decodeRefs(text);
-        // Undo the CSS escape valueToRawText writes for `<`.
-        else if (tag === 'style') text = text.split('\\3c ').join('<');
+        // Only generated spans have the original client text. Authored markup,
+        // including literal CSS escapes, is read exactly as the browser reads it.
+        else if (tag === 'style') {
+          const span = spans?.find((candidate) => candidate.start === i && candidate.end === end);
+          if (span) text = span.text;
+        }
         if (!hidden) out += text;
         i = end;
       }
@@ -251,12 +270,17 @@ function htmlText(html: string): string {
  * parent template it is spliced into at runtime. CSS reads `\3c ` as `<` in
  * strings and identifiers; textContent differs from the client until hydration.
  */
-export function valueToRawText(parts: unknown[], rcdata?: unknown): string {
+export function valueToRawText(
+  parts: unknown[],
+  rcdata?: unknown,
+  spans?: RawTextSpan[],
+  offset = 0,
+): string {
   // Each part is one template slot (or static text): coerce them separately so
   // cycle tracking does not carry across slots, then escape the joined text.
   let text = '';
   for (let i = 0; i < parts.length; i++) text += valueToHtmlInner(parts[i], null, false);
-  if (rcdata) return escHtml(text);
+  if (rcdata) return escHtml(text).replace(/\r/g, '&#13;');
   // An odd run of backslashes before `<` already escapes it in CSS (`\<` is
   // `<`): drop that backslash so the escape is not itself escaped.
   // Each prefix and adjacent slash run is visited once; an unanchored regex
@@ -271,15 +295,32 @@ export function valueToRawText(parts: unknown[], rcdata?: unknown): string {
   }
   if (start === 0) return text;
   chunks.push(text.slice(start));
-  return chunks.join('');
+  const escaped = chunks.join('');
+  spans?.push({ start: offset, end: offset + escaped.length, text });
+  return escaped;
 }
 
 // `html` false: text mode for raw content (no escaping; nested SSR HTML
 // becomes its text content).
-function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null, html: boolean): string {
+function valueToHtmlInner(
+  v: unknown,
+  seen: WeakSet<object> | null,
+  html: boolean,
+  spans?: RawTextSpan[],
+  offset = 0,
+): string {
   if (typeof v === 'function') v = (v as () => unknown)();
   if (v == null || v === false) return '';
-  if (isSSRHtml(v)) return html ? v.__purity_ssr_html__ : htmlText(v.__purity_ssr_html__);
+  if (isSSRHtml(v)) {
+    const source = rawTextSpans.get(v);
+    if (!html) return htmlText(v.__purity_ssr_html__, source);
+    if (spans && source) {
+      for (const span of source) {
+        spans.push({ start: offset + span.start, end: offset + span.end, text: span.text });
+      }
+    }
+    return v.__purity_ssr_html__;
+  }
   if (Array.isArray(v)) {
     // Lazily allocate the visited set — non-cyclic input keeps the fast path
     // allocation-free; only arrays pay the WeakSet add cost.
@@ -287,7 +328,9 @@ function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null, html: boolea
     if (seen.has(v)) return '';
     seen.add(v);
     let s = '';
-    for (let i = 0; i < v.length; i++) s += valueToHtmlInner(v[i], seen, html);
+    for (let i = 0; i < v.length; i++) {
+      s += valueToHtmlInner(v[i], seen, html, spans, offset + s.length);
+    }
     return s;
   }
   return html ? escHtml(String(v)) : String(v);

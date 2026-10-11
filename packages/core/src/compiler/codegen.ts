@@ -824,7 +824,7 @@ function genStaticDOM(
         }
       }
       for (const ch of node.children) {
-        genStaticDOM(ch, id, stmts, counter);
+        genStaticDOM(ch, /^template$/i.test(node.tag) ? `${id}.content` : id, stmts, counter);
       }
       stmts.push(`${parent}.appendChild(${id});`);
       break;
@@ -1228,7 +1228,9 @@ export function generateSSR(ast: FragmentNode): string {
   // variable reference (`_v[N]`, `_av${id}`). See "Codegen safety contract"
   // near SAFE_NAME at the top.
   // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
-  return ["function(_v,_h){var _o='';", ctx.parts.join(''), 'return _h.mark(_o);}'].join('');
+  return ["function(_v,_h){var _o='',_r=[];", ctx.parts.join(''), 'return _h.mark(_o,_r);}'].join(
+    '',
+  );
 }
 
 // True if any element node in the tree has a hyphenated tag. Custom elements
@@ -1300,7 +1302,10 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
       // _h.toHtml handles signal-accessor calls, branded HTML, arrays, and
       // primitive escaping in one place.
       emitLit(ctx, '<!--[-->');
-      pushRaw(ctx, `${ctx.out}+=_h.toHtml(_v[${node.index}]);`);
+      pushRaw(
+        ctx,
+        `${ctx.out}+=_h.toHtml(_v[${node.index}]${ctx.out === '_o' ? ',_r,_o.length' : ''});`,
+      );
       emitLit(ctx, '<!--]-->');
       return;
     }
@@ -1337,7 +1342,11 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
           for (const ch of node.children) if (ch.type === 'text') emitLit(ctx, ch.value);
         } else {
           const parts = node.children.map((ch) => rawPart(ch, (i) => `_v[${i}]`));
-          pushRaw(ctx, `${ctx.out}+=_h.rawText([${parts}]${node.raw === 'text' ? '' : ',1'});`);
+          const spanArgs = ctx.out === '_o' && node.raw === 'text' ? ',undefined,_r,_o.length' : '';
+          pushRaw(
+            ctx,
+            `${ctx.out}+=_h.rawText([${parts}]${node.raw === 'text' ? spanArgs : ',1'});`,
+          );
         }
       } else {
         for (const ch of node.children) buildSSRBody(ch, ctx);

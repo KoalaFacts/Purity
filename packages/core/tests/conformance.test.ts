@@ -634,8 +634,53 @@ describe('SSR / CSR / hydrate conformance', () => {
     expect(ssrHelpers.rawText([opaque], 1)).toBe(
       '&lt;b&gt;x&lt;/b&gt;&lt;i&gt;y&lt;/i&gt;&amp;amp;',
     );
-    const style = markSSRHtml(renderSSR(['<style>', '</style>'], ['<i>']));
+    const factory = new Function(
+      `return ${generateSSR(parse(tpl(['<style>', '</style>'])))}`,
+    )() as SSRFactory;
+    const style = factory(['<i>'], ssrHelpers);
     expect(ssrHelpers.rawText([style], 1)).toBe('&lt;i&gt;');
+  });
+
+  it('nested raw content preserves author-written CSS escapes', () => {
+    const style = markSSRHtml('<style>p{content:"\\3c "}</style>');
+    expect(ssrHelpers.rawText([style], 1)).toBe('p{content:&quot;\\3c &quot;}');
+  });
+
+  it('static template contents stay outside ancestor textContent', () => {
+    const fragment = html(tpl(['<template>x</template>'])) as DocumentFragment;
+    const template = fragment.firstChild as HTMLTemplateElement;
+    expect(template.content.textContent).toBe('x');
+    expect(fragment.textContent).toBe('');
+    expect(ssrHelpers.rawText([markSSRHtml('<template>x</template>')], 1)).toBe('');
+  });
+
+  it('RCDATA carriage returns survive HTML input preprocessing', () => {
+    for (const tag of ['textarea', 'title']) {
+      const host = document.createElement('div');
+      host.innerHTML = renderSSR([`<${tag}>`, `</${tag}>`], ['a\rb\r\nc']);
+      expect(host.querySelector(tag)?.textContent).toBe('a\rb\r\nc');
+    }
+  });
+
+  it('nested plaintext consumes all remaining source text', () => {
+    const value = markSSRHtml('<div><plaintext><b>x</b></plaintext></div>');
+    expect(ssrHelpers.rawText([value], 1)).toBe(
+      '&lt;b&gt;x&lt;/b&gt;&lt;/plaintext&gt;&lt;/div&gt;',
+    );
+  });
+
+  it('tracks only generated CSS escapes across nested SSR expression slots', () => {
+    const compile = (strings: string[]) =>
+      new Function(`return ${generateSSR(parse(tpl(strings)))}`)() as SSRFactory;
+    const original = 'p{content:"\\3c <"}';
+    const style = compile(['<style>', '</style>'])([original], ssrHelpers);
+    const outer = compile(['<div>', '</div>'])([[style, style]], ssrHelpers);
+    expect(ssrHelpers.rawText([outer], 1)).toBe(
+      'p{content:&quot;\\3c &lt;&quot;}p{content:&quot;\\3c &lt;&quot;}',
+    );
+    // Serializing to a string and branding it anew has no original-text metadata.
+    const rewrapped = markSSRHtml(style.__purity_ssr_html__);
+    expect(ssrHelpers.rawText([rewrapped], 1)).toBe('p{content:&quot;\\3c \\3c &quot;}');
   });
 
   it('a <style> value cannot break out of a raw-text ancestor', () => {

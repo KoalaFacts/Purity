@@ -1,12 +1,14 @@
 // ---------------------------------------------------------------------------
 // Purity Compiler — Code Generator
 //
-// Client templates take one of two paths:
+// Client templates take one of three paths:
+//   Static: built once with DOM APIs into a <template> (no innerHTML, so no
+//     Trusted Types sink and no parser rewrites), cloneNode per instance.
 //   Simple (one element whose children are text/expressions): createElement
 //     per instance, with text-only update code (measurably faster updates).
-//   Everything else, static or dynamic: innerHTML with markers parsed once into
-//     a <template>, cloneNode per instance, then positional paths
-//     (firstChild/nextSibling) to reach dynamic parts — no TreeWalker search.
+//   Dynamic: innerHTML with markers parsed once into a <template>, cloneNode
+//     per instance, then positional paths (firstChild/nextSibling) to reach
+//     dynamic parts — no TreeWalker search.
 // ---------------------------------------------------------------------------
 
 import type { ASTNode, AttributeNode, FragmentNode } from './ast.ts';
@@ -225,6 +227,18 @@ export function generateLinked(ast: FragmentNode): string {
   // between 5 sibling tags adds 5 text nodes per row.
   ast = condenseWhitespace(ast) as FragmentNode;
 
+  if (!hasDynamic(ast)) {
+    const html = buildStaticHtml(ast);
+    if (!html.trim()) return 'function(){return document.createDocumentFragment();}';
+    // Generate DOM API calls instead of innerHTML to prevent code injection
+    const stmts: string[] = ["var _t=document.createElement('template');"];
+    const counter = { n: 0 };
+    genStaticDOM(ast, '_t.content', stmts, counter);
+    stmts.push('return function(){return _t.content.cloneNode(true);};');
+    // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
+    return `(function(){${stmts.join('')}})()`;
+  }
+
   // Fast path: simple template (1 element with only text/expression children)
   // Use direct createElement — faster than cloneNode for small templates
   const simple = isSimpleTemplate(ast);
@@ -250,25 +264,11 @@ export function generateLinked(ast: FragmentNode): string {
     templatePrep,
     'return function(_v,_w,_d){',
     'var _r=_t.content.cloneNode(true);',
-    // Fragment-parsed scripts are marked "already started" and never run, so
-    // a static template recreates them, as a DOM-built template would.
-    slots.length === 0 && hasScript(ast) ? RECREATE_SCRIPTS : '',
     bindCode,
     'return _r;',
     '};',
     '})()',
   ].join('');
-}
-
-const RECREATE_SCRIPTS =
-  "for(var _sc=_r.querySelectorAll('script'),_si=0;_si<_sc.length;_si++){" +
-  "var _so=_sc[_si],_sn=document.createElement('script');" +
-  'for(var _sa=0;_sa<_so.attributes.length;_sa++)_sn.setAttribute(_so.attributes[_sa].name,_so.attributes[_sa].value);' +
-  '_sn.text=_so.text;_so.replaceWith(_sn);}';
-
-function hasScript(node: ASTNode): boolean {
-  if (node.type === 'element' && node.tag.toLowerCase() === 'script') return true;
-  return (node.type === 'element' || node.type === 'fragment') && node.children.some(hasScript);
 }
 
 // One-time template prep: convert each comment placeholder (used for
@@ -704,6 +704,59 @@ function buildStaticHtml(node: ASTNode, rawParent = false): string {
     default:
       /* v8 ignore next -- defensive fallthrough; AST has no other types */
       return '';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// genStaticDOM — generate DOM API calls for static templates (no innerHTML)
+// ---------------------------------------------------------------------------
+
+function genStaticDOM(
+  node: ASTNode,
+  parent: string,
+  stmts: string[],
+  counter: { n: number },
+): void {
+  switch (node.type) {
+    case 'text': {
+      const id = `_n${counter.n++}`;
+      stmts.push(
+        `var ${id}=document.createTextNode(${jsString(node.value)});${parent}.appendChild(${id});`,
+      );
+      break;
+    }
+    case 'comment': {
+      const id = `_n${counter.n++}`;
+      stmts.push(
+        `var ${id}=document.createComment(${jsString(node.value)});${parent}.appendChild(${id});`,
+      );
+      break;
+    }
+    case 'element': {
+      assertSafeName(node.tag, 'tag');
+      const id = `_n${counter.n++}`;
+      stmts.push(`var ${id}=document.createElement(${jsString(node.tag)});`);
+      for (const a of node.attributes) {
+        if (a.kind === 'static') {
+          stmts.push(
+            a.value
+              ? `${id}.setAttribute(${jsString(a.name)},${jsString(a.value)});`
+              : `${id}.setAttribute(${jsString(a.name)},'');`,
+          );
+        }
+      }
+      for (const ch of node.children) {
+        genStaticDOM(ch, id, stmts, counter);
+      }
+      stmts.push(`${parent}.appendChild(${id});`);
+      break;
+    }
+    case 'fragment': {
+      for (const ch of node.children) {
+        genStaticDOM(ch, parent, stmts, counter);
+      }
+      break;
+    }
   }
 }
 

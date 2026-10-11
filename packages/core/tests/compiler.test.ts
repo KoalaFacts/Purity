@@ -300,25 +300,26 @@ describe('codegen', () => {
     expect(div.querySelector('script')?.textContent).toBe('if (a > b) {}');
   });
 
-  it('creates nested static scripts with createElement so they run when mounted', () => {
-    const factory = new Function(
-      `return ${generate(parse(['<div><script type="module">go()</script></div><p>x</p>']))}`,
-    )() as () => DocumentFragment;
-    const created: Element[] = [];
-    const createElement = document.createElement.bind(document);
-    const spy = vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
-      const el = createElement(tag);
-      created.push(el);
-      return el;
-    }) as typeof document.createElement);
+  it('builds static templates without innerHTML (Trusted Types)', () => {
+    // Under `require-trusted-types-for 'script'`, assigning a string to
+    // innerHTML throws. Static templates must render without that sink.
+    const desc = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')!;
+    Object.defineProperty(Element.prototype, 'innerHTML', {
+      ...desc,
+      set() {
+        throw new TypeError('This document requires TrustedHTML assignment.');
+      },
+    });
     try {
-      const script = factory().querySelector('script');
-      // Parser-inserted scripts are marked "already started" and never run.
-      expect(created).toContain(script);
-      expect(script?.getAttribute('type')).toBe('module');
-      expect(script?.textContent).toBe('go()');
+      const factory = new Function(
+        `return ${generate(parse(['<div><pre>\nline</pre><script>go()</script></div><p>a > b</p>']))}`,
+      )() as () => DocumentFragment;
+      const root = factory();
+      expect(root.querySelector('pre')?.textContent).toBe('\nline');
+      expect(root.querySelector('script')?.textContent).toBe('go()');
+      expect(root.querySelector('p')?.textContent).toBe('a > b');
     } finally {
-      spy.mockRestore();
+      Object.defineProperty(Element.prototype, 'innerHTML', desc);
     }
   });
 

@@ -84,24 +84,19 @@ export function valueToHtml(v: unknown): string {
   return valueToHtmlInner(v, null, true);
 }
 
-// The end tag of each raw-text element that may hold a dynamic value. Only the
-// element's own end tag can close it (`</div>` inside <style> is inert text);
-// matching is ASCII case-insensitive, as in the HTML parser.
-const RAW_TEXT_END_TAG: Record<string, RegExp> = {
-  style: /<\/(?=style)/gi,
-  script: /<\/(?=script)/gi,
-};
+// A `</` that starts a raw-text end tag: `style` or `script` followed by
+// whitespace, `/`, `>` or the end of the content (`</div>` and `</stylesheet>`
+// stay intact). ASCII case-insensitive, as in the HTML parser.
+const RAW_TEXT_END_TAG = /<\/(?=(?:style|script)(?:[\t\n\f\r />]|$))/gi;
 
 /**
- * Same coercion as valueToHtml for a slot inside a raw-text element (`tag` is
- * `style` or `script`): the value is emitted unescaped, because the HTML parser
- * does not decode entities there. A `</` that starts the element's own end tag
- * becomes `<\/`, so the value cannot close the element early.
+ * Same coercion as valueToHtml for the content of a raw-text element (`<style>`,
+ * `<script>`): emitted unescaped, because the HTML parser does not decode
+ * entities there. A `</` that starts a raw-text end tag becomes `<\/`, so the
+ * content cannot close the element early.
  */
-export function valueToRawText(v: unknown, tag: string): string {
-  const s = valueToHtmlInner(v, null, false);
-  const endTag = RAW_TEXT_END_TAG[tag];
-  return endTag ? s.replace(endTag, '<\\/') : s;
+export function valueToRawText(v: unknown): string {
+  return valueToHtmlInner(v, null, false).replace(RAW_TEXT_END_TAG, '<\\/');
 }
 
 function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null, escape: boolean): string {

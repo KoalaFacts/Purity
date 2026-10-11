@@ -19,6 +19,13 @@ describe('html`` SSR tag', () => {
     expect(html`<p>hello</p>`.__purity_ssr_html__).toBe('<p>hello</p>');
   });
 
+  it('renders dynamic <style> content verbatim through the public tag', () => {
+    const color = 'red';
+    expect(html`<style>a > b { color: ${color} }</style>`.__purity_ssr_html__).toBe(
+      '<style>a > b { color: red }</style>',
+    );
+  });
+
   it('renders reactive expressions with hydration markers', () => {
     expect(html`<p>${'x'}</p>`.__purity_ssr_html__).toBe('<p><!--[-->x<!--]--></p>');
   });

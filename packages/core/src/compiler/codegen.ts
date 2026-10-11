@@ -422,10 +422,11 @@ function appendFlat(xv: string, id: number | string, target: string): string {
 
 // Raw-text / RCDATA element content: rewrite the element's text from the parts
 // on every change. `value(i)` is the source expression for template value i on
-// the calling path. A value is coerced to text: a function is called (inside
-// the watch, so its signals are tracked); a Node (nested template, each(),
-// when()/match()) is kept in a detached holder and contributes its live
-// textContent, re-read by a MutationObserver when its own bindings update it.
+// the calling path. A value is coerced to text like valueToHtml: functions are
+// called (inside the watch, so their signals are tracked) and arrays flattened;
+// a Node leaf (nested template, each(), when()/match()) is kept in a detached
+// holder and contributes its live textContent, re-read by a MutationObserver
+// when its own bindings update it.
 // During hydration (`hydrating`) nested templates and control flow arrive as
 // deferred carriers and are rendered into a fragment first.
 function rawContentBinding(
@@ -438,32 +439,33 @@ function rawContentBinding(
   const parts = `_rp${id}`;
   const write = `_rw${id}`;
   const observer = `_ro${id}`;
-  const coerce = `_rc${id}`;
+  const leaf = `_rl${id}`;
   let setup =
     `var ${parts}=[],${observer}=new MutationObserver(function(){${write}();});` +
     `var ${write}=function(){var t='';for(var i=0;i<${parts}.length;i++){var p=${parts}[i];t+=p instanceof Node?p.textContent:p;}${el}.textContent=t;};` +
-    `var ${coerce}=function(y){if(typeof y==='function')y=y();` +
+    `var ${leaf}=function(y){` +
     (hydrating
-      ? `if(y&&typeof y==='object'&&!(y instanceof Node)){var f=document.createDocumentFragment();` +
+      ? `if(typeof y==='object'&&!(y instanceof Node)){var f=document.createDocumentFragment();` +
         `if(y.__purity_deferred__===true){_i(y,f,false,true);y=f;}` +
         `else if(y.__purity_deferred_each__===true||y.__purity_deferred_match__===true){` +
         `var m=f.appendChild(document.createComment(''));(y.__purity_deferred_each__?_e:_m)(y,[],m);y=f;}}`
       : '') +
     `if(y instanceof Node){var h=document.createElement('div');h.appendChild(y);` +
     `${observer}.observe(h,{subtree:true,childList:true,characterData:true});return h;}` +
-    `return __purity_tx__(y);};`;
+    `return String(y);};`;
   const list: string[] = [];
   for (const ch of children) {
     if (ch.type !== 'expression') list.push(rawPart(ch, value));
     else {
       const x = `_rx${id}_${ch.index}`;
       setup += `var ${x}=${value(ch.index)};`;
-      list.push(`${coerce}(${x})`);
+      // Flatten (calling functions, dropping null/false), then coerce each leaf.
+      list.push(`__purity_fl__(${x},[],null).map(${leaf})`);
     }
   }
   return {
     setup,
-    reactive: `${observer}.disconnect();${parts}=[${list.join(',')}];${write}();`,
+    reactive: `${observer}.disconnect();${parts}=[].concat(${list.join(',')});${write}();`,
   };
 }
 
@@ -649,7 +651,9 @@ interface SimpleTemplate {
 function isSimpleTemplate(ast: FragmentNode): SimpleTemplate | null {
   if (ast.children.length !== 1) return null;
   const root = ast.children[0];
-  if (root.type !== 'element') return null;
+  // Raw-text / RCDATA content is one text node built by the raw slot, not
+  // appended child nodes.
+  if (root.type !== 'element' || isRawContentTag(root.tag)) return null;
 
   // Check children are only text/expression (no nested elements)
   for (const ch of root.children) {

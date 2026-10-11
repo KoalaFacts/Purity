@@ -374,13 +374,17 @@ class Parser {
         continue;
       }
       const s = this.current();
-      const lower = s.toLowerCase();
-      let stop = lower.indexOf(end, this.pos);
+      // Compare candidates in place: lower-casing the whole segment could change
+      // its length (e.g. U+0130) and shift every offset after it.
+      let stop = s.indexOf('</', this.pos);
       while (
         stop !== -1 &&
-        !/^(?:[\t\n\f\r />]|$)/.test(s.slice(stop + end.length, stop + end.length + 1))
+        !(
+          s.slice(stop, stop + end.length).toLowerCase() === end &&
+          /^(?:[\t\n\f\r />]|$)/.test(s.slice(stop + end.length, stop + end.length + 1))
+        )
       ) {
-        stop = lower.indexOf(end, stop + 1);
+        stop = s.indexOf('</', stop + 1);
       }
       const until = stop === -1 ? s.length : stop;
       if (until > this.pos) children.push({ type: 'text', value: s.slice(this.pos, until) });

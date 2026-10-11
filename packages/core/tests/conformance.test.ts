@@ -250,6 +250,38 @@ const cases: Case[] = [
     ],
   },
   {
+    name: 'a nested raw-text element keeps tag- and comment-shaped text',
+    strings: ['<div><textarea>', '</textarea></div>'],
+    values: (mode) => {
+      const inner = ['<style>p::after { content: "<i>" } /* <!-- x --> */</style>'];
+      return [mode === 'csr' ? html(tpl(inner)) : markSSRHtml(renderSSR(inner, []))];
+    },
+  },
+  {
+    name: 'the same array in two raw-content slots renders twice',
+    strings: ['<div><textarea>', '', '</textarea></div>'],
+    values: () => {
+      const items = ['a', 'b'];
+      return [items, items];
+    },
+  },
+  {
+    name: 'an array of templates inside raw content contributes their text',
+    strings: ['<div><textarea>', '</textarea></div>'],
+    values: (mode) => [
+      mode === 'csr'
+        ? [html(tpl(['<b>x</b>'])), html(tpl(['<i>y</i>']))]
+        : [markSSRHtml(renderSSR(['<b>x</b>'], [])), markSSRHtml(renderSSR(['<i>y</i>'], []))],
+    ],
+  },
+  {
+    name: 'a root raw-content element with a nested template is one text node',
+    strings: ['<textarea>', '</textarea>'],
+    values: (mode) => [
+      mode === 'csr' ? html(tpl(['<b>bold</b>'])) : markSSRHtml(renderSSR(['<b>bold</b>'], [])),
+    ],
+  },
+  {
     name: 'static raw content with a comment sequence hydrates as one text node',
     strings: ['<div><style><!-- a -->b > c {}</style><p>', '</p></div>'],
     values: () => ['x'],

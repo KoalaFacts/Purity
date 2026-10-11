@@ -98,18 +98,53 @@ const NAMED_ENTITIES: Record<string, string> = {
   nbsp: '\u00a0',
 };
 
+function decodeRefs(text: string): string {
+  return text.replace(/&(?:#(\d+)|#x([\da-f]+)|([a-z]+));/gi, (m, dec, hex, name) =>
+    dec || hex
+      ? String.fromCodePoint(dec ? +dec : parseInt(hex, 16))
+      : (NAMED_ENTITIES[name.toLowerCase()] ?? m),
+  );
+}
+
+// Offset of `</tag` (ASCII case-insensitive) at or after `from`, or the end.
+function rawEnd(html: string, from: number, tag: string): number {
+  const end = `</${tag}`;
+  for (let i = html.indexOf('</', from); i !== -1; i = html.indexOf('</', i + 1)) {
+    if (html.slice(i, i + end.length).toLowerCase() === end) return i;
+  }
+  return html.length;
+}
+
 // Text content of SSR-rendered HTML, as the browser's textContent would read
-// it: comments (hydration markers included) and tags are dropped and character
-// references decoded. The input is framework output, whose attribute values
-// are escaped, so a tag never contains a bare `>`.
+// it. A tokenizer, not a tag-stripping regex: comments (hydration markers
+// included) and tags are skipped, character references in text are decoded,
+// and raw-text / RCDATA element content is read up to its own end tag (so a
+// `<i>` inside a nested <style> stays text). The input is framework output,
+// whose attribute values are escaped, so a tag never contains a bare `>`.
 function htmlText(html: string): string {
-  return html
-    .replace(/<!--[\s\S]*?-->|<[^>]*>/g, '')
-    .replace(/&(?:#(\d+)|#x([\da-f]+)|([a-z]+));/gi, (m, dec, hex, name) =>
-      dec || hex
-        ? String.fromCodePoint(dec ? +dec : parseInt(hex, 16))
-        : (NAMED_ENTITIES[name.toLowerCase()] ?? m),
-    );
+  let out = '';
+  let i = 0;
+  while (i < html.length) {
+    const lt = html.indexOf('<', i);
+    out += decodeRefs(html.slice(i, lt === -1 ? html.length : lt));
+    if (lt === -1) break;
+    if (html.startsWith('<!--', lt)) {
+      const close = html.indexOf('-->', lt + 4);
+      i = close === -1 ? html.length : close + 3;
+      continue;
+    }
+    const gt = html.indexOf('>', lt);
+    if (gt === -1) break;
+    i = gt + 1;
+    const tag = /^<(style|script|textarea|title)[\s/>]/i.exec(html.slice(lt, gt + 1))?.[1];
+    if (tag) {
+      const end = rawEnd(html, i, tag.toLowerCase());
+      const text = html.slice(i, end);
+      out += /^(?:style|script)$/i.test(tag) ? text : decodeRefs(text);
+      i = end;
+    }
+  }
+  return out;
 }
 
 /**
@@ -121,8 +156,11 @@ function htmlText(html: string): string {
  * does not decode entities there, and a `</` that starts a raw-text end tag
  * becomes `<\/`, so the content cannot close the element early.
  */
-export function valueToRawText(v: unknown, rcdata?: unknown): string {
-  const text = valueToHtmlInner(v, null, false);
+export function valueToRawText(parts: unknown[], rcdata?: unknown): string {
+  // Each part is one template slot (or static text): coerce them separately so
+  // cycle tracking does not carry across slots, then neutralise the joined text.
+  let text = '';
+  for (let i = 0; i < parts.length; i++) text += valueToHtmlInner(parts[i], null, false);
   return rcdata ? escHtml(text) : text.replace(RAW_TEXT_END_TAG, '<\\/');
 }
 

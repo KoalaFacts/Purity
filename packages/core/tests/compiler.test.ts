@@ -37,6 +37,12 @@ describe('parser', () => {
     expect(ast.children[1].type === 'element' && ast.children[1].tag).toBe('p');
   });
 
+  it('finds the raw-text end tag after characters that change length when lower-cased', () => {
+    const ast = parse(['<textarea>İ</textarea><p>x</p>']);
+    expect(ast.children).toHaveLength(2);
+    expect(ast.children[1].type === 'element' && ast.children[1].tag).toBe('p');
+  });
+
   it('splits raw-text element content at expressions', () => {
     const ast = parse(['<textarea><b>', '</b></textarea>']);
     const textarea = ast.children[0];

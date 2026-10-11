@@ -259,10 +259,19 @@ export function valueToRawText(parts: unknown[], rcdata?: unknown): string {
   if (rcdata) return escHtml(text);
   // An odd run of backslashes before `<` already escapes it in CSS (`\<` is
   // `<`): drop that backslash so the escape is not itself escaped.
-  return text.replace(
-    /(\\*)</g,
-    (_, slashes: string) => `${slashes.length % 2 ? slashes.slice(1) : slashes}\\3c `,
-  );
+  // Each prefix and adjacent slash run is visited once; an unanchored regex
+  // would retry a long slash run at every starting position when no `<` follows.
+  const chunks: string[] = [];
+  let start = 0;
+  for (let end = text.indexOf('<'); end !== -1; end = text.indexOf('<', start)) {
+    let slashes = 0;
+    for (let i = end - 1; i >= start && text.charCodeAt(i) === 92; i--) slashes++;
+    chunks.push(text.slice(start, end - (slashes % 2)), '\\3c ');
+    start = end + 1;
+  }
+  if (start === 0) return text;
+  chunks.push(text.slice(start));
+  return chunks.join('');
 }
 
 // `html` false: text mode for raw content (no escaping; nested SSR HTML

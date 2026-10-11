@@ -621,6 +621,12 @@ describe('SSR / CSR / hydrate conformance', () => {
     expect(ssrHelpers.rawText(['a\\\\<b'])).toBe('a\\\\\\3c b');
   });
 
+  it('handles long slash runs without changing CSS escape parity', () => {
+    const slashes = '\\'.repeat(100_000);
+    expect(ssrHelpers.rawText([slashes])).toBe(slashes);
+    expect(ssrHelpers.rawText([`${slashes}<\\<`])).toBe(`${slashes}\\3c \\3c `);
+  });
+
   it('nested text reads opaque raw-text elements and undoes the style CSS escape', () => {
     const opaque = markSSRHtml(
       '<div><iframe><b>x</b></iframe><xmp><i>y</i></xmp><noembed>&amp;</noembed></div>',

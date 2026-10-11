@@ -2744,7 +2744,10 @@ export function suspense<T>(
           | undefined,
       });
     }
-    return markSSRHtml(`${prefix}${body}<!--/s:${id}-->`, body ? spans : undefined);
+    return markSSRHtml(`${prefix}${body}<!--/s:${id}-->`, [
+      [0, prefix.length, '', undefined, id],
+      ...(body ? spans : []),
+    ]);
   }
 
   let body: string;
@@ -2810,5 +2813,8 @@ export function suspense<T>(
       }
     }
   }
-  return markSSRHtml(`${prefix}${body}<!--/s:${id}-->`, body ? spans : undefined);
+  return markSSRHtml(`${prefix}${body}<!--/s:${id}-->`, [
+    [0, prefix.length, '', undefined, id],
+    ...(body ? spans : []),
+  ]);
 }

@@ -6,7 +6,7 @@
 // end-to-end behavior when the swap script is actually executed against a
 // jsdom document.
 
-import { asyncRoute, head, resource, routeData, suspense } from '@purityjs/core';
+import { asyncRoute, component, head, resource, routeData, suspense } from '@purityjs/core';
 import { markSSRHtml } from '@purityjs/core/compiler';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { html as ssrHtml, renderToStream, renderToStreamResponse } from '../src/index.ts';
@@ -55,6 +55,36 @@ describe('renderToStreamResponse — HTTP metadata before flush', () => {
     );
     expect(out).toBe('<main>READY</main>');
   });
+
+  it('authored numeric comments in raw text cannot inline an unrelated visible boundary', async () => {
+    let finish: ((value: string) => void) | undefined;
+    const stream = renderToStream(
+      () =>
+        ssrHtml`<textarea>${ssrHtml`<b><!--s:1-->text<!--/s:1--></b>`}</textarea><aside>${suspense(
+          () =>
+            resource(
+              () =>
+                new Promise<string>((resolve) => {
+                  finish = resolve;
+                }),
+            )(),
+          () => ssrHtml`<b>FALLBACK</b>`,
+        )}</aside>`,
+      { timeout: 1000, serializeResources: false },
+    );
+    const reader = stream.getReader();
+    try {
+      const shell = new TextDecoder().decode((await reader.read()).value);
+      expect(shell).toContain('<textarea>\ntext</textarea>');
+      expect(shell).toContain('FALLBACK');
+      const next = reader.read();
+      await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+      finish!('READY');
+      expect(new TextDecoder().decode((await next).value)).toContain('READY');
+    } finally {
+      await reader.cancel();
+    }
+  });
   it('does not execute a boundary whose only occurrence is in hidden template text', async () => {
     let calls = 0;
     const out = await streamToString(
@@ -68,6 +98,49 @@ describe('renderToStreamResponse — HTTP metadata before flush', () => {
             () => ssrHtml`<b>fallback</b>`,
           )}</template>`}</textarea>`,
         { timeout: 20, serializeResources: false },
+      ),
+    );
+    expect(out).toBe('<textarea>\n</textarea>');
+    expect(calls).toBe(0);
+  });
+
+  it('authored visible comments cannot revive a hidden generated boundary', async () => {
+    let calls = 0;
+    const out = await streamToString(
+      renderToStream(
+        () =>
+          ssrHtml`<textarea>${ssrHtml`<template>${suspense(
+            () => {
+              calls++;
+              return ssrHtml`<b>HIDDEN</b>`;
+            },
+            () => ssrHtml`<b>fallback</b>`,
+          )}</template>`}</textarea><aside><!--s:1--><!--/s:1--></aside>`,
+        { serializeResources: false },
+      ),
+    );
+    expect(calls).toBe(0);
+    expect(out).not.toContain('HIDDEN');
+  });
+
+  it('component shadow metadata keeps a coerced shadow-only boundary hidden', async () => {
+    let calls = 0;
+    component(
+      'ssr-shadow-provenance-1',
+      () =>
+        ssrHtml`<b>${suspense(
+          () => {
+            calls++;
+            return 'HIDDEN';
+          },
+          () => 'fallback',
+        )}</b>`,
+    );
+    const out = await streamToString(
+      renderToStream(
+        () =>
+          ssrHtml`<textarea>${ssrHtml`<ssr-shadow-provenance-1></ssr-shadow-provenance-1>`}</textarea>`,
+        { serializeResources: false },
       ),
     );
     expect(out).toBe('<textarea>\n</textarea>');

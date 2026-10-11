@@ -1026,6 +1026,63 @@ describe('SSR / CSR / hydrate conformance', () => {
     }
   });
 
+  it('nested parser-backed text normalizes line endings without changing direct DOM text', () => {
+    const factory = (strings: string[]) =>
+      new Function(`return ${generateSSR(parse(tpl(strings)))}`)() as SSRFactory;
+    for (const tag of ['textarea', 'title']) {
+      for (const inner of [
+        ['<div data-x=', '><span>a\rb\r\nc</span></div>'],
+        ['<span>a\rb\r\nc</span>'],
+        ['<span>a\rb\r\nc', '</span>'],
+        ['<div data-x=', '><span>', '</span></div>'],
+        ['<style>', '</style>'],
+      ]) {
+        const values = inner[0].includes('data-x')
+          ? inner.length === 3
+            ? [1, 'a\rb\r\nc']
+            : [1]
+          : inner.length === 2
+            ? ['a\rb\r\nc']
+            : [];
+        const child = html(tpl(inner), ...values) as DocumentFragment;
+        const expected = child.textContent;
+        const strings = [`<${tag}>`, `</${tag}>`];
+        const host = document.createElement('div');
+        host.innerHTML = renderSSR(strings, [factory(inner)(values, ssrHelpers)]);
+        expect(host.querySelector(tag)?.textContent).toBe(expected);
+        const mounted = hydrate(host, () => html(tpl(strings), child) as Node);
+        expect(host.querySelector(tag)?.textContent).toBe(expected);
+        mounted.unmount();
+      }
+      const native = document.createElement('template');
+      native.innerHTML = '<span>a\rb\r\nc&#13;d</span>';
+      const host = document.createElement('div');
+      host.innerHTML = renderSSR(
+        [`<${tag}>`, `</${tag}>`],
+        [markSSRHtml('<span>a\rb\r\nc&#13;d</span>')],
+      );
+      expect(host.querySelector(tag)?.textContent).toBe(native.content.textContent);
+      const inner = ['<div data-x=', '>', '</div>'];
+      const values = [1, ['prefix', 'a\rb\r\nc']];
+      host.innerHTML = renderSSR([`<${tag}>`, `</${tag}>`], [factory(inner)(values, ssrHelpers)]);
+      expect(host.querySelector(tag)?.textContent).toBe('prefixa\rb\r\nc');
+    }
+  });
+
+  it('SVG annotation-xml does not hide an in-scope HTML paragraph', () => {
+    const strings = ['<p><svg><annotation-xml><g></p><b>', '</b>'];
+    const native = document.createElement('div');
+    native.innerHTML = strings.join('tail');
+    const direct = html(tpl(strings), 'tail') as DocumentFragment;
+    expect(direct.querySelector('b')?.parentNode).toBe(direct);
+    expect(direct.querySelectorAll('p')).toHaveLength(1);
+    expect(renderCSR(strings, ['tail'])).toBe(normalize(native.innerHTML));
+    expect(normalize(renderSSR(strings, ['tail']))).toBe(normalize(native.innerHTML));
+    const math = ['<p><math><annotation-xml encoding="text/html"><svg><g></p><b>tail</b>'];
+    native.innerHTML = math[0];
+    expect(renderCSR(math, [])).toBe(normalize(native.innerHTML));
+  });
+
   it('static RCDATA retains carriage returns when another binding selects the complex path', () => {
     for (const tag of ['textarea', 'title']) {
       const strings = [`<div><${tag}>a\rb\r\nc</${tag}><p>`, '</p></div>'];

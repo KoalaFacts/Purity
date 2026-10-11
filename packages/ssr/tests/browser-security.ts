@@ -211,6 +211,7 @@ try {
     expected: string;
     values?: string[];
     nested?: string;
+    child?: { code: string; values: (string | number)[] };
   }[] = [];
   const references =
     '&copy;&NotEqualTilde;&CounterClockwiseContourIntegral;&AMP;&amP;&notit;&copy= &#128 &#x80; &#0; &#xD800; &unknown; &amp;copy;';
@@ -228,10 +229,35 @@ try {
       nested,
       expected: '©≂̸∳&&amP;¬it;©= € € � � &unknown; &copy;',
     });
+    for (const inner of [
+      ['<div data-x=', '><span>a\rb\r\nc</span></div>'],
+      ['<span>a\rb\r\nc</span>'],
+      ['<div data-x=', '><span>', '</span></div>'],
+    ]) {
+      const values = inner.length === 1 ? [] : inner.length === 2 ? [1] : [1, 'a\rb\r\nc'];
+      rawCases.push({
+        client: generate(tree),
+        hydrate: generateHydrate(tree),
+        markup: await renderToString(() =>
+          html(
+            strings as unknown as TemplateStringsArray,
+            html(inner as unknown as TemplateStringsArray, ...values),
+          ),
+        ),
+        tag,
+        child: { code: generate(parse(inner)), values },
+        expected: inner.length === 2 ? 'a\nb\nc' : 'a\rb\r\nc',
+      });
+    }
   }
   for (const outer of ['svg', 'math']) {
-    for (const inner of ['', '<span>']) {
-      const strings = [`<p>${inner}<${outer}><g></p><b>`, '</b>'];
+    for (const inner of ['', '<span>', ...(outer === 'svg' ? ['<annotation-xml>'] : [])]) {
+      const strings = [
+        inner === '<annotation-xml>'
+          ? `<p><${outer}>${inner}<g></p><b>`
+          : `<p>${inner}<${outer}><g></p><b>`,
+        '</b>',
+      ];
       const tree = parse(strings);
       rawCases.push({
         client: generate(tree),
@@ -300,7 +326,7 @@ try {
     });
   }
   const svgStrings = [
-    '<svg viewbox="0 0 10 10" VIEWBOX="0 0 99 99" preserveaspectratio="none" xml:lang="en" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><lineargradient id="g" gradientunits="userSpaceOnUse" xlink:href="#base"><stop></stop></lineargradient></defs><textpath>x</textpath><foreignobject><div>HTML</div></foreignobject></svg>',
+    '<svg viewbox="0 0 10 10" VIEWBOX="0 0 99 99" preserveaspectratio="none" xml:lang="en" xml:base="/assets/" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><lineargradient id="g" gradientunits="userSpaceOnUse" xlink:href="#base"><stop></stop></lineargradient></defs><textpath>x</textpath><foreignobject><div>HTML</div></foreignobject></svg>',
   ];
   const svgStaticCode = generate(parse(svgStrings));
   const svgStaticMarkup = await renderToString(() =>
@@ -384,6 +410,10 @@ try {
             root.querySelector('div')?.namespaceURI,
             root.querySelector('svg')?.getAttribute('viewBox'),
             root.querySelector('svg')?.getAttribute('preserveAspectRatio'),
+            root.querySelector('svg')?.getAttribute('xml:base'),
+            root
+              .querySelector('svg')
+              ?.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'base'),
             root
               .querySelector('svg')
               ?.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'lang'),
@@ -404,6 +434,8 @@ try {
           'http://www.w3.org/1999/xhtml',
           '0 0 10 10',
           'none',
+          '/assets/',
+          null,
           'en',
           'http://www.w3.org/1999/xlink',
           'userSpaceOnUse',
@@ -428,9 +460,11 @@ try {
             const immediate = (fn: () => void) => fn();
             const nested = document.createElement('template');
             if (fixture.nested) nested.innerHTML = fixture.nested;
-            const values = fixture.nested
-              ? [nested.content]
-              : (fixture.values ?? [fixture.tag === 'style' ? 'p{color:red}' : 'x']);
+            const values = fixture.child
+              ? [bind(fixture.child.code)(fixture.child.values, immediate)]
+              : fixture.nested
+                ? [nested.content]
+                : (fixture.values ?? [fixture.tag === 'style' ? 'p{color:red}' : 'x']);
             const client = bind(fixture.client)(values, immediate) as DocumentFragment;
             const host = document.createElement('div');
             host.innerHTML = fixture.markup;

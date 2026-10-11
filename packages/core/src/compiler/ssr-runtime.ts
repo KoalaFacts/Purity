@@ -32,6 +32,7 @@ export type RawTextSpan = readonly [
   end: number,
   text: string,
   children?: readonly RawTextSpan[],
+  boundary?: number,
 ];
 const emptySpans: readonly RawTextSpan[] = [];
 const trustedHtml = new WeakMap<object, readonly RawTextSpan[]>();
@@ -44,7 +45,7 @@ export function appendRawTextSpans(
 ): void {
   for (let i = 0; i < source.length; i++) {
     const span = source[i];
-    target.push([offset + span[0], offset + span[1], span[2], span[3]]);
+    target.push([offset + span[0], offset + span[1], span[2], span[3], span[4]]);
   }
 }
 
@@ -322,8 +323,25 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
   // Outside HTML, style/script/title/textarea content is markup, not raw text.
   const stack: [string, Namespace, Namespace][] = [];
   while (i < html.length) {
+    while (spanIndex < spans.length && spans[spanIndex][0] < i) spanIndex++;
+    const direct = spans[spanIndex];
+    if (direct?.[0] === i && direct[4] === undefined && !direct[3]) {
+      if (!hidden) out += direct[2];
+      i = direct[1];
+      spanIndex++;
+      continue;
+    }
     const lt = html.indexOf('<', i);
-    if (!hidden) out += decodeRefs(html.slice(i, lt === -1 ? html.length : lt));
+    const textEnd = lt === -1 ? html.length : lt;
+    if (direct && !direct[3] && direct[4] === undefined && direct[0] < textEnd) {
+      if (!hidden) out += decodeRefs(html.slice(i, direct[0]).replace(/\r\n?/g, '\n'));
+      i = direct[0];
+      continue;
+    }
+    // HTML input preprocessing happens before references are decoded, so
+    // literal CR/CRLF normalizes but an authored &#13; still yields CR.
+    if (!hidden)
+      out += decodeRefs(html.slice(i, lt === -1 ? html.length : lt).replace(/\r\n?/g, '\n'));
     if (lt === -1) break;
     // A component's detached client host exposes its original light DOM,
     // rather than the slot's rendered location inside the shadow template.
@@ -331,7 +349,10 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
     const span = spans[spanIndex];
     if (span?.[0] === lt && span[3]) {
       // Shadow-only stream markers also disappear when the host becomes text.
-      htmlText(html.slice(lt, span[1]), emptySpans, 1);
+      const shadow: RawTextSpan[] = [];
+      for (let at = spanIndex + 1; at < spans.length && spans[at][0] < span[1]; at++)
+        appendRawTextSpans([spans[at]], shadow, -lt);
+      htmlText(html.slice(lt, span[1]), shadow, 1);
       out += htmlText(span[2], span[3], hidden);
       i = span[1];
       continue;
@@ -341,8 +362,8 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
       const close = html.indexOf('-->', lt + 4);
       // These comments cannot remain DOM boundaries after text extraction.
       // The next shell pass renders those views inline before flushing.
-      if (html.startsWith('<!--s:', lt) && close !== -1) {
-        const id = Number(html.slice(lt + 6, close));
+      if (span?.[0] === lt && span[4] !== undefined && close !== -1) {
+        const id = span[4];
         if (ctx?.streamingBoundaries?.has(id) || ctx?.inlineBoundaries?.has(id)) {
           if (hidden) (ctx.hiddenBoundaries ??= new Set()).add(id);
           else {
@@ -362,7 +383,7 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
     ) {
       const close = html.indexOf(']]>', lt + 9);
       const end = close === -1 ? html.length : close;
-      if (!hidden) out += html.slice(lt + 9, end);
+      if (!hidden) out += html.slice(lt + 9, end).replace(/\r\n?/g, '\n');
       i = close === -1 ? html.length : close + 3;
       continue;
     }
@@ -413,7 +434,7 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
     }
     if (namespace === 'html') {
       if (tag === 'plaintext') {
-        if (!hidden) out += html.slice(i);
+        if (!hidden) out += html.slice(i).replace(/\r\n?/g, '\n');
         break;
       }
       // The parser drops one newline right after these start tags.
@@ -421,7 +442,7 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
       // Raw text (as a scripting-enabled browser parses it) and RCDATA.
       if (/^(?:style|script|xmp|iframe|noembed|noframes|noscript|textarea|title)$/.test(tag)) {
         const end = rawEnd(html, i, tag);
-        let text = html.slice(i, end);
+        let text = html.slice(i, end).replace(/\r\n?/g, '\n');
         if (tag === 'textarea' || tag === 'title') text = decodeRefs(text);
         // Only generated spans have the original client text. Authored markup,
         // including literal CSS escapes, is read exactly as the browser reads it.
@@ -479,7 +500,10 @@ export function valueToRawText(
     chunks.push(text.slice(start, end - (slashes % 2)), cdo?.has(end) ? '/**/' : '\\3c ');
     start = end + (cdo?.has(end) ? 4 : 1);
   }
-  if (start === 0) return text;
+  if (start === 0) {
+    if (text.includes('\r')) spans?.push([offset, offset + text.length, text]);
+    return text;
+  }
   chunks.push(text.slice(start));
   const escaped = chunks.join('');
   spans?.push([offset, offset + escaped.length, text]);
@@ -518,7 +542,11 @@ function valueToHtmlInner(
     }
     return s;
   }
-  return html ? escHtml(String(v)) : String(v);
+  const text = String(v);
+  if (!html) return text;
+  const escaped = escHtml(text);
+  if (text.includes('\r')) spans?.push([offset, offset + escaped.length, text]);
+  return escaped;
 }
 
 /**

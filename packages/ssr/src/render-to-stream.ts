@@ -427,8 +427,9 @@ async function renderShell(
       signal,
     };
     pushSSRRenderContext(ctx);
+    const shellSpans: NonNullable<Parameters<typeof valueToHtml>[1]> = [];
     try {
-      html = valueToHtml(component());
+      html = valueToHtml(component(), shellSpans);
     } finally {
       popSSRRenderContext();
     }
@@ -457,7 +458,7 @@ async function renderShell(
       }
       if (ctx.hiddenBoundaries) {
         const visible = new Set(
-          Array.from(html.matchAll(/<!--s:(\d+)-->/g), (match) => Number(match[1])),
+          shellSpans.filter((span) => span[4] !== undefined).map((span) => span[4]),
         );
         for (const id of ctx.hiddenBoundaries) if (!visible.has(id)) streamingBoundaries.delete(id);
       }

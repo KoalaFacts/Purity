@@ -728,6 +728,15 @@ function hasDynamic(node: ASTNode, customElements = false): boolean {
 // buildStaticHtml (no markers)
 // ---------------------------------------------------------------------------
 
+// Static client factories create Text nodes directly. Preserve their original
+// text when a CR-bearing fragment is later coerced to raw content on the server.
+function staticText(node: ASTNode): string {
+  if (node.type === 'text') return node.value;
+  if (node.type !== 'element' && node.type !== 'fragment') return '';
+  if (node.type === 'element' && !node.ns && node.tag.toLowerCase() === 'template') return '';
+  return node.children.map(staticText).join('');
+}
+
 // The enclosing raw-content mode preserves raw text and encodes RCDATA CRs
 // before HTML input preprocessing can normalize them.
 function buildStaticHtml(node: ASTNode, rawParent?: ElementNode['raw']): string {
@@ -1191,7 +1200,14 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
 export function generateSSR(ast: FragmentNode): string {
   assertSafeScriptContent(ast);
   ast = condenseWhitespace(ast) as FragmentNode;
-  const ctx: SSRGenCtx = { parts: [], counter: 0, out: '_o', spans: '_r', lastLitHtml: null };
+  const ctx: SSRGenCtx = {
+    parts: [],
+    counter: 0,
+    out: '_o',
+    spans: '_r',
+    lastLitHtml: null,
+    directText: isSimpleTemplate(ast) !== null,
+  };
   // Static-prefix optimization: if the entire tree is static AND contains no
   // hyphenated tags (which require runtime component dispatch), emit a closure
   // returning the prebuilt string. Avoids per-call work and skips the _v / _h
@@ -1207,6 +1223,7 @@ export function generateSSR(ast: FragmentNode): string {
     return [
       '(function(){var _s;return function(_v,_h){return _s||(_s=_h.mark(',
       jsString(html),
+      html.includes('\r') ? `,[[0,${html.length},${jsString(staticText(ast))}]]` : '',
       '));};})()',
     ].join('');
   }
@@ -1226,6 +1243,7 @@ export function generateSSRModule(ast: FragmentNode): string {
 }
 
 interface SSRGenCtx {
+  directText: boolean; // the simple client factory creates literal Text nodes directly
   parts: string[]; // JS source fragments that mutate the active output var
   counter: number; // unique-id counter for emitted local variables
   out: string; // current output variable name (default '_o', changes for slot capture)
@@ -1267,6 +1285,13 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
   switch (node.type) {
     case 'text':
       // `raw: true` declarations (DOCTYPE, etc.) bypass the escape.
+      if (ctx.directText && node.value.includes('\r')) {
+        const escaped = node.raw ? node.value : escapeHtml(node.value);
+        pushRaw(
+          ctx,
+          `${ctx.spans}.push([${ctx.out}.length,${ctx.out}.length+${escaped.length},${jsString(node.value)}]);`,
+        );
+      }
       emitLit(ctx, node.raw ? node.value : escapeHtml(node.value));
       return;
 

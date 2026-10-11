@@ -199,7 +199,8 @@ class Parser {
         if (tag === 'p') return true;
         if (/^(?:applet|caption|html|table|td|th|marquee|object|template|button)$/.test(tag))
           return false;
-      } else if (childNamespace(ns, tag) === 'html' || tag === 'annotation-xml') return false;
+      } else if (childNamespace(ns, tag) === 'html' || (ns === 'math' && tag === 'annotation-xml'))
+        return false;
     }
     return false;
   }

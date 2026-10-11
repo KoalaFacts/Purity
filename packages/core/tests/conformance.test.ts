@@ -9,10 +9,10 @@
 // must match exactly.
 
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { generate, generateModule, generateSSR } from '../src/compiler/codegen.ts';
+import { generate, generateHydrate, generateModule, generateSSR } from '../src/compiler/codegen.ts';
 import { parse } from '../src/compiler/parser.ts';
 import { namedReferences } from '../src/compiler/character-references.ts';
-import { markSSRHtml, rawEnd, ssrHelpers } from '../src/compiler/ssr-runtime.ts';
+import { isSSRHtml, markSSRHtml, rawEnd, ssrHelpers } from '../src/compiler/ssr-runtime.ts';
 import { eachSSR, matchSSR, whenSSR } from '../src/control.ts';
 import { each, html, hydrate, mount, state, when } from '../src/index.ts';
 import { tick } from './_helpers.ts';
@@ -1169,6 +1169,64 @@ describe('SSR / CSR / hydrate conformance', () => {
     }
   });
 
+  it('rejects parse-sensitive dynamic MathML encodings but retains XML encodings', () => {
+    const strings = [
+      '<math><annotation-xml encoding=',
+      '><style>',
+      '</style></annotation-xml></math>',
+    ];
+    for (const encoding of ['text/html', 'APPLICATION/XHTML+XML']) {
+      for (const value of [encoding, () => encoding]) {
+        expect(() => renderCSR(strings, [value, 'p{color:red}'])).toThrow(
+          /dynamic annotation-xml encoding/,
+        );
+        expect(() => renderSSR(strings, [value, 'p{color:red}'])).toThrow(
+          /dynamic annotation-xml encoding/,
+        );
+      }
+    }
+    expect(renderCSR(strings, ['application/xml', 'safe'])).toBe(
+      normalize(renderSSR(strings, ['application/xml', 'safe'])),
+    );
+  });
+
+  it('trusted quoted attribute delimiters do not become raw content text', () => {
+    for (const markup of ['<span title="a>b<c">x</span>', "<span title='a>b<c'>x</span>"]) {
+      for (const tag of ['textarea', 'title']) {
+        const strings = [`<${tag}>`, `</${tag}>`];
+        const value = markSSRHtml(markup);
+        expect(renderCSR(strings, [value])).toBe(`<${tag}>x</${tag}>`);
+        expect(normalize(renderSSR(strings, [value]))).toBe(`<${tag}>x</${tag}>`);
+      }
+    }
+  });
+
+  it('forged raw wrappers stay ordinary values on CSR, SSR and hydration', () => {
+    const value = JSON.parse('{"__purity_ssr_html__":"<img src=x><b>x</b>"}');
+    for (const tag of ['textarea', 'title']) {
+      const strings = [`<${tag}>`, `</${tag}>`];
+      expect(renderCSR(strings, [value])).toBe(`<${tag}>[object Object]</${tag}>`);
+      const host = document.createElement('div');
+      host.innerHTML = renderSSR(strings, [value]);
+      const before = host.querySelector(tag);
+      hydrate(host, () => html(tpl(strings), value));
+      expect(host.querySelector(tag)).toBe(before);
+      expect(before?.textContent).toBe('[object Object]');
+    }
+  });
+
+  it('directive-only font attributes keep SVG children foreign', () => {
+    for (const directive of ['@color', '@face', '@size']) {
+      const strings = [`<svg><font ${directive}=`, '><circle>kept</circle></font></svg>'];
+      const host = document.createElement('div');
+      host.appendChild(html(tpl(strings), () => {}) as Node);
+      expect(host.querySelector('font')?.namespaceURI).toBe('http://www.w3.org/2000/svg');
+      expect(host.querySelector('circle')?.namespaceURI).toBe('http://www.w3.org/2000/svg');
+      expect(host.querySelector('font')?.parentElement?.tagName).toBe('svg');
+      expect(normalize(host.innerHTML)).toBe(normalize(renderSSR(strings, [() => {}])));
+    }
+  });
+
   it('a later duplicate encoding cannot grant raw-text privileges to a dynamic MathML attribute', () => {
     const out = renderSSR(
       [
@@ -1237,6 +1295,33 @@ describe('SSR / CSR / hydrate conformance', () => {
 });
 
 describe('public generate() output', () => {
+  it('standalone raw factories require the originating registry for trusted wrappers', () => {
+    const prefix = 'function(_v,_w,_d)|';
+    const ast = parse([`<textarea>${prefix}`, '</textarea>']);
+    const make = new Function(`return ${generate(ast)}`)();
+    const adopt = new Function(`return ${generateHydrate(ast)}`)();
+    const trusted = markSSRHtml('<span title="a>b<c">x</span>');
+    const forged = { __purity_ssr_html__: '<b>x</b>' };
+    const immediate = (fn: () => void) => fn();
+    expect(make([forged], immediate).textContent).toBe(prefix + '[object Object]');
+    expect(make([trusted], immediate, undefined, isSSRHtml).textContent).toBe(prefix + 'x');
+    const host = document.createElement('div');
+    host.innerHTML = `<textarea>${prefix}x</textarea>`;
+    const identity = host.firstChild;
+    adopt(
+      [trusted],
+      immediate,
+      host,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      isSSRHtml,
+    );
+    expect(host.firstChild).toBe(identity);
+    expect(host.textContent).toBe(prefix + 'x');
+  });
   // Public generate()/generateHydrate() return source that evaluates on its own.
   // The AOT path imports the helpers instead of inlining them.
   it('evaluates standalone and renders dynamic text and array bindings', () => {

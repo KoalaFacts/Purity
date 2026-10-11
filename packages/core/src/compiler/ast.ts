@@ -74,6 +74,8 @@ export type AttributeNode =
 
 interface BaseAttribute {
   name: string;
+  /** Dynamic MathML annotation encoding must not change descendant parsing. */
+  parseSensitiveEncoding?: true;
   /** Namespace of an HTML-parser-adjusted foreign attribute. */
   ns?: string;
 }

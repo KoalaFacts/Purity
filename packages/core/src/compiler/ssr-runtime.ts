@@ -387,8 +387,17 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
       i = close === -1 ? html.length : close + 3;
       continue;
     }
-    const gt = html.indexOf('>', lt);
-    if (gt === -1) break;
+    // Trusted callers can supply literal angle brackets in quoted attributes.
+    let gt = lt + 1;
+    let quote = '';
+    for (; gt < html.length; gt++) {
+      const c = html[gt];
+      if (quote) {
+        if (c === quote) quote = '';
+      } else if (c === '"' || c === "'") quote = c;
+      else if (c === '>') break;
+    }
+    if (gt === html.length) break;
     i = gt + 1;
     const m = /^<(\/?)([a-z][^\s/>]*)/i.exec(html.slice(lt, gt + 1));
     if (!m) continue;

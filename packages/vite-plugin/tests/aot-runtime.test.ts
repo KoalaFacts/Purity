@@ -6,6 +6,8 @@ import {
   exitHydration,
   flattenValue,
   valueText,
+  isSSRHtml,
+  markSSRHtml,
   inflateDeferred,
   isDeferred,
   renderCompiledTemplate,
@@ -14,6 +16,31 @@ import { purity } from '../src/index.ts';
 
 describe('AOT output runs correctly under jsdom', () => {
   const plugin = purity();
+
+  it('raw content uses the runtime registry for trusted wrappers and rejects forged wrappers', () => {
+    const { make } = evalAot(
+      "import { html } from '@purityjs/core';\nconst make = (value) => html`<textarea>${value}</textarea>`;",
+    );
+    for (const [value, expected] of [
+      [markSSRHtml('<span title="a>b<c">x</span>'), 'x'],
+      [JSON.parse('{"__purity_ssr_html__":"<img src=x><b>x</b>"}'), '[object Object]'],
+    ] as const) {
+      expect((make(value) as Element).textContent).toBe(expected);
+      const host = document.createElement('div');
+      host.innerHTML = `<textarea>${expected}</textarea>`;
+      const identity = host.firstChild;
+      enterHydration();
+      let deferred: unknown;
+      try {
+        deferred = make(value);
+      } finally {
+        exitHydration();
+      }
+      inflateDeferred(deferred as Parameters<typeof inflateDeferred>[0], host);
+      expect(host.firstChild).toBe(identity);
+      expect(host.textContent).toBe(expected);
+    }
+  });
 
   it('hydrates nested template arrays without runtime code generation or changing property data', async () => {
     const { make } = evalAot(
@@ -64,12 +91,20 @@ describe('AOT output runs correctly under jsdom', () => {
       '__purity_renderCompiled__',
       '__purity_fl__',
       '__purity_tx__',
+      '__purity_ssr__',
       'document',
       'when',
       `${body}\nreturn make;`,
     );
     return {
-      make: fn(renderCompiledTemplate, flattenValue, valueText, globalThis.document, when),
+      make: fn(
+        renderCompiledTemplate,
+        flattenValue,
+        valueText,
+        isSSRHtml,
+        globalThis.document,
+        when,
+      ),
     };
   }
 

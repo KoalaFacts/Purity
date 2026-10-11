@@ -18,11 +18,16 @@ import {
   makeDeferred,
 } from './hydrate-runtime.ts';
 import { parse } from './parser.ts';
+import { isSSRHtml } from './ssr-runtime.ts';
 import { flattenValue, valueText } from './value-helpers.ts';
 
 // Generated code references the coercion helpers as free names; bind them here.
 const bindHelpers = (code: string) =>
-  new Function('__purity_fl__', '__purity_tx__', `return ${code}`)(flattenValue, valueText);
+  new Function('__purity_fl__', '__purity_tx__', '__purity_ssr__', `return ${code}`)(
+    flattenValue,
+    valueText,
+    isSSRHtml,
+  );
 
 type CompiledFn = (
   values: unknown[],

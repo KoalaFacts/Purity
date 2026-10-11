@@ -438,7 +438,11 @@ class Parser {
       this.opaque === 0 &&
       foreignBreakout(
         lower,
-        attributes.some((a) => /^(?:color|face|size)$/i.test(a.name)),
+        attributes.some(
+          (a) =>
+            (a.kind === 'static' || a.kind === 'dynamic' || a.kind === 'bool') &&
+            /^(?:color|face|size)$/i.test(a.name),
+        ),
       )
     ) {
       [this.strIdx, this.pos, this.exprIndex] = start;
@@ -461,6 +465,15 @@ class Parser {
         }
       }
     }
+    if (namespace === 'math' && lower === 'annotation-xml') {
+      for (const attr of attributes)
+        if (
+          attr.name.toLowerCase() === 'encoding' &&
+          attr.kind !== 'static' &&
+          attr.kind !== 'event'
+        )
+          attr.parseSensitiveEncoding = true;
+    }
     // Only HTML-namespace elements are raw text. When unsure, treat content as
     // markup: SSR then escapes it, which is safe; misreading foreign content as
     // raw would emit it unescaped where the browser parses tags.
@@ -479,7 +492,11 @@ class Parser {
       const parent = this.parent;
       // HTML parsing keeps the first duplicate attribute; an earlier dynamic
       // encoding must not gain HTML raw-text privileges from a later literal.
-      const encoding = attributes.find((a) => a.name.toLowerCase() === 'encoding');
+      const encoding = attributes.find(
+        (a) =>
+          (a.kind === 'static' || a.kind === 'dynamic' || a.kind === 'bool') &&
+          a.name.toLowerCase() === 'encoding',
+      );
       this.ns = childNamespace(
         namespace,
         lower,

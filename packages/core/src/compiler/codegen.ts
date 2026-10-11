@@ -99,7 +99,9 @@ const URL_BINDINGS = new Set(
   ),
 );
 
-function safeBindingValue(name: string, expr: string): string {
+function safeBindingValue(name: string, expr: string, parseSensitiveEncoding = false): string {
+  if (parseSensitiveEncoding)
+    return `(function(v){if(v==null||v===false)return v;var s=String(v);if(/^(?:text\\/html|application\\/xhtml\\+xml)$/i.test(s))throw new Error('[Purity] Unsafe dynamic annotation-xml encoding; use a static HTML encoding.');return s;})(${expr})`;
   if (!URL_BINDINGS.has(name.toLowerCase())) return expr;
   // Escape-only attribute binding does not stop executable URL schemes.
   // Return the checked string so stateful toString() cannot change it later.
@@ -212,11 +214,12 @@ export function condenseWhitespace(node: ASTNode): ASTNode {
 // ---------------------------------------------------------------------------
 
 /**
- * Client factory source that references `__purity_fl__` / `__purity_tx__` as
+ * Client factory source that references `__purity_fl__`, `__purity_tx__` and
+ * the wrapper identity check `__purity_ssr__` as
  * free names. Host code must bind them: compile.ts for JIT, an import for AOT
  * modules. Static templates reference neither.
  */
-export function generateLinked(ast: FragmentNode): string {
+export function generateLinked(ast: FragmentNode, isolated = false): string {
   assertSafeScriptContent(ast);
   // Strip pure-indentation text nodes from the entire tree (not just edges).
   // Indentation between sibling tags becomes real text nodes after innerHTML,
@@ -240,7 +243,7 @@ export function generateLinked(ast: FragmentNode): string {
   // Use direct createElement — faster than cloneNode for small templates
   const simple = isSimpleTemplate(ast);
   if (simple) {
-    return genSimpleTemplate(simple);
+    return genSimpleTemplate(simple, isolated);
   }
 
   // Complex template — cloneNode + positional paths
@@ -259,7 +262,7 @@ export function generateLinked(ast: FragmentNode): string {
     `var _t=document.createElement('template');`,
     `_t.innerHTML=${jsString(html)};`,
     templatePrep,
-    'return function(_v,_w,_d){',
+    `return function(_v,_w,_d${isolated && bindCode.includes('__purity_ssr__') ? STANDALONE_GUARD_PARAM : ''}){`,
     'var _r=_t.content.cloneNode(true);',
     bindCode,
     'return _r;',
@@ -292,7 +295,7 @@ function genTemplateCommentToTextConversion(slots: Slot[]): string {
 
 // Standalone modules import the coercion helpers the generated code references.
 const VALUE_HELPER_IMPORT =
-  "import { flattenValue as __purity_fl__, valueText as __purity_tx__ } from '@purityjs/core/compiler';\n";
+  "import { flattenValue as __purity_fl__, valueText as __purity_tx__, isSSRHtml as __purity_ssr__ } from '@purityjs/core/compiler';\n";
 
 export function generateModule(ast: FragmentNode): string {
   return `${VALUE_HELPER_IMPORT}export default ${generateLinked(ast)}`;
@@ -327,7 +330,7 @@ interface HydrateCtx {
 }
 
 /** Hydrate factory source with the same free-name contract as generateLinked. */
-export function generateHydrateLinked(ast: FragmentNode): string {
+export function generateHydrateLinked(ast: FragmentNode, isolated = false): string {
   assertSafeScriptContent(ast);
   ast = condenseWhitespace(ast) as FragmentNode;
 
@@ -356,7 +359,7 @@ export function generateHydrateLinked(ast: FragmentNode): string {
   // Parsed indices are numeric; names are validated above and literal text
   // is emitted with JSON.stringify.
   // codeql[js/bad-code-sanitization]
-  return `function(_v,_w,_r,_i,_c,_e,_m,_s){${body}}`;
+  return `function(_v,_w,_r,_i,_c,_e,_m,_s${isolated && body.includes('__purity_ssr__') ? STANDALONE_GUARD_PARAM : ''}){${body}}`;
 }
 
 // Standalone helper definitions, equivalent to flattenValue / valueText in
@@ -419,7 +422,7 @@ function rawContentBinding(
     `var ${leaf}=function(y){` +
     `if(typeof y==='object'&&!(y instanceof Node)){var f=document.createDocumentFragment();` +
     // Branded SSR HTML (e.g. a retained eachSSR() result): parse it for its text.
-    `if(typeof y.__purity_ssr_html__==='string'){var t=document.createElement('template');t.innerHTML=y.__purity_ssr_html__;y=t.content;}` +
+    `if(__purity_ssr__(y)){var t=document.createElement('template');t.innerHTML=y.__purity_ssr_html__;y=t.content;}` +
     (hydrating
       ? `else if(y.__purity_deferred__===true){_i(y,f,false,true);y=f;}` +
         `else if(y.__purity_deferred_each__===true||y.__purity_deferred_match__===true){` +
@@ -446,19 +449,22 @@ function rawContentBinding(
   return `${setup}_w(function(){${parts}=[].concat(${list.join(',')});${write}();return function(){${observer}.disconnect();};});`;
 }
 
+// Isolated factories have no shared registry; callers can pass the originating guard.
+const STANDALONE_GUARD_PARAM = ',__purity_ssr__=function(){return false;}';
+
 function standalone(code: string): string {
   if (!code.includes('__purity_fl__') && !code.includes('__purity_tx__')) return code;
   return `(function(){${VALUE_HELPER_DEFS}return ${code};})()`;
 }
 
-/** Public: standalone client factory source, evaluable with `new Function`. */
+/** Standalone client source. Optional fourth factory argument: originating isSSRHtml guard. */
 export function generate(ast: FragmentNode): string {
-  return standalone(generateLinked(ast));
+  return standalone(generateLinked(ast, true));
 }
 
-/** Public: standalone hydrate factory source, evaluable with `new Function`. */
+/** Standalone hydrate source. Optional ninth factory argument: originating isSSRHtml guard. */
 export function generateHydrate(ast: FragmentNode): string {
-  return standalone(generateHydrateLinked(ast));
+  return standalone(generateHydrateLinked(ast, true));
 }
 
 export function generateHydrateModule(ast: FragmentNode): string {
@@ -539,7 +545,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         `else if(${xv}.__purity_deferred_match__===true){_m(${xv},${cont},${close});}`,
         // Branded SSR HTML wrapper (e.g. eachSSR result) — SSR DOM is already
         // correct; nothing to bind on the client.
-        `else if(typeof ${xv}.__purity_ssr_html__==='string'){}`,
+        `else if(__purity_ssr__(${xv})){}`,
         // Real Node provided directly — replace SSR slot contents with it.
         `else if(${xv} instanceof Node){for(var _ri${id}=0;_ri${id}<${cont}.length;_ri${id}++)${cont}[_ri${id}].parentNode.removeChild(${cont}[_ri${id}]);${close}.parentNode.insertBefore(${xv},${close});}`,
         // Arrays keep the existing replace-only semantics, but templates in
@@ -641,7 +647,7 @@ function isSimpleTemplate(ast: FragmentNode): SimpleTemplate | null {
   return { tag: root.tag, staticAttrs, dynamicAttrs, children: root.children };
 }
 
-function genSimpleTemplate(tpl: SimpleTemplate): string {
+function genSimpleTemplate(tpl: SimpleTemplate, isolated: boolean): string {
   assertSafeName(tpl.tag, 'tag');
   const setupParts: string[] = [];
   const reactiveParts: string[] = [];
@@ -703,7 +709,7 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
   // SAFE_NAME / assertSafeName at the top of this file. All names and
   // values spliced into `body` are regex-validated and/or JSON.stringify'd
   // before reaching this point; user input cannot escape the literal.
-  return `function(_v,_w,_d){${body}}`;
+  return `function(_v,_w,_d${isolated && body.includes('__purity_ssr__') ? STANDALONE_GUARD_PARAM : ''}){${body}}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1086,7 +1092,9 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
   const qname = jsString(attr.name);
   // Custom-element properties are typed component data, not native URL sinks.
   const propertyValue = (expr: string): string =>
-    tag.includes('-') ? expr : safeBindingValue(attr.name, expr);
+    tag.includes('-') && !attr.parseSensitiveEncoding
+      ? expr
+      : safeBindingValue(attr.name, expr, attr.parseSensitiveEncoding);
 
   switch (attr.kind) {
     case 'event':
@@ -1096,13 +1104,13 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
       const setup = [
         `var ${av}=${val};`,
         `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl}&&${av}!=null&&${av}!==false)${attributeCall(el, attr, `${av}===true?'':String(${safeBindingValue(attr.name, av)})`)}`,
+        `if(!${fl}&&${av}!=null&&${av}!==false)${attributeCall(el, attr, `${av}===true?'':String(${safeBindingValue(attr.name, av, attr.parseSensitiveEncoding)})`)}`,
       ].join('');
       const reactive = [
         `if(${fl}){`,
         `var v${id}=${av}();`,
         `if(v${id}==null||v${id}===false)${attributeCall(el, attr)}`,
-        `else ${attributeCall(el, attr, `v${id}===true?'':String(${safeBindingValue(attr.name, `v${id}`)})`)}`,
+        `else ${attributeCall(el, attr, `v${id}===true?'':String(${safeBindingValue(attr.name, `v${id}`, attr.parseSensitiveEncoding)})`)}`,
         `}`,
       ].join('');
       return { setup, reactive };
@@ -1318,7 +1326,7 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
       // Hyphenated tags route through _h.element, which dispatches to a
       // registered component (DSD-wrapped output) or falls back to plain
       // custom-element markup. PR 3 component SSR hangs off this path.
-      if (node.tag.includes('-')) {
+      if (!node.ns && node.tag.includes('-')) {
         emitCustomElement(node, ctx);
         return;
       }
@@ -1475,9 +1483,14 @@ function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx, node: import('./ast.ts').
       // The remaining kinds read the current value (calling the accessor if
       // it's a function) and emit it as a quoted attribute. `bind` skips the
       // listener install — that's a hydration-time concern.
-      const resolved = URL_BINDINGS.has(a.name.toLowerCase())
-        ? safeBindingValue(a.name, `(typeof ${val}==='function'?${val}():${val})`)
-        : val;
+      const resolved =
+        a.parseSensitiveEncoding || URL_BINDINGS.has(a.name.toLowerCase())
+          ? safeBindingValue(
+              a.name,
+              `(typeof ${val}==='function'?${val}():${val})`,
+              a.parseSensitiveEncoding,
+            )
+          : val;
       pushRaw(ctx, `var ${av}=_h.toAttr(${resolved});`);
       pushRaw(ctx, `if(${av}!==null)${ctx.out}+=${namePrefix}+(${av}===''?'':'="'+${av}+'"');`);
       return;

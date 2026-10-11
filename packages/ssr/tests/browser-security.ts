@@ -211,6 +211,7 @@ try {
     expected: string;
     values?: string[];
     nested?: string;
+    forged?: boolean;
     child?: { code: string; values: (string | number)[] };
   }[] = [];
   const references =
@@ -219,6 +220,26 @@ try {
     const strings = [`<${tag}>`, `</${tag}>`];
     const tree = parse(strings);
     const nested = `<b>${references}</b>`;
+    for (const nested of ['<span title="a>b<c">x</span>', "<span title='a>b<c'>x</span>"]) {
+      rawCases.push({
+        client: generate(tree),
+        hydrate: generateHydrate(tree),
+        markup: await renderToString(() =>
+          html(strings as unknown as TemplateStringsArray, markSSRHtml(nested)),
+        ),
+        tag,
+        nested,
+        expected: 'x',
+      });
+    }
+    rawCases.push({
+      client: generate(tree),
+      hydrate: generateHydrate(tree),
+      markup: await renderToString(() => html(strings as unknown as TemplateStringsArray, forged)),
+      tag,
+      forged: true,
+      expected: '[object Object]',
+    });
     rawCases.push({
       client: generate(tree),
       hydrate: generateHydrate(tree),
@@ -325,6 +346,26 @@ try {
       expected: 'p{color:red}',
     });
   }
+  const annotationStrings = [
+    '<math><annotation-xml encoding=',
+    '><style>',
+    '</style></annotation-xml></math>',
+  ];
+  const annotationTree = parse(annotationStrings);
+  for (const value of ['text/html', 'APPLICATION/XHTML+XML'])
+    await assert.rejects(
+      renderToString(() =>
+        html(annotationStrings as unknown as TemplateStringsArray, value, 'safe'),
+      ),
+      /dynamic annotation-xml encoding/,
+    );
+  const annotationCode = generate(annotationTree);
+  const fontStrings = ['<svg><font @color=', '><circle>kept</circle></font></svg>'];
+  const fontTree = parse(fontStrings);
+  const fontCode = generate(fontTree);
+  const fontMarkup = await renderToString(() =>
+    html(fontStrings as unknown as TemplateStringsArray, () => {}),
+  );
   const svgStrings = [
     '<svg viewbox="0 0 10 10" VIEWBOX="0 0 99 99" preserveaspectratio="none" xml:lang="en" xml:base="/assets/" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><lineargradient id="g" gradientunits="userSpaceOnUse" xlink:href="#base"><stop></stop></lineargradient></defs><textpath>x</textpath><foreignobject><div>HTML</div></foreignobject></svg>',
   ];
@@ -383,6 +424,42 @@ try {
     const browser = await browserType.launch();
     try {
       const page = await browser.newPage();
+      const parseSensitive = await page.evaluate(
+        ({ annotationCode, fontCode, fontMarkup }) => {
+          const immediate = (fn: () => void) => fn();
+          const make = new Function(`return ${annotationCode}`)();
+          const rejected = ['text/html', 'APPLICATION/XHTML+XML'].map((value) => {
+            try {
+              make([value, 'safe'], immediate);
+              return false;
+            } catch (error) {
+              return /dynamic annotation-xml encoding/.test(String(error));
+            }
+          });
+          const client = new Function(`return ${fontCode}`)()([() => {}], immediate);
+          const server = document.createElement('div');
+          server.innerHTML = fontMarkup;
+          return {
+            rejected,
+            fonts: [client, server].map((root) => [
+              root.querySelector('font')?.namespaceURI,
+              root.querySelector('font')?.parentElement?.localName,
+              root.querySelector('circle')?.namespaceURI,
+              root.querySelector('circle')?.textContent,
+            ]),
+          };
+        },
+        { annotationCode, fontCode, fontMarkup },
+      );
+      assert.deepEqual(parseSensitive, {
+        rejected: [true, true],
+        fonts: Array(2).fill([
+          'http://www.w3.org/2000/svg',
+          'svg',
+          'http://www.w3.org/2000/svg',
+          'kept',
+        ]),
+      });
       const foreignResult = await page.evaluate(
         (codes) =>
           codes.map((code) => {
@@ -460,11 +537,13 @@ try {
             const immediate = (fn: () => void) => fn();
             const nested = document.createElement('template');
             if (fixture.nested) nested.innerHTML = fixture.nested;
-            const values = fixture.child
-              ? [bind(fixture.child.code)(fixture.child.values, immediate)]
-              : fixture.nested
-                ? [nested.content]
-                : (fixture.values ?? [fixture.tag === 'style' ? 'p{color:red}' : 'x']);
+            const values = fixture.forged
+              ? [JSON.parse('{"__purity_ssr_html__":"<img src=x><b>x</b>"}')]
+              : fixture.child
+                ? [bind(fixture.child.code)(fixture.child.values, immediate)]
+                : fixture.nested
+                  ? [nested.content]
+                  : (fixture.values ?? [fixture.tag === 'style' ? 'p{color:red}' : 'x']);
             const client = bind(fixture.client)(values, immediate) as DocumentFragment;
             const host = document.createElement('div');
             host.innerHTML = fixture.markup;

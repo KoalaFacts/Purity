@@ -220,6 +220,52 @@ try {
     const strings = [`<${tag}>`, `</${tag}>`];
     const tree = parse(strings);
     const nested = `<b>${references}</b>`;
+    const trustedCases: [string, string][] = [
+      ['<table><tr><td>a</td></tr>x</table>', 'xa'],
+      ['<table><tr><td>a</td></tr> x </table>', ' x a'],
+      ['<table><tr><td>a</td></tr>\n </table>', 'a\n '],
+      ['<table><div>x</div><tr><td>a</td></tr>y</table>', 'xya'],
+      ['<table><div><b>x</b>z</div><tr><td>a</td></tr>y</table>', 'xzya'],
+      [
+        'before<table><caption>c</caption><tbody><tr><td>a<table><tr><td>b</td></tr>x</table>z</td></tr>y</tbody></table>after',
+        'beforeycaxbzafter',
+      ],
+      ['<table><style>x</style><tr><td>a</td></tr>y</table>', 'yxa'],
+      ['<template><table>x<tr><td>a</td></tr></table></template>tail', 'tail'],
+    ];
+    for (const encoding of [
+      "encoding='text/html'",
+      'encoding=text/html',
+      'ENCODING="TEXT/HTML"',
+      'encoding="text&#47;html"',
+      'encoding="application/xhtml+xml"',
+      'encoding="text/html" encoding="application/xml"',
+    ])
+      trustedCases.push([
+        `<math><annotation-xml ${encoding}><style><b>x</b></style></annotation-xml></math>`,
+        '<b>x</b>',
+      ]);
+    trustedCases.push([
+      '<math><annotation-xml encoding="application/xml" encoding="text/html"><style><b>x</b></style></annotation-xml></math>',
+      'x',
+    ]);
+    for (const inner of ['textarea', 'pre', 'listing']) {
+      for (const prefix of ['\r', '\r\n', '\n', '&#10;', '&#xA;'])
+        trustedCases.push([`<${inner}>${prefix}x</${inner}>`, 'x']);
+      trustedCases.push([`<${inner}>&#13;x</${inner}>`, '\rx']);
+      trustedCases.push([`<${inner}>\r\n\r\nx</${inner}>`, '\nx']);
+    }
+    for (const [nested, expected] of trustedCases)
+      rawCases.push({
+        client: generate(tree),
+        hydrate: generateHydrate(tree),
+        markup: await renderToString(() =>
+          html(strings as unknown as TemplateStringsArray, markSSRHtml(nested)),
+        ),
+        tag,
+        nested,
+        expected,
+      });
     for (const nested of ['<span title="a>b<c">x</span>', "<span title='a>b<c'>x</span>"]) {
       rawCases.push({
         client: generate(tree),
@@ -551,6 +597,57 @@ try {
       await page.setContent(rawStreamMarkup);
       assert.equal(await page.locator('textarea').textContent(), '<READY>');
       assert.equal(await page.locator('#stream-sibling').textContent(), 'SIBLING-READY');
+      const nodeFactory = generate(parse(['<textarea>', '</textarea><title>', '</title>']));
+      const nodeHydrate = generateHydrate(parse(['<textarea>', '</textarea><title>', '</title>']));
+      const liveNodes = await page.evaluate(
+        async ({ client, hydrate }) => {
+          let disconnected = 0;
+          customElements.define(
+            'raw-observed-node',
+            class extends HTMLElement {
+              disconnectedCallback() {
+                disconnected++;
+              }
+            },
+          );
+          const parent = document.body.appendChild(document.createElement('section'));
+          const node = parent.appendChild(document.createElement('raw-observed-node'));
+          node.textContent = 'first';
+          const immediate = (fn: () => void) => fn();
+          const values = [[node, node], node];
+          const fragment = new Function(`return ${client}`)()(
+            values,
+            immediate,
+          ) as DocumentFragment;
+          const host = document.createElement('div');
+          host.innerHTML = '<textarea>firstfirst</textarea><title>first</title>';
+          const adopted = host.querySelector('textarea');
+          new Function(`return ${hydrate}`)()(values, immediate, host);
+          node.textContent = 'second';
+          await new Promise<void>((done) => setTimeout(done, 0));
+          return [
+            node.parentNode === parent,
+            node.isConnected,
+            disconnected,
+            fragment.querySelector('textarea')?.textContent,
+            fragment.querySelector('title')?.textContent,
+            host.querySelector('textarea')?.textContent,
+            host.querySelector('title')?.textContent,
+            adopted === host.querySelector('textarea'),
+          ];
+        },
+        { client: nodeFactory, hydrate: nodeHydrate },
+      );
+      assert.deepEqual(liveNodes, [
+        true,
+        true,
+        0,
+        'secondsecond',
+        'second',
+        'secondsecond',
+        'second',
+        true,
+      ]);
       for (const fixture of rawCases) {
         const result = await page.evaluate(
           ({ fixture, helpers }) => {

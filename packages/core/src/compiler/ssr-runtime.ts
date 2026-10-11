@@ -113,16 +113,24 @@ const numericReplacements = [
   8217, 8220, 8221, 8226, 8211, 8212, 732, 8482, 353, 8250, 339, 157, 382, 376,
 ];
 
-function decodeRefs(text: string): string {
+function decodeRefs(text: string, attribute = false): string {
   return text.replace(
     /&(?:#(\d+);?|#[xX]([\da-fA-F]+);?|([A-Za-z][A-Za-z\d]{0,31};?))/g,
-    (m, dec, hex, name: string | undefined) => {
+    (m, dec, hex, name: string | undefined, offset: number) => {
       if (name) {
         // Longest case-sensitive match, including legacy semicolonless names.
         // The bounded search cannot retry arbitrary input-length prefixes.
         for (let end = name.length; end > 0; end--) {
           const key = name.slice(0, end);
-          if (Object.hasOwn(namedReferences, key)) return namedReferences[key] + name.slice(end);
+          if (Object.hasOwn(namedReferences, key)) {
+            if (
+              attribute &&
+              !key.endsWith(';') &&
+              /[=A-Za-z\d]/.test(name[end] ?? text.charAt(offset + m.length))
+            )
+              return m;
+            return namedReferences[key] + name.slice(end);
+          }
         }
         return m;
       }
@@ -133,6 +141,22 @@ function decodeRefs(text: string): string {
         : String.fromCodePoint(cp >= 128 && cp <= 159 ? numericReplacements[cp - 128] : cp);
     },
   );
+}
+
+// HTML attribute values may be quoted or unquoted; the first duplicate wins.
+function htmlAttributes(source: string): Map<string, string> {
+  const attrs = new Map<string, string>();
+  for (const match of source.matchAll(
+    /([^\t\n\f\r "'<>/=]+)(?:[\t\n\f\r ]*=[\t\n\f\r ]*(?:"([^"]*)"|'([^']*)'|([^\t\n\f\r >]+)))?/g,
+  )) {
+    const name = match[1].toLowerCase();
+    if (!attrs.has(name))
+      attrs.set(
+        name,
+        decodeRefs((match[2] ?? match[3] ?? match[4] ?? '').replace(/\r\n?/g, '\n'), true),
+      );
+  }
+  return attrs;
 }
 
 // Only CDO tokens between top-level CSS rules are ignored by the CSS parser.
@@ -309,24 +333,54 @@ export function rawEnd(html: string, from: number, tag: string): number {
 // it. A tokenizer, not a tag-stripping regex: comments (hydration markers
 // included) and tags are skipped, character references in text are decoded,
 // and raw-text / RCDATA element content is read up to its own end tag (so a
-// `<i>` inside a nested <style> stays text). The input is framework output,
-// whose attribute values are escaped, so a tag never contains a bare `>`.
+// `<i>` inside a nested <style> stays text). Trusted public markup may contain
+// any HTML attribute quoting form. Table output groups preserve foster order.
 function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): string {
-  let out = '';
+  type TextGroup = (string | TextGroup)[];
+  const output: TextGroup = [];
   let i = 0;
   let spanIndex = 0;
+  let dropLF = false;
   const ctx = getSSRRenderContext();
   // Open HTML <template> elements: their contents (declarative shadow roots
   // included) live in a separate fragment and are not part of textContent.
   const hiddenBase = hidden;
   // Namespace changes, innermost last: [tag, namespace of its children].
   // Outside HTML, style/script/title/textarea content is markup, not raw text.
-  const stack: [string, Namespace, Namespace][] = [];
+  const stack: [string, Namespace, Namespace, TextGroup, TextGroup?][] = [];
+  const group = (): TextGroup => (stack.length ? stack[stack.length - 1][3] : output);
+  // The nearest HTML table owns two ordered groups: fostered siblings, then
+  // table descendants. A cell/caption suspends the table insertion mode.
+  const table = () => {
+    for (let at = stack.length - 1; at >= 0; at--) {
+      const frame = stack[at];
+      if (frame[2] !== 'html') continue;
+      if (/^(?:td|th|caption)$/.test(frame[0])) return undefined;
+      if (frame[0] === 'table') return frame;
+    }
+    return undefined;
+  };
+  const emit = (text: string, characters = true): void => {
+    if (dropLF) {
+      if (text.startsWith('\n')) text = text.slice(1);
+      dropLF = false;
+    }
+    if (hidden || !text) return;
+    const current = stack[stack.length - 1];
+    const foster =
+      characters &&
+      current?.[2] === 'html' &&
+      /^(?:table|tbody|tfoot|thead|tr)$/.test(current[0]) &&
+      /[^\t\n\f\r ]/.test(text)
+        ? table()?.[4]
+        : undefined;
+    (foster ?? group()).push(text);
+  };
   while (i < html.length) {
     while (spanIndex < spans.length && spans[spanIndex][0] < i) spanIndex++;
     const direct = spans[spanIndex];
     if (direct?.[0] === i && direct[4] === undefined && !direct[3]) {
-      if (!hidden) out += direct[2];
+      emit(direct[2]);
       i = direct[1];
       spanIndex++;
       continue;
@@ -334,14 +388,14 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
     const lt = html.indexOf('<', i);
     const textEnd = lt === -1 ? html.length : lt;
     if (direct && !direct[3] && direct[4] === undefined && direct[0] < textEnd) {
-      if (!hidden) out += decodeRefs(html.slice(i, direct[0]).replace(/\r\n?/g, '\n'));
+      emit(decodeRefs(html.slice(i, direct[0]).replace(/\r\n?/g, '\n')));
       i = direct[0];
       continue;
     }
     // HTML input preprocessing happens before references are decoded, so
     // literal CR/CRLF normalizes but an authored &#13; still yields CR.
-    if (!hidden)
-      out += decodeRefs(html.slice(i, lt === -1 ? html.length : lt).replace(/\r\n?/g, '\n'));
+    if (textEnd > i) emit(decodeRefs(html.slice(i, textEnd).replace(/\r\n?/g, '\n')));
+    dropLF = false;
     if (lt === -1) break;
     // A component's detached client host exposes its original light DOM,
     // rather than the slot's rendered location inside the shadow template.
@@ -353,7 +407,7 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
       for (let at = spanIndex + 1; at < spans.length && spans[at][0] < span[1]; at++)
         appendRawTextSpans([spans[at]], shadow, -lt);
       htmlText(html.slice(lt, span[1]), shadow, 1);
-      out += htmlText(span[2], span[3], hidden);
+      emit(htmlText(span[2], span[3], hidden));
       i = span[1];
       continue;
     }
@@ -383,7 +437,7 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
     ) {
       const close = html.indexOf(']]>', lt + 9);
       const end = close === -1 ? html.length : close;
-      if (!hidden) out += html.slice(lt + 9, end).replace(/\r\n?/g, '\n');
+      emit(html.slice(lt + 9, end).replace(/\r\n?/g, '\n'), false);
       i = close === -1 ? html.length : close + 3;
       continue;
     }
@@ -404,13 +458,11 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
     const tag = m[2].toLowerCase();
     const close = m[1] === '/';
     const selfClosing = html[gt - 1] === '/';
-    let fontAttribute = false;
-    if (tag === 'font') {
-      const attrs = html.slice(lt + m[0].length, gt);
-      for (const attr of attrs.matchAll(/([^\s"'<>/=]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?/g)) {
-        if (/^(?:color|face|size)$/i.test(attr[1])) fontAttribute = true;
-      }
-    }
+    const attrs =
+      tag === 'font' || tag === 'annotation-xml'
+        ? htmlAttributes(html.slice(lt + m[0].length, gt))
+        : undefined;
+    const fontAttribute = !!attrs && (attrs.has('color') || attrs.has('face') || attrs.has('size'));
     if (
       ns !== 'html' &&
       (close ? tag === 'p' || tag === 'br' : foreignBreakout(tag, fontAttribute))
@@ -434,20 +486,29 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
       continue;
     }
     const encoding =
-      namespace === 'math' && tag === 'annotation-xml'
-        ? /\sencoding="([^"]*)"/i.exec(html.slice(lt, gt + 1))?.[1]
-        : undefined;
+      namespace === 'math' && tag === 'annotation-xml' ? attrs?.get('encoding') : undefined;
     const inner = childNamespace(namespace, tag, encoding);
     if (namespace !== 'html' || !VOID_TAGS.has(tag)) {
-      stack.push([tag, inner, namespace]);
+      const body: TextGroup = [];
+      const before: TextGroup | undefined =
+        namespace === 'html' && tag === 'table' ? [] : undefined;
+      const foster =
+        ns === 'html' &&
+        parent?.[2] === 'html' &&
+        /^(?:table|tbody|tfoot|thead|tr)$/.test(parent[0]) &&
+        !/^(?:caption|colgroup|col|tbody|tfoot|thead|tr|td|th|style|script)$/.test(tag)
+          ? table()?.[4]
+          : undefined;
+      (foster ?? group()).push(before ? [before, body] : body);
+      stack.push([tag, inner, namespace, body, before]);
     }
     if (namespace === 'html') {
       if (tag === 'plaintext') {
-        if (!hidden) out += html.slice(i).replace(/\r\n?/g, '\n');
+        emit(html.slice(i).replace(/\r\n?/g, '\n'), false);
         break;
       }
       // The parser drops one newline right after these start tags.
-      if ((tag === 'textarea' || tag === 'pre' || tag === 'listing') && html[i] === '\n') i++;
+      dropLF = tag === 'textarea' || tag === 'pre' || tag === 'listing';
       // Raw text (as a scripting-enabled browser parses it) and RCDATA.
       if (/^(?:style|script|xmp|iframe|noembed|noframes|noscript|textarea|title)$/.test(tag)) {
         const end = rawEnd(html, i, tag);
@@ -459,12 +520,29 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
           // The ordered cursor already points at this element's next span.
           if (span?.[0] === i && span[1] === end) text = span[2];
         }
-        if (!hidden) out += text;
+        emit(text, false);
         i = end;
       }
     }
   }
-  return out;
+  // Flatten once; neither repeated foster insertions nor deep trees repeatedly
+  // copy already accumulated text.
+  const chunks: string[] = [];
+  const groups = [output];
+  const positions = [0];
+  while (groups.length) {
+    const at = groups.length - 1;
+    const item = groups[at][positions[at]++];
+    if (item === undefined) {
+      groups.pop();
+      positions.pop();
+    } else if (typeof item === 'string') chunks.push(item);
+    else {
+      groups.push(item);
+      positions.push(0);
+    }
+  }
+  return chunks.join('');
 }
 
 /**

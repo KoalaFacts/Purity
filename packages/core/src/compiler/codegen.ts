@@ -400,8 +400,8 @@ function appendFlat(xv: string, id: number | string, target: string): string {
 // on every change. `value(i)` is the source expression for template value i on
 // the calling path. A value is coerced to text like valueToHtml: functions are
 // called (inside the watch, so their signals are tracked) and arrays flattened;
-// a Node leaf (nested template, each(), when()/match()) is kept in a detached
-// holder and contributes its live textContent, re-read by a MutationObserver
+// a Node leaf (nested template, each(), when()/match()) contributes its live
+// textContent in place, re-read by a MutationObserver
 // when its own bindings update it.
 // During hydration (`hydrating`) nested templates and control flow arrive as
 // deferred carriers and are rendered into a fragment first.
@@ -429,10 +429,8 @@ function rawContentBinding(
         `var m=f.appendChild(document.createComment(''));(y.__purity_deferred_each__?_e:_m)(y,[],m);y=f;}`
       : '') +
     `}` +
-    // One holder per Node, so a Node used in two slots counts twice instead of
-    // being moved out of the first holder.
-    `if(y instanceof Node){var h=y.__purity_raw__;if(!h){h=y.__purity_raw__=document.createElement('div');h.appendChild(y);}` +
-    `${observer}.observe(h,{subtree:true,childList:true,characterData:true});return h;}` +
+    // Observe without moving a mounted Node or consuming a shared fragment.
+    `if(y instanceof Node){${observer}.observe(y,{subtree:true,childList:true,characterData:true});return y;}` +
     `return String(y);};`;
   const list: string[] = [];
   for (const ch of children) {

@@ -499,6 +499,75 @@ describe('SSR / CSR / hydrate conformance', () => {
     expect(ssrHelpers.rawText([markSSRHtml('<b>&#x110000;&#0;</b>')])).toBe('��');
   });
 
+  it('trusted annotation encodings accept HTML attribute forms and references', () => {
+    for (const encoding of [
+      "encoding='text/html'",
+      'encoding=text/html',
+      'ENCODING="TEXT/HTML"',
+      'encoding="text&#47;html"',
+      'encoding="application/xhtml+xml"',
+      'encoding="text/html" encoding="application/xml"',
+    ]) {
+      const source = `<math><annotation-xml ${encoding}><style><b>x</b></style></annotation-xml></math>`;
+      expect(ssrHelpers.rawText([markSSRHtml(source)], 1)).toBe('&lt;b&gt;x&lt;/b&gt;');
+    }
+    const foreign =
+      '<math><annotation-xml encoding="application/xml" encoding="text/html"><style><b>x</b></style></annotation-xml></math>';
+    expect(ssrHelpers.rawText([markSSRHtml(foreign)], 1)).toBe('x');
+  });
+
+  it('trusted table text follows foster parenting without moving cell or whitespace text', () => {
+    for (const [source, expected] of [
+      ['<table><tr><td>a</td></tr>x</table>', 'xa'],
+      ['<table><tr><td>a</td></tr> x </table>', ' x a'],
+      ['<table><tr><td>a</td></tr>\n </table>', 'a\n '],
+      ['<table><div>x</div><tr><td>a</td></tr>y</table>', 'xya'],
+      ['<table><div><b>x</b>z</div><tr><td>a</td></tr>y</table>', 'xzya'],
+      [
+        'before<table><caption>c</caption><tbody><tr><td>a<table><tr><td>b</td></tr>x</table>z</td></tr>y</tbody></table>after',
+        'beforeycaxbzafter',
+      ],
+      ['<table><style>x</style><tr><td>a</td></tr>y</table>', 'yxa'],
+      ['<template><table>x<tr><td>a</td></tr></table></template>tail', 'tail'],
+    ])
+      expect(ssrHelpers.rawText([markSSRHtml(source)], 1)).toBe(expected);
+  });
+
+  it('trusted leading newline removal follows preprocessing and reference decoding', () => {
+    for (const tag of ['textarea', 'pre', 'listing']) {
+      for (const prefix of ['\r', '\r\n', '\n', '&#10;', '&#xA;'])
+        expect(ssrHelpers.rawText([markSSRHtml(`<${tag}>${prefix}x</${tag}>`)], 1)).toBe('x');
+      expect(ssrHelpers.rawText([markSSRHtml(`<${tag}>&#13;x</${tag}>`)], 1)).toBe('&#13;x');
+      expect(ssrHelpers.rawText([markSSRHtml(`<${tag}>\r\n\r\nx</${tag}>`)], 1)).toBe('\nx');
+    }
+  });
+
+  it('raw content observes mounted and repeated Nodes without reparenting them', async () => {
+    const parent = document.createElement('div');
+    const node = parent.appendChild(document.createElement('b'));
+    node.textContent = 'first';
+    document.body.appendChild(parent);
+    const host = document.createElement('div');
+    const mounted = mount(
+      () => html`<textarea>${[node, node]}</textarea><title>${node}</title>` as Node,
+      host,
+    );
+    try {
+      expect(node.parentNode).toBe(parent);
+      expect(node.isConnected).toBe(true);
+      expect(host.querySelector('textarea')?.textContent).toBe('firstfirst');
+      expect(host.querySelector('title')?.textContent).toBe('first');
+      node.textContent = 'second';
+      await tick();
+      expect(host.querySelector('textarea')?.textContent).toBe('secondsecond');
+      expect(host.querySelector('title')?.textContent).toBe('second');
+      expect(node.parentNode).toBe(parent);
+    } finally {
+      mounted.unmount();
+      parent.remove();
+    }
+  });
+
   it('nested text drops a nested textarea leading newline like the HTML parser', () => {
     expect(ssrHelpers.rawText([markSSRHtml('<textarea>\n\nfoo</textarea>')], 1)).toBe('\nfoo');
   });

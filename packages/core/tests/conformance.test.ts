@@ -43,6 +43,11 @@ function normalize(markup: string): string {
     }
   };
   walk(root);
+  // SSR writes `<` in dynamic <style> content as the CSS escape `\3c ` (same
+  // CSS, but no `<` that could form a tag in any context); compare it as `<`.
+  for (const style of Array.from(root.querySelectorAll('style'))) {
+    style.textContent = (style.textContent ?? '').split('\\3c ').join('<');
+  }
   return root.innerHTML;
 }
 
@@ -575,6 +580,42 @@ describe('SSR / CSR / hydrate conformance', () => {
     const csr = document.createElement('div');
     csr.appendChild(html(tpl(['<div><pre>\n', '</pre></div>']), 'x') as Node);
     expect(csr.querySelector('pre')?.textContent).toBe('\nx');
+  });
+
+  it('SSR writes < in dynamic <style> content as \\3c and hydration restores it', () => {
+    const strings = ['<div><style>p::after { content: "', '" }</style></div>'];
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    host.innerHTML = renderSSR(strings, ['</div><b>']);
+    const style = host.querySelector('style');
+    expect(style?.textContent).toBe('p::after { content: "\\3c /div>\\3c b>" }');
+    const mounted = hydrate(host, () => html(tpl(strings), '</div><b>') as Node);
+    try {
+      expect(host.querySelector('style')).toBe(style);
+      expect(style?.textContent).toBe('p::after { content: "</div><b>" }');
+    } finally {
+      mounted.unmount();
+      host.remove();
+    }
+  });
+
+  it('a <style> value cannot break out of a raw-text ancestor', () => {
+    for (const tag of ['xmp', 'iframe', 'noembed', 'noframes', 'noscript']) {
+      const out = renderSSR([`<${tag}><style>`, `</style></${tag}>`], [`</${tag}><img src=x>`]);
+      const host = document.createElement('div');
+      host.innerHTML = out;
+      expect(host.querySelectorAll('img'), tag).toHaveLength(0);
+    }
+  });
+
+  it('a child template <style> spliced into SVG or MathML stays inert', () => {
+    for (const parent of ['svg', 'math']) {
+      const child = markSSRHtml(renderSSR(['<style>', '</style>'], ['<img src=x>']));
+      const out = renderSSR([`<${parent}>`, `</${parent}>`], [child]);
+      const host = document.createElement('div');
+      host.innerHTML = out;
+      expect(host.querySelectorAll('img'), parent).toHaveLength(0);
+    }
   });
 
   it('an SVG <title> keeps markup children', () => {

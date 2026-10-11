@@ -108,6 +108,10 @@ class Parser {
   // namespace decisions cannot be trusted: no element is treated as raw text
   // (its content stays escaped).
   private mismatched = false;
+  // Inside an element the browser reads as raw text (xmp, iframe, noembed,
+  // noframes, noscript, plaintext) while this parser reads markup: nested
+  // elements are not raw text, so their content stays escaped.
+  private opaque = 0;
 
   constructor(strings: readonly string[]) {
     this.strings = strings;
@@ -364,7 +368,7 @@ class Parser {
     // markup: SSR then escapes it, which is safe; misreading foreign content as
     // raw would emit it unescaped where the browser parses tags.
     const raw: ElementNode['raw'] =
-      this.ns !== 'html' || this.mismatched
+      this.ns !== 'html' || this.mismatched || this.opaque > 0
         ? undefined
         : lower === 'style' || lower === 'script'
           ? 'text'
@@ -378,7 +382,10 @@ class Parser {
       const parent = this.parentTag;
       this.ns = childNamespace(outer, lower, parent);
       this.parentTag = lower;
+      const opaque = /^(?:xmp|iframe|noembed|noframes|noscript|plaintext)$/.test(lower);
+      if (opaque) this.opaque++;
       children = raw ? this.parseRawChildren(lower) : this.parseChildren();
+      if (opaque) this.opaque--;
       this.ns = outer;
       this.parentTag = parent;
       // Consume closing tag </tag>

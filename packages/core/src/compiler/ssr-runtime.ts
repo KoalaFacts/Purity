@@ -84,11 +84,6 @@ export function valueToHtml(v: unknown): string {
   return valueToHtmlInner(v, null, true);
 }
 
-// A `</` that starts a raw-text end tag: `style` or `script` followed by
-// whitespace, `/`, `>` or the end of the content (`</div>` and `</stylesheet>`
-// stay intact). ASCII case-insensitive, as in the HTML parser.
-const RAW_TEXT_END_TAG = /<\/(?=(?:style|script)(?:[\t\n\f\r />]|$))/gi;
-
 const NAMED_ENTITIES: Record<string, string> = {
   amp: '&',
   lt: '<',
@@ -237,16 +232,20 @@ function htmlText(html: string): string {
  * where the HTML parser makes everything one text node: a nested template
  * contributes its text content, as it does on the client. For RCDATA
  * (`<textarea>`, `<title>`, `rcdata` set) the text is HTML-escaped. For
- * raw-text (`<style>`, `<script>`) it is emitted unescaped, because the parser
- * does not decode entities there, and a `</` that starts a raw-text end tag
- * becomes `<\/`, so the content cannot close the element early.
+ * raw-text (`<style>`; dynamic `<script>` content is rejected) entities are not
+ * decoded, so every `<` is written as the CSS escape `\3c ` instead. The output
+ * then contains no `<` at all, so it cannot form a tag in whatever context the
+ * browser parses it: raw text, foreign (SVG/MathML) content, or an ancestor
+ * such as <xmp> or <noscript> that this element was nested in, including a
+ * parent template it is spliced into at runtime. CSS reads `\3c ` as `<` in
+ * strings and identifiers; textContent differs from the client until hydration.
  */
 export function valueToRawText(parts: unknown[], rcdata?: unknown): string {
   // Each part is one template slot (or static text): coerce them separately so
-  // cycle tracking does not carry across slots, then neutralise the joined text.
+  // cycle tracking does not carry across slots, then escape the joined text.
   let text = '';
   for (let i = 0; i < parts.length; i++) text += valueToHtmlInner(parts[i], null, false);
-  return rcdata ? escHtml(text) : text.replace(RAW_TEXT_END_TAG, '<\\/');
+  return rcdata ? escHtml(text) : text.replace(/</g, '\\3c ');
 }
 
 // `html` false: text mode for raw content (no escaping; nested SSR HTML

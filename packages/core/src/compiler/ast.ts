@@ -22,8 +22,7 @@ export interface ElementNode {
   tag: string;
   attributes: AttributeNode[];
   children: ASTNode[];
-  /** HTML void element or self-closing foreign element; serialized without children. */
-  isVoid: boolean;
+  isVoid: boolean; // <br>, <input>, etc.
   /** Foreign namespace determined by the parser; omitted for HTML elements. */
   ns?: 'svg' | 'math';
   /**
@@ -74,10 +73,6 @@ export type AttributeNode =
 
 interface BaseAttribute {
   name: string;
-  /** Dynamic MathML annotation encoding must not change descendant parsing. */
-  parseSensitiveEncoding?: true;
-  /** Namespace of an HTML-parser-adjusted foreign attribute. */
-  ns?: string;
 }
 
 export interface StaticAttribute extends BaseAttribute {

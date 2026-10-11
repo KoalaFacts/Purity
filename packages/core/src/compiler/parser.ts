@@ -11,14 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from './ast.ts';
-import {
-  childNamespace,
-  elementNamespace,
-  foreignBreakout,
-  foreignAttribute,
-  rawEnd,
-  type Namespace,
-} from './ssr-runtime.ts';
+import { childNamespace, elementNamespace, rawEnd, type Namespace } from './ssr-runtime.ts';
 
 // Void elements that cannot have children. Shared with codegen.
 import { VOID_TAGS } from './ast.ts';
@@ -96,7 +89,6 @@ class Parser {
   // title/textarea are foreign elements whose content is markup.
   private ns: Namespace = 'html';
   private parent: [string, Namespace] | undefined;
-  private ancestors: [string, Namespace][] = [];
   // Set once an end tag does not match the element it closes. The browser may
   // then keep an element (e.g. <svg>) open that this parser closed, so later
   // namespace decisions cannot be trusted: no element is treated as raw text
@@ -106,9 +98,6 @@ class Parser {
   // noframes, noscript, plaintext) while this parser reads markup: nested
   // elements are not raw text, so their content stays escaped.
   private opaque = 0;
-  private breakingOut = false;
-  // End tags for foreign ancestors popped by an HTML breakout are ignored.
-  private poppedForeign = new Map<string, number>();
 
   constructor(strings: readonly string[]) {
     this.strings = strings;
@@ -192,19 +181,6 @@ class Parser {
     return { type: 'fragment', children };
   }
 
-  private paragraphInScope(): boolean {
-    for (let i = this.ancestors.length - 1; i >= 0; i--) {
-      const [tag, ns] = this.ancestors[i];
-      if (ns === 'html') {
-        if (tag === 'p') return true;
-        if (/^(?:applet|caption|html|table|td|th|marquee|object|template|button)$/.test(tag))
-          return false;
-      } else if (childNamespace(ns, tag) === 'html' || (ns === 'math' && tag === 'annotation-xml'))
-        return false;
-    }
-    return false;
-  }
-
   private parseChildren(): ASTNode[] {
     const children: ASTNode[] = [];
 
@@ -223,43 +199,6 @@ class Parser {
 
         // Closing tag — stop and let parent handle it
         if (this.pos + 1 < s.length && s.charCodeAt(this.pos + 1) === SLASH) {
-          const tag = /^<\/([^\s/>]+)/.exec(s.slice(this.pos))?.[1].toLowerCase();
-          if ((tag === 'p' || tag === 'br') && this.opaque === 0 && this.ns !== 'html') {
-            this.breakingOut = true;
-            break;
-          }
-          if (this.breakingOut && (tag === 'p' || tag === 'br')) {
-            if (tag === 'p' && this.paragraphInScope()) {
-              if (this.parent?.[0] === 'p' && this.parent[1] === 'html') this.breakingOut = false;
-              break;
-            }
-            children.push({
-              type: 'element',
-              tag,
-              attributes: [],
-              children: [],
-              isVoid: tag === 'br',
-            });
-            this.breakingOut = false;
-            const end = s.indexOf('>', this.pos);
-            this.pos = end < 0 ? s.length : end + 1;
-            continue;
-          }
-          if (tag && tag !== this.parent?.[0] && this.poppedForeign.has(tag)) {
-            const count = this.poppedForeign.get(tag)! - 1;
-            if (count) this.poppedForeign.set(tag, count);
-            else this.poppedForeign.delete(tag);
-            const end = s.indexOf('>', this.pos);
-            this.pos = end < 0 ? s.length : end + 1;
-            continue;
-          }
-          // An HTML script uses the raw parser for its own end tag. In normal
-          // HTML content a stray script end tag is ignored, not a parent close.
-          if (tag === 'script' && this.ns === 'html' && this.opaque === 0) {
-            const end = s.indexOf('>', this.pos);
-            this.pos = end < 0 ? s.length : end + 1;
-            continue;
-          }
           break;
         }
 
@@ -282,19 +221,17 @@ class Parser {
         // fall through to `parseElement`, where `readName()` can't
         // consume `!` and `parseAttribute()` spins forever (no advance).
         if (this.pos + 1 < s.length && s.charCodeAt(this.pos + 1) === BANG) {
-          this.appendText(children, this.parseDeclaration());
+          children.push(this.parseDeclaration());
           continue;
         }
 
         // Opening tag
-        const element = this.parseElement();
-        if (!element) break;
-        children.push(element);
+        children.push(this.parseElement());
         continue;
       }
 
       // Text content
-      this.appendText(children, this.parseText());
+      children.push(this.parseText());
     }
 
     return children;
@@ -310,33 +247,7 @@ class Parser {
     return { type: 'text', value };
   }
 
-  private appendText(children: ASTNode[], node: ASTNode): void {
-    if (node.type === 'text' && !node.raw && !node.value) return;
-    const previous = children[children.length - 1];
-    if (node.type === 'text' && !node.raw && previous?.type === 'text' && !previous.raw)
-      previous.value += node.value;
-    else children.push(node);
-  }
-
   private parseDeclaration(): ASTNode {
-    const source = this.current();
-    const cdata = source.startsWith('<![CDATA[', this.pos);
-    // Tokenizer CDATA permission uses the actual current node namespace,
-    // including foreign integration points whose children otherwise use HTML.
-    if (cdata && this.opaque === 0 && this.parent && this.parent[1] !== 'html') {
-      const start = this.pos + 9;
-      const end = source.indexOf(']]>', start);
-      if (end < 0 && this.strIdx < this.strings.length - 1)
-        throw new Error(`${UNSUPPORTED_TEMPLATE} interpolated CDATA; bind text outside CDATA.`);
-      this.pos = end < 0 ? source.length : end + 3;
-      return {
-        type: 'text',
-        value: source
-          .slice(start, end < 0 ? source.length : end)
-          .replace(/\r\n?/g, '\n')
-          .replace(/\0/g, '\uFFFD'),
-      };
-    }
     // Skip `<!`
     this.pos += 2;
     const s = this.current();
@@ -349,9 +260,7 @@ class Parser {
     if (this.pos < s.length) this.pos++; // consume `>`
     // Re-emit as a raw text node — bytes flow through codegen unescaped
     // so `<!doctype html>` survives intact. `raw` is the discriminator.
-    return cdata
-      ? { type: 'comment', value: body }
-      : { type: 'text', value: `<!${body}>`, raw: true };
+    return { type: 'text', value: `<!${body}>`, raw: true };
   }
 
   private parseComment(): ASTNode {
@@ -395,8 +304,7 @@ class Parser {
     return { type: 'comment', value };
   }
 
-  private parseElement(): ElementNode | undefined {
-    const start = [this.strIdx, this.pos, this.exprIndex];
+  private parseElement(): ElementNode {
     // Skip <
     this.advance();
 
@@ -439,48 +347,10 @@ class Parser {
     // `</BR>` close tag and swallow following siblings as children. Custom
     // elements (which must contain a `-`) are never in VOID_TAGS, so the
     // lowercase doesn't affect them.
+    const isVoid = VOID_TAGS.has(tag.toLowerCase()) || selfClosing;
+
     const lower = tag.toLowerCase();
-    if (
-      this.ns !== 'html' &&
-      this.opaque === 0 &&
-      foreignBreakout(
-        lower,
-        attributes.some(
-          (a) =>
-            (a.kind === 'static' || a.kind === 'dynamic' || a.kind === 'bool') &&
-            /^(?:color|face|size)$/i.test(a.name),
-        ),
-      )
-    ) {
-      [this.strIdx, this.pos, this.exprIndex] = start;
-      this.breakingOut = true;
-      return;
-    }
-    this.breakingOut = false;
     const namespace = elementNamespace(this.ns, lower, this.parent?.[0], this.parent?.[1]);
-    const isVoid = namespace === 'html' ? VOID_TAGS.has(lower) : selfClosing;
-    if (namespace !== 'html') {
-      const seen = new Set<string>();
-      for (let i = 0; i < attributes.length; i++) {
-        const attr = attributes[i];
-        if (attr.kind === 'static' || attr.kind === 'dynamic' || attr.kind === 'bool') {
-          const [name, ns] = foreignAttribute(attr.name, namespace);
-          attr.name = name;
-          if (ns) attr.ns = ns;
-          if (seen.has(name)) attributes.splice(i--, 1);
-          else seen.add(name);
-        }
-      }
-    }
-    if (namespace === 'math' && lower === 'annotation-xml') {
-      for (const attr of attributes)
-        if (
-          attr.name.toLowerCase() === 'encoding' &&
-          attr.kind !== 'static' &&
-          attr.kind !== 'event'
-        )
-          attr.parseSensitiveEncoding = true;
-    }
     // Only HTML-namespace elements are raw text. When unsure, treat content as
     // markup: SSR then escapes it, which is safe; misreading foreign content as
     // raw would emit it unescaped where the browser parses tags.
@@ -494,40 +364,32 @@ class Parser {
             : undefined;
 
     let children: ASTNode[] = [];
-    if (!isVoid && !selfClosing) {
+    if (!isVoid) {
       const outer = this.ns;
       const parent = this.parent;
       // HTML parsing keeps the first duplicate attribute; an earlier dynamic
       // encoding must not gain HTML raw-text privileges from a later literal.
-      const encoding = attributes.find(
-        (a) =>
-          (a.kind === 'static' || a.kind === 'dynamic' || a.kind === 'bool') &&
-          a.name.toLowerCase() === 'encoding',
-      );
+      const encoding = attributes.find((a) => a.name.toLowerCase() === 'encoding');
       this.ns = childNamespace(
         namespace,
         lower,
         encoding?.kind === 'static' ? encoding.value : undefined,
       );
       this.parent = [lower, namespace];
-      this.ancestors.push(this.parent);
-      const opaque =
-        namespace === 'html' && /^(?:xmp|iframe|noembed|noframes|noscript|plaintext)$/.test(lower);
+      const opaque = /^(?:xmp|iframe|noembed|noframes|noscript|plaintext)$/.test(lower);
       if (opaque) this.opaque++;
       children = raw ? this.parseRawChildren(lower) : this.parseChildren();
-      this.ancestors.pop();
       if (opaque) this.opaque--;
       this.ns = outer;
       this.parent = parent;
       // Consume closing tag </tag>
-      if (this.breakingOut) this.poppedForeign.set(lower, (this.poppedForeign.get(lower) ?? 0) + 1);
-      else this.consumeClosingTag(tag);
+      this.consumeClosingTag(tag);
     }
 
     const element: ElementNode = { type: 'element', tag, attributes, children, isVoid };
     if (namespace !== 'html') element.ns = namespace;
     if (raw) element.raw = raw;
-    if (namespace === 'html' && this.opaque === 0 && /^(?:textarea|pre|listing)$/.test(lower)) {
+    if (this.ns === 'html' && /^(?:textarea|pre|listing)$/.test(lower)) {
       element.preserveLeadingNewline = true;
     }
     return element;

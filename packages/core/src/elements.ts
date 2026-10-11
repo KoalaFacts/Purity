@@ -1,8 +1,6 @@
 import { enterHydration, exitHydration, inflateDeferred, isDeferred } from './compiler/compile.ts';
 import {
   markSSRHtml,
-  appendRawTextSpans,
-  type RawTextSpan,
   type SSRComponentRenderer,
   type SSRHtml,
   valueToAttr,
@@ -386,9 +384,9 @@ const componentOptions = new Map<string, ComponentOptions>();
 // `_renderComponentSSR` — that function only renders tags already registered.
 const SAFE_CE_TAG = /^[a-z][\w]*-[\w-]*$/;
 // Attribute names interpolated raw into the SSR host-attrs string. Same shape
-// as codegen's SAFE_ATTRIBUTE; used as a defensive filter for direct/SSR callers
+// as codegen's SAFE_NAME; used as a defensive filter for direct/SSR callers
 // of `_renderComponentSSR` that bypass the compiler's `assertSafeName`.
-const SAFE_ATTR_NAME = /^[a-zA-Z_][\w-]*(?::[a-zA-Z_][\w-]*)?$/;
+const SAFE_ATTR_NAME = /^[a-zA-Z_][\w-]*$/;
 
 /** @internal — accessor used by `@purityjs/ssr` to look up registered render fns. */
 export function _getRegisteredComponent(
@@ -476,8 +474,7 @@ export const _renderComponentSSR: SSRComponentRenderer = (
   }
 
   try {
-    const renderedSpans: RawTextSpan[] = [];
-    const renderedHtml = valueToHtml(view, renderedSpans);
+    const renderedHtml = valueToHtml(view);
 
     // Host-element attributes mirror what was declared in the parent template.
     // Attribute *names* are interpolated raw, so skip any key that isn't a safe
@@ -514,7 +511,6 @@ export const _renderComponentSSR: SSRComponentRenderer = (
     const prefix = `<${tag}${hostAttrs}><template shadowrootmode="open"${focusAttr}>${styleBlock}`;
     const markup = `${prefix}${renderedHtml}</template></${tag}>`;
     spans?.push([offset, offset + markup.length, slotHtml, slotSpans ?? []]);
-    if (spans) appendRawTextSpans(renderedSpans, spans, offset + prefix.length);
     return markup;
   } finally {
     // Server output is final once the shell is serialized: release the

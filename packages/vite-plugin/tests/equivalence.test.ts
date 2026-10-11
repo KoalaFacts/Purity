@@ -5,12 +5,7 @@
 // template + values.
 
 import { html } from '@purityjs/core';
-import {
-  flattenValue,
-  renderCompiledTemplate,
-  valueText,
-  isSSRHtml,
-} from '@purityjs/core/compiler';
+import { flattenValue, renderCompiledTemplate, valueText } from '@purityjs/core/compiler';
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
@@ -27,13 +22,10 @@ function evalAot(userCode: string): { make: (...args: any[]) => Node } {
     '__purity_renderCompiled__',
     '__purity_fl__',
     '__purity_tx__',
-    '__purity_ssr__',
     'document',
     `${body}\nreturn make;`,
   );
-  return {
-    make: fn(renderCompiledTemplate, flattenValue, valueText, isSSRHtml, globalThis.document),
-  };
+  return { make: fn(renderCompiledTemplate, flattenValue, valueText, globalThis.document) };
 }
 
 function nodeShape(n: Node): string {

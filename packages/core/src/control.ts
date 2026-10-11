@@ -2497,8 +2497,7 @@ export function listSSR<T>(
     // events skipped on the server — listeners attach during client hydration
   }
 
-  let inner = '<!--l-->';
-  const spans: RawTextSpan[] = [];
+  let inner = '';
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     // Duplicate key: emit only the first row, matching the client render.
@@ -2534,13 +2533,10 @@ export function listSSR<T>(
         if (v != null) attrs += ` ${k}="${escapeAttrLocal(v)}"`;
       }
     }
-    const rawText = getText ? getText(item, i) : '';
-    const text = escapeHtmlLocal(rawText);
-    inner += `<${tag}${attrs}>`;
-    if (text) spans.push([inner.length, inner.length + text.length, rawText]);
-    inner += `${text}</${tag}>`;
+    const text = getText ? escapeHtmlLocal(getText(item, i)) : '';
+    inner += `<${tag}${attrs}>${text}</${tag}>`;
   }
-  return markSSRHtml(`${inner}<!--/l-->`, spans);
+  return markSSRHtml(`<!--l-->${inner}<!--/l-->`);
 }
 
 // HTML attribute name grammar — letters, digits, hyphen, colon, underscore.
@@ -2748,10 +2744,7 @@ export function suspense<T>(
           | undefined,
       });
     }
-    return markSSRHtml(`${prefix}${body}<!--/s:${id}-->`, [
-      [0, prefix.length, '', undefined, id],
-      ...(body ? spans : []),
-    ]);
+    return markSSRHtml(`${prefix}${body}<!--/s:${id}-->`, body ? spans : undefined);
   }
 
   let body: string;
@@ -2817,8 +2810,5 @@ export function suspense<T>(
       }
     }
   }
-  return markSSRHtml(`${prefix}${body}<!--/s:${id}-->`, [
-    [0, prefix.length, '', undefined, id],
-    ...(body ? spans : []),
-  ]);
+  return markSSRHtml(`${prefix}${body}<!--/s:${id}-->`, body ? spans : undefined);
 }

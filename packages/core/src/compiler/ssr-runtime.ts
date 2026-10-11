@@ -16,7 +16,6 @@
 
 import { getSSRRenderContext } from '../ssr-context.ts';
 import { VOID_TAGS } from './ast.ts';
-import { namedReferences } from './character-references.ts';
 
 /** A string of pre-escaped, trusted HTML. Concatenated raw by valueToHtml. */
 export interface SSRHtml {
@@ -32,7 +31,6 @@ export type RawTextSpan = readonly [
   end: number,
   text: string,
   children?: readonly RawTextSpan[],
-  boundary?: number,
 ];
 const emptySpans: readonly RawTextSpan[] = [];
 const trustedHtml = new WeakMap<object, readonly RawTextSpan[]>();
@@ -45,7 +43,7 @@ export function appendRawTextSpans(
 ): void {
   for (let i = 0; i < source.length; i++) {
     const span = source[i];
-    target.push([offset + span[0], offset + span[1], span[2], span[3], span[4]]);
+    target.push([offset + span[0], offset + span[1], span[2], span[3]]);
   }
 }
 
@@ -107,157 +105,28 @@ export function valueToHtml(v: unknown, spans?: RawTextSpan[], offset = 0): stri
   return valueToHtmlInner(v, null, true, spans, offset);
 }
 
-// HTML's numeric-reference replacement table (the Windows-1252 range).
-const numericReplacements = [
-  8364, 129, 8218, 402, 8222, 8230, 8224, 8225, 710, 8240, 352, 8249, 338, 141, 381, 143, 144, 8216,
-  8217, 8220, 8221, 8226, 8211, 8212, 732, 8482, 353, 8250, 339, 157, 382, 376,
-];
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: '\u00a0',
+};
 
-function decodeRefs(text: string, attribute = false): string {
-  return text.replace(
-    /&(?:#(\d+);?|#[xX]([\da-fA-F]+);?|([A-Za-z][A-Za-z\d]{0,31};?))/g,
-    (m, dec, hex, name: string | undefined, offset: number) => {
-      if (name) {
-        // Longest case-sensitive match, including legacy semicolonless names.
-        // The bounded search cannot retry arbitrary input-length prefixes.
-        for (let end = name.length; end > 0; end--) {
-          const key = name.slice(0, end);
-          if (Object.hasOwn(namedReferences, key)) {
-            if (
-              attribute &&
-              !key.endsWith(';') &&
-              /[=A-Za-z\d]/.test(name[end] ?? text.charAt(offset + m.length))
-            )
-              return m;
-            return namedReferences[key] + name.slice(end);
-          }
-        }
-        return m;
-      }
-      const cp = dec ? +dec : parseInt(hex, 16);
-      // As the HTML parser: NUL, surrogates and out-of-range values become U+FFFD.
-      return cp === 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)
-        ? '\uFFFD'
-        : String.fromCodePoint(cp >= 128 && cp <= 159 ? numericReplacements[cp - 128] : cp);
-    },
-  );
-}
-
-// HTML attribute values may be quoted or unquoted; the first duplicate wins.
-function htmlAttributes(source: string): Map<string, string> {
-  const attrs = new Map<string, string>();
-  for (const match of source.matchAll(
-    /([^\t\n\f\r "'<>/=]+)(?:[\t\n\f\r ]*=[\t\n\f\r ]*(?:"([^"]*)"|'([^']*)'|([^\t\n\f\r >]+)))?/g,
-  )) {
-    const name = match[1].toLowerCase();
-    if (!attrs.has(name))
-      attrs.set(
-        name,
-        decodeRefs((match[2] ?? match[3] ?? match[4] ?? '').replace(/\r\n?/g, '\n'), true),
-      );
-  }
-  return attrs;
-}
-
-// Only CDO tokens between top-level CSS rules are ignored by the CSS parser.
-// Replacing those with a comment preserves token boundaries without emitting
-// an HTML comment opener when a style fragment is reused in foreign content.
-function cssCDO(text: string): Set<number> {
-  const positions = new Set<number>();
-  let quote = '',
-    comment = false,
-    blocks = 0,
-    groups = 0,
-    betweenRules = true;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (comment) {
-      if (c === '*' && text[i + 1] === '/') {
-        comment = false;
-        i++;
-      }
-      continue;
-    }
-    if (c === '\\') {
-      i++;
-      if (!quote && !blocks) betweenRules = false;
-      continue;
-    }
-    if (quote) {
-      if (c === quote) quote = '';
-      continue;
-    }
-    if (c === '/' && text[i + 1] === '*') {
-      comment = true;
-      i++;
-      continue;
-    }
-    if (!blocks && !groups && betweenRules) {
-      if (text.startsWith('<!--', i)) {
-        positions.add(i);
-        i += 3;
-        continue;
-      }
-      if (text.startsWith('-->', i)) {
-        i += 2;
-        continue;
-      }
-    }
-    if (c === '"' || c === "'") quote = c;
-    else if (c === '(' || c === '[') groups++;
-    else if (c === ')' || c === ']') groups = Math.max(0, groups - 1);
-    else if (!groups && c === '{') blocks++;
-    else if (!groups && c === '}') {
-      blocks = Math.max(0, blocks - 1);
-      if (!blocks) betweenRules = true;
-      continue;
-    } else if (!blocks && !groups && c === ';') {
-      betweenRules = true;
-      continue;
-    }
-    if (!blocks && !/[\t\n\f\r ]/.test(c)) betweenRules = false;
-  }
-  return positions;
+function decodeRefs(text: string): string {
+  return text.replace(/&(?:#(\d+)|#x([\da-f]+)|([a-z]+));/gi, (m, dec, hex, name) => {
+    if (!dec && !hex) return NAMED_ENTITIES[name.toLowerCase()] ?? m;
+    const cp = dec ? +dec : parseInt(hex, 16);
+    // As the HTML parser: NUL, surrogates and out-of-range values become U+FFFD.
+    return cp === 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)
+      ? '\uFFFD'
+      : String.fromCodePoint(cp);
+  });
 }
 
 /** Namespace an element's children are parsed in. */
 export type Namespace = 'html' | 'svg' | 'math';
-
-const svgAttributes = new Map(
-  'attributeName attributeType baseFrequency baseProfile calcMode clipPathUnits diffuseConstant edgeMode filterUnits glyphRef gradientTransform gradientUnits kernelMatrix kernelUnitLength keyPoints keySplines keyTimes lengthAdjust limitingConeAngle markerHeight markerUnits markerWidth maskContentUnits maskUnits numOctaves pathLength patternContentUnits patternTransform patternUnits pointsAtX pointsAtY pointsAtZ preserveAlpha preserveAspectRatio primitiveUnits refX refY repeatCount repeatDur requiredExtensions requiredFeatures specularConstant specularExponent spreadMethod startOffset stdDeviation stitchTiles surfaceScale systemLanguage tableValues targetX targetY textLength viewBox viewTarget xChannelSelector yChannelSelector zoomAndPan'
-    .split(' ')
-    .map((name) => [name.toLowerCase(), name]),
-);
-
-/** HTML foreign-attribute case and namespace adjustments. @internal */
-export function foreignAttribute(name: string, ns: Namespace): [string, string?] {
-  name = name.toLowerCase();
-  const uri = /^xlink:(?:actuate|arcrole|href|role|show|title|type)$/.test(name)
-    ? 'http://www.w3.org/1999/xlink'
-    : /^xml:(?:lang|space)$/.test(name)
-      ? 'http://www.w3.org/XML/1998/namespace'
-      : /^(?:xmlns|xmlns:xlink)$/.test(name)
-        ? 'http://www.w3.org/2000/xmlns/'
-        : undefined;
-  return [
-    ns === 'svg'
-      ? (svgAttributes.get(name) ?? name)
-      : name === 'definitionurl'
-        ? 'definitionURL'
-        : name,
-    uri,
-  ];
-}
-
-/** Start tags that leave foreign content under the HTML tree-construction rules. */
-export function foreignBreakout(tag: string, fontAttribute = false): boolean {
-  return (
-    /^(?:b|big|blockquote|body|br|center|code|dd|div|dl|dt|em|embed|h[1-6]|head|hr|i|img|li|listing|menu|meta|nobr|ol|p|pre|ruby|s|small|span|strong|strike|sub|sup|table|tt|u|ul|var)$/.test(
-      tag,
-    ) ||
-    (tag === 'font' && fontAttribute)
-  );
-}
 
 /** Actual element namespace, including the MathML text-integration exceptions. */
 export function elementNamespace(
@@ -333,84 +202,22 @@ export function rawEnd(html: string, from: number, tag: string): number {
 // it. A tokenizer, not a tag-stripping regex: comments (hydration markers
 // included) and tags are skipped, character references in text are decoded,
 // and raw-text / RCDATA element content is read up to its own end tag (so a
-// `<i>` inside a nested <style> stays text). Trusted public markup may contain
-// any HTML attribute quoting form. Table output groups preserve foster order.
+// `<i>` inside a nested <style> stays text). The input is framework output,
+// whose attribute values are escaped, so a tag never contains a bare `>`.
 function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): string {
-  type TextGroup = (string | TextGroup)[];
-  const output: TextGroup = [];
+  let out = '';
   let i = 0;
   let spanIndex = 0;
-  let dropLF = false;
   const ctx = getSSRRenderContext();
   // Open HTML <template> elements: their contents (declarative shadow roots
   // included) live in a separate fragment and are not part of textContent.
   const hiddenBase = hidden;
   // Namespace changes, innermost last: [tag, namespace of its children].
   // Outside HTML, style/script/title/textarea content is markup, not raw text.
-  const stack: [string, Namespace, Namespace, TextGroup, TextGroup?][] = [];
-  const group = (): TextGroup => (stack.length ? stack[stack.length - 1][3] : output);
-  // The nearest HTML table owns two ordered groups: fostered siblings, then
-  // table descendants. A cell/caption suspends the table insertion mode.
-  const table = () => {
-    for (let at = stack.length - 1; at >= 0; at--) {
-      const frame = stack[at];
-      if (frame[2] !== 'html') continue;
-      if (/^(?:td|th|caption)$/.test(frame[0])) return undefined;
-      if (frame[0] === 'table') return frame;
-    }
-    return undefined;
-  };
-  const emit = (text: string, characters = true): void => {
-    if (dropLF) {
-      if (text.startsWith('\n')) text = text.slice(1);
-      dropLF = false;
-    }
-    // Column-group whitespace stays in place. Its first non-whitespace token
-    // closes the group and is reprocessed in table mode, including its suffix.
-    if (
-      characters &&
-      stack[stack.length - 1]?.[0] === 'colgroup' &&
-      stack[stack.length - 1][2] === 'html' &&
-      table()
-    ) {
-      const at = text.search(/[^\t\n\f\r ]/);
-      if (at !== -1) {
-        if (!hidden && at) group().push(text.slice(0, at));
-        stack.pop();
-        text = text.slice(at);
-      }
-    }
-    if (hidden || !text) return;
-    const current = stack[stack.length - 1];
-    const foster =
-      characters &&
-      current?.[2] === 'html' &&
-      /^(?:table|tbody|tfoot|thead|tr)$/.test(current[0]) &&
-      /[^\t\n\f\r ]/.test(text)
-        ? table()?.[4]
-        : undefined;
-    (foster ?? group()).push(text);
-  };
+  const stack: [string, Namespace, Namespace][] = [];
   while (i < html.length) {
-    while (spanIndex < spans.length && spans[spanIndex][0] < i) spanIndex++;
-    const direct = spans[spanIndex];
-    if (direct?.[0] === i && direct[4] === undefined && !direct[3]) {
-      emit(direct[2]);
-      i = direct[1];
-      spanIndex++;
-      continue;
-    }
     const lt = html.indexOf('<', i);
-    const textEnd = lt === -1 ? html.length : lt;
-    if (direct && !direct[3] && direct[4] === undefined && direct[0] < textEnd) {
-      emit(decodeRefs(html.slice(i, direct[0]).replace(/\r\n?/g, '\n')));
-      i = direct[0];
-      continue;
-    }
-    // HTML input preprocessing happens before references are decoded, so
-    // literal CR/CRLF normalizes but an authored &#13; still yields CR.
-    if (textEnd > i) emit(decodeRefs(html.slice(i, textEnd).replace(/\r\n?/g, '\n')));
-    dropLF = false;
+    if (!hidden) out += decodeRefs(html.slice(i, lt === -1 ? html.length : lt));
     if (lt === -1) break;
     // A component's detached client host exposes its original light DOM,
     // rather than the slot's rendered location inside the shadow template.
@@ -418,211 +225,76 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
     const span = spans[spanIndex];
     if (span?.[0] === lt && span[3]) {
       // Shadow-only stream markers also disappear when the host becomes text.
-      const shadow: RawTextSpan[] = [];
-      for (let at = spanIndex + 1; at < spans.length && spans[at][0] < span[1]; at++)
-        appendRawTextSpans([spans[at]], shadow, -lt);
-      htmlText(html.slice(lt, span[1]), shadow, 1);
-      emit(htmlText(span[2], span[3], hidden));
+      htmlText(html.slice(lt, span[1]), emptySpans, 1);
+      out += htmlText(span[2], span[3], hidden);
       i = span[1];
       continue;
     }
-    let ns: Namespace = stack.length > 0 ? stack[stack.length - 1][1] : 'html';
+    const ns: Namespace = stack.length > 0 ? stack[stack.length - 1][1] : 'html';
     if (html.startsWith('<!--', lt)) {
-      // Empty comments may end abruptly; ordinary comments also accept --!>.
-      const endings = /--!?>/g;
-      endings.lastIndex = lt + 4;
-      const close =
-        html[lt + 4] === '>'
-          ? lt + 5
-          : html.startsWith('->', lt + 4)
-            ? lt + 6
-            : endings.exec(html)
-              ? endings.lastIndex
-              : -1;
+      const close = html.indexOf('-->', lt + 4);
       // These comments cannot remain DOM boundaries after text extraction.
       // The next shell pass renders those views inline before flushing.
-      if (span?.[0] === lt && span[4] !== undefined && close !== -1) {
-        const id = span[4];
-        if (ctx?.streamingBoundaries?.has(id) || ctx?.inlineBoundaries?.has(id)) {
+      if (html.startsWith('<!--s:', lt) && close !== -1) {
+        const id = Number(html.slice(lt + 6, close));
+        if (ctx?.streamingBoundaries?.has(id)) {
           if (hidden) (ctx.hiddenBoundaries ??= new Set()).add(id);
-          else {
-            ctx.inlineBoundaries?.add(id);
-            (ctx.rawBoundaries ??= new Set()).add(id);
-          }
+          else ctx.inlineBoundaries?.add(id);
         }
       }
-      i = close === -1 ? html.length : close;
-      continue;
-    }
-    // Tag-open errors emit a literal '<' and reconsume the following character.
-    // A trailing '</' at EOF similarly remains character data.
-    if (!/[A-Za-z!/?]/.test(html.charAt(lt + 1))) {
-      emit('<');
-      i = lt + 1;
-      continue;
-    }
-    if (lt === html.length - 2 && html[lt + 1] === '/') {
-      emit('</');
-      break;
-    }
-    // CDATA is character data in foreign content (a bogus comment in HTML).
-    if (
-      stack[stack.length - 1]?.[2] !== 'html' &&
-      stack.length > 0 &&
-      html.startsWith('<![CDATA[', lt)
-    ) {
-      const close = html.indexOf(']]>', lt + 9);
-      const end = close === -1 ? html.length : close;
-      emit(html.slice(lt + 9, end).replace(/\r\n?/g, '\n'), false);
       i = close === -1 ? html.length : close + 3;
       continue;
     }
-    // Bogus comments and declarations end at the first '>', even within quotes.
-    // Real comments and foreign CDATA were handled above.
-    if (
-      html[lt + 1] === '!' ||
-      html[lt + 1] === '?' ||
-      (html[lt + 1] === '/' && !/[A-Za-z>]/.test(html.charAt(lt + 2)))
-    ) {
-      const end = html.indexOf('>', lt + 2);
-      i = end === -1 ? html.length : end + 1;
+    // CDATA is character data in foreign content (a bogus comment in HTML).
+    if (ns !== 'html' && html.startsWith('<![CDATA[', lt)) {
+      const close = html.indexOf(']]>', lt + 9);
+      const end = close === -1 ? html.length : close;
+      if (!hidden) out += html.slice(lt + 9, end);
+      i = close === -1 ? html.length : close + 3;
       continue;
     }
-    // Attribute tokenization distinguishes a slash in an unquoted value from
-    // the self-closing flag. Quotes only begin values after '='.
-    let gt = lt + 1;
-    let quote = '';
-    // tag name, before/name/value, unquoted, quoted, slash, after name.
-    let state = 0;
-    if (html[gt] === '/') gt++;
-    for (; gt < html.length; gt++) {
-      const c = html[gt];
-      if (state === 5) {
-        if (c === quote) state = 1;
-        continue;
-      }
-      if (c === '>') break;
-      const space = /[\t\n\f\r ]/.test(c);
-      if (state === 6) {
-        state = 1;
-        gt--;
-      } else if (state === 4) {
-        if (space) state = 1;
-      } else if (state === 3) {
-        if (!space) {
-          if (c === '"' || c === "'") {
-            quote = c;
-            state = 5;
-          } else state = 4;
-        }
-      } else if (c === '/') state = 6;
-      else if (space) {
-        if (state === 2) state = 7;
-        else if (state !== 7) state = 1;
-      } else if (c === '=' && (state === 2 || state === 7)) state = 3;
-      else if (state === 1 || state === 7) state = 2;
-    }
-    if (gt === html.length) break;
+    const gt = html.indexOf('>', lt);
+    if (gt === -1) break;
     i = gt + 1;
     const m = /^<(\/?)([a-z][^\s/>]*)/i.exec(html.slice(lt, gt + 1));
     if (!m) continue;
     const tag = m[2].toLowerCase();
     const close = m[1] === '/';
-    // Comments, col, html and template keep column-group mode. Other tokens
-    // close it before normal table processing; an end-col token is ignored.
-    if (
-      stack[stack.length - 1]?.[0] === 'colgroup' &&
-      stack[stack.length - 1][2] === 'html' &&
-      table()
-    ) {
-      if (close && tag === 'col') continue;
-      if (close ? tag !== 'colgroup' && tag !== 'template' : !/^(?:html|col|template)$/.test(tag))
-        stack.pop();
-    }
-    const selfClosing = state === 6;
-    const attrs =
-      tag === 'font' || tag === 'annotation-xml'
-        ? htmlAttributes(html.slice(lt + m[0].length, gt))
-        : undefined;
-    const fontAttribute = !!attrs && (attrs.has('color') || attrs.has('face') || attrs.has('size'));
-    if (
-      ns !== 'html' &&
-      (close ? tag === 'p' || tag === 'br' : foreignBreakout(tag, fontAttribute))
-    ) {
-      while (stack.length && stack[stack.length - 1][1] !== 'html') stack.pop();
-      ns = 'html';
-    }
+    const selfClosing = html[gt - 1] === '/';
     if (close) {
       // Pop up to the matching open element, if any.
       let at = stack.length - 1;
-      while (at >= 0 && stack[at][0] !== tag) {
-        // Other end tags cannot escape an HTML template's scope.
-        if (stack[at][0] === 'template' && stack[at][2] === 'html') {
-          at = -1;
-          break;
-        }
-        at--;
-      }
-      if (at >= 0) {
-        if (tag === 'template' && stack[at][2] === 'html')
-          hidden = Math.max(hiddenBase, hidden - 1);
-        stack.length = at;
-      }
+      while (at >= 0 && stack[at][0] !== tag) at--;
+      if (at >= 0) stack.length = at;
+      else if (tag === 'template' && ns === 'html') hidden = Math.max(hiddenBase, hidden - 1);
       continue;
     }
-    // Table peer starts imply closing cells/captions, then rows and sections.
-    // Stop at the nearest table or template so nested tables and hidden
-    // fragments cannot close an enclosing cell. Foreign peers stay foreign.
-    if (ns === 'html' && /^(?:caption|col|colgroup|tbody|tfoot|thead|tr|td|th)$/.test(tag)) {
-      for (let at = stack.length - 1; at >= 0; at--) {
-        const frame = stack[at];
-        if (frame[2] !== 'html') continue;
-        if (frame[0] === 'table' || frame[0] === 'template') break;
-        if (
-          /^(?:td|th|caption)$/.test(frame[0]) ||
-          (frame[0] === 'tr' && tag !== 'td' && tag !== 'th') ||
-          (/^(?:tbody|tfoot|thead)$/.test(frame[0]) && !/^(?:tr|td|th)$/.test(tag))
-        )
-          stack.length = at;
-      }
-    }
+    if (selfClosing) continue;
     const parent = stack[stack.length - 1];
     const namespace = elementNamespace(ns, tag, parent?.[0], parent?.[2]);
-    // HTML ignores this flag on non-void elements; foreign elements honor it.
-    if (selfClosing && namespace !== 'html') continue;
     if (tag === 'template' && namespace === 'html') {
       hidden++;
-      stack.push([tag, 'html', 'html', []]);
       continue;
     }
     const encoding =
-      namespace === 'math' && tag === 'annotation-xml' ? attrs?.get('encoding') : undefined;
+      namespace === 'math' && tag === 'annotation-xml'
+        ? /\sencoding="([^"]*)"/i.exec(html.slice(lt, gt + 1))?.[1]
+        : undefined;
     const inner = childNamespace(namespace, tag, encoding);
-    if (namespace !== 'html' || !VOID_TAGS.has(tag)) {
-      const body: TextGroup = [];
-      const before: TextGroup | undefined =
-        namespace === 'html' && tag === 'table' ? [] : undefined;
-      const foster =
-        ns === 'html' &&
-        parent?.[2] === 'html' &&
-        /^(?:table|tbody|tfoot|thead|tr)$/.test(parent[0]) &&
-        !/^(?:caption|colgroup|col|tbody|tfoot|thead|tr|td|th|style|script)$/.test(tag)
-          ? table()?.[4]
-          : undefined;
-      (foster ?? group()).push(before ? [before, body] : body);
-      stack.push([tag, inner, namespace, body, before]);
+    if (!VOID_TAGS.has(tag)) {
+      stack.push([tag, inner, namespace]);
     }
     if (namespace === 'html') {
       if (tag === 'plaintext') {
-        emit(html.slice(i).replace(/\r\n?/g, '\n'), false);
+        if (!hidden) out += html.slice(i);
         break;
       }
       // The parser drops one newline right after these start tags.
-      dropLF = tag === 'textarea' || tag === 'pre' || tag === 'listing';
+      if ((tag === 'textarea' || tag === 'pre' || tag === 'listing') && html[i] === '\n') i++;
       // Raw text (as a scripting-enabled browser parses it) and RCDATA.
       if (/^(?:style|script|xmp|iframe|noembed|noframes|noscript|textarea|title)$/.test(tag)) {
         const end = rawEnd(html, i, tag);
-        let text = html.slice(i, end).replace(/\r\n?/g, '\n');
+        let text = html.slice(i, end);
         if (tag === 'textarea' || tag === 'title') text = decodeRefs(text);
         // Only generated spans have the original client text. Authored markup,
         // including literal CSS escapes, is read exactly as the browser reads it.
@@ -630,29 +302,12 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
           // The ordered cursor already points at this element's next span.
           if (span?.[0] === i && span[1] === end) text = span[2];
         }
-        emit(text, false);
+        if (!hidden) out += text;
         i = end;
       }
     }
   }
-  // Flatten once; neither repeated foster insertions nor deep trees repeatedly
-  // copy already accumulated text.
-  const chunks: string[] = [];
-  const groups = [output];
-  const positions = [0];
-  while (groups.length) {
-    const at = groups.length - 1;
-    const item = groups[at][positions[at]++];
-    if (item === undefined) {
-      groups.pop();
-      positions.pop();
-    } else if (typeof item === 'string') chunks.push(item);
-    else {
-      groups.push(item);
-      positions.push(0);
-    }
-  }
-  return chunks.join('');
+  return out;
 }
 
 /**
@@ -662,8 +317,7 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
  * (`<textarea>`, `<title>`, `rcdata` set) the text is HTML-escaped. For
  * raw-text (`<style>`; dynamic `<script>` content is rejected) entities are not
  * decoded, so tag-opening `<` prefixes are written as the CSS escape `\3c `.
- * CSS comparison delimiters remain literal; top-level CDO tokens become CSS
- * comments, preserving their ignored-token semantics. The output cannot form a tag in
+ * CSS comparison delimiters remain literal. The output cannot form a tag in
  * contexts such as raw text, foreign (SVG/MathML) content, or an ancestor
  * such as <xmp> or <noscript> that this element was nested in, including a
  * parent template it is spliced into at runtime. CSS reads `\3c ` as `<` in
@@ -685,7 +339,6 @@ export function valueToRawText(
   // Each prefix and adjacent slash run is visited once; an unanchored regex
   // would retry a long slash run at every starting position when no `<` follows.
   const chunks: string[] = [];
-  const cdo = text.includes('<!--') ? cssCDO(text) : undefined;
   let start = 0;
   for (let end = text.indexOf('<'); end !== -1; end = text.indexOf('<', end + 1)) {
     // Only tag-opening prefixes can become markup when this fragment is
@@ -694,13 +347,10 @@ export function valueToRawText(
     if (!/[A-Za-z/!?]/.test(text.charAt(end + 1))) continue;
     let slashes = 0;
     for (let i = end - 1; i >= start && text.charCodeAt(i) === 92; i--) slashes++;
-    chunks.push(text.slice(start, end - (slashes % 2)), cdo?.has(end) ? '/**/' : '\\3c ');
-    start = end + (cdo?.has(end) ? 4 : 1);
+    chunks.push(text.slice(start, end - (slashes % 2)), '\\3c ');
+    start = end + 1;
   }
-  if (start === 0) {
-    if (text.includes('\r')) spans?.push([offset, offset + text.length, text]);
-    return text;
-  }
+  if (start === 0) return text;
   chunks.push(text.slice(start));
   const escaped = chunks.join('');
   spans?.push([offset, offset + escaped.length, text]);
@@ -739,11 +389,7 @@ function valueToHtmlInner(
     }
     return s;
   }
-  const text = String(v);
-  if (!html) return text;
-  const escaped = escHtml(text);
-  if (text.includes('\r')) spans?.push([offset, offset + escaped.length, text]);
-  return escaped;
+  return html ? escHtml(String(v)) : String(v);
 }
 
 /**

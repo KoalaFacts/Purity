@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { createServer, type Server } from 'node:http';
-import { handleAction, serverAction } from '@purityjs/core';
+import { handleAction, resource, serverAction, suspense } from '@purityjs/core';
 import { flattenValue, valueText } from '@purityjs/core/compiler';
 import { chromium, firefox, webkit } from 'playwright';
 import {
@@ -184,10 +184,46 @@ try {
   // Generated client code takes the coercion helpers as free names; the page
   // rebuilds them from the same source the core runtime uses.
   const helperSource = `(function(){const flattenValue=${flattenValue.toString()};const valueText=${valueText.toString()};return {flattenValue,valueText};})()`;
+  const foreignTemplates = ['svg', 'math'].map((tag) =>
+    generate(parse([`<${tag}><template>x</template></${tag}>`])),
+  );
+  const rawStreamMarkup = await new Response(
+    renderToStream(
+      () =>
+        html`<textarea>${suspense(
+          () => {
+            const data = resource(() => Promise.resolve('<READY>'));
+            return html`<span>${() => data()}</span>`;
+          },
+          () => html`<span>RAW-FALLBACK</span>`,
+        )}</textarea><section id="stream-sibling">${suspense(
+          () => html`<b>SIBLING-READY</b>`,
+          () => html`<b>SIBLING-FALLBACK</b>`,
+        )}</section>`,
+      { serializeResources: false },
+    ),
+  ).text();
   for (const browserType of [chromium, firefox, webkit]) {
     const browser = await browserType.launch();
     try {
       const page = await browser.newPage();
+      const foreignResult = await page.evaluate(
+        (codes) =>
+          codes.map((code) => {
+            const render = new Function(`return ${code}`)() as () => DocumentFragment;
+            const root = render().firstChild as Element;
+            const child = root.firstChild as Element;
+            return [root.namespaceURI, child.namespaceURI, root.textContent];
+          }),
+        foreignTemplates,
+      );
+      assert.deepEqual(foreignResult, [
+        ['http://www.w3.org/2000/svg', 'http://www.w3.org/2000/svg', 'x'],
+        ['http://www.w3.org/1998/Math/MathML', 'http://www.w3.org/1998/Math/MathML', 'x'],
+      ]);
+      await page.setContent(rawStreamMarkup);
+      assert.equal(await page.locator('textarea').textContent(), '<READY>');
+      assert.equal(await page.locator('#stream-sibling').textContent(), 'SIBLING-READY');
       for (const output of doctypeControls) {
         await page.setContent(output);
         assert.equal(await page.locator('main').textContent(), 'DOCTYPE-SAFE');

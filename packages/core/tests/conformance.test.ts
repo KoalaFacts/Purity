@@ -709,6 +709,45 @@ describe('SSR / CSR / hydrate conformance', () => {
     expect(ssrHelpers.rawText([markSSRHtml('<template>x</template>')], 1)).toBe('');
   });
 
+  it('static foreign templates retain children in their own namespace', () => {
+    for (const [tag, ns] of [
+      ['svg', 'http://www.w3.org/2000/svg'],
+      ['math', 'http://www.w3.org/1998/Math/MathML'],
+    ]) {
+      const strings = [`<${tag}><template>x</template></${tag}>`];
+      const fragment = html(tpl(strings)) as DocumentFragment;
+      const root = fragment.firstChild as Element;
+      const template = root.firstChild as Element;
+      expect(root.namespaceURI).toBe(ns);
+      expect(template.namespaceURI).toBe(ns);
+      expect(template.textContent).toBe('x');
+      expect(root.textContent).toBe('x');
+      expect(renderCSR(strings, [])).toBe(normalize(renderSSR(strings, [])));
+    }
+    for (const strings of [
+      ['<svg><foreignObject><template>x</template></foreignObject></svg>'],
+      ['<math><mtext><template>x</template></mtext></math>'],
+      ['<math><annotation-xml encoding="text/html"><template>x</template></annotation-xml></math>'],
+    ]) {
+      const fragment = html(tpl(strings)) as DocumentFragment;
+      const template = fragment.querySelector('template') as HTMLTemplateElement;
+      expect(template.namespaceURI).toBe('http://www.w3.org/1999/xhtml');
+      expect(template.content.textContent).toBe('x');
+      expect(fragment.textContent).toBe('');
+    }
+  });
+
+  it('extracts original text from a large ordered list of generated styles', () => {
+    const factory = new Function(
+      `return ${generateSSR(parse(tpl(['<style>', '</style>'])))}`,
+    )() as SSRFactory;
+    const values = Array.from({ length: 2_000 }, (_, i) => `<i>${i}</i>`);
+    const list = eachSSR(values, (item) => factory([item()], ssrHelpers));
+    expect(ssrHelpers.rawText([list], 1)).toBe(
+      values.map((value) => value.replaceAll('<', '&lt;').replaceAll('>', '&gt;')).join(''),
+    );
+  });
+
   it('RCDATA carriage returns survive HTML input preprocessing', () => {
     for (const tag of ['textarea', 'title']) {
       const host = document.createElement('div');
@@ -755,6 +794,20 @@ describe('SSR / CSR / hydrate conformance', () => {
       host.innerHTML = out;
       expect(host.querySelectorAll('img'), parent).toHaveLength(0);
     }
+  });
+
+  it('a later duplicate encoding cannot grant raw-text privileges to a dynamic MathML attribute', () => {
+    const out = renderSSR(
+      [
+        '<math><annotation-xml encoding=',
+        ' encoding="text/html"><style>',
+        '</style></annotation-xml></math>',
+      ],
+      ['application/xml', '<img src=x>'],
+    );
+    const host = document.createElement('div');
+    host.innerHTML = out;
+    expect(host.querySelectorAll('img')).toHaveLength(0);
   });
 
   it('an SVG <title> keeps markup children', () => {

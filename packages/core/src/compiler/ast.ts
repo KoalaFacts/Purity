@@ -7,6 +7,11 @@
 
 export type ASTNode = ElementNode | TextNode | ExpressionNode | CommentNode | FragmentNode;
 
+/** HTML void elements, shared by parsing, codegen, and SSR text extraction. */
+export const VOID_TAGS = new Set(
+  'area base br col embed hr img input link meta param source track wbr'.split(' '),
+);
+
 export interface FragmentNode {
   type: 'fragment';
   children: ASTNode[];
@@ -18,6 +23,8 @@ export interface ElementNode {
   attributes: AttributeNode[];
   children: ASTNode[];
   isVoid: boolean; // <br>, <input>, etc.
+  /** Foreign namespace determined by the parser; omitted for HTML elements. */
+  ns?: 'svg' | 'math';
   /**
    * Set by the parser on an HTML-namespace raw-text (`'text'`: style, script)
    * or RCDATA (`'rcdata'`: textarea, title) element, whose content the HTML

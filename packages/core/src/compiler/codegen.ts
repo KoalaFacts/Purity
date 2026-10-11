@@ -13,6 +13,7 @@
 
 import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from './ast.ts';
 import { VOID_TAGS as VOID } from './parser.ts';
+import { escAttr as escapeAttr, escHtml as escapeHtml } from './ssr-runtime.ts';
 
 // JSON quoting protects JavaScript syntax; HTML delimiters must also be escaped
 // when a caller embeds generated code in an inline script. This only runs at
@@ -23,25 +24,6 @@ function jsString(value: string): string {
     .replace(/>/g, '\\u003e')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
-}
-
-function escapeHtml(s: string): string {
-  // OWASP five-character set so the helper is safe in attribute contexts too.
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function escapeAttr(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 // ---------------------------------------------------------------------------
@@ -109,21 +91,11 @@ function assertSafeScriptContent(node: ASTNode, inScript = false): void {
   for (const child of node.children) assertSafeScriptContent(child, script);
 }
 
-const URL_BINDINGS = new Set([
-  'href',
-  'src',
-  'action',
-  'formaction',
-  'poster',
-  'background',
-  'cite',
-  'data',
-  'codebase',
-  'manifest',
-  'longdesc',
-  'profile',
-  'usemap',
-]);
+const URL_BINDINGS = new Set(
+  'href src action formaction poster background cite data codebase manifest longdesc profile usemap'.split(
+    ' ',
+  ),
+);
 
 function safeBindingValue(name: string, expr: string): string {
   if (!URL_BINDINGS.has(name.toLowerCase())) return expr;
@@ -186,7 +158,7 @@ type Slot = ExprSlot | AttrSlot | RawContentSlot;
 // default `whitespace: 'condense'` behavior and Svelte's compiler.
 // ---------------------------------------------------------------------------
 
-const PRESERVE_WS_TAGS = new Set(['pre', 'textarea', 'script', 'style']);
+const PRESERVE_WS_TAGS = /^(?:pre|textarea|script|style)$/;
 
 function isIndentation(n: ASTNode): boolean {
   return n.type === 'text' && n.value.trim() === '' && n.value.includes('\n');
@@ -215,7 +187,7 @@ const rawPart = (node: ASTNode, value: (index: number) => string): string =>
 
 export function condenseWhitespace(node: ASTNode): ASTNode {
   if (node.type === 'fragment' || node.type === 'element') {
-    if (node.type === 'element' && PRESERVE_WS_TAGS.has(node.tag.toLowerCase())) return node;
+    if (node.type === 'element' && PRESERVE_WS_TAGS.test(node.tag.toLowerCase())) return node;
     let changed = false;
     const next: ASTNode[] = [];
     for (const ch of node.children) {
@@ -740,14 +712,23 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
 // hasDynamic
 // ---------------------------------------------------------------------------
 
-function hasDynamic(node: ASTNode): boolean {
-  if (node.type === 'expression') return true;
-  if (node.type === 'element') {
-    if (node.attributes.some((a) => a.kind !== 'static')) return true;
-    return node.children.some(hasDynamic);
+function hasDynamic(node: ASTNode, customElements = false): boolean {
+  switch (node.type) {
+    case 'expression':
+      return true;
+    case 'element':
+      // SSR must dispatch even static custom elements through the registry.
+      if (
+        (customElements && node.tag.includes('-')) ||
+        node.attributes.some((a) => a.kind !== 'static')
+      )
+        return true;
+    // Falls through: both elements and fragments contain children.
+    case 'fragment':
+      return node.children.some((child) => hasDynamic(child, customElements));
+    default:
+      return false;
   }
-  if (node.type === 'fragment') return node.children.some(hasDynamic);
-  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -813,7 +794,12 @@ function genStaticDOM(
     case 'element': {
       assertSafeName(node.tag, 'tag');
       const id = `_n${counter.n++}`;
-      stmts.push(`var ${id}=document.createElement(${jsString(node.tag)});`);
+      const tag = node.tag.toLowerCase();
+      const namespaceURI =
+        'http://www.w3.org/' + (node.ns === 'svg' ? '2000/svg' : '1998/Math/MathML');
+      stmts.push(
+        `var ${id}=document.${node.ns ? `createElementNS(${jsString(namespaceURI)},` : 'createElement('}${jsString(node.tag)});`,
+      );
       for (const a of node.attributes) {
         if (a.kind === 'static') {
           stmts.push(
@@ -824,7 +810,7 @@ function genStaticDOM(
         }
       }
       for (const ch of node.children) {
-        genStaticDOM(ch, /^template$/i.test(node.tag) ? `${id}.content` : id, stmts, counter);
+        genStaticDOM(ch, !node.ns && tag === 'template' ? `${id}.content` : id, stmts, counter);
       }
       stmts.push(`${parent}.appendChild(${id});`);
       break;
@@ -1208,7 +1194,7 @@ export function generateSSR(ast: FragmentNode): string {
   // hyphenated tags (which require runtime component dispatch), emit a closure
   // returning the prebuilt string. Avoids per-call work and skips the _v / _h
   // arguments entirely.
-  if (!hasDynamic(ast) && !hasCustomElement(ast)) {
+  if (!hasDynamic(ast, true)) {
     const html = buildStaticHtml(ast);
     // `html` is built by buildStaticHtml which assertSafeName-validates
     // tag/attr names and escapeHtml/escapeAttr-escapes text/attribute literals
@@ -1231,18 +1217,6 @@ export function generateSSR(ast: FragmentNode): string {
   return ["function(_v,_h){var _o='',_r=[];", ctx.parts.join(''), 'return _h.mark(_o,_r);}'].join(
     '',
   );
-}
-
-// True if any element node in the tree has a hyphenated tag. Custom elements
-// with no other dynamic content still need the runtime _h.element dispatch
-// because the component registry only populates at runtime.
-function hasCustomElement(node: ASTNode): boolean {
-  if (node.type === 'element') {
-    if (node.tag.includes('-')) return true;
-    return node.children.some(hasCustomElement);
-  }
-  if (node.type === 'fragment') return node.children.some(hasCustomElement);
-  return false;
 }
 
 export function generateSSRModule(ast: FragmentNode): string {
@@ -1423,7 +1397,7 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
 // where the markup is HTML-escaped into a dead attribute. Skip them during SSR;
 // the property assignment runs client-side at hydration. (Reflecting props such
 // as `value` / `checked` / `selected` keep their existing attribute emission.)
-const NON_REFLECTING_PROPS = new Set(['innerHTML', 'outerHTML', 'innerText', 'textContent']);
+const NON_REFLECTING_PROPS = /^(?:innerHTML|outerHTML|innerText|textContent)$/;
 
 function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx, node: import('./ast.ts').ElementNode): void {
   if (a.kind === 'static') {
@@ -1470,7 +1444,7 @@ function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx, node: import('./ast.ts').
       // assigned as properties on the client; serializing them as attributes
       // is a no-op (and escapes markup into a dead attribute). Skip server-side
       // for the property-ish kinds — `dynamic` keeps true setAttribute semantics.
-      if (a.kind !== 'dynamic' && NON_REFLECTING_PROPS.has(a.name)) return;
+      if (a.kind !== 'dynamic' && NON_REFLECTING_PROPS.test(a.name)) return;
       // The remaining kinds read the current value (calling the accessor if
       // it's a function) and emit it as a quoted attribute. `bind` skips the
       // listener install — that's a hydration-time concern.

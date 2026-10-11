@@ -14,6 +14,9 @@
 // conditional on private provenance rather than a forgeable JSON property.
 // ---------------------------------------------------------------------------
 
+import { getSSRRenderContext } from '../ssr-context.ts';
+import { VOID_TAGS } from './ast.ts';
+
 /** A string of pre-escaped, trusted HTML. Concatenated raw by valueToHtml. */
 export interface SSRHtml {
   readonly __purity_ssr_html__: string;
@@ -21,29 +24,36 @@ export interface SSRHtml {
 
 // External JSON must never gain raw-HTML privileges by copying a public field.
 // Weak references allow wrappers to be collected after each render.
-const trustedHtml = new WeakSet<object>();
-export interface RawTextSpan {
-  start: number;
-  end: number;
-  text: string;
+export type RawTextSpan = readonly [start: number, end: number, text: string];
+const emptySpans: readonly RawTextSpan[] = [];
+const trustedHtml = new WeakMap<object, readonly RawTextSpan[]>();
+
+/** Transfer original text offsets when an SSR fragment gains a prefix. @internal */
+export function appendRawTextSpans(
+  source: readonly RawTextSpan[],
+  target: RawTextSpan[],
+  offset: number,
+): void {
+  for (let i = 0; i < source.length; i++) {
+    const span = source[i];
+    target.push([offset + span[0], offset + span[1], span[2]]);
+  }
 }
-const rawTextSpans = new WeakMap<object, readonly RawTextSpan[]>();
 
 /** Marks a string as already-escaped HTML safe to concatenate raw. */
 export function markSSRHtml(s: string, spans?: readonly RawTextSpan[]): SSRHtml {
   const wrapper = Object.freeze({ __purity_ssr_html__: s });
-  trustedHtml.add(wrapper);
-  if (spans?.length)
-    rawTextSpans.set(
-      wrapper,
-      spans.map((span) => ({ ...span })),
-    );
+  trustedHtml.set(
+    wrapper,
+    spans?.length ? spans.map((span): RawTextSpan => [...span]) : emptySpans,
+  );
   return wrapper;
 }
 
 /** Type guard: true if x is a branded SSR HTML wrapper. */
 export function isSSRHtml(x: unknown): x is SSRHtml {
-  return x != null && typeof x === 'object' && trustedHtml.has(x);
+  // WeakMap.has returns false for primitives and only accepts wrappers we marked.
+  return trustedHtml.has(x as object);
 }
 
 /**
@@ -63,14 +73,7 @@ export function escHtml(s: string): string {
 }
 
 /** Escape a value for safe inclusion in a double-quoted attribute. */
-export function escAttr(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
+export const escAttr = escHtml;
 
 // Hydration markers wrap each reactive expression slot in SSR output so the
 // client-side hydrator can find binding sites without positional path drift
@@ -126,14 +129,21 @@ export type Namespace = 'html' | 'svg' | 'math';
  * mglyph/malignmark anywhere) the answer stays foreign, because misreading
  * foreign content as HTML raw text would emit it unescaped.
  */
-export function childNamespace(ns: Namespace, tag: string, parent?: string): Namespace {
+export function childNamespace(
+  ns: Namespace,
+  tag: string,
+  parent?: string,
+  encoding?: string,
+): Namespace {
   if (ns === 'math' && parent === 'annotation-xml' && tag === 'svg') return 'svg';
   if (ns === 'html') {
     if (tag === 'svg') return 'svg';
     return tag === 'math' || tag === 'mglyph' || tag === 'malignmark' ? 'math' : 'html';
   }
   if (ns === 'svg') return /^(?:foreignobject|desc|title)$/.test(tag) ? 'html' : 'svg';
-  return /^(?:mi|mo|mn|ms|mtext)$/.test(tag) ? 'html' : 'math';
+  if (tag === 'annotation-xml' && /^(?:text\/html|application\/xhtml\+xml)$/i.test(encoding ?? ''))
+    return 'html';
+  return /^m(?:[ions]|text)$/.test(tag) ? 'html' : 'math';
 }
 
 // Offset of the end tag `</tag` + whitespace, `/`, `>` or end (ASCII
@@ -143,7 +153,7 @@ export function rawEnd(html: string, from: number, tag: string): number {
   // `/`, `>` or the end.
   const tagAt = (i: number, name: string): boolean =>
     html.slice(i, i + name.length).toLowerCase() === name &&
-    /^(?:[\t\n\f\r />]|$)/.test(html.charAt(i + name.length));
+    /^[\t\n\f\r />]?$/.test(html.charAt(i + name.length));
   // Script data states (script only): 0 data, 1 escaped (after `<!--`),
   // 2 double-escaped (after `<script` while escaped), where a `</script`
   // returns to escaped instead of ending the element. `-->` returns to data.
@@ -182,6 +192,8 @@ export function rawEnd(html: string, from: number, tag: string): number {
 function htmlText(html: string, spans?: readonly RawTextSpan[]): string {
   let out = '';
   let i = 0;
+  let spanIndex = 0;
+  const ctx = getSSRRenderContext();
   // Open HTML <template> elements: their contents (declarative shadow roots
   // included) live in a separate fragment and are not part of textContent.
   let hidden = 0;
@@ -195,6 +207,12 @@ function htmlText(html: string, spans?: readonly RawTextSpan[]): string {
     const ns: Namespace = stack.length > 0 ? stack[stack.length - 1][1] : 'html';
     if (html.startsWith('<!--', lt)) {
       const close = html.indexOf('-->', lt + 4);
+      // These comments cannot remain DOM boundaries after text extraction.
+      // The next shell pass renders those views inline before flushing.
+      if (html.startsWith('<!--s:', lt) && close !== -1) {
+        const id = Number(html.slice(lt + 6, close));
+        if (ctx?.streamingBoundaries?.has(id)) ctx.inlineBoundaries?.add(id);
+      }
       i = close === -1 ? html.length : close + 3;
       continue;
     }
@@ -227,8 +245,12 @@ function htmlText(html: string, spans?: readonly RawTextSpan[]): string {
       hidden++;
       continue;
     }
-    const inner = childNamespace(ns, tag, stack[stack.length - 1]?.[0]);
-    if (!/^(?:area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)$/.test(tag)) {
+    const encoding =
+      ns === 'math' && tag === 'annotation-xml'
+        ? /\sencoding="([^"]*)"/i.exec(html.slice(lt, gt + 1))?.[1]
+        : undefined;
+    const inner = childNamespace(ns, tag, stack[stack.length - 1]?.[0], encoding);
+    if (!VOID_TAGS.has(tag)) {
       stack.push([tag, inner]);
     }
     if (ns === 'html') {
@@ -246,8 +268,13 @@ function htmlText(html: string, spans?: readonly RawTextSpan[]): string {
         // Only generated spans have the original client text. Authored markup,
         // including literal CSS escapes, is read exactly as the browser reads it.
         else if (tag === 'style') {
-          const span = spans?.find((candidate) => candidate.start === i && candidate.end === end);
-          if (span) text = span.text;
+          // Serialization appends spans in output order. Advance once through
+          // them, including spans in hidden/foreign content that we skipped.
+          if (spans) {
+            while (spanIndex < spans.length && spans[spanIndex][0] < i) spanIndex++;
+            const span = spans[spanIndex];
+            if (span?.[0] === i && span[1] === end) text = span[2];
+          }
         }
         if (!hidden) out += text;
         i = end;
@@ -287,24 +314,11 @@ export function valueToRawText(
   // would retry a long slash run at every starting position when no `<` follows.
   const chunks: string[] = [];
   let start = 0;
-  for (let end = text.indexOf('<'); end !== -1; end = text.indexOf('<', start)) {
+  for (let end = text.indexOf('<'); end !== -1; end = text.indexOf('<', end + 1)) {
     // Only tag-opening prefixes can become markup when this fragment is
     // nested in another HTML context. CSS comparison operators must remain
     // delimiters: replacing `< 600px` with an escape turns it into an identifier.
-    const next = text.charCodeAt(end + 1);
-    if (
-      !(
-        (next >= 65 && next <= 90) ||
-        (next >= 97 && next <= 122) ||
-        next === 47 ||
-        next === 33 ||
-        next === 63
-      )
-    ) {
-      chunks.push(text.slice(start, end + 1));
-      start = end + 1;
-      continue;
-    }
+    if (!/[A-Za-z/!?]/.test(text.charAt(end + 1))) continue;
     let slashes = 0;
     for (let i = end - 1; i >= start && text.charCodeAt(i) === 92; i--) slashes++;
     chunks.push(text.slice(start, end - (slashes % 2)), '\\3c ');
@@ -313,7 +327,7 @@ export function valueToRawText(
   if (start === 0) return text;
   chunks.push(text.slice(start));
   const escaped = chunks.join('');
-  spans?.push({ start: offset, end: offset + escaped.length, text });
+  spans?.push([offset, offset + escaped.length, text]);
   return escaped;
 }
 
@@ -328,15 +342,14 @@ function valueToHtmlInner(
 ): string {
   if (typeof v === 'function') v = (v as () => unknown)();
   if (v == null || v === false) return '';
-  if (isSSRHtml(v)) {
-    const source = rawTextSpans.get(v);
-    if (!html) return htmlText(v.__purity_ssr_html__, source);
-    if (spans && source) {
-      for (const span of source) {
-        spans.push({ start: offset + span.start, end: offset + span.end, text: span.text });
-      }
+  const source = trustedHtml.get(v as object);
+  if (source) {
+    const markup = (v as SSRHtml).__purity_ssr_html__;
+    if (!html) return htmlText(markup, source);
+    if (spans) {
+      appendRawTextSpans(source, spans, offset);
     }
-    return v.__purity_ssr_html__;
+    return markup;
   }
   if (Array.isArray(v)) {
     // Lazily allocate the visited set — non-cyclic input keeps the fast path
@@ -411,10 +424,7 @@ export function setSSRComponentRenderer(fn: SSRComponentRenderer | null): void {
   if (componentRenderer === fn) return;
   if (componentRenderer !== null && fn !== null) {
     throw new Error(
-      'setSSRComponentRenderer: a different renderer is already installed. ' +
-        'This usually means `@purityjs/ssr` was loaded twice (e.g. ESM dual ' +
-        'instantiation or a bundler dedup glitch). Reset to null before ' +
-        'installing a new renderer.',
+      'A different renderer is already installed; call setSSRComponentRenderer(null) first.',
     );
   }
   componentRenderer = fn;
@@ -452,10 +462,7 @@ function plainElement(
   // Custom elements are never void elements per the HTML spec — always emit
   // an explicit closing tag even if `slotHtml` is empty.
   if (spans && slotSpans) {
-    const base = offset + s.length + 1;
-    for (const span of slotSpans) {
-      spans.push({ start: base + span.start, end: base + span.end, text: span.text });
-    }
+    appendRawTextSpans(slotSpans, spans, offset + s.length + 1);
   }
   return `${s}>${slotHtml}</${tag}>`;
 }

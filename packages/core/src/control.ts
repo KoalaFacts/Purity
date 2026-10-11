@@ -11,6 +11,8 @@ import {
   isHydrating,
 } from './compiler/hydrate-runtime.ts';
 import {
+  escAttr as escapeAttrLocal,
+  escHtml as escapeHtmlLocal,
   markSSRHtml,
   type RawTextSpan,
   type SSRHtml,
@@ -2537,29 +2539,6 @@ export function listSSR<T>(
   return markSSRHtml(`<!--l-->${inner}<!--/l-->`);
 }
 
-// Local copies — escape helpers from ssr-runtime are imported indirectly via
-// valueToHtml, but listSSR builds attribute markup directly without going
-// through the converter. Inlining keeps control.ts free of cross-file calls
-// in the hot path.
-function escapeHtmlLocal(s: string): string {
-  // OWASP five-character set so the helper is safe in attribute contexts too.
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function escapeAttrLocal(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
 // HTML attribute name grammar — letters, digits, hyphen, colon, underscore.
 // Matches the conservative set codegen's assertSafeName accepts, plus `:`
 // for namespaced attrs (xml:lang, xlink:href). Anything outside this set
@@ -2729,7 +2708,7 @@ export function suspense<T>(
   // streaming, so the shell can flush immediately without awaiting the
   // boundary's resources. The marker grammar is identical — only the
   // body is the fallback rather than the resolved view.
-  if (ssrCtx.streamingMode && ssrCtx.streamingBoundaries) {
+  if (ssrCtx.streamingMode && ssrCtx.streamingBoundaries && !ssrCtx.inlineBoundaries?.has(id)) {
     let body: string;
     if (isTimedOut) {
       reportError(undefined, 'timeout');

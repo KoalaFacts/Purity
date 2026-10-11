@@ -1,5 +1,6 @@
 import { enterHydration, exitHydration, inflateDeferred, isDeferred } from './compiler/compile.ts';
 import {
+  appendRawTextSpans,
   markSSRHtml,
   type RawTextSpan,
   type SSRComponentRenderer,
@@ -512,10 +513,7 @@ export const _renderComponentSSR: SSRComponentRenderer = (
 
     const prefix = `<${tag}${hostAttrs}><template shadowrootmode="open"${focusAttr}>${styleBlock}`;
     if (spans && renderedSpans) {
-      const base = offset + prefix.length;
-      for (const span of renderedSpans) {
-        spans.push({ start: base + span.start, end: base + span.end, text: span.text });
-      }
+      appendRawTextSpans(renderedSpans, spans, offset + prefix.length);
     }
     return `${prefix}${renderedHtml}</template></${tag}>`;
   } finally {

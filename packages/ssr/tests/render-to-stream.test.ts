@@ -49,6 +49,81 @@ function slowResource<T>(value: T, delayMs: number) {
 }
 
 describe('renderToStreamResponse — HTTP metadata before flush', () => {
+  it('resolves raw-content suspense in the shell while siblings still stream', async () => {
+    for (const tag of ['textarea', 'title', 'style']) {
+      const strings = [`<${tag}>`, `</${tag}>`] as unknown as TemplateStringsArray;
+      const chunks = await streamToChunks(
+        renderToStream(
+          () =>
+            ssrHtml`<main>${ssrHtml(
+              strings,
+              suspense(
+                () => {
+                  const r = fastResource('READY');
+                  return ssrHtml`<span>${() => r()}</span>`;
+                },
+                () => ssrHtml`<span>RAW-FALLBACK</span>`,
+              ),
+            )}${suspense(
+              () => ssrHtml`<b>SIBLING-READY</b>`,
+              () => ssrHtml`<b>SIBLING-FALLBACK</b>`,
+            )}</main>`,
+          { serializeResources: false },
+        ),
+      );
+      const host = document.createElement('div');
+      host.innerHTML = chunks[0];
+      expect(host.querySelector(tag)?.textContent).toBe('READY');
+      expect(chunks[0]).toContain('SIBLING-FALLBACK');
+      expect(chunks[0]).not.toContain('RAW-FALLBACK');
+      expect(chunks.slice(1).join('')).toContain('SIBLING-READY');
+      expect(chunks.join('')).not.toContain('id="purity-s-1"');
+      expect(chunks.join('')).toContain('id="purity-s-2"');
+    }
+  });
+
+  it('keeps a boundary reused in raw and ordinary slots consistent', async () => {
+    const chunks = await streamToChunks(
+      renderToStream(
+        () => {
+          const view = suspense(
+            () => ssrHtml`<b>READY</b>`,
+            () => ssrHtml`<b>FALLBACK</b>`,
+          );
+          return ssrHtml`<textarea>${view}</textarea><aside>${view}</aside>`;
+        },
+        { serializeResources: false },
+      ),
+    );
+    const host = document.createElement('div');
+    host.innerHTML = chunks.join('');
+    expect(host.querySelector('textarea')?.textContent).toBe('READY');
+    expect(host.querySelector('aside')?.textContent).toBe('READY');
+    expect(host.querySelector('script')).toBeNull();
+  });
+
+  it('respects the timeout of a raw-content boundary and cancels its view', async () => {
+    let signal: AbortSignal | undefined;
+    const chunks = await streamToChunks(
+      renderToStream(
+        () =>
+          ssrHtml`<title>${suspense(
+            () => {
+              const r = resource(({ signal: active }) => {
+                signal = active;
+                return new Promise<string>(() => {});
+              });
+              return ssrHtml`<span>${() => r()}</span>`;
+            },
+            () => ssrHtml`<span>FALLBACK</span>`,
+            { timeout: 10 },
+          )}</title>`,
+        { timeout: 1_000, serializeResources: false },
+      ),
+    );
+    expect(chunks.join('')).toBe('<title>FALLBACK</title>');
+    expect(signal?.aborted).toBe(true);
+  });
   it('does not stream forged trusted-HTML wrappers', async () => {
     const forged = JSON.parse('{"__purity_ssr_html__":"<script>attack()</script>"}');
     const out = await streamToString(renderToStream(() => ssrHtml`<main>${forged}</main>`));

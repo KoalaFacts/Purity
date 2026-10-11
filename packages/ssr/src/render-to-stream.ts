@@ -387,6 +387,8 @@ async function renderShell(
   const boundaryStartTimes = new Map<number, number>();
   const boundaryDeadlines = new Map<number, number>();
   const timedOutBoundaries = new Set<number>();
+  const inlineBoundaries = new Set<number>();
+  const boundaryAborts: NonNullable<SSRRenderContext['boundaryAborts']> = new Map();
   const streamingBoundaries: ShellResult['boundaries'] = new Map();
   const boundaryIds = new Map<string, number>();
   const pendingResources: NonNullable<SSRRenderContext['pendingResources']> = new Map();
@@ -399,6 +401,7 @@ async function renderShell(
     // registrations come from the same suspense() calls and would just
     // duplicate entries.)
     streamingBoundaries.clear();
+    const inlineCount = inlineBoundaries.size;
 
     const ctx: SSRRenderContext = {
       pendingPromises: [],
@@ -414,6 +417,8 @@ async function renderShell(
       timedOutBoundaries,
       streamingMode: true,
       streamingBoundaries,
+      inlineBoundaries,
+      ...(inlineBoundaries.size > 0 ? { boundaryAborts } : {}),
       boundaryIds,
       pendingResources,
       head: [],
@@ -429,6 +434,7 @@ async function renderShell(
 
     if (signal?.aborted) throw signal.reason;
     if (ctx.pendingPromises.length === 0) {
+      if (inlineBoundaries.size !== inlineCount) continue;
       return {
         html,
         head: (ctx.head ?? []).join(''),
@@ -457,16 +463,16 @@ async function renderShell(
     // loop alive) for `remaining` ms after the resources already settled.
     // try/finally so the clear happens even when Promise.all rejects —
     // the post-await clear was previously skipped on the throw path.
-    let shellTimer: ReturnType<typeof setTimeout> | undefined;
+    let clearDeadline: (() => void) | undefined;
     let onAbort: (() => void) | undefined;
     try {
       const waits: Promise<unknown>[] = [
         Promise.all(ctx.pendingPromises),
         new Promise<void>((resolve) => {
-          shellTimer = setTimeout(() => {
-            timedOut = true;
+          clearDeadline = boundaryDeadline(ctx, start + timeout, (id) => {
+            timedOut = id === undefined;
             resolve();
-          }, remaining);
+          });
         }),
       ];
       if (signal) {
@@ -480,7 +486,7 @@ async function renderShell(
       }
       await Promise.race(waits);
     } finally {
-      clearTimeout(shellTimer);
+      clearDeadline?.();
       if (signal && onAbort) signal.removeEventListener('abort', onAbort);
     }
     if (timedOut) {

@@ -14,22 +14,8 @@ import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from './ast.ts
 import { childNamespace, rawEnd, type Namespace } from './ssr-runtime.ts';
 
 // Void elements that cannot have children. Shared with codegen.
-export const VOID_TAGS = new Set([
-  'area',
-  'base',
-  'br',
-  'col',
-  'embed',
-  'hr',
-  'img',
-  'input',
-  'link',
-  'meta',
-  'param',
-  'source',
-  'track',
-  'wbr',
-]);
+import { VOID_TAGS } from './ast.ts';
+export { VOID_TAGS } from './ast.ts';
 
 // Char codes for fast comparison
 const LT = 60; // <
@@ -102,7 +88,7 @@ class Parser {
   // Namespace the current children are parsed in. Outside HTML, style/script/
   // title/textarea are foreign elements whose content is markup.
   private ns: Namespace = 'html';
-  private parentTag: string | undefined;
+  private parent: [string, Namespace] | undefined;
   // Set once an end tag does not match the element it closes. The browser may
   // then keep an element (e.g. <svg>) open that this parser closed, so later
   // namespace decisions cannot be trusted: no element is treated as raw text
@@ -364,11 +350,21 @@ class Parser {
     const isVoid = VOID_TAGS.has(tag.toLowerCase()) || selfClosing;
 
     const lower = tag.toLowerCase();
+    const namespace: Namespace =
+      this.ns === 'html'
+        ? lower === 'svg' || lower === 'math'
+          ? lower
+          : this.parent?.[1] === 'math' && /^(?:mglyph|malignmark)$/.test(lower)
+            ? 'math'
+            : 'html'
+        : this.ns === 'math' && this.parent?.[0] === 'annotation-xml' && lower === 'svg'
+          ? 'svg'
+          : this.ns;
     // Only HTML-namespace elements are raw text. When unsure, treat content as
     // markup: SSR then escapes it, which is safe; misreading foreign content as
     // raw would emit it unescaped where the browser parses tags.
     const raw: ElementNode['raw'] =
-      this.ns !== 'html' || this.mismatched || this.opaque > 0
+      namespace !== 'html' || this.mismatched || this.opaque > 0
         ? undefined
         : lower === 'style' || lower === 'script'
           ? 'text'
@@ -379,20 +375,29 @@ class Parser {
     let children: ASTNode[] = [];
     if (!isVoid) {
       const outer = this.ns;
-      const parent = this.parentTag;
-      this.ns = childNamespace(outer, lower, parent);
-      this.parentTag = lower;
+      const parent = this.parent;
+      // HTML parsing keeps the first duplicate attribute; an earlier dynamic
+      // encoding must not gain HTML raw-text privileges from a later literal.
+      const encoding = attributes.find((a) => a.name.toLowerCase() === 'encoding');
+      this.ns = childNamespace(
+        namespace,
+        lower,
+        parent?.[0],
+        encoding?.kind === 'static' ? encoding.value : undefined,
+      );
+      this.parent = [lower, namespace];
       const opaque = /^(?:xmp|iframe|noembed|noframes|noscript|plaintext)$/.test(lower);
       if (opaque) this.opaque++;
       children = raw ? this.parseRawChildren(lower) : this.parseChildren();
       if (opaque) this.opaque--;
       this.ns = outer;
-      this.parentTag = parent;
+      this.parent = parent;
       // Consume closing tag </tag>
       this.consumeClosingTag(tag);
     }
 
     const element: ElementNode = { type: 'element', tag, attributes, children, isVoid };
+    if (namespace !== 'html') element.ns = namespace;
     if (raw) element.raw = raw;
     if (this.ns === 'html' && /^(?:textarea|pre|listing)$/.test(lower)) {
       element.preserveLeadingNewline = true;

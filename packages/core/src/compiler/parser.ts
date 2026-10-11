@@ -15,6 +15,7 @@ import {
   childNamespace,
   elementNamespace,
   foreignBreakout,
+  foreignAttribute,
   rawEnd,
   type Namespace,
 } from './ssr-runtime.ts';
@@ -256,7 +257,7 @@ class Parser {
         // fall through to `parseElement`, where `readName()` can't
         // consume `!` and `parseAttribute()` spins forever (no advance).
         if (this.pos + 1 < s.length && s.charCodeAt(this.pos + 1) === BANG) {
-          children.push(this.parseDeclaration());
+          this.appendText(children, this.parseDeclaration());
           continue;
         }
 
@@ -268,7 +269,7 @@ class Parser {
       }
 
       // Text content
-      children.push(this.parseText());
+      this.appendText(children, this.parseText());
     }
 
     return children;
@@ -284,7 +285,33 @@ class Parser {
     return { type: 'text', value };
   }
 
+  private appendText(children: ASTNode[], node: ASTNode): void {
+    if (node.type === 'text' && !node.raw && !node.value) return;
+    const previous = children[children.length - 1];
+    if (node.type === 'text' && !node.raw && previous?.type === 'text' && !previous.raw)
+      previous.value += node.value;
+    else children.push(node);
+  }
+
   private parseDeclaration(): ASTNode {
+    const source = this.current();
+    const cdata = source.startsWith('<![CDATA[', this.pos);
+    // Tokenizer CDATA permission uses the actual current node namespace,
+    // including foreign integration points whose children otherwise use HTML.
+    if (cdata && this.opaque === 0 && this.parent && this.parent[1] !== 'html') {
+      const start = this.pos + 9;
+      const end = source.indexOf(']]>', start);
+      if (end < 0 && this.strIdx < this.strings.length - 1)
+        throw new Error(`${UNSUPPORTED_TEMPLATE} interpolated CDATA; bind text outside CDATA.`);
+      this.pos = end < 0 ? source.length : end + 3;
+      return {
+        type: 'text',
+        value: source
+          .slice(start, end < 0 ? source.length : end)
+          .replace(/\r\n?/g, '\n')
+          .replace(/\0/g, '\uFFFD'),
+      };
+    }
     // Skip `<!`
     this.pos += 2;
     const s = this.current();
@@ -297,7 +324,9 @@ class Parser {
     if (this.pos < s.length) this.pos++; // consume `>`
     // Re-emit as a raw text node — bytes flow through codegen unescaped
     // so `<!doctype html>` survives intact. `raw` is the discriminator.
-    return { type: 'text', value: `<!${body}>`, raw: true };
+    return cdata
+      ? { type: 'comment', value: body }
+      : { type: 'text', value: `<!${body}>`, raw: true };
   }
 
   private parseComment(): ASTNode {
@@ -400,7 +429,20 @@ class Parser {
     }
     this.breakingOut = false;
     const namespace = elementNamespace(this.ns, lower, this.parent?.[0], this.parent?.[1]);
-    const isVoid = (namespace === 'html' && VOID_TAGS.has(lower)) || selfClosing;
+    const isVoid = namespace === 'html' ? VOID_TAGS.has(lower) : selfClosing;
+    if (namespace !== 'html') {
+      const seen = new Set<string>();
+      for (let i = 0; i < attributes.length; i++) {
+        const attr = attributes[i];
+        if (attr.kind === 'static' || attr.kind === 'dynamic' || attr.kind === 'bool') {
+          const [name, ns] = foreignAttribute(attr.name, namespace);
+          attr.name = name;
+          if (ns) attr.ns = ns;
+          if (seen.has(name)) attributes.splice(i--, 1);
+          else seen.add(name);
+        }
+      }
+    }
     // Only HTML-namespace elements are raw text. When unsure, treat content as
     // markup: SSR then escapes it, which is safe; misreading foreign content as
     // raw would emit it unescaped where the browser parses tags.
@@ -414,7 +456,7 @@ class Parser {
             : undefined;
 
     let children: ASTNode[] = [];
-    if (!isVoid) {
+    if (!isVoid && !selfClosing) {
       const outer = this.ns;
       const parent = this.parent;
       // HTML parsing keeps the first duplicate attribute; an earlier dynamic

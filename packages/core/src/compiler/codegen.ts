@@ -12,7 +12,6 @@
 // ---------------------------------------------------------------------------
 
 import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from './ast.ts';
-import { VOID_TAGS as VOID } from './parser.ts';
 import { escAttr as escapeAttr, escHtml as escapeHtml } from './ssr-runtime.ts';
 
 // JSON quoting protects JavaScript syntax; HTML delimiters must also be escaped
@@ -36,7 +35,8 @@ function jsString(value: string): string {
 //
 //   * Tag names and attribute names come from the parsed AST and pass
 //     through assertSafeName below before any interpolation. The regex
-//     [a-zA-Z_][\w-]* disallows everything that could escape an
+//     permits identifier-shaped names (one namespace colon in attributes),
+//     and disallows everything that could escape an
 //     identifier or single-quoted string — no dots, brackets, quotes,
 //     parentheses, semicolons, whitespace, or control chars. Anything
 //     non-conforming throws at compile time.
@@ -56,8 +56,10 @@ function jsString(value: string): string {
 // ---------------------------------------------------------------------------
 
 const SAFE_NAME = /^[a-zA-Z_][\w-]*$/;
+const SAFE_ATTRIBUTE = /^[a-zA-Z_][\w-]*(?::[a-zA-Z_][\w-]*)?$/;
 function assertSafeName(name: string, kind: string): void {
-  if (!SAFE_NAME.test(name)) throw new Error(`[Purity] Invalid ${kind} name: "${name}"`);
+  if (!(kind === 'attribute' ? SAFE_ATTRIBUTE : SAFE_NAME).test(name))
+    throw new Error(`[Purity] Invalid ${kind} name: "${name}"`);
 }
 
 function assertSafeBinding(name: string, kind: string): void {
@@ -92,7 +94,7 @@ function assertSafeScriptContent(node: ASTNode, inScript = false): void {
 }
 
 const URL_BINDINGS = new Set(
-  'href src action formaction poster background cite data codebase manifest longdesc profile usemap'.split(
+  'href xlink:href src action formaction poster background cite data codebase manifest longdesc profile usemap'.split(
     ' ',
   ),
 );
@@ -585,11 +587,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
       // rebuild the element's text from its parts instead of walking children.
       if (node.raw && hasExpressionChild(node)) {
         ctx.setup.push(rawContentBinding(el, node.children, (i) => `_v[${i}]`, true));
-      } else if (
-        !VOID.has(node.tag.toLowerCase()) &&
-        node.children.length > 0 &&
-        !node.tag.includes('-')
-      ) {
+      } else if (!node.isVoid && node.children.length > 0 && !node.tag.includes('-')) {
         // Recurse into children. Hyphenated tags are Custom Elements — their
         // shadow root is opaque to the outer hydrator; the element's own
         // connectedCallback handles its interior. Skip walking children here.
@@ -626,7 +624,7 @@ function isSimpleTemplate(ast: FragmentNode): SimpleTemplate | null {
   const root = ast.children[0];
   // Raw-text / RCDATA content is one text node built by the raw slot, not
   // appended child nodes.
-  if (root.type !== 'element' || root.raw) return null;
+  if (root.type !== 'element' || root.raw || root.ns) return null;
 
   // Check children are only text/expression (no nested elements)
   for (const ch of root.children) {
@@ -749,7 +747,7 @@ function buildStaticHtml(node: ASTNode, rawParent?: ElementNode['raw']): string 
         if (a.kind === 'static')
           s += a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
       }
-      if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
+      if (node.isVoid) return `${s}/>`;
       s += node.preserveLeadingNewline ? '>\n' : '>';
       for (const ch of node.children) s += buildStaticHtml(ch, node.raw);
       return `${s}</${node.tag}>`;
@@ -805,11 +803,7 @@ function genStaticDOM(
       );
       for (const a of node.attributes) {
         if (a.kind === 'static') {
-          stmts.push(
-            a.value
-              ? `${id}.setAttribute(${jsString(a.name)},${jsString(a.value)});`
-              : `${id}.setAttribute(${jsString(a.name)},'');`,
-          );
+          stmts.push(attributeCall(id, a, jsString(a.value)));
         }
       }
       for (const ch of node.children) {
@@ -875,7 +869,7 @@ function buildDynamicHtml(
         slots.push({ type: 'attr', tag: node.tag, attrs: dynamicAttrs, path: [...currentPath] });
       }
 
-      if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
+      if (node.isVoid) return `${s}/>`;
       s += node.preserveLeadingNewline ? '>\n' : '>';
       if (node.raw) {
         // Content is one text node: no placeholders inside. Static content is
@@ -1066,6 +1060,11 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
 // Returns { setup, reactive }: same fold contract as genExprBinding.
 // ---------------------------------------------------------------------------
 
+function attributeCall(el: string, attr: AttributeNode, value?: string): string {
+  const name = value === undefined && attr.ns ? attr.name.split(':').pop()! : attr.name;
+  return `${el}.${value === undefined ? 'remove' : 'set'}Attribute${attr.ns ? 'NS' : ''}(${attr.ns ? jsString(attr.ns) + ',' : ''}${jsString(name)}${value === undefined ? '' : ',' + value});`;
+}
+
 function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingParts {
   if (attr.kind === 'static') return { setup: '', reactive: '' };
   assertSafeName(attr.name, 'attribute');
@@ -1088,13 +1087,13 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
       const setup = [
         `var ${av}=${val};`,
         `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl}&&${av}!=null&&${av}!==false)${el}.setAttribute(${qname},${av}===true?'':String(${safeBindingValue(attr.name, av)}));`,
+        `if(!${fl}&&${av}!=null&&${av}!==false)${attributeCall(el, attr, `${av}===true?'':String(${safeBindingValue(attr.name, av)})`)}`,
       ].join('');
       const reactive = [
         `if(${fl}){`,
         `var v${id}=${av}();`,
-        `if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});`,
-        `else ${el}.setAttribute(${qname},v${id}===true?'':String(${safeBindingValue(attr.name, `v${id}`)}));`,
+        `if(v${id}==null||v${id}===false)${attributeCall(el, attr)}`,
+        `else ${attributeCall(el, attr, `v${id}===true?'':String(${safeBindingValue(attr.name, `v${id}`)})`)}`,
         `}`,
       ].join('');
       return { setup, reactive };
@@ -1104,12 +1103,12 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
       const setup = [
         `var ${av}=${val};`,
         `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl}&&${av})${el}.setAttribute(${qname},'');`,
+        `if(!${fl}&&${av})${attributeCall(el, attr, "''")}`,
       ].join('');
       const reactive = [
         `if(${fl}){`,
-        `if(${av}())${el}.setAttribute(${qname},'');`,
-        `else ${el}.removeAttribute(${qname});`,
+        `if(${av}())${attributeCall(el, attr, "''")}`,
+        `else ${attributeCall(el, attr)}`,
         `}`,
       ].join('');
       return { setup, reactive };
@@ -1300,7 +1299,7 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
       }
       emitLit(ctx, `<${node.tag}`);
       for (const a of node.attributes) emitSSRAttr(a, ctx, node);
-      if (VOID.has(node.tag.toLowerCase())) {
+      if (node.isVoid) {
         emitLit(ctx, '/>');
         return;
       }

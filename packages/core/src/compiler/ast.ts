@@ -22,7 +22,8 @@ export interface ElementNode {
   tag: string;
   attributes: AttributeNode[];
   children: ASTNode[];
-  isVoid: boolean; // <br>, <input>, etc.
+  /** HTML void element or self-closing foreign element; serialized without children. */
+  isVoid: boolean;
   /** Foreign namespace determined by the parser; omitted for HTML elements. */
   ns?: 'svg' | 'math';
   /**
@@ -73,6 +74,8 @@ export type AttributeNode =
 
 interface BaseAttribute {
   name: string;
+  /** Namespace of an HTML-parser-adjusted foreign attribute. */
+  ns?: string;
 }
 
 export interface StaticAttribute extends BaseAttribute {

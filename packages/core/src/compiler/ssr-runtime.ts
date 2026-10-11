@@ -128,6 +128,32 @@ function decodeRefs(text: string): string {
 /** Namespace an element's children are parsed in. */
 export type Namespace = 'html' | 'svg' | 'math';
 
+const svgAttributes = new Map(
+  'attributeName attributeType baseFrequency baseProfile calcMode clipPathUnits diffuseConstant edgeMode filterUnits glyphRef gradientTransform gradientUnits kernelMatrix kernelUnitLength keyPoints keySplines keyTimes lengthAdjust limitingConeAngle markerHeight markerUnits markerWidth maskContentUnits maskUnits numOctaves pathLength patternContentUnits patternTransform patternUnits pointsAtX pointsAtY pointsAtZ preserveAlpha preserveAspectRatio primitiveUnits refX refY repeatCount repeatDur requiredExtensions requiredFeatures specularConstant specularExponent spreadMethod startOffset stdDeviation stitchTiles surfaceScale systemLanguage tableValues targetX targetY textLength viewBox viewTarget xChannelSelector yChannelSelector zoomAndPan'
+    .split(' ')
+    .map((name) => [name.toLowerCase(), name]),
+);
+
+/** HTML foreign-attribute case and namespace adjustments. @internal */
+export function foreignAttribute(name: string, ns: Namespace): [string, string?] {
+  name = name.toLowerCase();
+  const uri = /^xlink:(?:actuate|arcrole|href|role|show|title|type)$/.test(name)
+    ? 'http://www.w3.org/1999/xlink'
+    : /^xml:(?:lang|space)$/.test(name)
+      ? 'http://www.w3.org/XML/1998/namespace'
+      : /^(?:xmlns|xmlns:xlink)$/.test(name)
+        ? 'http://www.w3.org/2000/xmlns/'
+        : undefined;
+  return [
+    ns === 'svg'
+      ? (svgAttributes.get(name) ?? name)
+      : name === 'definitionurl'
+        ? 'definitionURL'
+        : name,
+    uri,
+  ];
+}
+
 /** Start tags that leave foreign content under the HTML tree-construction rules. */
 export function foreignBreakout(tag: string, fontAttribute = false): boolean {
   return (
@@ -259,7 +285,11 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
       continue;
     }
     // CDATA is character data in foreign content (a bogus comment in HTML).
-    if (ns !== 'html' && html.startsWith('<![CDATA[', lt)) {
+    if (
+      stack[stack.length - 1]?.[2] !== 'html' &&
+      stack.length > 0 &&
+      html.startsWith('<![CDATA[', lt)
+    ) {
       const close = html.indexOf(']]>', lt + 9);
       const end = close === -1 ? html.length : close;
       if (!hidden) out += html.slice(lt + 9, end);
@@ -308,7 +338,7 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
         ? /\sencoding="([^"]*)"/i.exec(html.slice(lt, gt + 1))?.[1]
         : undefined;
     const inner = childNamespace(namespace, tag, encoding);
-    if (!VOID_TAGS.has(tag)) {
+    if (namespace !== 'html' || !VOID_TAGS.has(tag)) {
       stack.push([tag, inner, namespace]);
     }
     if (namespace === 'html') {

@@ -596,15 +596,14 @@ describe('compiler — extra coverage', () => {
     expect(first.value).toBe('<!DOCTYPE html>');
   });
 
-  it('parses `<![CDATA[...]]>` as a raw text node', () => {
+  it('parses HTML CDATA syntax as a bogus comment, matching the HTML tokenizer', () => {
     const ast = parse(['<![CDATA[x>y]]>']);
     const first = ast.children[0] as any;
-    expect(first.type).toBe('text');
-    expect(first.raw).toBe(true);
-    // Stops at the first `>` — CDATA in template literals is unusual;
-    // the goal is to survive parsing without infinite-looping, not to
-    // be a full SGML reader.
-    expect(first.value.startsWith('<![CDATA[')).toBe(true);
+    const template = document.createElement('template');
+    template.innerHTML = '<![CDATA[x>y]]>';
+    expect(first.type).toBe('comment');
+    expect(first.value).toBe((template.content.firstChild as Comment).data);
+    expect((ast.children[1] as any).value).toBe(template.content.lastChild?.textContent);
   });
 
   it('parses unquoted attribute values', () => {

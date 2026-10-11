@@ -784,6 +784,114 @@ describe('SSR / CSR / hydrate conformance', () => {
     expect(renderCSR(strings, [])).toBe(normalize(renderSSR(strings, [])));
   });
 
+  it('foreign HTML-void names retain children across static, dynamic, SSR and hydration', async () => {
+    for (const outer of ['svg', 'math']) {
+      for (const tag of ['input', 'area', 'source', 'link', 'track', 'wbr']) {
+        const staticStrings = [`<${outer}><${tag}><circle>kept</circle></${tag}></${outer}>`];
+        expect(renderCSR(staticStrings, [])).toBe(normalize(renderSSR(staticStrings, [])));
+        const strings = [
+          `<${outer}><${tag}><circle>`,
+          `</circle></${tag}><circle>tail</circle></${outer}>`,
+        ];
+        const value = state('kept');
+        const host = document.createElement('div');
+        host.innerHTML = renderSSR(strings, [value]);
+        expect(host.querySelector(tag)?.textContent).toBe('kept');
+        expect(renderCSR(strings, [value])).toBe(normalize(host.innerHTML));
+        const circle = host.querySelector('circle');
+        const mounted = hydrate(host, () => html(tpl(strings), value) as Node);
+        value('updated');
+        await tick();
+        expect(host.querySelector('circle')).toBe(circle);
+        expect(circle?.textContent).toBe('updated');
+        expect(host.querySelectorAll('circle')[1]?.textContent).toBe('tail');
+        mounted.unmount();
+      }
+    }
+    const strings = ['<main><div/><p>tail</p></main>'];
+    expect(renderCSR(strings, [])).toBe(normalize(renderSSR(strings, [])));
+  });
+
+  it('static foreign attributes have the HTML-parser names and namespaces', () => {
+    const strings = [
+      '<svg viewbox="0 0 10 10" preserveaspectratio="none" xml:lang="en" xmlns:xlink="http://www.w3.org/1999/xlink"><lineargradient gradientunits="userSpaceOnUse" xlink:href="#g"></lineargradient></svg>',
+    ];
+    const root = html(tpl(strings)) as DocumentFragment;
+    const svg = root.querySelector('svg')!;
+    expect(svg.getAttribute('viewBox')).toBe('0 0 10 10');
+    expect(svg.getAttribute('preserveAspectRatio')).toBe('none');
+    expect(svg.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'lang')).toBe('en');
+    expect(svg.getAttributeNS('http://www.w3.org/2000/xmlns/', 'xlink')).toBe(
+      'http://www.w3.org/1999/xlink',
+    );
+    expect(
+      root.querySelector('linearGradient')?.getAttributeNS('http://www.w3.org/1999/xlink', 'href'),
+    ).toBe('#g');
+    expect(renderCSR(strings, [])).toBe(normalize(renderSSR(strings, [])));
+  });
+
+  it('foreign CDATA contributes only normalized character data across rendering paths', () => {
+    for (const outer of ['svg', 'math', 'svg><foreignObject']) {
+      const close = outer === 'svg><foreignObject' ? 'foreignObject></svg' : outer;
+      const strings = [`<${outer}>before<![CDATA[<b>x</b>&\r\ny>]]>after</${close}>`];
+      const fragment = html(tpl(strings)) as DocumentFragment;
+      expect(fragment.textContent).toBe('before<b>x</b>&\ny>after');
+      expect(renderCSR(strings, [])).toBe(normalize(renderSSR(strings, [])));
+      const dynamic = [strings[0] + '<p>', '</p>'];
+      expect(renderCSR(dynamic, ['tail'])).toBe(normalize(renderSSR(dynamic, ['tail'])));
+      const host = document.createElement('div');
+      host.innerHTML = renderSSR(dynamic, ['tail']);
+      const text = host.querySelector('svg, math')?.firstChild;
+      const mounted = hydrate(host, () => html(tpl(dynamic), 'tail') as Node);
+      expect(host.querySelector('svg, math')?.firstChild).toBe(text);
+      mounted.unmount();
+    }
+    expect((html(tpl(['<div><![CDATA[x]]></div>'])) as DocumentFragment).textContent).toBe('');
+    const empty = ['<svg><![CDATA[]]><circle>', '</circle></svg>'];
+    const host = document.createElement('div');
+    host.innerHTML = renderSSR(empty, ['tail']);
+    const circle = host.querySelector('circle');
+    const mounted = hydrate(host, () => html(tpl(empty), 'tail') as Node);
+    expect(host.querySelector('circle')).toBe(circle);
+    expect(host.textContent).toBe('tail');
+    mounted.unmount();
+    expect(() => parse(tpl(['<svg><![CDATA[', ']]></svg>']))).toThrow('interpolated CDATA');
+  });
+
+  it('foreign reactive attributes retain namespace identity through updates and removal', async () => {
+    const strings = [
+      '<svg viewbox="0 0 10 10" VIEWBOX="0 0 99 99"><lineargradient gradientunits=',
+      ' xlink:href=',
+      '></lineargradient></svg>',
+    ];
+    const units = state('userSpaceOnUse');
+    const href = state<string | null>('#g');
+    const host = document.createElement('div');
+    host.innerHTML = renderSSR(strings, [units, href]);
+    const mounted = hydrate(host, () => html(tpl(strings), units, href) as Node);
+    const gradient = host.querySelector('linearGradient')!;
+    expect(host.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 10 10');
+    expect(gradient.getAttribute('gradientUnits')).toBe('userSpaceOnUse');
+    expect(gradient.getAttributeNS('http://www.w3.org/1999/xlink', 'href')).toBe('#g');
+    units('objectBoundingBox');
+    href('#next');
+    await tick();
+    expect(gradient.getAttribute('gradientUnits')).toBe('objectBoundingBox');
+    expect(gradient.getAttributeNS('http://www.w3.org/1999/xlink', 'href')).toBe('#next');
+    href(null);
+    await tick();
+    expect(gradient.hasAttributeNS('http://www.w3.org/1999/xlink', 'href')).toBe(false);
+    mounted.unmount();
+    expect(() => html(tpl(strings), 'userSpaceOnUse', 'javascript:attack()')).toThrow(
+      'Unsafe URL binding',
+    );
+    const math = ['<math definitionurl="https://example.com/definition"><mi>x</mi></math>'];
+    expect(
+      (html(tpl(math)) as DocumentFragment).firstElementChild?.getAttribute('definitionURL'),
+    ).toBe('https://example.com/definition');
+    expect(renderCSR(math, [])).toBe(normalize(renderSSR(math, [])));
+  });
+
   it('static foreign templates retain children in their own namespace', () => {
     for (const [tag, ns] of [
       ['svg', 'http://www.w3.org/2000/svg'],

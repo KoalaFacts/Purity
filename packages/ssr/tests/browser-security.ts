@@ -209,7 +209,37 @@ try {
     markup: string;
     tag: string;
     expected: string;
+    values?: string[];
   }[] = [];
+  for (const outer of ['svg', 'math']) {
+    for (const tag of ['input', 'area', 'source', 'link', 'track', 'wbr']) {
+      const strings = [
+        `<${outer}><${tag}><circle>`,
+        `</circle></${tag}><circle>tail</circle></${outer}>`,
+      ];
+      const tree = parse(strings);
+      rawCases.push({
+        client: generate(tree),
+        hydrate: generateHydrate(tree),
+        markup: await renderToString(() =>
+          html(strings as unknown as TemplateStringsArray, 'kept'),
+        ),
+        tag: 'circle',
+        expected: 'kept',
+        values: ['kept'],
+      });
+    }
+    const strings = [`<${outer}>before<![CDATA[<b>x</b>&\r\ny>]]>after</${outer}><p>`, '</p>'];
+    const tree = parse(strings);
+    rawCases.push({
+      client: generate(tree),
+      hydrate: generateHydrate(tree),
+      markup: await renderToString(() => html(strings as unknown as TemplateStringsArray, 'tail')),
+      tag: outer,
+      expected: 'before<b>x</b>&\ny>after',
+      values: ['tail'],
+    });
+  }
   const foreignRawCases: string[][] = [];
   for (const tag of ['xmp', 'iframe', 'noembed', 'noframes', 'noscript', 'plaintext']) {
     foreignRawCases.push([
@@ -238,7 +268,7 @@ try {
     });
   }
   const svgStrings = [
-    '<svg><defs><lineargradient id="g"><stop></stop></lineargradient></defs><textpath>x</textpath><foreignobject><div>HTML</div></foreignobject></svg>',
+    '<svg viewbox="0 0 10 10" VIEWBOX="0 0 99 99" preserveaspectratio="none" xml:lang="en" xmlns:xlink="http://www.w3.org/1999/xlink"><defs><lineargradient id="g" gradientunits="userSpaceOnUse" xlink:href="#base"><stop></stop></lineargradient></defs><textpath>x</textpath><foreignobject><div>HTML</div></foreignobject></svg>',
   ];
   const svgStaticCode = generate(parse(svgStrings));
   const svgStaticMarkup = await renderToString(() =>
@@ -320,6 +350,14 @@ try {
             root.querySelector('textPath')?.localName,
             root.querySelector('foreignObject')?.localName,
             root.querySelector('div')?.namespaceURI,
+            root.querySelector('svg')?.getAttribute('viewBox'),
+            root.querySelector('svg')?.getAttribute('preserveAspectRatio'),
+            root
+              .querySelector('svg')
+              ?.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'lang'),
+            root.querySelector('svg')?.getAttributeNS('http://www.w3.org/2000/xmlns/', 'xlink'),
+            root.querySelector('#g')?.getAttribute('gradientUnits'),
+            root.querySelector('#g')?.getAttributeNS('http://www.w3.org/1999/xlink', 'href'),
           ]);
         },
         { code: svgStaticCode, markup: svgStaticMarkup },
@@ -332,6 +370,12 @@ try {
           'textPath',
           'foreignObject',
           'http://www.w3.org/1999/xhtml',
+          '0 0 10 10',
+          'none',
+          'en',
+          'http://www.w3.org/1999/xlink',
+          'userSpaceOnUse',
+          '#base',
         ]),
       );
       await page.setContent(rawStreamMarkup);
@@ -350,7 +394,7 @@ try {
                 H.valueText,
               );
             const immediate = (fn: () => void) => fn();
-            const values = [fixture.tag === 'style' ? 'p{color:red}' : 'x'];
+            const values = fixture.values ?? [fixture.tag === 'style' ? 'p{color:red}' : 'x'];
             const client = bind(fixture.client)(values, immediate) as DocumentFragment;
             const host = document.createElement('div');
             host.innerHTML = fixture.markup;

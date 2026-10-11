@@ -387,18 +387,22 @@ async function renderShell(
   const boundaryStartTimes = new Map<number, number>();
   const boundaryDeadlines = new Map<number, number>();
   const timedOutBoundaries = new Set<number>();
+  const inlineBoundaries = new Set<number>();
+  const boundaryAborts: NonNullable<SSRRenderContext['boundaryAborts']> = new Map();
   const streamingBoundaries: ShellResult['boundaries'] = new Map();
   const boundaryIds = new Map<string, number>();
   const pendingResources: NonNullable<SSRRenderContext['pendingResources']> = new Map();
 
   let html = '';
-  for (let pass = 0; pass < MAX_PASSES; pass++) {
+  // Discovery of synchronous inline boundaries does not consume async passes.
+  for (let pass = 0; pass < MAX_PASSES;) {
     if (signal?.aborted) throw signal.reason;
     // Reset the registered boundary set on each pass — only the LAST pass's
     // suspense() registrations describe the true wire order. (Earlier-pass
     // registrations come from the same suspense() calls and would just
     // duplicate entries.)
     streamingBoundaries.clear();
+    const inlineCount = inlineBoundaries.size;
 
     const ctx: SSRRenderContext = {
       pendingPromises: [],
@@ -414,6 +418,8 @@ async function renderShell(
       timedOutBoundaries,
       streamingMode: true,
       streamingBoundaries,
+      inlineBoundaries,
+      ...(inlineBoundaries.size > 0 ? { boundaryAborts } : {}),
       boundaryIds,
       pendingResources,
       head: [],
@@ -429,6 +435,17 @@ async function renderShell(
 
     if (signal?.aborted) throw signal.reason;
     if (ctx.pendingPromises.length === 0) {
+      if (inlineBoundaries.size !== inlineCount) {
+        if (Date.now() - start >= timeout)
+          throw new SSRTimeoutError('shell', timeout, '[Purity] renderToStream shell timed out.');
+        continue;
+      }
+      if (ctx.hiddenBoundaries) {
+        const visible = new Set(
+          Array.from(html.matchAll(/<!--s:(\d+)-->/g), (match) => Number(match[1])),
+        );
+        for (const id of ctx.hiddenBoundaries) if (!visible.has(id)) streamingBoundaries.delete(id);
+      }
       return {
         html,
         head: (ctx.head ?? []).join(''),
@@ -441,6 +458,7 @@ async function renderShell(
       };
     }
 
+    pass++;
     const remaining = timeout - (Date.now() - start);
     if (remaining <= 0) {
       throw new SSRTimeoutError(
@@ -457,16 +475,16 @@ async function renderShell(
     // loop alive) for `remaining` ms after the resources already settled.
     // try/finally so the clear happens even when Promise.all rejects —
     // the post-await clear was previously skipped on the throw path.
-    let shellTimer: ReturnType<typeof setTimeout> | undefined;
+    let clearDeadline: (() => void) | undefined;
     let onAbort: (() => void) | undefined;
     try {
       const waits: Promise<unknown>[] = [
         Promise.all(ctx.pendingPromises),
         new Promise<void>((resolve) => {
-          shellTimer = setTimeout(() => {
-            timedOut = true;
+          clearDeadline = boundaryDeadline(ctx, start + timeout, (id) => {
+            timedOut = id === undefined;
             resolve();
-          }, remaining);
+          });
         }),
       ];
       if (signal) {
@@ -480,7 +498,7 @@ async function renderShell(
       }
       await Promise.race(waits);
     } finally {
-      clearTimeout(shellTimer);
+      clearDeadline?.();
       if (signal && onAbort) signal.removeEventListener('abort', onAbort);
     }
     if (timedOut) {

@@ -11,24 +11,11 @@
 // ---------------------------------------------------------------------------
 
 import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from './ast.ts';
+import { childNamespace, elementNamespace, rawEnd, type Namespace } from './ssr-runtime.ts';
 
 // Void elements that cannot have children. Shared with codegen.
-export const VOID_TAGS = new Set([
-  'area',
-  'base',
-  'br',
-  'col',
-  'embed',
-  'hr',
-  'img',
-  'input',
-  'link',
-  'meta',
-  'param',
-  'source',
-  'track',
-  'wbr',
-]);
+import { VOID_TAGS } from './ast.ts';
+export { VOID_TAGS } from './ast.ts';
 
 // Char codes for fast comparison
 const LT = 60; // <
@@ -98,6 +85,19 @@ class Parser {
   private strIdx = 0; // current string index
   private pos = 0; // position within current string
   private exprIndex = 0; // next expression index
+  // Namespace the current children are parsed in. Outside HTML, style/script/
+  // title/textarea are foreign elements whose content is markup.
+  private ns: Namespace = 'html';
+  private parent: [string, Namespace] | undefined;
+  // Set once an end tag does not match the element it closes. The browser may
+  // then keep an element (e.g. <svg>) open that this parser closed, so later
+  // namespace decisions cannot be trusted: no element is treated as raw text
+  // (its content stays escaped).
+  private mismatched = false;
+  // Inside an element the browser reads as raw text (xmp, iframe, noembed,
+  // noframes, noscript, plaintext) while this parser reads markup: nested
+  // elements are not raw text, so their content stays escaped.
+  private opaque = 0;
 
   constructor(strings: readonly string[]) {
     this.strings = strings;
@@ -349,17 +349,75 @@ class Parser {
     // lowercase doesn't affect them.
     const isVoid = VOID_TAGS.has(tag.toLowerCase()) || selfClosing;
 
+    const lower = tag.toLowerCase();
+    const namespace = elementNamespace(this.ns, lower, this.parent?.[0], this.parent?.[1]);
+    // Only HTML-namespace elements are raw text. When unsure, treat content as
+    // markup: SSR then escapes it, which is safe; misreading foreign content as
+    // raw would emit it unescaped where the browser parses tags.
+    const raw: ElementNode['raw'] =
+      namespace !== 'html' || this.mismatched || this.opaque > 0
+        ? undefined
+        : lower === 'style' || lower === 'script'
+          ? 'text'
+          : lower === 'textarea' || lower === 'title'
+            ? 'rcdata'
+            : undefined;
+
     let children: ASTNode[] = [];
     if (!isVoid) {
-      children = this.parseChildren();
+      const outer = this.ns;
+      const parent = this.parent;
+      // HTML parsing keeps the first duplicate attribute; an earlier dynamic
+      // encoding must not gain HTML raw-text privileges from a later literal.
+      const encoding = attributes.find((a) => a.name.toLowerCase() === 'encoding');
+      this.ns = childNamespace(
+        namespace,
+        lower,
+        encoding?.kind === 'static' ? encoding.value : undefined,
+      );
+      this.parent = [lower, namespace];
+      const opaque = /^(?:xmp|iframe|noembed|noframes|noscript|plaintext)$/.test(lower);
+      if (opaque) this.opaque++;
+      children = raw ? this.parseRawChildren(lower) : this.parseChildren();
+      if (opaque) this.opaque--;
+      this.ns = outer;
+      this.parent = parent;
       // Consume closing tag </tag>
       this.consumeClosingTag(tag);
     }
 
-    return { type: 'element', tag, attributes, children, isVoid };
+    const element: ElementNode = { type: 'element', tag, attributes, children, isVoid };
+    if (namespace !== 'html') element.ns = namespace;
+    if (raw) element.raw = raw;
+    if (this.ns === 'html' && /^(?:textarea|pre|listing)$/.test(lower)) {
+      element.preserveLeadingNewline = true;
+    }
+    return element;
   }
 
-  private consumeClosingTag(_tag: string): void {
+  // Raw-text / RCDATA content (style, script, textarea, title): the HTML parser
+  // reads it as text up to the element's own end tag — `</` + the tag name
+  // (ASCII case-insensitive) + whitespace, `/`, `>` or the end. Markup and
+  // comments inside are plain text; expressions still split it.
+  private parseRawChildren(tag: string): ASTNode[] {
+    const children: ASTNode[] = [];
+    while (!this.atEnd()) {
+      if (this.atExprBoundary()) {
+        children.push({ type: 'expression', index: this.consumeExpr() });
+        continue;
+      }
+      const s = this.current();
+      // Compare candidates in place: lower-casing the whole segment could change
+      // its length (e.g. U+0130) and shift every offset after it.
+      const until = rawEnd(s, this.pos, tag);
+      if (until > this.pos) children.push({ type: 'text', value: s.slice(this.pos, until) });
+      this.pos = until;
+      if (until < s.length) break;
+    }
+    return children;
+  }
+
+  private consumeClosingTag(tag: string): void {
     const s = this.current();
     // Expect </tagname>
     if (
@@ -368,8 +426,7 @@ class Parser {
       s.charCodeAt(this.pos + 1) === SLASH
     ) {
       this.pos += 2;
-      // Skip tag name
-      this.readName();
+      if (this.readName().toLowerCase() !== tag.toLowerCase()) this.mismatched = true;
       // Skip whitespace
       this.skipWhitespace();
       // Skip >

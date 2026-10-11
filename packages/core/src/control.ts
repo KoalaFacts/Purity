@@ -10,7 +10,14 @@ import {
   isDeferred,
   isHydrating,
 } from './compiler/hydrate-runtime.ts';
-import { markSSRHtml, type SSRHtml, valueToHtml } from './compiler/ssr-runtime.ts';
+import {
+  escAttr as escapeAttrLocal,
+  escHtml as escapeHtmlLocal,
+  markSSRHtml,
+  type RawTextSpan,
+  type SSRHtml,
+  valueToHtml,
+} from './compiler/ssr-runtime.ts';
 import {
   disposeScope,
   getCurrentContext,
@@ -2384,8 +2391,10 @@ export function matchSSR<T extends string | number | boolean>(
 ): SSRHtml {
   const key = String(sourceFn()) as `${T}`;
   const view = cases[key] ?? fallback;
-  const inner = view ? valueToHtml(view()) : '';
-  return markSSRHtml(`<!--m:${encodeRowKey(key)}-->${inner}<!--/m-->`);
+  const prefix = `<!--m:${encodeRowKey(key)}-->`;
+  const spans: RawTextSpan[] = [];
+  const inner = view ? valueToHtml(view(), spans, prefix.length) : '';
+  return markSSRHtml(`${prefix}${inner}<!--/m-->`, spans);
 }
 
 /** SSR variant of {@link when}. Picks then/else once, returns HTML. */
@@ -2396,8 +2405,10 @@ export function whenSSR(
 ): SSRHtml {
   const cond = conditionFn();
   const view = cond ? thenFn : elseFn;
-  const inner = view ? valueToHtml(view()) : '';
-  return markSSRHtml(`<!--m:${cond ? 'true' : 'false'}-->${inner}<!--/m-->`);
+  const prefix = `<!--m:${cond ? 'true' : 'false'}-->`;
+  const spans: RawTextSpan[] = [];
+  const inner = view ? valueToHtml(view(), spans, prefix.length) : '';
+  return markSSRHtml(`${prefix}${inner}<!--/m-->`, spans);
 }
 
 /**
@@ -2417,7 +2428,8 @@ export function eachSSR<T>(
 ): SSRHtml {
   const items = (typeof listAccessor === 'function' ? listAccessor() : listAccessor) || [];
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
-  let inner = '';
+  let inner = '<!--e-->';
+  const spans: RawTextSpan[] = [];
   const seenKeys = new Set<unknown>();
   for (let i = 0; i < items.length; i++) {
     // Pass a frozen accessor so user code that calls `item()` works the same
@@ -2431,9 +2443,10 @@ export function eachSSR<T>(
     }
     seenKeys.add(key);
     const accessor = () => value;
-    inner += `<!--er:${encodeRowKey(key)}-->${valueToHtml(mapFn(accessor, i))}<!--/er-->`;
+    inner += `<!--er:${encodeRowKey(key)}-->`;
+    inner += valueToHtml(mapFn(accessor, i), spans, inner.length) + '<!--/er-->';
   }
-  return markSSRHtml(`<!--e-->${inner}<!--/e-->`);
+  return markSSRHtml(`${inner}<!--/e-->`, spans);
 }
 
 interface ListSSROptions<T> {
@@ -2524,29 +2537,6 @@ export function listSSR<T>(
     inner += `<${tag}${attrs}>${text}</${tag}>`;
   }
   return markSSRHtml(`<!--l-->${inner}<!--/l-->`);
-}
-
-// Local copies — escape helpers from ssr-runtime are imported indirectly via
-// valueToHtml, but listSSR builds attribute markup directly without going
-// through the converter. Inlining keeps control.ts free of cross-file calls
-// in the hot path.
-function escapeHtmlLocal(s: string): string {
-  // OWASP five-character set so the helper is safe in attribute contexts too.
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function escapeAttrLocal(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 // HTML attribute name grammar — letters, digits, hyphen, colon, underscore.
@@ -2657,11 +2647,14 @@ export function suspense<T>(
   let id = ids.get(path);
   if (id === undefined) ids.set(path, (id = ids.size + 1));
   ssrCtx.suspenseCounter = Math.max(ssrCtx.suspenseCounter, id);
+  const prefix = `<!--s:${id}-->`;
+  const spans: RawTextSpan[] = [];
   const renderFallback = () => {
+    spans.length = 0;
     const previousPath = ssrCtx.boundaryPath;
     ssrCtx.boundaryPath = `${path}/fallback`;
     try {
-      return valueToHtml(fallback());
+      return valueToHtml(fallback(), spans, prefix.length);
     } finally {
       ssrCtx.boundaryPath = previousPath;
     }
@@ -2715,7 +2708,7 @@ export function suspense<T>(
   // streaming, so the shell can flush immediately without awaiting the
   // boundary's resources. The marker grammar is identical — only the
   // body is the fallback rather than the resolved view.
-  if (ssrCtx.streamingMode && ssrCtx.streamingBoundaries) {
+  if (ssrCtx.streamingMode && ssrCtx.streamingBoundaries && !ssrCtx.inlineBoundaries?.has(id)) {
     let body: string;
     if (isTimedOut) {
       reportError(undefined, 'timeout');
@@ -2751,7 +2744,7 @@ export function suspense<T>(
           | undefined,
       });
     }
-    return markSSRHtml(`<!--s:${id}-->${body}<!--/s:${id}-->`);
+    return markSSRHtml(`${prefix}${body}<!--/s:${id}-->`, body ? spans : undefined);
   }
 
   let body: string;
@@ -2776,7 +2769,7 @@ export function suspense<T>(
     ssrCtx.boundaryPath = `${path}/view`;
     let viewThrew = false;
     try {
-      body = valueToHtml(view());
+      body = valueToHtml(view(), spans, prefix.length);
     } catch (err) {
       viewThrew = true;
       reportError(err, 'view');
@@ -2817,5 +2810,5 @@ export function suspense<T>(
       }
     }
   }
-  return markSSRHtml(`<!--s:${id}-->${body}<!--/s:${id}-->`);
+  return markSSRHtml(`${prefix}${body}<!--/s:${id}-->`, body ? spans : undefined);
 }

@@ -16,6 +16,19 @@ const WRAPPER_OPEN = (id: number, trigger: string): string =>
 const WRAPPER_CLOSE = '</purity-island>';
 
 describe('island() — SSR wrapper (Phase 2)', () => {
+  it('preserves original style text when nested islands contribute to RCDATA', async () => {
+    const Style = island(() => ssrHtml`<style>${'p{content:"\\3c <i>"}'}</style>`);
+    const Outer = island(() => ssrHtml`<section>${Style()}</section>`, {
+      hydrate: 'media:(width < 600px)',
+    });
+    for (const tag of ['textarea', 'title']) {
+      const strings = [`<${tag}>`, `</${tag}>`] as unknown as TemplateStringsArray;
+      const out = await renderToString(() => ssrHtml(strings, Outer()));
+      const host = document.createElement('div');
+      host.innerHTML = out;
+      expect(host.querySelector(tag)?.textContent).toBe('p{content:"\\3c <i>"}');
+    }
+  });
   it('wraps the rendered view in <purity-island> with the default trigger', async () => {
     const View = () => ssrHtml`<aside class="x"><h2>hi</h2></aside>`;
     const inner = await renderToString(View);

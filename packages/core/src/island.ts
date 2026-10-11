@@ -22,7 +22,13 @@
 // flow through expression slots without changing the result shape.
 // ---------------------------------------------------------------------------
 
-import { escAttr, markSSRHtml, type SSRHtml, valueToHtml } from './compiler/ssr-runtime.ts';
+import {
+  escAttr,
+  markSSRHtml,
+  type RawTextSpan,
+  type SSRHtml,
+  valueToHtml,
+} from './compiler/ssr-runtime.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
 /**
@@ -132,17 +138,16 @@ export function island<V extends (...args: never[]) => unknown>(
       // used by mountIslands). The error itself is rethrown unchanged —
       // higher-level boundaries (suspense, renderToString) decide policy.
       const id = ++ctx.islandCounter;
+      const prefix = `<purity-island data-pi-id="${id}" data-pi-trigger="${escAttr(trigger)}" style="display:contents">`;
+      const spans: RawTextSpan[] = [];
       let inner: string;
       try {
-        inner = valueToHtml(view(...(args as never[])));
+        inner = valueToHtml(view(...(args as never[])), spans, prefix.length);
       } catch (err) {
         ctx.islandCounter = id - 1;
         throw err;
       }
-      return markSSRHtml(
-        `<purity-island data-pi-id="${id}" data-pi-trigger="${escAttr(trigger)}" ` +
-          `style="display:contents">${inner}</purity-island>`,
-      );
+      return markSSRHtml(`${prefix}${inner}</purity-island>`, spans);
     }
     return view(...(args as never[])) as ReturnType<V>;
   }) as V;

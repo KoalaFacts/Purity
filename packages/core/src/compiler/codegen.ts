@@ -11,8 +11,9 @@
 //     dynamic parts — no TreeWalker search.
 // ---------------------------------------------------------------------------
 
-import type { ASTNode, AttributeNode, FragmentNode } from './ast.ts';
+import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from './ast.ts';
 import { VOID_TAGS as VOID } from './parser.ts';
+import { escAttr as escapeAttr, escHtml as escapeHtml } from './ssr-runtime.ts';
 
 // JSON quoting protects JavaScript syntax; HTML delimiters must also be escaped
 // when a caller embeds generated code in an inline script. This only runs at
@@ -23,25 +24,6 @@ function jsString(value: string): string {
     .replace(/>/g, '\\u003e')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
-}
-
-function escapeHtml(s: string): string {
-  // OWASP five-character set so the helper is safe in attribute contexts too.
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function escapeAttr(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 // ---------------------------------------------------------------------------
@@ -109,21 +91,11 @@ function assertSafeScriptContent(node: ASTNode, inScript = false): void {
   for (const child of node.children) assertSafeScriptContent(child, script);
 }
 
-const URL_BINDINGS = new Set([
-  'href',
-  'src',
-  'action',
-  'formaction',
-  'poster',
-  'background',
-  'cite',
-  'data',
-  'codebase',
-  'manifest',
-  'longdesc',
-  'profile',
-  'usemap',
-]);
+const URL_BINDINGS = new Set(
+  'href src action formaction poster background cite data codebase manifest longdesc profile usemap'.split(
+    ' ',
+  ),
+);
 
 function safeBindingValue(name: string, expr: string): string {
   if (!URL_BINDINGS.has(name.toLowerCase())) return expr;
@@ -157,7 +129,16 @@ interface AttrSlot {
   path: PathStep[];
 }
 
-type Slot = ExprSlot | AttrSlot;
+// A raw-text / RCDATA element with expression children. The HTML parser makes
+// its content a single text node, so the expressions cannot have positional
+// slots. The element gets one slot instead, and its text is rebuilt from parts.
+interface RawContentSlot {
+  type: 'raw';
+  children: ASTNode[];
+  path: PathStep[];
+}
+
+type Slot = ExprSlot | AttrSlot | RawContentSlot;
 
 // ---------------------------------------------------------------------------
 // condenseWhitespace — strip whitespace-only text nodes containing a newline
@@ -177,7 +158,7 @@ type Slot = ExprSlot | AttrSlot;
 // default `whitespace: 'condense'` behavior and Svelte's compiler.
 // ---------------------------------------------------------------------------
 
-const PRESERVE_WS_TAGS = new Set(['pre', 'textarea', 'script', 'style']);
+const PRESERVE_WS_TAGS = /^(?:pre|textarea|script|style)$/;
 
 function isIndentation(n: ASTNode): boolean {
   return n.type === 'text' && n.value.trim() === '' && n.value.includes('\n');
@@ -190,9 +171,23 @@ function isIndentation(n: ASTNode): boolean {
 // createTextNode + replaceWith pair.
 const EXPR_PLACEHOLDER = '​';
 
+// Raw-text elements (`ElementNode.raw`, set by the parser for HTML-namespace
+// style/script/textarea/title): the HTML parser does not parse markup inside
+// them. RAWTEXT ('text': style, script) does not decode entities either, so
+// text is emitted verbatim. RCDATA ('rcdata': textarea, title) decodes
+// entities, so text is escaped. Neither can carry hydration markers or
+// placeholders (they would become literal text), so their dynamic content is
+// rebuilt as one text node.
+const hasExpressionChild = (node: ElementNode): boolean =>
+  node.children.some((c) => c.type === 'expression');
+// Source for one raw-content part: the parser gives raw-text / RCDATA elements
+// only text and expression children (see parseRawChildren).
+const rawPart = (node: ASTNode, value: (index: number) => string): string =>
+  node.type === 'expression' ? value(node.index) : jsString(node.type === 'text' ? node.value : '');
+
 export function condenseWhitespace(node: ASTNode): ASTNode {
   if (node.type === 'fragment' || node.type === 'element') {
-    if (node.type === 'element' && PRESERVE_WS_TAGS.has(node.tag)) return node;
+    if (node.type === 'element' && PRESERVE_WS_TAGS.test(node.tag.toLowerCase())) return node;
     let changed = false;
     const next: ASTNode[] = [];
     for (const ch of node.children) {
@@ -396,6 +391,59 @@ function appendFlat(xv: string, id: number | string, target: string): string {
   );
 }
 
+// Raw-text / RCDATA element content: rewrite the element's text from the parts
+// on every change. `value(i)` is the source expression for template value i on
+// the calling path. A value is coerced to text like valueToHtml: functions are
+// called (inside the watch, so their signals are tracked) and arrays flattened;
+// a Node leaf (nested template, each(), when()/match()) is kept in a detached
+// holder and contributes its live textContent, re-read by a MutationObserver
+// when its own bindings update it.
+// During hydration (`hydrating`) nested templates and control flow arrive as
+// deferred carriers and are rendered into a fragment first.
+function rawContentBinding(
+  el: string,
+  children: ASTNode[],
+  value: (index: number) => string,
+  hydrating: boolean,
+): string {
+  const id = bindVarCounter++;
+  const parts = `_rp${id}`;
+  const write = `_rw${id}`;
+  const observer = `_ro${id}`;
+  const leaf = `_rl${id}`;
+  let setup =
+    `var ${parts}=[],${observer}=new MutationObserver(function(){${write}();});` +
+    `var ${write}=function(){var t='';for(var i=0;i<${parts}.length;i++){var p=${parts}[i];t+=p instanceof Node?p.textContent:p;}${el}.textContent=t;};` +
+    `var ${leaf}=function(y){` +
+    `if(typeof y==='object'&&!(y instanceof Node)){var f=document.createDocumentFragment();` +
+    // Branded SSR HTML (e.g. a retained eachSSR() result): parse it for its text.
+    `if(typeof y.__purity_ssr_html__==='string'){var t=document.createElement('template');t.innerHTML=y.__purity_ssr_html__;y=t.content;}` +
+    (hydrating
+      ? `else if(y.__purity_deferred__===true){_i(y,f,false,true);y=f;}` +
+        `else if(y.__purity_deferred_each__===true||y.__purity_deferred_match__===true){` +
+        `var m=f.appendChild(document.createComment(''));(y.__purity_deferred_each__?_e:_m)(y,[],m);y=f;}`
+      : '') +
+    `}` +
+    // One holder per Node, so a Node used in two slots counts twice instead of
+    // being moved out of the first holder.
+    `if(y instanceof Node){var h=y.__purity_raw__;if(!h){h=y.__purity_raw__=document.createElement('div');h.appendChild(y);}` +
+    `${observer}.observe(h,{subtree:true,childList:true,characterData:true});return h;}` +
+    `return String(y);};`;
+  const list: string[] = [];
+  for (const ch of children) {
+    if (ch.type !== 'expression') list.push(rawPart(ch, value));
+    else {
+      const x = `_rx${id}_${ch.index}`;
+      setup += `var ${x}=${value(ch.index)};`;
+      // Flatten (calling functions, dropping null/false), then coerce each leaf.
+      list.push(`__purity_fl__(${x},[],null).map(${leaf})`);
+    }
+  }
+  // Its own watch, so the cleanup disconnects the observer on every re-run and
+  // when the owner is disposed.
+  return `${setup}_w(function(){${parts}=[].concat(${list.join(',')});${write}();return function(){${observer}.disconnect();};});`;
+}
+
 function standalone(code: string): string {
   if (!code.includes('__purity_fl__') && !code.includes('__purity_tx__')) return code;
   return `(function(){${VALUE_HELPER_DEFS}return ${code};})()`;
@@ -533,14 +581,18 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         }
       }
 
-      // Recurse into children. Hyphenated tags are Custom Elements — their
-      // shadow root is opaque to the outer hydrator; the element's own
-      // connectedCallback handles its interior. Skip walking children here.
-      if (
+      // Raw-text / RCDATA content with dynamic parts: SSR wrote no markers, so
+      // rebuild the element's text from its parts instead of walking children.
+      if (node.raw && hasExpressionChild(node)) {
+        ctx.setup.push(rawContentBinding(el, node.children, (i) => `_v[${i}]`, true));
+      } else if (
         !VOID.has(node.tag.toLowerCase()) &&
         node.children.length > 0 &&
         !node.tag.includes('-')
       ) {
+        // Recurse into children. Hyphenated tags are Custom Elements — their
+        // shadow root is opaque to the outer hydrator; the element's own
+        // connectedCallback handles its interior. Skip walking children here.
         const child = `_ch${id}`;
         ctx.setup.push(`var ${child}=${el}.firstChild;`);
         emitHydrateChildren(node.children, ctx, child);
@@ -572,7 +624,9 @@ interface SimpleTemplate {
 function isSimpleTemplate(ast: FragmentNode): SimpleTemplate | null {
   if (ast.children.length !== 1) return null;
   const root = ast.children[0];
-  if (root.type !== 'element') return null;
+  // Raw-text / RCDATA content is one text node built by the raw slot, not
+  // appended child nodes.
+  if (root.type !== 'element' || root.raw) return null;
 
   // Check children are only text/expression (no nested elements)
   for (const ch of root.children) {
@@ -658,32 +712,34 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
 // hasDynamic
 // ---------------------------------------------------------------------------
 
-function hasDynamic(node: ASTNode): boolean {
+function hasDynamic(node: ASTNode, customElements = false): boolean {
   if (node.type === 'expression') return true;
-  if (node.type === 'element') {
-    if (node.attributes.some((a) => a.kind !== 'static')) return true;
-    return node.children.some(hasDynamic);
-  }
-  if (node.type === 'fragment') return node.children.some(hasDynamic);
-  return false;
+  // SSR must dispatch even static custom elements through the registry.
+  if (
+    node.type === 'element' &&
+    ((customElements && node.tag.includes('-')) || node.attributes.some((a) => a.kind !== 'static'))
+  )
+    return true;
+  return (
+    (node.type === 'element' || node.type === 'fragment') &&
+    node.children.some((child) => hasDynamic(child, customElements))
+  );
 }
 
 // ---------------------------------------------------------------------------
 // buildStaticHtml (no markers)
 // ---------------------------------------------------------------------------
 
-// Raw-text elements: the HTML parser never decodes character references inside
-// them, so their text must be emitted verbatim. Tag names are ASCII
-// case-insensitive; the parser keeps the author's spelling.
-const isRawTextTag = (tag: string): boolean => /^(?:style|script)$/i.test(tag);
-
-// `rawParent` is true inside a raw-text element.
-function buildStaticHtml(node: ASTNode, rawParent = false): string {
+// The enclosing raw-content mode preserves raw text and encodes RCDATA CRs
+// before HTML input preprocessing can normalize them.
+function buildStaticHtml(node: ASTNode, rawParent?: ElementNode['raw']): string {
   switch (node.type) {
-    case 'text':
+    case 'text': {
       // `raw: true` marks SGML declarations like `<!doctype html>` parsed
       // verbatim from the template; escaping would corrupt them.
-      return node.raw || rawParent ? node.value : escapeHtml(node.value);
+      const text = node.raw || rawParent === 'text' ? node.value : escapeHtml(node.value);
+      return rawParent === 'rcdata' ? text.replace(/\r/g, '&#13;') : text;
+    }
     case 'comment':
       return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
     case 'element': {
@@ -694,9 +750,8 @@ function buildStaticHtml(node: ASTNode, rawParent = false): string {
           s += a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
       }
       if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
-      s += '>';
-      const raw = isRawTextTag(node.tag);
-      for (const ch of node.children) s += buildStaticHtml(ch, raw);
+      s += node.preserveLeadingNewline ? '>\n' : '>';
+      for (const ch of node.children) s += buildStaticHtml(ch, node.raw);
       return `${s}</${node.tag}>`;
     }
     case 'fragment':
@@ -735,7 +790,12 @@ function genStaticDOM(
     case 'element': {
       assertSafeName(node.tag, 'tag');
       const id = `_n${counter.n++}`;
-      stmts.push(`var ${id}=document.createElement(${jsString(node.tag)});`);
+      const tag = node.tag.toLowerCase();
+      const namespaceURI =
+        'http://www.w3.org/' + (node.ns === 'svg' ? '2000/svg' : '1998/Math/MathML');
+      stmts.push(
+        `var ${id}=document.${node.ns ? `createElementNS(${jsString(namespaceURI)},` : 'createElement('}${jsString(node.tag)});`,
+      );
       for (const a of node.attributes) {
         if (a.kind === 'static') {
           stmts.push(
@@ -746,7 +806,7 @@ function genStaticDOM(
         }
       }
       for (const ch of node.children) {
-        genStaticDOM(ch, id, stmts, counter);
+        genStaticDOM(ch, !node.ns && tag === 'template' ? `${id}.content` : id, stmts, counter);
       }
       stmts.push(`${parent}.appendChild(${id});`);
       break;
@@ -809,9 +869,13 @@ function buildDynamicHtml(
       }
 
       if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
-      s += '>';
-      if (isRawTextTag(node.tag) && !node.children.some((c) => c.type === 'expression')) {
-        for (const ch of node.children) s += buildStaticHtml(ch, true);
+      s += node.preserveLeadingNewline ? '>\n' : '>';
+      if (node.raw) {
+        // Content is one text node: no placeholders inside. Static content is
+        // serialized as-is (the open tag matches `s`: static attributes only);
+        // dynamic content is written by the element's raw slot.
+        if (!hasExpressionChild(node)) return buildStaticHtml(node);
+        slots.push({ type: 'raw', children: node.children, path: [...currentPath] });
       } else {
         s += emitChildrenHtml(node.children, slots, currentPath);
       }
@@ -920,6 +984,10 @@ function genPositionalBindings(slots: Slot[]): string {
       const { setup, reactive } = genExprBinding(nodeVar, slot.index, slot.textPlaceholder);
       setupParts.push(setup);
       if (reactive) reactiveParts.push(reactive);
+    } else if (slot.type === 'raw') {
+      setupParts.push(
+        rawContentBinding(nodeVar, slot.children, (i) => `_d?_d(_v[${i}]):_v[${i}]`, false),
+      );
     } else {
       for (const attr of slot.attrs) {
         if (attr.kind !== 'static') {
@@ -1117,12 +1185,12 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
 export function generateSSR(ast: FragmentNode): string {
   assertSafeScriptContent(ast);
   ast = condenseWhitespace(ast) as FragmentNode;
-  const ctx: SSRGenCtx = { parts: [], counter: 0, out: '_o', lastLitHtml: null };
+  const ctx: SSRGenCtx = { parts: [], counter: 0, out: '_o', spans: '_r', lastLitHtml: null };
   // Static-prefix optimization: if the entire tree is static AND contains no
   // hyphenated tags (which require runtime component dispatch), emit a closure
   // returning the prebuilt string. Avoids per-call work and skips the _v / _h
   // arguments entirely.
-  if (!hasDynamic(ast) && !hasCustomElement(ast)) {
+  if (!hasDynamic(ast, true)) {
     const html = buildStaticHtml(ast);
     // `html` is built by buildStaticHtml which assertSafeName-validates
     // tag/attr names and escapeHtml/escapeAttr-escapes text/attribute literals
@@ -1142,19 +1210,9 @@ export function generateSSR(ast: FragmentNode): string {
   // variable reference (`_v[N]`, `_av${id}`). See "Codegen safety contract"
   // near SAFE_NAME at the top.
   // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
-  return ["function(_v,_h){var _o='';", ctx.parts.join(''), 'return _h.mark(_o);}'].join('');
-}
-
-// True if any element node in the tree has a hyphenated tag. Custom elements
-// with no other dynamic content still need the runtime _h.element dispatch
-// because the component registry only populates at runtime.
-function hasCustomElement(node: ASTNode): boolean {
-  if (node.type === 'element') {
-    if (node.tag.includes('-')) return true;
-    return node.children.some(hasCustomElement);
-  }
-  if (node.type === 'fragment') return node.children.some(hasCustomElement);
-  return false;
+  return ["function(_v,_h){var _o='',_r=[];", ctx.parts.join(''), 'return _h.mark(_o,_r);}'].join(
+    '',
+  );
 }
 
 export function generateSSRModule(ast: FragmentNode): string {
@@ -1165,6 +1223,7 @@ interface SSRGenCtx {
   parts: string[]; // JS source fragments that mutate the active output var
   counter: number; // unique-id counter for emitted local variables
   out: string; // current output variable name (default '_o', changes for slot capture)
+  spans: string; // original raw-text spans belonging to the active output
   // Coalescing state: when the most recent push was a literal HTML append
   // (`_o+="…";`), track the raw HTML so we can extend the last entry without
   // re-parsing it out of the JS source. Reset whenever a non-literal part is
@@ -1214,7 +1273,7 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
       // _h.toHtml handles signal-accessor calls, branded HTML, arrays, and
       // primitive escaping in one place.
       emitLit(ctx, '<!--[-->');
-      pushRaw(ctx, `${ctx.out}+=_h.toHtml(_v[${node.index}]);`);
+      pushRaw(ctx, `${ctx.out}+=_h.toHtml(_v[${node.index}],${ctx.spans},${ctx.out}.length);`);
       emitLit(ctx, '<!--]-->');
       return;
     }
@@ -1239,7 +1298,27 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
         return;
       }
       emitLit(ctx, '>');
-      for (const ch of node.children) buildSSRBody(ch, ctx);
+      if (node.preserveLeadingNewline) emitLit(ctx, '\n');
+      if (node.raw) {
+        // Raw-text / RCDATA content is one text node: no hydration markers
+        // (they would become literal text), and the whole content is coerced
+        // in one call so an end tag split across adjacent values (`</sty` +
+        // `le>`) is still neutralised. Hydrate rebuilds the element's text.
+        // Static raw text is the author's own source (dynamic <script> content
+        // is rejected), so it is emitted as written.
+        if (node.raw === 'text' && !hasExpressionChild(node)) {
+          for (const ch of node.children) if (ch.type === 'text') emitLit(ctx, ch.value);
+        } else {
+          const parts = node.children.map((ch) => rawPart(ch, (i) => `_v[${i}]`));
+          const spanArgs = `,undefined,${ctx.spans},${ctx.out}.length`;
+          pushRaw(
+            ctx,
+            `${ctx.out}+=_h.rawText([${parts}]${node.raw === 'text' ? spanArgs : ',1'});`,
+          );
+        }
+      } else {
+        for (const ch of node.children) buildSSRBody(ch, ctx);
+      }
       emitLit(ctx, `</${node.tag}>`);
       return;
     }
@@ -1291,13 +1370,20 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
 
   // Capture children into a slot string. Temporarily swap the active output
   // variable so all nested emissions append to slotVar; restore afterward.
-  pushRaw(ctx, `var ${slotVar}='';`);
+  const slotSpans = `_sr${id}`;
+  pushRaw(ctx, `var ${slotVar}='',${slotSpans}=[];`);
   const prevOut = ctx.out;
+  const prevSpans = ctx.spans;
   ctx.out = slotVar;
+  ctx.spans = slotSpans;
   for (const ch of node.children) buildSSRBody(ch, ctx);
   ctx.out = prevOut;
+  ctx.spans = prevSpans;
 
-  pushRaw(ctx, `${ctx.out}+=_h.element(${jsString(node.tag)},${attrsVar},${slotVar});`);
+  pushRaw(
+    ctx,
+    `${ctx.out}+=_h.element(${jsString(node.tag)},${attrsVar},${slotVar},${slotSpans},${ctx.spans},${ctx.out}.length);`,
+  );
 }
 
 // DOM properties that do NOT reflect to a same-named HTML attribute. For
@@ -1307,7 +1393,7 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
 // where the markup is HTML-escaped into a dead attribute. Skip them during SSR;
 // the property assignment runs client-side at hydration. (Reflecting props such
 // as `value` / `checked` / `selected` keep their existing attribute emission.)
-const NON_REFLECTING_PROPS = new Set(['innerHTML', 'outerHTML', 'innerText', 'textContent']);
+const NON_REFLECTING_PROPS = /^(?:innerHTML|outerHTML|innerText|textContent)$/;
 
 function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx, node: import('./ast.ts').ElementNode): void {
   if (a.kind === 'static') {
@@ -1354,7 +1440,7 @@ function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx, node: import('./ast.ts').
       // assigned as properties on the client; serializing them as attributes
       // is a no-op (and escapes markup into a dead attribute). Skip server-side
       // for the property-ish kinds — `dynamic` keeps true setAttribute semantics.
-      if (a.kind !== 'dynamic' && NON_REFLECTING_PROPS.has(a.name)) return;
+      if (a.kind !== 'dynamic' && NON_REFLECTING_PROPS.test(a.name)) return;
       // The remaining kinds read the current value (calling the accessor if
       // it's a function) and emit it as a quoted attribute. `bind` skips the
       // listener install — that's a hydration-time concern.

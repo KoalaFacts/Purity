@@ -50,10 +50,10 @@ describe('@purityjs/vite-plugin — SSR mode', () => {
     const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>\${'x'}</div>\`;`;
     const result = transform(code, 'app.ts', true);
     expect(result).not.toBeNull();
-    // SSR codegen builds an HTML string via "_o += …" and brands the result
-    // with __purity_ssr_html__ via _h.mark(...).
-    expect(result!.code).toContain('_o');
-    expect(result!.code).toContain('_h.mark(_o)');
+    const body = result!.code.replace(/^import .+$/gm, '');
+    const output = new Function('__purity_h__', `${body};return el;`)(ssrHelpers);
+    expect(isSSRHtml(output)).toBe(true);
+    expect(output.__purity_ssr_html__).toContain('x');
     // Should not emit DOM creation calls.
     expect(result!.code).not.toContain('createElement');
     expect(result!.code).not.toContain('cloneNode');

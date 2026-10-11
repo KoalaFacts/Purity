@@ -110,6 +110,10 @@ export interface SSRRenderContext {
    * __purity_swap(N)</script>` chunk per boundary. ADR 0006 Phase 3.
    */
   streamingMode?: boolean;
+  /** Boundaries coerced to raw text must finish in the shell, without swaps. @internal */
+  inlineBoundaries?: Set<number>;
+  /** Removed raw-content occurrences; a reused visible occurrence can still stream. @internal */
+  hiddenBoundaries?: Set<number>;
   /**
    * Boundaries deferred for streaming. Populated by `suspense()` when
    * `streamingMode` is on; consumed by `renderToStream` after the

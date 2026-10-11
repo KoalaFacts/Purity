@@ -11,6 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from './ast.ts';
+import { childNamespace, type Namespace } from './ssr-runtime.ts';
 
 // Void elements that cannot have children. Shared with codegen.
 export const VOID_TAGS = new Set([
@@ -98,9 +99,9 @@ class Parser {
   private strIdx = 0; // current string index
   private pos = 0; // position within current string
   private exprIndex = 0; // next expression index
-  // Inside SVG/MathML content (and not at an HTML integration point), where
-  // style/script/title/textarea are foreign elements whose content is markup.
-  private foreign = false;
+  // Namespace the current children are parsed in. Outside HTML, style/script/
+  // title/textarea are foreign elements whose content is markup.
+  private ns: Namespace = 'html';
 
   constructor(strings: readonly string[]) {
     this.strings = strings;
@@ -356,29 +357,21 @@ class Parser {
     // Only HTML-namespace elements are raw text. When unsure, treat content as
     // markup: SSR then escapes it, which is safe; misreading foreign content as
     // raw would emit it unescaped where the browser parses tags.
-    const raw: ElementNode['raw'] = this.foreign
-      ? undefined
-      : lower === 'style' || lower === 'script'
-        ? 'text'
-        : lower === 'textarea' || lower === 'title'
-          ? 'rcdata'
-          : undefined;
+    const raw: ElementNode['raw'] =
+      this.ns !== 'html'
+        ? undefined
+        : lower === 'style' || lower === 'script'
+          ? 'text'
+          : lower === 'textarea' || lower === 'title'
+            ? 'rcdata'
+            : undefined;
 
     let children: ASTNode[] = [];
     if (!isVoid) {
-      const outer = this.foreign;
-      // mglyph/malignmark stay MathML even inside a MathML text integration
-      // point; outside MathML, treating them as foreign only means escaping.
-      if (lower === 'svg' || lower === 'math' || lower === 'mglyph' || lower === 'malignmark') {
-        this.foreign = true;
-      }
-      // HTML integration points: SVG foreignObject/desc/title and MathML text
-      // integration points parse their children as HTML.
-      else if (outer && /^(?:foreignobject|desc|title|mi|mo|mn|ms|mtext)$/.test(lower)) {
-        this.foreign = false;
-      }
+      const outer = this.ns;
+      this.ns = childNamespace(outer, lower);
       children = raw ? this.parseRawChildren(lower) : this.parseChildren();
-      this.foreign = outer;
+      this.ns = outer;
       // Consume closing tag </tag>
       this.consumeClosingTag(tag);
     }

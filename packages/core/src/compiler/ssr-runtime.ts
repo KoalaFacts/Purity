@@ -99,11 +99,34 @@ const NAMED_ENTITIES: Record<string, string> = {
 };
 
 function decodeRefs(text: string): string {
-  return text.replace(/&(?:#(\d+)|#x([\da-f]+)|([a-z]+));/gi, (m, dec, hex, name) =>
-    dec || hex
-      ? String.fromCodePoint(dec ? +dec : parseInt(hex, 16))
-      : (NAMED_ENTITIES[name.toLowerCase()] ?? m),
-  );
+  return text.replace(/&(?:#(\d+)|#x([\da-f]+)|([a-z]+));/gi, (m, dec, hex, name) => {
+    if (!dec && !hex) return NAMED_ENTITIES[name.toLowerCase()] ?? m;
+    const cp = dec ? +dec : parseInt(hex, 16);
+    // As the HTML parser: NUL, surrogates and out-of-range values become U+FFFD.
+    return cp === 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)
+      ? '\uFFFD'
+      : String.fromCodePoint(cp);
+  });
+}
+
+/** Namespace an element's children are parsed in. */
+export type Namespace = 'html' | 'svg' | 'math';
+
+/**
+ * Namespace for the children of a `tag` (lower-case) element that sits in
+ * namespace `ns`, following the HTML parser's foreign-content rules: svg/math
+ * enter their namespace from HTML; SVG foreignObject/desc/title and MathML
+ * mi/mo/mn/ms/mtext are HTML integration points. When unsure (annotation-xml,
+ * mglyph/malignmark anywhere) the answer stays foreign, because misreading
+ * foreign content as HTML raw text would emit it unescaped.
+ */
+export function childNamespace(ns: Namespace, tag: string): Namespace {
+  if (ns === 'html') {
+    if (tag === 'svg') return 'svg';
+    return tag === 'math' || tag === 'mglyph' || tag === 'malignmark' ? 'math' : 'html';
+  }
+  if (ns === 'svg') return /^(?:foreignobject|desc|title)$/.test(tag) ? 'html' : 'svg';
+  return /^(?:mi|mo|mn|ms|mtext)$/.test(tag) ? 'html' : 'math';
 }
 
 // Offset of the end tag `</tag` + whitespace, `/`, `>` or end (ASCII
@@ -129,19 +152,27 @@ function rawEnd(html: string, from: number, tag: string): number {
 function htmlText(html: string): string {
   let out = '';
   let i = 0;
-  // Open <template> elements: their contents (declarative shadow roots
+  // Open HTML <template> elements: their contents (declarative shadow roots
   // included) live in a separate fragment and are not part of textContent.
   let hidden = 0;
-  // Namespace transitions, innermost last: [tag, foreign]. Inside foreign
-  // content (svg/math, outside HTML integration points) style/script/title/
-  // textarea content is markup, not raw text.
-  const ns: [string, boolean][] = [];
+  // Namespace changes, innermost last: [tag, namespace of its children].
+  // Outside HTML, style/script/title/textarea content is markup, not raw text.
+  const stack: [string, Namespace][] = [];
   while (i < html.length) {
     const lt = html.indexOf('<', i);
     if (!hidden) out += decodeRefs(html.slice(i, lt === -1 ? html.length : lt));
     if (lt === -1) break;
+    const ns: Namespace = stack.length > 0 ? stack[stack.length - 1][1] : 'html';
     if (html.startsWith('<!--', lt)) {
       const close = html.indexOf('-->', lt + 4);
+      i = close === -1 ? html.length : close + 3;
+      continue;
+    }
+    // CDATA is character data in foreign content (a bogus comment in HTML).
+    if (ns !== 'html' && html.startsWith('<![CDATA[', lt)) {
+      const close = html.indexOf(']]>', lt + 9);
+      const end = close === -1 ? html.length : close;
+      if (!hidden) out += html.slice(lt + 9, end);
       i = close === -1 ? html.length : close + 3;
       continue;
     }
@@ -153,25 +184,19 @@ function htmlText(html: string): string {
     const tag = m[2].toLowerCase();
     const close = m[1] === '/';
     const selfClosing = html[gt - 1] === '/';
-    if (tag === 'template') {
-      if (close) hidden = Math.max(0, hidden - 1);
-      else if (!selfClosing) hidden++;
-      continue;
-    }
-    const foreign = ns.length > 0 && ns[ns.length - 1][1];
     if (close) {
-      if (ns.length > 0 && ns[ns.length - 1][0] === tag) ns.pop();
+      if (stack.length > 0 && stack[stack.length - 1][0] === tag) stack.pop();
+      else if (tag === 'template' && ns === 'html') hidden = Math.max(0, hidden - 1);
       continue;
     }
-    if (!selfClosing) {
-      if (tag === 'svg' || tag === 'math' || tag === 'mglyph' || tag === 'malignmark') {
-        ns.push([tag, true]);
-      } else if (foreign && /^(?:foreignobject|desc|title|mi|mo|mn|ms|mtext)$/.test(tag)) {
-        ns.push([tag, false]);
-        continue;
-      }
+    if (selfClosing) continue;
+    if (tag === 'template' && ns === 'html') {
+      hidden++;
+      continue;
     }
-    if (!foreign) {
+    const inner = childNamespace(ns, tag);
+    if (inner !== ns) stack.push([tag, inner]);
+    if (ns === 'html') {
       // The parser drops one newline right after these start tags.
       if ((tag === 'textarea' || tag === 'pre' || tag === 'listing') && html[i] === '\n') i++;
       if (/^(?:style|script|textarea|title)$/.test(tag)) {

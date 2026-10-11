@@ -450,6 +450,11 @@ describe('SSR / CSR / hydrate conformance', () => {
       '<svg><foreignObject><style>p{content:"<i>"}</style></foreignObject></svg>',
     );
     expect(ssrHelpers.rawText([fo], 1)).toBe('p{content:&quot;&lt;i&gt;&quot;}');
+    // A foreign <template> is an ordinary element; CDATA in foreign content is text.
+    const svg = markSSRHtml('<svg><template>x</template><![CDATA[a < b]]></svg>');
+    expect(ssrHelpers.rawText([svg], 1)).toBe('xa &lt; b');
+    // Invalid numeric references become U+FFFD instead of throwing.
+    expect(ssrHelpers.rawText([markSSRHtml('<b>&#x110000;&#0;</b>')])).toBe('��');
   });
 
   it('nested text drops a nested textarea leading newline like the HTML parser', () => {
@@ -502,6 +507,13 @@ describe('SSR / CSR / hydrate conformance', () => {
       ['<img src=x>'],
     );
     expect(out).not.toContain('<img');
+  });
+
+  it('MathML integration-point names inside SVG stay SVG', () => {
+    for (const name of ['mtext', 'mi']) {
+      const out = renderSSR([`<svg><${name}><style>`, `</style></${name}></svg>`], ['<img src=x>']);
+      expect(out).not.toContain('<img');
+    }
   });
 
   it('an SVG <title> keeps markup children', () => {

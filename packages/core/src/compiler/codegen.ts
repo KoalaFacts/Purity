@@ -713,36 +713,33 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
 // ---------------------------------------------------------------------------
 
 function hasDynamic(node: ASTNode, customElements = false): boolean {
-  switch (node.type) {
-    case 'expression':
-      return true;
-    case 'element':
-      // SSR must dispatch even static custom elements through the registry.
-      if (
-        (customElements && node.tag.includes('-')) ||
-        node.attributes.some((a) => a.kind !== 'static')
-      )
-        return true;
-    // Falls through: both elements and fragments contain children.
-    case 'fragment':
-      return node.children.some((child) => hasDynamic(child, customElements));
-    default:
-      return false;
-  }
+  if (node.type === 'expression') return true;
+  // SSR must dispatch even static custom elements through the registry.
+  if (
+    node.type === 'element' &&
+    ((customElements && node.tag.includes('-')) || node.attributes.some((a) => a.kind !== 'static'))
+  )
+    return true;
+  return (
+    (node.type === 'element' || node.type === 'fragment') &&
+    node.children.some((child) => hasDynamic(child, customElements))
+  );
 }
 
 // ---------------------------------------------------------------------------
 // buildStaticHtml (no markers)
 // ---------------------------------------------------------------------------
 
-// `rawParent` is true inside a raw-text element (style/script), whose content
-// the HTML parser never decodes.
-function buildStaticHtml(node: ASTNode, rawParent = false): string {
+// The enclosing raw-content mode preserves raw text and encodes RCDATA CRs
+// before HTML input preprocessing can normalize them.
+function buildStaticHtml(node: ASTNode, rawParent?: ElementNode['raw']): string {
   switch (node.type) {
-    case 'text':
+    case 'text': {
       // `raw: true` marks SGML declarations like `<!doctype html>` parsed
       // verbatim from the template; escaping would corrupt them.
-      return node.raw || rawParent ? node.value : escapeHtml(node.value);
+      const text = node.raw || rawParent === 'text' ? node.value : escapeHtml(node.value);
+      return rawParent === 'rcdata' ? text.replace(/\r/g, '&#13;') : text;
+    }
     case 'comment':
       return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
     case 'element': {
@@ -754,8 +751,7 @@ function buildStaticHtml(node: ASTNode, rawParent = false): string {
       }
       if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
       s += node.preserveLeadingNewline ? '>\n' : '>';
-      const raw = node.raw === 'text';
-      for (const ch of node.children) s += buildStaticHtml(ch, raw);
+      for (const ch of node.children) s += buildStaticHtml(ch, node.raw);
       return `${s}</${node.tag}>`;
     }
     case 'fragment':

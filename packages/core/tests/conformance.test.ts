@@ -756,6 +756,52 @@ describe('SSR / CSR / hydrate conformance', () => {
     }
   });
 
+  it('static RCDATA retains carriage returns when another binding selects the complex path', () => {
+    for (const tag of ['textarea', 'title']) {
+      const strings = [`<div><${tag}>a\rb\r\nc</${tag}><p>`, '</p></div>'];
+      const client = document.createElement('div');
+      client.appendChild(html(tpl(strings), 'x') as Node);
+      const host = document.createElement('div');
+      host.innerHTML = renderSSR(strings, ['x']);
+      expect(client.querySelector(tag)?.textContent).toBe('a\rb\r\nc');
+      expect(host.querySelector(tag)?.textContent).toBe('a\rb\r\nc');
+      const mounted = hydrate(host, () => html(tpl(strings), 'x') as Node);
+      try {
+        expect(host.querySelector(tag)?.textContent).toBe('a\rb\r\nc');
+      } finally {
+        mounted.unmount();
+      }
+    }
+  });
+
+  it('MathML glyph exceptions apply only to MathML text integration points', () => {
+    for (const glyph of ['mglyph', 'malignmark']) {
+      for (const parent of ['annotation-xml encoding="text/html"', 'mtext']) {
+        const close = parent.split(' ')[0];
+        const strings = [
+          `<math><${parent}><${glyph}><style>`,
+          `</style></${glyph}></${close}></math>`,
+        ];
+        const host = document.createElement('div');
+        host.innerHTML = renderSSR(strings, ['p{color:red}']);
+        const ns =
+          parent === 'mtext'
+            ? 'http://www.w3.org/1998/Math/MathML'
+            : 'http://www.w3.org/1999/xhtml';
+        expect(host.querySelector(glyph)?.namespaceURI).toBe(ns);
+        const mounted = hydrate(host, () => html(tpl(strings), 'p{color:red}') as Node);
+        try {
+          expect(host.querySelector('style')?.textContent).toBe('p{color:red}');
+        } finally {
+          mounted.unmount();
+        }
+        const factory = new Function(`return ${generateSSR(parse(tpl(strings)))}`)() as SSRFactory;
+        const nested = factory(['p{content:"<i>"}'], ssrHelpers);
+        expect(ssrHelpers.rawText([nested], 1)).toBe('p{content:&quot;&lt;i&gt;&quot;}');
+      }
+    }
+  });
+
   it('nested plaintext consumes all remaining source text', () => {
     const value = markSSRHtml('<div><plaintext><b>x</b></plaintext></div>');
     expect(ssrHelpers.rawText([value], 1)).toBe(

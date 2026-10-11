@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from './ast.ts';
-import { childNamespace, rawEnd, type Namespace } from './ssr-runtime.ts';
+import { childNamespace, elementNamespace, rawEnd, type Namespace } from './ssr-runtime.ts';
 
 // Void elements that cannot have children. Shared with codegen.
 import { VOID_TAGS } from './ast.ts';
@@ -350,16 +350,7 @@ class Parser {
     const isVoid = VOID_TAGS.has(tag.toLowerCase()) || selfClosing;
 
     const lower = tag.toLowerCase();
-    const namespace: Namespace =
-      this.ns === 'html'
-        ? lower === 'svg' || lower === 'math'
-          ? lower
-          : this.parent?.[1] === 'math' && /^(?:mglyph|malignmark)$/.test(lower)
-            ? 'math'
-            : 'html'
-        : this.ns === 'math' && this.parent?.[0] === 'annotation-xml' && lower === 'svg'
-          ? 'svg'
-          : this.ns;
+    const namespace = elementNamespace(this.ns, lower, this.parent?.[0], this.parent?.[1]);
     // Only HTML-namespace elements are raw text. When unsure, treat content as
     // markup: SSR then escapes it, which is safe; misreading foreign content as
     // raw would emit it unescaped where the browser parses tags.
@@ -382,7 +373,6 @@ class Parser {
       this.ns = childNamespace(
         namespace,
         lower,
-        parent?.[0],
         encoding?.kind === 'static' ? encoding.value : undefined,
       );
       this.parent = [lower, namespace];

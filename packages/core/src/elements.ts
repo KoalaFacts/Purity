@@ -1,8 +1,6 @@
 import { enterHydration, exitHydration, inflateDeferred, isDeferred } from './compiler/compile.ts';
 import {
-  appendRawTextSpans,
   markSSRHtml,
-  type RawTextSpan,
   type SSRComponentRenderer,
   type SSRHtml,
   valueToAttr,
@@ -476,8 +474,7 @@ export const _renderComponentSSR: SSRComponentRenderer = (
   }
 
   try {
-    const renderedSpans: RawTextSpan[] | undefined = spans ? [] : undefined;
-    const renderedHtml = valueToHtml(view, renderedSpans);
+    const renderedHtml = valueToHtml(view);
 
     // Host-element attributes mirror what was declared in the parent template.
     // Attribute *names* are interpolated raw, so skip any key that isn't a safe
@@ -512,10 +509,9 @@ export const _renderComponentSSR: SSRComponentRenderer = (
       (options?.delegatesFocus ?? !!options?.formControl) ? ' shadowrootdelegatesfocus' : '';
 
     const prefix = `<${tag}${hostAttrs}><template shadowrootmode="open"${focusAttr}>${styleBlock}`;
-    if (spans && renderedSpans) {
-      appendRawTextSpans(renderedSpans, spans, offset + prefix.length);
-    }
-    return `${prefix}${renderedHtml}</template></${tag}>`;
+    const markup = `${prefix}${renderedHtml}</template></${tag}>`;
+    spans?.push([offset, offset + markup.length, slotHtml, slotSpans ?? []]);
+    return markup;
   } finally {
     // Server output is final once the shell is serialized: release the
     // component's watches and computes so requests don't leave them

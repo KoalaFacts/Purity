@@ -394,7 +394,8 @@ async function renderShell(
   const pendingResources: NonNullable<SSRRenderContext['pendingResources']> = new Map();
 
   let html = '';
-  for (let pass = 0; pass < MAX_PASSES; pass++) {
+  // Discovery of synchronous inline boundaries does not consume async passes.
+  for (let pass = 0; pass < MAX_PASSES;) {
     if (signal?.aborted) throw signal.reason;
     // Reset the registered boundary set on each pass — only the LAST pass's
     // suspense() registrations describe the true wire order. (Earlier-pass
@@ -434,7 +435,17 @@ async function renderShell(
 
     if (signal?.aborted) throw signal.reason;
     if (ctx.pendingPromises.length === 0) {
-      if (inlineBoundaries.size !== inlineCount) continue;
+      if (inlineBoundaries.size !== inlineCount) {
+        if (Date.now() - start >= timeout)
+          throw new SSRTimeoutError('shell', timeout, '[Purity] renderToStream shell timed out.');
+        continue;
+      }
+      if (ctx.hiddenBoundaries) {
+        const visible = new Set(
+          Array.from(html.matchAll(/<!--s:(\d+)-->/g), (match) => Number(match[1])),
+        );
+        for (const id of ctx.hiddenBoundaries) if (!visible.has(id)) streamingBoundaries.delete(id);
+      }
       return {
         html,
         head: (ctx.head ?? []).join(''),
@@ -447,6 +458,7 @@ async function renderShell(
       };
     }
 
+    pass++;
     const remaining = timeout - (Date.now() - start);
     if (remaining <= 0) {
       throw new SSRTimeoutError(

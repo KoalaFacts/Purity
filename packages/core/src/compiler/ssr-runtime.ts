@@ -24,7 +24,14 @@ export interface SSRHtml {
 
 // External JSON must never gain raw-HTML privileges by copying a public field.
 // Weak references allow wrappers to be collected after each render.
-export type RawTextSpan = readonly [start: number, end: number, text: string];
+// Styles retain original text; component ranges retain original slot markup
+// with its own relative spans, rather than the rendered shadow subtree.
+export type RawTextSpan = readonly [
+  start: number,
+  end: number,
+  text: string,
+  children?: readonly RawTextSpan[],
+];
 const emptySpans: readonly RawTextSpan[] = [];
 const trustedHtml = new WeakMap<object, readonly RawTextSpan[]>();
 
@@ -36,7 +43,7 @@ export function appendRawTextSpans(
 ): void {
   for (let i = 0; i < source.length; i++) {
     const span = source[i];
-    target.push([offset + span[0], offset + span[1], span[2]]);
+    target.push([offset + span[0], offset + span[1], span[2], span[3]]);
   }
 }
 
@@ -121,25 +128,33 @@ function decodeRefs(text: string): string {
 /** Namespace an element's children are parsed in. */
 export type Namespace = 'html' | 'svg' | 'math';
 
-/**
- * Namespace for the children of a `tag` (lower-case) element that sits in
- * namespace `ns`, following the HTML parser's foreign-content rules: svg/math
- * enter their namespace from HTML; SVG foreignObject/desc/title and MathML
- * mi/mo/mn/ms/mtext are HTML integration points. When unsure (annotation-xml,
- * mglyph/malignmark anywhere) the answer stays foreign, because misreading
- * foreign content as HTML raw text would emit it unescaped.
- */
-export function childNamespace(
+/** Actual element namespace, including the MathML text-integration exceptions. */
+export function elementNamespace(
   ns: Namespace,
   tag: string,
   parent?: string,
-  encoding?: string,
+  parentNS?: Namespace,
 ): Namespace {
-  if (ns === 'math' && parent === 'annotation-xml' && tag === 'svg') return 'svg';
   if (ns === 'html') {
-    if (tag === 'svg') return 'svg';
-    return tag === 'math' || tag === 'mglyph' || tag === 'malignmark' ? 'math' : 'html';
-  }
+    if (tag === 'svg' || tag === 'math') return tag;
+    if (
+      parentNS === 'math' &&
+      /^m(?:[ions]|text)$/.test(parent ?? '') &&
+      /^(?:mglyph|malignmark)$/.test(tag)
+    )
+      return 'math';
+  } else if (ns === 'math' && parent === 'annotation-xml' && tag === 'svg') return 'svg';
+  return ns;
+}
+
+/**
+ * Namespace for the children of a `tag` (lower-case) element that sits in
+ * namespace `ns`. SVG foreignObject/desc/title and MathML mi/mo/mn/ms/mtext
+ * are HTML integration points. annotation-xml requires a known HTML encoding;
+ * an unknown encoding stays foreign to avoid granting raw-text privileges.
+ */
+export function childNamespace(ns: Namespace, tag: string, encoding?: string): Namespace {
+  if (ns === 'html') return 'html';
   if (ns === 'svg') return /^(?:foreignobject|desc|title)$/.test(tag) ? 'html' : 'svg';
   if (tag === 'annotation-xml' && /^(?:text\/html|application\/xhtml\+xml)$/i.test(encoding ?? ''))
     return 'html';
@@ -189,21 +204,32 @@ export function rawEnd(html: string, from: number, tag: string): number {
 // and raw-text / RCDATA element content is read up to its own end tag (so a
 // `<i>` inside a nested <style> stays text). The input is framework output,
 // whose attribute values are escaped, so a tag never contains a bare `>`.
-function htmlText(html: string, spans: readonly RawTextSpan[]): string {
+function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): string {
   let out = '';
   let i = 0;
   let spanIndex = 0;
   const ctx = getSSRRenderContext();
   // Open HTML <template> elements: their contents (declarative shadow roots
   // included) live in a separate fragment and are not part of textContent.
-  let hidden = 0;
+  const hiddenBase = hidden;
   // Namespace changes, innermost last: [tag, namespace of its children].
   // Outside HTML, style/script/title/textarea content is markup, not raw text.
-  const stack: [string, Namespace][] = [];
+  const stack: [string, Namespace, Namespace][] = [];
   while (i < html.length) {
     const lt = html.indexOf('<', i);
     if (!hidden) out += decodeRefs(html.slice(i, lt === -1 ? html.length : lt));
     if (lt === -1) break;
+    // A component's detached client host exposes its original light DOM,
+    // rather than the slot's rendered location inside the shadow template.
+    while (spanIndex < spans.length && spans[spanIndex][0] < lt) spanIndex++;
+    const span = spans[spanIndex];
+    if (span?.[0] === lt && span[3]) {
+      // Shadow-only stream markers also disappear when the host becomes text.
+      htmlText(html.slice(lt, span[1]), emptySpans, 1);
+      out += htmlText(span[2], span[3], hidden);
+      i = span[1];
+      continue;
+    }
     const ns: Namespace = stack.length > 0 ? stack[stack.length - 1][1] : 'html';
     if (html.startsWith('<!--', lt)) {
       const close = html.indexOf('-->', lt + 4);
@@ -211,7 +237,10 @@ function htmlText(html: string, spans: readonly RawTextSpan[]): string {
       // The next shell pass renders those views inline before flushing.
       if (html.startsWith('<!--s:', lt) && close !== -1) {
         const id = Number(html.slice(lt + 6, close));
-        if (ctx?.streamingBoundaries?.has(id)) ctx.inlineBoundaries?.add(id);
+        if (ctx?.streamingBoundaries?.has(id)) {
+          if (hidden) (ctx.hiddenBoundaries ??= new Set()).add(id);
+          else ctx.inlineBoundaries?.add(id);
+        }
       }
       i = close === -1 ? html.length : close + 3;
       continue;
@@ -237,23 +266,25 @@ function htmlText(html: string, spans: readonly RawTextSpan[]): string {
       let at = stack.length - 1;
       while (at >= 0 && stack[at][0] !== tag) at--;
       if (at >= 0) stack.length = at;
-      else if (tag === 'template' && ns === 'html') hidden = Math.max(0, hidden - 1);
+      else if (tag === 'template' && ns === 'html') hidden = Math.max(hiddenBase, hidden - 1);
       continue;
     }
     if (selfClosing) continue;
-    if (tag === 'template' && ns === 'html') {
+    const parent = stack[stack.length - 1];
+    const namespace = elementNamespace(ns, tag, parent?.[0], parent?.[2]);
+    if (tag === 'template' && namespace === 'html') {
       hidden++;
       continue;
     }
     const encoding =
-      ns === 'math' && tag === 'annotation-xml'
+      namespace === 'math' && tag === 'annotation-xml'
         ? /\sencoding="([^"]*)"/i.exec(html.slice(lt, gt + 1))?.[1]
         : undefined;
-    const inner = childNamespace(ns, tag, stack[stack.length - 1]?.[0], encoding);
+    const inner = childNamespace(namespace, tag, encoding);
     if (!VOID_TAGS.has(tag)) {
-      stack.push([tag, inner]);
+      stack.push([tag, inner, namespace]);
     }
-    if (ns === 'html') {
+    if (namespace === 'html') {
       if (tag === 'plaintext') {
         if (!hidden) out += html.slice(i);
         break;
@@ -268,10 +299,7 @@ function htmlText(html: string, spans: readonly RawTextSpan[]): string {
         // Only generated spans have the original client text. Authored markup,
         // including literal CSS escapes, is read exactly as the browser reads it.
         else if (tag === 'style') {
-          // Serialization appends spans in output order. Advance once through
-          // them, including spans in hidden/foreign content that we skipped.
-          while (spanIndex < spans.length && spans[spanIndex][0] < i) spanIndex++;
-          const span = spans[spanIndex];
+          // The ordered cursor already points at this element's next span.
           if (span?.[0] === i && span[1] === end) text = span[2];
         }
         if (!hidden) out += text;
@@ -421,9 +449,7 @@ let componentRenderer: SSRComponentRenderer | null = null;
 export function setSSRComponentRenderer(fn: SSRComponentRenderer | null): void {
   if (componentRenderer === fn) return;
   if (componentRenderer !== null && fn !== null) {
-    throw new Error(
-      'A different renderer is already installed; call setSSRComponentRenderer(null) first.',
-    );
+    throw new Error('A different renderer is already installed.');
   }
   componentRenderer = fn;
 }

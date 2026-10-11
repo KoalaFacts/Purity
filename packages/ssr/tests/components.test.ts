@@ -1,6 +1,6 @@
-import { component, css, slot, state } from '@purityjs/core';
+import { component, css, slot, state, suspense } from '@purityjs/core';
 import { describe, expect, it } from 'vite-plus/test';
-import { html, renderToString } from '../src/index.ts';
+import { html, renderToStream, renderToString } from '../src/index.ts';
 
 // Each test registers a component with a unique static tag so the parser can
 // see the tag name as a literal in the template. Purity's parser doesn't
@@ -8,6 +8,46 @@ import { html, renderToString } from '../src/index.ts';
 // fixed tags per test.
 
 describe('component SSR — Declarative Shadow DOM', () => {
+  it('coerces a detached component using its original light-DOM slot text', async () => {
+    component(
+      'ssr-light-text-1',
+      (_props, { default: body }) => html`<b>shadow</b>${body()}${body()}`,
+    );
+    for (const tag of ['textarea', 'title']) {
+      const strings = [`<${tag}>`, `</${tag}>`] as unknown as TemplateStringsArray;
+      const out = await renderToString(() =>
+        html(
+          strings,
+          html`<ssr-light-text-1><p>x</p><style>${'p{content:"\\3c <i>"}'}</style></ssr-light-text-1>`,
+        ),
+      );
+      expect(out).toContain('xp{content:&quot;\\3c &lt;i&gt;&quot;}');
+      expect(out).not.toContain('shadow');
+    }
+  });
+  it('does not stream shadow-only suspense when a component is coerced to text', async () => {
+    let calls = 0;
+    component(
+      'ssr-light-text-2',
+      () =>
+        suspense(
+          () => {
+            calls++;
+            return html`<b>shadow</b>`;
+          },
+          () => html`<b>fallback</b>`,
+        ) as never,
+    );
+    const out = await new Response(
+      renderToStream(
+        () => html`<title>${html`<ssr-light-text-2><p>light</p></ssr-light-text-2>`}</title>`,
+        { serializeResources: false },
+      ),
+    ).text();
+    expect(out).toBe('<title>light</title>');
+    expect(calls).toBe(0);
+  });
+
   it('wraps render output in <template shadowrootmode="open">', async () => {
     component('ssr-card-1', () => html`<div>hi</div>`);
     const out = await renderToString(() => html`<ssr-card-1></ssr-card-1>`);

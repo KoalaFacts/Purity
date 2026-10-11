@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { createServer, type Server } from 'node:http';
-import { handleAction, resource, serverAction, suspense } from '@purityjs/core';
+import { component, handleAction, resource, serverAction, suspense } from '@purityjs/core';
 import { flattenValue, valueText } from '@purityjs/core/compiler';
 import { chromium, firefox, webkit } from 'playwright';
 import {
@@ -203,6 +203,60 @@ try {
       { serializeResources: false },
     ),
   ).text();
+  const rawCases: {
+    client: string;
+    hydrate: string;
+    markup: string;
+    tag: string;
+    expected: string;
+  }[] = [];
+  for (const glyph of ['mglyph', 'malignmark']) {
+    for (const parent of ['annotation-xml encoding="text/html"', 'mtext']) {
+      const strings = [
+        `<math><${parent}><${glyph}><style>`,
+        `</style></${glyph}></${parent.split(' ')[0]}></math>`,
+      ];
+      const tree = parse(strings);
+      rawCases.push({
+        client: generate(tree),
+        hydrate: generateHydrate(tree),
+        markup: await renderToString(() =>
+          html(strings as unknown as TemplateStringsArray, 'p{color:red}'),
+        ),
+        tag: 'style',
+        expected: 'p{color:red}',
+      });
+    }
+  }
+  for (const tag of ['textarea', 'title']) {
+    const strings = [`<div><${tag}>a\rb\r\nc</${tag}><p>`, '</p></div>'];
+    const tree = parse(strings);
+    rawCases.push({
+      client: generate(tree),
+      hydrate: generateHydrate(tree),
+      markup: await renderToString(() => html(strings as unknown as TemplateStringsArray, 'x')),
+      tag,
+      expected: 'a\rb\r\nc',
+    });
+  }
+  component(
+    'browser-light-text-1',
+    (_props, { default: body }) => html`<b>shadow</b>${body()}${body()}`,
+  );
+  const lightMarkup = await renderToString(
+    () =>
+      html`<textarea>${html`<browser-light-text-1><p>x</p><style>${'p{content:"\\3c <i>"}'}</style></browser-light-text-1>`}</textarea>`,
+  );
+  const deep = (depth: number): unknown =>
+    depth
+      ? suspense(
+          () => deep(depth - 1),
+          () => html`<b>fallback</b>`,
+        )
+      : html`<b>READY</b>`;
+  const deepMarkup = await new Response(
+    renderToStream(() => html`<textarea>${deep(12)}</textarea>`, { serializeResources: false }),
+  ).text();
   for (const browserType of [chromium, firefox, webkit]) {
     const browser = await browserType.launch();
     try {
@@ -224,6 +278,41 @@ try {
       await page.setContent(rawStreamMarkup);
       assert.equal(await page.locator('textarea').textContent(), '<READY>');
       assert.equal(await page.locator('#stream-sibling').textContent(), 'SIBLING-READY');
+      for (const fixture of rawCases) {
+        const result = await page.evaluate(
+          ({ fixture, helpers }) => {
+            const H = new Function(`return ${helpers}`)() as {
+              flattenValue: unknown;
+              valueText: unknown;
+            };
+            const bind = (code: string) =>
+              new Function('__purity_fl__', '__purity_tx__', `return ${code}`)(
+                H.flattenValue,
+                H.valueText,
+              );
+            const immediate = (fn: () => void) => fn();
+            const values = [fixture.tag === 'style' ? 'p{color:red}' : 'x'];
+            const client = bind(fixture.client)(values, immediate) as DocumentFragment;
+            const host = document.createElement('div');
+            host.innerHTML = fixture.markup;
+            const adopted = host.querySelector(fixture.tag);
+            const before = adopted?.textContent;
+            bind(fixture.hydrate)(values, immediate, host);
+            return [
+              client.querySelector(fixture.tag)?.textContent,
+              before,
+              host.querySelector(fixture.tag)?.textContent,
+              adopted === host.querySelector(fixture.tag),
+            ];
+          },
+          { fixture, helpers: helperSource },
+        );
+        assert.deepEqual(result, [fixture.expected, fixture.expected, fixture.expected, true]);
+      }
+      await page.setContent(lightMarkup);
+      assert.equal(await page.locator('textarea').textContent(), 'xp{content:"\\3c <i>"}');
+      await page.setContent(deepMarkup);
+      assert.equal(await page.locator('textarea').textContent(), 'READY');
       for (const output of doctypeControls) {
         await page.setContent(output);
         assert.equal(await page.locator('main').textContent(), 'DOCTYPE-SAFE');

@@ -112,6 +112,8 @@ export interface SSRRenderContext {
   streamingMode?: boolean;
   /** Boundaries coerced to raw text must finish in the shell, without swaps. @internal */
   inlineBoundaries?: Set<number>;
+  /** Removed raw-content occurrences; a reused visible occurrence can still stream. @internal */
+  hiddenBoundaries?: Set<number>;
   /**
    * Boundaries deferred for streaming. Populated by `suspense()` when
    * `streamingMode` is on; consumed by `renderToStream` after the

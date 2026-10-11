@@ -91,9 +91,9 @@ describe('head() — SSR collection', () => {
       return ssrHtml`<main></main>`;
     };
     const out = await renderToString(App, { extractHead: true });
-    // Reactive `${() => r()}` slots wrap with the `<!--[-->...<!--]-->`
-    // expression marker pair on SSR. The resolved value is the only entry.
-    expect(out.head).toBe('<title><!--[-->Loaded<!--]--></title>');
+    // <title> is RCDATA: SSR writes no expression markers inside it (they would
+    // show in document.title). The resolved value is the only entry.
+    expect(out.head).toBe('<title>Loaded</title>');
   });
 
   it('still emits the resource-cache script in body when extractHead is true', async () => {

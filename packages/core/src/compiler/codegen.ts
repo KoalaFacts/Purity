@@ -209,10 +209,10 @@ const isRawTextTag = (tag: string): boolean => /^(?:style|script)$/i.test(tag);
 const isRawContentTag = (tag: string): boolean => /^(?:style|script|textarea|title)$/i.test(tag);
 const hasExpressionChild = (node: ElementNode): boolean =>
   node.children.some((c) => c.type === 'expression');
-// Literal text of a raw-content child: the parser splits a `<!-- -->` sequence
-// out as a comment node, but inside raw content it is plain text.
-const rawPartText = (node: ASTNode): string =>
-  node.type === 'text' ? node.value : node.type === 'comment' ? `<!--${node.value}-->` : '';
+// Source for one raw-content part: the parser gives raw-text / RCDATA elements
+// only text and expression children (see parseRawChildren).
+const rawPart = (node: ASTNode, value: (index: number) => string): string =>
+  node.type === 'expression' ? value(node.index) : jsString(node.type === 'text' ? node.value : '');
 
 export function condenseWhitespace(node: ASTNode): ASTNode {
   if (node.type === 'fragment' || node.type === 'element') {
@@ -421,10 +421,13 @@ function appendFlat(xv: string, id: number | string, target: string): string {
 }
 
 // Raw-text / RCDATA element content: rewrite the element's text from the parts
-// on every change. `value(i)` is the source
-// expression for template value i on the calling path. A value is coerced to
-// text: functions are called, a Node contributes its textContent, and during
-// hydration (`hydrating`) a nested template is rendered first.
+// on every change. `value(i)` is the source expression for template value i on
+// the calling path. A value is coerced to text: a function is called (inside
+// the watch, so its signals are tracked); a Node (nested template, each(),
+// when()/match()) is kept in a detached holder and contributes its live
+// textContent, re-read by a MutationObserver when its own bindings update it.
+// During hydration (`hydrating`) nested templates and control flow arrive as
+// deferred carriers and are rendered into a fragment first.
 function rawContentBinding(
   el: string,
   children: ASTNode[],
@@ -432,23 +435,36 @@ function rawContentBinding(
   hydrating: boolean,
 ): BindingParts {
   const id = bindVarCounter++;
-  const text = `_rc${id}`;
+  const parts = `_rp${id}`;
+  const write = `_rw${id}`;
+  const observer = `_ro${id}`;
+  const coerce = `_rc${id}`;
   let setup =
-    `var ${text}=function(y){if(typeof y==='function')y=y();` +
+    `var ${parts}=[],${observer}=new MutationObserver(function(){${write}();});` +
+    `var ${write}=function(){var t='';for(var i=0;i<${parts}.length;i++){var p=${parts}[i];t+=p instanceof Node?p.textContent:p;}${el}.textContent=t;};` +
+    `var ${coerce}=function(y){if(typeof y==='function')y=y();` +
     (hydrating
-      ? `if(y&&y.__purity_deferred__===true){var f=document.createDocumentFragment();_i(y,f,false,true);y=f;}`
+      ? `if(y&&typeof y==='object'&&!(y instanceof Node)){var f=document.createDocumentFragment();` +
+        `if(y.__purity_deferred__===true){_i(y,f,false,true);y=f;}` +
+        `else if(y.__purity_deferred_each__===true||y.__purity_deferred_match__===true){` +
+        `var m=f.appendChild(document.createComment(''));(y.__purity_deferred_each__?_e:_m)(y,[],m);y=f;}}`
       : '') +
-    `return y instanceof Node?y.textContent:__purity_tx__(y);};`;
-  const parts: string[] = [];
+    `if(y instanceof Node){var h=document.createElement('div');h.appendChild(y);` +
+    `${observer}.observe(h,{subtree:true,childList:true,characterData:true});return h;}` +
+    `return __purity_tx__(y);};`;
+  const list: string[] = [];
   for (const ch of children) {
-    if (ch.type !== 'expression') parts.push(jsString(rawPartText(ch)));
+    if (ch.type !== 'expression') list.push(rawPart(ch, value));
     else {
       const x = `_rx${id}_${ch.index}`;
       setup += `var ${x}=${value(ch.index)};`;
-      parts.push(`${text}(${x})`);
+      list.push(`${coerce}(${x})`);
     }
   }
-  return { setup, reactive: `${el}.textContent=${parts.join('+')};` };
+  return {
+    setup,
+    reactive: `${observer}.disconnect();${parts}=[${list.join(',')}];${write}();`,
+  };
 }
 
 function standalone(code: string): string {
@@ -1314,13 +1330,8 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
         // (they would become literal text), and the whole content is coerced
         // in one call so an end tag split across adjacent values (`</sty` +
         // `le>`) is still neutralised. Hydrate rebuilds the element's text.
-        const parts = node.children.map((ch) =>
-          ch.type === 'expression' ? `_v[${ch.index}]` : jsString(rawPartText(ch)),
-        );
-        pushRaw(
-          ctx,
-          `${ctx.out}+=_h.${isRawTextTag(node.tag) ? 'rawText' : 'toHtml'}([${parts}]);`,
-        );
+        const parts = node.children.map((ch) => rawPart(ch, (i) => `_v[${i}]`));
+        pushRaw(ctx, `${ctx.out}+=_h.rawText([${parts}]${isRawTextTag(node.tag) ? '' : ',1'});`);
       } else {
         for (const ch of node.children) buildSSRBody(ch, ctx);
       }

@@ -351,12 +351,43 @@ class Parser {
 
     let children: ASTNode[] = [];
     if (!isVoid) {
-      children = this.parseChildren();
+      children = /^(?:style|script|textarea|title)$/i.test(tag)
+        ? this.parseRawChildren(tag.toLowerCase())
+        : this.parseChildren();
       // Consume closing tag </tag>
       this.consumeClosingTag(tag);
     }
 
     return { type: 'element', tag, attributes, children, isVoid };
+  }
+
+  // Raw-text / RCDATA content (style, script, textarea, title): the HTML parser
+  // reads it as text up to the element's own end tag — `</` + the tag name
+  // (ASCII case-insensitive) + whitespace, `/`, `>` or the end. Markup and
+  // comments inside are plain text; expressions still split it.
+  private parseRawChildren(tag: string): ASTNode[] {
+    const children: ASTNode[] = [];
+    const end = `</${tag}`;
+    while (!this.atEnd()) {
+      if (this.atExprBoundary()) {
+        children.push({ type: 'expression', index: this.consumeExpr() });
+        continue;
+      }
+      const s = this.current();
+      const lower = s.toLowerCase();
+      let stop = lower.indexOf(end, this.pos);
+      while (
+        stop !== -1 &&
+        !/^(?:[\t\n\f\r />]|$)/.test(s.slice(stop + end.length, stop + end.length + 1))
+      ) {
+        stop = lower.indexOf(end, stop + 1);
+      }
+      const until = stop === -1 ? s.length : stop;
+      if (until > this.pos) children.push({ type: 'text', value: s.slice(this.pos, until) });
+      this.pos = until;
+      if (stop !== -1) break;
+    }
+    return children;
   }
 
   private consumeClosingTag(_tag: string): void {

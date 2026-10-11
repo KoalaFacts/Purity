@@ -89,20 +89,49 @@ export function valueToHtml(v: unknown): string {
 // stay intact). ASCII case-insensitive, as in the HTML parser.
 const RAW_TEXT_END_TAG = /<\/(?=(?:style|script)(?:[\t\n\f\r />]|$))/gi;
 
-/**
- * Same coercion as valueToHtml for the content of a raw-text element (`<style>`,
- * `<script>`): emitted unescaped, because the HTML parser does not decode
- * entities there. A `</` that starts a raw-text end tag becomes `<\/`, so the
- * content cannot close the element early.
- */
-export function valueToRawText(v: unknown): string {
-  return valueToHtmlInner(v, null, false).replace(RAW_TEXT_END_TAG, '<\\/');
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: '\u00a0',
+};
+
+// Text content of SSR-rendered HTML, as the browser's textContent would read
+// it: comments (hydration markers included) and tags are dropped and character
+// references decoded. The input is framework output, whose attribute values
+// are escaped, so a tag never contains a bare `>`.
+function htmlText(html: string): string {
+  return html
+    .replace(/<!--[\s\S]*?-->|<[^>]*>/g, '')
+    .replace(/&(?:#(\d+)|#x([\da-f]+)|([a-z]+));/gi, (m, dec, hex, name) =>
+      dec || hex
+        ? String.fromCodePoint(dec ? +dec : parseInt(hex, 16))
+        : (NAMED_ENTITIES[name.toLowerCase()] ?? m),
+    );
 }
 
-function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null, escape: boolean): string {
+/**
+ * Same coercion as valueToHtml for the content of a raw-text or RCDATA element,
+ * where the HTML parser makes everything one text node: a nested template
+ * contributes its text content, as it does on the client. For RCDATA
+ * (`<textarea>`, `<title>`, `rcdata` set) the text is HTML-escaped. For
+ * raw-text (`<style>`, `<script>`) it is emitted unescaped, because the parser
+ * does not decode entities there, and a `</` that starts a raw-text end tag
+ * becomes `<\/`, so the content cannot close the element early.
+ */
+export function valueToRawText(v: unknown, rcdata?: unknown): string {
+  const text = valueToHtmlInner(v, null, false);
+  return rcdata ? escHtml(text) : text.replace(RAW_TEXT_END_TAG, '<\\/');
+}
+
+// `html` false: text mode for raw content (no escaping; nested SSR HTML
+// becomes its text content).
+function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null, html: boolean): string {
   if (typeof v === 'function') v = (v as () => unknown)();
   if (v == null || v === false) return '';
-  if (isSSRHtml(v)) return v.__purity_ssr_html__;
+  if (isSSRHtml(v)) return html ? v.__purity_ssr_html__ : htmlText(v.__purity_ssr_html__);
   if (Array.isArray(v)) {
     // Lazily allocate the visited set — non-cyclic input keeps the fast path
     // allocation-free; only arrays pay the WeakSet add cost.
@@ -110,10 +139,10 @@ function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null, escape: bool
     if (seen.has(v)) return '';
     seen.add(v);
     let s = '';
-    for (let i = 0; i < v.length; i++) s += valueToHtmlInner(v[i], seen, escape);
+    for (let i = 0; i < v.length; i++) s += valueToHtmlInner(v[i], seen, html);
     return s;
   }
-  return escape ? escHtml(String(v)) : String(v);
+  return html ? escHtml(String(v)) : String(v);
 }
 
 /**

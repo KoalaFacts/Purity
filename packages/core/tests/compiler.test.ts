@@ -28,6 +28,25 @@ describe('parser', () => {
     expect(ast.children[0].tag).toBe('div');
   });
 
+  it('parses raw-text element content as text up to its own end tag', () => {
+    const ast = parse(['<SCRIPT>if (a < b) "</div>";</scripts></SCRIPT><p>', '</p>']);
+    const script = ast.children[0];
+    expect(script.type === 'element' && script.children).toEqual([
+      { type: 'text', value: 'if (a < b) "</div>";</scripts>' },
+    ]);
+    expect(ast.children[1].type === 'element' && ast.children[1].tag).toBe('p');
+  });
+
+  it('splits raw-text element content at expressions', () => {
+    const ast = parse(['<textarea><b>', '</b></textarea>']);
+    const textarea = ast.children[0];
+    expect(textarea.type === 'element' && textarea.children).toEqual([
+      { type: 'text', value: '<b>' },
+      { type: 'expression', index: 0 },
+      { type: 'text', value: '</b>' },
+    ]);
+  });
+
   it('parses nested elements', () => {
     const ast = parse(['<div><p></p></div>']);
     expect(ast.children[0].type).toBe('element');

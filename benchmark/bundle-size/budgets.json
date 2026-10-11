@@ -5,8 +5,8 @@
       "brotliBytes": 40704
     },
     "core-compiler": {
-      "gzipBytes": 11008,
-      "brotliBytes": 9728
+      "gzipBytes": 12032,
+      "brotliBytes": 10752
     },
     "ssr": {
       "gzipBytes": 5376,

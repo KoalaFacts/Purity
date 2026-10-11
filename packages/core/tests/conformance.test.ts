@@ -12,8 +12,8 @@ import { describe, expect, it } from 'vite-plus/test';
 import { generate, generateModule, generateSSR } from '../src/compiler/codegen.ts';
 import { parse } from '../src/compiler/parser.ts';
 import { markSSRHtml, ssrHelpers } from '../src/compiler/ssr-runtime.ts';
-import { eachSSR } from '../src/control.ts';
-import { each, html, hydrate, state } from '../src/index.ts';
+import { eachSSR, whenSSR } from '../src/control.ts';
+import { each, html, hydrate, state, when } from '../src/index.ts';
 import { tick } from './_helpers.ts';
 
 type Mode = 'csr' | 'ssr';
@@ -204,6 +204,57 @@ const cases: Case[] = [
     values: () => ['x'],
   },
   {
+    name: 'tag-shaped literal text inside raw content is kept',
+    strings: [
+      '<div><textarea><b>x</b>',
+      '</textarea><style>p::after { content: "<i>" }</style></div>',
+    ],
+    values: () => ['y'],
+  },
+  {
+    name: 'a nested template inside raw content contributes its text',
+    strings: ['<div><textarea>', '</textarea></div>'],
+    values: (mode) => [
+      mode === 'csr'
+        ? html(tpl(['<b>', ' &amp; co</b>']), 'bold')
+        : markSSRHtml(renderSSR(['<b>', ' &amp; co</b>'], ['bold'])),
+    ],
+  },
+  {
+    name: 'each() inside raw content contributes its rows as text',
+    strings: ['<div><title>', '</title></div>'],
+    values: (mode) => [
+      mode === 'csr'
+        ? each(
+            () => ['a', 'b'],
+            (item: () => string) => html(tpl(LI), item),
+          )
+        : eachSSR(['a', 'b'], (item) => markSSRHtml(renderSSR(LI, [item]))),
+    ],
+  },
+  {
+    name: 'when() inside raw content contributes the shown branch as text',
+    strings: ['<div><textarea>', '</textarea></div>'],
+    values: (mode) => [
+      mode === 'csr'
+        ? when(
+            () => true,
+            () => html(tpl(['<b>on</b>'])),
+            () => 'off',
+          )
+        : whenSSR(
+            () => true,
+            () => markSSRHtml(renderSSR(['<b>on</b>'], [])),
+            () => 'off',
+          ),
+    ],
+  },
+  {
+    name: 'static raw content with a comment sequence hydrates as one text node',
+    strings: ['<div><style><!-- a -->b > c {}</style><p>', '</p></div>'],
+    values: () => ['x'],
+  },
+  {
     name: 'raw-text <title> with dynamic content',
     strings: ['<title>', ' & more</title>'],
     values: () => ['Tom & <Jerry>'],
@@ -265,6 +316,44 @@ describe('SSR / CSR / hydrate conformance', () => {
       css('c > d');
       await tick();
       expect(host.querySelector('style')?.textContent).toBe('c > d');
+    } finally {
+      mounted.unmount();
+      host.remove();
+    }
+  });
+
+  it('a nested reactive template inside <textarea> stays live on the client and after hydration', async () => {
+    const strings = ['<div><textarea>', '</textarea><p>x</p></div>'];
+    const inner = ['<b>', '</b>'];
+    const name = state('Ada');
+
+    const csrHost = document.createElement('div');
+    csrHost.appendChild(
+      html(
+        tpl(strings),
+        html(tpl(inner), () => name()),
+      ) as Node,
+    );
+
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    host.innerHTML = renderSSR(strings, [markSSRHtml(renderSSR(inner, ['Ada']))]);
+    const mounted = hydrate(
+      host,
+      () =>
+        html(
+          tpl(strings),
+          html(tpl(inner), () => name()),
+        ) as Node,
+    );
+    try {
+      expect(csrHost.querySelector('textarea')?.textContent).toBe('Ada');
+      expect(host.querySelector('textarea')?.textContent).toBe('Ada');
+      name('Bea');
+      await tick();
+      await tick();
+      expect(csrHost.querySelector('textarea')?.textContent).toBe('Bea');
+      expect(host.querySelector('textarea')?.textContent).toBe('Bea');
     } finally {
       mounted.unmount();
       host.remove();

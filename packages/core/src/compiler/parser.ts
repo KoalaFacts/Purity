@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from './ast.ts';
-import { childNamespace, type Namespace } from './ssr-runtime.ts';
+import { childNamespace, rawEnd, type Namespace } from './ssr-runtime.ts';
 
 // Void elements that cannot have children. Shared with codegen.
 export const VOID_TAGS = new Set([
@@ -102,6 +102,12 @@ class Parser {
   // Namespace the current children are parsed in. Outside HTML, style/script/
   // title/textarea are foreign elements whose content is markup.
   private ns: Namespace = 'html';
+  private parentTag: string | undefined;
+  // Set once an end tag does not match the element it closes. The browser may
+  // then keep an element (e.g. <svg>) open that this parser closed, so later
+  // namespace decisions cannot be trusted: no element is treated as raw text
+  // (its content stays escaped).
+  private mismatched = false;
 
   constructor(strings: readonly string[]) {
     this.strings = strings;
@@ -358,7 +364,7 @@ class Parser {
     // markup: SSR then escapes it, which is safe; misreading foreign content as
     // raw would emit it unescaped where the browser parses tags.
     const raw: ElementNode['raw'] =
-      this.ns !== 'html'
+      this.ns !== 'html' || this.mismatched
         ? undefined
         : lower === 'style' || lower === 'script'
           ? 'text'
@@ -369,16 +375,22 @@ class Parser {
     let children: ASTNode[] = [];
     if (!isVoid) {
       const outer = this.ns;
-      this.ns = childNamespace(outer, lower);
+      const parent = this.parentTag;
+      this.ns = childNamespace(outer, lower, parent);
+      this.parentTag = lower;
       children = raw ? this.parseRawChildren(lower) : this.parseChildren();
       this.ns = outer;
+      this.parentTag = parent;
       // Consume closing tag </tag>
       this.consumeClosingTag(tag);
     }
 
-    return raw
-      ? { type: 'element', tag, attributes, children, isVoid, raw }
-      : { type: 'element', tag, attributes, children, isVoid };
+    const element: ElementNode = { type: 'element', tag, attributes, children, isVoid };
+    if (raw) element.raw = raw;
+    if (this.ns === 'html' && /^(?:textarea|pre|listing)$/.test(lower)) {
+      element.preserveLeadingNewline = true;
+    }
+    return element;
   }
 
   // Raw-text / RCDATA content (style, script, textarea, title): the HTML parser
@@ -387,7 +399,6 @@ class Parser {
   // comments inside are plain text; expressions still split it.
   private parseRawChildren(tag: string): ASTNode[] {
     const children: ASTNode[] = [];
-    const end = `</${tag}`;
     while (!this.atEnd()) {
       if (this.atExprBoundary()) {
         children.push({ type: 'expression', index: this.consumeExpr() });
@@ -396,25 +407,15 @@ class Parser {
       const s = this.current();
       // Compare candidates in place: lower-casing the whole segment could change
       // its length (e.g. U+0130) and shift every offset after it.
-      let stop = s.indexOf('</', this.pos);
-      while (
-        stop !== -1 &&
-        !(
-          s.slice(stop, stop + end.length).toLowerCase() === end &&
-          /^(?:[\t\n\f\r />]|$)/.test(s.slice(stop + end.length, stop + end.length + 1))
-        )
-      ) {
-        stop = s.indexOf('</', stop + 1);
-      }
-      const until = stop === -1 ? s.length : stop;
+      const until = rawEnd(s, this.pos, tag);
       if (until > this.pos) children.push({ type: 'text', value: s.slice(this.pos, until) });
       this.pos = until;
-      if (stop !== -1) break;
+      if (until < s.length) break;
     }
     return children;
   }
 
-  private consumeClosingTag(_tag: string): void {
+  private consumeClosingTag(tag: string): void {
     const s = this.current();
     // Expect </tagname>
     if (
@@ -423,8 +424,7 @@ class Parser {
       s.charCodeAt(this.pos + 1) === SLASH
     ) {
       this.pos += 2;
-      // Skip tag name
-      this.readName();
+      if (this.readName().toLowerCase() !== tag.toLowerCase()) this.mismatched = true;
       // Skip whitespace
       this.skipWhitespace();
       // Skip >

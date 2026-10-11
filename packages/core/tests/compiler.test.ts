@@ -43,6 +43,16 @@ describe('parser', () => {
     expect(ast.children[1].type === 'element' && ast.children[1].tag).toBe('p');
   });
 
+  it('honours script-data escape states when finding </script>', () => {
+    const ast = parse(['<script><!--<script></script>--></script><p>', '</p>']);
+    expect(ast.children).toHaveLength(2);
+    const script = ast.children[0];
+    expect(script.type === 'element' && script.children).toEqual([
+      { type: 'text', value: '<!--<script></script>-->' },
+    ]);
+    expect(ast.children[1].type === 'element' && ast.children[1].tag).toBe('p');
+  });
+
   it('splits raw-text element content at expressions', () => {
     const ast = parse(['<textarea><b>', '</b></textarea>']);
     const textarea = ast.children[0];

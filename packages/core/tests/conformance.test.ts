@@ -316,6 +316,40 @@ const cases: Case[] = [
 ];
 
 describe('SSR / CSR / hydrate conformance', () => {
+  it('escapes foreign style below annotation-xml SVG transitions', () => {
+    const out = renderSSR(
+      [
+        '<math><annotation-xml><svg><mtext><style>',
+        '</style></mtext></svg></annotation-xml></math>',
+      ],
+      ['<img src=x onerror=alert(1)>'],
+    );
+    expect(out).toContain('&lt;img');
+    const host = document.createElement('div');
+    host.innerHTML = out;
+    expect(host.querySelector('img')).toBeNull();
+  });
+
+  it('keeps CDATA after nested same-name foreign elements', () => {
+    expect(ssrHelpers.rawText([markSSRHtml('<svg><svg></svg><![CDATA[x]]></svg>')], 1)).toBe('x');
+  });
+
+  it('preserves static nested pre leading newlines', () => {
+    const inner = ['<pre>\nfoo</pre>'];
+    const out = renderSSR(['<textarea>', '</textarea>'], [markSSRHtml(renderSSR(inner, []))]);
+    const host = document.createElement('div');
+    host.innerHTML = out;
+    expect(host.querySelector('textarea')?.textContent).toBe('\nfoo');
+  });
+
+  it('keeps siblings after double-escaped static script content', () => {
+    const out = renderSSR(['<script><!--<script></script>--></script><p>', '</p>'], ['after']);
+    const host = document.createElement('div');
+    host.innerHTML = out;
+    expect(host.querySelector('p')?.textContent).toBe('after');
+    expect(host.querySelector('script')?.textContent).toBe('<!--<script></script>-->');
+  });
+
   for (const c of cases) {
     // A known defect is pinned with it.fails: the assertion must keep failing.
     const check = c.knownDefect ? it.fails : it;
@@ -453,6 +487,8 @@ describe('SSR / CSR / hydrate conformance', () => {
     // A foreign <template> is an ordinary element; CDATA in foreign content is text.
     const svg = markSSRHtml('<svg><template>x</template><![CDATA[a < b]]></svg>');
     expect(ssrHelpers.rawText([svg], 1)).toBe('xa &lt; b');
+    // A nested same-name element does not end the outer namespace early.
+    expect(ssrHelpers.rawText([markSSRHtml('<svg><svg></svg><![CDATA[x]]></svg>')], 1)).toBe('x');
     // Invalid numeric references become U+FFFD instead of throwing.
     expect(ssrHelpers.rawText([markSSRHtml('<b>&#x110000;&#0;</b>')])).toBe('��');
   });
@@ -514,6 +550,31 @@ describe('SSR / CSR / hydrate conformance', () => {
       const out = renderSSR([`<svg><${name}><style>`, `</style></${name}></svg>`], ['<img src=x>']);
       expect(out).not.toContain('<img');
     }
+  });
+
+  it('an <svg> under MathML annotation-xml is SVG, so its mtext stays foreign', () => {
+    const out = renderSSR(
+      [
+        '<math><annotation-xml><svg><mtext><style>',
+        '</style></mtext></svg></annotation-xml></math>',
+      ],
+      ['<img src=x>'],
+    );
+    expect(out).not.toContain('<img');
+  });
+
+  it('a mismatched end tag inside foreign content does not end it for raw detection', () => {
+    const out = renderSSR(['<svg></div><style>', '</style></svg>'], ['<img src=x>']);
+    expect(out).not.toContain('<img');
+  });
+
+  it('pre keeps a leading newline through SSR and the client cloning path', () => {
+    const host = document.createElement('div');
+    host.innerHTML = renderSSR(['<div><pre>\nfoo</pre><p>', '</p></div>'], ['x']);
+    expect(host.querySelector('pre')?.textContent).toBe('\nfoo');
+    const csr = document.createElement('div');
+    csr.appendChild(html(tpl(['<div><pre>\n', '</pre></div>']), 'x') as Node);
+    expect(csr.querySelector('pre')?.textContent).toBe('\nx');
   });
 
   it('an SVG <title> keeps markup children', () => {

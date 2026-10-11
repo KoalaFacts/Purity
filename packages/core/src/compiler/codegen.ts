@@ -206,10 +206,6 @@ const EXPR_PLACEHOLDER = '​';
 // entities, so text is escaped. Neither can carry hydration markers or
 // placeholders (they would become literal text), so their dynamic content is
 // rebuilt as one text node.
-// The HTML parser drops one newline right after <textarea>, so serialized
-// textarea content is always preceded by one; content starting with a newline
-// keeps it.
-const isTextareaTag = (tag: string): boolean => /^textarea$/i.test(tag);
 const hasExpressionChild = (node: ElementNode): boolean =>
   node.children.some((c) => c.type === 'expression');
 // Source for one raw-content part: the parser gives raw-text / RCDATA elements
@@ -776,7 +772,7 @@ function buildStaticHtml(node: ASTNode, rawParent = false): string {
           s += a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
       }
       if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
-      s += node.raw && isTextareaTag(node.tag) ? '>\n' : '>';
+      s += node.preserveLeadingNewline ? '>\n' : '>';
       const raw = node.raw === 'text';
       for (const ch of node.children) s += buildStaticHtml(ch, raw);
       return `${s}</${node.tag}>`;
@@ -891,7 +887,7 @@ function buildDynamicHtml(
       }
 
       if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
-      s += '>';
+      s += node.preserveLeadingNewline ? '>\n' : '>';
       if (node.raw) {
         // Content is one text node: no placeholders inside. Static content is
         // serialized as-is (the open tag matches `s`: static attributes only);
@@ -1329,14 +1325,20 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
         return;
       }
       emitLit(ctx, '>');
+      if (node.preserveLeadingNewline) emitLit(ctx, '\n');
       if (node.raw) {
         // Raw-text / RCDATA content is one text node: no hydration markers
         // (they would become literal text), and the whole content is coerced
         // in one call so an end tag split across adjacent values (`</sty` +
         // `le>`) is still neutralised. Hydrate rebuilds the element's text.
-        const parts = node.children.map((ch) => rawPart(ch, (i) => `_v[${i}]`));
-        if (isTextareaTag(node.tag)) emitLit(ctx, '\n');
-        pushRaw(ctx, `${ctx.out}+=_h.rawText([${parts}]${node.raw === 'text' ? '' : ',1'});`);
+        // Static raw text is the author's own source (dynamic <script> content
+        // is rejected), so it is emitted as written.
+        if (node.raw === 'text' && !hasExpressionChild(node)) {
+          for (const ch of node.children) if (ch.type === 'text') emitLit(ctx, ch.value);
+        } else {
+          const parts = node.children.map((ch) => rawPart(ch, (i) => `_v[${i}]`));
+          pushRaw(ctx, `${ctx.out}+=_h.rawText([${parts}]${node.raw === 'text' ? '' : ',1'});`);
+        }
       } else {
         for (const ch of node.children) buildSSRBody(ch, ctx);
       }

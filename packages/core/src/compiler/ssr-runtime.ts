@@ -120,7 +120,8 @@ export type Namespace = 'html' | 'svg' | 'math';
  * mglyph/malignmark anywhere) the answer stays foreign, because misreading
  * foreign content as HTML raw text would emit it unescaped.
  */
-export function childNamespace(ns: Namespace, tag: string): Namespace {
+export function childNamespace(ns: Namespace, tag: string, parent?: string): Namespace {
+  if (ns === 'math' && parent === 'annotation-xml' && tag === 'svg') return 'svg';
   if (ns === 'html') {
     if (tag === 'svg') return 'svg';
     return tag === 'math' || tag === 'mglyph' || tag === 'malignmark' ? 'math' : 'html';
@@ -131,7 +132,23 @@ export function childNamespace(ns: Namespace, tag: string): Namespace {
 
 // Offset of the end tag `</tag` + whitespace, `/`, `>` or end (ASCII
 // case-insensitive) at or after `from`, or the end of `html`.
-function rawEnd(html: string, from: number, tag: string): number {
+export function rawEnd(html: string, from: number, tag: string): number {
+  if (tag === 'script') {
+    let state: 'normal' | 'escaped' | 'double' = 'normal';
+    const tokens = /<!--|-->|<\/?script(?=[\t\n\f\r />]|$)/gi;
+    tokens.lastIndex = from;
+    for (let token = tokens.exec(html); token; token = tokens.exec(html)) {
+      const text = token[0].toLowerCase();
+      if (text === '<!--' && state === 'normal') state = 'escaped';
+      else if (text === '-->') state = 'normal';
+      else if (text === '<script' && state === 'escaped') state = 'double';
+      else if (text === '</script') {
+        if (state === 'double') state = 'escaped';
+        else return token.index;
+      }
+    }
+    return html.length;
+  }
   for (let i = html.indexOf('</', from); i !== -1; i = html.indexOf('</', i + 1)) {
     if (
       html.slice(i + 2, i + 2 + tag.length).toLowerCase() === tag &&
@@ -185,7 +202,10 @@ function htmlText(html: string): string {
     const close = m[1] === '/';
     const selfClosing = html[gt - 1] === '/';
     if (close) {
-      if (stack.length > 0 && stack[stack.length - 1][0] === tag) stack.pop();
+      // Pop up to the matching open element, if any.
+      let at = stack.length - 1;
+      while (at >= 0 && stack[at][0] !== tag) at--;
+      if (at >= 0) stack.length = at;
       else if (tag === 'template' && ns === 'html') hidden = Math.max(0, hidden - 1);
       continue;
     }
@@ -194,8 +214,10 @@ function htmlText(html: string): string {
       hidden++;
       continue;
     }
-    const inner = childNamespace(ns, tag);
-    if (inner !== ns) stack.push([tag, inner]);
+    const inner = childNamespace(ns, tag, stack[stack.length - 1]?.[0]);
+    if (!/^(?:area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)$/.test(tag)) {
+      stack.push([tag, inner]);
+    }
     if (ns === 'html') {
       // The parser drops one newline right after these start tags.
       if ((tag === 'textarea' || tag === 'pre' || tag === 'listing') && html[i] === '\n') i++;

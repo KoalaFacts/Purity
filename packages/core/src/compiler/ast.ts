@@ -25,6 +25,8 @@ export interface ElementNode {
    * name, which parse their content as markup.
    */
   raw?: 'text' | 'rcdata';
+  /** Compensate for the HTML parser consuming one initial LF. */
+  preserveLeadingNewline?: boolean;
 }
 
 export interface TextNode {

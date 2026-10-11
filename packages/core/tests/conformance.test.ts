@@ -499,6 +499,38 @@ describe('SSR / CSR / hydrate conformance', () => {
     expect(ssrHelpers.rawText([markSSRHtml('<b>&#x110000;&#0;</b>')])).toBe('��');
   });
 
+  it('trusted HTML ignores self-closing flags only on HTML elements', () => {
+    expect(ssrHelpers.rawText([markSSRHtml('<style/><b>x</b></style>')], 1)).toBe(
+      '&lt;b&gt;x&lt;/b&gt;',
+    );
+    expect(ssrHelpers.rawText([markSSRHtml('<template/>secret')], 1)).toBe('');
+    expect(ssrHelpers.rawText([markSSRHtml('<svg><style/><text>x</text></svg>')], 1)).toBe('x');
+  });
+
+  it('trusted text retains less-than characters outside tag tokens', () => {
+    for (const [source, expected] of [
+      ['<p>a < b</p>', 'a &lt; b'],
+      ['a <1 and << b <', 'a &lt;1 and &lt;&lt; b &lt;'],
+      ['a </', 'a &lt;/'],
+    ])
+      expect(ssrHelpers.rawText([markSSRHtml(source)], 1)).toBe(expected);
+  });
+
+  it('trusted comments accept alternate and abrupt empty endings', () => {
+    for (const source of [
+      '<!--x--!>visible',
+      '<!-->visible',
+      '<!--->visible',
+      '<!--<!-->visible',
+      '<!--x--!->hidden-->visible',
+    ])
+      expect(ssrHelpers.rawText([markSSRHtml(source)], 1)).toBe('visible');
+    expect(ssrHelpers.rawText([markSSRHtml('<!--x--!->hidden')], 1)).toBe('');
+    expect(ssrHelpers.rawText([markSSRHtml('<style><!--x--!>visible</style>')], 1)).toBe(
+      '&lt;!--x--!&gt;visible',
+    );
+  });
+
   it('trusted annotation encodings accept HTML attribute forms and references', () => {
     for (const encoding of [
       "encoding='text/html'",

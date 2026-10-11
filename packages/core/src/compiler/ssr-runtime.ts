@@ -413,7 +413,17 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
     }
     let ns: Namespace = stack.length > 0 ? stack[stack.length - 1][1] : 'html';
     if (html.startsWith('<!--', lt)) {
-      const close = html.indexOf('-->', lt + 4);
+      // Empty comments may end abruptly; ordinary comments also accept --!>.
+      const endings = /--!?>/g;
+      endings.lastIndex = lt + 4;
+      const close =
+        html[lt + 4] === '>'
+          ? lt + 5
+          : html.startsWith('->', lt + 4)
+            ? lt + 6
+            : endings.exec(html)
+              ? endings.lastIndex
+              : -1;
       // These comments cannot remain DOM boundaries after text extraction.
       // The next shell pass renders those views inline before flushing.
       if (span?.[0] === lt && span[4] !== undefined && close !== -1) {
@@ -426,8 +436,19 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
           }
         }
       }
-      i = close === -1 ? html.length : close + 3;
+      i = close === -1 ? html.length : close;
       continue;
+    }
+    // Tag-open errors emit a literal '<' and reconsume the following character.
+    // A trailing '</' at EOF similarly remains character data.
+    if (!/[A-Za-z!/?]/.test(html.charAt(lt + 1))) {
+      emit('<');
+      i = lt + 1;
+      continue;
+    }
+    if (lt === html.length - 2 && html[lt + 1] === '/') {
+      emit('</');
+      break;
     }
     // CDATA is character data in foreign content (a bogus comment in HTML).
     if (
@@ -478,9 +499,10 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
       else if (tag === 'template' && ns === 'html') hidden = Math.max(hiddenBase, hidden - 1);
       continue;
     }
-    if (selfClosing) continue;
     const parent = stack[stack.length - 1];
     const namespace = elementNamespace(ns, tag, parent?.[0], parent?.[2]);
+    // HTML ignores this flag on non-void elements; foreign elements honor it.
+    if (selfClosing && namespace !== 'html') continue;
     if (tag === 'template' && namespace === 'html') {
       hidden++;
       continue;

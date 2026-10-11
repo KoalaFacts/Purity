@@ -221,6 +221,19 @@ try {
     const tree = parse(strings);
     const nested = `<b>${references}</b>`;
     const trustedCases: [string, string][] = [
+      ['<style/><b>x</b></style>', '<b>x</b>'],
+      ['<template/>secret', ''],
+      ['<svg><style/><text>x</text></svg>', 'x'],
+      ['<p>a < b</p>', 'a < b'],
+      ['a <1 and << b <', 'a <1 and << b <'],
+      ['a </', 'a </'],
+      ['<!--x--!>visible', 'visible'],
+      ['<!-->visible', 'visible'],
+      ['<!--->visible', 'visible'],
+      ['<!--<!-->visible', 'visible'],
+      ['<!--x--!->hidden', ''],
+      ['<!--x--!->hidden-->visible', 'visible'],
+      ['<style><!--x--!>visible</style>', '<!--x--!>visible'],
       ['<table><tr><td>a</td></tr>x</table>', 'xa'],
       ['<table><tr><td>a</td></tr> x </table>', ' x a'],
       ['<table><tr><td>a</td></tr>\n </table>', 'a\n '],

@@ -98,6 +98,9 @@ class Parser {
   private strIdx = 0; // current string index
   private pos = 0; // position within current string
   private exprIndex = 0; // next expression index
+  // Inside SVG/MathML content (and not at an HTML integration point), where
+  // style/script/title/textarea are foreign elements whose content is markup.
+  private foreign = false;
 
   constructor(strings: readonly string[]) {
     this.strings = strings;
@@ -349,16 +352,36 @@ class Parser {
     // lowercase doesn't affect them.
     const isVoid = VOID_TAGS.has(tag.toLowerCase()) || selfClosing;
 
+    const lower = tag.toLowerCase();
+    // Only HTML-namespace elements are raw text. When unsure, treat content as
+    // markup: SSR then escapes it, which is safe; misreading foreign content as
+    // raw would emit it unescaped where the browser parses tags.
+    const raw: ElementNode['raw'] = this.foreign
+      ? undefined
+      : lower === 'style' || lower === 'script'
+        ? 'text'
+        : lower === 'textarea' || lower === 'title'
+          ? 'rcdata'
+          : undefined;
+
     let children: ASTNode[] = [];
     if (!isVoid) {
-      children = /^(?:style|script|textarea|title)$/i.test(tag)
-        ? this.parseRawChildren(tag.toLowerCase())
-        : this.parseChildren();
+      const outer = this.foreign;
+      if (lower === 'svg' || lower === 'math') this.foreign = true;
+      // HTML integration points: SVG foreignObject/desc/title and MathML text
+      // integration points parse their children as HTML.
+      else if (outer && /^(?:foreignobject|desc|title|mi|mo|mn|ms|mtext)$/.test(lower)) {
+        this.foreign = false;
+      }
+      children = raw ? this.parseRawChildren(lower) : this.parseChildren();
+      this.foreign = outer;
       // Consume closing tag </tag>
       this.consumeClosingTag(tag);
     }
 
-    return { type: 'element', tag, attributes, children, isVoid };
+    return raw
+      ? { type: 'element', tag, attributes, children, isVoid, raw }
+      : { type: 'element', tag, attributes, children, isVoid };
   }
 
   // Raw-text / RCDATA content (style, script, textarea, title): the HTML parser

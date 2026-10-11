@@ -199,14 +199,13 @@ function isIndentation(n: ASTNode): boolean {
 // createTextNode + replaceWith pair.
 const EXPR_PLACEHOLDER = '​';
 
-// Raw-text elements: the HTML parser does not parse markup inside them.
-// RAWTEXT (style, script) does not decode entities either, so text is emitted
-// verbatim. RCDATA (textarea, title) decodes entities, so text is escaped.
-// Neither can carry hydration markers or placeholders (they would become
-// literal text), so their dynamic content is rebuilt as one text node.
-// Tag names are ASCII case-insensitive; the parser keeps the author's spelling.
-const isRawTextTag = (tag: string): boolean => /^(?:style|script)$/i.test(tag);
-const isRawContentTag = (tag: string): boolean => /^(?:style|script|textarea|title)$/i.test(tag);
+// Raw-text elements (`ElementNode.raw`, set by the parser for HTML-namespace
+// style/script/textarea/title): the HTML parser does not parse markup inside
+// them. RAWTEXT ('text': style, script) does not decode entities either, so
+// text is emitted verbatim. RCDATA ('rcdata': textarea, title) decodes
+// entities, so text is escaped. Neither can carry hydration markers or
+// placeholders (they would become literal text), so their dynamic content is
+// rebuilt as one text node.
 // The HTML parser drops one newline right after <textarea>, so serialized
 // textarea content is always preceded by one; content starting with a newline
 // keeps it.
@@ -616,7 +615,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
 
       // Raw-text / RCDATA content with dynamic parts: SSR wrote no markers, so
       // rebuild the element's text from its parts instead of walking children.
-      if (isRawContentTag(node.tag) && hasExpressionChild(node)) {
+      if (node.raw && hasExpressionChild(node)) {
         ctx.setup.push(rawContentBinding(el, node.children, (i) => `_v[${i}]`, true));
       } else if (
         !VOID.has(node.tag.toLowerCase()) &&
@@ -659,7 +658,7 @@ function isSimpleTemplate(ast: FragmentNode): SimpleTemplate | null {
   const root = ast.children[0];
   // Raw-text / RCDATA content is one text node built by the raw slot, not
   // appended child nodes.
-  if (root.type !== 'element' || isRawContentTag(root.tag)) return null;
+  if (root.type !== 'element' || root.raw) return null;
 
   // Check children are only text/expression (no nested elements)
   for (const ch of root.children) {
@@ -777,8 +776,8 @@ function buildStaticHtml(node: ASTNode, rawParent = false): string {
           s += a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
       }
       if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
-      s += isTextareaTag(node.tag) ? '>\n' : '>';
-      const raw = isRawTextTag(node.tag);
+      s += node.raw && isTextareaTag(node.tag) ? '>\n' : '>';
+      const raw = node.raw === 'text';
       for (const ch of node.children) s += buildStaticHtml(ch, raw);
       return `${s}</${node.tag}>`;
     }
@@ -893,7 +892,7 @@ function buildDynamicHtml(
 
       if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
       s += '>';
-      if (isRawContentTag(node.tag)) {
+      if (node.raw) {
         // Content is one text node: no placeholders inside. Static content is
         // serialized as-is (the open tag matches `s`: static attributes only);
         // dynamic content is written by the element's raw slot.
@@ -1330,14 +1329,14 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
         return;
       }
       emitLit(ctx, '>');
-      if (isRawContentTag(node.tag)) {
+      if (node.raw) {
         // Raw-text / RCDATA content is one text node: no hydration markers
         // (they would become literal text), and the whole content is coerced
         // in one call so an end tag split across adjacent values (`</sty` +
         // `le>`) is still neutralised. Hydrate rebuilds the element's text.
         const parts = node.children.map((ch) => rawPart(ch, (i) => `_v[${i}]`));
         if (isTextareaTag(node.tag)) emitLit(ctx, '\n');
-        pushRaw(ctx, `${ctx.out}+=_h.rawText([${parts}]${isRawTextTag(node.tag) ? '' : ',1'});`);
+        pushRaw(ctx, `${ctx.out}+=_h.rawText([${parts}]${node.raw === 'text' ? '' : ',1'});`);
       } else {
         for (const ch of node.children) buildSSRBody(ch, ctx);
       }

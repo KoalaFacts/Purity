@@ -107,22 +107,15 @@ function decodeRefs(text: string): string {
 }
 
 // Offset of the end tag `</tag` + whitespace, `/`, `>` or end (ASCII
-// case-insensitive) at or after `from`, or the end of `html`. For `template`,
-// nested template elements are skipped.
+// case-insensitive) at or after `from`, or the end of `html`.
 function rawEnd(html: string, from: number, tag: string): number {
-  let depth = 0;
-  for (let i = html.indexOf('<', from); i !== -1; i = html.indexOf('<', i + 1)) {
-    const close = html[i + 1] === '/';
-    const name = html.slice(i + (close ? 2 : 1), i + (close ? 2 : 1) + tag.length);
+  for (let i = html.indexOf('</', from); i !== -1; i = html.indexOf('</', i + 1)) {
     if (
-      name.toLowerCase() !== tag ||
-      !/^(?:[\t\n\f\r />]|$)/.test(html.charAt(i + (close ? 2 : 1) + tag.length))
+      html.slice(i + 2, i + 2 + tag.length).toLowerCase() === tag &&
+      /^(?:[\t\n\f\r />]|$)/.test(html.charAt(i + 2 + tag.length))
     ) {
-      continue;
+      return i;
     }
-    // Only templates nest; inside raw text an open tag is just text.
-    if (!close) depth += tag === 'template' ? 1 : 0;
-    else if (depth-- === 0) return i;
   }
   return html.length;
 }
@@ -136,9 +129,15 @@ function rawEnd(html: string, from: number, tag: string): number {
 function htmlText(html: string): string {
   let out = '';
   let i = 0;
+  // Open <template> elements: their contents (declarative shadow roots
+  // included) live in a separate fragment and are not part of textContent.
+  let hidden = 0;
+  // Open <svg>/<math> elements: style/script/title/textarea there are foreign
+  // and their content is markup, not raw text.
+  let foreign = 0;
   while (i < html.length) {
     const lt = html.indexOf('<', i);
-    out += decodeRefs(html.slice(i, lt === -1 ? html.length : lt));
+    if (!hidden) out += decodeRefs(html.slice(i, lt === -1 ? html.length : lt));
     if (lt === -1) break;
     if (html.startsWith('<!--', lt)) {
       const close = html.indexOf('-->', lt + 4);
@@ -148,20 +147,26 @@ function htmlText(html: string): string {
     const gt = html.indexOf('>', lt);
     if (gt === -1) break;
     i = gt + 1;
-    const tag = /^<(style|script|textarea|title|template|pre|listing)[\s/>]/i
-      .exec(html.slice(lt, gt + 1))?.[1]
-      .toLowerCase();
-    // The parser drops one newline right after these start tags.
-    if ((tag === 'textarea' || tag === 'pre' || tag === 'listing') && html[i] === '\n') i++;
+    const m = /^<(\/?)([a-z][^\s/>]*)/i.exec(html.slice(lt, gt + 1));
+    if (!m) continue;
+    const tag = m[2].toLowerCase();
+    const close = m[1] === '/';
+    const selfClosing = html[gt - 1] === '/';
     if (tag === 'template') {
-      // Template contents (including declarative shadow roots) live in a
-      // separate fragment and are not part of textContent.
-      i = rawEnd(html, i, tag);
-    } else if (tag && tag !== 'pre' && tag !== 'listing') {
-      const end = rawEnd(html, i, tag);
-      const text = html.slice(i, end);
-      out += tag === 'style' || tag === 'script' ? text : decodeRefs(text);
-      i = end;
+      if (close) hidden = Math.max(0, hidden - 1);
+      else if (!selfClosing) hidden++;
+    } else if (tag === 'svg' || tag === 'math') {
+      if (close) foreign = Math.max(0, foreign - 1);
+      else if (!selfClosing) foreign++;
+    } else if (!close && !foreign) {
+      // The parser drops one newline right after these start tags.
+      if ((tag === 'textarea' || tag === 'pre' || tag === 'listing') && html[i] === '\n') i++;
+      if (/^(?:style|script|textarea|title)$/.test(tag)) {
+        const end = rawEnd(html, i, tag);
+        const text = html.slice(i, end);
+        if (!hidden) out += tag === 'style' || tag === 'script' ? text : decodeRefs(text);
+        i = end;
+      }
     }
   }
   return out;

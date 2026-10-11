@@ -438,6 +438,13 @@ describe('SSR / CSR / hydrate conformance', () => {
       '<x-card><template shadowrootmode="open"><b>shadow</b><template>t</template></template>light</x-card><template>x</template>',
     );
     expect(ssrHelpers.rawText([nested], 1)).toBe('light');
+    // A tag-shaped string inside raw text in the shadow root is not a template.
+    const css = markSSRHtml(
+      '<x-card><template shadowrootmode="open"><style>p::after { content: "<template>" }</style></template>light</x-card>',
+    );
+    expect(ssrHelpers.rawText([css], 1)).toBe('light');
+    // SVG <title> is foreign: its content is markup, not RCDATA.
+    expect(ssrHelpers.rawText([markSSRHtml('<svg><title><b>T</b></title></svg>')], 1)).toBe('T');
   });
 
   it('nested text drops a nested textarea leading newline like the HTML parser', () => {
@@ -474,6 +481,20 @@ describe('SSR / CSR / hydrate conformance', () => {
       mounted.unmount();
       host.remove();
     }
+  });
+
+  it('an SVG <style> is not raw text: markup in a value stays escaped', () => {
+    const out = renderSSR(['<svg><style>', '</style></svg>'], ['<script>x()</script>']);
+    const host = document.createElement('div');
+    host.innerHTML = out;
+    expect(host.querySelectorAll('script')).toHaveLength(0);
+    expect(host.querySelector('style')?.textContent).toBe('<script>x()</script>');
+  });
+
+  it('an SVG <title> keeps markup children', () => {
+    const host = document.createElement('div');
+    host.appendChild(html(tpl(['<svg><title><b>Bold</b>', '</title></svg>']), 'x') as Node);
+    expect(host.querySelector('title b')?.textContent).toBe('Bold');
   });
 
   it('an end tag split across adjacent values cannot close <style>', () => {

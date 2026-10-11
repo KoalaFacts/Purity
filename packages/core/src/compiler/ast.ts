@@ -18,6 +18,13 @@ export interface ElementNode {
   attributes: AttributeNode[];
   children: ASTNode[];
   isVoid: boolean; // <br>, <input>, etc.
+  /**
+   * Set by the parser on an HTML-namespace raw-text (`'text'`: style, script)
+   * or RCDATA (`'rcdata'`: textarea, title) element, whose content the HTML
+   * parser reads as one text node. Unset for SVG/MathML elements of the same
+   * name, which parse their content as markup.
+   */
+  raw?: 'text' | 'rcdata';
 }
 
 export interface TextNode {

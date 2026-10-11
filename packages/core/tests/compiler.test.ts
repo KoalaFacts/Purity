@@ -291,6 +291,15 @@ describe('codegen', () => {
     expect(first.querySelector('b')).toBeNull();
   });
 
+  it('keeps static raw-text content verbatim on the cloning path', () => {
+    const factory = new Function(
+      `return ${generate(parse(['<div><style>a > b { }</style><SCRIPT>if (a > b) {}</SCRIPT></div><p>x & y</p>']))}`,
+    )() as () => DocumentFragment;
+    const div = factory().firstChild as HTMLElement;
+    expect(div.querySelector('style')?.textContent).toBe('a > b { }');
+    expect(div.querySelector('script')?.textContent).toBe('if (a > b) {}');
+  });
+
   it('renders static text content', () => {
     expect(renderStatic(['<p>Hello</p>']).outerHTML).toBe('<p>Hello</p>');
   });

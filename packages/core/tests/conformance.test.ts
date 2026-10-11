@@ -285,8 +285,7 @@ describe('SSR / CSR / hydrate conformance', () => {
     expect(host.querySelectorAll('style')).toHaveLength(1);
   });
 
-  // Deferred: see RAW_TEXT_DEFERRED. Static <style> text is entity-escaped by SSR.
-  it.fails('fully static <style> content is not entity-escaped (static SSR path)', () => {
+  it('fully static <style> content is not entity-escaped (static SSR path)', () => {
     expect(normalize(renderSSR(['<style>a > b { }</style>'], []))).toBe(
       normalize('<style>a > b { }</style>'),
     );

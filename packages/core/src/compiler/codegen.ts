@@ -654,12 +654,18 @@ function hasDynamic(node: ASTNode): boolean {
 // buildStaticHtml (no markers)
 // ---------------------------------------------------------------------------
 
-function buildStaticHtml(node: ASTNode): string {
+// Raw-text elements: the HTML parser never decodes character references inside
+// them, so their text must be emitted verbatim. Tag names are ASCII
+// case-insensitive; the parser keeps the author's spelling.
+const isRawTextTag = (tag: string): boolean => /^(?:style|script)$/i.test(tag);
+
+// `rawParent` is true inside a raw-text element.
+function buildStaticHtml(node: ASTNode, rawParent = false): string {
   switch (node.type) {
     case 'text':
       // `raw: true` marks SGML declarations like `<!doctype html>` parsed
       // verbatim from the template; escaping would corrupt them.
-      return node.raw ? node.value : escapeHtml(node.value);
+      return node.raw || rawParent ? node.value : escapeHtml(node.value);
     case 'comment':
       return `<!--${node.value.replace(/--!?>/g, '--&gt;')}-->`;
     case 'element': {
@@ -671,11 +677,12 @@ function buildStaticHtml(node: ASTNode): string {
       }
       if (VOID.has(node.tag)) return `${s}/>`;
       s += '>';
-      for (const ch of node.children) s += buildStaticHtml(ch);
+      const raw = isRawTextTag(node.tag);
+      for (const ch of node.children) s += buildStaticHtml(ch, raw);
       return `${s}</${node.tag}>`;
     }
     case 'fragment':
-      return node.children.map(buildStaticHtml).join('');
+      return node.children.map((ch) => buildStaticHtml(ch)).join('');
     default:
       /* v8 ignore next -- defensive fallthrough; AST has no other types */
       return '';
@@ -732,7 +739,11 @@ function buildDynamicHtml(
 
       if (VOID.has(node.tag)) return `${s}/>`;
       s += '>';
-      s += emitChildrenHtml(node.children, slots, currentPath);
+      if (isRawTextTag(node.tag) && !node.children.some((c) => c.type === 'expression')) {
+        for (const ch of node.children) s += buildStaticHtml(ch, true);
+      } else {
+        s += emitChildrenHtml(node.children, slots, currentPath);
+      }
       return `${s}</${node.tag}>`;
     }
 

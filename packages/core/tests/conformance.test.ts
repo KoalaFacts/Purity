@@ -11,7 +11,7 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { generate, generateModule, generateSSR } from '../src/compiler/codegen.ts';
 import { parse } from '../src/compiler/parser.ts';
-import { markSSRHtml, ssrHelpers } from '../src/compiler/ssr-runtime.ts';
+import { markSSRHtml, rawEnd, ssrHelpers } from '../src/compiler/ssr-runtime.ts';
 import { eachSSR, whenSSR } from '../src/control.ts';
 import { each, html, hydrate, mount, state, when } from '../src/index.ts';
 import { tick } from './_helpers.ts';
@@ -580,6 +580,22 @@ describe('SSR / CSR / hydrate conformance', () => {
     const csr = document.createElement('div');
     csr.appendChild(html(tpl(['<div><pre>\n', '</pre></div>']), 'x') as Node);
     expect(csr.querySelector('pre')?.textContent).toBe('\nx');
+  });
+
+  it('finds the end of script content where the HTML parser does', () => {
+    for (const body of [
+      'a</script>',
+      '<!--<script></script>--></script>',
+      '<!--<script>--><script></script>--></script>',
+      '<!--<SCRIPT >x</script >y--></script>',
+      'x</scripts></script>',
+    ]) {
+      const host = document.createElement('div');
+      host.innerHTML = `<script>${body}<p>after</p>`;
+      expect(body.slice(0, rawEnd(body, 0, 'script')), body).toBe(
+        host.querySelector('script')?.textContent,
+      );
+    }
   });
 
   it('SSR writes < in dynamic <style> content as \\3c and hydration restores it', () => {

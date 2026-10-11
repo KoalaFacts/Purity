@@ -128,28 +128,35 @@ export function childNamespace(ns: Namespace, tag: string, parent?: string): Nam
 // Offset of the end tag `</tag` + whitespace, `/`, `>` or end (ASCII
 // case-insensitive) at or after `from`, or the end of `html`.
 export function rawEnd(html: string, from: number, tag: string): number {
-  if (tag === 'script') {
-    let state: 'normal' | 'escaped' | 'double' = 'normal';
-    const tokens = /<!--|-->|<\/?script(?=[\t\n\f\r />]|$)/gi;
-    tokens.lastIndex = from;
-    for (let token = tokens.exec(html); token; token = tokens.exec(html)) {
-      const text = token[0].toLowerCase();
-      if (text === '<!--' && state === 'normal') state = 'escaped';
-      else if (text === '-->') state = 'normal';
-      else if (text === '<script' && state === 'escaped') state = 'double';
-      else if (text === '</script') {
-        if (state === 'double') state = 'escaped';
-        else return token.index;
+  // `<name` / `</name` at i (ASCII case-insensitive) followed by whitespace,
+  // `/`, `>` or the end.
+  const tagAt = (i: number, name: string): boolean =>
+    html.slice(i, i + name.length).toLowerCase() === name &&
+    /^(?:[\t\n\f\r />]|$)/.test(html.charAt(i + name.length));
+  // Script data states (script only): 0 data, 1 escaped (after `<!--`),
+  // 2 double-escaped (after `<script` while escaped), where a `</script`
+  // returns to escaped instead of ending the element. `-->` returns to data.
+  let state = 0;
+  for (let i = from; i < html.length; i++) {
+    if (tag === 'script') {
+      if (state === 0 && html.startsWith('<!--', i)) {
+        state = 1;
+        i += 3;
+        continue;
+      }
+      if (state !== 0 && html.startsWith('-->', i)) {
+        state = 0;
+        i += 2;
+        continue;
+      }
+      if (state === 1 && tagAt(i, '<script')) {
+        state = 2;
+        continue;
       }
     }
-    return html.length;
-  }
-  for (let i = html.indexOf('</', from); i !== -1; i = html.indexOf('</', i + 1)) {
-    if (
-      html.slice(i + 2, i + 2 + tag.length).toLowerCase() === tag &&
-      /^(?:[\t\n\f\r />]|$)/.test(html.charAt(i + 2 + tag.length))
-    ) {
-      return i;
+    if (tagAt(i, `</${tag}`)) {
+      if (state !== 2) return i;
+      state = 1;
     }
   }
   return html.length;

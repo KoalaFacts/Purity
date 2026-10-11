@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import { generate, generateModule, generateSSR } from '../src/compiler/codegen.ts';
 import { parse } from '../src/compiler/parser.ts';
 import { markSSRHtml, rawEnd, ssrHelpers } from '../src/compiler/ssr-runtime.ts';
-import { eachSSR, whenSSR } from '../src/control.ts';
+import { eachSSR, matchSSR, whenSSR } from '../src/control.ts';
 import { each, html, hydrate, mount, state, when } from '../src/index.ts';
 import { tick } from './_helpers.ts';
 
@@ -624,7 +624,62 @@ describe('SSR / CSR / hydrate conformance', () => {
   it('handles long slash runs without changing CSS escape parity', () => {
     const slashes = '\\'.repeat(100_000);
     expect(ssrHelpers.rawText([slashes])).toBe(slashes);
-    expect(ssrHelpers.rawText([`${slashes}<\\<`])).toBe(`${slashes}\\3c \\3c `);
+    expect(ssrHelpers.rawText([`${slashes}<b\\<i`])).toBe(`${slashes}\\3c b\\3c i`);
+  });
+
+  it('dynamic styles preserve CSS range comparison delimiters', () => {
+    for (const comparison of ['< 600px', '<600px', '<=600px']) {
+      const strings = [`<style>@media (width ${comparison}) { p { color: `, ' } }</style>'];
+      const host = document.createElement('div');
+      host.innerHTML = renderSSR(strings, ['red']);
+      expect(host.querySelector('style')?.textContent).toBe(
+        `@media (width ${comparison}) { p { color: red } }`,
+      );
+    }
+    // Comparisons can coexist with dangerous prefixes; only the latter escape.
+    expect(ssrHelpers.rawText(['width < 600px; </sty', 'le><img src=x>'])).toBe(
+      'width < 600px; \\3c /style>\\3c img src=x>',
+    );
+  });
+
+  it('custom-element slots preserve original style text through nested outputs', () => {
+    const compile = (strings: string[]) =>
+      new Function(`return ${generateSSR(parse(tpl(strings)))}`)() as SSRFactory;
+    const style = compile(['<style>', '</style>'])(['<i>'], ssrHelpers);
+    for (const strings of [
+      ['<x-unknown><style>', '</style></x-unknown>'],
+      ['<x-unknown><x-inner>', '</x-inner></x-unknown>'],
+    ]) {
+      const values = strings[0].endsWith('<style>') ? ['<i>'] : [style];
+      const value = compile(strings)(values, ssrHelpers);
+      const outer = compile(['<textarea>', '</textarea>'])([value], ssrHelpers);
+      const host = document.createElement('div');
+      host.innerHTML = outer.__purity_ssr_html__;
+      expect(host.querySelector('textarea')?.textContent).toBe('<i>');
+    }
+  });
+
+  it('SSR control-flow wrappers preserve original style text and authored escapes', () => {
+    const factory = new Function(
+      `return ${generateSSR(parse(tpl(['<style>', '</style>'])))}`,
+    )() as SSRFactory;
+    const original = 'p{content:"\\3c <i>"}';
+    const style = () => factory([original], ssrHelpers);
+    const views = [
+      whenSSR(() => true, style),
+      whenSSR(
+        () => false,
+        () => '',
+        style,
+      ),
+      matchSSR(() => 'a&b', { 'a&b': style }),
+      matchSSR(() => 'missing', {}, style),
+      eachSSR([1, 2], () => whenSSR(() => true, style)),
+    ];
+    for (let i = 0; i < views.length; i++) {
+      const expected = 'p{content:&quot;\\3c &lt;i&gt;&quot;}';
+      expect(ssrHelpers.rawText([views[i]], 1)).toBe(i === 4 ? expected + expected : expected);
+    }
   });
 
   it('nested text reads opaque raw-text elements and undoes the style CSS escape', () => {
@@ -672,15 +727,15 @@ describe('SSR / CSR / hydrate conformance', () => {
   it('tracks only generated CSS escapes across nested SSR expression slots', () => {
     const compile = (strings: string[]) =>
       new Function(`return ${generateSSR(parse(tpl(strings)))}`)() as SSRFactory;
-    const original = 'p{content:"\\3c <"}';
+    const original = 'p{content:"\\3c <i>"}';
     const style = compile(['<style>', '</style>'])([original], ssrHelpers);
     const outer = compile(['<div>', '</div>'])([[style, style]], ssrHelpers);
     expect(ssrHelpers.rawText([outer], 1)).toBe(
-      'p{content:&quot;\\3c &lt;&quot;}p{content:&quot;\\3c &lt;&quot;}',
+      'p{content:&quot;\\3c &lt;i&gt;&quot;}p{content:&quot;\\3c &lt;i&gt;&quot;}',
     );
     // Serializing to a string and branding it anew has no original-text metadata.
     const rewrapped = markSSRHtml(style.__purity_ssr_html__);
-    expect(ssrHelpers.rawText([rewrapped], 1)).toBe('p{content:&quot;\\3c \\3c &quot;}');
+    expect(ssrHelpers.rawText([rewrapped], 1)).toBe('p{content:&quot;\\3c \\3c i&gt;&quot;}');
   });
 
   it('a <style> value cannot break out of a raw-text ancestor', () => {

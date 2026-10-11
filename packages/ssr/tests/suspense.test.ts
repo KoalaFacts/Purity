@@ -15,6 +15,28 @@ import { html as ssrHtml, renderToString } from '../src/index.ts';
 type AnyHtml = (strings: TemplateStringsArray, ...values: unknown[]) => unknown;
 
 describe('suspense() — SSR error isolation + boundary markers', () => {
+  it('preserves original style text through resolved and fallback boundaries', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      for (const fail of [false, true]) {
+        const out = await renderToString(
+          () =>
+            ssrHtml`<textarea>${suspense(
+              () => {
+                if (fail) throw new Error('fallback');
+                return ssrHtml`<style>${'<i>'}</style>`;
+              },
+              () => ssrHtml`<style>${'<i>'}</style>`,
+            )}</textarea>`,
+        );
+        const host = document.createElement('div');
+        host.innerHTML = out;
+        expect(host.querySelector('textarea')?.textContent).toBe('<i>');
+      }
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
   it('emits <!--s:N--><!--/s:N--> markers around the rendered view', async () => {
     const out = await renderToString(
       () =>

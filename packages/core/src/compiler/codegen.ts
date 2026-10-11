@@ -1203,7 +1203,7 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
 export function generateSSR(ast: FragmentNode): string {
   assertSafeScriptContent(ast);
   ast = condenseWhitespace(ast) as FragmentNode;
-  const ctx: SSRGenCtx = { parts: [], counter: 0, out: '_o', lastLitHtml: null };
+  const ctx: SSRGenCtx = { parts: [], counter: 0, out: '_o', spans: '_r', lastLitHtml: null };
   // Static-prefix optimization: if the entire tree is static AND contains no
   // hyphenated tags (which require runtime component dispatch), emit a closure
   // returning the prebuilt string. Avoids per-call work and skips the _v / _h
@@ -1253,6 +1253,7 @@ interface SSRGenCtx {
   parts: string[]; // JS source fragments that mutate the active output var
   counter: number; // unique-id counter for emitted local variables
   out: string; // current output variable name (default '_o', changes for slot capture)
+  spans: string; // original raw-text spans belonging to the active output
   // Coalescing state: when the most recent push was a literal HTML append
   // (`_o+="…";`), track the raw HTML so we can extend the last entry without
   // re-parsing it out of the JS source. Reset whenever a non-literal part is
@@ -1302,10 +1303,7 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
       // _h.toHtml handles signal-accessor calls, branded HTML, arrays, and
       // primitive escaping in one place.
       emitLit(ctx, '<!--[-->');
-      pushRaw(
-        ctx,
-        `${ctx.out}+=_h.toHtml(_v[${node.index}]${ctx.out === '_o' ? ',_r,_o.length' : ''});`,
-      );
+      pushRaw(ctx, `${ctx.out}+=_h.toHtml(_v[${node.index}],${ctx.spans},${ctx.out}.length);`);
       emitLit(ctx, '<!--]-->');
       return;
     }
@@ -1342,7 +1340,7 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
           for (const ch of node.children) if (ch.type === 'text') emitLit(ctx, ch.value);
         } else {
           const parts = node.children.map((ch) => rawPart(ch, (i) => `_v[${i}]`));
-          const spanArgs = ctx.out === '_o' && node.raw === 'text' ? ',undefined,_r,_o.length' : '';
+          const spanArgs = `,undefined,${ctx.spans},${ctx.out}.length`;
           pushRaw(
             ctx,
             `${ctx.out}+=_h.rawText([${parts}]${node.raw === 'text' ? spanArgs : ',1'});`,
@@ -1402,13 +1400,20 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
 
   // Capture children into a slot string. Temporarily swap the active output
   // variable so all nested emissions append to slotVar; restore afterward.
-  pushRaw(ctx, `var ${slotVar}='';`);
+  const slotSpans = `_sr${id}`;
+  pushRaw(ctx, `var ${slotVar}='',${slotSpans}=[];`);
   const prevOut = ctx.out;
+  const prevSpans = ctx.spans;
   ctx.out = slotVar;
+  ctx.spans = slotSpans;
   for (const ch of node.children) buildSSRBody(ch, ctx);
   ctx.out = prevOut;
+  ctx.spans = prevSpans;
 
-  pushRaw(ctx, `${ctx.out}+=_h.element(${jsString(node.tag)},${attrsVar},${slotVar});`);
+  pushRaw(
+    ctx,
+    `${ctx.out}+=_h.element(${jsString(node.tag)},${attrsVar},${slotVar},${slotSpans},${ctx.spans},${ctx.out}.length);`,
+  );
 }
 
 // DOM properties that do NOT reflect to a same-named HTML attribute. For

@@ -37,6 +37,27 @@ describe('component SSR — Declarative Shadow DOM', () => {
     );
   });
 
+  it('preserves original style text when a registered component reads its slot as RCDATA', async () => {
+    component(
+      'ssr-raw-slot-1',
+      (_props, { default: body }) => html`<textarea>${body()}</textarea>`,
+    );
+    component('ssr-raw-slot-2', () => {
+      const body = slot();
+      return html`<title>${body()}</title>`;
+    });
+    for (const strings of [
+      ['<ssr-raw-slot-1><style>', '</style></ssr-raw-slot-1>'],
+      ['<ssr-raw-slot-2><style>', '</style></ssr-raw-slot-2>'],
+    ]) {
+      const out = await renderToString(() =>
+        html(strings as unknown as TemplateStringsArray, '<i>'),
+      );
+      expect(out).toContain('&lt;i&gt;');
+      expect(out).not.toContain('\\3c ');
+    }
+  });
+
   it('renders empty slot as null', async () => {
     component('ssr-card-3', (_props, { default: body }) => html`<div>${body()}</div>`);
     const out = await renderToString(() => html`<ssr-card-3></ssr-card-3>`);

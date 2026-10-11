@@ -198,6 +198,20 @@ try {
           undefined,
         );
       }
+      await page.setViewportSize({ width: 500, height: 400 });
+      for (const comparison of ['< 600px', '<600px', '<=600px']) {
+        const strings = [
+          `<style>@media (width ${comparison}) { #css-range { color: `,
+          ' } }</style><p id="css-range">Range comparison</p>',
+        ] as unknown as TemplateStringsArray;
+        const output = await renderToString(() => html(strings, 'rgb(255, 0, 0)'));
+        await page.setContent(output);
+        assert.equal(
+          await page.locator('#css-range').evaluate((node) => getComputedStyle(node).color),
+          'rgb(255, 0, 0)',
+          `${browserType.name()}: CSS range comparison ${comparison} must apply before hydration`,
+        );
+      }
       await page.setContent(markup);
       assert.equal(
         await page.evaluate(() => (globalThis as { __purityAttack?: number }).__purityAttack),

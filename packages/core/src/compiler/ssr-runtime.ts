@@ -22,7 +22,7 @@ export interface SSRHtml {
 // External JSON must never gain raw-HTML privileges by copying a public field.
 // Weak references allow wrappers to be collected after each render.
 const trustedHtml = new WeakSet<object>();
-interface RawTextSpan {
+export interface RawTextSpan {
   start: number;
   end: number;
   text: string;
@@ -263,9 +263,9 @@ function htmlText(html: string, spans?: readonly RawTextSpan[]): string {
  * contributes its text content, as it does on the client. For RCDATA
  * (`<textarea>`, `<title>`, `rcdata` set) the text is HTML-escaped. For
  * raw-text (`<style>`; dynamic `<script>` content is rejected) entities are not
- * decoded, so every `<` is written as the CSS escape `\3c ` instead. The output
- * then contains no `<` at all, so it cannot form a tag in whatever context the
- * browser parses it: raw text, foreign (SVG/MathML) content, or an ancestor
+ * decoded, so tag-opening `<` prefixes are written as the CSS escape `\3c `.
+ * CSS comparison delimiters remain literal. The output cannot form a tag in
+ * contexts such as raw text, foreign (SVG/MathML) content, or an ancestor
  * such as <xmp> or <noscript> that this element was nested in, including a
  * parent template it is spliced into at runtime. CSS reads `\3c ` as `<` in
  * strings and identifiers; textContent differs from the client until hydration.
@@ -288,6 +288,23 @@ export function valueToRawText(
   const chunks: string[] = [];
   let start = 0;
   for (let end = text.indexOf('<'); end !== -1; end = text.indexOf('<', start)) {
+    // Only tag-opening prefixes can become markup when this fragment is
+    // nested in another HTML context. CSS comparison operators must remain
+    // delimiters: replacing `< 600px` with an escape turns it into an identifier.
+    const next = text.charCodeAt(end + 1);
+    if (
+      !(
+        (next >= 65 && next <= 90) ||
+        (next >= 97 && next <= 122) ||
+        next === 47 ||
+        next === 33 ||
+        next === 63
+      )
+    ) {
+      chunks.push(text.slice(start, end + 1));
+      start = end + 1;
+      continue;
+    }
     let slashes = 0;
     for (let i = end - 1; i >= start && text.charCodeAt(i) === 92; i--) slashes++;
     chunks.push(text.slice(start, end - (slashes % 2)), '\\3c ');
@@ -370,6 +387,9 @@ export type SSRComponentRenderer = (
   tag: string,
   attrs: Record<string, unknown>,
   slotHtml: string,
+  slotSpans?: readonly RawTextSpan[],
+  spans?: RawTextSpan[],
+  offset?: number,
 ) => string | null;
 
 let componentRenderer: SSRComponentRenderer | null = null;
@@ -415,7 +435,14 @@ const SAFE_ATTR_NAME = /^[A-Za-z_][A-Za-z0-9_\-:.]*$/;
  * Plain element fallback — emits `<tag attr="…">slot</tag>` with proper escaping.
  * Used when no component renderer is registered or when the tag is unknown.
  */
-function plainElement(tag: string, attrs: Record<string, unknown>, slotHtml: string): string {
+function plainElement(
+  tag: string,
+  attrs: Record<string, unknown>,
+  slotHtml: string,
+  slotSpans?: readonly RawTextSpan[],
+  spans?: RawTextSpan[],
+  offset = 0,
+): string {
   let s = `<${tag}`;
   for (const k of Object.keys(attrs)) {
     if (!SAFE_ATTR_NAME.test(k)) continue;
@@ -424,16 +451,29 @@ function plainElement(tag: string, attrs: Record<string, unknown>, slotHtml: str
   }
   // Custom elements are never void elements per the HTML spec — always emit
   // an explicit closing tag even if `slotHtml` is empty.
+  if (spans && slotSpans) {
+    const base = offset + s.length + 1;
+    for (const span of slotSpans) {
+      spans.push({ start: base + span.start, end: base + span.end, text: span.text });
+    }
+  }
   return `${s}>${slotHtml}</${tag}>`;
 }
 
 /** Render a hyphenated element tag, dispatching to a registered component if any. */
-export function ssrElement(tag: string, attrs: Record<string, unknown>, slotHtml: string): string {
+export function ssrElement(
+  tag: string,
+  attrs: Record<string, unknown>,
+  slotHtml: string,
+  slotSpans?: readonly RawTextSpan[],
+  spans?: RawTextSpan[],
+  offset = 0,
+): string {
   if (componentRenderer) {
-    const result = componentRenderer(tag, attrs, slotHtml);
+    const result = componentRenderer(tag, attrs, slotHtml, slotSpans, spans, offset);
     if (result !== null) return result;
   }
-  return plainElement(tag, attrs, slotHtml);
+  return plainElement(tag, attrs, slotHtml, slotSpans, spans, offset);
 }
 
 /** Helpers bundle passed as the second argument to SSR-compiled factories. */

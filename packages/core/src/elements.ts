@@ -1,6 +1,7 @@
 import { enterHydration, exitHydration, inflateDeferred, isDeferred } from './compiler/compile.ts';
 import {
   markSSRHtml,
+  type RawTextSpan,
   type SSRComponentRenderer,
   type SSRHtml,
   valueToAttr,
@@ -206,15 +207,16 @@ export function slot<E = void>(name?: string): SlotAccessor<E> {
 
   const slotName = name ?? 'default';
 
-  // SSR path: ctx carries pre-rendered slot HTML strings instead of DOM
-  // children. Return a branded SSR HTML wrapper so valueToHtml splices it
+  // SSR path: ctx carries pre-rendered slot HTML wrappers instead of DOM
+  // children. Return the wrapper so valueToHtml preserves its raw-text spans
   // raw into the surrounding template. Cast through `unknown` because the
   // SlotAccessor type signature targets DOM consumers.
-  const ssrSlots = (ctx as unknown as { _ssrSlots?: Record<string, string | undefined> })._ssrSlots;
+  const ssrSlots = (ctx as unknown as { _ssrSlots?: Record<string, SSRHtml | undefined> })
+    ._ssrSlots;
   if (ssrSlots !== undefined) {
     return ((_exposed?: unknown): SSRHtml | null => {
       const html = ssrSlots[slotName];
-      return html != null ? markSSRHtml(html) : null;
+      return html ?? null;
     }) as unknown as SlotAccessor<E>;
   }
 
@@ -398,14 +400,14 @@ export function _getRegisteredComponent(
 // SSRHtml wrappers instead of cloned DOM nodes. Cast through `unknown`
 // because the SlotAccessor public type is DOM-shaped.
 function createSSRSlotAccessors(
-  slots: Record<string, string | undefined>,
+  slots: Record<string, SSRHtml | undefined>,
 ): Record<string, SlotAccessor<any>> {
   return new Proxy({} as Record<string, SlotAccessor<any>>, {
     get(_target, prop) {
       if (typeof prop !== 'string') return undefined;
       return ((): SSRHtml | null => {
         const html = slots[prop];
-        return html != null ? markSSRHtml(html) : null;
+        return html ?? null;
       }) as unknown as SlotAccessor<any>;
     },
   });
@@ -423,7 +425,14 @@ function createSSRSlotAccessors(
  * any JS executes, eliminating the upgrade flash that the alternative
  * "attach Shadow at hydration" strategy would introduce.
  */
-export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) => {
+export const _renderComponentSSR: SSRComponentRenderer = (
+  tag,
+  attrs,
+  slotHtml,
+  slotSpans,
+  spans,
+  offset = 0,
+) => {
   const renderFn = componentRegistry.get(tag);
   if (!renderFn) return null;
 
@@ -448,14 +457,15 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
   //   _ssrStyles — css() pushes here instead of touching adoptedStyleSheets
   //   _ssrSlots  — slot() reads here instead of resolving from DOM children
   (ctx as unknown as { _ssrStyles: string[] })._ssrStyles = [];
-  (ctx as unknown as { _ssrSlots: Record<string, string | undefined> })._ssrSlots = {
-    default: slotHtml,
+  const slotValue = markSSRHtml(slotHtml, slotSpans);
+  (ctx as unknown as { _ssrSlots: Record<string, SSRHtml | undefined> })._ssrSlots = {
+    default: slotValue,
   };
 
   pushContext(ctx);
   let view: unknown;
   try {
-    view = renderFn(props, createSSRSlotAccessors({ default: slotHtml }));
+    view = renderFn(props, createSSRSlotAccessors({ default: slotValue }));
   } catch (e) {
     // No shell will be serialized: release what the render created.
     disposeScope(ctx);
@@ -465,7 +475,8 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
   }
 
   try {
-    const renderedHtml = valueToHtml(view);
+    const renderedSpans: RawTextSpan[] | undefined = spans ? [] : undefined;
+    const renderedHtml = valueToHtml(view, renderedSpans);
 
     // Host-element attributes mirror what was declared in the parent template.
     // Attribute *names* are interpolated raw, so skip any key that isn't a safe
@@ -495,12 +506,18 @@ export const _renderComponentSSR: SSRComponentRenderer = (tag, attrs, slotHtml) 
       styles.length > 0
         ? `<style>${styles.join('\n').replace(/<\/style/gi, '<\\/style')}</style>`
         : '';
-    const inner = styleBlock + renderedHtml;
     const options = componentOptions.get(tag);
     const focusAttr =
       (options?.delegatesFocus ?? !!options?.formControl) ? ' shadowrootdelegatesfocus' : '';
 
-    return `<${tag}${hostAttrs}><template shadowrootmode="open"${focusAttr}>${inner}</template></${tag}>`;
+    const prefix = `<${tag}${hostAttrs}><template shadowrootmode="open"${focusAttr}>${styleBlock}`;
+    if (spans && renderedSpans) {
+      const base = offset + prefix.length;
+      for (const span of renderedSpans) {
+        spans.push({ start: base + span.start, end: base + span.end, text: span.text });
+      }
+    }
+    return `${prefix}${renderedHtml}</template></${tag}>`;
   } finally {
     // Server output is final once the shell is serialized: release the
     // component's watches and computes so requests don't leave them

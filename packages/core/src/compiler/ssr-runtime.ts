@@ -106,11 +106,23 @@ function decodeRefs(text: string): string {
   );
 }
 
-// Offset of `</tag` (ASCII case-insensitive) at or after `from`, or the end.
+// Offset of the end tag `</tag` + whitespace, `/`, `>` or end (ASCII
+// case-insensitive) at or after `from`, or the end of `html`. For `template`,
+// nested template elements are skipped.
 function rawEnd(html: string, from: number, tag: string): number {
-  const end = `</${tag}`;
-  for (let i = html.indexOf('</', from); i !== -1; i = html.indexOf('</', i + 1)) {
-    if (html.slice(i, i + end.length).toLowerCase() === end) return i;
+  let depth = 0;
+  for (let i = html.indexOf('<', from); i !== -1; i = html.indexOf('<', i + 1)) {
+    const close = html[i + 1] === '/';
+    const name = html.slice(i + (close ? 2 : 1), i + (close ? 2 : 1) + tag.length);
+    if (
+      name.toLowerCase() !== tag ||
+      !/^(?:[\t\n\f\r />]|$)/.test(html.charAt(i + (close ? 2 : 1) + tag.length))
+    ) {
+      continue;
+    }
+    // Only templates nest; inside raw text an open tag is just text.
+    if (!close) depth += tag === 'template' ? 1 : 0;
+    else if (depth-- === 0) return i;
   }
   return html.length;
 }
@@ -136,11 +148,19 @@ function htmlText(html: string): string {
     const gt = html.indexOf('>', lt);
     if (gt === -1) break;
     i = gt + 1;
-    const tag = /^<(style|script|textarea|title)[\s/>]/i.exec(html.slice(lt, gt + 1))?.[1];
-    if (tag) {
-      const end = rawEnd(html, i, tag.toLowerCase());
+    const tag = /^<(style|script|textarea|title|template|pre|listing)[\s/>]/i
+      .exec(html.slice(lt, gt + 1))?.[1]
+      .toLowerCase();
+    // The parser drops one newline right after these start tags.
+    if ((tag === 'textarea' || tag === 'pre' || tag === 'listing') && html[i] === '\n') i++;
+    if (tag === 'template') {
+      // Template contents (including declarative shadow roots) live in a
+      // separate fragment and are not part of textContent.
+      i = rawEnd(html, i, tag);
+    } else if (tag && tag !== 'pre' && tag !== 'listing') {
+      const end = rawEnd(html, i, tag);
       const text = html.slice(i, end);
-      out += /^(?:style|script)$/i.test(tag) ? text : decodeRefs(text);
+      out += tag === 'style' || tag === 'script' ? text : decodeRefs(text);
       i = end;
     }
   }

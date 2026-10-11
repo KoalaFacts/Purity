@@ -8,12 +8,12 @@
 // stripped; everything else (elements, attributes, text, raw-text content)
 // must match exactly.
 
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { generate, generateModule, generateSSR } from '../src/compiler/codegen.ts';
 import { parse } from '../src/compiler/parser.ts';
 import { markSSRHtml, ssrHelpers } from '../src/compiler/ssr-runtime.ts';
 import { eachSSR, whenSSR } from '../src/control.ts';
-import { each, html, hydrate, state, when } from '../src/index.ts';
+import { each, html, hydrate, mount, state, when } from '../src/index.ts';
 import { tick } from './_helpers.ts';
 
 type Mode = 'csr' | 'ssr';
@@ -282,6 +282,28 @@ const cases: Case[] = [
     ],
   },
   {
+    name: 'a nested raw-text element is not closed by a longer end-tag name',
+    strings: ['<div><textarea>', '</textarea></div>'],
+    values: (mode) => {
+      const inner = ['<style>x</stylesheet>y</style>'];
+      return [mode === 'csr' ? html(tpl(inner)) : markSSRHtml(renderSSR(inner, []))];
+    },
+  },
+  {
+    name: 'the same nested template in two raw-content slots renders twice',
+    strings: ['<div><textarea>', '', '</textarea></div>'],
+    values: (mode) => {
+      const nested =
+        mode === 'csr' ? html(tpl(['<b>x</b>'])) : markSSRHtml(renderSSR(['<b>x</b>'], []));
+      return [nested, nested];
+    },
+  },
+  {
+    name: 'branded SSR HTML inside raw content contributes its text',
+    strings: ['<div><textarea>', '</textarea></div>'],
+    values: () => [markSSRHtml('<b>x</b> &amp; y')],
+  },
+  {
     name: 'static raw content with a comment sequence hydrates as one text node',
     strings: ['<div><style><!-- a -->b > c {}</style><p>', '</p></div>'],
     values: () => ['x'],
@@ -389,6 +411,52 @@ describe('SSR / CSR / hydrate conformance', () => {
     } finally {
       mounted.unmount();
       host.remove();
+    }
+  });
+
+  it('SSR keeps a textarea leading newline that the HTML parser would drop', () => {
+    const parse = (out: string) => {
+      const host = document.createElement('div');
+      host.innerHTML = out;
+      return host.querySelector('textarea')?.textContent;
+    };
+    expect(parse(renderSSR(['<div><textarea>\n', '</textarea></div>'], ['x']))).toBe('\nx');
+    expect(parse(renderSSR(['<div><textarea>\nfoo</textarea><p>', '</p></div>'], ['x']))).toBe(
+      '\nfoo',
+    );
+    expect(parse(renderSSR(['<textarea>\nfoo</textarea>'], []))).toBe('\nfoo');
+  });
+
+  it('the client cloning path keeps a textarea leading newline', () => {
+    const host = document.createElement('div');
+    host.appendChild(html(tpl(['<div><textarea>\nfoo</textarea><p>', '</p></div>']), 'x') as Node);
+    expect(host.querySelector('textarea')?.textContent).toBe('\nfoo');
+  });
+
+  it('nested text skips template contents and declarative shadow roots', () => {
+    const nested = markSSRHtml(
+      '<x-card><template shadowrootmode="open"><b>shadow</b><template>t</template></template>light</x-card><template>x</template>',
+    );
+    expect(ssrHelpers.rawText([nested], 1)).toBe('light');
+  });
+
+  it('nested text drops a nested textarea leading newline like the HTML parser', () => {
+    expect(ssrHelpers.rawText([markSSRHtml('<textarea>\n\nfoo</textarea>')], 1)).toBe('\nfoo');
+  });
+
+  it('disconnects the raw-content observer when the owner is torn down', () => {
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
+    try {
+      const host = document.createElement('div');
+      const app = mount(
+        () => html(tpl(['<div><textarea>', '</textarea></div>']), html(tpl(['<b>x</b>']))) as Node,
+        host,
+      );
+      const before = disconnect.mock.calls.length;
+      app.unmount();
+      expect(disconnect.mock.calls.length).toBeGreaterThan(before);
+    } finally {
+      disconnect.mockRestore();
     }
   });
 

@@ -207,6 +207,10 @@ const EXPR_PLACEHOLDER = '​';
 // Tag names are ASCII case-insensitive; the parser keeps the author's spelling.
 const isRawTextTag = (tag: string): boolean => /^(?:style|script)$/i.test(tag);
 const isRawContentTag = (tag: string): boolean => /^(?:style|script|textarea|title)$/i.test(tag);
+// The HTML parser drops one newline right after <textarea>, so serialized
+// textarea content is always preceded by one; content starting with a newline
+// keeps it.
+const isTextareaTag = (tag: string): boolean => /^textarea$/i.test(tag);
 const hasExpressionChild = (node: ElementNode): boolean =>
   node.children.some((c) => c.type === 'expression');
 // Source for one raw-content part: the parser gives raw-text / RCDATA elements
@@ -434,7 +438,7 @@ function rawContentBinding(
   children: ASTNode[],
   value: (index: number) => string,
   hydrating: boolean,
-): BindingParts {
+): string {
   const id = bindVarCounter++;
   const parts = `_rp${id}`;
   const write = `_rw${id}`;
@@ -444,13 +448,18 @@ function rawContentBinding(
     `var ${parts}=[],${observer}=new MutationObserver(function(){${write}();});` +
     `var ${write}=function(){var t='';for(var i=0;i<${parts}.length;i++){var p=${parts}[i];t+=p instanceof Node?p.textContent:p;}${el}.textContent=t;};` +
     `var ${leaf}=function(y){` +
+    `if(typeof y==='object'&&!(y instanceof Node)){var f=document.createDocumentFragment();` +
+    // Branded SSR HTML (e.g. a retained eachSSR() result): parse it for its text.
+    `if(typeof y.__purity_ssr_html__==='string'){var t=document.createElement('template');t.innerHTML=y.__purity_ssr_html__;y=t.content;}` +
     (hydrating
-      ? `if(typeof y==='object'&&!(y instanceof Node)){var f=document.createDocumentFragment();` +
-        `if(y.__purity_deferred__===true){_i(y,f,false,true);y=f;}` +
+      ? `else if(y.__purity_deferred__===true){_i(y,f,false,true);y=f;}` +
         `else if(y.__purity_deferred_each__===true||y.__purity_deferred_match__===true){` +
-        `var m=f.appendChild(document.createComment(''));(y.__purity_deferred_each__?_e:_m)(y,[],m);y=f;}}`
+        `var m=f.appendChild(document.createComment(''));(y.__purity_deferred_each__?_e:_m)(y,[],m);y=f;}`
       : '') +
-    `if(y instanceof Node){var h=document.createElement('div');h.appendChild(y);` +
+    `}` +
+    // One holder per Node, so a Node used in two slots counts twice instead of
+    // being moved out of the first holder.
+    `if(y instanceof Node){var h=y.__purity_raw__;if(!h){h=y.__purity_raw__=document.createElement('div');h.appendChild(y);}` +
     `${observer}.observe(h,{subtree:true,childList:true,characterData:true});return h;}` +
     `return String(y);};`;
   const list: string[] = [];
@@ -463,10 +472,9 @@ function rawContentBinding(
       list.push(`__purity_fl__(${x},[],null).map(${leaf})`);
     }
   }
-  return {
-    setup,
-    reactive: `${observer}.disconnect();${parts}=[].concat(${list.join(',')});${write}();`,
-  };
+  // Its own watch, so the cleanup disconnects the observer on every re-run and
+  // when the owner is disposed.
+  return `${setup}_w(function(){${parts}=[].concat(${list.join(',')});${write}();return function(){${observer}.disconnect();};});`;
 }
 
 function standalone(code: string): string {
@@ -609,9 +617,7 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
       // Raw-text / RCDATA content with dynamic parts: SSR wrote no markers, so
       // rebuild the element's text from its parts instead of walking children.
       if (isRawContentTag(node.tag) && hasExpressionChild(node)) {
-        const { setup, reactive } = rawContentBinding(el, node.children, (i) => `_v[${i}]`, true);
-        ctx.setup.push(setup);
-        ctx.reactive.push(reactive);
+        ctx.setup.push(rawContentBinding(el, node.children, (i) => `_v[${i}]`, true));
       } else if (
         !VOID.has(node.tag.toLowerCase()) &&
         node.children.length > 0 &&
@@ -771,7 +777,7 @@ function buildStaticHtml(node: ASTNode, rawParent = false): string {
           s += a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
       }
       if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
-      s += '>';
+      s += isTextareaTag(node.tag) ? '>\n' : '>';
       const raw = isRawTextTag(node.tag);
       for (const ch of node.children) s += buildStaticHtml(ch, raw);
       return `${s}</${node.tag}>`;
@@ -1002,14 +1008,9 @@ function genPositionalBindings(slots: Slot[]): string {
       setupParts.push(setup);
       if (reactive) reactiveParts.push(reactive);
     } else if (slot.type === 'raw') {
-      const { setup, reactive } = rawContentBinding(
-        nodeVar,
-        slot.children,
-        (i) => `_d?_d(_v[${i}]):_v[${i}]`,
-        false,
+      setupParts.push(
+        rawContentBinding(nodeVar, slot.children, (i) => `_d?_d(_v[${i}]):_v[${i}]`, false),
       );
-      setupParts.push(setup);
-      reactiveParts.push(reactive);
     } else {
       for (const attr of slot.attrs) {
         if (attr.kind !== 'static') {
@@ -1335,6 +1336,7 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
         // in one call so an end tag split across adjacent values (`</sty` +
         // `le>`) is still neutralised. Hydrate rebuilds the element's text.
         const parts = node.children.map((ch) => rawPart(ch, (i) => `_v[${i}]`));
+        if (isTextareaTag(node.tag)) emitLit(ctx, '\n');
         pushRaw(ctx, `${ctx.out}+=_h.rawText([${parts}]${isRawTextTag(node.tag) ? '' : ',1'});`);
       } else {
         for (const ch of node.children) buildSSRBody(ch, ctx);

@@ -58,7 +58,7 @@ interface Case {
   /** Fresh values per mode; SSR mode must use the *SSR* helpers (eachSSR, markSSRHtml). */
   values: (mode: Mode) => unknown[];
   /**
-   * Set when the drift is a known, unfixed defect (see RAW_TEXT_DEFERRED). The
+   * Set when the drift is a known, unfixed defect. The
    * case is asserted with it.fails so the suite stays green while the defect
    * exists, and turns red (prompting removal of this flag) once it is fixed.
    */
@@ -66,14 +66,6 @@ interface Case {
 }
 
 const LI = ['<li>', '</li>'];
-
-// Raw-text elements (style, script, textarea, title): SSR still emits hydration
-// markers and entity-escapes their content, and the complex CSR path does not
-// rebuild them. Deferred until the codegen paths are unified; tracked in #222
-// ("raw-text elements: SSR markers/escaping inside
-// style/script/textarea/title"). Pinned with it.fails so the defect stays visible.
-const RAW_TEXT_DEFERRED =
-  'raw-text elements: SSR markers/escaping in style/script/textarea/title (#222)';
 
 const cases: Case[] = [
   {
@@ -175,43 +167,36 @@ const cases: Case[] = [
     name: 'raw-text <style> keeps CSS verbatim',
     strings: ['<style>a > b { content: "', '" }</style>'],
     values: () => ['x&y'],
-    knownDefect: RAW_TEXT_DEFERRED,
   },
   {
     name: 'raw-text <textarea> keeps angle brackets as text',
     strings: ['<textarea>', '</textarea>'],
     values: () => ['a <b> & c'],
-    knownDefect: RAW_TEXT_DEFERRED,
   },
   {
     name: 'raw-text element nested in a wrapper (complex template)',
     strings: ['<div><style>a > b { color: ', ' }</style></div>'],
     values: () => ['red'],
-    knownDefect: RAW_TEXT_DEFERRED,
   },
   {
     name: 'raw-text element beside other roots',
     strings: ['<style>a > b { color: ', ' }</style><p>', '</p>'],
     values: () => ['red', 'x&y'],
-    knownDefect: RAW_TEXT_DEFERRED,
   },
   {
     name: 'upper-case raw-text tags match case-insensitively',
     strings: ['<STYLE>a > b { content: "', '" }</STYLE><div><TEXTAREA>', '</TEXTAREA></div>'],
     values: () => ['x&y', 'a <b> & c'],
-    knownDefect: RAW_TEXT_DEFERRED,
   },
   {
     name: 'end tags other than the element own stay inert inside style',
     strings: ['<style>', '</style>'],
     values: () => ['</div>'],
-    knownDefect: RAW_TEXT_DEFERRED,
   },
   {
     name: 'raw-text <title> with dynamic content',
     strings: ['<title>', ' & more</title>'],
     values: () => ['Tom & <Jerry>'],
-    knownDefect: RAW_TEXT_DEFERRED,
   },
 ];
 
@@ -255,10 +240,9 @@ describe('SSR / CSR / hydrate conformance', () => {
     host.remove();
   });
 
-  // Deferred: see RAW_TEXT_DEFERRED. SSR markers inside <style> parse as text,
-  // so the walker throws and hydrate() falls back to a fresh mount; the SSR
-  // <style> node is replaced instead of adopted.
-  it.fails('dynamic <style> SSR node is adopted by hydrate and stays live', async () => {
+  // SSR writes no markers inside <style>, so hydrate adopts the SSR node and
+  // rebuilds its text in place instead of falling back to a fresh mount.
+  it('dynamic <style> SSR node is adopted by hydrate and stays live', async () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const css = state('a > b');
@@ -283,6 +267,20 @@ describe('SSR / CSR / hydrate conformance', () => {
     host.innerHTML = out;
     expect(host.querySelectorAll('b')).toHaveLength(0);
     expect(host.querySelectorAll('style')).toHaveLength(1);
+  });
+
+  it('nested dynamic <style> stays live on the client complex path', async () => {
+    const color = state('red');
+    const host = document.createElement('div');
+    host.appendChild(
+      html(tpl(['<div><style>a > b { color: ', ' }</style><p>x</p></div>']), () => color()) as Node,
+    );
+    const style = host.querySelector('style');
+    expect(style?.textContent).toBe('a > b { color: red }');
+    color('blue');
+    await tick();
+    expect(host.querySelector('style')).toBe(style);
+    expect(style?.textContent).toBe('a > b { color: blue }');
   });
 
   it('fully static <style> content is not entity-escaped (static SSR path)', () => {

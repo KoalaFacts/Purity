@@ -81,10 +81,30 @@ export const HYDRATION_CLOSE = '<!--]-->';
  * - Everything else is String()'d and HTML-escaped.
  */
 export function valueToHtml(v: unknown): string {
-  return valueToHtmlInner(v, null);
+  return valueToHtmlInner(v, null, true);
 }
 
-function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null): string {
+// The end tag of each raw-text element that may hold a dynamic value. Only the
+// element's own end tag can close it (`</div>` inside <style> is inert text);
+// matching is ASCII case-insensitive, as in the HTML parser.
+const RAW_TEXT_END_TAG: Record<string, RegExp> = {
+  style: /<\/(?=style)/gi,
+  script: /<\/(?=script)/gi,
+};
+
+/**
+ * Same coercion as valueToHtml for a slot inside a raw-text element (`tag` is
+ * `style` or `script`): the value is emitted unescaped, because the HTML parser
+ * does not decode entities there. A `</` that starts the element's own end tag
+ * becomes `<\/`, so the value cannot close the element early.
+ */
+export function valueToRawText(v: unknown, tag: string): string {
+  const s = valueToHtmlInner(v, null, false);
+  const endTag = RAW_TEXT_END_TAG[tag];
+  return endTag ? s.replace(endTag, '<\\/') : s;
+}
+
+function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null, escape: boolean): string {
   if (typeof v === 'function') v = (v as () => unknown)();
   if (v == null || v === false) return '';
   if (isSSRHtml(v)) return v.__purity_ssr_html__;
@@ -95,10 +115,10 @@ function valueToHtmlInner(v: unknown, seen: WeakSet<object> | null): string {
     if (seen.has(v)) return '';
     seen.add(v);
     let s = '';
-    for (let i = 0; i < v.length; i++) s += valueToHtmlInner(v[i], seen);
+    for (let i = 0; i < v.length; i++) s += valueToHtmlInner(v[i], seen, escape);
     return s;
   }
-  return escHtml(String(v));
+  return escape ? escHtml(String(v)) : String(v);
 }
 
 /**
@@ -206,6 +226,7 @@ export const ssrHelpers = {
   esc: escHtml,
   attr: escAttr,
   toHtml: valueToHtml,
+  rawText: valueToRawText,
   toAttr: valueToAttr,
   isHtml: isSSRHtml,
   mark: markSSRHtml,

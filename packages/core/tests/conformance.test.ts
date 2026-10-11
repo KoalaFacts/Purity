@@ -709,6 +709,81 @@ describe('SSR / CSR / hydrate conformance', () => {
     expect(ssrHelpers.rawText([markSSRHtml('<template>x</template>')], 1)).toBe('');
   });
 
+  it('foreign opaque names do not suppress HTML raw-content integration points', () => {
+    for (const tag of ['xmp', 'iframe', 'noembed', 'noframes', 'noscript', 'plaintext']) {
+      const strings = [
+        `<svg><${tag}><foreignObject><style>`,
+        `</style></foreignObject></${tag}></svg>`,
+      ];
+      const host = document.createElement('div');
+      host.innerHTML = renderSSR(strings, ['p{color:red}']);
+      const style = host.querySelector('style');
+      expect(style?.textContent).toBe('p{color:red}');
+      const mounted = hydrate(host, () => html(tpl(strings), 'p{color:red}') as Node);
+      expect(host.querySelector('style')).toBe(style);
+      mounted.unmount();
+    }
+  });
+
+  it('foreign breakout tokens hoist HTML siblings and keep later raw bindings aligned', () => {
+    for (const outer of ['svg', 'math']) {
+      for (const start of ['p', 'div', 'font color="red"']) {
+        const tag = start.split(' ')[0];
+        const strings = [
+          `<${outer}><g><${start}><style>`,
+          `</style></${tag}></g></${outer}><textarea>`,
+          '</textarea>',
+        ];
+        const host = document.createElement('div');
+        host.innerHTML = renderSSR(strings, ['p{color:red}', 'tail']);
+        expect(host.querySelector('style')?.textContent).toBe('p{color:red}');
+        expect(host.querySelector(tag)?.parentNode).toBe(host);
+        expect(host.querySelector('textarea')?.textContent).toBe('tail');
+        expect(renderCSR(strings, ['p{color:red}', 'tail'])).toBe(normalize(host.innerHTML));
+        const style = host.querySelector('style');
+        const mounted = hydrate(host, () => html(tpl(strings), 'p{color:red}', 'tail') as Node);
+        expect(host.querySelector('style')).toBe(style);
+        mounted.unmount();
+      }
+    }
+    const value = markSSRHtml(
+      '<svg><g><p><style>p{content:"<i>"}</style></p></g></svg><b>tail</b>',
+    );
+    expect(ssrHelpers.rawText([value], 1)).toBe('p{content:&quot;&lt;i&gt;&quot;}tail');
+    // A breakout inside an integration point stops at that point, rather than
+    // discarding the outer SVG. Repeated popped names must all be ignored.
+    const strings = [
+      '<svg><foreignObject><svg><svg><g><p><style>',
+      '</style></p></g></svg></svg><textarea>',
+      '</textarea></foreignObject></svg>',
+    ];
+    expect(renderCSR(strings, ['p{color:red}', 'tail'])).toBe(
+      normalize(renderSSR(strings, ['p{color:red}', 'tail'])),
+    );
+    // Attribute-like words inside a quoted value do not turn font into HTML.
+    const foreign = markSSRHtml(
+      '<svg><font title="color=red"><style>&lt;i&gt;</style></font></svg>',
+    );
+    expect(ssrHelpers.rawText([foreign], 1)).toBe('&lt;i&gt;');
+    for (const tag of ['p', 'br']) {
+      const strings = [`<svg><g></${tag}><style>`, '</style></g></svg><textarea>', '</textarea>'];
+      const host = document.createElement('div');
+      host.innerHTML = renderSSR(strings, ['p{color:red}', 'tail']);
+      expect(host.querySelector('style')?.textContent).toBe('p{color:red}');
+      expect(renderCSR(strings, ['p{color:red}', 'tail'])).toBe(normalize(host.innerHTML));
+    }
+  });
+
+  it('static SVG names match the HTML parser adjustments', () => {
+    const strings = [
+      '<svg><defs><lineargradient id="g"><stop></stop></lineargradient></defs><textpath>x</textpath></svg>',
+    ];
+    const root = html(tpl(strings)) as DocumentFragment;
+    expect(root.querySelector('#g')?.localName).toBe('linearGradient');
+    expect(root.querySelector('textPath')?.localName).toBe('textPath');
+    expect(renderCSR(strings, [])).toBe(normalize(renderSSR(strings, [])));
+  });
+
   it('static foreign templates retain children in their own namespace', () => {
     for (const [tag, ns] of [
       ['svg', 'http://www.w3.org/2000/svg'],

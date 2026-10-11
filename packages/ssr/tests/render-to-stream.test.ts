@@ -97,6 +97,66 @@ describe('renderToStreamResponse — HTTP metadata before flush', () => {
     expect(calls).toBe(1);
   });
 
+  it('reclassifies a raw boundary after top-level data changes the shell container', async () => {
+    let finish: ((value: string) => void) | undefined;
+    const stream = renderToStream(
+      () => {
+        const ready = fastResource(true)();
+        const view = suspense(
+          () =>
+            resource(
+              () =>
+                new Promise<string>((resolve) => {
+                  finish = resolve;
+                }),
+            )(),
+          () => ssrHtml`<b>FALLBACK</b>`,
+        );
+        return ready ? ssrHtml`<div>${view}</div>` : ssrHtml`<textarea>${view}</textarea>`;
+      },
+      { timeout: 1000, serializeResources: false },
+    );
+    const reader = stream.getReader();
+    const shell = new TextDecoder().decode((await reader.read()).value);
+    expect(shell).toContain('<div>');
+    expect(shell).toContain('FALLBACK');
+    const next = reader.read();
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    finish!('READY');
+    expect(new TextDecoder().decode((await next).value)).toContain('READY');
+    await reader.cancel();
+  });
+
+  it('drops inline occurrences when synchronous discovery changes the shell shape', async () => {
+    let passes = 0;
+    const resolvers: ((value: string) => void)[] = [];
+    const stream = renderToStream(
+      () => {
+        const view = suspense(
+          () =>
+            resource(
+              () =>
+                new Promise<string>((resolve) => {
+                  resolvers.push(resolve);
+                }),
+            )(),
+          () => ssrHtml`<b>FALLBACK</b>`,
+        );
+        return ++passes === 1 ? ssrHtml`<textarea>${view}</textarea>` : ssrHtml`<div>${view}</div>`;
+      },
+      { timeout: 1000, serializeResources: false },
+    );
+    const reader = stream.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain(
+      '<div><!--[--><!--s:1--><b>FALLBACK</b>',
+    );
+    const next = reader.read();
+    await vi.waitFor(() => expect(resolvers.length).toBeGreaterThan(1));
+    resolvers.forEach((resolve) => resolve('READY'));
+    expect(new TextDecoder().decode((await next).value)).toContain('READY');
+    await reader.cancel();
+  });
+
   it('stabilizes a deep synchronous raw-content suspense chain', async () => {
     const nested = (depth: number): unknown =>
       depth === 0

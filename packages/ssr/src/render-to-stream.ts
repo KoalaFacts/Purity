@@ -434,6 +434,21 @@ async function renderShell(
     }
 
     if (signal?.aborted) throw signal.reason;
+    // Inline IDs are a classification of this shell shape, not a permanent
+    // property of a structural suspense call. Drop missing/hidden occurrences
+    // and rediscover before waiting on a view that no longer belongs inline.
+    let removedInline = false;
+    for (const id of inlineBoundaries) {
+      if (!ctx.rawBoundaries?.has(id)) {
+        inlineBoundaries.delete(id);
+        removedInline = true;
+      }
+    }
+    if (removedInline) {
+      if (Date.now() - start >= timeout)
+        throw new SSRTimeoutError('shell', timeout, '[Purity] renderToStream shell timed out.');
+      continue;
+    }
     if (ctx.pendingPromises.length === 0) {
       if (inlineBoundaries.size !== inlineCount) {
         if (Date.now() - start >= timeout)
@@ -509,6 +524,9 @@ async function renderShell(
           'awaiting top-level resources.',
       );
     }
+    // An awaited resource can change the shell's structure. Rediscover raw
+    // occurrences before executing views under the previous classification.
+    inlineBoundaries.clear();
   }
 
   throw new Error(

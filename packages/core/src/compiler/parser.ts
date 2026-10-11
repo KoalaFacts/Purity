@@ -11,7 +11,13 @@
 // ---------------------------------------------------------------------------
 
 import type { ASTNode, AttributeNode, ElementNode, FragmentNode } from './ast.ts';
-import { childNamespace, elementNamespace, rawEnd, type Namespace } from './ssr-runtime.ts';
+import {
+  childNamespace,
+  elementNamespace,
+  foreignBreakout,
+  rawEnd,
+  type Namespace,
+} from './ssr-runtime.ts';
 
 // Void elements that cannot have children. Shared with codegen.
 import { VOID_TAGS } from './ast.ts';
@@ -98,6 +104,9 @@ class Parser {
   // noframes, noscript, plaintext) while this parser reads markup: nested
   // elements are not raw text, so their content stays escaped.
   private opaque = 0;
+  private breakingOut = false;
+  // End tags for foreign ancestors popped by an HTML breakout are ignored.
+  private poppedForeign = new Map<string, number>();
 
   constructor(strings: readonly string[]) {
     this.strings = strings;
@@ -199,6 +208,32 @@ class Parser {
 
         // Closing tag — stop and let parent handle it
         if (this.pos + 1 < s.length && s.charCodeAt(this.pos + 1) === SLASH) {
+          const tag = /^<\/([^\s/>]+)/.exec(s.slice(this.pos))?.[1].toLowerCase();
+          if ((tag === 'p' || tag === 'br') && this.opaque === 0 && this.ns !== 'html') {
+            this.breakingOut = true;
+            break;
+          }
+          if (this.breakingOut && (tag === 'p' || tag === 'br')) {
+            children.push({
+              type: 'element',
+              tag,
+              attributes: [],
+              children: [],
+              isVoid: tag === 'br',
+            });
+            this.breakingOut = false;
+            const end = s.indexOf('>', this.pos);
+            this.pos = end < 0 ? s.length : end + 1;
+            continue;
+          }
+          if (tag && tag !== this.parent?.[0] && this.poppedForeign.has(tag)) {
+            const count = this.poppedForeign.get(tag)! - 1;
+            if (count) this.poppedForeign.set(tag, count);
+            else this.poppedForeign.delete(tag);
+            const end = s.indexOf('>', this.pos);
+            this.pos = end < 0 ? s.length : end + 1;
+            continue;
+          }
           break;
         }
 
@@ -226,7 +261,9 @@ class Parser {
         }
 
         // Opening tag
-        children.push(this.parseElement());
+        const element = this.parseElement();
+        if (!element) break;
+        children.push(element);
         continue;
       }
 
@@ -304,7 +341,8 @@ class Parser {
     return { type: 'comment', value };
   }
 
-  private parseElement(): ElementNode {
+  private parseElement(): ElementNode | undefined {
+    const start = [this.strIdx, this.pos, this.exprIndex];
     // Skip <
     this.advance();
 
@@ -347,10 +385,22 @@ class Parser {
     // `</BR>` close tag and swallow following siblings as children. Custom
     // elements (which must contain a `-`) are never in VOID_TAGS, so the
     // lowercase doesn't affect them.
-    const isVoid = VOID_TAGS.has(tag.toLowerCase()) || selfClosing;
-
     const lower = tag.toLowerCase();
+    if (
+      this.ns !== 'html' &&
+      this.opaque === 0 &&
+      foreignBreakout(
+        lower,
+        attributes.some((a) => /^(?:color|face|size)$/i.test(a.name)),
+      )
+    ) {
+      [this.strIdx, this.pos, this.exprIndex] = start;
+      this.breakingOut = true;
+      return;
+    }
+    this.breakingOut = false;
     const namespace = elementNamespace(this.ns, lower, this.parent?.[0], this.parent?.[1]);
+    const isVoid = (namespace === 'html' && VOID_TAGS.has(lower)) || selfClosing;
     // Only HTML-namespace elements are raw text. When unsure, treat content as
     // markup: SSR then escapes it, which is safe; misreading foreign content as
     // raw would emit it unescaped where the browser parses tags.
@@ -376,14 +426,16 @@ class Parser {
         encoding?.kind === 'static' ? encoding.value : undefined,
       );
       this.parent = [lower, namespace];
-      const opaque = /^(?:xmp|iframe|noembed|noframes|noscript|plaintext)$/.test(lower);
+      const opaque =
+        namespace === 'html' && /^(?:xmp|iframe|noembed|noframes|noscript|plaintext)$/.test(lower);
       if (opaque) this.opaque++;
       children = raw ? this.parseRawChildren(lower) : this.parseChildren();
       if (opaque) this.opaque--;
       this.ns = outer;
       this.parent = parent;
       // Consume closing tag </tag>
-      this.consumeClosingTag(tag);
+      if (this.breakingOut) this.poppedForeign.set(lower, (this.poppedForeign.get(lower) ?? 0) + 1);
+      else this.consumeClosingTag(tag);
     }
 
     const element: ElementNode = { type: 'element', tag, attributes, children, isVoid };

@@ -766,6 +766,13 @@ function buildStaticHtml(node: ASTNode, rawParent?: ElementNode['raw']): string 
 // genStaticDOM — generate DOM API calls for static templates (no innerHTML)
 // ---------------------------------------------------------------------------
 
+// The HTML parser lowercases tokens, then adjusts these SVG local names.
+const svgNames = new Map(
+  'altGlyph altGlyphDef altGlyphItem animateColor animateMotion animateTransform clipPath feBlend feColorMatrix feComponentTransfer feComposite feConvolveMatrix feDiffuseLighting feDisplacementMap feDistantLight feDropShadow feFlood feFuncA feFuncB feFuncG feFuncR feGaussianBlur feImage feMerge feMergeNode feMorphology feOffset fePointLight feSpecularLighting feSpotLight feTile feTurbulence foreignObject glyphRef linearGradient radialGradient textPath'
+    .split(' ')
+    .map((name) => [name.toLowerCase(), name]),
+);
+
 function genStaticDOM(
   node: ASTNode,
   parent: string,
@@ -794,7 +801,7 @@ function genStaticDOM(
       const namespaceURI =
         'http://www.w3.org/' + (node.ns === 'svg' ? '2000/svg' : '1998/Math/MathML');
       stmts.push(
-        `var ${id}=document.${node.ns ? `createElementNS(${jsString(namespaceURI)},` : 'createElement('}${jsString(node.tag)});`,
+        `var ${id}=document.${node.ns ? `createElementNS(${jsString(namespaceURI)},` : 'createElement('}${jsString(node.ns === 'svg' ? (svgNames.get(tag) ?? tag) : tag)});`,
       );
       for (const a of node.attributes) {
         if (a.kind === 'static') {

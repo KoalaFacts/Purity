@@ -210,6 +210,40 @@ try {
     tag: string;
     expected: string;
   }[] = [];
+  const foreignRawCases: string[][] = [];
+  for (const tag of ['xmp', 'iframe', 'noembed', 'noframes', 'noscript', 'plaintext']) {
+    foreignRawCases.push([
+      `<svg><${tag}><foreignObject><style>`,
+      `</style></foreignObject></${tag}></svg>`,
+    ]);
+  }
+  for (const outer of ['svg', 'math']) {
+    for (const tag of ['p', 'div', 'font color="red"']) {
+      foreignRawCases.push([
+        `<${outer}><g><${tag}><style>`,
+        `</style></${tag.split(' ')[0]}></g></${outer}>`,
+      ]);
+    }
+  }
+  for (const strings of foreignRawCases) {
+    const tree = parse(strings);
+    rawCases.push({
+      client: generate(tree),
+      hydrate: generateHydrate(tree),
+      markup: await renderToString(() =>
+        html(strings as unknown as TemplateStringsArray, 'p{color:red}'),
+      ),
+      tag: 'style',
+      expected: 'p{color:red}',
+    });
+  }
+  const svgStrings = [
+    '<svg><defs><lineargradient id="g"><stop></stop></lineargradient></defs><textpath>x</textpath><foreignobject><div>HTML</div></foreignobject></svg>',
+  ];
+  const svgStaticCode = generate(parse(svgStrings));
+  const svgStaticMarkup = await renderToString(() =>
+    html(svgStrings as unknown as TemplateStringsArray),
+  );
   for (const glyph of ['mglyph', 'malignmark']) {
     for (const parent of ['annotation-xml encoding="text/html"', 'mtext']) {
       const strings = [
@@ -275,6 +309,31 @@ try {
         ['http://www.w3.org/2000/svg', 'http://www.w3.org/2000/svg', 'x'],
         ['http://www.w3.org/1998/Math/MathML', 'http://www.w3.org/1998/Math/MathML', 'x'],
       ]);
+      const svgNames = await page.evaluate(
+        ({ code, markup }) => {
+          const client = new Function(`return ${code}`)()() as DocumentFragment;
+          const server = document.createElement('div');
+          server.innerHTML = markup;
+          return [client, server].map((root) => [
+            root.querySelector('#g')?.localName,
+            root.querySelector('#g')?.constructor.name,
+            root.querySelector('textPath')?.localName,
+            root.querySelector('foreignObject')?.localName,
+            root.querySelector('div')?.namespaceURI,
+          ]);
+        },
+        { code: svgStaticCode, markup: svgStaticMarkup },
+      );
+      assert.deepEqual(
+        svgNames,
+        Array(2).fill([
+          'linearGradient',
+          'SVGLinearGradientElement',
+          'textPath',
+          'foreignObject',
+          'http://www.w3.org/1999/xhtml',
+        ]),
+      );
       await page.setContent(rawStreamMarkup);
       assert.equal(await page.locator('textarea').textContent(), '<READY>');
       assert.equal(await page.locator('#stream-sibling').textContent(), 'SIBLING-READY');

@@ -128,6 +128,16 @@ function decodeRefs(text: string): string {
 /** Namespace an element's children are parsed in. */
 export type Namespace = 'html' | 'svg' | 'math';
 
+/** Start tags that leave foreign content under the HTML tree-construction rules. */
+export function foreignBreakout(tag: string, fontAttribute = false): boolean {
+  return (
+    /^(?:b|big|blockquote|body|br|center|code|dd|div|dl|dt|em|embed|h[1-6]|head|hr|i|img|li|listing|menu|meta|nobr|ol|p|pre|ruby|s|small|span|strong|strike|sub|sup|table|tt|u|ul|var)$/.test(
+      tag,
+    ) ||
+    (tag === 'font' && fontAttribute)
+  );
+}
+
 /** Actual element namespace, including the MathML text-integration exceptions. */
 export function elementNamespace(
   ns: Namespace,
@@ -230,16 +240,19 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
       i = span[1];
       continue;
     }
-    const ns: Namespace = stack.length > 0 ? stack[stack.length - 1][1] : 'html';
+    let ns: Namespace = stack.length > 0 ? stack[stack.length - 1][1] : 'html';
     if (html.startsWith('<!--', lt)) {
       const close = html.indexOf('-->', lt + 4);
       // These comments cannot remain DOM boundaries after text extraction.
       // The next shell pass renders those views inline before flushing.
       if (html.startsWith('<!--s:', lt) && close !== -1) {
         const id = Number(html.slice(lt + 6, close));
-        if (ctx?.streamingBoundaries?.has(id)) {
+        if (ctx?.streamingBoundaries?.has(id) || ctx?.inlineBoundaries?.has(id)) {
           if (hidden) (ctx.hiddenBoundaries ??= new Set()).add(id);
-          else ctx.inlineBoundaries?.add(id);
+          else {
+            ctx.inlineBoundaries?.add(id);
+            (ctx.rawBoundaries ??= new Set()).add(id);
+          }
         }
       }
       i = close === -1 ? html.length : close + 3;
@@ -261,6 +274,20 @@ function htmlText(html: string, spans: readonly RawTextSpan[], hidden = 0): stri
     const tag = m[2].toLowerCase();
     const close = m[1] === '/';
     const selfClosing = html[gt - 1] === '/';
+    let fontAttribute = false;
+    if (tag === 'font') {
+      const attrs = html.slice(lt + m[0].length, gt);
+      for (const attr of attrs.matchAll(/([^\s"'<>/=]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?/g)) {
+        if (/^(?:color|face|size)$/i.test(attr[1])) fontAttribute = true;
+      }
+    }
+    if (
+      ns !== 'html' &&
+      (close ? tag === 'p' || tag === 'br' : foreignBreakout(tag, fontAttribute))
+    ) {
+      while (stack.length && stack[stack.length - 1][1] !== 'html') stack.pop();
+      ns = 'html';
+    }
     if (close) {
       // Pop up to the matching open element, if any.
       let at = stack.length - 1;

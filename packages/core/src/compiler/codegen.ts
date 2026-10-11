@@ -250,11 +250,25 @@ export function generateLinked(ast: FragmentNode): string {
     templatePrep,
     'return function(_v,_w,_d){',
     'var _r=_t.content.cloneNode(true);',
+    // Fragment-parsed scripts are marked "already started" and never run, so
+    // a static template recreates them, as a DOM-built template would.
+    slots.length === 0 && hasScript(ast) ? RECREATE_SCRIPTS : '',
     bindCode,
     'return _r;',
     '};',
     '})()',
   ].join('');
+}
+
+const RECREATE_SCRIPTS =
+  "for(var _sc=_r.querySelectorAll('script'),_si=0;_si<_sc.length;_si++){" +
+  "var _so=_sc[_si],_sn=document.createElement('script');" +
+  'for(var _sa=0;_sa<_so.attributes.length;_sa++)_sn.setAttribute(_so.attributes[_sa].name,_so.attributes[_sa].value);' +
+  '_sn.text=_so.text;_so.replaceWith(_sn);}';
+
+function hasScript(node: ASTNode): boolean {
+  if (node.type === 'element' && node.tag.toLowerCase() === 'script') return true;
+  return (node.type === 'element' || node.type === 'fragment') && node.children.some(hasScript);
 }
 
 // One-time template prep: convert each comment placeholder (used for
@@ -522,7 +536,11 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
       // Recurse into children. Hyphenated tags are Custom Elements — their
       // shadow root is opaque to the outer hydrator; the element's own
       // connectedCallback handles its interior. Skip walking children here.
-      if (!VOID.has(node.tag) && node.children.length > 0 && !node.tag.includes('-')) {
+      if (
+        !VOID.has(node.tag.toLowerCase()) &&
+        node.children.length > 0 &&
+        !node.tag.includes('-')
+      ) {
         const child = `_ch${id}`;
         ctx.setup.push(`var ${child}=${el}.firstChild;`);
         emitHydrateChildren(node.children, ctx, child);
@@ -675,7 +693,7 @@ function buildStaticHtml(node: ASTNode, rawParent = false): string {
         if (a.kind === 'static')
           s += a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
       }
-      if (VOID.has(node.tag)) return `${s}/>`;
+      if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
       s += '>';
       const raw = isRawTextTag(node.tag);
       for (const ch of node.children) s += buildStaticHtml(ch, raw);
@@ -737,7 +755,7 @@ function buildDynamicHtml(
         slots.push({ type: 'attr', tag: node.tag, attrs: dynamicAttrs, path: [...currentPath] });
       }
 
-      if (VOID.has(node.tag)) return `${s}/>`;
+      if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
       s += '>';
       if (isRawTextTag(node.tag) && !node.children.some((c) => c.type === 'expression')) {
         for (const ch of node.children) s += buildStaticHtml(ch, true);
@@ -1163,7 +1181,7 @@ function buildSSRBody(node: ASTNode, ctx: SSRGenCtx): void {
       }
       emitLit(ctx, `<${node.tag}`);
       for (const a of node.attributes) emitSSRAttr(a, ctx, node);
-      if (VOID.has(node.tag)) {
+      if (VOID.has(node.tag.toLowerCase())) {
         emitLit(ctx, '/>');
         return;
       }

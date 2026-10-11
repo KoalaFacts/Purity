@@ -300,6 +300,35 @@ describe('codegen', () => {
     expect(div.querySelector('script')?.textContent).toBe('if (a > b) {}');
   });
 
+  it('creates nested static scripts with createElement so they run when mounted', () => {
+    const factory = new Function(
+      `return ${generate(parse(['<div><script type="module">go()</script></div><p>x</p>']))}`,
+    )() as () => DocumentFragment;
+    const created: Element[] = [];
+    const createElement = document.createElement.bind(document);
+    const spy = vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
+      const el = createElement(tag);
+      created.push(el);
+      return el;
+    }) as typeof document.createElement);
+    try {
+      const script = factory().querySelector('script');
+      // Parser-inserted scripts are marked "already started" and never run.
+      expect(created).toContain(script);
+      expect(script?.getAttribute('type')).toBe('module');
+      expect(script?.textContent).toBe('go()');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('serializes upper-case void tags without a closing tag', () => {
+    const factory = new Function(
+      `return ${generate(parse(['<div><BR>after</div><p>x</p>']))}`,
+    )() as () => DocumentFragment;
+    expect(factory().querySelectorAll('br')).toHaveLength(1);
+  });
+
   it('renders static text content', () => {
     expect(renderStatic(['<p>Hello</p>']).outerHTML).toBe('<p>Hello</p>');
   });

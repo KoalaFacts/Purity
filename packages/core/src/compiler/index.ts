@@ -4,10 +4,7 @@ export {
   generateHydrate,
   generateHydrateLinked,
   generateLinked,
-  generateHydrateModule,
-  generateModule,
   generateSSR,
-  generateSSRModule,
 } from './codegen.ts';
 export { html, inflateDeferred } from './compile.ts';
 export type { DeferredTemplate } from './hydrate-runtime.ts';

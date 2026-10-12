@@ -288,14 +288,6 @@ function genTemplateCommentToTextConversion(slots: Slot[]): string {
   return stmts.join('');
 }
 
-// Standalone modules import the coercion helpers the generated code references.
-const VALUE_HELPER_IMPORT =
-  "import { flattenValue as __purity_fl__, swapSlot as __purity_sw__ } from '@purityjs/core/compiler';\n";
-
-export function generateModule(ast: FragmentNode): string {
-  return `${VALUE_HELPER_IMPORT}export default ${generateLinked(ast)}`;
-}
-
 // ---------------------------------------------------------------------------
 // generateHydrate(ast)
 //
@@ -454,10 +446,6 @@ export function generate(ast: FragmentNode): string {
 /** Public: standalone hydrate factory source, evaluable with `new Function`. */
 export function generateHydrate(ast: FragmentNode): string {
   return standalone(generateHydrateLinked(ast));
-}
-
-export function generateHydrateModule(ast: FragmentNode): string {
-  return `${VALUE_HELPER_IMPORT}export default ${generateHydrateLinked(ast)}`;
 }
 
 function emitHydrateChildren(children: ASTNode[], ctx: HydrateCtx, cursor: string): void {
@@ -1157,10 +1145,6 @@ export function generateSSR(ast: FragmentNode): string {
   return ["function(_v,_h){var _o='',_r=[];", ctx.parts.join(''), 'return _h.mark(_o,_r);}'].join(
     '',
   );
-}
-
-export function generateSSRModule(ast: FragmentNode): string {
-  return `export default ${generateSSR(ast)}`;
 }
 
 interface SSRGenCtx {

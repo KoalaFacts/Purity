@@ -9,7 +9,7 @@
 // must match exactly.
 
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { generate, generateModule, generateSSR } from '../src/compiler/codegen.ts';
+import { generate, generateSSR } from '../src/compiler/codegen.ts';
 import { parse } from '../src/compiler/parser.ts';
 import { markSSRHtml, rawEnd, ssrHelpers } from '../src/compiler/ssr-runtime.ts';
 import { eachSSR, matchSSR, whenSSR } from '../src/control.ts';
@@ -1034,12 +1034,5 @@ describe('public generate() output', () => {
     const host = document.createElement('div');
     host.appendChild(root);
     expect(host.innerHTML).toBe('<p>x|ab</p>');
-  });
-
-  it('AOT module output imports the coercion helpers rather than inlining them', () => {
-    const out = generateModule(parse(tpl(['<p>', '</p>'])));
-    expect(out).toContain('flattenValue as __purity_fl__');
-    expect(out).not.toContain('var __purity_fl__=');
-    expect(out).not.toContain('var __purity_tx__=');
   });
 });

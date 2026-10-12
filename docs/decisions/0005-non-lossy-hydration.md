@@ -63,6 +63,13 @@ Concretely:
 - Compiled hydrate factories are JIT-cached per `TemplateStringsArray`
   alongside the existing client factory (lazy — only paid for if the
   template is hydrated). The AST is shared; codegen runs once per mode.
+- `inflateDeferred` lives in `hydrate-runtime.ts` and reaches the JIT
+  compiler only through `setJitCompiler`, which `makeDeferred` (the JIT
+  `html` tag's hydration capture) calls. AOT templates carry their own
+  precompiled walker and DOM factory, so an app built with
+  `@purityjs/vite-plugin` hydrates without bundling the parser or code
+  generator. The `controls-aot` and `hydration-aot` bundle fixtures pin
+  this with a zero `Function`-constructor budget.
 - Custom Elements with Declarative Shadow DOM hydrate their own shadow
   tree: `connectedCallback` checks `this._shadow.firstChild`, sets
   hydration mode, runs the renderer (which now returns a thunk), and

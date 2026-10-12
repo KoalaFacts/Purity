@@ -1359,6 +1359,21 @@ describe('each — LIS binary search exercise', () => {
       'G',
     ]);
   });
+
+  it('keeps every node of a multi-node row together when reordering', async () => {
+    const items = state(['A', 'B', 'C']);
+    const c = document.createElement('div');
+    c.appendChild(
+      each(
+        () => items(),
+        (item) => html`<b>${item()}</b><i>${item()}</i>`,
+      ),
+    );
+    await tick();
+    items(['C', 'A', 'B']);
+    await tick();
+    expect(c.textContent).toBe('CCAABB');
+  });
 });
 
 describe('each — no keyFn (item identity)', () => {

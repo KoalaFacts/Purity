@@ -656,6 +656,11 @@ interface CompileResult {
 interface CompileContext {
   hoists: string[];
   nextTplId: number;
+  // Prefix of every identifier injected into the module. `__purity` unless the
+  // source already mentions `__purity_`, in which case a numbered prefix that
+  // the source does not contain keeps injected names from colliding with (or
+  // being shadowed by) user bindings.
+  prefix: string;
   id: string;
   lineStarts: number[];
   warnings: string[];
@@ -809,9 +814,18 @@ function renderTemplate(
   // document.createElement('template') / innerHTML parse) only runs once per
   // file, not per call from inside a loop or arrow fn.
   ctx.compiled++;
-  const tplVar = `__purity_tpl_${ctx.nextTplId++}`;
-  ctx.hoists.push(`const ${tplVar} = ${fnBody};`);
-  if (hydrateBody !== null) ctx.hoists.push(`const ${tplVar}_hydrate = ${hydrateBody};`);
+  const p = ctx.prefix;
+  const tplVar = `${p}_tpl_${ctx.nextTplId++}`;
+  // Client factories reference the value helpers as `__purity_fl__` /
+  // `__purity_tx__`. Under another prefix, bind those names as parameters: a
+  // factory holds only generated code (slot expressions are passed in at the
+  // call site), so the parameters cannot shadow anything the user wrote.
+  const bind = (body: string): string =>
+    p === '__purity' || ctx.ssr
+      ? body
+      : `((__purity_fl__, __purity_tx__) => (${body}))(${p}_fl__, ${p}_tx__)`;
+  ctx.hoists.push(`const ${tplVar} = ${bind(fnBody)};`);
+  if (hydrateBody !== null) ctx.hoists.push(`const ${tplVar}_hydrate = ${bind(hydrateBody)};`);
 
   // Slot i lies between quasis[i] (which ends after `${`) and quasis[i+1]
   // (which starts at `}`).
@@ -820,8 +834,8 @@ function renderTemplate(
     slots.push(renderSpan(source, quasis[i]!.end, quasis[i + 1]!.start, nodes, ctx));
   }
   return ctx.ssr
-    ? `${tplVar}([${slots.join(', ')}], __purity_h__)`
-    : `__purity_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${slots.join(', ')}])`;
+    ? `${tplVar}([${slots.join(', ')}], ${p}_h__)`
+    : `${p}_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${slots.join(', ')}])`;
 }
 
 type ModuleLang = 'ts' | 'tsx' | 'jsx';
@@ -873,9 +887,12 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   }
 
   const nodes = collectHtmlTemplates(program);
+  let prefix = '__purity';
+  for (let n = 0; source.includes(`${prefix}_`); n++) prefix = `__purity${n}`;
   const ctx: CompileContext = {
     hoists: [],
     nextTplId: 0,
+    prefix,
     failed: false,
     ssr,
     id,
@@ -900,8 +917,8 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   // Modeled as a zero-length insertion edit so the source-map builder can
   // track it alongside the html`` replacements.
   const runtimeImport = ssr
-    ? `import { ssrHelpers as __purity_h__ } from '@purityjs/core/compiler';\nimport '@purityjs/ssr';\n`
-    : `import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, valueText as __purity_tx__ } from '@purityjs/core/compiler';\n`;
+    ? `import { ssrHelpers as ${prefix}_h__ } from '@purityjs/core/compiler';\nimport '@purityjs/ssr';\n`
+    : `import { renderCompiledTemplate as ${prefix}_renderCompiled__, flattenValue as ${prefix}_fl__, valueText as ${prefix}_tx__ } from '@purityjs/core/compiler';\n`;
   /* v8 ignore next -- edits.length > 0 implies at least one hoist was pushed */
   const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
   const insertAt = findLastImportEnd(source);

@@ -7,6 +7,7 @@
 //         charging / level / time change events.
 // ---------------------------------------------------------------------------
 
+import { bindListeners, type ListenerSpec } from './listen.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
@@ -33,8 +34,7 @@ let singleton: ComputedAccessor<BatteryInfo | null> | null = null;
 // (whose token no longer matches) is ignored, so it can't attach listeners
 // to the wrong BatteryManager or stomp the new epoch's state.
 let epoch = 0;
-let boundBattery: EventTarget | null = null;
-let boundRefresh: (() => void) | null = null;
+let boundUnbind: (() => void) | null = null;
 
 function snapshot(bm: BatteryManagerLike): BatteryInfo | null {
   // Field getters can throw (hardened mocks, DRM-blocked browsers). Isolate
@@ -94,28 +94,12 @@ export function batterySignal(): ComputedAccessor<BatteryInfo | null> {
         const s = snapshot(bm);
         if (s !== null) inner(s);
       };
-      // Half-bound rollback: if addEventListener throws partway through,
-      // detach what we already attached so _reset() can't see a half-bound
-      // state and so the next epoch starts clean.
-      const attached: (typeof BATTERY_EVENTS)[number][] = [];
-      try {
-        for (let i = 0; i < BATTERY_EVENTS.length; i++) {
-          bm.addEventListener(BATTERY_EVENTS[i], refresh);
-          attached.push(BATTERY_EVENTS[i]);
-        }
-      } catch (err) {
-        for (let i = 0; i < attached.length; i++) {
-          try {
-            bm.removeEventListener(attached[i], refresh);
-          } catch {
-            /* swallow — detach is best-effort */
-          }
-        }
-        console.error('[purity] batterySignal addEventListener failed:', err);
-        return;
-      }
-      boundBattery = bm;
-      boundRefresh = refresh;
+      // bindListeners rolls back a partial attach, so a failed bind leaves
+      // nothing for _reset() to miss.
+      boundUnbind = bindListeners(
+        BATTERY_EVENTS.map((name): ListenerSpec => [bm, name, refresh]),
+        'batterySignal',
+      );
     }).catch((err) => {
       console.error('[purity] batterySignal getBattery failed:', err);
     });
@@ -129,16 +113,7 @@ export function batterySignal(): ComputedAccessor<BatteryInfo | null> {
  * getBattery().then attaches nothing. */
 export function _resetBatterySignal(): void {
   epoch++;
-  if (boundBattery && boundRefresh) {
-    for (let i = 0; i < BATTERY_EVENTS.length; i++) {
-      try {
-        boundBattery.removeEventListener(BATTERY_EVENTS[i], boundRefresh);
-      } catch {
-        /* swallow — detach is best-effort */
-      }
-    }
-  }
-  boundBattery = null;
-  boundRefresh = null;
+  boundUnbind?.();
+  boundUnbind = null;
   singleton = null;
 }

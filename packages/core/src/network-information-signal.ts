@@ -6,6 +6,7 @@
 //         fallbacks), copies fields into a plain object on every `change`.
 // ---------------------------------------------------------------------------
 
+import { bindListeners } from './listen.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
@@ -33,10 +34,9 @@ const DEFAULT: NetworkInformation = {
 };
 
 let singleton: ComputedAccessor<NetworkInformation> | null = null;
-// (connection, listener) so reset can detach. Without this, _reset nulls
-// the singleton but leaves the listener attached to navigator.connection.
-let boundConnection: EventTarget | null = null;
-let boundListener: (() => void) | null = null;
+// Detach for the `change` listener. Without it, _reset nulls the singleton
+// but leaves the listener attached to navigator.connection.
+let unbind: (() => void) | null = null;
 
 function getConnection(): NetworkInformationLike | null {
   if (typeof navigator === 'undefined') return null;
@@ -106,19 +106,12 @@ export function networkInformationSignal(): ComputedAccessor<NetworkInformation>
     return singleton;
   }
   const inner = state<NetworkInformation>(snapshot(connection));
-  const onChange = (): void => {
-    inner(snapshot(connection));
-  };
-  // Attach defensively — a hostile EventTarget could throw from
-  // addEventListener. We still want a working (static) signal in that
-  // case rather than crashing the caller.
-  try {
-    connection.addEventListener('change', onChange);
-    boundConnection = connection;
-    boundListener = onChange;
-  } catch (err) {
-    console.error('[purity] networkInformationSignal addEventListener failed:', err);
-  }
+  // A hostile EventTarget may throw from addEventListener; bindListeners
+  // logs that and we keep a working (static) signal rather than crash.
+  unbind = bindListeners(
+    [[connection, 'change', () => inner(snapshot(connection))]],
+    'networkInformationSignal',
+  );
   singleton = compute(() => inner());
   return singleton;
 }
@@ -127,14 +120,7 @@ export function networkInformationSignal(): ComputedAccessor<NetworkInformation>
  * call rebuilds from scratch without doubling up listeners on a cached
  * `navigator.connection`. */
 export function _resetNetworkInformationSignal(): void {
-  if (boundConnection && boundListener) {
-    try {
-      boundConnection.removeEventListener('change', boundListener);
-    } catch (err) {
-      console.error('[purity] networkInformationSignal removeEventListener failed:', err);
-    }
-  }
-  boundConnection = null;
-  boundListener = null;
+  unbind?.();
+  unbind = null;
   singleton = null;
 }

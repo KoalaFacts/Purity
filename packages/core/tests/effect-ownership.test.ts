@@ -690,3 +690,60 @@ describe('each() rows are unaffected', () => {
     expect(host.textContent).toBe('11121314');
   });
 });
+
+// A watcher that disposes itself mid-run (stop() in its callback, or
+// unmounting its owner) must still release what the rest of that run creates.
+describe('self-disposing watcher (#226)', () => {
+  it('runs a cleanup returned after stop() right away', async () => {
+    const src = state(0);
+    let cleaned = 0;
+    const stop: () => void = watch(src, () => {
+      stop();
+      return () => {
+        cleaned++;
+      };
+    });
+    src(1);
+    await tick();
+    expect(cleaned).toBe(1);
+    src(2);
+    await tick();
+    expect(cleaned).toBe(1);
+  });
+
+  it('disposes a watch created after stop()', async () => {
+    const trigger = state(0);
+    const x = state(0);
+    let innerRuns = 0;
+    const stop: () => void = watch(() => {
+      if (trigger() === 0) return;
+      stop();
+      watch(() => {
+        innerRuns++;
+        x();
+      });
+    });
+    trigger(1);
+    await tick();
+    innerRuns = 0;
+    x(1);
+    await tick();
+    expect(innerRuns).toBe(0);
+  });
+
+  it('keeps the cleanup of a watcher that did not stop itself until its next run', async () => {
+    const src = state(0);
+    let cleaned = 0;
+    const stop = watch(src, () => () => {
+      cleaned++;
+    });
+    src(1);
+    await tick();
+    expect(cleaned).toBe(0);
+    src(2);
+    await tick();
+    expect(cleaned).toBe(1);
+    stop();
+    expect(cleaned).toBe(2);
+  });
+});

@@ -186,8 +186,8 @@ function peekNode<T>(node: StateNode<T> | ComputedNode): T {
   return node.value as T;
 }
 
-function writeState<T>(node: StateNode<T>, value: T, equals: (a: T, b: T) => boolean): void {
-  if (equals(node.value, value)) return;
+function writeState<T>(node: StateNode<T>, value: T): void {
+  if (Object.is(node.value, value)) return;
   node.value = value;
   node.version++;
   if (node.observers !== null) {
@@ -554,6 +554,9 @@ function runComputed(node: ComputedNode): void {
       (node.disposers ??= []).push(nextValue as () => void);
     }
     nextValue = undefined;
+    // The body disposed its own effect (stop() in the callback, or unmounting
+    // its owner): it will never run again, so release this run's work now.
+    if (node.disposed) disposeScope(node);
   }
 
   let changed: boolean;
@@ -729,8 +732,6 @@ export interface ComputedAccessor<T> {
 /** Cleanup function returned by watch(). Call to stop watching. */
 export type Dispose = () => void;
 
-const defaultEquals = Object.is;
-
 // ---------------------------------------------------------------------------
 // state(initial)
 // ---------------------------------------------------------------------------
@@ -766,10 +767,10 @@ export function state<T>(initial: T): StateAccessor<T> {
     const value = args[0];
     if (typeof value === 'function') {
       const next = (value as (current: T) => T)(node.value);
-      writeState(node, next, defaultEquals);
+      writeState(node, next);
       return next;
     }
-    writeState(node, value as T, defaultEquals);
+    writeState(node, value as T);
     return value as T;
   }) as StateAccessor<T>;
 
@@ -777,7 +778,7 @@ export function state<T>(initial: T): StateAccessor<T> {
   // directly because every call routes through `node` already.
   (accessor as unknown as { get: () => T }).get = () => readNode(node);
   (accessor as unknown as { set: (v: T) => void }).set = (v: T) => {
-    writeState(node, v, defaultEquals);
+    writeState(node, v);
   };
   (accessor as unknown as { peek: () => T }).peek = () => node.value;
 
@@ -973,15 +974,13 @@ export function watch(
   return _effect(() => {
     for (let i = 0; i < len; i++) newValues[i] = sources[i]();
 
-    if (first) {
-      first = false;
-      const tmp = oldValues;
-      oldValues = newValues;
-      newValues = tmp;
-      return;
-    }
-
-    const result = isArray ? cb(newValues, oldValues) : cb(newValues[0], oldValues[0]);
+    // The first run only records the values; cb fires from the next change.
+    const result = first
+      ? undefined
+      : isArray
+        ? cb(newValues, oldValues)
+        : cb(newValues[0], oldValues[0]);
+    first = false;
 
     const tmp = oldValues;
     oldValues = newValues;

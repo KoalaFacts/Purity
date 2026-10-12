@@ -364,14 +364,16 @@ const VALUE_HELPER_DEFS =
   'var __purity_fl__=function(v,o,s){if(typeof v==="function")v=v();if(v==null||v===false)return o;' +
   'if(Array.isArray(v)){if(s===null)s=new WeakSet();if(s.has(v))return o;s.add(v);' +
   'for(var i=0;i<v.length;i++)__purity_fl__(v[i],o,s);}else o.push(v);return o;};' +
-  'var __purity_sw__=function(c,v,m){var N=[],t=1,s="",O=Array.isArray(c)?c:[c],l=O[O.length-1];' +
+  'var __purity_sw__=function(c,v,m){var N=[],t=1,s="",O=Array.isArray(c)?c:[c],l=O[O.length-1],' +
+  'p=l.parentNode,a=l.nextSibling,f=document.createDocumentFragment(),K;' +
   '(Array.isArray(v)?__purity_fl__(v,[],null):v==null||v===false?[]:[v]).forEach(function(y){' +
   'if(m&&y&&y.__purity_deferred__===true)m(y,y=document.createDocumentFragment(),false,true);' +
-  'if(y instanceof Node){t=0;N.push.apply(N,y.nodeType===11?y.childNodes:[y]);}' +
-  'else{var x=String(y);s+=x;N.push(document.createTextNode(x));}});' +
-  'if(t)(N=[O[1]||l.nodeType!==3?document.createTextNode(""):l])[0].data=s;' +
-  'N[0]||N.push(document.createTextNode(""));' +
-  'if(l.parentNode){l.after.apply(l,N);O.forEach(function(o){if(N.indexOf(o)<0)o.remove();});}return N[1]?N:N[0];};';
+  'if(!(y instanceof Node)){s+=y=String(y);N.push(y);}else if(y.nodeType!==11){t=0;N.push(y);}' +
+  'else for(t=0,y=y.firstChild;y;y=y.nextSibling)N.push(y);});' +
+  'N=t?[O[1]||l.nodeType!==3?document.createTextNode(""):l]:N.map(function(y){return typeof y=="string"?document.createTextNode(y):y;});' +
+  'if(t)N[0].data=s;N[0]||N.push(document.createTextNode(""));' +
+  'if(p){K=new Set(N);O.forEach(function(o){K.has(o)||o.remove();});N.forEach(function(n){f.appendChild(n);});p.insertBefore(f,a);}' +
+  'return N[1]?N:N[0];};';
 
 // Wrap linked source so it evaluates on its own, binding the helpers once per
 // factory. Output without helper references is returned unchanged.
@@ -728,8 +730,7 @@ function buildStaticHtml(node: ASTNode, rawParent?: ElementNode['raw']): string 
       assertSafeName(node.tag, 'tag');
       let s = `<${node.tag}`;
       for (const a of node.attributes) {
-        if (a.kind === 'static')
-          s += a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
+        if (a.kind === 'static') s += attrMarkup(a);
       }
       if (VOID.has(node.tag.toLowerCase())) return `${s}/>`;
       s += node.preserveLeadingNewline ? '>\n' : '>';
@@ -840,7 +841,7 @@ function buildDynamicHtml(
       const dynamicAttrs: AttributeNode[] = [];
       for (const a of node.attributes) {
         if (a.kind === 'static') {
-          s += a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
+          s += attrMarkup(a);
         } else {
           dynamicAttrs.push(a);
         }
@@ -1041,60 +1042,35 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
   const propertyValue = (expr: string): string =>
     tag.includes('-') ? expr : safeBindingValue(attr.name, expr);
 
+  // Shared prefix of the value bindings: read the value once, note whether it
+  // is an accessor (applied in the shared watch) or a static value.
+  const head = `var ${av}=${val};var ${fl}=typeof ${av}==='function';`;
+
   switch (attr.kind) {
     case 'event':
       return { setup: `${el}.addEventListener(${qname},${val});`, reactive: '' };
 
     case 'dynamic': {
-      const setup = [
-        `var ${av}=${val};`,
-        `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl}&&${av}!=null&&${av}!==false)${el}.setAttribute(${qname},${av}===true?'':String(${safeBindingValue(attr.name, av)}));`,
-      ].join('');
-      const reactive = [
-        `if(${fl}){`,
-        `var v${id}=${av}();`,
-        `if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});`,
-        `else ${el}.setAttribute(${qname},v${id}===true?'':String(${safeBindingValue(attr.name, `v${id}`)}));`,
-        `}`,
-      ].join('');
-      return { setup, reactive };
+      const set = (x: string) =>
+        `${el}.setAttribute(${qname},${x}===true?'':String(${safeBindingValue(attr.name, x)}));`;
+      return {
+        setup: `${head}if(!${fl}&&${av}!=null&&${av}!==false)${set(av)}`,
+        reactive: `if(${fl}){var v${id}=${av}();if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});else ${set(`v${id}`)}}`,
+      };
     }
 
-    case 'bool': {
-      const setup = [
-        `var ${av}=${val};`,
-        `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl}&&${av})${el}.setAttribute(${qname},'');`,
-      ].join('');
-      const reactive = [
-        `if(${fl}){`,
-        `if(${av}())${el}.setAttribute(${qname},'');`,
-        `else ${el}.removeAttribute(${qname});`,
-        `}`,
-      ].join('');
-      return { setup, reactive };
-    }
+    case 'bool':
+      return {
+        setup: `${head}if(!${fl}&&${av})${el}.setAttribute(${qname},'');`,
+        reactive: `if(${fl}){if(${av}())${el}.setAttribute(${qname},'');else ${el}.removeAttribute(${qname});}`,
+      };
 
-    case 'prop': {
-      const setup = [
-        `var ${av}=${val};`,
-        `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
-      ].join('');
-      const reactive = `if(${fl})${el}[${qname}]=${propertyValue(`${av}()`)};`;
-      return { setup, reactive };
-    }
-
-    case 'reactive-prop': {
-      const setup = [
-        `var ${av}=${val};`,
-        `var ${fl}=typeof ${av}==='function';`,
-        `if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
-      ].join('');
-      const reactive = `if(${fl})${el}[${qname}]=${propertyValue(`${av}()`)};`;
-      return { setup, reactive };
-    }
+    case 'prop':
+    case 'reactive-prop':
+      return {
+        setup: `${head}if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
+        reactive: `if(${fl})${el}[${qname}]=${propertyValue(`${av}()`)};`,
+      };
 
     case 'bind': {
       // Bind keeps its own watch — its reactive read is asymmetric (signal ->
@@ -1363,13 +1339,14 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
 // as `value` / `checked` / `selected` keep their existing attribute emission.)
 const NON_REFLECTING_PROPS = /^(?:innerHTML|outerHTML|innerText|textContent)$/;
 
+// A static attribute as markup, shared by the static, cloned and SSR paths.
+function attrMarkup(a: import('./ast.ts').StaticAttribute): string {
+  return a.value ? ` ${a.name}="${escapeAttr(a.value)}"` : ` ${a.name}`;
+}
+
 function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx, node: import('./ast.ts').ElementNode): void {
   if (a.kind === 'static') {
-    if (a.value) {
-      emitLit(ctx, ` ${a.name}="${escapeAttr(a.value)}"`);
-    } else {
-      emitLit(ctx, ` ${a.name}`);
-    }
+    emitLit(ctx, attrMarkup(a));
     return;
   }
 

@@ -58,7 +58,8 @@ export function swapSlot(
       leaves[i] = y = f as never;
     }
     if (y instanceof Node) nodes = true;
-    else text += String(y);
+    // Coerce once: a stateful toString must not run again when rendering.
+    else text += leaves[i] = String(y);
   }
   const next: ChildNode[] = [];
   if (!nodes) {
@@ -70,8 +71,8 @@ export function swapSlot(
   } else {
     for (let i = 0; i < leaves.length; i++) {
       const y = leaves[i];
-      if (!(y instanceof Node)) next.push(document.createTextNode(String(y)));
-      else if (y.nodeType === 11) next.push(...y.childNodes);
+      if (!(y instanceof Node)) next.push(document.createTextNode(y as string));
+      else if (y.nodeType === 11) for (let c = y.firstChild; c; c = c.nextSibling) next.push(c);
       else next.push(y as ChildNode);
     }
     // An empty slot keeps a Text node as its position in the DOM.
@@ -79,9 +80,16 @@ export function swapSlot(
   }
   const old = Array.isArray(cur) ? cur : [cur];
   const last = old[old.length - 1];
-  if (last.parentNode) {
-    last.after(...next);
-    for (let i = 0; i < old.length; i++) if (!next.includes(old[i])) old[i].remove();
+  const parent = last.parentNode;
+  if (parent) {
+    // Remove the replaced nodes before inserting their successors, so custom
+    // elements disconnect before the new ones connect.
+    const anchor = last.nextSibling;
+    const keep = new Set(next);
+    for (let i = 0; i < old.length; i++) if (!keep.has(old[i])) old[i].remove();
+    const f = document.createDocumentFragment();
+    for (let i = 0; i < next.length; i++) f.appendChild(next[i]);
+    parent.insertBefore(f, anchor);
   }
   return next.length === 1 ? next[0] : next;
 }

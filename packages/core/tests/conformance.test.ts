@@ -446,6 +446,37 @@ describe('SSR / CSR / hydrate conformance', () => {
       }
     }
 
+    it('disconnects replaced nodes before connecting their successors', async () => {
+      const log: string[] = [];
+      class Probe extends HTMLElement {
+        connectedCallback() {
+          log.push(`+${this.id}`);
+        }
+        disconnectedCallback() {
+          log.push(`-${this.id}`);
+        }
+      }
+      customElements.define('p-slot-probe', Probe);
+      const probe = (id: string) => Object.assign(document.createElement('p-slot-probe'), { id });
+      const which = state('a');
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      host.appendChild(html(tpl(['<div>', '</div>']), () => [probe(which())]) as Node);
+      which('b');
+      await tick();
+      expect(log).toEqual(['+a', '-a', '+b']);
+      host.remove();
+    });
+
+    it('coerces each scalar leaf once next to Nodes', async () => {
+      let calls = 0;
+      const leaf = { toString: () => `n${++calls}` };
+      const host = document.createElement('div');
+      host.appendChild(html(tpl(['<div>', '</div>']), () => [li('a'), leaf]) as Node);
+      expect(normalize(host.innerHTML)).toBe('<div><li>a</li>n1</div>');
+      expect(calls).toBe(1);
+    });
+
     it('hydrated slot re-renders SSR nodes and keeps switching', async () => {
       const items = state(['a', 'b']);
       const host = document.createElement('div');

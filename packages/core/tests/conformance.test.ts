@@ -13,7 +13,7 @@ import { generate, generateModule, generateSSR } from '../src/compiler/codegen.t
 import { parse } from '../src/compiler/parser.ts';
 import { markSSRHtml, rawEnd, ssrHelpers } from '../src/compiler/ssr-runtime.ts';
 import { eachSSR, matchSSR, whenSSR } from '../src/control.ts';
-import { each, html, hydrate, mount, state, when } from '../src/index.ts';
+import { each, html, hydrate, mount, state, watch, when } from '../src/index.ts';
 import { tick } from './_helpers.ts';
 
 type Mode = 'csr' | 'ssr';
@@ -68,6 +68,11 @@ interface Case {
    * exists, and turns red (prompting removal of this flag) once it is fixed.
    */
   knownDefect?: string;
+  /**
+   * Hydration re-renders a reactive slot whose value holds Nodes, so only the
+   * template's top-level elements must be adopted in place.
+   */
+  rebuildsSlot?: true;
 }
 
 const LI = ['<li>', '</li>'];
@@ -120,12 +125,11 @@ const cases: Case[] = [
   },
   {
     name: 'signal returning nodes or templates renders them',
-    strings: ['<p>', '</p>'],
+    strings: ['<ul>', '</ul>'],
     values: (mode) => [
-      () => [mode === 'csr' ? html(tpl(LI), 'a') : markSSRHtml(renderSSR(LI, ['a']))],
+      () => [mode === 'csr' ? html(tpl(LI), 'a') : markSSRHtml(renderSSR(LI, ['a'])), 'b'],
     ],
-    knownDefect:
-      'reactive binding stringifies Node items ("[object DocumentFragment]"); needs range reconciliation',
+    rebuildsSlot: true,
   },
   {
     name: 'signal returning a function renders it once, as SSR does',
@@ -373,7 +377,7 @@ describe('SSR / CSR / hydrate conformance', () => {
       // hydrate() falls back to a fresh mount when adoption throws, which would
       // hide a broken walker behind equal innerHTML. Require the SSR elements to
       // survive, i.e. adoption happened in place.
-      const ssrElements = Array.from(host.querySelectorAll('*'));
+      const ssrElements = Array.from(c.rebuildsSlot ? host.children : host.querySelectorAll('*'));
       hydrate(host, () => html(tpl(c.strings), ...c.values('csr')) as Node);
       for (const el of ssrElements) expect(host.contains(el)).toBe(true);
       expect(normalize(host.innerHTML)).toBe(csr);
@@ -392,6 +396,83 @@ describe('SSR / CSR / hydrate conformance', () => {
     await tick();
     expect(host.textContent).toBe('Bea');
     host.remove();
+  });
+
+  describe('reactive slot switching between text, a node and a node list', () => {
+    const li = (s: string) => html(tpl(LI), s) as Node;
+    // Each step builds fresh nodes, as an accessor returning templates does.
+    // Two single-template steps in a row: a fragment's children must still be
+    // found and replaced after the fragment itself was emptied by insertion.
+    const steps: [() => unknown, string][] = [
+      [() => 'x', 'x'],
+      [() => ['a', 'b'].map(li), '<li>a</li><li>b</li>'],
+      [() => li('c'), '<li>c</li>'],
+      [() => li('d'), '<li>d</li>'],
+      [() => 'y', 'y'],
+      [() => [], ''],
+      [() => 'z', 'z'],
+    ];
+
+    for (const [label, strings, wrap] of [
+      ['single-element template', ['<ul>', '</ul>'], (s: string) => `<ul>${s}</ul>`],
+      [
+        'cloned template',
+        ['<div><ul>', '</ul><p>end</p></div>'],
+        (s: string) => `<div><ul>${s}</ul><p>end</p></div>`,
+      ],
+    ] as const) {
+      // `standalone`: the public generate() output, which carries its own
+      // copy of the value helpers.
+      for (const standalone of [false, true]) {
+        it(`${label}${standalone ? ' (standalone generate)' : ''}: leaves no stale nodes`, async () => {
+          const at = state(0);
+          const slot = () => steps[at()][0]();
+          const host = document.createElement('div');
+          const make = standalone
+            ? (new Function(`return ${generate(parse(tpl([...strings])))}`)() as (
+                v: unknown[],
+                w: typeof watch,
+              ) => Node)
+            : null;
+          host.appendChild(make ? make([slot], watch) : (html(tpl([...strings]), slot) as Node));
+          for (let i = 0; i < steps.length; i++) {
+            if (i > 0) {
+              at(i);
+              await tick();
+            }
+            expect(normalize(host.innerHTML)).toBe(wrap(steps[i][1]));
+          }
+        });
+      }
+    }
+
+    it('hydrated slot re-renders SSR nodes and keeps switching', async () => {
+      const items = state(['a', 'b']);
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      host.innerHTML = renderSSR(
+        ['<ul>', '</ul>'],
+        [() => items().map((s) => markSSRHtml(renderSSR(LI, [s])))],
+      );
+      const ul = host.firstChild;
+      const mounted = hydrate(
+        host,
+        () => html(tpl(['<ul>', '</ul>']), () => items().map(li)) as Node,
+      );
+      try {
+        expect(host.firstChild).toBe(ul);
+        expect(normalize(host.innerHTML)).toBe('<ul><li>a</li><li>b</li></ul>');
+        items(['c']);
+        await tick();
+        expect(normalize(host.innerHTML)).toBe('<ul><li>c</li></ul>');
+        items([]);
+        await tick();
+        expect(normalize(host.innerHTML)).toBe('<ul></ul>');
+      } finally {
+        mounted.unmount();
+        host.remove();
+      }
+    });
   });
 
   // SSR writes no markers inside <style>, so hydrate adopts the SSR node and

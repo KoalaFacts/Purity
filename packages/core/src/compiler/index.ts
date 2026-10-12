@@ -28,7 +28,7 @@ export {
   renderCompiledTemplate,
 } from './hydrate-runtime.ts';
 export { parse } from './parser.ts';
-export { flattenValue, valueText } from './value-helpers.ts';
+export { flattenValue, swapSlot } from './value-helpers.ts';
 export type { SSRComponentRenderer, SSRHelpers, SSRHtml } from './ssr-runtime.ts';
 export {
   escAttr,

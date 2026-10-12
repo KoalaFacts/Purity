@@ -103,6 +103,14 @@ Marker-walking hydration" is now done.
     SSR key reuses the original SSR-derived DOM. SSR-key / client-key
     drift falls through to a fresh render of the current view.
 
+- **Adopting a reactive slot whose accessor returns Nodes.** A binding
+  like `${() => items().map((i) => html\`<li>${i}</li>\`)}` owns the
+  nodes between its markers and swaps them on change (`swapSlot`). SSR
+  writes no per-item boundaries for it, so hydration re-renders the
+  slot's content on the first run instead of adopting it; a slot whose
+  value is text still adopts the SSR text node. Use `each()` for lists
+  that should hydrate in place.
+
 - _(superseded by [ADR 0007](./0007-text-rewrite-on-mismatch.md))_
   **Static text-content rewriting.** ADR 0005 detected text drift but
   preserved SSR bytes by default. ADR 0007 keeps that default and adds

@@ -210,7 +210,7 @@ export function condenseWhitespace(node: ASTNode): ASTNode {
 // ---------------------------------------------------------------------------
 
 /**
- * Client factory source that references `__purity_fl__` / `__purity_tx__` as
+ * Client factory source that references `__purity_fl__` / `__purity_sw__` as
  * free names. Host code must bind them: compile.ts for JIT, an import for AOT
  * modules. Static templates reference neither.
  */
@@ -290,7 +290,7 @@ function genTemplateCommentToTextConversion(slots: Slot[]): string {
 
 // Standalone modules import the coercion helpers the generated code references.
 const VALUE_HELPER_IMPORT =
-  "import { flattenValue as __purity_fl__, valueText as __purity_tx__ } from '@purityjs/core/compiler';\n";
+  "import { flattenValue as __purity_fl__, swapSlot as __purity_sw__ } from '@purityjs/core/compiler';\n";
 
 export function generateModule(ast: FragmentNode): string {
   return `${VALUE_HELPER_IMPORT}export default ${generateLinked(ast)}`;
@@ -357,15 +357,21 @@ export function generateHydrateLinked(ast: FragmentNode): string {
   return `function(_v,_w,_r,_i,_c,_e,_m,_s){${body}}`;
 }
 
-// Standalone helper definitions, equivalent to flattenValue / valueText in
-// value-helpers.ts (a parity test keeps the two in sync). Used only to make the
-// public generate()/generateHydrate() output evaluable on its own.
+// Standalone helper definitions, equivalent to flattenValue / swapSlot in
+// value-helpers.ts (the conformance switching tests run both). Used only to
+// make the public generate()/generateHydrate() output evaluable on its own.
 const VALUE_HELPER_DEFS =
   'var __purity_fl__=function(v,o,s){if(typeof v==="function")v=v();if(v==null||v===false)return o;' +
   'if(Array.isArray(v)){if(s===null)s=new WeakSet();if(s.has(v))return o;s.add(v);' +
   'for(var i=0;i<v.length;i++)__purity_fl__(v[i],o,s);}else o.push(v);return o;};' +
-  'var __purity_tx__=function(v){if(v==null||v===false)return "";if(!Array.isArray(v))return String(v);' +
-  'var L=__purity_fl__(v,[],null),t="";for(var i=0;i<L.length;i++)t+=String(L[i]);return t;};';
+  'var __purity_sw__=function(c,v,m){var N=[],t=1,s="",O=Array.isArray(c)?c:[c],l=O[O.length-1];' +
+  '(Array.isArray(v)?__purity_fl__(v,[],null):v==null||v===false?[]:[v]).forEach(function(y){' +
+  'if(m&&y&&y.__purity_deferred__===true)m(y,y=document.createDocumentFragment(),false,true);' +
+  'if(y instanceof Node){t=0;N.push.apply(N,y.nodeType===11?y.childNodes:[y]);}' +
+  'else{var x=String(y);s+=x;N.push(document.createTextNode(x));}});' +
+  'if(t)(N=[O[1]||l.nodeType!==3?document.createTextNode(""):l])[0].data=s;' +
+  'N[0]||N.push(document.createTextNode(""));' +
+  'if(l.parentNode){l.after.apply(l,N);O.forEach(function(o){if(N.indexOf(o)<0)o.remove();});}return N[1]?N:N[0];};';
 
 // Wrap linked source so it evaluates on its own, binding the helpers once per
 // factory. Output without helper references is returned unchanged.
@@ -373,22 +379,11 @@ const VALUE_HELPER_DEFS =
 // emitted from several generator paths; keeping one copy keeps the runtime
 // compiler small and the paths from drifting.
 
-// Re-render a slot from its accessor: swap in a returned Node, otherwise make
-// sure the slot holds a text node and write the coerced text.
-function slotUpdate(xv: string, tn: string, id: number | string): string {
-  return (
-    `var r${id}=${xv}();if(r${id} instanceof Node){${tn}.replaceWith(r${id});${tn}=r${id};}` +
-    `else{if(${tn}.nodeType!==3){var t${id}=document.createTextNode('');${tn}.replaceWith(t${id});${tn}=t${id};}` +
-    `${tn}.data=__purity_tx__(r${id});}`
-  );
-}
-
-// Flatten an array value and append each item to `target` as a node.
-function appendFlat(xv: string, id: number | string, target: string): string {
-  return (
-    `var _L${id}=__purity_fl__(${xv},[],null);for(var _ai${id}=0;_ai${id}<_L${id}.length;_ai${id}++)` +
-    `{var _av${id}=_L${id}[_ai${id}];${target}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}`
-  );
+// Re-render a slot from its accessor through swapSlot (value-helpers.ts),
+// which keeps `tn` pointing at the slot's current Text node or Node list.
+// Hydration passes `_i` so templates captured as deferred are built.
+function slotUpdate(xv: string, tn: string, hydrating = false): string {
+  return `${tn}=__purity_sw__(${tn},${xv}()${hydrating ? ',_i' : ''});`;
 }
 
 // Raw-text / RCDATA element content: rewrite the element's text from the parts
@@ -445,7 +440,7 @@ function rawContentBinding(
 }
 
 function standalone(code: string): string {
-  if (!code.includes('__purity_fl__') && !code.includes('__purity_tx__')) return code;
+  if (!/__purity_(fl|sw)__/.test(code)) return code;
   return `(function(){${VALUE_HELPER_DEFS}return ${code};})()`;
 }
 
@@ -511,25 +506,25 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         `var ${close}=${w};`,
       );
 
+      // What swapSlot starts from: the slot's SSR nodes, or an empty Text node
+      // holding the position of an empty slot.
+      const hold = `${cont}.length>1?${cont}:${cont}[0]||${close}.parentNode.insertBefore(document.createTextNode(''),${close})`;
       // Bind based on the user's value. Mirrors generate()'s genExprBinding
-      // type-dispatch (function / Node / Array / primitive) plus a deferred-
-      // template branch for nested `html\`\`` and an SSR-branded escape hatch
-      // for users who left an `eachSSR(...)` in client code.
+      // type-dispatch plus a deferred-template branch for nested `html\`\``
+      // and an SSR-branded escape hatch for users who left an `eachSSR(...)`
+      // in client code.
       ctx.setup.push(
         `var ${xv}=${val};`,
         `var ${fl}=typeof ${xv}==='function';`,
-        // Reactive accessor: collapse content to a single text node, watch.
-        `if(${fl}){`,
-        `var ${tn};`,
-        `if(${cont}.length===1&&${cont}[0].nodeType===3){${tn}=${cont}[0];}`,
-        `else{${tn}=document.createTextNode('');for(var _ci${id}=0;_ci${id}<${cont}.length;_ci${id}++)${cont}[_ci${id}].parentNode.removeChild(${cont}[_ci${id}]);${close}.parentNode.insertBefore(${tn},${close});}`,
-        `}`,
+        // Reactive accessor: the watch's first run adopts a single SSR text
+        // node and re-renders anything else.
+        `var ${tn};if(${fl})${tn}=${hold};`,
         // Static value branches.
         `else if(${xv}!=null&&typeof ${xv}==='object'){`,
         `if(${xv}.__purity_deferred__===true){`,
         // Nested template — inflate against a fragment containing this slot's
         // SSR content; re-insert before the close marker afterward.
-        `var _df${id}=document.createDocumentFragment();for(var _di${id}=0;_di${id}<${cont}.length;_di${id}++)_df${id}.appendChild(${cont}[_di${id}]);_i(${xv},_df${id});${close}.parentNode.insertBefore(_df${id},${close});`,
+        `var _df${id}=document.createDocumentFragment();_df${id}.append.apply(_df${id},${cont});_i(${xv},_df${id});${close}.before(_df${id});`,
         `}`,
         // Deferred each() — adopt SSR rows in place rather than rebuild.
         `else if(${xv}.__purity_deferred_each__===true){_e(${xv},${cont},${close});}`,
@@ -538,24 +533,14 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
         // Branded SSR HTML wrapper (e.g. eachSSR result) — SSR DOM is already
         // correct; nothing to bind on the client.
         `else if(typeof ${xv}.__purity_ssr_html__==='string'){}`,
-        // Real Node provided directly — replace SSR slot contents with it.
-        `else if(${xv} instanceof Node){for(var _ri${id}=0;_ri${id}<${cont}.length;_ri${id}++)${cont}[_ri${id}].parentNode.removeChild(${cont}[_ri${id}]);${close}.parentNode.insertBefore(${xv},${close});}`,
-        // Arrays keep the existing replace-only semantics, but templates in
-        // them are deferred during hydration and must be materialised.
-        `else if(Array.isArray(${xv})){`,
-        `for(var _ai${id}=0;_ai${id}<${cont}.length;_ai${id}++)${cont}[_ai${id}].parentNode.removeChild(${cont}[_ai${id}]);`,
-        `var _af${id}=document.createDocumentFragment();`,
-        `var _L${id}=__purity_fl__(${xv},[],null);`,
-        `for(var _aj${id}=0;_aj${id}<_L${id}.length;_aj${id}++){var _av${id}=_L${id}[_aj${id}];`,
-        `if(_av${id}&&_av${id}.__purity_deferred__===true){var _ad${id}=document.createDocumentFragment();_i(_av${id},_ad${id},false,true);_af${id}.appendChild(_ad${id});}`,
-        `else _af${id}.appendChild(_av${id} instanceof Node?_av${id}:document.createTextNode(String(_av${id})));}`,
-        `${close}.parentNode.insertBefore(_af${id},${close});}`,
-
+        // A Node or an array replaces the SSR content; templates in an array
+        // were captured as deferred and are built by swapSlot.
+        `else __purity_sw__(${hold},${xv},_i);`,
         `}`,
         // Primitive — SSR text already correct (or correctly empty); no-op.
       );
 
-      ctx.reactive.push(`if(${fl}){`, slotUpdate(xv, tn, id), `}`);
+      ctx.reactive.push(`if(${fl}){`, slotUpdate(xv, tn, true), `}`);
 
       // Advance cursor past the close marker.
       ctx.setup.push(`${cursor}=${close}.nextSibling;`);
@@ -686,13 +671,10 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
       // the literal text "false" on the client while SSR rendered nothing.
       // Symmetric `==null||===false` filter at every text-emit site.
       setupParts.push(
-        `var ${xv}=_d?_d(${val}):${val};var ${fl}=typeof ${xv}==='function';var ${tn};`,
-        `if(${fl}){${tn}=document.createTextNode('');_e.appendChild(${tn});}`,
-        `else if(${xv} instanceof Node)_e.appendChild(${xv});`,
-        `else if(Array.isArray(${xv})){${appendFlat(xv, id, '_e')}}`,
-        `else _e.appendChild(document.createTextNode(__purity_tx__(${xv})));`,
+        `var ${xv}=_d?_d(${val}):${val};var ${fl}=typeof ${xv}==='function';`,
+        `var ${tn}=_e.appendChild(document.createTextNode(''));if(!${fl})__purity_sw__(${tn},${xv});`,
       );
-      reactiveParts.push(`if(${fl}){${slotUpdate(xv, tn, id)}}`);
+      reactiveParts.push(`if(${fl}){${slotUpdate(xv, tn)}}`);
     }
   }
 
@@ -1031,25 +1013,11 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
   const fl = `_f${id}`;
   const val = `_v[${index}]`;
 
-  const setup = [
-    `var ${xv}=_d?_d(${val}):${val};`,
-    `var ${fl}=typeof ${xv}==='function';`,
-    `var ${tn}=${slotVar};`,
-    `if(!${fl}){`,
-    `if(typeof ${xv}==='object'){`,
-    `if(${xv} instanceof DocumentFragment||${xv} instanceof Node){${slotVar}.replaceWith(${xv});${tn}=${xv};}`,
-    // Array path: drop null/undefined/false items so SSR (valueToHtml
-    // recurses + concats with empty for falsy) matches the client.
-    `else if(Array.isArray(${xv})){var _af${id}=document.createDocumentFragment();${appendFlat(xv, id, `_af${id}`)}${slotVar}.replaceWith(_af${id});}`,
-    `else{${slotVar}.data=__purity_tx__(${xv});}`,
-    `}else{${slotVar}.data=__purity_tx__(${xv});}`,
-    `}`,
-  ].join('');
+  const setup =
+    `var ${xv}=_d?_d(${val}):${val};var ${fl}=typeof ${xv}==='function';` +
+    `var ${tn}=${slotVar};if(!${fl})__purity_sw__(${tn},${xv});`;
 
-  // Reactive: `r${id}===false` was missing from the falsy filter, so
-  // a signal returning false rendered "false" on the client while SSR
-  // emitted empty. Symmetric with the setup branch above.
-  const reactive = [`if(${fl}){`, slotUpdate(xv, tn, id), `}`].join('');
+  const reactive = `if(${fl}){${slotUpdate(xv, tn)}}`;
 
   return { setup, reactive };
 }

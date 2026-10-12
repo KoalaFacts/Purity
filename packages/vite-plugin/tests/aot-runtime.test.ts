@@ -357,6 +357,15 @@ describe('injected identifiers do not collide with user bindings', () => {
     expect(valueToHtml(make())).toContain('a');
   });
 
+  it.each(['__purity\\u005ftpl_0', '__purity\\u{5f}renderCompiled__'])(
+    'client build with an escaped user %s',
+    (name) => {
+      const { make, user } = runModule(source(name), false);
+      expect(user).toBe('mine');
+      expect(((make() as DocumentFragment).firstChild as HTMLElement).textContent).toBe('a');
+    },
+  );
+
   it('a local binding does not shadow the injected call', () => {
     const { make } = runModule(
       `import { html, state } from '@purityjs/core';\nconst user = 0;\nconst v = state('a');\n` +

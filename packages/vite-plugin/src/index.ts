@@ -887,8 +887,13 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   }
 
   const nodes = collectHtmlTemplates(program);
+  // Identifiers may be spelled with Unicode escapes (`__purity_tpl_0`), so
+  // look for the prefix in the source with escapes decoded.
+  const decoded = source.replace(/\\u\{([0-9a-fA-F]+)\}|\\u([0-9a-fA-F]{4})/g, (_, a, b) =>
+    String.fromCodePoint(parseInt(a ?? b, 16)),
+  );
   let prefix = '__purity';
-  for (let n = 0; source.includes(`${prefix}_`); n++) prefix = `__purity${n}`;
+  for (let n = 0; decoded.includes(`${prefix}_`); n++) prefix = `__purity${n}`;
   const ctx: CompileContext = {
     hoists: [],
     nextTplId: 0,

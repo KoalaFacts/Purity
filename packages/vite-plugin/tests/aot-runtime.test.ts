@@ -9,6 +9,8 @@ import {
   inflateDeferred,
   isDeferred,
   renderCompiledTemplate,
+  ssrHelpers,
+  valueToHtml,
 } from '@purityjs/core/compiler';
 import { purity } from '../src/index.ts';
 
@@ -296,5 +298,80 @@ describe('AOT output runs correctly under jsdom', () => {
     expect(root.querySelector('button')).toBe(button);
     expect(root.firstChild?.nodeName).toBe('STYLE');
     expect(root.querySelectorAll('button')).toHaveLength(1);
+  });
+});
+
+// The plugin injects module-level identifiers. A user module that declares one
+// of them must still transform and run, with the user's binding intact (#224).
+describe('injected identifiers do not collide with user bindings', () => {
+  const plugin = purity();
+
+  // Run transformed module code with its imports turned into `const`
+  // destructuring, so a duplicate declaration fails as it would in a module.
+  function runModule(code: string, ssr: boolean): Record<string, any> {
+    const result = plugin.transform(code, 'app.ts', ssr ? { ssr: true } : undefined);
+    if (!result) throw new Error('plugin returned null');
+    const body = result.code
+      .replace(
+        /^import\s*\{([^}]*)\}\s*from\s*'([^']+)';?$/gm,
+        (_, names: string, from: string) =>
+          `const {${names.replace(/\s+as\s+/g, ': ')}} = __modules[${JSON.stringify(from)}];`,
+      )
+      .replace(/^import\s*'[^']+';?$/gm, '');
+    const modules = {
+      '@purityjs/core': { state },
+      '@purityjs/core/compiler': {
+        renderCompiledTemplate,
+        flattenValue,
+        valueText,
+        ssrHelpers,
+      },
+    };
+    return new Function('__modules', `${body}\nreturn { make, v, user };`)(modules);
+  }
+
+  const source = (name: string) =>
+    `import { html, state } from '@purityjs/core';\n` +
+    `const ${name} = 'mine';\nconst user = ${name};\n` +
+    `const v = state('a');\nconst make = () => html\`<p>\${() => v()}</p>\`;`;
+
+  it.each([
+    '__purity_renderCompiled__',
+    '__purity_fl__',
+    '__purity_tx__',
+    '__purity_tpl_0',
+    '__purity_tpl_0_hydrate',
+  ])('client build with a user %s', async (name) => {
+    const { make, v, user } = runModule(source(name), false);
+    expect(user).toBe('mine');
+    const el = (make() as DocumentFragment).firstChild as HTMLElement;
+    expect(el.textContent).toBe('a');
+    v('b');
+    await vi.waitFor(() => expect(el.textContent).toBe('b'));
+  });
+
+  it.each(['__purity_h__', '__purity_tpl_0'])('SSR build with a user %s', (name) => {
+    const { make, user } = runModule(source(name), true);
+    expect(user).toBe('mine');
+    expect(valueToHtml(make())).toContain('<p>');
+    expect(valueToHtml(make())).toContain('a');
+  });
+
+  it.each(['__purity\\u005ftpl_0', '__purity\\u{5f}renderCompiled__'])(
+    'client build with an escaped user %s',
+    (name) => {
+      const { make, user } = runModule(source(name), false);
+      expect(user).toBe('mine');
+      expect(((make() as DocumentFragment).firstChild as HTMLElement).textContent).toBe('a');
+    },
+  );
+
+  it('a local binding does not shadow the injected call', () => {
+    const { make } = runModule(
+      `import { html, state } from '@purityjs/core';\nconst user = 0;\nconst v = state('a');\n` +
+        `const make = () => { const __purity_renderCompiled__ = null; return html\`<p>\${() => v()}</p>\`; };`,
+      false,
+    );
+    expect(((make() as DocumentFragment).firstChild as HTMLElement).textContent).toBe('a');
   });
 });

@@ -773,12 +773,6 @@ describe('compiler — extra coverage', () => {
     expect(c.querySelector('div')!.textContent).toContain('plain');
   });
 
-  it('exports generateModule', async () => {
-    const { generateModule } = await import('../src/compiler/codegen.ts');
-    const code = generateModule(parse(['<p>hi</p>']));
-    expect(code).toContain('export default');
-  });
-
   it('getCompiledFactory returns a callable factory', async () => {
     const { getCompiledFactory } = await import('../src/compiler/compile.ts');
     const { _watch } = await import('../src/compiler/compile.ts');

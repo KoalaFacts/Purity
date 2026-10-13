@@ -817,13 +817,13 @@ function renderTemplate(
   const p = ctx.prefix;
   const tplVar = `${p}_tpl_${ctx.nextTplId++}`;
   // Client factories reference the value helpers as `__purity_fl__` /
-  // `__purity_tx__`. Under another prefix, bind those names as parameters: a
+  // `__purity_sw__`. Under another prefix, bind those names as parameters: a
   // factory holds only generated code (slot expressions are passed in at the
   // call site), so the parameters cannot shadow anything the user wrote.
   const bind = (body: string): string =>
     p === '__purity' || ctx.ssr
       ? body
-      : `((__purity_fl__, __purity_tx__) => (${body}))(${p}_fl__, ${p}_tx__)`;
+      : `((__purity_fl__, __purity_sw__) => (${body}))(${p}_fl__, ${p}_sw__)`;
   ctx.hoists.push(`const ${tplVar} = ${bind(fnBody)};`);
   if (hydrateBody !== null) ctx.hoists.push(`const ${tplVar}_hydrate = ${bind(hydrateBody)};`);
 
@@ -923,7 +923,7 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   // track it alongside the html`` replacements.
   const runtimeImport = ssr
     ? `import { ssrHelpers as ${prefix}_h__ } from '@purityjs/core/compiler';\nimport '@purityjs/ssr';\n`
-    : `import { renderCompiledTemplate as ${prefix}_renderCompiled__, flattenValue as ${prefix}_fl__, valueText as ${prefix}_tx__ } from '@purityjs/core/compiler';\n`;
+    : `import { renderCompiledTemplate as ${prefix}_renderCompiled__, flattenValue as ${prefix}_fl__, swapSlot as ${prefix}_sw__ } from '@purityjs/core/compiler';\n`;
   /* v8 ignore next -- edits.length > 0 implies at least one hoist was pushed */
   const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
   const insertAt = findLastImportEnd(source);

@@ -5,7 +5,7 @@ import {
   enterHydration,
   exitHydration,
   flattenValue,
-  valueText,
+  swapSlot,
   inflateDeferred,
   isDeferred,
   renderCompiledTemplate,
@@ -65,13 +65,13 @@ describe('AOT output runs correctly under jsdom', () => {
     const fn = new Function(
       '__purity_renderCompiled__',
       '__purity_fl__',
-      '__purity_tx__',
+      '__purity_sw__',
       'document',
       'when',
       `${body}\nreturn make;`,
     );
     return {
-      make: fn(renderCompiledTemplate, flattenValue, valueText, globalThis.document, when),
+      make: fn(renderCompiledTemplate, flattenValue, swapSlot, globalThis.document, when),
     };
   }
 
@@ -323,7 +323,7 @@ describe('injected identifiers do not collide with user bindings', () => {
       '@purityjs/core/compiler': {
         renderCompiledTemplate,
         flattenValue,
-        valueText,
+        swapSlot,
         ssrHelpers,
       },
     };
@@ -339,6 +339,7 @@ describe('injected identifiers do not collide with user bindings', () => {
     '__purity_renderCompiled__',
     '__purity_fl__',
     '__purity_tx__',
+    '__purity_sw__',
     '__purity_tpl_0',
     '__purity_tpl_0_hydrate',
   ])('client build with a user %s', async (name) => {

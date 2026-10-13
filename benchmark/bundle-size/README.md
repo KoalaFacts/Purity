@@ -9,7 +9,8 @@ npm run check:bundle -- --verify
 
 The first command rebuilds core, SSR, and the Vite plugin, measures each
 published package entry against its [budget](./budgets.json), and builds five
-fixture apps with and without AOT, whose sizes are reported. The second
+fixture apps with and without AOT. Sizes are reported for all profiles; the
+ordinary controls and hydration AOT profiles also have size budgets. The second
 verifies all ten production builds in Chromium, Firefox, and WebKit. Every
 AOT page uses a Content Security Policy without `unsafe-eval`.
 Install engines with `npx playwright install chromium firefox webkit` if needed.
@@ -28,7 +29,8 @@ and `report.md` as workflow artifacts, including on budget or browser failures.
   own code. The Vite plugin and CLI are build-time Node tools and are not
   budgeted.
 - **Fixture apps (reported):** production ES2022, minified ESM JavaScript from
-  built package exports.
+  built package exports. Controls/hydration AOT enforce size budgets and
+  reject retained virtual-list spacer code.
 - Every emitted JavaScript chunk, including fixture application code.
 - Raw UTF-8 bytes, gzip at level 9, and Brotli at quality 11. Each file is
   compressed separately before adding its size, matching separate responses.
@@ -135,7 +137,8 @@ a promise that applications using each/match remove those dependencies.
 
 Budgets are per published package entry: gzip and Brotli must stay within the
 limit, which allows roughly 5% growth over the measurement and is rounded up to
-a 256-byte boundary. Fixture app sizes are not budgeted. Each fixture's direct
+a 256-byte boundary. The controls/hydration AOT fixtures also have size budgets; other fixture
+app sizes are reported only. Each fixture's direct
 `Function` call-site count stays enforced, because AOT output must keep
 working under a Content Security Policy without `unsafe-eval`. A failure exits
 nonzero and records the measured value and limit; it never updates budgets

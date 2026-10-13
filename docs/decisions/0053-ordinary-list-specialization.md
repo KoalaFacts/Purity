@@ -20,7 +20,7 @@ function. Spread arguments are not eligible.
 
 Analyze decoded AST identifiers. Any other occurrence of the imported name
 disqualifies the binding, including shadowing declarations, re-exports,
-property access, passing it elsewhere, or calls with dynamic options.
+property access, JSX tags, passing it elsewhere, or calls with dynamic options.
 Namespace, type-only, and attributed imports remain unchanged. Skip modules
 containing `eval` and all SSR transforms. False negatives are acceptable;
 an uncertain binding must retain the complete public implementation.

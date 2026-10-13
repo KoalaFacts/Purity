@@ -32,7 +32,7 @@ export function specializeOrdinaryLists(code: string, id: string): string | null
   let hasEval = false;
   const visit = (node: any, parent?: any): void => {
     if (!node || typeof node !== 'object' || node.type === 'ImportDeclaration') return;
-    if (node.type === 'Identifier') {
+    if (node.type === 'Identifier' || node.type === 'JSXIdentifier') {
       if (node.name === 'eval') hasEval = true;
       if (candidates.has(node.name)) {
         const args = parent?.arguments;

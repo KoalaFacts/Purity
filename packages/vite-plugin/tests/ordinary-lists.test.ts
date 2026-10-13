@@ -45,6 +45,15 @@ describe('ordinary list specialization', () => {
     ).toBeNull();
   });
 
+  it('keeps bindings passed through JSX unchanged', () => {
+    expect(
+      specializeOrdinaryLists(
+        "import { each as Rows } from '@purityjs/core'; Rows(items, render); const view = <Rows />;",
+        '/app/list.tsx',
+      ),
+    ).toBeNull();
+  });
+
   it('preserves namespace and type-only imports', () => {
     expect(
       specializeOrdinaryLists(

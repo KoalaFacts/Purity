@@ -87,6 +87,12 @@
     },
     "resource-aot": {
       "functionConstructorCalls": 0
+    },
+    "resource-runtime": {
+      "functionConstructorCalls": 1
+    },
+    "resource-aot": {
+      "functionConstructorCalls": 0
     }
   }
 }

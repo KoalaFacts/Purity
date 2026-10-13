@@ -26,6 +26,7 @@ const scenarios = [
   { name: 'controls', entry: 'controls.ts', templates: ['controls-view.ts'] },
   { name: 'form', entry: 'form.ts', templates: ['form.ts'] },
   { name: 'hydration', entry: 'hydration.ts', templates: ['controls-view.ts'] },
+  { name: 'resource', entry: 'resource.ts', templates: ['resource.ts'] },
 ];
 const outputDir = join(root, 'benchmark/dist/bundle-size');
 const measureOnly = process.argv.includes('--measure-only');

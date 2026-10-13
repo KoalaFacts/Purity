@@ -58,6 +58,7 @@ implementations from an application that uses them.
 
 The main entry has no JIT compiler dependency. Server control-flow rendering
 is registered when an SSR pass starts, so client controls do not retain the
-HTML string builders or streaming suspense implementation. Shared SSR
-coordination and server resource branches remain; this does not eliminate
-all server-related code from client bundles.
+HTML string builders or streaming suspense implementation. Server resource
+registration and cancellation are also installed at SSR entry, allowing
+client resources to discard those implementations. Shared SSR coordination
+remains; this does not eliminate all server-related code from client bundles.

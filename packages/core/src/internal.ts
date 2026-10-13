@@ -1,4 +1,4 @@
-export { eachSSR, listSSR, matchSSR, whenSSR } from './control.ts';
+export { eachSSR, listSSR, matchSSR, whenSSR } from './control/ssr.ts';
 export { _getRegisteredComponent, _renderComponentSSR } from './elements.ts';
 export {
   type SSRRenderContext,

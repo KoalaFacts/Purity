@@ -56,6 +56,8 @@ The measured counter, controls, form, and hydration applications provide
 separate tree-shaken evidence. Moving exports alone does not remove their
 implementations from an application that uses them.
 
-The main entry has no JIT compiler dependency. Shared SSR coordination and
-server branches in controls/resources still exist internally; this split
-does not claim to eliminate all server-related code from client bundles.
+The main entry has no JIT compiler dependency. Server control-flow rendering
+is registered when an SSR pass starts, so client controls do not retain the
+HTML string builders or streaming suspense implementation. Shared SSR
+coordination and server resource branches remain; this does not eliminate
+all server-related code from client bundles.

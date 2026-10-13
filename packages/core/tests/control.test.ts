@@ -2,15 +2,8 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
 import { mount, onDispose } from '../src/component.ts';
-import {
-  each,
-  eachSSR,
-  inflateDeferredEach,
-  list,
-  listSSR,
-  match,
-  type DeferredEach,
-} from '../src/control.ts';
+import { each, inflateDeferredEach, list, match, type DeferredEach } from '../src/control.ts';
+import { eachSSR, listSSR } from '../src/control/ssr.ts';
 import { state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));

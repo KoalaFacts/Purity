@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import { generate, generateSSR } from '../src/compiler/codegen.ts';
 import { parse } from '../src/compiler/parser.ts';
 import { markSSRHtml, rawEnd, ssrHelpers } from '../src/compiler/ssr-runtime.ts';
-import { eachSSR, matchSSR, whenSSR } from '../src/control.ts';
+import { eachSSR, matchSSR, whenSSR } from '../src/control/ssr.ts';
 import { each, hydrate, mount, state, watch, when } from '../src/index.ts';
 import { html } from '../src/compiler/jit.ts';
 import { tick } from './_helpers.ts';

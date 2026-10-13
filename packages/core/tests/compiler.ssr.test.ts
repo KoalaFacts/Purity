@@ -11,7 +11,7 @@ import {
   valueToAttr,
   valueToHtml,
 } from '../src/compiler/ssr-runtime.ts';
-import { eachSSR, listSSR, matchSSR, whenSSR } from '../src/control.ts';
+import { eachSSR, listSSR, matchSSR, whenSSR } from '../src/control/ssr.ts';
 
 type SSRFactory = (
   values: unknown[],

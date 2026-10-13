@@ -11,6 +11,9 @@
   client code when imported from `@purityjs/core/actions`.
 - Preserve the previous all-features bundle limits and enforce smaller limits
   for individual entries. Keep the root and AOT runtime free of JIT code.
+- Register server control-flow rendering when an SSR pass starts, removing
+  HTML string builders and streaming suspense handling from client controls.
+  Preserve marker grammar, duplicate-key diagnostics, and cancellation behavior.
 
 ## 0.3.4 — 2026-10-05
 

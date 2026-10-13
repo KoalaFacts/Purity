@@ -12,6 +12,8 @@
 //                       within the current pass; the index into resolvedData
 // ---------------------------------------------------------------------------
 
+import { setSSRControls } from './control/dispatch.ts';
+import { ssrControlFlow } from './control/ssr.ts';
 import { disposeScope } from './signals.ts';
 import { popContext, pushContext, type Scope } from './scope.ts';
 
@@ -178,6 +180,9 @@ const scopeStack: Scope[] = [];
 
 /** @internal */
 export function pushSSRRenderContext(ctx: SSRRenderContext): void {
+  // Keep registration inside the server entry path. Module-load registration
+  // would retain the server renderers in every client that reads the context.
+  setSSRControls(ssrControlFlow);
   contextStack.push(ctx);
   const scope: Scope = { disposers: null };
   scopeStack.push(scope);

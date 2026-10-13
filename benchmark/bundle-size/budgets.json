@@ -1,8 +1,8 @@
 {
   "packages": {
     "core": {
-      "gzipBytes": 20480,
-      "brotliBytes": 18432
+      "gzipBytes": 17920,
+      "brotliBytes": 16128
     },
     "core-compiler": {
       "gzipBytes": 8704,

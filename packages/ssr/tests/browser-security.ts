@@ -155,7 +155,7 @@ try {
 
   // Both package formats must reject structural impersonation and retain their
   // own explicitly trusted wrappers. Trust does not come from serialization.
-  const cjs = createRequire(import.meta.url)('@purityjs/core/compiler') as {
+  const cjs = createRequire(import.meta.url)('@purityjs/core/internal') as {
     isSSRHtml: typeof isSSRHtml;
     markSSRHtml: typeof markSSRHtml;
     valueToHtml: typeof valueToHtml;

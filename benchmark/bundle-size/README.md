@@ -8,9 +8,9 @@ npm run check:bundle -- --verify
 ```
 
 The first command rebuilds core, SSR, and the Vite plugin, measures each
-published package entry against its [budget](./budgets.json), and builds four
+published package entry against its [budget](./budgets.json), and builds five
 fixture apps with and without AOT, whose sizes are reported. The second
-verifies all eight production builds in Chromium, Firefox, and WebKit. Every
+verifies all ten production builds in Chromium, Firefox, and WebKit. Every
 AOT page uses a Content Security Policy without `unsafe-eval`.
 Install engines with `npx playwright install chromium firefox webkit` if needed.
 
@@ -57,6 +57,7 @@ Machine names and absolute filesystem paths are excluded.
 | `controls`  | [Shared view](./controls-view.ts), keyed each, match, nested templates, mounting.   | Reverse keeps row identity; labels update; a toggled-back branch renders fresh.    |
 | `form`      | [Enhanced form](./form.ts), two-way input, enhanceForms, response/error handling.   | Empty submission focuses the error field; retry succeeds, keeps the input and URL. |
 | `hydration` | [Hydration entry](./hydration.ts), the same controls view and server-rendered HTML. | Preserve SSR row identity, then perform the same controls interactions.            |
+| `resource`  | [Resource entry](./resource.ts), eager/lazy asynchronous loading and mounting.      | Initial load resolves, refresh replaces data, and a button triggers the lazy load. |
 
 Each profile's runtime/AOT pair uses the same entry and template source.
 Hydration HTML is generated from that shared view by an actual SSR build

@@ -14,6 +14,9 @@
 - Register server control-flow rendering when an SSR pass starts, removing
   HTML string builders and streaming suspense handling from client controls.
   Preserve marker grammar, duplicate-key diagnostics, and cancellation behavior.
+- Register server resource handling at SSR entry so client resources no longer
+  retain multipass fetching and boundary cancellation implementations. Preserve
+  retry, polling, hydration caches, and eager/lazy resource behavior.
 
 ## 0.3.4 — 2026-10-05
 

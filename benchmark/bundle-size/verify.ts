@@ -209,6 +209,13 @@ export async function verifyProfiles(
                 await page.getByRole('button', { name: `Count: ${i}`, exact: true }).click();
                 await page.getByRole('button', { name: `Count: ${i + 1}`, exact: true }).waitFor();
               }
+            } else if (profile.startsWith('resource-')) {
+              await page.getByText('Load 1', { exact: true }).waitFor();
+              await page.getByText('Not saved', { exact: true }).waitFor();
+              await page.getByRole('button', { name: 'Reload', exact: true }).click();
+              await page.getByText('Load 2', { exact: true }).waitFor();
+              await page.getByRole('button', { name: 'Save', exact: true }).click();
+              await page.getByText('Saved Ada', { exact: true }).waitFor();
             } else if (profile.startsWith('form-')) {
               await page.getByRole('button', { name: 'Send greeting', exact: true }).click();
               await page.getByText('Name is required.', { exact: true }).waitFor();

@@ -1,8 +1,8 @@
 {
   "packages": {
     "core": {
-      "gzipBytes": 17920,
-      "brotliBytes": 16128
+      "gzipBytes": 16896,
+      "brotliBytes": 15360
     },
     "core-compiler": {
       "gzipBytes": 8704,
@@ -29,8 +29,8 @@
       "brotliBytes": 8192
     },
     "core-router": {
-      "gzipBytes": 13312,
-      "brotliBytes": 12032
+      "gzipBytes": 12544,
+      "brotliBytes": 11264
     },
     "core-actions": {
       "gzipBytes": 5888,
@@ -41,8 +41,8 @@
       "brotliBytes": 7424
     },
     "core-query": {
-      "gzipBytes": 5376,
-      "brotliBytes": 4864
+      "gzipBytes": 4608,
+      "brotliBytes": 4224
     },
     "core-internal": {
       "gzipBytes": 4864,
@@ -72,6 +72,12 @@
       "functionConstructorCalls": 1
     },
     "hydration-aot": {
+      "functionConstructorCalls": 0
+    },
+    "resource-runtime": {
+      "functionConstructorCalls": 1
+    },
+    "resource-aot": {
       "functionConstructorCalls": 0
     }
   }

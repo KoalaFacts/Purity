@@ -20,6 +20,7 @@ export default defineConfig({
         'actions/index': 'src/actions/index.ts',
         'islands/index': 'src/islands/index.ts',
         'query/index': 'src/query/index.ts',
+        'list-runtime/index': 'src/control/list-runtime.ts',
         index: 'src/index.ts',
       },
       formats: ['es', 'cjs'],

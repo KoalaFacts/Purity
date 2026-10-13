@@ -1399,7 +1399,8 @@ export function each<T>(
   // returned handle and routes it through inflateDeferredEach, which adopts
   // the SSR-rendered rows in place rather than rebuilding the slot. See
   // ADR 0005 / handoff item "Per-row reconciliation in each()".
-  if (isHydrating()) return makeDeferredEach(listAccessor, mapFn, keyFn, eachOptions);
+  if (isHydrating())
+    return makeDeferredEach(listAccessor, mapFn, keyFn, eachOptions, hydrateEachWindow);
 
   // SSR-context dispatch (ADR 0023). Inside a server render pass, return
   // SSRHtml string output. Same per-row marker grammar as eachSSR, so
@@ -1408,6 +1409,25 @@ export function each<T>(
 
   if (eachOptions?.virtual) return eachWindow(listAccessor, mapFn, keyFn, getCurrentContext());
 
+  return renderEachDOM(listAccessor, mapFn, keyFn);
+}
+
+/** @internal — compiler target for calls proven to have no virtual options. */
+export function ordinaryEach<T>(
+  listAccessor: (() => T[]) | T[],
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  keyFn?: (item: T, index: number) => unknown,
+): DocumentFragment | DeferredEach<T> | SSRHtml {
+  if (isHydrating()) return makeDeferredEach(listAccessor, mapFn, keyFn);
+  if (getSSRRenderContext() !== null) return ssrControls.each(listAccessor, mapFn, keyFn);
+  return renderEachDOM(listAccessor, mapFn, keyFn);
+}
+
+function renderEachDOM<T>(
+  listAccessor: (() => T[]) | T[],
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  keyFn?: (item: T, index: number) => unknown,
+): DocumentFragment {
   const endMarker = document.createComment('e');
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
@@ -1447,6 +1467,7 @@ export interface DeferredEach<T = unknown> {
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string;
   keyFn?: (item: T, index: number) => unknown;
   options?: EachOptions;
+  hydrateWindow?: typeof hydrateEachWindow;
 }
 
 function makeDeferredEach<T>(
@@ -1454,11 +1475,12 @@ function makeDeferredEach<T>(
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
   keyFn?: (item: T, index: number) => unknown,
   options?: EachOptions,
+  hydrateWindow?: typeof hydrateEachWindow,
 ): DeferredEach<T> {
   // Register only when hydration captures an each() handle. A module-level
   // registration makes the compiler retain list adoption in every application.
   setInflateDeferredEach(inflateDeferredEach as (d: unknown, c: Node[], m: Node) => void);
-  return { __purity_deferred_each__: true, listAccessor, mapFn, keyFn, options };
+  return { __purity_deferred_each__: true, listAccessor, mapFn, keyFn, options, hydrateWindow };
 }
 
 function decodeRowKey(s: string): string {
@@ -1560,7 +1582,7 @@ export function inflateDeferredEach<T>(
   /* v8 ignore next -- defensive; close marker always has a parent here */
   if (!parent) return;
 
-  const { listAccessor, mapFn, keyFn, options } = deferred;
+  const { listAccessor, mapFn, keyFn, options, hydrateWindow } = deferred;
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
@@ -1688,30 +1710,8 @@ export function inflateDeferredEach<T>(
     }
   }
 
-  let spacers: EachWindowSpacers | undefined;
   if (options?.virtual) {
-    const doc = parent.ownerDocument ?? document;
-    const top = createEachSpacer(doc, parent);
-    const bottom = createEachSpacer(doc, parent);
-    const firstNode =
-      eachState.prevKeys.length > 0
-        ? eachState.keyToEntry.get(eachState.prevKeys[0])?.nodes[0]
-        : undefined;
-    parent.insertBefore(top, firstNode?.parentNode === parent ? firstNode : endMarker);
-    parent.insertBefore(bottom, endMarker);
-    spacers = { top, bottom };
-  }
-
-  if (spacers) {
-    const dispose = createEachWindowController(
-      ownerCtx,
-      eachState,
-      listAccessor,
-      mapFn,
-      getKey,
-      spacers,
-    );
-    registerEachAutoDispose(ownerCtx, dispose, eachState);
+    hydrateWindow!(ownerCtx, eachState, listAccessor, mapFn, getKey, parent, endMarker);
   } else {
     const ops = eachRowOps(mapFn);
     const dispose = watch(() => {
@@ -2223,4 +2223,34 @@ export function suspense<T>(
   options?: SuspenseOptions,
 ): T | SSRHtml {
   return getSSRRenderContext() ? ssrControls.suspense(view, fallback, options) : view();
+}
+
+function hydrateEachWindow<T>(
+  ownerCtx: Scope | null,
+  eachState: EachState<T>,
+  listAccessor: (() => T[]) | T[],
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  getKey: (item: T, index: number) => unknown,
+  parent: Node,
+  endMarker: Node,
+): void {
+  const doc = parent.ownerDocument ?? document;
+  const top = createEachSpacer(doc, parent);
+  const bottom = createEachSpacer(doc, parent);
+  const firstNode =
+    eachState.prevKeys.length > 0
+      ? eachState.keyToEntry.get(eachState.prevKeys[0])?.nodes[0]
+      : undefined;
+  parent.insertBefore(top, firstNode?.parentNode === parent ? firstNode : endMarker);
+  parent.insertBefore(bottom, endMarker);
+  const spacers = { top, bottom };
+  const dispose = createEachWindowController(
+    ownerCtx,
+    eachState,
+    listAccessor,
+    mapFn,
+    getKey,
+    spacers,
+  );
+  registerEachAutoDispose(ownerCtx, dispose, eachState);
 }

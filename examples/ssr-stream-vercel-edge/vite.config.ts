@@ -46,6 +46,10 @@ export default defineConfig({
         import.meta.dirname,
         '../../packages/core/src/islands/index.ts',
       ),
+      '@purityjs/core/list-runtime': resolve(
+        import.meta.dirname,
+        '../../packages/core/src/control/list-runtime.ts',
+      ),
       '@purityjs/core/query': resolve(
         import.meta.dirname,
         '../../packages/core/src/query/index.ts',

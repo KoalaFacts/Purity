@@ -22,6 +22,12 @@ Types follow their feature's entry point. The main reactive primitives remain
 at the root; `/signals` contains browser integrations, not another reactive
 engine. The compiler entry no longer re-exports runtime helpers.
 
+The plugin also selects `@purityjs/core/list-runtime` for direct ordinary
+`each` calls when it can prove that the binding never receives virtual options.
+This is a generated-code entry; continue importing `each` from the root.
+`each(..., { virtual: true })`, dynamic options, and uncertain bindings retain
+the full implementation. No application API migration is required.
+
 ```ts
 import { mount, state } from '@purityjs/core';
 import { html } from '@purityjs/core/jit';

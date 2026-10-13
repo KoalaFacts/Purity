@@ -17,6 +17,9 @@
 - Register server resource handling at SSR entry so client resources no longer
   retain multipass fetching and boundary cancellation implementations. Preserve
   retry, polling, hydration caches, and eager/lazy resource behavior.
+- Compile proven ordinary `each` calls to a smaller list runtime without
+  virtual scrolling code. Keep `each(..., { virtual: true })` and dynamic
+  options unchanged; upgrade core and the Vite plugin together.
 
 ## 0.3.4 — 2026-10-05
 

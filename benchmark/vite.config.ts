@@ -68,6 +68,10 @@ export default defineConfig({
         replacement: resolve(import.meta.dirname, '../packages/core/src/islands/index.ts'),
       },
       {
+        find: /^@purityjs\/core\/list-runtime$/,
+        replacement: resolve(import.meta.dirname, '../packages/core/src/control/list-runtime.ts'),
+      },
+      {
         find: /^@purityjs\/core\/query$/,
         replacement: resolve(import.meta.dirname, '../packages/core/src/query/index.ts'),
       },

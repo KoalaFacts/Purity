@@ -86,6 +86,12 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./list-runtime": {
+      "development": "./src/control/list-runtime.ts",
+      "types": "./dist/control/list-runtime.d.ts",
+      "import": "./dist/list-runtime/index.js",
+      "require": "./dist/list-runtime/index.cjs"
     }
   },
   "publishConfig": {

@@ -23,6 +23,10 @@ export default defineConfig({
       '@purityjs/core/router': resolve(import.meta.dirname, '../core/src/router/index.ts'),
       '@purityjs/core/actions': resolve(import.meta.dirname, '../core/src/actions/index.ts'),
       '@purityjs/core/islands': resolve(import.meta.dirname, '../core/src/islands/index.ts'),
+      '@purityjs/core/list-runtime': resolve(
+        import.meta.dirname,
+        '../core/src/control/list-runtime.ts',
+      ),
       '@purityjs/core/query': resolve(import.meta.dirname, '../core/src/query/index.ts'),
       '@purityjs/core': resolve(import.meta.dirname, '../core/src/index.ts'),
     },

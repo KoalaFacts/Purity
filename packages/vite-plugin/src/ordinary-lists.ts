@@ -1,5 +1,18 @@
 import { parseSync } from 'oxc-parser';
 
+/** Preserve custom core resolution unless the generated entry is explicitly mapped. */
+export function supportsOrdinaryListRuntime(
+  aliases: readonly { find: string | RegExp }[],
+): boolean {
+  const matches = (find: string | RegExp, id: string): boolean =>
+    typeof find === 'string'
+      ? id === find || id.startsWith(find + '/')
+      : new RegExp(find.source, find.flags).test(id);
+  const root = aliases.find((alias) => matches(alias.find, '@purityjs/core'));
+  const runtime = aliases.find((alias) => matches(alias.find, '@purityjs/core/list-runtime'));
+  return root === undefined || (runtime !== undefined && !matches(runtime.find, '@purityjs/core'));
+}
+
 /** Select the ordinary list runtime only when every use is an unambiguous direct call. */
 export function specializeOrdinaryLists(code: string, id: string): string | null {
   if (!code.includes('@purityjs/core') || !code.includes('each')) return null;

@@ -27,7 +27,7 @@ import {
   generateRouteManifestTypes,
 } from './routes.ts';
 import { stripServerActionBodies } from './server-action-strip.ts';
-import { specializeOrdinaryLists } from './ordinary-lists.ts';
+import { specializeOrdinaryLists, supportsOrdinaryListRuntime } from './ordinary-lists.ts';
 
 const DEVTOOLS_ID = 'virtual:purity-devtools';
 const RESOLVED_DEVTOOLS_ID = '\0' + DEVTOOLS_ID;
@@ -250,6 +250,7 @@ export function purity(options?: PurityPluginOptions) {
   let isPreview = false;
   let devtoolsBase = '/';
   let serverBuild = false;
+  let ordinaryListRuntime = true;
 
   const routesOpts = normaliseRoutesOption(options?.routes);
   // Resolved at configResolved time once Vite tells us the project root.
@@ -273,6 +274,7 @@ export function purity(options?: PurityPluginOptions) {
         root: string;
         command?: string;
         base?: string;
+        resolve?: { alias?: readonly { find: string | RegExp }[] };
         build?: {
           ssr?: unknown;
           assetsInlineLimit?: number | ((file: string, content: Buffer) => boolean | undefined);
@@ -280,6 +282,7 @@ export function purity(options?: PurityPluginOptions) {
       },
     ) {
       serverBuild = !!config.build?.ssr;
+      ordinaryListRuntime = supportsOrdinaryListRuntime(config.resolve?.alias ?? []);
       if (stripServerModules && !serverBuild && config.build) {
         const limit = config.build.assetsInlineLimit;
         config.build.assetsInlineLimit = (file, content) => {
@@ -450,7 +453,9 @@ export function purity(options?: PurityPluginOptions) {
       // do, in which case we fall through to the html`` template pass.
       let workingCode = code;
       const ordinaryLists =
-        transformOpts?.ssr === true ? null : specializeOrdinaryLists(workingCode, id);
+        transformOpts?.ssr === true || !ordinaryListRuntime
+          ? null
+          : specializeOrdinaryLists(workingCode, id);
       if (ordinaryLists !== null) workingCode = ordinaryLists;
       const specializedLists = ordinaryLists !== null;
       let rewritten = specializedLists;

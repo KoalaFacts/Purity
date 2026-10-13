@@ -25,6 +25,11 @@ Namespace, type-only, and attributed imports remain unchanged. Skip modules
 containing `eval` and all SSR transforms. False negatives are acceptable;
 an uncertain binding must retain the complete public implementation.
 
+Respect existing root aliases. When an alias overrides `@purityjs/core`, skip
+specialization unless an explicit list-runtime alias wins resolution before
+the root alias. This also avoids mixing an aliased source reactive graph with
+a built runtime entry. Existing projects do not need to change their aliases.
+
 The selected runtime shares keyed reconciliation, row ownership, duplicate-key
 handling, SSR dispatch, and hydration adoption with public `each`. It cannot
 reach virtual windowing. Public hydration handles carry their virtual row

@@ -120,4 +120,31 @@ describe('vite build pipeline', () => {
     const hasMap = map !== undefined || (jsChunk && jsChunk.map);
     expect(hasMap).toBe(true);
   }, 30000);
+
+  it('builds ordinary lists with an existing root-only string alias', async () => {
+    writeFileSync(
+      join(dir, 'core.ts'),
+      'export function each(items, render) { return items.map(render); }',
+    );
+    writeFileSync(
+      join(dir, 'entry.ts'),
+      "import { each } from '@purityjs/core'; export const rows = each([1, 2], item => item);",
+    );
+    const result = await build({
+      root: dir,
+      configFile: false,
+      logLevel: 'error',
+      resolve: { alias: { '@purityjs/core': join(dir, 'core.ts') } },
+      plugins: [purity()],
+      build: {
+        write: false,
+        minify: false,
+        lib: { entry: join(dir, 'entry.ts'), formats: ['es'], fileName: 'out' },
+      },
+    });
+    const output = (Array.isArray(result) ? result[0] : result).output;
+    const chunk = output.find((item) => item.type === 'chunk');
+    expect(chunk?.code).toContain('.map(');
+    expect(chunk?.code).not.toContain('@purityjs/core/list-runtime');
+  }, 30000);
 });

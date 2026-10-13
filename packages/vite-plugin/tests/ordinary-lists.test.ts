@@ -77,4 +77,28 @@ describe('ordinary list specialization', () => {
     expect(client?.map.sourcesContent).toEqual([source]);
     expect(plugin.transform(source, '/app/list.ts', { ssr: true })).toBeNull();
   });
+
+  it('preserves root aliases unless a dedicated runtime alias wins resolution', () => {
+    const source = "import { each } from '@purityjs/core'; each(items, render);";
+    const root = { find: '@purityjs/core', replacement: '/local/core/src/index.ts' };
+    const runtime = {
+      find: '@purityjs/core/list-runtime',
+      replacement: '/local/core/src/control/list-runtime.ts',
+    };
+    const cases = [
+      { alias: [], enabled: true },
+      { alias: [root], enabled: false },
+      { alias: [{ ...root, find: /^@purityjs\/core$/ }], enabled: false },
+      { alias: [runtime, root], enabled: true },
+      { alias: [root, runtime], enabled: false },
+      { alias: [{ ...runtime, find: /^@purityjs\/core\/list-runtime$/g }, root], enabled: true },
+    ];
+    for (const { alias, enabled } of cases) {
+      const plugin = purity();
+      plugin.configResolved({ root: '/app', resolve: { alias } });
+      const result = plugin.transform(source, '/app/list.ts');
+      if (enabled) expect(result?.code).toContain('@purityjs/core/list-runtime');
+      else expect(result).toBeNull();
+    }
+  });
 });

@@ -8,13 +8,13 @@
 // `orientationchange` fallback and finally a `resize` fallback.
 // ---------------------------------------------------------------------------
 
+import { bindListeners } from './listen.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
 let singleton: ComputedAccessor<'portrait' | 'landscape'> | null = null;
-// Track which target the listener landed on so reset can remove it.
-let boundRefresh: (() => void) | null = null;
-let boundTarget: 'orientation' | 'orientationchange' | 'resize' | null = null;
+// Detach for whichever tier's listener bound; null when none bound.
+let unbind: (() => void) | null = null;
 // Once the modern Screen Orientation API has misbehaved (addEventListener
 // threw, type getter threw, etc.) we permanently distrust it for this
 // session — otherwise the type getter would still drive derivation while
@@ -66,78 +66,26 @@ export function screenOrientationSignal(): ComputedAccessor<'portrait' | 'landsc
   const refresh = (): void => {
     inner(deriveOrientation());
   };
-  // Publish the singleton + handler ref BEFORE attaching listeners, so a
-  // throw from addEventListener cannot leave the module in a half-bound
-  // state (one listener attached, refs lost ⇒ leak on reset).
-  boundRefresh = refresh;
   singleton = compute(() => inner());
 
-  // Tier 1: modern Screen Orientation API.
+  // Tier 1: modern Screen Orientation API. A failed bind means the API is
+  // broken on this engine: distrust the type getter so derivation uses the
+  // viewport fallback that the next tiers will drive, and re-seed the state.
   if (typeof screen !== 'undefined' && typeof screen.orientation?.addEventListener === 'function') {
-    try {
-      screen.orientation.addEventListener('change', refresh);
-      boundTarget = 'orientation';
-      return singleton;
-    } catch (err) {
-      console.error(
-        '[purity] screenOrientationSignal: screen.orientation.addEventListener failed; falling back:',
-        err,
-      );
-      // Best-effort detach in case the listener half-registered.
-      try {
-        screen.orientation.removeEventListener('change', refresh);
-      } catch {
-        /* noop */
-      }
-      // The modern API is broken on this engine — make derivation use the
-      // viewport-dimension fallback so fallback events actually move the
-      // value. Refresh the seeded state too: the initial read above may
-      // have used the (still-trusted) type getter.
+    unbind = bindListeners([[screen.orientation, 'change', refresh]], 'screenOrientationSignal');
+    if (!unbind) {
       modernApiDistrusted = true;
       inner(deriveOrientation());
     }
   }
-
   // Tier 2: legacy `orientationchange` window event (older iOS Safari).
-  if (typeof window.addEventListener === 'function' && 'onorientationchange' in window) {
-    try {
-      window.addEventListener('orientationchange', refresh);
-      boundTarget = 'orientationchange';
-      return singleton;
-    } catch (err) {
-      console.error(
-        '[purity] screenOrientationSignal: window.addEventListener("orientationchange") failed; falling back to resize:',
-        err,
-      );
-      try {
-        window.removeEventListener('orientationchange', refresh);
-      } catch {
-        /* noop */
-      }
-    }
+  if (!unbind && typeof window.addEventListener === 'function' && 'onorientationchange' in window) {
+    unbind = bindListeners([[window, 'orientationchange', refresh]], 'screenOrientationSignal');
   }
-
-  // Tier 3: resize fallback.
-  if (typeof window.addEventListener === 'function') {
-    try {
-      window.addEventListener('resize', refresh);
-      boundTarget = 'resize';
-      return singleton;
-    } catch (err) {
-      console.error(
-        '[purity] screenOrientationSignal: window.addEventListener("resize") failed; accessor will be frozen at initial value:',
-        err,
-      );
-      try {
-        window.removeEventListener('resize', refresh);
-      } catch {
-        /* noop */
-      }
-    }
+  // Tier 3: resize fallback. If it also fails the accessor stays live but frozen.
+  if (!unbind && typeof window.addEventListener === 'function') {
+    unbind = bindListeners([[window, 'resize', refresh]], 'screenOrientationSignal');
   }
-
-  // No usable listener target — keep the accessor live but frozen.
-  boundTarget = null;
   return singleton;
 }
 
@@ -145,21 +93,8 @@ export function screenOrientationSignal(): ComputedAccessor<'portrait' | 'landsc
  * orientation / orientationchange / resize listener so subsequent test
  * runs start clean. */
 export function _resetScreenOrientationSignal(): void {
-  if (boundRefresh) {
-    try {
-      if (boundTarget === 'orientation' && typeof screen !== 'undefined') {
-        screen.orientation?.removeEventListener('change', boundRefresh);
-      } else if (boundTarget === 'orientationchange' && typeof window !== 'undefined') {
-        window.removeEventListener('orientationchange', boundRefresh);
-      } else if (boundTarget === 'resize' && typeof window !== 'undefined') {
-        window.removeEventListener('resize', boundRefresh);
-      }
-    } catch (err) {
-      console.error('[purity] screenOrientationSignal: detach during reset failed:', err);
-    }
-  }
-  boundRefresh = null;
-  boundTarget = null;
+  unbind?.();
+  unbind = null;
   singleton = null;
   modernApiDistrusted = false;
 }

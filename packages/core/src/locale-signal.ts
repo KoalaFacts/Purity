@@ -6,11 +6,12 @@
 //         on the `languagechange` window event.
 // ---------------------------------------------------------------------------
 
+import { bindListeners } from './listen.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
 let singleton: ComputedAccessor<string> | null = null;
-let onLanguageChange: (() => void) | null = null;
+let unbind: (() => void) | null = null;
 
 // Coerce — some environments expose `navigator.language` as a non-string
 // (undefined, null, an array, etc.). Always return a usable string.
@@ -38,38 +39,16 @@ export function localeSignal(): ComputedAccessor<string> {
   }
   if (singleton) return singleton;
   const inner = state(readLanguage());
-  const handler = (): void => {
-    inner(readLanguage());
-  };
-  // Publish the singleton + handler ref BEFORE attaching the listener, so a
-  // throw from addEventListener cannot leave the module in a half-bound
-  // state (listener attached, ref lost ⇒ leak on _resetLocaleSignal).
-  onLanguageChange = handler;
+  unbind = bindListeners([[window, 'languagechange', () => inner(readLanguage())]], 'localeSignal');
+  if (!unbind) return compute(() => readLanguage());
   singleton = compute(() => inner());
-  try {
-    window.addEventListener('languagechange', handler);
-  } catch (err) {
-    // Roll back so a partial bind doesn't leak a listener or pin a stale
-    // singleton that can never receive updates.
-    try {
-      window.removeEventListener('languagechange', handler);
-    } catch {
-      /* noop */
-    }
-    onLanguageChange = null;
-    singleton = null;
-    console.error('[purity] localeSignal: failed to register listener', err);
-    return compute(() => readLanguage());
-  }
   return singleton;
 }
 
 /** @internal — test helper. Clears the cached singleton and removes the
  * window listener so subsequent test runs start from a clean state. */
 export function _resetLocaleSignal(): void {
-  if (onLanguageChange && typeof window !== 'undefined') {
-    window.removeEventListener('languagechange', onLanguageChange);
-  }
-  onLanguageChange = null;
+  unbind?.();
+  unbind = null;
   singleton = null;
 }

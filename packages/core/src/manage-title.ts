@@ -27,7 +27,7 @@ import { getSSRRenderContext } from './ssr-context.ts';
  *
  * @example
  * ```ts
- * import { currentPath, manageTitle, loaderData } from '@purityjs/core';
+ * import { currentPath, manageTitle, loaderData } from '@purityjs/core/router';
  *
  * function App() {
  *   manageTitle(() => {

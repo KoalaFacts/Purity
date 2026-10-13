@@ -6,7 +6,7 @@
 // Order matters: the array index must match SSR allocation order
 // (Counter first in app.ts → index 0; Like second → index 1).
 
-import { mountIslands } from '@purityjs/core';
+import { mountIslands } from '@purityjs/core/islands';
 
 mountIslands(
   [

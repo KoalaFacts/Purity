@@ -1,4 +1,5 @@
-import { each, html, match, state } from '@purityjs/core';
+import { each, match, state } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 export function controlsView() {
   const rows = state([

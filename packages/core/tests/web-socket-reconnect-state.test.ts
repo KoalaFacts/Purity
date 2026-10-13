@@ -4,7 +4,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { _resetBfcacheRestoreSignal } from '../src/bfcache-restore-signal.ts';
-import { mount, webSocketSignal } from '../src/index.ts';
+import { mount } from '../src/index.ts';
+import { webSocketSignal } from '../src/browser-signals/index.ts';
 import { _resetPageVisibilitySignal } from '../src/page-visibility-signal.ts';
 
 type ReconnectPolicy = 'on-visible' | 'always';

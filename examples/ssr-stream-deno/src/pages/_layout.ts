@@ -1,4 +1,4 @@
-import { html } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 export default function RootLayout(children: () => unknown): unknown {
   return html`

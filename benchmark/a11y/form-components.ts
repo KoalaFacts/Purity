@@ -1,4 +1,5 @@
-import { component, html } from '@purityjs/core';
+import { component } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 component(
   'p-named-field',

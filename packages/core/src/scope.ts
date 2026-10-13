@@ -1,0 +1,119 @@
+// ---------------------------------------------------------------------------
+// ComponentContext — lean
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Scope — minimal contract used by the dispose-registration path.
+//
+// signals.ts and styles.ts only ever reach into a context to push a cleanup
+// onto `disposers`. each() entries don't need the full ComponentContext
+// shape (mount/destroy/error handlers, parent linking, etc.) — just a
+// `disposers` slot. By typing the context stack as Scope rather than the
+// full class, we let runEntryMapFn push a 1-field plain object per row
+// instead of allocating a 10-field class instance for the same purpose.
+// ---------------------------------------------------------------------------
+
+export interface Scope {
+  disposers: (() => void)[] | null;
+  /** Lean scopes that run after their component rendered (an effect re-running
+   *  in a later flush) record the component they belong to. */
+  component?: ComponentContext | null;
+}
+
+export class ComponentContext implements Scope {
+  mounted: (() => void)[] | null = null;
+  destroyed: (() => void)[] | null = null;
+  errorHandlers: ((err: unknown) => void)[] | null = null;
+  disposers: (() => void)[] | null = null;
+  nodes: Node[] | null = null;
+  parent: ComponentContext | null = null;
+  children: ComponentContext[] | null = null;
+  _isMounted = false;
+  _isDestroyed = false;
+  _slotContent: unknown = undefined;
+  // Set by PurityElement.connectedCallback when the component is a Custom
+  // Element. null for plain mount() roots (no host element to attach to).
+  _internals: ElementInternals | null = null;
+  // Ref counts per state name. bindComponentState() composes — many sources
+  // can drive the same state and the host only flips when count crosses 0↔1.
+  _stateRefs: Map<string, number> | null = null;
+  // Form-associated lifecycle callback arrays. Populated by the onForm*
+  // hooks; drained by PurityElement's matching callbacks. All nullable so
+  // non-form-associated components pay zero allocation cost.
+  _formAssociated: ((form: HTMLFormElement | null) => void)[] | null = null;
+  _formDisabled: ((disabled: boolean) => void)[] | null = null;
+  _formReset: (() => void)[] | null = null;
+  _formStateRestore:
+    | ((state: string | File | FormData | null, mode: 'restore' | 'autocomplete') => void)[]
+    | null = null;
+
+  _handleError(err: unknown): void {
+    // Scoped onError removal can leave an empty array; treat it as no handler.
+    if (this.errorHandlers?.length) {
+      for (let i = 0; i < this.errorHandlers.length; i++) {
+        try {
+          this.errorHandlers[i](err);
+        } catch (e) {
+          console.error('[Purity] Error in onError handler:', e);
+        }
+      }
+    } else if (this.parent) {
+      this.parent._handleError(err);
+    } else {
+      throw err;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Context stack
+// ---------------------------------------------------------------------------
+
+const contextStack: Scope[] = [];
+
+export function getCurrentContext(): Scope | null {
+  return contextStack[contextStack.length - 1] || null;
+}
+
+/**
+ * Nearest enclosing component render context. Lean scopes pushed above it
+ * (each() rows, match() branches, running effects) own disposal but must not
+ * hide the component from component-only APIs (lifecycle hooks, css(),
+ * internals, custom states). @internal
+ */
+export function getCurrentComponent(): ComponentContext | null {
+  for (let i = contextStack.length - 1; i >= 0; i--) {
+    const ctx = contextStack[i];
+    if (ctx instanceof ComponentContext) return ctx;
+    if (ctx.component) return ctx.component;
+  }
+  return null;
+}
+
+/**
+ * Attach a new child context to the current owner. A component owner tracks it
+ * as a child (and is its error parent). A lean scope (row, branch, effect)
+ * disposes it, and the nearest component becomes its error parent.
+ * @internal
+ */
+export function attachToOwner(
+  ctx: ComponentContext,
+  unmount: (ctx: ComponentContext) => void,
+): void {
+  const owner = getCurrentContext();
+  if (owner instanceof ComponentContext) {
+    ctx.parent = owner;
+    (owner.children ??= []).push(ctx);
+  } else if (owner) {
+    ctx.parent = getCurrentComponent();
+    (owner.disposers ??= []).push(() => unmount(ctx));
+  }
+}
+
+export function pushContext(ctx: Scope): void {
+  contextStack.push(ctx);
+}
+
+export function popContext(): Scope | undefined {
+  return contextStack.pop();
+}

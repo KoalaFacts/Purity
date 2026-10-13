@@ -87,7 +87,7 @@ inflates against its slot's subtree. See ADR
 [0005](../../docs/decisions/0005-non-lossy-hydration.md).
 
 ```ts
-import { enableHydrationWarnings, hydrate } from '@purityjs/core';
+import { enableHydrationWarnings } from '@purityjs/core/runtime'; import { hydrate } from '@purityjs/core';
 
 if (import.meta.env.DEV) enableHydrationWarnings();
 hydrate(document.getElementById('app')!, App);

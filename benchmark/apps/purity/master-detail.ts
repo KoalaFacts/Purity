@@ -1,7 +1,8 @@
 // Master-detail benchmark — Purity idiomatic version.
 // Uses: state, compute, each, html, mount, when. Zero vanilla JS for UI wiring.
 
-import { compute, each, html, mount, state, when } from '@purityjs/core';
+import { compute, each, mount, state, when } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 // ---------------------------------------------------------------------------
 // Types

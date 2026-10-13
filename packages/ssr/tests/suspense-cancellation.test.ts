@@ -1,11 +1,6 @@
-import {
-  getSSRRenderContext,
-  lazyResource,
-  query,
-  resource,
-  suspense,
-  type ResourceFetchInfo,
-} from '@purityjs/core';
+import { getSSRRenderContext } from '@purityjs/core/internal';
+import { lazyResource, resource, suspense, type ResourceFetchInfo } from '@purityjs/core';
+import { query } from '@purityjs/core/query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   html,

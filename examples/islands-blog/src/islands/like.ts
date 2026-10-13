@@ -3,7 +3,9 @@
 // enough below the fold in app.ts that the chunk request fires only
 // after a real intersection.
 
-import { html, island, state } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
+import { island } from '@purityjs/core/islands';
+import { state } from '@purityjs/core';
 
 const liked = state(false);
 

@@ -79,7 +79,7 @@ function focusElement(el: HTMLElement): void {
  * @example
  * ```ts
  * // entry.client.ts
- * import { hydrate, interceptLinks, manageNavFocus, manageNavScroll } from '@purityjs/core';
+ * import { hydrate } from '@purityjs/core'; import { interceptLinks, manageNavFocus, manageNavScroll } from '@purityjs/core/router';
  *
  * hydrate(document.getElementById('app')!, App);
  * interceptLinks();

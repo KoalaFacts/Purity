@@ -3,7 +3,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { onlineSignal, watch } from '../src/index.ts';
+import { onlineSignal } from '../src/browser-signals/index.ts';
+import { watch } from '../src/index.ts';
 import { _resetOnlineSignal } from '../src/online-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';

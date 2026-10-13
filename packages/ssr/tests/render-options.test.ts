@@ -1,4 +1,5 @@
-import { getRequest, resource } from '@purityjs/core';
+import { getRequest } from '@purityjs/core/router';
+import { resource } from '@purityjs/core';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import {
   html,

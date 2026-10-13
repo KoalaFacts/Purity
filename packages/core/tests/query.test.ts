@@ -3,7 +3,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { invalidateQuery, query, watch } from '../src/index.ts';
+import { invalidateQuery, query } from '../src/query/index.ts';
+import { watch } from '../src/index.ts';
 import { _resetBfcacheRestoreSignal } from '../src/bfcache-restore-signal.ts';
 import { _resetOnlineSignal } from '../src/online-signal.ts';
 import { _resetPageVisibilitySignal } from '../src/page-visibility-signal.ts';

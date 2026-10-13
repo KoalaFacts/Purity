@@ -7,7 +7,8 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
-import { intersectionSignal, mount, watch } from '../src/index.ts';
+import { intersectionSignal } from '../src/browser-signals/index.ts';
+import { mount, watch } from '../src/index.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';
 

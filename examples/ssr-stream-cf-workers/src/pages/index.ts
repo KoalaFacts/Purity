@@ -3,7 +3,8 @@
 // scope; the Worker still streams the shell, just without per-boundary
 // chunks.
 
-import { head, html } from '@purityjs/core';
+import { head } from '@purityjs/core/router';
+import { html } from '@purityjs/core/jit';
 
 export default function HomePage(): unknown {
   head(html`<meta name="description" content="Streaming SSR on Cloudflare Workers." />`);

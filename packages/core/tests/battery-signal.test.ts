@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { batterySignal } from '../src/index.ts';
+import { batterySignal } from '../src/browser-signals/index.ts';
 import { _resetBatterySignal } from '../src/battery-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';

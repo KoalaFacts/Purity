@@ -4,7 +4,8 @@
 // Pure composition over renderToString — no filesystem assertions; we just
 // check the returned `files` map.
 
-import { getRequest, head, resource, suspense } from '@purityjs/core';
+import { getRequest, head } from '@purityjs/core/router';
+import { resource, suspense } from '@purityjs/core';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { html as ssrHtml, renderStatic } from '../src/index.ts';
 

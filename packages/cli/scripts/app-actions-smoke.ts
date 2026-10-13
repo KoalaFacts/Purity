@@ -18,7 +18,7 @@ for (const key of Object.keys(npmEnv)) {
   if (key.toLowerCase().startsWith('npm_config_')) delete npmEnv[key];
 }
 
-function launch(args: string[], cwd: string, env = npmEnv) {
+function launch(args: string[], cwd: string, env = npmEnv, captureStdout = false) {
   const child = spawn(process.execPath, args, {
     cwd,
     env,
@@ -28,9 +28,13 @@ function launch(args: string[], cwd: string, env = npmEnv) {
   });
   let stdout = '';
   let stderr = '';
-  child.stdout.on('data', (chunk: Buffer) => (stdout = (stdout + chunk).slice(-16_000)));
+  child.stdout.on('data', (chunk: Buffer) => {
+    // npm pack --json includes every exported file; truncating it corrupts
+    // the machine-readable result. Long-running server logs stay bounded.
+    stdout = captureStdout ? stdout + chunk : (stdout + chunk).slice(-16_000);
+  });
   child.stderr.on('data', (chunk: Buffer) => (stderr = (stderr + chunk).slice(-16_000)));
-  return { child, stdout: () => stdout, output: () => stdout + stderr };
+  return { child, stdout: () => stdout, output: () => stdout.slice(-16_000) + stderr };
 }
 
 async function stop(child: ChildProcess): Promise<void> {
@@ -57,7 +61,7 @@ async function stop(child: ChildProcess): Promise<void> {
 }
 
 async function run(args: string[], cwd: string): Promise<string> {
-  const command = launch(args, cwd);
+  const command = launch(args, cwd, npmEnv, true);
   const timeout = new AbortController();
   try {
     const code = await Promise.race([
@@ -849,7 +853,7 @@ export function inspectDisconnect(id: string, release: boolean) {
   await writeFile(
     join(project, 'src/actions/disconnect.server.ts'),
     `
-import { serverAction } from '@purityjs/core';
+import { serverAction } from '@purityjs/core/actions';
 import { inspectDisconnect } from '../disconnect-probe.ts';
 export const disconnectState = serverAction('/actions/disconnect-state', async (request) => {
   const form = await request.formData();
@@ -859,7 +863,7 @@ export const disconnectState = serverAction('/actions/disconnect-state', async (
   );
   await mkdir(join(project, 'src/pages/disconnect'), { recursive: true });
   const disconnectPage = `
-import { asyncRoute, html, resource, suspense, type AsyncRouteEntry, type LoaderContext } from '@purityjs/core';
+import { asyncRoute, type AsyncRouteEntry, type LoaderContext } from '@purityjs/core/router'; import { html } from '@purityjs/core/jit'; import { resource, suspense } from '@purityjs/core';
 import { markView, waitForDisconnect } from '../../disconnect-probe.ts';
 export async function loader({ request, signal }: LoaderContext) {
   const url = new URL(request.url);
@@ -914,7 +918,7 @@ export default function Probe(_params: unknown, data: { id: string; mode: string
   await writeFile(
     join(project, 'src/pages/disconnect/_layout.ts'),
     `
-import { type LoaderContext } from '@purityjs/core';
+import { type LoaderContext } from '@purityjs/core/router';
 import { waitForDisconnect } from '../../disconnect-probe.ts';
 export async function loader({ request, signal }: LoaderContext) {
   const url = new URL(request.url);
@@ -952,7 +956,7 @@ export default function TimeoutLookalike(): never {
   );
   await writeFile(
     join(project, 'src/actions/probe.server.ts'),
-    "import { serverAction } from '@purityjs/core';\n" +
+    "import { serverAction } from '@purityjs/core/actions';\n" +
       "export const probe = serverAction('/actions/probe', async (request) => {\n" +
       "  const headers = new Headers({ 'X-Action-Probe': 'PURITY_ACTION_HANDLER_PRIVATE_MARKER' });\n" +
       "  headers.append('Set-Cookie', 'first=1; Path=/; HttpOnly');\n" +
@@ -997,7 +1001,7 @@ export const brokenStream = serverAction('/actions/broken-stream', () => new Res
   );
   await writeFile(
     join(project, 'src/query-probe.ts'),
-    `import { asyncRoute, mount, query, watch, type AsyncRouteEntry, type LoaderContext } from '@purityjs/core';
+    `import { asyncRoute, type AsyncRouteEntry, type LoaderContext } from '@purityjs/core/router'; import { mount, watch } from '@purityjs/core'; import { query } from '@purityjs/core/query';
 export function installQueryProbe() {
   const section = document.createElement('section');
   section.innerHTML = '<form id="query-form" action="/actions/query-write" method="post" data-purity-enhance><label>Query value<input name="value"></label><button>Save query value</button><p data-purity-form-status></p></form><span id="query-value"></span><span id="query-reads"></span><span id="query-error"></span><span id="other-reads"></span>';

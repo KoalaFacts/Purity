@@ -28,7 +28,7 @@ see no change in build output, bundle size, or runtime behaviour.
 ## The API
 
 ```ts
-import { island, mountIslands } from '@purityjs/core';
+import { island, mountIslands } from '@purityjs/core/islands';
 ```
 
 ### `island(view, options?)`
@@ -40,7 +40,7 @@ is a no-op when called directly — `mountIslands()` is what makes the
 trigger fire.
 
 ```ts
-import { island, component, html, state } from '@purityjs/core';
+import { island } from '@purityjs/core/islands'; import { component, state } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
 
 const Counter = component('my-counter', () => {
   const n = state(0);
@@ -75,7 +75,7 @@ costs more (HTTP overhead) than inlining it would save.
 
 ```ts
 // entry.client.ts
-import { mountIslands } from '@purityjs/core';
+import { mountIslands } from '@purityjs/core/islands';
 
 mountIslands([
   () => import('./islands/counter.ts').then((m) => m.Counter),

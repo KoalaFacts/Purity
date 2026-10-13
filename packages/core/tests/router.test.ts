@@ -13,8 +13,8 @@ import {
   matchRoute,
   navigate,
   onNavigate,
-  watch,
-} from '../src/index.ts';
+} from '../src/router/index.ts';
+import { watch } from '../src/index.ts';
 import { _setNavigateWrapper } from '../src/router.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';

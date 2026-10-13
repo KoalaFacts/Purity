@@ -3,7 +3,8 @@
  */
 
 import { describe, expect, it } from 'vite-plus/test';
-import { component, html } from '../src/index.ts';
+import { component } from '../src/index.ts';
+import { html } from '../src/compiler/jit.ts';
 
 describe('slot types', () => {
   it('compiles with correct types', () => {

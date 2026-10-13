@@ -94,7 +94,7 @@ export function currentPath(): string {
  *
  * @example
  * ```ts
- * import { currentSearch, navigate, currentPath, html } from '@purityjs/core';
+ * import { currentSearch, navigate, currentPath } from '@purityjs/core/router'; import { html } from '@purityjs/core/jit';
  *
  * function Paginator() {
  *   const page = Number(currentSearch().get('page') ?? '1');
@@ -169,7 +169,7 @@ const navigateListeners: Set<NavigateListener> = (routerGlobal.__purityNavigateL
  *
  * @example
  * ```ts
- * import { onNavigate } from '@purityjs/core';
+ * import { onNavigate } from '@purityjs/core/router';
  *
  * onNavigate((url) => {
  *   console.log('navigated to', url.pathname);
@@ -192,7 +192,7 @@ export function onNavigate(fn: NavigateListener): () => void {
  *
  * @example
  * ```ts
- * import { navigate } from '@purityjs/core';
+ * import { navigate } from '@purityjs/core/router';
  *
  * // Add `?sort=date` to the current URL, replace so back-stack stays tidy.
  * navigate(`${currentPath()}?sort=date`, { replace: true });

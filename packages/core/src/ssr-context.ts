@@ -12,7 +12,8 @@
 //                       within the current pass; the index into resolvedData
 // ---------------------------------------------------------------------------
 
-import { disposeScope, popContext, pushContext, type Scope } from './component.ts';
+import { disposeScope } from './signals.ts';
+import { popContext, pushContext, type Scope } from './scope.ts';
 
 export interface SSRRenderContext {
   pendingPromises: Promise<unknown>[];

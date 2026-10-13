@@ -1,19 +1,6 @@
-// ---------------------------------------------------------------------------
-// Purity Core — minimal, fast, signal-driven web framework
-// ---------------------------------------------------------------------------
-
-// Template rendering (JIT compiled)
 export {
-  disableHydrationTextRewrite,
-  disableHydrationWarnings,
-  enableHydrationTextRewrite,
-  enableHydrationWarnings,
-  html,
-} from './compiler/compile.ts';
-export type { ComponentFn, MountResult } from './component.ts';
-// Lifecycle (3 hooks + error) + hydrate + custom-state binder
-// + form-associated lifecycle hooks (ADR 0036)
-export {
+  type ComponentFn,
+  type MountResult,
   bindComponentState,
   hydrate,
   mount,
@@ -26,192 +13,44 @@ export {
   onFormStateRestore,
   onMount,
 } from './component.ts';
-export type {
-  EachOptions,
-  SuspenseErrorInfo,
-  SuspenseErrorPhase,
-  SuspenseOptions,
-} from './control.ts';
-// Control flow
 export {
+  type EachOptions,
+  type SuspenseErrorInfo,
+  type SuspenseErrorPhase,
+  type SuspenseOptions,
   each,
-  eachSSR,
   list,
-  listSSR,
   match,
-  matchSSR,
   suspense,
   when,
-  whenSSR,
 } from './control.ts';
-export type { DebouncedAccessor } from './debounced.ts';
-// Debounced derived signal
-export { debounced } from './debounced.ts';
-export type { ComponentOptions, SlotAccessor } from './elements.ts';
-// Components, slots, teleport
+export { type DebouncedAccessor, debounced } from './debounced.ts';
 export {
-  _getRegisteredComponent,
-  _renderComponentSSR,
+  type ComponentOptions,
+  type SlotAccessor,
   component,
   internals,
   slot,
   teleport,
 } from './elements.ts';
-export type {
-  LazyResourceAccessor,
-  ResourceAccessor,
-  ResourceFetchInfo,
-  ResourceOptions,
-  ResourceRetryOptions,
-  RetryDelay,
+export {
+  type LazyResourceAccessor,
+  type ResourceAccessor,
+  type ResourceFetchInfo,
+  type ResourceOptions,
+  type ResourceRetryOptions,
+  type RetryDelay,
+  lazyResource,
+  resource,
 } from './resource.ts';
-// Async resources (eager + lazy/imperative)
-export { lazyResource, resource } from './resource.ts';
-// SSR coordination (used by @purityjs/ssr; clearly internal — exposed for
-// the package boundary, not for end users)
-export type { SSRRenderContext } from './ssr-context.ts';
 export {
-  cancelSSRBoundary,
-  clearHydrationCache,
-  getSSRRenderContext,
-  nextSSRBoundaryDeadline,
-  popSSRRenderContext,
-  primeHydrationCache,
-  pushSSRRenderContext,
-} from './ssr-context.ts';
-export type { ComputedAccessor, Dispose, StateAccessor, WatchSource } from './signals.ts';
-// Reactive primitives
-export { batch, compute, state, watch } from './signals.ts';
-
-// Streaming SSR — client splice helper for ADR 0006 Phase 3.
-export { __purity_swap, PURITY_SWAP_SOURCE } from './__purity_swap.ts';
-// Head / meta tag management — ADR 0008.
-export { head } from './head.ts';
-// Islands — opt-in per-subtree hydration. ADR 0038. Phase 1: brand. Phase 2:
-// `<purity-island>` SSR wrapper + `mountIslands()` client runtime.
-// See docs/decisions/0038-islands.md.
-export {
-  getIslandBrand,
-  island,
-  type IslandBrand,
-  type IslandOptions,
-  type IslandTrigger,
-  isIsland,
-} from './island.ts';
-export { mountIslands, type MountIslandsOptions } from './island-mount.ts';
-// Request context — ADR 0009.
-export { getRequest } from './request-context.ts';
-// Router primitives — ADR 0011 (path / navigate / match) + ADR 0014 (search /
-// hash) + ADR 0015 (onNavigate listener hook).
-export {
-  currentHash,
-  currentPath,
-  currentSearch,
-  matchRoute,
-  navigate,
-  type NavigateListener,
-  type NavigateOptions,
-  onNavigate,
-  type RouteMatch,
-} from './router.ts';
-// Link auto-interception — ADR 0013.
-export { interceptLinks, type InterceptLinksOptions } from './router-intercept.ts';
-// Navigation scroll management — ADR 0015.
-export { manageNavScroll, type ManageNavScrollOptions } from './router-scroll.ts';
-// Navigation focus management — ADR 0016.
-export { manageNavFocus, type ManageNavFocusOptions } from './router-focus.ts';
-// ARIA live-region announce on navigate — ADR 0045.
-export { manageNavAnnounce, type ManageNavAnnounceOptions } from './router-announce.ts';
-// Navigation view transitions — ADR 0017.
-export { manageNavTransitions, type ManageNavTransitionsOptions } from './router-transitions.ts';
-// Navigation consolidator — ADR 0027.
-export {
-  configureNavigation,
-  type ConfigureNavigationOptions,
-  type ConfigureNavigationPrefetch,
-} from './router-configure.ts';
-// Hover-prefetch — ADR 0029.
-export { prefetchManifestLinks, type PrefetchManifestLinksOptions } from './router-prefetch.ts';
-// Reactive <title> sync — ADR 0030.
-export { manageTitle } from './manage-title.ts';
-// Async-route runtime composer — ADR 0025.
-export {
-  asyncNotFound,
-  asyncRoute,
-  type AsyncNotFoundEntry,
-  type AsyncRouteEntry,
-  type AsyncRouteOptions,
-  type LoaderContext,
-  routeData,
-  type RouteData,
-  type RouteResponseInit,
-} from './async-route.ts';
-// Loader-data accessor — ADR 0026.
-export { loaderData } from './loader-data.ts';
-// Server actions — ADR 0012.
-export {
-  findAction,
-  handleAction,
-  type ServerAction,
-  type ServerActionHandler,
-  serverAction,
-} from './server-action.ts';
-export {
-  enhanceForms,
-  type EnhancedForms,
-  type EnhancedFormState,
-  type EnhanceFormsOptions,
-  type FormActionResult,
-} from './enhance-forms.ts';
-
-// Scoped styles
+  type ComputedAccessor,
+  type Dispose,
+  type StateAccessor,
+  type WatchSource,
+  batch,
+  compute,
+  state,
+  watch,
+} from './signals.ts';
 export { css } from './styles.ts';
-
-// Persistence + lifecycle signal primitives — ADR 0039.
-export { localSignal, type LocalSignalOptions } from './local-signal.ts';
-export { broadcastSignal, type BroadcastValidator } from './broadcast-signal.ts';
-export { pageVisibilitySignal } from './page-visibility-signal.ts';
-export { pageLifecycleSignal, type PageLifecycleState } from './page-lifecycle-signal.ts';
-export { bfcacheRestoreSignal } from './bfcache-restore-signal.ts';
-
-// Observer-as-signal primitives — ADR 0040.
-export { intersectionSignal } from './intersection-signal.ts';
-export { mutationSignal } from './mutation-signal.ts';
-export { mediaSignal } from './media-signal.ts';
-export { resizeSignal } from './resize-signal.ts';
-
-// Environment + system preference signals — ADR 0041.
-export { onlineSignal } from './online-signal.ts';
-export { prefersColorSchemeSignal } from './prefers-color-scheme-signal.ts';
-export { prefersReducedMotionSignal } from './prefers-reduced-motion-signal.ts';
-export { type ContrastPreference, prefersContrastSignal } from './prefers-contrast-signal.ts';
-export { screenOrientationSignal } from './screen-orientation-signal.ts';
-export { localeSignal } from './locale-signal.ts';
-export { devicePixelRatioSignal } from './device-pixel-ratio-signal.ts';
-export { fullscreenSignal } from './fullscreen-signal.ts';
-
-// Capability + permission signals — ADR 0042.
-export { permissionSignal } from './permission-signal.ts';
-export { type BatteryInfo, batterySignal } from './battery-signal.ts';
-export { type NetworkInformation, networkInformationSignal } from './network-information-signal.ts';
-export { type IdleDetectorLike, idleSignal, type IdleSignalState } from './idle-signal.ts';
-
-// Query SWR — ADR 0048.
-export { invalidateQuery, query, type QueryKey, type QueryOptions } from './query.ts';
-
-// Optimistic-update server-action wrapper — ADR 0049.
-export { optimistic, type OptimisticAction, type OptimisticOptions } from './optimistic.ts';
-
-// Live data signals — ADR 0047.
-export {
-  eventSourceSignal,
-  type EventSourceSignalOptions,
-  type LiveReconnectPolicy,
-  type LiveValidator,
-} from './event-source-signal.ts';
-export {
-  type WebSocketReadyState,
-  type WebSocketSignal,
-  webSocketSignal,
-  type WebSocketSignalOptions,
-} from './web-socket-signal.ts';

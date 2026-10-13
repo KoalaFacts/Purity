@@ -13,8 +13,12 @@
 //      cache and skip the first refetch.
 // ---------------------------------------------------------------------------
 
-import { popSSRRenderContext, pushSSRRenderContext, type SSRRenderContext } from '@purityjs/core';
-import { valueToHtml } from '@purityjs/core/compiler';
+import {
+  popSSRRenderContext,
+  pushSSRRenderContext,
+  type SSRRenderContext,
+} from '@purityjs/core/internal';
+import { valueToHtml } from '@purityjs/core/internal';
 import { boundaryDeadline } from './boundary-deadline.ts';
 import { ensureSSRComponentRendererInstalled } from './component.ts';
 import { buildResourceScript } from './resource-script.ts';

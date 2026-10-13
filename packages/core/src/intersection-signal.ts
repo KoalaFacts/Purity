@@ -9,7 +9,7 @@
 //         (which IntersectionObserver fires on observe()) updates it.
 // ---------------------------------------------------------------------------
 
-import { getCurrentContext } from './component.ts';
+import { getCurrentContext } from './scope.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 

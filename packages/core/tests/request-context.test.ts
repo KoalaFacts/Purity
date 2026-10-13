@@ -3,7 +3,7 @@
 // SSR coverage lives in `@purityjs/ssr`'s request-context.test.ts.
 
 import { afterEach, describe, expect, it } from 'vite-plus/test';
-import { getRequest } from '../src/index.ts';
+import { getRequest } from '../src/router/index.ts';
 import {
   popSSRRenderContext,
   pushSSRRenderContext,

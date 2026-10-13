@@ -2,7 +2,9 @@
 // `island()` works with plain html-returning views; mountIslands will
 // take the standard hydrate(wrapper, view) path for these.
 
-import { html, island, state } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
+import { island } from '@purityjs/core/islands';
+import { state } from '@purityjs/core';
 
 // Module-scope state is local to this island's chunk — two instances of
 // <Counter /> on the same page would share this counter. That's the

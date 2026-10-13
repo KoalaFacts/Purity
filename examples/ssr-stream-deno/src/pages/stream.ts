@@ -1,4 +1,6 @@
-import { head, html, resource, suspense } from '@purityjs/core';
+import { head } from '@purityjs/core/router';
+import { html } from '@purityjs/core/jit';
+import { resource, suspense } from '@purityjs/core';
 
 export default function StreamPage(): unknown {
   head(html`<title>/stream — Purity SSR streaming on Deno</title>`);

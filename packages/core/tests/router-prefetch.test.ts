@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { configureNavigation, navigate, prefetchManifestLinks } from '../src/index.ts';
+import { configureNavigation, navigate, prefetchManifestLinks } from '../src/router/index.ts';
 
 interface MockEntry {
   pattern: string;

@@ -13,8 +13,8 @@
 //     get stripped. Identifier references (`serverAction(url, handlerVar)`)
 //     are left alone — the handler binding may be used elsewhere.
 //   - Detection is import-bound: we resolve `serverAction` (or its alias /
-//     namespace member) from `@purityjs/core` imports only.
-//   - Cheap pre-filter: skip files that don't mention `@purityjs/core` AND
+//     namespace member) from `@purityjs/core/actions` imports only.
+//   - Cheap pre-filter: skip files that don't mention `@purityjs/core/actions` AND
 //     `serverAction` so the parser cost is paid only on actual hits.
 // ---------------------------------------------------------------------------
 
@@ -33,7 +33,7 @@ const STUB =
 
 /**
  * Per-call stripping output. `null` when no `serverAction()` call was found
- * (or the file didn't import from `@purityjs/core`).
+ * (or the file didn't import from `@purityjs/core/actions`).
  */
 export interface StripResult {
   code: string;
@@ -108,13 +108,13 @@ function withoutShadows(active: ActiveBindings, shadows: Set<string>): ActiveBin
  * of files that can't possibly contain a `serverAction()` call we care about.
  */
 function couldContainServerAction(code: string): boolean {
-  return code.includes('@purityjs/core') && code.includes('serverAction');
+  return code.includes('@purityjs/core/actions') && code.includes('serverAction');
 }
 
 /**
  * Walk the import declarations of a parsed module and return:
  *   - the set of local identifier names bound to `serverAction` from
- *     `@purityjs/core` (handles default + alias)
+ *     `@purityjs/core/actions` (handles default + alias)
  *   - the set of local namespace import names whose `.serverAction` member
  *     should be treated as the function (handles `import * as p`)
  */
@@ -130,7 +130,7 @@ function collectServerActionBindings(program: OxcNode): {
   for (const stmt of body) {
     if (stmt.type !== 'ImportDeclaration') continue;
     const sourceValue = stmt.source?.value;
-    if (sourceValue !== '@purityjs/core') continue;
+    if (sourceValue !== '@purityjs/core/actions') continue;
     // Skip `import type { … }` — type-only imports erase at runtime, so
     // their names can't refer to the runtime `serverAction` we want to
     // strip. Treating them as bindings would false-positive-strip a
@@ -247,7 +247,7 @@ function localScopeBindings(scope: OxcNode): Set<string> {
 /**
  * Visit every CallExpression in the tree, prunning import-bound names
  * shadowed by local declarations along the way. A `function serverAction`
- * declared inside a user function will mask the `@purityjs/core` import
+ * declared inside a user function will mask the `@purityjs/core/actions` import
  * within its scope so we don't false-positive-strip its handler arg.
  */
 function walkWithScope(

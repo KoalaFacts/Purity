@@ -6,17 +6,7 @@ When asked to write tests for Purity components or features:
 
 ```ts
 import { describe, expect, it, vi } from 'vitest';
-import {
-  state,
-  compute,
-  watch,
-  html,
-  component,
-  mount,
-  onMount,
-  onDestroy,
-  onDispose,
-} from '../../core/src/index.ts';
+import { state, compute, watch, component, mount, onMount, onDestroy, onDispose } from '../../core/src/index.ts'; import { html } from '../../core/src/compiler/jit.ts';
 // Or for compiler tests:
 import { parse } from '../../core/src/compiler/parser.ts';
 import { generate } from '../../core/src/compiler/codegen.ts';

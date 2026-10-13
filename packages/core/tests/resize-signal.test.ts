@@ -4,7 +4,8 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
-import { mount, resizeSignal, watch } from '../src/index.ts';
+import { mount, watch } from '../src/index.ts';
+import { resizeSignal } from '../src/browser-signals/index.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';
 

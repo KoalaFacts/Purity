@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
-import { networkInformationSignal } from '../src/index.ts';
+import { networkInformationSignal } from '../src/browser-signals/index.ts';
 import { _resetNetworkInformationSignal } from '../src/network-information-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';

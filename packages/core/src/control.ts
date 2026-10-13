@@ -16,15 +16,8 @@ import {
   type SSRHtml,
   valueToHtml,
 } from './compiler/ssr-runtime.ts';
-import {
-  disposeScope,
-  getCurrentContext,
-  popContext,
-  pushContext,
-  type Scope,
-} from './component.ts';
-import type { StateAccessor } from './signals.ts';
-import { state, watch } from './signals.ts';
+import { getCurrentContext, popContext, pushContext, type Scope } from './scope.ts';
+import { disposeScope, state, watch, type StateAccessor } from './signals.ts';
 import { cancelSSRBoundary, getSSRRenderContext } from './ssr-context.ts';
 
 // ---------------------------------------------------------------------------

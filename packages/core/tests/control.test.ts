@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
-import { ComponentContext, mount, onDispose, popContext, pushContext } from '../src/component.ts';
+import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
+import { mount, onDispose } from '../src/component.ts';
 import {
   each,
   eachSSR,

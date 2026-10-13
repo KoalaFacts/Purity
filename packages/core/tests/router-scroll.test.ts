@@ -2,7 +2,7 @@
 // Tests for onNavigate() + manageNavScroll(). ADR 0015.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { manageNavScroll, navigate, onNavigate } from '../src/index.ts';
+import { manageNavScroll, navigate, onNavigate } from '../src/router/index.ts';
 
 let teardown: (() => void) | null = null;
 

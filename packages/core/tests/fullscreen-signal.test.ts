@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { fullscreenSignal } from '../src/index.ts';
+import { fullscreenSignal } from '../src/browser-signals/index.ts';
 import { _resetFullscreenSignal } from '../src/fullscreen-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';

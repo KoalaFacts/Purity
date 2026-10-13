@@ -1,4 +1,5 @@
-import { getSSRRenderContext, resource, suspense, type SSRRenderContext } from '@purityjs/core';
+import { getSSRRenderContext, type SSRRenderContext } from '@purityjs/core/internal';
+import { resource, suspense } from '@purityjs/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
   html,

@@ -18,7 +18,9 @@
 // gets its own `open` signal — per-instance state, no module-scope
 // closure footgun.
 
-import { component, css, html, island, slot, state } from '@purityjs/core';
+import { component, css, slot, state } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
+import { island } from '@purityjs/core/islands';
 
 component('demo-expander', () => {
   const open = state(false);

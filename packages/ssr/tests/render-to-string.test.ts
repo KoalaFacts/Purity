@@ -1,5 +1,6 @@
-import { asyncRoute, routeData, state } from '@purityjs/core';
-import { isSSRHtml, markSSRHtml } from '@purityjs/core/compiler';
+import { asyncRoute, routeData } from '@purityjs/core/router';
+import { state } from '@purityjs/core';
+import { isSSRHtml, markSSRHtml } from '@purityjs/core/internal';
 import { resource } from '@purityjs/core';
 import { describe, expect, it } from 'vite-plus/test';
 import { html, renderToString } from '../src/index.ts';
@@ -69,7 +70,7 @@ describe('html`` SSR tag', () => {
     // out of subsequent SSR renders. The entry point now snapshots and
     // freezes the helpers at module load, so post-load mutation cannot
     // alter what the compiled factory sees.
-    const mod = await import('@purityjs/core/compiler');
+    const mod = await import('@purityjs/core/internal');
     const realEsc = mod.ssrHelpers.esc;
     try {
       // Mutate the live export to a pass-through. If the html tag forwarded
@@ -84,7 +85,7 @@ describe('html`` SSR tag', () => {
   });
 
   it('keeps attribute escaping even when ssrHelpers.attr is mutated', async () => {
-    const mod = await import('@purityjs/core/compiler');
+    const mod = await import('@purityjs/core/internal');
     const realAttr = mod.ssrHelpers.attr;
     try {
       (mod.ssrHelpers as { attr: (s: string) => string }).attr = (s: string) => s;

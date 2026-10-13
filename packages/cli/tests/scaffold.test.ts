@@ -85,12 +85,12 @@ describe('scaffold — default (client-only) mode', () => {
     expect(tsconfig.include).toEqual(['src']);
   });
 
-  it('generates a vite.config.ts with no route plugin options and a core-only alias', () => {
+  it('generates a vite.config.ts with no route plugin options and aliases for all core subpaths', () => {
     scaffold(['my-app']);
     const config = readProjectFile('my-app', 'vite.config.ts');
     expect(config).toContain('plugins: [purity()]');
     expect(config).toContain("'@purityjs/core':");
-    expect(config).not.toContain("'@purityjs/core/compiler':");
+    expect(config).toContain("'@purityjs/core/jit':");
     expect(config).not.toContain("'@purityjs/ssr':");
   });
 });

@@ -17,8 +17,8 @@
 // from multiple entry points on every render is cheap and safe.
 // ---------------------------------------------------------------------------
 
-import { _renderComponentSSR } from '@purityjs/core';
-import { setSSRComponentRenderer } from '@purityjs/core/compiler';
+import { _renderComponentSSR } from '@purityjs/core/internal';
+import { setSSRComponentRenderer } from '@purityjs/core/internal';
 
 export function ensureSSRComponentRendererInstalled(): void {
   setSSRComponentRenderer(_renderComponentSSR);

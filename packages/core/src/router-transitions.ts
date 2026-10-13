@@ -116,7 +116,7 @@ function prefersReducedMotion(): boolean {
  * @example
  * ```ts
  * // entry.client.ts
- * import { hydrate, interceptLinks, manageNavScroll, manageNavFocus, manageNavTransitions } from '@purityjs/core';
+ * import { hydrate } from '@purityjs/core'; import { interceptLinks, manageNavScroll, manageNavFocus, manageNavTransitions } from '@purityjs/core/router';
  *
  * hydrate(document.getElementById('app')!, App);
  * interceptLinks();

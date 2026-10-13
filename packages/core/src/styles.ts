@@ -1,4 +1,4 @@
-import { getCurrentComponent, getCurrentContext } from './component.ts';
+import { getCurrentComponent, getCurrentContext } from './scope.ts';
 import { watch } from './signals.ts';
 
 // ---------------------------------------------------------------------------

@@ -64,7 +64,7 @@ function defaultScrollHandler(url: URL): void {
  * @example
  * ```ts
  * // entry.client.ts
- * import { hydrate, interceptLinks, manageNavScroll } from '@purityjs/core';
+ * import { hydrate } from '@purityjs/core'; import { interceptLinks, manageNavScroll } from '@purityjs/core/router';
  * import { App } from './app.ts';
  *
  * hydrate(document.getElementById('app')!, App);

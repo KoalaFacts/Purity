@@ -16,7 +16,7 @@ The starter includes a counter component and a Vite configuration with the Purit
 `state()` stores a value, `compute()` derives one, and `html` describes the DOM. Reactive expressions update when the state they read changes.
 
 ```ts
-import { compute, html, mount, state } from '@purityjs/core';
+import { compute, mount, state } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
 
 const count = state(0);
 const doubled = compute(() => count() * 2);

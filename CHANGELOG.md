@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — 0.4.0
+
+### Changed
+
+- Split core into feature entry points and separate JIT compilation, AOT runtime,
+  and compiler tooling. Move scope ownership below rendering and reactivity.
+  Migrate imports using the [entry-point mapping](docs/core-entry-points.md).
+  Upgrade the Vite plugin with core: server action handlers are stripped from
+  client code when imported from `@purityjs/core/actions`.
+- Preserve the previous all-features bundle limits and enforce smaller limits
+  for individual entries. Keep the root and AOT runtime free of JIT code.
+
 ## 0.3.4 — 2026-10-05
 
 ### Fixed

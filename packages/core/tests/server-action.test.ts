@@ -2,7 +2,7 @@
 // Tests for `serverAction` / `findAction` / `handleAction`. ADR 0012.
 
 import { afterEach, describe, expect, it } from 'vite-plus/test';
-import { findAction, handleAction, serverAction } from '../src/index.ts';
+import { findAction, handleAction, serverAction } from '../src/actions/index.ts';
 import { _clearActionRegistry } from '../src/server-action.ts';
 
 afterEach(() => {

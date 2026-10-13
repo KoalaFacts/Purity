@@ -117,7 +117,7 @@ handler's Web `Response` with its status, headers, cookies, and body.
 
 ```ts
 // src/actions/save.server.ts
-import { serverAction } from '@purityjs/core';
+import { serverAction } from '@purityjs/core/actions';
 
 export const save = serverAction('/actions/save', async (request) => {
   const form = await request.formData();
@@ -136,7 +136,7 @@ client entry already calls `enhanceForms(root)`. Existing forms work without
 JavaScript and keep their native submission path.
 
 ```ts
-import { enhanceForms } from '@purityjs/core';
+import { enhanceForms } from '@purityjs/core/actions';
 
 const forms = enhanceForms(document.getElementById('app')!);
 // When installing outside a component scope, dispose during application teardown.
@@ -243,7 +243,7 @@ Page and layout loaders follow a shared route cancellation scope. Each loader
 receives its own `LoaderContext.signal`. Pass it to operations that support cancellation:
 
 ```ts
-import type { LoaderContext } from '@purityjs/core';
+import type { LoaderContext } from '@purityjs/core/router';
 
 export async function loader({ params, request, signal }: LoaderContext) {
   const url = new URL(`/api/posts/${encodeURIComponent(params.slug)}`, request.url);
@@ -385,7 +385,7 @@ Use `routeData(value, { status, headers })` when a page should render with
 loader data and set HTTP metadata. The page receives only `value`:
 
 ```ts
-import { html, routeData, type LoaderContext } from '@purityjs/core';
+import { html } from '@purityjs/core/jit'; import { routeData, type LoaderContext } from '@purityjs/core/router';
 
 const posts: Record<string, string> = { hello: 'Hello' };
 

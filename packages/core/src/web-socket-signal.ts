@@ -17,7 +17,7 @@
 // options.initialValue, with no-op send() and readyState() === 'closed'.
 // ---------------------------------------------------------------------------
 
-import { getCurrentContext } from './component.ts';
+import { getCurrentContext } from './scope.ts';
 import {
   type LiveReconnectPolicy,
   type LiveValidator,

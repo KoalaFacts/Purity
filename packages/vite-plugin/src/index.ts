@@ -922,15 +922,15 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   // Modeled as a zero-length insertion edit so the source-map builder can
   // track it alongside the html`` replacements.
   const runtimeImport = ssr
-    ? `import { ssrHelpers as ${prefix}_h__ } from '@purityjs/core/compiler';\nimport '@purityjs/ssr';\n`
-    : `import { renderCompiledTemplate as ${prefix}_renderCompiled__, flattenValue as ${prefix}_fl__, swapSlot as ${prefix}_sw__ } from '@purityjs/core/compiler';\n`;
+    ? `import { ssrHelpers as ${prefix}_h__ } from '@purityjs/core/internal';\nimport '@purityjs/ssr';\n`
+    : `import { renderCompiledTemplate as ${prefix}_renderCompiled__, flattenValue as ${prefix}_fl__, swapSlot as ${prefix}_sw__ } from '@purityjs/core/runtime';\n`;
   /* v8 ignore next -- edits.length > 0 implies at least one hoist was pushed */
   const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
   const insertAt = findLastImportEnd(source);
   const insertPos = insertAt === -1 ? 0 : insertAt;
   edits.push({ start: insertPos, end: insertPos, out: runtimeImport + hoistsBlock });
 
-  // Removing `html` from `@purityjs/core` import statements — but ONLY when
+  // Removing `html` from `@purityjs/core/jit` import statements — but ONLY when
   // every template compiled. If any failed, the failed `html\`\`` is left in
   // the output as runtime code and still needs the import to resolve.
   if (!ctx.failed) edits.push(...findHtmlImportEdits(source));
@@ -944,7 +944,7 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
 }
 
 /**
- * Scan @purityjs/core named-import statements and emit edits that strip the
+ * Scan @purityjs/core/jit named-import statements and emit edits that strip the
  * `html` binding (and drop the entire statement when it's the only binding).
  *
  * Uses indexOf-based scanning (no regex) to avoid ReDoS on untrusted input.
@@ -1020,10 +1020,10 @@ function findHtmlImportEdits(code: string): Edit[] {
     if (end < code.length && code[end] === ';') end++;
 
     // Strip `html` from imports of either purity entry point — users may have
-    // `import { html } from '@purityjs/core'` (client app source) or
+    // `import { html } from '@purityjs/core/jit'` (client app source) or
     // `import { html } from '@purityjs/ssr'` (a pre-existing SSR-only file).
     // Both are dead after AOT replaces the call sites.
-    if (moduleName !== '@purityjs/core' && moduleName !== '@purityjs/ssr') {
+    if (moduleName !== '@purityjs/core/jit' && moduleName !== '@purityjs/ssr') {
       pos = end;
       continue;
     }

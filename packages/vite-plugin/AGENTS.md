@@ -32,5 +32,5 @@ purity({ include: ['.ts', '.js', '.tsx', '.jsx'] });
 
 - Only transforms user code, skips @purityjs/core internals
 - Removes `html` from imports after compilation
-- Auto-injects `renderCompiledTemplate` from `@purityjs/core/compiler` in client builds
+- Auto-injects `renderCompiledTemplate` from `@purityjs/core/runtime` in client builds
 - Uses the precompiled hydration walker against SSR nodes; hydration does not invoke the runtime parser or code generator

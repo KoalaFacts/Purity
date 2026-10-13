@@ -22,7 +22,7 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('compiles simple template', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>Hello</div>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>Hello</div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result.code).toContain('createElement');
@@ -30,7 +30,7 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('compiles template with expression', () => {
-    const code = `import { html } from '@purityjs/core';\nconst name = 'World';\nconst el = html\`<p>\${name}</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst name = 'World';\nconst el = html\`<p>\${name}</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result.code).toContain('createElement');
@@ -38,24 +38,24 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('compiles template with @event', () => {
-    const code = `import { html } from '@purityjs/core';\nconst fn = () => {};\nconst el = html\`<button @click=\${fn}>Go</button>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst fn = () => {};\nconst el = html\`<button @click=\${fn}>Go</button>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result.code).toContain('addEventListener');
   });
 
   it('adds the compiled hydration runtime import', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>Test</div>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>Test</div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result.code).toContain('__purity_renderCompiled__');
     expect(result.code).toContain('__purity_tpl_0_hydrate');
-    expect(result.code).toContain("from '@purityjs/core/compiler'");
+    expect(result.code).toContain("from '@purityjs/core/runtime'");
   });
 
   it('handles multi-line imports without splitting them', () => {
     const code =
-      "import {\n  html,\n  state,\n  watch,\n} from '@purityjs/core';\n" +
+      "import {\n  html,\n} from '@purityjs/core/jit';\nimport { state, watch } from '@purityjs/core';\n" +
       "import { foo } from './other.ts';\n" +
       'const el = html`<p>Test</p>`;';
     const result = plugin.transform(code, 'app.ts');
@@ -67,7 +67,7 @@ describe('@purityjs/vite-plugin', () => {
     const out = result.code;
     // The injected line should appear after both original imports.
     const injected = out.indexOf(
-      "import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, swapSlot as __purity_sw__ } from '@purityjs/core/compiler';",
+      "import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, swapSlot as __purity_sw__ } from '@purityjs/core/runtime';",
     );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf("from './other.ts'"));
@@ -79,13 +79,13 @@ describe('@purityjs/vite-plugin', () => {
   // offset 0 — before the user import it depended on.
   it('inserts runtime import AFTER a final import with a trailing // comment', () => {
     const code =
-      "import { html } from '@purityjs/core'; // last import on its own line\n" +
+      "import { html } from '@purityjs/core/jit'; // last import on its own line\n" +
       'const el = html`<p>x</p>`;';
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     const out = result!.code;
     const injected = out.indexOf(
-      "import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, swapSlot as __purity_sw__ } from '@purityjs/core/compiler';",
+      "import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, swapSlot as __purity_sw__ } from '@purityjs/core/runtime';",
     );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf('// last import on its own line'));
@@ -101,14 +101,14 @@ describe('@purityjs/vite-plugin', () => {
     expect(result).not.toBeNull();
     const out = result!.code;
     const injected = out.indexOf(
-      "import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, swapSlot as __purity_sw__ } from '@purityjs/core/compiler';",
+      "import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, swapSlot as __purity_sw__ } from '@purityjs/core/runtime';",
     );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf("from './data.json'"));
   });
 
   it('removes html from imports', () => {
-    const code = `import { html, state } from '@purityjs/core';\nconst el = html\`<p>Hi</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit'; import { state } from '@purityjs/core';\nconst el = html\`<p>Hi</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     // html should be removed from the import
@@ -122,7 +122,8 @@ describe('@purityjs/vite-plugin', () => {
   // quote) caused the import to be skipped — leaving an unused `html`
   // binding in the output that breaks strict tree-shaking / noUnusedLocals.
   it('removes html from an import that has a block comment between tokens', () => {
-    const code = "import /* legacy */ { html } from '@purityjs/core';\nconst el = html`<p>x</p>`;";
+    const code =
+      "import /* legacy */ { html } from '@purityjs/core/jit';\nconst el = html`<p>x</p>`;";
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     // The original import line (which still contains the unstripped `html`
@@ -132,7 +133,7 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('compiles multiple templates', () => {
-    const code = `import { html } from '@purityjs/core';\nconst a = html\`<div>A</div>\`;\nconst b = html\`<p>B</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst a = html\`<div>A</div>\`;\nconst b = html\`<p>B</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     const matches = result.code.match(/createElement/g);
@@ -140,7 +141,7 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('preserves non-template code', () => {
-    const code = `import { html, state } from '@purityjs/core';\nconst count = state(0);\nconsole.log('hi');\nconst el = html\`<p>Test</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit'; import { state } from '@purityjs/core';\nconst count = state(0);\nconsole.log('hi');\nconst el = html\`<p>Test</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result.code).toContain('state(0)');
@@ -151,13 +152,14 @@ describe('@purityjs/vite-plugin', () => {
     const custom = purity({ include: ['.vue'] });
     const sfc = [
       '<script>',
-      "import { html } from '@purityjs/core';",
+      "import { html } from '@purityjs/core/jit';",
       'export const v = html`<div></div>`;',
       '</script>',
     ].join('\n');
     // A raw container is not compiled; its script submodule is.
     expect(custom.transform(sfc, 'app.vue')).toBeNull();
-    const submodule = "import { html } from '@purityjs/core';\nexport const v = html`<div></div>`;";
+    const submodule =
+      "import { html } from '@purityjs/core/jit';\nexport const v = html`<div></div>`;";
     expect(custom.transform(submodule, 'app.vue?vue&type=script&lang.js')).not.toBeNull();
     expect(custom.transform('html`<div></div>`', 'app.ts')).toBeNull();
   });
@@ -165,7 +167,7 @@ describe('@purityjs/vite-plugin', () => {
   // --- Nested template expression tests (bug fix) ---
 
   it('handles nested html template inside expression', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>\${ok ? html\`<span>yes</span>\` : ""}</div>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>\${ok ? html\`<span>yes</span>\` : ""}</div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result.code).toContain('createElement');
@@ -173,34 +175,34 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('handles each() with nested html template in mapFn', () => {
-    const code = `import { html, each } from '@purityjs/core';\nconst el = html\`<ul>\${each(items, (item) => html\`<li>\${item.name}</li>\`, (item) => item.id)}</ul>\`;`;
+    const code = `import { html } from '@purityjs/core/jit'; import { each } from '@purityjs/core';\nconst el = html\`<ul>\${each(items, (item) => html\`<li>\${item.name}</li>\`, (item) => item.id)}</ul>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result.code).toContain('createElement');
   });
 
   it('handles deeply nested templates (3 levels)', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>\${show ? html\`<ul>\${items.map(i => html\`<li>\${i}</li>\`)}</ul>\` : ""}</div>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>\${show ? html\`<ul>\${items.map(i => html\`<li>\${i}</li>\`)}</ul>\` : ""}</div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result.code).toContain('createElement');
   });
 
   it('handles ternary with string literals in expression', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<span class=\${() => x() ? 'pill active' : 'pill'}>\${label}</span>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<span class=\${() => x() ? 'pill active' : 'pill'}>\${label}</span>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result.code).toContain('pill');
   });
 
   it('handles object literal inside expression', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>\${{ key: 'val' }}</div>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>\${{ key: 'val' }}</div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
   });
 
   it('handles arrow function with block body in expression', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>\${() => { const x = 1; return x; }}</div>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>\${() => { const x = 1; return x; }}</div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
   });
@@ -208,7 +210,7 @@ describe('@purityjs/vite-plugin', () => {
   // --- Template hoisting tests ---
 
   it('hoists each compiled template to a unique module-scope const', () => {
-    const code = `import { html } from '@purityjs/core';\nconst a = html\`<p>A</p>\`;\nconst b = html\`<p>B</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst a = html\`<p>A</p>\`;\nconst b = html\`<p>B</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result.code).toContain('const __purity_tpl_0 = ');
@@ -220,7 +222,7 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('templates inside arrow functions reuse hoisted const (no per-call IIFE)', () => {
-    const code = `import { html } from '@purityjs/core';\nconst f = (item) => html\`<div><li>\${item}</li></div>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst f = (item) => html\`<div><li>\${item}</li></div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     // The arrow body should reference the hoisted tpl, NOT have its own IIFE
@@ -234,7 +236,7 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('hoisted template is referenced exactly once in user code (single source of truth)', () => {
-    const code = `import { html } from '@purityjs/core';\nconst f = (label) => html\`<div><span>\${label}</span></div>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst f = (label) => html\`<div><span>\${label}</span></div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     // One hoist declaration
@@ -248,7 +250,7 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('nested templates in expressions also hoist (not duplicated inline)', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>\${ok ? html\`<span>yes</span>\` : ""}</div>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>\${ok ? html\`<span>yes</span>\` : ""}</div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result.code).toContain('const __purity_tpl_0');
@@ -267,13 +269,13 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('compiles consumer paths that resemble framework directories', () => {
-    const code = "import { html } from '@purityjs/core'; const view = html`<p>x</p>`;";
+    const code = "import { html } from '@purityjs/core/jit'; const view = html`<p>x</p>`;";
     expect(plugin.transform(code, '/consumer/packages/core/index.ts')).not.toBeNull();
     expect(plugin.transform(code, '/consumer/packages/vite-plugin/index.ts')).not.toBeNull();
   });
 
   it('does not match `xhtml`` (identifier-prefix guard)', () => {
-    const code = `import { html } from '@purityjs/core';\nconst x = "xhtml\`not a template\`";\nconst el = html\`<p>real</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst x = "xhtml\`not a template\`";\nconst el = html\`<p>real</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     // Only the real html`` got compiled; the `xhtml` string literal stays
@@ -282,7 +284,7 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('leaves a malformed/unterminated html`` as-is', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>broken`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>broken`;
     const result = plugin.transform(code, 'app.ts');
     // Plugin should not crash; output may equal input (no `changed`)
     expect(() => plugin.transform(code, 'app.ts')).not.toThrow();
@@ -292,47 +294,47 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('leaves side-effect imports untouched (no { ... } binding)', () => {
-    const code = `import "side-effect";\nimport { html } from '@purityjs/core';\nconst el = html\`<p>x</p>\`;`;
+    const code = `import "side-effect";\nimport { html } from '@purityjs/core/jit';\nconst el = html\`<p>x</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result!.code).toContain('import "side-effect"');
   });
 
   it('leaves default imports untouched', () => {
-    const code = `import lib from 'some-pkg';\nimport { html } from '@purityjs/core';\nconst el = html\`<p>x</p>\`;`;
+    const code = `import lib from 'some-pkg';\nimport { html } from '@purityjs/core/jit';\nconst el = html\`<p>x</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result!.code).toContain("import lib from 'some-pkg'");
   });
 
   it('leaves imports from other packages untouched', () => {
-    const code = `import { something } from 'other-pkg';\nimport { html } from '@purityjs/core';\nconst el = html\`<p>x</p>\`;`;
+    const code = `import { something } from 'other-pkg';\nimport { html } from '@purityjs/core/jit';\nconst el = html\`<p>x</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result!.code).toContain("from 'other-pkg'");
   });
 
   it('drops the @purityjs/core import entirely when only html was imported', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<p>x</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<p>x</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    // The original `import { html } from '@purityjs/core'` is gone
+    // The original `import { html } from '@purityjs/core/jit'` is gone
     // (the new runtime import uses the compiler entry point).
     const purityImports = result!.code.match(
-      /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core['"]/g,
+      /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core\/jit['"]/g,
     );
     expect(purityImports).toBeNull();
-    expect(result!.code).toContain("from '@purityjs/core/compiler'");
+    expect(result!.code).toContain("from '@purityjs/core/runtime'");
   });
 
   it('handles double-quoted import paths (single AND double quotes)', () => {
-    const code = `import { html } from "@purityjs/core";\nconst el = html\`<p>x</p>\`;`;
+    const code = `import { html } from "@purityjs/core/jit";\nconst el = html\`<p>x</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
   });
 
   it('handles escape sequences inside the static portion of a template', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<p title="a\\\\b">\${x}</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<p title="a\\\\b">\${x}</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     // Either the escape was preserved as-is or compilation handled it without throwing
@@ -342,7 +344,7 @@ describe('@purityjs/vite-plugin', () => {
   it('handles template-string inside expression argument', () => {
     const code =
       // biome-ignore lint/suspicious/noTemplateCurlyInString: this string IS the JS source under transformation
-      "import { html } from '@purityjs/core';\nconst el = html`<p>${`hello ${name}`}</p>`;";
+      "import { html } from '@purityjs/core/jit';\nconst el = html`<p>${`hello ${name}`}</p>`;";
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
   });
@@ -359,7 +361,7 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('handles `xhtml`` followed by valid html`` (identifier-prefix in compileTemplates)', () => {
-    const code = `import { html } from '@purityjs/core';\nconst other = "abchtml\`fake\`";\nconst el = html\`<p>real</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst other = "abchtml\`fake\`";\nconst el = html\`<p>real</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result!.code).toContain('abchtml`');
@@ -369,20 +371,20 @@ describe('@purityjs/vite-plugin', () => {
   it('skips identifier-prefixed html`` in nested expressions (xhtml`` inside ${...})', () => {
     const code =
       // biome-ignore lint/suspicious/noTemplateCurlyInString: this string IS the JS source under transformation
-      "import { html } from '@purityjs/core';\nconst el = html`<p>${ /* xhtml`fake` */ x}</p>`;";
+      "import { html } from '@purityjs/core/jit';\nconst el = html`<p>${ /* xhtml`fake` */ x}</p>`;";
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
   });
 
   it('handles arrow with template-only body (no nested html``)', () => {
-    const code = `import { html } from '@purityjs/core';\nconst f = () => "no template here";\nconst el = html\`<p>x</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst f = () => "no template here";\nconst el = html\`<p>x</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result!.code).toContain('"no template here"');
   });
 
   it('preserves @purityjs/core import path inside string literals', () => {
-    const code = `import { html } from '@purityjs/core';\nconst path = "@purityjs/core";\nconst el = html\`<p>x</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst path = "@purityjs/core";\nconst el = html\`<p>x</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     // String literal is untouched (only the import statement is rewritten)
@@ -402,7 +404,7 @@ describe('@purityjs/vite-plugin', () => {
 
   it('handles escaped backtick inside template-in-expression', () => {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: this string IS the JS source under transformation
-    const code = "import { html } from '@purityjs/core';\nconst el = html`<p>${`a\\`b`}</p>`;";
+    const code = "import { html } from '@purityjs/core/jit';\nconst el = html`<p>${`a\\`b`}</p>`;";
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
   });
@@ -413,7 +415,7 @@ describe('@purityjs/vite-plugin', () => {
   // `\`a}b\`` and the outer template's `</p>\`` leaked into the output.
   it('handles literal } inside a plain template literal nested in ${...}', () => {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: source under transformation
-    const code = "import { html } from '@purityjs/core';\nconst el = html`<p>${ `a}b` }</p>`;";
+    const code = "import { html } from '@purityjs/core/jit';\nconst el = html`<p>${ `a}b` }</p>`;";
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result!.code).toContain('`a}b`');
@@ -427,7 +429,7 @@ describe('@purityjs/vite-plugin', () => {
   it('handles nested template with inner expression (${...} inside `` inside ${...})', () => {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: source under transformation
     const code =
-      "import { html } from '@purityjs/core';\n" +
+      "import { html } from '@purityjs/core/jit';\n" +
       "const x = 'a';\n" +
       'const obj = { k: 1 };\n' +
       'const el = html`<p>${ `pre${ obj.k + 1 }post` }</p>`;';
@@ -475,7 +477,7 @@ describe('@purityjs/vite-plugin source maps', () => {
   const plugin = purity();
 
   it('returns a v3 source map alongside compiled code', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>Hi</div>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>Hi</div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result!.map).toBeDefined();
@@ -489,7 +491,7 @@ describe('@purityjs/vite-plugin source maps', () => {
   });
 
   it('emits one mapping line per output line', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>Hi</div>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>Hi</div>\`;`;
     const result = plugin.transform(code, 'app.ts')!;
     // Number of ';' separators = number of newlines in compiled output.
     const newlineCount = (result.code.match(/\n/g) ?? []).length;
@@ -499,7 +501,7 @@ describe('@purityjs/vite-plugin source maps', () => {
 
   it('maps compiled-template lines back to the original html`` line', () => {
     // Original line 1 (0-indexed): `const el = html\`<div>Hi</div>\`;`
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>Hi</div>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>Hi</div>\`;`;
     const result = plugin.transform(code, 'app.ts')!;
     // Find the output line that contains the compiled call.
     const outLines = result.code.split('\n');
@@ -535,7 +537,7 @@ describe('@purityjs/vite-plugin source maps', () => {
   });
 
   it('emits a non-empty mapping when only edits are import rewrites + insertion', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<p>x</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<p>x</p>\`;`;
     const result = plugin.transform(code, 'app.ts')!;
     expect(result.map!.mappings.length).toBeGreaterThan(0);
   });
@@ -550,7 +552,7 @@ describe('@purityjs/vite-plugin compile errors', () => {
 
   it('warns with file:line:col when a template fails to compile, leaving source as-is', () => {
     // `<my:component>` parses but fails the codegen SAFE_NAME check.
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<my:component>x</my:component>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<my:component>x</my:component>\`;`;
     const warns: string[] = [];
     const orig = console.warn;
     console.warn = (msg: any) => warns.push(String(msg));
@@ -568,7 +570,7 @@ describe('@purityjs/vite-plugin compile errors', () => {
   });
 
   it('uses plugin context warn() when available', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<my:component>x</my:component>\`;\nconst ok = html\`<p>fine</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<my:component>x</my:component>\`;\nconst ok = html\`<p>fine</p>\`;`;
     const ctxWarns: string[] = [];
     const ctx = { warn: (msg: string) => ctxWarns.push(msg) };
     const result = plugin.transform.call(ctx, code, 'app.ts');
@@ -579,7 +581,7 @@ describe('@purityjs/vite-plugin compile errors', () => {
   });
 
   it('still compiles other templates in the same file when one fails', () => {
-    const code = `import { html } from '@purityjs/core';\nconst bad = html\`<my:component>x</my:component>\`;\nconst ok = html\`<p>good</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst bad = html\`<my:component>x</my:component>\`;\nconst ok = html\`<p>good</p>\`;`;
     const orig = console.warn;
     console.warn = () => {};
     try {
@@ -595,7 +597,7 @@ describe('@purityjs/vite-plugin compile errors', () => {
 
   it('preserves the `html` import when a top-level template fails', () => {
     // The failed template stays as runtime html`` and still needs the import.
-    const code = `import { html } from '@purityjs/core';\nconst bad = html\`<my:component>x</my:component>\`;\nconst ok = html\`<p>good</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst bad = html\`<my:component>x</my:component>\`;\nconst ok = html\`<p>good</p>\`;`;
     const orig = console.warn;
     console.warn = () => {};
     try {
@@ -603,10 +605,10 @@ describe('@purityjs/vite-plugin compile errors', () => {
       // Both the original `html` import (kept because of the failure) and the
       // injected hydration runtime should reference the compiler entry point.
       const purityImports = result.code.match(
-        /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core['"]/g,
+        /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core\/jit['"]/g,
       )!;
       expect(purityImports.some((s) => /\bhtml\b/.test(s))).toBe(true);
-      expect(result.code).toContain("from '@purityjs/core/compiler'");
+      expect(result.code).toContain("from '@purityjs/core/runtime'");
     } finally {
       console.warn = orig;
     }
@@ -615,7 +617,7 @@ describe('@purityjs/vite-plugin compile errors', () => {
   it('preserves the `html` import when a nested template fails', () => {
     // Outer template compiles, but the inner html`` inside the expression
     // fails its codegen check and is left as runtime code.
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>\${ok ? html\`<my:component/>\` : ""}</div>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>\${ok ? html\`<my:component/>\` : ""}</div>\`;`;
     const orig = console.warn;
     console.warn = () => {};
     try {
@@ -626,7 +628,7 @@ describe('@purityjs/vite-plugin compile errors', () => {
       expect(result.code).toContain('html`<my:component/>');
       // …so the html import must remain.
       const purityImports = result.code.match(
-        /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core['"]/g,
+        /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core\/jit['"]/g,
       )!;
       expect(purityImports.some((s) => /\bhtml\b/.test(s))).toBe(true);
     } finally {
@@ -638,7 +640,7 @@ describe('@purityjs/vite-plugin compile errors', () => {
     // An unterminated html`` is a syntax error in the module. AST discovery
     // cannot see templates in an unparseable file, so nothing is compiled.
     const code = [
-      "import { html } from '@purityjs/core';",
+      "import { html } from '@purityjs/core/jit';",
       'const ok = html`<p>good</p>`;',
       'const bad = html`<div>broken;',
     ].join('\n');
@@ -659,7 +661,7 @@ describe('@purityjs/vite-plugin compile errors', () => {
     // invalid JS. With the fix, compileNestedTemplates throws, the outer
     // catch fires, we warn at the OUTER template's location, and leave
     // the outer html`` in source as runtime code.
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<div>\${html\`<broken}</div>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>\${html\`<broken}</div>\`;`;
     const warns: string[] = [];
     const orig = console.warn;
     console.warn = (msg: any) => warns.push(String(msg));
@@ -670,7 +672,7 @@ describe('@purityjs/vite-plugin compile errors', () => {
       if (result) {
         expect(result.code).not.toContain('([html`<broken');
         const purityImports = result.code.match(
-          /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core['"]/g,
+          /import\s*\{[^}]*\}\s*from\s*['"]@purityjs\/core\/jit['"]/g,
         );
         if (purityImports) {
           expect(purityImports.some((s) => /\bhtml\b/.test(s))).toBe(true);
@@ -683,7 +685,7 @@ describe('@purityjs/vite-plugin compile errors', () => {
   });
 
   it('is idempotent — re-transforming compiled output is a fixed point', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<p>x</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<p>x</p>\`;`;
     const first = plugin.transform(code, 'app.ts')!;
     expect(first).not.toBeNull();
     // Compiled output has no `html\`\``, so a second transform must skip
@@ -693,7 +695,7 @@ describe('@purityjs/vite-plugin compile errors', () => {
   });
 
   it('handles CRLF line endings without breaking the source map', () => {
-    const code = `import { html } from '@purityjs/core';\r\nconst el = html\`<p>x</p>\`;\r\n`;
+    const code = `import { html } from '@purityjs/core/jit';\r\nconst el = html\`<p>x</p>\`;\r\n`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result!.code).toContain('createElement');
@@ -704,7 +706,7 @@ describe('@purityjs/vite-plugin compile errors', () => {
   });
 
   it('handles a file with no trailing newline', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<p>x</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<p>x</p>\`;`;
     expect(code.endsWith('\n')).toBe(false);
     const result = plugin.transform(code, 'app.ts')!;
     expect(result).not.toBeNull();
@@ -714,7 +716,7 @@ describe('@purityjs/vite-plugin compile errors', () => {
   it('handles non-ASCII characters in template content', () => {
     // Emoji takes two UTF-16 code units in JS strings; column math should
     // still be consistent between source and map.
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<p>héllo 🌟</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<p>héllo 🌟</p>\`;`;
     const result = plugin.transform(code, 'app.ts')!;
     expect(result).not.toBeNull();
     expect(result.code).toContain('createElement');
@@ -723,7 +725,7 @@ describe('@purityjs/vite-plugin compile errors', () => {
 
   it('warning includes both the line and the column of the failing template', () => {
     // 4-space indent puts the html`` at column 18 (1-based) on line 2.
-    const code = `import { html } from '@purityjs/core';\n    const bad = html\`<my:component/>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\n    const bad = html\`<my:component/>\`;`;
     const warns: string[] = [];
     const orig = console.warn;
     console.warn = (msg: any) => warns.push(String(msg));

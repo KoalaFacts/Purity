@@ -3,7 +3,8 @@
 
 import { describe, expect, it } from 'vite-plus/test';
 
-import { mount, mutationSignal, watch } from '../src/index.ts';
+import { mount, watch } from '../src/index.ts';
+import { mutationSignal } from '../src/browser-signals/index.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';
 

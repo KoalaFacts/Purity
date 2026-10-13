@@ -1,4 +1,6 @@
-import { enhanceForms, html, mount, onMount, state } from '@purityjs/core';
+import { enhanceForms } from '@purityjs/core/actions';
+import { html } from '@purityjs/core/jit';
+import { mount, onMount, state } from '@purityjs/core';
 
 const name = state('');
 const root = document.getElementById('app')!;

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vite-plus/test';
-import { html, hydrate, state } from '../src/index.ts';
+import { html } from '../src/compiler/jit.ts';
+import { hydrate, state } from '../src/index.ts';
 
 let unmount: (() => void) | undefined;
 afterEach(() => {

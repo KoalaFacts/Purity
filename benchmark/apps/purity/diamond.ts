@@ -1,7 +1,8 @@
 // Diamond dependency benchmark — Purity idiomatic version.
 // Uses: state, compute, batch, html, mount. Zero vanilla JS for UI wiring.
 
-import { batch, compute, html, mount, state, watch } from '@purityjs/core';
+import { batch, compute, mount, state, watch } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 // ---------------------------------------------------------------------------
 // State

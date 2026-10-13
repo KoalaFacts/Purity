@@ -34,7 +34,7 @@ describe('plugin fuzz — never crashes on accepted input', () => {
         ([head, parts]) => {
           const tpl =
             'html`<div>' + head + parts.map(([e, s]) => '${' + e + '}' + s).join('') + '</div>`';
-          const code = `import { html } from '@purityjs/core';\nconst el = ${tpl};`;
+          const code = `import { html } from '@purityjs/core/jit';\nconst el = ${tpl};`;
           const orig = console.warn;
           console.warn = () => {};
           try {
@@ -66,7 +66,7 @@ describe('plugin fuzz — never crashes on accepted input', () => {
     // is tested separately. Limit junk to plain-text characters.
     fc.assert(
       fc.property(fc.stringMatching(/^[a-z0-9 ]{0,15}$/), (junk) => {
-        const code = `import { html } from '@purityjs/core';\nconst el = html\`<p>${junk}</p>\`;`;
+        const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<p>${junk}</p>\`;`;
         const orig = console.warn;
         console.warn = () => {};
         try {
@@ -95,7 +95,7 @@ describe('plugin fuzz — never crashes on accepted input', () => {
 
     fc.assert(
       fc.property(balanced, (b) => {
-        const code = `import { html } from '@purityjs/core';\nconst el = html\`<p>\${(${b || 'null'})}</p>\`;`;
+        const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<p>\${(${b || 'null'})}</p>\`;`;
         const orig = console.warn;
         console.warn = () => {};
         try {

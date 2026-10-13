@@ -1,4 +1,5 @@
-import { each, html, mount, state } from '@purityjs/core';
+import { each, mount, state } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 type Scenario = 'keyed' | 'virtual';
 

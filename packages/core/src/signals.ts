@@ -1,11 +1,11 @@
 import {
   type ComponentContext,
-  disposeScope,
   getCurrentComponent,
   getCurrentContext,
   popContext,
   pushContext,
-} from './component.ts';
+  type Scope,
+} from './scope.ts';
 
 // ---------------------------------------------------------------------------
 // Reactivity core
@@ -428,6 +428,24 @@ export function untracked<T>(fn: () => T): T {
   } finally {
     activeListener = prevListener;
   }
+}
+
+/** Run and clear a scope's disposers; one throwing disposer doesn't stop the rest. @internal */
+export function disposeScope(scope: Scope): void {
+  const disposers = scope.disposers;
+  if (!disposers) return;
+  scope.disposers = null;
+  // Cleanup reads must not subscribe whatever is running the disposal (an
+  // effect re-running, a match() switching cases, a list removing rows).
+  untracked(() => {
+    for (let i = 0; i < disposers.length; i++) {
+      try {
+        disposers[i]();
+      } catch (err) {
+        console.error('[Purity] Error during disposal:', err);
+      }
+    }
+  });
 }
 
 function runComputed(node: ComputedNode): void {

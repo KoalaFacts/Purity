@@ -21,7 +21,7 @@ import { getSSRRenderContext } from './ssr-context.ts';
  *
  * @example
  * ```ts
- * import { getRequest, head, html } from '@purityjs/core';
+ * import { getRequest, head } from '@purityjs/core/router'; import { html } from '@purityjs/core/jit';
  *
  * function PageHead() {
  *   const req = getRequest();

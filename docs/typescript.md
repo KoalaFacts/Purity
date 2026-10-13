@@ -99,7 +99,7 @@ caseInsensitive(() => 'hi'); // () => string             — works
 ### Props inference
 
 ```ts
-import { component, html } from '@purityjs/core';
+import { component } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
 
 const Tag = component<{ label: string; count?: number }>('p-tag', ({ label, count = 0 }) => {
   return html`<span>${label}: ${count}</span>`;

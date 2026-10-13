@@ -104,7 +104,7 @@ const LISTENER_FLAG = '__purityRouterInterceptBound';
  * ```ts
  * // entry.client.ts
  * import { hydrate } from '@purityjs/core';
- * import { interceptLinks } from '@purityjs/core';
+ * import { interceptLinks } from '@purityjs/core/router';
  * import { App } from './app.ts';
  *
  * hydrate(document.getElementById('app')!, App);

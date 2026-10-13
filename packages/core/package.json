@@ -27,17 +27,65 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": {
-      "development": "./src/index.ts",
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+    "./jit": {
+      "development": "./src/compiler/jit.ts",
+      "types": "./dist/compiler/jit.d.ts",
+      "import": "./dist/jit/index.js",
+      "require": "./dist/jit/index.cjs"
+    },
+    "./runtime": {
+      "development": "./src/compiler/runtime.ts",
+      "types": "./dist/compiler/runtime.d.ts",
+      "import": "./dist/runtime/index.js",
+      "require": "./dist/runtime/index.cjs"
     },
     "./compiler": {
       "development": "./src/compiler/index.ts",
       "types": "./dist/compiler/index.d.ts",
       "import": "./dist/compiler/index.js",
       "require": "./dist/compiler/index.cjs"
+    },
+    "./internal": {
+      "development": "./src/internal.ts",
+      "types": "./dist/internal.d.ts",
+      "import": "./dist/internal/index.js",
+      "require": "./dist/internal/index.cjs"
+    },
+    "./signals": {
+      "development": "./src/browser-signals/index.ts",
+      "types": "./dist/browser-signals/index.d.ts",
+      "import": "./dist/signals/index.js",
+      "require": "./dist/signals/index.cjs"
+    },
+    "./router": {
+      "development": "./src/router/index.ts",
+      "types": "./dist/router/index.d.ts",
+      "import": "./dist/router/index.js",
+      "require": "./dist/router/index.cjs"
+    },
+    "./actions": {
+      "development": "./src/actions/index.ts",
+      "types": "./dist/actions/index.d.ts",
+      "import": "./dist/actions/index.js",
+      "require": "./dist/actions/index.cjs"
+    },
+    "./islands": {
+      "development": "./src/islands/index.ts",
+      "types": "./dist/islands/index.d.ts",
+      "import": "./dist/islands/index.js",
+      "require": "./dist/islands/index.cjs"
+    },
+    "./query": {
+      "development": "./src/query/index.ts",
+      "types": "./dist/query/index.d.ts",
+      "import": "./dist/query/index.js",
+      "require": "./dist/query/index.cjs"
+    },
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
   },
   "publishConfig": {

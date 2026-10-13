@@ -7,7 +7,9 @@
 // substring equality holds; only the wrapper differs from Phase 1's
 // byte-identical output.
 
-import { html as clientHtml, island, state } from '@purityjs/core';
+import { html as clientHtml } from '@purityjs/core/jit';
+import { island } from '@purityjs/core/islands';
+import { state } from '@purityjs/core';
 import { describe, expect, it } from 'vite-plus/test';
 import { html as ssrHtml, renderToString } from '../src/index.ts';
 

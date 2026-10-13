@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vite-plus/test';
-import { component, html, hydrate, state } from '../src/index.ts';
+import { component, hydrate, state } from '../src/index.ts';
+import { html } from '../src/compiler/jit.ts';
 import { tick } from './_helpers.ts';
 
 describe('hydrate (marker-walking, non-lossy)', () => {

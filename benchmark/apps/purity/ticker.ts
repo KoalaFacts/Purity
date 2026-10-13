@@ -1,7 +1,8 @@
 // Stock ticker benchmark — Purity idiomatic version.
 // Uses: state, each, html, mount. Zero vanilla JS for UI wiring.
 
-import { each, html, mount, state } from '@purityjs/core';
+import { each, mount, state } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 // ---------------------------------------------------------------------------
 // Data

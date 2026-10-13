@@ -1,4 +1,5 @@
-import { html, routeData, type LoaderContext } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
+import { routeData, type LoaderContext } from '@purityjs/core/router';
 import { greetingActionUrl } from '../actions/greet.ts';
 
 type GreetingData = { name: string; error: boolean; submitted: boolean };

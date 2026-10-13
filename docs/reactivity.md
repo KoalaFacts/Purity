@@ -3,7 +3,7 @@
 Purity updates the DOM from the values a template reads. Start with `state()` for values that change, `compute()` for values derived from them, and `html` for the markup that displays them.
 
 ```ts
-import { compute, html, mount, state } from '@purityjs/core';
+import { compute, mount, state } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
 
 const count = state(0);
 const doubled = compute(() => count() * 2);
@@ -25,7 +25,7 @@ mount(
 Purity templates use a small set of prefixes:
 
 ```ts
-import { html, state } from '@purityjs/core';
+import { html } from '@purityjs/core/jit'; import { state } from '@purityjs/core';
 
 const name = state('');
 const canSubmit = state(false);
@@ -44,7 +44,7 @@ html`
 Use `each()` when items can be inserted, removed, or reordered. Give each item a stable key so Purity can preserve its DOM node when its position changes.
 
 ```ts
-import { each, html, state } from '@purityjs/core';
+import { each, state } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
 
 const todos = state([{ id: 1, text: 'Read the guide' }]);
 

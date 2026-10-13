@@ -2,7 +2,8 @@
 // Tests for `getRequest()` + `request` option on the SSR renderers.
 // ADR 0009.
 
-import { getRequest, head, suspense } from '@purityjs/core';
+import { getRequest, head } from '@purityjs/core/router';
+import { suspense } from '@purityjs/core';
 import { describe, expect, it } from 'vite-plus/test';
 import { html as ssrHtml, renderToStream, renderToString } from '../src/index.ts';
 

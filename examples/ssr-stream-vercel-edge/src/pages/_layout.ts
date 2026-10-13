@@ -3,7 +3,7 @@
 // (which skips the layout per ADR 0028) also ships a valid
 // declaration.
 
-import { html } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 export default function RootLayout(children: () => unknown): unknown {
   return html`

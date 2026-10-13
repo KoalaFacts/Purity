@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
-import { enhanceForms, mount, query } from '../src/index.ts';
+import { enhanceForms } from '../src/actions/index.ts';
+import { mount } from '../src/index.ts';
+import { query } from '../src/query/index.ts';
 import type { EnhancedForms } from '../src/enhance-forms.ts';
 import { _resetQueryCache } from '../src/query.ts';
 

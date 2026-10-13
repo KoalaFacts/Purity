@@ -2,7 +2,7 @@
 // Tests for manageNavAnnounce() — ADR 0045.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
-import { manageNavAnnounce, navigate } from '../src/index.ts';
+import { manageNavAnnounce, navigate } from '../src/router/index.ts';
 
 const DEFAULT_ID = '__purity_announce__';
 const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));

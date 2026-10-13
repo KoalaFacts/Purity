@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { prefersContrastSignal } from '../src/index.ts';
+import { prefersContrastSignal } from '../src/browser-signals/index.ts';
 import { _resetMediaSignalCache } from '../src/media-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import {

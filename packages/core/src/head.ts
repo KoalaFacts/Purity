@@ -31,7 +31,7 @@ import { getSSRRenderContext } from './ssr-context.ts';
  *
  * @example
  * ```ts
- * import { head, html } from '@purityjs/core';
+ * import { head } from '@purityjs/core/router'; import { html } from '@purityjs/core/jit';
  *
  * function PageHead({ title, description }: { title: string; description: string }) {
  *   head(html`<title>${title}</title>`);

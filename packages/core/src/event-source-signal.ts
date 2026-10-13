@@ -17,7 +17,7 @@
 // ---------------------------------------------------------------------------
 
 import { bfcacheRestoreSignal } from './bfcache-restore-signal.ts';
-import { getCurrentContext } from './component.ts';
+import { getCurrentContext } from './scope.ts';
 import { pageVisibilitySignal } from './page-visibility-signal.ts';
 import { compute, state, watch, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';

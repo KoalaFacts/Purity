@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
-import { devicePixelRatioSignal } from '../src/index.ts';
+import { devicePixelRatioSignal } from '../src/browser-signals/index.ts';
 import { _resetDevicePixelRatioSignal } from '../src/device-pixel-ratio-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import {

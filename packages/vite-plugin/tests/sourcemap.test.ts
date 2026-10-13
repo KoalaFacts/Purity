@@ -32,7 +32,7 @@ function findInOutput(out: string, needle: string): { line: number; column: numb
 describe('source map round-trip via source-map-js', () => {
   it('maps the compiled call back to the original html`` line', () => {
     const code =
-      `import { html } from '@purityjs/core';\n` + // line 1
+      `import { html } from '@purityjs/core/jit';\n` + // line 1
       `const a = 1;\n` + // line 2
       `const el = html\`<div>x</div>\`;`; // line 3
     const r = transform(code);
@@ -47,7 +47,7 @@ describe('source map round-trip via source-map-js', () => {
 
   it('maps unchanged source lines line-for-line', () => {
     const code =
-      `import { html } from '@purityjs/core';\n` + // line 1
+      `import { html } from '@purityjs/core/jit';\n` + // line 1
       `// keep this comment\n` + // line 2
       `const x = 42;\n` + // line 3
       `const el = html\`<p>x</p>\`;`; // line 4
@@ -64,7 +64,7 @@ describe('source map round-trip via source-map-js', () => {
 
   it('maps the user line `const x = 42` back to its source line', () => {
     const code =
-      `import { html } from '@purityjs/core';\n` + // line 1
+      `import { html } from '@purityjs/core/jit';\n` + // line 1
       `const x = 42;\n` + // line 2
       `const el = html\`<p>\${x}</p>\`;`; // line 3
     const r = transform(code);
@@ -77,14 +77,14 @@ describe('source map round-trip via source-map-js', () => {
   });
 
   it('sourcesContent is preserved verbatim', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<p>x</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<p>x</p>\`;`;
     const r = transform(code);
     expect(r.map!.sourcesContent[0]).toBe(code);
     expect(r.map!.sources).toEqual(['app.ts']);
   });
 
   it('gracefully handles a query for a position past the end of the map', () => {
-    const code = `import { html } from '@purityjs/core';\nconst el = html\`<p>x</p>\`;`;
+    const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<p>x</p>\`;`;
     const r = transform(code);
     const consumer = new SourceMapConsumer(r.map!);
     // Line 9999 is way past the output — consumer should return null fields,

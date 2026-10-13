@@ -32,9 +32,9 @@ import {
   prefersColorSchemeSignal,
   prefersContrastSignal,
   prefersReducedMotionSignal,
-  query,
   screenOrientationSignal,
-} from '../src/index.ts';
+} from '../src/browser-signals/index.ts';
+import { query } from '../src/query/index.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';
 

@@ -30,8 +30,8 @@ import {
   popSSRRenderContext,
   pushSSRRenderContext,
   type SSRRenderContext,
-} from '@purityjs/core';
-import { valueToHtml } from '@purityjs/core/compiler';
+} from '@purityjs/core/internal';
+import { valueToHtml } from '@purityjs/core/internal';
 import { boundaryDeadline } from './boundary-deadline.ts';
 import { ensureSSRComponentRendererInstalled } from './component.ts';
 import { renderCancellation } from './render-cancellation.ts';

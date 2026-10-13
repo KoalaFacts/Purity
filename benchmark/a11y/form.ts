@@ -1,4 +1,5 @@
-import { html, mount } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
+import { mount } from '@purityjs/core';
 import './form-components.ts';
 
 mount(

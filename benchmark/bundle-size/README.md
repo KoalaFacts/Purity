@@ -20,8 +20,9 @@ and `report.md` as workflow artifacts, including on budget or browser failures.
 
 ## What is measured
 
-- **Package entries (budgeted):** `@purityjs/core`, `@purityjs/core/compiler`,
-  and `@purityjs/ssr`. Each is built as `export * from <entry>`, so every export
+- **Package entries (budgeted):** `@purityjs/core`, all its feature subpaths,
+  and `@purityjs/ssr`. The `core-all` fixture combines the pre-split root API
+  under its original budget to prevent hiding growth across subpaths. Each is built as `export * from <entry>`, so every export
   is kept, then minified from the built dist into one payload. Other Purity
   packages and Node built-ins are external, so each figure is that package's
   own code. The Vite plugin and CLI are build-time Node tools and are not
@@ -36,7 +37,9 @@ and `report.md` as workflow artifacts, including on budget or browser failures.
 The runner checks that AOT actually compiled the fixture and that the runtime
 fixture kept its template. It rejects missing entries, source-only package
 resolution, external imports, hidden dynamic chunks, and unexpected assets.
-It does not claim that AOT eliminates every runtime compiler path in the core.
+The root and AOT runtime entries must contain no Function constructors.
+Both ESM and CommonJS exports must share working subscriptions across entries.
+Each package measurement also records a hash of its complete bundled payload.
 
 Report schema version 3 records the package entry sizes and, as before, the Git revision and dirty state, package
 versions, Node and compression-library versions, normalized hashes for all

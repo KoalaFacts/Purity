@@ -2,15 +2,13 @@ import { describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import {
   bindComponentState,
-  ComponentContext,
   mount,
   onDestroy,
   onDispose,
   onError,
   onMount,
-  popContext,
-  pushContext,
 } from '../src/component.ts';
+import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
 import { each, match, when } from '../src/control.ts';
 import { component, slot } from '../src/elements.ts';
 import { css } from '../src/styles.ts';

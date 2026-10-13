@@ -46,7 +46,7 @@ describe('vite build pipeline', () => {
   it('builds a fixture using the plugin and emits compiled DOM calls', async () => {
     writeFileSync(
       join(dir, 'entry.ts'),
-      `import { html } from '@purityjs/core';\n` +
+      `import { html } from '@purityjs/core/jit';\n` +
         `export const make = (label: string) => html\`<p class="x">\${label}</p>\`;\n`,
     );
 
@@ -84,13 +84,13 @@ describe('vite build pipeline', () => {
     // The original html`` literal is gone.
     expect(code).not.toContain('html`');
     // The client bundle calls the precompiled hydration-aware runtime.
-    expect(code).toMatch(/from\s*["']@purityjs\/core\/compiler["']/);
+    expect(code).toMatch(/from\s*["']@purityjs\/core\/runtime["']/);
   }, 30000);
 
   it('emits a usable .map alongside the bundled output', async () => {
     writeFileSync(
       join(dir, 'entry.ts'),
-      `import { html } from '@purityjs/core';\n` +
+      `import { html } from '@purityjs/core/jit';\n` +
         `export const greet = () => html\`<h1>hello</h1>\`;\n`,
     );
 

@@ -1,4 +1,5 @@
-import { each, html, state } from '@purityjs/core';
+import { each, state } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 interface Row {
   id: number;

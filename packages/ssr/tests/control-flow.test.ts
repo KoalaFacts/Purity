@@ -1,4 +1,5 @@
-import { eachSSR, listSSR, matchSSR, state, whenSSR } from '@purityjs/core';
+import { eachSSR, listSSR, matchSSR, whenSSR } from '@purityjs/core/internal';
+import { state } from '@purityjs/core';
 import { describe, expect, it } from 'vite-plus/test';
 import { html, renderToString } from '../src/index.ts';
 

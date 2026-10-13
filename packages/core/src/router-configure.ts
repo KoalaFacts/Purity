@@ -116,7 +116,7 @@ function runTeardowns(teardowns: ReadonlyArray<() => void>): void {
  *
  * @example
  * ```ts
- * import { configureNavigation, hydrate } from '@purityjs/core';
+ * import { configureNavigation } from '@purityjs/core/router'; import { hydrate } from '@purityjs/core';
  *
  * hydrate(document.getElementById('app')!, App);
  * configureNavigation(); // intercept + scroll + focus + transitions

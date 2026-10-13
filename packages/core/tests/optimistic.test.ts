@@ -3,7 +3,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { optimistic, query, serverAction } from '../src/index.ts';
+import { optimistic, serverAction } from '../src/actions/index.ts';
+import { query } from '../src/query/index.ts';
 import { _resetQueryCache, type QueryKey } from '../src/query.ts';
 import { _resetPageVisibilitySignal } from '../src/page-visibility-signal.ts';
 import { _resetOnlineSignal } from '../src/online-signal.ts';

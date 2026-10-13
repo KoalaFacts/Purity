@@ -2,7 +2,7 @@
 // Worker streams. Receives a `children` accessor; the consumer composer
 // (in app.ts) calls it to render the inner route view.
 
-import { html } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 // `<!doctype html>` is prepended by `renderToStream({ doctype })` in
 // `worker.ts` so the 404 path (which skips the layout per ADR 0028)

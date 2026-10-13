@@ -12,19 +12,9 @@
 // the user's component on the `html` tag — the test then drives it with
 // the SSR variant for renderToString and the core variant for hydrate.
 
-import {
-  component,
-  css,
-  each,
-  eachSSR,
-  html as clientHtml,
-  hydrate,
-  match,
-  matchSSR,
-  state,
-  when,
-  whenSSR,
-} from '@purityjs/core';
+import { component, css, each, hydrate, match, state, when } from '@purityjs/core';
+import { eachSSR, matchSSR, whenSSR } from '@purityjs/core/internal';
+import { html as clientHtml } from '@purityjs/core/jit';
 import { describe, expect, it } from 'vite-plus/test';
 import { html as ssrHtml, renderToString } from '../src/index.ts';
 

@@ -1,4 +1,4 @@
-import { asyncNotFound, asyncRoute, matchRoute } from '@purityjs/core';
+import { asyncNotFound, asyncRoute, matchRoute } from '@purityjs/core/router';
 
 import { notFoundChain, routes } from './.purity/routes.ts';
 

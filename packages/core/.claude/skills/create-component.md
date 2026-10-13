@@ -14,16 +14,7 @@ When asked to create a component, follow this pattern:
 ## Template
 
 ```ts
-import {
-  state,
-  compute,
-  html,
-  css,
-  component,
-  onMount,
-  onDestroy,
-  onDispose,
-} from '@purityjs/core';
+import { state, compute, css, component, onMount, onDestroy, onDispose } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
 
 component(
   'p-{name}',

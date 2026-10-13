@@ -24,7 +24,7 @@
       "functionConstructorCalls": 1
     },
     "controls-aot": {
-      "functionConstructorCalls": 1
+      "functionConstructorCalls": 0
     },
     "form-runtime": {
       "functionConstructorCalls": 1
@@ -36,7 +36,7 @@
       "functionConstructorCalls": 1
     },
     "hydration-aot": {
-      "functionConstructorCalls": 1
+      "functionConstructorCalls": 0
     }
   }
 }

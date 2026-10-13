@@ -1,14 +1,12 @@
 import {
-  inflateDeferred,
-  setInflateDeferredEach,
-  setInflateDeferredMatch,
-} from './compiler/compile.ts';
-import {
   type DeferredTemplate,
   enterHydration,
   exitHydration,
+  inflateDeferred,
   isDeferred,
   isHydrating,
+  setInflateDeferredEach,
+  setInflateDeferredMatch,
 } from './compiler/hydrate-runtime.ts';
 import {
   escAttr as escapeAttrLocal,

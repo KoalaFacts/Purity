@@ -25,7 +25,24 @@ export interface DeferredTemplate {
   values: unknown[];
 }
 
-type CompiledCreateFactory = (
+/**
+ * Compiles a JIT template on demand. `html` registers it when it captures a
+ * deferred template, so apps built with AOT templates never load the parser.
+ * @internal
+ */
+export interface JitCompiler {
+  create(strings: TemplateStringsArray): CompiledCreateFactory;
+  hydrate(strings: TemplateStringsArray): HydrateFactory;
+}
+
+let jit: JitCompiler | null = null;
+
+/** @internal — called by the JIT `html` tag before it returns a deferred template. */
+export function setJitCompiler(compiler: JitCompiler): void {
+  jit = compiler;
+}
+
+export type CompiledCreateFactory = (
   values: unknown[],
   watch: typeof import('../signals.ts').watch,
   materializeChild?: (value: unknown) => unknown,
@@ -112,15 +129,6 @@ export function isDeferred(v: unknown): v is DeferredTemplate {
   );
 }
 
-export function makeDeferred(strings: TemplateStringsArray, values: unknown[]): DeferredTemplate {
-  // Freeze the carrier so the brand can't be flipped off and the strings/
-  // values references can't be hot-swapped after capture. The arrays
-  // themselves are shared by reference (the tag-array is interned by V8;
-  // values is the caller's array) — freezing only the carrier is cheap and
-  // closes the brand-bypass surface.
-  return Object.freeze({ __purity_deferred__: true, strings, values });
-}
-
 /** Capture an AOT template without invoking the runtime parser or code generator. */
 export function makeCompiledDeferred(
   create: CompiledCreateFactory,
@@ -139,6 +147,130 @@ export function renderCompiledTemplate(
   return isHydrating()
     ? (makeCompiledDeferred(create, hydrate, values) as unknown as Node)
     : create(values, watch);
+}
+
+/**
+ * Inflate a DeferredTemplate against the SSR-rendered subtree in `target`.
+ * Called by the hydrator (and recursively by hydrate factories for nested
+ * templates).
+ *
+ * `target` is a Node container whose direct children are the SSR roots for
+ * this template — typically a DocumentFragment carved out of the parent
+ * slot's marker pair, or the hydration root container's children.
+ *
+ * Suspense boundary markers (`<!--s:N-->` / `<!--/s:N-->`) wrapping the
+ * SSR view content are stripped here — they wrap the slot's bytes but
+ * aren't part of the inner template's structural shape, so the hydrate
+ * factory shouldn't see them.
+ *
+ * @internal
+ */
+export function inflateDeferred(
+  deferred: DeferredTemplate,
+  target: Node,
+  skipFirstNode = false,
+  createIfEmpty = false,
+): Node {
+  stripSuspenseMarkers(target);
+  const first = target.firstChild;
+  const firstNode = skipFirstNode && first?.nodeName === 'STYLE' ? first.nextSibling : first;
+  if (!firstNode && (deferred.create || createIfEmpty)) {
+    target.appendChild(createDeferred(deferred));
+    return target;
+  }
+  const fn = deferred.hydrate ?? jit!.hydrate(deferred.strings!);
+  // Pass the cursor checker if either warnings or text-rewrite is enabled —
+  // the helper handles both behaviors and the codegen guard (`_c && _c(...)`)
+  // makes this a single null check per cursor step when both are off.
+  const check =
+    hydrationWarningsEnabled() || hydrationTextRewriteEnabled() ? checkHydrationCursor : undefined;
+  return fn(
+    deferred.values,
+    watch,
+    target,
+    inflateDeferred,
+    check,
+    inflateDeferredEachThunk,
+    inflateDeferredMatchThunk,
+    firstNode,
+  );
+}
+
+function createDeferred(deferred: DeferredTemplate): Node | DocumentFragment {
+  // A missing SSR row needs fresh DOM. Its nested templates were also
+  // captured as deferred values, including templates inside array slots.
+  const create = deferred.create ?? jit!.create(deferred.strings!);
+  return create(deferred.values, watch, materializeDeferredValue);
+}
+
+function materializeDeferredValue(value: unknown, seen: WeakSet<object> | null = null): unknown {
+  if (isDeferred(value)) return createDeferred(value);
+  if (!Array.isArray(value)) return value;
+  seen ??= new WeakSet<object>();
+  if (seen.has(value)) return [];
+  seen.add(value);
+  // Client factories accept flat arrays of Nodes/scalars. Flatten here while
+  // preserving null/false/zero semantics and avoiding cyclic-array recursion.
+  return value.flatMap((item: unknown) => materializeDeferredValue(item, seen));
+}
+
+// control.ts (the `each()` / `match()` runtimes) register their adoption
+// helpers here when capturing a hydration handle via
+// setInflateDeferredEach / setInflateDeferredMatch.
+// The thunk indirection avoids a static `hydrate-runtime.ts → control.ts`
+// import cycle (control.ts already imports `inflateDeferred` from this module).
+type InflateDeferredFn = (deferred: unknown, contNodes: Node[], closeMarker: Node) => void;
+
+let _inflateDeferredEach: InflateDeferredFn | null = null;
+let _inflateDeferredMatch: InflateDeferredFn | null = null;
+
+/** @internal — called by control.ts before returning an each() hydration handle. */
+export function setInflateDeferredEach(fn: InflateDeferredFn): void {
+  _inflateDeferredEach = fn;
+}
+
+/** @internal — called by control.ts before returning a match() hydration handle. */
+export function setInflateDeferredMatch(fn: InflateDeferredFn): void {
+  _inflateDeferredMatch = fn;
+}
+
+function inflateDeferredEachThunk(deferred: unknown, contNodes: Node[], closeMarker: Node): void {
+  /* v8 ignore start -- each() registers before returning a hydration handle */
+  if (!_inflateDeferredEach) {
+    throw new Error('[Purity] inflateDeferredEach not registered (control.ts not loaded)');
+  }
+  /* v8 ignore stop */
+  _inflateDeferredEach(deferred, contNodes, closeMarker);
+}
+
+function inflateDeferredMatchThunk(deferred: unknown, contNodes: Node[], closeMarker: Node): void {
+  /* v8 ignore start -- match() registers before returning a hydration handle */
+  if (!_inflateDeferredMatch) {
+    throw new Error('[Purity] inflateDeferredMatch not registered (control.ts not loaded)');
+  }
+  /* v8 ignore stop */
+  _inflateDeferredMatch(deferred, contNodes, closeMarker);
+}
+
+const SUSPENSE_MARKER = /^\/?s:\d+$/;
+
+function isSuspenseMarker(node: Node): boolean {
+  return node.nodeType === 8 && SUSPENSE_MARKER.test((node as Comment).data);
+}
+
+function stripSuspenseMarkers(target: Node): void {
+  // Single linear sweep over direct children — removes any `<!--s:N-->` /
+  // `<!--/s:N-->` comments regardless of position. Today's emitters only
+  // wrap (edge markers), but interior pairs can arise from SSR drift or a
+  // nested boundary whose unwrap was lossy. Stripping them defends the
+  // cursor walk in the compiled hydrate factory (which would otherwise
+  // mis-step onto a suspense marker and either warn or break).
+  let n = target.firstChild;
+  while (n) {
+    const next = n.nextSibling;
+    if (isSuspenseMarker(n)) target.removeChild(n);
+    n = next;
+  }
 }
 
 // ---------------------------------------------------------------------------

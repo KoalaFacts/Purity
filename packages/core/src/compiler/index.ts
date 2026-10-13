@@ -6,7 +6,7 @@ export {
   generateLinked,
   generateSSR,
 } from './codegen.ts';
-export { html, inflateDeferred } from './compile.ts';
+export { html, makeDeferred } from './compile.ts';
 export type { DeferredTemplate } from './hydrate-runtime.ts';
 export {
   checkHydrationCursor,
@@ -18,9 +18,9 @@ export {
   exitHydration,
   hydrationTextRewriteEnabled,
   hydrationWarningsEnabled,
+  inflateDeferred,
   isDeferred,
   isHydrating,
-  makeDeferred,
   makeCompiledDeferred,
   renderCompiledTemplate,
 } from './hydrate-runtime.ts';

@@ -1,4 +1,9 @@
-import { enterHydration, exitHydration, inflateDeferred, isDeferred } from './compiler/compile.ts';
+import {
+  enterHydration,
+  exitHydration,
+  inflateDeferred,
+  isDeferred,
+} from './compiler/hydrate-runtime.ts';
 import {
   markSSRHtml,
   type SSRComponentRenderer,

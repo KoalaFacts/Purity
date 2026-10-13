@@ -5,7 +5,12 @@
 // Error handling via onError (bubbles up to parent)
 // ---------------------------------------------------------------------------
 
-import { enterHydration, exitHydration, inflateDeferred, isDeferred } from './compiler/compile.ts';
+import {
+  enterHydration,
+  exitHydration,
+  inflateDeferred,
+  isDeferred,
+} from './compiler/hydrate-runtime.ts';
 import { untracked, watch } from './signals.ts';
 import { primeHydrationCache } from './ssr-context.ts';
 

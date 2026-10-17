@@ -29,9 +29,9 @@ import {
   nextSSRBoundaryDeadline,
   popSSRRenderContext,
   pushSSRRenderContext,
-  type SSRRenderContext,
 } from '@purityjs/core/internal';
 import { valueToHtml } from '@purityjs/core/internal';
+import { createRenderContext, createRenderSession } from './render-session.ts';
 import { boundaryDeadline } from './boundary-deadline.ts';
 import { ensureSSRComponentRendererInstalled } from './component.ts';
 import { renderCancellation } from './render-cancellation.ts';
@@ -379,19 +379,10 @@ async function renderShell(
 ): Promise<ShellResult> {
   ensureSSRComponentRendererInstalled();
   const start = Date.now();
-  const resolvedData: unknown[] = [];
-  const resolvedErrors: unknown[] = [];
-  // Null-prototype: see render-to-string.ts for rationale.
-  const resolvedDataByKey: Record<string, unknown> = Object.create(null);
-  const resolvedErrorsByKey: Record<string, unknown> = Object.create(null);
-  const boundaryStartTimes = new Map<number, number>();
-  const boundaryDeadlines = new Map<number, number>();
-  const timedOutBoundaries = new Set<number>();
+  const session = createRenderSession();
+  const { resolvedData, resolvedDataByKey, boundaryIds } = session;
   const inlineBoundaries = new Set<number>();
-  const boundaryAborts: NonNullable<SSRRenderContext['boundaryAborts']> = new Map();
   const streamingBoundaries: ShellResult['boundaries'] = new Map();
-  const boundaryIds = new Map<string, number>();
-  const pendingResources: NonNullable<SSRRenderContext['pendingResources']> = new Map();
 
   let html = '';
   // Discovery of synchronous inline boundaries does not consume async passes.
@@ -404,28 +395,12 @@ async function renderShell(
     streamingBoundaries.clear();
     const inlineCount = inlineBoundaries.size;
 
-    const ctx: SSRRenderContext = {
-      pendingPromises: [],
-      resolvedData,
-      resolvedErrors,
-      resolvedDataByKey,
-      resolvedErrorsByKey,
-      resourceCounter: 0,
-      suspenseCounter: 0,
-      islandCounter: 0,
-      boundaryStartTimes,
-      boundaryDeadlines,
-      timedOutBoundaries,
-      streamingMode: true,
-      streamingBoundaries,
-      inlineBoundaries,
-      ...(inlineBoundaries.size > 0 ? { boundaryAborts } : {}),
-      boundaryIds,
-      pendingResources,
-      head: [],
-      request,
-      signal,
-    };
+    const ctx = createRenderContext(session, request, signal);
+    ctx.streamingMode = true;
+    ctx.streamingBoundaries = streamingBoundaries;
+    ctx.inlineBoundaries = inlineBoundaries;
+    if (inlineBoundaries.size > 0) ctx.boundaryAborts = session.boundaryAborts;
+    ctx.head = [];
     pushSSRRenderContext(ctx);
     try {
       html = valueToHtml(component());
@@ -532,19 +507,12 @@ async function renderBoundary(
   boundaryIds: Map<string, number>,
 ): Promise<BoundaryResult | null> {
   const start = Date.now();
-  const resolvedData: unknown[] = [];
-  const resolvedErrors: unknown[] = [];
-  const resolvedDataByKey: Record<string, unknown> = Object.create(null);
-  const resolvedErrorsByKey: Record<string, unknown> = Object.create(null);
+  const session = createRenderSession(boundaryIds);
+  const { resolvedData, resolvedDataByKey, boundaryDeadlines } = session;
   // View deadlines retain the shell's first-encounter clock. Fallbacks
   // have the remaining renderer budget and never inherit a canceled view.
   const renderDeadline = start + timeout;
   const viewDeadline = Math.min(renderDeadline, boundary.deadline ?? Infinity);
-  const boundaryStartTimes = new Map<number, number>();
-  const boundaryDeadlines = new Map<number, number>();
-  const timedOutBoundaries = new Set<number>();
-  const boundaryAborts: NonNullable<SSRRenderContext['boundaryAborts']> = new Map();
-  const pendingResources: NonNullable<SSRRenderContext['pendingResources']> = new Map();
   // Zero and -1 are private operation groups in this boundary-local context;
   // nested suspense() IDs are positive and share the stream's marker namespace.
   boundaryDeadlines.set(0, viewDeadline);
@@ -572,29 +540,12 @@ async function renderBoundary(
       reportError(undefined, 'timeout');
       viewTimedOut = true;
     }
-    const ctx: SSRRenderContext = {
-      pendingPromises: [],
-      resolvedData,
-      resolvedErrors,
-      resolvedDataByKey,
-      resolvedErrorsByKey,
-      resourceCounter: 0,
-      suspenseCounter: 0,
-      islandCounter: 0,
-      boundaryStartTimes,
-      boundaryDeadlines,
-      timedOutBoundaries,
-      boundaryAborts,
-      boundaryIds,
-      boundaryPath: `stream:${boundaryId}/${viewTimedOut ? 'fallback' : 'view'}`,
-      pendingResources,
-      boundaryIdStack: [viewTimedOut ? -1 : 0],
-      request,
-      signal,
-      // Streaming mode is OFF inside a boundary render — nested suspense()
-      // calls inside the view render inline. Phase 3 MVP intentionally
-      // doesn't recursively stream sub-boundaries; that's a follow-up.
-    };
+    const ctx = createRenderContext(session, request, signal);
+    ctx.boundaryAborts = session.boundaryAborts;
+    ctx.boundaryPath = `stream:${boundaryId}/${viewTimedOut ? 'fallback' : 'view'}`;
+    ctx.boundaryIdStack = [viewTimedOut ? -1 : 0];
+    // Streaming mode stays off here: nested boundaries render inline, and
+    // boundary-local head calls remain absent from the shell's collector.
     if (deadlineExpired) {
       cancelSSRBoundary(ctx, 0, new DOMException('Suspense boundary timed out', 'TimeoutError'));
     }

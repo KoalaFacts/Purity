@@ -358,9 +358,15 @@ function runEntryMapFn<T>(
   pushContext(ctx);
   let content: Node | DocumentFragment | string;
   try {
-    content = mapFn(data, index);
-  } finally {
-    popContext();
+    try {
+      content = mapFn(data, index);
+    } finally {
+      popContext();
+    }
+  } catch (error) {
+    // Cleanup-created work belongs to the enclosing owner, not this lost row.
+    disposeScope(ctx);
+    throw error;
   }
   return { entry: { nodes: [], data, ctx }, content };
 }
@@ -559,19 +565,27 @@ function reconcileEach<T, E extends KeyedEntry>(
   if (prevLen === 0) {
     const newKeys2: unknown[] = [];
     const frag = document.createDocumentFragment();
-    for (let i = 0; i < len; i++) {
-      const item = items[i];
-      const key = getKey(item, i);
-      // Duplicate key: keep the first row only. Rendering a second entry
-      // would orphan the first one's DOM nodes and scope in keyToEntry.
-      if (keyToEntry.has(key)) {
-        warnDuplicateKey(key, i, ops.api);
-        continue;
+    try {
+      for (let i = 0; i < len; i++) {
+        const item = items[i];
+        const key = getKey(item, i);
+        // Duplicate key: keep the first row only. Rendering a second entry
+        // would orphan the first one's DOM nodes and scope in keyToEntry.
+        if (keyToEntry.has(key)) {
+          warnDuplicateKey(key, i, ops.api);
+          continue;
+        }
+        newKeys2.push(key);
+        const entry = ops.create(item, i);
+        for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
+        keyToEntry.set(key, entry);
       }
-      newKeys2.push(key);
-      const entry = ops.create(item, i);
-      for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
-      keyToEntry.set(key, entry);
+    } catch (error) {
+      // No row has been committed to the parent yet. Release earlier rows
+      // as well as the throwing row's own rollback in runEntryMapFn.
+      for (const entry of keyToEntry.values()) ops.release(entry);
+      keyToEntry.clear();
+      throw error;
     }
     parent.insertBefore(frag, endMarker);
     eachState.prevKeys = newKeys2;
@@ -582,31 +596,58 @@ function reconcileEach<T, E extends KeyedEntry>(
   // count used by every placement loop below.
   const newKeys: unknown[] = [];
   const newEntries = new Map<unknown, E>();
+  // Unique lists use their position directly. Only duplicate keys need an
+  // index map to preserve the first occurrence's source index after planning.
+  let sourceIndices: number[] | null = null;
   let reuseCount = 0;
 
-  for (let i = 0; i < len; i++) {
-    const item = items[i];
-    const key = getKey(item, i);
+  try {
+    for (let i = 0; i < len; i++) {
+      const item = items[i];
+      const key = getKey(item, i);
 
-    // Duplicate key: keys are documented as unique, so this only warns. The
-    // first occurrence owns the entry; later occurrences reuse it without
-    // creating or reusing a second one. That keeps reuseCount counting
-    // distinct keys and means no entry is created and then orphaned in
-    // newEntries (its nodes and scope would otherwise leak).
-    if (newEntries.has(key)) {
-      warnDuplicateKey(key, i, ops.api);
-      continue;
-    }
-    newKeys.push(key);
+      // Duplicate key: keys are documented as unique, so this only warns. The
+      // first occurrence owns the entry; later occurrences reuse it without
+      // creating or reusing a second one. That keeps reuseCount counting
+      // distinct keys and means no entry is created and then orphaned in
+      // newEntries (its nodes and scope would otherwise leak).
+      if (newEntries.has(key)) {
+        warnDuplicateKey(key, i, ops.api);
+        if (sourceIndices === null) {
+          sourceIndices = [];
+          for (let j = 0; j < newKeys.length; j++) sourceIndices.push(j);
+        }
+        continue;
+      }
+      sourceIndices?.push(i);
+      newKeys.push(key);
 
-    const existing = keyToEntry.get(key);
-    if (existing) {
-      ops.update(existing, item, i);
-      newEntries.set(key, existing);
-      reuseCount++;
-    } else {
-      newEntries.set(key, ops.create(item, i));
+      const existing = keyToEntry.get(key);
+      if (existing) {
+        newEntries.set(key, existing);
+        reuseCount++;
+      } else {
+        newEntries.set(key, ops.create(item, i));
+      }
     }
+    // Key evaluation and row creation must succeed before changing committed
+    // data or DOM. Keep this inside rollback so an update error releases new rows.
+    if (reuseCount > 0) {
+      for (let i = 0; i < newKeys.length; i++) {
+        const existing = keyToEntry.get(newKeys[i]);
+        if (existing) {
+          const index = sourceIndices === null ? i : sourceIndices[i];
+          ops.update(existing, items[index], index);
+        }
+      }
+    }
+  } catch (error) {
+    // New rows are not committed yet. Release only their scopes; existing
+    // rows remain owned so a later source update can retry.
+    for (const [key, entry] of newEntries) {
+      if (!keyToEntry.has(key)) ops.release(entry);
+    }
+    throw error;
   }
 
   const newLen = newKeys.length;
@@ -1288,13 +1329,31 @@ function createEachWindowController<T>(
     itemsVersion({});
   });
 
-  const disposeRender = watch(() => {
-    itemsVersion();
-    const parent = spacers.bottom.parentNode;
-    if (!parent) return;
-    reconcileEachWindow(eachState, items, indices, keys, parent, spacers, range(), heights, mapFn);
-    notifyRowsChanged();
-  });
+  let disposeRender: () => void;
+  try {
+    disposeRender = watch(() => {
+      itemsVersion();
+      const parent = spacers.bottom.parentNode;
+      if (!parent) return;
+      reconcileEachWindow(
+        eachState,
+        items,
+        indices,
+        keys,
+        parent,
+        spacers,
+        range(),
+        heights,
+        mapFn,
+      );
+      notifyRowsChanged();
+    });
+  } catch (error) {
+    // The controller never returns a disposer if its initial rows fail.
+    // This source watch also needs cleanup when there is no component owner.
+    disposeItems();
+    throw error;
+  }
 
   const disposeWindow = registerEachWindow(
     ownerCtx,
@@ -1609,118 +1668,133 @@ export function inflateDeferredEach<T>(
   const items = getList() || [];
   const eachState: EachState<T> = { keyToEntry: new Map(), prevKeys: [] };
 
-  // Adopt rows in items order. For each item, if a matching SSR row exists,
-  // run mapFn under the entry scope (yielding a DeferredTemplate when the
-  // user uses `html\`\``) and inflate against that row's nodes. Otherwise
-  // build fresh DOM.
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    const key = getKey(item, i);
-    // Duplicate key: first occurrence adopts the SSR row; later ones are
-    // skipped so prevKeys stays unique (see reconcileEach).
-    if (eachState.keyToEntry.has(key)) {
-      warnDuplicateKey(key, i);
-      continue;
-    }
-    eachState.prevKeys.push(key);
+  try {
+    // Adopt rows in items order. For each item, if a matching SSR row exists,
+    // run mapFn under the entry scope (yielding a DeferredTemplate when the
+    // user uses `html\`\``) and inflate against that row's nodes. Otherwise
+    // build fresh DOM.
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const key = getKey(item, i);
+      // Duplicate key: first occurrence adopts the SSR row; later ones are
+      // skipped so prevKeys stays unique (see reconcileEach).
+      if (eachState.keyToEntry.has(key)) {
+        warnDuplicateKey(key, i);
+        continue;
+      }
+      eachState.prevKeys.push(key);
 
-    // Items match SSR rows by `String(key)` — same coercion that eachSSR's
-    // encoder applies (round-trip through encodeURIComponent / decode).
-    const ssrRow = ssrByKey.get(String(key));
-    if (ssrRow) {
-      adoptedRows.add(ssrRow);
-      // Consume the row: a distinct key with the same string form must not
-      // adopt the same DOM a second time.
-      ssrByKey.delete(String(key));
-    }
-    const data = state(item);
-    const ctx: Scope = { disposers: null };
-    pushContext(ctx);
-    // Re-enter hydration mode while mapFn runs so nested `html\`\`` calls
-    // return DeferredTemplate handles (which we then inflate against the
-    // matching SSR row) instead of building fresh DOM. The outer hydrate()
-    // exits hydration mode before invoking inflate helpers, so each row
-    // toggles it locally.
-    enterHydration();
-    let content: Node | DocumentFragment | string | DeferredTemplate;
-    try {
-      content = mapFn(data, i) as Node | DocumentFragment | string | DeferredTemplate;
-    } finally {
-      exitHydration();
-      popContext();
-    }
-
-    let nodes: Node[];
-    if (ssrRow && isDeferred(content)) {
-      // Inflate the row template against a fragment carved from this row's
-      // SSR nodes. The hydrate factory mutates row DOM in place; we then
-      // re-attach the (now bound) nodes to the parent in their original
-      // position before the slot close marker.
-      const frag = document.createDocumentFragment();
-      for (let j = 0; j < ssrRow.nodes.length; j++) frag.appendChild(ssrRow.nodes[j]);
-      inflateDeferred(content as DeferredTemplate, frag);
-      nodes = Array.from(frag.childNodes);
-      parent.insertBefore(frag, endMarker);
-    } else {
-      // No SSR row OR mapFn returned non-deferred (string / static Node /
-      // fragment). Detach any SSR row nodes for this key — they're stale —
-      // and insert the fresh content.
+      // Items match SSR rows by `String(key)` — same coercion that eachSSR's
+      // encoder applies (round-trip through encodeURIComponent / decode).
+      const ssrRow = ssrByKey.get(String(key));
       if (ssrRow) {
-        for (let j = 0; j < ssrRow.nodes.length; j++) {
-          const n = ssrRow.nodes[j];
-          if (n.parentNode) n.parentNode.removeChild(n);
+        adoptedRows.add(ssrRow);
+        // Consume the row: a distinct key with the same string form must not
+        // adopt the same DOM a second time.
+        ssrByKey.delete(String(key));
+      }
+      const data = state(item);
+      const ctx: Scope = { disposers: null };
+      const entry: EachEntry<T> = { nodes: [], data, ctx };
+      // Track ownership before user code or hydration can throw. The failed
+      // adoption below must release both this row and all earlier rows.
+      eachState.keyToEntry.set(key, entry);
+      pushContext(ctx);
+      try {
+        // Re-enter hydration mode while mapFn runs so nested `html\`\`` calls
+        // return DeferredTemplate handles (which we then inflate against the
+        // matching SSR row) instead of building fresh DOM. The outer hydrate()
+        // exits hydration mode before invoking inflate helpers, so each row
+        // toggles it locally.
+        enterHydration();
+        let content: Node | DocumentFragment | string | DeferredTemplate;
+        try {
+          content = mapFn(data, i) as Node | DocumentFragment | string | DeferredTemplate;
+        } finally {
+          exitHydration();
         }
-      }
-      if (isDeferred(content)) {
-        // No SSR row to adopt — inflate against an empty fragment. The
-        // factory builds fresh DOM under that fragment via the same path
-        // used for top-level mismatched-slot recovery; we then move it in.
-        const frag = document.createDocumentFragment();
-        // createIfEmpty: the fragment is empty, so build fresh DOM instead of
-        // hydrating against nothing.
-        inflateDeferred(content as DeferredTemplate, frag, false, true);
-        nodes = Array.from(frag.childNodes);
-        parent.insertBefore(frag, endMarker);
-      } else if (content instanceof DocumentFragment) {
-        const fc = content.firstChild;
-        nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
-        parent.insertBefore(content, endMarker);
-      } else if (content instanceof Node) {
-        nodes = [content];
-        parent.insertBefore(content, endMarker);
-      } else {
-        const tn = document.createTextNode(String(content ?? ''));
-        nodes = [tn];
-        parent.insertBefore(tn, endMarker);
+
+        let nodes: Node[];
+        if (ssrRow && isDeferred(content)) {
+          // Inflate the row template against a fragment carved from this row's
+          // SSR nodes. The hydrate factory mutates row DOM in place; we then
+          // re-attach the (now bound) nodes to the parent in their original
+          // position before the slot close marker.
+          const frag = document.createDocumentFragment();
+          for (let j = 0; j < ssrRow.nodes.length; j++) frag.appendChild(ssrRow.nodes[j]);
+          inflateDeferred(content as DeferredTemplate, frag);
+          nodes = Array.from(frag.childNodes);
+          parent.insertBefore(frag, endMarker);
+        } else {
+          // No SSR row OR mapFn returned non-deferred (string / static Node /
+          // fragment). Detach any SSR row nodes for this key — they're stale —
+          // and insert the fresh content.
+          if (ssrRow) {
+            for (let j = 0; j < ssrRow.nodes.length; j++) {
+              const n = ssrRow.nodes[j];
+              if (n.parentNode) n.parentNode.removeChild(n);
+            }
+          }
+          if (isDeferred(content)) {
+            // No SSR row to adopt — inflate against an empty fragment. The
+            // factory builds fresh DOM under that fragment via the same path
+            // used for top-level mismatched-slot recovery; we then move it in.
+            const frag = document.createDocumentFragment();
+            // createIfEmpty: the fragment is empty, so build fresh DOM instead of
+            // hydrating against nothing.
+            inflateDeferred(content as DeferredTemplate, frag, false, true);
+            nodes = Array.from(frag.childNodes);
+            parent.insertBefore(frag, endMarker);
+          } else if (content instanceof DocumentFragment) {
+            const fc = content.firstChild;
+            nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
+            parent.insertBefore(content, endMarker);
+          } else if (content instanceof Node) {
+            nodes = [content];
+            parent.insertBefore(content, endMarker);
+          } else {
+            const tn = document.createTextNode(String(content ?? ''));
+            nodes = [tn];
+            parent.insertBefore(tn, endMarker);
+          }
+        }
+
+        entry.nodes = nodes;
+      } finally {
+        // Template inflation creates bindings too; keep them in the row scope.
+        popContext();
       }
     }
 
-    eachState.keyToEntry.set(key, { nodes, data, ctx });
-  }
-
-  // Detach every SSR row that was not adopted: rows whose key no longer
-  // exists (data changed between SSR and hydration) and duplicate-key rows
-  // (ssrByKey keeps only the last row per key, so they are not in it).
-  for (let i = 0; i < ssrRows.length; i++) {
-    const row = ssrRows[i];
-    if (adoptedRows.has(row)) continue;
-    for (let j = 0; j < row.nodes.length; j++) {
-      const n = row.nodes[j];
-      if (n.parentNode) n.parentNode.removeChild(n);
+    // Detach every SSR row that was not adopted: rows whose key no longer
+    // exists (data changed between SSR and hydration) and duplicate-key rows
+    // (ssrByKey keeps only the last row per key, so they are not in it).
+    for (let i = 0; i < ssrRows.length; i++) {
+      const row = ssrRows[i];
+      if (adoptedRows.has(row)) continue;
+      for (let j = 0; j < row.nodes.length; j++) {
+        const n = row.nodes[j];
+        if (n.parentNode) n.parentNode.removeChild(n);
+      }
     }
-  }
 
-  if (options?.virtual) {
-    hydrateWindow!(ownerCtx, eachState, listAccessor, mapFn, getKey, parent, endMarker);
-  } else {
-    const ops = eachRowOps(mapFn);
-    const dispose = watch(() => {
-      const next = getList() || [];
-      const p = endMarker.parentNode;
-      if (!p) return;
-      reconcileEach(eachState, next, p, endMarker, getKey, ops);
-    });
-    registerEachAutoDispose(ownerCtx, dispose, eachState);
+    if (options?.virtual) {
+      hydrateWindow!(ownerCtx, eachState, listAccessor, mapFn, getKey, parent, endMarker);
+    } else {
+      const ops = eachRowOps(mapFn);
+      const dispose = watch(() => {
+        const next = getList() || [];
+        const p = endMarker.parentNode;
+        if (!p) return;
+        reconcileEach(eachState, next, p, endMarker, getKey, ops);
+      });
+      registerEachAutoDispose(ownerCtx, dispose, eachState);
+    }
+  } catch (error) {
+    for (const entry of eachState.keyToEntry.values()) disposeEntry(entry);
+    eachState.keyToEntry.clear();
+    eachState.prevKeys = [];
+    throw error;
   }
 }
 

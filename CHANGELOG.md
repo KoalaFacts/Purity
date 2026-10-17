@@ -49,6 +49,11 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Fixed and improved
 
+- Release subscriptions and completed child scopes when component or list-row
+  initialization throws, while retaining committed row data when a later key
+  or row initializer fails during an update. Failed component renders retain their existing lifecycle
+  and error-propagation behavior.
+
 - Keep the Vercel example's Edge runtime declaration in a tracked API wrapper
   so the deployment builder recognizes it after bundling. Verify the real
   builder output and streaming responses in an isolated Edge runtime in CI.

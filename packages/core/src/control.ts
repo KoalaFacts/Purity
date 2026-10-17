@@ -13,7 +13,7 @@ import { ssrControls } from './control/dispatch.ts';
 import { warnDuplicateKey } from './control/keys.ts';
 import { getCurrentContext, popContext, pushContext, type Scope } from './scope.ts';
 import { disposeScope, state, watch, type StateAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 // ---------------------------------------------------------------------------
 // State-preserving DOM moves (ADR 0037)

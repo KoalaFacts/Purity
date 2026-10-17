@@ -6,7 +6,7 @@ import {
   type SSRHtml,
   valueToHtml,
 } from '../compiler/ssr-runtime.ts';
-import { cancelSSRBoundary, getSSRRenderContext } from '../ssr-context.ts';
+import { cancelSSRBoundary, getSSRRenderContext } from '../ssr/state.ts';
 import type { SuspenseOptions, SuspenseErrorPhase } from '../control.ts';
 import { warnDuplicateKey } from './keys.ts';
 

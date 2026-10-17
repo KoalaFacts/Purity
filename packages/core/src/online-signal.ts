@@ -8,7 +8,7 @@
 
 import { bindListeners } from './listen.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 let singleton: ComputedAccessor<boolean> | null = null;
 let unbind: (() => void) | null = null;

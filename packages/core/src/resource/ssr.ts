@@ -1,6 +1,6 @@
 import type { ResourceAccessor, ResourceFetchInfo, ResourceRetryOptions } from '../resource.ts';
 import type { StateAccessor } from '../signals.ts';
-import { currentBoundaryId, type SSRRenderContext } from '../ssr-context.ts';
+import { currentBoundaryId, type SSRRenderContext } from '../ssr/state.ts';
 import { withRetry } from './retry.ts';
 
 function startSSRFetch<T>(

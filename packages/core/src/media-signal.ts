@@ -8,7 +8,7 @@
 
 import { attachMqlChange, type MqlBinding } from './mql-listener.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 const cache: Map<string, ComputedAccessor<boolean>> = new Map();
 // (mql, detach) pairs so _reset can detach what cache.clear() can't reach.

@@ -86,7 +86,7 @@ and Node `24.17.0` measured:
 | Hydration     |       15,508 |   17,365 |         13,836 |     15,335 |
 
 All 24 browser/profile combinations passed with Chromium `148.0.7778.96`,
-Firefox `150.0.2`, and WebKit `26.4`. The controls AOT payload is about 12.5%
+Firefox `150.0.2`, and WebKit `26.4`. At that historical revision, the controls AOT payload is about 12.5%
 larger than runtime; hydration AOT is about 12.0% larger. Counter and form
 AOT are smaller. Applying the counter's earlier savings to all applications
 would therefore be incorrect.
@@ -97,7 +97,10 @@ two such JIT fallback sites; counter/form AOT retain none. CSP verification
 shows these fallbacks were not executed by the recorded AOT interactions.
 This inventory is not a security audit or a count of compiler bytes: aliases,
 other dynamic-code mechanisms, and broader user paths are outside its scope.
-Removing unnecessary JIT dependencies from these controls is still open.
+The 0.4.0 entry split removes these direct Function sites from all five AOT
+fixtures, including controls and hydration. The current runner enforces zero
+sites and verifies each AOT fixture without `unsafe-eval`; use its generated
+report for current sizes rather than the historical table above.
 
 ## Initial reference
 

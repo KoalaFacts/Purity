@@ -12,7 +12,7 @@
 
 import { mediaSignal } from './media-signal.ts';
 import { compute, type ComputedAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 export function preferenceSignal<T>(
   queries: readonly string[],

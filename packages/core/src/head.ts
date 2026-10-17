@@ -17,7 +17,7 @@
 // ---------------------------------------------------------------------------
 
 import { valueToHtml } from './compiler/ssr-runtime.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 /**
  * Register content for the document `<head>` from inside a component.

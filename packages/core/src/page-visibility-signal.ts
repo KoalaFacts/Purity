@@ -8,7 +8,7 @@
 
 import { bindListeners, isolate } from './listen.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 let singleton: ComputedAccessor<'visible' | 'hidden'> | null = null;
 // Teardown closure captured at wire-time so reset can remove the listener

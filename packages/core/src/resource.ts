@@ -15,7 +15,8 @@
 
 import { bindComponentState } from './component.ts';
 import { batch, state, watch } from './signals.ts';
-import { consumeHydrationValue, getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
+import { consumeHydrationValue } from './ssr/hydration-cache.ts';
 import { ssrResources } from './resource/dispatch.ts';
 import { normalizeRetry, withRetry } from './resource/retry.ts';
 

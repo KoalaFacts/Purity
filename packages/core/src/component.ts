@@ -20,7 +20,7 @@ import {
   pushContext,
   popContext,
 } from './scope.ts';
-import { primeHydrationCache } from './ssr-context.ts';
+import { primeHydrationCache } from './ssr/hydration-cache.ts';
 
 /**
  * A zero-argument function that returns a DOM subtree.

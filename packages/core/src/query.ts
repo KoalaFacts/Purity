@@ -22,7 +22,7 @@ import { onlineSignal } from './online-signal.ts';
 import { pageVisibilitySignal } from './page-visibility-signal.ts';
 import { resource, type ResourceAccessor, type ResourceFetchInfo } from './resource.ts';
 import { watch, type Dispose } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 /** Cache key for query(). Strings are used as-is; arrays are JSON-serialized. */
 export type QueryKey = string | readonly unknown[];

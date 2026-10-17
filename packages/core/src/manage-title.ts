@@ -15,7 +15,7 @@
 import { escHtml, markSSRHtml } from './compiler/ssr-runtime.ts';
 import { head } from './head.ts';
 import { watch } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 /**
  * Reactive `<title>` synchronisation (ADR 0030).

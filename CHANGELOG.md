@@ -8,6 +8,9 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Changed
 
+- Separate passive SSR context state and hydration caches from server adapter
+  registration, removing the internal runtime import cycle while preserving
+  entry exports, render-pass scope cleanup, and resource cancellation behavior.
 - Split core into feature entry points and separate JIT compilation, AOT runtime,
   and compiler tooling. Move scope ownership below rendering and reactivity.
   Migrate imports using the [entry-point mapping](docs/core-entry-points.md).

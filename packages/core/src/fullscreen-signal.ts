@@ -9,7 +9,7 @@
 
 import { bindListeners, isolate, type ListenerSpec } from './listen.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 let singleton: ComputedAccessor<Element | null> | null = null;
 let unbind: (() => void) | null = null;

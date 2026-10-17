@@ -15,7 +15,7 @@ import { type LoaderDataToken, popLoaderData, pushLoaderData } from './loader-da
 import { lazyResource } from './resource.ts';
 import { getRequest } from './request-context.ts';
 import { currentPath } from './router.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 const ROUTE_DATA = Symbol.for('@purityjs/core/route-data');
 

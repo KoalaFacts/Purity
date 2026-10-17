@@ -10,7 +10,7 @@
 
 import { bindListeners } from './listen.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 let singleton: ComputedAccessor<'portrait' | 'landscape'> | null = null;
 // Detach for whichever tier's listener bound; null when none bound.

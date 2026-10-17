@@ -24,7 +24,7 @@
 
 import { onDispose } from './component.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 export type IdleSignalState = {
   user: 'active' | 'idle';

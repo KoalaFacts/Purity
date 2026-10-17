@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import { state } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 // Reactive signal backing the URL accessors on the client. Initialised from
 // `window.location.href` at module load (or a placeholder on the server).

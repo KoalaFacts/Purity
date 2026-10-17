@@ -29,7 +29,7 @@ import {
   type SSRHtml,
   valueToHtml,
 } from './compiler/ssr-runtime.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 /**
  * When the island's chunk loads + hydrates. Phase 2 implements `'load'`

@@ -9,7 +9,7 @@
 
 import { bindListeners, isolate } from './listen.ts';
 import { state, type StateAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 let singleton: StateAccessor<number> | null = null;
 let unbind: (() => void) | null = null;

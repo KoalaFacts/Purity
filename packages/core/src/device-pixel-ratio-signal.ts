@@ -13,7 +13,7 @@
 
 import { attachMqlChange as attachMqlListener, type MqlBinding } from './mql-listener.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 let singleton: ComputedAccessor<number> | null = null;
 // The binding whose `.detach` is paired with whichever mql/API attach

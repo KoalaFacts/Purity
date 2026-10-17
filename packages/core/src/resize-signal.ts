@@ -10,7 +10,7 @@
 
 import { getCurrentContext } from './scope.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 const ZERO_RECT: DOMRectReadOnly = /* @__PURE__ */ Object.freeze({
   x: 0,

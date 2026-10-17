@@ -13,7 +13,7 @@
 // Workers, and Vercel Edge.
 // ---------------------------------------------------------------------------
 
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 /**
  * Return the incoming `Request` for the current SSR render, or `null`

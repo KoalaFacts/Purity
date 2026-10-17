@@ -14,7 +14,7 @@
 // conditional on private provenance rather than a forgeable JSON property.
 // ---------------------------------------------------------------------------
 
-import { getSSRRenderContext } from '../ssr-context.ts';
+import { getSSRRenderContext } from '../ssr/state.ts';
 import { VOID_TAGS } from './ast.ts';
 
 /** A string of pre-escaped, trusted HTML. Concatenated raw by valueToHtml. */

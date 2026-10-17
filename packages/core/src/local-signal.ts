@@ -14,7 +14,7 @@
 
 import { getCurrentContext } from './scope.ts';
 import { state, type StateAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 export interface LocalSignalOptions<T> {
   /** Which Storage to use. Defaults to `'local'`. */

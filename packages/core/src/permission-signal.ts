@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { compute, state, type ComputedAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 const cache: Map<string, ComputedAccessor<PermissionState>> = new Map();
 // Track the resolved `PermissionStatus` + its change listener per name, so

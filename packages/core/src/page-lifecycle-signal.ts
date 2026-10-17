@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { compute, state, type ComputedAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 export type PageLifecycleState = 'active' | 'passive' | 'hidden' | 'frozen' | 'terminated';
 

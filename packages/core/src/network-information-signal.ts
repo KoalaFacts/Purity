@@ -8,7 +8,7 @@
 
 import { bindListeners } from './listen.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 export type NetworkInformation = {
   effectiveType: '4g' | '3g' | '2g' | 'slow-2g';

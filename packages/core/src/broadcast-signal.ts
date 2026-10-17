@@ -16,7 +16,7 @@
 // ---------------------------------------------------------------------------
 
 import { state, type StateAccessor } from './signals.ts';
-import { getSSRRenderContext } from './ssr-context.ts';
+import { getSSRRenderContext } from './ssr/state.ts';
 
 /**
  * Type-narrowing predicate used to validate incoming `BroadcastChannel`

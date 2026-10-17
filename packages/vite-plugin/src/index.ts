@@ -14,7 +14,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, posix, resolve as resolvePath, sep as pathSep } from 'node:path';
-import { parseSync } from 'oxc-parser';
+import { parseSync, type Program } from 'oxc-parser';
 
 import { generateHydrateLinked, generateLinked, generateSSR, parse } from '@purityjs/core/compiler';
 import { devtoolsClientSource } from './devtools-client.ts';
@@ -936,14 +936,13 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
     : `import { renderCompiledTemplate as ${prefix}_renderCompiled__, flattenValue as ${prefix}_fl__, swapSlot as ${prefix}_sw__ } from '@purityjs/core/runtime';\n`;
   /* v8 ignore next -- edits.length > 0 implies at least one hoist was pushed */
   const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
-  const insertAt = findLastImportEnd(source);
-  const insertPos = insertAt === -1 ? 0 : insertAt;
-  edits.push({ start: insertPos, end: insertPos, out: runtimeImport + hoistsBlock });
+  const insertPos = findImportInsertionOffset(source, program);
+  edits.push({ start: insertPos, end: insertPos, out: '\n' + runtimeImport + hoistsBlock });
 
   // Removing `html` from `@purityjs/core/jit` import statements — but ONLY when
   // every template compiled. If any failed, the failed `html\`\`` is left in
   // the output as runtime code and still needs the import to resolve.
-  if (!ctx.failed) edits.push(...findHtmlImportEdits(source));
+  if (!ctx.failed) edits.push(...findHtmlImportEdits(source, program));
 
   // Sort: by start ASC, then by length ASC (insertions before replacements at
   // the same offset). Stable order for same-start same-length is fine.
@@ -953,12 +952,11 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   return { changed: true, code, map, warnings };
 }
 
-/**
- * Scan @purityjs/core/jit named-import statements and emit edits that strip the
- * `html` binding (and drop the entire statement when it's the only binding).
- *
- * Uses indexOf-based scanning (no regex) to avoid ReDoS on untrusted input.
- */
+function lineCommentEnd(code: string, pos: number): number {
+  while (pos < code.length && !/[\n\r\u2028\u2029]/.test(code[pos]!)) pos++;
+  return pos;
+}
+
 /**
  * Skip whitespace, block comments, and line comments
  * starting at `pos`. Returns the next non-trivia offset. Unterminated block
@@ -969,7 +967,7 @@ function skipWsAndComments(code: string, pos: number): number {
   let p = pos;
   while (p < code.length) {
     const c = code[p];
-    if (c === ' ' || c === '\t' || c === '\n' || c === '\r') {
+    if (/\s/.test(c!)) {
       p++;
       continue;
     }
@@ -982,9 +980,7 @@ function skipWsAndComments(code: string, pos: number): number {
         continue;
       }
       if (c2 === '/') {
-        const nl = code.indexOf('\n', p + 2);
-        if (nl === -1) return code.length;
-        p = nl + 1;
+        p = lineCommentEnd(code, p + 2);
         continue;
       }
     }
@@ -993,63 +989,41 @@ function skipWsAndComments(code: string, pos: number): number {
   return p;
 }
 
-function findHtmlImportEdits(code: string): Edit[] {
+/** Strip only the compiled binding, using the module's parsed import ranges. */
+function findHtmlImportEdits(code: string, program: Program): Edit[] {
   const edits: Edit[] = [];
-  let pos = 0;
-  while (pos < code.length) {
-    const idx = code.indexOf('import', pos);
-    if (idx === -1) break;
-
-    let i = skipWsAndComments(code, idx + 6); // skip 'import' + whitespace/comments
-    if (code[i] !== '{') {
-      pos = idx + 6;
+  for (const node of program.body) {
+    if (
+      node.type !== 'ImportDeclaration' ||
+      node.importKind === 'type' ||
+      (node.source.value !== '@purityjs/core/jit' && node.source.value !== '@purityjs/ssr')
+    )
       continue;
+    const named = node.specifiers.filter((specifier) => specifier.type === 'ImportSpecifier');
+    const index = named.findIndex(
+      (specifier) =>
+        specifier.importKind !== 'type' &&
+        specifier.local.name === 'html' &&
+        (specifier.imported.type === 'Identifier'
+          ? specifier.imported.name
+          : specifier.imported.value) === 'html',
+    );
+    if (index === -1) continue;
+    const specifier = named[index]!;
+    if (node.specifiers.length === 1) {
+      edits.push({ start: node.start, end: node.end, out: '' });
+    } else if (named.length === 1) {
+      // The default binding remains. Remove its comma and the named clause.
+      let close = skipWsAndComments(code, specifier.end);
+      if (code[close] === ',') close = skipWsAndComments(code, close + 1);
+      edits.push({ start: node.specifiers[0]!.end, end: close + 1, out: '' });
+    } else {
+      edits.push({ start: specifier.start, end: specifier.end, out: '' });
+      // Trivia may contain commas/braces; scan only between parsed bindings.
+      const after = skipWsAndComments(code, specifier.end);
+      const comma = code[after] === ',' ? after : skipWsAndComments(code, named[index - 1]!.end);
+      edits.push({ start: comma, end: comma + 1, out: '' });
     }
-    const braceStart = i;
-    const braceEnd = code.indexOf('}', braceStart);
-    if (braceEnd === -1) break;
-
-    let j = skipWsAndComments(code, braceEnd + 1);
-    if (code.slice(j, j + 4) !== 'from') {
-      pos = idx + 6;
-      continue;
-    }
-    j = skipWsAndComments(code, j + 4);
-    const quote = code[j];
-    if (quote !== "'" && quote !== '"') {
-      pos = idx + 6;
-      continue;
-    }
-    const modStart = j + 1;
-    const modEnd = code.indexOf(quote, modStart);
-    if (modEnd === -1) break;
-    const moduleName = code.slice(modStart, modEnd);
-    let end = modEnd + 1;
-    while (end < code.length && (code[end] === ' ' || code[end] === '\t' || code[end] === '\n'))
-      end++;
-    if (end < code.length && code[end] === ';') end++;
-
-    // Strip `html` from imports of either purity entry point — users may have
-    // `import { html } from '@purityjs/core/jit'` (client app source) or
-    // `import { html } from '@purityjs/ssr'` (a pre-existing SSR-only file).
-    // Both are dead after AOT replaces the call sites.
-    if (moduleName !== '@purityjs/core/jit' && moduleName !== '@purityjs/ssr') {
-      pos = end;
-      continue;
-    }
-
-    const imports = code.slice(braceStart + 1, braceEnd);
-    const cleaned = imports
-      .split(',')
-      .map((s: string) => s.trim())
-      .filter((s: string) => s && s !== 'html')
-      .join(', ');
-    edits.push({
-      start: idx,
-      end,
-      out: cleaned ? `import { ${cleaned} } from '${moduleName}';` : '',
-    });
-    pos = end;
   }
   return edits;
 }
@@ -1215,91 +1189,21 @@ function applyEdits(
   };
 }
 
-function findLastImportEnd(code: string): number {
-  // Track multi-line `import { ... } from '...';` statements: an import line
-  // is followed by zero-or-more continuation lines until one ends with the
-  // quoted source (plus optional import-attributes clause / trailer).
-  // Inserting in the middle of a multi-line import would split the import
-  // and break parsing (regression: see plugin.test.ts "handles multi-line
-  // imports").
-  const lines = code.split('\n');
-  let lastEnd = -1;
-  let offset = 0;
-  let inImport = false;
-
-  for (const line of lines) {
-    const trimmed = line.trimStart();
-    if (!inImport && (trimmed.startsWith('import ') || trimmed.startsWith('import{'))) {
-      inImport = true;
+function findImportInsertionOffset(code: string, program: Program): number {
+  let end = program.hashbang?.end ?? 0;
+  let hasImport = false;
+  for (const node of program.body) {
+    if (node.type === 'ImportDeclaration') {
+      end = node.end;
+      hasImport = true;
     }
-    if (inImport && lineClosesImport(line)) {
-      lastEnd = offset + line.length + 1;
-      inImport = false;
-    }
-    offset += line.length + 1;
   }
-
-  return lastEnd;
-}
-
-/**
- * True if `line` contains the closing portion of an `import` statement —
- * either a `from '…'` clause or a bare side-effect `'…';` — possibly
- * followed by import attributes (`with { … }` / `assert { … }`), trailing
- * semicolons, and inline / line comments.
- *
- * Scans left-to-right tracking outer-vs-brace context so the matched
- * "module source" string is the one at outer scope (not a nested string
- * inside a `with { … }` attribute clause). No regex backtracking —
- * predictable on long inputs.
- */
-function lineClosesImport(line: string): boolean {
-  let p = 0;
-  let depth = 0;
-  let lastOuterQuoteEnd = -1;
-  while (p < line.length) {
-    const c = line[p]!;
-    if (c === ' ' || c === '\t' || c === '\r') {
-      p++;
-      continue;
-    }
-    if (c === '/' && p + 1 < line.length && line[p + 1] === '/') {
-      // Line comment to EOL.
-      break;
-    }
-    if (c === '/' && p + 1 < line.length && line[p + 1] === '*') {
-      const close = line.indexOf('*/', p + 2);
-      if (close === -1) return false;
-      p = close + 2;
-      continue;
-    }
-    if (c === "'" || c === '"') {
-      const quote = c;
-      p++;
-      while (p < line.length && line[p] !== quote) {
-        if (line[p] === '\\') p += 2;
-        else p++;
-      }
-      if (p >= line.length) return false;
-      p++;
-      if (depth === 0) lastOuterQuoteEnd = p;
-      continue;
-    }
-    if (c === '{') {
-      depth++;
-      p++;
-      continue;
-    }
-    if (c === '}') {
-      depth--;
-      p++;
-      continue;
-    }
-    p++;
-  }
-  // We close an import iff we saw an outer-scope quoted source string and
-  // ended at top brace depth.
-  return lastOuterQuoteEnd >= 0 && depth === 0;
+  if (!hasImport) return end;
+  // Keep a same-line import comment before the insertion. Leading comments
+  // on the next statement (including PURE annotations) must stay with it.
+  let tail = end;
+  while (tail < code.length && /[^\S\r\n\u2028\u2029]/.test(code[tail]!)) tail++;
+  return code.startsWith('//', tail) ? lineCommentEnd(code, tail + 2) : end;
 }
 
 export type { LayoutEntry, RouteEntry } from './routes.ts';

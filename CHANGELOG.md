@@ -80,7 +80,9 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 - A leading newline in `<textarea>`, `<pre>` and `<listing>` survives SSR and
   the client cloning path.
 - The Vite plugin compiles only `html` tagged templates found in the module
-  AST, not text in comments or string literals.
+  AST, not text in comments or string literals. Import cleanup and helper
+  insertion also use parsed declarations, preserving literal import text,
+  remaining bindings, comments and call annotations.
 - AOT-compiled modules no longer break when user code declares a binding with
   the name of a helper the Vite plugin injects (`__purity_fl__` and friends).
 - Client and SSR coerce values the same way (arrays, functions, `null`/`false`).

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { isHydrating, withHydration } from '../src/compiler/hydrate-runtime.ts';
 import { hydrate, mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
-import { each, inflateDeferredEach, type DeferredEach } from '../src/control.ts';
+import { each, inflateDeferredEach, list, type DeferredEach } from '../src/control.ts';
 import { ComponentContext, getCurrentContext, popContext, pushContext } from '../src/scope.ts';
 import { disposeScope, state, watch } from '../src/signals.ts';
 
@@ -206,6 +206,113 @@ describe('failed list row initialization', () => {
       });
     }
   }
+
+  for (const virtual of [false, true]) {
+    it(`owns reactive work created by failed ${virtual ? 'virtual' : 'ordinary'} row cleanup`, async () => {
+      const value = state(0);
+      let runs = 0;
+      const result = mount(() => {
+        onError(() => {});
+        return each(
+          [1],
+          () => {
+            onDispose(() => {
+              stops.push(
+                watch(() => {
+                  value();
+                  runs++;
+                }),
+              );
+            });
+            throw new Error('row failed');
+          },
+          { virtual },
+        );
+      }, document.createElement('div'));
+      result.unmount();
+      expect(runs).toBe(1);
+      value(1);
+      await tick();
+      expect(runs).toBe(1);
+      expect(getCurrentContext()).toBeNull();
+    });
+  }
+
+  for (const kind of ['each', 'list'] as const) {
+    for (const failure of ['key', 'create'] as const) {
+      it(`${kind} preserves reused row data when later ${failure} planning throws`, async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        type Item = { id: number; label: string };
+        const items = state<Item[]>([{ id: 1, label: 'old' }]);
+        const key = (item: Item) => {
+          if (item.id === 3 && failure === 'key') throw new Error('key failed');
+          return item.id;
+        };
+        const text = (item: Item) => {
+          if (item.id === 3 && failure === 'create') throw new Error('create failed');
+          return item.label;
+        };
+        const host = document.createElement('div');
+        const result = mount(
+          () =>
+            kind === 'list'
+              ? list('li', items, text, key)
+              : (each(
+                  items,
+                  (item) => {
+                    text(item());
+                    return html`<li>${() => item().label}</li>`;
+                  },
+                  key,
+                ) as DocumentFragment),
+          host,
+        );
+        const original = host.querySelector('li');
+        items([
+          { id: 1, label: 'changed' },
+          { id: 2, label: 'second' },
+          { id: 3, label: 'bad' },
+        ]);
+        await tick();
+        expect(host.textContent).toBe('old');
+        expect(host.querySelector('li')).toBe(original);
+        items([{ id: 1, label: 'recovered' }]);
+        await tick();
+        expect(host.textContent).toBe('recovered');
+        expect(host.querySelector('li')).toBe(original);
+        result.unmount();
+      });
+    }
+  }
+
+  it('keeps first-occurrence source indices for reused rows after duplicate keys', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const items = state([
+      { id: 1, label: 'one' },
+      { id: 2, label: 'two' },
+    ]);
+    const host = document.createElement('div');
+    const result = mount(
+      () =>
+        list(
+          'li',
+          items,
+          (item, index) => `${item.label}:${index};`,
+          (item) => item.id,
+        ),
+      host,
+    );
+    const rows = Array.from(host.querySelectorAll('li'));
+    items([
+      { id: 1, label: 'first' },
+      { id: 1, label: 'duplicate' },
+      { id: 2, label: 'second' },
+    ]);
+    await tick();
+    expect(host.textContent).toBe('first:0;second:2;');
+    expect(Array.from(host.querySelectorAll('li'))).toEqual(rows);
+    result.unmount();
+  });
 
   for (const failureKind of ['map', 'key'] as const) {
     it(`rolls back new rows after an update ${failureKind} error and keeps existing rows usable`, async () => {

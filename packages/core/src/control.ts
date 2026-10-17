@@ -358,12 +358,15 @@ function runEntryMapFn<T>(
   pushContext(ctx);
   let content: Node | DocumentFragment | string;
   try {
-    content = mapFn(data, index);
+    try {
+      content = mapFn(data, index);
+    } finally {
+      popContext();
+    }
   } catch (error) {
+    // Cleanup-created work belongs to the enclosing owner, not this lost row.
     disposeScope(ctx);
     throw error;
-  } finally {
-    popContext();
   }
   return { entry: { nodes: [], data, ctx }, content };
 }
@@ -593,6 +596,9 @@ function reconcileEach<T, E extends KeyedEntry>(
   // count used by every placement loop below.
   const newKeys: unknown[] = [];
   const newEntries = new Map<unknown, E>();
+  // Unique lists use their position directly. Only duplicate keys need an
+  // index map to preserve the first occurrence's source index after planning.
+  let sourceIndices: number[] | null = null;
   let reuseCount = 0;
 
   try {
@@ -607,22 +613,37 @@ function reconcileEach<T, E extends KeyedEntry>(
       // newEntries (its nodes and scope would otherwise leak).
       if (newEntries.has(key)) {
         warnDuplicateKey(key, i, ops.api);
+        if (sourceIndices === null) {
+          sourceIndices = [];
+          for (let j = 0; j < newKeys.length; j++) sourceIndices.push(j);
+        }
         continue;
       }
+      sourceIndices?.push(i);
       newKeys.push(key);
 
       const existing = keyToEntry.get(key);
       if (existing) {
-        ops.update(existing, item, i);
         newEntries.set(key, existing);
         reuseCount++;
       } else {
         newEntries.set(key, ops.create(item, i));
       }
     }
+    // Key evaluation and row creation must succeed before changing committed
+    // data or DOM. Keep this inside rollback so an update error releases new rows.
+    if (reuseCount > 0) {
+      for (let i = 0; i < newKeys.length; i++) {
+        const existing = keyToEntry.get(newKeys[i]);
+        if (existing) {
+          const index = sourceIndices === null ? i : sourceIndices[i];
+          ops.update(existing, items[index], index);
+        }
+      }
+    }
   } catch (error) {
-    // Existing rows still belong to the last committed list. Only newly
-    // created rows are abandoned; later updates can retry from that list.
+    // New rows are not committed yet. Release only their scopes; existing
+    // rows remain owned so a later source update can retry.
     for (const [key, entry] of newEntries) {
       if (!keyToEntry.has(key)) ops.release(entry);
     }

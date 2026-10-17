@@ -56,6 +56,38 @@ describe('failed component initialization', () => {
       });
     }
 
+    it(`${mode} skips the failed child's destroy hook when its error handler unmounts the parent`, async () => {
+      let destroyed = 0;
+      let disposals = 0;
+      const errors: unknown[] = [];
+      const parent = mount(() => {
+        onError(() => parent.unmount());
+        onMount(() => {
+          const render = () => {
+            onDestroy(() => destroyed++);
+            onDispose(() => disposals++);
+            throw new Error('child failed');
+          };
+          const host = document.createElement('div');
+          if (mode === 'hydrate') host.innerHTML = '<p>server</p>';
+          try {
+            if (mode === 'hydrate') hydrate(host, render);
+            else mount(render, host);
+          } catch (error) {
+            // Error propagation must not bypass scope cleanup. The parent can
+            // itself throw after its error handler tears down its callbacks.
+            errors.push(error);
+          }
+        });
+        return document.createElement('div');
+      }, document.createElement('div'));
+      await tick();
+      parent.unmount();
+      expect(destroyed).toBe(0);
+      expect(disposals).toBe(1);
+      expect(errors.every((error) => error instanceof Error)).toBe(true);
+    });
+
     it(`${mode} tears down completed child mounts when its own render fails`, async () => {
       const host = document.createElement('div');
       if (mode === 'hydrate') host.innerHTML = '<p>server</p>';

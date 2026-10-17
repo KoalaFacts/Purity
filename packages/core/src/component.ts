@@ -315,11 +315,12 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     popContext();
     // Report while error handlers and the parent are still available, then
     // release everything the abandoned render created, even on rethrow.
+    // An error handler can unmount the parent while this child is attached.
+    // Suppress the failed render's destroy lifecycle before dispatching it.
+    ctx.destroyed = null;
     try {
       ctx._handleError(err);
     } finally {
-      // A render that never completed does not enter the destroy lifecycle.
-      ctx.destroyed = null;
       unmountContext(ctx);
     }
     return { unmount: () => {} };
@@ -506,11 +507,12 @@ export function mount(component: ComponentFn, container: Element): MountResult {
     popContext();
     // A failed render has no usable unmount handle. Keep error propagation
     // intact, but always tear down its subscriptions and completed children.
+    // An error handler can unmount the parent while this child is attached.
+    // Suppress the failed render's destroy lifecycle before dispatching it.
+    ctx.destroyed = null;
     try {
       ctx._handleError(err);
     } finally {
-      // A render that never completed does not enter the destroy lifecycle.
-      ctx.destroyed = null;
       unmountContext(ctx);
     }
     return { unmount: () => {} };

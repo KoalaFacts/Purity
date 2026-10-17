@@ -313,13 +313,15 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   } catch (err) {
     exitHydration();
     popContext();
-    // Drop the half-registered ctx from its parent so it isn't kept alive
-    // (and re-walked at no benefit) until the parent unmounts.
-    if (ctx.parent?.children) {
-      const idx = ctx.parent.children.indexOf(ctx);
-      if (idx !== -1) ctx.parent.children.splice(idx, 1);
+    // Report while error handlers and the parent are still available, then
+    // release everything the abandoned render created, even on rethrow.
+    try {
+      ctx._handleError(err);
+    } finally {
+      // A render that never completed does not enter the destroy lifecycle.
+      ctx.destroyed = null;
+      unmountContext(ctx);
     }
-    ctx._handleError(err);
     return { unmount: () => {} };
   }
   exitHydration();
@@ -502,13 +504,15 @@ export function mount(component: ComponentFn, container: Element): MountResult {
     fragment = component();
   } catch (err) {
     popContext();
-    // Drop the half-registered ctx from its parent so a thrown render leaves
-    // no stale child reachable through parent.children until parent unmount.
-    if (ctx.parent?.children) {
-      const idx = ctx.parent.children.indexOf(ctx);
-      if (idx !== -1) ctx.parent.children.splice(idx, 1);
+    // A failed render has no usable unmount handle. Keep error propagation
+    // intact, but always tear down its subscriptions and completed children.
+    try {
+      ctx._handleError(err);
+    } finally {
+      // A render that never completed does not enter the destroy lifecycle.
+      ctx.destroyed = null;
+      unmountContext(ctx);
     }
-    ctx._handleError(err);
     return { unmount: () => {} };
   }
 

@@ -22,7 +22,7 @@
     "@solidjs/web": "2.0.0-rc.14",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@vitejs/plugin-react": "6.1.2",
-    "@vitejs/plugin-vue": "^6.0.9",
+    "@vitejs/plugin-vue": "^6.0.10",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "solid-js": "2.0.0-rc.14",

@@ -2,7 +2,8 @@
 // Uses: state, compute, html, mount. Zero vanilla JS for UI wiring.
 
 import type { ComputedAccessor } from '@purityjs/core';
-import { compute, html, mount, state, watch } from '@purityjs/core';
+import { compute, mount, state, watch } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 // ---------------------------------------------------------------------------
 // State

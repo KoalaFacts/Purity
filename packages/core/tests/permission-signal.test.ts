@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { permissionSignal } from '../src/index.ts';
+import { permissionSignal } from '../src/browser-signals/index.ts';
 import { _resetPermissionSignalCache } from '../src/permission-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';

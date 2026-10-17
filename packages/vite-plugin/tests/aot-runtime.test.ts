@@ -5,13 +5,12 @@ import {
   enterHydration,
   exitHydration,
   flattenValue,
-  valueText,
+  swapSlot,
   inflateDeferred,
   isDeferred,
   renderCompiledTemplate,
-  ssrHelpers,
-  valueToHtml,
-} from '@purityjs/core/compiler';
+} from '@purityjs/core/runtime';
+import { ssrHelpers, valueToHtml } from '@purityjs/core/internal';
 import { purity } from '../src/index.ts';
 
 describe('AOT output runs correctly under jsdom', () => {
@@ -19,7 +18,7 @@ describe('AOT output runs correctly under jsdom', () => {
 
   it('hydrates nested template arrays without runtime code generation or changing property data', async () => {
     const { make } = evalAot(
-      "import { html } from '@purityjs/core';\nconst make = (label, click, payload) => html`<main>${[html`<section .payload=${payload}><header>Summary</header><div>${[html`<button @click=${click}>${label}</button>`, html`<span>source</span>`]}</div></section>`]}</main>`;",
+      "import { html } from '@purityjs/core/jit';\nconst make = (label, click, payload) => html`<main>${[html`<section .payload=${payload}><header>Summary</header><div>${[html`<button @click=${click}>${label}</button>`, html`<span>source</span>`]}</div></section>`]}</main>`;",
     );
     const root = document.createElement('div');
     root.innerHTML =
@@ -59,25 +58,25 @@ describe('AOT output runs correctly under jsdom', () => {
     if (!result) throw new Error('plugin returned null');
     // Strip top-level imports; expose the user-code body as a function we can call.
     const body = result.code
-      .replace(/^import .+$/gm, '')
+      .replace(/^\s*import .+$/gm, '')
       .replace(/^export /gm, '')
       .trim();
     const fn = new Function(
       '__purity_renderCompiled__',
       '__purity_fl__',
-      '__purity_tx__',
+      '__purity_sw__',
       'document',
       'when',
       `${body}\nreturn make;`,
     );
     return {
-      make: fn(renderCompiledTemplate, flattenValue, valueText, globalThis.document, when),
+      make: fn(renderCompiledTemplate, flattenValue, swapSlot, globalThis.document, when),
     };
   }
 
   it('hoisted template produces correct DOM and reuses across calls', () => {
     const { make } = evalAot(
-      `import { html } from '@purityjs/core';\nconst make = (label) => html\`<div><span>\${label}</span></div>\`;`,
+      `import { html } from '@purityjs/core/jit';\nconst make = (label) => html\`<div><span>\${label}</span></div>\`;`,
     );
     const a = make('Hi') as HTMLElement;
     const b = make('Bye') as HTMLElement;
@@ -92,7 +91,7 @@ describe('AOT output runs correctly under jsdom', () => {
 
   it('rejects executable URL values in AOT factories', () => {
     const { make } = evalAot(
-      "import { html } from '@purityjs/core';\nconst make = (url) => html`<a href=${url}>go</a>`;",
+      "import { html } from '@purityjs/core/jit';\nconst make = (url) => html`<a href=${url}>go</a>`;",
     );
     expect(() => make('javascript:attack()')).toThrow(/Unsafe URL binding/);
     expect((make('/safe') as HTMLAnchorElement).getAttribute('href')).toBe('/safe');
@@ -101,7 +100,7 @@ describe('AOT output runs correctly under jsdom', () => {
   it('rejects dynamic inline handlers during AOT compilation', () => {
     expect(() =>
       plugin.transform(
-        "import { html } from '@purityjs/core'; const view = html`<button onclick=${handler}>go</button>`;",
+        "import { html } from '@purityjs/core/jit'; const view = html`<button onclick=${handler}>go</button>`;",
         'app.ts',
       ),
     ).toThrow(/Unsafe dynamic binding/);
@@ -119,7 +118,7 @@ describe('AOT output runs correctly under jsdom', () => {
     ]) {
       expect(() =>
         plugin.transform(
-          "import { html } from '@purityjs/core'; const view = html`<div>${cond ? " +
+          "import { html } from '@purityjs/core/jit'; const view = html`<div>${cond ? " +
             nested +
             ' : null}</div>`;',
           'app.ts',
@@ -137,7 +136,7 @@ describe('AOT output runs correctly under jsdom', () => {
     ]) {
       expect(() =>
         plugin.transform(
-          "import { html } from '@purityjs/core'; const view = " + source + ';',
+          "import { html } from '@purityjs/core/jit'; const view = " + source + ';',
           'app.ts',
           { ssr },
         ),
@@ -150,7 +149,7 @@ describe('AOT output runs correctly under jsdom', () => {
     (ssr) => {
       // Dev pre-bundles keep JSDoc, so the plugin sees examples from library comments.
       const code = [
-        "import { html } from '@purityjs/core';",
+        "import { html } from '@purityjs/core/jit';",
         '/**',
         ' * head(html`<link rel="canonical" href="${canonical}">`);',
         ' */',
@@ -172,7 +171,7 @@ describe('AOT output runs correctly under jsdom', () => {
 
   it('hoisted simple template (single element) still works', () => {
     const { make } = evalAot(
-      `import { html } from '@purityjs/core';\nconst make = (text) => html\`<p>\${text}</p>\`;`,
+      `import { html } from '@purityjs/core/jit';\nconst make = (text) => html\`<p>\${text}</p>\`;`,
     );
     const a = make('first') as HTMLElement;
     const b = make('second') as HTMLElement;
@@ -182,7 +181,7 @@ describe('AOT output runs correctly under jsdom', () => {
 
   it('hoisted template with reactive expression updates from a signal', async () => {
     const { make } = evalAot(
-      `import { html } from '@purityjs/core';\nconst make = (fn) => html\`<div><p>\${fn}</p></div>\`;`,
+      `import { html } from '@purityjs/core/jit';\nconst make = (fn) => html\`<div><p>\${fn}</p></div>\`;`,
     );
     const value = state('reactive-text');
     const el = make(value) as HTMLElement;
@@ -195,7 +194,7 @@ describe('AOT output runs correctly under jsdom', () => {
 
   it('hydrates the existing nodes without runtime code generation', () => {
     const { make } = evalAot(
-      `import { html } from '@purityjs/core';\nconst make = (label) => html\`<p>\${label}</p>\`;`,
+      `import { html } from '@purityjs/core/jit';\nconst make = (label) => html\`<p>\${label}</p>\`;`,
     );
     const root = document.createElement('div');
     root.innerHTML = '<p><!--[-->hello<!--]--></p>';
@@ -225,7 +224,7 @@ describe('AOT output runs correctly under jsdom', () => {
 
   it('creates an AOT template and nested template when no SSR nodes exist', () => {
     const { make } = evalAot(
-      `import { html } from '@purityjs/core';\nconst make = (label) => html\`<li><strong>\${html\`<span>\${label}</span>\`}</strong></li>\`;`,
+      `import { html } from '@purityjs/core/jit';\nconst make = (label) => html\`<li><strong>\${html\`<span>\${label}</span>\`}</strong></li>\`;`,
     );
     enterHydration();
     let deferred: unknown;
@@ -243,7 +242,7 @@ describe('AOT output runs correctly under jsdom', () => {
     'adopts fragment siblings around a nested %s match boundary',
     async (initial) => {
       const { make } = evalAot(
-        `import { html, when } from '@purityjs/core';\nconst make = (outer, inner, label) => html\`<section>\${when(outer, () => html\`<div>\${label}</div>\${when(inner, () => html\`<button>Details</button>\`)}<p>Tail</p>\`)}</section>\`;`,
+        `import { html } from '@purityjs/core/jit'; import { when } from '@purityjs/core';\nconst make = (outer, inner, label) => html\`<section>\${when(outer, () => html\`<div>\${label}</div>\${when(inner, () => html\`<button>Details</button>\`)}<p>Tail</p>\`)}</section>\`;`,
       );
       const root = document.createElement('div');
       root.innerHTML = `<section><!--[--><!--m:true--><div><!--[-->Member<!--]--></div><!--[--><!--m:${initial}-->${initial ? '<button>Details</button>' : ''}<!--/m--><!--]--><p>Tail</p><!--/m--><!--]--></section>`;
@@ -281,7 +280,7 @@ describe('AOT output runs correctly under jsdom', () => {
 
   it('starts after stripped suspense markers and the retained SSR style', () => {
     const { make } = evalAot(
-      `import { html } from '@purityjs/core';\nconst make = (label) => html\`<button>\${label}</button>\`;`,
+      `import { html } from '@purityjs/core/jit';\nconst make = (label) => html\`<button>\${label}</button>\`;`,
     );
     const root = document.createElement('div');
     root.innerHTML =
@@ -313,25 +312,25 @@ describe('injected identifiers do not collide with user bindings', () => {
     if (!result) throw new Error('plugin returned null');
     const body = result.code
       .replace(
-        /^import\s*\{([^}]*)\}\s*from\s*'([^']+)';?$/gm,
+        /import\s*\{([^}]*)\}\s*from\s*'([^']+)';?/g,
         (_, names: string, from: string) =>
           `const {${names.replace(/\s+as\s+/g, ': ')}} = __modules[${JSON.stringify(from)}];`,
       )
       .replace(/^import\s*'[^']+';?$/gm, '');
     const modules = {
       '@purityjs/core': { state },
-      '@purityjs/core/compiler': {
+      '@purityjs/core/runtime': {
         renderCompiledTemplate,
         flattenValue,
-        valueText,
-        ssrHelpers,
+        swapSlot,
       },
     };
+    Object.assign(modules, { '@purityjs/core/internal': { ssrHelpers } });
     return new Function('__modules', `${body}\nreturn { make, v, user };`)(modules);
   }
 
   const source = (name: string) =>
-    `import { html, state } from '@purityjs/core';\n` +
+    `import { html } from '@purityjs/core/jit'; import { state } from '@purityjs/core';\n` +
     `const ${name} = 'mine';\nconst user = ${name};\n` +
     `const v = state('a');\nconst make = () => html\`<p>\${() => v()}</p>\`;`;
 
@@ -339,6 +338,7 @@ describe('injected identifiers do not collide with user bindings', () => {
     '__purity_renderCompiled__',
     '__purity_fl__',
     '__purity_tx__',
+    '__purity_sw__',
     '__purity_tpl_0',
     '__purity_tpl_0_hydrate',
   ])('client build with a user %s', async (name) => {
@@ -368,7 +368,7 @@ describe('injected identifiers do not collide with user bindings', () => {
 
   it('a local binding does not shadow the injected call', () => {
     const { make } = runModule(
-      `import { html, state } from '@purityjs/core';\nconst user = 0;\nconst v = state('a');\n` +
+      `import { html } from '@purityjs/core/jit'; import { state } from '@purityjs/core';\nconst user = 0;\nconst v = state('a');\n` +
         `const make = () => { const __purity_renderCompiled__ = null; return html\`<p>\${() => v()}</p>\`; };`,
       false,
     );

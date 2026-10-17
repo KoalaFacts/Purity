@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { generate } from '../src/compiler/codegen.ts';
-import { html, inflateDeferred } from '../src/compiler/compile.ts';
+import { html, makeDeferred } from '../src/compiler/compile.ts';
 import {
   checkHydrationCursor,
   type DeferredTemplate,
@@ -8,9 +8,9 @@ import {
   enableHydrationWarnings,
   enterHydration,
   exitHydration,
+  inflateDeferred,
   isDeferred,
   isHydrating,
-  makeDeferred,
   resetHydration,
   withHydration,
 } from '../src/compiler/hydrate-runtime.ts';
@@ -771,33 +771,6 @@ describe('compiler — extra coverage', () => {
     await tick();
     expect(c.querySelector('.n')).toBeNull();
     expect(c.querySelector('div')!.textContent).toContain('plain');
-  });
-
-  it('exports generateModule', async () => {
-    const { generateModule } = await import('../src/compiler/codegen.ts');
-    const code = generateModule(parse(['<p>hi</p>']));
-    expect(code).toContain('export default');
-  });
-
-  it('getCompiledFactory returns a callable factory', async () => {
-    const { getCompiledFactory } = await import('../src/compiler/compile.ts');
-    const { _watch } = await import('../src/compiler/compile.ts');
-    const strings = Object.assign(['<p>factory</p>'], { raw: ['<p>factory</p>'] }) as any;
-    const fn = getCompiledFactory(strings);
-    const node = fn([], _watch);
-    expect((node as any).querySelector?.('p')?.textContent ?? (node as any).textContent).toContain(
-      'factory',
-    );
-  });
-
-  it('getCompiledFactory returns the cached compiled fn on second call', async () => {
-    const { getCompiledFactory } = await import('../src/compiler/compile.ts');
-    const strings = Object.assign(['<span>cached</span>'], {
-      raw: ['<span>cached</span>'],
-    }) as any;
-    const a = getCompiledFactory(strings);
-    const b = getCompiledFactory(strings);
-    expect(a).toBe(b);
   });
 
   it('renders simple template with event handler', () => {

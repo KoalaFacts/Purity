@@ -104,7 +104,7 @@ export function loaderDataStackDepth(): number {
  * @example
  * ```ts
  * // src/pages/users/[id].ts
- * import { html, loaderData } from '@purityjs/core';
+ * import { html } from '@purityjs/core/jit'; import { loaderData } from '@purityjs/core/router';
  *
  * export async function loader({ params }) {
  *   return await fetch(`/api/users/${params.id}`).then((r) => r.json());

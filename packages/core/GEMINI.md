@@ -80,7 +80,7 @@ mount(() => html`<p-app></p-app>`, document.getElementById('app'));
 ## Component Example
 
 ```ts
-import { state, compute, html, css, component, mount, onMount, each, when } from '@purityjs/core';
+import { state, compute, css, component, mount, onMount, each, when } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
 
 component('p-todo', () => {
   const todos = state([]);

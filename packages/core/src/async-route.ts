@@ -551,7 +551,7 @@ async function loadStack(
  *
  * @example
  * ```ts
- * import { asyncRoute, html, matchRoute } from '@purityjs/core';
+ * import { asyncRoute, matchRoute } from '@purityjs/core/router'; import { html } from '@purityjs/core/jit';
  * import { routes } from 'purity:routes';
  *
  * export function App() {
@@ -629,7 +629,7 @@ function pickNotFoundForPath(
  *
  * @example
  * ```ts
- * import { asyncNotFound, asyncRoute, matchRoute } from '@purityjs/core';
+ * import { asyncNotFound, asyncRoute, matchRoute } from '@purityjs/core/router';
  * import { notFoundChain, routes } from 'purity:routes';
  *
  * export function App() {

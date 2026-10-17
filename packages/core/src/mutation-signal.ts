@@ -12,7 +12,7 @@
 // Apps observing short-lived nodes should use the raw API.
 // ---------------------------------------------------------------------------
 
-import { getCurrentContext } from './component.ts';
+import { getCurrentContext } from './scope.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 

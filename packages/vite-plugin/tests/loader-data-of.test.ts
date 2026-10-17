@@ -10,7 +10,7 @@
 //      the negative case.
 
 import { describe, expect, it } from 'vite-plus/test';
-import type { RouteData } from '@purityjs/core';
+import type { RouteData } from '@purityjs/core/router';
 
 import type { LoaderDataOf, LoaderDataOfEntry } from '../src/loader-data-of.ts';
 

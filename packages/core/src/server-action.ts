@@ -115,7 +115,7 @@ function assertSafeActionUrl(url: string): void {
  *
  * @example
  * ```ts
- * import { serverAction } from '@purityjs/core';
+ * import { serverAction } from '@purityjs/core/actions';
  *
  * export const saveTodo = serverAction('/api/save-todo', async (request) => {
  *   const data = await request.formData();
@@ -214,7 +214,7 @@ export function findAction(request: Request): ServerActionHandler | null {
  *
  * @example
  * ```ts
- * import { handleAction } from '@purityjs/core';
+ * import { handleAction } from '@purityjs/core/actions';
  *
  * // In your server entry, before SSR:
  * const actionResponse = await handleAction(request);

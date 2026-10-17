@@ -5,7 +5,7 @@
 // reduced-motion, so we stub them per-test to exercise each branch.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
-import { manageNavTransitions, navigate } from '../src/index.ts';
+import { manageNavTransitions, navigate } from '../src/router/index.ts';
 
 let teardown: (() => void) | null = null;
 
@@ -143,7 +143,7 @@ describe('manageNavTransitions() — lifecycle', () => {
 
 describe('manageNavTransitions() — listeners + URL signal', () => {
   it('the wrapped callback updates urlSignal + fires onNavigate listeners', async () => {
-    const { onNavigate, currentPath } = await import('../src/index.ts');
+    const { onNavigate, currentPath } = await import('../src/router/index.ts');
     (document as DocStub).startViewTransition = (cb) => {
       // Synchronously execute, mirroring the View Transitions API spec.
       (cb as () => void)();

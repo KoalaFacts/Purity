@@ -8,9 +8,10 @@ npm run check:bundle -- --verify
 ```
 
 The first command rebuilds core, SSR, and the Vite plugin, measures each
-published package entry against its [budget](./budgets.json), and builds four
-fixture apps with and without AOT, whose sizes are reported. The second
-verifies all eight production builds in Chromium, Firefox, and WebKit. Every
+published package entry against its [budget](./budgets.json), and builds five
+fixture apps with and without AOT. Sizes are reported for all profiles; the
+ordinary controls and hydration AOT profiles also have size budgets. The second
+verifies all ten production builds in Chromium, Firefox, and WebKit. Every
 AOT page uses a Content Security Policy without `unsafe-eval`.
 Install engines with `npx playwright install chromium firefox webkit` if needed.
 
@@ -20,14 +21,16 @@ and `report.md` as workflow artifacts, including on budget or browser failures.
 
 ## What is measured
 
-- **Package entries (budgeted):** `@purityjs/core`, `@purityjs/core/compiler`,
-  and `@purityjs/ssr`. Each is built as `export * from <entry>`, so every export
+- **Package entries (budgeted):** `@purityjs/core`, all its feature subpaths,
+  and `@purityjs/ssr`. The `core-all` fixture combines the pre-split root API
+  under its original budget to prevent hiding growth across subpaths. Each is built as `export * from <entry>`, so every export
   is kept, then minified from the built dist into one payload. Other Purity
   packages and Node built-ins are external, so each figure is that package's
   own code. The Vite plugin and CLI are build-time Node tools and are not
   budgeted.
 - **Fixture apps (reported):** production ES2022, minified ESM JavaScript from
-  built package exports.
+  built package exports. Controls/hydration AOT enforce size budgets and
+  reject retained virtual-list spacer code.
 - Every emitted JavaScript chunk, including fixture application code.
 - Raw UTF-8 bytes, gzip at level 9, and Brotli at quality 11. Each file is
   compressed separately before adding its size, matching separate responses.
@@ -36,7 +39,9 @@ and `report.md` as workflow artifacts, including on budget or browser failures.
 The runner checks that AOT actually compiled the fixture and that the runtime
 fixture kept its template. It rejects missing entries, source-only package
 resolution, external imports, hidden dynamic chunks, and unexpected assets.
-It does not claim that AOT eliminates every runtime compiler path in the core.
+The root and AOT runtime entries must contain no Function constructors.
+Both ESM and CommonJS exports must share working subscriptions across entries.
+Each package measurement also records a hash of its complete bundled payload.
 
 Report schema version 3 records the package entry sizes and, as before, the Git revision and dirty state, package
 versions, Node and compression-library versions, normalized hashes for all
@@ -54,6 +59,7 @@ Machine names and absolute filesystem paths are excluded.
 | `controls`  | [Shared view](./controls-view.ts), keyed each, match, nested templates, mounting.   | Reverse keeps row identity; labels update; a toggled-back branch renders fresh.    |
 | `form`      | [Enhanced form](./form.ts), two-way input, enhanceForms, response/error handling.   | Empty submission focuses the error field; retry succeeds, keeps the input and URL. |
 | `hydration` | [Hydration entry](./hydration.ts), the same controls view and server-rendered HTML. | Preserve SSR row identity, then perform the same controls interactions.            |
+| `resource`  | [Resource entry](./resource.ts), eager/lazy asynchronous loading and mounting.      | Initial load resolves, refresh replaces data, and a button triggers the lazy load. |
 
 Each profile's runtime/AOT pair uses the same entry and template source.
 Hydration HTML is generated from that shared view by an actual SSR build
@@ -131,7 +137,8 @@ a promise that applications using each/match remove those dependencies.
 
 Budgets are per published package entry: gzip and Brotli must stay within the
 limit, which allows roughly 5% growth over the measurement and is rounded up to
-a 256-byte boundary. Fixture app sizes are not budgeted. Each fixture's direct
+a 256-byte boundary. The controls/hydration AOT fixtures also have size budgets; other fixture
+app sizes are reported only. Each fixture's direct
 `Function` call-site count stays enforced, because AOT output must keep
 working under a Content Security Policy without `unsafe-eval`. A failure exits
 nonzero and records the measured value and limit; it never updates budgets

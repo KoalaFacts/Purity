@@ -11,8 +11,17 @@ export default defineConfig({
   build: {
     lib: {
       entry: {
-        index: 'src/index.ts',
+        'jit/index': 'src/compiler/jit.ts',
+        'runtime/index': 'src/compiler/runtime.ts',
         'compiler/index': 'src/compiler/index.ts',
+        'internal/index': 'src/internal.ts',
+        'signals/index': 'src/browser-signals/index.ts',
+        'router/index': 'src/router/index.ts',
+        'actions/index': 'src/actions/index.ts',
+        'islands/index': 'src/islands/index.ts',
+        'query/index': 'src/query/index.ts',
+        'list-runtime/index': 'src/control/list-runtime.ts',
+        index: 'src/index.ts',
       },
       formats: ['es', 'cjs'],
       fileName: (format, entryName) => (format === 'es' ? `${entryName}.js` : `${entryName}.cjs`),

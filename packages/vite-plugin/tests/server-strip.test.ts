@@ -16,7 +16,7 @@ describe('server-module strip — default behavior', () => {
 
   it('replaces *.server.ts content in client builds', () => {
     const code = `
-      import { serverAction } from '@purityjs/core';
+      import { serverAction } from '@purityjs/core/actions';
       import { db } from './secret-db.ts';
       export const saveTodo = serverAction('/api/save', async (req) => {
         await db.insert({ text: 'secret' });
@@ -34,7 +34,7 @@ describe('server-module strip — default behavior', () => {
 
   it('passes through *.server.ts in SSR builds (handler bodies stay on the server)', () => {
     const code = `
-      import { serverAction } from '@purityjs/core';
+      import { serverAction } from '@purityjs/core/actions';
       export const saveTodo = serverAction('/api/save', async () => new Response('ok'));
     `;
     // SSR build: no html`` either, so transform returns null (unchanged).
@@ -230,7 +230,7 @@ describe('server-module strip — opt out', () => {
   it('respects stripServerModules: false', () => {
     const plugin = purity({ stripServerModules: false });
     const code = `
-      import { serverAction } from '@purityjs/core';
+      import { serverAction } from '@purityjs/core/actions';
       export const x = serverAction('/api/x', async () => new Response('ok'));
     `;
     const result = plugin.transform(code, '/app/x.server.ts', { ssr: false });
@@ -250,8 +250,8 @@ describe('server-module strip — composes with html`` compilation', () => {
     // SSR plugin path). On the client build we strip first, so the html``
     // never gets compiled.
     const code = `
-      import { html } from '@purityjs/core';
-      import { serverAction } from '@purityjs/core';
+      import { html } from '@purityjs/core/jit';
+      import { serverAction } from '@purityjs/core/actions';
       export const x = serverAction('/api/x', async () => {
         return new Response(html\`<p>hello</p>\`.toString());
       });
@@ -264,7 +264,7 @@ describe('server-module strip — composes with html`` compilation', () => {
 
   it('does not interfere with non-server.ts files', () => {
     const code = `
-      import { html } from '@purityjs/core';
+      import { html } from '@purityjs/core/jit';
       const el = html\`<div>Hello</div>\`;
     `;
     const result = plugin.transform(code, '/app/component.ts', { ssr: false });

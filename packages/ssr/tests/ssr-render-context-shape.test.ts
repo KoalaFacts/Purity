@@ -9,7 +9,8 @@
 // needed) is exactly the kind of bug that wouldn't show up as a type error,
 // only as a subtle runtime behavior change deep in suspense/streaming logic.
 
-import { getSSRRenderContext, resource, suspense } from '@purityjs/core';
+import { getSSRRenderContext } from '@purityjs/core/internal';
+import { resource, suspense } from '@purityjs/core';
 import { describe, expect, it } from 'vite-plus/test';
 import { html as ssrHtml, renderToStream, renderToString } from '../src/index.ts';
 

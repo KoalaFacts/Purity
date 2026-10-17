@@ -1,4 +1,5 @@
-import { enhanceForms, hydrate, mount } from '@purityjs/core';
+import { enhanceForms } from '@purityjs/core/actions';
+import { hydrate, mount } from '@purityjs/core';
 import { App } from './app.ts';
 
 const root = document.getElementById('app');

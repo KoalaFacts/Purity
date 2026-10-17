@@ -39,7 +39,7 @@ npm run dev
 ## At a Glance
 
 ```ts
-import { state, compute, html, css, component, mount } from '@purityjs/core';
+import { state, compute, css, component, mount } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
 
 component('p-counter', () => {
   const count = state(0);

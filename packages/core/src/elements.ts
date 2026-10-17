@@ -1,4 +1,9 @@
-import { enterHydration, exitHydration, inflateDeferred, isDeferred } from './compiler/compile.ts';
+import {
+  enterHydration,
+  exitHydration,
+  inflateDeferred,
+  isDeferred,
+} from './compiler/hydrate-runtime.ts';
 import {
   markSSRHtml,
   type SSRComponentRenderer,
@@ -9,15 +14,14 @@ import {
 import {
   attachToOwner,
   ComponentContext,
-  disposeScope,
   getCurrentComponent,
   getCurrentContext,
-  hydratePendingCustomElements,
   popContext,
   pushContext,
-} from './component.ts';
+} from './scope.ts';
+import { hydratePendingCustomElements } from './component.ts';
 import { FormControlBridge } from './form-control.ts';
-import { watch } from './signals.ts';
+import { disposeScope, watch } from './signals.ts';
 
 // Unmount a context's child contexts, depth-first in reverse order (mirrors
 // unmountContext in component.ts).

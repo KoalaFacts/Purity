@@ -1,8 +1,8 @@
 import { statSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import { head } from '@purityjs/core';
-import { markSSRHtml } from '@purityjs/core/compiler';
+import { head } from '@purityjs/core/router';
+import { markSSRHtml } from '@purityjs/core/internal';
 import { html, renderStatic } from '@purityjs/ssr';
 import MarkdownIt from 'markdown-it';
 import { categories, categoryHref, type CategoryId } from '../src/categories.ts';

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
@@ -25,6 +26,7 @@ const scenarios = [
   { name: 'controls', entry: 'controls.ts', templates: ['controls-view.ts'] },
   { name: 'form', entry: 'form.ts', templates: ['form.ts'] },
   { name: 'hydration', entry: 'hydration.ts', templates: ['controls-view.ts'] },
+  { name: 'resource', entry: 'resource.ts', templates: ['resource.ts'] },
 ];
 const outputDir = join(root, 'benchmark/dist/bundle-size');
 const measureOnly = process.argv.includes('--measure-only');
@@ -40,6 +42,25 @@ assert(
   ),
   'Run without the development export condition; measure built packages',
 );
+
+// Exercise published entry boundaries in both module formats. A duplicated
+// reactive graph can look correct in size reports but lose subscriptions.
+const require = createRequire(import.meta.url);
+for (const load of [(id: string) => import(id), (id: string) => Promise.resolve(require(id))]) {
+  const core = await load('@purityjs/core');
+  const signals = await load('@purityjs/core/signals');
+  const value = signals.localSignal('bundle-entry-proof', 0);
+  const seen: number[] = [];
+  const stop = core.watch(() => {
+    seen.push(value());
+  });
+  value(1);
+  await Promise.resolve();
+  stop();
+  value(2);
+  await Promise.resolve();
+  assert.deepEqual(seen, [0, 1], 'Feature entries must share reactivity and disposal');
+}
 
 function sizes(source: string): Sizes {
   const bytes = Buffer.from(source);
@@ -141,6 +162,12 @@ async function measure(scenario: (typeof scenarios)[number], aot: boolean): Prom
     'Source export measured',
   );
   const profile = `${scenario.name}-${aot ? 'aot' : 'runtime'}`;
+  if (aot && (scenario.name === 'controls' || scenario.name === 'hydration')) {
+    assert(
+      chunks.every((chunk) => !chunk.code.includes('data-purity-window-spacer')),
+      'Ordinary list fixtures retained virtualization',
+    );
+  }
   for (const chunk of chunks) payloads.set(`/${profile}/${chunk.fileName}`, chunk.code);
   const measured = chunks.map((chunk) => ({ file: chunk.fileName, ...sizes(chunk.code) }));
   const total = measured.reduce(
@@ -170,15 +197,35 @@ async function measure(scenario: (typeof scenarios)[number], aot: boolean): Prom
 const packageEntries = [
   { name: 'core', specifier: '@purityjs/core', dist: 'packages/core/dist/' },
   { name: 'core-compiler', specifier: '@purityjs/core/compiler', dist: 'packages/core/dist/' },
+  {
+    name: 'core-list-runtime',
+    specifier: '@purityjs/core/list-runtime',
+    dist: 'packages/core/dist/',
+  },
+  { name: 'core-runtime', specifier: '@purityjs/core/runtime', dist: 'packages/core/dist/' },
+  { name: 'core-jit', specifier: '@purityjs/core/jit', dist: 'packages/core/dist/' },
+  { name: 'core-signals', specifier: '@purityjs/core/signals', dist: 'packages/core/dist/' },
+  { name: 'core-router', specifier: '@purityjs/core/router', dist: 'packages/core/dist/' },
+  { name: 'core-actions', specifier: '@purityjs/core/actions', dist: 'packages/core/dist/' },
+  { name: 'core-islands', specifier: '@purityjs/core/islands', dist: 'packages/core/dist/' },
+  { name: 'core-query', specifier: '@purityjs/core/query', dist: 'packages/core/dist/' },
+  { name: 'core-internal', specifier: '@purityjs/core/internal', dist: 'packages/core/dist/' },
+  { name: 'core-all', specifier: '@purityjs/core', dist: 'packages/core/dist/' },
   { name: 'ssr', specifier: '@purityjs/ssr', dist: 'packages/ssr/dist/' },
 ];
 
 interface PackageMeasurement extends Sizes {
   entry: string;
+  functionConstructorCalls: number;
+  sha256: string;
 }
 
 async function measurePackage(entry: (typeof packageEntries)[number]): Promise<PackageMeasurement> {
   const virtualId = '\0purity-package-entry';
+  const entrySource =
+    entry.name === 'core-all'
+      ? await readFile(join(import.meta.dirname, 'core-all.ts'), 'utf8')
+      : `export * from '${entry.specifier}';`;
   const result = await build({
     root,
     configFile: false,
@@ -189,7 +236,7 @@ async function measurePackage(entry: (typeof packageEntries)[number]): Promise<P
       {
         name: 'purity-package-entry',
         resolveId: (id) => (id === 'purity-package-entry' ? virtualId : undefined),
-        load: (id) => (id === virtualId ? `export * from '${entry.specifier}';` : undefined),
+        load: (id) => (id === virtualId ? entrySource : undefined),
       },
     ],
     build: {
@@ -219,7 +266,12 @@ async function measurePackage(entry: (typeof packageEntries)[number]): Promise<P
     `Missing built ${entry.specifier}`,
   );
   assert(!rendered.some((id) => id.includes('/src/')), 'Source export measured');
-  return { entry: entry.name, ...sizes(chunks[0].code) };
+  return {
+    entry: entry.name,
+    ...sizes(chunks[0].code),
+    functionConstructorCalls: functionConstructorCalls(chunks[0].fileName, chunks[0].code),
+    sha256: createHash('sha256').update(chunks[0].code).digest('hex'),
+  };
 }
 
 async function packageVersion(path: string): Promise<string> {
@@ -258,11 +310,18 @@ if (verify) {
     verification = { status: 'failed', engines: {} };
   }
 }
-// Size budgets apply to the published packages. Fixture apps are size-reported
-// only; their Function-constructor count stays enforced because AOT output
-// must keep working under a CSP without unsafe-eval.
+// Every published entry and selected ordinary-list fixtures have size budgets.
+// Function-constructor counts stay enforced for every fixture because AOT
+// output must keep working under a CSP without unsafe-eval.
 const violations: string[] = [];
 for (const item of packageMeasurements) {
+  if (['core', 'core-runtime', 'core-list-runtime'].includes(item.entry)) {
+    assert.equal(
+      item.functionConstructorCalls,
+      0,
+      `${item.entry} must not include the JIT compiler`,
+    );
+  }
   for (const metric of ['gzipBytes', 'brotliBytes'] as const) {
     const budget = budgets.packages?.[item.entry]?.[metric];
     assert(Number.isSafeInteger(budget) && budget >= 1, 'Invalid package size budget');
@@ -277,6 +336,13 @@ for (const item of measurements) {
     violations.push(
       `${item.profile}: functionConstructorCalls ${item.functionConstructorCalls} > ${budget}`,
     );
+  for (const metric of ['gzipBytes', 'brotliBytes'] as const) {
+    const limit = budgets.fixtures?.[item.profile]?.[metric];
+    if (limit === undefined) continue;
+    assert(Number.isSafeInteger(limit) && limit >= 1, 'Invalid fixture size budget');
+    if (item[metric] > limit)
+      violations.push(`${item.profile}: ${metric} ${item[metric]} > ${limit}`);
+  }
 }
 const git = (...args: string[]) =>
   execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -334,7 +400,7 @@ const report = {
     perFileCompression: true,
   },
   scope:
-    'Packages: every export of each published entry, minified, from built dist; other Purity packages and Node built-ins external. Fixtures: complete fixture JavaScript payload, reported only.',
+    'Packages: every export of each published entry, minified, from built dist; other Purity packages and Node built-ins external. Fixtures: complete fixture JavaScript payload; selected profiles also have size budgets.',
   packages: packageMeasurements,
   measurements,
   budgets,
@@ -356,7 +422,7 @@ const summary = [
       `| ${item.entry} | ${item.rawBytes} | ${item.gzipBytes} | ${item.brotliBytes} | ${budgets.packages[item.entry].gzipBytes} | ${budgets.packages[item.entry].brotliBytes} |`,
   ),
   '',
-  'Fixture apps (size reported only):',
+  'Fixture apps (selected profiles budgeted):',
   '',
   '| Profile | Raw bytes | gzip bytes | Brotli bytes | Function constructor calls |',
   '| --- | ---: | ---: | ---: | ---: |',

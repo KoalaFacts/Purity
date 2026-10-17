@@ -188,7 +188,7 @@ A tabs component is a fair stress test because it requires:
 - Focus management between tab and panel
 
 ```ts
-import { component, state, html, each } from '@purityjs/core';
+import { component, state, each } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
 
 interface Tab {
   id: string;

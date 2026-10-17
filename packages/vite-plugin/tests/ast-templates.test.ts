@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
-const IMPORT = "import { html } from '@purityjs/core';\n";
+const IMPORT = "import { html } from '@purityjs/core/jit';\n";
 // A mixed interpolated attribute is a compile error, so a template-looking
 // example that is compiled anywhere would throw. Non-template text must not.
 const MIXED = 'html`<a title="x ${v}">y</a>`';
@@ -140,7 +140,7 @@ export const el = <div />;
   it('still strips the html import only when every real template compiled', () => {
     const code = `${IMPORT}export const view = () => html\`<p>ok</p>\`;\n`;
     const result = plugin.transform(code, 'app.ts');
-    expect(result.code).not.toContain("import { html } from '@purityjs/core'");
+    expect(result.code).not.toContain("import { html } from '@purityjs/core/jit'");
   });
 
   it('a file whose only html text is in comments does not change', () => {

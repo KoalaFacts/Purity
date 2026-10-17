@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
-import { screenOrientationSignal } from '../src/index.ts';
+import { screenOrientationSignal } from '../src/browser-signals/index.ts';
 import { _resetScreenOrientationSignal } from '../src/screen-orientation-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';

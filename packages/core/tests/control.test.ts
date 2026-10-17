@@ -1,15 +1,10 @@
+import { withHydration } from '../src/compiler/hydrate-runtime.ts';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
-import { ComponentContext, mount, onDispose, popContext, pushContext } from '../src/component.ts';
-import {
-  each,
-  eachSSR,
-  inflateDeferredEach,
-  list,
-  listSSR,
-  match,
-  type DeferredEach,
-} from '../src/control.ts';
+import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
+import { mount, onDispose } from '../src/component.ts';
+import { each, inflateDeferredEach, list, match, type DeferredEach } from '../src/control.ts';
+import { eachSSR, listSSR } from '../src/control/ssr.ts';
 import { state, watch } from '../src/signals.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
@@ -576,13 +571,14 @@ describe('each', () => {
     const closeMarker = document.createComment('slot-close');
     host.appendChild(closeMarker);
     const context = new ComponentContext();
-    const deferred: DeferredEach<number> = {
-      __purity_deferred_each__: true,
-      listAccessor: items,
-      mapFn: (item) => html`<li>${item()}</li>`,
-      keyFn: (item) => item,
-      options: { virtual: true },
-    };
+    const deferred = withHydration(() =>
+      each(
+        items,
+        (item) => html`<li>${item()}</li>`,
+        (item) => item,
+        { virtual: true },
+      ),
+    ) as DeferredEach<number>;
 
     pushContext(context);
     try {
@@ -614,12 +610,9 @@ describe('each', () => {
     const closeMarker = document.createComment('slot-close');
     host.appendChild(closeMarker);
     const context = new ComponentContext();
-    const deferred: DeferredEach<number | undefined> = {
-      __purity_deferred_each__: true,
-      listAccessor: items,
-      mapFn: (item) => html`<li>${item()}</li>`,
-      options: { virtual: true },
-    };
+    const deferred = withHydration(() =>
+      each(items, (item) => html`<li>${item()}</li>`, { virtual: true }),
+    ) as DeferredEach<number | undefined>;
 
     pushContext(context);
     try {
@@ -1358,6 +1351,21 @@ describe('each — LIS binary search exercise', () => {
       'A',
       'G',
     ]);
+  });
+
+  it('keeps every node of a multi-node row together when reordering', async () => {
+    const items = state(['A', 'B', 'C']);
+    const c = document.createElement('div');
+    c.appendChild(
+      each(
+        () => items(),
+        (item) => html`<b>${item()}</b><i>${item()}</i>`,
+      ),
+    );
+    await tick();
+    items(['C', 'A', 'B']);
+    await tick();
+    expect(c.textContent).toBe('CCAABB');
   });
 });
 

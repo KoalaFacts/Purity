@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { ComponentContext, popContext, pushContext } from '../src/component.ts';
+import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
 import { batch, compute, state, watch, type ComputedAccessor } from '../src/signals.ts';
 
 describe('state', () => {

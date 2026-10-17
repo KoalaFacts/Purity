@@ -4,10 +4,9 @@ import {
   disableHydrationWarnings,
   enableHydrationTextRewrite,
   enableHydrationWarnings,
-  html,
-  hydrate,
-  state,
-} from '../src/index.ts';
+} from '../src/compiler/runtime.ts';
+import { html } from '../src/compiler/jit.ts';
+import { hydrate, state } from '../src/index.ts';
 import { tick } from './_helpers.ts';
 
 describe('hydrate mismatch warnings (opt-in dev diagnostics)', () => {

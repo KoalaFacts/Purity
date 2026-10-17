@@ -50,6 +50,46 @@ const viteConfig = {
   resolve: {
     alias: [
       {
+        find: /^@purityjs\/core\/jit$/,
+        replacement: resolve(benchmarkRoot, '../packages/core/src/compiler/jit.ts'),
+      },
+      {
+        find: /^@purityjs\/core\/runtime$/,
+        replacement: resolve(benchmarkRoot, '../packages/core/src/compiler/runtime.ts'),
+      },
+      {
+        find: /^@purityjs\/core\/compiler$/,
+        replacement: resolve(benchmarkRoot, '../packages/core/src/compiler/index.ts'),
+      },
+      {
+        find: /^@purityjs\/core\/internal$/,
+        replacement: resolve(benchmarkRoot, '../packages/core/src/internal.ts'),
+      },
+      {
+        find: /^@purityjs\/core\/signals$/,
+        replacement: resolve(benchmarkRoot, '../packages/core/src/browser-signals/index.ts'),
+      },
+      {
+        find: /^@purityjs\/core\/router$/,
+        replacement: resolve(benchmarkRoot, '../packages/core/src/router/index.ts'),
+      },
+      {
+        find: /^@purityjs\/core\/actions$/,
+        replacement: resolve(benchmarkRoot, '../packages/core/src/actions/index.ts'),
+      },
+      {
+        find: /^@purityjs\/core\/islands$/,
+        replacement: resolve(benchmarkRoot, '../packages/core/src/islands/index.ts'),
+      },
+      {
+        find: /^@purityjs\/core\/list-runtime$/,
+        replacement: resolve(benchmarkRoot, '../packages/core/src/control/list-runtime.ts'),
+      },
+      {
+        find: /^@purityjs\/core\/query$/,
+        replacement: resolve(benchmarkRoot, '../packages/core/src/query/index.ts'),
+      },
+      {
         find: /^@purityjs\/core$/,
         replacement: resolve(benchmarkRoot, '../packages/core/src/index.ts'),
       },

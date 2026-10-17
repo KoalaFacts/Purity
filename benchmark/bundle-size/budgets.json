@@ -1,16 +1,56 @@
 {
   "packages": {
     "core": {
-      "gzipBytes": 46080,
-      "brotliBytes": 40704
+      "gzipBytes": 16896,
+      "brotliBytes": 15360
     },
     "core-compiler": {
-      "gzipBytes": 12800,
-      "brotliBytes": 11520
+      "gzipBytes": 8704,
+      "brotliBytes": 7808
     },
     "ssr": {
       "gzipBytes": 5376,
       "brotliBytes": 4864
+    },
+    "core-all": {
+      "gzipBytes": 46080,
+      "brotliBytes": 40704
+    },
+    "core-runtime": {
+      "gzipBytes": 3328,
+      "brotliBytes": 2944
+    },
+    "core-jit": {
+      "gzipBytes": 8448,
+      "brotliBytes": 7680
+    },
+    "core-signals": {
+      "gzipBytes": 9216,
+      "brotliBytes": 8192
+    },
+    "core-router": {
+      "gzipBytes": 12544,
+      "brotliBytes": 11264
+    },
+    "core-actions": {
+      "gzipBytes": 5888,
+      "brotliBytes": 5248
+    },
+    "core-islands": {
+      "gzipBytes": 8192,
+      "brotliBytes": 7424
+    },
+    "core-query": {
+      "gzipBytes": 4608,
+      "brotliBytes": 4224
+    },
+    "core-internal": {
+      "gzipBytes": 4864,
+      "brotliBytes": 4352
+    },
+    "core-list-runtime": {
+      "gzipBytes": 5888,
+      "brotliBytes": 5376
     }
   },
   "fixtures": {
@@ -24,7 +64,9 @@
       "functionConstructorCalls": 1
     },
     "controls-aot": {
-      "functionConstructorCalls": 1
+      "functionConstructorCalls": 0,
+      "gzipBytes": 8960,
+      "brotliBytes": 7936
     },
     "form-runtime": {
       "functionConstructorCalls": 1
@@ -36,7 +78,21 @@
       "functionConstructorCalls": 1
     },
     "hydration-aot": {
+      "functionConstructorCalls": 0,
+      "gzipBytes": 9472,
+      "brotliBytes": 8448
+    },
+    "resource-runtime": {
       "functionConstructorCalls": 1
+    },
+    "resource-aot": {
+      "functionConstructorCalls": 0
+    },
+    "resource-runtime": {
+      "functionConstructorCalls": 1
+    },
+    "resource-aot": {
+      "functionConstructorCalls": 0
     }
   }
 }

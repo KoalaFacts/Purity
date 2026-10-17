@@ -13,7 +13,9 @@
 //     Apps no longer need to thread the on-disk `./.purity/routes.ts`
 //     path through every page.
 
-import { component, each, head, html, loaderData } from '@purityjs/core';
+import { component, each } from '@purityjs/core';
+import { head, loaderData } from '@purityjs/core/router';
+import { html } from '@purityjs/core/jit';
 import type { LoaderDataOf } from '@purityjs/vite-plugin';
 // `import type` — value-namespace binding usable in `typeof` positions
 // only. Compiles to nothing; no runtime import or cycle.

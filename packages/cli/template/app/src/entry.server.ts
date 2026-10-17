@@ -1,4 +1,5 @@
-import { handleAction, matchRoute } from '@purityjs/core';
+import { handleAction } from '@purityjs/core/actions';
+import { matchRoute } from '@purityjs/core/router';
 import {
   SSRTimeoutError,
   renderToStreamResponse,

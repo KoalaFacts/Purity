@@ -12,7 +12,7 @@
 // don't throw — the in-memory state still updates.
 // ---------------------------------------------------------------------------
 
-import { getCurrentContext } from './component.ts';
+import { getCurrentContext } from './scope.ts';
 import { state, type StateAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 

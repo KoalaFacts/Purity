@@ -1,18 +1,11 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { createServer, type Server } from 'node:http';
-import { component, handleAction, resource, serverAction, suspense } from '@purityjs/core';
-import { flattenValue, valueText } from '@purityjs/core/compiler';
+import { component, resource, suspense } from '@purityjs/core';
+import { handleAction, serverAction } from '@purityjs/core/actions';
 import { chromium, firefox, webkit } from 'playwright';
-import {
-  generate,
-  generateHydrate,
-  generateSSR,
-  isSSRHtml,
-  markSSRHtml,
-  parse,
-  valueToHtml,
-} from '@purityjs/core/compiler';
+import { generate, generateHydrate, generateSSR, parse } from '@purityjs/core/compiler';
+import { isSSRHtml, markSSRHtml, valueToHtml } from '@purityjs/core/internal';
 import {
   html,
   renderStatic,
@@ -162,7 +155,7 @@ try {
 
   // Both package formats must reject structural impersonation and retain their
   // own explicitly trusted wrappers. Trust does not come from serialization.
-  const cjs = createRequire(import.meta.url)('@purityjs/core/compiler') as {
+  const cjs = createRequire(import.meta.url)('@purityjs/core/internal') as {
     isSSRHtml: typeof isSSRHtml;
     markSSRHtml: typeof markSSRHtml;
     valueToHtml: typeof valueToHtml;
@@ -181,9 +174,6 @@ try {
   const hydrate = generateHydrate(ast);
   const inlinePayload = '</script><script>globalThis.__purityLiteralAttack=1</script><!--';
   const inlineFactory = generate(parse([`<p title="${inlinePayload}">`, '</p>']));
-  // Generated client code takes the coercion helpers as free names; the page
-  // rebuilds them from the same source the core runtime uses.
-  const helperSource = `(function(){const flattenValue=${flattenValue.toString()};const valueText=${valueText.toString()};return {flattenValue,valueText};})()`;
   const foreignTemplates = ['svg', 'math'].map((tag) =>
     generate(parse([`<${tag}><template>x</template></${tag}>`])),
   );
@@ -280,16 +270,9 @@ try {
       assert.equal(await page.locator('#stream-sibling').textContent(), 'SIBLING-READY');
       for (const fixture of rawCases) {
         const result = await page.evaluate(
-          ({ fixture, helpers }) => {
-            const H = new Function(`return ${helpers}`)() as {
-              flattenValue: unknown;
-              valueText: unknown;
-            };
-            const bind = (code: string) =>
-              new Function('__purity_fl__', '__purity_tx__', `return ${code}`)(
-                H.flattenValue,
-                H.valueText,
-              );
+          ({ fixture }) => {
+            // generate() output carries its own value helpers.
+            const bind = (code: string) => new Function(`return ${code}`)();
             const immediate = (fn: () => void) => fn();
             const values = [fixture.tag === 'style' ? 'p{color:red}' : 'x'];
             const client = bind(fixture.client)(values, immediate) as DocumentFragment;
@@ -305,7 +288,7 @@ try {
               adopted === host.querySelector(fixture.tag),
             ];
           },
-          { fixture, helpers: helperSource },
+          { fixture },
         );
         assert.deepEqual(result, [fixture.expected, fixture.expected, fixture.expected, true]);
       }
@@ -343,9 +326,7 @@ try {
         undefined,
       );
       assert.equal(await page.locator('strong').textContent(), 'safe');
-      await page.setContent(
-        `<script>globalThis.__purityHelpers=${helperSource};globalThis.__purityInlineFactory=(function(__purity_fl__,__purity_tx__){return ${inlineFactory};})(__purityHelpers.flattenValue,__purityHelpers.valueText);</script>`,
-      );
+      await page.setContent(`<script>globalThis.__purityInlineFactory=${inlineFactory};</script>`);
       assert.equal(
         await page.evaluate(
           () => (globalThis as { __purityLiteralAttack?: number }).__purityLiteralAttack,
@@ -366,17 +347,9 @@ try {
       });
       assert.equal(literalTitle, inlinePayload);
       const result = await page.evaluate(
-        ({ client, hydrate, helpers }) => {
+        ({ client, hydrate }) => {
           const immediate = (fn: () => void) => fn();
-          const H = new Function(`return ${helpers}`)() as {
-            flattenValue: unknown;
-            valueText: unknown;
-          };
-          const bind = (code: string) =>
-            new Function('__purity_fl__', '__purity_tx__', `return ${code}`)(
-              H.flattenValue,
-              H.valueText,
-            );
+          const bind = (code: string) => new Function(`return ${code}`)();
           const dom = bind(client);
           const adopt = bind(hydrate);
           let rejected = 0;
@@ -408,7 +381,7 @@ try {
             safeHref: (root as unknown as HTMLAnchorElement).getAttribute('href'),
           };
         },
-        { client, hydrate, helpers: helperSource },
+        { client, hydrate },
       );
       assert.deepEqual(result, { rejected: 6, safeHref: '/safe' });
       console.log(

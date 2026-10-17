@@ -21,7 +21,6 @@ import {
   compute,
   debounced,
   each,
-  html,
   lazyResource,
   match,
   mount,
@@ -31,6 +30,7 @@ import {
   watch,
   when,
 } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 import { fetchSnapshot, postEvent, type Event as LogEvent, type Snapshot } from './mock.ts';
 
 // ---------------------------------------------------------------------------

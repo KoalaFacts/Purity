@@ -87,7 +87,7 @@ inflates against its slot's subtree. See ADR
 [0005](../../docs/decisions/0005-non-lossy-hydration.md).
 
 ```ts
-import { enableHydrationWarnings, hydrate } from '@purityjs/core';
+import { enableHydrationWarnings } from '@purityjs/core/runtime'; import { hydrate } from '@purityjs/core';
 
 if (import.meta.env.DEV) enableHydrationWarnings();
 hydrate(document.getElementById('app')!, App);
@@ -186,8 +186,8 @@ compiler/
   ast.ts            — AST node types
   parser.ts         — charcode-based template parser
   codegen.ts        — AST → optimized JS DOM code (generate / generateSSR / generateHydrate)
-  compile.ts        — JIT html`` with WeakMap cache + inflateDeferred for hydration
-  hydrate-runtime.ts — isHydrating flag + DeferredTemplate thunk (ADR 0005)
+  compile.ts        — JIT html`` with WeakMap cache; registers the compiler for hydration
+  hydrate-runtime.ts — isHydrating flag, DeferredTemplate thunk, inflateDeferred (ADR 0005)
   index.ts          — re-exports for the @purityjs/core/compiler subpath
 component.ts        — ComponentContext, Scope, mount, lifecycle
 elements.ts         — component(), slot(), teleport(), Custom Element

@@ -8,7 +8,7 @@ import {
   type ConfigureNavigationOptions,
   currentPath,
   navigate,
-} from '../src/index.ts';
+} from '../src/router/index.ts';
 
 let teardown: (() => void) | null = null;
 

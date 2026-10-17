@@ -6,7 +6,7 @@
 // the SSR behavior (collection on the context) and the renderToString
 // `extractHead: true` option that surfaces it.
 
-import { head } from '@purityjs/core';
+import { head } from '@purityjs/core/router';
 import { describe, expect, it } from 'vite-plus/test';
 import { html as ssrHtml, renderToString } from '../src/index.ts';
 

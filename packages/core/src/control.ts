@@ -1,33 +1,19 @@
 import {
-  inflateDeferred,
-  setInflateDeferredEach,
-  setInflateDeferredMatch,
-} from './compiler/compile.ts';
-import {
   type DeferredTemplate,
   enterHydration,
   exitHydration,
+  inflateDeferred,
   isDeferred,
   isHydrating,
+  setInflateDeferredEach,
+  setInflateDeferredMatch,
 } from './compiler/hydrate-runtime.ts';
-import {
-  escAttr as escapeAttrLocal,
-  escHtml as escapeHtmlLocal,
-  markSSRHtml,
-  type RawTextSpan,
-  type SSRHtml,
-  valueToHtml,
-} from './compiler/ssr-runtime.ts';
-import {
-  disposeScope,
-  getCurrentContext,
-  popContext,
-  pushContext,
-  type Scope,
-} from './component.ts';
-import type { StateAccessor } from './signals.ts';
-import { state, watch } from './signals.ts';
-import { cancelSSRBoundary, getSSRRenderContext } from './ssr-context.ts';
+import type { SSRHtml } from './compiler/ssr-runtime.ts';
+import { ssrControls } from './control/dispatch.ts';
+import { warnDuplicateKey } from './control/keys.ts';
+import { getCurrentContext, popContext, pushContext, type Scope } from './scope.ts';
+import { disposeScope, state, watch, type StateAccessor } from './signals.ts';
+import { getSSRRenderContext } from './ssr-context.ts';
 
 // ---------------------------------------------------------------------------
 // State-preserving DOM moves (ADR 0037)
@@ -232,7 +218,7 @@ export function match<T extends string | number | boolean>(
   // `renderToStream` / `renderStatic` pass, return SSRHtml string output
   // instead of touching `document`. Lets `match()` be called from
   // manifest-driven composers without needing the explicit `matchSSR`.
-  if (getSSRRenderContext() !== null) return matchSSR(sourceFn, cases, fallback);
+  if (getSSRRenderContext() !== null) return ssrControls.match(sourceFn, cases, fallback);
 
   const endMarker = document.createComment('m');
   const fragment = document.createDocumentFragment();
@@ -277,7 +263,7 @@ export function when(
   // entirely on the server — whenSSR returns the picked branch as a tagged
   // string. `match()` itself ALSO dispatches in SSR (so the recursion would
   // be safe), but going direct is clearer + slightly faster.
-  if (getSSRRenderContext() !== null) return whenSSR(conditionFn, thenFn, elseFn);
+  if (getSSRRenderContext() !== null) return ssrControls.when(conditionFn, thenFn, elseFn);
   return match((() => String(conditionFn())) as () => 'true' | 'false', {
     true: thenFn,
     ...(elseFn ? { false: elseFn } : {}),
@@ -367,7 +353,6 @@ function runEntryMapFn<T>(
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
   data: StateAccessor<T>,
   index: number,
-  _parentCtx: Scope | null,
 ): { entry: EachEntry<T>; content: Node | DocumentFragment | string } {
   const ctx: Scope = { disposers: null };
   pushContext(ctx);
@@ -384,21 +369,35 @@ function disposeEntry<T>(entry: EachEntry<T>): void {
   disposeScope(entry.ctx);
 }
 
-function describeKey(key: unknown): string {
-  // String(key) throws for null-prototype objects; a diagnostic must not abort
-  // the render, so report the conversion error and fall back to the type name.
-  try {
-    return JSON.stringify(String(key));
-  } catch (e) {
-    console.error('[Purity] key format:', e);
-    return `<${typeof key}>`;
-  }
+/** A keyed row: the nodes it renders between its siblings. */
+interface KeyedEntry {
+  nodes: Node[];
 }
 
-function warnDuplicateKey(key: unknown, index: number, api = 'each()'): void {
-  console.warn(
-    `[Purity] ${api} duplicate key ${describeKey(key)} at index ${index}; only the first row renders. keyFn must be unique.`,
-  );
+// What reconcileEach needs from a row kind: each() rows own a scope and a data
+// signal; list() rows are one element with its bound event handlers.
+interface RowOps<T, E extends KeyedEntry> {
+  create(item: T, index: number): E;
+  update(entry: E, item: T, index: number): void;
+  release(entry: E): void;
+  /** API name in duplicate-key warnings. */
+  api?: string;
+}
+
+function eachRowOps<T>(
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+): RowOps<T, EachEntry<T>> {
+  return {
+    create(item, index) {
+      const { entry, content } = runEntryMapFn(mapFn, state(item), index);
+      entry.nodes = extractNodes(content);
+      return entry;
+    },
+    update(entry, item) {
+      entry.data(item);
+    },
+    release: disposeEntry,
+  };
 }
 
 /**
@@ -432,10 +431,10 @@ function firstOccurrenceRows<T>(
   return rows;
 }
 
-function canReplaceOwnedRange<T>(
+function canReplaceOwnedRange(
   parent: Node,
   prevKeys: unknown[],
-  keyToEntry: Map<unknown, EachEntry<T>>,
+  keyToEntry: Map<unknown, KeyedEntry>,
   endMarker: Node,
 ): boolean {
   const firstEntry = keyToEntry.get(prevKeys[0]);
@@ -451,11 +450,12 @@ function canReplaceOwnedRange<T>(
 }
 
 // Detach all managed nodes from the parent and release their reactive scopes.
-function bulkClear<T>(
+function bulkClear<E extends KeyedEntry>(
   parent: Node,
   prevKeys: unknown[],
-  keyToEntry: Map<unknown, EachEntry<T>>,
+  keyToEntry: Map<unknown, E>,
   endMarker: Node,
+  release: (entry: E) => void,
 ): void {
   const prevLen = prevKeys.length;
   if (prevLen === 0) return;
@@ -481,7 +481,7 @@ function bulkClear<T>(
         if (p) p.removeChild(node);
       }
     }
-    disposeEntry(entry);
+    release(entry);
   }
 }
 
@@ -500,8 +500,8 @@ function extractNodes(content: Node | DocumentFragment | string): Node[] {
 // Mutable state shared between each()'s watch and inflateDeferredEach's hydration
 // pre-population so a hydrated each() can fall straight through into the same
 // reconciliation logic on subsequent reactive updates.
-interface EachState<T> {
-  keyToEntry: Map<unknown, EachEntry<T>>;
+interface EachState<T, E extends KeyedEntry = EachEntry<T>> {
+  keyToEntry: Map<unknown, E>;
   prevKeys: unknown[];
 }
 
@@ -520,14 +520,13 @@ const EACH_WINDOW_INITIAL_ROWS = 40;
 const EACH_WINDOW_OVERSCAN = 8;
 const EACH_WINDOW_ESTIMATED_ROW_HEIGHT = 32;
 
-function reconcileEach<T>(
-  eachState: EachState<T>,
+function reconcileEach<T, E extends KeyedEntry>(
+  eachState: EachState<T, E>,
   items: T[],
   parent: Node,
   endMarker: Node,
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
   getKey: (item: T, index: number) => unknown,
-  ownerCtx: Scope | null,
+  ops: RowOps<T, E>,
 ): void {
   const len = items.length;
   const { keyToEntry, prevKeys } = eachState;
@@ -543,17 +542,14 @@ function reconcileEach<T>(
       }
     }
     if (same) {
-      for (let i = 0; i < len; i++) {
-        const entry = keyToEntry.get(prevKeys[i])!;
-        entry.data(items[i]);
-      }
+      for (let i = 0; i < len; i++) ops.update(keyToEntry.get(prevKeys[i])!, items[i], i);
       return;
     }
   }
 
   if (len === 0) {
     if (prevLen > 0) {
-      bulkClear(parent, prevKeys, keyToEntry, endMarker);
+      bulkClear(parent, prevKeys, keyToEntry, endMarker, ops.release);
       eachState.keyToEntry = new Map();
     }
     eachState.prevKeys = [];
@@ -569,24 +565,12 @@ function reconcileEach<T>(
       // Duplicate key: keep the first row only. Rendering a second entry
       // would orphan the first one's DOM nodes and scope in keyToEntry.
       if (keyToEntry.has(key)) {
-        warnDuplicateKey(key, i);
+        warnDuplicateKey(key, i, ops.api);
         continue;
       }
       newKeys2.push(key);
-      const data = state(item);
-      const { entry, content } = runEntryMapFn(mapFn, data, i, ownerCtx);
-      if (content instanceof DocumentFragment) {
-        const fc = content.firstChild;
-        entry.nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
-        frag.appendChild(content);
-      } else if (content instanceof Node) {
-        entry.nodes = [content];
-        frag.appendChild(content);
-      } else {
-        const tn = document.createTextNode(String(content ?? ''));
-        entry.nodes = [tn];
-        frag.appendChild(tn);
-      }
+      const entry = ops.create(item, i);
+      for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
       keyToEntry.set(key, entry);
     }
     parent.insertBefore(frag, endMarker);
@@ -597,7 +581,7 @@ function reconcileEach<T>(
   // newKeys holds first occurrences only, so newLen (not len) is the row
   // count used by every placement loop below.
   const newKeys: unknown[] = [];
-  const newEntries = new Map<unknown, EachEntry<T>>();
+  const newEntries = new Map<unknown, E>();
   let reuseCount = 0;
 
   for (let i = 0; i < len; i++) {
@@ -610,28 +594,25 @@ function reconcileEach<T>(
     // distinct keys and means no entry is created and then orphaned in
     // newEntries (its nodes and scope would otherwise leak).
     if (newEntries.has(key)) {
-      warnDuplicateKey(key, i);
+      warnDuplicateKey(key, i, ops.api);
       continue;
     }
     newKeys.push(key);
 
-    const _existing = keyToEntry.get(key) as EachEntry<T> | undefined;
-    if (_existing) {
-      _existing.data(item);
-      newEntries.set(key, _existing);
+    const existing = keyToEntry.get(key);
+    if (existing) {
+      ops.update(existing, item, i);
+      newEntries.set(key, existing);
       reuseCount++;
     } else {
-      const data = state(item);
-      const { entry, content } = runEntryMapFn(mapFn, data, i, ownerCtx);
-      entry.nodes = extractNodes(content);
-      newEntries.set(key, entry);
+      newEntries.set(key, ops.create(item, i));
     }
   }
 
   const newLen = newKeys.length;
 
   if (reuseCount === 0) {
-    bulkClear(parent, prevKeys, keyToEntry, endMarker);
+    bulkClear(parent, prevKeys, keyToEntry, endMarker, ops.release);
     const frag = document.createDocumentFragment();
     for (let i = 0; i < newLen; i++) {
       const entry = newEntries.get(newKeys[i])!;
@@ -655,7 +636,7 @@ function reconcileEach<T>(
             const node = entry.nodes[j];
             if (node.parentNode) node.parentNode.removeChild(node);
           }
-          disposeEntry(entry);
+          ops.release(entry);
         }
       }
     }
@@ -777,7 +758,6 @@ function reconcileEach<T>(
 
         for (let i = newLen - 1; i >= 0; i--) {
           const entry = newEntries.get(newKeys[i])!;
-          const firstNode = entry.nodes[0];
           const sourceIdx = newIndexToSource[i];
           const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
 
@@ -786,7 +766,9 @@ function reconcileEach<T>(
               batch = [];
               batchTarget = nextSibling;
             }
-            batch.push(firstNode);
+            // Reversed here, reversed again on insert: rows and their nodes
+            // keep their order.
+            for (let j = entry.nodes.length - 1; j >= 0; j--) batch.push(entry.nodes[j]);
           } else {
             if (batch) {
               const frag = document.createDocumentFragment();
@@ -1255,7 +1237,6 @@ function reconcileEachWindow<T>(
   requestedRange: EachWindowRange,
   heights: EachWindowHeightIndex,
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
-  ownerCtx: Scope | null,
 ): void {
   const start = Math.min(Math.max(0, requestedRange.start), items.length);
   const visibleCount = Math.max(1, requestedRange.end - requestedRange.start);
@@ -1274,9 +1255,8 @@ function reconcileEachWindow<T>(
     visible,
     parent,
     spacers.bottom,
-    (item, index) => mapFn(item, indices[normalizedStart + index]),
     (_item, index) => keys[normalizedStart + index],
-    ownerCtx,
+    eachRowOps((item, index) => mapFn(item, indices[normalizedStart + index])),
   );
 }
 
@@ -1312,18 +1292,7 @@ function createEachWindowController<T>(
     itemsVersion();
     const parent = spacers.bottom.parentNode;
     if (!parent) return;
-    reconcileEachWindow(
-      eachState,
-      items,
-      indices,
-      keys,
-      parent,
-      spacers,
-      range(),
-      heights,
-      mapFn,
-      ownerCtx,
-    );
+    reconcileEachWindow(eachState, items, indices, keys, parent, spacers, range(), heights, mapFn);
     notifyRowsChanged();
   });
 
@@ -1430,15 +1399,35 @@ export function each<T>(
   // returned handle and routes it through inflateDeferredEach, which adopts
   // the SSR-rendered rows in place rather than rebuilding the slot. See
   // ADR 0005 / handoff item "Per-row reconciliation in each()".
-  if (isHydrating()) return makeDeferredEach(listAccessor, mapFn, keyFn, eachOptions);
+  if (isHydrating())
+    return makeDeferredEach(listAccessor, mapFn, keyFn, eachOptions, hydrateEachWindow);
 
   // SSR-context dispatch (ADR 0023). Inside a server render pass, return
   // SSRHtml string output. Same per-row marker grammar as eachSSR, so
   // hydration adoption still works against the resulting markup.
-  if (getSSRRenderContext() !== null) return eachSSR(listAccessor, mapFn, keyFn);
+  if (getSSRRenderContext() !== null) return ssrControls.each(listAccessor, mapFn, keyFn);
 
   if (eachOptions?.virtual) return eachWindow(listAccessor, mapFn, keyFn, getCurrentContext());
 
+  return renderEachDOM(listAccessor, mapFn, keyFn);
+}
+
+/** @internal — compiler target for calls proven to have no virtual options. */
+export function ordinaryEach<T>(
+  listAccessor: (() => T[]) | T[],
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  keyFn?: (item: T, index: number) => unknown,
+): DocumentFragment | DeferredEach<T> | SSRHtml {
+  if (isHydrating()) return makeDeferredEach(listAccessor, mapFn, keyFn);
+  if (getSSRRenderContext() !== null) return ssrControls.each(listAccessor, mapFn, keyFn);
+  return renderEachDOM(listAccessor, mapFn, keyFn);
+}
+
+function renderEachDOM<T>(
+  listAccessor: (() => T[]) | T[],
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  keyFn?: (item: T, index: number) => unknown,
+): DocumentFragment {
   const endMarker = document.createComment('e');
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
@@ -1447,12 +1436,13 @@ export function each<T>(
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
+  const ops = eachRowOps(mapFn);
 
   const dispose = watch(() => {
     const items = getList() || [];
     const parent = endMarker.parentNode;
     if (!parent) return;
-    reconcileEach(eachState, items, parent, endMarker, mapFn, getKey, getCurrentContext());
+    reconcileEach(eachState, items, parent, endMarker, getKey, ops);
   });
 
   registerEachAutoDispose(getCurrentContext(), dispose, eachState);
@@ -1477,6 +1467,7 @@ export interface DeferredEach<T = unknown> {
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string;
   keyFn?: (item: T, index: number) => unknown;
   options?: EachOptions;
+  hydrateWindow?: typeof hydrateEachWindow;
 }
 
 function makeDeferredEach<T>(
@@ -1484,20 +1475,12 @@ function makeDeferredEach<T>(
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
   keyFn?: (item: T, index: number) => unknown,
   options?: EachOptions,
+  hydrateWindow?: typeof hydrateEachWindow,
 ): DeferredEach<T> {
   // Register only when hydration captures an each() handle. A module-level
   // registration makes the compiler retain list adoption in every application.
   setInflateDeferredEach(inflateDeferredEach as (d: unknown, c: Node[], m: Node) => void);
-  return { __purity_deferred_each__: true, listAccessor, mapFn, keyFn, options };
-}
-
-// Encode an arbitrary key into a comment-data-safe string. encodeURIComponent
-// escapes everything except `A-Za-z0-9-_.!~*'()`; we additionally rewrite `-`
-// to `%2D` so two consecutive dashes can never appear in the encoded form
-// (HTML comments forbid `--`). decodeURIComponent inverts both transforms in
-// one step, since `%2D` round-trips to `-`. See WHATWG comment grammar.
-function encodeRowKey(key: unknown): string {
-  return encodeURIComponent(String(key)).replace(/-/g, '%2D');
+  return { __purity_deferred_each__: true, listAccessor, mapFn, keyFn, options, hydrateWindow };
 }
 
 function decodeRowKey(s: string): string {
@@ -1599,7 +1582,7 @@ export function inflateDeferredEach<T>(
   /* v8 ignore next -- defensive; close marker always has a parent here */
   if (!parent) return;
 
-  const { listAccessor, mapFn, keyFn, options } = deferred;
+  const { listAccessor, mapFn, keyFn, options, hydrateWindow } = deferred;
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
@@ -1727,36 +1710,15 @@ export function inflateDeferredEach<T>(
     }
   }
 
-  let spacers: EachWindowSpacers | undefined;
   if (options?.virtual) {
-    const doc = parent.ownerDocument ?? document;
-    const top = createEachSpacer(doc, parent);
-    const bottom = createEachSpacer(doc, parent);
-    const firstNode =
-      eachState.prevKeys.length > 0
-        ? eachState.keyToEntry.get(eachState.prevKeys[0])?.nodes[0]
-        : undefined;
-    parent.insertBefore(top, firstNode?.parentNode === parent ? firstNode : endMarker);
-    parent.insertBefore(bottom, endMarker);
-    spacers = { top, bottom };
-  }
-
-  if (spacers) {
-    const dispose = createEachWindowController(
-      ownerCtx,
-      eachState,
-      listAccessor,
-      mapFn,
-      getKey,
-      spacers,
-    );
-    registerEachAutoDispose(ownerCtx, dispose, eachState);
+    hydrateWindow!(ownerCtx, eachState, listAccessor, mapFn, getKey, parent, endMarker);
   } else {
+    const ops = eachRowOps(mapFn);
     const dispose = watch(() => {
       const next = getList() || [];
       const p = endMarker.parentNode;
       if (!p) return;
-      reconcileEach(eachState, next, p, endMarker, mapFn, getKey, ownerCtx);
+      reconcileEach(eachState, next, p, endMarker, getKey, ops);
     });
     registerEachAutoDispose(ownerCtx, dispose, eachState);
   }
@@ -1982,7 +1944,7 @@ interface ListOptions<T> {
 
 type ListTextFn<T> = (item: T, index: number) => string;
 
-interface ListEntry {
+interface ListEntry extends KeyedEntry {
   node: Element;
   textNode: Text | null;
   // Bound event handlers for this entry, keyed by event name. Stored so
@@ -2040,8 +2002,7 @@ export function list<T>(
     getKey = textOrOptions.key ?? ((item: T) => item as unknown);
   }
 
-  let keyToEntry = new Map<unknown, ListEntry>();
-  let prevKeys: unknown[] = [];
+  const listState: EachState<T, ListEntry> = { keyToEntry: new Map(), prevKeys: [] };
 
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
@@ -2096,7 +2057,7 @@ export function list<T>(
       }
     }
 
-    return { node: el, textNode, boundEvents };
+    return { nodes: [el], node: el, textNode, boundEvents };
   };
 
   // Update an existing element in place — zero DOM creation
@@ -2145,199 +2106,16 @@ export function list<T>(
     entry.boundEvents = null;
   };
 
+  const ops: RowOps<T, ListEntry> = {
+    create: createEntry,
+    update: updateEntry,
+    release: releaseEntry,
+    api: 'list()',
+  };
   const dispose = watch(() => {
     const items = getList() || [];
     const parent = endMarker.parentNode;
-    if (!parent) return;
-
-    const len = items.length;
-    const prevLen = prevKeys.length;
-
-    // Fast path: same keys — update in place
-    if (len === prevLen) {
-      let same = true;
-      for (let i = 0; i < len; i++) {
-        if (prevKeys[i] !== getKey(items[i], i)) {
-          same = false;
-          break;
-        }
-      }
-      if (same) {
-        for (let i = 0; i < len; i++) {
-          updateEntry(keyToEntry.get(prevKeys[i])!, items[i], i);
-        }
-        return;
-      }
-    }
-
-    // Fast path: clear all — per-node detach (matches each())
-    if (len === 0) {
-      for (let i = 0; i < prevLen; i++) {
-        const entry = keyToEntry.get(prevKeys[i]);
-        if (!entry) continue;
-        const p = entry.node.parentNode;
-        if (p) p.removeChild(entry.node);
-        releaseEntry(entry);
-      }
-      keyToEntry = new Map();
-      prevKeys = [];
-      return;
-    }
-
-    // Fast path: all new (first render) — single pass, no Map lookups
-    if (prevLen === 0) {
-      const newKeys2: unknown[] = [];
-      const frag = document.createDocumentFragment();
-      for (let i = 0; i < len; i++) {
-        const item = items[i];
-        const key = getKey(item, i);
-        // Duplicate key: first row wins (see each()). A second entry would
-        // orphan the first one's node and scope in keyToEntry.
-        if (keyToEntry.has(key)) {
-          warnDuplicateKey(key, i, 'list()');
-          continue;
-        }
-        newKeys2.push(key);
-        const entry = createEntry(item, i);
-        keyToEntry.set(key, entry);
-        frag.appendChild(entry.node);
-      }
-      parent.insertBefore(frag, endMarker);
-      prevKeys = newKeys2;
-      return;
-    }
-
-    // newKeys holds first occurrences only, so newLen (not len) is the row
-    // count used by every placement loop below.
-    const newKeys: unknown[] = [];
-    const newEntries = new Map<unknown, ListEntry>();
-    let reuseCount = 0;
-
-    // Tight creation loop — NO function call overhead per item
-    for (let i = 0; i < len; i++) {
-      const item = items[i];
-      const key = getKey(item, i);
-
-      // Duplicate key: first occurrence owns the entry (see each()).
-      if (newEntries.has(key)) {
-        warnDuplicateKey(key, i, 'list()');
-        continue;
-      }
-      newKeys.push(key);
-
-      const _existing = keyToEntry.get(key);
-      if (_existing) {
-        const entry = _existing;
-        updateEntry(entry, item, i);
-        newEntries.set(key, entry);
-        reuseCount++;
-      } else {
-        newEntries.set(key, createEntry(item, i));
-      }
-    }
-
-    const newLen = newKeys.length;
-
-    // Fast path: no reuse — bulk remove + bulk insert
-    if (reuseCount === 0) {
-      for (let i = 0; i < prevLen; i++) {
-        const entry = keyToEntry.get(prevKeys[i]);
-        if (!entry) continue;
-        const p = entry.node.parentNode;
-        if (p) p.removeChild(entry.node);
-        releaseEntry(entry);
-      }
-      const frag = document.createDocumentFragment();
-      for (let i = 0; i < newLen; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
-      parent.insertBefore(frag, endMarker);
-      keyToEntry = newEntries;
-      prevKeys = newKeys;
-      return;
-    }
-
-    // Remove deleted. reuseCount counts distinct reused keys, so it is below
-    // keyToEntry.size exactly when some previous key was dropped.
-    if (reuseCount < keyToEntry.size) {
-      for (let i = 0; i < prevLen; i++) {
-        if (!newEntries.has(prevKeys[i])) {
-          const entry = keyToEntry.get(prevKeys[i]);
-          if (!entry) continue;
-          if (entry.node.parentNode) entry.node.parentNode.removeChild(entry.node);
-          releaseEntry(entry);
-        }
-      }
-    }
-
-    // Reorder — append-only / prepend-only fast paths or LIS
-    if (prevLen > 0 && newLen > 0) {
-      let isAppend = newLen > prevLen;
-      if (isAppend) {
-        for (let i = 0; i < prevLen; i++) {
-          if (prevKeys[i] !== newKeys[i]) {
-            isAppend = false;
-            break;
-          }
-        }
-      }
-
-      let isPrepend = !isAppend && newLen > prevLen;
-      if (isPrepend) {
-        const offset = newLen - prevLen;
-        for (let i = 0; i < prevLen; i++) {
-          if (prevKeys[i] !== newKeys[i + offset]) {
-            isPrepend = false;
-            break;
-          }
-        }
-      }
-
-      if (isAppend) {
-        const frag = document.createDocumentFragment();
-        for (let i = prevLen; i < newLen; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
-        parent.insertBefore(frag, endMarker);
-      } else if (isPrepend) {
-        // Pure prepend — see each() for the reuseCount-equals-prevLen invariant.
-        const newCount = newLen - prevLen;
-        const frag = document.createDocumentFragment();
-        for (let i = 0; i < newCount; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
-        const firstExisting = newEntries.get(newKeys[newCount])!.node;
-        parent.insertBefore(frag, firstExisting);
-      } else {
-        // LIS reorder
-        const oldKeyIndex = new Map<unknown, number>();
-        for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
-
-        const sources: number[] = [];
-        const srcMap: number[] = new Array(newLen).fill(-1);
-        for (let i = 0; i < newLen; i++) {
-          const oi = oldKeyIndex.get(newKeys[i]);
-          if (oi !== undefined) {
-            sources.push(oi);
-            srcMap[i] = sources.length - 1;
-          }
-        }
-
-        const stableSet = new Set(lis(sources));
-        let next: Node = endMarker;
-        for (let i = newLen - 1; i >= 0; i--) {
-          const entry = newEntries.get(newKeys[i])!;
-          if (srcMap[i] === -1 || !stableSet.has(srcMap[i])) {
-            parent.insertBefore(entry.node, next);
-          }
-          next = entry.node;
-        }
-      }
-      /* v8 ignore start -- prevLen===0 caught by earlier fast path; newLen===0 caught above */
-    } else {
-      // All new — batch insert
-      const frag = document.createDocumentFragment();
-      for (let i = 0; i < newLen; i++) frag.appendChild(newEntries.get(newKeys[i])!.node);
-      parent.insertBefore(frag, endMarker);
-    }
-    /* v8 ignore stop */
-
-    keyToEntry = newEntries;
-    prevKeys = newKeys;
+    if (parent) reconcileEach(listState, items, parent, endMarker, getKey, ops);
   });
 
   // Auto-dispose watcher + clean up entries on component unmount
@@ -2350,201 +2128,14 @@ export function list<T>(
       // no longer pin the captured `item` closure. The row nodes themselves
       // are left to GC alongside their parent — the same shape as each()'s
       // disposeEntry walk.
-      for (const entry of keyToEntry.values()) releaseEntry(entry);
-      keyToEntry.clear();
-      prevKeys = [];
+      for (const entry of listState.keyToEntry.values()) releaseEntry(entry);
+      listState.keyToEntry.clear();
+      listState.prevKeys = [];
     });
   }
 
   return fragment;
 }
-
-// ---------------------------------------------------------------------------
-// SSR variants — return branded HTML strings, no DOM, no watchers.
-//
-// These are pulled in by @purityjs/ssr's renderToString during server render.
-// Each region is bracketed by start + end comment markers so the PR 4
-// hydrator can locate control-flow boundaries on the parsed DOM:
-//
-//   match / when:  <!--m-->...<!--/m-->
-//   each:          <!--e-->...<!--/e-->
-//   list:          <!--l-->...<!--/l-->
-//
-// Accessors are called once. Returns from view/map functions are normalized
-// via valueToHtml — which handles branded SSR HTML, primitives, arrays, and
-// signal accessors transparently.
-// ---------------------------------------------------------------------------
-
-/**
- * SSR variant of {@link match}. Renders the matching case once, returns HTML.
- *
- * The boundary marker carries the rendered case key (URL-encoded) so the
- * client-side hydrator can tell whether to adopt the SSR-rendered subtree
- * (when the current key matches what SSR produced) or fall through to a
- * fresh render (data drift between server and client). Encoding follows
- * the same scheme as `eachSSR`'s row markers — see {@link encodeRowKey}.
- */
-export function matchSSR<T extends string | number | boolean>(
-  sourceFn: () => T,
-  cases: Partial<Record<`${T}`, () => unknown>>,
-  fallback?: () => unknown,
-): SSRHtml {
-  const key = String(sourceFn()) as `${T}`;
-  const view = cases[key] ?? fallback;
-  const prefix = `<!--m:${encodeRowKey(key)}-->`;
-  const spans: RawTextSpan[] = [];
-  const inner = view ? valueToHtml(view(), spans, prefix.length) : '';
-  return markSSRHtml(`${prefix}${inner}<!--/m-->`, spans);
-}
-
-/** SSR variant of {@link when}. Picks then/else once, returns HTML. */
-export function whenSSR(
-  conditionFn: () => boolean,
-  thenFn: () => unknown,
-  elseFn?: () => unknown,
-): SSRHtml {
-  const cond = conditionFn();
-  const view = cond ? thenFn : elseFn;
-  const prefix = `<!--m:${cond ? 'true' : 'false'}-->`;
-  const spans: RawTextSpan[] = [];
-  const inner = view ? valueToHtml(view(), spans, prefix.length) : '';
-  return markSSRHtml(`${prefix}${inner}<!--/m-->`, spans);
-}
-
-/**
- * SSR variant of {@link each}. Maps each item once, concatenates HTML.
- *
- * Each row is wrapped in `<!--er:KEY-->...<!--/er-->` markers so the client-
- * side hydrator can split the SSR output back into individual rows and
- * adopt their DOM in place when keys match the hydration items list. KEY
- * is the result of `keyFn(item, i)` (or the item itself when no keyFn is
- * supplied), encoded via {@link encodeRowKey} so it survives HTML comment
- * data restrictions. See ADR 0005 / `inflateDeferredEach`.
- */
-export function eachSSR<T>(
-  listAccessor: (() => T[]) | T[],
-  mapFn: (item: () => T, index: number) => unknown,
-  keyFn?: (item: T, index: number) => unknown,
-): SSRHtml {
-  const items = (typeof listAccessor === 'function' ? listAccessor() : listAccessor) || [];
-  const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
-  let inner = '<!--e-->';
-  const spans: RawTextSpan[] = [];
-  const seenKeys = new Set<unknown>();
-  for (let i = 0; i < items.length; i++) {
-    // Pass a frozen accessor so user code that calls `item()` works the same
-    // shape as the client. No reactivity — the value is captured at render.
-    const value = items[i];
-    const key = getKey(value, i);
-    // Duplicate key: emit only the first row, matching the client render.
-    if (seenKeys.has(key)) {
-      warnDuplicateKey(key, i);
-      continue;
-    }
-    seenKeys.add(key);
-    const accessor = () => value;
-    inner += `<!--er:${encodeRowKey(key)}-->`;
-    inner += valueToHtml(mapFn(accessor, i), spans, inner.length) + '<!--/er-->';
-  }
-  return markSSRHtml(`${inner}<!--/e-->`, spans);
-}
-
-interface ListSSROptions<T> {
-  text?: (item: T, index: number) => string;
-  class?: (item: T, index: number) => string;
-  style?: (item: T, index: number) => string;
-  attrs?: Record<string, (item: T, index: number) => string>;
-  events?: Record<string, (item: T, index: number) => (e: Event) => void>;
-  key?: (item: T, index: number) => unknown;
-}
-
-/** SSR variant of {@link list}. Builds a flat list of single-tag rows as HTML. */
-export function listSSR<T>(
-  tag: string,
-  listAccessor: (() => T[]) | T[],
-  textOrOptions: ((item: T, index: number) => string) | ListSSROptions<T>,
-  _keyFn?: (item: T, index: number) => unknown,
-): SSRHtml {
-  // Validate the tag name. The codegen runs every literal tag through
-  // assertSafeName; the cycle-73 fix applied LIST_SAFE_ATTR_NAME to
-  // attrs-object keys. The `tag` parameter was the remaining gap —
-  // `listSSR(userTag, …)` with `userTag = 'div><script>alert(1)</script><div'`
-  // would escape the tag context and inject markup. Same regex shape.
-  if (!LIST_SAFE_ATTR_NAME.test(tag)) {
-    console.warn(`[Purity] listSSR: invalid tag name ${JSON.stringify(tag)}; emitting empty list.`);
-    return markSSRHtml('<!--l--><!--/l-->');
-  }
-  const items = (typeof listAccessor === 'function' ? listAccessor() : listAccessor) || [];
-  // Same key resolution as list(): an options object supplies its own key and
-  // ignores the 4th argument.
-  const getKey: (item: T, index: number) => unknown =
-    typeof textOrOptions === 'function'
-      ? (_keyFn ?? ((item: T) => item as unknown))
-      : (textOrOptions.key ?? ((item: T) => item as unknown));
-  const seenKeys = new Set<unknown>();
-  let getText: ((item: T, index: number) => string) | undefined;
-  let getClass: ((item: T, index: number) => string) | undefined;
-  let getStyle: ((item: T, index: number) => string) | undefined;
-  let getAttrs: Record<string, (item: T, index: number) => string> | undefined;
-
-  if (typeof textOrOptions === 'function') {
-    getText = textOrOptions;
-  } else {
-    getText = textOrOptions.text;
-    getClass = textOrOptions.class;
-    getStyle = textOrOptions.style;
-    getAttrs = textOrOptions.attrs;
-    // events skipped on the server — listeners attach during client hydration
-  }
-
-  let inner = '';
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    // Duplicate key: emit only the first row, matching the client render.
-    const key = getKey(item, i);
-    if (seenKeys.has(key)) {
-      warnDuplicateKey(key, i, 'listSSR()');
-      continue;
-    }
-    seenKeys.add(key);
-    let attrs = '';
-    if (getClass) {
-      const cls = getClass(item, i);
-      if (cls) attrs += ` class="${escapeAttrLocal(cls)}"`;
-    }
-    if (getStyle) {
-      const sty = getStyle(item, i);
-      if (sty) attrs += ` style="${escapeAttrLocal(sty)}"`;
-    }
-    if (getAttrs) {
-      for (const k of Object.keys(getAttrs)) {
-        // Attribute NAMES are interpolated raw into the opening tag — a
-        // hostile name like `foo"><script>...` would close the tag and
-        // inject markup. Validate against the same conservative HTML name
-        // grammar the codegen uses (assertSafeName); skip invalid keys
-        // with a warning rather than silently render unsafe HTML.
-        if (!LIST_SAFE_ATTR_NAME.test(k)) {
-          console.warn(
-            `[Purity] listSSR: dropping attrs key ${JSON.stringify(k)} — not a valid HTML attribute name.`,
-          );
-          continue;
-        }
-        const v = getAttrs[k](item, i);
-        if (v != null) attrs += ` ${k}="${escapeAttrLocal(v)}"`;
-      }
-    }
-    const text = getText ? escapeHtmlLocal(getText(item, i)) : '';
-    inner += `<${tag}${attrs}>${text}</${tag}>`;
-  }
-  return markSSRHtml(`<!--l-->${inner}<!--/l-->`);
-}
-
-// HTML attribute name grammar — letters, digits, hyphen, colon, underscore.
-// Matches the conservative set codegen's assertSafeName accepts, plus `:`
-// for namespaced attrs (xml:lang, xlink:href). Anything outside this set
-// (quotes, angle brackets, whitespace, equals signs, …) could escape the
-// tag-attribute context and inject markup.
-const LIST_SAFE_ATTR_NAME = /^[A-Za-z_][\w:-]*$/;
 
 // ---------------------------------------------------------------------------
 // suspense(view, fallback) — error-isolating render boundary
@@ -2631,184 +2222,35 @@ export function suspense<T>(
   fallback: () => T,
   options?: SuspenseOptions,
 ): T | SSRHtml {
-  const ssrCtx = getSSRRenderContext();
-  if (!ssrCtx) {
-    // Client path — render the view; the fallback is forward-compat for
-    // Phase 3 streaming where it shows while a streamed boundary is in
-    // flight. For now it's unused.
-    return view();
-  }
-  const parentPath = ssrCtx.boundaryPath ?? '';
-  const positions = (ssrCtx.boundaryPositions ??= new Map());
-  const position = positions.get(parentPath) ?? 0;
-  positions.set(parentPath, position + 1);
-  const path = `${parentPath}/${position}`;
-  const ids = (ssrCtx.boundaryIds ??= new Map());
-  let id = ids.get(path);
-  if (id === undefined) ids.set(path, (id = ids.size + 1));
-  ssrCtx.suspenseCounter = Math.max(ssrCtx.suspenseCounter, id);
-  const prefix = `<!--s:${id}-->`;
-  const spans: RawTextSpan[] = [];
-  const renderFallback = () => {
-    spans.length = 0;
-    const previousPath = ssrCtx.boundaryPath;
-    ssrCtx.boundaryPath = `${path}/fallback`;
-    try {
-      return valueToHtml(fallback(), spans, prefix.length);
-    } finally {
-      ssrCtx.boundaryPath = previousPath;
-    }
-  };
+  return getSSRRenderContext() ? ssrControls.suspense(view, fallback, options) : view();
+}
 
-  // Record the first-encounter time so deadlines stay anchored to pass 1
-  // even when later passes re-execute view() with resolved data. If a
-  // timeout is supplied, register the deadline once.
-  if (!ssrCtx.boundaryStartTimes.has(id)) {
-    const start = Date.now();
-    ssrCtx.boundaryStartTimes.set(id, start);
-    if (options?.timeout !== undefined) {
-      ssrCtx.boundaryDeadlines.set(id, start + options.timeout);
-    }
-  }
-
-  // Track the active boundary so any `resource()` invoked inside
-  // `view()` can capture this id at fetcher-registration time. If the
-  // surrounding boundary later loses its deadline race, the renderer
-  // adds the id to the shared `timedOutBoundaries` Set; the resource's
-  // settle path observes that membership and short-circuits before
-  // mutating `resolvedDataByKey` — which would otherwise corrupt the
-  // hydration cache (and, when the late write lands during a sibling
-  // boundary's await window in the same render, the rendered HTML
-  // too). The stack is re-entrant-safe: nested suspense() boundaries
-  // each push their id and pop, so the innermost wraps the resource.
-  const idStack = (ssrCtx.boundaryIdStack ??= []);
-
-  const onError = options?.onError;
-  const reportError = (err: unknown, phase: SuspenseErrorPhase): void => {
-    if (onError) {
-      try {
-        onError(err, { boundaryId: id, phase });
-      } catch (hookErr) {
-        // The hook itself threw — log but don't propagate; one bad reporter
-        // shouldn't take down the whole render.
-        console.error(
-          `[Purity] suspense() onError hook threw (boundary ${id}, phase ${phase}):`,
-          hookErr,
-        );
-      }
-    }
-  };
-
-  const isTimedOut = ssrCtx.timedOutBoundaries.has(id);
-
-  // Streaming branch (ADR 0006 Phase 3) — `renderToStream` flips
-  // ssrCtx.streamingMode and provides a streamingBoundaries registry.
-  // For each boundary we emit the fallback HTML in the shell and queue
-  // the view (+ its fallback for re-render on timeout) for later
-  // streaming, so the shell can flush immediately without awaiting the
-  // boundary's resources. The marker grammar is identical — only the
-  // body is the fallback rather than the resolved view.
-  if (ssrCtx.streamingMode && ssrCtx.streamingBoundaries && !ssrCtx.inlineBoundaries?.has(id)) {
-    let body: string;
-    if (isTimedOut) {
-      reportError(undefined, 'timeout');
-      try {
-        body = renderFallback();
-      } catch (fallbackErr) {
-        reportError(fallbackErr, 'fallback');
-        body = '';
-      }
-    } else {
-      try {
-        body = renderFallback();
-      } catch (fallbackErr) {
-        reportError(fallbackErr, 'fallback');
-        console.error(
-          `[Purity] suspense() shell fallback threw (boundary ${id}); emitting empty fallback:`,
-          fallbackErr,
-        );
-        body = '';
-      }
-      // Don't queue boundaries that already timed out — the shell already
-      // shows their fallback; there's nothing left to stream.
-      ssrCtx.streamingBoundaries.set(id, {
-        view: view as () => unknown,
-        fallback: fallback as () => unknown,
-        deadline: ssrCtx.boundaryDeadlines.get(id),
-        // The ssr-context types `phase` as `string` (variance-friendly for
-        // the boundary table); our `onError` only ever fires with a
-        // `SuspenseErrorPhase` literal at runtime. The cast bridges the
-        // narrower → wider contravariance.
-        onError: onError as
-          | ((err: unknown, info: { boundaryId: number; phase: string }) => void)
-          | undefined,
-      });
-    }
-    return markSSRHtml(`${prefix}${body}<!--/s:${id}-->`, body ? spans : undefined);
-  }
-
-  let body: string;
-  if (isTimedOut) {
-    reportError(undefined, 'timeout');
-    try {
-      body = renderFallback();
-    } catch (fallbackErr) {
-      reportError(fallbackErr, 'fallback');
-      console.error(
-        `[Purity] suspense() fallback threw after timeout (boundary ${id}); emitting empty boundary:`,
-        fallbackErr,
-      );
-      body = '';
-    }
-  } else {
-    // Push the boundary id around view() so resources opened inside it
-    // capture it; pop in `finally` so a synchronous throw doesn't leak
-    // a stale frame onto the stack.
-    idStack.push(id);
-    const previousPath = ssrCtx.boundaryPath;
-    ssrCtx.boundaryPath = `${path}/view`;
-    let viewThrew = false;
-    try {
-      body = valueToHtml(view(), spans, prefix.length);
-    } catch (err) {
-      viewThrew = true;
-      reportError(err, 'view');
-      console.error(
-        `[Purity] suspense() view threw during SSR (boundary ${id}); rendering fallback:`,
-        err,
-      );
-      // Mark the boundary as cancelled so any resource() registered
-      // inside view() before the throw — whose fetcher is still in
-      // flight — has its `.then()` short-circuit instead of writing
-      // into the shared `resolvedDataByKey` after we've already
-      // committed to the fallback. Same semantic guarantee as the
-      // timeout path in render-to-string.ts; widens the Set's meaning
-      // from "boundary that lost its deadline race" to "boundary
-      // whose view will not be rendered, so its late writes are stale".
-      cancelSSRBoundary(ssrCtx, id, err);
-      // The fallback() runs AFTER the finally below pops the boundary
-      // id, so its own resources are scoped to the surrounding (outer)
-      // boundary, not this failed one. This matches the existing
-      // semantics for fallback resources.
-      body = '__pending_fallback__';
-    } finally {
-      ssrCtx.boundaryPath = previousPath;
-      if (idStack[idStack.length - 1] === id) idStack.pop();
-    }
-    if (viewThrew) {
-      try {
-        body = renderFallback();
-      } catch (fallbackErr) {
-        reportError(fallbackErr, 'fallback');
-        // Fallback also threw — emit an empty boundary rather than blowing
-        // up the entire render. The error logs above identify the boundary.
-        console.error(
-          `[Purity] suspense() fallback also threw (boundary ${id}); emitting empty boundary:`,
-          fallbackErr,
-        );
-        body = '';
-      }
-    }
-  }
-  return markSSRHtml(`${prefix}${body}<!--/s:${id}-->`, body ? spans : undefined);
+function hydrateEachWindow<T>(
+  ownerCtx: Scope | null,
+  eachState: EachState<T>,
+  listAccessor: (() => T[]) | T[],
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  getKey: (item: T, index: number) => unknown,
+  parent: Node,
+  endMarker: Node,
+): void {
+  const doc = parent.ownerDocument ?? document;
+  const top = createEachSpacer(doc, parent);
+  const bottom = createEachSpacer(doc, parent);
+  const firstNode =
+    eachState.prevKeys.length > 0
+      ? eachState.keyToEntry.get(eachState.prevKeys[0])?.nodes[0]
+      : undefined;
+  parent.insertBefore(top, firstNode?.parentNode === parent ? firstNode : endMarker);
+  parent.insertBefore(bottom, endMarker);
+  const spacers = { top, bottom };
+  const dispose = createEachWindowController(
+    ownerCtx,
+    eachState,
+    listAccessor,
+    mapFn,
+    getKey,
+    spacers,
+  );
+  registerEachAutoDispose(ownerCtx, dispose, eachState);
 }

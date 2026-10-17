@@ -4,8 +4,8 @@
 // must match the DOM produced by the runtime `html\`\`` tag for the same
 // template + values.
 
-import { html } from '@purityjs/core';
-import { flattenValue, renderCompiledTemplate, valueText } from '@purityjs/core/compiler';
+import { html } from '@purityjs/core/jit';
+import { flattenValue, renderCompiledTemplate, swapSlot } from '@purityjs/core/runtime';
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
@@ -21,11 +21,13 @@ function evalAot(userCode: string): { make: (...args: any[]) => Node } {
   const fn = new Function(
     '__purity_renderCompiled__',
     '__purity_fl__',
-    '__purity_tx__',
+    '__purity_sw__',
     'document',
     `${body}\nreturn make;`,
   );
-  return { make: fn(renderCompiledTemplate, flattenValue, valueText, globalThis.document) };
+  return {
+    make: fn(renderCompiledTemplate, flattenValue, swapSlot, globalThis.document),
+  };
 }
 
 function nodeShape(n: Node): string {
@@ -45,7 +47,7 @@ function nodeShape(n: Node): string {
 describe('AOT vs runtime DOM equivalence', () => {
   it('static template', () => {
     const { make } = evalAot(
-      `import { html } from '@purityjs/core';\nconst make = () => html\`<div class="box">hi</div>\`;`,
+      `import { html } from '@purityjs/core/jit';\nconst make = () => html\`<div class="box">hi</div>\`;`,
     );
     const aot = make() as HTMLElement;
     const rt = html`<div class="box">hi</div>` as HTMLElement;
@@ -54,7 +56,7 @@ describe('AOT vs runtime DOM equivalence', () => {
 
   it('template with text expression', () => {
     const { make } = evalAot(
-      `import { html } from '@purityjs/core';\nconst make = (label) => html\`<p>\${label}</p>\`;`,
+      `import { html } from '@purityjs/core/jit';\nconst make = (label) => html\`<p>\${label}</p>\`;`,
     );
     const aot = make('hello') as HTMLElement;
     const rt = html`<p>${'hello'}</p>` as HTMLElement;
@@ -63,7 +65,7 @@ describe('AOT vs runtime DOM equivalence', () => {
 
   it('template with attribute expression', () => {
     const { make } = evalAot(
-      `import { html } from '@purityjs/core';\nconst make = (cls) => html\`<span :class=\${cls}>x</span>\`;`,
+      `import { html } from '@purityjs/core/jit';\nconst make = (cls) => html\`<span :class=\${cls}>x</span>\`;`,
     );
     const aot = make('active') as HTMLElement;
     const rt = html`<span :class=${'active'}>x</span>` as HTMLElement;
@@ -72,7 +74,7 @@ describe('AOT vs runtime DOM equivalence', () => {
 
   it('nested elements', () => {
     const { make } = evalAot(
-      `import { html } from '@purityjs/core';\nconst make = () => html\`<ul><li>a</li><li>b</li></ul>\`;`,
+      `import { html } from '@purityjs/core/jit';\nconst make = () => html\`<ul><li>a</li><li>b</li></ul>\`;`,
     );
     const aot = make() as HTMLElement;
     const rt = html`<ul>
@@ -84,7 +86,7 @@ describe('AOT vs runtime DOM equivalence', () => {
 
   it('multiple expressions on one element', () => {
     const { make } = evalAot(
-      `import { html } from '@purityjs/core';\nconst make = (id, label) => html\`<button id=\${id}>\${label}</button>\`;`,
+      `import { html } from '@purityjs/core/jit';\nconst make = (id, label) => html\`<button id=\${id}>\${label}</button>\`;`,
     );
     const aot = make('go', 'Go!') as HTMLElement;
     const rt = html`<button id=${'go'}>${'Go!'}</button>` as HTMLElement;
@@ -93,7 +95,7 @@ describe('AOT vs runtime DOM equivalence', () => {
 
   it('deeply nested with mixed static and dynamic content', () => {
     const { make } = evalAot(
-      `import { html } from '@purityjs/core';\nconst make = (n) => html\`<section><header><h1>Title</h1></header><main><p>Count: \${n}</p></main></section>\`;`,
+      `import { html } from '@purityjs/core/jit';\nconst make = (n) => html\`<section><header><h1>Title</h1></header><main><p>Count: \${n}</p></main></section>\`;`,
     );
     const aot = make(42) as HTMLElement;
     const rt = html`<section>

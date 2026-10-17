@@ -8,7 +8,8 @@
 //     transparent to the inner template's structural walk
 //   * per-render `suspenseCounter` reset on each renderToString pass
 
-import { html as clientHtml, hydrate, resource, state, suspense } from '@purityjs/core';
+import { html as clientHtml } from '@purityjs/core/jit';
+import { hydrate, resource, state, suspense } from '@purityjs/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html as ssrHtml, renderToString } from '../src/index.ts';
 

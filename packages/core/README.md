@@ -5,7 +5,10 @@
 [![bundle size](https://img.shields.io/bundlephobia/minzip/@purityjs/core?label=gzipped)](https://bundlephobia.com/package/@purityjs/core)
 [![license](https://img.shields.io/npm/l/@purityjs/core.svg)](../../LICENSE)
 
-The core Purity framework. A tiny API. ~5.8 kB gzipped. No virtual DOM.
+The core Purity framework. Signal-driven rendering without a virtual DOM.
+
+Use the feature entry points described in the [0.4 import guide](../../docs/core-entry-points.md).
+Production sizes depend on the APIs used; run `npm run check:bundle` for current measurements.
 
 ## Install
 
@@ -47,7 +50,7 @@ The fetcher receives an `AbortSignal` that fires on dep change or unmount,
 so callers don't need to wire `AbortController` themselves.
 
 ```ts
-import { state, resource, html } from '@purityjs/core';
+import { state, resource } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
 
 const userId = state(1);
 
@@ -308,7 +311,7 @@ cd benchmark && node --expose-gc \
 JIT compiled: `html` tagged literals → parse → AST → codegen → cached DOM factory.
 
 ```ts
-import { html } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 html`
   <div class=${() => (active() ? 'on' : 'off')}>

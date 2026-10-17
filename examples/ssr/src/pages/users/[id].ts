@@ -4,7 +4,8 @@
 // matchRoute() shape). Also uses `manageTitle` (ADR 0030) so the tab
 // title updates on SPA navigation between /users/42 and /users/99.
 
-import { html, manageTitle } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
+import { manageTitle } from '@purityjs/core/router';
 import type { RouteParams } from '@purityjs/vite-plugin';
 
 export default function UserProfilePage(params: RouteParams<'/users/:id'>): unknown {

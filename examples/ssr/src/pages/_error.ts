@@ -1,7 +1,8 @@
 // Root error boundary (ADR 0021). The consumer composer wraps the route +
 // loader in try/catch and calls this with the thrown error on failure.
 
-import { head, html } from '@purityjs/core';
+import { head } from '@purityjs/core/router';
+import { html } from '@purityjs/core/jit';
 
 export default function RootError(error: unknown): unknown {
   head(html`<title>Error — Purity SSR demo</title>`);

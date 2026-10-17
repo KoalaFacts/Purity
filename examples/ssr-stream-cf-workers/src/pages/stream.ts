@@ -3,7 +3,9 @@
 // once the resource resolves the Worker streams a chunk that
 // `__purity_swap(N)` splices into place in the browser.
 
-import { head, html, resource, suspense } from '@purityjs/core';
+import { head } from '@purityjs/core/router';
+import { html } from '@purityjs/core/jit';
+import { resource, suspense } from '@purityjs/core';
 
 export default function StreamPage(): unknown {
   head(html`<title>/stream — Purity SSR streaming on Workers</title>`);

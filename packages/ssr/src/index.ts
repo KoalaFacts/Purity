@@ -6,7 +6,7 @@
 // lean by only loading it from your `entry.server.ts`.
 // ---------------------------------------------------------------------------
 
-export type { SSRHtml } from '@purityjs/core/compiler';
+export type { SSRHtml } from '@purityjs/core/internal';
 export { html } from './html.ts';
 export { SSRTimeoutError } from './timeout-error.ts';
 export {

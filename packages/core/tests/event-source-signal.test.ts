@@ -6,7 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { eventSourceSignal } from '../src/index.ts';
+import { eventSourceSignal } from '../src/browser-signals/index.ts';
 import { isSafeEventSourceUrl } from '../src/event-source-signal.ts';
 import { _resetPageVisibilitySignal } from '../src/page-visibility-signal.ts';
 import { _resetBfcacheRestoreSignal } from '../src/bfcache-restore-signal.ts';

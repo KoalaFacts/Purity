@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 — 2026-10-12
+## Unreleased — 0.4.0
 
 Coordinated release of `@purityjs/core`, `@purityjs/ssr`,
 `@purityjs/vite-plugin`, and `@purityjs/cli`. It changes ownership and
@@ -8,6 +8,22 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Changed
 
+- Split core into feature entry points and separate JIT compilation, AOT runtime,
+  and compiler tooling. Move scope ownership below rendering and reactivity.
+  Migrate imports using the [entry-point mapping](docs/core-entry-points.md).
+  Upgrade the Vite plugin with core: server action handlers are stripped from
+  client code when imported from `@purityjs/core/actions`.
+- Preserve the previous all-features bundle limits and enforce smaller limits
+  for individual entries. Keep the root and AOT runtime free of JIT code.
+- Register server control-flow rendering when an SSR pass starts, removing
+  HTML string builders and streaming suspense handling from client controls.
+  Preserve marker grammar, duplicate-key diagnostics, and cancellation behavior.
+- Register server resource handling at SSR entry so client resources no longer
+  retain multipass fetching and boundary cancellation implementations. Preserve
+  retry, polling, hydration caches, and eager/lazy resource behavior.
+- Compile proven ordinary `each` calls to a smaller list runtime without
+  virtual scrolling code. Keep `each(..., { virtual: true })` and dynamic
+  options unchanged; upgrade core and the Vite plugin together.
 - Effects own the reactive work they create. Watchers, computes and bindings
   created inside an effect, a `when()`/`match()` branch or an SSR render pass
   are disposed when that owner re-runs or goes away, instead of accumulating.
@@ -33,6 +49,12 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Fixed and improved
 
+- Reactive child bindings render returned DOM nodes and templates instead of
+  stringifying them, and release the previous child scopes on updates.
+- `list()` shares the keyed reconciler used by `each()`, including duplicate-key
+  diagnostics and ownership cleanup.
+- Browser signals share listener binding and cleanup across modern and legacy
+  event targets.
 - `each()` and `list()` keep DOM and scopes consistent when keys repeat.
 - Effects that feed each other through signals are cut off after a bounded
   number of runs per flush instead of looping.
@@ -69,6 +91,14 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 - Update all four packages together to 0.4.0. The SSR and Vite plugin packages
   require `@purityjs/core` `^0.4.0`; generated projects use the same range.
+- Migrate imports using the [0.4 entry-point guide](docs/core-entry-points.md).
+  `html` moves from the root to `/jit`; browser integrations, router, actions,
+  islands, and query APIs move to their feature subpaths. Types follow their
+  feature. SSR-only `html` remains in `@purityjs/ssr`.
+- Rebuild both client and server output with the upgraded Vite plugin. Runtime
+  helpers move from `/compiler` to `/runtime` or `/internal`; removed generator
+  wrappers and `valueText` are detailed in the entry-point guide. Do not reuse
+  pre-0.4 generated templates or mix source and dist aliases.
 - Keep state that must survive a `when()`/`match()` switch outside the branch
   (a signal in the parent).
 - Bind a mixed attribute as one expression, e.g.
@@ -76,8 +106,9 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 - `<title>`/`<textarea>` SSR output changes: no `<!--[-->` markers, and
   `<textarea>`/`<pre>`/`<listing>` content is preceded by one newline that the
   browser consumes. Update snapshot tests that pin the old output.
-- A side-effect import such as `import '@purityjs/core'` no longer runs module
-  setup; import what you use.
+- Bundlers may discard side-effect-only imports such as
+  `import '@purityjs/core'` because the packages declare `sideEffects: false`;
+  import the APIs you use.
 - Package bundle budgets now track published entries; the `@purityjs/core/compiler`
   budget grew with raw-text support (see `benchmark/bundle-size`).
 

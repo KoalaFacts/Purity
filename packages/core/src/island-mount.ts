@@ -101,7 +101,7 @@ export interface MountIslandsOptions {
  * @example
  * ```ts
  * // entry.client.ts
- * import { mountIslands } from '@purityjs/core';
+ * import { mountIslands } from '@purityjs/core/islands';
  *
  * // Eager: views ship with the shell.
  * import { Counter } from './counter.ts';

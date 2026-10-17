@@ -1,6 +1,7 @@
 // Shared benchmark app using Purity public APIs: state, watch, each.
 
-import { each, html, state, watch } from '../../packages/core/src/index.ts';
+import { each, state, watch } from '../../packages/core/src/index.ts';
+import { html } from '../../packages/core/src/compiler/jit.ts';
 
 const adjectives = [
   'pretty',

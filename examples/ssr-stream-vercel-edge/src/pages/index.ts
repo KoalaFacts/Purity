@@ -1,4 +1,5 @@
-import { head, html } from '@purityjs/core';
+import { head } from '@purityjs/core/router';
+import { html } from '@purityjs/core/jit';
 
 export default function HomePage(): unknown {
   head(html`<meta name="description" content="Streaming SSR on Vercel Edge." />`);

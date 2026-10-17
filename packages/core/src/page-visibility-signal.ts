@@ -6,6 +6,7 @@
 // return a constant `'visible'`.
 // ---------------------------------------------------------------------------
 
+import { bindListeners, isolate } from './listen.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr-context.ts';
 
@@ -44,32 +45,20 @@ export function pageVisibilitySignal(): ComputedAccessor<'visible' | 'hidden'> {
   }
   if (singleton) return singleton;
   const inner = state<'visible' | 'hidden'>(readVisibility());
-  const listener = (): void => {
-    // Throw isolation — a malformed shim or stale Object.defineProperty
-    // override on `visibilityState` must not bubble out of the DOM
-    // event-dispatch path and crash the page.
-    try {
-      inner(readVisibility());
-    } catch (err) {
-      console.error('[pageVisibilitySignal] visibilitychange handler failed', err);
-    }
-  };
-  // `addEventListener` is the only call that can throw at wire-time. If it
-  // does, leave singleton/teardown unset so a later call can retry cleanly
-  // (no half-bound state, no leaked listener).
-  try {
-    document.addEventListener('visibilitychange', listener);
-  } catch (err) {
-    console.error('[pageVisibilitySignal] addEventListener failed', err);
-    return compute(() => 'visible' as const);
-  }
-  teardown = () => {
-    try {
-      document.removeEventListener('visibilitychange', listener);
-    } catch {
-      // best-effort teardown — secondary failures must not throw out of reset.
-    }
-  };
+  // Throw isolation — a malformed shim or stale Object.defineProperty
+  // override on `visibilityState` must not bubble out of the DOM
+  // event-dispatch path and crash the page.
+  teardown = bindListeners(
+    [
+      [
+        document,
+        'visibilitychange',
+        isolate('pageVisibilitySignal', () => inner(readVisibility())),
+      ],
+    ],
+    'pageVisibilitySignal',
+  );
+  if (!teardown) return compute(() => 'visible' as const);
   singleton = compute(() => inner());
   return singleton;
 }

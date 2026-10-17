@@ -2,7 +2,7 @@
 // `./.purity/routes.ts` is written by `@purityjs/vite-plugin`'s
 // buildStart hook (ADR 0033) on every `vite build` / `vite dev`.
 
-import { asyncNotFound, asyncRoute, matchRoute } from '@purityjs/core';
+import { asyncNotFound, asyncRoute, matchRoute } from '@purityjs/core/router';
 
 import { notFoundChain, routes } from './.purity/routes.ts';
 

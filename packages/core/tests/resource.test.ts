@@ -1400,6 +1400,39 @@ describe('debounced', () => {
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 
 describe('lazyResource — SSR multipass registration (ADR 0024)', () => {
+  it('keeps nested SSR registrations separate and restores client resources after pop', async () => {
+    const outer = makeSSRContext();
+    const inner = makeSSRContext();
+    pushSSRRenderContext(outer);
+    try {
+      resource(async () => 'outer', { key: 'shared' });
+      pushSSRRenderContext(inner);
+      try {
+        const nested = lazyResource(async (value: string) => value, { key: 'shared' });
+        nested.fetch('inner');
+      } finally {
+        popSSRRenderContext();
+      }
+      resource(async () => 'restored', { key: 'after' });
+    } finally {
+      popSSRRenderContext();
+    }
+    expect(outer.pendingPromises).toHaveLength(2);
+    expect(inner.pendingPromises).toHaveLength(1);
+    await Promise.all([...outer.pendingPromises, ...inner.pendingPromises]);
+    expect(outer.resolvedDataByKey).toEqual({ shared: 'outer', after: 'restored' });
+    expect(inner.resolvedDataByKey).toEqual({ shared: 'inner' });
+
+    const client = resource(() => 'client');
+    try {
+      expect(client()).toBe('client');
+      client.mutate('updated');
+      expect(client()).toBe('updated');
+    } finally {
+      client.dispose();
+    }
+  });
+
   it('pushes the fetcher promise onto pendingPromises on pass 1', () => {
     const ctx = makeSSRContext();
     pushSSRRenderContext(ctx);

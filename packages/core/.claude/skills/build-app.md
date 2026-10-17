@@ -25,7 +25,7 @@ src/
 
 ```ts
 // src/main.ts
-import { mount, html } from '@purityjs/core';
+import { mount } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
 import './components/app.ts';
 
 mount(() => html`<p-app></p-app>`, document.getElementById('app')!);
@@ -35,7 +35,7 @@ mount(() => html`<p-app></p-app>`, document.getElementById('app')!);
 
 ```ts
 // src/components/app.ts
-import { state, compute, html, css, component, onMount, each, when } from '@purityjs/core';
+import { state, compute, css, component, onMount, each, when } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
 
 component('p-app', () => {
   const items = state([]);

@@ -19,7 +19,7 @@
 //     `/users/missing` lands on `pages/users/_404.ts`; `/missing` lands on
 //     `pages/_404.ts`.
 
-import { asyncNotFound, asyncRoute, matchRoute } from '@purityjs/core';
+import { asyncNotFound, asyncRoute, matchRoute } from '@purityjs/core/router';
 import { notFoundChain, routes } from 'purity:routes';
 
 export function App(): unknown {

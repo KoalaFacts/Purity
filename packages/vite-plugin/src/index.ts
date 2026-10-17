@@ -27,6 +27,7 @@ import {
   generateRouteManifestTypes,
 } from './routes.ts';
 import { stripServerActionBodies } from './server-action-strip.ts';
+import { specializeOrdinaryLists, supportsOrdinaryListRuntime } from './ordinary-lists.ts';
 
 const DEVTOOLS_ID = 'virtual:purity-devtools';
 const RESOLVED_DEVTOOLS_ID = '\0' + DEVTOOLS_ID;
@@ -249,6 +250,7 @@ export function purity(options?: PurityPluginOptions) {
   let isPreview = false;
   let devtoolsBase = '/';
   let serverBuild = false;
+  let ordinaryListRuntime = true;
 
   const routesOpts = normaliseRoutesOption(options?.routes);
   // Resolved at configResolved time once Vite tells us the project root.
@@ -272,6 +274,7 @@ export function purity(options?: PurityPluginOptions) {
         root: string;
         command?: string;
         base?: string;
+        resolve?: { alias?: readonly { find: string | RegExp }[] };
         build?: {
           ssr?: unknown;
           assetsInlineLimit?: number | ((file: string, content: Buffer) => boolean | undefined);
@@ -279,6 +282,7 @@ export function purity(options?: PurityPluginOptions) {
       },
     ) {
       serverBuild = !!config.build?.ssr;
+      ordinaryListRuntime = supportsOrdinaryListRuntime(config.resolve?.alias ?? []);
       if (stripServerModules && !serverBuild && config.build) {
         const limit = config.build.assetsInlineLimit;
         config.build.assetsInlineLimit = (file, content) => {
@@ -448,18 +452,24 @@ export function purity(options?: PurityPluginOptions) {
       // `@purityjs/core` and `serverAction`). Returns null when nothing to
       // do, in which case we fall through to the html`` template pass.
       let workingCode = code;
-      let strippedAny = false;
+      const ordinaryLists =
+        transformOpts?.ssr === true || !ordinaryListRuntime
+          ? null
+          : specializeOrdinaryLists(workingCode, id);
+      if (ordinaryLists !== null) workingCode = ordinaryLists;
+      const specializedLists = ordinaryLists !== null;
+      let rewritten = specializedLists;
       if (stripServerActions && transformOpts?.ssr !== true) {
         const stripped = stripServerActionBodies(workingCode, id);
         if (stripped !== null) {
           workingCode = stripped.code;
-          strippedAny = true;
+          rewritten = true;
         }
       }
 
       if (!workingCode.includes('html`')) {
-        if (!strippedAny) return null;
-        // The serverAction strip shifted source positions relative to the
+        if (!rewritten) return null;
+        // Preprocessing shifted source positions relative to the
         // original file. Returning `map: null` would let consumers fall
         // back to an identity map against the *rewritten* code, breaking
         // stack traces inside this file. Emit an empty-mappings v3 map
@@ -481,10 +491,10 @@ export function purity(options?: PurityPluginOptions) {
       }
 
       if (!result.changed) {
-        if (strippedAny) return { code: workingCode, map: emptyV3Map(id, code) };
+        if (rewritten) return { code: workingCode, map: emptyV3Map(id, code) };
         return null;
       }
-      return { code: result.code, map: result.map };
+      return { code: result.code, map: specializedLists ? emptyV3Map(id, code) : result.map };
     },
   };
 }
@@ -817,13 +827,13 @@ function renderTemplate(
   const p = ctx.prefix;
   const tplVar = `${p}_tpl_${ctx.nextTplId++}`;
   // Client factories reference the value helpers as `__purity_fl__` /
-  // `__purity_tx__`. Under another prefix, bind those names as parameters: a
+  // `__purity_sw__`. Under another prefix, bind those names as parameters: a
   // factory holds only generated code (slot expressions are passed in at the
   // call site), so the parameters cannot shadow anything the user wrote.
   const bind = (body: string): string =>
     p === '__purity' || ctx.ssr
       ? body
-      : `((__purity_fl__, __purity_tx__) => (${body}))(${p}_fl__, ${p}_tx__)`;
+      : `((__purity_fl__, __purity_sw__) => (${body}))(${p}_fl__, ${p}_sw__)`;
   ctx.hoists.push(`const ${tplVar} = ${bind(fnBody)};`);
   if (hydrateBody !== null) ctx.hoists.push(`const ${tplVar}_hydrate = ${bind(hydrateBody)};`);
 
@@ -922,15 +932,15 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   // Modeled as a zero-length insertion edit so the source-map builder can
   // track it alongside the html`` replacements.
   const runtimeImport = ssr
-    ? `import { ssrHelpers as ${prefix}_h__ } from '@purityjs/core/compiler';\nimport '@purityjs/ssr';\n`
-    : `import { renderCompiledTemplate as ${prefix}_renderCompiled__, flattenValue as ${prefix}_fl__, valueText as ${prefix}_tx__ } from '@purityjs/core/compiler';\n`;
+    ? `import { ssrHelpers as ${prefix}_h__ } from '@purityjs/core/internal';\nimport '@purityjs/ssr';\n`
+    : `import { renderCompiledTemplate as ${prefix}_renderCompiled__, flattenValue as ${prefix}_fl__, swapSlot as ${prefix}_sw__ } from '@purityjs/core/runtime';\n`;
   /* v8 ignore next -- edits.length > 0 implies at least one hoist was pushed */
   const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
   const insertAt = findLastImportEnd(source);
   const insertPos = insertAt === -1 ? 0 : insertAt;
   edits.push({ start: insertPos, end: insertPos, out: runtimeImport + hoistsBlock });
 
-  // Removing `html` from `@purityjs/core` import statements — but ONLY when
+  // Removing `html` from `@purityjs/core/jit` import statements — but ONLY when
   // every template compiled. If any failed, the failed `html\`\`` is left in
   // the output as runtime code and still needs the import to resolve.
   if (!ctx.failed) edits.push(...findHtmlImportEdits(source));
@@ -944,7 +954,7 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
 }
 
 /**
- * Scan @purityjs/core named-import statements and emit edits that strip the
+ * Scan @purityjs/core/jit named-import statements and emit edits that strip the
  * `html` binding (and drop the entire statement when it's the only binding).
  *
  * Uses indexOf-based scanning (no regex) to avoid ReDoS on untrusted input.
@@ -1020,10 +1030,10 @@ function findHtmlImportEdits(code: string): Edit[] {
     if (end < code.length && code[end] === ';') end++;
 
     // Strip `html` from imports of either purity entry point — users may have
-    // `import { html } from '@purityjs/core'` (client app source) or
+    // `import { html } from '@purityjs/core/jit'` (client app source) or
     // `import { html } from '@purityjs/ssr'` (a pre-existing SSR-only file).
     // Both are dead after AOT replaces the call sites.
-    if (moduleName !== '@purityjs/core' && moduleName !== '@purityjs/ssr') {
+    if (moduleName !== '@purityjs/core/jit' && moduleName !== '@purityjs/ssr') {
       pos = end;
       continue;
     }

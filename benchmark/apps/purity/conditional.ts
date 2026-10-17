@@ -1,7 +1,8 @@
 // Conditional rendering benchmark — Purity idiomatic version.
 // Uses: state, each, html, mount, when. Zero vanilla JS for UI wiring.
 
-import { each, html, mount, state, when } from '@purityjs/core';
+import { each, mount, state, when } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 // ---------------------------------------------------------------------------
 // Types

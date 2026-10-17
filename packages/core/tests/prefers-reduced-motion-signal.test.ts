@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
-import { prefersReducedMotionSignal } from '../src/index.ts';
+import { prefersReducedMotionSignal } from '../src/browser-signals/index.ts';
 import { _resetMediaSignalCache } from '../src/media-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import {

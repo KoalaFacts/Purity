@@ -3,7 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
-import { pageLifecycleSignal } from '../src/index.ts';
+import { pageLifecycleSignal } from '../src/browser-signals/index.ts';
 import { _resetPageLifecycleSignal } from '../src/page-lifecycle-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';

@@ -3,7 +3,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { broadcastSignal, watch } from '../src/index.ts';
+import { broadcastSignal } from '../src/browser-signals/index.ts';
+import { watch } from '../src/index.ts';
 import { _resetBroadcastSignalRegistry } from '../src/broadcast-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';

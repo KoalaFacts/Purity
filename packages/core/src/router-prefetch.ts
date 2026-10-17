@@ -76,7 +76,7 @@ function defaultShouldPrefetch(event: MouseEvent | FocusEvent, a: HTMLAnchorElem
  *
  * @example
  * ```ts
- * import { configureNavigation, prefetchManifestLinks } from '@purityjs/core';
+ * import { configureNavigation, prefetchManifestLinks } from '@purityjs/core/router';
  * import { routes } from 'purity:routes';
  *
  * configureNavigation();

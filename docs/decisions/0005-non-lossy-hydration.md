@@ -63,6 +63,13 @@ Concretely:
 - Compiled hydrate factories are JIT-cached per `TemplateStringsArray`
   alongside the existing client factory (lazy — only paid for if the
   template is hydrated). The AST is shared; codegen runs once per mode.
+- `inflateDeferred` lives in `hydrate-runtime.ts` and reaches the JIT
+  compiler only through `setJitCompiler`, which `makeDeferred` (the JIT
+  `html` tag's hydration capture) calls. AOT templates carry their own
+  precompiled walker and DOM factory, so an app built with
+  `@purityjs/vite-plugin` hydrates without bundling the parser or code
+  generator. The `controls-aot` and `hydration-aot` bundle fixtures pin
+  this with a zero `Function`-constructor budget.
 - Custom Elements with Declarative Shadow DOM hydrate their own shadow
   tree: `connectedCallback` checks `this._shadow.firstChild`, sets
   hydration mode, runs the renderer (which now returns a thunk), and
@@ -102,6 +109,14 @@ Marker-walking hydration" is now done.
     nodes seed the per-case DOM cache, so toggling away and back to the
     SSR key reuses the original SSR-derived DOM. SSR-key / client-key
     drift falls through to a fresh render of the current view.
+
+- **Adopting a reactive slot whose accessor returns Nodes.** A binding
+  like `${() => items().map((i) => html\`<li>${i}</li>\`)}` owns the
+  nodes between its markers and swaps them on change (`swapSlot`). SSR
+  writes no per-item boundaries for it, so hydration re-renders the
+  slot's content on the first run instead of adopting it; a slot whose
+  value is text still adopts the SSR text node. Use `each()` for lists
+  that should hydrate in place.
 
 - _(superseded by [ADR 0007](./0007-text-rewrite-on-mismatch.md))_
   **Static text-content rewriting.** ADR 0005 detected text drift but

@@ -3,7 +3,8 @@
 
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { component, idleSignal, type IdleDetectorLike, mount, watch } from '../src/index.ts';
+import { component, mount, watch } from '../src/index.ts';
+import { idleSignal, type IdleDetectorLike } from '../src/browser-signals/index.ts';
 import { _evictIdleSignal } from '../src/idle-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext, tick } from './_helpers.ts';

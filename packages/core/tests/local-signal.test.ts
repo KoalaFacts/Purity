@@ -3,7 +3,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-import { localSignal, watch } from '../src/index.ts';
+import { localSignal } from '../src/browser-signals/index.ts';
+import { watch } from '../src/index.ts';
 import { _resetLocalSignalRegistry } from '../src/local-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../src/ssr-context.ts';
 import { makeSSRContext } from './_helpers.ts';

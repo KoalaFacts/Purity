@@ -30,7 +30,6 @@ import {
   compute,
   watch,
   batch, // reactive
-  html,
   css, // template + styles
   component,
   slot,
@@ -44,6 +43,7 @@ import {
   when,
   each, // control flow
 } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 ```
 
 ## Reactive Primitives

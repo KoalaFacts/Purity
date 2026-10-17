@@ -281,7 +281,7 @@ export default {
 ### With `<Suspense>`
 
 ```ts
-import { html, suspense } from '@purityjs/core';
+import { html } from '@purityjs/core/jit'; import { suspense } from '@purityjs/core';
 import { renderToStream } from '@purityjs/ssr';
 
 const App = () => html`
@@ -303,7 +303,7 @@ The shell paints with `<aside class="loading">…</aside>` immediately; when `sl
 `head(content)` lets a component contribute HTML to the document `<head>` from inside the render tree. `renderToString({ extractHead: true })` surfaces the collected HTML as `{ body, head }` so you can splice it into your shell.
 
 ```ts
-import { head, html } from '@purityjs/core';
+import { head } from '@purityjs/core/router'; import { html } from '@purityjs/core/jit';
 import { renderToString, html as ssrHtml } from '@purityjs/ssr';
 
 function PageHead({ title, description }: { title: string; description: string }) {
@@ -334,7 +334,7 @@ Contract:
 Pass the incoming `Request` through to components via the `request` option on either render entry. Components read it with `getRequest()`.
 
 ```ts
-import { getRequest, head, html } from '@purityjs/core';
+import { getRequest, head } from '@purityjs/core/router'; import { html } from '@purityjs/core/jit';
 import { renderToString } from '@purityjs/ssr';
 
 function PageHead() {
@@ -366,7 +366,7 @@ Contract:
 Three composable functions in `@purityjs/core` close the per-app routing boilerplate without picking a routing convention.
 
 ```ts
-import { currentPath, matchRoute, navigate, html } from '@purityjs/core';
+import { currentPath, matchRoute, navigate } from '@purityjs/core/router'; import { html } from '@purityjs/core/jit';
 
 function App() {
   if (matchRoute('/')) return Home();
@@ -399,7 +399,7 @@ Link auto-interception via [`interceptLinks()`](../../docs/decisions/0013-link-i
 
 ```ts
 // entry.client.ts
-import { hydrate, interceptLinks, manageNavScroll } from '@purityjs/core';
+import { hydrate } from '@purityjs/core'; import { interceptLinks, manageNavScroll } from '@purityjs/core/router';
 import { App } from './app.ts';
 
 hydrate(document.getElementById('app')!, App);
@@ -423,7 +423,7 @@ Server actions register a `(Request) => Response` handler at a stable URL. `<for
 
 ```ts
 // app/save-todo.server.ts
-import { serverAction } from '@purityjs/core';
+import { serverAction } from '@purityjs/core/actions';
 
 export const saveTodo = serverAction('/api/save-todo', async (request) => {
   const data = await request.formData();
@@ -440,7 +440,7 @@ html`<form action=${saveTodo.url} method="POST">
 </form>`;
 
 // In your server entry, before SSR:
-import { handleAction } from '@purityjs/core';
+import { handleAction } from '@purityjs/core/actions';
 
 const actionResponse = await handleAction(request);
 if (actionResponse) return actionResponse;
@@ -461,7 +461,7 @@ Action handlers belong in `*.server.{ts,js,tsx,jsx}` files — the `@purityjs/vi
 export const SAVE_TODO_URL = '/api/save-todo';
 
 // app/save-todo.server.ts (server-only — stripped from client)
-import { serverAction } from '@purityjs/core';
+import { serverAction } from '@purityjs/core/actions';
 import { SAVE_TODO_URL } from './api-urls.ts';
 export const saveTodo = serverAction(SAVE_TODO_URL, async (request) => {
   /* … */
@@ -561,7 +561,7 @@ The hydrator:
 
 ```ts
 import { html as ssrHtml, renderToString } from '@purityjs/ssr';
-import { eachSSR } from '@purityjs/core';
+import { eachSSR } from '@purityjs/core/internal';
 
 const out = await renderToString(
   () =>

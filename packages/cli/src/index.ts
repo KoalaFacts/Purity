@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { writeAppTemplate } from './app-template.ts';
 
@@ -125,8 +125,6 @@ writeFileSync(
 );
 
 // vite.config.ts — always generated, includes purity plugin
-const coreSrcPath = resolve(coreDir, 'src/index.ts');
-const coreCompilerPath = resolve(coreDir, 'src/compiler/index.ts');
 const ssrSrcPath = resolve(ssrDir, 'src/index.ts');
 // Embed paths via `JSON.stringify` so Windows backslashes (and any other
 // JS-significant characters) are properly escaped inside the generated source.
@@ -137,11 +135,13 @@ const pluginImport = isLocal
 // Server modes need the compiler subpath before the core alias and the SSR alias.
 let aliasBlock = '';
 if (isLocal) {
+  const coreExports = JSON.parse(readFileSync(resolve(coreDir, 'package.json'), 'utf8'))
+    .exports as Record<string, { development: string }>;
   const aliases: string[] = [];
-  if (serverMode) {
-    aliases.push(`'@purityjs/core/compiler': ${JSON.stringify(coreCompilerPath)}`);
+  for (const [key, entry] of Object.entries(coreExports).sort(([a], [b]) => b.length - a.length)) {
+    const name = '@purityjs/core' + (key === '.' ? '' : key.slice(1));
+    aliases.push(`'${name}': ${JSON.stringify(resolve(coreDir, entry.development))}`);
   }
-  aliases.push(`'@purityjs/core': ${JSON.stringify(coreSrcPath)}`);
   if (serverMode) {
     aliases.push(`'@purityjs/ssr': ${JSON.stringify(ssrSrcPath)}`);
   }
@@ -213,7 +213,7 @@ if (appMode) {
   // Shared component used by both server and client builds.
   writeFileSync(
     resolve(projectDir, 'src/app.ts'),
-    `import { component, html, state } from '@purityjs/core';
+    `import { component, state } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
 
 component('p-counter', () => {
   const value = state(0);
@@ -408,7 +408,7 @@ if (isProd) {
   // src/main.ts
   writeFileSync(
     resolve(projectDir, 'src/main.ts'),
-    `import { state, compute, html, css, component, mount, onMount } from '@purityjs/core';
+    `import { state, compute, css, component, mount, onMount } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
 
 // Define a component
 component('p-counter', () => {

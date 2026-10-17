@@ -4,7 +4,8 @@
 // caches or DOM mutation outside the reactive system — same shape as Solid's
 // idiomatic <For> + per-row signal pattern.
 
-import { each, html, mount, state } from '@purityjs/core';
+import { each, mount, state } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 // ---------------------------------------------------------------------------
 // Data generation

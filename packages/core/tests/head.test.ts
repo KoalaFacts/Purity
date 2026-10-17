@@ -6,7 +6,8 @@
 // the stack, head() is a no-op (the SSR-rendered <head> stays put).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { head, html } from '../src/index.ts';
+import { head } from '../src/router/index.ts';
+import { html } from '../src/compiler/jit.ts';
 import { markSSRHtml } from '../src/compiler/ssr-runtime.ts';
 import {
   popSSRRenderContext,

@@ -11,8 +11,12 @@ canonical Node SSR demo and the cf-workers example).
 
 ## Architecture
 
-Vite SSR-builds `src/edge.ts` to `api/stream.js`. Vercel's Edge runtime
-picks the file up automatically. The plugin's `buildStart` hook
+Vite SSR-builds `src/edge.ts` to `dist/edge.js`. The tracked `api/stream.js`
+wrapper directly exports `const config = { runtime: 'edge' }` and re-exports
+the built handler. Vercel reads this declaration statically; bundling the
+declaration can turn it into an indirect export that is classified as a
+Node function. Generated chunks stay outside the scanned `api/` directory.
+The plugin's `buildStart` hook
 (ADR 0033) writes `src/.purity/routes.ts` as a side effect of the
 build so the manifest is always in sync with `src/pages/`.
 
@@ -20,13 +24,19 @@ build so the manifest is always in sync with `src/pages/`.
 match happens inside the handler via `matchRoute` over the manifest.
 
 ```bash
-npm run build    # vite build → api/stream.js + manifest emit
+npm run build    # vite build → dist/edge.js + manifest emit
+npm run test:compat # typecheck + real builder and isolated Edge streaming checks
 npm run dev      # build + vercel dev
 npm run deploy   # build + vercel deploy --prod
 ```
 
-`src/.purity/routes.ts`, `api/stream.js`, and `api/chunks/` are
-gitignored (per-machine paths + build artefacts).
+`src/.purity/routes.ts` and `dist/` are gitignored (per-machine paths +
+build artefacts). Keep the API wrapper in source control.
+
+Run `test:compat` after `build`. It uses the builder installed with the
+workspace's Vercel CLI, checks that the output is an EdgeFunction, and runs
+the home, streaming, and unmatched routes in an isolated Edge runtime. It
+does not link a project or deploy; hosted deployment is a separate check.
 
 ## Toolchain security
 
@@ -35,7 +45,7 @@ dependencies with patched versions. The overrides apply only within the
 Vercel dependency tree; `js-yaml` stays on its supported 4.x release line.
 Keep these overrides until Vercel's dependency pins include the fixes.
 CI audits development dependencies as well as production dependencies
-and builds this example to catch dependency and build regressions.
+and builds and verifies this example to catch dependency and runtime regressions.
 
 ## Files
 
@@ -51,7 +61,11 @@ src/
   .purity/
     routes.ts       — emitted manifest (gitignored)
 api/
-  stream.js         — built artefact (gitignored)
+  stream.js         — tracked Edge runtime declaration and handler re-export
+dist/
+  edge.js           — built handler (gitignored)
+scripts/
+  verify-edge.mjs    — real builder and isolated runtime compatibility check
 vite.config.ts      — wires the plugin + SSR build mode for the edge entry
 vercel.json         — rewrites all paths to /api/stream
 ```

@@ -1,6 +1,6 @@
 // Vite config for the Vercel Edge example. Vite SSR-builds
-// `src/edge.ts` to `api/stream.js` so Vercel's Edge runtime picks it
-// up directly. The plugin's `buildStart` hook (ADR 0033) emits
+// `src/edge.ts` to `dist/edge.js`. The tracked API wrapper preserves the
+// static Edge runtime declaration. The plugin's `buildStart` hook (ADR 0033) emits
 // `src/.purity/routes.ts` as a side effect of the build.
 
 import { resolve } from 'node:path';
@@ -59,16 +59,14 @@ export default defineConfig({
     },
   },
   build: {
-    // Vercel scans `api/` for handler files; the built bundle lives
-    // there alongside any other hand-written API routes.
-    outDir: 'api',
-    emptyOutDir: false,
+    // Keep generated chunks outside Vercel's scanned API route directory.
+    outDir: 'dist',
     target: 'esnext',
     minify: false,
     ssr: 'src/edge.ts',
     rollupOptions: {
       output: {
-        entryFileNames: 'stream.js',
+        entryFileNames: 'edge.js',
         chunkFileNames: 'chunks/[name]-[hash].js',
         format: 'es',
       },

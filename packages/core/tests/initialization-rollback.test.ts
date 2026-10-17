@@ -229,6 +229,41 @@ describe('failed list row initialization', () => {
     });
   }
 
+  for (const adopted of [true, false]) {
+    it(`releases ${adopted ? 'adopted' : 'fresh'} hydration template bindings after row and fallback failure`, async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const value = state(0);
+      let bindingRuns = 0;
+      const host = document.createElement('div');
+      host.innerHTML =
+        '<ul><!--[--><!--e-->' +
+        (adopted ? '<!--er:1--><li><!--[-->0<!--]--></li><!--/er-->' : '') +
+        '<!--er:2--><li>2</li><!--/er--><!--/e--><!--]--></ul>';
+      const result = hydrate(host, () => {
+        onError(() => {});
+        return html`<ul>${each(
+          [1, 2],
+          (item) => {
+            if (item() === 2) throw new Error('row failed');
+            return html`<li>${() => {
+              bindingRuns++;
+              return value();
+            }}</li>`;
+          },
+          (item) => item,
+        )}</ul>`;
+      });
+      result.unmount();
+      expect(bindingRuns).toBe(2);
+      value(1);
+      await tick();
+      expect(bindingRuns).toBe(2);
+      expect(host.childNodes).toHaveLength(0);
+      expect(getCurrentContext()).toBeNull();
+      expect(isHydrating()).toBe(false);
+    });
+  }
+
   it('releases adopted hydration rows and the throwing row without leaving hydration active', async () => {
     const value = state(0);
     const runs: number[] = [];

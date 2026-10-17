@@ -1,15 +1,13 @@
 // Vercel Edge Function entry — streams Purity SSR through the standard
 // Web Platform Request → Response shape. ADR 0006 Phase 4.
 //
-// `export const config = { runtime: 'edge' }` opts into the V8 isolate
-// runtime (vs the Node.js runtime). Vite SSR-builds this file to
-// `api/stream.js`; `vercel.json` rewrites all paths to that function.
+// Vite builds this handler to `dist/edge.js`. The tracked `api/stream.js`
+// wrapper declares the Edge runtime so Vercel can read it statically;
+// `vercel.json` rewrites all paths to that function.
 
 import { renderToStream } from '@purityjs/ssr';
 
 import { App } from './app.ts';
-
-export const config = { runtime: 'edge' as const };
 
 export default async function handler(req: Request): Promise<Response> {
   const stream = renderToStream(App, {

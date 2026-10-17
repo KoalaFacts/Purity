@@ -49,6 +49,9 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Fixed and improved
 
+- Keep the Vercel example's Edge runtime declaration in a tracked API wrapper
+  so the deployment builder recognizes it after bundling. Verify the real
+  builder output and streaming responses in an isolated Edge runtime in CI.
 - Reactive child bindings render returned DOM nodes and templates instead of
   stringifying them, and release the previous child scopes on updates.
 - `list()` shares the keyed reconciler used by `each()`, including duplicate-key

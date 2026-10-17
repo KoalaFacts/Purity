@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "cross-env NODE_OPTIONS=--conditions=development vp build --logLevel info",
+    "test:compat": "tsc --noEmit && node scripts/verify-edge.mjs",
     "dev": "npm run build && vercel dev",
     "deploy": "npm run build && vercel deploy --prod"
   },

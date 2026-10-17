@@ -2,6 +2,10 @@
 
 ## Unreleased — 0.4.0
 
+Coordinated release of `@purityjs/core`, `@purityjs/ssr`,
+`@purityjs/vite-plugin`, and `@purityjs/cli`. It changes ownership and
+rendering behaviour that existing apps can observe; read the upgrade notes.
+
 ### Changed
 
 - Split core into feature entry points and separate JIT compilation, AOT runtime,
@@ -20,6 +24,93 @@
 - Compile proven ordinary `each` calls to a smaller list runtime without
   virtual scrolling code. Keep `each(..., { virtual: true })` and dynamic
   options unchanged; upgrade core and the Vite plugin together.
+- Effects own the reactive work they create. Watchers, computes and bindings
+  created inside an effect, a `when()`/`match()` branch or an SSR render pass
+  are disposed when that owner re-runs or goes away, instead of accumulating.
+- `when()` and `match()` dispose the hidden branch. Showing it again renders it
+  fresh, so local state inside a branch does not survive a switch.
+- Attributes that mix literal text with an interpolation (`title="x ${v}"`,
+  `class="a-${b}"`) are compile errors, at runtime and in AOT builds. They were
+  previously compiled with the expression silently dropped.
+- Raw-text and RCDATA elements (`<style>`, `<script>`, `<textarea>`, `<title>`)
+  render the same on the client, in SSR and after hydration. SSR no longer
+  writes hydration markers or entity-escapes `<style>` content inside them,
+  the template parser reads their content as text up to the element's own end
+  tag, and they accept nested templates and control flow, contributing their
+  text. Only HTML-namespace elements qualify; SVG and MathML elements of the
+  same name parse markup. Nested SSR HTML inside them is treated as
+  well-formed framework output: for malformed markup (implied end tags, table
+  foster parenting) the SSR `textContent` can differ from the client until
+  hydration rewrites it.
+- A `compute()` that throws caches its error and rethrows it on every read
+  until a source changes, instead of returning its previous value.
+- All four packages declare `"sideEffects": false`, and production builds drop
+  the inspector hook (gated on `NODE_ENV`).
+
+### Fixed and improved
+
+- Reactive child bindings render returned DOM nodes and templates instead of
+  stringifying them, and release the previous child scopes on updates.
+- `list()` shares the keyed reconciler used by `each()`, including duplicate-key
+  diagnostics and ownership cleanup.
+- Browser signals share listener binding and cleanup across modern and legacy
+  event targets.
+- `each()` and `list()` keep DOM and scopes consistent when keys repeat.
+- Effects that feed each other through signals are cut off after a bounded
+  number of runs per flush instead of looping.
+- Dirty propagation and CHECK resolution are iterative, so very long derived
+  chains no longer overflow the call stack.
+- `compute()` created in a disposed scope is released and dead observer edges
+  are dropped.
+- A watcher that disposes itself mid-run (`stop()` in its callback, or
+  unmounting its owner) releases the cleanup it returns and the reactive work
+  it creates afterwards, instead of leaking them.
+- `mediaSignal()` and `devicePixelRatioSignal()` pair listener attach/detach
+  correctly on legacy and adversarial `MediaQueryList` targets.
+- Upper-case void tags (`<BR>`) serialize without a closing tag, and static
+  `<style>`/`<script>` content is no longer entity-escaped.
+- A leading newline in `<textarea>`, `<pre>` and `<listing>` survives SSR and
+  the client cloning path.
+- The Vite plugin compiles only `html` tagged templates found in the module
+  AST, not text in comments or string literals.
+- AOT-compiled modules no longer break when user code declares a binding with
+  the name of a helper the Vite plugin injects (`__purity_fl__` and friends).
+- Client and SSR coerce values the same way (arrays, functions, `null`/`false`).
+- Scaffolded projects use TypeScript `^7.0.2`.
+
+### Security
+
+- SSR writes every `<` in dynamic `<style>` content as the CSS escape `\3c `.
+  CSS reads it as `<`, but no context can turn it into a tag: not the style
+  itself, an SVG/MathML parent, or a parent template the style is spliced into
+  at runtime. Until hydration, such a style's `textContent` shows the escape.
+- Raw-text detection follows the HTML parser's foreign-content, integration
+  point and script-escape rules; when unsure, content is escaped.
+
+### Upgrade notes
+
+- Update all four packages together to 0.4.0. The SSR and Vite plugin packages
+  require `@purityjs/core` `^0.4.0`; generated projects use the same range.
+- Migrate imports using the [0.4 entry-point guide](docs/core-entry-points.md).
+  `html` moves from the root to `/jit`; browser integrations, router, actions,
+  islands, and query APIs move to their feature subpaths. Types follow their
+  feature. SSR-only `html` remains in `@purityjs/ssr`.
+- Rebuild both client and server output with the upgraded Vite plugin. Runtime
+  helpers move from `/compiler` to `/runtime` or `/internal`; removed generator
+  wrappers and `valueText` are detailed in the entry-point guide. Do not reuse
+  pre-0.4 generated templates or mix source and dist aliases.
+- Keep state that must survive a `when()`/`match()` switch outside the branch
+  (a signal in the parent).
+- Bind a mixed attribute as one expression, e.g.
+  ``title=${() => `x ${v()} y`}``.
+- `<title>`/`<textarea>` SSR output changes: no `<!--[-->` markers, and
+  `<textarea>`/`<pre>`/`<listing>` content is preceded by one newline that the
+  browser consumes. Update snapshot tests that pin the old output.
+- Bundlers may discard side-effect-only imports such as
+  `import '@purityjs/core'` because the packages declare `sideEffects: false`;
+  import the APIs you use.
+- Package bundle budgets now track published entries; the `@purityjs/core/compiler`
+  budget grew with raw-text support (see `benchmark/bundle-size`).
 
 ## 0.3.4 — 2026-10-05
 

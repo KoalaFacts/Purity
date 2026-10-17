@@ -26,7 +26,8 @@ The plugin also selects `@purityjs/core/list-runtime` for direct ordinary
 `each` calls when it can prove that the binding never receives virtual options.
 This is a generated-code entry; continue importing `each` from the root.
 `each(..., { virtual: true })`, dynamic options, and uncertain bindings retain
-the full implementation. No application API migration is required.
+the full implementation. This list optimization requires no application API
+changes; the 0.4 entry-point migration above still applies.
 Projects with a custom core root alias keep the full implementation unless
 an explicit `/list-runtime` alias takes precedence over the root alias.
 

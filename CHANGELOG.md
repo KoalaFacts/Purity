@@ -8,6 +8,8 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Changed
 
+- Share SSR session caches and per-pass defaults across string, shell, and
+  boundary rendering while preserving mode-specific context fields and policies.
 - Separate passive SSR context state and hydration caches from server adapter
   registration, removing the internal runtime import cycle while preserving
   entry exports, render-pass scope cleanup, and resource cancellation behavior.

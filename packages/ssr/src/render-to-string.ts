@@ -13,12 +13,9 @@
 //      cache and skip the first refetch.
 // ---------------------------------------------------------------------------
 
-import {
-  popSSRRenderContext,
-  pushSSRRenderContext,
-  type SSRRenderContext,
-} from '@purityjs/core/internal';
+import { popSSRRenderContext, pushSSRRenderContext } from '@purityjs/core/internal';
 import { valueToHtml } from '@purityjs/core/internal';
+import { createRenderContext, createRenderSession } from './render-session.ts';
 import { boundaryDeadline } from './boundary-deadline.ts';
 import { ensureSSRComponentRendererInstalled } from './component.ts';
 import { buildResourceScript } from './resource-script.ts';
@@ -166,21 +163,8 @@ async function renderString(
   }
   const start = Date.now();
 
-  const resolvedData: unknown[] = [];
-  const resolvedErrors: unknown[] = [];
-  // Null-prototype: `key in resolvedDataByKey` and writes like
-  // `resolvedDataByKey['__proto__'] = ...` can't traverse / mutate
-  // Object.prototype for a user-supplied resource `key`.
-  const resolvedDataByKey: Record<string, unknown> = Object.create(null);
-  const resolvedErrorsByKey: Record<string, unknown> = Object.create(null);
-  // Boundary tracking — shared across passes so deadlines and timed-out
-  // marks survive the render loop. ADR 0006 Phase 2.
-  const boundaryStartTimes = new Map<number, number>();
-  const boundaryDeadlines = new Map<number, number>();
-  const timedOutBoundaries = new Set<number>();
-  const boundaryAborts: NonNullable<SSRRenderContext['boundaryAborts']> = new Map();
-  const pendingResources: NonNullable<SSRRenderContext['pendingResources']> = new Map();
-  const boundaryIds = new Map<string, number>();
+  const session = createRenderSession();
+  const { resolvedData, resolvedDataByKey } = session;
   // head() collector. Reset per pass so later passes don't double-count;
   // we capture the final pass's value when the render becomes quiescent.
   let lastHead: string[] | undefined;
@@ -188,25 +172,9 @@ async function renderString(
   let html = '';
   for (let pass = 0; pass < MAX_PASSES; pass++) {
     signal.throwIfAborted();
-    const ctx: SSRRenderContext = {
-      pendingPromises: [],
-      resolvedData,
-      resolvedErrors,
-      resolvedDataByKey,
-      resolvedErrorsByKey,
-      resourceCounter: 0,
-      suspenseCounter: 0,
-      islandCounter: 0,
-      boundaryStartTimes,
-      boundaryDeadlines,
-      timedOutBoundaries,
-      boundaryAborts,
-      pendingResources,
-      boundaryIds,
-      head: [],
-      request,
-      signal,
-    };
+    const ctx = createRenderContext(session, request, signal);
+    ctx.boundaryAborts = session.boundaryAborts;
+    ctx.head = [];
     pushSSRRenderContext(ctx);
     try {
       html = valueToHtml(component());

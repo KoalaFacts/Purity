@@ -715,10 +715,10 @@ export function component<
         const ctx = new ComponentContext();
         // The current scope might be a lean each() scope (just disposers) or
         // a full ComponentContext from a parent component. Only chain into
-        // the parent when it's a real component — that's the only case where
-        // child/parent linking is meaningful for error bubbling.
+        // a live component. A mounted hook can reconnect its own element,
+        // leaving the destroyed prior instance on the stack during this render.
         const parentCtx = getCurrentContext();
-        if (parentCtx instanceof ComponentContext) {
+        if (parentCtx instanceof ComponentContext && !parentCtx._isDestroyed) {
           ctx.parent = parentCtx;
           (parentCtx.children ??= []).push(ctx);
         }

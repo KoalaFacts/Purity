@@ -192,6 +192,29 @@ describe('lifecycle hooks', () => {
     err.mockRestore();
   });
 
+  it('continues to the next error handler when a live component handler throws', () => {
+    const failure = new Error('render failed');
+    const handlerFailure = new Error('handler failed');
+    const seen: unknown[] = [];
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mount(() => {
+        onError(() => {
+          throw handlerFailure;
+        });
+        onError((error) => seen.push(error));
+        throw failure;
+      }, document.createElement('div'));
+      expect(seen).toEqual([failure]);
+      expect(log).toHaveBeenCalledExactlyOnceWith(
+        '[Purity] Error in onError handler:',
+        handlerFailure,
+      );
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('logs disposer errors during unmountContext disposal', () => {
     const container = document.createElement('div');
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});

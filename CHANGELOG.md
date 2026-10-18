@@ -54,6 +54,8 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Fixed and improved
 
+- Avoid a secondary TypeError when an error handler unmounts its component
+  and releases the remaining handlers, while retaining teardown error reporting.
 - Release subscriptions and completed child scopes when component or list-row
   initialization throws, while retaining committed row data when a later key
   or row initializer fails during an update. Failed component renders retain their existing lifecycle

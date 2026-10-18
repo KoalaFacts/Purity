@@ -4,6 +4,7 @@ import {
   mount,
   onDestroy,
   onDispose,
+  onError,
   onFormDisabled,
   onFormReset,
   onMount,
@@ -454,6 +455,32 @@ describe('slots — extra coverage', () => {
 });
 
 describe('component as custom element — lifecycle', () => {
+  for (const child of [false, true]) {
+    it(`reports ${child ? 'factory child' : 'host'} destroy errors during disconnect`, async () => {
+      const failure = new Error('destroy failed');
+      const seen: unknown[] = [];
+      const render = () => {
+        onError((error) => seen.push(error));
+        onDestroy(() => {
+          throw failure;
+        });
+        return html`<p>owned</p>`;
+      };
+      const name = tag('cel-destroy-error');
+      if (child) {
+        const Child = component(tag('cel-destroy-error-child'), render);
+        component(name, () => html`<div>${Child({})}</div>`);
+      } else component(name, render);
+
+      const el = document.createElement(name);
+      document.body.appendChild(el);
+      await tick();
+      el.remove();
+      await tick();
+      expect(seen).toEqual([failure]);
+    });
+  }
+
   it('runs disconnectedCallback dispose on removal', async () => {
     const name = tag('cel-dispose');
     const calls: string[] = [];

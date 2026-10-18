@@ -1070,11 +1070,20 @@ function vlqEncode(n: number): string {
   return out;
 }
 
+// ECMAScript line terminators; a CRLF pair advances only one line. Reuse the
+// same boundaries for diagnostics, original source, and generated slot text.
+function nextLineStart(text: string, start: number, end = text.length): number {
+  for (let i = start; i < end; i++) {
+    const char = text.charCodeAt(i);
+    if (char === 13) return i + (i + 1 < end && text.charCodeAt(i + 1) === 10 ? 2 : 1);
+    if (char === 10 || char === 0x2028 || char === 0x2029) return i + 1;
+  }
+  return -1;
+}
+
 function buildLineStarts(s: string): number[] {
   const out = [0];
-  for (let i = 0; i < s.length; i++) {
-    if (s.charCodeAt(i) === 10) out.push(i + 1);
-  }
+  for (let next = nextLineStart(s, 0); next !== -1; next = nextLineStart(s, next)) out.push(next);
   return out;
 }
 
@@ -1129,17 +1138,17 @@ function applyEdits(
     let { line: sl, column: sc } = offsetToLineCol(lineStarts, pos);
     emitSegment(curOutCol, sl, sc);
     while (pos < end) {
-      const nl = source.indexOf('\n', pos);
-      if (nl === -1 || nl >= end) {
+      const next = nextLineStart(source, pos, end);
+      if (next === -1) {
         const seg = source.slice(pos, end);
         code += seg;
         curOutCol += seg.length;
         break;
       }
-      const seg = source.slice(pos, nl + 1);
+      const seg = source.slice(pos, next);
       code += seg;
       newline();
-      pos = nl + 1;
+      pos = next;
       if (pos < end) {
         ({ line: sl, column: sc } = offsetToLineCol(lineStarts, pos));
         emitSegment(0, sl, sc);
@@ -1154,17 +1163,17 @@ function applyEdits(
     emitSegment(curOutCol, sl, sc);
     let pos = 0;
     while (pos < text.length) {
-      const nl = text.indexOf('\n', pos);
-      if (nl === -1) {
+      const next = nextLineStart(text, pos);
+      if (next === -1) {
         const seg = text.slice(pos);
         code += seg;
         curOutCol += seg.length;
         break;
       }
-      const seg = text.slice(pos, nl + 1);
+      const seg = text.slice(pos, next);
       code += seg;
       newline();
-      pos = nl + 1;
+      pos = next;
       if (pos < text.length) emitSegment(0, sl, sc);
     }
   }

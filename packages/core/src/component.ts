@@ -109,6 +109,29 @@ export function onMount(fn: () => void): void {
   });
 }
 
+/** @internal Schedule mounted hooks under the component that owns their work. */
+export function scheduleMountCallbacks(ctx: ComponentContext): void {
+  if (!ctx.mounted) return;
+  queueMicrotask(() => {
+    const mounted = ctx.mounted;
+    if (!mounted) return;
+    pushContext(ctx);
+    try {
+      // A hook can unmount its owner; later hooks must not revive its work.
+      for (let i = 0; i < mounted.length && !ctx._isDestroyed; i++) {
+        try {
+          mounted[i]();
+        } catch (err) {
+          ctx._handleError(err);
+        }
+      }
+    } finally {
+      popContext();
+    }
+    ctx.mounted = null;
+  });
+}
+
 /**
  * Register a callback that runs when the component is unmounted.
  *
@@ -367,27 +390,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   hydratePendingCustomElements(container);
   ctx._isMounted = true;
 
-  if (ctx.mounted) {
-    queueMicrotask(() => {
-      const mounted = ctx.mounted;
-      if (!mounted) return;
-      pushContext(ctx);
-      try {
-        // A callback may unmount the component (which clears ctx.mounted);
-        // stop running the rest once it is destroyed.
-        for (let i = 0; i < mounted.length && !ctx._isDestroyed; i++) {
-          try {
-            mounted[i]();
-          } catch (err) {
-            ctx._handleError(err);
-          }
-        }
-      } finally {
-        popContext();
-      }
-      ctx.mounted = null;
-    });
-  }
+  scheduleMountCallbacks(ctx);
 
   return { unmount: () => unmountContext(ctx) };
 }
@@ -532,30 +535,7 @@ export function mount(component: ComponentFn, container: Element): MountResult {
 
   ctx._isMounted = true;
 
-  if (ctx.mounted) {
-    queueMicrotask(() => {
-      const mounted = ctx.mounted;
-      if (!mounted) return;
-      // Make the component context active during onMount callbacks so
-      // onDispose() / onError() registered inside them attach to this
-      // component instead of silently no-oping.
-      pushContext(ctx);
-      try {
-        // A callback may unmount the component (which clears ctx.mounted);
-        // stop running the rest once it is destroyed.
-        for (let i = 0; i < mounted.length && !ctx._isDestroyed; i++) {
-          try {
-            mounted[i]();
-          } catch (err) {
-            ctx._handleError(err);
-          }
-        }
-      } finally {
-        popContext();
-      }
-      ctx.mounted = null;
-    });
-  }
+  scheduleMountCallbacks(ctx);
 
   return { unmount: () => unmountContext(ctx) };
 }

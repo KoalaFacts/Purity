@@ -54,6 +54,9 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Fixed and improved
 
+- Run custom-element and factory-component mounted hooks under their owner,
+  so reactive work and cleanup registered there are released on teardown.
+  Cancel queued and remaining mounted hooks when their component is removed.
 - Avoid a secondary TypeError when an error handler unmounts its component
   and releases the remaining handlers, while retaining teardown error reporting.
 - Release subscriptions and completed child scopes when component or list-row

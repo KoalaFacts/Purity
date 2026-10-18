@@ -19,7 +19,7 @@ import {
   popContext,
   pushContext,
 } from './scope.ts';
-import { hydratePendingCustomElements } from './component.ts';
+import { hydratePendingCustomElements, scheduleMountCallbacks } from './component.ts';
 import { FormControlBridge } from './form-control.ts';
 import { disposeScope, watch } from './signals.ts';
 
@@ -789,7 +789,7 @@ export function component<
         this._mounted = true;
         this._hasRendered = true;
 
-        queueMicrotask(() => runCallbacks(ctx.mounted, ctx));
+        scheduleMountCallbacks(ctx);
       }
 
       // Empty by design — declaring this method opts the custom element
@@ -1004,7 +1004,7 @@ export function component<
       }
 
       ctx._isMounted = true;
-      queueMicrotask(() => runCallbacks(ctx.mounted, ctx));
+      scheduleMountCallbacks(ctx);
 
       return result;
     }
@@ -1019,7 +1019,7 @@ export function component<
     }
 
     ctx._isMounted = true;
-    queueMicrotask(() => runCallbacks(ctx.mounted, ctx));
+    scheduleMountCallbacks(ctx);
 
     return result;
   };

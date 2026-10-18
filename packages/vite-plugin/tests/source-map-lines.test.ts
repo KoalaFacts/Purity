@@ -13,6 +13,49 @@ const lines = (text: string) => text.split(/\r\n|[\r\n\u2028\u2029]/);
 
 for (const ssr of [false, true]) {
   describe(`${ssr ? 'SSR' : 'client'} AOT source positions`, () => {
+    for (const prefix of ['// banner\r', '\r']) {
+      it(`counts CRLF formed by import removal and injection after ${JSON.stringify(prefix)}`, () => {
+        const source =
+          prefix +
+          [
+            "import { html } from '@purityjs/core/jit';",
+            'const view = html`<p>mapped</p>`;',
+            'throw new Error("after import");',
+          ].join('\r');
+        const result = purity().transform(source, '/banner.ts', { ssr })!;
+        const outputLines = lines(result.code);
+        const line = outputLines.findIndex((text) => text.startsWith('throw new Error')) + 1;
+        expect(
+          new SourceMapConsumer(result.map).originalPositionFor({ line, column: 0 }),
+        ).toMatchObject({
+          source: '/banner.ts',
+          line: 4,
+          column: 0,
+        });
+        expect(result.code.startsWith(prefix + '\n')).toBe(true);
+        expect(result.map.mappings.split(';')).toHaveLength(outputLines.length);
+      });
+    }
+
+    for (const source of [
+      "// banner\rimport { html } from '@purityjs/core/jit';\nimport { keep } from 'retained';\nconst view = html`<p/>`;\nthrow new Error('after deletion');",
+      "import {\rhtml,\nother } from '@purityjs/core/jit';\nconst view = html`<p/>`;\nthrow new Error('after deletion');",
+    ]) {
+      it(`counts CRLF formed between unchanged slices of ${JSON.stringify(source)}`, () => {
+        const result = purity().transform(source, '/removed.ts', { ssr })!;
+        const outputLines = lines(result.code);
+        const line = outputLines.findIndex((text) => text.startsWith('throw new Error')) + 1;
+        expect(
+          new SourceMapConsumer(result.map).originalPositionFor({ line, column: 0 }),
+        ).toMatchObject({
+          source: '/removed.ts',
+          line: 5,
+          column: 0,
+        });
+        expect(result.map.mappings.split(';')).toHaveLength(outputLines.length);
+      });
+    }
+
     for (const [name, separator] of separators) {
       it(`maps unchanged statements and compiled templates with ${name} separators`, () => {
         const source = [

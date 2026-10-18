@@ -1111,6 +1111,18 @@ function applyEdits(
   let prevSrcLine = 0;
   let prevSrcCol = 0;
   let firstInLine = true;
+  let endsWithCR = false;
+
+  // Removing an import or inserting generated text can join a CR and LF that
+  // were not adjacent in the source. The preceding slice already advanced the
+  // output line; append the LF without advancing it again.
+  function appendJoinedLineFeed(text: string, start: number, end: number): number {
+    const joinsCRLF = endsWithCR && text.charCodeAt(start) === 10;
+    endsWithCR = text.charCodeAt(end - 1) === 13;
+    if (!joinsCRLF) return start;
+    code += '\n';
+    return start + 1;
+  }
 
   function newline() {
     mappings += ';';
@@ -1134,7 +1146,8 @@ function applyEdits(
   // Append a slice of original source, emitting one segment per line.
   function appendOrig(start: number, end: number) {
     if (start >= end) return;
-    let pos = start;
+    let pos = appendJoinedLineFeed(source, start, end);
+    if (pos >= end) return;
     let { line: sl, column: sc } = offsetToLineCol(lineStarts, pos);
     emitSegment(curOutCol, sl, sc);
     while (pos < end) {
@@ -1159,9 +1172,10 @@ function applyEdits(
   // Append generated text anchored to a single source position.
   function appendGen(text: string, srcAnchor: number) {
     if (text.length === 0) return;
+    let pos = appendJoinedLineFeed(text, 0, text.length);
+    if (pos >= text.length) return;
     const { line: sl, column: sc } = offsetToLineCol(lineStarts, srcAnchor);
     emitSegment(curOutCol, sl, sc);
-    let pos = 0;
     while (pos < text.length) {
       const next = nextLineStart(text, pos);
       if (next === -1) {

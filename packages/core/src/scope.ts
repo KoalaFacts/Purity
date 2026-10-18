@@ -51,9 +51,9 @@ export class ComponentContext implements Scope {
     // Scoped onError removal can leave an empty array; treat it as no handler.
     const handlers = this.errorHandlers;
     if (handlers?.length) {
-      // A handler can unmount this component and clear its callbacks.
-      // Stop dispatching once their owner is destroyed, as onMount does.
-      for (let i = 0; i < handlers.length && !this._isDestroyed; i++) {
+      // A handler can unmount this component and release the callback list.
+      // Teardown errors can still use handlers until that list is released.
+      for (let i = 0; i < handlers.length && this.errorHandlers === handlers; i++) {
         try {
           handlers[i](err);
         } catch (e) {

@@ -19,7 +19,7 @@ import {
   popContext,
   pushContext,
 } from './scope.ts';
-import { hydratePendingCustomElements } from './component.ts';
+import { hydratePendingCustomElements, scheduleMountCallbacks } from './component.ts';
 import { FormControlBridge } from './form-control.ts';
 import { disposeScope, watch } from './signals.ts';
 
@@ -715,10 +715,10 @@ export function component<
         const ctx = new ComponentContext();
         // The current scope might be a lean each() scope (just disposers) or
         // a full ComponentContext from a parent component. Only chain into
-        // the parent when it's a real component — that's the only case where
-        // child/parent linking is meaningful for error bubbling.
+        // a live component. A mounted hook can reconnect its own element,
+        // leaving the destroyed prior instance on the stack during this render.
         const parentCtx = getCurrentContext();
-        if (parentCtx instanceof ComponentContext) {
+        if (parentCtx instanceof ComponentContext && !parentCtx._isDestroyed) {
           ctx.parent = parentCtx;
           (parentCtx.children ??= []).push(ctx);
         }
@@ -789,7 +789,7 @@ export function component<
         this._mounted = true;
         this._hasRendered = true;
 
-        queueMicrotask(() => runCallbacks(ctx.mounted, ctx));
+        scheduleMountCallbacks(ctx);
       }
 
       // Empty by design — declaring this method opts the custom element
@@ -1004,7 +1004,7 @@ export function component<
       }
 
       ctx._isMounted = true;
-      queueMicrotask(() => runCallbacks(ctx.mounted, ctx));
+      scheduleMountCallbacks(ctx);
 
       return result;
     }
@@ -1019,7 +1019,7 @@ export function component<
     }
 
     ctx._isMounted = true;
-    queueMicrotask(() => runCallbacks(ctx.mounted, ctx));
+    scheduleMountCallbacks(ctx);
 
     return result;
   };

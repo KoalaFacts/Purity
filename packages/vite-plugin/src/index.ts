@@ -1070,11 +1070,20 @@ function vlqEncode(n: number): string {
   return out;
 }
 
+// ECMAScript line terminators; a CRLF pair advances only one line. Reuse the
+// same boundaries for diagnostics, original source, and generated slot text.
+function nextLineStart(text: string, start: number, end = text.length): number {
+  for (let i = start; i < end; i++) {
+    const char = text.charCodeAt(i);
+    if (char === 13) return i + (i + 1 < end && text.charCodeAt(i + 1) === 10 ? 2 : 1);
+    if (char === 10 || char === 0x2028 || char === 0x2029) return i + 1;
+  }
+  return -1;
+}
+
 function buildLineStarts(s: string): number[] {
   const out = [0];
-  for (let i = 0; i < s.length; i++) {
-    if (s.charCodeAt(i) === 10) out.push(i + 1);
-  }
+  for (let next = nextLineStart(s, 0); next !== -1; next = nextLineStart(s, next)) out.push(next);
   return out;
 }
 
@@ -1102,6 +1111,18 @@ function applyEdits(
   let prevSrcLine = 0;
   let prevSrcCol = 0;
   let firstInLine = true;
+  let endsWithCR = false;
+
+  // Removing an import or inserting generated text can join a CR and LF that
+  // were not adjacent in the source. The preceding slice already advanced the
+  // output line; append the LF without advancing it again.
+  function appendJoinedLineFeed(text: string, start: number, end: number): number {
+    const joinsCRLF = endsWithCR && text.charCodeAt(start) === 10;
+    endsWithCR = text.charCodeAt(end - 1) === 13;
+    if (!joinsCRLF) return start;
+    code += '\n';
+    return start + 1;
+  }
 
   function newline() {
     mappings += ';';
@@ -1125,21 +1146,22 @@ function applyEdits(
   // Append a slice of original source, emitting one segment per line.
   function appendOrig(start: number, end: number) {
     if (start >= end) return;
-    let pos = start;
+    let pos = appendJoinedLineFeed(source, start, end);
+    if (pos >= end) return;
     let { line: sl, column: sc } = offsetToLineCol(lineStarts, pos);
     emitSegment(curOutCol, sl, sc);
     while (pos < end) {
-      const nl = source.indexOf('\n', pos);
-      if (nl === -1 || nl >= end) {
+      const next = nextLineStart(source, pos, end);
+      if (next === -1) {
         const seg = source.slice(pos, end);
         code += seg;
         curOutCol += seg.length;
         break;
       }
-      const seg = source.slice(pos, nl + 1);
+      const seg = source.slice(pos, next);
       code += seg;
       newline();
-      pos = nl + 1;
+      pos = next;
       if (pos < end) {
         ({ line: sl, column: sc } = offsetToLineCol(lineStarts, pos));
         emitSegment(0, sl, sc);
@@ -1150,21 +1172,22 @@ function applyEdits(
   // Append generated text anchored to a single source position.
   function appendGen(text: string, srcAnchor: number) {
     if (text.length === 0) return;
+    let pos = appendJoinedLineFeed(text, 0, text.length);
+    if (pos >= text.length) return;
     const { line: sl, column: sc } = offsetToLineCol(lineStarts, srcAnchor);
     emitSegment(curOutCol, sl, sc);
-    let pos = 0;
     while (pos < text.length) {
-      const nl = text.indexOf('\n', pos);
-      if (nl === -1) {
+      const next = nextLineStart(text, pos);
+      if (next === -1) {
         const seg = text.slice(pos);
         code += seg;
         curOutCol += seg.length;
         break;
       }
-      const seg = text.slice(pos, nl + 1);
+      const seg = text.slice(pos, next);
       code += seg;
       newline();
-      pos = nl + 1;
+      pos = next;
       if (pos < text.length) emitSegment(0, sl, sc);
     }
   }

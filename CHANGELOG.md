@@ -8,6 +8,8 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Changed
 
+- Isolate the Vite plugin's text-edit and source-map helpers for dependency-free
+  testing, preserving generated code, mappings, and public type exports.
 - Share SSR session caches and per-pass defaults across string, shell, and
   boundary rendering while preserving mode-specific context fields and policies.
 - Separate passive SSR context state and hydration caches from server adapter

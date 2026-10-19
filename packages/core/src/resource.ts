@@ -236,13 +236,37 @@ export function resource<T, K>(
     let key: K | undefined;
     if (sourceFn !== null) {
       let k: K | false | null | undefined;
-      try {
-        k = sourceFn();
-      } catch (err) {
+      let sourceFailed = false;
+      let sourceError: unknown;
+      for (;;) {
+        sourceFailed = false;
+        try {
+          k = sourceFn();
+        } catch (err) {
+          sourceFailed = true;
+          sourceError = err;
+        }
+        if (
+          !sourceFailed &&
+          k !== false &&
+          k !== null &&
+          k !== undefined &&
+          hasPrevKey &&
+          Object.is(prevKey, k)
+        )
+          return;
+        if (currentController === null) break;
+        hasPrevKey = false;
+        cancelInFlight();
+        if (disposed) return;
+        // Abort listeners can change source dependencies synchronously. Read
+        // again after cancellation, including disabled and throwing sources.
+      }
+      if (sourceFailed) {
         hasPrevKey = false;
         cancelInFlight();
         batch(() => {
-          error(err);
+          error(sourceError);
           loading(false);
         });
         return;
@@ -253,7 +277,6 @@ export function resource<T, K>(
         loading(false);
         return;
       }
-      if (hasPrevKey && Object.is(prevKey, k)) return;
       prevKey = k;
       hasPrevKey = true;
       key = k;

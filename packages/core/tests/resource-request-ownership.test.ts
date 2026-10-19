@@ -171,3 +171,46 @@ it('does not subscribe an auto-tracked fetch to reads in the prior abort listene
   await flushAll();
   expect(calls).toBe(2);
 });
+
+describe.each([1, false, null, undefined, 'throw'] as const)(
+  'source cancellation triggered by %s',
+  (trigger) => {
+    it.each([0, 2, false, null, undefined, 'throw'] as const)(
+      'honors an abort listener changing the source to %s',
+      async (target) => {
+        const key = state<number | false | null | undefined | 'throw'>(0);
+        const failure = new Error('source failed');
+        const calls: number[] = [];
+        const signals: AbortSignal[] = [];
+        const settle: (() => void)[] = [];
+        const result = resource(
+          () => {
+            const value = key();
+            if (value === 'throw') throw failure;
+            return value;
+          },
+          (value, { signal }) => {
+            calls.push(value);
+            signals.push(signal);
+            if (calls.length === 1) {
+              signal.addEventListener('abort', () => key(target), { once: true });
+            }
+            return new Promise<number>((resolve) => settle.push(() => resolve(value)));
+          },
+        );
+        stops.push(result.dispose);
+        key(trigger);
+        await flushAll();
+        const enabled = typeof target === 'number';
+        expect(calls).toEqual(enabled ? [0, target] : [0]);
+        expect(signals[0].aborted).toBe(true);
+        if (enabled) expect(signals[1].aborted).toBe(false);
+        for (const done of settle) done();
+        await flushAll();
+        expect(result()).toBe(enabled ? target : undefined);
+        expect(result.loading()).toBe(false);
+        expect(result.error()).toBe(target === 'throw' ? failure : undefined);
+      },
+    );
+  },
+);

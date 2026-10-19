@@ -13,7 +13,7 @@
 // fresher data. data() is preserved across refetches (SWR by default).
 // ---------------------------------------------------------------------------
 
-import { bindComponentState } from './component.ts';
+import { bindComponentState, onDispose } from './component.ts';
 import { batch, state, watch } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
 import { consumeHydrationValue } from './ssr/hydration-cache.ts';
@@ -170,12 +170,18 @@ export function resource<T, K>(
   let prevKey: K;
   let hasPrevKey = false;
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
+  let pollingStopped = false;
 
   const clearPoll = () => {
     if (pollTimer !== null) {
       clearTimeout(pollTimer);
       pollTimer = null;
     }
+  };
+
+  const stopPolling = () => {
+    pollingStopped = true;
+    clearPoll();
   };
 
   const cancelInFlight = () => {
@@ -187,7 +193,7 @@ export function resource<T, K>(
   };
 
   const schedulePoll = () => {
-    if (pollInterval == null) return;
+    if (pollingStopped || pollInterval == null) return;
     clearPoll();
     pollTimer = setTimeout(() => {
       pollTimer = null;
@@ -205,6 +211,10 @@ export function resource<T, K>(
     return ssrResources.resource(ssrCtx, userKey, sourceFn, fetcher, retry, data, error, loading);
   }
 
+  // A poll belongs to the whole resource, not one watch run: an unchanged
+  // source key skips fetching and must retain its already scheduled poll.
+  // Register before the eager fetch, which can synchronously stop its owner.
+  onDispose(stopPolling);
   const dispose = watch(() => {
     refreshTick();
     if (skipFirstFetch) {
@@ -339,6 +349,7 @@ export function resource<T, K>(
     });
   };
   accessor.dispose = () => {
+    stopPolling();
     cancelInFlight();
     hasPrevKey = false;
     // Drop loading so UI bound to it doesn't stick on a forever spinner.

@@ -1830,9 +1830,9 @@ describe('resource — non-positive pollInterval disables polling', () => {
 });
 
 // Invariant pin (audit 412-421 / 373-380 verdict: prior in-flight fetch is
-// aborted on source-key change and on a source going falsy — via the watch's
-// returned cleanup, not the bookkeeping assignment). These guard against a
-// future refactor that drops the cleanup and reintroduces a network leak.
+// aborted on source-key change and on a source going falsy). The resource owns
+// cancellation so same-key watch reruns retain pending work. These guard
+// against a refactor that drops cancellation and reintroduces a network leak.
 describe('resource — prior in-flight fetch is aborted on source change', () => {
   it('changing the source key aborts the previous fetch signal', async () => {
     const id = state(1);

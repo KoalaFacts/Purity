@@ -1,6 +1,6 @@
 /**
- * Minimal v3 source map. Hand-rolled (no `magic-string` dependency) so the
- * these helpers have no runtime dependencies.
+ * Minimal v3 source map. Hand-rolled (no `magic-string` dependency) so these
+ * helpers have no runtime dependencies.
  */
 export interface PuritySourceMap {
   version: 3;

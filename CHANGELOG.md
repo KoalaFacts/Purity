@@ -54,6 +54,8 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Fixed and improved
 
+- Keep pending resource requests and retries alive when source dependencies
+  change without changing the key, avoiding a permanently loading resource.
 - Cancel pending resource polling timers when their component or effect owner
   is disposed, including successful and failed fetches.
 - Preserve AOT warning and source-map positions for CR and Unicode line

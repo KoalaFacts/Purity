@@ -14,7 +14,7 @@
 // ---------------------------------------------------------------------------
 
 import { bindComponentState, onDispose } from './component.ts';
-import { batch, state, watch } from './signals.ts';
+import { batch, state, untracked, watch } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
 import { consumeHydrationValue } from './ssr/hydration-cache.ts';
 import { ssrResources } from './resource/dispatch.ts';
@@ -170,7 +170,7 @@ export function resource<T, K>(
   let prevKey: K;
   let hasPrevKey = false;
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
-  let pollingStopped = false;
+  let disposed = false;
 
   const clearPoll = () => {
     if (pollTimer !== null) {
@@ -179,21 +179,21 @@ export function resource<T, K>(
     }
   };
 
-  const stopPolling = () => {
-    pollingStopped = true;
-    clearPoll();
-  };
-
   const cancelInFlight = () => {
     clearPoll();
-    if (currentController !== null) {
-      currentController.abort();
-      currentController = null;
-    }
+    const controller = currentController;
+    currentController = null;
+    // Abort callbacks can dispose the resource and read unrelated signals.
+    if (controller !== null) untracked(() => controller.abort());
+  };
+
+  const stopResource = () => {
+    disposed = true;
+    cancelInFlight();
   };
 
   const schedulePoll = () => {
-    if (pollingStopped || pollInterval == null) return;
+    if (disposed || pollInterval == null) return;
     clearPoll();
     pollTimer = setTimeout(() => {
       pollTimer = null;
@@ -211,11 +211,12 @@ export function resource<T, K>(
     return ssrResources.resource(ssrCtx, userKey, sourceFn, fetcher, retry, data, error, loading);
   }
 
-  // A poll belongs to the whole resource, not one watch run: an unchanged
-  // source key skips fetching and must retain its already scheduled poll.
+  // Requests and polls belong to the resource, not individual watch runs:
+  // unchanged source keys must retain both in-flight work and pending polls.
   // Register before the eager fetch, which can synchronously stop its owner.
-  onDispose(stopPolling);
+  onDispose(stopResource);
   const dispose = watch(() => {
+    if (disposed) return;
     refreshTick();
     if (skipFirstFetch) {
       // Hydration: cached value already in `data`; skip the first fetcher
@@ -239,7 +240,7 @@ export function resource<T, K>(
         k = sourceFn();
       } catch (err) {
         hasPrevKey = false;
-        clearPoll();
+        cancelInFlight();
         batch(() => {
           error(err);
           loading(false);
@@ -248,8 +249,7 @@ export function resource<T, K>(
       }
       if (k === false || k === null || k === undefined) {
         hasPrevKey = false;
-        if (currentController !== null) currentController = null;
-        clearPoll();
+        cancelInFlight();
         loading(false);
         return;
       }
@@ -259,11 +259,12 @@ export function resource<T, K>(
       key = k;
     }
 
+    cancelInFlight();
+    // Cancelling the previous request can synchronously dispose this owner.
+    if (disposed) return;
     const myRun = ++runId;
     const ac = new AbortController();
     currentController = ac;
-    clearPoll();
-    const cleanup = () => ac.abort();
 
     const callFetcher = (): T | Promise<T> =>
       sourceFn !== null
@@ -284,7 +285,7 @@ export function resource<T, K>(
         loading(false);
       });
       schedulePoll();
-      return cleanup;
+      return;
     }
 
     if (!(result instanceof Promise)) {
@@ -295,7 +296,7 @@ export function resource<T, K>(
         loading(false);
       });
       schedulePoll();
-      return cleanup;
+      return;
     }
 
     result.then(
@@ -317,8 +318,6 @@ export function resource<T, K>(
         schedulePoll();
       },
     );
-
-    return cleanup;
   });
 
   const accessor = data.get as ResourceAccessor<T>;
@@ -349,8 +348,7 @@ export function resource<T, K>(
     });
   };
   accessor.dispose = () => {
-    stopPolling();
-    cancelInFlight();
+    stopResource();
     hasPrevKey = false;
     // Drop loading so UI bound to it doesn't stick on a forever spinner.
     loading(false);

@@ -14,6 +14,32 @@ afterEach(() => {
 describe.each(['sync', 'resolve', 'reject', 'throw'] as const)(
   'resource polling ownership after %s',
   (settlement) => {
+    it('keeps polling when a source dependency changes without changing its key', async () => {
+      const unrelated = state(0);
+      let calls = 0;
+      const result = resource(
+        () => {
+          unrelated();
+          return 'same-key';
+        },
+        () => {
+          calls++;
+          if (settlement === 'throw') throw new Error('expected');
+          if (settlement === 'reject') return Promise.reject(new Error('expected'));
+          return settlement === 'resolve' ? Promise.resolve(calls) : calls;
+        },
+        { pollInterval: 1000 },
+      );
+      stops.push(result.dispose);
+      await flushAll();
+      unrelated(1);
+      await flushAll();
+      expect(calls).toBe(1);
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(calls).toBe(2);
+    });
+
     it.each(['component', 'effect', 'explicit'] as const)(
       'releases the pending timer when its %s owner stops',
       async (owner) => {
@@ -57,6 +83,36 @@ describe.each(['sync', 'resolve', 'reject', 'throw'] as const)(
   },
 );
 
+it.each(['return', 'throw'] as const)(
+  'does not rearm polling when a fetch unmounts its owner before %s',
+  async (completion) => {
+    const source = state(0);
+    let calls = 0;
+    let unmount = () => {};
+    const handle = mount(() => {
+      resource(
+        source,
+        (key) => {
+          calls++;
+          if (key > 0) {
+            unmount();
+            if (completion === 'throw') throw new Error('expected');
+          }
+          return key;
+        },
+        { pollInterval: 60_000 },
+      );
+      return document.createElement('p');
+    }, document.createElement('div'));
+    unmount = handle.unmount;
+    stops.push(unmount);
+    source(1);
+    await flushAll();
+    expect(calls).toBe(2);
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
+
 it.each(['resolve', 'reject'] as const)(
   'does not arm a poll after a %s observer disposes the resource',
   async (settlement) => {
@@ -78,3 +134,22 @@ it.each(['resolve', 'reject'] as const)(
     expect(vi.getTimerCount()).toBe(0);
   },
 );
+
+it('does not rearm polling when a fetch explicitly disposes its resource', async () => {
+  const source = state(0);
+  let calls = 0;
+  const result = resource(
+    source,
+    (key) => {
+      calls++;
+      if (key > 0) result.dispose();
+      return key;
+    },
+    { pollInterval: 60_000 },
+  );
+  stops.push(result.dispose);
+  source(1);
+  await flushAll();
+  expect(calls).toBe(2);
+  expect(vi.getTimerCount()).toBe(0);
+});

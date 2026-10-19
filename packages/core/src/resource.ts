@@ -253,7 +253,12 @@ export function resource<T, K>(
     const ac = new AbortController();
     currentController = ac;
     clearPoll();
-    const cleanup = () => ac.abort();
+    const cleanup = () => {
+      // The watch owns both the request and its next poll, including when an
+      // enclosing component or effect stops without calling accessor.dispose().
+      clearPoll();
+      ac.abort();
+    };
 
     const callFetcher = (): T | Promise<T> =>
       sourceFn !== null

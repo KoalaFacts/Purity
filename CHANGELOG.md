@@ -54,6 +54,8 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Fixed and improved
 
+- Cancel pending resource polling timers when their component or effect owner
+  is disposed, including successful and failed fetches.
 - Preserve AOT warning and source-map positions for CR and Unicode line
   separators, including multiline slot expressions in client and SSR output.
 - Run custom-element and factory-component mounted hooks under their owner,

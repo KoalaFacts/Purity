@@ -72,7 +72,18 @@ export class ComponentContext implements Scope {
 // Context stack
 // ---------------------------------------------------------------------------
 
-const contextStack: Scope[] = [];
+let contextStack: Scope[] = [];
+
+/** Run shared work without capturing a caller's disposal or component owner. @internal */
+export function withoutScope<T>(fn: () => T): T {
+  const previous = contextStack;
+  contextStack = [];
+  try {
+    return fn();
+  } finally {
+    contextStack = previous;
+  }
+}
 
 export function getCurrentContext(): Scope | null {
   return contextStack[contextStack.length - 1] || null;

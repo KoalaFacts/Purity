@@ -56,6 +56,8 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Fixed and improved
 
+- Keep shared query requests and browser revalidation alive when their first
+  consumer unmounts, while releasing each consumer's custom-state bindings.
 - Keep pending resource requests and retries alive when source dependencies
   change without changing the key, avoiding a permanently loading resource.
 - Cancel pending resource polling timers when their component or effect owner

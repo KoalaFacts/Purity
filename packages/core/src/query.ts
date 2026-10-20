@@ -18,10 +18,12 @@
 // ---------------------------------------------------------------------------
 
 import { bfcacheRestoreSignal } from './bfcache-restore-signal.ts';
+import { bindComponentState } from './component.ts';
 import { onlineSignal } from './online-signal.ts';
 import { pageVisibilitySignal } from './page-visibility-signal.ts';
 import { resource, type ResourceAccessor, type ResourceFetchInfo } from './resource.ts';
-import { watch, type Dispose } from './signals.ts';
+import { withoutScope } from './scope.ts';
+import { untracked, watch, type Dispose } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
 
 /** Cache key for query(). Strings are used as-is; arrays are JSON-serialized. */
@@ -210,6 +212,7 @@ export function query<T>(options: QueryOptions<T>): ResourceAccessor<T> {
   const existing = cache.get(keyStr);
   if (existing) {
     warnOnConfigMismatch(keyStr, options, existing);
+    bindQueryState(existing.resource);
     return existing.resource as ResourceAccessor<T>;
   }
 
@@ -223,13 +226,26 @@ export function query<T>(options: QueryOptions<T>): ResourceAccessor<T> {
   };
   cache.set(keyStr, entry as QueryEntry<unknown>);
 
-  entry.resource = resource(makeStampedFetcher(options, keyStr), {
-    initialValue: options.initialValue,
-    key: keyStr,
-  });
+  // The cache owns this resource and its shared triggers. Neither may capture
+  // the first consumer's scope, component, or reactive subscriptions.
+  withoutScope(() =>
+    untracked(() => {
+      entry.resource = resource(makeStampedFetcher(options, keyStr), {
+        initialValue: options.initialValue,
+        key: keyStr,
+      });
+      wireRevalidationTriggers();
+    }),
+  );
 
-  wireRevalidationTriggers();
+  bindQueryState(entry.resource);
   return entry.resource;
+}
+
+function bindQueryState<T>(accessor: ResourceAccessor<T>): void {
+  // Host state belongs to each consumer, even though the request is shared.
+  bindComponentState('loading', accessor.loading);
+  bindComponentState('error', () => accessor.error() !== undefined);
 }
 
 /** Imperatively invalidate a cache entry and refresh it. No-op if absent. */

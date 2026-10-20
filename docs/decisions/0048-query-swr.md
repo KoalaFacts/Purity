@@ -69,6 +69,12 @@ shared entry; subsequent calls with the same key return the same
 reading `query({ key: ['user', 42] })` share one in-flight
 request, one cached value, one error state.
 
+The client cache and revalidation subscriptions live for the page, independent
+of the first consumer's component or effect. Unmounting a consumer releases
+its loading/error custom-state bindings but does not cancel shared work.
+Calling the shared accessor's `.dispose()` explicitly stops that resource for
+all consumers; use `resource()` for work that should end with one component.
+
 ### Revalidation triggers
 
 The first `query()` call lazily wires three module-scoped watches

@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { bindListeners } from './listen.ts';
+import { withoutScope } from './scope.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
 
@@ -44,7 +45,7 @@ export function onlineSignal(): ComputedAccessor<boolean> {
     'onlineSignal',
   );
   if (!unbind) return compute(() => navigator.onLine === true);
-  singleton = compute(() => inner());
+  singleton = withoutScope(() => compute(() => inner()));
   return singleton;
 }
 

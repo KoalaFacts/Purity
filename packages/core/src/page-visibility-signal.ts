@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { bindListeners, isolate } from './listen.ts';
+import { withoutScope } from './scope.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
 
@@ -59,7 +60,7 @@ export function pageVisibilitySignal(): ComputedAccessor<'visible' | 'hidden'> {
     'pageVisibilitySignal',
   );
   if (!teardown) return compute(() => 'visible' as const);
-  singleton = compute(() => inner());
+  singleton = withoutScope(() => compute(() => inner()));
   return singleton;
 }
 

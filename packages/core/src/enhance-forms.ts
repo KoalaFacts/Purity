@@ -48,7 +48,8 @@ type Entry = {
   timer?: ReturnType<typeof setTimeout>;
   restorePending?: () => void;
   fields: Map<HTMLElement, FieldSnapshot>;
-  errors: HTMLElement[];
+  errors: Array<{ element: HTMLElement; fields: HTMLElement[] }>;
+  errorRoot?: Document | ShadowRoot;
   nativeErrors: Map<HTMLElement, HTMLElement['hidden']>;
   region?: HTMLElement;
   ownsRegion: boolean;
@@ -192,8 +193,9 @@ export function enhanceForms(
   }
 
   function clearErrors(entry: Entry): void {
-    for (const error of entry.errors) error.remove();
+    for (const { element } of entry.errors) element.remove();
     entry.errors.length = 0;
+    entry.errorRoot = undefined;
     const nativeIds = new Set(Array.from(entry.nativeErrors.keys(), (error) => error.id));
     for (const [field, snapshot] of entry.fields) {
       // A previous SSR validation error must not survive a successful retry.
@@ -286,7 +288,8 @@ export function enhanceForms(
       // Associated controls may live outside this form; keep the error in the form.
       if (form.contains(last)) last.after(error);
       else form.append(error);
-      entry.errors.push(error);
+      entry.errors.push({ element: error, fields: matches as HTMLElement[] });
+      entry.errorRoot = errorRoot;
       for (const control of matches) {
         const field = control as HTMLElement;
         if (!entry.fields.has(field))
@@ -307,6 +310,32 @@ export function enhanceForms(
     entry.region!.textContent = message;
     if (firstField) firstField.focus();
     if (success) refreshQueries(result.invalidate);
+  }
+
+  function refreshErrorIds(form: HTMLFormElement, entry: Entry): void {
+    if (!entry.errors.length) return;
+    const tree = view!.Node.prototype.getRootNode.call(form) as Document | ShadowRoot;
+    if (tree === entry.errorRoot) return;
+    entry.errorRoot = tree;
+    const elements = Array.from(tree.querySelectorAll('[id]'));
+    for (const { element, fields } of entry.errors) {
+      const previous = element.id;
+      if (!elements.some((other) => other !== element && other.id === previous)) continue;
+      let id: string;
+      do {
+        id = `purity-form-error-${++nextErrorId}`;
+      } while (tree.getElementById(id));
+      element.id = id;
+      for (const field of fields) {
+        const ids = field.getAttribute('aria-describedby')?.split(/\s+/).filter(Boolean);
+        const index = ids?.lastIndexOf(previous) ?? -1;
+        // Only replace the appended managed reference, preserving author tokens.
+        if (ids && index !== -1) {
+          ids[index] = id;
+          field.setAttribute('aria-describedby', ids.join(' '));
+        }
+      }
+    }
   }
 
   async function submit(event: Event): Promise<void> {
@@ -443,7 +472,10 @@ export function enhanceForms(
           return;
         }
         observeTrees();
-        for (const [form, entry] of entries) if (!contains(form)) release(form, entry);
+        for (const [form, entry] of entries) {
+          if (!contains(form)) release(form, entry);
+          else refreshErrorIds(form, entry);
+        }
       })
     : undefined;
   let observedTrees: Node[] = [];

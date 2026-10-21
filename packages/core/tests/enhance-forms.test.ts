@@ -645,6 +645,81 @@ describe('enhanceForms', () => {
 });
 
 describe('enhanced validation errors in shadow trees', () => {
+  it.each([
+    ['open', 'append'],
+    ['open', 'prepend'],
+    ['closed', 'append'],
+    ['closed', 'prepend'],
+  ] as const)(
+    'preserves rendered error associations after a %s-tree %s move',
+    async (mode, order) => {
+      const hosts = [document.createElement('div'), document.createElement('div')];
+      document.body.append(...hosts);
+      const roots = hosts.map((host) => host.attachShadow({ mode }));
+      const forms = roots.map((root) => {
+        root.innerHTML =
+          '<form data-purity-enhance method="post" action="/save"><input name="name"><button>Save</button></form>';
+        return root.querySelector('form')!;
+      });
+      const controllers = forms.map((form, i) =>
+        enhanceForms(form, {
+          fetch: async () =>
+            Response.json({ fieldErrors: { name: i ? 'ERROR B' : 'ERROR A' } }, { status: 422 }),
+        }),
+      );
+      cleanups.push(...controllers.map((controller) => controller.dispose));
+      forms.forEach((form) => submit(form));
+      await Promise.all(controllers.map((controller, i) => finished(controller, forms[i])));
+      const error = (form: HTMLFormElement) => form.querySelector('[data-purity-field-error]')!;
+      expect(error(forms[0]).id).toBe(error(forms[1]).id);
+      const states = controllers.map((controller, i) => controller.getState(forms[i])());
+      roots[1][order](forms[0]);
+      await new Promise((done) => setTimeout(done, 0));
+      forms.forEach((form, i) => {
+        const id = form.querySelector('input')!.getAttribute('aria-describedby')!;
+        expect(roots[1].getElementById(id)?.textContent).toBe(i ? 'ERROR B' : 'ERROR A');
+        expect(controllers[i].getState(form)()).toBe(states[i]);
+      });
+      expect(error(forms[0]).id).not.toBe(error(forms[1]).id);
+    },
+  );
+
+  it.each(['open', 'closed'] as const)(
+    'updates only owned error references after a validated %s-tree move',
+    async (mode) => {
+      const hosts = [document.createElement('div'), document.createElement('div')];
+      document.body.append(...hosts);
+      const [a, b] = hosts.map((host) => host.attachShadow({ mode }));
+      a.innerHTML =
+        '<form data-purity-enhance method="post" action="/save"><input name="first"><input name="second" aria-describedby="purity-form-error-1"><button>Save</button></form>';
+      b.innerHTML =
+        '<p id="purity-form-error-1">Existing help 1</p><p id="purity-form-error-2">Existing help 2</p>';
+      const form = a.querySelector('form')!;
+      const controller = enhanceForms(form, {
+        fetch: async () =>
+          Response.json({ fieldErrors: { first: 'FIRST', second: 'SECOND' } }, { status: 422 }),
+      });
+      cleanups.push(controller.dispose);
+      submit(form);
+      await finished(controller, form);
+      b.append(form);
+      await new Promise((done) => setTimeout(done, 0));
+      const fields = Array.from(form.querySelectorAll('input'));
+      const errors = Array.from(form.querySelectorAll('[data-purity-field-error]'));
+      expect(
+        errors.every((error) => !['purity-form-error-1', 'purity-form-error-2'].includes(error.id)),
+      ).toBe(true);
+      expect(fields[0].getAttribute('aria-describedby')).toBe(errors[0].id);
+      expect(fields[1].getAttribute('aria-describedby')).toBe(
+        `purity-form-error-1 ${errors[1].id}`,
+      );
+      controller.dispose();
+      expect(fields[0].hasAttribute('aria-describedby')).toBe(false);
+      expect(fields[1].getAttribute('aria-describedby')).toBe('purity-form-error-1');
+      expect(b.getElementById('purity-form-error-1')?.textContent).toBe('Existing help 1');
+    },
+  );
+
   it.each([false, true])('handles a control shadowing getRootNode (error: %s)', async (error) => {
     const { root, form } = fixture();
     const control = document.createElement('input');

@@ -56,6 +56,8 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Fixed and improved
 
+- Preserve field-error accessibility references when validated forms move between
+  shadow trees containing conflicting generated IDs.
 - Cancel enhanced form requests and restore their state when forms or their hosts
   are removed inside shadow trees, while preserving connected synchronous moves.
 - Keep asynchronous form validation messages associated with the correct field

@@ -24,8 +24,9 @@ try {
         const inputs = page.locator('#container input');
         await inputs.last().waitFor();
         assert.equal(await inputs.count(), 100);
-        for (const phase of ['created', 'updated', 'cleared']) {
-          if (phase === 'updated') {
+        for (const phase of ['created', 'updated', 'cleared', 'recreated']) {
+          if (phase === 'recreated') await page.locator('#create-100').click();
+          if (phase === 'updated' || phase === 'recreated') {
             await page.locator('#update-all').click();
             assert.deepEqual(
               await inputs.evaluateAll((nodes) => nodes.map((node) => node.value)),

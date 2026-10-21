@@ -152,7 +152,9 @@ const fragment = each(
       </div>
     ` as unknown as HTMLElement;
   },
-  (field: FieldEntry) => field.id,
+  // Each Create action owns fresh signals, even when numeric IDs repeat.
+  // Match Solid's object-keyed For so inputs bind to the new field objects.
+  (field: FieldEntry) => field,
 );
 container.appendChild(fragment);
 

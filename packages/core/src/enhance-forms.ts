@@ -270,7 +270,7 @@ export function enhanceForms(
     const message = result.message || (success ? messages.success : messages.failure);
     // ARIA ID references resolve within the form's tree, including closed
     // shadow roots that document.getElementById cannot search.
-    const errorRoot = form.getRootNode() as Document | ShadowRoot;
+    const errorRoot = view!.Node.prototype.getRootNode.call(form) as Document | ShadowRoot;
     let firstField: HTMLElement | undefined;
     for (const [name, text] of Object.entries(fieldErrors)) {
       if (!text) continue;

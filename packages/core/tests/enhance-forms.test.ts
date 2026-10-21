@@ -553,6 +553,28 @@ describe('enhanceForms', () => {
 });
 
 describe('enhanced validation errors in shadow trees', () => {
+  it.each([false, true])('handles a control shadowing getRootNode (error: %s)', async (error) => {
+    const { root, form } = fixture();
+    const control = document.createElement('input');
+    control.name = 'getRootNode';
+    form.append(control);
+    // JSDOM does not implement native form named-property access for this method.
+    Object.defineProperty(form, 'getRootNode', { value: control, configurable: true });
+    const controller = enhanceForms(root, {
+      fetch: () =>
+        Promise.resolve(
+          Response.json(error ? { fieldErrors: { name: 'Invalid' } } : {}, {
+            status: error ? 422 : 200,
+          }),
+        ),
+    });
+    cleanups.push(controller.dispose);
+    submit(form);
+    await finished(controller, form);
+    expect(controller.getState(form)().status).toBe(error ? 'error' : 'success');
+    if (error) expect(form.querySelector('[data-purity-field-error]')?.textContent).toBe('Invalid');
+  });
+
   it.each(['open', 'closed'] as const)(
     'keeps a later submission associated with its own error after an older %s-tree response',
     async (mode) => {

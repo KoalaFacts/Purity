@@ -168,6 +168,11 @@ export function manageNavTransitions(options: ManageNavTransitionsOptions = {}):
   let inFlight: AbortController | null = null;
 
   const wrapper: NavigateWrapper = (url, replace, update) => {
+    // Every navigation supersedes the previous loader, including routes that
+    // skip animation. Clear first because abort callbacks can run teardown.
+    const previous = inFlight;
+    inFlight = null;
+    previous?.abort();
     if (prefersReducedMotion()) {
       update();
       return;
@@ -176,13 +181,10 @@ export function manageNavTransitions(options: ManageNavTransitionsOptions = {}):
       update();
       return;
     }
-    // Supersede any prior in-flight awaitNavigation. The previous
-    // transition is still running in the background; its abort handler
-    // will see `signal.aborted` and bail out. We then mint a fresh
-    // controller for THIS navigation. Even when `awaitNavigation` is not
+    // Mint a fresh controller for this animated navigation. Even when
+    // `awaitNavigation` is not
     // configured we still cycle the controller — keeps the contract
     // simple: one navigation, one signal lifetime.
-    if (inFlight) inFlight.abort();
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     inFlight = controller;
     // Settle hook clears the slot only if WE are still the live one —

@@ -56,6 +56,10 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Fixed and improved
 
+- Update the documentation site to markdown-it 15.0.3 to fix parser denial-of-service
+  advisories, without changing framework runtime dependencies.
+- Cancel a pending navigation loader when the next route skips view transitions,
+  including routes that honor a newly enabled reduced-motion preference.
 - Keep shared query requests and browser revalidation alive when their first
   consumer unmounts, while releasing each consumer's custom-state bindings.
 - Keep pending resource requests and retries alive when source dependencies

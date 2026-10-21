@@ -268,6 +268,9 @@ export function enhanceForms(
     const hasErrors = Object.values(fieldErrors).some(Boolean);
     const success = ok && !hasErrors;
     const message = result.message || (success ? messages.success : messages.failure);
+    // ARIA ID references resolve within the form's tree, including closed
+    // shadow roots that document.getElementById cannot search.
+    const errorRoot = form.getRootNode() as Document | ShadowRoot;
     let firstField: HTMLElement | undefined;
     for (const [name, text] of Object.entries(fieldErrors)) {
       if (!text) continue;
@@ -276,7 +279,7 @@ export function enhanceForms(
       const error = doc.createElement('p');
       do {
         error.id = `purity-form-error-${++nextErrorId}`;
-      } while (doc.getElementById(error.id));
+      } while (errorRoot.getElementById(error.id));
       error.textContent = text;
       error.setAttribute('data-purity-field-error', name);
       const last = matches[matches.length - 1];

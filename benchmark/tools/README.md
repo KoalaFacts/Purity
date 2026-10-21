@@ -85,7 +85,7 @@ screen-reader acceptance criteria that remain unverified.
 `npm run test:browser:binding -w purity-benchmark` builds the production
 benchmark and checks both Purity and Solid in Chromium, Firefox and WebKit.
 It verifies that Clear All clears user-entered values after creation, a bulk
-update and a previous clear. Passing this regression does not establish full
+update, a previous clear and recreation with the same numeric IDs. Passing this regression does not establish full
 feature parity or a performance ranking; the fixtures still differ in markup
 and accessibility associations. Continuing comparison work is tracked in
 [#276](https://github.com/KoalaFacts/Purity/issues/276).

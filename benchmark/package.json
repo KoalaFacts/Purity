@@ -25,7 +25,7 @@
     "@vitejs/plugin-vue": "^6.0.10",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "solid-js": "2.0.0-rc.14",
+    "solid-js": "2.0.0-rc.15",
     "svelte": "^5.57.1",
     "vue": "3.6.0-rc.11"
   },

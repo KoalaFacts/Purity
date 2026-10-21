@@ -442,17 +442,37 @@ export function enhanceForms(
           dispose();
           return;
         }
+        observeTrees();
         for (const [form, entry] of entries) if (!contains(form)) release(form, entry);
       })
     : undefined;
-  // Observe the document as well so removing the entire root cancels its requests.
-  observer?.observe(doc, { childList: true, subtree: true });
-  if (root !== doc) observer?.observe(root, { childList: true, subtree: true });
+  let observedTrees: Node[] = [];
+  function observeTrees(): void {
+    if (!observer) return;
+    const trees: Node[] = scope === doc ? [doc] : [doc, scope];
+    let tree = view!.Node.prototype.getRootNode.call(scope);
+    // Document observers do not cross shadow boundaries. Follow the whole host
+    // chain, which can change even when the scope stays in the same inner tree.
+    while (tree instanceof view!.ShadowRoot) {
+      if (tree !== scope) trees.push(tree);
+      tree = view!.Node.prototype.getRootNode.call(tree.host);
+    }
+    if (
+      trees.length === observedTrees.length &&
+      trees.every((target, i) => target === observedTrees[i])
+    )
+      return;
+    observer.disconnect();
+    for (const target of trees) observer.observe(target, { childList: true, subtree: true });
+    observedTrees = trees;
+  }
+  observeTrees();
   function dispose(): void {
     if (disposed) return;
     disposed = true;
     scope.removeEventListener('submit', listener);
     observer?.disconnect();
+    observedTrees = [];
     for (const [form, entry] of entries) release(form, entry);
   }
   onDispose(dispose);

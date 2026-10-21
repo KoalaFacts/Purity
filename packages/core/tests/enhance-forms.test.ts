@@ -479,6 +479,98 @@ describe('enhanceForms', () => {
     expect(form.textContent).not.toContain('Late');
   });
 
+  it.each(['open', 'closed'] as const)(
+    'releases a directly enhanced form removed from a quiet %s shadow tree',
+    async (mode) => {
+      const host = document.createElement('div');
+      document.body.append(host);
+      const shadow = host.attachShadow({ mode });
+      shadow.innerHTML =
+        '<form data-purity-enhance method="post" action="/save"><input name="name" value="Ada"><button>Save</button></form>';
+      const form = shadow.querySelector('form')!;
+      const button = form.querySelector('button')!;
+      const transport = deferred();
+      const controller = enhanceForms(form, { fetch: transport.fetch });
+      cleanups.push(controller.dispose);
+      submit(form);
+      // Drain pending status mutations before removal; no document mutations follow.
+      await new Promise((done) => setTimeout(done, 0));
+      expect(controller.getState(form)().status).toBe('pending');
+      form.remove();
+      await new Promise((done) => setTimeout(done, 0));
+      expect(transport.fetch.mock.calls[0][1]?.signal?.aborted).toBe(true);
+      expect(controller.getState(form)().status).toBe('idle');
+      expect(button.disabled).toBe(false);
+      expect(form.hasAttribute('aria-busy')).toBe(false);
+      expect(form.hasAttribute('data-purity-pending')).toBe(false);
+      expect(form.querySelector('[data-purity-form-status]')).toBeNull();
+      transport.resolve(Response.json({ message: 'Stale!' }));
+      await new Promise((done) => setTimeout(done, 0));
+      expect(form.textContent).not.toContain('Stale!');
+      shadow.append(form);
+      expect(submit(form).defaultPrevented).toBe(false);
+      expect(transport.fetch).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['same', 'different'] as const)(
+    'preserves a synchronous %s-shadow-tree move and observes subsequent removal',
+    async (destination) => {
+      const host = document.createElement('div');
+      const otherHost = document.createElement('div');
+      document.body.append(host, otherHost);
+      const shadow = host.attachShadow({ mode: 'closed' });
+      const other = otherHost.attachShadow({ mode: 'closed' });
+      shadow.innerHTML =
+        '<form data-purity-enhance method="post" action="/save"><input name="name"><button>Save</button></form><div></div>';
+      const form = shadow.querySelector('form')!;
+      const transport = deferred();
+      const controller = enhanceForms(form, { fetch: transport.fetch });
+      cleanups.push(controller.dispose);
+      submit(form);
+      await new Promise((done) => setTimeout(done, 0));
+      (destination === 'same' ? shadow.querySelector('div')! : other).append(form);
+      await new Promise((done) => setTimeout(done, 0));
+      expect(transport.fetch.mock.calls[0][1]?.signal?.aborted).toBe(false);
+      expect(controller.getState(form)().status).toBe('pending');
+      form.remove();
+      await new Promise((done) => setTimeout(done, 0));
+      expect(transport.fetch.mock.calls[0][1]?.signal?.aborted).toBe(true);
+      expect(controller.getState(form)().status).toBe('idle');
+    },
+  );
+
+  it.each(['form', 'shadow'] as const)(
+    'tracks outer shadow ancestors when an enhanced %s moves with its host',
+    async (scope) => {
+      const a = document.createElement('div');
+      const b = document.createElement('div');
+      document.body.append(a, b);
+      const outerA = a.attachShadow({ mode: 'closed' });
+      const outerB = b.attachShadow({ mode: 'closed' });
+      const innerHost = document.createElement('div');
+      outerA.append(innerHost);
+      const inner = innerHost.attachShadow({ mode: 'closed' });
+      inner.innerHTML =
+        '<form data-purity-enhance method="post" action="/save"><input name="name"><button>Save</button></form>';
+      const form = inner.querySelector('form')!;
+      const transport = deferred();
+      const controller = enhanceForms(scope === 'form' ? form : inner, { fetch: transport.fetch });
+      cleanups.push(controller.dispose);
+      submit(form);
+      await new Promise((done) => setTimeout(done, 0));
+      outerB.append(innerHost);
+      await new Promise((done) => setTimeout(done, 0));
+      expect(transport.fetch.mock.calls[0][1]?.signal?.aborted).toBe(false);
+      expect(controller.getState(form)().status).toBe('pending');
+      innerHost.remove();
+      await new Promise((done) => setTimeout(done, 0));
+      expect(transport.fetch.mock.calls[0][1]?.signal?.aborted).toBe(true);
+      expect(controller.getState(form)().status).toBe('idle');
+      expect(form.querySelector('button')!.disabled).toBe(false);
+    },
+  );
+
   it('supports dynamic multipart forms and submitter overrides', async () => {
     const { root, form, button } = fixture();
     form.remove();

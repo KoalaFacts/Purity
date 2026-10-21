@@ -505,3 +505,62 @@ describe('manageNavTransitions() — audit-v2 regressions', () => {
     }
   });
 });
+
+describe('unanimated navigation supersedes pending loaders', () => {
+  it.each([
+    ['predicate', false],
+    ['predicate', true],
+    ['reduced-motion', false],
+    ['reduced-motion', true],
+  ] as const)(
+    'cancels before %s bypass (replace=%s) and preserves the next wait',
+    async (bypass, replace) => {
+      const captured: Array<() => Promise<void>> = [];
+      (document as DocStub).startViewTransition = (cb) => {
+        captured.push(cb as () => Promise<void>);
+        return {};
+      };
+      const originalMM = window.matchMedia;
+      let skip = false;
+      window.matchMedia = (() => ({
+        matches: bypass === 'reduced-motion' && skip,
+      })) as typeof window.matchMedia;
+      const signals: AbortSignal[] = [];
+      const pending: Promise<void>[] = [];
+      teardown = manageNavTransitions({
+        shouldTransition: () => bypass !== 'predicate' || !skip,
+        awaitNavigation: (_url, _replace, { signal }) => {
+          signals.push(signal);
+          return new Promise<void>((resolve) =>
+            signal.addEventListener('abort', () => resolve(), { once: true }),
+          );
+        },
+      });
+      try {
+        navigate('/waiting');
+        pending.push(captured[0]!());
+        expect(signals[0].aborted).toBe(false);
+        skip = true;
+        navigate('/plain', { replace });
+        expect(window.location.pathname).toBe('/plain');
+        expect(signals[0].aborted).toBe(true);
+        expect(captured).toHaveLength(1);
+        expect(signals).toHaveLength(1);
+        skip = false;
+        navigate('/again');
+        pending.push(captured[1]!());
+        await pending[0];
+        expect(signals[1].aborted).toBe(false);
+        teardown();
+        teardown = null;
+        await pending[1];
+        expect(signals[1].aborted).toBe(true);
+      } finally {
+        teardown?.();
+        teardown = null;
+        window.matchMedia = originalMM;
+        await Promise.all(pending);
+      }
+    },
+  );
+});

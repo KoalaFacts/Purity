@@ -56,6 +56,8 @@ rendering behaviour that existing apps can observe; read the upgrade notes.
 
 ### Fixed and improved
 
+- Keep asynchronous form validation messages associated with the correct field
+  inside shadow roots, including independently enhanced sibling forms.
 - Update the documentation site to markdown-it 15.0.3 to fix parser denial-of-service
   advisories, without changing framework runtime dependencies.
 - Cancel a pending navigation loader when the next route skips view transitions,

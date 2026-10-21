@@ -551,3 +551,91 @@ describe('enhanceForms', () => {
     },
   );
 });
+
+describe('enhanced validation errors in shadow trees', () => {
+  it.each([false, true])('handles a control shadowing getRootNode (error: %s)', async (error) => {
+    const { root, form } = fixture();
+    const control = document.createElement('input');
+    control.name = 'getRootNode';
+    form.append(control);
+    // JSDOM does not implement native form named-property access for this method.
+    Object.defineProperty(form, 'getRootNode', { value: control, configurable: true });
+    const controller = enhanceForms(root, {
+      fetch: () =>
+        Promise.resolve(
+          Response.json(error ? { fieldErrors: { name: 'Invalid' } } : {}, {
+            status: error ? 422 : 200,
+          }),
+        ),
+    });
+    cleanups.push(controller.dispose);
+    submit(form);
+    await finished(controller, form);
+    expect(controller.getState(form)().status).toBe(error ? 'error' : 'success');
+    if (error) expect(form.querySelector('[data-purity-field-error]')?.textContent).toBe('Invalid');
+  });
+
+  it.each(['open', 'closed'] as const)(
+    'keeps a later submission associated with its own error after an older %s-tree response',
+    async (mode) => {
+      const host = document.createElement('div');
+      document.body.append(host);
+      const root = host.attachShadow({ mode });
+      root.innerHTML =
+        '<form data-purity-enhance method="post" action="/save"><input name="name"><button>Save A</button></form><form data-purity-enhance method="post" action="/save"><input name="name"><button>Save B</button></form>';
+      const [a, b] = Array.from(root.querySelectorAll('form'));
+      const first = deferred(),
+        second = deferred();
+      const ca = enhanceForms(a, { fetch: first.fetch }),
+        cb = enhanceForms(b, { fetch: second.fetch });
+      cleanups.push(ca.dispose, cb.dispose);
+      submit(a);
+      submit(b);
+      second.resolve(Response.json({ fieldErrors: { name: 'ERROR B' } }, { status: 422 }));
+      await finished(cb, b);
+      const field = b.querySelector('input')!;
+      const describedMessage = () =>
+        root.getElementById(field.getAttribute('aria-describedby')!)?.textContent;
+      expect(describedMessage()).toBe('ERROR B');
+      first.resolve(Response.json({ fieldErrors: { name: 'ERROR A' } }, { status: 422 }));
+      await finished(ca, a);
+      expect(cb.getState(b)().fieldErrors.name).toBe('ERROR B');
+      expect(describedMessage()).toBe('ERROR B');
+      expect(a.querySelector('[data-purity-field-error]')!.id).not.toBe(
+        b.querySelector('[data-purity-field-error]')!.id,
+      );
+      ca.dispose();
+      expect(describedMessage()).toBe('ERROR B');
+    },
+  );
+
+  it.each(['open', 'closed'] as const)(
+    'avoids an existing error ID inside a %s shadow tree',
+    async (mode) => {
+      const host = document.createElement('div');
+      document.body.append(host);
+      const root = host.attachShadow({ mode });
+      root.innerHTML =
+        '<p id="purity-form-error-1">Existing help</p><form data-purity-enhance method="post" action="/save"><input name="name" aria-describedby="purity-form-error-1"><button>Save</button></form>';
+      const form = root.querySelector('form')!;
+      const controller = enhanceForms(root, {
+        fetch: () =>
+          Promise.resolve(Response.json({ fieldErrors: { name: 'New error' } }, { status: 422 })),
+      });
+      cleanups.push(controller.dispose);
+      submit(form);
+      await finished(controller, form);
+      const error = form.querySelector('[data-purity-field-error]')!;
+      expect(error.id).not.toBe('purity-form-error-1');
+      const field = form.querySelector('input')!;
+      expect(
+        field
+          .getAttribute('aria-describedby')!
+          .split(' ')
+          .map((id) => root.getElementById(id)?.textContent),
+      ).toEqual(['Existing help', 'New error']);
+      controller.dispose();
+      expect(field.getAttribute('aria-describedby')).toBe('purity-form-error-1');
+    },
+  );
+});

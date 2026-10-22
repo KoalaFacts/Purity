@@ -130,10 +130,17 @@ try {
             const counts = [0, 10, 20, 20, 20, 19, 1000, 1000, 2000, 0, 1000, 10000, 0, 0, 10];
             for (const page of pages) {
               assert.equal(await page.locator('tbody tr').count(), counts[step]);
-              for (const name of ['Select row', 'Remove row']) {
+              assert.equal(
+                await page.getByRole('link', { name: 'Remove row', exact: true }).count(),
+                counts[step],
+              );
+              if (counts[step]) {
+                const row = page.locator('tbody tr').first();
+                const label = await row.locator('.lbl').textContent();
                 assert.equal(
-                  await page.getByRole('link', { name, exact: true }).count(),
-                  counts[step],
+                  await row.getByRole('link', { name: label!, exact: true }).count(),
+                  1,
+                  'Selection link accessible name preserves its visible row label',
                 );
               }
               if (action === '#run-10') {

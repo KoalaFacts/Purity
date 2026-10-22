@@ -94,7 +94,8 @@ row and binding fixtures' semantic DOM under `#main` after create, append, updat
 removal, swap, clear, recreation and reload actions. Elements, attributes,
 input values and text must match. Framework comments, split text nodes,
 formatting whitespace and CSS serialization are normalized; semantic wrappers
-and accessibility attributes are not excluded. Gzipped raw JSON snapshots are
+and accessibility attributes are not excluded. Selection links retain their visible row
+text as the accessible name; removal links use `Remove row`. Gzipped raw JSON snapshots are
 saved under `benchmark/dist/fixture-parity` and uploaded by CI.
 
 The row fixtures generate the same LCG data inside the original actions. The

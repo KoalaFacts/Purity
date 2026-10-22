@@ -266,7 +266,7 @@ render(
         <tr class={row.id === selectedId() ? 'danger' : ''}>
           <td class="col-md-1">{row.id}</td>
           <td class="col-md-4">
-            <a href="#" class="lbl" aria-label="Select row">
+            <a href="#" class="lbl">
               {row.label()}
             </a>
           </td>

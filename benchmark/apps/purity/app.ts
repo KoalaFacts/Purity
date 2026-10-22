@@ -238,7 +238,7 @@ const fragment = each(
     return html`
       <tr class=${() => (selectedId() === item().id ? 'danger' : '')}>
         <td class="col-md-1">${() => String(item().id)}</td>
-        <td class="col-md-4"><a href="#" class="lbl" aria-label="Select row">${() => item().label}</a></td>
+        <td class="col-md-4"><a href="#" class="lbl">${() => item().label}</a></td>
         <td class="col-md-1">
           <a href="#" class="remove" aria-label="Remove row"
             ><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span

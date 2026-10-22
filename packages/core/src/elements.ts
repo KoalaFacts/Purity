@@ -25,10 +25,10 @@ import { disposeScope, watch } from './signals.ts';
 
 // Unmount a context's child contexts, depth-first in reverse order (mirrors
 // unmountContext in component.ts).
-function unmountChildren(ctx: ComponentContext): void {
+function unmountChildren(ctx: ComponentContext, rollback = false): void {
   const children = ctx.children;
   if (!children) return;
-  for (let i = children.length - 1; i >= 0; i--) unmountChildContext(children[i]);
+  for (let i = children.length - 1; i >= 0; i--) unmountChildContext(children[i], rollback);
   ctx.children = null;
 }
 
@@ -43,9 +43,9 @@ function unmountChildren(ctx: ComponentContext): void {
 // nothing else tears them down. Guarded by `_isDestroyed` so a child that was
 // already unmounted (e.g. a nested custom element whose own
 // `disconnectedCallback` already ran) is skipped rather than double-torn-down.
-function unmountChildContext(ctx: ComponentContext): void {
+function unmountChildContext(ctx: ComponentContext, rollback = false): void {
   if (ctx._isDestroyed) return;
-  unmountChildren(ctx);
+  unmountChildren(ctx, rollback);
 
   // Remove DOM
   if (ctx.nodes) {
@@ -63,7 +63,7 @@ function unmountChildContext(ctx: ComponentContext): void {
   ctx._isMounted = false;
 
   // Run destroy callbacks
-  runCallbacks(ctx.destroyed, ctx);
+  runCallbacks(ctx.destroyed, rollback ? undefined : ctx);
   ctx.destroyed = null;
 
   // Unlink from parent so a later parent teardown doesn't revisit this node.
@@ -84,7 +84,6 @@ function runCallbacks(arr: (() => void)[] | null, ctx?: ComponentContext): void 
       if (ctx) {
         ctx._handleError(err);
       } else {
-        /* v8 ignore next -- ctx always provided at call sites; defensive */
         console.error('[Purity] Error:', err);
       }
     }
@@ -334,26 +333,27 @@ function runRender<P, S>(
   slotAccessors: any,
   ctx: ComponentContext,
 ): { result: Node | DocumentFragment; exposed: Record<string, unknown> } {
-  let exposed: Record<string, unknown> = {};
-
   pushContext(ctx);
   let output: Node | DocumentFragment | RenderOutput;
   try {
-    output = renderFn(props, slotAccessors);
-  } finally {
-    popContext();
+    try {
+      output = renderFn(props, slotAccessors);
+    } finally {
+      popContext();
+    }
+  } catch (error) {
+    // A failed initialization has no destroy lifecycle. Cleanup failures
+    // must not strand other work or replace the original render error.
+    ctx.destroyed = null;
+    unmountChildContext(ctx, true);
+    throw error;
   }
 
-  let result: Node | DocumentFragment;
   if (output && typeof output === 'object' && 'view' in output) {
     const ro = output as RenderOutput;
-    result = ro.view;
-    exposed = ro.expose ?? {};
-  } else {
-    result = output as Node | DocumentFragment;
+    return { result: ro.view, exposed: ro.expose ?? {} };
   }
-
-  return { result, exposed };
+  return { result: output as Node | DocumentFragment, exposed: {} };
 }
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ import { html } from '../src/compiler/compile.ts';
 import { isHydrating, withHydration } from '../src/compiler/hydrate-runtime.ts';
 import { hydrate, mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
 import { each, inflateDeferredEach, list, type DeferredEach } from '../src/control.ts';
+import { component } from '../src/elements.ts';
 import { ComponentContext, getCurrentContext, popContext, pushContext } from '../src/scope.ts';
 import { disposeScope, state, watch } from '../src/signals.ts';
 
@@ -456,4 +457,129 @@ describe('failed list row initialization', () => {
     expect(isHydrating()).toBe(false);
     expect(getCurrentContext()).toBeNull();
   });
+});
+
+describe('failed component factory initialization', () => {
+  it('releases subscriptions immediately when a standalone factory render throws', async () => {
+    const value = state(0);
+    let runs = 0;
+    let disposed = 0;
+    let destroyed = 0;
+    const failure = new Error('factory render failed');
+    const Broken = component('p-rollback-factory', () => {
+      stops.push(
+        watch(() => {
+          value();
+          runs++;
+        }),
+      );
+      onDispose(() => disposed++);
+      onDestroy(() => destroyed++);
+      throw failure;
+    });
+    expect(() => Broken({})).toThrow(failure);
+    value(1);
+    await tick();
+    expect(runs).toBe(1);
+    expect(disposed).toBe(1);
+    expect(destroyed).toBe(0);
+    expect(getCurrentContext()).toBeNull();
+  });
+});
+
+it('releases a failed factory and its completed child before the surviving owner unmounts', async () => {
+  const value = state(0);
+  const host = document.createElement('div');
+  const events: string[] = [];
+  let runs = 0;
+  const Child = component('p-rollback-completed-child', () => {
+    onMount(() => events.push('child-mounted'));
+    onDestroy(() => events.push('child-destroyed'));
+    stops.push(
+      watch(() => {
+        value();
+        runs++;
+      }),
+    );
+    return document.createElement('span');
+  });
+  const Broken = component('p-rollback-owned-factory', () => {
+    Child({});
+    onDestroy(() => events.push('failed-destroyed'));
+    onDispose(() => events.push('failed-disposed'));
+    throw new Error('owned factory failed');
+  });
+  const parent = mount(() => {
+    expect(() => Broken({})).toThrow('owned factory failed');
+    return document.createElement('p');
+  }, host);
+  value(1);
+  await tick();
+  expect(runs).toBe(1);
+  expect(events).toEqual(['child-destroyed', 'failed-disposed']);
+  parent.unmount();
+  parent.unmount();
+  expect(events).toEqual(['child-destroyed', 'failed-disposed']);
+  expect(getCurrentContext()).toBeNull();
+});
+
+it('preserves the render failure and releases all work when a completed child destroy hook throws', async () => {
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const value = state(0);
+  let runs = 0;
+  let disposed = 0;
+  const failure = new Error('original render failure');
+  const Child = component('p-rollback-throwing-destroy', () => {
+    onDestroy(() => {
+      throw new Error('child destroy failed');
+    });
+    return document.createElement('span');
+  });
+  const Broken = component('p-rollback-cleanup-error', () => {
+    stops.push(
+      watch(() => {
+        value();
+        runs++;
+      }),
+    );
+    onDispose(() => disposed++);
+    Child({});
+    throw failure;
+  });
+  expect(() => Broken({})).toThrow(failure);
+  value(1);
+  await tick();
+  expect(runs).toBe(1);
+  expect(disposed).toBe(1);
+  expect(logged).toHaveBeenCalled();
+  expect(getCurrentContext()).toBeNull();
+});
+
+it('restores the surviving caller context before failed factory cleanup creates new work', async () => {
+  const value = state(0);
+  let cleanupOwner: unknown;
+  let owner: unknown;
+  let runs = 0;
+  const Broken = component('p-rollback-cleanup-owner', () => {
+    onDispose(() => {
+      cleanupOwner = getCurrentContext();
+      stops.push(
+        watch(() => {
+          value();
+          runs++;
+        }),
+      );
+    });
+    throw new Error('cleanup owner failed');
+  });
+  const parent = mount(() => {
+    owner = getCurrentContext();
+    expect(() => Broken({})).toThrow('cleanup owner failed');
+    return document.createElement('span');
+  }, document.createElement('div'));
+  expect(cleanupOwner).toBe(owner);
+  parent.unmount();
+  value(1);
+  await tick();
+  expect(runs).toBe(1);
 });

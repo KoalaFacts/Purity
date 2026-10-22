@@ -85,9 +85,35 @@ screen-reader acceptance criteria that remain unverified.
 `npm run test:browser:binding -w purity-benchmark` builds the production
 benchmark and checks both Purity and Solid in Chromium, Firefox and WebKit.
 It verifies that Clear All clears user-entered values after creation, a bulk
-update, a previous clear and recreation with the same numeric IDs. Passing this regression does not establish full
-feature parity or a performance ranking; the fixtures still differ in markup
-and accessibility associations. Continuing comparison work is tracked in
+update, a previous clear and recreation with the same numeric IDs. All 100
+inputs must have explicit associated labels; clicking a label must focus its
+input.
+
+After building, `npm run test:browser:parity -w purity-benchmark` compares the
+row and binding fixtures' semantic DOM under `#main` after create, append, update, selection,
+removal, swap, clear, recreation and reload actions. Elements, attributes,
+input values and text must match. Framework comments, split text nodes,
+formatting whitespace and CSS serialization are normalized; semantic wrappers
+and accessibility attributes are not excluded. Gzipped raw JSON snapshots are
+saved under `benchmark/dist/fixture-parity` and uploaded by CI.
+
+The row fixtures generate the same LCG data inside the original actions. The
+seed starts at 1 and IDs start at 1 on page load; neither resets on create or
+clear. A fixed first-label sequence and reload check guard this contract. The
+field fixture keeps object identity keys and both pages retain all original
+selectors, including `#result-container` (now present in Solid too).
+
+Both checks default to all three engines. For an explicitly scoped local run,
+use `node benchmark/tools/binding-browser-check.ts chromium` and
+`node benchmark/tools/fixture-parity-browser-check.ts chromium` after building.
+CI rejects a single-engine selection; a local Chromium result never implies
+Firefox or WebKit passed.
+
+This is fixture correctness evidence, not a runtime optimization or a new
+performance ranking. Row state-update strategies still differ: Purity copies
+row objects, while Solid updates individual label signals. Versions, timing
+boundaries, operation sizes and size budgets stay unchanged. Old measurements
+remain attached to their source SHA. Continuing comparison work is tracked in
 [#276](https://github.com/KoalaFacts/Purity/issues/276).
 
 ```bash

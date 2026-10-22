@@ -69,11 +69,11 @@ function hBtn(id: string, label: string, handler: () => void) {
   </button>`;
 }
 
-function ButtonBar() {
+function App() {
   return html`
     <div class="jumbotron">
       <div class="row">
-        <div class="col-md-6"><h1>Purity (Binding)</h1></div>
+        <div class="col-md-6"><h1>Two-way binding</h1></div>
         <div class="col-md-6">
           <div class="row">
             <div class="col-sm-6 smallpad">
@@ -126,12 +126,14 @@ function ButtonBar() {
                 Read All
               </button>
             </div>
-            ${hBtn('create-10', 'Create 10', () => createFields(10))}
-            ${hBtn('create-10k', 'Create 10k', () => createFields(10000))}
+            ${hBtn('create-10', 'Create 10 Fields', () => createFields(10))}
+            ${hBtn('create-10k', 'Create 10,000 Fields', () => createFields(10000))}
           </div>
         </div>
       </div>
     </div>
+    <div id="result-container"><div id="result">${() => resultMsg()}</div></div>
+    <div id="container">${FieldList()}</div>
   `;
 }
 
@@ -139,37 +141,22 @@ function ButtonBar() {
 // Field list rendering
 // ---------------------------------------------------------------------------
 
-const container = document.getElementById('container')!;
-
-const fragment = each(
-  () => fields(),
-  (field: () => FieldEntry) => {
-    const f = field();
-    return html`
+function FieldList() {
+  return each(
+    () => fields(),
+    (field: () => FieldEntry) => {
+      const f = field();
+      return html`
       <div>
-        <label>Field ${String(f.id)}:</label>
-        <input ::value=${f.signal} />
+        <label for=${`field-${f.id}`}>Field ${String(f.id)}:</label>
+        <input id=${`field-${f.id}`} ::value=${f.signal} />
       </div>
     ` as unknown as HTMLElement;
-  },
-  // Each Create action owns fresh signals, even when numeric IDs repeat.
-  // Match Solid's object-keyed For so inputs bind to the new field objects.
-  (field: FieldEntry) => field,
-);
-container.appendChild(fragment);
-
-// ---------------------------------------------------------------------------
-// Result display
-// ---------------------------------------------------------------------------
-
-function Result() {
-  return html`<div id="result">${() => resultMsg()}</div>`;
+    },
+    // Each Create action owns fresh signals, even when numeric IDs repeat.
+    // Match Solid's object-keyed For so inputs bind to the new field objects.
+    (field: FieldEntry) => field,
+  );
 }
 
-mount(Result, document.getElementById('result-container')!);
-
-// ---------------------------------------------------------------------------
-// Mount
-// ---------------------------------------------------------------------------
-
-mount(ButtonBar, document.getElementById('app')!);
+mount(App, document.getElementById('app')!);

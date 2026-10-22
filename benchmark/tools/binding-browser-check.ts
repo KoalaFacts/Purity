@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
-import { chromium, firefox, webkit } from 'playwright';
+import { browserEngines } from './browser-engines.ts';
 import { preview } from 'vite';
 
 // Check both production fixtures before using their timings as a comparison.
@@ -12,7 +12,7 @@ const server = await preview({
 });
 try {
   const base = server.resolvedUrls!.local[0];
-  for (const [engine, launcher] of Object.entries({ chromium, firefox, webkit })) {
+  for (const [engine, launcher] of browserEngines) {
     const browser = await launcher.launch();
     try {
       for (const framework of ['purity', 'solid']) {
@@ -24,6 +24,24 @@ try {
         const inputs = page.locator('#container input');
         await inputs.last().waitFor();
         assert.equal(await inputs.count(), 100);
+        assert.deepEqual(
+          await inputs.evaluateAll((nodes) =>
+            nodes.map((node) => ({
+              id: node.id,
+              labels: Array.from(node.labels ?? [], (label) => label.textContent?.trim()),
+            })),
+          ),
+          Array.from({ length: 100 }, (_, index) => ({
+            id: `field-${index + 1}`,
+            labels: [`Field ${index + 1}:`],
+          })),
+          `${engine}/${framework}: every input has its explicit label`,
+        );
+        await page.locator('label[for="field-1"]').click();
+        assert.equal(
+          await inputs.first().evaluate((node) => node === document.activeElement),
+          true,
+        );
         for (const phase of ['created', 'updated', 'cleared', 'recreated']) {
           if (phase === 'recreated') await page.locator('#create-100').click();
           if (phase === 'updated' || phase === 'recreated') {

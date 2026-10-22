@@ -154,6 +154,18 @@ jobs:
       - name: Check benchmark binding correctness in all three browsers
         run: npm run test:browser:binding -w purity-benchmark
 
+      - name: Check benchmark fixture DOM and data parity in all three browsers
+        id: fixture_parity
+        run: npm run test:browser:parity -w purity-benchmark
+
+      - name: Save benchmark semantic DOM snapshots
+        if: ${{ !cancelled() && steps.fixture_parity.outcome != 'skipped' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: benchmark-fixture-parity-${{ github.run_attempt }}
+          path: benchmark/dist/fixture-parity
+          if-no-files-found: error
+
       - name: 🧠 Check memory retention
         run: npm run test:browser:memory
 

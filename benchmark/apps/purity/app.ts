@@ -73,7 +73,12 @@ interface Row {
 }
 
 let nextId = 1;
-const random = (max: number) => (Math.random() * max) | 0;
+// Like Solid, seed and IDs persist across actions and reset on page load only.
+let seed = 1;
+const random = (max: number) => {
+  seed = (seed * 1664525 + 1013904223) >>> 0;
+  return seed % max;
+};
 const buildLabel = () =>
   `${adjectives[random(adjectives.length)]} ${colours[random(colours.length)]} ${nouns[random(nouns.length)]}`;
 
@@ -151,7 +156,7 @@ function ButtonBar() {
   return html`
     <div class="jumbotron">
       <div class="row">
-        <div class="col-md-6"><h1>Purity</h1></div>
+        <div class="col-md-6"><h1>Keyed rows</h1></div>
         <div class="col-md-6">
           <div class="row">
             <div class="col-sm-6 smallpad">
@@ -208,9 +213,9 @@ function ButtonBar() {
             ${hBtn('run-100', 'Create 100', () => run(100))}
             ${hBtn('run-1k', 'Create 1k', () => run(1000))}
             ${hBtn('run-10k', 'Create 10k', () => run(10000))}
-            ${hBtn('add-10', 'Add 10', () => add(10))} ${hBtn('add-100', 'Add 100', () => add(100))}
-            ${hBtn('add-1k', 'Add 1k', () => add(1000))}
-            ${hBtn('add-10k', 'Add 10k', () => add(10000))}
+            ${hBtn('add-10', 'Append 10', () => add(10))} ${hBtn('add-100', 'Append 100', () => add(100))}
+            ${hBtn('add-1k', 'Append 1k', () => add(1000))}
+            ${hBtn('add-10k', 'Append 10,000', () => add(10000))}
           </div>
         </div>
       </div>
@@ -233,9 +238,9 @@ const fragment = each(
     return html`
       <tr class=${() => (selectedId() === item().id ? 'danger' : '')}>
         <td class="col-md-1">${() => String(item().id)}</td>
-        <td class="col-md-4"><a href="#" class="lbl">${() => item().label}</a></td>
+        <td class="col-md-4"><a href="#" class="lbl" aria-label="Select row">${() => item().label}</a></td>
         <td class="col-md-1">
-          <a href="#" class="remove"
+          <a href="#" class="remove" aria-label="Remove row"
             ><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span
           ></a>
         </td>

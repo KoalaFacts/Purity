@@ -26,6 +26,8 @@ async function runCase(options = {}) {
             : sha,
       });
     }
+    if (command === 'gh' && args[0] === 'api')
+      return (options.releases ?? []).map((release) => JSON.stringify(release)).join('\n');
     if (args[0] === 'rev-parse') return sha;
     if (args[0] === 'ls-remote')
       return (
@@ -100,5 +102,32 @@ for (const failCommand of ['npm', 'ls-remote', 'push'])
   test(`${failCommand} failure prevents Release creation`, async () => {
     const { calls, error } = await runCase({ failCommand });
     assert.match(error.message, /transport/);
-    assert.ok(!calls.some(([cmd]) => cmd === 'gh'));
+    assert.ok(!calls.some(([cmd, operation]) => cmd === 'gh' && operation === 'release'));
   });
+
+test('recovers a previously published Release without creating it again', async () => {
+  const { calls, error } = await runCase({
+    tagSha: sha,
+    releases: [{ tag_name: 'v0.4.0', draft: false, prerelease: false }],
+  });
+  assert.equal(error, undefined);
+  assert.ok(!calls.some((call) => call[1] === 'release' && call[2] === 'create'));
+});
+test('does not silently accept an existing draft or wrong prerelease status', async () => {
+  for (const release of [
+    { draft: true, prerelease: false },
+    { draft: false, prerelease: true },
+  ]) {
+    const { calls, error } = await runCase({
+      tagSha: sha,
+      releases: [{ tag_name: 'v0.4.0', ...release }],
+    });
+    assert.match(error.message, /existing Release/);
+    assert.ok(!calls.some((call) => call[1] === 'release'));
+  }
+});
+test('Release lookup failure does not trigger creation', async () => {
+  const { calls, error } = await runCase({ failCommand: 'api' });
+  assert.match(error.message, /transport/);
+  assert.ok(!calls.some((call) => call[1] === 'release'));
+});

@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Explicit version to publish (e.g. 0.1.0, 0.2.0)'
+        description: 'Exact version matching the selected checkout and all four packages (e.g. 0.4.0)'
         required: true
-        default: '0.3.0'
 
 permissions:
   contents: write
@@ -74,7 +73,7 @@ jobs:
       - name: Install browser engines
         run: npx playwright install --with-deps chromium firefox webkit
 
-      - name: Check packaged SSR node retention
+      - name: Check packaged client and SSR projects
         run: npm run test:browser:ssr-retention
 
       - name: Check rendering security

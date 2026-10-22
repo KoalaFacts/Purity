@@ -142,15 +142,16 @@ each, mount): [koalafacts.github.io/Purity/dashboard](https://koalafacts.github.
 
 ## Status
 
-**Pre-1.0 (`0.3.0`).** The API may break between minor versions until 1.0.
-See the [changelog](./CHANGELOG.md) for upgrade notes.
+**Pre-1.0; 0.4.0 is unreleased.** The API may break between minor versions until 1.0.
+For the 0.3.4 → 0.4.0 upgrade, read the [changelog](./CHANGELOG.md#upgrade-notes)
+and [entry-point migration guide](./docs/core-entry-points.md) before upgrading.
 There is no public versioning policy yet, and we don't know of any production
 users. If you ship Purity to users, please open an issue so we can keep your
 use case in mind for the breaking-change discussions.
 
 ## What this framework does NOT do
 
-Knowing what's missing matters more than what's there. As of `0.3.0`:
+Knowing what's missing matters more than what's there. Current limitations:
 
 - **DevTools has limited scope.** The opt-in development panel shows the
   reactive graph, without source locations, a component hierarchy or time

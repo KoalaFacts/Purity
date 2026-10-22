@@ -175,7 +175,7 @@ jobs:
       - name: 🧪 Check published CLI projects
         run: npm run test:published-cli
 
-      - name: 🧪 Check packaged SSR node retention
+      - name: 🧪 Check packaged client and SSR projects
         run: npm run test:browser:ssr-retention
 
       - name: 🧪 Check app forms and server actions

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Exercise the generated SSR production app against tarballs packed from this checkout.
+// Exercise generated client and SSR production apps against this checkout's tarballs.
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
@@ -7,7 +7,8 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { chromium, firefox, webkit, type BrowserType } from 'playwright';
+import type { BrowserType } from 'playwright';
+import { browserEngines } from '../../../benchmark/tools/browser-engines.ts';
 
 const repo = resolve(import.meta.dirname, '../../..');
 const npmCli = process.env.npm_execpath;
@@ -145,6 +146,75 @@ async function checkBrowser(browserType: BrowserType, url: string): Promise<void
   }
 }
 
+async function checkClient(project: string): Promise<void> {
+  const port = await freePort();
+  const url = `http://127.0.0.1:${port}/`;
+  const server = spawn(
+    process.execPath,
+    [
+      npmCli!,
+      'run',
+      'preview',
+      '--',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      String(port),
+      '--strictPort',
+    ],
+    {
+      cwd: project,
+      env: npmEnv,
+      detached: process.platform !== 'win32',
+      stdio: 'ignore',
+      windowsHide: true,
+    },
+  );
+  try {
+    let ready = false;
+    for (let attempt = 0; attempt < 80; attempt++) {
+      if (server.exitCode !== null) throw new Error('Client preview exited before becoming ready');
+      try {
+        if ((await fetch(url, { signal: AbortSignal.timeout(1000) })).ok) {
+          ready = true;
+          break;
+        }
+      } catch {
+        // Preview may still be starting.
+      }
+      await delay(250);
+    }
+    assert.ok(ready, 'Client preview did not become ready');
+    for (const [name, browserType] of browserEngines) {
+      const browser = await browserType.launch();
+      try {
+        const page = await browser.newPage();
+        const errors: string[] = [];
+        page.on('pageerror', (error) => errors.push(error.message));
+        page.on('console', (message) => {
+          if (message.type() === 'error') errors.push(message.text());
+        });
+        const response = await page.goto(url, { waitUntil: 'networkidle' });
+        assert.equal(response?.status(), 200);
+        assert.equal(await page.locator('p-counter').count(), 1);
+        assert.match((await page.locator('p-counter p').textContent()) ?? '', /Count:\s*0\b/);
+        await page.getByRole('button', { name: '+1', exact: true }).click();
+        await page.waitForFunction(() =>
+          /Count:\s*1\b/.test(
+            document.querySelector('p-counter')?.shadowRoot?.querySelector('p')?.textContent ?? '',
+          ),
+        );
+        assert.deepEqual(errors, []);
+        console.log(`${name}: packaged client production preview and first click passed`);
+      } finally {
+        await browser.close();
+      }
+    }
+  } finally {
+    if (server.exitCode === null) await stop(server);
+  }
+}
+
 const scratch = await mkdtemp(join(tmpdir(), 'purity-ssr-retention-'));
 const tempRoot = await realpath(tmpdir());
 const target = await realpath(scratch);
@@ -152,6 +222,8 @@ assert.ok(
   dirname(target) === tempRoot && basename(target).startsWith('purity-ssr-retention-'),
   'Unexpected temporary project location',
 );
+// Keep packaging/install cache inside the isolated consumer test directory.
+npmEnv.npm_config_cache = join(target, 'npm-cache');
 try {
   const { version: releaseVersion } = JSON.parse(
     await readFile(join(repo, 'package.json'), 'utf8'),
@@ -172,10 +244,51 @@ try {
     assert.equal(entry.version, releaseVersion, `${pkg} tarball has the wrong version`);
     tarballs.set(pkg, entry.filename);
   }
+  console.log(
+    `Candidate packages: ${[...tarballs.keys()].map((pkg) => `${pkg}@${releaseVersion}`).join(', ')}`,
+  );
   await run(
     [
       npmCli,
       'exec',
+      '--offline',
+      '--yes',
+      `--package=./${tarballs.get('@purityjs/cli')}`,
+      '--',
+      'purity',
+      'client',
+    ],
+    target,
+  );
+  const client = join(target, 'client');
+  const clientManifestPath = join(client, 'package.json');
+  const clientManifest = JSON.parse(await readFile(clientManifestPath, 'utf8')) as {
+    dependencies: Record<string, string>;
+    devDependencies: Record<string, string>;
+  };
+  for (const pkg of ['@purityjs/core', '@purityjs/vite-plugin']) {
+    const deps =
+      pkg === '@purityjs/vite-plugin'
+        ? clientManifest.devDependencies
+        : clientManifest.dependencies;
+    assert.equal(deps[pkg], `^${releaseVersion}`, `${pkg} client scaffold spec is outdated`);
+    deps[pkg] = `file:${join(target, tarballs.get(pkg)!)}`;
+  }
+  await writeFile(clientManifestPath, `${JSON.stringify(clientManifest, null, 2)}\n`);
+  await run([npmCli, 'install', '--no-audit', '--no-fund'], client);
+  for (const pkg of ['@purityjs/core', '@purityjs/vite-plugin']) {
+    const { version } = JSON.parse(
+      await readFile(join(client, 'node_modules', ...pkg.split('/'), 'package.json'), 'utf8'),
+    ) as { version: string };
+    assert.equal(version, releaseVersion, `${pkg} client installed at the wrong version`);
+  }
+  await run([npmCli, 'run', 'build'], client);
+  await checkClient(client);
+  await run(
+    [
+      npmCli,
+      'exec',
+      '--offline',
       '--yes',
       `--package=./${tarballs.get('@purityjs/cli')}`,
       '--',
@@ -243,7 +356,7 @@ try {
     assert.equal(direct.status, 200, 'Direct requests must render HTML');
     assert.match(await direct.text(), /shadowrootmode="open"/);
     assert.equal((await fetch(`${url}assets/missing.js`)).status, 404);
-    for (const browserType of [chromium, firefox, webkit]) {
+    for (const [, browserType] of browserEngines) {
       await checkBrowser(browserType, url);
     }
   } finally {

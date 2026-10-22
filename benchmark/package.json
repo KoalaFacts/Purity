@@ -15,7 +15,8 @@
     "test:browser:parity": "node tools/fixture-parity-browser-check.ts",
     "a11y": "node --conditions=development tools/a11y.ts",
     "a11y:form": "node --conditions=development tools/a11y-form-check.ts",
-    "a11y:matrix": "node --conditions=development tools/a11y-matrix.ts"
+    "a11y:matrix": "node --conditions=development tools/a11y-matrix.ts",
+    "test": "vp test run"
   },
   "dependencies": {
     "@purityjs/core": "*",

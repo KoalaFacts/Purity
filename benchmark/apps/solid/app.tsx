@@ -170,7 +170,7 @@ function App() {
     <div class="jumbotron">
       <div class="row">
         <div class="col-md-6">
-          <h1>Solid</h1>
+          <h1>Keyed rows</h1>
         </div>
         <div class="col-md-6">
           <div class="row">
@@ -266,7 +266,7 @@ render(
         <tr class={row.id === selectedId() ? 'danger' : ''}>
           <td class="col-md-1">{row.id}</td>
           <td class="col-md-4">
-            <a href="#" class="lbl" aria-label="Select row">
+            <a href="#" class="lbl">
               {row.label()}
             </a>
           </td>

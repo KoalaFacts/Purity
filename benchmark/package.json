@@ -12,6 +12,7 @@
     "compare": "node --conditions=development tools/compare.ts",
     "sanity": "node --conditions=development tools/sanity.ts",
     "test:browser:binding": "npm run build && node tools/binding-browser-check.ts",
+    "test:browser:parity": "node tools/fixture-parity-browser-check.ts",
     "a11y": "node --conditions=development tools/a11y.ts",
     "a11y:form": "node --conditions=development tools/a11y-form-check.ts",
     "a11y:matrix": "node --conditions=development tools/a11y-matrix.ts"

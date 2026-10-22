@@ -111,8 +111,10 @@ CI rejects a single-engine selection; a local Chromium result never implies
 Firefox or WebKit passed.
 
 This is fixture correctness evidence, not a runtime optimization or a new
-performance ranking. Row state-update strategies still differ: Purity copies
-row objects, while Solid updates individual label signals. Versions, timing
+performance ranking. Both row fixtures update independent label signals; label-only updates retain
+the array and row objects. Structural actions still publish arrays. A regression
+loads the real Purity fixture and wraps the real `each` only to inspect those
+identities while checking its rendered output. Versions, timing
 boundaries, operation sizes and size budgets stay unchanged. Old measurements
 remain attached to their source SHA. Continuing comparison work is tracked in
 [#276](https://github.com/KoalaFacts/Purity/issues/276).

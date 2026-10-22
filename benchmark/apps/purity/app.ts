@@ -1,10 +1,8 @@
-// Row rendering benchmark — Purity idiomatic version.
-// Uses: state, each, html, mount. Reactive `${() => item().X}` bindings drive
-// per-row updates via the framework's per-item signal (Path B). No hand-rolled
-// caches or DOM mutation outside the reactive system — same shape as Solid's
-// idiomatic <For> + per-row signal pattern.
+// Row rendering benchmark — keyed rows with independent label state.
+// Structural actions publish arrays; updating every tenth label keeps the list
+// and row objects stable, matching Solid's per-row signal strategy.
 
-import { each, mount, state } from '@purityjs/core';
+import { each, mount, state, type StateAccessor } from '@purityjs/core';
 import { html } from '@purityjs/core/jit';
 
 // ---------------------------------------------------------------------------
@@ -69,7 +67,7 @@ const nouns = [
 
 interface Row {
   id: number;
-  label: string;
+  label: StateAccessor<string>;
 }
 
 let nextId = 1;
@@ -84,7 +82,7 @@ const buildLabel = () =>
 
 function buildData(count: number): Row[] {
   const d = new Array<Row>(count);
-  for (let i = 0; i < count; i++) d[i] = { id: nextId++, label: buildLabel() };
+  for (let i = 0; i < count; i++) d[i] = { id: nextId++, label: state(buildLabel()) };
   return d;
 }
 
@@ -109,11 +107,10 @@ function add(n: number) {
 }
 
 function update() {
-  data((d) => {
-    const c = d.slice();
-    for (let i = 0; i < c.length; i += 10) c[i] = { ...c[i], label: `${c[i].label} !!!` };
-    return c;
-  });
+  const rows = data();
+  for (let i = 0; i < rows.length; i += 10) {
+    rows[i].label((label) => `${label} !!!`);
+  }
 }
 
 function clear() {
@@ -229,16 +226,15 @@ function ButtonBar() {
 
 const tbody = document.getElementById('tbody')!;
 
-// Keyed list via each() — LIS reconciliation + per-item signal updates.
-// `${() => item().X}` bindings re-run whenever the item signal fires (key
-// reuse with new data) — no DOM rebuild for label/class changes.
+// Numeric keys retain row DOM across structural actions. Label bindings read
+// independent row state, so label-only updates do not reconcile the list.
 const fragment = each(
   () => data(),
   (item: () => Row) => {
     return html`
       <tr class=${() => (selectedId() === item().id ? 'danger' : '')}>
         <td class="col-md-1">${() => String(item().id)}</td>
-        <td class="col-md-4"><a href="#" class="lbl">${() => item().label}</a></td>
+        <td class="col-md-4"><a href="#" class="lbl">${() => item().label()}</a></td>
         <td class="col-md-1">
           <a href="#" class="remove" aria-label="Remove row"
             ><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span

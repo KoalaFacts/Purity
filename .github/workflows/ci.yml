@@ -54,7 +54,9 @@ jobs:
 
       - name: 🧪 Test workspaces
         # Runs every workspace test script, including SSR parity tests.
-        run: npm test
+        run: |
+          npm test
+          node --test scripts/finalize-release.test.mjs
 
       - name: 🏗️ Build @purityjs/core
         # Produces dist/ with ESM, CJS, and .d.ts type declarations

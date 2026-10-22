@@ -137,8 +137,7 @@ jobs:
         env:
           PURITY_SMOKE_VERSION: ${{ env.RELEASE_VERSION }}
 
-      # Tag the release
-      - name: Create git tag
-        run: |
-          git tag "v$RELEASE_VERSION"
-          git push origin "v$RELEASE_VERSION"
+      - name: Verify package origins and create GitHub Release
+        run: node scripts/finalize-release.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -30,6 +30,8 @@ export class ComponentContext implements Scope {
   children: ComponentContext[] | null = null;
   _isMounted = false;
   _isDestroyed = false;
+  // Only failed factory teardown sets this flag; lean-owned descendants inherit it.
+  declare _rollback?: boolean;
   _slotContent: unknown = undefined;
   // Set by PurityElement.connectedCallback when the component is a Custom
   // Element. null for plain mount() roots (no host element to attach to).

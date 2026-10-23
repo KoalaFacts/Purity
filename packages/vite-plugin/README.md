@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@purityjs/vite-plugin.svg)](https://www.npmjs.com/package/@purityjs/vite-plugin)
 [![npm downloads](https://img.shields.io/npm/dm/@purityjs/vite-plugin.svg)](https://www.npmjs.com/package/@purityjs/vite-plugin)
 [![bundle size](https://img.shields.io/bundlephobia/minzip/@purityjs/vite-plugin?label=gzipped)](https://bundlephobia.com/package/@purityjs/vite-plugin)
-[![license](https://img.shields.io/npm/l/@purityjs/vite-plugin.svg)](../../LICENSE)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
 AOT template compilation for Purity. Compiles `html` tagged templates at build time into direct DOM creation code.
 
@@ -86,4 +86,7 @@ The plugin only transforms user code — framework internals are skipped.
 
 ## License
 
-MIT
+[Apache-2.0](./LICENSE) starting with 0.5.0 (currently unreleased). Releases
+through 0.4.0 remain MIT; their copyright and permission notice is retained in
+[LICENSES/Purity-MIT.txt](./LICENSES/Purity-MIT.txt). Third-party components retain
+their own licenses.

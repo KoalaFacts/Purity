@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@purityjs/core.svg)](https://www.npmjs.com/package/@purityjs/core)
 [![npm downloads](https://img.shields.io/npm/dm/@purityjs/core.svg)](https://www.npmjs.com/package/@purityjs/core)
 [![bundle size](https://img.shields.io/bundlephobia/minzip/@purityjs/core?label=gzipped)](https://bundlephobia.com/package/@purityjs/core)
-[![license](https://img.shields.io/npm/l/@purityjs/core.svg)](../../LICENSE)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
 The core Purity framework. Signal-driven rendering without a virtual DOM.
 
@@ -506,4 +506,7 @@ const { unmount } = mount(() => html`<p-app></p-app>`, document.getElementById('
 
 ## License
 
-MIT
+[Apache-2.0](./LICENSE) starting with 0.5.0 (currently unreleased). Releases
+through 0.4.0 remain MIT; their copyright and permission notice is retained in
+[LICENSES/Purity-MIT.txt](./LICENSES/Purity-MIT.txt). Third-party components retain
+their own licenses.

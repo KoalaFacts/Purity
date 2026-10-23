@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased — 0.4.0
+## Unreleased — 0.5.0
+
+### Changed
+
+- Use Apache-2.0 for Purity from 0.5.0. Preserve the original MIT copyright and
+  permission notice for earlier source; published releases through 0.4.0 remain
+  MIT. Third-party components retain their own licenses.
+- Include the full license and applicable retained notices in each of the four
+  npm tarballs, with package-level checks in CI and the manual publish preflight.
+  See [licensing scope](docs/licensing.md).
+
+## 0.4.0 — 2026-10-23
 
 Coordinated release of `@purityjs/core`, `@purityjs/ssr`,
 `@purityjs/vite-plugin`, and `@purityjs/cli`. It changes ownership and

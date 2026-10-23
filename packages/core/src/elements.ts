@@ -25,10 +25,10 @@ import { disposeScope, watch } from './signals.ts';
 
 // Unmount a context's child contexts, depth-first in reverse order (mirrors
 // unmountContext in component.ts).
-function unmountChildren(ctx: ComponentContext, rollback = false): void {
+function unmountChildren(ctx: ComponentContext): void {
   const children = ctx.children;
   if (!children) return;
-  for (let i = children.length - 1; i >= 0; i--) unmountChildContext(children[i], rollback);
+  for (let i = children.length; i--;) unmountChildContext(children[i]);
   ctx.children = null;
 }
 
@@ -43,9 +43,10 @@ function unmountChildren(ctx: ComponentContext, rollback = false): void {
 // nothing else tears them down. Guarded by `_isDestroyed` so a child that was
 // already unmounted (e.g. a nested custom element whose own
 // `disconnectedCallback` already ran) is skipped rather than double-torn-down.
-function unmountChildContext(ctx: ComponentContext, rollback = false): void {
+function unmountChildContext(ctx: ComponentContext, rollback = ctx.parent?._rollback): void {
   if (ctx._isDestroyed) return;
-  unmountChildren(ctx, rollback);
+  if (rollback) ctx._rollback = true;
+  unmountChildren(ctx);
 
   // Remove DOM
   if (ctx.nodes) {

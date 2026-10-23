@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { isHydrating, withHydration } from '../src/compiler/hydrate-runtime.ts';
 import { hydrate, mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
-import { each, inflateDeferredEach, list, type DeferredEach } from '../src/control.ts';
+import { each, inflateDeferredEach, list, when, type DeferredEach } from '../src/control.ts';
 import { component } from '../src/elements.ts';
 import { ComponentContext, getCurrentContext, popContext, pushContext } from '../src/scope.ts';
 import { disposeScope, state, watch } from '../src/signals.ts';
@@ -582,4 +582,192 @@ it('restores the surviving caller context before failed factory cleanup creates 
   value(1);
   await tick();
   expect(runs).toBe(1);
+});
+
+for (const owner of ['watch', 'branch'] as const) {
+  it(`releases a completed factory owned by a ${owner} scope when its descendant destroy hook throws during rollback`, async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const value = state(0);
+    let runs = 0;
+    let disposed = 0;
+    const failure = new Error('outer render failed');
+    const Descendant = component(`p-lean-${owner}-descendant`, () => {
+      onDestroy(() => {
+        throw new Error('descendant destroy failed');
+      });
+      return document.createElement('span');
+    });
+    const Middle = component(`p-lean-${owner}-middle`, () => {
+      stops.push(
+        watch(() => {
+          value();
+          runs++;
+        }),
+      );
+      onDispose(() => disposed++);
+      Descendant({});
+      return document.createElement('div');
+    });
+    const Broken = component(`p-lean-${owner}-broken`, () => {
+      if (owner === 'watch')
+        stops.push(
+          watch(() => {
+            Middle({});
+          }),
+        );
+      else
+        when(
+          () => true,
+          () => Middle({}),
+        );
+      throw failure;
+    });
+    expect(() => Broken({})).toThrow(failure);
+    value(1);
+    await tick();
+    expect({ runs, disposed }).toEqual({ runs: 1, disposed: 1 });
+    expect(getCurrentContext()).toBeNull();
+  });
+}
+
+it('propagates rollback through multiple completed lean-owned ancestors', async () => {
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  const value = state(0);
+  let runs = 0;
+  let disposed = 0;
+  const Leaf = component('p-deep-lean-leaf', () => {
+    onDestroy(() => {
+      throw new Error('deep destroy failed');
+    });
+    return document.createElement('span');
+  });
+  const Inner = component('p-deep-lean-inner', () => {
+    stops.push(
+      watch(() => {
+        value();
+        runs++;
+      }),
+    );
+    onDispose(() => disposed++);
+    Leaf({});
+    return document.createElement('span');
+  });
+  const Middle = component('p-deep-lean-middle', () => {
+    stops.push(
+      watch(() => {
+        Inner({});
+      }),
+    );
+    return document.createElement('div');
+  });
+  const Broken = component('p-deep-lean-broken', () => {
+    stops.push(
+      watch(() => {
+        Middle({});
+      }),
+    );
+    throw new Error('deep render failed');
+  });
+  expect(() => Broken({})).toThrow('deep render failed');
+  value(1);
+  await tick();
+  expect({ runs, disposed }).toEqual({ runs: 1, disposed: 1 });
+});
+
+it('keeps normal lean-owned teardown errors routed to the existing onError handler', async () => {
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const value = state(0);
+  const failure = new Error('normal child destroy failed');
+  const handled: unknown[] = [];
+  let runs = 0;
+  let disposed = 0;
+  const Leaf = component('p-normal-lean-leaf', () => {
+    onDestroy(() => {
+      throw failure;
+    });
+    return document.createElement('span');
+  });
+  const Middle = component('p-normal-lean-middle', () => {
+    stops.push(
+      watch(() => {
+        value();
+        runs++;
+      }),
+    );
+    onDispose(() => disposed++);
+    Leaf({});
+    return document.createElement('span');
+  });
+  const parent = mount(() => {
+    onError((error) => handled.push(error));
+    stops.push(
+      watch(() => {
+        Middle({});
+      }),
+    );
+    return document.createElement('div');
+  }, document.createElement('div'));
+  parent.unmount();
+  value(1);
+  await tick();
+  expect(handled).toEqual([failure]);
+  expect(logged).not.toHaveBeenCalled();
+  expect({ runs, disposed }).toEqual({ runs: 1, disposed: 1 });
+});
+
+it('routes destroy errors normally when a custom element disconnects during successful render', () => {
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const failure = new Error('early disconnect destroy failed');
+  const handled: unknown[] = [];
+  const Child = component('p-early-disconnect-child', () => {
+    onError((error) => handled.push(error));
+    onDestroy(() => {
+      throw failure;
+    });
+    return document.createElement('span');
+  });
+  let host: HTMLElement;
+  component('p-early-disconnect-owner', () => {
+    stops.push(
+      watch(() => {
+        Child({});
+      }),
+    );
+    host.remove();
+    return document.createElement('div');
+  });
+  host = document.createElement('p-early-disconnect-owner');
+  document.body.append(host);
+  expect(handled).toEqual([failure]);
+  expect(logged).not.toHaveBeenCalled();
+  expect(host.isConnected).toBe(false);
+});
+
+it('keeps an unrelated component teardown inside rollback cleanup on its normal error path', () => {
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const failure = new Error('unrelated destroy failed');
+  const handled: unknown[] = [];
+  const Child = component('p-unrelated-cleanup-child', () => {
+    onDestroy(() => {
+      throw failure;
+    });
+    return document.createElement('span');
+  });
+  const healthy = mount(() => {
+    onError((error) => handled.push(error));
+    stops.push(
+      watch(() => {
+        Child({});
+      }),
+    );
+    return document.createElement('div');
+  }, document.createElement('div'));
+  const renderFailure = new Error('rollback render failed');
+  const Broken = component('p-unrelated-cleanup-broken', () => {
+    onDispose(() => healthy.unmount());
+    throw renderFailure;
+  });
+  expect(() => Broken({})).toThrow(renderFailure);
+  expect(handled).toEqual([failure]);
+  expect(logged).not.toHaveBeenCalled();
 });

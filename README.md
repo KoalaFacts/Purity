@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@purityjs/core.svg?label=%40purityjs%2Fcore)](https://www.npmjs.com/package/@purityjs/core)
 [![bundle size](https://img.shields.io/bundlephobia/minzip/@purityjs/core?label=gzipped)](https://bundlephobia.com/package/@purityjs/core)
-[![license](https://img.shields.io/npm/l/@purityjs/core.svg)](./LICENSE)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/KoalaFacts/Purity?style=social)](https://github.com/KoalaFacts/Purity)
 
 A minimal web framework with TC39-Signals-inspired reactivity and templates that compile to direct DOM operations.
@@ -142,7 +142,9 @@ each, mount): [koalafacts.github.io/Purity/dashboard](https://koalafacts.github.
 
 ## Status
 
-**Pre-1.0; 0.4.0 is unreleased.** The API may break between minor versions until 1.0.
+**Pre-1.0; 0.5.0 is unreleased.** The latest published release is 0.4.0 (MIT).
+This checkout prepares Apache-2.0 licensing from 0.5.0; see the
+[licensing scope](./docs/licensing.md). The API may break between minor versions until 1.0.
 For the 0.3.4 → 0.4.0 upgrade, read the [changelog](./CHANGELOG.md#upgrade-notes)
 and [entry-point migration guide](./docs/core-entry-points.md) before upgrading.
 There is no public versioning policy yet, and we don't know of any production
@@ -185,4 +187,7 @@ npm run check:fix       # auto-fix
 
 ## License
 
-MIT
+[Apache-2.0](./LICENSE) starting with 0.5.0. Releases through 0.4.0 remain MIT.
+The original MIT copyright and permission notice is retained in
+[LICENSES/Purity-MIT.txt](./LICENSES/Purity-MIT.txt); third-party terms remain
+separate. See [licensing scope and package notices](./docs/licensing.md).

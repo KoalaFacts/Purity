@@ -1,6 +1,6 @@
 {
   "name": "@purityjs/cli",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Scaffold a new Purity project",
   "keywords": [
     "cli",
@@ -8,7 +8,7 @@
     "purity",
     "scaffold"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "KoalaFacts",
   "repository": {
     "type": "git",
@@ -20,7 +20,10 @@
   },
   "files": [
     "dist",
-    "template"
+    "template",
+    "LICENSE",
+    "NOTICE",
+    "LICENSES"
   ],
   "type": "module",
   "sideEffects": false,

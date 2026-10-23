@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@purityjs/ssr.svg)](https://www.npmjs.com/package/@purityjs/ssr)
 [![npm downloads](https://img.shields.io/npm/dm/@purityjs/ssr.svg)](https://www.npmjs.com/package/@purityjs/ssr)
-[![license](https://img.shields.io/npm/l/@purityjs/ssr.svg)](../../LICENSE)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
 Server-side rendering for Purity. Renders components to an HTML string, awaits async `resource()` data, primes the client cache, supports Custom Elements via Declarative Shadow DOM, and (since 0.1) ships a streaming entry with `<Suspense>` boundaries for progressive flush.
 
@@ -620,4 +620,7 @@ The SSR feature set is documented through ADRs — start here when you need to d
 
 ## License
 
-MIT
+[Apache-2.0](./LICENSE) starting with 0.5.0 (currently unreleased). Releases
+through 0.4.0 remain MIT; their copyright and permission notice is retained in
+[LICENSES/Purity-MIT.txt](./LICENSES/Purity-MIT.txt). Third-party components retain
+their own licenses.

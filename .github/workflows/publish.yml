@@ -70,6 +70,9 @@ jobs:
       - name: Build cli
         run: npm run build -w packages/cli
 
+      - name: Verify license texts in all four npm tarballs
+        run: npm run check:licenses
+
       - name: Install browser engines
         run: npx playwright install --with-deps chromium firefox webkit
 

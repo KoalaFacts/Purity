@@ -72,6 +72,12 @@ jobs:
       - name: Build SSR package for production feature evidence
         run: npm run build -w @purityjs/ssr
 
+      - name: Build CLI for package license verification
+        run: npm run build -w @purityjs/cli
+
+      - name: Verify license texts in all four npm tarballs
+        run: npm run check:licenses
+
       - name: Measure production JavaScript bundle sizes
         id: bundle_size
         run: node --experimental-strip-types benchmark/bundle-size/measure.ts

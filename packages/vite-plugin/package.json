@@ -1,6 +1,6 @@
 {
   "name": "@purityjs/vite-plugin",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Vite plugin for AOT template compilation in Purity",
   "keywords": [
     "aot",
@@ -9,7 +9,7 @@
     "purity",
     "vite"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "KoalaFacts",
   "repository": {
     "type": "git",
@@ -18,7 +18,10 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "LICENSE",
+    "NOTICE",
+    "LICENSES"
   ],
   "type": "module",
   "sideEffects": false,
@@ -48,7 +51,7 @@
     "fast-check": "4.10.2"
   },
   "peerDependencies": {
-    "@purityjs/core": "^0.4.0",
+    "@purityjs/core": "^0.5.0",
     "vite": ">=6.0.0"
   }
 }

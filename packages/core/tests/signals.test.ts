@@ -397,6 +397,60 @@ describe('watch', () => {
     expect(calls).toEqual(['1,0:first', '1,2:second']);
     stop();
   });
+
+  it('preserves tuple watch callback value snapshots across subsequent source changes', async () => {
+    const first = state(0);
+    const second = state(0);
+    const observed: { values: number[]; oldValues: number[] }[] = [];
+    const stop = watch([first, second], (values, oldValues) => {
+      // Applications may retain arguments after a callback returns.
+      observed.push({ values, oldValues });
+    });
+
+    first(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(observed).toEqual([{ values: [1, 0], oldValues: [0, 0] }]);
+
+    second(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(observed).toEqual([
+      { values: [1, 0], oldValues: [0, 0] },
+      { values: [1, 2], oldValues: [1, 0] },
+    ]);
+
+    first(3);
+    await new Promise((r) => queueMicrotask(r));
+    expect(observed).toEqual([
+      { values: [1, 0], oldValues: [0, 0] },
+      { values: [1, 2], oldValues: [1, 0] },
+      { values: [3, 2], oldValues: [1, 2] },
+    ]);
+    stop();
+  });
+
+  it('does not reuse tuple values retained by a throwing callback', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const source = state(0);
+    const snapshots: number[][] = [];
+    const stop = watch([source], (values) => {
+      snapshots.push(values);
+      if (values[0] === 1) throw new Error('intentional callback failure');
+    });
+
+    try {
+      source(1);
+      await new Promise((r) => queueMicrotask(r));
+      expect(errSpy).toHaveBeenCalled();
+      expect(snapshots).toEqual([[1]]);
+
+      source(2);
+      await new Promise((r) => queueMicrotask(r));
+      expect(snapshots).toEqual([[1], [2]]);
+    } finally {
+      stop();
+      errSpy.mockRestore();
+    }
+  });
 });
 
 describe('batch', () => {

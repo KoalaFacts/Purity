@@ -68,7 +68,7 @@ type MatchCases<T extends string | number | boolean> = Partial<Record<`${T}`, Ma
 
 interface MatchState {
   currentNodes: Node[];
-  prevKey: string | undefined;
+  prevKey: string | null;
   /** Scope owning the active case's reactive work; disposed on case switch. */
   branch: Scope | null;
 }
@@ -83,8 +83,9 @@ function renderBranch(matchState: MatchState, render: () => unknown): unknown {
     return render();
   } catch (e) {
     // Nothing will render this case, so release what it created before throwing.
-    matchState.branch = null;
-    disposeScope(scope);
+    // Invalidate the failed selector along with its branch owner.
+    matchState.prevKey = null;
+    disposeBranch(matchState);
     throw e;
   } finally {
     popContext();
@@ -106,20 +107,14 @@ function insertMatchView(
   endMarker: Node,
   content: unknown,
 ): void {
-  if (content instanceof DocumentFragment) {
-    matchState.currentNodes = Array.from(content.childNodes);
-    parent.insertBefore(content, endMarker);
-  } else if (content instanceof Node) {
-    matchState.currentNodes = [content];
-    parent.insertBefore(content, endMarker);
-  } else if (content == null) {
+  if (content == null) {
     // `undefined` / `null` view return → render nothing.
     matchState.currentNodes = [];
-  } else {
-    const textNode = document.createTextNode(String(content));
-    matchState.currentNodes = [textNode];
-    parent.insertBefore(textNode, endMarker);
+    return;
   }
+  const node = content instanceof Node ? content : document.createTextNode(String(content));
+  matchState.currentNodes = node instanceof DocumentFragment ? [...node.childNodes] : [node];
+  parent.insertBefore(node, endMarker);
 }
 
 // Detach and dispose the current case, then render the selector's current key.
@@ -136,11 +131,7 @@ function reconcileMatch<T extends string | number | boolean>(
   // case's render may write it, and that write can't re-run this watch (it is
   // mid-run, and an effect's self-queued re-run is skipped).
   for (let runs = 0; ;) {
-    for (let i = 0; i < matchState.currentNodes.length; i++) {
-      const node = matchState.currentNodes[i];
-      /* v8 ignore next -- defensive guard; nodes always have parent here */
-      if (node.parentNode) node.parentNode.removeChild(node);
-    }
+    detachNodes(matchState.currentNodes);
     disposeBranch(matchState);
     const key = String(sourceFn());
     matchState.prevKey = key;
@@ -218,13 +209,13 @@ export function match<T extends string | number | boolean>(
   // `renderToStream` / `renderStatic` pass, return SSRHtml string output
   // instead of touching `document`. Lets `match()` be called from
   // manifest-driven composers without needing the explicit `matchSSR`.
-  if (getSSRRenderContext() !== null) return ssrControls.match(sourceFn, cases, fallback);
+  if (getSSRRenderContext()) return ssrControls.match(sourceFn, cases, fallback);
 
   const endMarker = document.createComment('m');
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
-  const matchState: MatchState = { currentNodes: [], prevKey: undefined, branch: null };
+  const matchState: MatchState = { currentNodes: [], prevKey: null, branch: null };
 
   const initKey = String(sourceFn()) as `${T}`;
   const initView = cases[initKey] ?? fallback;
@@ -263,11 +254,8 @@ export function when(
   // entirely on the server — whenSSR returns the picked branch as a tagged
   // string. `match()` itself ALSO dispatches in SSR (so the recursion would
   // be safe), but going direct is clearer + slightly faster.
-  if (getSSRRenderContext() !== null) return ssrControls.when(conditionFn, thenFn, elseFn);
-  return match((() => String(conditionFn())) as () => 'true' | 'false', {
-    true: thenFn,
-    ...(elseFn ? { false: elseFn } : {}),
-  }) as DocumentFragment;
+  if (getSSRRenderContext()) return ssrControls.when(conditionFn, thenFn, elseFn);
+  return match(conditionFn, { true: thenFn, false: elseFn }) as DocumentFragment;
 }
 
 // ---------------------------------------------------------------------------
@@ -446,7 +434,7 @@ function canReplaceOwnedRange(
   const firstEntry = keyToEntry.get(prevKeys[0]);
   return (
     prevKeys.length > 32 &&
-    firstEntry !== undefined &&
+    !!firstEntry &&
     firstEntry.nodes[0]?.parentNode === parent &&
     firstEntry.nodes[0] === parent.firstChild &&
     endMarker.parentNode === parent &&
@@ -501,6 +489,14 @@ function extractNodes(content: Node | DocumentFragment | string): Node[] {
   }
   if (content instanceof Node) return [content];
   return [document.createTextNode(String(content ?? ''))];
+}
+
+// Shared cold-path DOM removal for SSR hydration and mismatch cleanup.
+function detachNodes(nodes: Node[]): void {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    node.parentNode?.removeChild(node);
+  }
 }
 
 // Mutable state shared between each()'s watch and inflateDeferredEach's hydration
@@ -1464,7 +1460,7 @@ export function each<T>(
   // SSR-context dispatch (ADR 0023). Inside a server render pass, return
   // SSRHtml string output. Same per-row marker grammar as eachSSR, so
   // hydration adoption still works against the resulting markup.
-  if (getSSRRenderContext() !== null) return ssrControls.each(listAccessor, mapFn, keyFn);
+  if (getSSRRenderContext()) return ssrControls.each(listAccessor, mapFn, keyFn);
 
   if (eachOptions?.virtual) return eachWindow(listAccessor, mapFn, keyFn, getCurrentContext());
 
@@ -1478,7 +1474,7 @@ export function ordinaryEach<T>(
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment | DeferredEach<T> | SSRHtml {
   if (isHydrating()) return makeDeferredEach(listAccessor, mapFn, keyFn);
-  if (getSSRRenderContext() !== null) return ssrControls.each(listAccessor, mapFn, keyFn);
+  if (getSSRRenderContext()) return ssrControls.each(listAccessor, mapFn, keyFn);
   return renderEachDOM(listAccessor, mapFn, keyFn);
 }
 
@@ -1655,10 +1651,7 @@ export function inflateDeferredEach<T>(
   const { rows: ssrRows, boundaryNodes } = parseSSRRows(contNodes);
   // Detach the SSR `<!--e-->` / `<!--/e-->` markers and any orphan content —
   // the new endMarker replaces them. Row content is left in place and adopted.
-  for (let i = 0; i < boundaryNodes.length; i++) {
-    const n = boundaryNodes[i];
-    if (n.parentNode) n.parentNode.removeChild(n);
-  }
+  detachNodes(boundaryNodes);
 
   const ssrByKey = new Map<string, SSRRow>();
   for (let i = 0; i < ssrRows.length; i++) ssrByKey.set(ssrRows[i].key, ssrRows[i]);
@@ -1730,10 +1723,7 @@ export function inflateDeferredEach<T>(
           // fragment). Detach any SSR row nodes for this key — they're stale —
           // and insert the fresh content.
           if (ssrRow) {
-            for (let j = 0; j < ssrRow.nodes.length; j++) {
-              const n = ssrRow.nodes[j];
-              if (n.parentNode) n.parentNode.removeChild(n);
-            }
+            detachNodes(ssrRow.nodes);
           }
           if (isDeferred(content)) {
             // No SSR row to adopt — inflate against an empty fragment. The
@@ -1772,10 +1762,7 @@ export function inflateDeferredEach<T>(
     for (let i = 0; i < ssrRows.length; i++) {
       const row = ssrRows[i];
       if (adoptedRows.has(row)) continue;
-      for (let j = 0; j < row.nodes.length; j++) {
-        const n = row.nodes[j];
-        if (n.parentNode) n.parentNode.removeChild(n);
-      }
+      detachNodes(row.nodes);
     }
 
     if (options?.virtual) {
@@ -1930,12 +1917,9 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
   // for adoption.
   const endMarker = document.createComment('m');
   parent.insertBefore(endMarker, closeMarker);
-  for (let i = 0; i < boundary.boundaryNodes.length; i++) {
-    const n = boundary.boundaryNodes[i];
-    if (n.parentNode) n.parentNode.removeChild(n);
-  }
+  detachNodes(boundary.boundaryNodes);
 
-  const matchState: MatchState = { currentNodes: [], prevKey: undefined, branch: null };
+  const matchState: MatchState = { currentNodes: [], prevKey: null, branch: null };
   const initKey = String(sourceFn()) as `${T}`;
   const ssrKey = boundary.key;
   const initView = cases[initKey] ?? fallback;
@@ -1964,10 +1948,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
     if (!adopted) {
       // View returned a non-deferred value (raw Node, string, etc.) — can't
       // adopt; lossy-replace the boundary content with the new value.
-      for (let i = 0; i < boundary.inner.length; i++) {
-        const n = boundary.inner[i];
-        if (n.parentNode) n.parentNode.removeChild(n);
-      }
+      detachNodes(boundary.inner);
     }
     insertMatchView(matchState, parent, endMarker, content);
     matchState.prevKey = initKey;
@@ -1975,10 +1956,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
     // Either no view was rendered server-side (key === undefined / no inner
     // content) or the SSR key disagrees with the current key. Detach SSR
     // inner content and render the current view fresh.
-    for (let i = 0; i < boundary.inner.length; i++) {
-      const n = boundary.inner[i];
-      if (n.parentNode) n.parentNode.removeChild(n);
-    }
+    detachNodes(boundary.inner);
     if (initView) {
       matchState.prevKey = initKey;
       insertMatchView(matchState, parent, endMarker, renderBranch(matchState, initView));

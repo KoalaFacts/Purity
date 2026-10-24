@@ -14,14 +14,10 @@ describe('match() failed branch recovery', () => {
     const host = document.createElement('div');
     const app = mount(() => {
       onError((error) => caught.push(error));
-      return match(
-        selected,
-        { ready: () => document.createTextNode('Ready') },
-        () => {
-          if (!available()) throw failure;
-          return document.createTextNode('Fallback recovered');
-        },
-      ) as DocumentFragment;
+      return match(selected, { ready: () => document.createTextNode('Ready') }, () => {
+        if (!available()) throw failure;
+        return document.createTextNode('Fallback recovered');
+      }) as DocumentFragment;
     }, host);
 
     try {

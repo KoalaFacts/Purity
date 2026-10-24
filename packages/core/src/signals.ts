@@ -1006,6 +1006,9 @@ export function watch(
   let first = true;
 
   return _effect(() => {
+    // A callback may retain tuple arguments even if it throws. Recycle only
+    // the single-source buffers; each tuple run owns its own snapshot array.
+    if (isArray) newValues = [];
     for (let i = 0; i < len; i++) newValues[i] = sources[i]();
 
     // The first run only records the values; cb fires from the next change.
@@ -1019,9 +1022,7 @@ export function watch(
 
     const tmp = oldValues;
     oldValues = newValues;
-    // Tuple values are callback snapshots; never recycle an exposed array.
-    // Preserve the zero-allocation rerun path for a single explicit source.
-    newValues = isArray ? new Array(len) : tmp;
+    newValues = tmp;
 
     return result;
   });

@@ -29,7 +29,7 @@ async function get(url: string) {
 
 try {
   for (const expected of inputs.solid.packages) {
-    const registryUrl = `https://registry.npmjs.org/${expected.name.replace('/', '%2f')}/${expected.version}`;
+    const registryUrl = `https://registry.npmjs.org/${encodeURIComponent(expected.name)}/${encodeURIComponent(expected.version)}`;
     const metadata = await (await get(registryUrl)).json();
     if (
       metadata.name !== expected.name ||

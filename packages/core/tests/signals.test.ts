@@ -24,6 +24,14 @@ describe('state', () => {
     expect(count.get()).toBe(20);
   });
 
+  it('keeps state.get read-only when called with callback-supplied arguments', () => {
+    const value = state(42);
+    // Array.map passes value, index and array arguments to the callback.
+    // get() must ignore them rather than turn the getter into a setter.
+    expect([1, 2].map(value.get)).toEqual([42, 42]);
+    expect(value()).toBe(42);
+  });
+
   it('accepts updater function', () => {
     const count = state(5);
     count((v) => v + 1);

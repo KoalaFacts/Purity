@@ -6,32 +6,36 @@ import { state } from '../src/signals.ts';
 const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 
 describe('match() failed branch recovery', () => {
-  it('can render the previous key again after another branch throws', async () => {
-    const selected = state<'ready' | 'broken'>('ready');
-    const failure = new Error('broken view');
+  it('retries a failed fallback when its tracked dependency recovers', async () => {
+    const selected = state<'ready' | 'missing'>('ready');
+    const available = state(false);
+    const failure = new Error('fallback unavailable');
     const caught: unknown[] = [];
     const host = document.createElement('div');
     const app = mount(() => {
       onError((error) => caught.push(error));
-      return match(selected, {
-        ready: () => document.createTextNode('Ready'),
-        broken: () => {
-          throw failure;
+      return match(
+        selected,
+        { ready: () => document.createTextNode('Ready') },
+        () => {
+          if (!available()) throw failure;
+          return document.createTextNode('Fallback recovered');
         },
-      }) as DocumentFragment;
+      ) as DocumentFragment;
     }, host);
 
     try {
       expect(host.textContent).toBe('Ready');
-      selected('broken');
+      selected('missing');
       await tick();
       expect(caught).toEqual([failure]);
       expect(host.textContent).toBe('');
 
-      // The failed render must not leave the old key cached as already shown.
-      selected('ready');
+      // The selector is still "missing": only the failing fallback's
+      // dependency changes. The failed key must not short-circuit the retry.
+      available(true);
       await tick();
-      expect(host.textContent).toBe('Ready');
+      expect(host.textContent).toBe('Fallback recovered');
       expect(caught).toEqual([failure]);
     } finally {
       app.unmount();

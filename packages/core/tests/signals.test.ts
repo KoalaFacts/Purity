@@ -311,6 +311,41 @@ describe('watch', () => {
     stop();
   });
 
+  it('does not accidentally subscribe a parent effect when an explicit child watch is created', async () => {
+    const parentSource = state(0);
+    const childSource = state(0);
+    const seen: number[] = [];
+    let parentRuns = 0;
+
+    const stop = watch(() => {
+      parentRuns++;
+      parentSource();
+      watch(childSource, (value) => {
+        seen.push(value);
+      });
+    });
+
+    expect(parentRuns).toBe(1);
+    childSource(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(parentRuns).toBe(1);
+    expect(seen).toEqual([1]);
+
+    parentSource(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(parentRuns).toBe(2);
+
+    childSource(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(parentRuns).toBe(2);
+    expect(seen).toEqual([1, 2]);
+
+    stop();
+    childSource(3);
+    await new Promise((r) => queueMicrotask(r));
+    expect(seen).toEqual([1, 2]);
+  });
+
   it('watches a single source with old/new values', async () => {
     const calls = [];
     const count = state(0);

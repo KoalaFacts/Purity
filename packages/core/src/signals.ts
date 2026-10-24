@@ -806,7 +806,7 @@ export function state<T>(initial: T): StateAccessor<T> {
 
   // Avoid `bind()` and per-call closures: we can attach the property API
   // directly because every call routes through `node` already.
-  (accessor as unknown as { get: () => T }).get = accessor;
+  (accessor as unknown as { get: () => T }).get = () => readNode(node);
   (accessor as unknown as { set: (v: T) => void }).set = (v: T) => {
     writeState(node, v);
   };

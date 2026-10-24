@@ -1012,9 +1012,9 @@ export function watch(
     // Explicit sources alone control re-runs; callback reads are not dependencies.
     const result = first
       ? undefined
-      : untracked(() =>
-          isArray ? cb(newValues, oldValues) : cb(newValues[0], oldValues[0]),
-        );
+      : untracked(() => {
+          return isArray ? cb(newValues, oldValues) : cb(newValues[0], oldValues[0]);
+        });
     first = false;
 
     const tmp = oldValues;

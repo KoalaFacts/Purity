@@ -799,18 +799,14 @@ export function state<T>(initial: T): StateAccessor<T> {
   const accessor = ((...args: [T | ((current: T) => T)] | []): T => {
     if (args.length === 0) return readNode(node);
     const value = args[0];
-    if (typeof value === 'function') {
-      const next = (value as (current: T) => T)(node.value);
-      writeState(node, next);
-      return next;
-    }
-    writeState(node, value as T);
-    return value as T;
+    const next = typeof value === 'function' ? (value as (current: T) => T)(node.value) : value;
+    writeState(node, next as T);
+    return next as T;
   }) as StateAccessor<T>;
 
   // Avoid `bind()` and per-call closures: we can attach the property API
   // directly because every call routes through `node` already.
-  (accessor as unknown as { get: () => T }).get = () => readNode(node);
+  (accessor as unknown as { get: () => T }).get = accessor;
   (accessor as unknown as { set: (v: T) => void }).set = (v: T) => {
     writeState(node, v);
   };
@@ -869,7 +865,7 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
   if (ctx) (ctx.disposers ??= []).push(dispose);
 
   const accessor = (() => readNode<T>(node)) as ComputedAccessor<T>;
-  (accessor as unknown as { get: () => T }).get = () => readNode<T>(node);
+  (accessor as unknown as { get: () => T }).get = accessor;
   (accessor as unknown as { peek: () => T }).peek = () => peekNode<T>(node);
 
   return accessor;
@@ -996,25 +992,36 @@ export function watch(
   }
 
   const isArray = Array.isArray(sourceOrFn);
-  const len = isArray ? sourceOrFn.length : 0;
-  let oldValue: any;
+  const sources: WatchSource<any>[] = isArray ? sourceOrFn : [sourceOrFn as WatchSource<any>];
+  const len = sources.length;
+
+  let oldValues = new Array(len);
+  let newValues = new Array(len);
+
+  // The eager first effect run samples and subscribes to every source; the
+  // buffer swap below keeps those values as the next callback's oldValues.
+  // Do not read source getters here as well: that evaluates user code twice.
   let first = true;
 
   return _effect(() => {
-    // Tuple snapshots must remain independent, including when cb throws.
-    // A single source needs only a scalar, not rotating array buffers.
-    let newValue: any;
-    if (isArray) {
-      newValue = [];
-      for (let i = 0; i < len; i++) newValue[i] = (sourceOrFn as WatchSource<any>[])[i]();
-    } else {
-      newValue = (sourceOrFn as WatchSource<any>)();
-    }
+    // A callback may retain tuple arguments even if it throws. Recycle only
+    // the single-source buffers; each tuple run owns its own snapshot array.
+    if (isArray) newValues = [];
+    for (let i = 0; i < len; i++) newValues[i] = sources[i]();
 
-    // The eager first run subscribes exactly once without invoking cb.
-    const result = first ? undefined : untracked(() => cb(newValue, oldValue));
+    // The first run only records the values; cb fires from the next change.
+    // Explicit sources alone control re-runs; callback reads are not dependencies.
+    const result = first
+      ? undefined
+      : untracked(() => {
+          return isArray ? cb(newValues, oldValues) : cb(newValues[0], oldValues[0]);
+        });
     first = false;
-    oldValue = newValue;
+
+    const tmp = oldValues;
+    oldValues = newValues;
+    newValues = tmp;
+
     return result;
   });
 }

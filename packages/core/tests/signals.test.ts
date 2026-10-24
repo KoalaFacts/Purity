@@ -352,6 +352,51 @@ describe('watch', () => {
     await new Promise((r) => queueMicrotask(r));
     expect(calls).toEqual([1]);
   });
+
+  it('does not subscribe an explicit single-source watch to signals read by its callback', async () => {
+    const source = state(0);
+    const unrelated = state('first');
+    const calls: string[] = [];
+    const stop = watch(source, (value) => {
+      calls.push(`${value}:${unrelated()}`);
+    });
+
+    source(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual(['1:first']);
+
+    unrelated('second');
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual(['1:first']);
+
+    source(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual(['1:first', '2:second']);
+    stop();
+  });
+
+  it('tracks declared tuple sources without tracking reads in the callback', async () => {
+    const left = state(0);
+    const right = state(0);
+    const unrelated = state('first');
+    const calls: string[] = [];
+    const stop = watch([left, right], ([a, b]) => {
+      calls.push(`${a},${b}:${unrelated()}`);
+    });
+
+    left(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual(['1,0:first']);
+
+    unrelated('second');
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual(['1,0:first']);
+
+    right(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual(['1,0:first', '1,2:second']);
+    stop();
+  });
 });
 
 describe('batch', () => {

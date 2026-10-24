@@ -7,10 +7,11 @@
 
 A minimal web framework with TC39-Signals-inspired reactivity and templates that compile to direct DOM operations.
 
-Our goal is to make Purity a strong SolidJS competitor through direct DOM updates,
+Our goal is to make Purity a strong Solid v2 competitor through direct DOM updates,
 Web Components, modular AOT compilation, and zero runtime dependencies. The
-[competitive roadmap](./docs/solid-competitor-roadmap.md) defines the behavior,
-tooling, published-consumer, and deployment evidence needed to reach that goal.
+[Solid v2 gap comparison](./docs/solid-v2-gap-analysis.md) records the exact target,
+current differences, priorities, and acceptance scenarios. The [competitive roadmap](./docs/solid-competitor-roadmap.md)
+turns those gaps into implementation and published-consumer milestones.
 
 - **A tiny API** — that's the whole thing
 - **No virtual DOM** — signals drive DOM updates directly

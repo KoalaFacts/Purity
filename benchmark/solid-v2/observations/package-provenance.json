@@ -1,0 +1,22 @@
+[
+  {
+    "name": "@solidjs/signals",
+    "version": "2.0.0-rc.18",
+    "registry_url": "https://registry.npmjs.org/@solidjs%2fsignals/2.0.0-rc.18",
+    "tarball": "https://registry.npmjs.org/@solidjs/signals/-/signals-2.0.0-rc.18.tgz",
+    "integrity": "sha512-pzYahnM93EpDN4xZF1EefdjPE6Buuu/90/kiaLOjUFhPd3H0W6J9R8lIF+kkD1Z78LW1OTHciRY5MCqpYj5iSQ==",
+    "shasum": "044b83c18c92094e2d7a960dcf8966127a6f9c4b",
+    "gitHead": "225014bf8757421a2ea0a9c6ddc148b965eed000",
+    "tar_sha256": "154b2650af96445fbbbda03f59b71c1028a2c27cebd6d3d4cfab4b0ff5021b6b"
+  },
+  {
+    "name": "solid-js",
+    "version": "2.0.0-rc.18",
+    "registry_url": "https://registry.npmjs.org/solid-js/2.0.0-rc.18",
+    "tarball": "https://registry.npmjs.org/solid-js/-/solid-js-2.0.0-rc.18.tgz",
+    "integrity": "sha512-g4KjUQUjfqvqHYnBddN5nVAF7DFcDjtuH+NeDu/26vx6SlSDiqBJS8jsNag6VpdKAnfK8oLfphogEhXtM4UOyw==",
+    "shasum": "4048b5c92d487960695a16dd7599bde8719713c0",
+    "gitHead": "225014bf8757421a2ea0a9c6ddc148b965eed000",
+    "tar_sha256": "e7b6ff8d6e7698c8ce1dad12dbeba8738a0f8b6c09dcd03c133113dc29ec62df"
+  }
+]

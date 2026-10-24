@@ -131,11 +131,7 @@ function reconcileMatch<T extends string | number | boolean>(
   // case's render may write it, and that write can't re-run this watch (it is
   // mid-run, and an effect's self-queued re-run is skipped).
   for (let runs = 0; ;) {
-    for (let i = 0; i < matchState.currentNodes.length; i++) {
-      const node = matchState.currentNodes[i];
-      /* v8 ignore next -- defensive guard; nodes always have parent here */
-      if (node.parentNode) node.parentNode.removeChild(node);
-    }
+    detachNodes(matchState.currentNodes);
     disposeBranch(matchState);
     const key = String(sourceFn());
     matchState.prevKey = key;
@@ -499,8 +495,7 @@ function extractNodes(content: Node | DocumentFragment | string): Node[] {
 function detachNodes(nodes: Node[]): void {
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
-    const parent = node.parentNode;
-    if (parent) parent.removeChild(node);
+    node.parentNode?.removeChild(node);
   }
 }
 

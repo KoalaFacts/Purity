@@ -999,8 +999,10 @@ export function watch(
   const sources: WatchSource<any>[] = isArray ? sourceOrFn : [sourceOrFn as WatchSource<any>];
   const len = sources.length;
 
-  let oldValues = new Array(len);
-  let newValues = new Array(len);
+  // The buffers are populated sequentially before callback delivery. Empty
+  // arrays also avoid a redundant sized allocation for tuple callbacks.
+  let oldValues: unknown[] = [];
+  let newValues: unknown[] = [];
 
   // The eager first effect run samples and subscribes to every source; the
   // buffer swap below keeps those values as the next callback's oldValues.

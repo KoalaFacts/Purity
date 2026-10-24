@@ -82,9 +82,9 @@ function renderBranch(matchState: MatchState, render: () => unknown): unknown {
   try {
     return render();
   } catch (e) {
-    // Don't cache the failed case: retry when one of its read signals recovers.
-    matchState.prevKey = undefined;
-    disposeBranch(matchState);
+    // Nothing will render this case, so release what it created before throwing.
+    matchState.branch = null;
+    disposeScope(scope);
     throw e;
   } finally {
     popContext();
@@ -168,7 +168,8 @@ function installMatchWatch<T extends string | number | boolean>(
 ): () => void {
   return watch(() => {
     const key = String(sourceFn()) as `${T}`;
-    if (key === matchState.prevKey) return;
+    // A failed case has no live branch and must be retried on later changes.
+    if (key === matchState.prevKey && matchState.branch) return;
     const parent = endMarker.parentNode;
     /* v8 ignore next -- defensive; if endMarker is detached, watch is disposed */
     if (!parent) return;

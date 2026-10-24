@@ -94,7 +94,7 @@ function renderBranch(matchState: MatchState, render: () => unknown): unknown {
 
 function disposeBranch(matchState: MatchState): void {
   const scope = matchState.branch;
-  if (!scope) return;
+  if (scope === null) return;
   matchState.branch = null;
   disposeScope(scope);
 }
@@ -113,7 +113,7 @@ function insertMatchView(
     return;
   }
   const node = content instanceof Node ? content : document.createTextNode(String(content));
-  matchState.currentNodes = node.nodeType === 11 ? [...node.childNodes] : [node];
+  matchState.currentNodes = extractNodes(node);
   parent.insertBefore(node, endMarker);
 }
 
@@ -134,7 +134,7 @@ function reconcileMatch<T extends string | number | boolean>(
     for (let i = 0; i < matchState.currentNodes.length; i++) {
       const node = matchState.currentNodes[i];
       /* v8 ignore next -- defensive guard; nodes always have parent here */
-      node.parentNode?.removeChild(node);
+      if (node.parentNode) node.parentNode.removeChild(node);
     }
     disposeBranch(matchState);
     const key = String(sourceFn());

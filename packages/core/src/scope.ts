@@ -20,6 +20,8 @@ export interface Scope {
   component?: ComponentContext | null;
 }
 
+let contextStack: Scope[] = [];
+
 export class ComponentContext implements Scope {
   mounted: (() => void)[] | null = null;
   destroyed: (() => void)[] | null = null;
@@ -83,8 +85,6 @@ export class ComponentContext implements Scope {
 // Context stack
 // ---------------------------------------------------------------------------
 
-let contextStack: Scope[] = [];
-
 /** Run shared work without capturing a caller's disposal or component owner. @internal */
 export function withoutScope<T>(fn: () => T): T {
   const previous = contextStack;
@@ -109,8 +109,8 @@ export function getCurrentContext(): Scope | null {
 export function getCurrentComponent(): ComponentContext | null {
   for (let i = contextStack.length - 1; i >= 0; i--) {
     const ctx = contextStack[i];
-    if (ctx instanceof ComponentContext) return ctx;
-    if (ctx.component) return ctx.component;
+    const component = ctx instanceof ComponentContext ? ctx : ctx.component;
+    if (component) return component;
   }
   return null;
 }

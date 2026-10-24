@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import {
   bindComponentState,
@@ -96,6 +96,46 @@ describe('effect-owned reactive work', () => {
     await tick();
     expect(outerRuns).toBe(0);
     stop();
+  });
+
+  it('keeps each disposer untracked and restores the caller after a cleanup throws', async () => {
+    const a = state(1);
+    const b = state(2);
+    const c = state(0);
+    const cleanupReads: number[] = [];
+    const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const stopInner = watch(() => {
+      onDispose(() => {
+        cleanupReads.push(a());
+        throw null;
+      });
+      onDispose(() => cleanupReads.push(b()));
+    });
+    let outerRuns = 0;
+    let stopOuter = () => {};
+    try {
+      stopOuter = watch(() => {
+        outerRuns++;
+        stopInner();
+        c();
+      });
+      expect(cleanupReads).toEqual([1, 2]);
+      expect(reported).toHaveBeenCalledExactlyOnceWith('[Purity] Error during disposal:', null);
+
+      a(3);
+      await tick();
+      expect(outerRuns).toBe(1);
+      b(4);
+      await tick();
+      expect(outerRuns).toBe(1);
+      c(1);
+      await tick();
+      expect(outerRuns).toBe(2);
+    } finally {
+      stopOuter();
+      stopInner();
+      reported.mockRestore();
+    }
   });
 
   it('releases work an effect created before its re-run threw', async () => {

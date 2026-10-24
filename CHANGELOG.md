@@ -26,10 +26,10 @@
 
 ### Changed
 
-- Accept the measured runtime cost of owned error recovery in two reviewed
-  Brotli budgets: `core-actions` 5,248 → 5,376 bytes and `core-all` 40,704 →
-  40,960 bytes. The measured increases are 24 and 123 bytes; preserve the
-  [before/after reports and rationale](benchmark/bundle-size/evidence/2026-10-24-reactive-errors/README.md).
+- Share the programmatic component factory's final render/mount path while
+  preserving callback-slot discovery and lifecycle order. Remove redundant
+  ownership lookups and cleanup wrappers, keeping the original bundle limits;
+  preserve the [measured inputs and results](benchmark/bundle-size/evidence/2026-10-24-reactive-errors/README.md).
 - Use Apache-2.0 for Purity from 0.5.0. Preserve the original MIT copyright and
   permission notice for earlier source; published releases through 0.4.0 remain
   MIT. Third-party components retain their own licenses.

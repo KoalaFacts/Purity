@@ -437,15 +437,17 @@ export function disposeScope(scope: Scope): void {
   scope.disposers = null;
   // Cleanup reads must not subscribe whatever is running the disposal (an
   // effect re-running, a match() switching cases, a list removing rows).
-  untracked(() => {
-    for (let i = 0; i < disposers.length; i++) {
-      try {
-        disposers[i]();
-      } catch (err) {
-        console.error('[Purity] Error during disposal:', err);
-      }
+  const prevListener = activeListener;
+  for (let i = 0; i < disposers.length; i++) {
+    activeListener = null;
+    try {
+      disposers[i]();
+    } catch (err) {
+      console.error('[Purity] Error during disposal:', err);
+    } finally {
+      activeListener = prevListener;
     }
-  });
+  }
 }
 
 function runComputed(node: ComputedNode): void {
@@ -667,7 +669,13 @@ function flush(): void {
         disposeScope(e);
         try {
           if (!owner || owner._isDestroyed) throw err;
-          untracked(() => owner._handleError(err));
+          const prevListener = activeListener;
+          activeListener = null;
+          try {
+            owner._handleError(err);
+          } finally {
+            activeListener = prevListener;
+          }
         } catch (unhandled) {
           console.error('[Purity] watch/effect threw:', unhandled);
         }

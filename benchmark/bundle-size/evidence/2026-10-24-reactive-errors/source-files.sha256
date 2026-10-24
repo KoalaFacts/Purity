@@ -1,0 +1,5 @@
+7c88888f8dfc09236090cc8fee52737c02f68b156956590e98811565e1e4d2ae  packages/core/src/signals.ts
+57df169fc569b146d0c88b21cb39252053677995fac1cc3ea7122902beb7cb0c  packages/core/src/scope.ts
+9a72ee42102760182e46677f5c75bf84e5876140d8c100592e63acf51c11b3fd  packages/core/src/elements.ts
+7c4fda4edcedfd9041fc6d53227ac9b04ca6a80f5533a31b7b0c5e22d982270f  packages/core/tests/effect-ownership.test.ts
+88e8484ec7cd806f68d75de88ee05c93ccebb0fc0ce73c0a039d990886d385c2  benchmark/bundle-size/budgets.json

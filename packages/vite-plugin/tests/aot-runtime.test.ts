@@ -14,7 +14,7 @@ import { ssrHelpers, valueToHtml } from '@purityjs/core/internal';
 import { purity } from '../src/index.ts';
 
 describe('AOT output runs correctly under jsdom', () => {
-  const plugin = purity();
+  const plugin = purity({ strictAot: true });
 
   it('hydrates nested template arrays without runtime code generation or changing property data', async () => {
     const { make } = evalAot(

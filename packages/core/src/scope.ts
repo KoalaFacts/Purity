@@ -53,14 +53,23 @@ export class ComponentContext implements Scope {
     // Scoped onError removal can leave an empty array; treat it as no handler.
     const handlers = this.errorHandlers;
     if (handlers?.length) {
-      // A handler can unmount this component and release the callback list.
-      // Teardown errors can still use handlers until that list is released.
-      for (let i = 0; i < handlers.length && this.errorHandlers === handlers; i++) {
-        try {
-          handlers[i](err);
-        } catch (e) {
-          console.error('[Purity] Error in onError handler:', e);
+      // Recovery work belongs to the component whose handlers receive the
+      // error, even when a descendant or a later scheduled effect failed.
+      // Teardown errors can still use handlers until their list is released,
+      // but must not restore an already destroyed component as a live owner.
+      const scoped = !this._isDestroyed;
+      if (scoped) pushContext(this);
+      try {
+        // A handler can unmount this component and release the callback list.
+        for (let i = 0; i < handlers.length && this.errorHandlers === handlers; i++) {
+          try {
+            handlers[i](err);
+          } catch (e) {
+            console.error('[Purity] Error in onError handler:', e);
+          }
         }
+      } finally {
+        if (scoped) popContext();
       }
     } else if (this.parent) {
       this.parent._handleError(err);

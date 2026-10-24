@@ -114,7 +114,7 @@ async function measure(scenario: (typeof scenarios)[number], aot: boolean): Prom
     mode: 'production',
     logLevel: 'error',
     resolve: { conditions: ['module', 'browser', 'production'] },
-    plugins: [...(aot ? [purity()] : []), inspectTransform],
+    plugins: [...(aot ? [purity({ strictAot: true })] : []), inspectTransform],
     build: {
       write: false,
       target: 'es2022',

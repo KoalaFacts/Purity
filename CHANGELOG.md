@@ -2,6 +2,25 @@
 
 ## Unreleased — 0.5.0
 
+### Added
+
+- Add opt-in `purity({ strictAot: true })` builds. Template transformation
+  failures report source locations instead of falling back to JIT, and client
+  output checks reject retained Purity runtime compilation. SSR keeps its
+  server compiler support. See [strict AOT builds](packages/vite-plugin/README.md#strict-aot-builds).
+- Record the [SolidJS competitor roadmap](docs/solid-competitor-roadmap.md),
+  separating stable behavior contracts, forward targets, and release evidence.
+
+### Fixed
+
+- Send later component-owned watch/effect failures to the existing `onError`
+  chain after releasing failed-run work. Independent queued effects keep
+  running; unhandled failures still reach the console, and initial watch
+  failures remain synchronous.
+- Run error handlers under the component receiving the error, so reactive
+  recovery work and disposal hooks belong to that component and are released
+  when it unmounts, including when a parent handles a descendant's failure.
+
 ### Changed
 
 - Use Apache-2.0 for Purity from 0.5.0. Preserve the original MIT copyright and

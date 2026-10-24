@@ -624,10 +624,9 @@ function flush(): void {
   // stay stale until some unrelated write retriggers a flush — and (b)
   // skip `pendingEffects.length = 0` below, leaving the queue polluted
   // with stale entries the next flush would re-run. Catch + console.error
-  // matches how cleanup errors and every other user-callback site in the
-  // codebase handle throws (resource error, optimistic onSettle, lifecycle
-  // hooks, …). The outer try/finally guarantees the queue is cleared
-  // regardless.
+  // reports unowned/unhandled failures, while component-owned effects use
+  // the existing onError chain. The outer try/finally guarantees the queue
+  // is cleared regardless.
   const id = ++flushSeq;
   try {
     let i = 0;
@@ -650,6 +649,10 @@ function flush(): void {
         settleAfterLoop(i - 1);
         break;
       }
+      // A callback can stop its own effect, which releases node.component.
+      // Retain the owner just for this attempt, and re-check its lifetime
+      // after releasing the failed run's work below.
+      const owner = e.component;
       try {
         updateValue(e);
       } catch (err) {
@@ -662,7 +665,12 @@ function flush(): void {
         // created before throwing; no later run is guaranteed to.
         e.status = STATUS_CLEAN;
         disposeScope(e);
-        console.error('[Purity] watch/effect threw:', err);
+        try {
+          if (!owner || owner._isDestroyed) throw err;
+          untracked(() => owner._handleError(err));
+        } catch (unhandled) {
+          console.error('[Purity] watch/effect threw:', unhandled);
+        }
       }
     }
   } finally {

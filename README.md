@@ -7,6 +7,11 @@
 
 A minimal web framework with TC39-Signals-inspired reactivity and templates that compile to direct DOM operations.
 
+Our goal is to make Purity a strong SolidJS competitor through direct DOM updates,
+Web Components, modular AOT compilation, and zero runtime dependencies. The
+[competitive roadmap](./docs/solid-competitor-roadmap.md) defines the behavior,
+tooling, published-consumer, and deployment evidence needed to reach that goal.
+
 - **A tiny API** — that's the whole thing
 - **No virtual DOM** — signals drive DOM updates directly
 - **CSP-safe** — no `eval`, no `new Function` (with the Vite plugin)

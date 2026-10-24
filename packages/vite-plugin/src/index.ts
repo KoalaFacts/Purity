@@ -2,7 +2,7 @@
 // @purityjs/vite-plugin — AOT template compilation + file-system routing
 //
 // Transforms html`...` at build time into direct DOM creation code.
-// No runtime parser, no new Function(), CSP-safe.
+// Successfully compiled templates use precompiled factories and hydration walkers.
 //
 // Optionally scans a routes directory and exposes a virtual
 // `purity:routes` module (ADR 0019).
@@ -42,6 +42,7 @@ export type { PuritySourceMap } from './text-edits.ts';
 const DEVTOOLS_ID = 'virtual:purity-devtools';
 const RESOLVED_DEVTOOLS_ID = '\0' + DEVTOOLS_ID;
 const frameworkPackages = new Map<string, boolean>();
+const COMPILER_ENTRIES = ['@purityjs/core/jit', '@purityjs/ssr'];
 
 function isFrameworkInternal(id: string): boolean {
   const path = id.split('?')[0]!.replaceAll('\\', '/');
@@ -183,6 +184,9 @@ export interface RoutesOptions {
  * Configuration options for the Purity Vite plugin.
  */
 export interface PurityPluginOptions {
+  /** Fail template compilation instead of falling back to JIT, and reject
+   * retained Purity runtime compilation in production client output. Default false. */
+  strictAot?: boolean;
   /** Show the reactive graph panel during Vite dev. Off by default; excluded from builds and preview. */
   devtools?: boolean;
   /**
@@ -248,6 +252,7 @@ export function purity(options?: PurityPluginOptions) {
   let isPreview = false;
   let devtoolsBase = '/';
   let serverBuild = false;
+  let productionBuild = false;
   let ordinaryListRuntime = true;
 
   const routesOpts = normaliseRoutesOption(options?.routes);
@@ -280,6 +285,7 @@ export function purity(options?: PurityPluginOptions) {
       },
     ) {
       serverBuild = !!config.build?.ssr;
+      productionBuild = config.command === 'build';
       ordinaryListRuntime = supportsOrdinaryListRuntime(config.resolve?.alias ?? []);
       if (stripServerModules && !serverBuild && config.build) {
         const limit = config.build.assetsInlineLimit;
@@ -364,8 +370,10 @@ export function purity(options?: PurityPluginOptions) {
       return source;
     },
 
-    generateBundle(_options: unknown, bundle: Record<string, any>) {
-      if (!stripServerModules || serverBuild) return;
+    generateBundle(this: any, _options: any, bundle: Record<string, any>) {
+      const ssr = serverBuild || this?.environment?.config?.consumer === 'server';
+      if (options?.strictAot && productionBuild && !ssr) assertStrictAotOutput(bundle, _options);
+      if (!stripServerModules || ssr) return;
       for (const output of Object.values(bundle)) {
         if (output.type !== 'asset') continue;
         for (const path of output.originalFileNames ?? []) rejectServerAssetPath(path);
@@ -476,13 +484,30 @@ export function purity(options?: PurityPluginOptions) {
         return { code: workingCode, map: emptyV3Map(id, code) };
       }
 
-      const result = compileTemplates(workingCode, id, transformOpts?.ssr === true);
+      const result = compileTemplates(
+        workingCode,
+        id,
+        transformOpts?.ssr === true,
+        options?.strictAot === true,
+      );
 
       // Surface compile failures: prefer the Rollup/Vite plugin context
       // (yields a proper warning in the dev overlay + build log) and fall
       // back to console.warn when called outside Vite (unit tests). Emitted
       // regardless of `changed` so a file containing only broken templates
       // still reports the failure.
+      if (options?.strictAot && result.warnings.length > 0) {
+        // Preprocessing can insert imports or remove server-action bodies.
+        // Recompile the original only on failure to recover source locations,
+        // without rejecting templates removed from a successful client pass.
+        const originalWarnings = rewritten
+          ? compileTemplates(code, id, transformOpts?.ssr === true, true).warnings
+          : result.warnings;
+        throw new Error(
+          (originalWarnings.length > 0 ? originalWarnings : result.warnings).join('\n') +
+            '\n[purity] strictAot requires every template to compile. Fix the template or module syntax reported above; use strictAot: false only if runtime compilation is intended.',
+        );
+      }
       for (const w of result.warnings) {
         if (this && typeof this.warn === 'function') this.warn(w);
         else console.warn(w);
@@ -495,6 +520,285 @@ export function purity(options?: PurityPluginOptions) {
       return { code: result.code, map: specializedLists ? emptyV3Map(id, code) : result.map };
     },
   };
+}
+
+// Check the owner of the rendered module, including symlinked packages and
+// published dist/shared chunks. Names or Function calls in application code
+// are not evidence of Purity runtime compilation. SSR compiler code is also
+// rejected here if it accidentally reaches a client chunk.
+function isCompilerPackageModule(id: string, owners: Map<string, boolean>): boolean {
+  if (id.startsWith('\0')) return false;
+  let dir = dirname(id.split('?')[0]!);
+  const visited: string[] = [];
+  let core = false;
+  for (;;) {
+    const known = owners.get(dir);
+    if (known !== undefined) {
+      core = known;
+      break;
+    }
+    visited.push(dir);
+    const manifest = resolvePath(dir, 'package.json');
+    if (existsSync(manifest)) {
+      core = ['@purityjs/core', '@purityjs/ssr'].includes(
+        JSON.parse(readFileSync(manifest, 'utf8')).name,
+      );
+      break;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  for (const path of visited) owners.set(path, core);
+  return core;
+}
+
+function someAstNode(node: any, predicate: (node: any) => boolean): boolean {
+  if (!node || typeof node !== 'object') return false;
+  if (predicate(node)) return true;
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) {
+      if (value.some((child) => someAstNode(child, predicate))) return true;
+    } else if (value && typeof value === 'object' && someAstNode(value, predicate)) return true;
+  }
+  return false;
+}
+
+function retainedJitImport(node: any, sources: Set<string>): boolean {
+  const source = node.source?.value;
+  if (!sources.has(source)) return false;
+  if (node.type === 'ImportExpression' || node.type === 'ExportAllDeclaration') return true;
+  if (node.type !== 'ImportDeclaration' && node.type !== 'ExportNamedDeclaration') return false;
+  return node.specifiers.some((specifier: any) => {
+    if (
+      specifier.type === 'ImportNamespaceSpecifier' ||
+      specifier.type === 'ImportDefaultSpecifier'
+    )
+      return true;
+    const name = specifier.imported ?? specifier.local;
+    return ['html', 'makeDeferred'].includes(name?.name ?? name?.value);
+  });
+}
+
+function globalReference(node: any): string | null {
+  if (node?.type === 'Identifier') return node.name;
+  if (node?.type !== 'MemberExpression') return null;
+  const object = globalReference(node.object);
+  const property = node.computed ? node.property?.value : node.property?.name;
+  return object && typeof property === 'string' ? `${object}.${property}` : null;
+}
+
+function bindsName(pattern: any, name: string): boolean {
+  if (!pattern) return false;
+  if (pattern.type === 'Identifier') return pattern.name === name;
+  if (pattern.type === 'RestElement') return bindsName(pattern.argument, name);
+  if (pattern.type === 'AssignmentPattern') return bindsName(pattern.left, name);
+  if (pattern.type === 'ArrayPattern')
+    return pattern.elements.some((item: any) => bindsName(item, name));
+  if (pattern.type === 'ObjectPattern')
+    return pattern.properties.some((item: any) =>
+      bindsName(item.type === 'RestElement' ? item.argument : item.value, name),
+    );
+  return false;
+}
+
+function functionVarBinds(node: any, name: string): boolean {
+  if (!node || typeof node !== 'object') return false;
+  if (['FunctionExpression', 'FunctionDeclaration', 'ArrowFunctionExpression'].includes(node.type))
+    return false;
+  if (
+    node.type === 'VariableDeclaration' &&
+    node.kind === 'var' &&
+    node.declarations.some((declaration: any) => bindsName(declaration.id, name))
+  )
+    return true;
+  return Object.values(node).some((value) =>
+    Array.isArray(value)
+      ? value.some((child) => functionVarBinds(child, name))
+      : value && typeof value === 'object' && functionVarBinds(value, name),
+  );
+}
+
+function usesCompilerNamespace(node: any, namespace: string, parent?: any): boolean {
+  if (!node || typeof node !== 'object') return false;
+  // Follow lexical scope: minifiers reuse an outer parameter's spelling
+  // for inner bindings even when those bindings never reference the import.
+  if (
+    ['FunctionExpression', 'FunctionDeclaration', 'ArrowFunctionExpression'].includes(node.type) &&
+    (node.id?.name === namespace ||
+      node.params.some((parameter: any) => bindsName(parameter, namespace)) ||
+      functionVarBinds(node.body, namespace))
+  )
+    return false;
+  if (
+    node.type === 'BlockStatement' &&
+    node.body.some(
+      (statement: any) =>
+        (statement.type === 'VariableDeclaration' &&
+          statement.kind !== 'var' &&
+          statement.declarations.some((declaration: any) =>
+            bindsName(declaration.id, namespace),
+          )) ||
+        (['FunctionDeclaration', 'ClassDeclaration'].includes(statement.type) &&
+          statement.id?.name === namespace),
+    )
+  )
+    return false;
+  if (node.type === 'CatchClause' && bindsName(node.param, namespace)) return false;
+  const loopBinding =
+    node.type === 'ForStatement'
+      ? node.init
+      : ['ForInStatement', 'ForOfStatement'].includes(node.type)
+        ? node.left
+        : null;
+  if (
+    loopBinding?.type === 'VariableDeclaration' &&
+    loopBinding.kind !== 'var' &&
+    loopBinding.declarations.some((declaration: any) => bindsName(declaration.id, namespace))
+  )
+    return false;
+  if (node.type === 'Identifier' && node.name === namespace) {
+    // Static names are not variable reads. Computed keys and shorthand
+    // properties still evaluate their identifiers and must remain checked.
+    if (
+      ['Property', 'MethodDefinition', 'PropertyDefinition'].includes(parent?.type) &&
+      parent.key === node &&
+      !parent.computed &&
+      !parent.shorthand
+    )
+      return false;
+    if (
+      ['LabeledStatement', 'BreakStatement', 'ContinueStatement'].includes(parent?.type) &&
+      parent.label === node
+    )
+      return false;
+    if (parent?.type === 'MemberExpression' && parent.object === node) {
+      const member = parent.computed ? parent.property?.value : parent.property?.name;
+      return typeof member !== 'string' || ['html', 'makeDeferred', 'default'].includes(member);
+    }
+    if (parent?.type === 'MemberExpression' && parent.property === node && !parent.computed)
+      return false;
+    // Passing or exporting the whole namespace retains the compiler too.
+    return true;
+  }
+  return Object.values(node).some((value) =>
+    Array.isArray(value)
+      ? value.some((child) => usesCompilerNamespace(child, namespace, node))
+      : value && typeof value === 'object' && usesCompilerNamespace(value, namespace, node),
+  );
+}
+
+function hasExternalNamespaceArgument(node: any): boolean {
+  if (!node || typeof node !== 'object') return false;
+  if (['FunctionExpression', 'FunctionDeclaration', 'ArrowFunctionExpression'].includes(node.type))
+    return false;
+  if (
+    node.type === 'CallExpression' &&
+    ['FunctionExpression', 'ArrowFunctionExpression'].includes(node.callee?.type) &&
+    node.arguments.some((argument: any) => globalReference(argument) !== null)
+  )
+    return true;
+  return Object.values(node).some((value) =>
+    Array.isArray(value)
+      ? value.some(hasExternalNamespaceArgument)
+      : value && typeof value === 'object' && hasExternalNamespaceArgument(value),
+  );
+}
+
+function retainedIifeCompiler(program: Program, outputOptions: any, imports: string[]): boolean {
+  if (outputOptions.format !== 'iife') return false;
+  const globals = new Set<string>();
+  for (const source of COMPILER_ENTRIES) {
+    // Side-effect-only external imports remain in chunk.imports, but produce
+    // no namespace argument. Require a real emitted namespace and compiler use.
+    const mapped =
+      typeof outputOptions.paths === 'function'
+        ? outputOptions.paths(source)
+        : outputOptions.paths?.[source];
+    if (!imports.includes(source) && !imports.includes(mapped)) continue;
+    const global =
+      typeof outputOptions.globals === 'function'
+        ? outputOptions.globals(source)
+        : outputOptions.globals?.[source];
+    if (global) globals.add(global);
+    else if (hasExternalNamespaceArgument(program)) {
+      throw new Error(
+        `[purity] strictAot: cannot verify external binding for ${source} in IIFE output. ` +
+          'Configure an explicit output.globals mapping for this external package, or bundle it so Purity can inspect its rendered code.',
+      );
+    }
+  }
+  return someAstNode(program, (node) => {
+    if (
+      node.type !== 'CallExpression' ||
+      !['FunctionExpression', 'ArrowFunctionExpression'].includes(node.callee?.type)
+    )
+      return false;
+    return node.arguments.some((argument: any, index: number) => {
+      if (!globals.has(globalReference(argument) ?? '')) return false;
+      const namespace = node.callee.params[index]?.name;
+      return namespace && usesCompilerNamespace(node.callee.body, namespace);
+    });
+  });
+}
+
+function externalCompilerError(fileName: string): Error {
+  return new Error(
+    `[purity] strictAot: retained Purity runtime compilation import from @purityjs/core/jit or @purityjs/ssr in ${fileName}. ` +
+      'Use the named html tag and compile the importing module; import hydration helpers from @purityjs/core/runtime instead.',
+  );
+}
+
+function assertStrictAotOutput(bundle: Record<string, any>, outputOptions: any): void {
+  const sources = new Set(COMPILER_ENTRIES);
+  for (const source of COMPILER_ENTRIES) {
+    const mapped =
+      typeof outputOptions.paths === 'function'
+        ? outputOptions.paths(source)
+        : outputOptions.paths?.[source];
+    if (mapped) sources.add(mapped);
+  }
+  const owners = new Map<string, boolean>();
+  for (const chunk of Object.values(bundle)) {
+    if (chunk.type !== 'chunk') continue;
+    for (const [id, rendered] of Object.entries(chunk.modules ?? {})) {
+      const code = (rendered as { code?: string | null }).code;
+      // Rendered code has already been tree-shaken. The presence of the
+      // original module in the graph alone must never reject a build.
+      if (!code || !isCompilerPackageModule(id, owners)) continue;
+      const { program } = parseSync('purity-rendered.js', code);
+      if (
+        someAstNode(
+          program,
+          (node) =>
+            (node.type === 'NewExpression' || node.type === 'CallExpression') &&
+            node.callee?.type === 'Identifier' &&
+            node.callee.name === 'Function',
+        )
+      ) {
+        throw new Error(
+          `[purity] strictAot: retained Purity runtime compilation in ${chunk.fileName}, module ${id}. ` +
+            'Use the named html tag so Purity can compile it, include the source extension in purity({ include }), and remove client JIT calls.',
+        );
+      }
+    }
+    // External packages have no rendered module body. Inspect only imports
+    // that survived in the emitted JavaScript, not original import records.
+    const { program } = parseSync('purity-output.js', chunk.code, { preserveParens: false });
+    if (
+      retainedIifeCompiler(program, outputOptions, chunk.imports ?? []) ||
+      someAstNode(
+        program,
+        (node) =>
+          retainedJitImport(node, sources) ||
+          (node.type === 'CallExpression' &&
+            node.callee?.name === 'require' &&
+            sources.has(node.arguments?.[0]?.value)),
+      )
+    ) {
+      throw externalCompilerError(chunk.fileName);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -682,6 +986,7 @@ interface CompileContext {
   // `__purity_h__` (ssrHelpers) instead of DOM-builders that take
   // `__purity_w__` (the watch fn).
   ssr: boolean;
+  strictAot: boolean;
 }
 
 /**
@@ -801,7 +1106,7 @@ function renderTemplate(
     if (!ctx.ssr) hydrateBody = generateHydrateLinked(ast);
   } catch (err) {
     // Security failures must not fall back to an uncompiled template.
-    if (isFatalTemplateError(err)) throw err;
+    if (isFatalTemplateError(err) && !ctx.strictAot) throw err;
     ctx.failed = true;
     const { line, column } = offsetToLineCol(ctx.lineStarts, node.start);
     const msg = err instanceof Error ? err.message : String(err);
@@ -873,7 +1178,12 @@ function moduleLangOf(id: string): ModuleLang | undefined {
   return lang === 'ts' ? 'ts' : lang === 'tsx' ? 'tsx' : 'jsx';
 }
 
-function compileTemplates(source: string, id: string, ssr: boolean): CompileResult {
+function compileTemplates(
+  source: string,
+  id: string,
+  ssr: boolean,
+  strictAot: boolean,
+): CompileResult {
   const warnings: string[] = [];
   const lineStarts = buildLineStarts(source);
   const filename = id.split('?')[0]!;
@@ -883,7 +1193,10 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
   const { program, errors } = parseSync(filename, source, { lang, preserveParens: false });
   if (errors.length > 0) {
     // Syntax errors are reported by Vite itself. Do not guess at templates.
-    warnings.push(`[purity] ${id} — could not parse module; html\`\` templates were not compiled`);
+    const { line, column } = offsetToLineCol(lineStarts, errors[0]?.labels?.[0]?.start ?? 0);
+    warnings.push(
+      `[purity] ${id}:${line + 1}:${column + 1} — could not parse module; html\`\` templates were not compiled: ${errors[0]?.message ?? 'invalid syntax'}`,
+    );
     return { changed: false, code: source, map: null, warnings };
   }
 
@@ -901,6 +1214,7 @@ function compileTemplates(source: string, id: string, ssr: boolean): CompileResu
     prefix,
     failed: false,
     ssr,
+    strictAot,
     id,
     lineStarts,
     warnings,

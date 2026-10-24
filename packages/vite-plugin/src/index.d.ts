@@ -1,5 +1,6 @@
 export interface PurityPluginOptions {
   include?: string[];
+  strictAot?: boolean;
 }
 
 export interface PuritySourceMap {

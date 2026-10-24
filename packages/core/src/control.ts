@@ -142,16 +142,14 @@ function reconcileMatch<T extends string | number | boolean>(
       if (node.parentNode) node.parentNode.removeChild(node);
     }
     disposeBranch(matchState);
+    // An unsuccessful case render must not count as the active key.
+    matchState.currentNodes = [];
+    matchState.prevKey = undefined;
     const key = String(sourceFn());
-    matchState.prevKey = key;
-
     const viewFn = cases[key as `${T}`] ?? fallback;
-    if (!viewFn) {
-      matchState.currentNodes = [];
-      return;
-    }
-    insertMatchView(matchState, parent, endMarker, renderBranch(matchState, viewFn));
-    if (String(sourceFn()) === key) return;
+    if (viewFn) insertMatchView(matchState, parent, endMarker, renderBranch(matchState, viewFn));
+    matchState.prevKey = key;
+    if (!viewFn || String(sourceFn()) === key) return;
     if (++runs > 100) {
       console.error('[Purity] match() selector did not settle.');
       return;

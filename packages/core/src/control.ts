@@ -68,7 +68,7 @@ type MatchCases<T extends string | number | boolean> = Partial<Record<`${T}`, Ma
 
 interface MatchState {
   currentNodes: Node[];
-  prevKey: string | undefined | null;
+  prevKey: string | null;
   /** Scope owning the active case's reactive work; disposed on case switch. */
   branch: Scope | null;
 }
@@ -84,8 +84,8 @@ function renderBranch(matchState: MatchState, render: () => unknown): unknown {
   } catch (e) {
     // Nothing will render this case, so release what it created before throwing.
     // Invalidate the failed selector along with its branch owner.
-    matchState.prevKey = matchState.branch = null;
-    disposeScope(scope);
+    matchState.prevKey = null;
+    disposeBranch(matchState);
     throw e;
   } finally {
     popContext();
@@ -225,7 +225,7 @@ export function match<T extends string | number | boolean>(
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
-  const matchState: MatchState = { currentNodes: [], prevKey: undefined, branch: null };
+  const matchState: MatchState = { currentNodes: [], prevKey: null, branch: null };
 
   const initKey = String(sourceFn()) as `${T}`;
   const initView = cases[initKey] ?? fallback;
@@ -265,10 +265,7 @@ export function when(
   // string. `match()` itself ALSO dispatches in SSR (so the recursion would
   // be safe), but going direct is clearer + slightly faster.
   if (getSSRRenderContext() !== null) return ssrControls.when(conditionFn, thenFn, elseFn);
-  return match((() => String(conditionFn())) as () => 'true' | 'false', {
-    true: thenFn,
-    ...(elseFn ? { false: elseFn } : {}),
-  }) as DocumentFragment;
+  return match(conditionFn, { true: thenFn, false: elseFn }) as DocumentFragment;
 }
 
 // ---------------------------------------------------------------------------
@@ -1936,7 +1933,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
     if (n.parentNode) n.parentNode.removeChild(n);
   }
 
-  const matchState: MatchState = { currentNodes: [], prevKey: undefined, branch: null };
+  const matchState: MatchState = { currentNodes: [], prevKey: null, branch: null };
   const initKey = String(sourceFn()) as `${T}`;
   const ssrKey = boundary.key;
   const initView = cases[initKey] ?? fallback;

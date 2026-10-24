@@ -68,7 +68,7 @@ type MatchCases<T extends string | number | boolean> = Partial<Record<`${T}`, Ma
 
 interface MatchState {
   currentNodes: Node[];
-  prevKey: string | undefined;
+  prevKey: string | undefined | null;
   /** Scope owning the active case's reactive work; disposed on case switch. */
   branch: Scope | null;
 }
@@ -83,7 +83,8 @@ function renderBranch(matchState: MatchState, render: () => unknown): unknown {
     return render();
   } catch (e) {
     // Nothing will render this case, so release what it created before throwing.
-    matchState.branch = null;
+    // Invalidate the failed selector along with its branch owner.
+    matchState.prevKey = matchState.branch = null;
     disposeScope(scope);
     throw e;
   } finally {
@@ -168,8 +169,7 @@ function installMatchWatch<T extends string | number | boolean>(
 ): () => void {
   return watch(() => {
     const key = String(sourceFn()) as `${T}`;
-    // A failed case has no live branch and must be retried on later changes.
-    if (key === matchState.prevKey && matchState.branch) return;
+    if (key === matchState.prevKey) return;
     const parent = endMarker.parentNode;
     /* v8 ignore next -- defensive; if endMarker is detached, watch is disposed */
     if (!parent) return;

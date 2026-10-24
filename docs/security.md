@@ -95,6 +95,33 @@ concurrently modify the server filesystem. Existing generated applications need
 the adapter changes applied to their own server source; upgrading the CLI does
 not rewrite an existing project.
 
+## Development and deployment dependencies
+
+The 2026-10-24 dependency repair raises the minimum fast-uri and Undici
+overrides to 3.1.9 and 7.30.1, and pins Zod 4.6.6 under Vercel. These are
+development/deployment dependencies; the published framework packages keep
+their existing runtime dependency boundaries.
+
+The scoped Zod override also replaces four Vercel dependencies' pinned Zod 3.22.4
+packages. It was checked against the installed Vercel 64.5.0 builder and its
+isolated Edge responses, plus positive and negative fixtures for seven
+exported Python-analysis 0.15.0 CommonJS schemas. The checked main-entry array,
+set, and map maximum bounds reject oversized collections before visiting their
+elements. Keep the normal CI audit and
+`npm run test:compat -w examples/ssr-stream-vercel-edge` when updating these
+dependencies; an upstream source rebuild or every Vercel CLI command is
+outside this compatibility evidence.
+
+Vercel's CLI still explicitly imports `zod/v3` for some local build manifests
+and authenticated Vercel API responses. Those parsers are not converted by
+the main-entry upgrade and retain their original collection traversal. The
+observed CLI schemas do not impose collection maximums, so the new main-entry
+early-bound checks would not cap their input either. This patch adds no such
+parsing path or input trust boundary. A clean dependency audit is not evidence
+that these upstream legacy parsers have been hardened; review their continued
+use separately when updating Vercel. They are deployment tooling, outside the
+Purity Edge application's request handler.
+
 ## Verification
 
 Run `npm run test:browser:security` for the built ESM/CommonJS and three-browser

@@ -1,0 +1,394 @@
+{
+  "schemaVersion": 3,
+  "revision": "d711bac2f5ae4b7420e6933b9c884ece119b1425",
+  "dirty": true,
+  "node": "24.21.0",
+  "zlib": "1.3.2.1-motley-8002e91",
+  "brotli": "1.2.0",
+  "versions": {
+    "core": "0.5.0",
+    "plugin": "0.5.0",
+    "ssr": "0.5.0",
+    "vite": "1.3.0",
+    "parser": "0.154.0"
+  },
+  "fixtureHashes": {
+    "counter.ts": "64b72a7f5a5339c35faa6aa307463beac0408d908140f4ac1f4ac217daabdae5",
+    "controls.ts": "ecbfa6501bf0b2f8f284bd27ba84eac1df0ac58351735c07d726dfd712653a04",
+    "controls-view.ts": "1b3907ecad66e1bdbcb17e0be9a45e54ccfcd2c29216ceb34a7a36a5408ea6fe",
+    "form.ts": "0967f1758df095d585d01646eb882d9ebcf8e1dd4abfde9ae55271a36882369f",
+    "hydration.ts": "92ffd1b9507fca729d55f3100716c0c5ae3f6b55ec32a42a92377da7593545ca",
+    "resource.ts": "34b6ef7f4535a95fe23981b0f2039d774dfbe4e58edc5f372053088391a18273",
+    "controls-server.ts": "18358b0e1db46ae3e51e5ee0915fef0a719a904a4a4599feee329d6efd46dcf5"
+  },
+  "artifactsSha256": {
+    "core": "fafea01cbb78670c10a9f83cf125b2be15a699f2041e5175e37fc8d59e414f88",
+    "coreCompiler": "af759949ae38c46cd0de77f88cbcb8005495e0d4dbc150bd4a3926f990d799a7",
+    "ssr": "44a145a878d617a7ce223ded86a3c028747234f46917ffbc4d0c1bc5630dc2f1",
+    "plugin": "26fba05b4e6d6fe13715a59b89cc660980a90b29b85038f7ead3cfa0602a0661"
+  },
+  "verification": {
+    "status": "not-run",
+    "engines": {}
+  },
+  "settings": {
+    "target": "es2022",
+    "minify": true,
+    "gzipLevel": 9,
+    "brotliQuality": 11,
+    "perFileCompression": true
+  },
+  "scope": "Packages: every export of each published entry, minified, from built dist; other Purity packages and Node built-ins external. Fixtures: complete fixture JavaScript payload; selected profiles also have size budgets.",
+  "packages": [
+    {
+      "entry": "core",
+      "rawBytes": 51712,
+      "gzipBytes": 16619,
+      "brotliBytes": 15055,
+      "functionConstructorCalls": 0,
+      "sha256": "f3ae70ffd90fe5d7efe90be6c8f8ffb7729f421d2f9fdbaac25aed79e901a595"
+    },
+    {
+      "entry": "core-compiler",
+      "rawBytes": 25062,
+      "gzipBytes": 8222,
+      "brotliBytes": 7437,
+      "functionConstructorCalls": 0,
+      "sha256": "e900202bcb35d3da6d6b27dc894592dbf4752656f3fe2c4d5b869c323729a692"
+    },
+    {
+      "entry": "core-list-runtime",
+      "rawBytes": 15787,
+      "gzipBytes": 5647,
+      "brotliBytes": 5114,
+      "functionConstructorCalls": 0,
+      "sha256": "4b1acb710222303b6aa4c4504e6d3983b0634a2e77444ee6fc7764b147999a8f"
+    },
+    {
+      "entry": "core-runtime",
+      "rawBytes": 7766,
+      "gzipBytes": 3142,
+      "brotliBytes": 2817,
+      "functionConstructorCalls": 0,
+      "sha256": "a5ceb9860a8b7670f5b4a2ac15a6486481845a3707178aff1fe14eed5799f0f2"
+    },
+    {
+      "entry": "core-jit",
+      "rawBytes": 23421,
+      "gzipBytes": 8015,
+      "brotliBytes": 7283,
+      "functionConstructorCalls": 1,
+      "sha256": "1676cd61949ef9424ac7da8d44c0625df1d610f943dbd671331a4d922a14e998"
+    },
+    {
+      "entry": "core-signals",
+      "rawBytes": 29244,
+      "gzipBytes": 8769,
+      "brotliBytes": 7886,
+      "functionConstructorCalls": 0,
+      "sha256": "74c03bcfec112876fa63a51a414b9c8af533608f29d56474d5280e0a4be371a6"
+    },
+    {
+      "entry": "core-router",
+      "rawBytes": 34223,
+      "gzipBytes": 12234,
+      "brotliBytes": 11021,
+      "functionConstructorCalls": 0,
+      "sha256": "9e6450262a0b1ad1bd3d95c05912ede11bc2060726f1343996b728491d4d212a"
+    },
+    {
+      "entry": "core-actions",
+      "rawBytes": 16008,
+      "gzipBytes": 5821,
+      "brotliBytes": 5248,
+      "functionConstructorCalls": 0,
+      "sha256": "71a319b43e1978c4caaabdd3a98dd2e074404ee92e552b2d6068c3b7a0df9dd7"
+    },
+    {
+      "entry": "core-islands",
+      "rawBytes": 21411,
+      "gzipBytes": 7803,
+      "brotliBytes": 6988,
+      "functionConstructorCalls": 0,
+      "sha256": "c8443eb3070f45476fc075b6329790214981809c474a1acef3e61ccfa1ffbd23"
+    },
+    {
+      "entry": "core-query",
+      "rawBytes": 12738,
+      "gzipBytes": 4570,
+      "brotliBytes": 4169,
+      "functionConstructorCalls": 0,
+      "sha256": "f656cfc3ac9fc3783f073f1de44ed64ce8d1e969f468e72831e59687a0b7d2e5"
+    },
+    {
+      "entry": "core-internal",
+      "rawBytes": 10496,
+      "gzipBytes": 4565,
+      "brotliBytes": 4083,
+      "functionConstructorCalls": 0,
+      "sha256": "c733c64e17123ce06a0f961d57bb3a06e80246240ecea65cb755de18eb90ad91"
+    },
+    {
+      "entry": "core-all",
+      "rawBytes": 147997,
+      "gzipBytes": 45741,
+      "brotliBytes": 40698,
+      "functionConstructorCalls": 1,
+      "sha256": "a6ab0342a81b2380b2732ec0416d1feb81b1955252c934e8589b78b6f8501a29"
+    },
+    {
+      "entry": "ssr",
+      "rawBytes": 13327,
+      "gzipBytes": 5073,
+      "brotliBytes": 4545,
+      "functionConstructorCalls": 1,
+      "sha256": "40ccecb5b1f4e4276c573feddf44054641fc8d894dca87339e47e63fc430839a"
+    }
+  ],
+  "measurements": [
+    {
+      "profile": "counter-runtime",
+      "rawBytes": 27008,
+      "gzipBytes": 9127,
+      "brotliBytes": 8300,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 27008,
+          "gzipBytes": 9127,
+          "brotliBytes": 8300
+        }
+      ],
+      "functionConstructorCalls": 1
+    },
+    {
+      "profile": "counter-aot",
+      "rawBytes": 9767,
+      "gzipBytes": 3519,
+      "brotliBytes": 3226,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 9767,
+          "gzipBytes": 3519,
+          "brotliBytes": 3226
+        }
+      ],
+      "functionConstructorCalls": 0
+    },
+    {
+      "profile": "controls-runtime",
+      "rawBytes": 49889,
+      "gzipBytes": 16633,
+      "brotliBytes": 15100,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 49889,
+          "gzipBytes": 16633,
+          "brotliBytes": 15100
+        }
+      ],
+      "functionConstructorCalls": 1
+    },
+    {
+      "profile": "controls-aot",
+      "rawBytes": 26049,
+      "gzipBytes": 8547,
+      "brotliBytes": 7625,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 26049,
+          "gzipBytes": 8547,
+          "brotliBytes": 7625
+        }
+      ],
+      "functionConstructorCalls": 0
+    },
+    {
+      "profile": "form-runtime",
+      "rawBytes": 36173,
+      "gzipBytes": 12298,
+      "brotliBytes": 11132,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 36173,
+          "gzipBytes": 12298,
+          "brotliBytes": 11132
+        }
+      ],
+      "functionConstructorCalls": 1
+    },
+    {
+      "profile": "form-aot",
+      "rawBytes": 19550,
+      "gzipBytes": 6993,
+      "brotliBytes": 6294,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 19550,
+          "gzipBytes": 6993,
+          "brotliBytes": 6294
+        }
+      ],
+      "functionConstructorCalls": 0
+    },
+    {
+      "profile": "hydration-runtime",
+      "rawBytes": 52170,
+      "gzipBytes": 17218,
+      "brotliBytes": 15598,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 52170,
+          "gzipBytes": 17218,
+          "brotliBytes": 15598
+        }
+      ],
+      "functionConstructorCalls": 1
+    },
+    {
+      "profile": "hydration-aot",
+      "rawBytes": 28328,
+      "gzipBytes": 9118,
+      "brotliBytes": 8145,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 28328,
+          "gzipBytes": 9118,
+          "brotliBytes": 8145
+        }
+      ],
+      "functionConstructorCalls": 0
+    },
+    {
+      "profile": "resource-runtime",
+      "rawBytes": 30155,
+      "gzipBytes": 10366,
+      "brotliBytes": 9471,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 30155,
+          "gzipBytes": 10366,
+          "brotliBytes": 9471
+        }
+      ],
+      "functionConstructorCalls": 1
+    },
+    {
+      "profile": "resource-aot",
+      "rawBytes": 13954,
+      "gzipBytes": 5129,
+      "brotliBytes": 4667,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 13954,
+          "gzipBytes": 5129,
+          "brotliBytes": 4667
+        }
+      ],
+      "functionConstructorCalls": 0
+    }
+  ],
+  "budgets": {
+    "packages": {
+      "core": {
+        "gzipBytes": 16896,
+        "brotliBytes": 15360
+      },
+      "core-compiler": {
+        "gzipBytes": 8704,
+        "brotliBytes": 7808
+      },
+      "ssr": {
+        "gzipBytes": 5376,
+        "brotliBytes": 4864
+      },
+      "core-all": {
+        "gzipBytes": 46080,
+        "brotliBytes": 40704
+      },
+      "core-runtime": {
+        "gzipBytes": 3328,
+        "brotliBytes": 2944
+      },
+      "core-jit": {
+        "gzipBytes": 8448,
+        "brotliBytes": 7680
+      },
+      "core-signals": {
+        "gzipBytes": 9216,
+        "brotliBytes": 8192
+      },
+      "core-router": {
+        "gzipBytes": 12544,
+        "brotliBytes": 11264
+      },
+      "core-actions": {
+        "gzipBytes": 5888,
+        "brotliBytes": 5248
+      },
+      "core-islands": {
+        "gzipBytes": 8192,
+        "brotliBytes": 7424
+      },
+      "core-query": {
+        "gzipBytes": 4608,
+        "brotliBytes": 4224
+      },
+      "core-internal": {
+        "gzipBytes": 4864,
+        "brotliBytes": 4352
+      },
+      "core-list-runtime": {
+        "gzipBytes": 5888,
+        "brotliBytes": 5376
+      }
+    },
+    "fixtures": {
+      "counter-runtime": {
+        "functionConstructorCalls": 1
+      },
+      "counter-aot": {
+        "functionConstructorCalls": 0
+      },
+      "controls-runtime": {
+        "functionConstructorCalls": 1
+      },
+      "controls-aot": {
+        "functionConstructorCalls": 0,
+        "gzipBytes": 8960,
+        "brotliBytes": 7936
+      },
+      "form-runtime": {
+        "functionConstructorCalls": 1
+      },
+      "form-aot": {
+        "functionConstructorCalls": 0
+      },
+      "hydration-runtime": {
+        "functionConstructorCalls": 1
+      },
+      "hydration-aot": {
+        "functionConstructorCalls": 0,
+        "gzipBytes": 9472,
+        "brotliBytes": 8448
+      },
+      "resource-runtime": {
+        "functionConstructorCalls": 1
+      },
+      "resource-aot": {
+        "functionConstructorCalls": 0
+      }
+    }
+  },
+  "violations": [],
+  "budgetEnforced": true
+}

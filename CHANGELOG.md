@@ -2,8 +2,34 @@
 
 ## Unreleased — 0.5.0
 
+### Added
+
+- Add opt-in `purity({ strictAot: true })` builds. Template transformation
+  failures report source locations instead of falling back to JIT, and client
+  output checks reject retained Purity runtime compilation. SSR keeps its
+  server compiler support. See [strict AOT builds](packages/vite-plugin/README.md#strict-aot-builds).
+- Record the [SolidJS competitor roadmap](docs/solid-competitor-roadmap.md),
+  separating stable behavior contracts, forward targets, and release evidence.
+
+### Fixed
+
+- Send later component-owned watch/effect failures to the existing `onError`
+  chain after releasing failed-run work. Independent queued effects keep
+  running; unhandled failures still reach the console, and initial watch
+  failures remain synchronous.
+- Run error handlers under the component receiving the error, so reactive
+  recovery work and disposal hooks belong to that component and are released
+  when it unmounts, including when a parent handles a descendant's failure.
+- Update development/deployment transitives to fast-uri 3.1.9, Undici 7.30.1,
+  and Zod 4.6.6. Scope the Zod override to Vercel and verify the installed
+  builder and schema consumers; see the [tooling scope and remaining v3 use](docs/security.md#development-and-deployment-dependencies).
+
 ### Changed
 
+- Share the programmatic component factory's final render/mount path while
+  preserving callback-slot discovery and lifecycle order. Remove redundant
+  ownership lookups and cleanup wrappers, keeping the original bundle limits;
+  preserve the [measured inputs and results](benchmark/bundle-size/evidence/2026-10-24-reactive-errors/README.md).
 - Use Apache-2.0 for Purity from 0.5.0. Preserve the original MIT copyright and
   permission notice for earlier source; published releases through 0.4.0 remain
   MIT. Third-party components retain their own licenses.

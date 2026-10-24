@@ -148,6 +148,11 @@ nonzero and records the measured value and limit; it never updates budgets
 automatically. Review the current report and the code/toolchain change before
 editing a budget.
 
+The [2026-10-24 reactive-error recovery review](./evidence/2026-10-24-reactive-errors/README.md)
+preserves the original failing reports and records why the proposed allowance
+was withdrawn. Its final candidate passes all original limits after reducing
+implementation overhead, with the full report and source fingerprints retained.
+
 For an investigation that deliberately exceeds a budget, use:
 
 ```bash

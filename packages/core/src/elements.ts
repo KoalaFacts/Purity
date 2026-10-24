@@ -989,28 +989,12 @@ export function component<
       const bag = { ...createConsumerBag(registry), ...exposed };
       const consumerResult = children(bag);
 
-      if (consumerResult instanceof Node) {
-        registry.filled.set('default', consumerResult);
-      } else if (typeof consumerResult === 'string') {
+      if (consumerResult instanceof Node || typeof consumerResult === 'string') {
         registry.filled.set('default', consumerResult);
       }
-
-      // Pass 2: re-render with filled slots
-      const { result } = runRender(renderFn, props, slotAccessors, ctx);
-
-      if (result instanceof DocumentFragment) {
-        ctx.nodes = Array.from(result.childNodes);
-      } else {
-        ctx.nodes = [result];
-      }
-
-      ctx._isMounted = true;
-      scheduleMountCallbacks(ctx);
-
-      return result;
     }
 
-    // Single render for non-callback
+    // Render with filled slots; callback children completed discovery above.
     const { result } = runRender(renderFn, props, slotAccessors, ctx);
 
     if (result instanceof DocumentFragment) {

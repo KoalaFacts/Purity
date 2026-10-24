@@ -173,7 +173,9 @@ export function onDispose(fn: () => void): void {
 }
 
 /**
- * Register an error handler. Catches errors from render and lifecycle hooks.
+ * Register an error handler. Catches errors from render, lifecycle hooks, and
+ * subsequent scheduled runs of component-owned watches/effects. A watch's
+ * initial run remains synchronous and throws to its caller.
  * Errors bubble up to parent components if not handled.
  *
  * @example

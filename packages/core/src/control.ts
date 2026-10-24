@@ -94,9 +94,8 @@ function renderBranch(matchState: MatchState, render: () => unknown): unknown {
 
 function disposeBranch(matchState: MatchState): void {
   const scope = matchState.branch;
-  if (scope === null) return;
   matchState.branch = null;
-  disposeScope(scope);
+  if (scope) disposeScope(scope);
 }
 
 // Insert the result of viewFn() before endMarker and update matchState. Shared
@@ -134,7 +133,7 @@ function reconcileMatch<T extends string | number | boolean>(
     for (let i = 0; i < matchState.currentNodes.length; i++) {
       const node = matchState.currentNodes[i];
       /* v8 ignore next -- defensive guard; nodes always have parent here */
-      if (node.parentNode) node.parentNode.removeChild(node);
+      node.parentNode?.removeChild(node);
     }
     disposeBranch(matchState);
     const key = String(sourceFn());
@@ -667,7 +666,7 @@ function reconcileEach<T, E extends KeyedEntry>(
         if (entry) {
           for (let j = 0; j < entry.nodes.length; j++) {
             const node = entry.nodes[j];
-            if (node.parentNode) node.parentNode.removeChild(node);
+            node.parentNode?.removeChild(node);
           }
           ops.release(entry);
         }
@@ -1649,7 +1648,7 @@ export function inflateDeferredEach<T>(
   // the new endMarker replaces them. Row content is left in place and adopted.
   for (let i = 0; i < boundaryNodes.length; i++) {
     const n = boundaryNodes[i];
-    if (n.parentNode) n.parentNode.removeChild(n);
+    n.parentNode?.removeChild(n);
   }
 
   const ssrByKey = new Map<string, SSRRow>();
@@ -1724,7 +1723,7 @@ export function inflateDeferredEach<T>(
           if (ssrRow) {
             for (let j = 0; j < ssrRow.nodes.length; j++) {
               const n = ssrRow.nodes[j];
-              if (n.parentNode) n.parentNode.removeChild(n);
+              n.parentNode?.removeChild(n);
             }
           }
           if (isDeferred(content)) {
@@ -1766,7 +1765,7 @@ export function inflateDeferredEach<T>(
       if (adoptedRows.has(row)) continue;
       for (let j = 0; j < row.nodes.length; j++) {
         const n = row.nodes[j];
-        if (n.parentNode) n.parentNode.removeChild(n);
+        n.parentNode?.removeChild(n);
       }
     }
 
@@ -1924,7 +1923,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
   parent.insertBefore(endMarker, closeMarker);
   for (let i = 0; i < boundary.boundaryNodes.length; i++) {
     const n = boundary.boundaryNodes[i];
-    if (n.parentNode) n.parentNode.removeChild(n);
+    n.parentNode?.removeChild(n);
   }
 
   const matchState: MatchState = { currentNodes: [], prevKey: null, branch: null };
@@ -1958,7 +1957,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
       // adopt; lossy-replace the boundary content with the new value.
       for (let i = 0; i < boundary.inner.length; i++) {
         const n = boundary.inner[i];
-        if (n.parentNode) n.parentNode.removeChild(n);
+        n.parentNode?.removeChild(n);
       }
     }
     insertMatchView(matchState, parent, endMarker, content);
@@ -1969,7 +1968,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
     // inner content and render the current view fresh.
     for (let i = 0; i < boundary.inner.length; i++) {
       const n = boundary.inner[i];
-      if (n.parentNode) n.parentNode.removeChild(n);
+      n.parentNode?.removeChild(n);
     }
     if (initView) {
       matchState.prevKey = initKey;

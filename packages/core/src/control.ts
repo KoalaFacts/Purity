@@ -113,7 +113,7 @@ function insertMatchView(
     return;
   }
   const node = content instanceof Node ? content : document.createTextNode(String(content));
-  matchState.currentNodes = extractNodes(node);
+  matchState.currentNodes = node instanceof DocumentFragment ? [...node.childNodes] : [node];
   parent.insertBefore(node, endMarker);
 }
 
@@ -493,6 +493,14 @@ function extractNodes(content: Node | DocumentFragment | string): Node[] {
   }
   if (content instanceof Node) return [content];
   return [document.createTextNode(String(content ?? ''))];
+}
+
+// Shared cold-path DOM removal for SSR hydration and mismatch cleanup.
+function detachNodes(nodes: Node[]): void {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    if (node.parentNode) node.parentNode.removeChild(node);
+  }
 }
 
 // Mutable state shared between each()'s watch and inflateDeferredEach's hydration
@@ -1647,10 +1655,7 @@ export function inflateDeferredEach<T>(
   const { rows: ssrRows, boundaryNodes } = parseSSRRows(contNodes);
   // Detach the SSR `<!--e-->` / `<!--/e-->` markers and any orphan content —
   // the new endMarker replaces them. Row content is left in place and adopted.
-  for (let i = 0; i < boundaryNodes.length; i++) {
-    const n = boundaryNodes[i];
-    if (n.parentNode) n.parentNode.removeChild(n);
-  }
+  detachNodes(boundaryNodes);
 
   const ssrByKey = new Map<string, SSRRow>();
   for (let i = 0; i < ssrRows.length; i++) ssrByKey.set(ssrRows[i].key, ssrRows[i]);
@@ -1722,10 +1727,7 @@ export function inflateDeferredEach<T>(
           // fragment). Detach any SSR row nodes for this key — they're stale —
           // and insert the fresh content.
           if (ssrRow) {
-            for (let j = 0; j < ssrRow.nodes.length; j++) {
-              const n = ssrRow.nodes[j];
-              if (n.parentNode) n.parentNode.removeChild(n);
-            }
+            detachNodes(ssrRow.nodes);
           }
           if (isDeferred(content)) {
             // No SSR row to adopt — inflate against an empty fragment. The
@@ -1764,10 +1766,7 @@ export function inflateDeferredEach<T>(
     for (let i = 0; i < ssrRows.length; i++) {
       const row = ssrRows[i];
       if (adoptedRows.has(row)) continue;
-      for (let j = 0; j < row.nodes.length; j++) {
-        const n = row.nodes[j];
-        if (n.parentNode) n.parentNode.removeChild(n);
-      }
+      detachNodes(row.nodes);
     }
 
     if (options?.virtual) {
@@ -1922,10 +1921,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
   // for adoption.
   const endMarker = document.createComment('m');
   parent.insertBefore(endMarker, closeMarker);
-  for (let i = 0; i < boundary.boundaryNodes.length; i++) {
-    const n = boundary.boundaryNodes[i];
-    if (n.parentNode) n.parentNode.removeChild(n);
-  }
+  detachNodes(boundary.boundaryNodes);
 
   const matchState: MatchState = { currentNodes: [], prevKey: null, branch: null };
   const initKey = String(sourceFn()) as `${T}`;
@@ -1956,10 +1952,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
     if (!adopted) {
       // View returned a non-deferred value (raw Node, string, etc.) — can't
       // adopt; lossy-replace the boundary content with the new value.
-      for (let i = 0; i < boundary.inner.length; i++) {
-        const n = boundary.inner[i];
-        if (n.parentNode) n.parentNode.removeChild(n);
-      }
+      detachNodes(boundary.inner);
     }
     insertMatchView(matchState, parent, endMarker, content);
     matchState.prevKey = initKey;
@@ -1967,10 +1960,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
     // Either no view was rendered server-side (key === undefined / no inner
     // content) or the SSR key disagrees with the current key. Detach SSR
     // inner content and render the current view fresh.
-    for (let i = 0; i < boundary.inner.length; i++) {
-      const n = boundary.inner[i];
-      if (n.parentNode) n.parentNode.removeChild(n);
-    }
+    detachNodes(boundary.inner);
     if (initView) {
       matchState.prevKey = initKey;
       insertMatchView(matchState, parent, endMarker, renderBranch(matchState, initView));

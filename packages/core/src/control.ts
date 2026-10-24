@@ -68,7 +68,7 @@ type MatchCases<T extends string | number | boolean> = Partial<Record<`${T}`, Ma
 
 interface MatchState {
   currentNodes: Node[];
-  prevKey?: string | null;
+  prevKey: string | null;
   /** Scope owning the active case's reactive work; disposed on case switch. */
   branch: Scope | null;
 }
@@ -113,7 +113,7 @@ function insertMatchView(
     return;
   }
   const node = content instanceof Node ? content : document.createTextNode(String(content));
-  matchState.currentNodes = node.nodeType === 11 ? Array.from(node.childNodes) : [node];
+  matchState.currentNodes = node instanceof DocumentFragment ? [...node.childNodes] : [node];
   parent.insertBefore(node, endMarker);
 }
 
@@ -213,13 +213,13 @@ export function match<T extends string | number | boolean>(
   // `renderToStream` / `renderStatic` pass, return SSRHtml string output
   // instead of touching `document`. Lets `match()` be called from
   // manifest-driven composers without needing the explicit `matchSSR`.
-  if (getSSRRenderContext() !== null) return ssrControls.match(sourceFn, cases, fallback);
+  if (getSSRRenderContext()) return ssrControls.match(sourceFn, cases, fallback);
 
   const endMarker = document.createComment('m');
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
-  const matchState: MatchState = { currentNodes: [], branch: null };
+  const matchState: MatchState = { currentNodes: [], prevKey: null, branch: null };
 
   const initKey = String(sourceFn()) as `${T}`;
   const initView = cases[initKey] ?? fallback;
@@ -258,7 +258,7 @@ export function when(
   // entirely on the server — whenSSR returns the picked branch as a tagged
   // string. `match()` itself ALSO dispatches in SSR (so the recursion would
   // be safe), but going direct is clearer + slightly faster.
-  if (getSSRRenderContext() !== null) return ssrControls.when(conditionFn, thenFn, elseFn);
+  if (getSSRRenderContext()) return ssrControls.when(conditionFn, thenFn, elseFn);
   return match(conditionFn, { true: thenFn, false: elseFn }) as DocumentFragment;
 }
 
@@ -438,7 +438,7 @@ function canReplaceOwnedRange(
   const firstEntry = keyToEntry.get(prevKeys[0]);
   return (
     prevKeys.length > 32 &&
-    firstEntry !== undefined &&
+    !!firstEntry &&
     firstEntry.nodes[0]?.parentNode === parent &&
     firstEntry.nodes[0] === parent.firstChild &&
     endMarker.parentNode === parent &&
@@ -1456,7 +1456,7 @@ export function each<T>(
   // SSR-context dispatch (ADR 0023). Inside a server render pass, return
   // SSRHtml string output. Same per-row marker grammar as eachSSR, so
   // hydration adoption still works against the resulting markup.
-  if (getSSRRenderContext() !== null) return ssrControls.each(listAccessor, mapFn, keyFn);
+  if (getSSRRenderContext()) return ssrControls.each(listAccessor, mapFn, keyFn);
 
   if (eachOptions?.virtual) return eachWindow(listAccessor, mapFn, keyFn, getCurrentContext());
 
@@ -1470,7 +1470,7 @@ export function ordinaryEach<T>(
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment | DeferredEach<T> | SSRHtml {
   if (isHydrating()) return makeDeferredEach(listAccessor, mapFn, keyFn);
-  if (getSSRRenderContext() !== null) return ssrControls.each(listAccessor, mapFn, keyFn);
+  if (getSSRRenderContext()) return ssrControls.each(listAccessor, mapFn, keyFn);
   return renderEachDOM(listAccessor, mapFn, keyFn);
 }
 
@@ -1927,7 +1927,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
     if (n.parentNode) n.parentNode.removeChild(n);
   }
 
-  const matchState: MatchState = { currentNodes: [], branch: null };
+  const matchState: MatchState = { currentNodes: [], prevKey: null, branch: null };
   const initKey = String(sourceFn()) as `${T}`;
   const ssrKey = boundary.key;
   const initView = cases[initKey] ?? fallback;

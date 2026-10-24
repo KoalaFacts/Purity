@@ -1009,11 +1009,12 @@ export function watch(
     for (let i = 0; i < len; i++) newValues[i] = sources[i]();
 
     // The first run only records the values; cb fires from the next change.
+    // Explicit sources alone control re-runs; callback reads are not dependencies.
     const result = first
       ? undefined
-      : isArray
-        ? cb(newValues, oldValues)
-        : cb(newValues[0], oldValues[0]);
+      : untracked(() => {
+          return isArray ? cb(newValues, oldValues) : cb(newValues[0], oldValues[0]);
+        });
     first = false;
 
     const tmp = oldValues;

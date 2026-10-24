@@ -164,8 +164,11 @@ function readNode<T>(node: StateNode<T> | ComputedNode): T {
   // A disposed computed is a frozen snapshot, not a live reactive source: it
   // can never become dirty again (its own sources were cut on dispose), so
   // tracking it here would only create a dead observer edge.
-  const producerDisposed = node.fn !== null && (node as ComputedNode).disposed;
-  if (activeListener !== null && !activeListener.disposed && !producerDisposed) {
+  if (
+    activeListener !== null &&
+    !activeListener.disposed &&
+    (node.fn === null || !(node as ComputedNode).disposed)
+  ) {
     track(node);
   }
   // Track before throwing so a consumer that catches the error still re-runs
@@ -438,15 +441,17 @@ export function disposeScope(scope: Scope): void {
   // Cleanup reads must not subscribe whatever is running the disposal (an
   // effect re-running, a match() switching cases, a list removing rows).
   const prevListener = activeListener;
-  for (let i = 0; i < disposers.length; i++) {
-    activeListener = null;
-    try {
-      disposers[i]();
-    } catch (err) {
-      console.error('[Purity] Error during disposal:', err);
-    } finally {
-      activeListener = prevListener;
+  activeListener = null;
+  try {
+    for (let i = 0; i < disposers.length; i++) {
+      try {
+        disposers[i]();
+      } catch (err) {
+        console.error('[Purity] Error during disposal:', err);
+      }
     }
+  } finally {
+    activeListener = prevListener;
   }
 }
 
@@ -796,9 +801,8 @@ export function state<T>(initial: T): StateAccessor<T> {
   };
   trackNode(node);
 
-  const accessor = ((...args: [T | ((current: T) => T)] | []): T => {
-    if (args.length === 0) return readNode(node);
-    const value = args[0];
+  const accessor = (function (value?: T | ((current: T) => T)): T {
+    if (arguments.length === 0) return readNode(node);
     const next = typeof value === 'function' ? (value as (current: T) => T)(node.value) : value;
     writeState(node, next as T);
     return next as T;
@@ -865,7 +869,7 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
   if (ctx) (ctx.disposers ??= []).push(dispose);
 
   const accessor = (() => readNode<T>(node)) as ComputedAccessor<T>;
-  (accessor as unknown as { get: () => T }).get = accessor;
+  (accessor as unknown as { get: () => T }).get = () => readNode<T>(node);
   (accessor as unknown as { peek: () => T }).peek = () => peekNode<T>(node);
 
   return accessor;
@@ -995,8 +999,8 @@ export function watch(
   const sources: WatchSource<any>[] = isArray ? sourceOrFn : [sourceOrFn as WatchSource<any>];
   const len = sources.length;
 
-  let oldValues = Array(len);
-  let newValues = Array(len);
+  let oldValues = new Array(len);
+  let newValues = new Array(len);
 
   // The eager first effect run samples and subscribes to every source; the
   // buffer swap below keeps those values as the next callback's oldValues.

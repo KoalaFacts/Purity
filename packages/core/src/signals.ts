@@ -996,38 +996,25 @@ export function watch(
   }
 
   const isArray = Array.isArray(sourceOrFn);
-  const sources: WatchSource<any>[] = isArray ? sourceOrFn : [sourceOrFn as WatchSource<any>];
-  const len = sources.length;
-
-  // The buffers are populated sequentially before callback delivery. Empty
-  // arrays also avoid a redundant sized allocation for tuple callbacks.
-  let oldValues: unknown[] = [];
-  let newValues: unknown[] = [];
-
-  // The eager first effect run samples and subscribes to every source; the
-  // buffer swap below keeps those values as the next callback's oldValues.
-  // Do not read source getters here as well: that evaluates user code twice.
+  const len = isArray ? sourceOrFn.length : 0;
+  let oldValue: any;
   let first = true;
 
   return _effect(() => {
-    // A callback may retain tuple arguments even if it throws. Recycle only
-    // the single-source buffers; each tuple run owns its own snapshot array.
-    if (isArray) newValues = [];
-    for (let i = 0; i < len; i++) newValues[i] = sources[i]();
+    // Tuple snapshots must remain independent, including when cb throws.
+    // A single source needs only a scalar, not rotating array buffers.
+    let newValue: any;
+    if (isArray) {
+      newValue = [];
+      for (let i = 0; i < len; i++) newValue[i] = (sourceOrFn as WatchSource<any>[])[i]();
+    } else {
+      newValue = (sourceOrFn as WatchSource<any>)();
+    }
 
-    // The first run only records the values; cb fires from the next change.
-    // Explicit sources alone control re-runs; callback reads are not dependencies.
-    const result = first
-      ? undefined
-      : untracked(() => {
-          return isArray ? cb(newValues, oldValues) : cb(newValues[0], oldValues[0]);
-        });
+    // The eager first run subscribes exactly once without invoking cb.
+    const result = first ? undefined : untracked(() => cb(newValue, oldValue));
     first = false;
-
-    const tmp = oldValues;
-    oldValues = newValues;
-    newValues = tmp;
-
+    oldValue = newValue;
     return result;
   });
 }

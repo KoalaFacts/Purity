@@ -269,6 +269,48 @@ describe('watch', () => {
     expect(fn).toHaveBeenCalledWith(0);
   });
 
+  it('evaluates an explicit single source once on subscription and keeps tracking it', async () => {
+    const source = state(0);
+    const getter = vi.fn(() => source());
+    const calls: { value: number; oldValue: number }[] = [];
+
+    const stop = watch(getter, (value, oldValue) => {
+      calls.push({ value, oldValue });
+    });
+
+    expect(getter).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual([]);
+
+    source(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(getter).toHaveBeenCalledTimes(2);
+    expect(calls).toEqual([{ value: 1, oldValue: 0 }]);
+    stop();
+  });
+
+  it('evaluates each explicit tuple source once on subscription and retains initial values', async () => {
+    const left = state(10);
+    const right = state('a');
+    const readLeft = vi.fn(() => left());
+    const readRight = vi.fn(() => right());
+    const calls: { values: [number, string]; previous: [number, string] }[] = [];
+
+    const stop = watch([readLeft, readRight], (values, previous) => {
+      calls.push({ values: [...values], previous: [...previous] });
+    });
+
+    expect(readLeft).toHaveBeenCalledTimes(1);
+    expect(readRight).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual([]);
+
+    right('b');
+    await new Promise((r) => queueMicrotask(r));
+    expect(readLeft).toHaveBeenCalledTimes(2);
+    expect(readRight).toHaveBeenCalledTimes(2);
+    expect(calls).toEqual([{ values: [10, 'b'], previous: [10, 'a'] }]);
+    stop();
+  });
+
   it('watches a single source with old/new values', async () => {
     const calls = [];
     const count = state(0);

@@ -84,8 +84,7 @@ function renderBranch(matchState: MatchState, render: () => unknown): unknown {
   } catch (e) {
     // Don't cache the failed case: retry when one of its read signals recovers.
     matchState.prevKey = undefined;
-    matchState.branch = null;
-    disposeScope(scope);
+    disposeBranch(matchState);
     throw e;
   } finally {
     popContext();

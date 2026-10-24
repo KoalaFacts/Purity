@@ -148,15 +148,11 @@ describe('each — multi-root LIS moves with moveBefore', () => {
     dependency(1);
     await tick();
     expect(['A', 'B', 'X'].map((key) => runs.get(key))).toEqual(removedRuns);
-    expect(['Y', 'C'].map((key) => runs.get(key))).toEqual(
-      retainedRuns.map((count) => count! + 1),
-    );
+    expect(['Y', 'C'].map((key) => runs.get(key))).toEqual(retainedRuns.map((count) => count! + 1));
     unmount();
     expect([...disposed].sort()).toEqual(['A', 'B', 'C', 'X', 'Y']);
     dependency(2);
     await tick();
-    expect(['Y', 'C'].map((key) => runs.get(key))).toEqual(
-      retainedRuns.map((count) => count! + 1),
-    );
+    expect(['Y', 'C'].map((key) => runs.get(key))).toEqual(retainedRuns.map((count) => count! + 1));
   });
 });

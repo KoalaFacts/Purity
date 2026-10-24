@@ -76,9 +76,7 @@ async function checkBrowser(browserType: BrowserType, url: string): Promise<void
       await multi.evaluate(() => {
         const originals = [...document.querySelectorAll('#multi-root > b, #multi-root > input')];
         (window as Window & { __multiRootOriginals?: Element[] }).__multiRootOriginals = originals;
-        const input = document.querySelector<HTMLInputElement>(
-          '#multi-root input[data-key="C"]',
-        )!;
+        const input = document.querySelector<HTMLInputElement>('#multi-root input[data-key="C"]')!;
         input.value = 'typed-C';
         input.focus();
         input.setSelectionRange(1, 4);

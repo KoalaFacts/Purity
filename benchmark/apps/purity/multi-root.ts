@@ -23,6 +23,4 @@ document.getElementById('multi-root')!.appendChild(
 
 document.getElementById('rotate')!.addEventListener('click', () => rows(['C', 'A', 'B']));
 document.getElementById('reverse')!.addEventListener('click', () => rows(['B', 'A', 'C']));
-document.getElementById('insert')!.addEventListener('click', () =>
-  rows(['X', 'B', 'C', 'A', 'Y']),
-);
+document.getElementById('insert')!.addEventListener('click', () => rows(['X', 'B', 'C', 'A', 'Y']));

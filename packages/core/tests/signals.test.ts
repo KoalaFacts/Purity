@@ -397,6 +397,36 @@ describe('watch', () => {
     expect(calls).toEqual(['1,0:first', '1,2:second']);
     stop();
   });
+
+  it('preserves tuple watch callback value snapshots across subsequent source changes', async () => {
+    const first = state(0);
+    const second = state(0);
+    const observed: { values: number[]; oldValues: number[] }[] = [];
+    const stop = watch([first, second], (values, oldValues) => {
+      // Applications may retain arguments after a callback returns.
+      observed.push({ values, oldValues });
+    });
+
+    first(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(observed).toEqual([{ values: [1, 0], oldValues: [0, 0] }]);
+
+    second(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(observed).toEqual([
+      { values: [1, 0], oldValues: [0, 0] },
+      { values: [1, 2], oldValues: [1, 0] },
+    ]);
+
+    first(3);
+    await new Promise((r) => queueMicrotask(r));
+    expect(observed).toEqual([
+      { values: [1, 0], oldValues: [0, 0] },
+      { values: [1, 2], oldValues: [1, 0] },
+      { values: [3, 2], oldValues: [1, 2] },
+    ]);
+    stop();
+  });
 });
 
 describe('batch', () => {

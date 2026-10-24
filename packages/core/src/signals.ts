@@ -1019,7 +1019,9 @@ export function watch(
 
     const tmp = oldValues;
     oldValues = newValues;
-    newValues = tmp;
+    // Tuple values are callback snapshots; never recycle an exposed array.
+    // Preserve the zero-allocation rerun path for a single explicit source.
+    newValues = isArray ? new Array(len) : tmp;
 
     return result;
   });

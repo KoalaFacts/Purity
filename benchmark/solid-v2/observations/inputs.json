@@ -1,0 +1,32 @@
+{
+  "runtime": {
+    "node": "v24.21.0"
+  },
+  "purity": {
+    "commit": "58ff714a336ee1fb34a3d9f77f4e0601e64a2d8f",
+    "source_sha256": {
+      "packages/core/src/signals.ts": "0bb07ea92fa6174e7f0b88d165ba590e77a42f7c6e755b62de2d9e0a128a4d91",
+      "packages/core/src/scope.ts": "57df169fc569b146d0c88b21cb39252053677995fac1cc3ea7122902beb7cb0c",
+      "packages/core/src/component.ts": "63bd22d5b4b78f90510cc9b6660a87c80c59a9c7a515f6e0cb43351ce55ed179"
+    }
+  },
+  "solid": {
+    "git_commit": "225014bf8757421a2ea0a9c6ddc148b965eed000",
+    "entry_sha256": {
+      "solid-js/dist/solid.js": "576371c9437d4189db4018b17060ce284d334cfb6df874121ed3246e29ddc261",
+      "@solidjs/signals/dist/prod/index.js": "357605050049e02cec5aa71813c53eb04119d0b9a34753ec0ef3fb653e70e9e2"
+    },
+    "packages": [
+      {
+        "name": "@solidjs/signals",
+        "version": "2.0.0-rc.18",
+        "integrity": "sha512-pzYahnM93EpDN4xZF1EefdjPE6Buuu/90/kiaLOjUFhPd3H0W6J9R8lIF+kkD1Z78LW1OTHciRY5MCqpYj5iSQ=="
+      },
+      {
+        "name": "solid-js",
+        "version": "2.0.0-rc.18",
+        "integrity": "sha512-g4KjUQUjfqvqHYnBddN5nVAF7DFcDjtuH+NeDu/26vx6SlSDiqBJS8jsNag6VpdKAnfK8oLfphogEhXtM4UOyw=="
+      }
+    ]
+  }
+}

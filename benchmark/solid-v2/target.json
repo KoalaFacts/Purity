@@ -1,0 +1,316 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Frozen Solid v2 comparison target and registry identity evidence. This is not an installed lockfile or a benchmark result.",
+  "baseline": "Solid 2.0.0-rc.18",
+  "baselineStatus": "Release candidate / prerelease",
+  "baselineCommit": "225014bf8757421a2ea0a9c6ddc148b965eed000",
+  "auditDateAustraliaSydney": "2026-10-25",
+  "retrievedAtUTC": "2026-10-24T17:36:43Z",
+  "source": "Official npm registry packuments",
+  "clientEntryNotes": {
+    "@solidjs/signals": "No Node SSR branch. Published default entry is ./dist/prod/index.js, with no runtime package dependencies; suitable for isolated pure-reactivity behavior observations.",
+    "solid-js": "Node/deno/worker select ./dist/server.js. Client entry file is ./dist/solid.js; do not assume adding browser condition defeats earlier node condition. Use client build explicitly when comparing framework client behavior.",
+    "@solidjs/web": "Node/deno/worker select ./dist/server.js. Client entry file is ./dist/web.js. Browser DOM required for renderer observations.",
+    "exportsCaveat": "These notes summarize published export maps; actual probes must verify the installed package export map and resolved file."
+  },
+  "packages": [
+    {
+      "name": "solid-js",
+      "version": "2.0.0-rc.18",
+      "role": "Renderer-neutral framework and application API",
+      "gitHead": "225014bf8757421a2ea0a9c6ddc148b965eed000",
+      "dist": {
+        "integrity": "sha512-g4KjUQUjfqvqHYnBddN5nVAF7DFcDjtuH+NeDu/26vx6SlSDiqBJS8jsNag6VpdKAnfK8oLfphogEhXtM4UOyw==",
+        "shasum": "4048b5c92d487960695a16dd7599bde8719713c0",
+        "tarball": "https://registry.npmjs.org/solid-js/-/solid-js-2.0.0-rc.18.tgz"
+      },
+      "dependencies": {
+        "csstype": "^3.1.0",
+        "seroval": "1.7.0",
+        "seroval-plugins": "1.7.0",
+        "@solidjs/signals": "^2.0.0-rc.18"
+      },
+      "peerDependencies": {},
+      "publishedAtUTC": "2026-10-23T09:25:58.429Z",
+      "metadataURL": "https://registry.npmjs.org/solid-js/2.0.0-rc.18",
+      "packumentURL": "https://registry.npmjs.org/solid-js",
+      "retrievedAtUTC": "2026-10-24T17:36:43Z",
+      "distTagsAtRetrieval": {
+        "beta": "1.10.0-beta.0",
+        "latest": "1.9.17",
+        "next": "2.0.0-rc.18"
+      },
+      "includedInSolid2Target": true
+    },
+    {
+      "name": "@solidjs/signals",
+      "version": "2.0.0-rc.18",
+      "role": "Reactive engine; pure reactivity client probe target",
+      "gitHead": "225014bf8757421a2ea0a9c6ddc148b965eed000",
+      "dist": {
+        "integrity": "sha512-pzYahnM93EpDN4xZF1EefdjPE6Buuu/90/kiaLOjUFhPd3H0W6J9R8lIF+kkD1Z78LW1OTHciRY5MCqpYj5iSQ==",
+        "shasum": "044b83c18c92094e2d7a960dcf8966127a6f9c4b",
+        "tarball": "https://registry.npmjs.org/@solidjs/signals/-/signals-2.0.0-rc.18.tgz"
+      },
+      "dependencies": {},
+      "peerDependencies": {},
+      "publishedAtUTC": "2026-10-23T09:26:00.652Z",
+      "metadataURL": "https://registry.npmjs.org/@solidjs%2fsignals/2.0.0-rc.18",
+      "packumentURL": "https://registry.npmjs.org/@solidjs%2fsignals",
+      "retrievedAtUTC": "2026-10-24T17:36:43Z",
+      "distTagsAtRetrieval": {
+        "latest": "2.0.0-rc.0",
+        "next": "2.0.0-rc.18"
+      },
+      "includedInSolid2Target": true
+    },
+    {
+      "name": "@solidjs/web",
+      "version": "2.0.0-rc.18",
+      "role": "DOM renderer, SSR, hydration and server-functions runtime",
+      "gitHead": "225014bf8757421a2ea0a9c6ddc148b965eed000",
+      "dist": {
+        "integrity": "sha512-qtxuskii4N/gMipmg94yfPSJ0djwVWF+Elrdhtdb/8ZThvPc6RI/edY6guEMwdx7OADa1f9cQ0MwQe7kDW+Vwg==",
+        "shasum": "ec62be5ae28f393db5a610014328ec0747954130",
+        "tarball": "https://registry.npmjs.org/@solidjs/web/-/web-2.0.0-rc.18.tgz"
+      },
+      "dependencies": {
+        "seroval": "1.7.0",
+        "seroval-plugins": "1.7.0"
+      },
+      "peerDependencies": {
+        "solid-js": "^2.0.0-rc.18"
+      },
+      "publishedAtUTC": "2026-10-23T09:26:23.134Z",
+      "metadataURL": "https://registry.npmjs.org/@solidjs%2fweb/2.0.0-rc.18",
+      "packumentURL": "https://registry.npmjs.org/@solidjs%2fweb",
+      "retrievedAtUTC": "2026-10-24T17:36:43Z",
+      "distTagsAtRetrieval": {
+        "latest": "2.0.0-rc.0",
+        "next": "2.0.0-rc.18"
+      },
+      "includedInSolid2Target": true
+    },
+    {
+      "name": "@solidjs/compiler",
+      "version": "2.0.0-rc.18",
+      "role": "Solid 2 native compiler",
+      "gitHead": "225014bf8757421a2ea0a9c6ddc148b965eed000",
+      "dist": {
+        "integrity": "sha512-I9wQy6RQeOeDvbxDxco+hlDIK5UBxnVNdBEc2LnaC+bkSZwQX7S5ebAohPGhxfsEChLD++u9A8NBkFd9vSVM7A==",
+        "shasum": "f77add0a9a9258b98faeeaafc74a4ac54e1c219f",
+        "tarball": "https://registry.npmjs.org/@solidjs/compiler/-/compiler-2.0.0-rc.18.tgz"
+      },
+      "dependencies": {},
+      "optionalDependencies": {
+        "@solidjs/compiler-darwin-x64": "2.0.0-rc.18",
+        "@solidjs/compiler-wasm32-wasi": "2.0.0-rc.18",
+        "@solidjs/compiler-darwin-arm64": "2.0.0-rc.18",
+        "@solidjs/compiler-linux-x64-gnu": "2.0.0-rc.18",
+        "@solidjs/compiler-win32-x64-msvc": "2.0.0-rc.18",
+        "@solidjs/compiler-linux-arm64-gnu": "2.0.0-rc.18"
+      },
+      "peerDependencies": {},
+      "publishedAtUTC": "2026-10-23T09:25:29.696Z",
+      "metadataURL": "https://registry.npmjs.org/@solidjs%2fcompiler/2.0.0-rc.18",
+      "packumentURL": "https://registry.npmjs.org/@solidjs%2fcompiler",
+      "retrievedAtUTC": "2026-10-24T17:36:43Z",
+      "distTagsAtRetrieval": {
+        "latest": "2.0.0-rc.2",
+        "next": "2.0.0-rc.18"
+      },
+      "includedInSolid2Target": true
+    },
+    {
+      "name": "@solidjs/babel-plugin",
+      "version": "2.0.0-rc.18",
+      "role": "Solid 2 Babel compiler alternative",
+      "gitHead": "225014bf8757421a2ea0a9c6ddc148b965eed000",
+      "dist": {
+        "integrity": "sha512-jgwUfRB9jZrIaFxjgzbr6Di7H+jSVEk7j+ZtYHLWSTuF1UnRct6wrfrGQOU9B9WQZa8fR0KWNkdLlb6zfqfeZw==",
+        "shasum": "4646642870dc9c2e8171c4f6fade3346645db479",
+        "tarball": "https://registry.npmjs.org/@solidjs/babel-plugin/-/babel-plugin-2.0.0-rc.18.tgz"
+      },
+      "dependencies": {
+        "parse5": "^7.1.2",
+        "@babel/types": "^7.20.7",
+        "html-entities": "2.3.3",
+        "@babel/plugin-syntax-jsx": "^7.18.6",
+        "@babel/helper-module-imports": "7.18.6"
+      },
+      "peerDependencies": {
+        "@tsrx/core": "0.1.63",
+        "@babel/core": "^7.20.12"
+      },
+      "publishedAtUTC": "2026-10-23T09:25:45.987Z",
+      "metadataURL": "https://registry.npmjs.org/@solidjs%2fbabel-plugin/2.0.0-rc.18",
+      "packumentURL": "https://registry.npmjs.org/@solidjs%2fbabel-plugin",
+      "retrievedAtUTC": "2026-10-24T17:36:43Z",
+      "distTagsAtRetrieval": {
+        "latest": "2.0.0-rc.2",
+        "next": "2.0.0-rc.18"
+      },
+      "includedInSolid2Target": true
+    },
+    {
+      "name": "@solidjs/vite-plugin",
+      "version": "3.0.0-next.51",
+      "role": "Solid 2 Vite integration and start mode",
+      "gitHead": null,
+      "dist": {
+        "integrity": "sha512-ffpFNYX1z3mGjr95nM3hwo0R3P489FjVnYP5YCOorw+N8grCo+Ay1hGx68H00n5OAC7uGd/7B4GsU1HnA/VU0A==",
+        "shasum": "14251f4fa2d8ecebd4df1fa5c5946e5742147d8e",
+        "tarball": "https://registry.npmjs.org/@solidjs/vite-plugin/-/vite-plugin-3.0.0-next.51.tgz"
+      },
+      "dependencies": {
+        "vitefu": "^1.0.4",
+        "@babel/core": "^7.23.3",
+        "merge-anything": "^5.1.7",
+        "@solidjs/compiler": "^2.0.0-rc.16",
+        "@types/babel__core": "^7.20.4",
+        "@ampproject/remapping": "^2.3.0",
+        "@solidjs/babel-plugin": "^2.0.0-rc.16"
+      },
+      "peerDependencies": {
+        "vite": "^8.0.0 || ^9.0.0",
+        "solid-js": "^2.0.0-rc.16",
+        "@solidjs/web": "^2.0.0-rc.16",
+        "@solidjs/start-devtools": "^1.0.0-next.2",
+        "@testing-library/jest-dom": "^5.16.6 || ^5.17.0 || ^6.0.0 || ^7.0.0"
+      },
+      "publishedAtUTC": "2026-10-21T20:44:36.747Z",
+      "metadataURL": "https://registry.npmjs.org/@solidjs%2fvite-plugin/3.0.0-next.51",
+      "packumentURL": "https://registry.npmjs.org/@solidjs%2fvite-plugin",
+      "retrievedAtUTC": "2026-10-24T17:36:43Z",
+      "distTagsAtRetrieval": {
+        "next": "3.0.0-next.35",
+        "latest": "3.0.0-next.51"
+      },
+      "includedInSolid2Target": true
+    },
+    {
+      "name": "@solidjs/router",
+      "version": "2.0.0-next.42",
+      "role": "Optional Solid 2 router ecosystem comparator",
+      "gitHead": null,
+      "dist": {
+        "integrity": "sha512-UMeBFTLk5DzIi4Kj0lmoyB0JmGXDB1gYVPwKXkyaHJccjXX6LbFOJkNoJCRzm7K88/NxR8rh10fjbJO6vzfxXA==",
+        "shasum": "5ab4a0a2749c6fc5ec7f27b51a2f016c4d20c0a6",
+        "tarball": "https://registry.npmjs.org/@solidjs/router/-/router-2.0.0-next.42.tgz"
+      },
+      "dependencies": {},
+      "peerDependencies": {
+        "solid-js": "^2.0.0-rc.17",
+        "@solidjs/web": "^2.0.0-rc.17",
+        "filesystem-routing": ">=0.4.0"
+      },
+      "publishedAtUTC": "2026-10-22T08:54:23.312Z",
+      "metadataURL": "https://registry.npmjs.org/@solidjs%2frouter/2.0.0-next.42",
+      "packumentURL": "https://registry.npmjs.org/@solidjs%2frouter",
+      "retrievedAtUTC": "2026-10-24T17:36:43Z",
+      "distTagsAtRetrieval": {
+        "beta": "0.10.0-beta.9",
+        "latest": "1.0.0",
+        "next": "2.0.0-next.42"
+      },
+      "includedInSolid2Target": true
+    },
+    {
+      "name": "@solidjs/start",
+      "version": "2.1.0",
+      "role": "Excluded: this package major 2 targets Solid runtime 1.x, not Solid runtime 2",
+      "gitHead": null,
+      "dist": {
+        "integrity": "sha512-WxYkBPmjnrP30ODWLui8QVPki80puvsKZ5jOmy0m/t7mZsmhY0IBHpra8n+UQoMFgvvJkaAJS+DJqPFzmoKf+Q==",
+        "shasum": "917e86c9ab69308daffa47ab4dde4a8dfea2b8d1",
+        "tarball": "https://registry.npmjs.org/@solidjs/start/-/start-2.1.0.tgz"
+      },
+      "dependencies": {
+        "h3": "^2.0.1-rc.26",
+        "defu": "^6.1.7",
+        "srvx": "^0.12.4",
+        "pathe": "^2.0.3",
+        "shiki": "^4.3.1",
+        "radix3": "^1.1.2",
+        "seroval": "^1.6.11",
+        "cookie-es": "^3.1.1",
+        "fast-glob": "^3.3.3",
+        "micromatch": "^4.0.8",
+        "oxc-parser": "^0.141.0",
+        "terracotta": "^1.2.4",
+        "@babel/core": "^7.29.7",
+        "@babel/types": "^7.29.7",
+        "@solidjs/meta": "^0.29.4",
+        "html-to-image": "^1.11.13",
+        "path-to-regexp": "^8.4.2",
+        "@babel/traverse": "^7.29.7",
+        "seroval-plugins": "^1.6.11",
+        "@types/micromatch": "^4.0.10",
+        "vite-plugin-solid": "^2.11.13",
+        "error-stack-parser-es": "^2.0.1",
+        "@types/babel__traverse": "^7.28.0",
+        "@jridgewell/trace-mapping": "^0.3.31"
+      },
+      "peerDependencies": {
+        "vite": "^8 || ^9",
+        "solid-js": "^1.9.15",
+        "@solidjs/router": ">=0.16.0 <2.0.0-0"
+      },
+      "publishedAtUTC": "2026-10-22T01:52:31.954Z",
+      "metadataURL": "https://registry.npmjs.org/@solidjs%2fstart/2.1.0",
+      "packumentURL": "https://registry.npmjs.org/@solidjs%2fstart",
+      "retrievedAtUTC": "2026-10-24T17:36:43Z",
+      "distTagsAtRetrieval": {
+        "alpha": "2.0.0-alpha.3",
+        "beta": "2.0.0-beta.10",
+        "rc": "2.0.0-rc.10",
+        "latest": "2.1.0",
+        "v1-latest": "1.4.0"
+      },
+      "includedInSolid2Target": false,
+      "exclusionReason": "@solidjs/start@2.1.0 declares solid-js ^1.9.15 and @solidjs/router >=0.16.0 <2.0.0-0 peers; package major 2 is not Solid runtime 2. Solid 2 uses @solidjs/vite-plugin start mode plus @solidjs/web server functions and optional filesystem-routing."
+    }
+  ],
+  "existingBenchmarkAtAudit": {
+    "purityCommit": "58ff714a336ee1fb34a3d9f77f4e0601e64a2d8f",
+    "resolvedPackages": {
+      "solid-js": {
+        "version": "2.0.0-rc.15",
+        "integrity": "sha512-HXiWAEG5Rjp5C7reElUlvdriIadcbpwWwVdztTf0wuxeirw49rGuIzVbSRn06p6GjlINwi5d24Z46b478hNdvw==",
+        "resolved": "https://registry.npmjs.org/solid-js/-/solid-js-2.0.0-rc.15.tgz"
+      },
+      "@solidjs/signals": {
+        "version": "2.0.0-rc.15",
+        "integrity": "sha512-rMhLaYnBvpb9sB3NJGPsqIxjgr0XKU2nvBS7jhWX2fKx+K/m5O0VoAuCgYuTie3BMBZU9vX08NdnFXg508pcew==",
+        "resolved": "https://registry.npmjs.org/@solidjs/signals/-/signals-2.0.0-rc.15.tgz"
+      },
+      "@solidjs/web": {
+        "version": "2.0.0-rc.14",
+        "integrity": "sha512-MhHqUoVBdgAG7EZOANx7Y5SuCFH7sBxzt9uBSYLpJxE503tqoi7pX1UhV7PWxw4LvmPe1PZkdkSOZ8BLchZkhQ==",
+        "resolved": "https://registry.npmjs.org/@solidjs/web/-/web-2.0.0-rc.14.tgz"
+      },
+      "@solidjs/compiler": {
+        "version": "2.0.0-rc.14",
+        "integrity": "sha512-eCTVcxXl1UHOisRMYg+hABwiiTkfTmSkaOFtAb8bjzeqpLlju3lo6pT2qWPfUbrvnslbNGnLZd+HZSIVgZu9VQ==",
+        "resolved": "https://registry.npmjs.org/@solidjs/compiler/-/compiler-2.0.0-rc.14.tgz"
+      },
+      "@solidjs/babel-plugin": {
+        "version": "2.0.0-rc.14",
+        "integrity": "sha512-zMbK1GMHnChgfnalS5Q6rwPeQ9UoC7snavzes90R7+6J+8Fa7Yq4AfgqrfaAKYAjlpMgT0E8AmVwYCdIvSsG/A==",
+        "resolved": "https://registry.npmjs.org/@solidjs/babel-plugin/-/babel-plugin-2.0.0-rc.14.tgz"
+      },
+      "@solidjs/vite-plugin": {
+        "version": "3.0.0-next.50",
+        "integrity": "sha512-eCtI4SwZOCnhwFist0WpUtAf/HPQ26z74XOtzm3z41FFJdKprHEMEVKw8NKfViwp9mecMK4FLZSm6k6OY4yBsA==",
+        "resolved": "https://registry.npmjs.org/@solidjs/vite-plugin/-/vite-plugin-3.0.0-next.50.tgz"
+      }
+    },
+    "status": "Historical comparison inputs; benchmark package.json and lockfile are unchanged by this ledger."
+  },
+  "executionPrerequisites": [
+    "Resolve and retain a complete comparison lockfile, including transitives and platform compiler package, before an application benchmark.",
+    "Use exact versions; metadata dist-tags record retrieval history, not update instructions.",
+    "Verify actual client versus server export selection.",
+    "Changing the target requires a deliberate baseline update; retain the previous artifacts."
+  ]
+}

@@ -53,6 +53,12 @@ DOM deltas, and the top-N hot functions by self time.
 
 ## Cross-framework comparison
 
+Solid **v2** is the primary comparison target. See the [frozen rc.18 package identities](../solid-v2/target.json)
+and [SV2-001/SV2-015 acceptance requirements](../../docs/solid-v2-gap-analysis.md).
+The existing benchmark still resolves core/signals rc.15 and web/compiler rc.14;
+its historical results must retain those inputs. Target metadata does not itself
+upgrade the adapter, create an installed comparison lockfile, or produce new measurements.
+
 ```bash
 node tools/compare.ts <scenario>
 ```

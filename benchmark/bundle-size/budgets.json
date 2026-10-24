@@ -14,7 +14,7 @@
     },
     "core-all": {
       "gzipBytes": 46080,
-      "brotliBytes": 40704
+      "brotliBytes": 40960
     },
     "core-runtime": {
       "gzipBytes": 3328,
@@ -34,7 +34,7 @@
     },
     "core-actions": {
       "gzipBytes": 5888,
-      "brotliBytes": 5248
+      "brotliBytes": 5376
     },
     "core-islands": {
       "gzipBytes": 8192,

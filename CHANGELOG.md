@@ -20,9 +20,16 @@
 - Run error handlers under the component receiving the error, so reactive
   recovery work and disposal hooks belong to that component and are released
   when it unmounts, including when a parent handles a descendant's failure.
+- Update development/deployment transitives to fast-uri 3.1.9, Undici 7.30.1,
+  and Zod 4.6.6. Scope the Zod override to Vercel and verify the installed
+  builder and schema consumers; see the [tooling scope and remaining v3 use](docs/security.md#development-and-deployment-dependencies).
 
 ### Changed
 
+- Accept the measured runtime cost of owned error recovery in two reviewed
+  Brotli budgets: `core-actions` 5,248 → 5,376 bytes and `core-all` 40,704 →
+  40,960 bytes. The measured increases are 24 and 123 bytes; preserve the
+  [before/after reports and rationale](benchmark/bundle-size/evidence/2026-10-24-reactive-errors/README.md).
 - Use Apache-2.0 for Purity from 0.5.0. Preserve the original MIT copyright and
   permission notice for earlier source; published releases through 0.4.0 remain
   MIT. Third-party components retain their own licenses.

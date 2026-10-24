@@ -47,6 +47,12 @@ Keep these overrides until Vercel's dependency pins include the fixes.
 CI audits development dependencies as well as production dependencies
 and builds and verifies this example to catch dependency and runtime regressions.
 
+The Vercel tree also pins Zod 4.6.6, including builders that previously pinned
+Zod 3.22.4. The installed builder and selected schema consumers were checked
+before accepting this override. Some CLI code still explicitly uses `zod/v3`;
+see the [compatibility evidence and remaining legacy scope](../../docs/security.md#development-and-deployment-dependencies)
+before changing or removing the override.
+
 ## Files
 
 ```

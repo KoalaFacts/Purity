@@ -68,7 +68,7 @@ type MatchCases<T extends string | number | boolean> = Partial<Record<`${T}`, Ma
 
 interface MatchState {
   currentNodes: Node[];
-  prevKey: string | null;
+  prevKey?: string | null;
   /** Scope owning the active case's reactive work; disposed on case switch. */
   branch: Scope | null;
 }
@@ -94,8 +94,9 @@ function renderBranch(matchState: MatchState, render: () => unknown): unknown {
 
 function disposeBranch(matchState: MatchState): void {
   const scope = matchState.branch;
+  if (scope === null) return;
   matchState.branch = null;
-  if (scope) disposeScope(scope);
+  disposeScope(scope);
 }
 
 // Insert the result of viewFn() before endMarker and update matchState. Shared
@@ -112,7 +113,7 @@ function insertMatchView(
     return;
   }
   const node = content instanceof Node ? content : document.createTextNode(String(content));
-  matchState.currentNodes = node instanceof DocumentFragment ? [...node.childNodes] : [node];
+  matchState.currentNodes = node.nodeType === 11 ? Array.from(node.childNodes) : [node];
   parent.insertBefore(node, endMarker);
 }
 
@@ -133,7 +134,7 @@ function reconcileMatch<T extends string | number | boolean>(
     for (let i = 0; i < matchState.currentNodes.length; i++) {
       const node = matchState.currentNodes[i];
       /* v8 ignore next -- defensive guard; nodes always have parent here */
-      node.parentNode?.removeChild(node);
+      if (node.parentNode) node.parentNode.removeChild(node);
     }
     disposeBranch(matchState);
     const key = String(sourceFn());
@@ -218,7 +219,7 @@ export function match<T extends string | number | boolean>(
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
-  const matchState: MatchState = { currentNodes: [], prevKey: null, branch: null };
+  const matchState: MatchState = { currentNodes: [], branch: null };
 
   const initKey = String(sourceFn()) as `${T}`;
   const initView = cases[initKey] ?? fallback;
@@ -666,7 +667,7 @@ function reconcileEach<T, E extends KeyedEntry>(
         if (entry) {
           for (let j = 0; j < entry.nodes.length; j++) {
             const node = entry.nodes[j];
-            node.parentNode?.removeChild(node);
+            if (node.parentNode) node.parentNode.removeChild(node);
           }
           ops.release(entry);
         }
@@ -1648,7 +1649,7 @@ export function inflateDeferredEach<T>(
   // the new endMarker replaces them. Row content is left in place and adopted.
   for (let i = 0; i < boundaryNodes.length; i++) {
     const n = boundaryNodes[i];
-    n.parentNode?.removeChild(n);
+    if (n.parentNode) n.parentNode.removeChild(n);
   }
 
   const ssrByKey = new Map<string, SSRRow>();
@@ -1723,7 +1724,7 @@ export function inflateDeferredEach<T>(
           if (ssrRow) {
             for (let j = 0; j < ssrRow.nodes.length; j++) {
               const n = ssrRow.nodes[j];
-              n.parentNode?.removeChild(n);
+              if (n.parentNode) n.parentNode.removeChild(n);
             }
           }
           if (isDeferred(content)) {
@@ -1765,7 +1766,7 @@ export function inflateDeferredEach<T>(
       if (adoptedRows.has(row)) continue;
       for (let j = 0; j < row.nodes.length; j++) {
         const n = row.nodes[j];
-        n.parentNode?.removeChild(n);
+        if (n.parentNode) n.parentNode.removeChild(n);
       }
     }
 
@@ -1923,10 +1924,10 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
   parent.insertBefore(endMarker, closeMarker);
   for (let i = 0; i < boundary.boundaryNodes.length; i++) {
     const n = boundary.boundaryNodes[i];
-    n.parentNode?.removeChild(n);
+    if (n.parentNode) n.parentNode.removeChild(n);
   }
 
-  const matchState: MatchState = { currentNodes: [], prevKey: null, branch: null };
+  const matchState: MatchState = { currentNodes: [], branch: null };
   const initKey = String(sourceFn()) as `${T}`;
   const ssrKey = boundary.key;
   const initView = cases[initKey] ?? fallback;
@@ -1957,7 +1958,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
       // adopt; lossy-replace the boundary content with the new value.
       for (let i = 0; i < boundary.inner.length; i++) {
         const n = boundary.inner[i];
-        n.parentNode?.removeChild(n);
+        if (n.parentNode) n.parentNode.removeChild(n);
       }
     }
     insertMatchView(matchState, parent, endMarker, content);
@@ -1968,7 +1969,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
     // inner content and render the current view fresh.
     for (let i = 0; i < boundary.inner.length; i++) {
       const n = boundary.inner[i];
-      n.parentNode?.removeChild(n);
+      if (n.parentNode) n.parentNode.removeChild(n);
     }
     if (initView) {
       matchState.prevKey = initKey;

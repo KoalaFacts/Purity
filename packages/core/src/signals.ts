@@ -995,8 +995,8 @@ export function watch(
   const sources: WatchSource<any>[] = isArray ? sourceOrFn : [sourceOrFn as WatchSource<any>];
   const len = sources.length;
 
-  let oldValues = new Array(len);
-  let newValues = new Array(len);
+  let oldValues = Array(len);
+  let newValues = Array(len);
 
   // The eager first effect run samples and subscribes to every source; the
   // buffer swap below keeps those values as the next callback's oldValues.

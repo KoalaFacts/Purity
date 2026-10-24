@@ -778,7 +778,9 @@ function reconcileEach<T, E extends KeyedEntry>(
           const sourceIdx = newIndexToSource[i];
           const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
           if (needsMove) {
-            for (let j = entry.nodes.length - 1; j >= 0; j--) {
+            // Every root uses the following-row anchor. Move roots forward
+            // so <b>,<i> does not become <i>,<b> within a retained row.
+            for (let j = 0; j < entry.nodes.length; j++) {
               moveOrInsert(parent, entry.nodes[j], nextSibling);
             }
           }

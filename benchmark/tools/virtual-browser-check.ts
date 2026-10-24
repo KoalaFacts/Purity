@@ -61,6 +61,82 @@ async function checkBrowser(browserType: BrowserType, url: string): Promise<void
     );
     assert.ok((await shadowRows.count()) < 100);
 
+    // This fixture is part of the production Vite build, not a dev-only
+    // evaluation of source modules. Assert exact multi-root order and identity
+    // in each engine, including the native moveBefore-capable engines.
+    const multi = await browser.newPage();
+    try {
+      const errors: string[] = [];
+      multi.on('pageerror', (error) => errors.push(error.message));
+      await multi.goto(url.replace('/virtual.html', '/multi-root.html'));
+      await multi.locator('#multi-root input[data-key="C"]').waitFor();
+      const nativeMoveBefore = await multi.evaluate(
+        () => typeof Element.prototype.moveBefore === 'function',
+      );
+      await multi.evaluate(() => {
+        const originals = [...document.querySelectorAll('#multi-root > b, #multi-root > input')];
+        (window as Window & { __multiRootOriginals?: Element[] }).__multiRootOriginals = originals;
+        const input = document.querySelector<HTMLInputElement>('#multi-root input[data-key="C"]')!;
+        input.value = 'typed-C';
+        input.focus();
+        input.setSelectionRange(1, 4);
+      });
+      const check = async (keys: string[], requireAllOriginals: boolean) => {
+        const actual = await multi.evaluate(() => {
+          const nodes = [...document.querySelectorAll('#multi-root > b, #multi-root > input')];
+          const originals = (window as Window & { __multiRootOriginals?: Element[] })
+            .__multiRootOriginals!;
+          const focusedInput = document.querySelector<HTMLInputElement>(
+            '#multi-root input[data-key="C"]',
+          )!;
+          return {
+            sequence: nodes.map((node) => `${node.tagName}:${node.getAttribute('data-key')}`),
+            retained: originals.filter((node) => nodes.includes(node)).length,
+            typedValue: focusedInput.value,
+            focus: document.activeElement === focusedInput,
+            selection: [focusedInput.selectionStart, focusedInput.selectionEnd],
+          };
+        });
+        assert.deepEqual(
+          actual.sequence,
+          keys.flatMap((key) => [`B:${key}`, `INPUT:${key}`]),
+          `${browserType.name()}: multi-root child order`,
+        );
+        if (requireAllOriginals) {
+          assert.equal(actual.retained, 6, 'reorder must preserve every original element');
+        }
+        assert.equal(actual.typedValue, 'typed-C', 'reorder must preserve user-edited input value');
+        if (nativeMoveBefore) {
+          assert.equal(actual.focus, true, 'native moveBefore must retain input focus');
+          assert.deepEqual(actual.selection, [1, 4], 'native moveBefore must retain selection');
+        }
+      };
+      for (const [button, order, original] of [
+        ['rotate', ['C', 'A', 'B'], true],
+        ['reverse', ['B', 'A', 'C'], true],
+        ['insert', ['X', 'B', 'C', 'A', 'Y'], false],
+      ] as const) {
+        await multi.locator(`#${button}`).evaluate((element: HTMLElement) => element.click());
+        await multi.waitForFunction(
+          (expected) =>
+            document.querySelector('#multi-root > b')?.getAttribute('data-key') === expected,
+          order[0],
+        );
+        await check([...order], original);
+      }
+      assert.deepEqual(errors, [], `${browserType.name()}: multi-root page errors`);
+      console.log(
+        JSON.stringify({
+          engine: browserType.name(),
+          browserVersion: browser.version(),
+          nativeMoveBefore,
+          multiRootReorder: 'passed',
+        }),
+      );
+    } finally {
+      await multi.close();
+    }
+
     console.log(
       `${browserType.name()}: ${initialCount} initial and ${bottomCount} bottom virtual rows; 10,000 regular rows; shadow scroll reached Row 9999`,
     );

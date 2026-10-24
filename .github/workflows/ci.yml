@@ -44,6 +44,14 @@ jobs:
         # Verifies all files are formatted; no modifications
         run: npm run format:check
 
+      # Temporary diagnostic: emit the precise pinned formatter output for
+      # the test fixture, without weakening the mandatory format gate.
+      - name: Show formatter patch after failure
+        if: ${{ failure() }}
+        run: |
+          npm run format
+          git diff -- benchmark/apps/purity/multi-root.ts benchmark/tools/virtual-browser-check.ts packages/core/tests/each-move-before.test.ts
+
       - name: 🔍 Lint (Oxlint — Vite+)
         # Uses the root Vite+ lint configuration.
         run: npm run lint

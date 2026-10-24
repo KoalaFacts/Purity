@@ -1001,8 +1001,10 @@ export function watch(
 
   let oldValues = new Array(len);
   let newValues = new Array(len);
-  for (let i = 0; i < len; i++) oldValues[i] = sources[i]();
 
+  // The eager first effect run samples and subscribes to every source; the
+  // buffer swap below keeps those values as the next callback's oldValues.
+  // Do not read source getters here as well: that evaluates user code twice.
   let first = true;
 
   return _effect(() => {

@@ -113,8 +113,7 @@ function insertMatchView(
     return;
   }
   const node = content instanceof Node ? content : document.createTextNode(String(content));
-  matchState.currentNodes =
-    node instanceof DocumentFragment ? Array.from(node.childNodes) : [node];
+  matchState.currentNodes = node instanceof DocumentFragment ? [...node.childNodes] : [node];
   parent.insertBefore(node, endMarker);
 }
 

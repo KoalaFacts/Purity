@@ -107,20 +107,15 @@ function insertMatchView(
   endMarker: Node,
   content: unknown,
 ): void {
-  if (content instanceof DocumentFragment) {
-    matchState.currentNodes = Array.from(content.childNodes);
-    parent.insertBefore(content, endMarker);
-  } else if (content instanceof Node) {
-    matchState.currentNodes = [content];
-    parent.insertBefore(content, endMarker);
-  } else if (content == null) {
+  if (content == null) {
     // `undefined` / `null` view return → render nothing.
     matchState.currentNodes = [];
-  } else {
-    const textNode = document.createTextNode(String(content));
-    matchState.currentNodes = [textNode];
-    parent.insertBefore(textNode, endMarker);
+    return;
   }
+  const node = content instanceof Node ? content : document.createTextNode(String(content));
+  matchState.currentNodes =
+    node instanceof DocumentFragment ? Array.from(node.childNodes) : [node];
+  parent.insertBefore(node, endMarker);
 }
 
 // Detach and dispose the current case, then render the selector's current key.

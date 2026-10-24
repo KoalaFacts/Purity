@@ -427,6 +427,30 @@ describe('watch', () => {
     ]);
     stop();
   });
+
+  it('does not reuse tuple values retained by a throwing callback', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const source = state(0);
+    const snapshots: number[][] = [];
+    const stop = watch([source], (values) => {
+      snapshots.push(values);
+      if (values[0] === 1) throw new Error('intentional callback failure');
+    });
+
+    try {
+      source(1);
+      await new Promise((r) => queueMicrotask(r));
+      expect(errSpy).toHaveBeenCalled();
+      expect(snapshots).toEqual([[1]]);
+
+      source(2);
+      await new Promise((r) => queueMicrotask(r));
+      expect(snapshots).toEqual([[1], [2]]);
+    } finally {
+      stop();
+      errSpy.mockRestore();
+    }
+  });
 });
 
 describe('batch', () => {

@@ -1,0 +1,241 @@
+{
+  "purpose": "Four tiny behavior observations, not performance measurements or framework-wide conformance.",
+  "observed_at_utc": "2026-10-24T17:54:18.555Z",
+  "runtime": {
+    "node": "v24.21.0",
+    "execArgv": [],
+    "NODE_OPTIONS": "",
+    "platform": "linux",
+    "arch": "x64",
+    "NODE_ENV": "production",
+    "actual_browser": false,
+    "solid_branch": "Explicit solid-js/dist/solid.js client production entry, executed in Node; no Node SSR entry.",
+    "purity_source_execution": "Node native TypeScript stripping; no source bundle/build command.",
+    "purity_entry": "packages/core/src/signals.ts",
+    "purity_hooks_entry": "packages/core/src/component.ts",
+    "solid_entry": "node_modules/solid-js/dist/solid.js",
+    "solid_signals_entry": "node_modules/@solidjs/signals/dist/prod/index.js",
+    "solid_signals_resolved_entry": "@solidjs/signals/dist/prod/index.js",
+    "invocation": "NODE_OPTIONS= NODE_ENV=production <Node v24.21.0 executable> observations.ts --purity-root <checkout> --deps-root <download-dir>/node_modules --output <new-trace.json>"
+  },
+  "provenance": {
+    "purity_commit": "58ff714a336ee1fb34a3d9f77f4e0601e64a2d8f",
+    "source_identity": "Recorded frozen checkout commit plus verified source hashes. Documentation edits are outside the observed source inputs; current whole-repository dirty status is not used.",
+    "packages": [
+      {
+        "name": "@solidjs/signals",
+        "version": "2.0.0-rc.18",
+        "registry_url": "https://registry.npmjs.org/@solidjs%2fsignals/2.0.0-rc.18",
+        "tarball": "https://registry.npmjs.org/@solidjs/signals/-/signals-2.0.0-rc.18.tgz",
+        "integrity": "sha512-pzYahnM93EpDN4xZF1EefdjPE6Buuu/90/kiaLOjUFhPd3H0W6J9R8lIF+kkD1Z78LW1OTHciRY5MCqpYj5iSQ==",
+        "shasum": "044b83c18c92094e2d7a960dcf8966127a6f9c4b",
+        "gitHead": "225014bf8757421a2ea0a9c6ddc148b965eed000",
+        "tar_sha256": "154b2650af96445fbbbda03f59b71c1028a2c27cebd6d3d4cfab4b0ff5021b6b"
+      },
+      {
+        "name": "solid-js",
+        "version": "2.0.0-rc.18",
+        "registry_url": "https://registry.npmjs.org/solid-js/2.0.0-rc.18",
+        "tarball": "https://registry.npmjs.org/solid-js/-/solid-js-2.0.0-rc.18.tgz",
+        "integrity": "sha512-g4KjUQUjfqvqHYnBddN5nVAF7DFcDjtuH+NeDu/26vx6SlSDiqBJS8jsNag6VpdKAnfK8oLfphogEhXtM4UOyw==",
+        "shasum": "4048b5c92d487960695a16dd7599bde8719713c0",
+        "gitHead": "225014bf8757421a2ea0a9c6ddc148b965eed000",
+        "tar_sha256": "e7b6ff8d6e7698c8ce1dad12dbeba8738a0f8b6c09dcd03c133113dc29ec62df"
+      }
+    ],
+    "sha256": {
+      "purity_source": {
+        "packages/core/src/signals.ts": "0bb07ea92fa6174e7f0b88d165ba590e77a42f7c6e755b62de2d9e0a128a4d91",
+        "packages/core/src/scope.ts": "57df169fc569b146d0c88b21cb39252053677995fac1cc3ea7122902beb7cb0c",
+        "packages/core/src/component.ts": "63bd22d5b4b78f90510cc9b6660a87c80c59a9c7a515f6e0cb43351ce55ed179"
+      },
+      "solid_entries": {
+        "solid-js/dist/solid.js": "576371c9437d4189db4018b17060ce284d334cfb6df874121ed3246e29ddc261",
+        "@solidjs/signals/dist/prod/index.js": "357605050049e02cec5aa71813c53eb04119d0b9a34753ec0ef3fb653e70e9e2"
+      },
+      "inputs": "06de8bf2fef19073dd68b55e64503fd8af5d3b169c8f78f5fd27363f918161aa",
+      "harness": "a6424b143b5ff0f5cf240e266ebb628a27df7db96ddba68d31ead71a7c6e0a28"
+    }
+  },
+  "observations": [
+    {
+      "name": "sync_read_after_write",
+      "purity": [
+        {
+          "point": "before-write",
+          "value": 0,
+          "doubled": 0
+        },
+        {
+          "point": "same-stack-after-write",
+          "value": 1,
+          "doubled": 2
+        },
+        {
+          "point": "after-next-microtask",
+          "value": 1,
+          "doubled": 2
+        }
+      ],
+      "solid_v2": [
+        {
+          "point": "before-write",
+          "value": 0,
+          "doubled": 0
+        },
+        {
+          "point": "same-stack-after-write",
+          "value": 0,
+          "doubled": 0
+        },
+        {
+          "point": "after-next-microtask",
+          "value": 1,
+          "doubled": 2
+        }
+      ]
+    },
+    {
+      "name": "effect_first_and_followup_timing",
+      "method_note": "Purity auto-track watch; Solid two-phase createEffect with the signal as tracked compute and a logging apply.",
+      "purity": [
+        "before-effect-create",
+        ["effect-apply", 0],
+        "after-effect-create",
+        "after-initial-microtask",
+        "after-write",
+        ["effect-apply", 1],
+        "after-update-microtask"
+      ],
+      "solid_v2": [
+        "before-effect-create",
+        "after-effect-create",
+        ["effect-apply", 0],
+        "after-initial-microtask",
+        "after-write",
+        ["effect-apply", 1],
+        "after-update-microtask"
+      ]
+    },
+    {
+      "name": "explicit_apply_dependency_isolation",
+      "method_note": "Native first-run semantics retained: Purity explicit watch skips callback initially; Solid createEffect applies initially. Solid undefined initial previous is serialized as null.",
+      "purity": [
+        {
+          "point": "after-initial-microtask",
+          "calls": []
+        },
+        {
+          "point": "after-declared-source-write",
+          "calls": [
+            {
+              "current": 1,
+              "previous": 0,
+              "unrelated": 10
+            }
+          ]
+        },
+        {
+          "point": "after-callback-only-source-write",
+          "calls": [
+            {
+              "current": 1,
+              "previous": 0,
+              "unrelated": 10
+            }
+          ]
+        },
+        {
+          "point": "after-next-declared-source-write",
+          "calls": [
+            {
+              "current": 1,
+              "previous": 0,
+              "unrelated": 10
+            },
+            {
+              "current": 2,
+              "previous": 1,
+              "unrelated": 20
+            }
+          ]
+        }
+      ],
+      "solid_v2": [
+        {
+          "point": "after-initial-microtask",
+          "calls": [
+            {
+              "current": 0,
+              "previous": null,
+              "unrelated": 10
+            }
+          ]
+        },
+        {
+          "point": "after-declared-source-write",
+          "calls": [
+            {
+              "current": 0,
+              "previous": null,
+              "unrelated": 10
+            },
+            {
+              "current": 1,
+              "previous": 0,
+              "unrelated": 10
+            }
+          ]
+        },
+        {
+          "point": "after-callback-only-source-write",
+          "calls": [
+            {
+              "current": 0,
+              "previous": null,
+              "unrelated": 10
+            },
+            {
+              "current": 1,
+              "previous": 0,
+              "unrelated": 10
+            }
+          ]
+        },
+        {
+          "point": "after-next-declared-source-write",
+          "calls": [
+            {
+              "current": 0,
+              "previous": null,
+              "unrelated": 10
+            },
+            {
+              "current": 1,
+              "previous": 0,
+              "unrelated": 10
+            },
+            {
+              "current": 2,
+              "previous": 1,
+              "unrelated": 20
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "owner_cleanup_order",
+      "method_note": "Purity source-free nested watches with onDispose; Solid nested createRoot with onCleanup. This records these disposable-owner paths, not DOM component unmount order.",
+      "purity": ["parent:A", "parent:B", "child:A", "child:B"],
+      "solid_v2": ["child:B", "child:A", "parent:B", "parent:A"]
+    }
+  ],
+  "limits": [
+    "No DOM, browser rendering, browser engines, hydration, async resource composition, or user-input state observed.",
+    "No Purity repository install, lockfile change, source change, or unit/workspace test run.",
+    "No Solid 1.9 comparison; exact rc.18 packages only.",
+    "No PR294 code included; Purity is frozen main 58ff714.",
+    "Purity source executes via Node native TypeScript stripping; no bundler or production Purity package build is claimed."
+  ]
+}

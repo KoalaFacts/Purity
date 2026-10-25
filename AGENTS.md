@@ -5,6 +5,11 @@ Minimal web framework with TC39-Signals-inspired reactivity. See
 audited feature state; bundle and framework-comparison figures require a fresh
 measurement.
 
+For competitive work, use the [Solid v2 gap analysis](./docs/solid-v2-gap-analysis.md)
+and [gap ledger](./docs/solid-v2-gaps.json). Name the `SV2-*` gap and executed
+before/after evidence in substantive changes; keep bounded fixes separate from
+whole-capability acceptance. The pinned v2 target, not v1 API names, is the reference.
+
 ## Packages
 
 - `@purityjs/core` — the framework → [AGENTS.md](./packages/core/AGENTS.md)

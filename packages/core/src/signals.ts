@@ -156,7 +156,7 @@ function trackNode(node: AnyNode): void {
 // read / write / track
 // ---------------------------------------------------------------------------
 
-function readNode<T>(node: StateNode<T> | ComputedNode): T {
+function readNode<T>(node: StateNode<T> | ComputedNode, trackReads = true): T {
   if (node.fn !== null) {
     const c = node as ComputedNode;
     if (c.status !== STATUS_CLEAN) updateValue(c);
@@ -165,6 +165,7 @@ function readNode<T>(node: StateNode<T> | ComputedNode): T {
   // can never become dirty again (its own sources were cut on dispose), so
   // tracking it here would only create a dead observer edge.
   if (
+    trackReads &&
     activeListener !== null &&
     !activeListener.disposed &&
     (node.fn === null || !(node as ComputedNode).disposed)
@@ -176,15 +177,6 @@ function readNode<T>(node: StateNode<T> | ComputedNode): T {
   if (node.fn !== null) {
     const err = (node as ComputedNode).error;
     if (err !== null) throw err.value;
-  }
-  return node.value as T;
-}
-
-function peekNode<T>(node: StateNode<T> | ComputedNode): T {
-  if (node.fn !== null) {
-    const c = node as ComputedNode;
-    if (c.status !== STATUS_CLEAN) updateValue(c);
-    if (c.error !== null) throw c.error.value;
   }
   return node.value as T;
 }
@@ -801,12 +793,12 @@ export function state<T>(initial: T): StateAccessor<T> {
   };
   trackNode(node);
 
-  const accessor = (function (value?: T | ((current: T) => T)): T {
+  const accessor = function (value?: T | ((current: T) => T)): T {
     if (arguments.length === 0) return readNode(node);
     const next = typeof value === 'function' ? (value as (current: T) => T)(node.value) : value;
     writeState(node, next as T);
     return next as T;
-  }) as StateAccessor<T>;
+  } as StateAccessor<T>;
 
   // Avoid `bind()` and per-call closures: we can attach the property API
   // directly because every call routes through `node` already.
@@ -870,7 +862,7 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
 
   const accessor = (() => readNode<T>(node)) as ComputedAccessor<T>;
   (accessor as unknown as { get: () => T }).get = () => readNode<T>(node);
-  (accessor as unknown as { peek: () => T }).peek = () => peekNode<T>(node);
+  (accessor as unknown as { peek: () => T }).peek = () => readNode<T>(node, false);
 
   return accessor;
 }

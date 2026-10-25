@@ -52,6 +52,8 @@ For a new comparison:
 
 Historical figures need their original run artifacts and methodology before reuse. This page makes no universal speed or size claim; use the versioned counter reports for its specific bundle measurements.
 
+The primary competitive reference is now the [versioned Solid v2 gap analysis](./solid-v2-gap-analysis.md). It separates current source gaps, intentional differences, and comparative evidence still needed; this capability inventory alone does not establish parity.
+
 ## Remaining work
 
 1. Verify the declared minimum browser versions, or revise the proposed matrix with recorded evidence.

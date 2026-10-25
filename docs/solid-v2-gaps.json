@@ -1,0 +1,610 @@
+{
+  "schemaVersion": 1,
+  "title": "PurityJS versus Solid v2 gap ledger",
+  "auditedAt": "2026-10-25",
+  "timezone": "Australia/Sydney",
+  "purity": {
+    "commit": "58ff714a336ee1fb34a3d9f77f4e0601e64a2d8f",
+    "sourceVersion": "0.5.0-unreleased",
+    "publishedVersionAtAudit": "0.4.0",
+    "activeImplementationPR": 294,
+    "activeHeadAtAudit": "e22120eb6a7910d7a6235f5ca9d0de253079bba1",
+    "activeCIAtAudit": {
+      "head": "e22120eb6a7910d7a6235f5ca9d0de253079bba1",
+      "run": "https://github.com/KoalaFacts/Purity/actions/runs/40115313478",
+      "status": "failed_original_bundle_gate",
+      "evidenceBasis": "Actual completed logs for both full jobs, not the stale workflow summary.",
+      "jobs": [
+        "https://github.com/KoalaFacts/Purity/actions/runs/40115313478/job/120935272374",
+        "https://github.com/KoalaFacts/Purity/actions/runs/40115313478/job/120935272680"
+      ],
+      "coreActionsBrotliBytes": 5248,
+      "coreAllBrotliBytes": 40747,
+      "coreAllBudgetBytes": 40704
+    }
+  },
+  "targetManifest": "../benchmark/solid-v2/target.json",
+  "primaryTarget": "Solid 2.0.0-rc.18",
+  "scope": "Source-and-contract audit plus explicitly attached observations; not a completed full-framework conformance or performance run.",
+  "statusRules": {
+    "open": "Acceptance remains unproved even if partial APIs or tests exist.",
+    "in_progress": "An identified implementation slice is active; the whole row is not accepted.",
+    "accepted": "Every stated acceptance item has exact-input executed evidence and normal review/CI/main verification; any differences are explicitly accepted."
+  },
+  "kindRules": {
+    "capability": "The audited Purity source lacks the stated compositional capability.",
+    "partial": "Some behavior exists; a specific capability or application contract remains open.",
+    "evidence": "Implementation may exist, but the claimed comparison or release behavior lacks sufficient current evidence."
+  },
+  "priorityRules": {
+    "P0": "Close current correctness failures or establish comparison integrity before a new competitive claim.",
+    "P1": "High-impact application capability or evidence needed to choose Purity for demanding reactive work.",
+    "P2": "Broader composition, developer or release acceptance after the prerequisite slices."
+  },
+  "selectionRules": [
+    "Finish the active implementation PR and main verification first.",
+    "Select a gap by application impact and acceptance prerequisites; choose a bounded slice whose own inputs are sufficient, not an entire subsystem rewrite.",
+    "Maintain a capability/evidence lane alongside correctness fixes; after the current known correctness fix, complete SV2-001's first paired baseline and the first SV2-015 evidence slice before selecting unrelated cleanup.",
+    "Record gap ID, before/after behavior or metric, exact inputs, evidence and remaining acceptance in each substantive PR/monitor update.",
+    "Do not convert a merged regression fix or a green Purity-only CI into whole-row acceptance; do not compute a parity percentage."
+  ],
+  "gates": {
+    "coreActionsBrotliBytes": 5248,
+    "coreAllBrotliBytes": 40704,
+    "policy": "Retain existing correctness, security, memory and size gates. Any changed standard requires the user's explicit decision."
+  },
+  "gaps": [
+    {
+      "id": "SV2-001",
+      "title": "Frozen comparator and reproducible comparison inputs",
+      "kind": "evidence",
+      "priority": "P0",
+      "state": "open",
+      "dependsOn": [],
+      "solid": "The selected target is rc.18 for core, signals and web, with separately versioned build and router packages.",
+      "purity": "Existing benchmark resolves core/signals rc.15, web/compiler/babel-plugin rc.14 and Vite plugin next.50. Its historical results remain valid only for those inputs.",
+      "impact": "Without matched versioned inputs, changes cannot establish progress against the agreed Solid v2 target.",
+      "acceptance": [
+        "Resolve and archive exact rc.18 framework/build package versions and integrities in an executable comparison lockfile.",
+        "Verify selected client/server export conditions and baseline behavior before collecting results.",
+        "Keep old result identities; record changes caused by upgrading the comparator separately from Purity improvements."
+      ],
+      "nextSlice": "Create an isolated rc.18 comparison fixture using the target metadata; retain the existing benchmark until its adapter and parity checks pass.",
+      "files": ["benchmark/package.json", "package-lock.json", "benchmark/tools/README.md"],
+      "solidSources": ["https://github.com/solidjs/solid/releases/tag/solid-js@2.0.0-rc.18"],
+      "workload": "W0",
+      "evidence": [
+        {
+          "kind": "executed_observations",
+          "artifact": "../benchmark/solid-v2/observations/trace.json",
+          "reproduction": "../benchmark/solid-v2/observations/README.md",
+          "scope": "Two fixed rc.18 tarballs and their actual client/engine entries execute four Node observations; the full application/compiler fixture and transitive lockfile remain open.",
+          "wholeRowAccepted": false
+        }
+      ]
+    },
+    {
+      "id": "SV2-002",
+      "title": "Reactive correctness, scheduling and effect observations",
+      "kind": "partial",
+      "priority": "P0",
+      "state": "in_progress",
+      "dependsOn": ["SV2-001"],
+      "solid": "Writes normally stage until commit; user effect application is queued and untracked. Effects do not equality-filter a rerun's returned value; a memo can do that.",
+      "purity": "State and computed reads update immediately; auto-watch starts eagerly, explicit callbacks skip the first run, and later effects flush in a microtask. The frozen main still samples an explicit source twice during setup; PR #294 addresses that defect.",
+      "impact": "Hidden parent subscriptions can lose child callbacks. Intentional same-stack and effect-phase differences affect migrations and DOM-reading effects.",
+      "acceptance": [
+        "Close PR #294 using its exact-head review and original CI gates, then verify main.",
+        "Record state/derived/DOM observations after a write, after a microtask and at explicit synchronization points in both implementations.",
+        "Exercise diamond dependencies, source-only callback tracking, nested owners, error recovery and disposal; document intentional differences instead of copying API names."
+      ],
+      "nextSlice": "Finish #294, then retain a small paired contract suite for observable scheduling and ownership behavior.",
+      "files": [
+        "packages/core/src/signals.ts",
+        "packages/core/tests/signals.test.ts",
+        "packages/core/tests/effect-ownership.test.ts"
+      ],
+      "solidSources": [
+        "https://v2.solidjs.com/reference/solid-js/reactivity/create-signal",
+        "https://v2.solidjs.com/reference/solid-js/reactivity/create-effect",
+        "https://v2.solidjs.com/reference/solid-js/reactivity/flush",
+        "https://github.com/solidjs/solid/blob/225014bf8757421a2ea0a9c6ddc148b965eed000/packages/signals/src/core/effect.ts"
+      ],
+      "workload": "W0",
+      "activePR": 294,
+      "evidence": [
+        {
+          "kind": "executed_observations",
+          "artifact": "../benchmark/solid-v2/observations/trace.json",
+          "reproduction": "../benchmark/solid-v2/observations/README.md",
+          "scope": "Same-stack versus microtask reads, first/followup effect timing, and callback-only dependency isolation at frozen main 58ff714. No DOM phase claim; excludes PR294.",
+          "wholeRowAccepted": false
+        },
+        {
+          "kind": "ci_failure",
+          "artifact": "https://github.com/KoalaFacts/Purity/actions/runs/40115313478",
+          "head": "e22120eb6a7910d7a6235f5ca9d0de253079bba1",
+          "scope": "Both full jobs fail core-all Brotli 40747 > 40704; core-actions 5248 meets its 5248 cap.",
+          "wholeRowAccepted": false
+        }
+      ]
+    },
+    {
+      "id": "SV2-003",
+      "title": "Async derivation through the reactive graph",
+      "kind": "capability",
+      "priority": "P1",
+      "state": "open",
+      "dependsOn": ["SV2-002"],
+      "solid": "Async memos accept PromiseLike or AsyncIterable computation results and propagate unresolved reads through downstream derivations.",
+      "purity": "compute caches its direct return, including a Promise. resource separately exposes data, loading and error accessors; downstream code handles unresolved values and flags explicitly.",
+      "impact": "A fetched value cannot transparently feed an ordinary derived calculation and a pending-aware consumer without application coordination.",
+      "acceptance": [
+        "Use source -> async derivation -> synchronous derivation -> view/effect, with no undefined or Promise delivered as resolved application data.",
+        "Supersede A with B and resolve A last; only B may become current.",
+        "Define rejection, cancellation, iterator closure and disposal behavior before selecting an API."
+      ],
+      "nextSlice": "Specify and implement the smallest owned async-derivation contract with deterministic settlement traces.",
+      "files": [
+        "packages/core/src/signals.ts",
+        "packages/core/src/resource.ts",
+        "packages/core/tests/resource-request-ownership.test.ts"
+      ],
+      "solidSources": [
+        "https://v2.solidjs.com/reference/solid-js/reactivity/create-memo",
+        "https://v2.solidjs.com/concepts/async-reactivity"
+      ],
+      "workload": "W1",
+      "evidence": []
+    },
+    {
+      "id": "SV2-004",
+      "title": "Client loading, retained content and coordinated reveal",
+      "kind": "capability",
+      "priority": "P1",
+      "state": "open",
+      "dependsOn": ["SV2-003", "SV2-006"],
+      "solid": "Loading handles unresolved reads and retains committed content on ordinary refetch; Reveal coordinates boundary slots. isPending describes unrevealed changed state, not every network request.",
+      "purity": "Client suspense directly calls view() and does not use its fallback. Resources can already retain prior data during refresh, but applications assemble loading and cross-region consistency themselves.",
+      "impact": "A selector and several async panels can expose mismatched versions or lose local state unless the application coordinates them.",
+      "acceptance": [
+        "Initial load shows a fallback; refresh retains a complete prior view and its edited input state.",
+        "Two panels settle in reverse order under an explicit reveal policy without mixing subject versions.",
+        "Nested rejection, supersession and unmount release owned work; pending feedback has a defined visible contract."
+      ],
+      "nextSlice": "Build one client async boundary journey after SV2-003; retain explicit limitations for later reveal policies.",
+      "files": [
+        "packages/core/src/control.ts",
+        "packages/core/src/resource.ts",
+        "packages/core/src/query.ts"
+      ],
+      "solidSources": [
+        "https://v2.solidjs.com/reference/solid-js/components-jsx/loading",
+        "https://v2.solidjs.com/reference/solid-js/components-jsx/reveal",
+        "https://v2.solidjs.com/reference/solid-js/reactivity/is-pending"
+      ],
+      "workload": "W1",
+      "evidence": []
+    },
+    {
+      "id": "SV2-005",
+      "title": "Property-granular structured state and keyed adoption",
+      "kind": "capability",
+      "priority": "P1",
+      "state": "open",
+      "dependsOn": ["SV2-002"],
+      "solid": "Stores track property reads through proxies and use draft updates. Derived stores reconcile snapshots by a selected key; ordinary setter replacement is not keyed reconciliation.",
+      "purity": "A state is one Object.is-compared value. Nested objects work through replacement or manually composed field signals; there is no public property-granular store/draft/reconciliation facility.",
+      "impact": "Nested forms and entity collections require more application state plumbing and can cause broader dependency invalidation.",
+      "acceptance": [
+        "Update one nested property without rerunning unrelated field or row computations.",
+        "Add/delete keys and resize/reorder arrays with correct structural subscriptions.",
+        "Adopt new server objects with stable IDs while preserving the intended nested identities; enforce public types and disposal behavior."
+      ],
+      "nextSlice": "Design an optional structured-state entry around a nested form and editable collection, keeping core runtime dependency constraints.",
+      "files": [
+        "packages/core/src/signals.ts",
+        "packages/core/src/index.ts",
+        "packages/core/package.json",
+        "packages/core/tests/types.test.ts"
+      ],
+      "solidSources": [
+        "https://v2.solidjs.com/reference/solid-js/stores/create-store",
+        "https://v2.solidjs.com/reference/solid-js/stores/create-projection"
+      ],
+      "workload": "W2",
+      "evidence": []
+    },
+    {
+      "id": "SV2-006",
+      "title": "Reactive error fallback and retry/reset boundaries",
+      "kind": "partial",
+      "priority": "P1",
+      "state": "open",
+      "dependsOn": ["SV2-002", "SV2-003"],
+      "solid": "Errored replaces a failed reactive/render subtree, supplies reset, and lets fallback failures reach a parent boundary. Event errors are a separate responsibility.",
+      "purity": "Owned later watch failures reach onError, recovery work is owned, computeds can recover, and resources expose error/retry. There is no general client fallback/reset subtree boundary; handler throws are logged.",
+      "impact": "Applications must compose retry UI, subtree replacement and nested fallback escalation themselves.",
+      "acceptance": [
+        "A rejected derived value selects the nearest error fallback while sibling UI continues.",
+        "A changed input or explicit reset restores the subtree and disposes failed/recovery work once.",
+        "A throwing fallback reaches a defined outer boundary; event-handler failures are tested separately."
+      ],
+      "nextSlice": "Extend the existing ownership/error contract to one explicit client fallback/reset journey.",
+      "files": [
+        "packages/core/src/scope.ts",
+        "packages/core/src/component.ts",
+        "packages/core/src/signals.ts",
+        "packages/core/tests/reactive-error-ownership.test.ts",
+        "packages/core/tests/match-error-recovery.test.ts"
+      ],
+      "solidSources": [
+        "https://v2.solidjs.com/reference/solid-js/components-jsx/errored",
+        "https://v2.solidjs.com/concepts/boundaries"
+      ],
+      "workload": "W1",
+      "evidence": [
+        {
+          "kind": "bounded_implementation",
+          "url": "https://github.com/KoalaFacts/Purity/pull/288"
+        },
+        {
+          "kind": "bounded_implementation",
+          "url": "https://github.com/KoalaFacts/Purity/pull/289"
+        }
+      ]
+    },
+    {
+      "id": "SV2-007",
+      "title": "Async transaction visibility and optimistic overlays",
+      "kind": "partial",
+      "priority": "P1",
+      "state": "open",
+      "dependsOn": ["SV2-002", "SV2-003"],
+      "solid": "Generator-based actions hold normal writes across transaction-safe yields; optimistic signals/stores expose tentative overlays that settle with the action.",
+      "purity": "optimistic already offers apply/rollback, invalidation and settlement callbacks; resource.mutate invalidates an old fetch. batch controls synchronous scheduling, not graph-wide writes across async work.",
+      "impact": "Keeping related authoritative values coherent while showing tentative edits is application code.",
+      "acceptance": [
+        "Two authoritative values changed around async work remain a coherent committed view.",
+        "An explicit tentative value appears promptly and settles or rolls back exactly once.",
+        "Define overlapping operations and disposal without claiming general server-side business conflict resolution."
+      ],
+      "nextSlice": "Add a controlled two-field mutation journey and document which transaction guarantees Purity will provide.",
+      "files": [
+        "packages/core/src/optimistic.ts",
+        "packages/core/src/resource.ts",
+        "packages/core/src/signals.ts",
+        "packages/core/src/query.ts"
+      ],
+      "solidSources": [
+        "https://v2.solidjs.com/reference/solid-js/lifecycle-actions/action",
+        "https://v2.solidjs.com/reference/solid-js/stores/create-optimistic-store"
+      ],
+      "workload": "W2",
+      "evidence": []
+    },
+    {
+      "id": "SV2-008",
+      "title": "Current keyed position and editing-state preservation",
+      "kind": "partial",
+      "priority": "P1",
+      "state": "open",
+      "dependsOn": ["SV2-002"],
+      "solid": "Custom-key For supplies item and current-index accessors; positional mode supplies an item accessor and fixed slot index.",
+      "purity": "each preserves keyed row identity and updates item accessors, but its renderer receives a creation-time numeric index. Position-keyed reuse is expressible with the index as key. Multi-root native movement was fixed in #291; focus preservation has a documented fallback limit.",
+      "impact": "Ordinal labels or position-based callbacks can become stale after a keyed reorder; editing focus needs a platform-specific contract.",
+      "acceptance": [
+        "Prepend, reverse and replace same-ID objects while node references, local input values and current-position actions stay correct.",
+        "Cover both native moveBefore and fragment fallback with explicit focus/selection expectations.",
+        "Verify reorder does not dispose retained rows and removal/unmount releases owned work once."
+      ],
+      "nextSlice": "Specify current-position usage and add the focused-editing scenario to existing production fixtures.",
+      "files": [
+        "packages/core/src/control.ts",
+        "packages/core/tests/control.test.ts",
+        "packages/core/tests/each-move-before.test.ts",
+        "benchmark/tools/virtual-browser-check.ts",
+        "docs/reactivity.md"
+      ],
+      "solidSources": ["https://v2.solidjs.com/reference/solid-js/components-jsx/for"],
+      "workload": "W2",
+      "evidence": [
+        {
+          "kind": "bounded_implementation",
+          "url": "https://github.com/KoalaFacts/Purity/pull/291"
+        }
+      ]
+    },
+    {
+      "id": "SV2-009",
+      "title": "Independent SSR boundary progress",
+      "kind": "partial",
+      "priority": "P1",
+      "state": "open",
+      "dependsOn": ["SV2-002"],
+      "solid": "The streaming renderer flushes a shell and emits settled boundary fragments; reveal policy must be selected when checking sibling progress.",
+      "purity": "Deferred SSR views are queued and awaited sequentially. An earlier blocked boundary delays starting a later view, while request cancellation, deadlines and backpressure controls already exist.",
+      "impact": "A fast summary or sidebar can wait behind unrelated slow work.",
+      "acceptance": [
+        "Keep the first sibling blocked and let a later sibling become usable before releasing it under the natural-progress contract.",
+        "Exercise nesting, rejection, deadlines, request abort, slow readers and serialization failure.",
+        "Preserve bounded buffering, request-local resource state and existing retention controls."
+      ],
+      "nextSlice": "Add a blocked-first/fast-second stream trace, then implement independent scheduling without weakening request lifetime guarantees.",
+      "files": [
+        "packages/ssr/src/render-to-stream.ts",
+        "packages/core/src/control/ssr.ts",
+        "packages/ssr/tests/render-to-stream.test.ts",
+        "packages/ssr/tests/stream-backpressure.test.ts"
+      ],
+      "solidSources": [
+        "https://v2.solidjs.com/reference/solid-web/rendering-ssr/render-to-stream",
+        "https://v2.solidjs.com/reference/solid-js/components-jsx/reveal"
+      ],
+      "workload": "W3",
+      "evidence": []
+    },
+    {
+      "id": "SV2-010",
+      "title": "Interactivity during streaming and hydration source policies",
+      "kind": "partial",
+      "priority": "P1",
+      "state": "open",
+      "dependsOn": ["SV2-009", "SV2-004"],
+      "solid": "Hydration adopts server DOM and serialized state with explicit server/hybrid/client source policies. The selected streaming integration must be exercised for early interactivity.",
+      "purity": "DOM adoption and resource priming exist. The supported full-page path hydrates after the stream closes; the starter sends its client module in the suffix after the body. Islands already replay ordinary first activation, with manually supplied entry thunks.",
+      "impact": "An early-painted shell may wait for the final slow region before its handlers are available.",
+      "acceptance": [
+        "With one boundary still pending, an already painted shell control and ready region respond correctly.",
+        "Preserve node identity, pre-hydration input edits, resource fetch counts, nonce/CSP behavior and mismatch diagnostics.",
+        "Exercise conditional/lazy/streamed islands without duplicate imports or wrong view selection; record trusted-activation limits."
+      ],
+      "nextSlice": "Specify a supported early-hydration protocol and prove one blocked-stream interaction before widening the claim.",
+      "files": [
+        "packages/ssr/README.md",
+        "packages/cli/template/app/server.ts",
+        "packages/cli/template/app/index.html",
+        "packages/core/src/component.ts",
+        "packages/core/src/island-mount.ts",
+        "packages/ssr/tests/hydrate-parity.test.ts",
+        "docs/islands.md"
+      ],
+      "solidSources": [
+        "https://v2.solidjs.com/reference/solid-web/rendering-ssr/hydrate",
+        "https://v2.solidjs.com/reference/solid-js/reactivity/create-memo"
+      ],
+      "workload": "W3",
+      "evidence": []
+    },
+    {
+      "id": "SV2-011",
+      "title": "Router, server functions and application composition",
+      "kind": "partial",
+      "priority": "P2",
+      "state": "open",
+      "dependsOn": ["SV2-004", "SV2-007"],
+      "solid": "Compare the named v2 router, web server-function support and Vite start-mode stack. SolidStart 2.1.0 targets Solid 1 and is excluded from this v2 baseline.",
+      "purity": "Route manifests, layouts, loaders, cancellation, native/enhanced forms, server actions and invalidation exist. The mixed-delivery starter deliberately uses document navigation; applications assemble SPA navigation when wanted.",
+      "impact": "A team needs a coherent installed application journey, not a list of separate primitives.",
+      "acceptance": [
+        "Run back/forward, stale navigation, route errors/redirects/statuses and header handling in the same installed application.",
+        "Verify no-JS POST, enhanced field errors/retry/input retention, write invalidation and server-only stripping.",
+        "Choose document or SPA navigation explicitly and pin the v2-compatible ecosystem packages used for comparison."
+      ],
+      "nextSlice": "Use one realistic installed application for matched navigation and mutation acceptance.",
+      "files": [
+        "packages/core/src/async-route.ts",
+        "packages/core/src/router-configure.ts",
+        "packages/cli/template/app/src/entry.server.ts",
+        "packages/cli/scripts/app-actions-smoke.ts",
+        "docs/server-rendering.md"
+      ],
+      "solidSources": [
+        "https://v2.solidjs.com/reference/solid-router",
+        "https://v2.solidjs.com/reference/solid-web/server-functions",
+        "https://v2.solidjs.com/reference/vite-plugin-solid"
+      ],
+      "workload": "W4",
+      "evidence": []
+    },
+    {
+      "id": "SV2-012",
+      "title": "Compiler-free client builds and complete CSP application evidence",
+      "kind": "evidence",
+      "priority": "P1",
+      "state": "open",
+      "dependsOn": ["SV2-001"],
+      "solid": "The v2 build/compiler stack is part of the selected comparison input. An application-level CSP claim still requires its emitted graph and runtime behavior.",
+      "purity": "strictAot is implemented and checks failed transforms plus retained Purity client compiler paths. Five paired production AOT fixtures exist; SSR compiler support is legitimate. The bundle fixture runner rejects dynamic imports.",
+      "impact": "A compiler-free positioning needs proof across real lazy routes, islands and dependencies, beyond static fixture sizes.",
+      "acceptance": [
+        "Install candidate or published packages outside the monorepo and build client/SSR/hydration with lazy routes and islands.",
+        "Inspect all emitted chunks and exercise the application under its real restrictive CSP.",
+        "Keep actionable negative cases and preserve supported server compilation; do not claim to audit arbitrary third-party code."
+      ],
+      "nextSlice": "Extend installed-consumer acceptance to one strict-AOT lazy application and archive its complete chunk inventory.",
+      "files": [
+        "packages/vite-plugin/src/index.ts",
+        "packages/vite-plugin/README.md",
+        "packages/vite-plugin/tests/strict-aot.test.ts",
+        "benchmark/bundle-size/measure.ts",
+        "benchmark/bundle-size/verify.ts"
+      ],
+      "solidSources": [
+        "https://v2.solidjs.com/reference/vite-plugin-solid",
+        "https://github.com/solidjs/solid/releases/tag/@solidjs/compiler@2.0.0-rc.18"
+      ],
+      "workload": "W4",
+      "evidence": [
+        {
+          "kind": "bounded_implementation",
+          "url": "https://github.com/KoalaFacts/Purity/pull/288"
+        }
+      ]
+    },
+    {
+      "id": "SV2-013",
+      "title": "Source/owner diagnostics and predictable HMR",
+      "kind": "partial",
+      "priority": "P2",
+      "state": "open",
+      "dependsOn": ["SV2-002"],
+      "solid": "The v2 development surface includes source attribution, owner/graph diagnostics and compiler-provided source locations. Exact HMR behavior belongs to the selected tooling.",
+      "purity": "The graph inspector and development panel expose values/dependencies but no source locations or component tree. Source-map and route HMR paths exist; a complete owner/resource application HMR journey is not established.",
+      "impact": "A stale view is harder to trace to its creation site and owning component; edits need explicit state/cleanup expectations.",
+      "acceptance": [
+        "Find a seeded stale binding's source and owner through the debugger in a real transformed application.",
+        "Edit a component, route and shared state while requests/listeners/effects are active; document preserve-state versus reload behavior.",
+        "Verify no duplicate work and no diagnostics retained in production."
+      ],
+      "nextSlice": "Add source and owner attribution for one end-to-end debugging journey before considering optional time travel.",
+      "files": [
+        "packages/core/src/signals.ts",
+        "docs/debugging.md",
+        "packages/vite-plugin/src/index.ts",
+        "packages/vite-plugin/tests/devtools-browser.ts",
+        "packages/vite-plugin/tests/sourcemap.test.ts"
+      ],
+      "solidSources": [
+        "https://v2.solidjs.com/reference/solid-js/advanced/diagnostics-dev-hooks/attribution"
+      ],
+      "workload": "W4",
+      "evidence": []
+    },
+    {
+      "id": "SV2-014",
+      "title": "Enforced public declaration and negative typing contracts",
+      "kind": "evidence",
+      "priority": "P1",
+      "state": "open",
+      "dependsOn": ["SV2-001"],
+      "solid": "Compare actual public declarations and generated route APIs for the pinned v2 stack with an explicitly selected TypeScript version.",
+      "purity": "Public declarations and strict scaffold builds exist. Core/plugin tsconfigs exclude tests; ordinary Vitest runs do not type-check compile-shaped cases or enforce their negative assertions.",
+      "impact": "A green runtime suite can miss public API type regressions.",
+      "acceptance": [
+        "Run tsc --strict on positive and negative consumers against built/published declarations without source aliases.",
+        "Cover overloaded watches, props/slots/events, resources, generated routes and action payloads.",
+        "Prove an intended type error makes the negative test pass, and a removed diagnostic makes it fail."
+      ],
+      "nextSlice": "Create a small declaration-consumer type gate with real negative cases using the existing compiler.",
+      "files": [
+        "packages/core/tsconfig.json",
+        "packages/core/vitest.config.ts",
+        "packages/core/tests/types.test.ts",
+        "packages/vite-plugin/tsconfig.json",
+        "packages/vite-plugin/tests/loader-data-of.test.ts",
+        "packages/cli/src/index.ts"
+      ],
+      "solidSources": [
+        "https://v2.solidjs.com/reference/solid-js",
+        "https://v2.solidjs.com/reference/solid-router"
+      ],
+      "workload": "W0",
+      "evidence": []
+    },
+    {
+      "id": "SV2-015",
+      "title": "Matched current runtime, allocation, retention and payload evidence",
+      "kind": "evidence",
+      "priority": "P0",
+      "state": "open",
+      "dependsOn": ["SV2-001"],
+      "solid": "Performance must be measured for the exact rc.18 application and workload; no release-level universal speed/size claim is used.",
+      "purity": "Historical #280 measurements show mixed outcomes at older versions. Row/binding semantic parity and internal bundle/memory gates exist. The normal timing runner does not persist its raw arrays, and no new matched rc.18 result was produced by this audit.",
+      "impact": "Without current comparable samples, the next performance optimization has no defensible bottleneck or regression baseline.",
+      "acceptance": [
+        "Pass per-scenario DOM/data/state-strategy parity before timing ordinary lists; keep virtualization separate.",
+        "Archive raw samples, dispersion, run order, full environment and separate uninstrumented timing, allocation and retained-heap evidence.",
+        "Record initial-route plus full lazy application raw/gzip/Brotli totals and publish regressions as well as improvements."
+      ],
+      "nextSlice": "Persist existing runner samples after the timed region, refresh a matched rc.18 row/binding baseline, then select one measured bottleneck.",
+      "files": [
+        "benchmark/run-bench.ts",
+        "benchmark/tools/fixture-parity-browser-check.ts",
+        "benchmark/tools/binding-browser-check.ts",
+        "benchmark/tools/README.md",
+        "benchmark/bundle-size/measure.ts"
+      ],
+      "solidSources": ["https://github.com/KoalaFacts/Purity/issues/276"],
+      "workload": "W5",
+      "evidence": [
+        {
+          "kind": "historical_report_not_rerun",
+          "url": "https://github.com/KoalaFacts/Purity/pull/280"
+        },
+        {
+          "kind": "bounded_fixture_parity",
+          "url": "https://github.com/KoalaFacts/Purity/pull/279"
+        }
+      ]
+    },
+    {
+      "id": "SV2-016",
+      "title": "Published consumer, host and accessibility acceptance",
+      "kind": "evidence",
+      "priority": "P2",
+      "state": "open",
+      "dependsOn": ["SV2-011", "SV2-012", "SV2-014"],
+      "solid": "Production-choice comparisons must name the actual package stack, hosts and accessibility journeys. No ecosystem-size or reliability ranking is inferred from package names.",
+      "purity": "The audited main is unreleased 0.5.0; registry 0.4.0 client/SSR and candidate tarball app checks have different scopes. Node deployment and isolated Edge checks exist. Per-host live evidence and specified assistive-technology journeys remain incomplete.",
+      "impact": "Repository success alone does not establish a usable upgrade and deployment path for the version customers install.",
+      "acceptance": [
+        "Record actual registry/candidate versions, integrity and lockfiles separately, including mixed-delivery consumers and any real app upgrade.",
+        "Verify the claimed host's streaming, cancellation, actions, headers and CSP behavior.",
+        "Complete or explicitly narrow supported browser/assistive-technology commitments with recorded application journeys."
+      ],
+      "nextSlice": "Maintain an installed-consumer evidence ledger and add the missing mixed-delivery release journey without publishing automatically.",
+      "files": [
+        "README.md",
+        "packages/cli/scripts/published-smoke.ts",
+        "packages/ssr/tests/browser-retention.ts",
+        "packages/cli/scripts/app-actions-smoke.ts",
+        "docs/accessibility.md",
+        "docs/framework-capabilities.md"
+      ],
+      "solidSources": ["https://github.com/solidjs/solid/releases/tag/solid-js@2.0.0-rc.18"],
+      "workload": "W4",
+      "evidence": []
+    },
+    {
+      "id": "SV2-017",
+      "title": "Public owner composition and external-source lifetime",
+      "kind": "partial",
+      "priority": "P2",
+      "state": "open",
+      "dependsOn": ["SV2-002", "SV2-003"],
+      "solid": "v2 exposes owner capture/re-entry and explicitly detached roots. When iteration starts under a live synchronous owner/computation, rc.18 from(source) closes the source on supersession or owner disposal; plain iteration or iteration begun after await relies on iterator closure. Ownership is synchronous on re-entry.",
+      "purity": "Automatic component/effect/branch/row ownership and manual stop/dispose exist. General capture/re-entry/detached scope APIs are internal. Per-scope disposer registration order is FIFO, an observable difference from v2 owner LIFO.",
+      "impact": "Reusable integrations that create reactive work in later callbacks need manual teardown wiring and a clear contract after parent disposal.",
+      "acceptance": [
+        "A later callback creates work explicitly bound to a live parent and is rejected or safely disposed after that parent dies.",
+        "A deliberately detached cache has an explicit lifetime and is released exactly once.",
+        "Record nested cleanup order and subscription/iterator teardown under replacement, error and unmount."
+      ],
+      "nextSlice": "Define the minimal public ownership composition needed by an external subscription adapter; keep cache ownership deliberate.",
+      "files": [
+        "packages/core/src/scope.ts",
+        "packages/core/src/signals.ts",
+        "packages/core/src/index.ts",
+        "packages/core/src/query.ts",
+        "packages/core/tests/query-ownership.test.ts"
+      ],
+      "solidSources": [
+        "https://v2.solidjs.com/reference/solid-js/advanced/owner-introspection/create-root",
+        "https://v2.solidjs.com/reference/solid-js/advanced/owner-introspection/run-with-owner",
+        "https://github.com/solidjs/solid/releases/tag/solid-js@2.0.0-rc.18"
+      ],
+      "workload": "W1",
+      "evidence": [
+        {
+          "kind": "executed_observations",
+          "artifact": "../benchmark/solid-v2/observations/trace.json",
+          "reproduction": "../benchmark/solid-v2/observations/README.md",
+          "scope": "Cleanup order for source-free nested Purity watches versus nested Solid roots only. Does not establish Purity component DOM unmount or external-adapter teardown.",
+          "wholeRowAccepted": false
+        }
+      ]
+    }
+  ],
+  "dependencyRules": "dependsOn constrains whole-row acceptance. Bounded correctness or evidence slices may start earlier when their own inputs are sufficient; finish the active implementation PR before selecting another implementation slice."
+}

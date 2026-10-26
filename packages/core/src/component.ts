@@ -338,17 +338,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   } catch (err) {
     exitHydration();
     popContext();
-    // Report while error handlers and the parent are still available, then
-    // release everything the abandoned render created, even on rethrow.
-    // An error handler can unmount the parent while this child is attached.
-    // Suppress the failed render's destroy lifecycle before dispatching it.
-    ctx.destroyed = null;
-    try {
-      ctx._handleError(err);
-    } finally {
-      unmountContext(ctx);
-    }
-    return { unmount: () => {} };
+    return cleanupFailedInitialRender(ctx, err);
   }
   exitHydration();
   popContext();
@@ -510,17 +500,7 @@ export function mount(component: ComponentFn, container: Element): MountResult {
     fragment = component();
   } catch (err) {
     popContext();
-    // A failed render has no usable unmount handle. Keep error propagation
-    // intact, but always tear down its subscriptions and completed children.
-    // An error handler can unmount the parent while this child is attached.
-    // Suppress the failed render's destroy lifecycle before dispatching it.
-    ctx.destroyed = null;
-    try {
-      ctx._handleError(err);
-    } finally {
-      unmountContext(ctx);
-    }
-    return { unmount: () => {} };
+    return cleanupFailedInitialRender(ctx, err);
   }
 
   popContext();
@@ -540,6 +520,19 @@ export function mount(component: ComponentFn, container: Element): MountResult {
   scheduleMountCallbacks(ctx);
 
   return { unmount: () => unmountContext(ctx) };
+}
+
+// Both entry points restore their render modes and pop the context before
+// calling this helper. Error handlers can unmount the parent reentrantly:
+// always release the abandoned owner even when handling throws.
+function cleanupFailedInitialRender(ctx: ComponentContext, err: unknown): MountResult {
+  ctx.destroyed = null;
+  try {
+    ctx._handleError(err);
+  } finally {
+    unmountContext(ctx);
+  }
+  return { unmount: () => {} };
 }
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { bindListeners } from './listen.ts';
+import { withoutScope } from './scope.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
 
@@ -41,7 +42,8 @@ export function localeSignal(): ComputedAccessor<string> {
   const inner = state(readLanguage());
   unbind = bindListeners([[window, 'languagechange', () => inner(readLanguage())]], 'localeSignal');
   if (!unbind) return compute(() => readLanguage());
-  singleton = compute(() => inner());
+  // Page-lifetime singleton must not inherit the creating component's owner.
+  singleton = withoutScope(() => compute(inner.get));
   return singleton;
 }
 

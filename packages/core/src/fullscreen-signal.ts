@@ -8,6 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { bindListeners, isolate, type ListenerSpec } from './listen.ts';
+import { withoutScope } from './scope.ts';
 import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
 
@@ -67,7 +68,8 @@ export function fullscreenSignal(): ComputedAccessor<Element | null> {
   const specs = FULLSCREEN_EVENTS.map((name): ListenerSpec => [document, name, handler]);
   unbind = bindListeners(specs, 'fullscreenSignal');
   if (!unbind) return compute(() => readFullscreenElement());
-  singleton = compute(() => inner());
+  // Page-lifetime singleton must not inherit the creating component's owner.
+  singleton = withoutScope(() => compute(inner.get));
   return singleton;
 }
 

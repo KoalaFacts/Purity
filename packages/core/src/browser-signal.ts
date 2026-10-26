@@ -8,10 +8,10 @@ export interface BrowserSignal<T> {
   stop: Dispose | null;
 }
 
-/** Initialize only after the adapter's platform guard and cache lookup. @internal */
+/** Shared by adapters whose native events re-read a platform property. @internal */
 export function createBrowserSignal<T>(
   cache: BrowserSignal<T>,
-  read: (event?: Event) => T,
+  read: () => T,
   target: EventTarget,
   events: readonly string[],
   label: string,
@@ -19,7 +19,7 @@ export function createBrowserSignal<T>(
   fallback: () => T = read,
 ): ComputedAccessor<T> {
   const inner = state(read());
-  const update = (event: Event): void => inner.set(read(event));
+  const update = (): void => inner.set(read());
   const handler = isolateErrors ? isolate(label, update) : update;
   cache.stop = bindListeners(
     events.map((name): ListenerSpec => [target, name, handler]),

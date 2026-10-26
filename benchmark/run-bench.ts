@@ -6,7 +6,13 @@
 // Usage: cd benchmark && npm run build-prod && npx vite preview & node --import tsx run-bench.ts
 
 import { chromium, type Page } from 'playwright';
-import { persistBenchRun, type BenchError, type BenchRunOrder } from './tools/run-evidence.ts';
+import {
+  persistBenchRun,
+  validateBenchRunInput,
+  validateBenchSettings,
+  type BenchError,
+  type BenchRunOrder,
+} from './tools/run-evidence.ts';
 
 const PORT = process.env.PORT || 4173;
 const BASE = `http://localhost:${PORT}/Purity`;
@@ -854,6 +860,7 @@ interface Result {
 }
 
 interface MemoryResult {
+  scenario: string;
   category: string;
   op: string;
   framework: string;
@@ -869,6 +876,36 @@ interface MemoryResult {
 async function main() {
   const scenarios = selectScenarios(SCENARIOS);
   const memoryScenarios = MEM_ITERATIONS > 0 ? selectScenarios(MEMORY_SCENARIOS, true) : [];
+
+  const settings = {
+    warmup: WARMUP,
+    iterations: ITERATIONS,
+    memoryIterations: MEM_ITERATIONS,
+    dropOutliers: DROP_OUTLIERS,
+    port: Number(PORT),
+  };
+  const invalidSettings = validateBenchSettings(settings);
+  if (invalidSettings.length > 0) {
+    const evidencePath = persistBenchRun({
+      browserVersion: 'not-launched',
+      frameworks: [...FRAMEWORKS],
+      scenarioPages: scenarios.map((scenario) => scenario.page),
+      settings,
+      executionOrder: [],
+      timings: [],
+      memory: [],
+      errors: invalidSettings.map((message) => ({
+        phase: 'runner' as const,
+        scenario: '*',
+        operation: 'settings',
+        framework: 'runner',
+        message,
+      })),
+    });
+    console.error(`Invalid benchmark configuration; evidence: ${evidencePath}`);
+    process.exitCode = 1;
+    return;
+  }
 
   console.log('\nPurity Comprehensive Benchmark');
   console.log(`Frameworks: ${FRAMEWORKS.join(', ')}`);
@@ -912,22 +949,52 @@ async function main() {
 
       for (const fw of fws) {
         const url = `${BASE}/apps/${fw}/${scenario.page}.html`;
-        const page = await browser.newPage();
-
+        let page: Page | undefined;
+        const times: number[] = [];
+        let med = -1;
         try {
+          page = await browser.newPage();
           await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-          const times: number[] = [];
 
           for (let i = 0; i < WARMUP + ITERATIONS; i++) {
             if (op.setup?.length) await runSetup(page, op.setup);
             await settle(page);
             const t = await measureSteps(page, op.steps);
+            if (!Number.isFinite(t) || t < 0) throw new Error('non-finite timing sample');
             if (i >= WARMUP) times.push(t);
             await page.waitForTimeout(20);
           }
 
-          const med = trimmedMedian(times, DROP_OUTLIERS);
+          med = trimmedMedian(times, DROP_OUTLIERS);
+          if (!Number.isFinite(med)) throw new Error('non-finite timing median');
           fwResults[fw] = med;
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          fwResults[fw] = -1;
+          errors.push({
+            phase: 'timing',
+            scenario: scenario.page,
+            operation: op.name,
+            framework: fw,
+            message,
+          });
+          console.error(`  [${fw}] ${op.name}: ERROR — ${message}`);
+        } finally {
+          if (page) {
+            try {
+              await page.close();
+            } catch (err: unknown) {
+              const message = err instanceof Error ? err.message : String(err);
+              fwResults[fw] = -1;
+              errors.push({
+                phase: 'timing',
+                scenario: scenario.page,
+                operation: op.name,
+                framework: fw,
+                message: `page.close: ${message}`,
+              });
+            }
+          }
           allResults.push({
             scenario: scenario.page,
             category: scenario.category,
@@ -936,18 +1003,6 @@ async function main() {
             median: med,
             raw: times,
           });
-        } catch (err: any) {
-          fwResults[fw] = -1;
-          errors.push({
-            phase: 'timing',
-            scenario: scenario.page,
-            operation: op.name,
-            framework: fw,
-            message: String(err?.message ?? err),
-          });
-          console.error(`  [${fw}] ${op.name}: ERROR — ${err.message}`);
-        } finally {
-          await page.close();
         }
       }
 
@@ -983,12 +1038,14 @@ async function main() {
 
       for (const fw of FRAMEWORKS) {
         const url = `${BASE}/apps/${fw}/${scenario.page}.html`;
-        const page = await browser.newPage();
-
+        let page: Page | undefined;
+        const createSamples: number[] = [];
+        const retainedSamples: number[] = [];
+        let medCreate = -1;
+        let medRetained = -1;
         try {
+          page = await browser.newPage();
           await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
-          const createSamples: number[] = [];
-          const retainedSamples: number[] = [];
 
           for (let i = 0; i < MEM_ITERATIONS; i++) {
             // Ensure clean state
@@ -1006,17 +1063,55 @@ async function main() {
             await settle(page);
             const afterDestroy = await getHeapKB(page);
 
-            if (baseline >= 0) {
-              createSamples.push(afterCreate - baseline);
-              retainedSamples.push(afterDestroy - baseline);
+            if (
+              !Number.isFinite(baseline) ||
+              !Number.isFinite(afterCreate) ||
+              !Number.isFinite(afterDestroy) ||
+              baseline < 0 ||
+              afterCreate < 0 ||
+              afterDestroy < 0
+            ) {
+              throw new Error('performance.memory unavailable or non-finite');
             }
+            createSamples.push(afterCreate - baseline);
+            retainedSamples.push(afterDestroy - baseline);
           }
 
-          const medCreate = createSamples.length > 0 ? trimmedMedian(createSamples, 0) : -1;
-          const medRetained = retainedSamples.length > 0 ? trimmedMedian(retainedSamples, 0) : -1;
-
+          medCreate = trimmedMedian(createSamples, 0);
+          medRetained = trimmedMedian(retainedSamples, 0);
+          if (!Number.isFinite(medCreate) || !Number.isFinite(medRetained)) {
+            throw new Error('non-finite memory median');
+          }
           fwResults[fw] = { createKB: medCreate, retainedKB: medRetained };
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          fwResults[fw] = { createKB: -1, retainedKB: -1 };
+          errors.push({
+            phase: 'memory',
+            scenario: scenario.page,
+            operation: op.name,
+            framework: fw,
+            message,
+          });
+          console.error(`  [${fw}] ${op.name}: ERROR — ${message}`);
+        } finally {
+          if (page) {
+            try {
+              await page.close();
+            } catch (err: unknown) {
+              const message = err instanceof Error ? err.message : String(err);
+              fwResults[fw] = { createKB: -1, retainedKB: -1 };
+              errors.push({
+                phase: 'memory',
+                scenario: scenario.page,
+                operation: op.name,
+                framework: fw,
+                message: `page.close: ${message}`,
+              });
+            }
+          }
           memoryResults.push({
+            scenario: scenario.page,
             category: scenario.category,
             op: op.name,
             framework: fw,
@@ -1025,18 +1120,6 @@ async function main() {
             createSamplesKB: createSamples,
             retainedSamplesKB: retainedSamples,
           });
-        } catch (err: any) {
-          fwResults[fw] = { createKB: -1, retainedKB: -1 };
-          errors.push({
-            phase: 'memory',
-            scenario: scenario.page,
-            operation: op.name,
-            framework: fw,
-            message: String(err?.message ?? err),
-          });
-          console.error(`  [${fw}] ${op.name}: ERROR — ${err.message}`);
-        } finally {
-          await page.close();
         }
       }
 
@@ -1132,31 +1215,39 @@ async function main() {
     '- **Memory results:** Heap usage measured via `performance.memory.usedJSHeapSize` with forced GC. "Used" = heap delta after creation. "Retained" = heap delta after destroy — indicates memory not released (closer to 0 = better cleanup).',
   );
 
-  // Serialize only after ALL timed regions, never inside measureSteps or GC sampling.
-  let evidencePath: string;
+  // Close the browser before writing evidence so cleanup failures are archived.
+  const browserVersion = browser.version();
   try {
-    evidencePath = persistBenchRun({
-      browserVersion: browser.version(),
-      frameworks: [...FRAMEWORKS],
-      scenarioPages: scenarios.map((scenario) => scenario.page),
-      settings: {
-        warmup: WARMUP,
-        iterations: ITERATIONS,
-        memoryIterations: MEM_ITERATIONS,
-        dropOutliers: DROP_OUTLIERS,
-        port: Number(PORT),
-      },
-      executionOrder,
-      timings: allResults,
-      memory: memoryResults,
-      errors,
-    });
-  } finally {
     await browser.close();
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    errors.push({
+      phase: 'runner',
+      scenario: '*',
+      operation: 'browser.close',
+      framework: 'browser',
+      message,
+    });
   }
+
+  // Serialize only after ALL timed regions and browser cleanup.
+  const evidence = {
+    browserVersion,
+    frameworks: [...FRAMEWORKS],
+    scenarioPages: scenarios.map((scenario) => scenario.page),
+    settings,
+    executionOrder,
+    timings: allResults,
+    memory: memoryResults,
+    errors,
+  };
+  const validationErrors = validateBenchRunInput(evidence);
+  const evidencePath = persistBenchRun(evidence);
   console.log(`\nRaw evidence: ${evidencePath}`);
-  if (errors.length > 0) {
-    console.error(`${errors.length} operation(s) failed; raw evidence includes their errors.`);
+  if (errors.length > 0 || validationErrors.length > 0) {
+    console.error(
+      `${errors.length} operation errors, ${validationErrors.length} evidence validation errors.`,
+    );
     process.exitCode = 1;
   } else {
     console.log('\n✓ Benchmark complete.');

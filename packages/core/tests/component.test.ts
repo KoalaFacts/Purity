@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { html } from '../src/compiler/compile.ts';
 import { hydrate, mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
 import { resource } from '../src/resource.ts';
+import { state, watch } from '../src/signals.ts';
 import { primeHydrationCache } from '../src/ssr-context.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
@@ -315,6 +316,67 @@ describe('lifecycle hooks', () => {
     // Only the good child's destroy ran — the failed child was dropped, not
     // re-walked by the parent during teardown.
     expect(order).toEqual(['good-destroyed']);
+  });
+});
+
+// SV2-015: both initial-render entry points must release the same owned work
+// and suppress destroy hooks before reporting an abandoned render.
+describe.each(['mount', 'hydrate'] as const)('%s initial render failure cleanup', (entry) => {
+  const start = (host: HTMLElement, render: () => never) => {
+    if (entry === 'hydrate') host.innerHTML = '<span>SSR shell</span>';
+    return entry === 'mount' ? mount(render, host) : hydrate(host, render);
+  };
+
+  it('reports before disposing once and suppresses onDestroy', () => {
+    const host = document.createElement('div');
+    const events: string[] = [];
+    const failure = new Error('initial failed');
+    const handle = start(host, () => {
+      onDestroy(() => events.push('destroy'));
+      onDispose(() => events.push('dispose'));
+      onError((error) => {
+        expect(error).toBe(failure);
+        events.push('handled');
+      });
+      throw failure;
+    });
+
+    expect(events).toEqual(['handled', 'dispose']);
+    expect(() => handle.unmount()).not.toThrow();
+    expect(events).toEqual(['handled', 'dispose']);
+  });
+
+  it('unsubscribes reactive observers created by the failed render', async () => {
+    const host = document.createElement('div');
+    const source = state(0);
+    let runs = 0;
+    start(host, () => {
+      onError(() => {});
+      watch(() => {
+        source();
+        runs++;
+      });
+      throw new Error('abandoned render');
+    });
+
+    expect(runs).toBe(1);
+    source(1);
+    await tick();
+    expect(runs).toBe(1);
+  });
+
+  it('propagates an unhandled error after releasing owned resources', () => {
+    const host = document.createElement('div');
+    const events: string[] = [];
+    const failure = new Error('unhandled initial failure');
+    expect(() =>
+      start(host, () => {
+        onDestroy(() => events.push('destroy'));
+        onDispose(() => events.push('dispose'));
+        throw failure;
+      }),
+    ).toThrow(failure);
+    expect(events).toEqual(['dispose']);
   });
 });
 

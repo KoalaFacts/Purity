@@ -28,9 +28,7 @@ assert.equal(manifest.dependencies.vite, '8.0.0');
 assert.equal(lock.packages['node_modules/vite']?.version, '8.0.0');
 assert.equal(Object.hasOwn(manifest.dependencies, '@solidjs/start'), false);
 
-const pinned = target.packages.filter(
-  (entry: any) => entry.includedInSolid2Target === true,
-);
+const pinned = target.packages.filter((entry: any) => entry.includedInSolid2Target === true);
 assert.equal(pinned.length, 7);
 const verifiedPackages = [];
 for (const entry of pinned) {
@@ -60,10 +58,7 @@ const verifiedClientEntries = clientEntries.map((entry) => {
   return { entry, sha256: hashFile(path) };
 });
 const clientRequire = createRequire(join(modulesRoot, clientEntries[0]));
-const resolvedSignals = relative(
-  modulesRoot,
-  clientRequire.resolve('@solidjs/signals'),
-)
+const resolvedSignals = relative(modulesRoot, clientRequire.resolve('@solidjs/signals'))
   .split(sep)
   .join('/');
 assert.equal(resolvedSignals, '@solidjs/signals/dist/prod/index.js');

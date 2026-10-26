@@ -2,8 +2,8 @@
   "name": "purity-solid-v2-rc18-app-fixture",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
   "description": "Isolated Solid v2 rc.18 client/build comparison input (not the legacy benchmark)",
+  "type": "module",
   "dependencies": {
     "@solidjs/babel-plugin": "2.0.0-rc.18",
     "@solidjs/compiler": "2.0.0-rc.18",

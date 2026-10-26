@@ -6,6 +6,7 @@
 // Usage: cd benchmark && npm run build-prod && npx vite preview & node --import tsx run-bench.ts
 
 import { chromium, type Page } from 'playwright';
+import { persistBenchRun, type BenchError, type BenchRunOrder } from './tools/run-evidence.ts';
 
 const PORT = process.env.PORT || 4173;
 const BASE = `http://localhost:${PORT}/Purity`;
@@ -860,6 +861,9 @@ interface MemoryResult {
   createKB: number;
   /** Median heap retained after destroy (KB) — lower = better cleanup */
   retainedKB: number;
+  /** Raw per-iteration heap deltas; these are NOT allocation samples. */
+  createSamplesKB: number[];
+  retainedSamplesKB: number[];
 }
 
 async function main() {
@@ -883,6 +887,8 @@ async function main() {
   });
   const allResults: Result[] = [];
   const memoryResults: MemoryResult[] = [];
+  const executionOrder: BenchRunOrder[] = [];
+  const errors: BenchError[] = [];
 
   for (const scenario of scenarios) {
     console.log(`\n=== ${scenario.category}: ${scenario.page} ===`);
@@ -896,6 +902,13 @@ async function main() {
         const k = Math.floor(Math.random() * (j + 1));
         [fws[j], fws[k]] = [fws[k], fws[j]];
       }
+
+      executionOrder.push({
+        phase: 'timing',
+        scenario: scenario.page,
+        operation: op.name,
+        frameworks: [...fws],
+      });
 
       for (const fw of fws) {
         const url = `${BASE}/apps/${fw}/${scenario.page}.html`;
@@ -925,6 +938,13 @@ async function main() {
           });
         } catch (err: any) {
           fwResults[fw] = -1;
+          errors.push({
+            phase: 'timing',
+            scenario: scenario.page,
+            operation: op.name,
+            framework: fw,
+            message: String(err?.message ?? err),
+          });
           console.error(`  [${fw}] ${op.name}: ERROR — ${err.message}`);
         } finally {
           await page.close();
@@ -953,6 +973,13 @@ async function main() {
   for (const scenario of memoryScenarios) {
     for (const op of scenario.ops) {
       const fwResults: Record<string, { createKB: number; retainedKB: number }> = {};
+
+      executionOrder.push({
+        phase: 'memory',
+        scenario: scenario.page,
+        operation: op.name,
+        frameworks: [...FRAMEWORKS],
+      });
 
       for (const fw of FRAMEWORKS) {
         const url = `${BASE}/apps/${fw}/${scenario.page}.html`;
@@ -995,9 +1022,18 @@ async function main() {
             framework: fw,
             createKB: medCreate,
             retainedKB: medRetained,
+            createSamplesKB: createSamples,
+            retainedSamplesKB: retainedSamples,
           });
         } catch (err: any) {
           fwResults[fw] = { createKB: -1, retainedKB: -1 };
+          errors.push({
+            phase: 'memory',
+            scenario: scenario.page,
+            operation: op.name,
+            framework: fw,
+            message: String(err?.message ?? err),
+          });
           console.error(`  [${fw}] ${op.name}: ERROR — ${err.message}`);
         } finally {
           await page.close();
@@ -1096,8 +1132,35 @@ async function main() {
     '- **Memory results:** Heap usage measured via `performance.memory.usedJSHeapSize` with forced GC. "Used" = heap delta after creation. "Retained" = heap delta after destroy — indicates memory not released (closer to 0 = better cleanup).',
   );
 
-  console.log('\n✓ Benchmark complete.');
-  await browser.close();
+  // Serialize only after ALL timed regions, never inside measureSteps or GC sampling.
+  let evidencePath: string;
+  try {
+    evidencePath = persistBenchRun({
+      browserVersion: browser.version(),
+      frameworks: [...FRAMEWORKS],
+      scenarioPages: scenarios.map((scenario) => scenario.page),
+      settings: {
+        warmup: WARMUP,
+        iterations: ITERATIONS,
+        memoryIterations: MEM_ITERATIONS,
+        dropOutliers: DROP_OUTLIERS,
+        port: Number(PORT),
+      },
+      executionOrder,
+      timings: allResults,
+      memory: memoryResults,
+      errors,
+    });
+  } finally {
+    await browser.close();
+  }
+  console.log(`\nRaw evidence: ${evidencePath}`);
+  if (errors.length > 0) {
+    console.error(`${errors.length} operation(s) failed; raw evidence includes their errors.`);
+    process.exitCode = 1;
+  } else {
+    console.log('\n✓ Benchmark complete.');
+  }
 }
 
 main().catch((err) => {

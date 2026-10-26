@@ -815,21 +815,6 @@ export function state<T>(initial: T): StateAccessor<T> {
 // compute(fn)
 // ---------------------------------------------------------------------------
 
-/**
- * Create a computed (derived) value. Re-evaluates when dependencies change.
- *
- * @example
- * ```ts
- * const count = state(0);
- * const doubled = compute(() => count() * 2);
- * doubled()  // → 0
- * count(5);
- * doubled()  // → 10
- *
- * // In templates:
- * html`<p>${() => doubled()}</p>`
- * ```
- */
 // One canonical node shape for derived computations and owned effects.
 // Keep key order, eager effect setup and scope-specific disposal unchanged.
 function createComputedNode(fn: () => unknown, isEffect: boolean): ComputedNode {
@@ -854,6 +839,21 @@ function createComputedNode(fn: () => unknown, isEffect: boolean): ComputedNode 
   return node;
 }
 
+/**
+ * Create a computed (derived) value. Re-evaluates when dependencies change.
+ *
+ * @example
+ * ```ts
+ * const count = state(0);
+ * const doubled = compute(() => count() * 2);
+ * doubled()  // → 0
+ * count(5);
+ * doubled()  // → 10
+ *
+ * // In templates:
+ * html`<p>${() => doubled()}</p>`
+ * ```
+ */
 export function compute<T>(fn: () => T): ComputedAccessor<T> {
   const node = createComputedNode(fn as () => unknown, false);
 

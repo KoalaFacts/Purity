@@ -109,4 +109,7 @@ it('SV2-015: detects duplicate profile, dirty run and original package budget ex
   next.dirty = false;
   next.packages[0].brotliBytes = 40705;
   expect(compareSizeReports(base, next).budgetViolations.map((entry) => entry.name)).toEqual(['core-all']);
+  next.packages[0].brotliBytes = 72;
+  next.budgets.packages['core-all'].brotliBytes = 40705;
+  expect(() => compareSizeReports(base, next)).toThrow(/Original Brotli budget missing or changed/);
 });

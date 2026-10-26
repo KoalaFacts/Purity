@@ -79,6 +79,31 @@ interface ComputedNode {
 
 type AnyNode = StateNode<unknown> | ComputedNode;
 
+/**
+ * State and effect derivations share the same fixed-shape graph node.
+ * Keeping one initializer avoids duplicating the entire allocation shape in
+ * compute() and _effect(), while preserving lazy vs eager and owner behavior.
+ */
+function createComputedNode(fn: () => unknown, isEffect: boolean): ComputedNode {
+  return {
+    fn,
+    value: undefined,
+    version: 0,
+    status: STATUS_DIRTY,
+    sources: null,
+    sourceVersions: null,
+    observerSlots: null,
+    observers: null,
+    disposers: null,
+    component: isEffect ? getCurrentComponent() : null,
+    isEffect,
+    disposed: false,
+    error: null,
+    flushId: 0,
+    flushRuns: 0,
+  };
+}
+
 let activeListener: ComputedNode | null = null;
 /** Position cursor while activeListener is running fn(); enables in-place source slot reuse. */
 let activeSourceIdx = 0;
@@ -831,23 +856,7 @@ export function state<T>(initial: T): StateAccessor<T> {
  * ```
  */
 export function compute<T>(fn: () => T): ComputedAccessor<T> {
-  const node: ComputedNode = {
-    fn: fn as () => unknown,
-    value: undefined,
-    version: 0,
-    status: STATUS_DIRTY,
-    sources: null,
-    sourceVersions: null,
-    observerSlots: null,
-    observers: null,
-    disposers: null,
-    component: null,
-    isEffect: false,
-    disposed: false,
-    error: null,
-    flushId: 0,
-    flushRuns: 0,
-  };
+  const node = createComputedNode(fn, false);
   trackNode(node);
 
   // Register with the current scope so a computed created inside a branch
@@ -872,23 +881,7 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
 // ---------------------------------------------------------------------------
 
 function _effect(fn: () => undefined | Dispose): Dispose {
-  const node: ComputedNode = {
-    fn: fn as () => unknown,
-    value: undefined,
-    version: 0,
-    status: STATUS_DIRTY,
-    sources: null,
-    sourceVersions: null,
-    observerSlots: null,
-    observers: null,
-    disposers: null,
-    component: getCurrentComponent(),
-    isEffect: true,
-    disposed: false,
-    error: null,
-    flushId: 0,
-    flushRuns: 0,
-  };
+  const node = createComputedNode(fn, true);
   trackNode(node);
 
   // Effects run their initial body eagerly (synchronous) — the templates

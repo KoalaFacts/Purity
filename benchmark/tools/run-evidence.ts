@@ -91,31 +91,29 @@ export function collectBenchProvenance(
   if (!lock.packages) throw new Error('Benchmark evidence requires npm lockfile package entries');
   const lockedVersions: Record<string, string | null> = {};
   for (const name of PACKAGE_NAMES) {
-    const workspace =
-      name === '@purityjs/core'
-        ? 'packages/core'
-        : name === '@purityjs/vite-plugin'
-          ? 'packages/vite-plugin'
-          : null;
-    lockedVersions[name] =
-      lock.packages[`node_modules/${name}`]?.version ??
-      (workspace ? lock.packages[workspace]?.version : null) ??
-      null;
+    const registry = lock.packages[`node_modules/${name}`]?.version;
+    let workspace: string | undefined;
+    if (name === '@purityjs/core') workspace = lock.packages['packages/core']?.version;
+    if (name === '@purityjs/vite-plugin') {
+      workspace = lock.packages['packages/vite-plugin']?.version;
+    }
+    lockedVersions[name] = registry ?? workspace ?? null;
   }
   const sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: root,
     encoding: 'utf8',
   }).trim();
-  const sourceDirty =
-    execFileSync('git', ['status', '--porcelain'], {
-      cwd: root,
-      encoding: 'utf8',
-    }).trim().length > 0;
+  const status = execFileSync('git', ['status', '--porcelain'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  const sourceDirty = status.trim().length > 0;
+  const targetBytes = readFileSync(resolve(root, 'benchmark/solid-v2/target.json'));
   return {
     sourceRevision,
     sourceDirty,
     rootLockfileSHA256: sha256(lockBytes),
-    targetMetadataSHA256: sha256(readFileSync(resolve(root, 'benchmark/solid-v2/target.json'))),
+    targetMetadataSHA256: sha256(targetBytes),
     lockedVersions,
   };
 }
@@ -159,16 +157,17 @@ export function writeBenchEvidence(
       timing: 'Each raw value is page-side click(s) + microtask flush + forced layout in ms.',
       memory:
         'Raw values are usedJSHeapSize KB deltas after forced GC, not allocation sampling.',
-      comparability:
-        'A version tag alone does not prove the same workloads, full application chunks, or parity.',
+      comparability: 'A version tag alone does not prove same-workload or application parity.',
     },
   };
   mkdirSync(directory, { recursive: true });
   // Exclusive creation prevents overwriting evidence from any prior run.
-  const file = join(
-    directory,
-    `${capturedAtUTC.replace(/[:.]/g, '-')}-${provenance.sourceRevision.slice(0, 12)}-${randomUUID()}.json`,
-  );
+  const fileName = [
+    capturedAtUTC.replace(/[:.]/g, '-'),
+    provenance.sourceRevision.slice(0, 12),
+    randomUUID(),
+  ].join('-');
+  const file = join(directory, `${fileName}.json`);
   writeFileSync(file, JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });
   return file;
 }

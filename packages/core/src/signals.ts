@@ -830,9 +830,11 @@ export function state<T>(initial: T): StateAccessor<T> {
  * html`<p>${() => doubled()}</p>`
  * ```
  */
-export function compute<T>(fn: () => T): ComputedAccessor<T> {
+// One canonical node shape for derived computations and owned effects.
+// Keep key order, eager effect setup and scope-specific disposal unchanged.
+function createComputedNode(fn: () => unknown, isEffect: boolean): ComputedNode {
   const node: ComputedNode = {
-    fn: fn as () => unknown,
+    fn,
     value: undefined,
     version: 0,
     status: STATUS_DIRTY,
@@ -841,14 +843,19 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
     observerSlots: null,
     observers: null,
     disposers: null,
-    component: null,
-    isEffect: false,
+    component: isEffect ? getCurrentComponent() : null,
+    isEffect,
     disposed: false,
     error: null,
     flushId: 0,
     flushRuns: 0,
   };
   trackNode(node);
+  return node;
+}
+
+export function compute<T>(fn: () => T): ComputedAccessor<T> {
+  const node = createComputedNode(fn as () => unknown, false);
 
   // Register with the current scope so a computed created inside a branch
   // that unmounts is detached from its sources (no dangling observer links).
@@ -872,24 +879,7 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
 // ---------------------------------------------------------------------------
 
 function _effect(fn: () => undefined | Dispose): Dispose {
-  const node: ComputedNode = {
-    fn: fn as () => unknown,
-    value: undefined,
-    version: 0,
-    status: STATUS_DIRTY,
-    sources: null,
-    sourceVersions: null,
-    observerSlots: null,
-    observers: null,
-    disposers: null,
-    component: getCurrentComponent(),
-    isEffect: true,
-    disposed: false,
-    error: null,
-    flushId: 0,
-    flushRuns: 0,
-  };
-  trackNode(node);
+  const node = createComputedNode(fn as () => unknown, true);
 
   // Effects run their initial body eagerly (synchronous) — the templates
   // and tests rely on this to set up DOM bindings before the user code

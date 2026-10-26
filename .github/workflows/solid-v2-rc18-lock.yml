@@ -59,7 +59,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add benchmark/solid-v2/app-fixture
+          git add benchmark/solid-v2/app-fixture/package.json benchmark/solid-v2/app-fixture/README.md benchmark/solid-v2/app-fixture/verify-target-lock.ts benchmark/solid-v2/app-fixture/index.html benchmark/solid-v2/app-fixture/vite.config.ts benchmark/solid-v2/app-fixture/src/counter.tsx benchmark/solid-v2/app-fixture/inventory-chunks.ts
           if ! git diff --cached --quiet; then
             git commit -m 'style(sv2-001): canonicalize isolated app fixture'
             git push origin HEAD:refs/heads/evidence/sv2-001-rc18-isolated-app-lock

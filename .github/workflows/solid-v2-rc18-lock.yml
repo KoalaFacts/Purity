@@ -8,22 +8,28 @@ on:
       - '.github/workflows/solid-v2-rc18-lock.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   isolated-lock:
     name: Resolve rc.18 and archive complete lock
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'evidence/sv2-001-rc18-isolated-app-lock' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout exact PR
+      - name: Checkout exact PR head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Node 24
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
       - name: Resolve isolated comparator lock (no lifecycle scripts)
         working-directory: benchmark/solid-v2/app-fixture
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+        run: |
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          fi
       - name: Reinstall exact resolved dependency tree
         working-directory: benchmark/solid-v2/app-fixture
         run: npm ci --ignore-scripts --no-audit --no-fund
@@ -42,3 +48,16 @@ jobs:
             benchmark/solid-v2/app-fixture/package-lock.json
             benchmark/solid-v2/app-fixture/validation-report.json
           if-no-files-found: error
+      - name: Install pinned repository formatter for canonical source
+        run: npm ci
+      - name: Format fixture source with repo Oxfmt
+        run: npx vp fmt benchmark/solid-v2/app-fixture/package.json benchmark/solid-v2/app-fixture/verify-target-lock.ts
+      - name: Commit generated transitive lock and canonical source to this PR only
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add benchmark/solid-v2/app-fixture/package-lock.json benchmark/solid-v2/app-fixture/package.json benchmark/solid-v2/app-fixture/verify-target-lock.ts
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore(sv2-001): freeze generated rc.18 lock and Oxfmt source'
+            git push origin HEAD:refs/heads/evidence/sv2-001-rc18-isolated-app-lock
+          fi

@@ -156,7 +156,7 @@ function trackNode(node: AnyNode): void {
 // read / write / track
 // ---------------------------------------------------------------------------
 
-function readNode<T>(node: StateNode<T> | ComputedNode): T {
+function readNode<T>(node: StateNode<T> | ComputedNode, trackReads = true): T {
   if (node.fn !== null) {
     const c = node as ComputedNode;
     if (c.status !== STATUS_CLEAN) updateValue(c);
@@ -164,8 +164,12 @@ function readNode<T>(node: StateNode<T> | ComputedNode): T {
   // A disposed computed is a frozen snapshot, not a live reactive source: it
   // can never become dirty again (its own sources were cut on dispose), so
   // tracking it here would only create a dead observer edge.
-  const producerDisposed = node.fn !== null && (node as ComputedNode).disposed;
-  if (activeListener !== null && !activeListener.disposed && !producerDisposed) {
+  if (
+    trackReads &&
+    activeListener !== null &&
+    !activeListener.disposed &&
+    (node.fn === null || !(node as ComputedNode).disposed)
+  ) {
     track(node);
   }
   // Track before throwing so a consumer that catches the error still re-runs
@@ -173,15 +177,6 @@ function readNode<T>(node: StateNode<T> | ComputedNode): T {
   if (node.fn !== null) {
     const err = (node as ComputedNode).error;
     if (err !== null) throw err.value;
-  }
-  return node.value as T;
-}
-
-function peekNode<T>(node: StateNode<T> | ComputedNode): T {
-  if (node.fn !== null) {
-    const c = node as ComputedNode;
-    if (c.status !== STATUS_CLEAN) updateValue(c);
-    if (c.error !== null) throw c.error.value;
   }
   return node.value as T;
 }
@@ -438,15 +433,17 @@ export function disposeScope(scope: Scope): void {
   // Cleanup reads must not subscribe whatever is running the disposal (an
   // effect re-running, a match() switching cases, a list removing rows).
   const prevListener = activeListener;
-  for (let i = 0; i < disposers.length; i++) {
-    activeListener = null;
-    try {
-      disposers[i]();
-    } catch (err) {
-      console.error('[Purity] Error during disposal:', err);
-    } finally {
-      activeListener = prevListener;
+  activeListener = null;
+  try {
+    for (let i = 0; i < disposers.length; i++) {
+      try {
+        disposers[i]();
+      } catch (err) {
+        console.error('[Purity] Error during disposal:', err);
+      }
     }
+  } finally {
+    activeListener = prevListener;
   }
 }
 
@@ -796,17 +793,12 @@ export function state<T>(initial: T): StateAccessor<T> {
   };
   trackNode(node);
 
-  const accessor = ((...args: [T | ((current: T) => T)] | []): T => {
-    if (args.length === 0) return readNode(node);
-    const value = args[0];
-    if (typeof value === 'function') {
-      const next = (value as (current: T) => T)(node.value);
-      writeState(node, next);
-      return next;
-    }
-    writeState(node, value as T);
-    return value as T;
-  }) as StateAccessor<T>;
+  const accessor = function (value?: T | ((current: T) => T)): T {
+    if (arguments.length === 0) return readNode(node);
+    const next = typeof value === 'function' ? (value as (current: T) => T)(node.value) : value;
+    writeState(node, next as T);
+    return next as T;
+  } as StateAccessor<T>;
 
   // Avoid `bind()` and per-call closures: we can attach the property API
   // directly because every call routes through `node` already.
@@ -870,7 +862,7 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
 
   const accessor = (() => readNode<T>(node)) as ComputedAccessor<T>;
   (accessor as unknown as { get: () => T }).get = () => readNode<T>(node);
-  (accessor as unknown as { peek: () => T }).peek = () => peekNode<T>(node);
+  (accessor as unknown as { peek: () => T }).peek = () => readNode<T>(node, false);
 
   return accessor;
 }
@@ -1001,8 +993,10 @@ export function watch(
 
   let oldValues = new Array(len);
   let newValues = new Array(len);
-  for (let i = 0; i < len; i++) oldValues[i] = sources[i]();
 
+  // The eager first effect run samples and subscribes to every source; the
+  // buffer swap below keeps those values as the next callback's oldValues.
+  // Do not read source getters here as well: that evaluates user code twice.
   let first = true;
 
   return _effect(() => {

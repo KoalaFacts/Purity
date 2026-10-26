@@ -119,6 +119,9 @@ export function compareSizeReports(base: Report, candidate: Report) {
       assert(report[key] && typeof report[key] === 'object' && !Array.isArray(report[key]) && Object.keys(report[key]).length > 0, 'Missing ' + key + ': ' + label);
     }
     assert(report.budgets && typeof report.budgets.packages === 'object' && report.budgets.packages !== null, 'Missing budgets: ' + label);
+    for (const [name, limit] of [['core-actions', 5248], ['core-all', 40704]] as const) {
+      assert.equal(report.budgets.packages[name]?.brotliBytes, limit, 'Original Brotli budget missing or changed: ' + name);
+    }
     assert(Array.isArray(report.packages) && report.packages.length > 0, 'Missing package entries: ' + label);
     assert(Array.isArray(report.measurements) && report.measurements.length > 0, 'Missing application profiles: ' + label);
   }

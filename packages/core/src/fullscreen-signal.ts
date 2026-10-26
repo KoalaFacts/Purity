@@ -7,11 +7,13 @@
 //         `fullscreenchange` event (with vendor-prefixed fallbacks).
 // ---------------------------------------------------------------------------
 
-import { createBrowserSignal, resetBrowserSignal, type BrowserSignal } from './browser-signal.ts';
-import { compute, type ComputedAccessor } from './signals.ts';
+import { bindListeners, isolate, type ListenerSpec } from './listen.ts';
+import { withoutScope } from './scope.ts';
+import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
 
-const source: BrowserSignal<Element | null> = { value: null, stop: null };
+let singleton: ComputedAccessor<Element | null> | null = null;
+let unbind: (() => void) | null = null;
 
 // Vendor-prefixed event names — order matches the spec → moz → webkit → MS
 // progression. We bind every event the document supports rather than
@@ -58,21 +60,23 @@ export function fullscreenSignal(): ComputedAccessor<Element | null> {
   ) {
     return compute(() => null as Element | null);
   }
-  return (
-    source.value ??
-    createBrowserSignal(
-      source,
-      readFullscreenElement,
-      document,
-      FULLSCREEN_EVENTS,
-      'fullscreenSignal',
-      true,
-    )
-  );
+  if (singleton) return singleton;
+  const inner = state<Element | null>(readFullscreenElement());
+  // Isolate listener throws — a userland Element subclass with a throwing
+  // getter must not crash the event loop or leave the signal stuck.
+  const handler = isolate('fullscreenSignal', () => inner(readFullscreenElement()));
+  const specs = FULLSCREEN_EVENTS.map((name): ListenerSpec => [document, name, handler]);
+  unbind = bindListeners(specs, 'fullscreenSignal');
+  if (!unbind) return compute(() => readFullscreenElement());
+  // Page-lifetime singleton must not inherit the creating component's owner.
+  singleton = withoutScope(() => compute(inner.get));
+  return singleton;
 }
 
 /** @internal — test helper. Clears the cached singleton and removes the
  * document listeners so subsequent test runs start from a clean state. */
 export function _resetFullscreenSignal(): void {
-  resetBrowserSignal(source);
+  unbind?.();
+  unbind = null;
+  singleton = null;
 }

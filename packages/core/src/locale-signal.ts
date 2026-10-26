@@ -6,11 +6,13 @@
 //         on the `languagechange` window event.
 // ---------------------------------------------------------------------------
 
-import { createBrowserSignal, resetBrowserSignal, type BrowserSignal } from './browser-signal.ts';
-import { compute, type ComputedAccessor } from './signals.ts';
+import { bindListeners } from './listen.ts';
+import { withoutScope } from './scope.ts';
+import { compute, state, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
 
-const source: BrowserSignal<string> = { value: null, stop: null };
+let singleton: ComputedAccessor<string> | null = null;
+let unbind: (() => void) | null = null;
 
 // Coerce — some environments expose `navigator.language` as a non-string
 // (undefined, null, an array, etc.). Always return a usable string.
@@ -36,14 +38,19 @@ export function localeSignal(): ComputedAccessor<string> {
   ) {
     return compute(() => 'en');
   }
-  return (
-    source.value ??
-    createBrowserSignal(source, readLanguage, window, ['languagechange'], 'localeSignal')
-  );
+  if (singleton) return singleton;
+  const inner = state(readLanguage());
+  unbind = bindListeners([[window, 'languagechange', () => inner(readLanguage())]], 'localeSignal');
+  if (!unbind) return compute(() => readLanguage());
+  // Page-lifetime singleton must not inherit the creating component's owner.
+  singleton = withoutScope(() => compute(inner.get));
+  return singleton;
 }
 
 /** @internal — test helper. Clears the cached singleton and removes the
  * window listener so subsequent test runs start from a clean state. */
 export function _resetLocaleSignal(): void {
-  resetBrowserSignal(source);
+  unbind?.();
+  unbind = null;
+  singleton = null;
 }

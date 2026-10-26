@@ -45,6 +45,9 @@ interface Delta {
   after: number;
   headroom?: number;
   chunks?: Delta[];
+  chunkState?: 'matched' | 'added' | 'removed';
+  previousFilename?: string;
+  candidateFilename?: string;
   functionCallsDelta?: number;
 }
 
@@ -83,13 +86,20 @@ function delta(name: string, before: Size, after: Size): Delta {
   };
 }
 
+function logicalChunkName(file: string): string {
+  // Vite/Rollup emits content-hashed lazy/shared chunks. The full byte totals
+  // remain comparable even if a logical chunk is renamed, added or removed.
+  return file.replace(/-[A-Za-z0-9_-]{8}(?=\.js$)/, '');
+}
+
 function allChunks(row: Entry, name: string): Map<string, Chunk> {
   assert(Array.isArray(row.chunks) && row.chunks.length > 0, 'Missing full JS chunk inventory: ' + name);
   const chunks = new Map<string, Chunk>();
   for (const chunk of row.chunks) {
     assert(typeof chunk.file === 'string' && chunk.file.endsWith('.js'), 'Invalid JS chunk name: ' + name);
-    assert(!chunks.has(chunk.file), 'Duplicate emitted chunk: ' + name + '/' + chunk.file);
-    chunks.set(chunk.file, chunk);
+    const identity = logicalChunkName(chunk.file);
+    assert(!chunks.has(identity), 'Ambiguous logical emitted chunk: ' + name + '/' + identity);
+    chunks.set(identity, chunk);
   }
   for (const prop of ['rawBytes', 'gzipBytes', 'brotliBytes'] as const) {
     assert.equal(row.chunks.reduce((sum, chunk) => sum + chunk[prop], 0), row[prop], 'Unaccounted JS chunk bytes: ' + name + '.' + prop);
@@ -100,6 +110,18 @@ function allChunks(row: Entry, name: string): Map<string, Chunk> {
 export function compareSizeReports(base: Report, candidate: Report) {
   assert(base?.revision && candidate?.revision, 'Missing revision');
   assert(base.dirty === false && candidate.dirty === false, 'Dirty build is not comparable');
+  for (const [label, report] of [['baseline', base], ['candidate', candidate]] as const) {
+    assert(Number.isSafeInteger(report.schemaVersion) && report.schemaVersion >= 3, 'Missing schemaVersion: ' + label);
+    for (const key of ['node', 'zlib', 'brotli', 'scope'] as const) {
+      assert(typeof report[key] === 'string' && report[key].length > 0, 'Missing ' + key + ': ' + label);
+    }
+    for (const key of ['versions', 'fixtureHashes', 'settings'] as const) {
+      assert(report[key] && typeof report[key] === 'object' && !Array.isArray(report[key]) && Object.keys(report[key]).length > 0, 'Missing ' + key + ': ' + label);
+    }
+    assert(report.budgets && typeof report.budgets.packages === 'object' && report.budgets.packages !== null, 'Missing budgets: ' + label);
+    assert(Array.isArray(report.packages) && report.packages.length > 0, 'Missing package entries: ' + label);
+    assert(Array.isArray(report.measurements) && report.measurements.length > 0, 'Missing application profiles: ' + label);
+  }
   for (const key of ['schemaVersion', 'node', 'zlib', 'brotli', 'versions', 'fixtureHashes', 'settings', 'scope', 'budgets'] as const) {
     assert.equal(normalized(base[key]), normalized(candidate[key]), 'INCOMPARABLE: changed ' + key);
   }
@@ -117,8 +139,17 @@ export function compareSizeReports(base: Report, candidate: Report) {
       } else {
         const oldChunks = allChunks(old, 'baseline/' + name);
         const newChunks = allChunks(next, 'candidate/' + name);
-        assert.deepEqual([...oldChunks.keys()].sort(), [...newChunks.keys()].sort(), 'Changed JS chunk identities: ' + name);
-        change.chunks = [...oldChunks].map(([file, chunk]) => delta(file, chunk, newChunks.get(file)!));
+        const identities = [...new Set([...oldChunks.keys(), ...newChunks.keys()])].sort();
+        const empty: Size = { rawBytes: 0, gzipBytes: 0, brotliBytes: 0 };
+        change.chunks = identities.map((identity) => {
+          const beforeChunk = oldChunks.get(identity);
+          const afterChunk = newChunks.get(identity);
+          const diff = delta(identity, beforeChunk ?? empty, afterChunk ?? empty);
+          diff.chunkState = beforeChunk && afterChunk ? 'matched' : beforeChunk ? 'removed' : 'added';
+          diff.previousFilename = beforeChunk?.file;
+          diff.candidateFilename = afterChunk?.file;
+          return diff;
+        });
       }
       if (old.functionConstructorCalls !== undefined || next.functionConstructorCalls !== undefined) {
         assert(Number.isSafeInteger(old.functionConstructorCalls) && Number.isSafeInteger(next.functionConstructorCalls), 'Incomplete Function constructor evidence: ' + name);
@@ -154,7 +185,9 @@ if (process.argv[1]?.endsWith('compare-reports.ts')) {
   for (const row of [...result.packages, ...result.apps]) {
     console.log('| ' + row.name + ' | ' + row.before + ' | ' + row.after + ' | ' + signed(row.brotli) + ' | ' + (row.headroom ?? 'n/a') + ' |');
     for (const chunk of row.chunks ?? []) {
-      console.log('| ↳ ' + row.name + '/' + chunk.name + ' | ' + chunk.before + ' | ' + chunk.after + ' | ' + signed(chunk.brotli) + ' | n/a |');
+      const source = chunk.previousFilename ?? '(new)';
+      const target = chunk.candidateFilename ?? '(removed)';
+      console.log('| ↳ ' + row.name + '/' + chunk.name + ' [' + chunk.chunkState + ': ' + source + ' → ' + target + '] | ' + chunk.before + ' | ' + chunk.after + ' | ' + signed(chunk.brotli) + ' | n/a |');
     }
   }
   console.log('Application payload regressions: ' + result.appGrowth.length + ' / ' + result.apps.length);

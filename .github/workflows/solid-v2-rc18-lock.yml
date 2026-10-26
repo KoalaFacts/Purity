@@ -8,7 +8,7 @@ on:
       - '.github/workflows/solid-v2-rc18-lock.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   isolated-lock:
@@ -24,6 +24,10 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
+      - name: Check fixture format using locked Oxfmt
+        run: |
+          npm ci
+          npx vp fmt --check benchmark/solid-v2/app-fixture
       - name: Reinstall isolated pinned dependency tree
         working-directory: benchmark/solid-v2/app-fixture
         run: npm ci --ignore-scripts --no-audit --no-fund
@@ -39,6 +43,21 @@ jobs:
       - name: Inventory all emitted JS chunks at Brotli 11
         working-directory: benchmark/solid-v2/app-fixture
         run: node --experimental-strip-types inventory-chunks.ts
+      - name: Verify source identity in both reports
+        working-directory: benchmark/solid-v2/app-fixture
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node --input-type=module -e '
+            import assert from "node:assert/strict";
+            import { execFileSync } from "node:child_process";
+            import { readFileSync } from "node:fs";
+            const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+            assert.equal(head, process.env.EXPECTED_SOURCE_SHA, "Checkout differs from PR head");
+            for (const report of ["validation-report.json", "dist/payload-report.json"]) {
+              assert.equal(JSON.parse(readFileSync(report, "utf8")).sourceRef, head, report);
+            }
+          '
       - name: Archive lock, verified package identity and full app chunks
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -47,20 +66,6 @@ jobs:
           path: |
             benchmark/solid-v2/app-fixture/package-lock.json
             benchmark/solid-v2/app-fixture/validation-report.json
-            benchmark/solid-v2/app-fixture/dist/payload-report.json
-            benchmark/solid-v2/app-fixture/dist/.vite/manifest.json
+            benchmark/solid-v2/app-fixture/dist/
           include-hidden-files: true
           if-no-files-found: error
-      - name: Install pinned repository formatter
-        run: npm ci
-      - name: Canonical Oxfmt on the fixture source
-        run: npx vp fmt benchmark/solid-v2/app-fixture
-      - name: Commit source formatting only to the owned PR
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add benchmark/solid-v2/app-fixture/package.json benchmark/solid-v2/app-fixture/README.md benchmark/solid-v2/app-fixture/verify-target-lock.ts benchmark/solid-v2/app-fixture/index.html benchmark/solid-v2/app-fixture/vite.config.ts benchmark/solid-v2/app-fixture/src/counter.tsx benchmark/solid-v2/app-fixture/inventory-chunks.ts
-          if ! git diff --cached --quiet; then
-            git commit -m 'style(sv2-001): canonicalize isolated app fixture'
-            git push origin HEAD:refs/heads/evidence/sv2-001-rc18-isolated-app-lock
-          fi

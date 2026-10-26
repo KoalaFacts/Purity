@@ -1,6 +1,7 @@
 // SV2-001: verify a real isolated npm v3 lock and installed export inputs.
 // Identity evidence only; this does not execute a browser or measure performance.
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -67,7 +68,10 @@ const report = {
   schemaVersion: 1,
   scope: 'SV2-001 installed rc.18 lock and client entry identity',
   status: 'input_verified_not_application_or_performance_parity',
-  sourceRef: process.env.GITHUB_SHA ?? null,
+  sourceRef: execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim(),
   node: process.version,
   platform: process.platform,
   arch: process.arch,

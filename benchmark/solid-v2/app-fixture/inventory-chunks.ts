@@ -1,6 +1,7 @@
 // SV2-001/015: enumerate every JavaScript output of the pinned Solid rc.18 app.
 // This inventory alone is not matched benchmark or browser behavior evidence.
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
@@ -43,7 +44,10 @@ const report = {
   scope: 'Solid rc.18 single-counter built JS payload, all emitted chunks',
   fullApplicationLock: '../package-lock.json',
   execution: 'Vite 8 production app build; no browser/DOM execution',
-  sourceRef: process.env.GITHUB_SHA ?? null,
+  sourceRef: execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim(),
   node: process.version,
   manifestSha256: createHash('sha256').update(readFileSync(manifest)).digest('hex'),
   chunks,

@@ -119,7 +119,6 @@ export function collectBenchProvenance(
   };
 }
 
-
 /**
  * Reject configurations that cannot yield a meaningful trimmed timing median.
  * A disabled memory phase (zero iterations) is not represented as measured.

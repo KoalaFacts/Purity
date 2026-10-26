@@ -79,31 +79,6 @@ interface ComputedNode {
 
 type AnyNode = StateNode<unknown> | ComputedNode;
 
-/**
- * Computed and effect derivations share one fixed-shape graph-node allocator.
- * Eager effect ownership is assigned only by _effect(), so compute-only
- * consumers do not import component-owner lookup through the shared path.
- */
-function createComputedNode(fn: () => unknown): ComputedNode {
-  return {
-    fn,
-    value: undefined,
-    version: 0,
-    status: STATUS_DIRTY,
-    sources: null,
-    sourceVersions: null,
-    observerSlots: null,
-    observers: null,
-    disposers: null,
-    component: null,
-    isEffect: false,
-    disposed: false,
-    error: null,
-    flushId: 0,
-    flushRuns: 0,
-  };
-}
-
 let activeListener: ComputedNode | null = null;
 /** Position cursor while activeListener is running fn(); enables in-place source slot reuse. */
 let activeSourceIdx = 0;
@@ -856,7 +831,23 @@ export function state<T>(initial: T): StateAccessor<T> {
  * ```
  */
 export function compute<T>(fn: () => T): ComputedAccessor<T> {
-  const node = createComputedNode(fn);
+  const node: ComputedNode = {
+    fn: fn as () => unknown,
+    value: undefined,
+    version: 0,
+    status: STATUS_DIRTY,
+    sources: null,
+    sourceVersions: null,
+    observerSlots: null,
+    observers: null,
+    disposers: null,
+    component: null,
+    isEffect: false,
+    disposed: false,
+    error: null,
+    flushId: 0,
+    flushRuns: 0,
+  };
   trackNode(node);
 
   // Register with the current scope so a computed created inside a branch
@@ -881,9 +872,23 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
 // ---------------------------------------------------------------------------
 
 function _effect(fn: () => undefined | Dispose): Dispose {
-  const node = createComputedNode(fn);
-  node.component = getCurrentComponent();
-  node.isEffect = true;
+  const node: ComputedNode = {
+    fn: fn as () => unknown,
+    value: undefined,
+    version: 0,
+    status: STATUS_DIRTY,
+    sources: null,
+    sourceVersions: null,
+    observerSlots: null,
+    observers: null,
+    disposers: null,
+    component: getCurrentComponent(),
+    isEffect: true,
+    disposed: false,
+    error: null,
+    flushId: 0,
+    flushRuns: 0,
+  };
   trackNode(node);
 
   // Effects run their initial body eagerly (synchronous) — the templates

@@ -64,8 +64,18 @@ jobs:
         # Playwright drives headless Chromium through each scenario page
         # Each operation: 3 warmup + N measured iterations, metric: median
         run: |
+          set -o pipefail
           cd benchmark
           ITERATIONS=${{ inputs.iterations || '5' }} MEM_ITERATIONS=2 npx tsx run-bench.ts | tee benchmark-results.md
+
+      - name: Archive raw benchmark samples and provenance
+        # Preserve evidence even if the benchmark itself reports a failure.
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: benchmark-raw-${{ github.run_id }}-${{ github.run_attempt }}
+          path: benchmark/dist/benchmark-runs/*.json
+          if-no-files-found: warn
 
       - name: Save results to history (last 3 runs)
         run: |

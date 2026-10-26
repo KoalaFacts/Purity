@@ -7,7 +7,6 @@
 // ---------------------------------------------------------------------------
 
 import { createBrowserSignal, resetBrowserSignal, type BrowserSignal } from './browser-signal.ts';
-import { bindListeners } from './listen.ts';
 import { compute, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
 
@@ -39,9 +38,7 @@ export function localeSignal(): ComputedAccessor<string> {
   }
   return (
     source.value ??
-    createBrowserSignal(source, readLanguage, (write) =>
-      bindListeners([[window, 'languagechange', () => write(readLanguage())]], 'localeSignal'),
-    )
+    createBrowserSignal(source, readLanguage, window, ['languagechange'], 'localeSignal')
   );
 }
 

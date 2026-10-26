@@ -7,11 +7,16 @@
 // ---------------------------------------------------------------------------
 
 import { createBrowserSignal, resetBrowserSignal, type BrowserSignal } from './browser-signal.ts';
-import { bindListeners } from './listen.ts';
 import { compute, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
 
 const source: BrowserSignal<boolean> = { value: null, stop: null };
+
+// Initial/fallback reads use the platform value; events themselves determine
+// subsequent values even when a shim leaves navigator.onLine unchanged.
+function readOnline(event?: Event): boolean {
+  return event ? event.type === 'online' : navigator.onLine === true;
+}
 
 /**
  * Reactive `navigator.onLine` (ADR 0041).
@@ -35,19 +40,7 @@ export function onlineSignal(): ComputedAccessor<boolean> {
   }
   return (
     source.value ??
-    createBrowserSignal(
-      source,
-      // Coerce — some environments expose `onLine` as undefined / non-boolean.
-      () => navigator.onLine === true,
-      (write) =>
-        bindListeners(
-          [
-            [window, 'online', () => write(true)],
-            [window, 'offline', () => write(false)],
-          ],
-          'onlineSignal',
-        ),
-    )
+    createBrowserSignal(source, readOnline, window, ['online', 'offline'], 'onlineSignal')
   );
 }
 

@@ -8,7 +8,6 @@
 // ---------------------------------------------------------------------------
 
 import { createBrowserSignal, resetBrowserSignal, type BrowserSignal } from './browser-signal.ts';
-import { bindListeners, isolate, type ListenerSpec } from './listen.ts';
 import { compute, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
 
@@ -61,12 +60,14 @@ export function fullscreenSignal(): ComputedAccessor<Element | null> {
   }
   return (
     source.value ??
-    createBrowserSignal(source, readFullscreenElement, (write) => {
-      // A throwing platform getter must not escape the native event dispatcher.
-      const handler = isolate('fullscreenSignal', () => write(readFullscreenElement()));
-      const specs = FULLSCREEN_EVENTS.map((name): ListenerSpec => [document, name, handler]);
-      return bindListeners(specs, 'fullscreenSignal');
-    })
+    createBrowserSignal(
+      source,
+      readFullscreenElement,
+      document,
+      FULLSCREEN_EVENTS,
+      'fullscreenSignal',
+      true,
+    )
   );
 }
 

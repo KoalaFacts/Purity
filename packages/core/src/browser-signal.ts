@@ -1,3 +1,4 @@
+import { bindListeners, isolate, type ListenerSpec } from './listen.ts';
 import { withoutScope } from './scope.ts';
 import { compute, state, type ComputedAccessor, type Dispose } from './signals.ts';
 
@@ -10,12 +11,20 @@ export interface BrowserSignal<T> {
 /** Initialize only after the adapter's platform guard and cache lookup. @internal */
 export function createBrowserSignal<T>(
   cache: BrowserSignal<T>,
-  read: () => T,
-  bind: (write: (value: T) => void) => Dispose | null,
+  read: (event?: Event) => T,
+  target: EventTarget,
+  events: readonly string[],
+  label: string,
+  isolateErrors = false,
   fallback: () => T = read,
 ): ComputedAccessor<T> {
   const inner = state(read());
-  cache.stop = bind(inner.set);
+  const update = (event: Event): void => inner.set(read(event));
+  const handler = isolateErrors ? isolate(label, update) : update;
+  cache.stop = bindListeners(
+    events.map((name): ListenerSpec => [target, name, handler]),
+    label,
+  );
   // Failed bindings remain uncached so a later call can retry. Preserve the
   // fallback's normal ownership and the successful source's equality filter.
   if (!cache.stop) return compute(fallback);

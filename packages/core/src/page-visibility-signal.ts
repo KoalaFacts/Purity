@@ -7,7 +7,6 @@
 // ---------------------------------------------------------------------------
 
 import { createBrowserSignal, resetBrowserSignal, type BrowserSignal } from './browser-signal.ts';
-import { bindListeners, isolate } from './listen.ts';
 import { compute, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
 
@@ -46,17 +45,10 @@ export function pageVisibilitySignal(): ComputedAccessor<'visible' | 'hidden'> {
     createBrowserSignal(
       source,
       readVisibility,
-      (write) =>
-        bindListeners(
-          [
-            [
-              document,
-              'visibilitychange',
-              isolate('pageVisibilitySignal', () => write(readVisibility())),
-            ],
-          ],
-          'pageVisibilitySignal',
-        ),
+      document,
+      ['visibilitychange'],
+      'pageVisibilitySignal',
+      true,
       () => 'visible' as const,
     )
   );

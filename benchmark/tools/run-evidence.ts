@@ -171,7 +171,9 @@ export function validateBenchRunInput(input: BenchRunInput): string[] {
       new Set(order.frameworks).size !== input.frameworks.length ||
       order.frameworks.some((framework) => !input.frameworks.includes(framework))
     ) {
-      problems.push(`${order.phase}/${order.scenario}/${order.operation}: incomplete framework order`);
+      problems.push(
+        `${order.phase}/${order.scenario}/${order.operation}: incomplete framework order`,
+      );
     }
     for (const framework of order.frameworks) {
       const label = `${order.phase}/${order.scenario}/${order.operation}/${framework}`;

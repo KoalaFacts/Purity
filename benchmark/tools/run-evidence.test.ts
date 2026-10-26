@@ -99,7 +99,6 @@ const provenance = {
 };
 
 describe('SV2-015 raw benchmark evidence', () => {
-
   it('rejects invalid or empty sampling settings instead of declaring success', () => {
     expect(validateBenchSettings({ ...input.settings, iterations: 0 })).not.toEqual([]);
     expect(validateBenchSettings({ ...input.settings, iterations: Number.NaN })).not.toEqual([]);

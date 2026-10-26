@@ -59,15 +59,35 @@ it('SV2-015: rejects nonmatching inputs rather than presenting a false size delt
   expect(() => compareSizeReports(base, next)).toThrow(/INCOMPARABLE: changed node/);
 });
 
-it('SV2-015: rejects missing chunks, names and totals (including gzip)', () => {
+it('SV2-015: reports renamed or missing JS chunks, but rejects incomplete byte accounting', () => {
   const { base, next } = examples();
   next.measurements[0].chunks[1].file = 'silently-renamed.js';
-  expect(() => compareSizeReports(base, next)).toThrow(/Changed JS chunk identities/);
+  const moved = compareSizeReports(base, next).apps[0].chunks;
+  expect(moved?.filter((chunk) => chunk.chunkState === 'removed')).toHaveLength(1);
+  expect(moved?.filter((chunk) => chunk.chunkState === 'added')).toHaveLength(1);
   next.measurements[0].chunks[1].file = 'lazy.js';
   next.measurements[0].chunks[0].gzipBytes += 1;
   expect(() => compareSizeReports(base, next)).toThrow(/Unaccounted JS chunk bytes/);
   next.measurements[0].chunks.length = 0;
   expect(() => compareSizeReports(base, next)).toThrow(/Missing full JS chunk inventory/);
+});
+
+it('SV2-015: matches generated content-hash filenames by logical chunk identity', () => {
+  const { base, next } = examples();
+  base.measurements[0].chunks[1].file = 'lazy-AbCd1234.js';
+  next.measurements[0].chunks[1].file = 'lazy-EfGh5678.js';
+  const lazy = compareSizeReports(base, next).apps[0].chunks?.find((chunk) => chunk.name === 'lazy.js');
+  expect(lazy?.chunkState).toBe('matched');
+  expect(lazy?.brotli).toBe(15);
+  expect(lazy?.previousFilename).toBe('lazy-AbCd1234.js');
+  expect(lazy?.candidateFilename).toBe('lazy-EfGh5678.js');
+});
+
+it('SV2-015: rejects equally missing required metadata on both archives', () => {
+  const { base, next } = examples();
+  delete (base as Partial<typeof base>).fixtureHashes;
+  delete (next as Partial<typeof next>).fixtureHashes;
+  expect(() => compareSizeReports(base, next)).toThrow(/Missing fixtureHashes/);
 });
 
 it('SV2-015: individual JS chunk growth is visible even if the app total is unchanged', () => {

@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   isolated-lock:
-    name: Resolve rc.18 and archive complete lock
+    name: Build and inventory pinned rc.18 counter fixture
     if: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'evidence/sv2-001-rc18-isolated-app-lock' }}
     runs-on: ubuntu-latest
     steps:
@@ -24,40 +24,43 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
-      - name: Resolve isolated comparator lock (no lifecycle scripts)
-        working-directory: benchmark/solid-v2/app-fixture
-        run: |
-          if [ ! -f package-lock.json ]; then
-            npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-          fi
-      - name: Reinstall exact resolved dependency tree
+      - name: Reinstall isolated pinned dependency tree
         working-directory: benchmark/solid-v2/app-fixture
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Verify actual package integrities and client entry resolution
+      - name: Verify actual package integrities and client entries
         working-directory: benchmark/solid-v2/app-fixture
         env:
           NODE_ENV: production
           NODE_OPTIONS: ''
         run: node --experimental-strip-types verify-target-lock.ts
-      - name: Archive candidate lock and identity report
+      - name: Build rc.18 counter app using isolated Vite 8
+        working-directory: benchmark/solid-v2/app-fixture
+        run: npm exec -- vite build
+      - name: Inventory all emitted JS chunks at Brotli 11
+        working-directory: benchmark/solid-v2/app-fixture
+        run: node --experimental-strip-types inventory-chunks.ts
+      - name: Archive lock, verified package identity and full app chunks
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: solid-v2-rc18-lock-${{ github.run_id }}-${{ github.run_attempt }}
+          name: solid-v2-rc18-lock-app-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             benchmark/solid-v2/app-fixture/package-lock.json
             benchmark/solid-v2/app-fixture/validation-report.json
+            benchmark/solid-v2/app-fixture/dist/payload-report.json
+            benchmark/solid-v2/app-fixture/dist/.vite/manifest.json
+          include-hidden-files: true
           if-no-files-found: error
-      - name: Install pinned repository formatter for canonical source
+      - name: Install pinned repository formatter
         run: npm ci
-      - name: Format fixture source with repo Oxfmt
-        run: npx vp fmt benchmark/solid-v2/app-fixture/package.json benchmark/solid-v2/app-fixture/verify-target-lock.ts
-      - name: Commit generated transitive lock and canonical source to this PR only
+      - name: Canonical Oxfmt on the fixture source
+        run: npx vp fmt benchmark/solid-v2/app-fixture
+      - name: Commit source formatting only to the owned PR
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add benchmark/solid-v2/app-fixture/package-lock.json benchmark/solid-v2/app-fixture/package.json benchmark/solid-v2/app-fixture/verify-target-lock.ts
+          git add benchmark/solid-v2/app-fixture
           if ! git diff --cached --quiet; then
-            git commit -m 'chore(sv2-001): freeze generated rc.18 lock and Oxfmt source'
+            git commit -m 'style(sv2-001): canonicalize isolated app fixture'
             git push origin HEAD:refs/heads/evidence/sv2-001-rc18-isolated-app-lock
           fi

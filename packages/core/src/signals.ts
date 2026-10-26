@@ -80,11 +80,11 @@ interface ComputedNode {
 type AnyNode = StateNode<unknown> | ComputedNode;
 
 /**
- * State and effect derivations share the same fixed-shape graph node.
- * Keeping one initializer avoids duplicating the entire allocation shape in
- * compute() and _effect(), while preserving lazy vs eager and owner behavior.
+ * Computed and effect derivations share one fixed-shape graph-node allocator.
+ * Eager effect ownership is assigned only by _effect(), so compute-only
+ * consumers do not import component-owner lookup through the shared path.
  */
-function createComputedNode(fn: () => unknown, isEffect: boolean): ComputedNode {
+function createComputedNode(fn: () => unknown): ComputedNode {
   return {
     fn,
     value: undefined,
@@ -95,8 +95,8 @@ function createComputedNode(fn: () => unknown, isEffect: boolean): ComputedNode 
     observerSlots: null,
     observers: null,
     disposers: null,
-    component: isEffect ? getCurrentComponent() : null,
-    isEffect,
+    component: null,
+    isEffect: false,
     disposed: false,
     error: null,
     flushId: 0,
@@ -856,7 +856,7 @@ export function state<T>(initial: T): StateAccessor<T> {
  * ```
  */
 export function compute<T>(fn: () => T): ComputedAccessor<T> {
-  const node = createComputedNode(fn, false);
+  const node = createComputedNode(fn);
   trackNode(node);
 
   // Register with the current scope so a computed created inside a branch
@@ -881,7 +881,9 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
 // ---------------------------------------------------------------------------
 
 function _effect(fn: () => undefined | Dispose): Dispose {
-  const node = createComputedNode(fn, true);
+  const node = createComputedNode(fn);
+  node.component = getCurrentComponent();
+  node.isEffect = true;
   trackNode(node);
 
   // Effects run their initial body eagerly (synchronous) — the templates

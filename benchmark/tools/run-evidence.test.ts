@@ -102,7 +102,8 @@ describe('SV2-015 raw benchmark evidence', () => {
   it('rejects invalid or empty sampling settings instead of declaring success', () => {
     expect(validateBenchSettings({ ...input.settings, iterations: 0 })).not.toEqual([]);
     expect(validateBenchSettings({ ...input.settings, iterations: Number.NaN })).not.toEqual([]);
-    expect(validateBenchSettings({ ...input.settings, iterations: 2 })).not.toEqual([]);
+    const tooFew = { ...input.settings, iterations: 2, dropOutliers: 1 };
+    expect(validateBenchSettings(tooFew)).not.toEqual([]);
     expect(validateBenchSettings({ ...input.settings, warmup: -1 })).not.toEqual([]);
     expect(validateBenchSettings({ ...input.settings, memoryIterations: -1 })).not.toEqual([]);
     const sample = structuredClone(input);

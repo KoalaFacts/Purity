@@ -6,13 +6,23 @@
 //         by `online` / `offline` window events.
 // ---------------------------------------------------------------------------
 
+import { createBrowserSignal } from './browser-signal.ts';
 import { bindListeners } from './listen.ts';
-import { withoutScope } from './scope.ts';
-import { compute, state, type ComputedAccessor } from './signals.ts';
+import { compute, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
 
-let singleton: ComputedAccessor<boolean> | null = null;
-let unbind: (() => void) | null = null;
+const source = /* @__PURE__ */ createBrowserSignal(
+  // Coerce — some environments expose `onLine` as undefined / non-boolean.
+  () => navigator.onLine === true,
+  (write) =>
+    bindListeners(
+      [
+        [window, 'online', () => write(true)],
+        [window, 'offline', () => write(false)],
+      ],
+      'onlineSignal',
+    ),
+);
 
 /**
  * Reactive `navigator.onLine` (ADR 0041).
@@ -34,25 +44,11 @@ export function onlineSignal(): ComputedAccessor<boolean> {
   ) {
     return compute(() => true);
   }
-  if (singleton) return singleton;
-  // Coerce — some environments expose `onLine` as undefined / non-boolean.
-  const inner = state(navigator.onLine === true);
-  unbind = bindListeners(
-    [
-      [window, 'online', () => inner(true)],
-      [window, 'offline', () => inner(false)],
-    ],
-    'onlineSignal',
-  );
-  if (!unbind) return compute(() => navigator.onLine === true);
-  singleton = withoutScope(() => compute(() => inner()));
-  return singleton;
+  return source();
 }
 
 /** @internal — test helper. Clears the cached singleton and removes the
  * window listeners so subsequent test runs start from a clean state. */
 export function _resetOnlineSignal(): void {
-  unbind?.();
-  unbind = null;
-  singleton = null;
+  source.reset();
 }

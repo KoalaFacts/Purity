@@ -91,7 +91,7 @@ function scenario(kind: Kind): Scenario {
     updated,
     change(value) {
       current = value;
-      target.dispatchEvent(new Event(event));
+      target.dispatchEvent(new Event(kind === 'online' && value === true ? 'online' : event));
     },
   };
 }
@@ -142,10 +142,24 @@ describe.each(['locale', 'fullscreen', 'online', 'visibility'] as const)(
 
       second.unmount();
       // Consumer disposal stops its watch, not the shared source.
-      if (kind === 'online') window.dispatchEvent(new Event('online'));
-      else source.change(source.initial);
+      source.change(source.initial);
       await tick();
       expect(seen).toEqual([source.initial, source.updated]);
+    });
+
+    it('preserves computed equality filtering for a same-tick round trip', async () => {
+      const signal = source.read();
+      const seen: unknown[] = [];
+      disposers.push(
+        watch(() => {
+          seen.push(signal());
+        }),
+      );
+      source.change(source.updated);
+      source.change(source.initial);
+      await tick();
+      expect(signal()).toBe(source.initial);
+      expect(seen).toEqual([source.initial]);
     });
 
     it('keeps calls and get read-only, and peek does not subscribe', async () => {

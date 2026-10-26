@@ -6,15 +6,10 @@
 // return a constant `'visible'`.
 // ---------------------------------------------------------------------------
 
+import { createBrowserSignal } from './browser-signal.ts';
 import { bindListeners, isolate } from './listen.ts';
-import { withoutScope } from './scope.ts';
-import { compute, state, type ComputedAccessor } from './signals.ts';
+import { compute, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
-
-let singleton: ComputedAccessor<'visible' | 'hidden'> | null = null;
-// Teardown closure captured at wire-time so reset can remove the listener
-// even if `document` is shape-mutated between wire and reset.
-let teardown: (() => void) | null = null;
 
 /**
  * Per the Page Visibility spec, `document.visibilityState` is either
@@ -27,6 +22,22 @@ function readVisibility(): 'visible' | 'hidden' {
   const v = (document as { visibilityState?: unknown }).visibilityState;
   return v === 'visible' ? 'visible' : 'hidden';
 }
+
+const source = /* @__PURE__ */ createBrowserSignal(
+  readVisibility,
+  (write) =>
+    bindListeners(
+      [
+        [
+          document,
+          'visibilitychange',
+          isolate('pageVisibilitySignal', () => write(readVisibility())),
+        ],
+      ],
+      'pageVisibilitySignal',
+    ),
+  () => 'visible' as const,
+);
 
 /**
  * Reactive `document.visibilityState` (ADR 0039).
@@ -44,30 +55,11 @@ export function pageVisibilitySignal(): ComputedAccessor<'visible' | 'hidden'> {
   ) {
     return compute(() => 'visible' as const);
   }
-  if (singleton) return singleton;
-  const inner = state<'visible' | 'hidden'>(readVisibility());
-  // Throw isolation — a malformed shim or stale Object.defineProperty
-  // override on `visibilityState` must not bubble out of the DOM
-  // event-dispatch path and crash the page.
-  teardown = bindListeners(
-    [
-      [
-        document,
-        'visibilitychange',
-        isolate('pageVisibilitySignal', () => inner(readVisibility())),
-      ],
-    ],
-    'pageVisibilitySignal',
-  );
-  if (!teardown) return compute(() => 'visible' as const);
-  singleton = withoutScope(() => compute(() => inner()));
-  return singleton;
+  return source();
 }
 
 /** @internal — test helper. Clears the cached singleton and removes the
  * document listener so subsequent test runs start from a clean state. */
 export function _resetPageVisibilitySignal(): void {
-  teardown?.();
-  teardown = null;
-  singleton = null;
+  source.reset();
 }

@@ -6,10 +6,12 @@
 // return a constant `'visible'`.
 // ---------------------------------------------------------------------------
 
-import { createBrowserSignal } from './browser-signal.ts';
+import { createBrowserSignal, resetBrowserSignal, type BrowserSignal } from './browser-signal.ts';
 import { bindListeners, isolate } from './listen.ts';
 import { compute, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
+
+const source: BrowserSignal<'visible' | 'hidden'> = { value: null, stop: null };
 
 /**
  * Per the Page Visibility spec, `document.visibilityState` is either
@@ -22,22 +24,6 @@ function readVisibility(): 'visible' | 'hidden' {
   const v = (document as { visibilityState?: unknown }).visibilityState;
   return v === 'visible' ? 'visible' : 'hidden';
 }
-
-const source = /* @__PURE__ */ createBrowserSignal(
-  readVisibility,
-  (write) =>
-    bindListeners(
-      [
-        [
-          document,
-          'visibilitychange',
-          isolate('pageVisibilitySignal', () => write(readVisibility())),
-        ],
-      ],
-      'pageVisibilitySignal',
-    ),
-  () => 'visible' as const,
-);
 
 /**
  * Reactive `document.visibilityState` (ADR 0039).
@@ -55,11 +41,29 @@ export function pageVisibilitySignal(): ComputedAccessor<'visible' | 'hidden'> {
   ) {
     return compute(() => 'visible' as const);
   }
-  return source();
+  return (
+    source.value ??
+    createBrowserSignal(
+      source,
+      readVisibility,
+      (write) =>
+        bindListeners(
+          [
+            [
+              document,
+              'visibilitychange',
+              isolate('pageVisibilitySignal', () => write(readVisibility())),
+            ],
+          ],
+          'pageVisibilitySignal',
+        ),
+      () => 'visible' as const,
+    )
+  );
 }
 
 /** @internal — test helper. Clears the cached singleton and removes the
  * document listener so subsequent test runs start from a clean state. */
 export function _resetPageVisibilitySignal(): void {
-  source.reset();
+  resetBrowserSignal(source);
 }

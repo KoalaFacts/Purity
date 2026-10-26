@@ -7,10 +7,12 @@
 //         `fullscreenchange` event (with vendor-prefixed fallbacks).
 // ---------------------------------------------------------------------------
 
-import { createBrowserSignal } from './browser-signal.ts';
+import { createBrowserSignal, resetBrowserSignal, type BrowserSignal } from './browser-signal.ts';
 import { bindListeners, isolate, type ListenerSpec } from './listen.ts';
 import { compute, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
+
+const source: BrowserSignal<Element | null> = { value: null, stop: null };
 
 // Vendor-prefixed event names — order matches the spec → moz → webkit → MS
 // progression. We bind every event the document supports rather than
@@ -42,13 +44,6 @@ function readFullscreenElement(): Element | null {
   );
 }
 
-const source = /* @__PURE__ */ createBrowserSignal(readFullscreenElement, (write) => {
-  // A throwing platform getter must not escape the native event dispatcher.
-  const handler = isolate('fullscreenSignal', () => write(readFullscreenElement()));
-  const specs = FULLSCREEN_EVENTS.map((name): ListenerSpec => [document, name, handler]);
-  return bindListeners(specs, 'fullscreenSignal');
-});
-
 /**
  * Reactive `document.fullscreenElement` (ADR 0041).
  *
@@ -64,11 +59,19 @@ export function fullscreenSignal(): ComputedAccessor<Element | null> {
   ) {
     return compute(() => null as Element | null);
   }
-  return source();
+  return (
+    source.value ??
+    createBrowserSignal(source, readFullscreenElement, (write) => {
+      // A throwing platform getter must not escape the native event dispatcher.
+      const handler = isolate('fullscreenSignal', () => write(readFullscreenElement()));
+      const specs = FULLSCREEN_EVENTS.map((name): ListenerSpec => [document, name, handler]);
+      return bindListeners(specs, 'fullscreenSignal');
+    })
+  );
 }
 
 /** @internal — test helper. Clears the cached singleton and removes the
  * document listeners so subsequent test runs start from a clean state. */
 export function _resetFullscreenSignal(): void {
-  source.reset();
+  resetBrowserSignal(source);
 }

@@ -8,6 +8,7 @@ import {
   generateSSR,
 } from '../src/compiler/codegen.ts';
 import { parse } from '../src/compiler/parser.ts';
+import { flattenValue, swapSlot } from '../src/compiler/value-helpers.ts';
 import { ssrHelpers } from '../src/compiler/ssr-runtime.ts';
 import { state, watch } from '../src/signals.ts';
 
@@ -43,68 +44,80 @@ function fixture(kind: 'url' | 'group', count = 8): FragmentNode {
   };
 }
 
-function render(ast: FragmentNode, values: unknown[], hydrate: boolean, markup = '') {
+function render(
+  ast: FragmentNode,
+  values: unknown[],
+  hydrate: boolean,
+  markup = '',
+  linked = false,
+) {
   const root = document.createElement('div');
   // Only trusted generated source is evaluated. Production AOT evaluates no code strings.
   if (hydrate) {
     root.innerHTML = markup;
     const prior = Array.from(root.childNodes);
-    const factory = new Function(`return ${generateHydrate(ast)}`)();
+    const source = linked ? generateHydrateLinked(ast) : generateHydrate(ast);
+    const factory = new Function('__purity_fl__', '__purity_sw__', `return ${source}`)(
+      flattenValue,
+      swapSlot,
+    );
     factory(values, track, root);
     expect(Array.from(root.childNodes)).toEqual(prior);
   } else {
-    const factory = new Function(`return ${generate(ast)}`)();
+    const source = linked ? generateLinked(ast) : generate(ast);
+    const factory = new Function('__purity_fl__', '__purity_sw__', `return ${source}`)(
+      flattenValue,
+      swapSlot,
+    );
     root.appendChild(factory(values, track));
   }
   return root;
 }
 
 describe('generated binding correctness across rendering paths', () => {
-  for (const [name, generateSource] of [
-    ['create', generate],
-    ['hydrate', generateHydrate],
-    ['linked create', generateLinked],
-    ['linked hydrate', generateHydrateLinked],
-    ['SSR', generateSSR],
+  for (const [mode, hydrate, linked] of [
+    ['create', false, false],
+    ['hydrate', true, false],
+    ['linked create', false, true],
+    ['linked hydrate', true, true],
   ] as const) {
-    it(`${name} keeps URL validation at each emitted sink`, () => {
-      const source = generateSource(fixture('url'));
-      expect((source.match(/\[Purity\] Unsafe URL binding/g) ?? []).length).toBeGreaterThanOrEqual(
-        8,
+    const run = (ast: FragmentNode, values: unknown[], hydration: boolean, markup = '') =>
+      render(ast, values, hydration, markup, linked);
+
+    it(`${mode} checks all eight URL sinks independently`, () => {
+      const values = Array.from({ length: 8 }, (_, index) => `/safe-${index}`);
+      const markup = '<a></a>'.repeat(8);
+      const root = run(fixture('url'), values, hydrate, markup);
+      expect(Array.from(root.children, (el) => el.getAttribute('href'))).toEqual(values);
+      for (let index = 0; index < values.length; index++) {
+        const unsafe = [...values];
+        unsafe[index] = ' \tjava\nscript:alert(1)';
+        expect(() => run(fixture('url'), unsafe, hydrate, markup)).toThrow(
+          '[Purity] Unsafe URL binding',
+        );
+      }
+    });
+
+    it(`${mode} updates multiple grouped inputs without mutating prior values`, async () => {
+      const selected = state(['v1', 'v5']);
+      const previous = selected();
+      const markup = Array.from(
+        { length: 8 },
+        (_, index) => `<input type="${index % 2 ? 'checkbox' : 'radio'}" value="v${index}">`,
+      ).join('');
+      const root = run(fixture('group'), Array(8).fill(selected), hydrate, markup);
+      const boxes = Array.from(root.querySelectorAll<HTMLInputElement>('input')).filter(
+        (input) => input.type === 'checkbox',
       );
-      expect(source).not.toContain('function __purity_url__(');
+      expect(boxes.map((input) => input.checked)).toEqual([true, false, true, false]);
+      boxes[1]!.checked = true;
+      boxes[1]!.dispatchEvent(new Event('change'));
+      expect(selected()).toEqual(['v1', 'v5', 'v3']);
+      expect(previous).toEqual(['v1', 'v5']);
+      selected(['v7']);
+      await tick();
+      expect(boxes.map((input) => input.checked)).toEqual([false, false, false, true]);
     });
-  }
-
-  for (const [name, generateSource] of [
-    ['create', generate],
-    ['hydrate', generateHydrate],
-    ['linked create', generateLinked],
-    ['linked hydrate', generateHydrateLinked],
-  ] as const) {
-    it(`${name} retains group selection and immutable array updates`, () => {
-      const source = generateSource(fixture('group'));
-      expect((source.match(/\.splice\(/g) ?? []).length).toBeGreaterThanOrEqual(1);
-      expect(source).not.toContain('function __purity_group__(');
-    });
-  }
-
-  it('does not inject binding helpers into templates that do not use them', () => {
-    for (const make of [
-      generate,
-      generateHydrate,
-      generateLinked,
-      generateHydrateLinked,
-      generateSSR,
-    ]) {
-      const source = make(parse(['<p>', '</p>']));
-      expect(source).not.toContain('__purity_url__');
-      expect(source).not.toContain('__purity_group__');
-    }
-  });
-
-  for (const hydrate of [false, true]) {
-    const mode = hydrate ? 'hydrate' : 'create';
 
     it(`${mode} retains single coercion, reactive removal and watcher disposal`, async () => {
       let reads = 0;
@@ -114,7 +127,7 @@ describe('generated binding correctness across rendering paths', () => {
           return '/safe';
         },
       });
-      const root = render(fixture('url'), Array(8).fill(value), hydrate, '<a></a>'.repeat(8));
+      const root = run(fixture('url'), Array(8).fill(value), hydrate, '<a></a>'.repeat(8));
       expect(reads).toBe(8);
       expect(Array.from(root.children, (el) => el.getAttribute('href'))).toEqual(
         Array(8).fill('/safe'),
@@ -141,12 +154,12 @@ describe('generated binding correctness across rendering paths', () => {
         'data:text/html,x',
         'data:image/svg+xml;base64,x',
       ]) {
-        expect(() => render(fixture('url', 1), [value], hydrate, '<a></a>')).toThrow(
+        expect(() => run(fixture('url', 1), [value], hydrate, '<a></a>')).toThrow(
           '[Purity] Unsafe URL binding',
         );
       }
       for (const value of ['/relative', 'https://example.test', 'data:image/png;base64,x']) {
-        const root = render(fixture('url', 1), [value], hydrate, '<a></a>');
+        const root = run(fixture('url', 1), [value], hydrate, '<a></a>');
         expect(root.firstElementChild?.getAttribute('href')).toBe(value);
       }
       let reads = 0;
@@ -155,7 +168,7 @@ describe('generated binding correctness across rendering paths', () => {
           return ++reads === 1 ? '/safe-once' : 'javascript:second-coercion';
         },
       };
-      const root = render(fixture('url', 1), [stateful], hydrate, '<a></a>');
+      const root = run(fixture('url', 1), [stateful], hydrate, '<a></a>');
       expect(reads).toBe(1);
       expect(root.firstElementChild?.getAttribute('href')).toBe('/safe-once');
     });
@@ -164,7 +177,7 @@ describe('generated binding correctness across rendering paths', () => {
       const radio = state('v0');
       const initial = ['v1'];
       const group = state(initial);
-      const root = render(
+      const root = run(
         fixture('group', 2),
         [radio, group],
         hydrate,
@@ -201,7 +214,7 @@ describe('generated binding correctness across rendering paths', () => {
           return selected;
         },
       ];
-      const root = render(fixture('group', 1), values, hydrate, '<input type="radio" value="v0">');
+      const root = run(fixture('group', 1), values, hydrate, '<input type="radio" value="v0">');
       const input = root.firstElementChild as HTMLInputElement;
       let replacement: unknown;
       values[0] = function (this: unknown, next: unknown) {
@@ -216,10 +229,10 @@ describe('generated binding correctness across rendering paths', () => {
 
     it(`${mode} keeps native URL checks but does not coerce custom-element props`, () => {
       const native = parse(['<a :href=', '></a>']);
-      expect(() => render(native, ['javascript:bad'], hydrate, '<a></a>')).toThrow('Unsafe URL');
+      expect(() => run(native, ['javascript:bad'], hydrate, '<a></a>')).toThrow('Unsafe URL');
       const value = { toString: () => 'javascript:typed-data' };
       const custom = parse(['<test-link :href=', '></test-link>']);
-      const root = render(custom, [value], hydrate, '<test-link></test-link>');
+      const root = run(custom, [value], hydrate, '<test-link></test-link>');
       expect((root.firstElementChild as HTMLElement & { href: unknown }).href).toBe(value);
     });
   }
@@ -236,11 +249,10 @@ describe('generated binding correctness across rendering paths', () => {
     const result = factory(Array(8).fill(value), ssrHelpers);
     expect(reads).toBe(8);
     expect(result.__purity_ssr_html__).toBe('<a href="/safe?x=1&amp;y=2"></a>'.repeat(8));
-    expect(() =>
-      factory(
-        Array(8).fill(() => 'javascript:bad'),
-        ssrHelpers,
-      ),
-    ).toThrow('Unsafe URL');
+    for (let index = 0; index < 8; index++) {
+      const unsafe = Array(8).fill('/safe');
+      unsafe[index] = () => 'javascript:bad';
+      expect(() => factory(unsafe, ssrHelpers)).toThrow('Unsafe URL');
+    }
   });
 });

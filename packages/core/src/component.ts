@@ -380,13 +380,9 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     // Component returned a non-deferred Node (e.g. user wrapped html`` in
     // something that bypassed deferral). Fall back to lossy: clear + insert.
     while (container.firstChild) container.removeChild(container.firstChild);
-    if (view instanceof DocumentFragment) {
-      container.appendChild(view);
-      ctx.nodes = Array.from(container.childNodes);
-    } else {
-      container.appendChild(view);
-      ctx.nodes = [view];
-    }
+    const wasFragment = view instanceof DocumentFragment;
+    container.appendChild(view);
+    ctx.nodes = wasFragment ? Array.from(container.childNodes) : [view];
   }
 
   hydratePendingCustomElements(container);
@@ -459,14 +455,9 @@ function primeResourceHydrationCache(container: Element): void {
           parsed.keyed &&
           typeof parsed.keyed === 'object'
         ) {
-          // Copy own keys explicitly rather than Object.assign: a boundary
-          // resource keyed `__proto__` arrives from JSON.parse as an own
-          // data property, and Object.assign([[Set]]) would route it through
-          // the prototype setter (dropping the value). `merged.keyed` is a
-          // null-prototype object (see normalizeCachePayload), so a direct
-          // bracket assignment stores even reserved names as plain data.
-          const src = parsed.keyed as Record<string, unknown>;
-          for (const k of Object.keys(src)) merged.keyed[k] = src[k];
+          // The null-prototype destination stores reserved JSON keys as data,
+          // with no inherited setters for "__proto__" or other names.
+          Object.assign(merged.keyed, parsed.keyed);
         }
       } catch (err) {
         console.error('[Purity] Failed to parse per-boundary hydration cache:', err);
@@ -490,10 +481,7 @@ function normalizeCachePayload(parsed: unknown): {
     // data and `key in keyed` never matches an inherited member. The
     // boundary-merge loop and primeHydrationCache rely on this shape.
     const keyed: Record<string, unknown> = Object.create(null);
-    if (obj.keyed && typeof obj.keyed === 'object') {
-      const src = obj.keyed as Record<string, unknown>;
-      for (const k of Object.keys(src)) keyed[k] = src[k];
-    }
+    if (obj.keyed && typeof obj.keyed === 'object') Object.assign(keyed, obj.keyed);
     return { ordered: Array.isArray(obj.ordered) ? obj.ordered : [], keyed };
   }
   return { ordered: [], keyed: Object.create(null) };

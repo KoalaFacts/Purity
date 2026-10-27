@@ -202,6 +202,15 @@ export function resource<T, K>(
     }, pollInterval);
   };
 
+  // SSR path: bypass watch entirely. Two-pass render — first pass fires the
+  // fetcher and registers the promise on the active SSRRenderContext; second
+  // pass consumes the resolved value from `ctx.resolvedData`. The watch is
+  // reactive and DOM-bound, neither of which applies on the server.
+  const ssrCtx = getSSRRenderContext();
+  if (ssrCtx) {
+    return ssrResources.resource(ssrCtx, userKey, sourceFn, fetcher, retry, data, error, loading);
+  }
+
   // Share completion state updates across synchronous results and promise
   // settlements. Both paths must preserve the same batch and poll order.
   const settleSuccess = (value: T) => {
@@ -220,15 +229,6 @@ export function resource<T, K>(
     });
     schedulePoll();
   };
-
-  // SSR path: bypass watch entirely. Two-pass render — first pass fires the
-  // fetcher and registers the promise on the active SSRRenderContext; second
-  // pass consumes the resolved value from `ctx.resolvedData`. The watch is
-  // reactive and DOM-bound, neither of which applies on the server.
-  const ssrCtx = getSSRRenderContext();
-  if (ssrCtx) {
-    return ssrResources.resource(ssrCtx, userKey, sourceFn, fetcher, retry, data, error, loading);
-  }
 
   // Requests and polls belong to the resource, not individual watch runs:
   // unchanged source keys must retain both in-flight work and pending polls.

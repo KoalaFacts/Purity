@@ -69,7 +69,9 @@ describe('generated binding correctness across rendering paths', () => {
   ] as const) {
     it(`${name} keeps URL validation at each emitted sink`, () => {
       const source = generateSource(fixture('url'));
-      expect((source.match(/\[Purity\] Unsafe URL binding/g) ?? []).length).toBeGreaterThanOrEqual(8);
+      expect((source.match(/\[Purity\] Unsafe URL binding/g) ?? []).length).toBeGreaterThanOrEqual(
+        8,
+      );
       expect(source).not.toContain('function __purity_url__(');
     });
   }
@@ -199,12 +201,7 @@ describe('generated binding correctness across rendering paths', () => {
           return selected;
         },
       ];
-      const root = render(
-        fixture('group', 1),
-        values,
-        hydrate,
-        '<input type="radio" value="v0">',
-      );
+      const root = render(fixture('group', 1), values, hydrate, '<input type="radio" value="v0">');
       const input = root.firstElementChild as HTMLInputElement;
       let replacement: unknown;
       values[0] = function (this: unknown, next: unknown) {
@@ -239,6 +236,11 @@ describe('generated binding correctness across rendering paths', () => {
     const result = factory(Array(8).fill(value), ssrHelpers);
     expect(reads).toBe(8);
     expect(result.__purity_ssr_html__).toBe('<a href="/safe?x=1&amp;y=2"></a>'.repeat(8));
-    expect(() => factory(Array(8).fill(() => 'javascript:bad'), ssrHelpers)).toThrow('Unsafe URL');
+    expect(() =>
+      factory(
+        Array(8).fill(() => 'javascript:bad'),
+        ssrHelpers,
+      ),
+    ).toThrow('Unsafe URL');
   });
 });

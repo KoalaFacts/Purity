@@ -2,7 +2,7 @@
 // @purityjs/vite-plugin — AOT template compilation + file-system routing
 //
 // Transforms html`...` at build time into direct DOM creation code.
-// Successfully compiled templates use precompiled factories and hydration walkers.
+// Client-only templates use create factories directly. Hydration walkers are opt-in.
 //
 // Optionally scans a routes directory and exposes a virtual
 // `purity:routes` module (ADR 0019).
@@ -184,8 +184,11 @@ export interface RoutesOptions {
  * Configuration options for the Purity Vite plugin.
  */
 export interface PurityPluginOptions {
+  /** Generate DOM-adoption walkers for SSR clients. Default false.
+   * Client-only builds call create factories directly and cannot hydrate server DOM. */
+  hydratable?: boolean;
   /** Fail template compilation instead of falling back to JIT, and reject
-   * retained Purity runtime compilation in production client output. Default false. */
+   * retained Purity runtime compilation in production client output. Default true. */
   strictAot?: boolean;
   /** Show the reactive graph panel during Vite dev. Off by default; excluded from builds and preview. */
   devtools?: boolean;
@@ -245,6 +248,8 @@ export interface PurityPluginOptions {
  * ```
  */
 export function purity(options?: PurityPluginOptions) {
+  const strictAot = options?.strictAot !== false;
+  const hydratable = options?.hydratable === true;
   const extensions = options?.include ?? ['.ts', '.js', '.tsx', '.jsx'];
   const stripServerModules = options?.stripServerModules !== false;
   const stripServerActions = options?.stripServerActions !== false;
@@ -372,7 +377,7 @@ export function purity(options?: PurityPluginOptions) {
 
     generateBundle(this: any, _options: any, bundle: Record<string, any>) {
       const ssr = serverBuild || this?.environment?.config?.consumer === 'server';
-      if (options?.strictAot && productionBuild && !ssr) assertStrictAotOutput(bundle, _options);
+      if (strictAot && productionBuild && !ssr) assertStrictAotOutput(bundle, _options);
       if (!stripServerModules || ssr) return;
       for (const output of Object.values(bundle)) {
         if (output.type !== 'asset') continue;
@@ -488,7 +493,8 @@ export function purity(options?: PurityPluginOptions) {
         workingCode,
         id,
         transformOpts?.ssr === true,
-        options?.strictAot === true,
+        strictAot !== false,
+        hydratable,
       );
 
       // Surface compile failures: prefer the Rollup/Vite plugin context
@@ -496,12 +502,12 @@ export function purity(options?: PurityPluginOptions) {
       // back to console.warn when called outside Vite (unit tests). Emitted
       // regardless of `changed` so a file containing only broken templates
       // still reports the failure.
-      if (options?.strictAot && result.warnings.length > 0) {
+      if (strictAot && result.warnings.length > 0) {
         // Preprocessing can insert imports or remove server-action bodies.
         // Recompile the original only on failure to recover source locations,
         // without rejecting templates removed from a successful client pass.
         const originalWarnings = rewritten
-          ? compileTemplates(code, id, transformOpts?.ssr === true, true).warnings
+          ? compileTemplates(code, id, transformOpts?.ssr === true, true, hydratable).warnings
           : result.warnings;
         throw new Error(
           (originalWarnings.length > 0 ? originalWarnings : result.warnings).join('\n') +
@@ -987,6 +993,7 @@ interface CompileContext {
   // `__purity_w__` (the watch fn).
   ssr: boolean;
   strictAot: boolean;
+  hydratable: boolean;
 }
 
 /**
@@ -1103,7 +1110,7 @@ function renderTemplate(
   try {
     const ast = parse(quasis.map((q) => q.value.raw));
     fnBody = (ctx.ssr ? generateSSR : generateLinked)(ast);
-    if (!ctx.ssr) hydrateBody = generateHydrateLinked(ast);
+    if (!ctx.ssr && ctx.hydratable) hydrateBody = generateHydrateLinked(ast);
   } catch (err) {
     // Security failures must not fall back to an uncompiled template.
     if (isFatalTemplateError(err) && !ctx.strictAot) throw err;
@@ -1141,7 +1148,9 @@ function renderTemplate(
   }
   return ctx.ssr
     ? `${tplVar}([${slots.join(', ')}], ${p}_h__)`
-    : `${p}_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${slots.join(', ')}])`;
+    : ctx.hydratable
+      ? `${p}_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${slots.join(', ')}])`
+      : `${tplVar}([${slots.join(', ')}], ${p}_watch__)`;
 }
 
 type ModuleLang = 'ts' | 'tsx' | 'jsx';
@@ -1183,6 +1192,7 @@ function compileTemplates(
   id: string,
   ssr: boolean,
   strictAot: boolean,
+  hydratable: boolean,
 ): CompileResult {
   const warnings: string[] = [];
   const lineStarts = buildLineStarts(source);
@@ -1215,6 +1225,7 @@ function compileTemplates(
     failed: false,
     ssr,
     strictAot,
+    hydratable,
     id,
     lineStarts,
     warnings,
@@ -1238,7 +1249,9 @@ function compileTemplates(
   // track it alongside the html`` replacements.
   const runtimeImport = ssr
     ? `import { ssrHelpers as ${prefix}_h__ } from '@purityjs/core/internal';\nimport '@purityjs/ssr';\n`
-    : `import { renderCompiledTemplate as ${prefix}_renderCompiled__, flattenValue as ${prefix}_fl__, swapSlot as ${prefix}_sw__ } from '@purityjs/core/runtime';\n`;
+    : hydratable
+      ? `import { renderCompiledTemplate as ${prefix}_renderCompiled__, flattenValue as ${prefix}_fl__, swapSlot as ${prefix}_sw__ } from '@purityjs/core/runtime';\n`
+      : `import { watch as ${prefix}_watch__ } from '@purityjs/core';\nimport { flattenValue as ${prefix}_fl__, swapSlot as ${prefix}_sw__ } from '@purityjs/core/runtime';\n`;
   /* v8 ignore next -- edits.length > 0 implies at least one hoist was pushed */
   const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
   const insertPos = findImportInsertionOffset(source, program);

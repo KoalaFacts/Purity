@@ -154,7 +154,7 @@ writeFileSync(
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  plugins: [purity(${appMode ? "{ routes: { dir: 'src/pages', emitTo: 'src/.purity/routes.ts' } }" : ''})],${aliasBlock}
+  plugins: [purity(${appMode ? "{ hydratable: true, routes: { dir: 'src/pages', emitTo: 'src/.purity/routes.ts' } }" : serverMode ? '{ hydratable: true }' : ''})],${aliasBlock}
 });
 `,
 );

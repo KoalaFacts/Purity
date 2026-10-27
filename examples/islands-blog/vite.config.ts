@@ -10,7 +10,7 @@ import { purity } from '@purityjs/vite-plugin';
 import { defineConfig } from 'vite-plus';
 
 export default defineConfig({
-  plugins: [purity()],
+  plugins: [purity({ hydratable: true })],
   resolve: {
     alias: {
       '@purityjs/core/jit': resolve(import.meta.dirname, '../../packages/core/src/compiler/jit.ts'),

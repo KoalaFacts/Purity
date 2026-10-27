@@ -1,4 +1,5 @@
-import currentBudgets from '../bundle-size/budgets.json' with { type: 'json' };
+import currentBudgets from '../bundle-size/budgets-v4.json' with { type: 'json' };
+import clientBudgets from '../bundle-size/budgets.json' with { type: 'json' };
 import budgets from '../bundle-size/budgets-v3.json' with { type: 'json' };
 import { expect, it } from 'vite-plus/test';
 import { compareSizeReports } from '../bundle-size/compare-reports.ts';
@@ -387,5 +388,70 @@ it.each(['missing', 'negative'] as const)(
     expect(() => compareSizeReports(base, structuredClone(base))).toThrow(
       /Function constructor evidence/,
     );
+  },
+);
+
+function clientExamples() {
+  const { base, next } = expandedExamples();
+  for (const report of [base, next]) {
+    report.schemaVersion = 5;
+    report.budgets = structuredClone(clientBudgets);
+    for (const name of ['counter', 'counter-client', 'controls', 'form', 'resource']) {
+      report.measurements.push({
+        profile: name + '-csr-aot',
+        rawBytes: 100,
+        gzipBytes: 50,
+        brotliBytes: 40,
+        functionConstructorCalls: 0,
+        chunks: [{ file: 'entry.js', rawBytes: 100, gzipBytes: 50, brotliBytes: 40 }],
+      });
+    }
+    for (const row of report.measurements)
+      Object.assign(row, {
+        compilation: row.profile.endsWith('-csr-aot')
+          ? 'client'
+          : row.profile.endsWith('-aot')
+            ? 'hydrate'
+            : 'jit',
+      });
+  }
+  return { base, next };
+}
+
+it('requires all 17 v5 application profiles with explicit compilation modes', () => {
+  const { base } = clientExamples();
+  expect(compareSizeReports(base, structuredClone(base)).apps).toHaveLength(17);
+  const missing = structuredClone(base);
+  missing.measurements = missing.measurements.filter((row) => row.profile !== 'form-csr-aot');
+  expect(() => compareSizeReports(missing, structuredClone(missing))).toThrow(
+    /Incomplete v5 coverage/,
+  );
+  const wrongMode = structuredClone(base);
+  Object.assign(
+    wrongMode.measurements.find((row) => row.profile === 'form-csr-aot')!,
+    { compilation: 'hydrate' },
+  );
+  expect(() => compareSizeReports(wrongMode, structuredClone(wrongMode))).toThrow(
+    /compilation mode/,
+  );
+});
+
+it('keeps client mode and historical full-hydration evidence distinct', () => {
+  const { base: old } = expandedExamples();
+  const { base: current } = clientExamples();
+  expect(() => compareSizeReports(old, current)).toThrow(/INCOMPARABLE: changed schemaVersion/);
+});
+
+it.each(['rawBytes', 'gzipBytes', 'brotliBytes'] as const)(
+  'reports client-only full-app and chunk %s growth',
+  (metric) => {
+    const { base } = clientExamples();
+    const next = structuredClone(base);
+    const app = next.measurements.find((row) => row.profile === 'controls-csr-aot')!;
+    app[metric]++;
+    app.chunks[0][metric]++;
+    const result = compareSizeReports(base, next);
+    expect(result.appGrowth.map((row) => row.name)).toContain('controls-csr-aot');
+    expect(result.chunkGrowth.map((row) => row.name)).toContain('controls-csr-aot/entry.js');
   },
 );

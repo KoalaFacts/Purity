@@ -6,7 +6,7 @@ import { SourceMapConsumer } from 'source-map-js';
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
-const plugin = purity();
+const plugin = purity({ hydratable: true, strictAot: false });
 
 function transform(code: string, id = 'app.ts') {
   const r = plugin.transform(code, id);

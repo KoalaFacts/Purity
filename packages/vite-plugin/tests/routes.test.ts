@@ -789,7 +789,11 @@ describe('purity({ routes }) — Vite plugin integration', () => {
       'pages/users/me.ts': '// me',
     });
     try {
-      const plugin = purity({ routes: { dir: 'pages' } });
+      const plugin = purity({
+        hydratable: true,
+        strictAot: false,
+        ...{ routes: { dir: 'pages' } },
+      });
       // Simulate Vite's lifecycle: configResolved → resolveId → load.
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
@@ -814,7 +818,11 @@ describe('purity({ routes }) — Vite plugin integration', () => {
   it('returns an empty manifest when the routes dir does not exist', () => {
     const { root, cleanup } = makeTmpPages({});
     try {
-      const plugin = purity({ routes: { dir: 'pages' } });
+      const plugin = purity({
+        hydratable: true,
+        strictAot: false,
+        ...{ routes: { dir: 'pages' } },
+      });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
         'purity:routes',
@@ -832,7 +840,7 @@ describe('purity({ routes }) — Vite plugin integration', () => {
   it('honors `routes: true` shorthand (defaults to pages/)', () => {
     const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
     try {
-      const plugin = purity({ routes: true });
+      const plugin = purity({ hydratable: true, strictAot: false, ...{ routes: true } });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
         'purity:routes',
@@ -845,7 +853,7 @@ describe('purity({ routes }) — Vite plugin integration', () => {
   });
 
   it('does not register the virtual module when routes option is omitted', () => {
-    const plugin = purity();
+    const plugin = purity({ hydratable: true, strictAot: false });
     const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
       'purity:routes',
     );
@@ -855,7 +863,11 @@ describe('purity({ routes }) — Vite plugin integration', () => {
   it('honors a custom virtualId', () => {
     const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
     try {
-      const plugin = purity({ routes: { dir: 'pages', virtualId: 'my:routes' } });
+      const plugin = purity({
+        hydratable: true,
+        strictAot: false,
+        ...{ routes: { dir: 'pages', virtualId: 'my:routes' } },
+      });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       expect(
         (plugin as { resolveId: (s: string) => string | null }).resolveId('purity:routes'),
@@ -871,7 +883,11 @@ describe('purity({ routes }) — Vite plugin integration', () => {
   it('invalidates the manifest when a file under the routes dir changes', () => {
     const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
     try {
-      const plugin = purity({ routes: { dir: 'pages' } });
+      const plugin = purity({
+        hydratable: true,
+        strictAot: false,
+        ...{ routes: { dir: 'pages' } },
+      });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const invalidated: string[] = [];
       const fakeMod = { id: '\0purity:routes' };
@@ -899,7 +915,11 @@ describe('purity({ routes }) — Vite plugin integration', () => {
       'pages/users/[id].ts': '// user detail',
     });
     try {
-      const plugin = purity({ routes: { dir: 'pages' } });
+      const plugin = purity({
+        hydratable: true,
+        strictAot: false,
+        ...{ routes: { dir: 'pages' } },
+      });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
         'purity:routes',
@@ -931,7 +951,11 @@ describe('purity({ routes }) — Vite plugin integration', () => {
       'pages/admin/users.ts': '// admin users',
     });
     try {
-      const plugin = purity({ routes: { dir: 'pages' } });
+      const plugin = purity({
+        hydratable: true,
+        strictAot: false,
+        ...{ routes: { dir: 'pages' } },
+      });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
         'purity:routes',
@@ -965,7 +989,11 @@ describe('purity({ routes }) — Vite plugin integration', () => {
       'pages/admin/users.ts': '// admin users',
     });
     try {
-      const plugin = purity({ routes: { dir: 'pages' } });
+      const plugin = purity({
+        hydratable: true,
+        strictAot: false,
+        ...{ routes: { dir: 'pages' } },
+      });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
         'purity:routes',
@@ -991,7 +1019,11 @@ describe('purity({ routes }) — Vite plugin integration', () => {
       'pages/users/[id].ts': 'export default (p) => p.id',
     });
     try {
-      const plugin = purity({ routes: { dir: 'pages' } });
+      const plugin = purity({
+        hydratable: true,
+        strictAot: false,
+        ...{ routes: { dir: 'pages' } },
+      });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
         'purity:routes',
@@ -1021,7 +1053,11 @@ describe('purity({ routes }) — Vite plugin integration', () => {
   it('does not invalidate for files outside the routes dir', () => {
     const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
     try {
-      const plugin = purity({ routes: { dir: 'pages' } });
+      const plugin = purity({
+        hydratable: true,
+        strictAot: false,
+        ...{ routes: { dir: 'pages' } },
+      });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const invalidated: string[] = [];
       const ctx = {
@@ -1067,7 +1103,11 @@ describe('purity({ routes: { emitTo } }) — on-disk manifest emit (ADR 0032)', 
     });
     try {
       const plugin = purity({
-        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        hydratable: true,
+        strictAot: false,
+        ...{
+          routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        },
       });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
@@ -1087,7 +1127,11 @@ describe('purity({ routes: { emitTo } }) — on-disk manifest emit (ADR 0032)', 
     const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
     try {
       const plugin = purity({
-        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        hydratable: true,
+        strictAot: false,
+        ...{
+          routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        },
       });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
@@ -1115,7 +1159,11 @@ describe('purity({ routes: { emitTo } }) — on-disk manifest emit (ADR 0032)', 
     const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
     try {
       const plugin = purity({
-        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        hydratable: true,
+        strictAot: false,
+        ...{
+          routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        },
       });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
@@ -1143,7 +1191,11 @@ describe('purity({ routes: { emitTo } }) — on-disk manifest emit (ADR 0032)', 
     const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
     try {
       const plugin = purity({
-        routes: { dir: 'pages', emitTo: 'deeply/nested/routes.ts' },
+        hydratable: true,
+        strictAot: false,
+        ...{
+          routes: { dir: 'pages', emitTo: 'deeply/nested/routes.ts' },
+        },
       });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
@@ -1161,7 +1213,11 @@ describe('purity({ routes: { emitTo } }) — on-disk manifest emit (ADR 0032)', 
   it('does NOT emit when emitTo is omitted (default off)', () => {
     const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
     try {
-      const plugin = purity({ routes: { dir: 'pages' } });
+      const plugin = purity({
+        hydratable: true,
+        strictAot: false,
+        ...{ routes: { dir: 'pages' } },
+      });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
         'purity:routes',
@@ -1194,7 +1250,11 @@ describe('purity({ routes: { emitTo } }) — buildStart eager-emit (ADR 0033)', 
     });
     try {
       const plugin = purity({
-        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        hydratable: true,
+        strictAot: false,
+        ...{
+          routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        },
       });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       // Critical: NO `resolveId` / `load` calls — buildStart fires on its own.
@@ -1213,7 +1273,11 @@ describe('purity({ routes: { emitTo } }) — buildStart eager-emit (ADR 0033)', 
   it('buildStart is a no-op when emitTo is omitted', () => {
     const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
     try {
-      const plugin = purity({ routes: { dir: 'pages' } });
+      const plugin = purity({
+        hydratable: true,
+        strictAot: false,
+        ...{ routes: { dir: 'pages' } },
+      });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       (plugin as { buildStart: () => void }).buildStart();
       // No emitTo means no on-disk side-effect, even with buildStart.
@@ -1226,7 +1290,7 @@ describe('purity({ routes: { emitTo } }) — buildStart eager-emit (ADR 0033)', 
   it('buildStart is a no-op when routes is disabled entirely', () => {
     const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
     try {
-      const plugin = purity({});
+      const plugin = purity({ hydratable: true, strictAot: false, ...{} });
       // configResolved still runs, but routesOpts is null.
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       // buildStart must short-circuit cleanly.
@@ -1241,7 +1305,11 @@ describe('purity({ routes: { emitTo } }) — buildStart eager-emit (ADR 0033)', 
     const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
     try {
       const plugin = purity({
-        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        hydratable: true,
+        strictAot: false,
+        ...{
+          routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        },
       });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       (plugin as { buildStart: () => void }).buildStart();
@@ -1270,7 +1338,11 @@ describe('purity({ routes: { emitTo } }) — buildStart eager-emit (ADR 0033)', 
     const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
     try {
       const plugin = purity({
-        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        hydratable: true,
+        strictAot: false,
+        ...{
+          routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        },
       });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       (plugin as { buildStart: () => void }).buildStart();

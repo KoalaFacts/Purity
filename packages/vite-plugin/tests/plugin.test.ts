@@ -3,7 +3,7 @@ import { purity } from '../src/index.ts';
 import { resolve } from 'node:path';
 
 describe('@purityjs/vite-plugin', () => {
-  const plugin = purity();
+  const plugin = purity({ hydratable: true, strictAot: false });
 
   it('has correct plugin name', () => {
     expect(plugin.name).toBe('purity');
@@ -159,7 +159,7 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('respects custom include option', () => {
-    const custom = purity({ include: ['.vue'] });
+    const custom = purity({ hydratable: true, strictAot: false, ...{ include: ['.vue'] } });
     const sfc = [
       '<script>',
       "import { html } from '@purityjs/core/jit';",
@@ -484,7 +484,7 @@ function vlqDecodeLine(s: string): number[][] {
 }
 
 describe('@purityjs/vite-plugin source maps', () => {
-  const plugin = purity();
+  const plugin = purity({ hydratable: true, strictAot: false });
 
   it('returns a v3 source map alongside compiled code', () => {
     const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>Hi</div>\`;`;
@@ -558,7 +558,7 @@ describe('@purityjs/vite-plugin source maps', () => {
 // ---------------------------------------------------------------------------
 
 describe('@purityjs/vite-plugin compile errors', () => {
-  const plugin = purity();
+  const plugin = purity({ hydratable: true, strictAot: false });
 
   it('warns with file:line:col when a template fails to compile, leaving source as-is', () => {
     // `<my:component>` parses but fails the codegen SAFE_NAME check.

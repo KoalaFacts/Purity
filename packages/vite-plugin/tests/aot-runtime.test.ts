@@ -14,7 +14,7 @@ import { ssrHelpers, valueToHtml } from '@purityjs/core/internal';
 import { purity } from '../src/index.ts';
 
 describe('AOT output runs correctly under jsdom', () => {
-  const plugin = purity({ strictAot: true });
+  const plugin = purity({ hydratable: true, strictAot: false, ...{ strictAot: true } });
 
   it('hydrates nested template arrays without runtime code generation or changing property data', async () => {
     const { make } = evalAot(
@@ -303,7 +303,7 @@ describe('AOT output runs correctly under jsdom', () => {
 // The plugin injects module-level identifiers. A user module that declares one
 // of them must still transform and run, with the user's binding intact (#224).
 describe('injected identifiers do not collide with user bindings', () => {
-  const plugin = purity();
+  const plugin = purity({ hydratable: true, strictAot: false });
 
   // Run transformed module code with its imports turned into `const`
   // destructuring, so a duplicate declaration fails as it would in a module.

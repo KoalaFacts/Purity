@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 import { isSSRHtml, ssrHelpers } from '@purityjs/core/internal';
 
-const plugin = purity();
+const plugin = purity({ hydratable: true, strictAot: false });
 
 const transform = (code: string, id: string, ssr: boolean) =>
   (plugin.transform as (c: string, i: string, o?: { ssr?: boolean }) => unknown).call(

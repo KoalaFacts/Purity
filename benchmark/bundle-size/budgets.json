@@ -98,10 +98,19 @@
     "resource-aot": {
       "functionConstructorCalls": 0
     },
-    "resource-runtime": {
-      "functionConstructorCalls": 1
+    "counter-csr-aot": {
+      "functionConstructorCalls": 0
     },
-    "resource-aot": {
+    "counter-client-csr-aot": {
+      "functionConstructorCalls": 0
+    },
+    "controls-csr-aot": {
+      "functionConstructorCalls": 0
+    },
+    "form-csr-aot": {
+      "functionConstructorCalls": 0
+    },
+    "resource-csr-aot": {
       "functionConstructorCalls": 0
     }
   }

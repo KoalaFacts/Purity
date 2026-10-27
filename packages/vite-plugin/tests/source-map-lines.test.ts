@@ -22,7 +22,11 @@ for (const ssr of [false, true]) {
             'const view = html`<p>mapped</p>`;',
             'throw new Error("after import");',
           ].join('\r');
-        const result = purity().transform(source, '/banner.ts', { ssr })!;
+        const result = purity({ hydratable: true, strictAot: false }).transform(
+          source,
+          '/banner.ts',
+          { ssr },
+        )!;
         const outputLines = lines(result.code);
         const line = outputLines.findIndex((text) => text.startsWith('throw new Error')) + 1;
         expect(
@@ -42,7 +46,11 @@ for (const ssr of [false, true]) {
       "import {\rhtml,\nother } from '@purityjs/core/jit';\nconst view = html`<p/>`;\nthrow new Error('after deletion');",
     ]) {
       it(`counts CRLF formed between unchanged slices of ${JSON.stringify(source)}`, () => {
-        const result = purity().transform(source, '/removed.ts', { ssr })!;
+        const result = purity({ hydratable: true, strictAot: false }).transform(
+          source,
+          '/removed.ts',
+          { ssr },
+        )!;
         const outputLines = lines(result.code);
         const line = outputLines.findIndex((text) => text.startsWith('throw new Error')) + 1;
         expect(
@@ -64,7 +72,9 @@ for (const ssr of [false, true]) {
           'const view = html`<p>${message}</p>`;',
           'throw new Error(message);',
         ].join(separator);
-        const result = purity().transform(source, '/app.ts', { ssr })!;
+        const result = purity({ hydratable: true, strictAot: false }).transform(source, '/app.ts', {
+          ssr,
+        })!;
         const map = new SourceMapConsumer(result.map);
         const outputLines = lines(result.code);
         const diagnosticLine = outputLines.findIndex((line) => line.startsWith('throw new Error'));
@@ -89,7 +99,9 @@ for (const ssr of [false, true]) {
         ].join(separator);
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         try {
-          expect(purity().transform(source, '/warn.ts', { ssr })).toBeNull();
+          expect(
+            purity({ hydratable: true, strictAot: false }).transform(source, '/warn.ts', { ssr }),
+          ).toBeNull();
           expect(warn).toHaveBeenCalledTimes(1);
           const column = 'const marker = "🌟"; const bad = '.length + 1;
           expect(warn.mock.calls[0]![0]).toContain(`/warn.ts:2:${column}`);
@@ -104,7 +116,11 @@ for (const ssr of [false, true]) {
           "import { html } from '@purityjs/core/jit';\n" +
           `const view = html\`<p>\${${expression}}</p>\`;\n` +
           'throw new Error("after slot");';
-        const result = purity().transform(source, '/slot.ts', { ssr })!;
+        const result = purity({ hydratable: true, strictAot: false }).transform(
+          source,
+          '/slot.ts',
+          { ssr },
+        )!;
         const outputLines = lines(result.code);
         const line = outputLines.findIndex((text) => text.startsWith('throw new Error')) + 1;
         expect(

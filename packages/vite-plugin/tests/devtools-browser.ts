@@ -147,11 +147,15 @@ document.querySelector('#increment').addEventListener('click', () => count(count
       await server.close();
     }
   }
-  await build({ ...config, plugins: [purity({ devtools: true })], build: { outDir: 'dist' } });
+  await build({
+    ...config,
+    plugins: [purity({ hydratable: true, strictAot: false, ...{ devtools: true } })],
+    build: { outDir: 'dist' },
+  });
   assert.doesNotMatch(await readFile(join(dir, 'dist/index.html'), 'utf8'), /purity-devtools/);
   const production = await preview({
     ...config,
-    plugins: [purity({ devtools: true })],
+    plugins: [purity({ hydratable: true, strictAot: false, ...{ devtools: true } })],
     preview: { host: '127.0.0.1', port: 0 },
   });
   try {

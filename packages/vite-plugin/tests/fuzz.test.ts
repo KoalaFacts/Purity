@@ -11,7 +11,7 @@ import * as fc from 'fast-check';
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
-const plugin = purity();
+const plugin = purity({ hydratable: true, strictAot: false });
 
 // Keep static parts limited to characters that won't trip the parser.
 const safeStatic = fc.stringMatching(/^[a-z0-9 ]{0,20}$/);

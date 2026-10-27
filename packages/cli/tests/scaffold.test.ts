@@ -139,7 +139,7 @@ describe('scaffold — --ssr mode', () => {
   it('generates a vite.config.ts with the core/compiler + ssr aliases and no route plugin options', () => {
     scaffold(['my-ssr-app', '--ssr']);
     const config = readProjectFile('my-ssr-app', 'vite.config.ts');
-    expect(config).toContain('plugins: [purity()]');
+    expect(config).toContain('plugins: [purity({ hydratable: true })]');
     expect(config).toContain("'@purityjs/core/compiler':");
     expect(config).toContain("'@purityjs/ssr':");
   });
@@ -188,7 +188,7 @@ describe('scaffold — --app mode', () => {
     scaffold(['my-full-app', '--app']);
     const config = readProjectFile('my-full-app', 'vite.config.ts');
     expect(config).toContain(
-      "plugins: [purity({ routes: { dir: 'src/pages', emitTo: 'src/.purity/routes.ts' } })]",
+      "plugins: [purity({ hydratable: true, routes: { dir: 'src/pages', emitTo: 'src/.purity/routes.ts' } })]",
     );
   });
 

@@ -46,7 +46,7 @@ const viteConfig = {
   root: benchmarkRoot,
   configFile: false as const,
   base: '/Purity/',
-  plugins: [purity()],
+  plugins: [purity({ hydratable: true })],
   resolve: {
     alias: [
       {

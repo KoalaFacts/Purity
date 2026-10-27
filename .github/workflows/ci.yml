@@ -65,6 +65,9 @@ jobs:
       - name: 🧠 Check inspector registry retention and leak detection
         run: node --experimental-strip-types packages/core/tests/inspect-retention.ts
 
+      - name: 🧠 Check computed/effect owner retention
+        run: node --expose-gc --experimental-strip-types packages/core/tests/computed-owner-retention.ts
+
       - name: 🏗️ Build @purityjs/vite-plugin
         # Produces dist/ with the compiled plugin
         run: npm run build -w packages/vite-plugin

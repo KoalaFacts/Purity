@@ -112,9 +112,9 @@ function insertMatchView(
     matchState.currentNodes = [];
     return;
   }
-  const node = content instanceof Node ? content : document.createTextNode(String(content));
-  matchState.currentNodes = node instanceof DocumentFragment ? [...node.childNodes] : [node];
-  parent.insertBefore(node, endMarker);
+  const nodes = extractNodes(content as Node | DocumentFragment | string);
+  matchState.currentNodes = nodes;
+  parent.insertBefore(content instanceof Node ? content : nodes[0], endMarker);
 }
 
 // Detach and dispose the current case, then render the selector's current key.

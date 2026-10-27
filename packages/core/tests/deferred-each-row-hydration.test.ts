@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/jit.ts';
-import { inflateDeferredEach, type DeferredEach } from '../src/control.ts';
+import { inflateDeferredEach, match, type DeferredEach } from '../src/control.ts';
 import { popContext, pushContext, type Scope } from '../src/scope.ts';
 import { disposeScope, state } from '../src/signals.ts';
 
@@ -87,6 +87,56 @@ describe('deferred each row hydration (SV2-015)', () => {
       label('updated');
       await tick();
       expect(host.querySelector('strong')?.textContent).toBe('updated');
+    } finally {
+      disposeScope(owner);
+    }
+  });
+});
+
+describe('shared static view extraction (SV2-015)', () => {
+  it('preserves match fragment roots and clears them across string, Node and empty branches', async () => {
+    const chosen = state('fragment');
+    const host = document.createElement('div');
+    const first = document.createElement('b');
+    const second = document.createElement('em');
+    first.textContent = 'first';
+    second.textContent = 'second';
+    const fragment = document.createDocumentFragment();
+    fragment.append(first, second);
+    const button = document.createElement('button');
+    button.textContent = 'click';
+    let clicks = 0;
+    button.addEventListener('click', () => clicks++);
+    const owner = withOwner(() => {
+      host.appendChild(
+        match(() => chosen(), {
+          fragment: () => fragment,
+          text: () => 'plain',
+          node: () => button,
+          empty: () => null,
+        }) as DocumentFragment,
+      );
+    });
+
+    try {
+      expect(host.querySelector('b')).toBe(first);
+      expect(host.querySelector('em')).toBe(second);
+      chosen('text');
+      await tick();
+      expect(host.textContent).toBe('plain');
+      expect(first.parentNode).toBeNull();
+      expect(second.parentNode).toBeNull();
+
+      chosen('node');
+      await tick();
+      expect(host.querySelector('button')).toBe(button);
+      button.click();
+      expect(clicks).toBe(1);
+
+      chosen('empty');
+      await tick();
+      expect(host.textContent).toBe('');
+      expect(button.parentNode).toBeNull();
     } finally {
       disposeScope(owner);
     }

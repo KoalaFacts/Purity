@@ -21,6 +21,15 @@ jobs:
           cache: npm
       - name: Resolve only the audited Svelte transitive package
         run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const path = 'package-lock.json';
+          const lock = JSON.parse(readFileSync(path, 'utf8'));
+          // npm may consider the previously locked vulnerable tarball satisfied
+          // despite a changed root override; invalidate exactly this entry.
+          delete lock.packages['node_modules/deepmerge'];
+          writeFileSync(path, JSON.stringify(lock, null, 2) + '\n');
+          NODE
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';

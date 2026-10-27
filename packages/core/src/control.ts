@@ -704,114 +704,80 @@ function reconcileEach<T, E extends KeyedEntry>(
     const anchor = isAppend ? endMarker : newEntries.get(newKeys[end])!.nodes[0];
     parent.insertBefore(frag, anchor);
   } else {
-    let swapped = false;
-    if (newLen === prevLen && reuseCount === newLen) {
-      let sc = 0;
-      let sa = -1;
-      let sb = -1;
-      for (let i = 0; i < newLen; i++) {
-        if (prevKeys[i] !== newKeys[i]) {
-          if (sc === 0) sa = i;
-          else if (sc === 1) sb = i;
-          sc++;
-          if (sc > 2) break;
-        }
-      }
-      if (sc === 2 && sa >= 0 && sb >= 0) {
-        const entryA = newEntries.get(newKeys[sa])!;
-        const entryB = newEntries.get(newKeys[sb])!;
-        if (entryA.nodes.length === 1 && entryB.nodes.length === 1) {
-          swapped = true;
-          const nodeA = entryA.nodes[0];
-          const nodeB = entryB.nodes[0];
-          // Two-element swap. moveOrInsert preserves focus/animations on
-          // the two moved rows when moveBefore is available; the marker is
-          // a fresh node so it always uses insertBefore.
-          const marker = document.createComment('');
-          parent.insertBefore(marker, nodeA);
-          moveOrInsert(parent, nodeA, nodeB);
-          moveOrInsert(parent, nodeB, marker);
-          parent.removeChild(marker);
-        }
+    const oldKeyIndex = new Map<unknown, number>();
+    for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
+
+    const sources: number[] = [];
+    const newIndexToSource: number[] = new Array(newLen).fill(-1);
+
+    for (let i = 0; i < newLen; i++) {
+      const oldIdx = oldKeyIndex.get(newKeys[i]);
+      if (oldIdx !== undefined) {
+        sources.push(oldIdx);
+        newIndexToSource[i] = sources.length - 1;
       }
     }
 
-    if (!swapped) {
-      const oldKeyIndex = new Map<unknown, number>();
-      for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
+    const lisIndices = new Set(lis(sources));
 
-      const sources: number[] = [];
-      const newIndexToSource: number[] = new Array(newLen).fill(-1);
-
-      for (let i = 0; i < newLen; i++) {
-        const oldIdx = oldKeyIndex.get(newKeys[i]);
-        if (oldIdx !== undefined) {
-          sources.push(oldIdx);
-          newIndexToSource[i] = sources.length - 1;
+    if (hasMoveBefore) {
+      // moveBefore path: per-row moves preserve focus, CSS
+      // transitions/animations, iframe load, popover/dialog state,
+      // and pointer capture across the reorder. No fragment batching —
+      // moveBefore is O(1) per node, and pulling rows into a fragment
+      // first would detach them and lose the preserved state.
+      let nextSibling: Node = endMarker;
+      for (let i = newLen - 1; i >= 0; i--) {
+        const entry = newEntries.get(newKeys[i])!;
+        const sourceIdx = newIndexToSource[i];
+        const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
+        if (needsMove) {
+          // Every root uses the following-row anchor. Move roots forward
+          // so <b>,<i> does not become <i>,<b> within a retained row.
+          for (let j = 0; j < entry.nodes.length; j++) {
+            moveOrInsert(parent, entry.nodes[j], nextSibling);
+          }
         }
+        nextSibling = entry.nodes[0] || nextSibling;
+      }
+    } else {
+      // Fragment-batching path for engines without moveBefore (Safari
+      // as of May 2026). Accumulates consecutive moves into a
+      // DocumentFragment and inserts them in a single DOM op. Loses
+      // focus/animation state on moved rows — acceptable fallback.
+      let nextSibling: Node = endMarker;
+      let batch: Node[] | null = null;
+      let batchTarget: Node = endMarker;
+
+      for (let i = newLen - 1; i >= 0; i--) {
+        const entry = newEntries.get(newKeys[i])!;
+        const sourceIdx = newIndexToSource[i];
+        const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
+
+        if (needsMove) {
+          if (!batch) {
+            batch = [];
+            batchTarget = nextSibling;
+          }
+          // Reversed here, reversed again on insert: rows and their nodes
+          // keep their order.
+          for (let j = entry.nodes.length - 1; j >= 0; j--) batch.push(entry.nodes[j]);
+        } else {
+          if (batch) {
+            const frag = document.createDocumentFragment();
+            for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
+            parent.insertBefore(frag, batchTarget);
+            batch = null;
+          }
+        }
+
+        nextSibling = entry.nodes[0] || nextSibling;
       }
 
-      const lisIndices = new Set(lis(sources));
-
-      if (hasMoveBefore) {
-        // moveBefore path: per-row moves preserve focus, CSS
-        // transitions/animations, iframe load, popover/dialog state,
-        // and pointer capture across the reorder. No fragment batching —
-        // moveBefore is O(1) per node, and pulling rows into a fragment
-        // first would detach them and lose the preserved state.
-        let nextSibling: Node = endMarker;
-        for (let i = newLen - 1; i >= 0; i--) {
-          const entry = newEntries.get(newKeys[i])!;
-          const sourceIdx = newIndexToSource[i];
-          const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
-          if (needsMove) {
-            // Every root uses the following-row anchor. Move roots forward
-            // so <b>,<i> does not become <i>,<b> within a retained row.
-            for (let j = 0; j < entry.nodes.length; j++) {
-              moveOrInsert(parent, entry.nodes[j], nextSibling);
-            }
-          }
-          nextSibling = entry.nodes[0] || nextSibling;
-        }
-      } else {
-        // Fragment-batching path for engines without moveBefore (Safari
-        // as of May 2026). Accumulates consecutive moves into a
-        // DocumentFragment and inserts them in a single DOM op. Loses
-        // focus/animation state on moved rows — acceptable fallback.
-        let nextSibling: Node = endMarker;
-        let batch: Node[] | null = null;
-        let batchTarget: Node = endMarker;
-
-        for (let i = newLen - 1; i >= 0; i--) {
-          const entry = newEntries.get(newKeys[i])!;
-          const sourceIdx = newIndexToSource[i];
-          const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
-
-          if (needsMove) {
-            if (!batch) {
-              batch = [];
-              batchTarget = nextSibling;
-            }
-            // Reversed here, reversed again on insert: rows and their nodes
-            // keep their order.
-            for (let j = entry.nodes.length - 1; j >= 0; j--) batch.push(entry.nodes[j]);
-          } else {
-            if (batch) {
-              const frag = document.createDocumentFragment();
-              for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
-              parent.insertBefore(frag, batchTarget);
-              batch = null;
-            }
-          }
-
-          nextSibling = entry.nodes[0] || nextSibling;
-        }
-
-        if (batch) {
-          const frag = document.createDocumentFragment();
-          for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
-          parent.insertBefore(frag, batchTarget);
-        }
+      if (batch) {
+        const frag = document.createDocumentFragment();
+        for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
+        parent.insertBefore(frag, batchTarget);
       }
     }
   }

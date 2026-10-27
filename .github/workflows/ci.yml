@@ -41,8 +41,14 @@ jobs:
         run: npm audit signatures || true
 
       - name: 🔍 Format check (Oxfmt — Vite+)
-        # Verifies all files are formatted; no modifications
-        run: npm run format:check
+        # Preserve the gate and print the formatter's precise proposed diff on failure.
+        # Edits are confined to the disposable CI checkout; the job still fails.
+        run: |
+          if ! npm run format:check; then
+            npm run format
+            git diff -- . | sed -n '1,240p'
+            exit 1
+          fi
 
       - name: 🔍 Lint (Oxlint — Vite+)
         # Uses the root Vite+ lint configuration.

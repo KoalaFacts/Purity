@@ -202,6 +202,25 @@ export function resource<T, K>(
     }, pollInterval);
   };
 
+  // Share completion state updates across synchronous results and promise
+  // settlements. Both paths must preserve the same batch and poll order.
+  const settleSuccess = (value: T) => {
+    batch(() => {
+      data(() => value);
+      error(undefined);
+      loading(false);
+    });
+    schedulePoll();
+  };
+
+  const settleFailure = (reason: unknown) => {
+    batch(() => {
+      error(reason);
+      loading(false);
+    });
+    schedulePoll();
+  };
+
   // SSR path: bypass watch entirely. Two-pass render — first pass fires the
   // fetcher and registers the promise on the active SSRRenderContext; second
   // pass consumes the resolved value from `ctx.resolvedData`. The watch is
@@ -303,42 +322,23 @@ export function resource<T, K>(
     try {
       result = retry.count > 0 ? withRetry(callFetcher, ac.signal, retry) : callFetcher();
     } catch (err) {
-      batch(() => {
-        error(err);
-        loading(false);
-      });
-      schedulePoll();
+      settleFailure(err);
       return;
     }
 
     if (!(result instanceof Promise)) {
-      const sync = result;
-      batch(() => {
-        data(() => sync);
-        error(undefined);
-        loading(false);
-      });
-      schedulePoll();
+      settleSuccess(result);
       return;
     }
 
     result.then(
       (val) => {
         if (myRun !== runId || ac.signal.aborted) return;
-        batch(() => {
-          data(() => val);
-          error(undefined);
-          loading(false);
-        });
-        schedulePoll();
+        settleSuccess(val);
       },
       (err) => {
         if (myRun !== runId || ac.signal.aborted) return;
-        batch(() => {
-          error(err);
-          loading(false);
-        });
-        schedulePoll();
+        settleFailure(err);
       },
     );
   });

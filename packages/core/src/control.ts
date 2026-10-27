@@ -718,7 +718,10 @@ function reconcileEach<T, E extends KeyedEntry>(
       }
     }
 
-    const lisIndices = new Set(lis(sources));
+    // Reverse placement visits retained source slots in descending order, so
+    // an LIS cursor avoids allocating and hashing a Set on each reorder.
+    const lisIndices = lis(sources);
+    let lisCursor = lisIndices.length - 1;
 
     if (hasMoveBefore) {
       // moveBefore path: per-row moves preserve focus, CSS
@@ -730,7 +733,8 @@ function reconcileEach<T, E extends KeyedEntry>(
       for (let i = newLen - 1; i >= 0; i--) {
         const entry = newEntries.get(newKeys[i])!;
         const sourceIdx = newIndexToSource[i];
-        const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
+        const needsMove = sourceIdx === -1 || sourceIdx !== lisIndices[lisCursor];
+        if (!needsMove) lisCursor--;
         if (needsMove) {
           // Every root uses the following-row anchor. Move roots forward
           // so <b>,<i> does not become <i>,<b> within a retained row.
@@ -752,7 +756,8 @@ function reconcileEach<T, E extends KeyedEntry>(
       for (let i = newLen - 1; i >= 0; i--) {
         const entry = newEntries.get(newKeys[i])!;
         const sourceIdx = newIndexToSource[i];
-        const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
+        const needsMove = sourceIdx === -1 || sourceIdx !== lisIndices[lisCursor];
+        if (!needsMove) lisCursor--;
 
         if (needsMove) {
           if (!batch) {

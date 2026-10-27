@@ -116,6 +116,38 @@ describe('each — multi-root LIS moves with moveBefore', () => {
     expect(rows.map((node) => node.dataset.key)).toEqual(['A', 'C', 'B', 'D']);
     expect(rows).toEqual(['A', 'C', 'B', 'D'].map((key) => nodes.get(key)));
     expect(nativeMoves).toBe(1);
+
+    // Alternating moves and stable LIS members must consume the cursor only
+    // for retained rows. The best subsequence here has length two.
+    nativeMoves = 0;
+    keys(['C', 'A', 'D', 'B']);
+    await tick();
+    expect([...container.querySelectorAll('p')].map((node) => node.dataset.key)).toEqual([
+      'C',
+      'A',
+      'D',
+      'B',
+    ]);
+    expect([...container.querySelectorAll('p')]).toEqual(
+      ['C', 'A', 'D', 'B'].map((key) => nodes.get(key)),
+    );
+    expect(nativeMoves).toBe(2);
+
+    // An inserted row has no source slot and must not advance the LIS cursor.
+    nativeMoves = 0;
+    keys(['C', 'X', 'A', 'D', 'B']);
+    await tick();
+    expect([...container.querySelectorAll('p')].map((node) => node.dataset.key)).toEqual([
+      'C',
+      'X',
+      'A',
+      'D',
+      'B',
+    ]);
+    expect([...container.querySelectorAll('p')]).toEqual(
+      ['C', 'X', 'A', 'D', 'B'].map((key) => nodes.get(key)),
+    );
+    expect(nativeMoves).toBe(0);
     unmount();
   });
 

@@ -97,7 +97,7 @@ describe('consumeHydrationValue — mixed keyed + unkeyed positional pairing', (
     // Public priming owns a defensive copy: mutation of the caller's JSON
     // object must not change a cache already primed for hydration.
     keyed['__proto__'] = 'mutated';
-    keyed.constructor = 'mutated';
+    keyed['constructor'] = 'mutated';
 
     expect(consumeHydrationValue('__proto__')).toBe('safe');
     expect(consumeHydrationValue('constructor')).toBe('ctor');

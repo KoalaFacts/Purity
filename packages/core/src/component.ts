@@ -425,7 +425,7 @@ function primeResourceHydrationCache(container: Element): void {
     } catch (err) {
       console.error('[Purity] Failed to parse hydration cache:', err);
     }
-    shellEl.remove();
+    if (shellEl.parentNode) shellEl.parentNode.removeChild(shellEl);
   }
 
   // Find every streamed boundary's cache and merge keyed entries. The
@@ -466,7 +466,7 @@ function primeResourceHydrationCache(container: Element): void {
       } catch (err) {
         console.error('[Purity] Failed to parse per-boundary hydration cache:', err);
       }
-      el.remove();
+      if (el.parentNode) el.parentNode.removeChild(el);
     }
   }
 
@@ -484,12 +484,12 @@ function normalizeCachePayload(parsed: unknown): {
     // with a reserved name (`__proto__`, `constructor`, …) lands as plain
     // data and `key in keyed` never matches an inherited member. The
     // boundary-merge loop and primeHydrationCache rely on this shape.
-    const keyed: Record<string, unknown> = Object.create(null);
-    if (obj.keyed && typeof obj.keyed === 'object') {
-      // JSON.parse yields enumerable own string keys; the null-prototype
-      // target makes even reserved names safe to assign.
-      Object.assign(keyed, obj.keyed);
-    }
+    // An empty/null/invalid keyed payload still receives its own safe map;
+    // Object.assign ignores a null source and preserves JSON's own keys.
+    const keyed: Record<string, unknown> = Object.assign(
+      Object.create(null),
+      obj.keyed && typeof obj.keyed === 'object' ? obj.keyed : null,
+    );
     return { ordered: Array.isArray(obj.ordered) ? obj.ordered : [], keyed };
   }
   return { ordered: [], keyed: Object.create(null) };

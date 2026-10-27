@@ -37,13 +37,15 @@ jobs:
           import { readFileSync } from 'node:fs';
           const old = JSON.parse(execFileSync('git', ['show', 'HEAD:package-lock.json'], { encoding: 'utf8' }));
           const now = JSON.parse(readFileSync('package-lock.json', 'utf8'));
-          const alias = now.packages['node_modules/deepmerge'];
-          console.log('Resolved audited merge alias:', JSON.stringify(alias));
+          const aliases = Object.entries(now.packages).filter(([key]) => key.includes('deepmerge') || key.includes('stackline'));
+          console.log('Resolved merge entries:', JSON.stringify(aliases));
+          assert.equal(aliases.length, 1, 'Expected exactly one pinned, audited merge implementation');
+          const [aliasPath, alias] = aliases[0];
           assert(decodeURIComponent(alias.resolved ?? '').includes('/@stackline/deepmerge/-/'), 'Expected audited alias registry URL');
           assert.equal(alias.version, '1.1.0');
           assert(alias.integrity?.startsWith('sha512-'));
           delete old.packages['node_modules/deepmerge'];
-          delete now.packages['node_modules/deepmerge'];
+          delete now.packages[aliasPath];
           assert.deepEqual(now.packages, old.packages, 'Unexpected other package resolution changed');
           NODE
       - name: Install exact lockfile and audit all dependencies

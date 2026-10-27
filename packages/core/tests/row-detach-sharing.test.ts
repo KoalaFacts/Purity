@@ -114,28 +114,17 @@ describe('SV2-015 shared cold-path row detachment', () => {
     );
     await tick();
 
-    const existing = [rowNodes.get(2)!, rowNodes.get(3)!];
+    const retained = [rowNodes.get(2)!, rowNodes.get(3)!].flat();
+    const labels = () => [...container.querySelectorAll('b')].map((node) => node.textContent);
     items([1, 2, 3]);
     await tick();
-    expect([...container.querySelectorAll('b')].map((n) => n.textContent)).toEqual([
-      '1',
-      '2',
-      '3',
-    ]);
-    expect(existing.every((nodes) => nodes.every((node) => node.parentNode === container))).toBe(
-      true,
-    );
+    expect(labels()).toEqual(['1', '2', '3']);
+    expect(retained.every((node) => node.parentNode === container)).toBe(true);
+
     items([1, 2, 3, 4]);
     await tick();
-    expect([...container.querySelectorAll('b')].map((n) => n.textContent)).toEqual([
-      '1',
-      '2',
-      '3',
-      '4',
-    ]);
-    expect(existing.every((nodes) => nodes.every((node) => node.parentNode === container))).toBe(
-      true,
-    );
+    expect(labels()).toEqual(['1', '2', '3', '4']);
+    expect(retained.every((node) => node.parentNode === container)).toBe(true);
     expect(disposed).toEqual([]);
   });
 });

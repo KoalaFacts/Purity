@@ -331,13 +331,15 @@ export function compareSizeReports(base: Report, candidate: Report) {
   };
   const packages = match('packages');
   const apps = match('measurements');
+  // Raw and gzip regressions matter even if Brotli happens to shrink.
+  const grows = (item: Delta) => item.raw > 0 || item.gzip > 0 || item.brotli > 0;
   return {
     baseRevision: base.revision,
     candidateRevision: candidate.revision,
     packages,
     apps,
-    packageGrowth: packages.filter((x) => x.brotli > 0),
-    appGrowth: apps.filter((x) => x.brotli > 0),
+    packageGrowth: packages.filter(grows),
+    appGrowth: apps.filter(grows),
     budgetViolations: packages.filter((x) => x.headroom !== undefined && x.headroom < 0),
   };
 }

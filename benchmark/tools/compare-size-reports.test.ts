@@ -152,6 +152,31 @@ it('SV2-015: full core reduction does not mask an application and lazy-chunk reg
   expect(result.budgetViolations).toHaveLength(0);
 });
 
+it.each(['rawBytes', 'gzipBytes'] as const)(
+  'SV2-015: detects %s growth even when Brotli decreases',
+  (metric) => {
+    for (const { base, next } of [examples(), expandedExamples()]) {
+      const before = base.measurements[0];
+      const after = next.measurements[0];
+      after.brotliBytes = before.brotliBytes - 1;
+      after.chunks[1].brotliBytes = before.chunks[1].brotliBytes - 1;
+      after[metric] = before[metric] + 1;
+      after.chunks[1][metric] = before.chunks[1][metric] + 1;
+      const result = compareSizeReports(base, next);
+      expect(result.apps[0].brotli).toBe(-1);
+      expect(result.appGrowth.map((entry) => entry.name)).toContain('controls-runtime');
+    }
+  },
+);
+
+it('SV2-015: reports package gzip growth despite lower Brotli', () => {
+  const { base, next } = examples();
+  next.packages[0].gzipBytes = base.packages[0].gzipBytes + 1;
+  const result = compareSizeReports(base, next);
+  expect(result.packages[0].brotli).toBe(-8);
+  expect(result.packageGrowth.map((entry) => entry.name)).toContain('core-all');
+});
+
 it('SV2-015: rejects nonmatching inputs rather than presenting a false size delta', () => {
   const { base, next } = examples();
   next.fixtureHashes['controls.ts'] = 'b'.repeat(64);

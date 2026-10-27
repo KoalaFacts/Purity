@@ -6,6 +6,8 @@ on:
     paths:
       - 'benchmark/solid-v2/app-fixture/**'
       - '.github/workflows/solid-v2-rc18-lock.yml'
+      - 'benchmark/tools/fixture-parity-browser-check.ts'
+      - 'benchmark/tools/binding-browser-check.ts'
 
 permissions:
   contents: read
@@ -13,7 +15,7 @@ permissions:
 jobs:
   isolated-lock:
     name: Build and inventory pinned rc.18 counter fixture
-    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'evidence/sv2-001-rc18-isolated-app-lock' || startsWith(github.head_ref, 'dependabot/npm_and_yarn/benchmark/solid-v2/app-fixture/')) }}
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'evidence/sv2-001-rc18-isolated-app-lock' || github.head_ref == 'evidence/sv2-001-rc18-row-binding' || startsWith(github.head_ref, 'dependabot/npm_and_yarn/benchmark/solid-v2/app-fixture/')) }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact PR head
@@ -43,6 +45,26 @@ jobs:
       - name: Inventory all emitted JS chunks at Brotli 11
         working-directory: benchmark/solid-v2/app-fixture
         run: node --experimental-strip-types inventory-chunks.ts
+      - name: Build and inventory isolated rc.18 row/binding workloads
+        working-directory: benchmark/solid-v2/app-fixture
+        run: |
+          npm exec -- vite build --config vite.workloads.config.ts
+          node --experimental-strip-types inventory-chunks.ts --workloads
+      - name: Verify built workload state in Node DOM
+        run: node --experimental-vm-modules --test benchmark/solid-v2/app-fixture/workloads.test.ts
+      - name: Build the unchanged Purity comparison workloads
+        run: |
+          npm run build -w @purityjs/core
+          npm run build -w @purityjs/vite-plugin
+          npm run build -w benchmark
+      - name: Install engines for semantic comparison
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Verify rc.18 row/binding parity in all three engines
+        env:
+          SOLID_V2_FIXTURE: '1'
+        run: |
+          node benchmark/tools/fixture-parity-browser-check.ts
+          node benchmark/tools/binding-browser-check.ts
       - name: Verify source identity in both reports
         working-directory: benchmark/solid-v2/app-fixture
         env:
@@ -54,7 +76,7 @@ jobs:
             import { readFileSync } from "node:fs";
             const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
             assert.equal(head, process.env.EXPECTED_SOURCE_SHA, "Checkout differs from PR head");
-            for (const report of ["validation-report.json", "dist/payload-report.json"]) {
+            for (const report of ["validation-report.json", "dist/payload-report.json", "dist-workloads/payload-report.json"]) {
               assert.equal(JSON.parse(readFileSync(report, "utf8")).sourceRef, head, report);
             }
           '
@@ -67,5 +89,18 @@ jobs:
             benchmark/solid-v2/app-fixture/package-lock.json
             benchmark/solid-v2/app-fixture/validation-report.json
             benchmark/solid-v2/app-fixture/dist/
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Archive separate rc.18 workload and semantic evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: solid-v2-rc18-row-binding-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            package-lock.json
+            benchmark/solid-v2/app-fixture/package-lock.json
+            benchmark/solid-v2/app-fixture/validation-report.json
+            benchmark/solid-v2/app-fixture/dist-workloads/
+            benchmark/dist/fixture-parity-rc18/
           include-hidden-files: true
           if-no-files-found: error

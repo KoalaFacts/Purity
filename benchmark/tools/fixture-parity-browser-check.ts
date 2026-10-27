@@ -1,13 +1,21 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import type { Page } from 'playwright';
 import { preview } from 'vite';
 import { browserEngines } from './browser-engines.ts';
 
-const output = resolve(import.meta.dirname, '../dist/fixture-parity');
+const isolated = process.env.SOLID_V2_FIXTURE === '1';
+assert(!process.env.SOLID_V2_FIXTURE || isolated, 'Expected SOLID_V2_FIXTURE=1');
+const output = resolve(
+  import.meta.dirname,
+  isolated ? '../dist/fixture-parity-rc18' : '../dist/fixture-parity',
+);
+const fixture = resolve(import.meta.dirname, '../solid-v2/app-fixture');
+let solidServer: Awaited<ReturnType<typeof preview>> | undefined;
 await mkdir(output, { recursive: true });
 const server = await preview({
   configFile: false,
@@ -67,6 +75,13 @@ async function snapshot(page: Page): Promise<string> {
 }
 
 try {
+  if (isolated)
+    solidServer = await preview({
+      configFile: false,
+      root: fixture,
+      build: { outDir: 'dist-workloads' },
+      preview: { host: '127.0.0.1', port: 0, open: false },
+    });
   for (const [engine, launcher] of browserEngines) {
     const browser = await launcher.launch();
     try {
@@ -76,7 +91,9 @@ try {
       for (const scene of ['index', 'binding']) {
         for (const [index, framework] of ['purity', 'solid'].entries()) {
           await pages[index].goto(
-            `${server.resolvedUrls!.local[0]}apps/${framework}/${scene}.html`,
+            framework === 'solid' && solidServer
+              ? `${solidServer.resolvedUrls!.local[0]}${scene === 'index' ? 'rows' : scene}.html`
+              : `${server.resolvedUrls!.local[0]}apps/${framework}/${scene}.html`,
           );
         }
         const actions =
@@ -183,7 +200,45 @@ try {
       await browser.close();
     }
   }
+  if (isolated) {
+    const sourceRef = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: fixture,
+      encoding: 'utf8',
+    }).trim();
+    const installed = JSON.parse(
+      await readFile(resolve(fixture, 'validation-report.json'), 'utf8'),
+    );
+    const payload = JSON.parse(
+      await readFile(resolve(fixture, 'dist-workloads/payload-report.json'), 'utf8'),
+    );
+    assert.equal(installed.sourceRef, sourceRef);
+    assert.equal(payload.sourceRef, sourceRef);
+    await writeFile(
+      resolve(output, 'provenance.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          sourceRef,
+          complete: true,
+          check: 'snapshot-parity; separate binding input check has its own receipt',
+          scope: 'rc18 row/binding semantic DOM parity only; not timings',
+          engines: browserEngines.map(([name]) => name),
+          rootLockSHA256: createHash('sha256')
+            .update(await readFile(resolve(fixture, '../../../package-lock.json')))
+            .digest('hex'),
+          installed,
+          payload,
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+  }
 } finally {
+  if (solidServer)
+    await new Promise<void>((done, reject) =>
+      solidServer!.httpServer.close((error) => (error ? reject(error) : done())),
+    );
   await new Promise<void>((resolve, reject) =>
     server.httpServer.close((error) => (error ? reject(error) : resolve())),
   );

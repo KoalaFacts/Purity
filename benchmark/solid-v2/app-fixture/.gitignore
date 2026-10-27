@@ -1,3 +1,4 @@
 node_modules/
 dist/
 validation-report.json
+dist-workloads/

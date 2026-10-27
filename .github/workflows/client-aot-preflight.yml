@@ -56,10 +56,12 @@ jobs:
           npm run build -w examples/docs-site
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add packages benchmark docs scripts
+          git add packages benchmark docs scripts examples
           git diff --cached --binary > "$RUNNER_TEMP/aot-preflight/product.patch"
           git commit -m 'feat(compiler)!: land verified client-first AOT implementation and migrations' -m 'Default strict client-only factories; explicit hydratable builds retain SSR adoption. Preserve original inventories and add same-source client-only applications. Pinned Node24 preflight passed; formal exact-head browser/security/consumer CI and independent review remain required. Refs #276.'
           git rev-parse HEAD > "$RUNNER_TEMP/aot-preflight/candidate-sha.txt"
+          git status --short
+          test -z "$(git status --porcelain)"
           node benchmark/bundle-size/measure.ts
           cp benchmark/dist/bundle-size/report.json "$RUNNER_TEMP/aot-preflight/candidate.json"
       - name: Reject whole-app or chunk growth before push
@@ -116,7 +118,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/aot-preflight"
           git diff --binary HEAD > "$RUNNER_TEMP/aot-preflight/uncommitted.patch"
-          git status --short > "$RUNNER_TEMP/aot-preflight/status.txt"
+          git status --short | tee "$RUNNER_TEMP/aot-preflight/status.txt"
           git grep -n 'purity(' -- packages/cli benchmark/tools examples > "$RUNNER_TEMP/aot-preflight/consumers.txt" || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()

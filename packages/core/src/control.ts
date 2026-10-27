@@ -467,14 +467,7 @@ function bulkClear<E extends KeyedEntry>(
   for (let i = 0; i < prevLen; i++) {
     const entry = keyToEntry.get(prevKeys[i]);
     if (!entry) continue;
-    if (!canReplaceChildren) {
-      const nodes = entry.nodes;
-      for (let j = 0; j < nodes.length; j++) {
-        const node = nodes[j];
-        const p = node.parentNode;
-        if (p) p.removeChild(node);
-      }
-    }
+    if (!canReplaceChildren) detachNodes(entry.nodes);
     release(entry);
   }
 }
@@ -669,17 +662,16 @@ function reconcileEach<T, E extends KeyedEntry>(
       if (!newEntries.has(key)) {
         const entry = keyToEntry.get(key);
         if (entry) {
-          for (let j = 0; j < entry.nodes.length; j++) {
-            const node = entry.nodes[j];
-            if (node.parentNode) node.parentNode.removeChild(node);
-          }
+          detachNodes(entry.nodes);
           ops.release(entry);
         }
       }
     }
   }
 
-  let isAppend = newLen > prevLen;
+  // Both fast placement paths have the same number of freshly created rows.
+  const newCount = newLen - prevLen;
+  let isAppend = newCount > 0;
   if (isAppend) {
     for (let i = 0; i < prevLen; i++) {
       if (prevKeys[i] !== newKeys[i]) {
@@ -689,33 +681,28 @@ function reconcileEach<T, E extends KeyedEntry>(
     }
   }
 
-  let isPrepend = !isAppend && newLen > prevLen;
+  let isPrepend = !isAppend && newCount > 0;
   if (isPrepend) {
-    const offset = newLen - prevLen;
     for (let i = 0; i < prevLen; i++) {
-      if (prevKeys[i] !== newKeys[i + offset]) {
+      if (prevKeys[i] !== newKeys[i + newCount]) {
         isPrepend = false;
         break;
       }
     }
   }
 
-  if (isAppend) {
+  if (isAppend || isPrepend) {
+    // Both paths move only newly created rows. Preserve the same fragment
+    // insertion (and every retained row's DOM identity) with one placement loop.
+    const start = isAppend ? prevLen : 0;
+    const end = start + newCount;
     const frag = document.createDocumentFragment();
-    for (let i = prevLen; i < newLen; i++) {
+    for (let i = start; i < end; i++) {
       const entry = newEntries.get(newKeys[i])!;
       for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
     }
-    parent.insertBefore(frag, endMarker);
-  } else if (isPrepend) {
-    const newCount = newLen - prevLen;
-    const frag = document.createDocumentFragment();
-    for (let i = 0; i < newCount; i++) {
-      const entry = newEntries.get(newKeys[i])!;
-      for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
-    }
-    const firstExisting = newEntries.get(newKeys[newCount])!.nodes[0];
-    parent.insertBefore(frag, firstExisting);
+    const anchor = isAppend ? endMarker : newEntries.get(newKeys[end])!.nodes[0];
+    parent.insertBefore(frag, anchor);
   } else {
     let swapped = false;
     if (newLen === prevLen && reuseCount === newLen) {

@@ -42,6 +42,36 @@ describe('hydrate + resource cache', () => {
     expect(host.querySelector('#__purity_resources__')).toBeNull();
   });
 
+  it('retains both direct fragment roots for unmount after hydration fallback', () => {
+    host.innerHTML = '<p>server</p>';
+    const first = document.createElement('span');
+    const second = document.createElement('span');
+    first.textContent = 'first';
+    second.textContent = 'second';
+    const fragment = document.createDocumentFragment();
+    fragment.append(first, second);
+
+    const { unmount } = hydrate(host, () => fragment);
+
+    expect(host.children).toHaveLength(2);
+    expect(host.children[0]).toBe(first);
+    expect(host.children[1]).toBe(second);
+    unmount();
+    expect(host.childNodes).toHaveLength(0);
+  });
+
+  it('retains a direct Node for unmount after hydration fallback', () => {
+    host.innerHTML = '<p>server</p>';
+    const replacement = document.createElement('span');
+    replacement.textContent = 'client';
+
+    const { unmount } = hydrate(host, () => replacement);
+
+    expect(host.firstChild).toBe(replacement);
+    unmount();
+    expect(host.childNodes).toHaveLength(0);
+  });
+
   it('falls back to normal fetching when no script is present', async () => {
     host.innerHTML = '<p><!--[-->loading<!--]--></p>';
 
@@ -138,6 +168,39 @@ describe('hydrate + keyed resource cache', () => {
 
     expect(host.textContent).toContain('primed');
     expect(fetcherCalls).toBeLessThanOrEqual(0);
+  });
+
+  it('retains reserved shell-cache keys without inherited properties or refetch', async () => {
+    host.innerHTML =
+      '<p><!--[-->X<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources__">' +
+      '{"ordered":[],"keyed":{"__proto__":"shell-proto","constructor":"shell-ctor"}}' +
+      '</script>';
+
+    let fetches = 0;
+    hydrate(host, () => {
+      const proto = resource(
+        () => {
+          fetches++;
+          return Promise.resolve('refetched');
+        },
+        { key: '__proto__' },
+      );
+      const ctor = resource(
+        () => {
+          fetches++;
+          return Promise.resolve('refetched');
+        },
+        { key: 'constructor' },
+      );
+      return html`<p>${() => `${proto() ?? '?'}/${ctor() ?? '?'}`}</p>`;
+    });
+    await tick();
+
+    expect(host.textContent).toContain('shell-proto/shell-ctor');
+    expect(fetches).toBe(0);
+    expect(Object.prototype).not.toHaveProperty('shell-proto');
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
   it('matches keyed resources even when conditional resources reorder unkeyed neighbors', async () => {

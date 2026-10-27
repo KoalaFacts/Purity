@@ -24,6 +24,10 @@
       "gzipBytes": 8448,
       "brotliBytes": 7680
     },
+    "core-jit-client": {
+      "gzipBytes": 8448,
+      "brotliBytes": 7680
+    },
     "core-signals": {
       "gzipBytes": 9216,
       "brotliBytes": 8192
@@ -58,6 +62,12 @@
       "functionConstructorCalls": 1
     },
     "counter-aot": {
+      "functionConstructorCalls": 0
+    },
+    "counter-client-runtime": {
+      "functionConstructorCalls": 1
+    },
+    "counter-client-aot": {
       "functionConstructorCalls": 0
     },
     "controls-runtime": {

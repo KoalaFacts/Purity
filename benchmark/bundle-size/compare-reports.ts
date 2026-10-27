@@ -6,7 +6,8 @@
  */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import originalBudgets from './budgets.json' with { type: 'json' };
+import currentBudgets from './budgets.json' with { type: 'json' };
+import legacyBudgets from './budgets-v3.json' with { type: 'json' };
 
 interface Size {
   rawBytes: number;
@@ -158,6 +159,8 @@ const profileNames = ['counter', 'controls', 'form', 'hydration', 'resource'].fl
   name + '-runtime',
   name + '-aot',
 ]);
+const packageNamesV4 = [...packageNames, 'core-jit-client'];
+const profileNamesV4 = [...profileNames, 'counter-client-runtime', 'counter-client-aot'];
 const fixtureNames = [
   'counter.ts',
   'controls.ts',
@@ -168,14 +171,24 @@ const fixtureNames = [
   'controls-server.ts',
 ];
 
-function coverage(actual: string[], expected: string[], name: string) {
-  assert.deepEqual([...actual].sort(), [...expected].sort(), 'Incomplete v3 coverage: ' + name);
+const fixtureNamesV4 = [...fixtureNames, 'counter-client.ts'];
+
+function coverage(actual: string[], expected: string[], name: string, version: number) {
+  assert.deepEqual(
+    [...actual].sort(),
+    [...expected].sort(),
+    `Incomplete v${version} coverage: ` + name,
+  );
 }
 
 function validateReportContract(report: Report, label: string) {
   assert(report?.revision, 'Missing revision: ' + label);
   assert(report.dirty === false, 'Dirty build is not comparable');
-  assert.equal(report.schemaVersion, 3, 'Unsupported schemaVersion: ' + label);
+  assert(
+    report.schemaVersion === 3 || report.schemaVersion === 4,
+    'Unsupported schemaVersion: ' + label,
+  );
+  const expanded = report.schemaVersion === 4;
   for (const key of ['node', 'zlib', 'brotli', 'scope'] as const) {
     assert(
       typeof report[key] === 'string' && report[key].trim().length > 0,
@@ -192,13 +205,19 @@ function validateReportContract(report: Report, label: string) {
     Object.keys(report.versions),
     ['core', 'ssr', 'plugin', 'vite', 'parser'],
     label + '/versions',
+    report.schemaVersion,
   );
   for (const version of Object.values(report.versions))
     assert(
       typeof version === 'string' && version.trim().length > 0,
       'Missing tool version: ' + label,
     );
-  coverage(Object.keys(report.fixtureHashes), fixtureNames, label + '/fixtureHashes');
+  coverage(
+    Object.keys(report.fixtureHashes),
+    expanded ? fixtureNamesV4 : fixtureNames,
+    label + '/fixtureHashes',
+    report.schemaVersion,
+  );
   for (const hash of Object.values(report.fixtureHashes))
     assert(
       typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash),
@@ -227,16 +246,22 @@ function validateReportContract(report: Report, label: string) {
   }
   assert.equal(
     normalized(report.budgets),
-    normalized(originalBudgets),
-    'Missing or changed original v3 budgets: ' + label,
+    normalized(expanded ? currentBudgets : legacyBudgets),
+    'Missing or changed v' + report.schemaVersion + ' budgets: ' + label,
   );
   assert(Array.isArray(report.packages), 'Missing package entries: ' + label);
   assert(Array.isArray(report.measurements), 'Missing application profiles: ' + label);
-  coverage([...unique(report.packages, 'entry').keys()], packageNames, label + '/packages');
+  coverage(
+    [...unique(report.packages, 'entry').keys()],
+    expanded ? packageNamesV4 : packageNames,
+    label + '/packages',
+    report.schemaVersion,
+  );
   coverage(
     [...unique(report.measurements, 'profile').keys()],
-    profileNames,
+    expanded ? profileNamesV4 : profileNames,
     label + '/measurements',
+    report.schemaVersion,
   );
   for (const row of [...report.packages, ...report.measurements]) {
     assert(
@@ -306,13 +331,21 @@ export function compareSizeReports(base: Report, candidate: Report) {
   };
   const packages = match('packages');
   const apps = match('measurements');
+  // Raw and gzip regressions matter even if Brotli happens to shrink.
+  const grows = (item: Delta) => item.raw > 0 || item.gzip > 0 || item.brotli > 0;
+  const chunkGrowth = apps.flatMap((app) =>
+    (app.chunks ?? [])
+      .filter(grows)
+      .map((chunk) => ({ ...chunk, name: `${app.name}/${chunk.name}` })),
+  );
   return {
     baseRevision: base.revision,
     candidateRevision: candidate.revision,
     packages,
     apps,
-    packageGrowth: packages.filter((x) => x.brotli > 0),
-    appGrowth: apps.filter((x) => x.brotli > 0),
+    packageGrowth: packages.filter(grows),
+    appGrowth: apps.filter(grows),
+    chunkGrowth,
     budgetViolations: packages.filter((x) => x.headroom !== undefined && x.headroom < 0),
   };
 }
@@ -381,10 +414,13 @@ if (process.argv[1]?.endsWith('compare-reports.ts')) {
   console.log(
     'Application payload regressions: ' + result.appGrowth.length + ' / ' + result.apps.length,
   );
+  console.log('Required JS chunk payload regressions: ' + result.chunkGrowth.length);
   console.log(
     'No performance, allocation, retained-heap or Solid parity claim follows from size alone.',
   );
   assert.equal(result.budgetViolations.length, 0, 'Original package Brotli budget exceeded');
-  if (flags.includes('--reject-app-growth'))
+  if (flags.includes('--reject-app-growth')) {
     assert.equal(result.appGrowth.length, 0, 'Same-function app JS payload grew');
+    assert.equal(result.chunkGrowth.length, 0, 'Individual JS chunk payload grew');
+  }
 }

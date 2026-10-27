@@ -481,6 +481,36 @@ describe('component as custom element — lifecycle', () => {
     });
   }
 
+  it('delivers factory child destroy errors to the host and still tears down siblings', async () => {
+    const failure = new Error('factory teardown');
+    const seen: unknown[] = [];
+    const order: string[] = [];
+    const Child = component(tag('cel-shared-teardown-child'), () => {
+      onDispose(() => order.push('dispose'));
+      onDestroy(() => {
+        order.push('first-destroy');
+        throw failure;
+      });
+      onDestroy(() => order.push('second-destroy'));
+      return html`<p>child</p>`;
+    });
+    const name = tag('cel-shared-teardown-host');
+    component(name, () => {
+      onError((error) => seen.push(error));
+      onDestroy(() => order.push('host-destroy'));
+      return html`<div>${Child({})}</div>`;
+    });
+
+    const el = document.createElement(name);
+    document.body.appendChild(el);
+    await tick();
+    el.remove();
+    await tick();
+
+    expect(seen).toEqual([failure]);
+    expect(order).toEqual(['dispose', 'first-destroy', 'second-destroy', 'host-destroy']);
+  });
+
   it('runs disconnectedCallback dispose on removal', async () => {
     const name = tag('cel-dispose');
     const calls: string[] = [];

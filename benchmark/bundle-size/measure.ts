@@ -23,6 +23,7 @@ interface Measurement extends Sizes {
 const root = resolve(import.meta.dirname, '../..');
 const scenarios = [
   { name: 'counter', entry: 'counter.ts', templates: ['counter.ts'] },
+  { name: 'counter-client', entry: 'counter-client.ts', templates: ['counter-client.ts'] },
   { name: 'controls', entry: 'controls.ts', templates: ['controls-view.ts'] },
   { name: 'form', entry: 'form.ts', templates: ['form.ts'] },
   { name: 'hydration', entry: 'hydration.ts', templates: ['controls-view.ts'] },
@@ -204,6 +205,7 @@ const packageEntries = [
   },
   { name: 'core-runtime', specifier: '@purityjs/core/runtime', dist: 'packages/core/dist/' },
   { name: 'core-jit', specifier: '@purityjs/core/jit', dist: 'packages/core/dist/' },
+  { name: 'core-jit-client', specifier: '@purityjs/core/jit-client', dist: 'packages/core/dist/' },
   { name: 'core-signals', specifier: '@purityjs/core/signals', dist: 'packages/core/dist/' },
   { name: 'core-router', specifier: '@purityjs/core/router', dist: 'packages/core/dist/' },
   { name: 'core-actions', specifier: '@purityjs/core/actions', dist: 'packages/core/dist/' },
@@ -329,6 +331,17 @@ for (const item of packageMeasurements) {
       violations.push(`${item.entry}: ${metric} ${item[metric]} > ${budget}`);
   }
 }
+// A client-only JIT entry is useful only if a real application that cannot
+// hydrate becomes smaller than the otherwise identical full JIT application.
+const fullJitCounter = measurements.find((item) => item.profile === 'counter-runtime')!;
+const clientJitCounter = measurements.find((item) => item.profile === 'counter-client-runtime')!;
+for (const metric of ['gzipBytes', 'brotliBytes'] as const) {
+  if (clientJitCounter[metric] >= fullJitCounter[metric]) {
+    violations.push(
+      `counter-client-runtime: ${metric} ${clientJitCounter[metric]} must be smaller than counter-runtime ${fullJitCounter[metric]}`,
+    );
+  }
+}
 for (const item of measurements) {
   const budget = budgets.fixtures?.[item.profile]?.functionConstructorCalls;
   assert(Number.isSafeInteger(budget) && budget >= 0, 'Invalid fixture budget');
@@ -347,7 +360,7 @@ for (const item of measurements) {
 const git = (...args: string[]) =>
   execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 const report = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   revision: git('rev-parse', 'HEAD'),
   dirty: git('status', '--porcelain', '--untracked-files=normal').length > 0,
   node: process.versions.node,

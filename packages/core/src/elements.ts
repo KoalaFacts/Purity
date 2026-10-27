@@ -43,13 +43,19 @@ function unmountChildren(ctx: ComponentContext): void {
 // nothing else tears them down. Guarded by `_isDestroyed` so a child that was
 // already unmounted (e.g. a nested custom element whose own
 // `disconnectedCallback` already ran) is skipped rather than double-torn-down.
-function unmountChildContext(ctx: ComponentContext, rollback = ctx.parent?._rollback): void {
+function unmountChildContext(
+  ctx: ComponentContext,
+  rollback = ctx.parent?._rollback,
+  keepHostDOM = false,
+): void {
   if (ctx._isDestroyed) return;
   if (rollback) ctx._rollback = true;
   unmountChildren(ctx);
 
-  // Remove DOM
-  if (ctx.nodes) {
+  // A native custom element's host is already detached by the browser.
+  // Its shadow DOM remains platform-owned, but factory descendants still
+  // need full DOM teardown before disposing the host's own scope.
+  if (!keepHostDOM && ctx.nodes) {
     for (let i = 0; i < ctx.nodes.length; i++) {
       const node = ctx.nodes[i];
       if (node.parentNode) node.parentNode.removeChild(node);
@@ -806,20 +812,9 @@ export function component<
 
       disconnectedCallback() {
         this._formBridge?.disconnect();
-        if (this._ctx) {
-          if (this._ctx._isDestroyed) return;
-
-          // Tear down factory-rendered child contexts first. These are NOT
-          // custom elements, so the browser never dispatches their teardown —
-          // without this recursion their disposers / onDestroy callbacks would
-          // orphan. Mirrors the canonical `unmountContext` (component.ts).
-          unmountChildren(this._ctx);
-
-          this._ctx._isDestroyed = true;
-          disposeScope(this._ctx);
-          this._ctx._isMounted = false;
-          runCallbacks(this._ctx.destroyed, this._ctx);
-        }
+        // Share child-first disposal and error handling. Only the host's
+        // already-detached shadow DOM must remain intact.
+        if (this._ctx) unmountChildContext(this._ctx, false, true);
       }
 
       // Form-associated lifecycle. Defined unconditionally — the browser

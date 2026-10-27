@@ -375,31 +375,41 @@ describe('suspense() — client + hydration', () => {
     // as true and surfaced the late value — corrupting the rendered
     // output and the serialized hydration cache.
     //
-    // Driver: a 1ms boundary whose fetcher resolves at 15ms, alongside
-    // a 200ms sibling boundary whose fetcher resolves at 30ms. The
-    // first boundary's deadline fires immediately; the render then
-    // waits for the sibling — during that 30ms window the first
-    // boundary's late fetch settles. Without the guard, its `.then()`
-    // writes `LATE-VALUE` into `resolvedDataByKey['late']` and it
-    // leaks into the serialized __purity_resources__ payload.
+    // Keep both resources pending until the first boundary actually renders
+    // its timeout fallback. Tiny 1ms/15ms competing timers were flaky under
+    // loaded CI: the late fetch could settle before the deadline was raced.
+    // Once the fallback runs, settle the cancelled resource BEFORE its live
+    // sibling. This preserves the cache-contamination regression deterministically.
+    let resolveLate!: (value: string) => void;
+    let resolveSibling!: (value: string) => void;
+    const late = new Promise<string>((resolve) => {
+      resolveLate = resolve;
+    });
+    const sibling = new Promise<string>((resolve) => {
+      resolveSibling = resolve;
+    });
+    let released = false;
     const out = await renderToString(
       () =>
         ssrHtml`<main>${suspense(
           () => {
-            const r = resource(
-              () => new Promise<string>((resolve) => setTimeout(() => resolve('LATE-VALUE'), 15)),
-              { key: 'late' },
-            );
+            const r = resource(() => late, { key: 'late' });
             return ssrHtml`<aside>${() => r() ?? '...'}</aside>`;
           },
-          () => ssrHtml`<aside class="loading">FB</aside>`,
+          () => {
+            if (!released) {
+              released = true;
+              queueMicrotask(() => {
+                resolveLate('LATE-VALUE');
+                queueMicrotask(() => resolveSibling('SIB'));
+              });
+            }
+            return ssrHtml`<aside class="loading">FB</aside>`;
+          },
           { timeout: 1 },
         )}${suspense(
           () => {
-            const k = resource(
-              () => new Promise<string>((resolve) => setTimeout(() => resolve('SIB'), 30)),
-              { key: 'sibling' },
-            );
+            const k = resource(() => sibling, { key: 'sibling' });
             return ssrHtml`<aside>${() => k() ?? '...'}</aside>`;
           },
           () => ssrHtml`<aside>SIB-FB</aside>`,

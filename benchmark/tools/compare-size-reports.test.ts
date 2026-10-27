@@ -1,4 +1,5 @@
-import budgets from '../bundle-size/budgets.json' with { type: 'json' };
+import currentBudgets from '../bundle-size/budgets.json' with { type: 'json' };
+import budgets from '../bundle-size/budgets-v3.json' with { type: 'json' };
 import { expect, it } from 'vite-plus/test';
 import { compareSizeReports } from '../bundle-size/compare-reports.ts';
 
@@ -91,6 +92,56 @@ function examples() {
   return { base, next };
 }
 
+function expandedExamples() {
+  const { base, next } = examples();
+  for (const report of [base, next]) {
+    report.schemaVersion = 4;
+    report.budgets = structuredClone(currentBudgets);
+    report.fixtureHashes['counter-client.ts'] = 'a'.repeat(64);
+    for (const entry of Object.keys(report.budgets.packages)) {
+      if (!report.packages.some((row) => row.entry === entry)) {
+        report.packages.push({
+          entry,
+          functionConstructorCalls: 1,
+          rawBytes: 100,
+          gzipBytes: 50,
+          brotliBytes: 40,
+        });
+      }
+    }
+    for (const profile of Object.keys(report.budgets.fixtures)) {
+      if (!report.measurements.some((row) => row.profile === profile)) {
+        report.measurements.push({
+          profile,
+          rawBytes: 100,
+          gzipBytes: 50,
+          brotliBytes: 40,
+          functionConstructorCalls: profile.endsWith('-aot') ? 0 : 1,
+          chunks: [{ file: 'entry.js', rawBytes: 100, gzipBytes: 50, brotliBytes: 40 }],
+        });
+      }
+    }
+  }
+  return { base, next };
+}
+
+it('accepts complete v4 reports and refuses omissions of newly introduced entries', () => {
+  const { base } = expandedExamples();
+  const result = compareSizeReports(base, structuredClone(base));
+  expect(result.packages).toHaveLength(14);
+  expect(result.apps).toHaveLength(12);
+  const missing = structuredClone(base);
+  missing.packages = missing.packages.filter((row) => row.entry !== 'core-jit-client');
+  expect(() => compareSizeReports(base, missing)).toThrow(/Incomplete v4 coverage/);
+});
+
+it('keeps historical v3 evidence valid but rejects cross-schema comparisons', () => {
+  const { base: legacy } = examples();
+  const { base: current } = expandedExamples();
+  expect(compareSizeReports(legacy, structuredClone(legacy)).packages).toHaveLength(13);
+  expect(() => compareSizeReports(legacy, current)).toThrow(/INCOMPARABLE: changed schemaVersion/);
+});
+
 it('SV2-015: full core reduction does not mask an application and lazy-chunk regression', () => {
   const { base, next } = examples();
   const result = compareSizeReports(base, next);
@@ -99,6 +150,31 @@ it('SV2-015: full core reduction does not mask an application and lazy-chunk reg
   expect(result.apps[0].brotli).toBe(15);
   expect(result.apps[0].chunks?.map((chunk) => chunk.brotli)).toEqual([0, 15]);
   expect(result.budgetViolations).toHaveLength(0);
+});
+
+it.each(['rawBytes', 'gzipBytes'] as const)(
+  'SV2-015: detects %s growth even when Brotli decreases',
+  (metric) => {
+    for (const { base, next } of [examples(), expandedExamples()]) {
+      const before = base.measurements[0];
+      const after = next.measurements[0];
+      after.brotliBytes = before.brotliBytes - 1;
+      after.chunks[1].brotliBytes = before.chunks[1].brotliBytes - 1;
+      after[metric] = before[metric] + 1;
+      after.chunks[1][metric] = before.chunks[1][metric] + 1;
+      const result = compareSizeReports(base, next);
+      expect(result.apps[0].brotli).toBe(-1);
+      expect(result.appGrowth.map((entry) => entry.name)).toContain('controls-runtime');
+    }
+  },
+);
+
+it('SV2-015: reports package gzip growth despite lower Brotli', () => {
+  const { base, next } = examples();
+  next.packages[0].gzipBytes = base.packages[0].gzipBytes + 1;
+  const result = compareSizeReports(base, next);
+  expect(result.packages[0].brotli).toBe(-8);
+  expect(result.packageGrowth.map((entry) => entry.name)).toContain('core-all');
 });
 
 it('SV2-015: rejects nonmatching inputs rather than presenting a false size delta', () => {
@@ -150,6 +226,38 @@ it('SV2-015: individual JS chunk growth is visible even if the app total is unch
   const result = compareSizeReports(base, next);
   expect(result.apps[0].brotli).toBe(0);
   expect(result.apps[0].chunks?.find((chunk) => chunk.name === 'lazy.js')?.brotli).toBe(15);
+});
+
+it.each(['rawBytes', 'gzipBytes', 'brotliBytes'] as const)(
+  'SV2-015: catches compensated %s growth in a required JS chunk',
+  (metric) => {
+    for (const { base } of [examples(), expandedExamples()]) {
+      const next = structuredClone(base);
+      next.measurements[0].chunks[0][metric] -= 1;
+      next.measurements[0].chunks[1][metric] += 1;
+      const result = compareSizeReports(base, next);
+      expect(result.appGrowth).toHaveLength(0);
+      expect(result.chunkGrowth.map((chunk) => chunk.name)).toEqual(['controls-runtime/lazy.js']);
+    }
+  },
+);
+
+it('SV2-015: identifies a newly emitted JS chunk even when total bytes are unchanged', () => {
+  const { base } = examples();
+  const next = structuredClone(base);
+  for (const metric of ['rawBytes', 'gzipBytes', 'brotliBytes'] as const) {
+    next.measurements[0].chunks[0][metric] -= 1;
+  }
+  next.measurements[0].chunks.push({
+    file: 'added.js',
+    rawBytes: 1,
+    gzipBytes: 1,
+    brotliBytes: 1,
+  });
+  const result = compareSizeReports(base, next);
+  expect(result.appGrowth).toHaveLength(0);
+  expect(result.chunkGrowth.map((chunk) => chunk.name)).toEqual(['controls-runtime/added.js']);
+  expect(result.chunkGrowth[0]?.chunkState).toBe('added');
 });
 
 it('SV2-015: detects duplicate profile, dirty run and original package budget exceedance', () => {

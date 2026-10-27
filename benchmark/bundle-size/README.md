@@ -43,13 +43,15 @@ The root and AOT runtime entries must contain no Function constructors.
 Both ESM and CommonJS exports must share working subscriptions across entries.
 Each package measurement also records a hash of its complete bundled payload.
 
-Report schema version 3 records the package entry sizes and, as before, the Git revision and dirty state, package
+Report schema version 4 records the package entry sizes and, as before, the Git revision and dirty state, package
 versions, Node and compression-library versions, normalized hashes for all
 fixture sources, built entry hashes, settings, per-chunk sizes, budgets, and
 optional browser verification with exact engine versions. A verified SSR
 body has its own hash. Verification failures retain the size report and exit
 nonzero; their diagnostics go to the job log.
 Machine names and absolute filesystem paths are excluded.
+
+Schema 4 adds the client-only JIT package entry and the matched client-only counter runtime/AOT profiles. The comparison utility still accepts complete historical schema-3 reports using the frozen `budgets-v3.json` contract. Schema-3 and schema-4 reports are not directly comparable as a complete inventory; retain the historical report unmodified and compare only genuinely identical schema/toolchain/input scopes.
 
 ## Feature profiles
 

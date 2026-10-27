@@ -36,6 +36,12 @@
       "import": "./dist/jit/index.js",
       "require": "./dist/jit/index.cjs"
     },
+    "./jit-client": {
+      "development": "./src/compiler/client.ts",
+      "types": "./dist/compiler/client.d.ts",
+      "import": "./dist/jit-client/index.js",
+      "require": "./dist/jit-client/index.cjs"
+    },
     "./runtime": {
       "development": "./src/compiler/runtime.ts",
       "types": "./dist/compiler/runtime.d.ts",

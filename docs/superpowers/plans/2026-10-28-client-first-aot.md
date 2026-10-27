@@ -29,15 +29,15 @@
 
 - [x] Add default-client and explicit-hydration contract tests in `packages/vite-plugin/tests/client-first-aot.test.ts`.
 - [x] Observe intended failure on unchanged source under Node24: run 40591881426, job 122497938596; default output contains hydration walkers.
-- [ ] Implement `hydratable?: boolean` and strict-AOT default in `packages/vite-plugin/src/index.ts`.
-- [ ] Emit direct create calls with shared `watch` for client-only compilation; retain existing SSR output and opt-in hydration.
-- [ ] Execute new behavior/security/disposal tests and the existing suite; no skipped or deleted regressions.
+- [x] Implement `hydratable?: boolean` and strict-AOT default in `packages/vite-plugin/src/index.ts`.
+- [x] Emit direct create calls with shared `watch` for client-only compilation; retain existing SSR output and opt-in hydration.
+- [x] Execute new behavior/security/disposal tests and the existing suite; no skipped or deleted regressions.
 
 ## Task 2 — Consumers and full applications
 
 - [ ] Explicitly select hydration for SSR consumers and hydration-specific tests; leave client applications on the new default.
-- [ ] Preserve historical full-hydration size profiles and add same-source client-only AOT profiles, including every emitted chunk and browser verification.
-- [ ] Document the breaking migration and keep historical report schemas/budgets immutable.
+- [x] Preserve historical full-hydration size profiles and add same-source client-only AOT profiles, including every emitted chunk and browser verification.
+- [x] Document the breaking migration and keep historical report schemas/budgets immutable.
 - [ ] Run formatter, lint, types, all workspace tests, builds and full size preflight before opening the single implementation PR.
 
 ## Task 3 — Acceptance
@@ -50,3 +50,7 @@
 ## Execution environment
 
 The local container initially had Node22 and no public DNS; after a toolchain archive was fetched it returned ClientError for both shell and Python calls. Development preflight therefore runs on the existing repository Actions service with Node24.21.0. Temporary recovery/preflight files must not remain in the final product diff. A preflight job is not a substitute for exact-head formal CI or independent review.
+
+## Implementation receipt
+
+Compiler implementation `d7615346` passed pinned Node24 format/lint/types/workspace tests/builds and all original full-app/chunk non-growth checks in preflight 40594390437. The CLI generated SSR/app configuration required an additional explicit hydration migration, with its own observed failing test before the fix. Formal exact-head CI and independent review remain mandatory; no merge or Solid ranking follows from preflight.

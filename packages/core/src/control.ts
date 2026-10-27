@@ -112,9 +112,9 @@ function insertMatchView(
     matchState.currentNodes = [];
     return;
   }
-  const node = content instanceof Node ? content : document.createTextNode(String(content));
-  matchState.currentNodes = node instanceof DocumentFragment ? [...node.childNodes] : [node];
-  parent.insertBefore(node, endMarker);
+  const nodes = extractNodes(content as Node | DocumentFragment | string);
+  matchState.currentNodes = nodes;
+  parent.insertBefore(content instanceof Node ? content : nodes[0], endMarker);
 }
 
 // Detach and dispose the current case, then render the selector's current key.
@@ -1697,45 +1697,22 @@ export function inflateDeferredEach<T>(
         }
 
         let nodes: Node[];
-        if (ssrRow && isDeferred(content)) {
-          // Inflate the row template against a fragment carved from this row's
-          // SSR nodes. The hydrate factory mutates row DOM in place; we then
-          // re-attach the (now bound) nodes to the parent in their original
-          // position before the slot close marker.
+        if (isDeferred(content)) {
+          // Only matching server rows are adopted. Missing rows use the
+          // existing createIfEmpty path rather than hydrating empty markup.
           const frag = document.createDocumentFragment();
-          for (let j = 0; j < ssrRow.nodes.length; j++) frag.appendChild(ssrRow.nodes[j]);
-          inflateDeferred(content as DeferredTemplate, frag);
+          if (ssrRow) {
+            for (let j = 0; j < ssrRow.nodes.length; j++) frag.appendChild(ssrRow.nodes[j]);
+          }
+          inflateDeferred(content as DeferredTemplate, frag, false, !ssrRow);
           nodes = Array.from(frag.childNodes);
           parent.insertBefore(frag, endMarker);
         } else {
-          // No SSR row OR mapFn returned non-deferred (string / static Node /
-          // fragment). Detach any SSR row nodes for this key — they're stale —
-          // and insert the fresh content.
-          if (ssrRow) {
-            detachNodes(ssrRow.nodes);
-          }
-          if (isDeferred(content)) {
-            // No SSR row to adopt — inflate against an empty fragment. The
-            // factory builds fresh DOM under that fragment via the same path
-            // used for top-level mismatched-slot recovery; we then move it in.
-            const frag = document.createDocumentFragment();
-            // createIfEmpty: the fragment is empty, so build fresh DOM instead of
-            // hydrating against nothing.
-            inflateDeferred(content as DeferredTemplate, frag, false, true);
-            nodes = Array.from(frag.childNodes);
-            parent.insertBefore(frag, endMarker);
-          } else if (content instanceof DocumentFragment) {
-            const fc = content.firstChild;
-            nodes = fc && !fc.nextSibling ? [fc] : Array.from(content.childNodes);
-            parent.insertBefore(content, endMarker);
-          } else if (content instanceof Node) {
-            nodes = [content];
-            parent.insertBefore(content, endMarker);
-          } else {
-            const tn = document.createTextNode(String(content ?? ''));
-            nodes = [tn];
-            parent.insertBefore(tn, endMarker);
-          }
+          // Static rows replace stale server nodes, preserving fragments,
+          // text nodes, and event-bearing DOM nodes with one extraction path.
+          if (ssrRow) detachNodes(ssrRow.nodes);
+          nodes = extractNodes(content as Node | DocumentFragment | string);
+          parent.insertBefore(content instanceof Node ? content : nodes[0], endMarker);
         }
 
         entry.nodes = nodes;

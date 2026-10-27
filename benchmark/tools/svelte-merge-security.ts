@@ -5,7 +5,12 @@ import { createRequire } from 'node:module';
 
 // Resolve from the benchmark plugin itself, rather than relying on npm hoisting.
 const fromPlugin = createRequire(import.meta.resolve('@sveltejs/vite-plugin-svelte'));
-const merge = fromPlugin('deepmerge') as (a: unknown, b: unknown) => any;
+type ArrayMerge = (target: unknown[], source: unknown[]) => unknown[];
+const merge = fromPlugin('deepmerge') as (
+  a: unknown,
+  b: unknown,
+  options?: { arrayMerge?: ArrayMerge },
+) => any;
 
 const hostile = JSON.parse('{"config":{"__proto__":{"admin":true}},"list":[2]}');
 const merged = merge({ config: { safe: true }, list: [1] }, hostile);

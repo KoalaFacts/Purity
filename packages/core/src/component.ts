@@ -297,8 +297,10 @@ export function hydratePendingCustomElements(root: ParentNode): void {
  * primitive), that one slot's SSR content is replaced. Function-valued
  * slots (`each`/`when`/`match` and other reactive accessors returning
  * Nodes) likewise replace their slot on first read; the surrounding tree
- * is preserved. A non-deferred root (including client-only AOT) is rejected:
- * replacing all server nodes would discard focus, edits, and element identity.
+ * is preserved. A root component may also return an existing direct child
+ * Node (for example, an already-connected Custom Element), which is reused.
+ * A freshly created non-deferred root (including client-only AOT) is rejected:
+ * replacing server nodes would discard focus, edits, and element identity.
  * Build the SSR client with `purity({ hydratable: true })`.
  *
  * @param container Element pre-rendered by `@purityjs/ssr`'s `renderToString`.

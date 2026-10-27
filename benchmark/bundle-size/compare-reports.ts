@@ -6,7 +6,8 @@
  */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import originalBudgets from './budgets.json' with { type: 'json' };
+import currentBudgets from './budgets.json' with { type: 'json' };
+import legacyBudgets from './budgets-v3.json' with { type: 'json' };
 
 interface Size {
   rawBytes: number;
@@ -158,6 +159,8 @@ const profileNames = ['counter', 'controls', 'form', 'hydration', 'resource'].fl
   name + '-runtime',
   name + '-aot',
 ]);
+const packageNamesV4 = [...packageNames, 'core-jit-client'];
+const profileNamesV4 = [...profileNames, 'counter-client-runtime', 'counter-client-aot'];
 const fixtureNames = [
   'counter.ts',
   'controls.ts',
@@ -168,14 +171,20 @@ const fixtureNames = [
   'controls-server.ts',
 ];
 
-function coverage(actual: string[], expected: string[], name: string) {
-  assert.deepEqual([...actual].sort(), [...expected].sort(), 'Incomplete v3 coverage: ' + name);
+const fixtureNamesV4 = [...fixtureNames, 'counter-client.ts'];
+
+function coverage(actual: string[], expected: string[], name: string, version: number) {
+  assert.deepEqual([...actual].sort(), [...expected].sort(), `Incomplete v${version} coverage: ` + name);
 }
 
 function validateReportContract(report: Report, label: string) {
   assert(report?.revision, 'Missing revision: ' + label);
   assert(report.dirty === false, 'Dirty build is not comparable');
-  assert.equal(report.schemaVersion, 3, 'Unsupported schemaVersion: ' + label);
+  assert(
+    report.schemaVersion === 3 || report.schemaVersion === 4,
+    'Unsupported schemaVersion: ' + label,
+  );
+  const expanded = report.schemaVersion === 4;
   for (const key of ['node', 'zlib', 'brotli', 'scope'] as const) {
     assert(
       typeof report[key] === 'string' && report[key].trim().length > 0,
@@ -192,13 +201,19 @@ function validateReportContract(report: Report, label: string) {
     Object.keys(report.versions),
     ['core', 'ssr', 'plugin', 'vite', 'parser'],
     label + '/versions',
+    report.schemaVersion,
   );
   for (const version of Object.values(report.versions))
     assert(
       typeof version === 'string' && version.trim().length > 0,
       'Missing tool version: ' + label,
     );
-  coverage(Object.keys(report.fixtureHashes), fixtureNames, label + '/fixtureHashes');
+  coverage(
+    Object.keys(report.fixtureHashes),
+    expanded ? fixtureNamesV4 : fixtureNames,
+    label + '/fixtureHashes',
+    report.schemaVersion,
+  );
   for (const hash of Object.values(report.fixtureHashes))
     assert(
       typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash),
@@ -227,16 +242,22 @@ function validateReportContract(report: Report, label: string) {
   }
   assert.equal(
     normalized(report.budgets),
-    normalized(originalBudgets),
-    'Missing or changed original v3 budgets: ' + label,
+    normalized(expanded ? currentBudgets : legacyBudgets),
+    'Missing or changed v' + report.schemaVersion + ' budgets: ' + label,
   );
   assert(Array.isArray(report.packages), 'Missing package entries: ' + label);
   assert(Array.isArray(report.measurements), 'Missing application profiles: ' + label);
-  coverage([...unique(report.packages, 'entry').keys()], packageNames, label + '/packages');
+  coverage(
+    [...unique(report.packages, 'entry').keys()],
+    expanded ? packageNamesV4 : packageNames,
+    label + '/packages',
+    report.schemaVersion,
+  );
   coverage(
     [...unique(report.measurements, 'profile').keys()],
-    profileNames,
+    expanded ? profileNamesV4 : profileNames,
     label + '/measurements',
+    report.schemaVersion,
   );
   for (const row of [...report.packages, ...report.measurements]) {
     assert(

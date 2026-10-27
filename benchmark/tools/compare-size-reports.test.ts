@@ -1,4 +1,5 @@
-import budgets from '../bundle-size/budgets.json' with { type: 'json' };
+import currentBudgets from '../bundle-size/budgets.json' with { type: 'json' };
+import budgets from '../bundle-size/budgets-v3.json' with { type: 'json' };
 import { expect, it } from 'vite-plus/test';
 import { compareSizeReports } from '../bundle-size/compare-reports.ts';
 
@@ -90,6 +91,56 @@ function examples() {
   next.measurements[0].chunks[1].brotliBytes += 15;
   return { base, next };
 }
+
+function expandedExamples() {
+  const { base, next } = examples();
+  for (const report of [base, next]) {
+    report.schemaVersion = 4;
+    report.budgets = structuredClone(currentBudgets);
+    report.fixtureHashes['counter-client.ts'] = 'a'.repeat(64);
+    for (const entry of Object.keys(report.budgets.packages)) {
+      if (!report.packages.some((row) => row.entry === entry)) {
+        report.packages.push({
+          entry,
+          functionConstructorCalls: 1,
+          rawBytes: 100,
+          gzipBytes: 50,
+          brotliBytes: 40,
+        });
+      }
+    }
+    for (const profile of Object.keys(report.budgets.fixtures)) {
+      if (!report.measurements.some((row) => row.profile === profile)) {
+        report.measurements.push({
+          profile,
+          rawBytes: 100,
+          gzipBytes: 50,
+          brotliBytes: 40,
+          functionConstructorCalls: profile.endsWith('-aot') ? 0 : 1,
+          chunks: [{ file: 'entry.js', rawBytes: 100, gzipBytes: 50, brotliBytes: 40 }],
+        });
+      }
+    }
+  }
+  return { base, next };
+}
+
+it('accepts complete v4 reports and refuses omissions of newly introduced entries', () => {
+  const { base } = expandedExamples();
+  const result = compareSizeReports(base, structuredClone(base));
+  expect(result.packages).toHaveLength(14);
+  expect(result.apps).toHaveLength(12);
+  const missing = structuredClone(base);
+  missing.packages = missing.packages.filter((row) => row.entry !== 'core-jit-client');
+  expect(() => compareSizeReports(base, missing)).toThrow(/Incomplete v4 coverage/);
+});
+
+it('keeps historical v3 evidence valid but rejects cross-schema comparisons', () => {
+  const { base: legacy } = examples();
+  const { base: current } = expandedExamples();
+  expect(compareSizeReports(legacy, structuredClone(legacy)).packages).toHaveLength(13);
+  expect(() => compareSizeReports(legacy, current)).toThrow(/INCOMPARABLE: changed schemaVersion/);
+});
 
 it('SV2-015: full core reduction does not mask an application and lazy-chunk regression', () => {
   const { base, next } = examples();

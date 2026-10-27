@@ -360,7 +360,7 @@ for (const item of measurements) {
 const git = (...args: string[]) =>
   execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 const report = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   revision: git('rev-parse', 'HEAD'),
   dirty: git('status', '--porcelain', '--untracked-files=normal').length > 0,
   node: process.versions.node,

@@ -333,6 +333,9 @@ export function compareSizeReports(base: Report, candidate: Report) {
   const apps = match('measurements');
   // Raw and gzip regressions matter even if Brotli happens to shrink.
   const grows = (item: Delta) => item.raw > 0 || item.gzip > 0 || item.brotli > 0;
+  const chunkGrowth = apps.flatMap((app) =>
+    (app.chunks ?? []).filter(grows).map((chunk) => ({ ...chunk, name: `${app.name}/${chunk.name}` })),
+  );
   return {
     baseRevision: base.revision,
     candidateRevision: candidate.revision,
@@ -340,6 +343,7 @@ export function compareSizeReports(base: Report, candidate: Report) {
     apps,
     packageGrowth: packages.filter(grows),
     appGrowth: apps.filter(grows),
+    chunkGrowth,
     budgetViolations: packages.filter((x) => x.headroom !== undefined && x.headroom < 0),
   };
 }
@@ -408,10 +412,13 @@ if (process.argv[1]?.endsWith('compare-reports.ts')) {
   console.log(
     'Application payload regressions: ' + result.appGrowth.length + ' / ' + result.apps.length,
   );
+  console.log('Required JS chunk payload regressions: ' + result.chunkGrowth.length);
   console.log(
     'No performance, allocation, retained-heap or Solid parity claim follows from size alone.',
   );
   assert.equal(result.budgetViolations.length, 0, 'Original package Brotli budget exceeded');
-  if (flags.includes('--reject-app-growth'))
+  if (flags.includes('--reject-app-growth')) {
     assert.equal(result.appGrowth.length, 0, 'Same-function app JS payload grew');
+    assert.equal(result.chunkGrowth.length, 0, 'Individual JS chunk payload grew');
+  }
 }

@@ -228,6 +228,38 @@ it('SV2-015: individual JS chunk growth is visible even if the app total is unch
   expect(result.apps[0].chunks?.find((chunk) => chunk.name === 'lazy.js')?.brotli).toBe(15);
 });
 
+it.each(['rawBytes', 'gzipBytes', 'brotliBytes'] as const)(
+  'SV2-015: catches compensated %s growth in a required JS chunk',
+  (metric) => {
+    for (const { base } of [examples(), expandedExamples()]) {
+      const next = structuredClone(base);
+      next.measurements[0].chunks[0][metric] -= 1;
+      next.measurements[0].chunks[1][metric] += 1;
+      const result = compareSizeReports(base, next);
+      expect(result.appGrowth).toHaveLength(0);
+      expect(result.chunkGrowth.map((chunk) => chunk.name)).toEqual(['controls-runtime/lazy.js']);
+    }
+  },
+);
+
+it('SV2-015: identifies a newly emitted JS chunk even when total bytes are unchanged', () => {
+  const { base } = examples();
+  const next = structuredClone(base);
+  for (const metric of ['rawBytes', 'gzipBytes', 'brotliBytes'] as const) {
+    next.measurements[0].chunks[0][metric] -= 1;
+  }
+  next.measurements[0].chunks.push({
+    file: 'added.js',
+    rawBytes: 1,
+    gzipBytes: 1,
+    brotliBytes: 1,
+  });
+  const result = compareSizeReports(base, next);
+  expect(result.appGrowth).toHaveLength(0);
+  expect(result.chunkGrowth.map((chunk) => chunk.name)).toEqual(['controls-runtime/added.js']);
+  expect(result.chunkGrowth[0]?.chunkState).toBe('added');
+});
+
 it('SV2-015: detects duplicate profile, dirty run and original package budget exceedance', () => {
   const { base, next } = examples();
   next.measurements.push(structuredClone(next.measurements[0]));

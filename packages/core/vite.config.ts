@@ -12,6 +12,7 @@ export default defineConfig({
     lib: {
       entry: {
         'jit/index': 'src/compiler/jit.ts',
+        'jit-client/index': 'src/compiler/client.ts',
         'runtime/index': 'src/compiler/runtime.ts',
         'compiler/index': 'src/compiler/index.ts',
         'internal/index': 'src/internal.ts',

@@ -42,7 +42,7 @@ export type { PuritySourceMap } from './text-edits.ts';
 const DEVTOOLS_ID = 'virtual:purity-devtools';
 const RESOLVED_DEVTOOLS_ID = '\0' + DEVTOOLS_ID;
 const frameworkPackages = new Map<string, boolean>();
-const COMPILER_ENTRIES = ['@purityjs/core/jit', '@purityjs/ssr'];
+const COMPILER_ENTRIES = ['@purityjs/core/jit', '@purityjs/core/jit-client', '@purityjs/ssr'];
 
 function isFrameworkInternal(id: string): boolean {
   const path = id.split('?')[0]!.replaceAll('\\', '/');
@@ -744,7 +744,7 @@ function retainedIifeCompiler(program: Program, outputOptions: any, imports: str
 
 function externalCompilerError(fileName: string): Error {
   return new Error(
-    `[purity] strictAot: retained Purity runtime compilation import from @purityjs/core/jit or @purityjs/ssr in ${fileName}. ` +
+    `[purity] strictAot: retained Purity runtime compilation import from @purityjs/core/jit, @purityjs/core/jit-client or @purityjs/ssr in ${fileName}. ` +
       'Use the named html tag and compile the importing module; import hydration helpers from @purityjs/core/runtime instead.',
   );
 }
@@ -1301,7 +1301,7 @@ function findHtmlImportEdits(code: string, program: Program): Edit[] {
     if (
       node.type !== 'ImportDeclaration' ||
       node.importKind === 'type' ||
-      (node.source.value !== '@purityjs/core/jit' && node.source.value !== '@purityjs/ssr')
+      !COMPILER_ENTRIES.includes(node.source.value)
     )
       continue;
     const named = node.specifiers.filter((specifier) => specifier.type === 'ImportSpecifier');

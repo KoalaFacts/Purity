@@ -29,6 +29,15 @@ describe('@purityjs/vite-plugin', () => {
     expect(result.code).not.toContain('html`');
   });
 
+  it('compiles client-only JIT imports without retaining a runtime compiler', () => {
+    const code = "import { html } from '@purityjs/core/jit-client';\nconst el = html\`<p>Client</p>\`;";
+    const result = plugin.transform(code, 'app.ts');
+    expect(result).not.toBeNull();
+    expect(result.code).toContain('createElement');
+    expect(result.code).not.toContain('@purityjs/core/jit-client');
+    expect(result.code).toContain("from '@purityjs/core/runtime'");
+  });
+
   it('compiles template with expression', () => {
     const code = `import { html } from '@purityjs/core/jit';\nconst name = 'World';\nconst el = html\`<p>\${name}</p>\`;`;
     const result = plugin.transform(code, 'app.ts');

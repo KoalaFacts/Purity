@@ -9,6 +9,7 @@ state and ownership; they are not separate installations.
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `@purityjs/core`          | `state`, `compute`, `watch`, `batch`, `debounced`, component lifecycle, `mount`, `hydrate`, `component`, `slot`, `internals`, `teleport`, `each`, `list`, `match`, `when`, `suspense`, `resource`, `lazyResource`, `css` |
 | `@purityjs/core/jit`      | `html`, `makeDeferred`; supports templates without a build step                                                                                                                                                          |
+| `@purityjs/core/jit-client` | Client-only JIT `html` without the hydration code generator; throws if called inside a hydration pass. Suitable for no-build pages that never hydrate. |
 | `@purityjs/core/runtime`  | Precompiled template/hydration and value helpers; hydration warning and text-rewrite options                                                                                                                             |
 | `@purityjs/core/compiler` | `parse`, `generate`, `generateLinked`, `generateHydrate`, `generateHydrateLinked`, `generateSSR`, AST types                                                                                                              |
 | `@purityjs/core/signals`  | Browser storage, observer, environment, permission, and live-data signals                                                                                                                                                |
@@ -28,6 +29,8 @@ This is a generated-code entry; continue importing `each` from the root.
 `each(..., { virtual: true })`, dynamic options, and uncertain bindings retain
 the full implementation. This list optimization requires no application API
 changes; the 0.4 entry-point migration above still applies.
+The `jit-client` entry is an explicit application choice, not a drop-in replacement for hydration. `@purityjs/core/jit` remains compatible with both client creation and hydration. The Vite plugin recognizes both JIT imports and removes either from fully compiled AOT output. The bundle-size harness measures a real counter with both JIT entries; changes must reduce the **complete app** rather than just the exported entry size.
+
 Projects with a custom core root alias keep the full implementation unless
 an explicit `/list-runtime` alias takes precedence over the root alias.
 

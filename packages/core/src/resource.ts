@@ -211,20 +211,12 @@ export function resource<T, K>(
     return ssrResources.resource(ssrCtx, userKey, sourceFn, fetcher, retry, data, error, loading);
   }
 
-  // Share completion state updates across synchronous results and promise
-  // settlements. Both paths must preserve the same batch and poll order.
-  const settleSuccess = (value: T) => {
+  // Keep both completion paths in one batch and schedule polling after
+  // the state transition. Sync and promise results use the same semantics.
+  const settle = (value: unknown, succeeded: boolean) => {
     batch(() => {
-      data(() => value);
-      error(undefined);
-      loading(false);
-    });
-    schedulePoll();
-  };
-
-  const settleFailure = (reason: unknown) => {
-    batch(() => {
-      error(reason);
+      if (succeeded) data(() => value as T);
+      error(succeeded ? undefined : value);
       loading(false);
     });
     schedulePoll();
@@ -322,23 +314,23 @@ export function resource<T, K>(
     try {
       result = retry.count > 0 ? withRetry(callFetcher, ac.signal, retry) : callFetcher();
     } catch (err) {
-      settleFailure(err);
+      settle(err, false);
       return;
     }
 
     if (!(result instanceof Promise)) {
-      settleSuccess(result);
+      settle(result, true);
       return;
     }
 
     result.then(
       (val) => {
         if (myRun !== runId || ac.signal.aborted) return;
-        settleSuccess(val);
+        settle(val, true);
       },
       (err) => {
         if (myRun !== runId || ac.signal.aborted) return;
-        settleFailure(err);
+        settle(err, false);
       },
     );
   });

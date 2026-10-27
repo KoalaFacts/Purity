@@ -65,6 +65,15 @@ node tools/compare.ts <scenario>
 
 ## Raw runner evidence (SV2-015)
 
+Numeric environment inputs (`PORT`, `WARMUP`, `ITERATIONS`, `MEM_ITERATIONS`)
+must be whole decimal integer tokens; only unset variables select defaults.
+Malformed tokens and invalid selections are retained in `rawSettings` and produce
+an incomplete configuration-error archive before browser launch. Launch and
+cleanup errors also produce failed evidence; already collected timing and heap
+samples remain available, including a create delta when subsequent destroy fails.
+The runner's injected-browser regression tests use explicitly synthetic values;
+they are control-flow tests, not browser execution or performance measurements.
+
 After a successful production benchmark build and preview, run the existing
 Playwright orchestrator with Node 24:
 

@@ -52,6 +52,10 @@ export interface BenchRunInput {
     dropOutliers: number;
     port: number;
   };
+  /** Exact supplied environment tokens; omitted keys used the documented defaults. */
+  rawSettings?: Partial<
+    Record<'PORT' | 'WARMUP' | 'ITERATIONS' | 'MEM_ITERATIONS' | 'FRAMEWORKS' | 'PAGES', string>
+  >;
   executionOrder: BenchRunOrder[];
   timings: TimingSample[];
   memory: MemorySample[];
@@ -249,6 +253,7 @@ export function writeBenchEvidence(
       chromiumVersion: input.browserVersion,
     },
     settings: input.settings,
+    rawSettings: input.rawSettings ?? {},
     frameworks: input.frameworks,
     scenarioPages: input.scenarioPages,
     executionOrder: input.executionOrder,

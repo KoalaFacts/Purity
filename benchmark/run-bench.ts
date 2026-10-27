@@ -5,7 +5,7 @@
 //
 // Usage: cd benchmark && npm run build-prod && npx vite preview & node --import tsx run-bench.ts
 
-import { chromium, type Page } from 'playwright';
+import { chromium, type Browser, type Page } from 'playwright';
 import {
   persistBenchRun,
   validateBenchRunInput,
@@ -14,15 +14,27 @@ import {
   type BenchRunOrder,
 } from './tools/run-evidence.ts';
 
-const PORT = process.env.PORT || 4173;
+const rawSettings = {
+  PORT: process.env.PORT,
+  WARMUP: process.env.WARMUP,
+  ITERATIONS: process.env.ITERATIONS,
+  MEM_ITERATIONS: process.env.MEM_ITERATIONS,
+  FRAMEWORKS: process.env.FRAMEWORKS,
+  PAGES: process.env.PAGES,
+};
+// Only an absent token selects the default; reject partial or fractional tokens.
+function integerSetting(token: string | undefined, fallback: number): number {
+  return token === undefined ? fallback : /^-?\d+$/.test(token) ? Number(token) : Number.NaN;
+}
+const PORT = integerSetting(rawSettings.PORT, 4173);
 const BASE = `http://localhost:${PORT}/Purity`;
-const WARMUP = parseInt(process.env.WARMUP || '3', 10);
-const ITERATIONS = parseInt(process.env.ITERATIONS || '7', 10);
-const MEM_ITERATIONS = parseInt(process.env.MEM_ITERATIONS || '3', 10);
+const WARMUP = integerSetting(rawSettings.WARMUP, 3);
+const ITERATIONS = integerSetting(rawSettings.ITERATIONS, 7);
+const MEM_ITERATIONS = integerSetting(rawSettings.MEM_ITERATIONS, 3);
 const DROP_OUTLIERS = 1; // drop N fastest + N slowest before computing median
 const ALL_FRAMEWORKS = ['purity', 'solid', 'svelte', 'vue', 'react'] as const;
 type Framework = (typeof ALL_FRAMEWORKS)[number];
-const FRAMEWORKS = selectFrameworks();
+let FRAMEWORKS: Framework[] = [];
 
 function selectFrameworks(): Framework[] {
   const requested = new Set(
@@ -874,8 +886,8 @@ interface MemoryResult {
 }
 
 async function main() {
-  const scenarios = selectScenarios(SCENARIOS);
-  const memoryScenarios = MEM_ITERATIONS > 0 ? selectScenarios(MEMORY_SCENARIOS, true) : [];
+  let scenarios: typeof SCENARIOS = [];
+  let memoryScenarios: typeof MEMORY_SCENARIOS = [];
 
   const settings = {
     warmup: WARMUP,
@@ -885,25 +897,36 @@ async function main() {
     port: Number(PORT),
   };
   const invalidSettings = validateBenchSettings(settings);
-  if (invalidSettings.length > 0) {
+  try {
+    FRAMEWORKS = selectFrameworks();
+    scenarios = selectScenarios(SCENARIOS);
+    memoryScenarios = MEM_ITERATIONS > 0 ? selectScenarios(MEMORY_SCENARIOS, true) : [];
+  } catch (error: unknown) {
+    invalidSettings.push(error instanceof Error ? error.message : String(error));
+  }
+  const failBeforeMeasurements = (operation: string, messages: string[]): void => {
     const evidencePath = persistBenchRun({
       browserVersion: 'not-launched',
       frameworks: [...FRAMEWORKS],
       scenarioPages: scenarios.map((scenario) => scenario.page),
       settings,
+      rawSettings,
       executionOrder: [],
       timings: [],
       memory: [],
-      errors: invalidSettings.map((message) => ({
+      errors: messages.map((message) => ({
         phase: 'runner' as const,
         scenario: '*',
-        operation: 'settings',
+        operation,
         framework: 'runner',
         message,
       })),
     });
-    console.error(`Invalid benchmark configuration; evidence: ${evidencePath}`);
+    console.error(`Benchmark ${operation} failed; evidence: ${evidencePath}`);
     process.exitCode = 1;
+  };
+  if (invalidSettings.length > 0) {
+    failBeforeMeasurements('settings', invalidSettings);
     return;
   }
 
@@ -917,11 +940,19 @@ async function main() {
   );
   console.log('Primary metric: CPU + microtask flush + forced layout.\n');
 
-  const browser = await chromium.launch({
-    headless: true,
-    executablePath: process.env.CHROMIUM_PATH,
-    args: ['--js-flags=--expose-gc', '--enable-precise-memory-info'],
-  });
+  let browser: Browser;
+  try {
+    browser = await chromium.launch({
+      headless: true,
+      executablePath: process.env.CHROMIUM_PATH,
+      args: ['--js-flags=--expose-gc', '--enable-precise-memory-info'],
+    });
+  } catch (error: unknown) {
+    failBeforeMeasurements('browser.launch', [
+      error instanceof Error ? error.message : String(error),
+    ]);
+    return;
+  }
   const allResults: Result[] = [];
   const memoryResults: MemoryResult[] = [];
   const executionOrder: BenchRunOrder[] = [];
@@ -1058,22 +1089,25 @@ async function main() {
             await settle(page);
             const afterCreate = await getHeapKB(page);
 
+            if (
+              !Number.isFinite(baseline) ||
+              !Number.isFinite(afterCreate) ||
+              baseline < 0 ||
+              afterCreate < 0
+            ) {
+              throw new Error('performance.memory unavailable or non-finite');
+            }
+            // Preserve the observed creation delta even if the following destroy fails.
+            createSamples.push(afterCreate - baseline);
+
             // Destroy
             await runSetup(page, op.destroy);
             await settle(page);
             const afterDestroy = await getHeapKB(page);
 
-            if (
-              !Number.isFinite(baseline) ||
-              !Number.isFinite(afterCreate) ||
-              !Number.isFinite(afterDestroy) ||
-              baseline < 0 ||
-              afterCreate < 0 ||
-              afterDestroy < 0
-            ) {
+            if (!Number.isFinite(afterDestroy) || afterDestroy < 0) {
               throw new Error('performance.memory unavailable or non-finite');
             }
-            createSamples.push(afterCreate - baseline);
             retainedSamples.push(afterDestroy - baseline);
           }
 
@@ -1236,6 +1270,7 @@ async function main() {
     frameworks: [...FRAMEWORKS],
     scenarioPages: scenarios.map((scenario) => scenario.page),
     settings,
+    rawSettings,
     executionOrder,
     timings: allResults,
     memory: memoryResults,

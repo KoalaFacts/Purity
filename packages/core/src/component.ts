@@ -425,7 +425,7 @@ function primeResourceHydrationCache(container: Element): void {
     } catch (err) {
       console.error('[Purity] Failed to parse hydration cache:', err);
     }
-    if (shellEl.parentNode) shellEl.parentNode.removeChild(shellEl);
+    shellEl.remove();
   }
 
   // Find every streamed boundary's cache and merge keyed entries. The
@@ -466,7 +466,7 @@ function primeResourceHydrationCache(container: Element): void {
       } catch (err) {
         console.error('[Purity] Failed to parse per-boundary hydration cache:', err);
       }
-      if (el.parentNode) el.parentNode.removeChild(el);
+      el.remove();
     }
   }
 

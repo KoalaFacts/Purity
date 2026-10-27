@@ -8,12 +8,9 @@
 // ---------------------------------------------------------------------------
 
 import { bindListeners, isolate, type ListenerSpec } from './listen.ts';
-import { withoutScope } from './scope.ts';
-import { compute, state, type ComputedAccessor } from './signals.ts';
+import { createSharedBrowserSignal } from './browser-signal-singleton.ts';
+import { compute, type ComputedAccessor } from './signals.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
-
-let singleton: ComputedAccessor<Element | null> | null = null;
-let unbind: (() => void) | null = null;
 
 // Vendor-prefixed event names — order matches the spec → moz → webkit → MS
 // progression. We bind every event the document supports rather than
@@ -45,6 +42,12 @@ function readFullscreenElement(): Element | null {
   );
 }
 
+const fullscreen = createSharedBrowserSignal(readFullscreenElement, (update) => {
+  const handler = isolate('fullscreenSignal', () => update(readFullscreenElement()));
+  const specs = FULLSCREEN_EVENTS.map((name): ListenerSpec => [document, name, handler]);
+  return bindListeners(specs, 'fullscreenSignal');
+});
+
 /**
  * Reactive `document.fullscreenElement` (ADR 0041).
  *
@@ -60,23 +63,11 @@ export function fullscreenSignal(): ComputedAccessor<Element | null> {
   ) {
     return compute(() => null as Element | null);
   }
-  if (singleton) return singleton;
-  const inner = state<Element | null>(readFullscreenElement());
-  // Isolate listener throws — a userland Element subclass with a throwing
-  // getter must not crash the event loop or leave the signal stuck.
-  const handler = isolate('fullscreenSignal', () => inner(readFullscreenElement()));
-  const specs = FULLSCREEN_EVENTS.map((name): ListenerSpec => [document, name, handler]);
-  unbind = bindListeners(specs, 'fullscreenSignal');
-  if (!unbind) return compute(() => readFullscreenElement());
-  // Page-lifetime singleton must not inherit the creating component's owner.
-  singleton = withoutScope(() => compute(inner.get));
-  return singleton;
+  return fullscreen.get();
 }
 
 /** @internal — test helper. Clears the cached singleton and removes the
  * document listeners so subsequent test runs start from a clean state. */
 export function _resetFullscreenSignal(): void {
-  unbind?.();
-  unbind = null;
-  singleton = null;
+  fullscreen.reset();
 }

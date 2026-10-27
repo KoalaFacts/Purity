@@ -198,3 +198,16 @@ describe.each(['locale', 'fullscreen', 'online', 'visibility'] as const)(
     });
   },
 );
+
+it('keeps separate browser-signal caches independent when one is reset', async () => {
+  const locale = scenario('locale');
+  const online = scenario('online');
+  const language = locale.read();
+  const connectivity = online.read();
+  locale.reset();
+  online.change(online.updated);
+  await tick();
+  expect(connectivity()).toBe(online.updated);
+  expect(online.read()).toBe(connectivity);
+  expect(locale.read()).not.toBe(language);
+});

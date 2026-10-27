@@ -467,14 +467,7 @@ function bulkClear<E extends KeyedEntry>(
   for (let i = 0; i < prevLen; i++) {
     const entry = keyToEntry.get(prevKeys[i]);
     if (!entry) continue;
-    if (!canReplaceChildren) {
-      const nodes = entry.nodes;
-      for (let j = 0; j < nodes.length; j++) {
-        const node = nodes[j];
-        const p = node.parentNode;
-        if (p) p.removeChild(node);
-      }
-    }
+    if (!canReplaceChildren) detachNodes(entry.nodes);
     release(entry);
   }
 }
@@ -669,10 +662,7 @@ function reconcileEach<T, E extends KeyedEntry>(
       if (!newEntries.has(key)) {
         const entry = keyToEntry.get(key);
         if (entry) {
-          for (let j = 0; j < entry.nodes.length; j++) {
-            const node = entry.nodes[j];
-            if (node.parentNode) node.parentNode.removeChild(node);
-          }
+          detachNodes(entry.nodes);
           ops.release(entry);
         }
       }

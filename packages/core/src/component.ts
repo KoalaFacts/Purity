@@ -616,65 +616,52 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
   });
 }
 
-/** @internal — a factory-rendered child uses the host's error boundary and rollback rules. */
-export function unmountChildContext(
-  ctx: ComponentContext,
-  rollback: boolean = ctx.parent?._rollback ?? false,
-): void {
-  unmountContext(ctx, true, rollback);
-}
-
-// Both mounted roots and programmatic factory children own the same tree,
-// DOM nodes, reactive work and destroy callbacks. Only error routing differs:
-// root destroy errors are logged; factory child errors use the nearest
-// component boundary unless this is a failed render being rolled back.
-function unmountContext(ctx: ComponentContext, fromFactory = false, rollback = false): void {
+function unmountContext(ctx: ComponentContext): void {
   if (ctx._isDestroyed) return;
-  if (rollback) ctx._rollback = true;
 
+  // Unmount children first
   if (ctx.children) {
     for (let i = ctx.children.length - 1; i >= 0; i--) {
-      if (fromFactory) unmountChildContext(ctx.children[i]);
-      else unmountContext(ctx.children[i]);
+      unmountContext(ctx.children[i]);
     }
     ctx.children = null;
   }
 
+  // Remove DOM
   if (ctx.nodes) {
     for (let i = 0; i < ctx.nodes.length; i++) {
       const node = ctx.nodes[i];
+      /* v8 ignore next -- defensive; nodes are attached when set */
       if (node.parentNode) node.parentNode.removeChild(node);
     }
     ctx.nodes = null;
   }
 
-  // Guard before disposal: lean owned scopes must not unregister callbacks
-  // from a context already being dismantled.
+  // Mark destroyed before disposers run: lean scopes released by this teardown
+  // must not unregister their callbacks from a component that is going away.
   ctx._isDestroyed = true;
   disposeScope(ctx);
   ctx._isMounted = false;
 
+  // Run destroy callbacks
   if (ctx.destroyed) {
     for (let i = 0; i < ctx.destroyed.length; i++) {
       try {
         ctx.destroyed[i]();
       } catch (err) {
-        if (fromFactory) {
-          if (rollback) console.error('[Purity] Error:', err);
-          else ctx._handleError(err);
-        } else {
-          console.error('[Purity] Error in onDestroy:', err);
-        }
+        console.error('[Purity] Error in onDestroy:', err);
       }
     }
     ctx.destroyed = null;
   }
 
+  // Remove from parent
   if (ctx.parent?.children) {
     const idx = ctx.parent.children.indexOf(ctx);
     if (idx !== -1) ctx.parent.children.splice(idx, 1);
   }
 
+  // Release remaining references for GC
   ctx.mounted = null;
   ctx.errorHandlers = null;
   ctx.parent = null;

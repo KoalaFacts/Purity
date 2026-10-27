@@ -334,7 +334,9 @@ export function compareSizeReports(base: Report, candidate: Report) {
   // Raw and gzip regressions matter even if Brotli happens to shrink.
   const grows = (item: Delta) => item.raw > 0 || item.gzip > 0 || item.brotli > 0;
   const chunkGrowth = apps.flatMap((app) =>
-    (app.chunks ?? []).filter(grows).map((chunk) => ({ ...chunk, name: `${app.name}/${chunk.name}` })),
+    (app.chunks ?? [])
+      .filter(grows)
+      .map((chunk) => ({ ...chunk, name: `${app.name}/${chunk.name}` })),
   );
   return {
     baseRevision: base.revision,

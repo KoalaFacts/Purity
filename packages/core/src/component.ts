@@ -380,13 +380,11 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     // Component returned a non-deferred Node (e.g. user wrapped html`` in
     // something that bypassed deferral). Fall back to lossy: clear + insert.
     while (container.firstChild) container.removeChild(container.firstChild);
-    if (view instanceof DocumentFragment) {
-      container.appendChild(view);
-      ctx.nodes = Array.from(container.childNodes);
-    } else {
-      container.appendChild(view);
-      ctx.nodes = [view];
-    }
+    // Snapshot after insertion: custom-element connected callbacks may add
+    // DOM that must remain owned by this hydrated root's unmount handle.
+    const wasFragment = view instanceof DocumentFragment;
+    container.appendChild(view);
+    ctx.nodes = wasFragment ? Array.from(container.childNodes) : [view];
   }
 
   hydratePendingCustomElements(container);
@@ -484,12 +482,12 @@ function normalizeCachePayload(parsed: unknown): {
     // with a reserved name (`__proto__`, `constructor`, …) lands as plain
     // data and `key in keyed` never matches an inherited member. The
     // boundary-merge loop and primeHydrationCache rely on this shape.
-    // An empty/null/invalid keyed payload still receives its own safe map;
-    // Object.assign ignores a null source and preserves JSON's own keys.
-    const keyed: Record<string, unknown> = Object.assign(
-      Object.create(null),
-      obj.keyed && typeof obj.keyed === 'object' ? obj.keyed : null,
-    );
+    // Only JSON-owned object entries are copied; the null-prototype target
+    // safely retains reserved resource keys without inherited setters.
+    const keyed: Record<string, unknown> = Object.create(null);
+    if (obj.keyed && typeof obj.keyed === 'object') {
+      Object.assign(keyed, obj.keyed);
+    }
     return { ordered: Array.isArray(obj.ordered) ? obj.ordered : [], keyed };
   }
   return { ordered: [], keyed: Object.create(null) };

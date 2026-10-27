@@ -42,6 +42,36 @@ describe('hydrate + resource cache', () => {
     expect(host.querySelector('#__purity_resources__')).toBeNull();
   });
 
+  it('retains both direct fragment roots for unmount after hydration fallback', () => {
+    host.innerHTML = '<p>server</p>';
+    const first = document.createElement('span');
+    const second = document.createElement('span');
+    first.textContent = 'first';
+    second.textContent = 'second';
+    const fragment = document.createDocumentFragment();
+    fragment.append(first, second);
+
+    const { unmount } = hydrate(host, () => fragment);
+
+    expect(host.children).toHaveLength(2);
+    expect(host.children[0]).toBe(first);
+    expect(host.children[1]).toBe(second);
+    unmount();
+    expect(host.childNodes).toHaveLength(0);
+  });
+
+  it('retains a direct Node for unmount after hydration fallback', () => {
+    host.innerHTML = '<p>server</p>';
+    const replacement = document.createElement('span');
+    replacement.textContent = 'client';
+
+    const { unmount } = hydrate(host, () => replacement);
+
+    expect(host.firstChild).toBe(replacement);
+    unmount();
+    expect(host.childNodes).toHaveLength(0);
+  });
+
   it('falls back to normal fetching when no script is present', async () => {
     host.innerHTML = '<p><!--[-->loading<!--]--></p>';
 

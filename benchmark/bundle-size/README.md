@@ -51,7 +51,6 @@ body has its own hash. Verification failures retain the size report and exit
 nonzero; their diagnostics go to the job log.
 Machine names and absolute filesystem paths are excluded.
 
-
 Schema 4 adds the client-only JIT package entry and the matched client-only counter runtime/AOT profiles. The comparison utility still accepts complete historical schema-3 reports using the frozen `budgets-v3.json` contract. Schema-3 and schema-4 reports are not directly comparable as a complete inventory; retain the historical report unmodified and compare only genuinely identical schema/toolchain/input scopes.
 
 ## Feature profiles

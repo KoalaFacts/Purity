@@ -174,7 +174,11 @@ const fixtureNames = [
 const fixtureNamesV4 = [...fixtureNames, 'counter-client.ts'];
 
 function coverage(actual: string[], expected: string[], name: string, version: number) {
-  assert.deepEqual([...actual].sort(), [...expected].sort(), `Incomplete v${version} coverage: ` + name);
+  assert.deepEqual(
+    [...actual].sort(),
+    [...expected].sort(),
+    `Incomplete v${version} coverage: ` + name,
+  );
 }
 
 function validateReportContract(report: Report, label: string) {

@@ -97,26 +97,11 @@ const URL_BINDINGS = new Set(
   ),
 );
 
-// Generated binding algorithms are shared by all sinks in a factory instead
-// of being copied into every setup/update site. These are immutable framework
-// source strings, never input text; AOT emits normal functions, not eval.
-const URL_HELPER_DEF =
-  "function __purity_url__(v){if(v==null||v===false)return v;if(v===true)return '';" +
-  "var s=String(v),p=s.replace(/[\\u0000-\\u0020\\u007f]/g,'');" +
-  'if(/^(?:javascript|vbscript):/i.test(p)||(/^data:/i.test(p)&&' +
-  '!/^data:image\\/(?:png|jpeg|gif|webp|avif|bmp|x-icon);base64,/i.test(p)))' +
-  "throw new Error('[Purity] Unsafe URL binding');return s;};";
-
-const GROUP_HELPER_DEF =
-  "function __purity_group__(e,v,i,w){if(typeof v[i]!=='function')return;" +
-  "if(e.type==='radio'){w(function(){e.checked=v[i]()===e.value;});" +
-  "e.addEventListener('change',function(){if(e.checked)v[i](e.value);});}" +
-  'else{w(function(){e.checked=v[i]().includes(e.value);});' +
-  "e.addEventListener('change',function(){var a=[...v[i]()],n=a.indexOf(e.value);" +
-  'if(e.checked){if(n===-1)a.push(e.value);}else if(n!==-1)a.splice(n,1);v[i](a);});}}';
-
 function safeBindingValue(name: string, expr: string): string {
-  return URL_BINDINGS.has(name.toLowerCase()) ? `__purity_url__(${expr})` : expr;
+  if (!URL_BINDINGS.has(name.toLowerCase())) return expr;
+  // Escape-only attribute binding does not stop executable URL schemes.
+  // Return the checked string so stateful toString() cannot change it later.
+  return `(function(v){if(v==null||v===false)return v;if(v===true)return '';var s=String(v),p=s.replace(/[\\u0000-\\u0020\\u007f]/g,'');if(/^(?:javascript|vbscript):/i.test(p)||(/^data:/i.test(p)&&!/^data:image\\/(?:png|jpeg|gif|webp|avif|bmp|x-icon);base64,/i.test(p)))throw new Error('[Purity] Unsafe URL binding');return s;})(${expr})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -230,10 +215,6 @@ export function condenseWhitespace(node: ASTNode): ASTNode {
  * modules. Static templates reference neither.
  */
 export function generateLinked(ast: FragmentNode): string {
-  return generateClient(ast, false);
-}
-
-function generateClient(ast: FragmentNode, standaloneValues: boolean): string {
   assertSafeScriptContent(ast);
   // Strip pure-indentation text nodes from the entire tree (not just edges).
   // Indentation between sibling tags becomes real text nodes after innerHTML,
@@ -257,7 +238,7 @@ function generateClient(ast: FragmentNode, standaloneValues: boolean): string {
   // Use direct createElement — faster than cloneNode for small templates
   const simple = isSimpleTemplate(ast);
   if (simple) {
-    return standalone(genSimpleTemplate(simple), standaloneValues);
+    return genSimpleTemplate(simple);
   }
 
   // Complex template — cloneNode + positional paths
@@ -271,21 +252,18 @@ function generateClient(ast: FragmentNode, standaloneValues: boolean): string {
   // `html` was built by buildDynamicHtml which JSON.stringify's all values
   // and assertSafeName-validates all tag/attr names. `bindCode` interpolates
   // only validated names through JSON.stringify and bracket notation.
-  return standalone(
-    [
-      '(function(){',
-      `var _t=document.createElement('template');`,
-      `_t.innerHTML=${jsString(html)};`,
-      templatePrep,
-      'return function(_v,_w,_d){',
-      'var _r=_t.content.cloneNode(true);',
-      bindCode,
-      'return _r;',
-      '};',
-      '})()',
-    ].join(''),
-    standaloneValues,
-  );
+  return [
+    '(function(){',
+    `var _t=document.createElement('template');`,
+    `_t.innerHTML=${jsString(html)};`,
+    templatePrep,
+    'return function(_v,_w,_d){',
+    'var _r=_t.content.cloneNode(true);',
+    bindCode,
+    'return _r;',
+    '};',
+    '})()',
+  ].join('');
 }
 
 // One-time template prep: convert each comment placeholder (used for
@@ -340,10 +318,6 @@ interface HydrateCtx {
 
 /** Hydrate factory source with the same free-name contract as generateLinked. */
 export function generateHydrateLinked(ast: FragmentNode): string {
-  return generateHydration(ast, false);
-}
-
-function generateHydration(ast: FragmentNode, standaloneValues: boolean): string {
   assertSafeScriptContent(ast);
   ast = condenseWhitespace(ast) as FragmentNode;
 
@@ -356,7 +330,11 @@ function generateHydration(ast: FragmentNode, standaloneValues: boolean): string
   ctx.setup.push('var _c0=_s===undefined?_r.firstChild:_s;');
   emitHydrateChildren(ast.children, ctx, '_c0');
 
-  const body = joinBindings(ctx.setup, ctx.reactive) + 'return _r;';
+  let body = ctx.setup.join('');
+  if (ctx.reactive.length > 0) {
+    body += `_w(function(){${ctx.reactive.join('')}});`;
+  }
+  body += 'return _r;';
 
   // All identifiers spliced into `body` are framework-internal counters
   // (_c0, _el<id>, _open<id>, …) or have been validated/JSON.stringify'd by
@@ -368,7 +346,7 @@ function generateHydration(ast: FragmentNode, standaloneValues: boolean): string
   // Parsed indices are numeric; names are validated above and literal text
   // is emitted with JSON.stringify.
   // codeql[js/bad-code-sanitization]
-  return standalone(`function(_v,_w,_r,_i,_c,_e,_m,_s){${body}}`, standaloneValues);
+  return `function(_v,_w,_r,_i,_c,_e,_m,_s){${body}}`;
 }
 
 // Standalone helper definitions, equivalent to flattenValue / swapSlot in
@@ -455,22 +433,19 @@ function rawContentBinding(
   return `${setup}_w(function(){${parts}=[].concat(${list.join(',')});${write}();return function(){${observer}.disconnect();};});`;
 }
 
-function standalone(code: string, values = false): string {
-  const defs =
-    (values && /__purity_(fl|sw)__/.test(code) ? VALUE_HELPER_DEFS : '') +
-    (code.includes('__purity_url__(') ? URL_HELPER_DEF : '') +
-    (code.includes('__purity_group__(') ? GROUP_HELPER_DEF : '');
-  return defs ? `(function(){${defs}return ${code};})()` : code;
+function standalone(code: string): string {
+  if (!/__purity_(fl|sw)__/.test(code)) return code;
+  return `(function(){${VALUE_HELPER_DEFS}return ${code};})()`;
 }
 
 /** Public: standalone client factory source, evaluable with `new Function`. */
 export function generate(ast: FragmentNode): string {
-  return generateClient(ast, true);
+  return standalone(generateLinked(ast));
 }
 
 /** Public: standalone hydrate factory source, evaluable with `new Function`. */
 export function generateHydrate(ast: FragmentNode): string {
-  return generateHydration(ast, true);
+  return standalone(generateHydrateLinked(ast));
 }
 
 function emitHydrateChildren(children: ASTNode[], ctx: HydrateCtx, cursor: string): void {
@@ -673,17 +648,31 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
         setupParts.push(`_e.appendChild(document.createTextNode(${jsString(ch.value)}));`);
       }
     } else if (ch.type === 'expression') {
-      const { setup, reactive } = genExprBinding(
-        "_e.appendChild(document.createTextNode(''))",
-        ch.index,
-        true,
+      const val = `_v[${ch.index}]`;
+      const id = bindVarCounter++;
+      const xv = `_x${id}`;
+      const tn = `_t${id}`;
+      const fl = `_xf${id}`;
+      // Text-slot value coercion MUST match valueToHtml() on the SSR side
+      // (compiler/ssr-runtime.ts): null / undefined / false render as empty
+      // string, everything else stringifies. The previous client path
+      // skipped `=== false` in the reactive (function-call) branch AND in
+      // the array-item branch — so a signal returning `false` produced
+      // the literal text "false" on the client while SSR rendered nothing.
+      // Symmetric `==null||===false` filter at every text-emit site.
+      setupParts.push(
+        `var ${xv}=_d?_d(${val}):${val};var ${fl}=typeof ${xv}==='function';`,
+        `var ${tn}=_e.appendChild(document.createTextNode(''));if(!${fl})__purity_sw__(${tn},${xv});`,
       );
-      setupParts.push(setup);
-      reactiveParts.push(reactive);
+      reactiveParts.push(`if(${fl}){${slotUpdate(xv, tn)}}`);
     }
   }
 
-  const body = joinBindings(setupParts, reactiveParts) + 'return _e;';
+  let body = setupParts.join('');
+  if (reactiveParts.length > 0) {
+    body += `_w(function(){${reactiveParts.join('')}});`;
+  }
+  body += 'return _e;';
   // codeql[js/code-injection] — see "Codegen safety contract" comment near
   // SAFE_NAME / assertSafeName at the top of this file. All names and
   // values spliced into `body` are regex-validated and/or JSON.stringify'd
@@ -926,11 +915,6 @@ interface BindingParts {
   reactive: string; // body for the shared watch — guarded by per-binding _f* flags
 }
 
-// Preserve navigation/setup ordering and one shared watch in all three paths.
-function joinBindings(setup: string[], reactive: string[]): string {
-  return setup.join('') + (reactive.length ? `_w(function(){${reactive.join('')}});` : '');
-}
-
 function genPositionalBindings(slots: Slot[]): string {
   // Cache paths used by multiple slots so cloned instances traverse them once.
   const prefixCounts = new Map<string, number>();
@@ -986,7 +970,11 @@ function genPositionalBindings(slots: Slot[]): string {
     }
   }
 
-  return navigationParts.join('') + joinBindings(setupParts, reactiveParts);
+  let result = navigationParts.join('') + setupParts.join('');
+  if (reactiveParts.length > 0) {
+    result += `_w(function(){${reactiveParts.join('')}});`;
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -1081,7 +1069,11 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
       const qevt = jsString(evt);
       if (attr.name === 'group') {
         return {
-          setup: `__purity_group__(${el},_v,${attr.index},_w);`,
+          setup: [
+            `if(typeof ${val}==='function'){`,
+            `if(${el}.type==='radio'){_w(function(){${el}.checked=${val}()===${el}.value;});${el}.addEventListener('change',function(){if(${el}.checked)${val}(${el}.value);});}`,
+            `else{_w(function(){${el}.checked=${val}().includes(${el}.value);});${el}.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(${el}.value);if(${el}.checked){if(i===-1)a.push(${el}.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
+          ].join(''),
           reactive: '',
         };
       }
@@ -1150,8 +1142,8 @@ export function generateSSR(ast: FragmentNode): string {
   // variable reference (`_v[N]`, `_av${id}`). See "Codegen safety contract"
   // near SAFE_NAME at the top.
   // codeql[js/code-injection] — see "Codegen safety contract" near SAFE_NAME.
-  return standalone(
-    ["function(_v,_h){var _o='',_r=[];", ctx.parts.join(''), 'return _h.mark(_o,_r);}'].join(''),
+  return ["function(_v,_h){var _o='',_r=[];", ctx.parts.join(''), 'return _h.mark(_o,_r);}'].join(
+    '',
   );
 }
 

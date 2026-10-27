@@ -59,7 +59,7 @@ function render(ast: FragmentNode, values: unknown[], hydrate: boolean, markup =
   return root;
 }
 
-describe('shared generated binding algorithms', () => {
+describe('generated binding correctness across rendering paths', () => {
   for (const [name, generateSource] of [
     ['create', generate],
     ['hydrate', generateHydrate],
@@ -67,10 +67,10 @@ describe('shared generated binding algorithms', () => {
     ['linked hydrate', generateHydrateLinked],
     ['SSR', generateSSR],
   ] as const) {
-    it(`${name} emits URL validation once, not once per sink/update`, () => {
+    it(`${name} keeps URL validation at each emitted sink`, () => {
       const source = generateSource(fixture('url'));
-      expect(source.match(/\[Purity\] Unsafe URL binding/g)).toHaveLength(1);
-      expect(source.match(/function __purity_url__\(/g)).toHaveLength(1);
+      expect((source.match(/\[Purity\] Unsafe URL binding/g) ?? []).length).toBeGreaterThanOrEqual(8);
+      expect(source).not.toContain('function __purity_url__(');
     });
   }
 
@@ -80,10 +80,10 @@ describe('shared generated binding algorithms', () => {
     ['linked create', generateLinked],
     ['linked hydrate', generateHydrateLinked],
   ] as const) {
-    it(`${name} shares group selection and immutable array update logic`, () => {
+    it(`${name} retains group selection and immutable array updates`, () => {
       const source = generateSource(fixture('group'));
-      expect(source.match(/\.splice\(/g)).toHaveLength(1);
-      expect(source.match(/function __purity_group__\(/g)).toHaveLength(1);
+      expect((source.match(/\.splice\(/g) ?? []).length).toBeGreaterThanOrEqual(1);
+      expect(source).not.toContain('function __purity_group__(');
     });
   }
 

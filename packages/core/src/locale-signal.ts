@@ -19,10 +19,7 @@ function readLanguage(): string {
 }
 
 const locale = createSharedBrowserSignal(readLanguage, (update) =>
-  bindListeners(
-    [[window, 'languagechange', () => update(readLanguage())]],
-    'localeSignal',
-  ),
+  bindListeners([[window, 'languagechange', () => update(readLanguage())]], 'localeSignal'),
 );
 
 /**

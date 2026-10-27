@@ -88,4 +88,54 @@ describe('SV2-015 shared cold-path row detachment', () => {
     second.dispatchEvent(new Event('click'));
     expect(calls).toEqual([2]);
   });
+
+  it('keeps multi-root identity and cleanup ownership across prepend and append', async () => {
+    const items = state([2, 3]);
+    const rowNodes = new Map<number, Node[]>();
+    const disposed: number[] = [];
+    const container = document.createElement('div');
+    container.appendChild(
+      each(
+        () => items(),
+        (read: () => number) => {
+          const id = read();
+          const fragment = document.createDocumentFragment();
+          const first = document.createElement('b');
+          const second = document.createElement('i');
+          first.textContent = String(id);
+          second.textContent = String(id);
+          fragment.append(first, second);
+          rowNodes.set(id, [first, second]);
+          onDispose(() => disposed.push(id));
+          return fragment;
+        },
+        (id: number) => id,
+      ),
+    );
+    await tick();
+
+    const existing = [rowNodes.get(2)!, rowNodes.get(3)!];
+    items([1, 2, 3]);
+    await tick();
+    expect([...container.querySelectorAll('b')].map((n) => n.textContent)).toEqual([
+      '1',
+      '2',
+      '3',
+    ]);
+    expect(existing.every((nodes) => nodes.every((node) => node.parentNode === container))).toBe(
+      true,
+    );
+    items([1, 2, 3, 4]);
+    await tick();
+    expect([...container.querySelectorAll('b')].map((n) => n.textContent)).toEqual([
+      '1',
+      '2',
+      '3',
+      '4',
+    ]);
+    expect(existing.every((nodes) => nodes.every((node) => node.parentNode === container))).toBe(
+      true,
+    );
+    expect(disposed).toEqual([]);
+  });
 });

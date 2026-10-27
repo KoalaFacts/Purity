@@ -690,22 +690,18 @@ function reconcileEach<T, E extends KeyedEntry>(
     }
   }
 
-  if (isAppend) {
+  if (isAppend || isPrepend) {
+    // Both paths move only newly created rows. Preserve the same fragment
+    // insertion (and every retained row's DOM identity) with one placement loop.
+    const start = isAppend ? prevLen : 0;
+    const end = isAppend ? newLen : newLen - prevLen;
     const frag = document.createDocumentFragment();
-    for (let i = prevLen; i < newLen; i++) {
+    for (let i = start; i < end; i++) {
       const entry = newEntries.get(newKeys[i])!;
       for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
     }
-    parent.insertBefore(frag, endMarker);
-  } else if (isPrepend) {
-    const newCount = newLen - prevLen;
-    const frag = document.createDocumentFragment();
-    for (let i = 0; i < newCount; i++) {
-      const entry = newEntries.get(newKeys[i])!;
-      for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
-    }
-    const firstExisting = newEntries.get(newKeys[newCount])!.nodes[0];
-    parent.insertBefore(frag, firstExisting);
+    const anchor = isAppend ? endMarker : newEntries.get(newKeys[end])!.nodes[0];
+    parent.insertBefore(frag, anchor);
   } else {
     let swapped = false;
     if (newLen === prevLen && reuseCount === newLen) {

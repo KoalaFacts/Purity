@@ -669,7 +669,9 @@ function reconcileEach<T, E extends KeyedEntry>(
     }
   }
 
-  let isAppend = newLen > prevLen;
+  // Both fast placement paths have the same number of freshly created rows.
+  const newCount = newLen - prevLen;
+  let isAppend = newCount > 0;
   if (isAppend) {
     for (let i = 0; i < prevLen; i++) {
       if (prevKeys[i] !== newKeys[i]) {
@@ -679,11 +681,10 @@ function reconcileEach<T, E extends KeyedEntry>(
     }
   }
 
-  let isPrepend = !isAppend && newLen > prevLen;
+  let isPrepend = !isAppend && newCount > 0;
   if (isPrepend) {
-    const offset = newLen - prevLen;
     for (let i = 0; i < prevLen; i++) {
-      if (prevKeys[i] !== newKeys[i + offset]) {
+      if (prevKeys[i] !== newKeys[i + newCount]) {
         isPrepend = false;
         break;
       }
@@ -694,7 +695,7 @@ function reconcileEach<T, E extends KeyedEntry>(
     // Both paths move only newly created rows. Preserve the same fragment
     // insertion (and every retained row's DOM identity) with one placement loop.
     const start = isAppend ? prevLen : 0;
-    const end = isAppend ? newLen : newLen - prevLen;
+    const end = start + newCount;
     const frag = document.createDocumentFragment();
     for (let i = start; i < end; i++) {
       const entry = newEntries.get(newKeys[i])!;

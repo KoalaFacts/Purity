@@ -311,17 +311,6 @@ export function hydratePendingCustomElements(root: ParentNode): void {
  * hydrate(document.getElementById('app')!, App);
  * ```
  */
-/** Complete a failed root render without leaking owners or firing onDestroy. */
-function abortRender(ctx: ComponentContext, err: unknown): MountResult {
-  ctx.destroyed = null;
-  try {
-    ctx._handleError(err);
-  } finally {
-    unmountContext(ctx);
-  }
-  return { unmount: () => {} };
-}
-
 export function hydrate(container: Element, component: ComponentFn): MountResult {
   // Empty container — nothing to hydrate. Fall back to a fresh mount so
   // hydrate() works as a drop-in for mount() in dev/test setups that
@@ -349,7 +338,17 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   } catch (err) {
     exitHydration();
     popContext();
-    return abortRender(ctx, err);
+    // Report while error handlers and the parent are still available, then
+    // release everything the abandoned render created, even on rethrow.
+    // An error handler can unmount the parent while this child is attached.
+    // Suppress the failed render's destroy lifecycle before dispatching it.
+    ctx.destroyed = null;
+    try {
+      ctx._handleError(err);
+    } finally {
+      unmountContext(ctx);
+    }
+    return { unmount: () => {} };
   }
   exitHydration();
   popContext();
@@ -474,18 +473,18 @@ function normalizeCachePayload(parsed: unknown): {
   ordered: unknown[];
   keyed: Record<string, unknown>;
 } {
-  if (Array.isArray(parsed)) return { ordered: parsed, keyed: Object.create(null) };
-  if (parsed && typeof parsed === 'object') {
+  // Allocate one safe destination for legacy, current and invalid payloads.
+  // Own JSON keys (including "__proto__") never hit inherited setters.
+  const keyed: Record<string, unknown> = Object.create(null);
+  let ordered: unknown[] = [];
+  if (Array.isArray(parsed)) {
+    ordered = parsed;
+  } else if (parsed && typeof parsed === 'object') {
     const obj = parsed as { ordered?: unknown; keyed?: unknown };
-    // Copy keyed entries into a null-prototype object so a resource keyed
-    // with a reserved name (`__proto__`, `constructor`, …) lands as plain
-    // data and `key in keyed` never matches an inherited member. The
-    // boundary-merge loop and primeHydrationCache rely on this shape.
-    const keyed: Record<string, unknown> = Object.create(null);
     if (obj.keyed && typeof obj.keyed === 'object') Object.assign(keyed, obj.keyed);
-    return { ordered: Array.isArray(obj.ordered) ? obj.ordered : [], keyed };
+    if (Array.isArray(obj.ordered)) ordered = obj.ordered;
   }
-  return { ordered: [], keyed: Object.create(null) };
+  return { ordered, keyed };
 }
 
 export function mount(component: ComponentFn, container: Element): MountResult {
@@ -499,7 +498,17 @@ export function mount(component: ComponentFn, container: Element): MountResult {
     fragment = component();
   } catch (err) {
     popContext();
-    return abortRender(ctx, err);
+    // A failed render has no usable unmount handle. Keep error propagation
+    // intact, but always tear down its subscriptions and completed children.
+    // An error handler can unmount the parent while this child is attached.
+    // Suppress the failed render's destroy lifecycle before dispatching it.
+    ctx.destroyed = null;
+    try {
+      ctx._handleError(err);
+    } finally {
+      unmountContext(ctx);
+    }
+    return { unmount: () => {} };
   }
 
   popContext();

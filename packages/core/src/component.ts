@@ -297,7 +297,9 @@ export function hydratePendingCustomElements(root: ParentNode): void {
  * primitive), that one slot's SSR content is replaced. Function-valued
  * slots (`each`/`when`/`match` and other reactive accessors returning
  * Nodes) likewise replace their slot on first read; the surrounding tree
- * is preserved.
+ * is preserved. A non-deferred root (including client-only AOT) is rejected:
+ * replacing all server nodes would discard focus, edits, and element identity.
+ * Build the SSR client with `purity({ hydratable: true })`.
  *
  * @param container Element pre-rendered by `@purityjs/ssr`'s `renderToString`.
  * @param component The same component function used during SSR.
@@ -376,13 +378,12 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
       return mount(component, container);
     }
     ctx.nodes = Array.from(container.childNodes);
-  } else if (view instanceof Node) {
-    // Component returned a non-deferred Node (e.g. user wrapped html`` in
-    // something that bypassed deferral). Fall back to lossy: clear + insert.
-    while (container.firstChild) container.removeChild(container.firstChild);
-    const wasFragment = view instanceof DocumentFragment;
-    container.appendChild(view);
-    ctx.nodes = wasFragment ? Array.from(container.childNodes) : [view];
+  } else {
+    // A client-only AOT factory creates fresh DOM even during hydrate().
+    // Never discard the existing SSR nodes (and user edits) by accident.
+    ctx.destroyed = null;
+    unmountContext(ctx);
+    throw new Error('[Purity] hydrate() requires purity({ hydratable: true })');
   }
 
   hydratePendingCustomElements(container);

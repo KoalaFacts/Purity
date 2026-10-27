@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vite-plus/test';
-import { mount, state, watch } from '@purityjs/core';
-import { flattenValue, swapSlot } from '@purityjs/core/runtime';
+import { hydrate, mount, onDestroy, onDispose, state, watch } from '@purityjs/core';
+import { flattenValue, renderCompiledTemplate, swapSlot } from '@purityjs/core/runtime';
 import { purity, type PurityPluginOptions } from '../src/index.ts';
 
 const disposers: Array<() => void> = [];
@@ -28,6 +28,17 @@ function execute(code: string): (...values: any[]) => Node {
     '__purity_sw__',
     `${body}\nreturn make;`,
   )(watch, flattenValue, swapSlot);
+}
+
+function executeHydratable(code: string): (...values: any[]) => Node {
+  const compiled = compile(code, { hydratable: true });
+  const body = compiled.replace(/^\s*import .+$/gm, '').replace(/\bexport /g, '');
+  return new Function(
+    '__purity_renderCompiled__',
+    '__purity_fl__',
+    '__purity_sw__',
+    `${body}\nreturn make;`,
+  )(renderCompiledTemplate, flattenValue, swapSlot);
 }
 
 function render(view: () => Node) {
@@ -171,6 +182,59 @@ describe('client-first AOT build contract', () => {
     expect(second.getAttribute('href')).toBe('/other');
     expect(first).not.toBe(second);
     expect(calls).toBe(1);
+  });
+
+  it('rejects client-only output passed to hydrate without replacing SSR DOM', async () => {
+    const make = execute(
+      "import { html } from '@purityjs/core/jit'; export const make = (value) => html`<section><input /><p>${value}</p></section>`;",
+    );
+    const host = document.createElement('main');
+    host.innerHTML = '<section><input value="server" /><p>server</p></section>';
+    document.body.append(host);
+    const original = host.firstElementChild;
+    const input = host.querySelector('input')!;
+    input.value = 'unsaved';
+    input.focus();
+
+    const signal = state('client');
+    let reads = 0;
+    let disposed = 0;
+    let destroyed = 0;
+    expect(() =>
+      hydrate(host, () => {
+        onDispose(() => disposed++);
+        onDestroy(() => destroyed++);
+        watch(() => {
+          signal();
+          reads++;
+        });
+        return make(signal);
+      }),
+    ).toThrow('purity({ hydratable: true })');
+
+    expect(host.firstElementChild).toBe(original);
+    expect(host.querySelector('input')).toBe(input);
+    expect(input.value).toBe('unsaved');
+    expect(document.activeElement).toBe(input);
+    expect(disposed).toBe(1);
+    expect(destroyed).toBe(0);
+    signal('later');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(reads).toBe(1);
+  });
+
+  it('adopts existing SSR nodes with explicitly hydratable compiled output', () => {
+    const make = executeHydratable(
+      "import { html } from '@purityjs/core/jit'; export const make = () => html`<section><p>server</p></section>`;",
+    );
+    const host = document.createElement('main');
+    host.innerHTML = '<section><p>server</p></section>';
+    document.body.append(host);
+    const original = host.firstElementChild;
+    disposers.push(hydrate(host, () => make()).unmount);
+    expect(host.firstElementChild).toBe(original);
+    expect(host.querySelector('p')!.textContent).toBe('server');
   });
 
   it.each([false, true])('preserves explicit server output with hydratable=%s', (hydratable) => {

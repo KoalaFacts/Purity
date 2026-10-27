@@ -708,13 +708,11 @@ function reconcileEach<T, E extends KeyedEntry>(
     for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
 
     const sources: number[] = [];
-    const newIndexToSource: number[] = new Array(newLen).fill(-1);
 
     for (let i = 0; i < newLen; i++) {
       const oldIdx = oldKeyIndex.get(newKeys[i]);
       if (oldIdx !== undefined) {
         sources.push(oldIdx);
-        newIndexToSource[i] = sources.length - 1;
       }
     }
 
@@ -722,6 +720,7 @@ function reconcileEach<T, E extends KeyedEntry>(
     // an LIS cursor avoids allocating and hashing a Set on each reorder.
     const lisIndices = lis(sources);
     let lisCursor = lisIndices.length - 1;
+    let sourceIdx = sources.length - 1;
 
     if (hasMoveBefore) {
       // moveBefore path: per-row moves preserve focus, CSS
@@ -732,8 +731,9 @@ function reconcileEach<T, E extends KeyedEntry>(
       let nextSibling: Node = endMarker;
       for (let i = newLen - 1; i >= 0; i--) {
         const entry = newEntries.get(newKeys[i])!;
-        const sourceIdx = newIndexToSource[i];
-        const needsMove = sourceIdx === -1 || sourceIdx !== lisIndices[lisCursor];
+        const reused = oldKeyIndex.has(newKeys[i]);
+        const needsMove = !reused || sourceIdx !== lisIndices[lisCursor];
+        if (reused) sourceIdx--;
         if (!needsMove) lisCursor--;
         if (needsMove) {
           // Every root uses the following-row anchor. Move roots forward
@@ -755,8 +755,9 @@ function reconcileEach<T, E extends KeyedEntry>(
 
       for (let i = newLen - 1; i >= 0; i--) {
         const entry = newEntries.get(newKeys[i])!;
-        const sourceIdx = newIndexToSource[i];
-        const needsMove = sourceIdx === -1 || sourceIdx !== lisIndices[lisCursor];
+        const reused = oldKeyIndex.has(newKeys[i]);
+        const needsMove = !reused || sourceIdx !== lisIndices[lisCursor];
+        if (reused) sourceIdx--;
         if (!needsMove) lisCursor--;
 
         if (needsMove) {

@@ -6,7 +6,7 @@ import { state } from '../src/signals.ts';
 const tick = () => new Promise((resolve) => queueMicrotask(resolve));
 
 describe('SV2-015 shared cold-path row detachment', () => {
-  it('detaches all roots and disposes each scope once across selective removal and bulk clear', async () => {
+  it('detaches every root and disposes each scope once across removal modes', async () => {
     const items = state([1, 2, 3]);
     const rows = new Map<number, Node[]>();
     const disposed: number[] = [];
@@ -48,8 +48,10 @@ describe('SV2-015 shared cold-path row detachment', () => {
     items([]);
     await tick();
     expect(disposed).toEqual([1, 3, 2, 4]);
-    expect([...rows.values()].every((nodes) => nodes.every((node) => node.parentNode === null)))
-      .toBe(true);
+    const detached = [...rows.values()].every((nodes) =>
+      nodes.every((node) => node.parentNode === null),
+    );
+    expect(detached).toBe(true);
     items([]);
     await tick();
     expect(disposed).toEqual([1, 3, 2, 4]);

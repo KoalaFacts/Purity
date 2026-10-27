@@ -1,5 +1,5 @@
 // SV2-012 CI prerequisite: keep Svelte fixture builds on a patched,
- // drop-in merge implementation instead of vulnerable deepmerge@4.3.1.
+// drop-in merge implementation instead of vulnerable deepmerge@4.3.1.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 

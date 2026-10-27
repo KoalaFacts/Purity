@@ -14,5 +14,23 @@ assert.equal(merged.config.admin, undefined);
 assert.equal(Object.getPrototypeOf(merged.config), Object.prototype);
 assert.equal(Object.prototype.hasOwnProperty.call(merged.config, '__proto__'), false);
 assert.deepEqual(merged.list, [1, 2]);
+
+// Regression for CVE-2026-93753: ordinary-object targets do not trigger the
+// vulnerable path. A null target lets the old deepmerge change the returned
+// nested object's prototype instead of copying an own "__proto__" key.
+const poisonedSource = JSON.parse('{"session":{"__proto__":{"admin":true}}}');
+const poisoned = merge({ session: null }, poisonedSource);
+assert.equal(poisoned.session.admin, undefined);
+assert.equal(Object.getPrototypeOf(poisoned.session), Object.prototype);
+assert.equal(Object.prototype.hasOwnProperty.call(poisoned.session, '__proto__'), false);
+
+// Svelte's actual merge option replaces, rather than concatenates arrays.
+// Verify the replacement library honors options provided by Svelte.
+const svelteStyle = merge(
+  { list: [1] },
+  { list: [2] },
+  { arrayMerge: (target: unknown[], source: unknown[]) => source ?? target },
+);
+assert.deepEqual(svelteStyle.list, [2]);
 assert.equal(({} as { admin?: boolean }).admin, undefined);
 console.log('Svelte tooling merge: prototype safe and standard options preserved.');

@@ -378,9 +378,15 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
       return mount(component, container);
     }
     ctx.nodes = Array.from(container.childNodes);
+  } else if (view instanceof Node && view.parentNode === container) {
+    // A component may return a custom element already present as a direct
+    // child of the SSR root. Reuse exactly that live node: no generated
+    // client-only AOT factory returns an already-connected child here.
+    // Preserve its shadow tree and mounted callback ownership.
+    ctx.nodes = Array.from(container.childNodes);
   } else {
-    // A client-only AOT factory creates fresh DOM even during hydrate().
-    // Never discard the existing SSR nodes (and user edits) by accident.
+    // A client-only AOT factory creates detached DOM during hydrate().
+    // Reject detached nodes/fragments rather than replacing the SSR tree.
     ctx.destroyed = null;
     unmountContext(ctx);
     throw new Error('[Purity] hydrate() requires purity({ hydratable: true })');

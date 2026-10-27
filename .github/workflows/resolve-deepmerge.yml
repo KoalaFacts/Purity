@@ -5,6 +5,9 @@ on:
     branches: [fix/sv2-012-hydration-mode-failfast]
     paths:
       - .github/workflows/resolve-deepmerge.yml
+      - packages/core/src/component.ts
+      - packages/core/tests/hydrate-resource.test.ts
+      - benchmark/tools/svelte-merge-security.ts
 
 permissions:
   contents: write

@@ -311,26 +311,6 @@ export function hydratePendingCustomElements(root: ParentNode): void {
  * hydrate(document.getElementById('app')!, App);
  * ```
  */
-// Share the failure and success lifecycle of mount() and hydrate() without
-// changing the order in which they restore their render contexts.
-function abandonRender(ctx: ComponentContext, err: unknown): MountResult {
-  // Suppress destroy handlers for a render that never completed; error
-  // handlers still run while the failed context has a parent.
-  ctx.destroyed = null;
-  try {
-    ctx._handleError(err);
-  } finally {
-    unmountContext(ctx);
-  }
-  return { unmount: () => {} };
-}
-
-function finishRender(ctx: ComponentContext): MountResult {
-  ctx._isMounted = true;
-  scheduleMountCallbacks(ctx);
-  return { unmount: () => unmountContext(ctx) };
-}
-
 export function hydrate(container: Element, component: ComponentFn): MountResult {
   // Empty container — nothing to hydrate. Fall back to a fresh mount so
   // hydrate() works as a drop-in for mount() in dev/test setups that
@@ -358,7 +338,17 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   } catch (err) {
     exitHydration();
     popContext();
-    return abandonRender(ctx, err);
+    // Report while error handlers and the parent are still available, then
+    // release everything the abandoned render created, even on rethrow.
+    // An error handler can unmount the parent while this child is attached.
+    // Suppress the failed render's destroy lifecycle before dispatching it.
+    ctx.destroyed = null;
+    try {
+      ctx._handleError(err);
+    } finally {
+      unmountContext(ctx);
+    }
+    return { unmount: () => {} };
   }
   exitHydration();
   popContext();
@@ -400,7 +390,11 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   }
 
   hydratePendingCustomElements(container);
-  return finishRender(ctx);
+  ctx._isMounted = true;
+
+  scheduleMountCallbacks(ctx);
+
+  return { unmount: () => unmountContext(ctx) };
 }
 
 const RESOURCE_SCRIPT_ID = '__purity_resources__';
@@ -465,14 +459,9 @@ function primeResourceHydrationCache(container: Element): void {
           parsed.keyed &&
           typeof parsed.keyed === 'object'
         ) {
-          // Copy own keys explicitly rather than Object.assign: a boundary
-          // resource keyed `__proto__` arrives from JSON.parse as an own
-          // data property, and Object.assign([[Set]]) would route it through
-          // the prototype setter (dropping the value). `merged.keyed` is a
-          // null-prototype object (see normalizeCachePayload), so a direct
-          // bracket assignment stores even reserved names as plain data.
-          const src = parsed.keyed as Record<string, unknown>;
-          for (const k of Object.keys(src)) merged.keyed[k] = src[k];
+          // The null-prototype cache has no inherited __proto__ setter:
+          // Object.assign preserves every JSON-owned key as plain data.
+          Object.assign(merged.keyed, parsed.keyed);
         }
       } catch (err) {
         console.error('[Purity] Failed to parse per-boundary hydration cache:', err);
@@ -497,8 +486,9 @@ function normalizeCachePayload(parsed: unknown): {
     // boundary-merge loop and primeHydrationCache rely on this shape.
     const keyed: Record<string, unknown> = Object.create(null);
     if (obj.keyed && typeof obj.keyed === 'object') {
-      const src = obj.keyed as Record<string, unknown>;
-      for (const k of Object.keys(src)) keyed[k] = src[k];
+      // JSON.parse yields enumerable own string keys; the null-prototype
+      // target makes even reserved names safe to assign.
+      Object.assign(keyed, obj.keyed);
     }
     return { ordered: Array.isArray(obj.ordered) ? obj.ordered : [], keyed };
   }
@@ -516,7 +506,17 @@ export function mount(component: ComponentFn, container: Element): MountResult {
     fragment = component();
   } catch (err) {
     popContext();
-    return abandonRender(ctx, err);
+    // A failed render has no usable unmount handle. Keep error propagation
+    // intact, but always tear down its subscriptions and completed children.
+    // An error handler can unmount the parent while this child is attached.
+    // Suppress the failed render's destroy lifecycle before dispatching it.
+    ctx.destroyed = null;
+    try {
+      ctx._handleError(err);
+    } finally {
+      unmountContext(ctx);
+    }
+    return { unmount: () => {} };
   }
 
   popContext();
@@ -531,7 +531,11 @@ export function mount(component: ComponentFn, container: Element): MountResult {
     container.appendChild(fragment);
   }
 
-  return finishRender(ctx);
+  ctx._isMounted = true;
+
+  scheduleMountCallbacks(ctx);
+
+  return { unmount: () => unmountContext(ctx) };
 }
 
 // ---------------------------------------------------------------------------

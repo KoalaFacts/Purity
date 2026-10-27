@@ -140,6 +140,39 @@ describe('hydrate + keyed resource cache', () => {
     expect(fetcherCalls).toBeLessThanOrEqual(0);
   });
 
+  it('retains reserved shell-cache keys without inherited properties or refetch', async () => {
+    host.innerHTML =
+      '<p><!--[-->X<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources__">' +
+      '{"ordered":[],"keyed":{"__proto__":"shell-proto","constructor":"shell-ctor"}}' +
+      '</script>';
+
+    let fetches = 0;
+    hydrate(host, () => {
+      const proto = resource(
+        () => {
+          fetches++;
+          return Promise.resolve('refetched');
+        },
+        { key: '__proto__' },
+      );
+      const ctor = resource(
+        () => {
+          fetches++;
+          return Promise.resolve('refetched');
+        },
+        { key: 'constructor' },
+      );
+      return html`<p>${() => `${proto() ?? '?'}/${ctor() ?? '?'}`}</p>`;
+    });
+    await tick();
+
+    expect(host.textContent).toContain('shell-proto/shell-ctor');
+    expect(fetches).toBe(0);
+    expect(Object.prototype).not.toHaveProperty('shell-proto');
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
   it('matches keyed resources even when conditional resources reorder unkeyed neighbors', async () => {
     // Stage a payload where the keyed value is preserved by name even
     // though the ordered array's first slot belongs to a different

@@ -30,7 +30,7 @@ jobs:
           const now = JSON.parse(readFileSync('package-lock.json', 'utf8'));
           const alias = now.packages['node_modules/deepmerge'];
           console.log('Resolved audited merge alias:', JSON.stringify(alias));
-          assert(/@stackline(?:%2f|\\/)deepmerge/i.test(alias.resolved ?? ''), 'Expected audited alias registry URL');
+          assert(decodeURIComponent(alias.resolved ?? '').includes('/@stackline/deepmerge/-/'), 'Expected audited alias registry URL');
           assert.equal(alias.version, '1.1.0');
           assert(alias.integrity?.startsWith('sha512-'));
           delete old.packages['node_modules/deepmerge'];

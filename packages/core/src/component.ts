@@ -619,7 +619,7 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
 /** @internal — a factory-rendered child uses the host's error boundary and rollback rules. */
 export function unmountChildContext(
   ctx: ComponentContext,
-  rollback = ctx.parent?._rollback,
+  rollback: boolean = ctx.parent?._rollback ?? false,
 ): void {
   unmountContext(ctx, true, rollback);
 }

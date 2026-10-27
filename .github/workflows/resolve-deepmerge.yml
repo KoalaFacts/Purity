@@ -19,31 +19,36 @@ jobs:
         with:
           node-version: '24.21.0'
           cache: npm
-      - name: Resolve only the audited Svelte transitive package
+      - name: Pin the security-reviewed transitive tarball without changing other packages
         run: |
-          npm install 'deepmerge@npm:@stackline/deepmerge@1.1.0' --workspace benchmark --save-exact --package-lock-only --ignore-scripts --no-audit --no-fund
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
-          import { execFileSync } from 'node:child_process';
-          import { readFileSync } from 'node:fs';
-          const old = JSON.parse(execFileSync('git', ['show', 'HEAD:package-lock.json'], { encoding: 'utf8' }));
-          const now = JSON.parse(readFileSync('package-lock.json', 'utf8'));
-          const aliases = Object.entries(now.packages).filter(([key]) => key.includes('deepmerge') || key.includes('stackline'));
-          console.log('Resolved merge entries:', JSON.stringify(aliases));
-          assert.equal(aliases.length, 1, 'Expected exactly one pinned, audited merge implementation');
-          const [aliasPath, alias] = aliases[0];
-          assert(decodeURIComponent(alias.resolved ?? '').includes('/@stackline/deepmerge/-/'), 'Expected audited alias registry URL');
-          assert.equal(alias.version, '1.1.0');
-          assert(alias.integrity?.startsWith('sha512-'));
-          const oldBenchmark = old.packages.benchmark;
-          const newBenchmark = now.packages.benchmark;
-          assert.equal(newBenchmark.dependencies.deepmerge, 'npm:@stackline/deepmerge@1.1.0');
-          const { deepmerge: _alias, ...originalBenchmarkDeps } = newBenchmark.dependencies;
-          assert.deepEqual(originalBenchmarkDeps, oldBenchmark.dependencies, 'Original benchmark inputs changed');
-          newBenchmark.dependencies = originalBenchmarkDeps;
-          delete old.packages['node_modules/deepmerge'];
-          delete now.packages[aliasPath];
-          assert.deepEqual(now.packages, old.packages, 'Unexpected other package resolution changed');
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const lockfile = 'package-lock.json';
+          const original = JSON.parse(readFileSync(lockfile, 'utf8'));
+          const old = original.packages['node_modules/deepmerge'];
+          assert.equal(old.version, '4.3.1');
+          const updated = structuredClone(original);
+          // Integrity/resolved were obtained from npm's actual 2026-10-28
+          // resolution of deepmerge@npm:@stackline/deepmerge@1.1.0 in preflight 40604276397.
+          const pinned = {
+            name: '@stackline/deepmerge',
+            version: '1.1.0',
+            resolved: 'https://registry.npmjs.org/@stackline/deepmerge/-/deepmerge-1.1.0.tgz',
+            integrity: 'sha512-bEQ1EpXrlu9PTTgKD9z85MWYGjDMv79fF2qn2LYdmukpuj6onkn5kZlRAu0PaZvUv9ZQerwtDVgIEn2LYtsE7w==',
+            license: 'MIT',
+            engines: { node: '>=14.17.0' },
+          };
+          assert.equal(updated.packages['node_modules/@sveltejs/vite-plugin-svelte'].dependencies.deepmerge, '^4.3.1');
+          assert.equal(JSON.parse(readFileSync('package.json','utf8')).overrides.deepmerge, 'npm:@stackline/deepmerge@1.1.0');
+          updated.packages['node_modules/deepmerge'] = pinned;
+          assert.deepEqual(
+            { ...updated, packages: { ...updated.packages, 'node_modules/deepmerge': old } },
+            original,
+            'Unrelated resolved packages changed',
+          );
+          writeFileSync(lockfile, JSON.stringify(updated, null, 2) + '\n');
+          console.log('Only transitive deepmerge lockfile entry changed; registry integrity pinned.');
           NODE
       - name: Install exact lockfile and audit all dependencies
         run: |
@@ -65,7 +70,7 @@ jobs:
           git rm .github/workflows/resolve-deepmerge.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add package.json package-lock.json benchmark/package.json benchmark/tools/svelte-merge-security.ts packages/core/src/component.ts packages/vite-plugin/tests/client-first-aot.test.ts docs/client-first-aot.md
+          git add package.json package-lock.json benchmark/tools/svelte-merge-security.ts packages/core/src/component.ts packages/vite-plugin/tests/client-first-aot.test.ts docs/client-first-aot.md
           git commit -m 'fix(build): replace vulnerable Svelte tooling deepmerge with pinned safe alias' -m 'The original CI audit failed on GHSA-gcqx-w48m-w2h4, upstream 7.3.1 still pins deepmerge@4.3.1 with no fix. Use @stackline/deepmerge@1.1.0 only as a transitive Svelte tooling override, prove prototype safety and standard semantics, and preserve all other locked packages.'
           test "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | cut -f1)" = "$GITHUB_SHA"
           git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"

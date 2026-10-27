@@ -393,10 +393,7 @@ describe('suspense() — client + hydration', () => {
       () =>
         ssrHtml`<main>${suspense(
           () => {
-            const r = resource(
-              () => late,
-              { key: 'late' },
-            );
+            const r = resource(() => late, { key: 'late' });
             return ssrHtml`<aside>${() => r() ?? '...'}</aside>`;
           },
           () => {
@@ -412,10 +409,7 @@ describe('suspense() — client + hydration', () => {
           { timeout: 1 },
         )}${suspense(
           () => {
-            const k = resource(
-              () => sibling,
-              { key: 'sibling' },
-            );
+            const k = resource(() => sibling, { key: 'sibling' });
             return ssrHtml`<aside>${() => k() ?? '...'}</aside>`;
           },
           () => ssrHtml`<aside>SIB-FB</aside>`,

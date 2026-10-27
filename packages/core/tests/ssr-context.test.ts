@@ -88,6 +88,25 @@ describe('consumeHydrationValue — mixed keyed + unkeyed positional pairing', (
     primeHydrationCache([]);
   });
 
+  it('snapshots reserved JSON keys without aliasing or inherited cache hits', () => {
+    const keyed = JSON.parse(
+      '{"__proto__":"safe","constructor":"ctor","0":"index-zero"}',
+    ) as Record<string, unknown>;
+    primeHydrationCache({ ordered: ['unkeyed'], keyed });
+
+    // Public priming owns a defensive copy: mutation of the caller's JSON
+    // object must not change a cache already primed for hydration.
+    keyed['__proto__'] = 'mutated';
+    keyed.constructor = 'mutated';
+
+    expect(consumeHydrationValue('__proto__')).toBe('safe');
+    expect(consumeHydrationValue('constructor')).toBe('ctor');
+    expect(consumeHydrationValue('0')).toBe('index-zero');
+    expect(consumeHydrationValue('toString')).toBeUndefined();
+    expect(consumeHydrationValue()).toBe('unkeyed');
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
   it('a keyed miss does NOT advance the positional cursor', () => {
     // Server-side invariant (resource.ts:264): a keyed resource never
     // consumes a positional slot. So the ordered payload here holds ONE

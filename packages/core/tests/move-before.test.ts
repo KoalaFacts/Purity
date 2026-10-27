@@ -82,7 +82,7 @@ describe('each() reorder — fallback path (jsdom has no moveBefore)', () => {
     expect(texts).toEqual(['C', 'B', 'A']);
   });
 
-  it('handles the 2-swap fast path correctly', async () => {
+  it('handles an adjacent 2-row swap through the LIS path', async () => {
     const items = state([
       { id: 'a', label: 'A' },
       { id: 'b', label: 'B' },

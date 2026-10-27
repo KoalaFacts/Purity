@@ -86,6 +86,39 @@ describe('each — multi-root LIS moves with moveBefore', () => {
     unmount();
   });
 
+  it('uses one state-preserving DOM move for an adjacent keyed swap', async () => {
+    nativeMoves = 0;
+    const keys = state(['A', 'B', 'C', 'D']);
+    const nodes = new Map<string, Element>();
+    const container = document.createElement('div');
+    const { unmount } = mount(
+      () =>
+        each(
+          () => keys(),
+          (item) => {
+            const key = item();
+            const node = document.createElement('p');
+            node.dataset.key = key;
+            nodes.set(key, node);
+            return node;
+          },
+          (item) => item,
+        ),
+      container,
+    );
+
+    await tick();
+    expect(nativeMoves).toBe(0);
+    keys(['A', 'C', 'B', 'D']);
+    await tick();
+
+    const rows = [...container.querySelectorAll('p')];
+    expect(rows.map((node) => node.dataset.key)).toEqual(['A', 'C', 'B', 'D']);
+    expect(rows).toEqual(['A', 'C', 'B', 'D'].map((key) => nodes.get(key)));
+    expect(nativeMoves).toBe(1);
+    unmount();
+  });
+
   it('keeps retained row watchers alive and disposes removed rows exactly once after mixed insertion', async () => {
     const keys = state(['A', 'B', 'C']);
     const dependency = state(0);

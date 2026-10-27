@@ -63,6 +63,41 @@ upgrade the adapter, create an installed comparison lockfile, or produce new mea
 node tools/compare.ts <scenario>
 ```
 
+## Raw runner evidence (SV2-015)
+
+Numeric environment inputs (`PORT`, `WARMUP`, `ITERATIONS`, `MEM_ITERATIONS`)
+must be whole decimal integer tokens; only unset variables select defaults.
+Malformed tokens and invalid selections are retained in `rawSettings` and produce
+an incomplete configuration-error archive before browser launch. Launch and
+cleanup errors also produce failed evidence; already collected timing and heap
+samples remain available, including a create delta when subsequent destroy fails.
+The runner's injected-browser regression tests use explicitly synthetic values;
+they are control-flow tests, not browser execution or performance measurements.
+
+After a successful production benchmark build and preview, run the existing
+Playwright orchestrator with Node 24:
+
+```bash
+cd benchmark
+FRAMEWORKS=purity,solid PAGES=binding MEM_ITERATIONS=3 node run-bench.ts
+```
+
+The runner now archives **all untrimmed timing samples**, raw per-round
+used-heap deltas, execution order, operation errors, browser/Node/CPU information,
+checkout SHA/dirty flag, root-lockfile and pinned-target hashes, and the
+**actual versions from the installed application's lockfile**. New reports are
+created exclusively under ignored `benchmark/dist/benchmark-runs/`; the prior
+reports cannot be overwritten. Serialization happens **after** timed regions.
+Failed scenario results remain in the report and cause a nonzero exit status.
+
+This is a provenance and raw-sample retention improvement, **not a speed or
+allocation measurement**. The existing benchmark's lock still uses Solid
+core/signals rc.15, web rc.14 and Vite next.50, not the frozen rc.18 target.
+`solidV2Rc18Installed: false` makes that mismatch explicit. Used-heap deltas
+are not allocation samples; the runner does not yet capture paired startup,
+full application chunks, or rc.18 same-workload results. Keep these results
+out of whole-gap acceptance until those independent validations exist.
+
 ## Accessibility fixtures
 
 Run the benchmark development server, then scan the form fixtures in all

@@ -833,45 +833,40 @@ export function component<
       // `disconnectedCallback`, and running user handlers (which may touch
       // `internals()` on a detached host) against a torn-down context is
       // unsafe.
-      formAssociatedCallback(form: HTMLFormElement | null) {
-        if (!this._ctx || this._ctx._isDestroyed) return;
-        const arr = this._ctx._formAssociated;
-        if (!arr) return;
+      // Share the callback loop without rest arrays or dynamic-key dispatch.
+      // Passing arity explicitly preserves the browser's exact arguments and
+      // the handler-array receiver even for zero-argument reset callbacks.
+      private _dispatchFormCallbacks(
+        arr: ((...args: any[]) => void)[] | null | undefined,
+        count: 0 | 1 | 2,
+        first?: unknown,
+        second?: unknown,
+      ) {
+        if (!this._ctx || this._ctx._isDestroyed || !arr) return;
         for (let i = 0; i < arr.length; i++) {
           try {
-            arr[i](form);
+            if (count === 0) arr[i]();
+            else if (count === 1) arr[i](first);
+            else arr[i](first, second);
           } catch (err) {
+            // Handlers may reconnect the host before error propagation.
             this._ctx?._handleError(err);
           }
         }
+      }
+
+      formAssociatedCallback(form: HTMLFormElement | null) {
+        this._dispatchFormCallbacks(this._ctx?._formAssociated, 1, form);
       }
 
       formDisabledCallback(disabled: boolean) {
         this._formBridge?.setDisabled(disabled);
-        if (!this._ctx || this._ctx._isDestroyed) return;
-        const arr = this._ctx._formDisabled;
-        if (!arr) return;
-        for (let i = 0; i < arr.length; i++) {
-          try {
-            arr[i](disabled);
-          } catch (err) {
-            this._ctx?._handleError(err);
-          }
-        }
+        this._dispatchFormCallbacks(this._ctx?._formDisabled, 1, disabled);
       }
 
       formResetCallback() {
         this._formBridge?.reset();
-        if (!this._ctx || this._ctx._isDestroyed) return;
-        const arr = this._ctx._formReset;
-        if (!arr) return;
-        for (let i = 0; i < arr.length; i++) {
-          try {
-            arr[i]();
-          } catch (err) {
-            this._ctx?._handleError(err);
-          }
-        }
+        this._dispatchFormCallbacks(this._ctx?._formReset, 0);
       }
 
       formStateRestoreCallback(
@@ -879,16 +874,7 @@ export function component<
         mode: 'restore' | 'autocomplete',
       ) {
         if (state !== null) this._formBridge?.restore(state);
-        if (!this._ctx || this._ctx._isDestroyed) return;
-        const arr = this._ctx._formStateRestore;
-        if (!arr) return;
-        for (let i = 0; i < arr.length; i++) {
-          try {
-            arr[i](state, mode);
-          } catch (err) {
-            this._ctx?._handleError(err);
-          }
-        }
+        this._dispatchFormCallbacks(this._ctx?._formStateRestore, 2, state, mode);
       }
     }
 

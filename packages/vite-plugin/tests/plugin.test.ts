@@ -30,7 +30,8 @@ describe('@purityjs/vite-plugin', () => {
   });
 
   it('compiles client-only JIT imports without retaining a runtime compiler', () => {
-    const code = "import { html } from '@purityjs/core/jit-client';\nconst el = html\`<p>Client</p>\`;";
+    const code =
+      "import { html } from '@purityjs/core/jit-client';\nconst el = html\`<p>Client</p>\`;";
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     expect(result.code).toContain('createElement');

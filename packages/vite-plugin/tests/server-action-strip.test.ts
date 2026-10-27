@@ -412,7 +412,7 @@ describe('stripServerActionBodies — stub form', () => {
 
 describe('stripServerActions plugin option — wired into transform', () => {
   it('strips handler bodies in client builds by default', () => {
-    const plugin = purity();
+    const plugin = purity({ hydratable: true, strictAot: false });
     const code = [
       `import { serverAction } from '@purityjs/core/actions';`,
       `export const a = serverAction('/api/a', async (req) => {`,
@@ -426,7 +426,7 @@ describe('stripServerActions plugin option — wired into transform', () => {
   });
 
   it('does NOT strip in SSR builds (handler bodies must run on the server)', () => {
-    const plugin = purity();
+    const plugin = purity({ hydratable: true, strictAot: false });
     const code = [
       `import { serverAction } from '@purityjs/core/actions';`,
       `export const a = serverAction('/api/a', async (req) => {`,
@@ -439,7 +439,7 @@ describe('stripServerActions plugin option — wired into transform', () => {
   });
 
   it('respects stripServerActions: false (opt-out)', () => {
-    const plugin = purity({ stripServerActions: false });
+    const plugin = purity({ hydratable: true, strictAot: false, ...{ stripServerActions: false } });
     const code = [
       `import { serverAction } from '@purityjs/core/actions';`,
       `export const a = serverAction('/api/a', async (req) => {`,
@@ -456,7 +456,7 @@ describe('stripServerActions plugin option — wired into transform', () => {
   it('still respects the *.server.ts strip when both options are on', () => {
     // ADR 0018 takes precedence: a *.server.ts file is fully stripped, so we
     // never reach the per-call stripping pass.
-    const plugin = purity();
+    const plugin = purity({ hydratable: true, strictAot: false });
     const code = [
       `import { serverAction } from '@purityjs/core/actions';`,
       `export const a = serverAction('/api/a', async () => SECRET);`,
@@ -468,7 +468,7 @@ describe('stripServerActions plugin option — wired into transform', () => {
   });
 
   it('composes with html`` AOT compilation in non-server files', () => {
-    const plugin = purity();
+    const plugin = purity({ hydratable: true, strictAot: false });
     const code = [
       `import { html } from '@purityjs/core/jit'; import { serverAction } from '@purityjs/core/actions';`,
       `export const a = serverAction('/api/a', async () => SECRET);`,
@@ -488,7 +488,7 @@ describe('stripServerActions plugin option — wired into transform', () => {
   // identity map against the *rewritten* code, breaking stack traces. Emit a
   // v3 map (empty mappings) with the original sourcesContent instead.
   it('returns a non-null source map when only the strip rewrote the file', () => {
-    const plugin = purity();
+    const plugin = purity({ hydratable: true, strictAot: false });
     const code = [
       `import { serverAction } from '@purityjs/core/actions';`,
       `export const a = serverAction('/api/a', async () => SECRET);`,

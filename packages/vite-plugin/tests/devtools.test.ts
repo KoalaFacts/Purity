@@ -196,7 +196,7 @@ describe('development graph panel', () => {
 
 describe('DevTools Vite integration', () => {
   it.each([{}, { devtools: false }])('is opt-in: %s', (options) => {
-    const plugin = purity(options);
+    const plugin = purity({ hydratable: true, strictAot: false, ...options });
     plugin.configResolved({ root: process.cwd(), command: 'serve' });
     expect(plugin.transformIndexHtml('<html></html>')).toBe('<html></html>');
     expect(plugin.resolveId('virtual:purity-devtools')).toBeNull();
@@ -206,7 +206,7 @@ describe('DevTools Vite integration', () => {
   it.each(['/', '/Purity/', 'https://cdn.example.test/Purity/'])(
     'uses the resolved base %s',
     (base) => {
-      const plugin = purity({ devtools: true });
+      const plugin = purity({ hydratable: true, strictAot: false, ...{ devtools: true } });
       plugin.configResolved({ root: process.cwd(), command: 'serve', base });
       const path = base === '/' ? '/' : '/Purity/';
       expect(plugin.transformIndexHtml('<html></html>')).toMatchObject({
@@ -226,7 +226,7 @@ describe('DevTools Vite integration', () => {
   it.each([{ command: 'build' }, { command: 'serve', isPreview: true }])(
     'excludes DevTools from %s',
     (config) => {
-      const plugin = purity({ devtools: true });
+      const plugin = purity({ hydratable: true, strictAot: false, ...{ devtools: true } });
       plugin.config({}, { isPreview: config.isPreview });
       plugin.configResolved({ root: process.cwd(), ...config });
       expect(plugin.transformIndexHtml('<html></html>')).toBe('<html></html>');

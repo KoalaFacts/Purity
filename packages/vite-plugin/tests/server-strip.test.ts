@@ -8,7 +8,7 @@ import { join } from 'node:path';
 // Tests for the *.server.{ts,js,tsx,jsx} client-bundle strip — ADR 0018.
 
 describe('server-module strip — default behavior', () => {
-  const plugin = purity();
+  const plugin = purity({ hydratable: true, strictAot: false });
 
   function transform(code: string, id: string, ssr = false): unknown {
     return plugin.transform(code, id, { ssr });
@@ -93,7 +93,7 @@ describe('server-only production output boundary', () => {
       configFile: false,
       logLevel: 'silent',
       plugins: [
-        purity({ stripServerModules: enabled }),
+        purity({ hydratable: true, strictAot: false, ...{ stripServerModules: enabled } }),
         {
           name: 'security-fixture',
           resolveId: (id) =>
@@ -170,7 +170,9 @@ describe('server-only production output boundary', () => {
           root: dir,
           configFile: false,
           logLevel: 'silent',
-          plugins: [purity({ stripServerModules: enabled })],
+          plugins: [
+            purity({ hydratable: true, strictAot: false, ...{ stripServerModules: enabled } }),
+          ],
           build: {
             write: false,
             minify: false,
@@ -205,12 +207,15 @@ describe('server-only production output boundary', () => {
 
   it('handles long unterminated CSS URLs without regex backtracking', () => {
     expect(
-      purity().transform('.x { background: url(' + ' '.repeat(100000), 'style.css'),
+      purity({ hydratable: true, strictAot: false }).transform(
+        '.x { background: url(' + ' '.repeat(100000),
+        'style.css',
+      ),
     ).toBeNull();
   });
 
   it('rejects dynamic new-URL globs and emitted server assets', () => {
-    const plugin = purity();
+    const plugin = purity({ hydratable: true, strictAot: false });
     expect(() =>
       plugin.transform('.x { background: url("auth.serv\\65 r.ts?inline"); }', 'style.css'),
     ).toThrow(/Server-only modules cannot/);
@@ -228,7 +233,7 @@ describe('server-only production output boundary', () => {
 
 describe('server-module strip — opt out', () => {
   it('respects stripServerModules: false', () => {
-    const plugin = purity({ stripServerModules: false });
+    const plugin = purity({ hydratable: true, strictAot: false, ...{ stripServerModules: false } });
     const code = `
       import { serverAction } from '@purityjs/core/actions';
       export const x = serverAction('/api/x', async () => new Response('ok'));
@@ -243,7 +248,7 @@ describe('server-module strip — opt out', () => {
 });
 
 describe('server-module strip — composes with html`` compilation', () => {
-  const plugin = purity();
+  const plugin = purity({ hydratable: true, strictAot: false });
 
   it('strips even when the file also contains html`` calls', () => {
     // A *.server.ts file might still have `html``` (string-builder via the

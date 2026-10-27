@@ -126,7 +126,11 @@ describe('purity({ routes: { emitTo } }) — sibling .d.ts emit (ADR 0044)', () 
     });
     try {
       const plugin = purity({
-        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        hydratable: true,
+        strictAot: false,
+        ...{
+          routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        },
       });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
@@ -151,7 +155,11 @@ describe('purity({ routes: { emitTo } }) — sibling .d.ts emit (ADR 0044)', () 
     });
     try {
       const plugin = purity({
-        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        hydratable: true,
+        strictAot: false,
+        ...{
+          routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        },
       });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       // No resolveId / load — buildStart eager-emit only.
@@ -167,7 +175,11 @@ describe('purity({ routes: { emitTo } }) — sibling .d.ts emit (ADR 0044)', () 
   it('does NOT emit a .d.ts when emitTo is omitted', () => {
     const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
     try {
-      const plugin = purity({ routes: { dir: 'pages' } });
+      const plugin = purity({
+        hydratable: true,
+        strictAot: false,
+        ...{ routes: { dir: 'pages' } },
+      });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
         'purity:routes',
@@ -186,7 +198,11 @@ describe('purity({ routes: { emitTo } }) — sibling .d.ts emit (ADR 0044)', () 
     });
     try {
       const plugin = purity({
-        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        hydratable: true,
+        strictAot: false,
+        ...{
+          routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        },
       });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       (plugin as { buildStart: () => void }).buildStart();
@@ -208,7 +224,11 @@ describe('purity({ routes: { emitTo } }) — sibling .d.ts emit (ADR 0044)', () 
     try {
       // Unusual but legal: emitTo can target a `.tsx` consumer file.
       const plugin = purity({
-        routes: { dir: 'pages', emitTo: '.purity/routes.tsx' },
+        hydratable: true,
+        strictAot: false,
+        ...{
+          routes: { dir: 'pages', emitTo: '.purity/routes.tsx' },
+        },
       });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       (plugin as { buildStart: () => void }).buildStart();
@@ -224,7 +244,11 @@ describe('purity({ routes: { emitTo } }) — sibling .d.ts emit (ADR 0044)', () 
     const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
     try {
       const plugin = purity({
-        routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        hydratable: true,
+        strictAot: false,
+        ...{
+          routes: { dir: 'pages', emitTo: '.purity/routes.ts' },
+        },
       });
       (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
       (plugin as { buildStart: () => void }).buildStart();

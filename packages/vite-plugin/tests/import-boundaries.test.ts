@@ -16,7 +16,11 @@ for (const ssr of [false, true]) {
       ]) {
         it(`preserves import text in ${name} (${entry})`, () => {
           const source = `import { html } from '${entry}';\n${snippet}\nconst view = html\`<p>real</p>\`;`;
-          const result = purity().transform(source, 'app.ts', { ssr });
+          const result = purity({ hydratable: true, strictAot: false }).transform(
+            source,
+            'app.ts',
+            { ssr },
+          );
           expect(result).not.toBeNull();
           expect(result!.code).toContain(snippet);
           const parsed = parseSync('app.ts', result!.code);
@@ -43,7 +47,9 @@ for (const ssr of [false, true]) {
     ]) {
       it(`removes only the compiled binding from ${clause}`, () => {
         const source = `import ${clause} from '@purityjs/core/jit';\nconst view = html\`<p>real</p>\`;`;
-        const result = purity().transform(source, 'app.ts', { ssr });
+        const result = purity({ hydratable: true, strictAot: false }).transform(source, 'app.ts', {
+          ssr,
+        });
         const parsed = parseSync('app.ts', result!.code);
         expect(parsed.errors).toEqual([]);
         const imports = parsed.program.body.filter(
@@ -66,7 +72,11 @@ for (const ssr of [false, true]) {
       ]) {
         it(`handles line-comment terminator ${JSON.stringify(separator)} in ${clause}`, () => {
           const source = `import ${clause} from '@purityjs/core/jit';\nconst view = html\`<p>real</p>\`;`;
-          const result = purity().transform(source, 'app.ts', { ssr });
+          const result = purity({ hydratable: true, strictAot: false }).transform(
+            source,
+            'app.ts',
+            { ssr },
+          );
           const parsed = parseSync('app.ts', result!.code);
           expect(parsed.errors).toEqual([]);
           expect(result!.code).toContain('const view =');
@@ -83,21 +93,27 @@ for (const ssr of [false, true]) {
     it('keeps the next statement annotation attached to its call', () => {
       const annotation = '/* @__PURE__ */ doWork();';
       const source = `import { html } from '@purityjs/core/jit';\n${annotation}\nconst view = html\`<p>real</p>\`;`;
-      const result = purity().transform(source, 'app.ts', { ssr });
+      const result = purity({ hydratable: true, strictAot: false }).transform(source, 'app.ts', {
+        ssr,
+      });
       expect(result!.code).toContain(annotation);
     });
 
     it('keeps a leading line PURE annotation when the module has no imports', () => {
       const annotation = '// @__PURE__\ndoWork();';
       const source = `${annotation}\nconst view = html\`<p>real</p>\`;`;
-      const result = purity().transform(source, 'app.ts', { ssr });
+      const result = purity({ hydratable: true, strictAot: false }).transform(source, 'app.ts', {
+        ssr,
+      });
       expect(result!.code).toContain(annotation);
     });
 
     it('preserves source mapping after literal import text and Unicode', () => {
       const source =
         "import { html } from '@purityjs/core/jit';\nconst message = \"🌟 import { html } from '@purityjs/core/jit';\";\nconst view = html`<p>real</p>`;\nthrow new Error(message);";
-      const result = purity().transform(source, 'app.ts', { ssr });
+      const result = purity({ hydratable: true, strictAot: false }).transform(source, 'app.ts', {
+        ssr,
+      });
       const lines = result!.code.split('\n');
       const line = lines.findIndex((text) => text.includes('throw new Error(message)')) + 1;
       const map = new SourceMapConsumer(result!.map);

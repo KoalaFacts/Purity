@@ -30,7 +30,7 @@ describe('vite build pipeline', () => {
       root: dir,
       configFile: false,
       logLevel: 'error',
-      plugins: [purity({ devtools: true })],
+      plugins: [purity({ hydratable: true, strictAot: false, ...{ devtools: true } })],
       build: { write: false },
     });
     const output = (Array.isArray(result) ? result[0] : result).output;
@@ -63,7 +63,7 @@ describe('vite build pipeline', () => {
         },
         rolldownOptions: { external: [/^@purityjs\//] },
       },
-      plugins: [purity()],
+      plugins: [purity({ hydratable: true, strictAot: false })],
     })) as Array<{ output: Array<{ fileName: string; code?: string; source?: string }> }>;
 
     const outputs = Array.isArray(result) ? result[0].output : (result as any).output;
@@ -107,7 +107,7 @@ describe('vite build pipeline', () => {
         },
         rolldownOptions: { external: [/^@purityjs\//] },
       },
-      plugins: [purity()],
+      plugins: [purity({ hydratable: true, strictAot: false })],
     })) as Array<{ output: Array<any> }>;
 
     const outputs = Array.isArray(result) ? result[0].output : (result as any).output;
@@ -135,7 +135,7 @@ describe('vite build pipeline', () => {
       configFile: false,
       logLevel: 'error',
       resolve: { alias: { '@purityjs/core': join(dir, 'core.ts') } },
-      plugins: [purity()],
+      plugins: [purity({ hydratable: true, strictAot: false })],
       build: {
         write: false,
         minify: false,

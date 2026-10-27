@@ -7,7 +7,7 @@ const IMPORT = "import { html } from '@purityjs/core/jit';\n";
 const MIXED = 'html`<a title="x ${v}">y</a>`';
 
 describe('AOT template discovery is AST based', () => {
-  const plugin: any = purity();
+  const plugin: any = purity({ hydratable: true, strictAot: false });
 
   it.each([false, true])('leaves html`` text in a JSDoc comment alone (ssr=%s)', (ssr) => {
     const code = `${IMPORT}/**\n * Example: ${MIXED}\n */\nexport const view = () => 1;\n`;
@@ -61,7 +61,7 @@ export const el = <div />;
   });
 
   describe('non-ASCII source offsets', () => {
-    const plugin: any = purity();
+    const plugin: any = purity({ hydratable: true, strictAot: false });
 
     it('compiles a template after a non-ASCII comment and leaves the rest byte-identical', () => {
       const before = `${IMPORT}// 中文注释 🧪 说明\n`;
@@ -86,7 +86,11 @@ export const el = <div />;
   });
 
   describe('container submodules (single-file components)', () => {
-    const vuePlugin: any = purity({ include: ['.vue', '.ts', '.tsx', '.js', '.jsx'] });
+    const vuePlugin: any = purity({
+      hydratable: true,
+      strictAot: false,
+      ...{ include: ['.vue', '.ts', '.tsx', '.js', '.jsx'] },
+    });
     // Container plugins such as @vitejs/plugin-vue hand purity each script as a
     // pure-JS virtual module with its language in the `lang.*` query.
     const SUB = 'Card.vue?vue&type=script&setup=true&lang.ts';

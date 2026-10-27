@@ -9,7 +9,7 @@ import { flattenValue, renderCompiledTemplate, swapSlot } from '@purityjs/core/r
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
-const plugin = purity();
+const plugin = purity({ hydratable: true, strictAot: false });
 
 function evalAot(userCode: string): { make: (...args: any[]) => Node } {
   const result = plugin.transform(userCode, 'app.ts');

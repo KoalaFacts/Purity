@@ -71,7 +71,7 @@ describe('ordinary list specialization', () => {
 
   it('runs in client modules without templates and preserves server imports', () => {
     const source = "import { each } from '@purityjs/core'; each(items, render);";
-    const plugin = purity();
+    const plugin = purity({ hydratable: true, strictAot: false });
     const client = plugin.transform(source, '/app/list.ts');
     expect(client?.code).toContain('@purityjs/core/list-runtime');
     expect(client?.map.sourcesContent).toEqual([source]);
@@ -94,7 +94,7 @@ describe('ordinary list specialization', () => {
       { alias: [{ ...runtime, find: /^@purityjs\/core\/list-runtime$/g }, root], enabled: true },
     ];
     for (const { alias, enabled } of cases) {
-      const plugin = purity();
+      const plugin = purity({ hydratable: true, strictAot: false });
       plugin.configResolved({ root: '/app', resolve: { alias } });
       const result = plugin.transform(source, '/app/list.ts');
       if (enabled) expect(result?.code).toContain('@purityjs/core/list-runtime');

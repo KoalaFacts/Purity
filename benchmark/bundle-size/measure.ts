@@ -16,6 +16,7 @@ interface Sizes {
 }
 interface Measurement extends Sizes {
   profile: string;
+  compilation: 'jit' | 'hydrate' | 'client';
   functionConstructorCalls: number;
   chunks: Array<Sizes & { file: string }>;
 }
@@ -95,7 +96,11 @@ function functionConstructorCalls(file: string, code: string): number {
   return calls;
 }
 
-async function measure(scenario: (typeof scenarios)[number], aot: boolean): Promise<Measurement> {
+async function measure(
+  scenario: (typeof scenarios)[number],
+  aot: boolean,
+  clientOnly = false,
+): Promise<Measurement> {
   const templates = new Set(scenario.templates.map((file) => join(import.meta.dirname, file)));
   const seen = new Set<string>();
   const inspectTransform: Plugin = {
@@ -115,7 +120,10 @@ async function measure(scenario: (typeof scenarios)[number], aot: boolean): Prom
     mode: 'production',
     logLevel: 'error',
     resolve: { conditions: ['module', 'browser', 'production'] },
-    plugins: [...(aot ? [purity({ strictAot: true })] : []), inspectTransform],
+    plugins: [
+      ...(aot ? [purity({ strictAot: true, hydratable: !clientOnly })] : []),
+      inspectTransform,
+    ],
     build: {
       write: false,
       target: 'es2022',
@@ -162,7 +170,7 @@ async function measure(scenario: (typeof scenarios)[number], aot: boolean): Prom
     !renderedModules.some((id) => id.includes('/packages/core/src/')),
     'Source export measured',
   );
-  const profile = `${scenario.name}-${aot ? 'aot' : 'runtime'}`;
+  const profile = `${scenario.name}${clientOnly ? '-csr' : ''}-${aot ? 'aot' : 'runtime'}`;
   if (aot && (scenario.name === 'controls' || scenario.name === 'hydration')) {
     assert(
       chunks.every((chunk) => !chunk.code.includes('data-purity-window-spacer')),
@@ -181,6 +189,7 @@ async function measure(scenario: (typeof scenarios)[number], aot: boolean): Prom
   );
   return {
     profile,
+    compilation: aot ? (clientOnly ? 'client' : 'hydrate') : 'jit',
     ...total,
     chunks: measured,
     functionConstructorCalls: chunks.reduce(
@@ -288,6 +297,7 @@ for (const entry of packageEntries) packageMeasurements.push(await measurePackag
 const measurements: Measurement[] = [];
 for (const scenario of scenarios) {
   measurements.push(await measure(scenario, false), await measure(scenario, true));
+  if (scenario.name !== 'hydration') measurements.push(await measure(scenario, true, true));
 }
 let verification: {
   status: string;
@@ -360,7 +370,7 @@ for (const item of measurements) {
 const git = (...args: string[]) =>
   execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 const report = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   revision: git('rev-parse', 'HEAD'),
   dirty: git('status', '--porcelain', '--untracked-files=normal').length > 0,
   node: process.versions.node,

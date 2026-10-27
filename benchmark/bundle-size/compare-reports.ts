@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import currentBudgets from './budgets.json' with { type: 'json' };
+import v4Budgets from './budgets-v4.json' with { type: 'json' };
 import legacyBudgets from './budgets-v3.json' with { type: 'json' };
 
 interface Size {
@@ -20,6 +21,7 @@ interface Chunk extends Size {
 interface Entry extends Size {
   entry?: string;
   profile?: string;
+  compilation?: 'jit' | 'hydrate' | 'client';
   chunks?: Chunk[];
   functionConstructorCalls?: number;
 }
@@ -161,6 +163,10 @@ const profileNames = ['counter', 'controls', 'form', 'hydration', 'resource'].fl
 ]);
 const packageNamesV4 = [...packageNames, 'core-jit-client'];
 const profileNamesV4 = [...profileNames, 'counter-client-runtime', 'counter-client-aot'];
+const profileNamesV5 = [
+  ...profileNamesV4,
+  ...['counter', 'counter-client', 'controls', 'form', 'resource'].map((name) => name + '-csr-aot'),
+];
 const fixtureNames = [
   'counter.ts',
   'controls.ts',
@@ -185,10 +191,10 @@ function validateReportContract(report: Report, label: string) {
   assert(report?.revision, 'Missing revision: ' + label);
   assert(report.dirty === false, 'Dirty build is not comparable');
   assert(
-    report.schemaVersion === 3 || report.schemaVersion === 4,
+    report.schemaVersion === 3 || report.schemaVersion === 4 || report.schemaVersion === 5,
     'Unsupported schemaVersion: ' + label,
   );
-  const expanded = report.schemaVersion === 4;
+  const expanded = report.schemaVersion >= 4;
   for (const key of ['node', 'zlib', 'brotli', 'scope'] as const) {
     assert(
       typeof report[key] === 'string' && report[key].trim().length > 0,
@@ -246,7 +252,7 @@ function validateReportContract(report: Report, label: string) {
   }
   assert.equal(
     normalized(report.budgets),
-    normalized(expanded ? currentBudgets : legacyBudgets),
+    normalized(report.schemaVersion === 5 ? currentBudgets : expanded ? v4Budgets : legacyBudgets),
     'Missing or changed v' + report.schemaVersion + ' budgets: ' + label,
   );
   assert(Array.isArray(report.packages), 'Missing package entries: ' + label);
@@ -259,7 +265,7 @@ function validateReportContract(report: Report, label: string) {
   );
   coverage(
     [...unique(report.measurements, 'profile').keys()],
-    expanded ? profileNamesV4 : profileNames,
+    report.schemaVersion === 5 ? profileNamesV5 : expanded ? profileNamesV4 : profileNames,
     label + '/measurements',
     report.schemaVersion,
   );
@@ -269,7 +275,21 @@ function validateReportContract(report: Report, label: string) {
       'Incomplete Function constructor evidence: ' + label + '/' + (row.entry ?? row.profile),
     );
   }
-  for (const row of report.measurements) allChunks(row, label + '/' + row.profile);
+  for (const row of report.measurements) {
+    allChunks(row, label + '/' + row.profile);
+    if (report.schemaVersion === 5) {
+      const expected = row.profile!.endsWith('-csr-aot')
+        ? 'client'
+        : row.profile!.endsWith('-aot')
+          ? 'hydrate'
+          : 'jit';
+      assert.equal(
+        row.compilation,
+        expected,
+        'Missing or changed compilation mode: ' + label + '/' + row.profile,
+      );
+    }
+  }
 }
 
 export function compareSizeReports(base: Report, candidate: Report) {
@@ -295,6 +315,11 @@ export function compareSizeReports(base: Report, candidate: Report) {
     assert.deepEqual([...a.keys()].sort(), [...b.keys()].sort(), 'Changed entry coverage: ' + kind);
     return [...a].map(([name, old]) => {
       const next = b.get(name)!;
+      assert.equal(
+        old.compilation,
+        next.compilation,
+        'INCOMPARABLE: changed compilation mode for ' + name,
+      );
       const change = delta(name, old, next);
       if (kind === 'packages') {
         const budget = base.budgets.packages[name]?.brotliBytes;

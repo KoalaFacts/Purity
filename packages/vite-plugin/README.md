@@ -1,5 +1,7 @@
 # @purityjs/vite-plugin
 
+**Breaking default:** `purity()` now produces strict client-only AOT. SSR clients and hydrated component libraries must explicitly use `purity({ hydratable: true })`. Runtime fallback requires `strictAot: false`. See [migration and complete-application evidence](../../docs/client-first-aot.md).
+
 [![npm version](https://img.shields.io/npm/v/@purityjs/vite-plugin.svg)](https://www.npmjs.com/package/@purityjs/vite-plugin)
 [![npm downloads](https://img.shields.io/npm/dm/@purityjs/vite-plugin.svg)](https://www.npmjs.com/package/@purityjs/vite-plugin)
 [![bundle size](https://img.shields.io/bundlephobia/minzip/@purityjs/vite-plugin?label=gzipped)](https://bundlephobia.com/package/@purityjs/vite-plugin)
@@ -15,8 +17,7 @@ AOT template compilation for Purity. Compiles `html` tagged templates at build t
 | Dynamic code generation | JIT uses `Function`                      | AOT factories and hydration walkers avoid JIT evaluation |
 | Browser compiler        | Parser and code generator retained       | Compiled templates use `@purityjs/core/runtime`          |
 
-By default, nonfatal compilation failures warn and preserve the runtime tag.
-Enable `strictAot` to make these failures fatal and check client build output.
+By default, compilation failures stop the build and client output must not retain the runtime compiler. Only explicit `strictAot: false` permits nonfatal warning-and-JIT fallback.
 
 ## Install
 
@@ -36,7 +37,7 @@ export default defineConfig({
 });
 ```
 
-That's it. No other config needed.
+This is the client-only setup. For an SSR client, use `purity({ hydratable: true })`; otherwise compiled templates do not adopt server DOM.
 
 ## What It Does
 
@@ -64,7 +65,8 @@ No runtime parsing. No `new Function()`. Direct DOM calls.
 
 ```ts
 purity({
-  strictAot: true, // fail compilation and reject retained client JIT code (default: false)
+  strictAot: true, // fail compilation and reject retained client JIT code (default: true)
+  hydratable: false, // opt in only for SSR clients or hydrated component libraries
   devtools: true, // opt-in reactive graph panel during vite dev only (default: false)
   include: [".ts", ".js", ".tsx", ".jsx"], // file extensions to transform (default)
 });
@@ -77,7 +79,7 @@ exclude the panel. See [Debugging Purity apps](../../docs/debugging.md) for deta
 
 ## Strict AOT builds
 
-Opt in in your Vite configuration:
+Strict AOT is the default; the explicit form is:
 
 ```ts
 export default defineConfig({
@@ -87,8 +89,8 @@ export default defineConfig({
 
 With `strictAot: true`, a module syntax error or a template parse/code-generation
 failure stops transformation with the source filename, line and column, plus the
-underlying error and a repair hint. This includes nested templates. The default
-`strictAot: false` keeps the existing warning-and-JIT fallback for nonfatal errors;
+underlying error and a repair hint. This includes nested templates. Explicit
+`strictAot: false` permits warning-and-JIT fallback for nonfatal errors;
 unsupported or unsafe bindings remain fatal in either mode.
 
 During `vite build`, strict AOT also checks every emitted **client** JavaScript
@@ -165,7 +167,7 @@ audit of application code, other libraries, or code loaded outside the bundle.
 4. Generates optimized JS using `@purityjs/core`'s codegen
 5. Replaces the `html`...`` call with the compiled output
 6. Removes `html` from imports (dead code eliminated)
-7. Imports the precompiled factory/hydration helpers from `@purityjs/core/runtime`
+7. Calls client create factories with the shared `watch` implementation by default; only `hydratable: true` emits hydration walkers and the mode-selecting runtime helper
 
 The plugin only transforms user code — framework internals are skipped.
 

@@ -312,7 +312,7 @@ try {
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   await writeFile(
     join(project, 'vite.config.ts'),
-    "import { purity } from '@purityjs/vite-plugin';\nimport { defineConfig } from 'vite';\nexport default defineConfig({ plugins: [purity()] });\n",
+    "import { purity } from '@purityjs/vite-plugin';\nimport { defineConfig } from 'vite';\nexport default defineConfig({ plugins: [purity({ hydratable: true })] });\n",
   );
   await run([npmCli, 'install', '--no-audit', '--no-fund'], project);
   for (const pkg of ['@purityjs/core', '@purityjs/ssr', '@purityjs/vite-plugin']) {

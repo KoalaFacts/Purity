@@ -20,14 +20,17 @@ describe('strict AOT diagnostics', () => {
     "import { html } from '@purityjs/core/jit';\n    const bad = html`<my:component/>`;";
 
   it('fails real code generation with the source location and a repair hint', () => {
-    expect(() => purity({ strictAot: true }).transform(source, '/app/view.ts')).toThrow(
-      /\/app\/view\.ts:2:17.*failed to compile html``.*Invalid[\s\S]*strictAot/,
-    );
+    expect(() =>
+      purity({ hydratable: true, strictAot: false, ...{ strictAot: true } }).transform(
+        source,
+        '/app/view.ts',
+      ),
+    ).toThrow(/\/app\/view\.ts:2:17.*failed to compile html``.*Invalid[\s\S]*strictAot/);
   });
 
   it('rejects a module parse failure with location information', () => {
     expect(() =>
-      purity({ strictAot: true }).transform(
+      purity({ hydratable: true, strictAot: false, ...{ strictAot: true } }).transform(
         "import { html } from '@purityjs/core/jit';\nconst bad = html`<p>unfinished;",
         '/app/view.ts',
       ),
@@ -36,7 +39,7 @@ describe('strict AOT diagnostics', () => {
 
   it('rejects a nested real code generation failure', () => {
     expect(() =>
-      purity({ strictAot: true }).transform(
+      purity({ hydratable: true, strictAot: false, ...{ strictAot: true } }).transform(
         "import { html } from '@purityjs/core/jit';\nconst view = html`<div>${html`<my:component/>`}</div>`;",
         '/app/view.ts',
       ),
@@ -45,7 +48,7 @@ describe('strict AOT diagnostics', () => {
 
   it('adds source diagnostics to existing fatal template errors', () => {
     expect(() =>
-      purity({ strictAot: true }).transform(
+      purity({ hydratable: true, strictAot: false, ...{ strictAot: true } }).transform(
         "import { html } from '@purityjs/core/jit';\nconst bad = html`<button onclick=${handler}>go</button>`;",
         '/app/view.ts',
       ),
@@ -60,17 +63,24 @@ describe('strict AOT diagnostics', () => {
       'const count = state(0);',
       'const view = html`<my:component/>`;',
     ].join('\n');
-    expect(() => purity({ strictAot: true }).transform(source, '/app/view.ts')).toThrow(
-      /view\.ts:5:14.*Invalid tag name/,
-    );
+    expect(() =>
+      purity({ hydratable: true, strictAot: false, ...{ strictAot: true } }).transform(
+        source,
+        '/app/view.ts',
+      ),
+    ).toThrow(/view\.ts:5:14.*Invalid tag name/);
   });
 
   it('also fails SSR compilation when a template cannot compile', () => {
     // A JavaScript parse error is a compilation failure in either target.
     expect(() =>
-      purity({ strictAot: true }).transform('const view = html`<p>unfinished;', '/app/view.ts', {
-        ssr: true,
-      }),
+      purity({ hydratable: true, strictAot: false, ...{ strictAot: true } }).transform(
+        'const view = html`<p>unfinished;',
+        '/app/view.ts',
+        {
+          ssr: true,
+        },
+      ),
     ).toThrow(/could not parse/);
   });
 });
@@ -105,8 +115,12 @@ describe('strict production client output', () => {
       resolve: { alias: options.external ? [] : aliases },
       plugins: [
         purity({
-          strictAot: options.strict !== false,
-          include: options.skip ? ['.ts'] : undefined,
+          hydratable: true,
+          strictAot: false,
+          ...{
+            strictAot: options.strict !== false,
+            include: options.skip ? ['.ts'] : undefined,
+          },
         }),
         ...(options.suppressWarnings
           ? [
@@ -312,7 +326,7 @@ describe('strict production client output', () => {
         root: dir,
         configFile: false,
         logLevel: 'silent',
-        plugins: [purity({ strictAot: true })],
+        plugins: [purity({ hydratable: true, strictAot: false, ...{ strictAot: true } })],
         build: {
           write: false,
           lib: { entry: join(dir, 'entry.js'), formats: ['es'], fileName: 'out' },

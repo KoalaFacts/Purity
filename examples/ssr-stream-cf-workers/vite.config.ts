@@ -15,9 +15,7 @@ import { defineConfig } from 'vite-plus';
 
 export default defineConfig({
   plugins: [
-    purity({
-      routes: { dir: 'src/pages', emitTo: 'src/.purity/routes.ts' },
-    }),
+    purity({ hydratable: true, routes: { dir: 'src/pages', emitTo: 'src/.purity/routes.ts' } }),
   ],
   resolve: {
     alias: {

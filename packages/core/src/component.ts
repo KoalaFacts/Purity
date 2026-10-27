@@ -311,6 +311,26 @@ export function hydratePendingCustomElements(root: ParentNode): void {
  * hydrate(document.getElementById('app')!, App);
  * ```
  */
+// Share the failure and success lifecycle of mount() and hydrate() without
+// changing the order in which they restore their render contexts.
+function abandonRender(ctx: ComponentContext, err: unknown): MountResult {
+  // Suppress destroy handlers for a render that never completed; error
+  // handlers still run while the failed context has a parent.
+  ctx.destroyed = null;
+  try {
+    ctx._handleError(err);
+  } finally {
+    unmountContext(ctx);
+  }
+  return { unmount: () => {} };
+}
+
+function finishRender(ctx: ComponentContext): MountResult {
+  ctx._isMounted = true;
+  scheduleMountCallbacks(ctx);
+  return { unmount: () => unmountContext(ctx) };
+}
+
 export function hydrate(container: Element, component: ComponentFn): MountResult {
   // Empty container — nothing to hydrate. Fall back to a fresh mount so
   // hydrate() works as a drop-in for mount() in dev/test setups that
@@ -338,17 +358,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   } catch (err) {
     exitHydration();
     popContext();
-    // Report while error handlers and the parent are still available, then
-    // release everything the abandoned render created, even on rethrow.
-    // An error handler can unmount the parent while this child is attached.
-    // Suppress the failed render's destroy lifecycle before dispatching it.
-    ctx.destroyed = null;
-    try {
-      ctx._handleError(err);
-    } finally {
-      unmountContext(ctx);
-    }
-    return { unmount: () => {} };
+    return abandonRender(ctx, err);
   }
   exitHydration();
   popContext();
@@ -390,11 +400,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   }
 
   hydratePendingCustomElements(container);
-  ctx._isMounted = true;
-
-  scheduleMountCallbacks(ctx);
-
-  return { unmount: () => unmountContext(ctx) };
+  return finishRender(ctx);
 }
 
 const RESOURCE_SCRIPT_ID = '__purity_resources__';
@@ -510,17 +516,7 @@ export function mount(component: ComponentFn, container: Element): MountResult {
     fragment = component();
   } catch (err) {
     popContext();
-    // A failed render has no usable unmount handle. Keep error propagation
-    // intact, but always tear down its subscriptions and completed children.
-    // An error handler can unmount the parent while this child is attached.
-    // Suppress the failed render's destroy lifecycle before dispatching it.
-    ctx.destroyed = null;
-    try {
-      ctx._handleError(err);
-    } finally {
-      unmountContext(ctx);
-    }
-    return { unmount: () => {} };
+    return abandonRender(ctx, err);
   }
 
   popContext();
@@ -535,11 +531,7 @@ export function mount(component: ComponentFn, container: Element): MountResult {
     container.appendChild(fragment);
   }
 
-  ctx._isMounted = true;
-
-  scheduleMountCallbacks(ctx);
-
-  return { unmount: () => unmountContext(ctx) };
+  return finishRender(ctx);
 }
 
 // ---------------------------------------------------------------------------

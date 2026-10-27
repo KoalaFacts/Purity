@@ -1,0 +1,62 @@
+name: Temporary secure Svelte dependency resolution
+
+on:
+  push:
+    branches: [fix/sv2-012-hydration-mode-failfast]
+    paths:
+      - .github/workflows/resolve-deepmerge.yml
+
+permissions:
+  contents: write
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.21.0'
+          cache: npm
+      - name: Resolve only the audited Svelte transitive package
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { execFileSync } from 'node:child_process';
+          import { readFileSync } from 'node:fs';
+          const old = JSON.parse(execFileSync('git', ['show', 'HEAD:package-lock.json'], { encoding: 'utf8' }));
+          const now = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+          const alias = now.packages['node_modules/deepmerge'];
+          assert.equal(alias.name, '@stackline/deepmerge');
+          assert.equal(alias.version, '1.1.0');
+          assert(alias.integrity?.startsWith('sha512-'));
+          delete old.packages['node_modules/deepmerge'];
+          delete now.packages['node_modules/deepmerge'];
+          assert.deepEqual(now.packages, old.packages, 'Unexpected other package resolution changed');
+          NODE
+      - name: Install exact lockfile and audit all dependencies
+        run: |
+          npm ci
+          npm audit --audit-level=low
+          node --experimental-strip-types benchmark/tools/svelte-merge-security.ts
+      - name: Format, targeted tests, and both framework build paths
+        run: |
+          npm run format
+          npm run format:check
+          npm run lint
+          npm run test -w @purityjs/core
+          npm run test -w @purityjs/vite-plugin
+          npm run build -w @purityjs/core
+          npm run build -w @purityjs/vite-plugin
+          npm run build -w benchmark
+      - name: Remove temporary workflow and fast-forward the single WIP
+        run: |
+          git rm .github/workflows/resolve-deepmerge.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json benchmark/tools/svelte-merge-security.ts packages/core/src/component.ts packages/vite-plugin/tests/client-first-aot.test.ts docs/client-first-aot.md
+          git commit -m 'fix(build): replace vulnerable Svelte tooling deepmerge with pinned safe alias' -m 'The original CI audit failed on GHSA-gcqx-w48m-w2h4, upstream 7.3.1 still pins deepmerge@4.3.1 with no fix. Use @stackline/deepmerge@1.1.0 only as a transitive Svelte tooling override, prove prototype safety and standard semantics, and preserve all other locked packages.'
+          test "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | cut -f1)" = "$GITHUB_SHA"
+          git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"

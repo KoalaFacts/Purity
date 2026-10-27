@@ -25,8 +25,8 @@ assert.equal(target.baseline, 'Solid 2.0.0-rc.18');
 assert.equal(lock.lockfileVersion, 3);
 assert.equal(lock.packages['']?.name, manifest.name);
 assert.deepEqual(lock.packages['']?.dependencies, manifest.dependencies);
-assert.equal(manifest.dependencies.vite, '8.0.0');
-assert.equal(lock.packages['node_modules/vite']?.version, '8.0.0');
+assert.equal(manifest.dependencies.vite, '8.3.5');
+assert.equal(lock.packages['node_modules/vite']?.version, '8.3.5');
 assert.equal(Object.hasOwn(manifest.dependencies, '@solidjs/start'), false);
 
 const pinned = target.packages.filter((entry: any) => entry.includedInSolid2Target === true);

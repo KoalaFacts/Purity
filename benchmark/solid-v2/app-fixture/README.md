@@ -6,8 +6,13 @@ components and must never be relabelled as rc.18.
 
 Exact direct versions are drawn from `../target.json`: core, signals,
 web, compiler and Babel plugin `2.0.0-rc.18`; Vite plugin
-`3.0.0-next.51`; router `2.0.0-next.42`. Vite is fixed to `8.0.0`.
+`3.0.0-next.51`; router `2.0.0-next.42`. Vite is fixed to `8.3.5`.
 SolidStart `2.1.0` is excluded because of its Solid v1 peer requirements.
+
+The original #302 build used Vite `8.0.0`. Its archived sizes and hashes remain
+historical evidence for that toolchain; they must not be relabelled as results
+of this dependency update. New reports have their own source and lock identity.
+The frozen Solid target and legacy benchmark inputs remain unchanged.
 
 This folder has a **committed full transitive npm lock**, produced with Node
 24.21.0, reinstalled with `npm ci --ignore-scripts` and cross-verified

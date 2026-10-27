@@ -13,7 +13,7 @@ permissions:
 jobs:
   isolated-lock:
     name: Build and inventory pinned rc.18 counter fixture
-    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'evidence/sv2-001-rc18-isolated-app-lock' }}
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && (github.head_ref == 'evidence/sv2-001-rc18-isolated-app-lock' || startsWith(github.head_ref, 'dependabot/npm_and_yarn/benchmark/solid-v2/app-fixture/')) }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact PR head

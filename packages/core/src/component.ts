@@ -328,7 +328,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   // shell's cached values into a fresh render (and clobber another root's
   // module-level cache) as a side effect.
   if (!container.firstChild) {
-    return mountComponent(component, container, true);
+    return mountHydrated(component, container);
   }
 
   // Resource values must be primed before the component creates subscriptions.
@@ -404,7 +404,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
       // (set only on the success path below), so no DOM is touched here.
       unmountContext(ctx);
       while (container.firstChild) container.removeChild(container.firstChild);
-      return mountComponent(component, container, true);
+      return mountHydrated(component, container);
     }
     ctx.nodes = Array.from(container.childNodes);
   } else if (view instanceof Node && view.parentNode === container) {
@@ -541,14 +541,6 @@ function normalizeCachePayload(parsed: unknown): {
 }
 
 export function mount(component: ComponentFn, container: Element): MountResult {
-  return mountComponent(component, container, false);
-}
-
-function mountComponent(
-  component: ComponentFn,
-  container: Element,
-  hydrating: boolean,
-): MountResult {
   const ctx = new ComponentContext();
   attachToOwner(ctx, unmountContext);
 
@@ -584,12 +576,27 @@ function mountComponent(
     container.appendChild(fragment);
   }
 
-  if (hydrating) hydratedRoots.set(container, ++hydrationRevision);
   ctx._isMounted = true;
 
   scheduleMountCallbacks(ctx);
 
   return { unmount: () => unmountContext(ctx) };
+}
+
+// Keep the cache-commit tracking entirely on the hydrate path. A render that
+// throws but is handled by onError returns a no-op mount handle; it did not
+// commit a new root and must not invalidate an outer rollback checkpoint.
+// Ordinary CSR mount() stays independent of hydration revisions, allowing
+// applications that never hydrate to tree-shake this ownership machinery.
+function mountHydrated(component: ComponentFn, container: Element): MountResult {
+  let rendered = false;
+  const result = mount(() => {
+    const view = component();
+    rendered = true;
+    return view;
+  }, container);
+  if (rendered) hydratedRoots.set(container, ++hydrationRevision);
+  return result;
 }
 
 // ---------------------------------------------------------------------------

@@ -148,7 +148,7 @@ function prepareResourceHydrationCache(container: Element): Element[] {
   // Nested SSR islands own their resource scripts. A parent shell must not
   // prime or consume a deferred island before its own hydration trigger.
   const ownerIsland = container.closest('purity-island');
-  const inRoot = container.querySelectorAll(`script[id^="${prefix}"]`);
+  const inRoot = container.querySelectorAll(`script[type="application/json"][id^="${prefix}"]`);
   const scripts: Element[] = [];
   for (let i = 0; i < inRoot.length; i++) {
     const script = inRoot[i]!;
@@ -157,7 +157,11 @@ function prepareResourceHydrationCache(container: Element): Element[] {
   let sibling = container.nextElementSibling;
   // An unrelated script ends this root's streaming chunk sequence; scanning
   // past it would adopt and delete serialization owned by another source.
-  while (sibling?.tagName === 'SCRIPT' && sibling.id.startsWith(prefix)) {
+  while (
+    sibling?.tagName === 'SCRIPT' &&
+    sibling.id.startsWith(prefix) &&
+    sibling.getAttribute('type') === 'application/json'
+  ) {
     scripts.push(sibling);
     sibling = sibling.nextElementSibling;
   }
@@ -171,36 +175,30 @@ function prepareResourceHydrationCache(container: Element): Element[] {
     keyed: Object.create(null) as Record<string, unknown>,
   };
   const shell = scripts.find((script) => script.id === '__purity_resources__');
-  if (shell?.textContent != null) {
+  // Decode the shell first, even when a streaming boundary appears earlier
+  // in the DOM. Boundary entries must override shell keys on collisions.
+  // Both shapes use the same safe accumulator and JSON handling path.
+  for (let i = -1; i < scripts.length; i++) {
+    const script = i < 0 ? shell : scripts[i]!;
+    if (!script || (i >= 0 && script === shell) || script.textContent == null) continue;
     try {
-      const parsed: unknown = JSON.parse(shell.textContent);
-      if (Array.isArray(parsed)) merged.ordered = parsed;
-      else if (parsed && typeof parsed === 'object') {
+      const parsed: unknown = JSON.parse(script.textContent);
+      if (i < 0 && Array.isArray(parsed)) {
+        merged.ordered = parsed;
+      } else if (parsed && typeof parsed === 'object') {
         const data = parsed as { ordered?: unknown; keyed?: unknown };
-        if (Array.isArray(data.ordered)) merged.ordered = data.ordered;
+        if (i < 0 && Array.isArray(data.ordered)) merged.ordered = data.ordered;
         if (data.keyed && typeof data.keyed === 'object') {
           Object.assign(merged.keyed, data.keyed);
         }
       }
     } catch (err) {
-      console.error('[Purity] Failed to parse hydration cache:', err);
-    }
-  }
-  for (let i = 0; i < scripts.length; i++) {
-    const script = scripts[i]!;
-    if (script === shell || script.textContent == null) continue;
-    try {
-      const parsed = JSON.parse(script.textContent) as { keyed?: unknown };
-      if (
-        parsed &&
-        typeof parsed === 'object' &&
-        parsed.keyed &&
-        typeof parsed.keyed === 'object'
-      ) {
-        Object.assign(merged.keyed, parsed.keyed);
-      }
-    } catch (err) {
-      console.error('[Purity] Failed to parse per-boundary hydration cache:', err);
+      console.error(
+        i < 0
+          ? '[Purity] Failed to parse hydration cache:'
+          : '[Purity] Failed to parse per-boundary hydration cache:',
+        err,
+      );
     }
   }
   primeHydrationCache(merged);

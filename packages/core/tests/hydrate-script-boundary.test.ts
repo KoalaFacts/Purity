@@ -40,3 +40,57 @@ it('stops adjacent streaming cache discovery at an unrelated script', () => {
     owner.unmount();
   }
 });
+
+it('does not consume an executable script with a resource-shaped id', () => {
+  const root = document.createElement('main');
+  const p = document.createElement('p');
+  p.textContent = 'root';
+  const executable = document.createElement('script');
+  executable.type = 'text/javascript';
+  executable.id = '__purity_resources__';
+  executable.textContent = '{"keyed":{"wrong":"untrusted"}}';
+  root.append(p, executable);
+  document.body.append(root);
+
+  let borrowed: unknown;
+  const owner = hydrate(root, () => {
+    borrowed = consumeHydrationValue('wrong');
+    return p;
+  });
+  try {
+    expect(borrowed).toBeUndefined();
+    expect(executable.parentNode).toBe(root);
+    expect(root.firstChild).toBe(p);
+  } finally {
+    owner.unmount();
+  }
+});
+
+it('does not cross a non-JSON script even if its id resembles streaming cache', () => {
+  const root = document.createElement('main');
+  const p = document.createElement('p');
+  root.append(p);
+  const unrelated = document.createElement('script');
+  unrelated.type = 'text/javascript';
+  unrelated.id = '__purity_resources_external';
+  unrelated.textContent = 'void 0;';
+  const foreignCache = document.createElement('script');
+  foreignCache.type = 'application/json';
+  foreignCache.id = '__purity_resources_2__';
+  foreignCache.textContent = '{"keyed":{"foreign":"value"}}';
+  document.body.append(root, unrelated, foreignCache);
+
+  let borrowed: unknown;
+  const owner = hydrate(root, () => {
+    borrowed = consumeHydrationValue('foreign');
+    return p;
+  });
+  try {
+    expect(borrowed).toBeUndefined();
+    expect(unrelated.isConnected).toBe(true);
+    expect(foreignCache.isConnected).toBe(true);
+    expect(unrelated.nextElementSibling).toBe(foreignCache);
+  } finally {
+    owner.unmount();
+  }
+});

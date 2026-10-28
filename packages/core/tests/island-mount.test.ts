@@ -542,6 +542,27 @@ describe('mountIslands() — interact trigger (ADR 0038 Phase 4)', () => {
 
     expect(onMount).toHaveBeenCalledTimes(1);
   });
+
+  it('does not replay the first click on unhydrated SSR controls when a lazy chunk fails', async () => {
+    host = makeWrapper(1, 'interact', '<button type="button">Save</button>');
+    const button = host.querySelector('button')!;
+    const click = vi.fn();
+    button.addEventListener('click', click);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mountIslands([() => Promise.reject(new Error('chunk unavailable'))], { root: host });
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+      for (let i = 0; i < 5; i++) await tick();
+
+      // No handler has been adopted: replaying the intercepted activation
+      // can trigger native/default actions on an unhydrated SSR control.
+      expect(click).not.toHaveBeenCalled();
+      expect(host.querySelector('button')).toBe(button);
+    } finally {
+      errors.mockRestore();
+    }
+  });
 });
 
 describe('mountIslands() — media trigger (ADR 0038 Phase 4)', () => {

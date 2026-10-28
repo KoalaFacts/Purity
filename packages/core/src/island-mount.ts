@@ -222,6 +222,8 @@ function scheduleHydration(
     resolveEntry(entry, id)
       .then((view) => {
         if (!view) {
+          // A rejected import never adopted SSR DOM. Allow a later manifest retry.
+          hydrated.delete(el);
           finish();
           return;
         }

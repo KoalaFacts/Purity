@@ -5,12 +5,6 @@
 // Error handling via onError (bubbles up to parent)
 // ---------------------------------------------------------------------------
 
-import {
-  enterHydration,
-  exitHydration,
-  inflateDeferred,
-  isDeferred,
-} from './compiler/hydrate-runtime.ts';
 import { disposeScope, watch } from './signals.ts';
 import {
   ComponentContext,
@@ -20,7 +14,6 @@ import {
   pushContext,
   popContext,
 } from './scope.ts';
-import { checkpointHydrationCache, primeHydrationCache } from './ssr/hydration-cache.ts';
 
 /**
  * A zero-argument function that returns a DOM subtree.
@@ -249,302 +242,7 @@ export function onFormStateRestore(
   if (ctx) addCallback(ctx, (ctx._formStateRestore ??= []), fn);
 }
 
-// ---------------------------------------------------------------------------
-// mount(component, container)
-// ---------------------------------------------------------------------------
-
-/**
- * Mount a component into a DOM container.
- *
- * @example
- * ```ts
- * const { unmount } = mount(
- *   () => html`<p-app></p-app>`,
- *   document.getElementById('app')!
- * );
- *
- * // Later — tear down the component:
- * unmount();
- * ```
- *
- * @returns Object with `unmount()` to remove the component.
- */
-/** @internal — hydrate connected DSD elements after their parent bound props. */
-export function hydratePendingCustomElements(root: ParentNode): void {
-  const elements = root.querySelectorAll('*');
-  for (let i = 0; i < elements.length; i++) {
-    const element = elements[i];
-    const hydrateElement = (element as Element & { _hydrateSSR?: () => void })._hydrateSSR;
-    if (typeof hydrateElement === 'function') hydrateElement.call(element);
-  }
-}
-
-// Successful roots own the cache and scripts they adopted. Failed outer
-// attempts must not roll their snapshots over a newer successful root.
-let hydrationRevision = 0;
-const hydratedRoots = new WeakMap<Element, number>();
-
-/**
- * Hydrate a server-rendered root: walk the existing SSR DOM, attach reactive
- * bindings to the existing nodes (no re-rendering), and return an unmount
- * handle.
- *
- * **Marker-walking hydration.** `html\`\`` returns a deferred-template thunk
- * during hydration; the hydrator inflates each thunk against the slice of
- * SSR DOM it owns, walking `<!--[--><!--]-->` marker pairs to locate
- * expression slots without rebuilding nodes. Nested templates (`html\`<p>${
- * html\`<span>${name}</span>\`}</p>\``) inflate against their slot's subtree.
- * Custom Elements with DSD content hydrate their own shadow tree after the
- * parent has assigned their typed property bindings.
- *
- * Mismatch fallback — if the user's value at a slot is an Array or a Node
- * provided directly (rather than a deferred template / reactive accessor /
- * primitive), that one slot's SSR content is replaced. Function-valued
- * slots (`each`/`when`/`match` and other reactive accessors returning
- * Nodes) likewise replace their slot on first read; the surrounding tree
- * is preserved. A root component may also return an existing direct child
- * Node (for example, an already-connected Custom Element), which is reused.
- * A freshly created non-deferred root (including client-only AOT) is rejected:
- * replacing server nodes would discard focus, edits, and element identity.
- * Build the SSR client with `purity({ hydratable: true })`.
- *
- * @param container Element pre-rendered by `@purityjs/ssr`'s `renderToString`.
- * @param component The same component function used during SSR.
- * @returns Object with `unmount()` — same shape as `mount()`.
- *
- * @example
- * ```ts
- * import { hydrate } from '@purityjs/core';
- * import { App } from './app.ts';
- *
- * hydrate(document.getElementById('app')!, App);
- * ```
- */
-export function hydrate(container: Element, component: ComponentFn): MountResult {
-  // Empty container — nothing to hydrate. Fall back to a fresh mount so
-  // hydrate() works as a drop-in for mount() in dev/test setups that
-  // skipped the SSR step. Checked before priming the resource cache: with
-  // no SSR DOM there's nothing to adopt, and priming here would leak the
-  // shell's cached values into a fresh render (and clobber another root's
-  // module-level cache) as a side effect.
-  if (!container.firstChild) {
-    return mountHydrated(component, container);
-  }
-
-  // Resource values must be primed before the component creates subscriptions.
-  // A rejected client-only render must put both cache state and SSR scripts
-  // back, so a later correctly hydratable render can still adopt this root.
-  const revision = hydrationRevision;
-  const restoreCache = checkpointHydrationCache();
-  const removedScripts: [Element, Node, Node | null][] = [];
-  primeResourceHydrationCache(container, removedScripts);
-  const rollbackCache = (): void => {
-    if (hydrationRevision === revision) restoreCache();
-    // An absent revision compares false, just like the initial revision zero.
-    if (hydratedRoots.get(container)! > revision) return;
-    for (let i = removedScripts.length - 1; i >= 0; i--) {
-      const [script, parent, next] = removedScripts[i]!;
-      parent.insertBefore(script, next?.parentNode === parent ? next : null);
-    }
-  };
-
-  const ctx = new ComponentContext();
-  attachToOwner(ctx, unmountContext);
-
-  pushContext(ctx);
-  enterHydration();
-
-  let view: unknown;
-  try {
-    view = component();
-  } catch (err) {
-    exitHydration();
-    popContext();
-    // Report while error handlers and the parent are still available, then
-    // release everything the abandoned render created, even on rethrow.
-    // An error handler can unmount the parent while this child is attached.
-    // Suppress the failed render's destroy lifecycle before dispatching it.
-    ctx.destroyed = null;
-    // A recovery handler may synchronously hydrate this same root. Release the
-    // failed attempt's cache/scripts first and never attach recovery work to
-    // the context that is about to be destroyed.
-    try {
-      rollbackCache();
-      // _handleError normally binds recovery to the failing owner. Mark
-      // it unavailable only during dispatch, so a nested hydrate can
-      // outlive this failed render and its cleanup.
-      ctx._isDestroyed = true;
-      ctx._handleError(err);
-    } finally {
-      ctx._isDestroyed = false;
-      unmountContext(ctx);
-    }
-    return { unmount: () => {} };
-  }
-  exitHydration();
-  popContext();
-
-  const deferred = isDeferred(view);
-  if (deferred) {
-    // Inflate in place. Moving SSR nodes through a fragment disconnects and
-    // reconnects nested custom elements, tearing down their hydrated shadow
-    // trees and rendering them a second time.
-    try {
-      inflateDeferred(view as Parameters<typeof inflateDeferred>[0], container);
-    } catch (err) {
-      // The walker hit a structural mismatch (cursor went off the rails on
-      // null sibling / wrong nodeType). The opt-in mismatch warnings would
-      // already have logged the divergence; here we recover by dropping the
-      // SSR DOM and re-rendering fresh so the page keeps working.
-      console.error('[Purity] Hydration walk failed; falling back to fresh mount:', err);
-      // Tear down the abandoned context before re-rendering. The failed
-      // render may have registered disposers (live watch/resource
-      // subscriptions), onDestroy/onError handlers, and child contexts; left
-      // orphaned they keep running and leak. unmountContext drains them and
-      // removes ctx from parent.children itself. ctx.nodes is still null
-      // (set only on the success path below), so no DOM is touched here.
-      unmountContext(ctx);
-      while (container.firstChild) container.removeChild(container.firstChild);
-      return mountHydrated(component, container);
-    }
-  }
-
-  // Existing direct children (including hydrated Custom Elements) and deferred
-  // control-flow handles can reuse server DOM. Detached client-only AOT roots
-  // cannot. Handle this rejection and a failing Custom Element hydration hook
-  // with the same rollback, so neither can consume SSR scripts or leak owners.
-  try {
-    if (
-      !deferred &&
-      !(view instanceof Node && view.parentNode === container) &&
-      !(
-        view !== null &&
-        typeof view === 'object' &&
-        (view as { __purity_deferred_match__?: unknown }).__purity_deferred_match__ === true
-      )
-    ) {
-      throw new Error('[Purity] hydrate() requires purity({ hydratable: true })');
-    }
-    hydratePendingCustomElements(container);
-  } catch (err) {
-    ctx.destroyed = null;
-    try {
-      rollbackCache();
-    } finally {
-      unmountContext(ctx);
-    }
-    throw err;
-  }
-  // Do not claim the SSR nodes until every hydration hook has succeeded.
-  ctx.nodes = Array.from(container.childNodes);
-  hydratedRoots.set(container, ++hydrationRevision);
-  ctx._isMounted = true;
-
-  scheduleMountCallbacks(ctx);
-
-  return { unmount: () => unmountContext(ctx) };
-}
-
-const RESOURCE_SCRIPT_ID = '__purity_resources__';
-// Per-boundary cache prime — emitted by `renderToStream` next to each
-// streamed `<template id="purity-s-N">` chunk. ADR 0006 Phase 6 second-half.
-const PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX = '__purity_resources_';
-
-// Capture the original position before consuming an SSR resource script.
-// Shared by the shell and per-stream boundary paths; these scripts must be
-// restored by identity if the root's hydration is rejected.
-function removeHydrationResourceScript(
-  script: Element,
-  removedScripts: [Element, Node, Node | null][],
-): void {
-  const parent = script.parentNode;
-  if (!parent) return;
-  removedScripts.push([script, parent, script.nextSibling]);
-  parent.removeChild(script);
-}
-
-function primeResourceHydrationCache(
-  container: Element,
-  removedScripts: [Element, Node, Node | null][],
-): void {
-  // Gather one ordered script list for this root: inside boundary fragments
-  // first, then consecutive adjacent scripts. Do not search the document.
-  const boundaryScripts: Element[] = [
-    ...container.querySelectorAll(`script[id^="${PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX}"]`),
-  ];
-  let sibling = container.nextElementSibling;
-  while (sibling?.tagName === 'SCRIPT') {
-    boundaryScripts.push(sibling);
-    sibling = sibling.nextElementSibling;
-  }
-
-  // Shell cache is primed first; later boundary values override its keys.
-  const shellEl =
-    container.querySelector(`script#${RESOURCE_SCRIPT_ID}`) ??
-    boundaryScripts.find((el) => el.id === RESOURCE_SCRIPT_ID);
-  let merged: { ordered: unknown[]; keyed: Record<string, unknown> } | null = null;
-  if (shellEl?.textContent != null) {
-    try {
-      const parsed = JSON.parse(shellEl.textContent) as unknown;
-      merged = normalizeCachePayload(parsed);
-    } catch (err) {
-      console.error('[Purity] Failed to parse hydration cache:', err);
-    }
-    removeHydrationResourceScript(shellEl, removedScripts);
-  }
-
-  // Find every streamed boundary's cache and merge keyed entries. The
-  // positional `ordered` from boundaries is dropped — boundary indices
-  // collide with the shell's index space, so we only support keyed
-  // resources for streaming. Scan in document order so a later boundary's
-  // entry wins on key collision (matches "later wins" everywhere else).
-  //
-  // After __purity_swap, scripts may be in the root while later streamed
-  // chunks remain adjacent to it. Both placements belong to this root;
-  // never search the whole document (another root may reuse these IDs).
-  for (let i = 0; i < boundaryScripts.length; i++) {
-    const el = boundaryScripts[i]!;
-    if (el === shellEl || !el.id.startsWith(PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX)) continue;
-    if (!merged) merged = { ordered: [], keyed: Object.create(null) };
-    if (el.textContent == null) continue;
-    try {
-      const parsed = JSON.parse(el.textContent) as { keyed?: unknown };
-      if (
-        parsed &&
-        typeof parsed === 'object' &&
-        parsed.keyed &&
-        typeof parsed.keyed === 'object'
-      ) {
-        // The null-prototype destination stores reserved JSON keys as data,
-        // with no inherited setters for "__proto__" or other names.
-        Object.assign(merged.keyed, parsed.keyed);
-      }
-    } catch (err) {
-      console.error('[Purity] Failed to parse per-boundary hydration cache:', err);
-    }
-    removeHydrationResourceScript(el, removedScripts);
-  }
-  primeHydrationCache(merged ?? []);
-}
-
-function normalizeCachePayload(parsed: unknown): {
-  ordered: unknown[];
-  keyed: Record<string, unknown>;
-} {
-  // Allocate one safe destination for legacy, current and invalid payloads.
-  // Own JSON keys (including "__proto__") never hit inherited setters.
-  const keyed: Record<string, unknown> = Object.create(null);
-  let ordered: unknown[] = [];
-  if (Array.isArray(parsed)) {
-    ordered = parsed;
-  } else if (parsed && typeof parsed === 'object') {
-    const obj = parsed as { ordered?: unknown; keyed?: unknown };
-    if (obj.keyed && typeof obj.keyed === 'object') Object.assign(keyed, obj.keyed);
-    if (Array.isArray(obj.ordered)) ordered = obj.ordered;
-  }
-  return { ordered, keyed };
-}
-
+/** Mount a client-rendered root with its own lifecycle. */
 export function mount(component: ComponentFn, container: Element): MountResult {
   const ctx = new ComponentContext();
   attachToOwner(ctx, unmountContext);
@@ -587,26 +285,6 @@ export function mount(component: ComponentFn, container: Element): MountResult {
 
   return { unmount: () => unmountContext(ctx) };
 }
-
-// Keep the cache-commit tracking entirely on the hydrate path. A render that
-// throws but is handled by onError returns a no-op mount handle; it did not
-// commit a new root and must not invalidate an outer rollback checkpoint.
-// Ordinary CSR mount() stays independent of hydration revisions, allowing
-// applications that never hydrate to tree-shake this ownership machinery.
-function mountHydrated(component: ComponentFn, container: Element): MountResult {
-  let rendered = false;
-  const result = mount(() => {
-    const view = component();
-    rendered = true;
-    return view;
-  }, container);
-  if (rendered) hydratedRoots.set(container, ++hydrationRevision);
-  return result;
-}
-
-// ---------------------------------------------------------------------------
-// unmountContext
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // bindComponentState — reactively drive an ElementInternals custom state
@@ -690,7 +368,8 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
   });
 }
 
-function unmountContext(ctx: ComponentContext): void {
+/** @internal Shared owner teardown; root hydration imports lifecycle, not the reverse. */
+export function unmountContext(ctx: ComponentContext): void {
   if (ctx._isDestroyed) return;
 
   // Unmount children first

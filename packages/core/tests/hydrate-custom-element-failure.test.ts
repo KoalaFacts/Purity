@@ -1,5 +1,6 @@
 import { afterEach, expect, it } from 'vite-plus/test';
-import { hydrate, onDispose } from '../src/component.ts';
+import { onDispose } from '../src/component.ts';
+import { hydrate } from '../src/hydrate.ts';
 import {
   clearHydrationCache,
   consumeHydrationValue,

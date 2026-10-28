@@ -19,7 +19,8 @@ import {
   popContext,
   pushContext,
 } from './scope.ts';
-import { hydratePendingCustomElements, scheduleMountCallbacks } from './component.ts';
+import { scheduleMountCallbacks } from './component.ts';
+import { hydratePendingCustomElements } from './compiler/hydrate-elements.ts';
 import { FormControlBridge } from './form-control.ts';
 import { disposeScope, watch } from './signals.ts';
 

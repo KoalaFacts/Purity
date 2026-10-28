@@ -39,7 +39,7 @@
 // server round-trips for shared state. See ADR 0038.
 // ---------------------------------------------------------------------------
 
-import { hydrate } from './component.ts';
+import { hydrate } from './hydrate.ts';
 import { getIslandBrand, ISLAND_TRIGGERS, type IslandTrigger } from './island.ts';
 
 const WRAPPER_SELECTOR = 'purity-island[data-pi-id]';

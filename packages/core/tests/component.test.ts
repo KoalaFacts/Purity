@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
-import { hydrate, mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
+import { mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
+import { hydrate } from '../src/hydrate.ts';
 import { resource } from '../src/resource.ts';
 import { state, watch } from '../src/signals.ts';
 import { primeHydrationCache } from '../src/ssr-context.ts';

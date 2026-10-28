@@ -1,6 +1,7 @@
 import { expect, it, beforeEach } from 'vite-plus/test';
 import { withoutScope } from '../src/scope.ts';
-import { hydrate, onError, onDispose } from '../src/component.ts';
+import { onError, onDispose } from '../src/component.ts';
+import { hydrate } from '../src/hydrate.ts';
 import { primeHydrationCache, consumeHydrationValue } from '../src/ssr/hydration-cache.ts';
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -73,14 +74,17 @@ it('does not resurrect scripts after independent same-root success during render
   let retry: ReturnType<typeof hydrate> | undefined;
   expect(() =>
     hydrate(host, () => {
+      // Preparation is read-only: the nested adopter sees this root's live serialization.
+      expect(host.querySelectorAll('script')).toHaveLength(1);
       retry = withoutScope(() => hydrate(host, () => host.querySelector('p')!));
       return document.createElement('section');
     }),
   ).toThrow('hydratable');
   expect(host.querySelector('p')).not.toBeNull();
   expect(host.querySelectorAll('script')).toHaveLength(0);
-  // This nested nonempty root has no remaining scripts: the new root contract clears cache.
-  expect(consumeHydrationValue('key')).toBeUndefined();
+  // The nested root adopted the still-connected script. The failed outer
+  // attempt must not overwrite that successfully adopted value with 'prior'.
+  expect(consumeHydrationValue('key')).toBe('outer');
   retry!.unmount();
   expect(host.childNodes).toHaveLength(0);
   host.remove();
@@ -111,6 +115,7 @@ for (const empty of [false, true])
     expect(() =>
       hydrate(host, () => {
         if (empty) host.replaceChildren();
+        expect(host.querySelectorAll('script')).toHaveLength(empty ? 0 : 1);
         retry = withoutScope(() =>
           hydrate(host, () => {
             if (!empty && ++calls === 1)
@@ -131,8 +136,10 @@ for (const empty of [false, true])
     ).toThrow('hydratable');
     expect(host.textContent).toBe('mounted recovery');
     expect(host.querySelectorAll('script')).toHaveLength(0);
-    // Empty-root mount does not prime; a nonempty scriptless retry clears its cache.
-    expect(consumeHydrationValue('key')).toBe(empty ? 'outer' : undefined);
+    // Empty-root mounting keeps the prepared value; a nonempty retry now
+    // reads the still-live script before its mismatch fallback. Both commit
+    // that value rather than letting the outer checkpoint restore 'prior'.
+    expect(consumeHydrationValue('key')).toBe('outer');
     retry!.unmount();
     expect(host.childNodes).toHaveLength(0);
   });

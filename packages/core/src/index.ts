@@ -2,7 +2,6 @@ export {
   type ComponentFn,
   type MountResult,
   bindComponentState,
-  hydrate,
   mount,
   onDestroy,
   onDispose,
@@ -13,6 +12,7 @@ export {
   onFormStateRestore,
   onMount,
 } from './component.ts';
+export { hydrate } from './hydrate.ts';
 export {
   type EachOptions,
   type SuspenseErrorInfo,

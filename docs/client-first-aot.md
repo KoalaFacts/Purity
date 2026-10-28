@@ -21,3 +21,7 @@ Compare client-only and hydratable builds only for workloads that do not require
 ## SSR resource cache ownership
 
 Hydration resource JSON scripts must be **inside their SSR root** or **consecutive adjacent script siblings immediately after that root**. Document-wide script ID lookup is not supported, because separate SSR roots can use the same shell and boundary IDs and must never consume one another's cache. A root without cache scripts starts with an empty cache rather than borrowing stale global values left by a previous hydration; failures still restore the prior cache/script nodes before invoking recovery handlers. This preserves the normal append-whole and in-root streaming layouts without crossing a different root's boundary.
+
+## Hydration commit boundary
+
+Root hydration is implemented separately from client mounting/lifecycle. Resource scripts are read during preparation and remain connected while the root and its Custom Elements adopt DOM. They are removed only after adoption succeeds. A rejected build mode or failed adoption no longer removes and reinserts serialization nodes. Existing cache rollback and successful nested-root ordering remain required. This does not make all hydration work transactional: the existing structural-walk fallback still rebuilds a mismatched view, and shared control flow/Custom Element implementations may still contain hydration support.

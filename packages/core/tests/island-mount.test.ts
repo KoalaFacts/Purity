@@ -378,6 +378,41 @@ describe('mountIslands() — lazy entries (ADR 0038 Phase 3)', () => {
     }
   });
 
+  it('retries after a lazy module export getter throws before adoption', async () => {
+    const value = state(0);
+    const View = (): unknown => html`<p><!--[-->${() => value()}<!--]--></p>`;
+    host = makeWrapper(1, 'load', '<p><!--[-->0<!--]--></p>');
+    const wrapper = host.querySelector('purity-island')!;
+    const onMount = vi.fn();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mountIslands(
+        [
+          () =>
+            Promise.resolve({
+              get default(): never {
+                throw new Error('cyclic export not ready');
+              },
+            }),
+        ],
+        { root: host, onMount },
+      );
+      for (let i = 0; i < 5; i++) await tick();
+      expect(onMount).toHaveBeenCalledTimes(1);
+      expect(error).toHaveBeenCalled();
+      expect(wrapper.isConnected).toBe(true);
+
+      mountIslands([() => Promise.resolve(island(View))], { root: host, onMount });
+      for (let i = 0; i < 5; i++) await tick();
+      expect(onMount).toHaveBeenCalledTimes(2);
+      value(8);
+      await tick();
+      expect(host.textContent).toBe('8');
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it('logs an error and skips when the thunk rejects', async () => {
     const View = (): unknown => html`<span>x</span>`;
     host = makeWrapper(1, 'load', '<span>x</span>');

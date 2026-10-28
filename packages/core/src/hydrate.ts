@@ -145,7 +145,15 @@ function prepareResourceHydrationCache(container: Element): Element[] {
   // Collect only this root's serialization. In-root streamed chunks precede
   // its consecutive adjacent scripts; unrelated roots are never searched.
   const prefix = '__purity_resources_';
-  const scripts: Element[] = [...container.querySelectorAll(`script[id^="${prefix}"]`)];
+  // Nested SSR islands own their resource scripts. A parent shell must not
+  // prime or consume a deferred island before its own hydration trigger.
+  const ownerIsland = container.closest('purity-island');
+  const inRoot = container.querySelectorAll(`script[id^="${prefix}"]`);
+  const scripts: Element[] = [];
+  for (let i = 0; i < inRoot.length; i++) {
+    const script = inRoot[i]!;
+    if (script.closest('purity-island') === ownerIsland) scripts.push(script);
+  }
   let sibling = container.nextElementSibling;
   while (sibling?.tagName === 'SCRIPT') {
     if (sibling.id.startsWith(prefix)) scripts.push(sibling);

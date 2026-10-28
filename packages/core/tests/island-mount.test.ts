@@ -354,6 +354,30 @@ describe('mountIslands() — lazy entries (ADR 0038 Phase 3)', () => {
     expect(host.textContent).toBe('4');
   });
 
+  it('retries the same SSR wrapper after a lazy import rejection', async () => {
+    const value = state(0);
+    const View = (): unknown => html`<p><!--[-->${() => value()}<!--]--></p>`;
+    host = makeWrapper(1, 'load', '<p><!--[-->0<!--]--></p>');
+    const wrapper = host.querySelector('purity-island')!;
+    const onMount = vi.fn();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mountIslands([() => Promise.reject(new Error('offline'))], { root: host, onMount });
+      for (let i = 0; i < 5; i++) await tick();
+      expect(onMount).toHaveBeenCalledTimes(1);
+      expect(wrapper.isConnected).toBe(true);
+
+      mountIslands([() => Promise.resolve(island(View))], { root: host, onMount });
+      for (let i = 0; i < 5; i++) await tick();
+      expect(onMount).toHaveBeenCalledTimes(2);
+      value(9);
+      await tick();
+      expect(host.textContent).toBe('9');
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it('logs an error and skips when the thunk rejects', async () => {
     const View = (): unknown => html`<span>x</span>`;
     host = makeWrapper(1, 'load', '<span>x</span>');

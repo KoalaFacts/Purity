@@ -143,7 +143,8 @@ export function mountIslands(
     // wrapper. Without this guard, `interact` islands accumulate
     // listeners and `load` islands double-hydrate.
     if (hydrated.has(el)) continue;
-    hydrated.add(el);
+    // Do not permanently claim an invalid/missing manifest entry: callers
+    // can fix the manifest and retry without replacing the SSR wrapper.
     const rawId = el.getAttribute('data-pi-id');
     const id = rawId != null ? Number(rawId) : NaN;
     if (!Number.isInteger(id) || id < 1) {
@@ -160,6 +161,7 @@ export function mountIslands(
       );
       continue;
     }
+    hydrated.add(el);
     const trigger = readTrigger(el);
     scheduleHydration(el, entry, trigger, id, () => {
       if (onMount) onMount(id, el);

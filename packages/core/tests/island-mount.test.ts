@@ -140,6 +140,39 @@ describe('mountIslands() — load trigger', () => {
     warn.mockRestore();
   });
 
+  it('can hydrate after a corrected manifest supplies the previously missing view', async () => {
+    host = makeWrapper(1, 'load', '<span>x</span>');
+    const onMount = vi.fn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mountIslands([], { root: host, onMount });
+      expect(warn).toHaveBeenCalled();
+      mountIslands([island(() => html`<span>x</span>`)], { root: host, onMount });
+      await tick();
+      expect(onMount).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('can hydrate after an invalid SSR island ID is corrected', async () => {
+    host = makeWrapper(1, 'load', '<span>x</span>');
+    const wrapper = host.querySelector('purity-island')!;
+    wrapper.setAttribute('data-pi-id', 'not-a-number');
+    const onMount = vi.fn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mountIslands([island(() => html`<span>x</span>`)], { root: host, onMount });
+      expect(warn).toHaveBeenCalled();
+      wrapper.setAttribute('data-pi-id', '1');
+      mountIslands([island(() => html`<span>x</span>`)], { root: host, onMount });
+      await tick();
+      expect(onMount).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('warns when data-pi-id is not a positive integer', () => {
     const View = (): unknown => html`<span>x</span>`;
     host = document.createElement('div');

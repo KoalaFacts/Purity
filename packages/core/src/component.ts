@@ -279,6 +279,11 @@ export function hydratePendingCustomElements(root: ParentNode): void {
   }
 }
 
+// Successful roots own the cache and scripts they adopted. Failed outer
+// attempts must not roll their snapshots over a newer successful root.
+let hydrationRevision = 0;
+const hydratedRoots = new WeakMap<Element, number>();
+
 /**
  * Hydrate a server-rendered root: walk the existing SSR DOM, attach reactive
  * bindings to the existing nodes (no re-rendering), and return an unmount
@@ -323,17 +328,20 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   // shell's cached values into a fresh render (and clobber another root's
   // module-level cache) as a side effect.
   if (!container.firstChild) {
-    return mount(component, container);
+    return mountComponent(component, container, true);
   }
 
   // Resource values must be primed before the component creates subscriptions.
   // A rejected client-only render must put both cache state and SSR scripts
   // back, so a later correctly hydratable render can still adopt this root.
+  const revision = hydrationRevision;
   const restoreCache = checkpointHydrationCache();
   const removedScripts: [Element, Node, Node | null][] = [];
   primeResourceHydrationCache(container, removedScripts);
   const rollbackCache = (): void => {
-    restoreCache();
+    if (hydrationRevision === revision) restoreCache();
+    // An absent revision compares false, just like the initial revision zero.
+    if (hydratedRoots.get(container)! > revision) return;
     for (let i = removedScripts.length - 1; i >= 0; i--) {
       const [script, parent, next] = removedScripts[i]!;
       parent.insertBefore(script, next?.parentNode === parent ? next : null);
@@ -396,7 +404,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
       // (set only on the success path below), so no DOM is touched here.
       unmountContext(ctx);
       while (container.firstChild) container.removeChild(container.firstChild);
-      return mount(component, container);
+      return mountComponent(component, container, true);
     }
     ctx.nodes = Array.from(container.childNodes);
   } else if (view instanceof Node && view.parentNode === container) {
@@ -431,6 +439,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   }
 
   hydratePendingCustomElements(container);
+  hydratedRoots.set(container, ++hydrationRevision);
   ctx._isMounted = true;
 
   scheduleMountCallbacks(ctx);
@@ -487,7 +496,7 @@ function primeResourceHydrationCache(
   // never search the whole document (another root may reuse these IDs).
   for (let i = 0; i < boundaryScripts.length; i++) {
     const el = boundaryScripts[i]!;
-    if (!el.id.startsWith(PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX)) continue;
+    if (el === shellEl || !el.id.startsWith(PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX)) continue;
     if (!merged) merged = { ordered: [], keyed: Object.create(null) };
     if (el.textContent == null) continue;
     try {
@@ -532,6 +541,14 @@ function normalizeCachePayload(parsed: unknown): {
 }
 
 export function mount(component: ComponentFn, container: Element): MountResult {
+  return mountComponent(component, container, false);
+}
+
+function mountComponent(
+  component: ComponentFn,
+  container: Element,
+  hydrating: boolean,
+): MountResult {
   const ctx = new ComponentContext();
   attachToOwner(ctx, unmountContext);
 
@@ -567,6 +584,7 @@ export function mount(component: ComponentFn, container: Element): MountResult {
     container.appendChild(fragment);
   }
 
+  if (hydrating) hydratedRoots.set(container, ++hydrationRevision);
   ctx._isMounted = true;
 
   scheduleMountCallbacks(ctx);

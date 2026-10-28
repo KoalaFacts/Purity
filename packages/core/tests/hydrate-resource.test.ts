@@ -517,6 +517,51 @@ describe('hydrate + per-boundary streaming cache (ADR 0006 Phase 6 second-half)'
     }
   });
 
+  it('merges in-root and adjacent boundary scripts for one SSR root', async () => {
+    host.innerHTML =
+      '<p><!--[-->in-root/adjacent<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources_1__">' +
+      '{"keyed":{"inside":"in-root"}}' +
+      '</script>';
+    host.insertAdjacentHTML(
+      'afterend',
+      '<script type="application/json" id="__purity_resources_2__">' +
+        '{"keyed":{"outside":"adjacent"}}' +
+        '</script>',
+    );
+    const internal = host.querySelector('#__purity_resources_1__')!;
+    const external = host.nextElementSibling!;
+    let owner: ReturnType<typeof hydrate> | undefined;
+    try {
+      let fetches = 0;
+      owner = hydrate(host, () => {
+        const inside = resource(
+          () => {
+            fetches++;
+            return Promise.resolve('refetched-inside');
+          },
+          { key: 'inside' },
+        );
+        const outside = resource(
+          () => {
+            fetches++;
+            return Promise.resolve('refetched-outside');
+          },
+          { key: 'outside' },
+        );
+        return html`<p>${() => `${inside() ?? '?'}/${outside() ?? '?'}`}</p>`;
+      });
+      await tick();
+      expect(fetches).toBe(0);
+      expect(host.textContent).toContain('in-root/adjacent');
+      expect(internal.parentNode).toBeNull();
+      expect(external.isConnected).toBe(false);
+    } finally {
+      owner?.unmount();
+      external.remove();
+    }
+  });
+
   it('merges per-boundary <script id="__purity_resources_N__"> into the keyed cache', async () => {
     // Stage what a streamed renderToStream output looks like AFTER all
     // boundaries have swapped: shell prime + two per-boundary primes already

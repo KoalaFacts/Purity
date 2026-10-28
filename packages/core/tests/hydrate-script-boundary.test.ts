@@ -48,7 +48,8 @@ it('does not consume an executable script with a resource-shaped id', () => {
   const executable = document.createElement('script');
   executable.type = 'text/javascript';
   executable.id = '__purity_resources__';
-  executable.textContent = '{"keyed":{"wrong":"untrusted"}}';
+  // Executable JavaScript must stay valid: jsdom actually runs connected scripts.
+  executable.textContent = 'void 0;';
   root.append(p, executable);
   document.body.append(root);
 

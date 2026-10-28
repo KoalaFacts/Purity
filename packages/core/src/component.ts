@@ -477,9 +477,10 @@ function primeResourceHydrationCache(
     } catch (err) {
       console.error('[Purity] Failed to parse hydration cache:', err);
     }
-    if (shellEl.parentNode) {
-      removedScripts.push([shellEl, shellEl.parentNode, shellEl.nextSibling]);
-      shellEl.parentNode.removeChild(shellEl);
+    const parent = shellEl.parentNode;
+    if (parent) {
+      removedScripts.push([shellEl, parent, shellEl.nextSibling]);
+      parent.removeChild(shellEl);
     }
   }
 
@@ -512,9 +513,10 @@ function primeResourceHydrationCache(
     } catch (err) {
       console.error('[Purity] Failed to parse per-boundary hydration cache:', err);
     }
-    if (el.parentNode) {
-      removedScripts.push([el, el.parentNode, el.nextSibling]);
-      el.parentNode.removeChild(el);
+    const parent = el.parentNode;
+    if (parent) {
+      removedScripts.push([el, parent, el.nextSibling]);
+      parent.removeChild(el);
     }
   }
   primeHydrationCache(merged ?? []);

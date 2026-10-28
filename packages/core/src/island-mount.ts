@@ -248,6 +248,9 @@ function scheduleHydration(
         try {
           hydrate(el, view as Parameters<typeof hydrate>[1]);
         } catch (err) {
+          // A rejected adoption leaves the original SSR wrapper intact.
+          // Release the scheduling claim so a corrected view can retry.
+          hydrated.delete(el);
           console.error('[Purity] mountIslands: hydrate() threw for island', el, err);
         }
         finish();

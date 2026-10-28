@@ -163,9 +163,7 @@ export function mountIslands(
     }
     hydrated.add(el);
     const trigger = readTrigger(el);
-    scheduleHydration(el, entry, trigger, id, () => {
-      if (onMount) onMount(id, el);
-    });
+    scheduleHydration(el, entry, trigger, id, onMount);
   }
 }
 
@@ -195,7 +193,7 @@ function scheduleHydration(
   entry: IslandEntry,
   trigger: IslandTrigger,
   id: number,
-  done: () => void,
+  done?: (id: number, root: Element) => void,
 ): void {
   // Keep both user instrumentation and replay cleanup isolated from the
   // promise chain. Only a committed hydration may replay an intercepted
@@ -210,7 +208,7 @@ function scheduleHydration(
         }
       }
       try {
-        done();
+        done?.(id, el);
       } catch (err) {
         console.error(`[Purity] mountIslands: onMount threw for island ${id}:`, err);
       }

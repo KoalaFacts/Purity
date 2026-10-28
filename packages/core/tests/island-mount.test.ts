@@ -1053,6 +1053,30 @@ describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', (
     host.remove();
   });
 
+  it('re-arms a visible SSR wrapper reattached before its first intersection', async () => {
+    const View = (): unknown => html`<span>x</span>`;
+    const host = makeWrapper(1, 'visible', '<span>x</span>');
+    const wrapper = host.querySelector('purity-island')!;
+    const onMount = vi.fn();
+
+    mountIslands([island(View, { hydrate: 'visible' })], { root: host, onMount });
+    expect(ios).toHaveLength(1);
+
+    wrapper.remove();
+    for (let i = 0; i < 5; i++) await tick();
+    expect(ios[0].disconnected).toBeGreaterThanOrEqual(1);
+
+    host.append(wrapper);
+    mountIslands([island(View, { hydrate: 'visible' })], { root: host, onMount });
+    expect(ios).toHaveLength(2);
+    expect(ios[1].observed).toContain(wrapper.firstElementChild!);
+
+    ios[1]._cb([{ isIntersecting: true, target: wrapper.firstElementChild! }], ios[1]);
+    for (let i = 0; i < 5; i++) await tick();
+    expect(onMount).toHaveBeenCalledTimes(1);
+    host.remove();
+  });
+
   it('does not double-fire when the wrapper detaches AFTER it has already intersected', async () => {
     // Make sure the detach-watcher's re-entrancy guard cooperates with
     // the IO-callback path: an intersection that already disposed the

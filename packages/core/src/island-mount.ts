@@ -418,6 +418,8 @@ function waitForVisible(el: Element, run: () => void): void {
         for (let i = 0; i < targets.length; i++) obs.unobserve(targets[i]);
         obs.disconnect();
         if (mo) mo.disconnect();
+        // A detached, unhydrated SSR wrapper can be reattached and scheduled again.
+        hydrated.delete(el);
       }
     });
     mo.observe(parent, { childList: true });

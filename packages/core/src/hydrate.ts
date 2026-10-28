@@ -21,6 +21,9 @@ import { checkpointHydrationCache, primeHydrationCache } from './ssr/hydration-c
 // script journal is needed because failed preparation did not mutate scripts.
 let hydrationRevision = 0;
 
+/** @internal An onError handler consumed the failed render; no SSR adoption occurred. */
+export const FAILED_HYDRATION: MountResult = { unmount: () => {} };
+
 export function hydrate(container: Element, component: ComponentFn): MountResult {
   // Empty container — nothing to hydrate. Fall back to a fresh mount so
   // hydrate() works as a drop-in for mount() in dev/test setups that
@@ -73,7 +76,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
       ctx._isDestroyed = false;
       unmountContext(ctx);
     }
-    return { unmount: () => {} };
+    return FAILED_HYDRATION;
   }
   exitHydration();
   popContext();

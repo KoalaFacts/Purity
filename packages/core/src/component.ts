@@ -386,6 +386,17 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     // client-only AOT factory returns an already-connected child here.
     // Preserve its shadow tree and mounted callback ownership.
     ctx.nodes = Array.from(container.childNodes);
+  } else if (
+    view !== null &&
+    typeof view === 'object' &&
+    (view as { __purity_deferred_match__?: unknown }).__purity_deferred_match__ === true
+  ) {
+    // A root-level when()/match() returns its deferred control-flow handle,
+    // not a DOM factory result. Keeping its existing SSR content is the
+    // established root contract (the nested-slot inflater owns adoption).
+    // In particular, asyncRoute() returns when() at the application root.
+    // Do not treat this marker as detached client-only AOT DOM.
+    ctx.nodes = Array.from(container.childNodes);
   } else {
     // A client-only AOT factory creates detached DOM during hydrate().
     // Reject detached nodes/fragments rather than replacing the SSR tree.

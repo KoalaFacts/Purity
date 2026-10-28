@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/jit.ts';
-import { hydrate, resource, state } from '../src/index.ts';
+import { hydrate, resource, state, when } from '../src/index.ts';
 import { primeHydrationCache } from '../src/ssr-context.ts';
 import { tick } from './_helpers.ts';
 
@@ -69,6 +69,27 @@ describe('hydrate + resource cache', () => {
     expect(host.firstChild).toBe(server);
     expect(replacement.parentNode).toBeNull();
     expect(host.textContent).toBe('server');
+  });
+
+  it('keeps a top-level when control handle and SSR form nodes intact', () => {
+    // asyncRoute() uses when() as the top-level application result. This is
+    // a deferred control-flow token, not detached client-only AOT markup.
+    host.innerHTML =
+      '<!--m:false--><form data-purity-enhance><input value="server" /></form><!--/m-->';
+    const form = host.querySelector('form')!;
+    const input = host.querySelector('input')!;
+    input.value = 'unsaved';
+    const { unmount } = hydrate(host, () =>
+      when(
+        () => false,
+        () => document.createElement('p'),
+      ),
+    );
+    expect(host.querySelector('form')).toBe(form);
+    expect(host.querySelector('input')).toBe(input);
+    expect(input.value).toBe('unsaved');
+    unmount();
+    expect(host.childNodes).toHaveLength(0);
   });
 
   it('falls back to normal fetching when no script is present', async () => {

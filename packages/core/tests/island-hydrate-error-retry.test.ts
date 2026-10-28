@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vite-plus/test';
-import { html } from '../src/compiler/compile.ts';
 import { island } from '../src/island.ts';
 import { mountIslands } from '../src/island-mount.ts';
-import { state } from '../src/signals.ts';
+import { state, watch } from '../src/signals.ts';
 import { tick } from './_helpers.ts';
 
 afterEach(() => {
@@ -33,7 +32,14 @@ it('retries an island after failed hydrate adoption without replacing SSR DOM', 
     expect(serverParagraph.textContent).toBe('0');
 
     const count = state(0);
-    const View = () => html`<p><!--[-->${() => count()}<!--]--></p>`;
+    const View = () => {
+      // Corrected handwritten hydration can safely adopt the existing node.
+      // It need not invoke JIT's documented mismatch/rebuild fallback.
+      watch(() => {
+        serverParagraph.childNodes[1]!.textContent = String(count());
+      });
+      return serverParagraph;
+    };
     mountIslands([island(View)], { root: host, onMount });
     for (let i = 0; i < 5; i++) await tick();
     expect(onMount).toHaveBeenCalledTimes(2);

@@ -1,10 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from 'vite-plus/test';
 import { hydrate } from '../src/hydrate.ts';
-import {
-  clearHydrationCache,
-  consumeHydrationValue,
-} from '../src/ssr/hydration-cache.ts';
+import { clearHydrationCache, consumeHydrationValue } from '../src/ssr/hydration-cache.ts';
 
 afterEach(() => {
   document.body.replaceChildren();

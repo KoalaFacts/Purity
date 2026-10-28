@@ -253,6 +253,9 @@ function scheduleHydration(
         }
       })
       .catch((err) => {
+        // A malformed module export can throw during unwrap, before adoption.
+        // Do not leave its SSR wrapper permanently claimed.
+        hydrated.delete(el);
         console.error(`[Purity] mountIslands: failed to resolve island ${id}:`, err);
         finish(false);
       });

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/jit.ts';
 import { hydrate, resource, state, when } from '../src/index.ts';
 import { primeHydrationCache } from '../src/ssr-context.ts';
+import { consumeHydrationValue } from '../src/ssr/hydration-cache.ts';
 import { tick } from './_helpers.ts';
 
 describe('hydrate + resource cache', () => {
@@ -40,6 +41,44 @@ describe('hydrate + resource cache', () => {
     expect(fetcherCalls).toBeLessThanOrEqual(0);
     // The script was removed so a re-mount doesn't re-prime.
     expect(host.querySelector('#__purity_resources__')).toBeNull();
+  });
+
+  it('restores both hydration scripts and global cache after a client-only render is refused', async () => {
+    primeHydrationCache({ ordered: [], keyed: { unrelated: 'untouched' } });
+    host.innerHTML =
+      '<p><!--[-->restored<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources__">' +
+      '{"ordered":[],"keyed":{"test":"initial"}}' +
+      '</script>' +
+      '<script type="application/json" id="__purity_resources_1__">' +
+      '{"keyed":{"test":"restored"}}' +
+      '</script>';
+    const nodes = Array.from(host.childNodes);
+
+    expect(() => hydrate(host, () => document.createElement('section'))).toThrow(
+      'purity({ hydratable: true })',
+    );
+    expect(Array.from(host.childNodes)).toEqual(nodes);
+    expect(consumeHydrationValue('unrelated')).toBe('untouched');
+    expect(consumeHydrationValue('test')).toBeUndefined();
+
+    let fetches = 0;
+    const handle = hydrate(host, () => {
+      const data = resource(
+        () => {
+          fetches++;
+          return Promise.resolve('fetched');
+        },
+        { key: 'test' },
+      );
+      return html`<p>${() => data() ?? 'loading'}</p>`;
+    });
+    await tick();
+    expect(fetches).toBe(0);
+    expect(host.textContent).toContain('restored');
+    expect(host.querySelector('#__purity_resources__')).toBeNull();
+    expect(host.querySelector('#__purity_resources_1__')).toBeNull();
+    handle.unmount();
   });
 
   it('rejects a detached fragment root without deleting SSR nodes', () => {

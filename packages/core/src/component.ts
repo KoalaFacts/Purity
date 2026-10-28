@@ -20,7 +20,7 @@ import {
   pushContext,
   popContext,
 } from './scope.ts';
-import { primeHydrationCache } from './ssr/hydration-cache.ts';
+import { checkpointHydrationCache, primeHydrationCache } from './ssr/hydration-cache.ts';
 
 /**
  * A zero-argument function that returns a DOM subtree.
@@ -326,9 +326,19 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     return mount(component, container);
   }
 
-  // Prime the resource cache from the JSON payload renderToString embedded.
-  // Done before any DOM manipulation so the script tag is still in place.
-  primeResourceHydrationCache(container);
+  // Resource values must be primed before the component creates subscriptions.
+  // A rejected client-only render must put both cache state and SSR scripts
+  // back, so a later correctly hydratable render can still adopt this root.
+  const restoreCache = checkpointHydrationCache();
+  const removedScripts: [Element, Node, Node | null][] = [];
+  primeResourceHydrationCache(container, removedScripts);
+  const rollbackCache = (): void => {
+    restoreCache();
+    for (let i = removedScripts.length - 1; i >= 0; i--) {
+      const [script, parent, next] = removedScripts[i]!;
+      parent.insertBefore(script, next?.parentNode === parent ? next : null);
+    }
+  };
 
   const ctx = new ComponentContext();
   attachToOwner(ctx, unmountContext);
@@ -350,7 +360,11 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     try {
       ctx._handleError(err);
     } finally {
-      unmountContext(ctx);
+      try {
+        unmountContext(ctx);
+      } finally {
+        rollbackCache();
+      }
     }
     return { unmount: () => {} };
   }
@@ -401,7 +415,11 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     // A client-only AOT factory creates detached DOM during hydrate().
     // Reject detached nodes/fragments rather than replacing the SSR tree.
     ctx.destroyed = null;
-    unmountContext(ctx);
+    try {
+      unmountContext(ctx);
+    } finally {
+      rollbackCache();
+    }
     throw new Error('[Purity] hydrate() requires purity({ hydratable: true })');
   }
 
@@ -418,7 +436,10 @@ const RESOURCE_SCRIPT_ID = '__purity_resources__';
 // streamed `<template id="purity-s-N">` chunk. ADR 0006 Phase 6 second-half.
 const PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX = '__purity_resources_';
 
-function primeResourceHydrationCache(container: Element): void {
+function primeResourceHydrationCache(
+  container: Element,
+  removedScripts: [Element, Node, Node | null][],
+): void {
   // The script tag may be inside the container, immediately after it (when
   // renderToString output is appended whole), or at document scope. Try the
   // most likely locations in order. Document-scope is the canonical case
@@ -441,7 +462,10 @@ function primeResourceHydrationCache(container: Element): void {
     } catch (err) {
       console.error('[Purity] Failed to parse hydration cache:', err);
     }
-    if (shellEl.parentNode) shellEl.parentNode.removeChild(shellEl);
+    if (shellEl.parentNode) {
+      removedScripts.push([shellEl, shellEl.parentNode, shellEl.nextSibling]);
+      shellEl.parentNode.removeChild(shellEl);
+    }
   }
 
   // Find every streamed boundary's cache and merge keyed entries. The
@@ -482,7 +506,10 @@ function primeResourceHydrationCache(container: Element): void {
       } catch (err) {
         console.error('[Purity] Failed to parse per-boundary hydration cache:', err);
       }
-      if (el.parentNode) el.parentNode.removeChild(el);
+      if (el.parentNode) {
+        removedScripts.push([el, el.parentNode, el.nextSibling]);
+        el.parentNode.removeChild(el);
+      }
     }
   }
 

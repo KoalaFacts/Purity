@@ -517,7 +517,7 @@ describe('hydrate + per-boundary streaming cache (ADR 0006 Phase 6 second-half)'
     }
   });
 
-  it('uses later adjacent boundary data after an earlier in-root cache with the same key', async () => {
+  it('prefers adjacent boundary keys over in-root keys', async () => {
     host.innerHTML =
       '<p><!--[-->adjacent-wins<!--]--></p>' +
       '<script type="application/json" id="__purity_resources_1__">' +

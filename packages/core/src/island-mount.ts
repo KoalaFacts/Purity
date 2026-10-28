@@ -363,7 +363,7 @@ function waitForLoad(run: () => void): void {
   queueMicrotask(run);
 }
 
-function waitForVisible(el: Element, run: () => void): void {
+function waitForVisible(el: HTMLElement, run: () => void): void {
   const Ctor = (globalThis as { IntersectionObserver?: typeof IntersectionObserver })
     .IntersectionObserver;
   if (typeof Ctor !== 'function') {

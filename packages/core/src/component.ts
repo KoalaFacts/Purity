@@ -390,7 +390,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     // reconnects nested custom elements, tearing down their hydrated shadow
     // trees and rendering them a second time.
     try {
-      inflateDeferred(view, container);
+      inflateDeferred(view as Parameters<typeof inflateDeferred>[0], container);
     } catch (err) {
       // The walker hit a structural mismatch (cursor went off the rails on
       // null sibling / wrong nodeType). The opt-in mismatch warnings would

@@ -163,7 +163,9 @@ export function mountIslands(
     }
     hydrated.add(el);
     const trigger = readTrigger(el);
-    scheduleHydration(el, entry, trigger, id, onMount);
+    scheduleHydration(el, entry, trigger, id, () => {
+      if (onMount) onMount(id, el);
+    });
   }
 }
 
@@ -193,22 +195,20 @@ function scheduleHydration(
   entry: IslandEntry,
   trigger: IslandTrigger,
   id: number,
-  done?: (id: number, root: Element) => void,
+  done: () => void,
 ): void {
   // Keep both user instrumentation and replay cleanup isolated from the
   // promise chain. Only a committed hydration may replay an intercepted
   // activation; a rejected chunk must not click an unhydrated SSR control.
   const run = (onSettled?: (ready: boolean) => void): void => {
     const finish = (ready: boolean): void => {
-      if (onSettled) {
-        try {
-          onSettled(ready);
-        } catch (err) {
-          console.error(`[Purity] mountIslands: interaction replay threw for island ${id}:`, err);
-        }
+      try {
+        onSettled?.(ready);
+      } catch (err) {
+        console.error(`[Purity] mountIslands: interaction replay threw for island ${id}:`, err);
       }
       try {
-        done?.(id, el);
+        done();
       } catch (err) {
         console.error(`[Purity] mountIslands: onMount threw for island ${id}:`, err);
       }

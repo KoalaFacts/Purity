@@ -578,6 +578,39 @@ describe('mountIslands() — interact trigger (ADR 0038 Phase 4)', () => {
     expect(onMount).toHaveBeenCalledTimes(1);
   });
 
+  it('replays an exact ARIA menuitemradio role but not an unknown role on first keydown', async () => {
+    const accepted = makeWrapper(1, 'interact', '<span role="menuitemradio" tabindex="0">x</span>');
+    const rejected = makeWrapper(1, 'interact', '<span role="menuitemradios" tabindex="0">x</span>');
+    let acceptedKeys = 0;
+    let rejectedKeys = 0;
+    try {
+      const Accepted = (): unknown =>
+        html`<span role="menuitemradio" tabindex="0" @keydown=${() => acceptedKeys++}>x</span>`;
+      const Rejected = (): unknown =>
+        html`<span role="menuitemradios" tabindex="0" @keydown=${() => rejectedKeys++}>x</span>`;
+
+      mountIslands([island(Accepted)], { root: accepted });
+      mountIslands([island(Rejected)], { root: rejected });
+      for (const host of [accepted, rejected]) {
+        host.querySelector('span')!.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          }),
+        );
+      }
+      for (let i = 0; i < 5; i++) await tick();
+      expect(acceptedKeys).toBe(1);
+      expect(rejectedKeys).toBe(0);
+    } finally {
+      accepted.remove();
+      rejected.remove();
+    }
+  });
+
   it('does not replay the first click on unhydrated SSR controls when a lazy chunk fails', async () => {
     host = makeWrapper(1, 'interact', '<button type="button">Save</button>');
     const button = host.querySelector('button')!;

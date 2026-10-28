@@ -301,14 +301,12 @@ async function resolveEntry(entry: IslandEntry, id: number): Promise<View | null
     return null;
   }
   if (produced != null && typeof (produced as { then?: unknown }).then === 'function') {
-    let resolved: unknown;
     try {
-      resolved = await (produced as Promise<unknown>);
+      produced = await (produced as Promise<unknown>);
     } catch (err) {
       console.error(`[Purity] mountIslands: island ${id} import rejected:`, err);
       return null;
     }
-    return unwrapModule(resolved, id);
   }
   return unwrapModule(produced, id);
 }
@@ -512,26 +510,17 @@ function liveInteractionTarget(
   return node;
 }
 
+// Keep ARIA activation roles as exact tokens; a prefix match would let
+// unknown roles replay a key event after hydration.
+const ACTIVATION_ROLE = /^(?:button|checkbox|radio|switch|menuitem(?:checkbox|radio)?|tab|option)$/;
+
 function hasActivationRole(event: Event, island: Element, key: string): boolean {
   const path = event.composedPath();
   for (let i = 0; i < path.length && path[i] !== island; i++) {
     const node = path[i];
     if (!(node instanceof Element)) continue;
     const role = node.getAttribute('role');
-    if (role === 'link' && key === 'Enter') return true;
-    if (
-      role === 'button' ||
-      role === 'checkbox' ||
-      role === 'radio' ||
-      role === 'switch' ||
-      role === 'menuitem' ||
-      role === 'menuitemcheckbox' ||
-      role === 'menuitemradio' ||
-      role === 'tab' ||
-      role === 'option'
-    ) {
-      return true;
-    }
+    if ((role === 'link' && key === 'Enter') || (role && ACTIVATION_ROLE.test(role))) return true;
   }
   return false;
 }

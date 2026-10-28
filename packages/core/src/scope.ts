@@ -59,7 +59,7 @@ export class ComponentContext implements Scope {
       // error, even when a descendant or a later scheduled effect failed.
       // Teardown errors can still use handlers until their list is released,
       // but must not restore an already destroyed component as a live owner.
-      const scoped = !this._isDestroyed && !this._rollback;
+      const scoped = !this._isDestroyed;
       if (scoped) pushContext(this);
       try {
         // A handler can unmount this component and release the callback list.

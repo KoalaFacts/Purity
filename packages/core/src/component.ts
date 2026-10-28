@@ -360,11 +360,15 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     // A recovery handler may synchronously hydrate this same root. Release the
     // failed attempt's cache/scripts first and never attach recovery work to
     // the context that is about to be destroyed.
-    ctx._rollback = true;
     try {
       rollbackCache();
+      // _handleError normally binds recovery to the failing owner. Mark
+      // it unavailable only during dispatch, so a nested hydrate can
+      // outlive this failed render and its cleanup.
+      ctx._isDestroyed = true;
       ctx._handleError(err);
     } finally {
+      ctx._isDestroyed = false;
       unmountContext(ctx);
     }
     return { unmount: () => {} };

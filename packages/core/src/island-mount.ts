@@ -39,7 +39,7 @@
 // server round-trips for shared state. See ADR 0038.
 // ---------------------------------------------------------------------------
 
-import { hydrate } from './hydrate.ts';
+import { FAILED_HYDRATION, hydrate } from './hydrate.ts';
 import { getIslandBrand, ISLAND_TRIGGERS, type IslandTrigger } from './island.ts';
 
 const WRAPPER_SELECTOR = 'purity-island[data-pi-id]';
@@ -241,8 +241,8 @@ function scheduleHydration(
           return;
         }
         try {
-          hydrate(el, view as Parameters<typeof hydrate>[1]);
-          finish(true);
+          const result = hydrate(el, view as Parameters<typeof hydrate>[1]);
+          finish(result !== FAILED_HYDRATION);
         } catch (err) {
           // A rejected adoption leaves the original SSR wrapper intact.
           // Release the scheduling claim so a corrected view can retry.

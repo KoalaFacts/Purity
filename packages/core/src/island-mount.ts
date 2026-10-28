@@ -521,7 +521,9 @@ function hasActivationRole(event: Event, island: Element, key: string): boolean 
     if (role === 'link' && key === 'Enter') return true;
     // Match the same exact ARIA activation roles without repeating a
     // separate branch for each menu item variant.
-    if (/^(?:button|checkbox|radio|switch|menuitem(?:checkbox|radio)?|tab|option)$/.test(role ?? '')) {
+    if (
+      /^(?:button|checkbox|radio|switch|menuitem(?:checkbox|radio)?|tab|option)$/.test(role ?? '')
+    ) {
       return true;
     }
   }

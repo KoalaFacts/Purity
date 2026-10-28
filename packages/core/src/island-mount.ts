@@ -227,7 +227,8 @@ function scheduleHydration(
         // upgrade. Purity elements with DSD instead wait for their parent
         // to bind typed props, so they still need hydrate(el, view). That
         // path inflates in place and then hydrates the shadow tree.
-        // Check after the import so the element has already upgraded.
+        // Check after import/upgrade. Query the CE's existing SSR state
+        // instead of maintaining a second pending-hydration boolean.
         const first = el.firstElementChild;
         const tag = first?.tagName.toLowerCase();
         if (
@@ -235,7 +236,7 @@ function scheduleHydration(
           tag.includes('-') &&
           typeof customElements !== 'undefined' &&
           customElements.get(tag) &&
-          (first as Element & { _pendingSSRHydration?: boolean })._pendingSSRHydration !== true
+          (first as Element & { _isSSRRoot?: () => boolean })._isSSRRoot?.() !== true
         ) {
           finish();
           return;

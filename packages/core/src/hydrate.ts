@@ -155,8 +155,10 @@ function prepareResourceHydrationCache(container: Element): Element[] {
     if (script.closest('purity-island') === ownerIsland) scripts.push(script);
   }
   let sibling = container.nextElementSibling;
-  while (sibling?.tagName === 'SCRIPT') {
-    if (sibling.id.startsWith(prefix)) scripts.push(sibling);
+  // An unrelated script ends this root's streaming chunk sequence; scanning
+  // past it would adopt and delete serialization owned by another source.
+  while (sibling?.tagName === 'SCRIPT' && sibling.id.startsWith(prefix)) {
+    scripts.push(sibling);
     sibling = sibling.nextElementSibling;
   }
   if (!scripts.length) {

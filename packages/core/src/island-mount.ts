@@ -204,12 +204,10 @@ function scheduleHydration(
     const finish = (ready: boolean): void => {
       // Failed resolution or adoption must not strand the SSR wrapper.
       if (!ready) hydrated.delete(el);
-      if (onSettled) {
-        try {
-          onSettled(ready);
-        } catch (err) {
-          console.error(`[Purity] mountIslands: interaction replay threw for island ${id}:`, err);
-        }
+      try {
+        onSettled?.(ready);
+      } catch (err) {
+        console.error(`[Purity] mountIslands: interaction replay threw for island ${id}:`, err);
       }
       try {
         done();

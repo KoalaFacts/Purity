@@ -483,16 +483,14 @@ function primeResourceHydrationCache(
   // resources for streaming. Scan in document order so a later boundary's
   // entry wins on key collision (matches "later wins" everywhere else).
   //
-  // After __purity_swap, scripts normally live inside their own root.
-  // Otherwise only the root's adjacent script siblings are eligible. Never
-  // search the entire document: two SSR roots may use the same cache IDs.
+  // After __purity_swap, scripts may be in the root while later streamed
+  // chunks remain adjacent to it. Both placements belong to this root;
+  // never search the whole document (another root may reuse these IDs).
   const boundarySelector = `script[id^="${PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX}"]`;
-  let boundaryScripts: ArrayLike<Element> = container.querySelectorAll(boundarySelector);
-  if (boundaryScripts.length === 0) {
-    boundaryScripts = siblings.filter((el) =>
-      el.id.startsWith(PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX),
-    );
-  }
+  const boundaryScripts = [
+    ...container.querySelectorAll(boundarySelector),
+    ...siblings.filter((el) => el.id.startsWith(PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX)),
+  ];
   if (boundaryScripts.length > 0) {
     if (!merged) merged = { ordered: [], keyed: Object.create(null) };
     for (let i = 0; i < boundaryScripts.length; i++) {

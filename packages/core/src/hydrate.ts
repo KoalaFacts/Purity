@@ -159,20 +159,34 @@ function prepareResourceHydrationCache(container: Element): Element[] {
     if (sibling.id.startsWith(prefix)) scripts.push(sibling);
     sibling = sibling.nextElementSibling;
   }
+  if (!scripts.length) {
+    primeHydrationCache([]);
+    return scripts;
+  }
+  // One safe accumulator for both legacy shell and streamed keyed data.
+  const merged = {
+    ordered: [] as unknown[],
+    keyed: Object.create(null) as Record<string, unknown>,
+  };
   const shell = scripts.find((script) => script.id === '__purity_resources__');
-  let merged: { ordered: unknown[]; keyed: Record<string, unknown> } | null = null;
   if (shell?.textContent != null) {
     try {
-      merged = normalizeCachePayload(JSON.parse(shell.textContent));
+      const parsed: unknown = JSON.parse(shell.textContent);
+      if (Array.isArray(parsed)) merged.ordered = parsed;
+      else if (parsed && typeof parsed === 'object') {
+        const data = parsed as { ordered?: unknown; keyed?: unknown };
+        if (Array.isArray(data.ordered)) merged.ordered = data.ordered;
+        if (data.keyed && typeof data.keyed === 'object') {
+          Object.assign(merged.keyed, data.keyed);
+        }
+      }
     } catch (err) {
       console.error('[Purity] Failed to parse hydration cache:', err);
     }
   }
   for (let i = 0; i < scripts.length; i++) {
     const script = scripts[i]!;
-    if (script === shell) continue;
-    if (!merged) merged = { ordered: [], keyed: Object.create(null) };
-    if (script.textContent == null) continue;
+    if (script === shell || script.textContent == null) continue;
     try {
       const parsed = JSON.parse(script.textContent) as { keyed?: unknown };
       if (
@@ -187,26 +201,8 @@ function prepareResourceHydrationCache(container: Element): Element[] {
       console.error('[Purity] Failed to parse per-boundary hydration cache:', err);
     }
   }
-  primeHydrationCache(merged ?? []);
+  primeHydrationCache(merged);
   return scripts;
-}
-
-function normalizeCachePayload(parsed: unknown): {
-  ordered: unknown[];
-  keyed: Record<string, unknown>;
-} {
-  // Allocate one safe destination for legacy, current and invalid payloads.
-  // Own JSON keys (including "__proto__") never hit inherited setters.
-  const keyed: Record<string, unknown> = Object.create(null);
-  let ordered: unknown[] = [];
-  if (Array.isArray(parsed)) {
-    ordered = parsed;
-  } else if (parsed && typeof parsed === 'object') {
-    const obj = parsed as { ordered?: unknown; keyed?: unknown };
-    if (obj.keyed && typeof obj.keyed === 'object') Object.assign(keyed, obj.keyed);
-    if (Array.isArray(obj.ordered)) ordered = obj.ordered;
-  }
-  return { ordered, keyed };
 }
 
 function mountHydrated(component: ComponentFn, container: Element): MountResult {

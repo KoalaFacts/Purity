@@ -146,7 +146,7 @@ export function mountIslands(
     // Do not permanently claim an invalid/missing manifest entry: callers
     // can fix the manifest and retry without replacing the SSR wrapper.
     const rawId = el.getAttribute('data-pi-id');
-    const id = rawId != null ? Number(rawId) : NaN;
+    const id = Number(rawId);
     if (!Number.isInteger(id) || id < 1) {
       console.warn(
         `[Purity] mountIslands: skipping <purity-island> with invalid data-pi-id=${JSON.stringify(rawId)}`,
@@ -164,14 +164,14 @@ export function mountIslands(
     hydrated.add(el);
     const trigger = readTrigger(el);
     scheduleHydration(el, entry, trigger, id, () => {
-      if (onMount) onMount(id, el);
+      onMount?.(id, el);
     });
   }
 }
 
 function readTrigger(el: Element): IslandTrigger {
   const raw = el.getAttribute('data-pi-trigger');
-  if (raw == null || raw === '') return 'load';
+  if (!raw) return 'load';
   // Bug #14: reference the SAME allow-list `island.ts` uses for SSR
   // normalisation. Pre-fix, both sides duplicated the literal list — a
   // change on one side silently moved the security boundary. Importing
@@ -202,10 +202,12 @@ function scheduleHydration(
   // activation; a rejected chunk must not click an unhydrated SSR control.
   const run = (onSettled?: (ready: boolean) => void): void => {
     const finish = (ready: boolean): void => {
-      try {
-        onSettled?.(ready);
-      } catch (err) {
-        console.error(`[Purity] mountIslands: interaction replay threw for island ${id}:`, err);
+      if (onSettled) {
+        try {
+          onSettled(ready);
+        } catch (err) {
+          console.error(`[Purity] mountIslands: interaction replay threw for island ${id}:`, err);
+        }
       }
       try {
         done();
@@ -341,7 +343,7 @@ function unwrapModule(value: unknown, id: number): View | null {
         count++;
       }
     }
-    if (count === 1 && candidate) return candidate;
+    if (count === 1) return candidate;
     console.warn(
       `[Purity] mountIslands: island ${id} resolved to a module with ${count} function exports; ` +
         'expected exactly one, or a `default` export. Returning null.',
@@ -387,7 +389,7 @@ function waitForVisible(el: HTMLElement, run: () => void): void {
         if (fired) return;
         fired = true;
         observer.disconnect();
-        if (mo) mo.disconnect();
+        mo?.disconnect();
         run();
         return;
       }
@@ -414,7 +416,7 @@ function waitForVisible(el: HTMLElement, run: () => void): void {
         fired = true;
         // disconnect() releases every target; per-target unobserve is redundant.
         obs.disconnect();
-        if (mo) mo.disconnect();
+        mo?.disconnect();
         // A detached, unhydrated SSR wrapper can be reattached and scheduled again.
         hydrated.delete(el);
       }
@@ -519,10 +521,16 @@ function hasActivationRole(event: Event, island: Element, key: string): boolean 
     if (!(node instanceof Element)) continue;
     const role = node.getAttribute('role');
     if (role === 'link' && key === 'Enter') return true;
-    // Match the same exact ARIA activation roles without repeating a
-    // separate branch for each menu item variant.
     if (
-      /^(?:button|checkbox|radio|switch|menuitem(?:checkbox|radio)?|tab|option)$/.test(role ?? '')
+      role === 'button' ||
+      role === 'checkbox' ||
+      role === 'radio' ||
+      role === 'switch' ||
+      role === 'menuitem' ||
+      role === 'menuitemcheckbox' ||
+      role === 'menuitemradio' ||
+      role === 'tab' ||
+      role === 'option'
     ) {
       return true;
     }

@@ -406,13 +406,11 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
       while (container.firstChild) container.removeChild(container.firstChild);
       return mountHydrated(component, container);
     }
-    ctx.nodes = Array.from(container.childNodes);
   } else if (view instanceof Node && view.parentNode === container) {
     // A component may return a custom element already present as a direct
     // child of the SSR root. Reuse exactly that live node: no generated
     // client-only AOT factory returns an already-connected child here.
     // Preserve its shadow tree and mounted callback ownership.
-    ctx.nodes = Array.from(container.childNodes);
   } else if (
     view !== null &&
     typeof view === 'object' &&
@@ -423,7 +421,6 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     // established root contract (the nested-slot inflater owns adoption).
     // In particular, asyncRoute() returns when() at the application root.
     // Do not treat this marker as detached client-only AOT DOM.
-    ctx.nodes = Array.from(container.childNodes);
   } else {
     // A client-only AOT factory creates detached DOM during hydrate().
     // Reject detached nodes/fragments rather than replacing the SSR tree.
@@ -438,7 +435,22 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     throw new Error('[Purity] hydrate() requires purity({ hydratable: true })');
   }
 
-  hydratePendingCustomElements(container);
+  // Only a fully adopted root owns its DOM. Custom Element hydration hooks can
+  // throw after the template walker returned; release the failed subscriptions,
+  // restore consumed scripts and preserve the pre-existing SSR children.
+  ctx.nodes = Array.from(container.childNodes);
+  try {
+    hydratePendingCustomElements(container);
+  } catch (err) {
+    ctx.nodes = null;
+    ctx.destroyed = null;
+    try {
+      rollbackCache();
+    } finally {
+      unmountContext(ctx);
+    }
+    throw err;
+  }
   hydratedRoots.set(container, ++hydrationRevision);
   ctx._isMounted = true;
 

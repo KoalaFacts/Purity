@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from 'vite-plus/test';
 import { hydrate } from '../src/hydrate.ts';
+import { hydratePendingCustomElements } from '../src/compiler/hydrate-elements.ts';
 import { clearHydrationCache, consumeHydrationValue } from '../src/ssr/hydration-cache.ts';
 
 afterEach(() => {
@@ -47,4 +48,51 @@ it('keeps a deferred nested island’s cache scripts for that island, not its pa
   child.unmount();
   shell.unmount();
   expect(islandView.isConnected).toBe(false);
+});
+
+it('defers nested island Custom Element hydration until its own root is adopted', () => {
+  const host = document.createElement('main');
+  const parent = document.createElement('x-shell-hydrate');
+  const island = document.createElement('purity-island');
+  island.setAttribute('data-pi-id', '1');
+  island.setAttribute('data-pi-trigger', 'interact');
+  const child = document.createElement('x-lazy-hydrate');
+  let shellCalls = 0;
+  let islandCalls = 0;
+  (parent as Element & { _hydrateSSR?: () => void })._hydrateSSR = () => shellCalls++;
+  (child as Element & { _hydrateSSR?: () => void })._hydrateSSR = () => islandCalls++;
+  island.appendChild(child);
+  host.append(parent, island);
+  document.body.appendChild(host);
+
+  const shell = hydrate(host, () => parent);
+  expect(shellCalls).toBe(1);
+  expect(islandCalls).toBe(0);
+  expect(child.parentNode).toBe(island);
+  const nested = hydrate(island, () => child);
+  expect(shellCalls).toBe(1);
+  expect(islandCalls).toBe(1);
+  nested.unmount();
+  shell.unmount();
+});
+
+it('does not traverse a deferred island inside a Custom Element shadow root', () => {
+  const host = document.createElement('div');
+  const shadow = host.attachShadow({ mode: 'open' });
+  const parent = document.createElement('x-shadow-hydrate');
+  const island = document.createElement('purity-island');
+  const child = document.createElement('x-shadow-lazy-hydrate');
+  let parentCalls = 0;
+  let nestedCalls = 0;
+  (parent as Element & { _hydrateSSR?: () => void })._hydrateSSR = () => parentCalls++;
+  (child as Element & { _hydrateSSR?: () => void })._hydrateSSR = () => nestedCalls++;
+  island.appendChild(child);
+  shadow.append(parent, island);
+  document.body.appendChild(host);
+
+  hydratePendingCustomElements(shadow);
+  expect(parentCalls).toBe(1);
+  expect(nestedCalls).toBe(0);
+  hydratePendingCustomElements(island);
+  expect(nestedCalls).toBe(1);
 });

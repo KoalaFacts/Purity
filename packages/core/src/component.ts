@@ -450,6 +450,19 @@ const RESOURCE_SCRIPT_ID = '__purity_resources__';
 // streamed `<template id="purity-s-N">` chunk. ADR 0006 Phase 6 second-half.
 const PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX = '__purity_resources_';
 
+// Capture the original position before consuming an SSR resource script.
+// Shared by the shell and per-stream boundary paths; these scripts must be
+// restored by identity if the root's hydration is rejected.
+function removeHydrationResourceScript(
+  script: Element,
+  removedScripts: [Element, Node, Node | null][],
+): void {
+  const parent = script.parentNode;
+  if (!parent) return;
+  removedScripts.push([script, parent, script.nextSibling]);
+  parent.removeChild(script);
+}
+
 function primeResourceHydrationCache(
   container: Element,
   removedScripts: [Element, Node, Node | null][],
@@ -477,11 +490,7 @@ function primeResourceHydrationCache(
     } catch (err) {
       console.error('[Purity] Failed to parse hydration cache:', err);
     }
-    const parent = shellEl.parentNode;
-    if (parent) {
-      removedScripts.push([shellEl, parent, shellEl.nextSibling]);
-      parent.removeChild(shellEl);
-    }
+    removeHydrationResourceScript(shellEl, removedScripts);
   }
 
   // Find every streamed boundary's cache and merge keyed entries. The
@@ -513,11 +522,7 @@ function primeResourceHydrationCache(
     } catch (err) {
       console.error('[Purity] Failed to parse per-boundary hydration cache:', err);
     }
-    const parent = el.parentNode;
-    if (parent) {
-      removedScripts.push([el, parent, el.nextSibling]);
-      parent.removeChild(el);
-    }
+    removeHydrationResourceScript(el, removedScripts);
   }
   primeHydrationCache(merged ?? []);
 }

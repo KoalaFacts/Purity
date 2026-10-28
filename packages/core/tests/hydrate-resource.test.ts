@@ -372,7 +372,7 @@ describe('hydrate + per-boundary streaming cache (ADR 0006 Phase 6 second-half)'
     primeHydrationCache([]);
   });
 
-  it('does not steal another root\'s in-root shell and boundary scripts', async () => {
+  it("does not steal another root's in-root shell and boundary scripts", async () => {
     host.innerHTML = '<p>root-a</p>';
     const other = document.createElement('div');
     other.innerHTML =

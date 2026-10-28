@@ -598,7 +598,6 @@ export function component<
     class PurityElement extends HTMLElement {
       _ctx: ComponentContext | null = null;
       _props: Record<string, unknown> = {};
-      _mounted = false;
       // True once this element has rendered at least one connectedCallback.
       // Gates the DSD/SSR-hydration branch so it runs ONLY on the first
       // connect (when shadow content came from the parser). On a later
@@ -606,7 +605,6 @@ export function component<
       // re-rendered fresh, not re-hydrated against marker-less DOM.
       _hasRendered = false;
       _hadDeclarativeShadowRoot = false;
-      _pendingSSRHydration = false;
       _shadow: ShadowRoot;
       _internals: ElementInternals | null = null;
       _formBridge: FormControlBridge | null = null;
@@ -662,7 +660,6 @@ export function component<
         if (this._isSSRRoot()) {
           // The parent must assign typed property bindings first. The DSD
           // content stays visible until hydrate() walks this element.
-          this._pendingSSRHydration = true;
           return;
         }
         this._renderConnected();
@@ -675,10 +672,20 @@ export function component<
       }
 
       _hydrateSSR(): void {
-        if (!this._pendingSSRHydration || !this.isConnected) return;
-        this._pendingSSRHydration = false;
-        this._renderConnected();
-        hydratePendingCustomElements(this._shadow);
+        if (!this._isSSRRoot() || !this.isConnected) return;
+        try {
+          this._renderConnected();
+          hydratePendingCustomElements(this._shadow);
+        } catch (err) {
+          // A rejected adoption must not strand a live shadow owner or turn
+          // off retries. Preserve the parsed shadow tree while disposing
+          // bindings, including when a nested Custom Element hook failed.
+          if (this._ctx) unmountChildContext(this._ctx, true, true);
+          this._ctx = null;
+          this._hasRendered = false;
+          this._formBridge?.disconnect();
+          throw err;
+        }
       }
 
       _renderConnected(): void {
@@ -794,7 +801,6 @@ export function component<
         }
 
         ctx._isMounted = true;
-        this._mounted = true;
         this._hasRendered = true;
 
         scheduleMountCallbacks(ctx);

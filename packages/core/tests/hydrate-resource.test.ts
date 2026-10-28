@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/jit.ts';
-import { hydrate, resource, state, when } from '../src/index.ts';
+import { hydrate, onDispose, onError, resource, state, when } from '../src/index.ts';
 import { primeHydrationCache } from '../src/ssr-context.ts';
 import { consumeHydrationValue } from '../src/ssr/hydration-cache.ts';
 import { tick } from './_helpers.ts';
@@ -79,6 +79,67 @@ describe('hydrate + resource cache', () => {
     expect(host.querySelector('#__purity_resources__')).toBeNull();
     expect(host.querySelector('#__purity_resources_1__')).toBeNull();
     handle.unmount();
+  });
+
+  it('preserves a successful reentrant hydration started by an error handler', () => {
+    primeHydrationCache({ ordered: [], keyed: { key: 'prior' } });
+    host.innerHTML =
+      '<p>server</p>' +
+      '<script type="application/json" id="__purity_resources__">' +
+      '{"ordered":[],"keyed":{"key":"root"}}' +
+      '</script>';
+    const original = host.querySelector('p')!;
+    const shellScript = host.querySelector('script')!;
+    let recovered: ReturnType<typeof hydrate> | undefined;
+    let failedOwnerDisposals = 0;
+
+    const failed = hydrate(host, () => {
+      onDispose(() => failedOwnerDisposals++);
+      onError(() => {
+        recovered = hydrate(host, () => host.querySelector('p')!);
+        expect(host.querySelector('p')).toBe(original);
+        expect(consumeHydrationValue('key')).toBe('root');
+        expect(shellScript.parentNode).toBeNull();
+      });
+      throw new Error('initial hydration failed');
+    });
+
+    expect(failedOwnerDisposals).toBe(1);
+    expect(host.querySelector('p')).toBe(original);
+    expect(shellScript.parentNode).toBeNull();
+    expect(consumeHydrationValue('key')).toBe('root');
+    failed.unmount();
+    expect(host.querySelector('p')).toBe(original);
+    recovered!.unmount();
+    expect(host.querySelector('p')).toBeNull();
+    expect(shellScript.parentNode).toBeNull();
+  });
+
+  it('does not overwrite a newer hydration started during refused-render disposal', () => {
+    primeHydrationCache({ ordered: [], keyed: { key: 'prior' } });
+    host.innerHTML =
+      '<p>server</p>' +
+      '<script type="application/json" id="__purity_resources__">' +
+      '{"ordered":[],"keyed":{"key":"new"}}' +
+      '</script>';
+    const server = host.querySelector('p')!;
+    const script = host.querySelector('script')!;
+    let recovered: ReturnType<typeof hydrate> | undefined;
+
+    expect(() =>
+      hydrate(host, () => {
+        onDispose(() => {
+          recovered = hydrate(host, () => host.querySelector('p')!);
+        });
+        return document.createElement('span');
+      }),
+    ).toThrow('purity({ hydratable: true })');
+
+    expect(host.querySelector('p')).toBe(server);
+    expect(script.parentNode).toBeNull();
+    expect(consumeHydrationValue('key')).toBe('new');
+    recovered!.unmount();
+    expect(script.parentNode).toBeNull();
   });
 
   it('rejects a detached fragment root without deleting SSR nodes', () => {

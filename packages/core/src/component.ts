@@ -357,14 +357,15 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     // An error handler can unmount the parent while this child is attached.
     // Suppress the failed render's destroy lifecycle before dispatching it.
     ctx.destroyed = null;
+    // A recovery handler may synchronously hydrate this same root. Release the
+    // failed attempt's cache/scripts first and never attach recovery work to
+    // the context that is about to be destroyed.
+    ctx._rollback = true;
     try {
+      rollbackCache();
       ctx._handleError(err);
     } finally {
-      try {
-        unmountContext(ctx);
-      } finally {
-        rollbackCache();
-      }
+      unmountContext(ctx);
     }
     return { unmount: () => {} };
   }
@@ -415,10 +416,12 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     // A client-only AOT factory creates detached DOM during hydrate().
     // Reject detached nodes/fragments rather than replacing the SSR tree.
     ctx.destroyed = null;
+    // A disposer can start a correctly hydratable retry. Its consumed cache
+    // must not be overwritten when this rejected attempt finishes cleanup.
     try {
-      unmountContext(ctx);
-    } finally {
       rollbackCache();
+    } finally {
+      unmountContext(ctx);
     }
     throw new Error('[Purity] hydrate() requires purity({ hydratable: true })');
   }

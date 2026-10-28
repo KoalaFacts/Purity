@@ -372,6 +372,115 @@ describe('hydrate + per-boundary streaming cache (ADR 0006 Phase 6 second-half)'
     primeHydrationCache([]);
   });
 
+  it('does not steal another root\'s in-root shell and boundary scripts', async () => {
+    host.innerHTML = '<p>root-a</p>';
+    const other = document.createElement('div');
+    other.innerHTML =
+      '<p><!--[-->B-shell/B-stream<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources__">' +
+      '{"ordered":[],"keyed":{"shell":"B-shell"}}' +
+      '</script>' +
+      '<script type="application/json" id="__purity_resources_1__">' +
+      '{"keyed":{"stream":"B-stream"}}' +
+      '</script>';
+    document.body.appendChild(other);
+    const shell = other.querySelector('#__purity_resources__')!;
+    const boundary = other.querySelector('#__purity_resources_1__')!;
+    let ownerA: ReturnType<typeof hydrate> | undefined;
+    let ownerB: ReturnType<typeof hydrate> | undefined;
+    try {
+      const originalA = host.firstChild!;
+      ownerA = hydrate(host, () => originalA);
+      expect(other.contains(shell)).toBe(true);
+      expect(other.contains(boundary)).toBe(true);
+      expect(consumeHydrationValue('shell')).toBeUndefined();
+      expect(consumeHydrationValue('stream')).toBeUndefined();
+
+      let fetches = 0;
+      ownerB = hydrate(other, () => {
+        const shellResource = resource(
+          () => {
+            fetches++;
+            return Promise.resolve('refetched-shell');
+          },
+          { key: 'shell' },
+        );
+        const streamResource = resource(
+          () => {
+            fetches++;
+            return Promise.resolve('refetched-stream');
+          },
+          { key: 'stream' },
+        );
+        return html`<p>${() => `${shellResource() ?? '?'}/${streamResource() ?? '?'}`}</p>`;
+      });
+      await tick();
+      expect(fetches).toBe(0);
+      expect(other.textContent).toContain('B-shell/B-stream');
+      expect(shell.parentNode).toBeNull();
+      expect(boundary.parentNode).toBeNull();
+    } finally {
+      ownerA?.unmount();
+      ownerB?.unmount();
+      other.remove();
+    }
+  });
+
+  it('associates document-level cache scripts with their adjacent SSR root only', async () => {
+    host.innerHTML = '<p>root-a</p>';
+    const other = document.createElement('div');
+    other.innerHTML = '<p><!--[-->B-shell/B-stream<!--]--></p>';
+    document.body.appendChild(other);
+    other.insertAdjacentHTML(
+      'afterend',
+      '<script type="application/json" id="__purity_resources__">' +
+        '{"ordered":[],"keyed":{"shell":"B-shell"}}' +
+        '</script>' +
+        '<script type="application/json" id="__purity_resources_2__">' +
+        '{"keyed":{"stream":"B-stream"}}' +
+        '</script>',
+    );
+    const shell = other.nextElementSibling!;
+    const boundary = shell.nextElementSibling!;
+    let ownerA: ReturnType<typeof hydrate> | undefined;
+    let ownerB: ReturnType<typeof hydrate> | undefined;
+    try {
+      ownerA = hydrate(host, () => host.querySelector('p')!);
+      expect(shell.isConnected).toBe(true);
+      expect(boundary.isConnected).toBe(true);
+
+      let fetches = 0;
+      ownerB = hydrate(other, () => {
+        const shellResource = resource(
+          () => {
+            fetches++;
+            return Promise.resolve('network-shell');
+          },
+          { key: 'shell' },
+        );
+        const streamResource = resource(
+          () => {
+            fetches++;
+            return Promise.resolve('network-stream');
+          },
+          { key: 'stream' },
+        );
+        return html`<p>${() => `${shellResource() ?? '?'}/${streamResource() ?? '?'}`}</p>`;
+      });
+      await tick();
+      expect(fetches).toBe(0);
+      expect(other.textContent).toContain('B-shell/B-stream');
+      expect(shell.isConnected).toBe(false);
+      expect(boundary.isConnected).toBe(false);
+    } finally {
+      ownerA?.unmount();
+      ownerB?.unmount();
+      shell.remove();
+      boundary.remove();
+      other.remove();
+    }
+  });
+
   it('merges per-boundary <script id="__purity_resources_N__"> into the keyed cache', async () => {
     // Stage what a streamed renderToStream output looks like AFTER all
     // boundaries have swapped: shell prime + two per-boundary primes already

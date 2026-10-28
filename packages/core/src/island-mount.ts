@@ -202,6 +202,8 @@ function scheduleHydration(
   // activation; a rejected chunk must not click an unhydrated SSR control.
   const run = (onSettled?: (ready: boolean) => void): void => {
     const finish = (ready: boolean): void => {
+      // Failed resolution or adoption must not strand the SSR wrapper.
+      if (!ready) hydrated.delete(el);
       if (onSettled) {
         try {
           onSettled(ready);
@@ -219,7 +221,6 @@ function scheduleHydration(
       .then((view) => {
         if (!view) {
           // A rejected import never adopted SSR DOM. Allow a later manifest retry.
-          hydrated.delete(el);
           finish(false);
           return;
         }
@@ -247,15 +248,11 @@ function scheduleHydration(
         } catch (err) {
           // A rejected adoption leaves the original SSR wrapper intact.
           // Release the scheduling claim so a corrected view can retry.
-          hydrated.delete(el);
           console.error('[Purity] mountIslands: hydrate() threw for island', el, err);
           finish(false);
         }
       })
       .catch((err) => {
-        // A malformed module export can throw during unwrap, before adoption.
-        // Do not leave its SSR wrapper permanently claimed.
-        hydrated.delete(el);
         console.error(`[Purity] mountIslands: failed to resolve island ${id}:`, err);
         finish(false);
       });

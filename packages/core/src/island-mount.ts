@@ -414,7 +414,7 @@ function waitForVisible(el: HTMLElement, run: () => void): void {
       if (el.parentNode !== parent) {
         if (fired) return;
         fired = true;
-        for (let i = 0; i < targets.length; i++) obs.unobserve(targets[i]);
+        // disconnect() releases every target; per-target unobserve is redundant.
         obs.disconnect();
         if (mo) mo.disconnect();
         // A detached, unhydrated SSR wrapper can be reattached and scheduled again.

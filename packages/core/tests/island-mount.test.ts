@@ -982,10 +982,9 @@ describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', (
   type SpyIO = {
     _cb: Cb;
     observed: Element[];
-    unobserved: Element[];
+    active: Set<Element>;
     disconnected: number;
     observe(el: Element): void;
-    unobserve(el: Element): void;
     disconnect(): void;
   };
   const ios: SpyIO[] = [];
@@ -1002,16 +1001,15 @@ describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', (
       const inst: SpyIO = {
         _cb: cb,
         observed: [],
-        unobserved: [],
+        active: new Set<Element>(),
         disconnected: 0,
         observe(el) {
           this.observed.push(el);
-        },
-        unobserve(el) {
-          this.unobserved.push(el);
+          this.active.add(el);
         },
         disconnect() {
           this.disconnected++;
+          this.active.clear();
         },
       };
       ios.push(inst);
@@ -1028,7 +1026,7 @@ describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', (
     document.body.innerHTML = '';
   });
 
-  it('unobserves + disconnects the IO when the wrapper is removed before intersecting', async () => {
+  it('disconnects all observed targets when the wrapper is removed before intersecting', async () => {
     const View = (): unknown => html`<span>x</span>`;
     const host = makeWrapper(1, 'visible', '<span>x</span>');
     mountIslands([island(View, { hydrate: 'visible' })]);
@@ -1039,6 +1037,7 @@ describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', (
     const wrapper = host.querySelector('purity-island')!;
     const visibleChild = wrapper.firstElementChild!;
     expect(io.observed).toContain(visibleChild);
+    expect(io.active.has(visibleChild)).toBe(true);
     expect(io.disconnected).toBe(0);
 
     // Detach the wrapper from its parent before any intersection fires.
@@ -1046,9 +1045,8 @@ describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', (
     // jsdom MutationObservers fire on a microtask — flush.
     for (let i = 0; i < 5; i++) await tick();
 
-    // The fix: unobserve was called for the wrapper AND the observer
-    // was disconnected (no more armed reference).
-    expect(io.unobserved).toContain(visibleChild);
+    // A single disconnect stops observing every target; no target is retained.
+    expect(io.active.size).toBe(0);
     expect(io.disconnected).toBeGreaterThanOrEqual(1);
     host.remove();
   });

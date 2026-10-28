@@ -580,7 +580,11 @@ describe('mountIslands() — interact trigger (ADR 0038 Phase 4)', () => {
 
   it('replays an exact ARIA menuitemradio role but not an unknown role on first keydown', async () => {
     const accepted = makeWrapper(1, 'interact', '<span role="menuitemradio" tabindex="0">x</span>');
-    const rejected = makeWrapper(1, 'interact', '<span role="menuitemradios" tabindex="0">x</span>');
+    const rejected = makeWrapper(
+      1,
+      'interact',
+      '<span role="menuitemradios" tabindex="0">x</span>',
+    );
     let acceptedKeys = 0;
     let rejectedKeys = 0;
     try {

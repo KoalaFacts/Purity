@@ -447,20 +447,22 @@ function primeResourceHydrationCache(
   container: Element,
   removedScripts: [Element, Node, Node | null][],
 ): void {
-  // The script tag may be inside the container, immediately after it (when
-  // renderToString output is appended whole), or at document scope. Try the
-  // most likely locations in order. Document-scope is the canonical case
-  // because the SSR flow is `document.getElementById('app').outerHTML = ssrOutput`.
-  const doc = container.ownerDocument ?? globalThis.document;
-  /* v8 ignore next 2 -- tests run in jsdom which always has ownerDocument */
-  if (!doc) return;
+  // Cache scripts belong to this SSR root: either inside it, or as consecutive
+  // script siblings immediately after it (append-whole renderToString output).
+  // A document-wide lookup can steal another root's scripts and resource data.
+  const siblings: Element[] = [];
+  let sibling = container.nextElementSibling;
+  while (sibling?.tagName === 'SCRIPT') {
+    siblings.push(sibling);
+    sibling = sibling.nextElementSibling;
+  }
 
   // Start with the shell-level cache. Accepts either the legacy positional
   // array or the `{ ordered, keyed }` object shape; merge per-boundary
   // keyed entries on top so streamed boundaries' resources hit the cache.
   const shellEl =
     container.querySelector(`script#${RESOURCE_SCRIPT_ID}`) ??
-    doc.getElementById(RESOURCE_SCRIPT_ID);
+    siblings.find((el) => el.id === RESOURCE_SCRIPT_ID);
   let merged: { ordered: unknown[]; keyed: Record<string, unknown> } | null = null;
   if (shellEl?.textContent != null) {
     try {
@@ -481,17 +483,15 @@ function primeResourceHydrationCache(
   // resources for streaming. Scan in document order so a later boundary's
   // entry wins on key collision (matches "later wins" everywhere else).
   //
-  // Prefer container scope: after `__purity_swap` runs, each boundary's
-  // `__purity_resources_N__` script lands inside the root it belongs to
-  // (insertBefore at the in-root boundary marker). Scoping to the container
-  // means a second `hydrate()` root keeps its own scripts instead of having
-  // the first root consume + delete every per-boundary script globally. Fall
-  // back to document scope only when the container holds none — the
-  // append-whole / non-streamed layouts that emit the scripts as siblings.
+  // After __purity_swap, scripts normally live inside their own root.
+  // Otherwise only the root's adjacent script siblings are eligible. Never
+  // search the entire document: two SSR roots may use the same cache IDs.
   const boundarySelector = `script[id^="${PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX}"]`;
-  let boundaryScripts = container.querySelectorAll(boundarySelector);
+  let boundaryScripts: ArrayLike<Element> = container.querySelectorAll(boundarySelector);
   if (boundaryScripts.length === 0) {
-    boundaryScripts = doc.querySelectorAll(boundarySelector);
+    boundaryScripts = siblings.filter((el) =>
+      el.id.startsWith(PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX),
+    );
   }
   if (boundaryScripts.length > 0) {
     if (!merged) merged = { ordered: [], keyed: Object.create(null) };
@@ -520,7 +520,7 @@ function primeResourceHydrationCache(
     }
   }
 
-  if (merged) primeHydrationCache(merged);
+  primeHydrationCache(merged ?? []);
 }
 
 function normalizeCachePayload(parsed: unknown): {

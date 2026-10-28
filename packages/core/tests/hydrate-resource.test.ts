@@ -481,6 +481,42 @@ describe('hydrate + per-boundary streaming cache (ADR 0006 Phase 6 second-half)'
     }
   });
 
+  it("does not reuse a previous root's keyed cache when the next root has no scripts", async () => {
+    host.innerHTML = '<p><!--[-->loading<!--]--></p>';
+    const other = document.createElement('div');
+    other.innerHTML =
+      '<p>root-b</p>' +
+      '<script type="application/json" id="__purity_resources__">' +
+      '{"ordered":[],"keyed":{"private":"from-root-b"}}' +
+      '</script>';
+    document.body.appendChild(other);
+    let ownerA: ReturnType<typeof hydrate> | undefined;
+    let ownerB: ReturnType<typeof hydrate> | undefined;
+    try {
+      ownerB = hydrate(other, () => other.querySelector('p')!);
+      expect(consumeHydrationValue('private')).toBe('from-root-b');
+      let fetches = 0;
+      ownerA = hydrate(host, () => {
+        const data = resource(
+          () => {
+            fetches++;
+            return Promise.resolve('fetched-for-a');
+          },
+          { key: 'private' },
+        );
+        return html`<p>${() => data() ?? 'loading'}</p>`;
+      });
+      await tick();
+      expect(fetches).toBe(1);
+      expect(host.textContent).toContain('fetched-for-a');
+      expect(host.textContent).not.toContain('from-root-b');
+    } finally {
+      ownerA?.unmount();
+      ownerB?.unmount();
+      other.remove();
+    }
+  });
+
   it('merges per-boundary <script id="__purity_resources_N__"> into the keyed cache', async () => {
     // Stage what a streamed renderToStream output looks like AFTER all
     // boundaries have swapped: shell prime + two per-boundary primes already

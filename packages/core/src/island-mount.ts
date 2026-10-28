@@ -519,17 +519,9 @@ function hasActivationRole(event: Event, island: Element, key: string): boolean 
     if (!(node instanceof Element)) continue;
     const role = node.getAttribute('role');
     if (role === 'link' && key === 'Enter') return true;
-    if (
-      role === 'button' ||
-      role === 'checkbox' ||
-      role === 'radio' ||
-      role === 'switch' ||
-      role === 'menuitem' ||
-      role === 'menuitemcheckbox' ||
-      role === 'menuitemradio' ||
-      role === 'tab' ||
-      role === 'option'
-    ) {
+    // Match the same exact ARIA activation roles without repeating a
+    // separate branch for each menu item variant.
+    if (/^(?:button|checkbox|radio|switch|menuitem(?:checkbox|radio)?|tab|option)$/.test(role ?? '')) {
       return true;
     }
   }

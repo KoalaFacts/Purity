@@ -517,6 +517,41 @@ describe('hydrate + per-boundary streaming cache (ADR 0006 Phase 6 second-half)'
     }
   });
 
+  it('uses later adjacent boundary data after an earlier in-root cache with the same key', async () => {
+    host.innerHTML =
+      '<p><!--[-->adjacent-wins<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources_1__">' +
+      '{"keyed":{"shared":"inside-loses"}}' +
+      '</script>';
+    host.insertAdjacentHTML(
+      'afterend',
+      '<script type="application/json" id="__purity_resources_2__">' +
+        '{"keyed":{"shared":"adjacent-wins"}}' +
+        '</script>',
+    );
+    const outside = host.nextElementSibling!;
+    let fetches = 0;
+    const owner = hydrate(host, () => {
+      const cached = resource(
+        () => {
+          fetches++;
+          return Promise.resolve('network');
+        },
+        { key: 'shared' },
+      );
+      return html`<p>${() => cached() ?? '?'}</p>`;
+    });
+    try {
+      await tick();
+      expect(fetches).toBe(0);
+      expect(host.textContent).toContain('adjacent-wins');
+      expect(host.textContent).not.toContain('inside-loses');
+      expect(outside.isConnected).toBe(false);
+    } finally {
+      owner.unmount();
+      outside.remove();
+    }
+  });
   it('merges in-root and adjacent boundary scripts for one SSR root', async () => {
     host.innerHTML =
       '<p><!--[-->in-root/adjacent<!--]--></p>' +

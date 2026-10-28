@@ -447,22 +447,23 @@ function primeResourceHydrationCache(
   container: Element,
   removedScripts: [Element, Node, Node | null][],
 ): void {
-  // Cache scripts belong to this SSR root: either inside it, or as consecutive
-  // script siblings immediately after it (append-whole renderToString output).
-  // A document-wide lookup can steal another root's scripts and resource data.
-  const siblings: Element[] = [];
-  let sibling = container.nextElementSibling;
-  while (sibling?.tagName === 'SCRIPT') {
-    siblings.push(sibling);
-    sibling = sibling.nextElementSibling;
-  }
+  // Only root descendants and consecutive script siblings may provide cache
+  // data. Walk siblings without building an intermediate collection.
 
   // Start with the shell-level cache. Accepts either the legacy positional
   // array or the `{ ordered, keyed }` object shape; merge per-boundary
   // keyed entries on top so streamed boundaries' resources hit the cache.
-  const shellEl =
-    container.querySelector(`script#${RESOURCE_SCRIPT_ID}`) ??
-    siblings.find((el) => el.id === RESOURCE_SCRIPT_ID);
+  let shellEl = container.querySelector(`script#${RESOURCE_SCRIPT_ID}`);
+  if (!shellEl) {
+    let adjacent = container.nextElementSibling;
+    while (adjacent?.tagName === 'SCRIPT') {
+      if (adjacent.id === RESOURCE_SCRIPT_ID) {
+        shellEl = adjacent;
+        break;
+      }
+      adjacent = adjacent.nextElementSibling;
+    }
+  }
   let merged: { ordered: unknown[]; keyed: Record<string, unknown> } | null = null;
   if (shellEl?.textContent != null) {
     try {
@@ -487,37 +488,42 @@ function primeResourceHydrationCache(
   // chunks remain adjacent to it. Both placements belong to this root;
   // never search the whole document (another root may reuse these IDs).
   const boundarySelector = `script[id^="${PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX}"]`;
-  const boundaryScripts = [
-    ...container.querySelectorAll(boundarySelector),
-    ...siblings.filter((el) => el.id.startsWith(PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX)),
-  ];
-  if (boundaryScripts.length > 0) {
+  const inRoot = container.querySelectorAll(boundarySelector);
+  let adjacent = container.nextElementSibling;
+  let index = 0;
+  // QuerySelectorAll returns a static NodeList. Consume its entries first,
+  // then adjacent stream chunks in document order, with no temporary arrays.
+  while (index < inRoot.length || adjacent?.tagName === 'SCRIPT') {
+    let el: Element;
+    if (index < inRoot.length) {
+      el = inRoot[index++]!;
+    } else {
+      el = adjacent!;
+      adjacent = el.nextElementSibling;
+      if (!el.id.startsWith(PER_BOUNDARY_RESOURCE_SCRIPT_PREFIX)) continue;
+    }
     if (!merged) merged = { ordered: [], keyed: Object.create(null) };
-    for (let i = 0; i < boundaryScripts.length; i++) {
-      const el = boundaryScripts[i] as Element;
-      if (el.textContent == null) continue;
-      try {
-        const parsed = JSON.parse(el.textContent) as { keyed?: unknown };
-        if (
-          parsed &&
-          typeof parsed === 'object' &&
-          parsed.keyed &&
-          typeof parsed.keyed === 'object'
-        ) {
-          // The null-prototype destination stores reserved JSON keys as data,
-          // with no inherited setters for "__proto__" or other names.
-          Object.assign(merged.keyed, parsed.keyed);
-        }
-      } catch (err) {
-        console.error('[Purity] Failed to parse per-boundary hydration cache:', err);
+    if (el.textContent == null) continue;
+    try {
+      const parsed = JSON.parse(el.textContent) as { keyed?: unknown };
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        parsed.keyed &&
+        typeof parsed.keyed === 'object'
+      ) {
+        // The null-prototype destination stores reserved JSON keys as data,
+        // with no inherited setters for "__proto__" or other names.
+        Object.assign(merged.keyed, parsed.keyed);
       }
-      if (el.parentNode) {
-        removedScripts.push([el, el.parentNode, el.nextSibling]);
-        el.parentNode.removeChild(el);
-      }
+    } catch (err) {
+      console.error('[Purity] Failed to parse per-boundary hydration cache:', err);
+    }
+    if (el.parentNode) {
+      removedScripts.push([el, el.parentNode, el.nextSibling]);
+      el.parentNode.removeChild(el);
     }
   }
-
   primeHydrationCache(merged ?? []);
 }
 

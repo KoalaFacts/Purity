@@ -197,34 +197,30 @@ function scheduleHydration(
   id: number,
   done: () => void,
 ): void {
-  // `done()` is user-supplied (onMount instrumentation). Isolate it so a
-  // throwing onMount doesn't surface as a "failed to resolve island"
-  // false positive via the outer `.catch`, and so it can't kill the
-  // hydration pipeline for *other* islands sharing the same tick.
-  const safeDone = (): void => {
-    try {
-      done();
-    } catch (err) {
-      console.error(`[Purity] mountIslands: onMount threw for island ${id}:`, err);
-    }
-  };
-  const run = (onSettled?: () => void): void => {
-    const finish = (): void => {
+  // Keep both user instrumentation and replay cleanup isolated from the
+  // promise chain. Only a committed hydration may replay an intercepted
+  // activation; a rejected chunk must not click an unhydrated SSR control.
+  const run = (onSettled?: (ready: boolean) => void): void => {
+    const finish = (ready: boolean): void => {
       if (onSettled) {
         try {
-          onSettled();
+          onSettled(ready);
         } catch (err) {
           console.error(`[Purity] mountIslands: interaction replay threw for island ${id}:`, err);
         }
       }
-      safeDone();
+      try {
+        done();
+      } catch (err) {
+        console.error(`[Purity] mountIslands: onMount threw for island ${id}:`, err);
+      }
     };
     resolveEntry(entry, id)
       .then((view) => {
         if (!view) {
           // A rejected import never adopted SSR DOM. Allow a later manifest retry.
           hydrated.delete(el);
-          finish();
+          finish(false);
           return;
         }
         // A registered custom element may already have rendered itself on
@@ -242,22 +238,23 @@ function scheduleHydration(
           customElements.get(tag) &&
           (first as Element & { _isSSRRoot?: () => boolean })._isSSRRoot?.() !== true
         ) {
-          finish();
+          finish(true);
           return;
         }
         try {
           hydrate(el, view as Parameters<typeof hydrate>[1]);
+          finish(true);
         } catch (err) {
           // A rejected adoption leaves the original SSR wrapper intact.
           // Release the scheduling claim so a corrected view can retry.
           hydrated.delete(el);
           console.error('[Purity] mountIslands: hydrate() threw for island', el, err);
+          finish(false);
         }
-        finish();
       })
       .catch((err) => {
         console.error(`[Purity] mountIslands: failed to resolve island ${id}:`, err);
-        finish();
+        finish(false);
       });
   };
   switch (trigger) {
@@ -541,12 +538,12 @@ function hasActivationRole(event: Event, island: Element, key: string): boolean 
   return false;
 }
 
-function waitForInteract(el: Element, run: (onSettled: () => void) => void): void {
+function waitForInteract(el: Element, run: (onSettled: (ready: boolean) => void) => void): void {
   let started = false;
   let pending: (() => void) | null = null;
   const submitRoots: ShadowRoot[] = [];
 
-  const finish = (): void => {
+  const finish = (ready: boolean): void => {
     el.removeEventListener('click', onClick, true);
     el.removeEventListener('submit', onSubmit, true);
     el.removeEventListener('keydown', onKeydown, true);
@@ -557,7 +554,7 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
     pending = null;
     // hydrate() schedules mounted hooks as microtasks. Let those complete
     // before delivering the first user action to its newly bound handler.
-    if (replay) {
+    if (replay && ready) {
       queueMicrotask(() => {
         try {
           replay();

@@ -384,7 +384,8 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   exitHydration();
   popContext();
 
-  if (isDeferred(view)) {
+  const deferred = isDeferred(view);
+  if (deferred) {
     // Inflate in place. Moving SSR nodes through a fragment disconnects and
     // reconnects nested custom elements, tearing down their hydrated shadow
     // trees and rendering them a second time.
@@ -406,43 +407,26 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
       while (container.firstChild) container.removeChild(container.firstChild);
       return mountHydrated(component, container);
     }
-  } else if (view instanceof Node && view.parentNode === container) {
-    // A component may return a custom element already present as a direct
-    // child of the SSR root. Reuse exactly that live node: no generated
-    // client-only AOT factory returns an already-connected child here.
-    // Preserve its shadow tree and mounted callback ownership.
-  } else if (
-    view !== null &&
-    typeof view === 'object' &&
-    (view as { __purity_deferred_match__?: unknown }).__purity_deferred_match__ === true
-  ) {
-    // A root-level when()/match() returns its deferred control-flow handle,
-    // not a DOM factory result. Keeping its existing SSR content is the
-    // established root contract (the nested-slot inflater owns adoption).
-    // In particular, asyncRoute() returns when() at the application root.
-    // Do not treat this marker as detached client-only AOT DOM.
-  } else {
-    // A client-only AOT factory creates detached DOM during hydrate().
-    // Reject detached nodes/fragments rather than replacing the SSR tree.
-    ctx.destroyed = null;
-    // A disposer can start a correctly hydratable retry. Its consumed cache
-    // must not be overwritten when this rejected attempt finishes cleanup.
-    try {
-      rollbackCache();
-    } finally {
-      unmountContext(ctx);
-    }
-    throw new Error('[Purity] hydrate() requires purity({ hydratable: true })');
   }
 
-  // Only a fully adopted root owns its DOM. Custom Element hydration hooks can
-  // throw after the template walker returned; release the failed subscriptions,
-  // restore consumed scripts and preserve the pre-existing SSR children.
-  ctx.nodes = Array.from(container.childNodes);
+  // Existing direct children (including hydrated Custom Elements) and deferred
+  // control-flow handles can reuse server DOM. Detached client-only AOT roots
+  // cannot. Handle this rejection and a failing Custom Element hydration hook
+  // with the same rollback, so neither can consume SSR scripts or leak owners.
   try {
+    if (
+      !deferred &&
+      !(view instanceof Node && view.parentNode === container) &&
+      !(
+        view !== null &&
+        typeof view === 'object' &&
+        (view as { __purity_deferred_match__?: unknown }).__purity_deferred_match__ === true
+      )
+    ) {
+      throw new Error('[Purity] hydrate() requires purity({ hydratable: true })');
+    }
     hydratePendingCustomElements(container);
   } catch (err) {
-    ctx.nodes = null;
     ctx.destroyed = null;
     try {
       rollbackCache();
@@ -451,6 +435,8 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     }
     throw err;
   }
+  // Do not claim the SSR nodes until every hydration hook has succeeded.
+  ctx.nodes = Array.from(container.childNodes);
   hydratedRoots.set(container, ++hydrationRevision);
   ctx._isMounted = true;
 

@@ -368,20 +368,37 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
   });
 }
 
-/** @internal Shared owner teardown; root hydration imports lifecycle, not the reverse. */
-export function unmountContext(ctx: ComponentContext): void {
+/**
+ * @internal Shared child-first owner teardown.
+ * Custom Element roots can retain their disconnected shadow DOM; their
+ * descendants still release DOM and disposers. A failed SSR adoption marks
+ * the subtree as rolled back and changes destroy-error propagation only.
+ */
+export function unmountContext(
+  ctx: ComponentContext,
+  rollback?: boolean,
+  keepHostDOM = false,
+  customElement = false,
+): void {
   if (ctx._isDestroyed) return;
+  if (customElement && rollback) ctx._rollback = true;
 
-  // Unmount children first
+  // Release children before their parent, propagating the CE rollback marker.
   if (ctx.children) {
     for (let i = ctx.children.length - 1; i >= 0; i--) {
-      unmountContext(ctx.children[i]);
+      unmountContext(
+        ctx.children[i],
+        customElement ? ctx._rollback : undefined,
+        false,
+        customElement,
+      );
     }
     ctx.children = null;
   }
 
-  // Remove DOM
-  if (ctx.nodes) {
+  // A detached Custom Element owns its shadow DOM; only its factory children
+  // remove nodes. Other roots remove the nodes they mounted or adopted.
+  if (!keepHostDOM && ctx.nodes) {
     for (let i = 0; i < ctx.nodes.length; i++) {
       const node = ctx.nodes[i];
       /* v8 ignore next -- defensive; nodes are attached when set */
@@ -390,31 +407,27 @@ export function unmountContext(ctx: ComponentContext): void {
     ctx.nodes = null;
   }
 
-  // Mark destroyed before disposers run: lean scopes released by this teardown
-  // must not unregister their callbacks from a component that is going away.
   ctx._isDestroyed = true;
   disposeScope(ctx);
   ctx._isMounted = false;
 
-  // Run destroy callbacks
   if (ctx.destroyed) {
     for (let i = 0; i < ctx.destroyed.length; i++) {
       try {
         ctx.destroyed[i]();
       } catch (err) {
-        console.error('[Purity] Error in onDestroy:', err);
+        if (customElement && !rollback) ctx._handleError(err);
+        else console.error(customElement ? '[Purity] Error:' : '[Purity] Error in onDestroy:', err);
       }
     }
     ctx.destroyed = null;
   }
 
-  // Remove from parent
   if (ctx.parent?.children) {
     const idx = ctx.parent.children.indexOf(ctx);
     if (idx !== -1) ctx.parent.children.splice(idx, 1);
   }
 
-  // Release remaining references for GC
   ctx.mounted = null;
   ctx.errorHandlers = null;
   ctx.parent = null;

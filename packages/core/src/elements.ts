@@ -19,83 +19,20 @@ import {
   popContext,
   pushContext,
 } from './scope.ts';
-import { scheduleMountCallbacks } from './component.ts';
+import { scheduleMountCallbacks, unmountContext } from './component.ts';
 import { hydratePendingCustomElements } from './compiler/hydrate-elements.ts';
 import { FormControlBridge } from './form-control.ts';
 import { disposeScope, watch } from './signals.ts';
 
-// Unmount a context's child contexts, depth-first in reverse order (mirrors
-// unmountContext in component.ts).
-function unmountChildren(ctx: ComponentContext): void {
-  const children = ctx.children;
-  if (!children) return;
-  for (let i = children.length; i--;) unmountChildContext(children[i]);
-  ctx.children = null;
-}
-
-// Recursively tear down a non-custom-element child ComponentContext.
-//
-// Mirrors the canonical `unmountContext` in component.ts (which is private to
-// that module): child-first recursion, DOM removal, disposers, destroyed
-// callbacks, then parent unlink. The host custom element's own teardown lives
-// in `disconnectedCallback` and intentionally skips DOM removal (the browser
-// detaches the host, taking its shadow content with it) — but factory-rendered
-// child contexts created during the host's render are NOT custom elements, so
-// nothing else tears them down. Guarded by `_isDestroyed` so a child that was
-// already unmounted (e.g. a nested custom element whose own
-// `disconnectedCallback` already ran) is skipped rather than double-torn-down.
+// Custom Element hosts may retain detached shadow DOM and suppress destroy
+// propagation during failed hydration. Reuse the canonical component teardown
+// so descendant ownership and disposal order cannot drift between entrypoints.
 function unmountChildContext(
   ctx: ComponentContext,
   rollback = ctx.parent?._rollback,
   keepHostDOM = false,
 ): void {
-  if (ctx._isDestroyed) return;
-  if (rollback) ctx._rollback = true;
-  unmountChildren(ctx);
-
-  // A native custom element's host is already detached by the browser.
-  // Its shadow DOM remains platform-owned, but factory descendants still
-  // need full DOM teardown before disposing the host's own scope.
-  if (!keepHostDOM && ctx.nodes) {
-    for (let i = 0; i < ctx.nodes.length; i++) {
-      const node = ctx.nodes[i];
-      if (node.parentNode) node.parentNode.removeChild(node);
-    }
-    ctx.nodes = null;
-  }
-
-  // Mark destroyed before disposers run: lean scopes released by this teardown
-  // must not unregister their callbacks from a component that is going away.
-  ctx._isDestroyed = true;
-  disposeScope(ctx);
-  ctx._isMounted = false;
-
-  // Run destroy callbacks
-  runCallbacks(ctx.destroyed, rollback ? undefined : ctx);
-  ctx.destroyed = null;
-
-  // Unlink from parent so a later parent teardown doesn't revisit this node.
-  if (ctx.parent?.children) {
-    const idx = ctx.parent.children.indexOf(ctx);
-    if (idx !== -1) ctx.parent.children.splice(idx, 1);
-  }
-  ctx.parent = null;
-}
-
-// Run callbacks safely
-function runCallbacks(arr: (() => void)[] | null, ctx?: ComponentContext): void {
-  if (!arr) return;
-  for (let i = 0; i < arr.length; i++) {
-    try {
-      arr[i]();
-    } catch (err) {
-      if (ctx) {
-        ctx._handleError(err);
-      } else {
-        console.error('[Purity] Error:', err);
-      }
-    }
-  }
+  unmountContext(ctx, rollback, keepHostDOM, true);
 }
 
 // ---------------------------------------------------------------------------

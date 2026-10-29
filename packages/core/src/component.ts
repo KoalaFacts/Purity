@@ -41,9 +41,6 @@ export interface MountResult {
   unmount: () => void;
 }
 
-/** @internal Shared no-op handle for a render error consumed by onError. */
-export const FAILED_MOUNT_RESULT: MountResult = { unmount: () => {} };
-
 // ---------------------------------------------------------------------------
 // Lifecycle hooks — only 3 + error
 // ---------------------------------------------------------------------------
@@ -267,7 +264,7 @@ export function mount(component: ComponentFn, container: Element): MountResult {
     } finally {
       unmountContext(ctx);
     }
-    return FAILED_MOUNT_RESULT;
+    return { unmount: () => {} };
   }
 
   popContext();

@@ -8,7 +8,6 @@ import {
 } from './compiler/hydrate-runtime.ts';
 import { hydratePendingCustomElements } from './compiler/hydrate-elements.ts';
 import {
-  FAILED_MOUNT_RESULT as FAILED_HYDRATION,
   mount,
   scheduleMountCallbacks,
   unmountContext,
@@ -23,7 +22,7 @@ import { checkpointHydrationCache, primeHydrationCache } from './ssr/hydration-c
 let hydrationRevision = 0;
 
 /** @internal A handled render failed without adopting SSR DOM. */
-export { FAILED_MOUNT_RESULT as FAILED_HYDRATION } from './component.ts';
+export const FAILED_HYDRATION: MountResult = { unmount: () => {} };
 
 export function hydrate(container: Element, component: ComponentFn): MountResult {
   // Empty container — nothing to hydrate. Fall back to a fresh mount so
@@ -210,7 +209,16 @@ function prepareResourceHydrationCache(container: Element): Element[] {
 }
 
 function mountHydrated(component: ComponentFn, container: Element): MountResult {
-  const result = mount(component, container);
-  if (result !== FAILED_HYDRATION) hydrationRevision++;
+  // Keep handled-render failure detection in hydration, not the CSR mount path.
+  // A successful render may return an empty DocumentFragment, so DOM child
+  // count cannot distinguish completion from a swallowed render exception.
+  let rendered = false;
+  const result = mount(() => {
+    const view = component();
+    rendered = true;
+    return view;
+  }, container);
+  if (!rendered) return FAILED_HYDRATION;
+  hydrationRevision++;
   return result;
 }

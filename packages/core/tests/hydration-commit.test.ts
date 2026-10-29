@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vite-plus/test';
-import { onDispose } from '../src/component.ts';
-import { hydrate } from '../src/hydrate.ts';
+import { onDispose, onError, onMount } from '../src/component.ts';
+import { FAILED_HYDRATION, hydrate } from '../src/hydrate.ts';
 import {
   clearHydrationCache,
   consumeHydrationValue,
@@ -28,6 +28,29 @@ function fixture() {
 }
 
 describe('resource hydration prepares before it commits', () => {
+  it('distinguishes handled empty-root failure from a successful empty render', async () => {
+    const host = document.createElement('main');
+    document.body.append(host);
+    let disposed = 0;
+    const failed = hydrate(host, () => {
+      onError(() => {});
+      onDispose(() => disposed++);
+      throw new Error('handled empty render failure');
+    });
+    expect(failed).toBe(FAILED_HYDRATION);
+    expect(disposed).toBe(1);
+
+    let mounted = 0;
+    const successful = hydrate(host, () => {
+      onMount(() => mounted++);
+      return document.createDocumentFragment();
+    });
+    expect(successful).not.toBe(FAILED_HYDRATION);
+    disposers.push(successful.unmount);
+    await Promise.resolve();
+    expect(mounted).toBe(1);
+  });
+
   it('keeps the source script connected during rendering and consumes it only on success', () => {
     const { host, p, script } = fixture();
     let wasConnected = false;

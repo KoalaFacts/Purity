@@ -23,9 +23,40 @@ isolated build compiles the same minimal button/counter shape as
 parameters. CI archives the exact installed entry hashes, lock identity,
 build output and chunk inventory without touching the legacy benchmark lock.
 
-This demonstrates reproducible **input resolution and buildability**, not
-whole-row acceptance. Browser DOM/click parity, server export conditions,
-full comparative app workloads, startup/update timings, allocation and
-retained heap are still unproved; those require separate executed traces
-and the matched Purity fixture. Core-all and core-actions budgets remain
-unchanged. No size reduction or Solid performance advantage is claimed.
+## Row and binding inputs
+
+`rows.html` and `binding.html` use isolated rc.18 compilation of the existing
+Solid row/binding source shapes. Their action selectors, LCG data sequence,
+per-row label signals and object-keyed field ownership match the established
+Purity workloads. The legacy fixture sources and snapshots remain unchanged.
+The copied HTML omits the legacy dangling stylesheet link; these checks compare
+semantic DOM and state, not visual styling, layout cost or rendering speed.
+
+Build these inputs separately from the counter:
+
+```sh
+npm exec -- vite build --config vite.workloads.config.ts
+node inventory-chunks.ts --workloads
+node --experimental-vm-modules --test workloads.test.ts
+```
+
+The Node DOM tests execute the emitted modules in jsdom. They are not real
+browser or performance results. `dist-workloads` has its own manifest and
+complete chunk inventory, including shared chunks counted once; it does not
+replace the historical counter payload report.
+
+After building the unchanged root benchmark, the existing browser checks can
+explicitly target these inputs with `SOLID_V2_FIXTURE=1`. The same row/binding
+actions, DOM normalization, labels, input-clear and reload assertions run against
+Purity and the rc.18 build in all three engines in CI. New snapshots and source,
+root-lock, isolated-lock and workload hashes are archived separately under
+`benchmark/dist/fixture-parity-rc18`; default legacy checks retain their original
+targets and output directory. Do not infer a pass without the exact-source CI
+receipt. The dedicated workflow has read-only repository permissions and no
+publishing step.
+
+These are bounded input and semantic checks, not whole-row acceptance. Server
+export conditions, full comparative app workloads, startup/update timings,
+allocation and retained heap still require separate executed evidence. No timing
+runner or measurement boundary is changed. Core-all and core-actions budgets
+remain unchanged. No size reduction or Solid performance advantage is claimed.

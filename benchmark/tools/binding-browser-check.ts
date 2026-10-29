@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { browserEngines } from './browser-engines.ts';
 import { preview } from 'vite';
+
+const isolated = process.env.SOLID_V2_FIXTURE === '1';
+assert(!process.env.SOLID_V2_FIXTURE || isolated, 'Expected SOLID_V2_FIXTURE=1');
+let solidServer: Awaited<ReturnType<typeof preview>> | undefined;
 
 // Check both production fixtures before using their timings as a comparison.
 const server = await preview({
@@ -11,6 +17,13 @@ const server = await preview({
   preview: { host: '127.0.0.1', port: 0, open: false },
 });
 try {
+  if (isolated)
+    solidServer = await preview({
+      configFile: false,
+      root: resolve(import.meta.dirname, '../solid-v2/app-fixture'),
+      build: { outDir: 'dist-workloads' },
+      preview: { host: '127.0.0.1', port: 0, open: false },
+    });
   const base = server.resolvedUrls!.local[0];
   for (const [engine, launcher] of browserEngines) {
     const browser = await launcher.launch();
@@ -19,7 +32,11 @@ try {
         const page = await browser.newPage();
         const errors: string[] = [];
         page.on('pageerror', (error) => errors.push(error.message));
-        await page.goto(`${base}apps/${framework}/binding.html`);
+        await page.goto(
+          framework === 'solid' && solidServer
+            ? `${solidServer.resolvedUrls!.local[0]}binding.html`
+            : `${base}apps/${framework}/binding.html`,
+        );
         await page.locator('#create-100').click();
         const inputs = page.locator('#container input');
         await inputs.last().waitFor();
@@ -77,7 +94,33 @@ try {
       await browser.close();
     }
   }
+  if (isolated) {
+    const output = resolve(import.meta.dirname, '../dist/fixture-parity-rc18');
+    await mkdir(output, { recursive: true });
+    await writeFile(
+      resolve(output, 'binding-provenance.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          sourceRef: execFileSync('git', ['rev-parse', 'HEAD'], {
+            cwd: import.meta.dirname,
+            encoding: 'utf8',
+          }).trim(),
+          complete: true,
+          scope:
+            'rc18 binding labels, focus, clear-after-user-input and recreation only; not timings',
+          engines: browserEngines.map(([name]) => name),
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+  }
 } finally {
+  if (solidServer)
+    await new Promise<void>((done, reject) =>
+      solidServer!.httpServer.close((error) => (error ? reject(error) : done())),
+    );
   await new Promise<void>((resolve, reject) =>
     server.httpServer.close((error) => (error ? reject(error) : resolve())),
   );

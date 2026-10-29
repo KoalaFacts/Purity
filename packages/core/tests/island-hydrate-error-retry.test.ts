@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vite-plus/test';
-import { onError } from '../src/component.ts';
+import { onDispose, onError } from '../src/component.ts';
 import { island } from '../src/island.ts';
 import { mountIslands } from '../src/island-mount.ts';
 import { state, watch } from '../src/signals.ts';
@@ -87,4 +87,42 @@ it('retries a handled island render error instead of committing an unhydrated wr
   expect(attempts).toBe(2);
   expect(onMount).toHaveBeenCalledTimes(2);
   expect(wrapper.querySelector('p')).toBe(serverParagraph);
+});
+
+it('retries an empty island after onError consumes the first mount failure', async () => {
+  const host = document.createElement('div');
+  host.innerHTML = '<purity-island data-pi-id="1" data-pi-trigger="load"></purity-island>';
+  document.body.append(host);
+  const wrapper = host.querySelector('purity-island')!;
+  const onMount = vi.fn();
+  let attempts = 0;
+  let handled = 0;
+  let disposed = 0;
+  const View = () => {
+    attempts++;
+    if (attempts === 1) {
+      onDispose(() => disposed++);
+      onError(() => handled++);
+      throw new Error('handled empty-root failure');
+    }
+    const paragraph = document.createElement('p');
+    paragraph.textContent = 'recovered';
+    return paragraph;
+  };
+
+  mountIslands([island(View)], { root: host, onMount });
+  for (let i = 0; i < 5; i++) await tick();
+  expect({ attempts, handled, disposed }).toEqual({ attempts: 1, handled: 1, disposed: 1 });
+  expect(wrapper.childNodes).toHaveLength(0);
+
+  mountIslands([island(View)], { root: host, onMount });
+  for (let i = 0; i < 5; i++) await tick();
+  expect(attempts).toBe(2);
+  expect(onMount).toHaveBeenCalledTimes(2);
+  expect(wrapper.textContent).toBe('recovered');
+
+  mountIslands([island(View)], { root: host, onMount });
+  for (let i = 0; i < 5; i++) await tick();
+  expect(attempts).toBe(2);
+  expect(disposed).toBe(1);
 });

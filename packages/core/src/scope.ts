@@ -34,22 +34,24 @@ export class ComponentContext implements Scope {
   _isDestroyed = false;
   // Only failed factory teardown sets this flag; lean-owned descendants inherit it.
   declare _rollback?: boolean;
-  _slotContent: unknown = undefined;
+  // Optional per-instance data stays absent on ordinary components. The
+  // declaring class fields otherwise allocate slots for every new owner.
+  declare _slotContent: unknown;
   // Set by PurityElement.connectedCallback when the component is a Custom
   // Element. null for plain mount() roots (no host element to attach to).
-  _internals: ElementInternals | null = null;
+  declare _internals?: ElementInternals | null;
   // Ref counts per state name. bindComponentState() composes — many sources
   // can drive the same state and the host only flips when count crosses 0↔1.
-  _stateRefs: Map<string, number> | null = null;
+  declare _stateRefs?: Map<string, number>;
   // Form-associated lifecycle callback arrays. Populated by the onForm*
   // hooks; drained by PurityElement's matching callbacks. All nullable so
   // non-form-associated components pay zero allocation cost.
-  _formAssociated: ((form: HTMLFormElement | null) => void)[] | null = null;
-  _formDisabled: ((disabled: boolean) => void)[] | null = null;
-  _formReset: (() => void)[] | null = null;
-  _formStateRestore:
-    | ((state: string | File | FormData | null, mode: 'restore' | 'autocomplete') => void)[]
-    | null = null;
+  declare _formAssociated?: ((form: HTMLFormElement | null) => void)[];
+  declare _formDisabled?: ((disabled: boolean) => void)[];
+  declare _formReset?: (() => void)[];
+  declare _formStateRestore?: ((state: string | File | FormData | null,
+    mode: 'restore' | 'autocomplete',
+  ) => void)[];
 
   _handleError(err: unknown): void {
     // Scoped onError removal can leave an empty array; treat it as no handler.

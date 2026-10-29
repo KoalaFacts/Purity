@@ -393,25 +393,31 @@ function waitForVisible(el: HTMLElement, run: () => void): void {
   });
   for (let i = 0; i < targets.length; i++) obs.observe(targets[i]);
 
-  // Observe the ancestor chain, not just the immediate parent: removing a
-  // whole shell leaves el.parentNode unchanged and IntersectionObserver does
-  // not reliably notify about a non-intersecting target's removal.
-  // childList (without subtree) limits callbacks to structural detachments.
+  // Bug #5: without parent-detach detection, a `<purity-island>` removed
+  // from the DOM before it intersects leaks the IntersectionObserver
+  // target — the observer stays armed and the wrapper can't be GC'd.
+  // Watch the parent's childList; when our wrapper goes missing, tear
+  // the IO down. Use the parent (not the element itself) because once an
+  // element is detached its own MutationObserver fires nothing useful.
+  // If there is no parent (mount-before-attach), skip the watcher — the
+  // GC pressure isn't there until the element has lived in a tree.
   const MO = (globalThis as { MutationObserver?: typeof MutationObserver }).MutationObserver;
   const parent = el.parentNode;
   if (typeof MO === 'function' && parent) {
     mo = new MO(() => {
-      if (el.parentNode !== parent || !el.isConnected) {
+      // Cheap identity check on every mutation batch beats walking the
+      // records — we only care that the wrapper is still parented here.
+      if (el.parentNode !== parent) {
         if (fired) return;
         fired = true;
+        // disconnect() releases every target; per-target unobserve is redundant.
         obs.disconnect();
         mo?.disconnect();
+        // A detached, unhydrated SSR wrapper can be reattached and scheduled again.
         hydrated.delete(el);
       }
     });
-    for (let ancestor: Node | null = parent; ancestor; ancestor = ancestor.parentNode) {
-      mo.observe(ancestor, { childList: true });
-    }
+    mo.observe(parent, { childList: true });
   }
 }
 

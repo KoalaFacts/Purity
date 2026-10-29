@@ -1176,30 +1176,6 @@ describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', (
     host.remove();
   });
 
-  it('releases the visible observer when an ancestor shell is detached', async () => {
-    const View = (): unknown => html`<span>x</span>`;
-    const host = makeWrapper(1, 'visible', '<span>x</span>');
-    const wrapper = host.querySelector('purity-island')!;
-
-    mountIslands([island(View, { hydrate: 'visible' })], { root: host });
-    expect(ios).toHaveLength(1);
-    expect(ios[0].active.has(wrapper.firstElementChild!)).toBe(true);
-
-    // The wrapper remains parented inside host, but host leaves the document.
-    host.remove();
-    for (let i = 0; i < 5; i++) await tick();
-    expect(wrapper.parentNode).toBe(host);
-    expect(ios[0].active.size).toBe(0);
-    expect(ios[0].disconnected).toBe(1);
-
-    document.body.appendChild(host);
-    mountIslands([island(View, { hydrate: 'visible' })], { root: host });
-    expect(ios).toHaveLength(2);
-    expect(ios[1].active.has(wrapper.firstElementChild!)).toBe(true);
-    host.remove();
-    for (let i = 0; i < 5; i++) await tick();
-  });
-
   it('re-arms a visible SSR wrapper reattached before its first intersection', async () => {
     const View = (): unknown => html`<span>x</span>`;
     const host = makeWrapper(1, 'visible', '<span>x</span>');

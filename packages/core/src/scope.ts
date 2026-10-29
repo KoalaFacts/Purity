@@ -38,18 +38,19 @@ export class ComponentContext implements Scope {
   // declaring class fields otherwise allocate slots for every new owner.
   declare _slotContent: unknown;
   // Set by PurityElement.connectedCallback when the component is a Custom
-  // Element. null for plain mount() roots (no host element to attach to).
+  // Element. Absent for plain mount() roots (no host element to attach to).
   declare _internals?: ElementInternals | null;
   // Ref counts per state name. bindComponentState() composes — many sources
   // can drive the same state and the host only flips when count crosses 0↔1.
   declare _stateRefs?: Map<string, number>;
   // Form-associated lifecycle callback arrays. Populated by the onForm*
-  // hooks; drained by PurityElement's matching callbacks. All nullable so
-  // non-form-associated components pay zero allocation cost.
+  // hooks; drained by PurityElement's matching callbacks. The fields are
+  // absent until registered, so plain components allocate no form slots.
   declare _formAssociated?: ((form: HTMLFormElement | null) => void)[];
   declare _formDisabled?: ((disabled: boolean) => void)[];
   declare _formReset?: (() => void)[];
-  declare _formStateRestore?: ((state: string | File | FormData | null,
+  declare _formStateRestore?: ((
+    state: string | File | FormData | null,
     mode: 'restore' | 'autocomplete',
   ) => void)[];
 

@@ -819,9 +819,11 @@ export function component<
 
       disconnectedCallback() {
         this._formBridge?.disconnect();
-        // Share child-first disposal and error handling. Only the host's
-        // already-detached shadow DOM must remain intact.
-        if (this._ctx) unmountChildContext(this._ctx, false, true);
+        // A detached host can outlive its disposed owner. Clear before cleanup
+        // so an onDestroy callback may reconnect it with a fresh owner.
+        const ctx = this._ctx;
+        this._ctx = null;
+        if (ctx) unmountChildContext(ctx, false, true);
       }
 
       // Form-associated lifecycle. Defined unconditionally — the browser

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { onFormReset, onMount, unmountContext } from '../src/component.ts';
+import { onDestroy, onFormReset, onMount, unmountContext } from '../src/component.ts';
+import { component } from '../src/elements.ts';
 import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
 
 describe('SV2-015 lean component ownership', () => {
@@ -51,5 +52,37 @@ describe('SV2-015 lean component ownership', () => {
     for (const key of ['mounted', 'destroyed', 'errorHandlers', '_slotContent']) {
       expect(Object.hasOwn(ctx, key)).toBe(false);
     }
+  });
+
+  it('releases a detached custom-element owner and preserves reentrant reconnect', () => {
+    let host!: HTMLElement & { _ctx: ComponentContext | null };
+    let reconnect = true;
+    let destroyed = 0;
+    const name = 'p-sv2-lazy-owner-detach';
+    component(name, () => {
+      onDestroy(() => {
+        destroyed++;
+        if (reconnect) {
+          reconnect = false;
+          document.body.append(host);
+        }
+      });
+      return document.createElement('span');
+    });
+
+    host = document.createElement(name) as typeof host;
+    document.body.append(host);
+    const first = host._ctx;
+    expect(first).toBeInstanceOf(ComponentContext);
+
+    host.remove();
+    expect(destroyed).toBe(1);
+    expect(host.isConnected).toBe(true);
+    expect(host._ctx).toBeInstanceOf(ComponentContext);
+    expect(host._ctx).not.toBe(first);
+
+    host.remove();
+    expect(destroyed).toBe(2);
+    expect(host._ctx).toBeNull();
   });
 });

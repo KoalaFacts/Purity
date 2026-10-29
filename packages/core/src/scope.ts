@@ -23,13 +23,14 @@ export interface Scope {
 let contextStack: Scope[] = [];
 
 export class ComponentContext implements Scope {
-  mounted: (() => void)[] | null = null;
-  destroyed: (() => void)[] | null = null;
-  errorHandlers: ((err: unknown) => void)[] | null = null;
+  // Callback and child arrays are created only when a component needs them.
+  declare mounted?: (() => void)[] | null;
+  declare destroyed?: (() => void)[] | null;
+  declare errorHandlers?: ((err: unknown) => void)[] | null;
   disposers: (() => void)[] | null = null;
   nodes: Node[] | null = null;
   parent: ComponentContext | null = null;
-  children: ComponentContext[] | null = null;
+  declare children?: ComponentContext[] | null;
   _isMounted = false;
   _isDestroyed = false;
   // Only failed factory teardown sets this flag; lean-owned descendants inherit it.

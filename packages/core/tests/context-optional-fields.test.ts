@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { onFormReset, onMount } from '../src/component.ts';
+import { onFormReset, onMount, unmountContext } from '../src/component.ts';
 import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
 
 describe('SV2-015 lean component ownership', () => {
@@ -42,5 +42,14 @@ describe('SV2-015 lean component ownership', () => {
     expect(ctx.mounted).toEqual([mounted]);
     expect(Object.hasOwn(ctx, '_formReset')).toBe(true);
     expect(Object.hasOwn(ctx, 'mounted')).toBe(true);
+  });
+
+  it('keeps never-used optional fields absent after root teardown', () => {
+    const ctx = new ComponentContext();
+    unmountContext(ctx);
+    expect(ctx._isDestroyed).toBe(true);
+    for (const key of ['mounted', 'destroyed', 'errorHandlers', '_slotContent']) {
+      expect(Object.hasOwn(ctx, key)).toBe(false);
+    }
   });
 });

@@ -415,8 +415,9 @@ export function unmountContext(ctx: ComponentContext): void {
   }
 
   // Release remaining references for GC
-  ctx.mounted = null;
-  ctx.errorHandlers = null;
+  // Keep never-used callback/slot fields absent on a disposed lean owner.
+  ctx.mounted &&= null;
+  ctx.errorHandlers &&= null;
   ctx.parent = null;
-  ctx._slotContent = undefined;
+  if (ctx._slotContent !== undefined) ctx._slotContent = undefined;
 }

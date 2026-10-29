@@ -72,7 +72,7 @@ function unmountChildContext(
 
   // Run destroy callbacks
   runCallbacks(ctx.destroyed, rollback ? undefined : ctx);
-  ctx.destroyed = null;
+  ctx.destroyed &&= null;
 
   // Unlink from parent so a later parent teardown doesn't revisit this node.
   if (ctx.parent?.children) {

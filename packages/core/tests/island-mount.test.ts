@@ -140,6 +140,39 @@ describe('mountIslands() — load trigger', () => {
     warn.mockRestore();
   });
 
+  it('can hydrate after a corrected manifest supplies the previously missing view', async () => {
+    host = makeWrapper(1, 'load', '<span>x</span>');
+    const onMount = vi.fn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mountIslands([], { root: host, onMount });
+      expect(warn).toHaveBeenCalled();
+      mountIslands([island(() => html`<span>x</span>`)], { root: host, onMount });
+      await tick();
+      expect(onMount).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('can hydrate after an invalid SSR island ID is corrected', async () => {
+    host = makeWrapper(1, 'load', '<span>x</span>');
+    const wrapper = host.querySelector('purity-island')!;
+    wrapper.setAttribute('data-pi-id', 'not-a-number');
+    const onMount = vi.fn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mountIslands([island(() => html`<span>x</span>`)], { root: host, onMount });
+      expect(warn).toHaveBeenCalled();
+      wrapper.setAttribute('data-pi-id', '1');
+      mountIslands([island(() => html`<span>x</span>`)], { root: host, onMount });
+      await tick();
+      expect(onMount).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('warns when data-pi-id is not a positive integer', () => {
     const View = (): unknown => html`<span>x</span>`;
     host = document.createElement('div');
@@ -321,6 +354,97 @@ describe('mountIslands() — lazy entries (ADR 0038 Phase 3)', () => {
     expect(host.textContent).toBe('4');
   });
 
+  it('retries the same SSR wrapper after a lazy import rejection', async () => {
+    const value = state(0);
+    const View = (): unknown => html`<p><!--[-->${() => value()}<!--]--></p>`;
+    host = makeWrapper(1, 'load', '<p><!--[-->0<!--]--></p>');
+    const wrapper = host.querySelector('purity-island')!;
+    const onMount = vi.fn();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mountIslands([() => Promise.reject(new Error('offline'))], { root: host, onMount });
+      for (let i = 0; i < 5; i++) await tick();
+      expect(onMount).toHaveBeenCalledTimes(1);
+      expect(wrapper.isConnected).toBe(true);
+
+      mountIslands([() => Promise.resolve(island(View))], { root: host, onMount });
+      for (let i = 0; i < 5; i++) await tick();
+      expect(onMount).toHaveBeenCalledTimes(2);
+      value(9);
+      await tick();
+      expect(host.textContent).toBe('9');
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('does not hydrate a detached wrapper after a lazy module settles', async () => {
+    let renders = 0;
+    const View = (): unknown => {
+      renders++;
+      return html`<span>x</span>`;
+    };
+    const branded = island(View);
+    host = makeWrapper(1, 'load', '<span>x</span>');
+    const wrapper = host.querySelector('purity-island')!;
+    const server = wrapper.querySelector('span')!;
+    let resolveLoad!: (view: typeof branded) => void;
+    const pending = new Promise<typeof branded>((resolve) => {
+      resolveLoad = resolve;
+    });
+
+    mountIslands([() => pending], { root: host });
+    await tick();
+    wrapper.remove();
+    resolveLoad(branded);
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(renders).toBe(0);
+    expect(wrapper.querySelector('span')).toBe(server);
+
+    host.append(wrapper);
+    mountIslands([branded], { root: host });
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(renders).toBe(1);
+    expect(wrapper.querySelector('span')).toBe(server);
+  });
+
+  it('retries after a lazy module export getter throws before adoption', async () => {
+    const value = state(0);
+    const View = (): unknown => html`<p><!--[-->${() => value()}<!--]--></p>`;
+    host = makeWrapper(1, 'load', '<p><!--[-->0<!--]--></p>');
+    const wrapper = host.querySelector('purity-island')!;
+    const onMount = vi.fn();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mountIslands(
+        [
+          () =>
+            Promise.resolve({
+              get default(): never {
+                throw new Error('cyclic export not ready');
+              },
+            }),
+        ],
+        { root: host, onMount },
+      );
+      for (let i = 0; i < 5; i++) await tick();
+      expect(onMount).toHaveBeenCalledTimes(1);
+      expect(error).toHaveBeenCalled();
+      expect(wrapper.isConnected).toBe(true);
+
+      mountIslands([() => Promise.resolve(island(View))], { root: host, onMount });
+      for (let i = 0; i < 5; i++) await tick();
+      expect(onMount).toHaveBeenCalledTimes(2);
+      value(8);
+      await tick();
+      expect(host.textContent).toBe('8');
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it('logs an error and skips when the thunk rejects', async () => {
     const View = (): unknown => html`<span>x</span>`;
     host = makeWrapper(1, 'load', '<span>x</span>');
@@ -484,6 +608,64 @@ describe('mountIslands() — interact trigger (ADR 0038 Phase 4)', () => {
     for (let i = 0; i < 3; i++) await tick();
 
     expect(onMount).toHaveBeenCalledTimes(1);
+  });
+
+  it('replays an exact ARIA menuitemradio role but not an unknown role on first keydown', async () => {
+    const accepted = makeWrapper(1, 'interact', '<span role="menuitemradio" tabindex="0">x</span>');
+    const rejected = makeWrapper(
+      1,
+      'interact',
+      '<span role="menuitemradios" tabindex="0">x</span>',
+    );
+    let acceptedKeys = 0;
+    let rejectedKeys = 0;
+    try {
+      const Accepted = (): unknown =>
+        html`<span role="menuitemradio" tabindex="0" @keydown=${() => acceptedKeys++}>x</span>`;
+      const Rejected = (): unknown =>
+        html`<span role="menuitemradios" tabindex="0" @keydown=${() => rejectedKeys++}>x</span>`;
+
+      mountIslands([island(Accepted)], { root: accepted });
+      mountIslands([island(Rejected)], { root: rejected });
+      for (const host of [accepted, rejected]) {
+        host.querySelector('span')!.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+          }),
+        );
+      }
+      for (let i = 0; i < 5; i++) await tick();
+      expect(acceptedKeys).toBe(1);
+      expect(rejectedKeys).toBe(0);
+    } finally {
+      accepted.remove();
+      rejected.remove();
+    }
+  });
+
+  it('does not replay the first click on unhydrated SSR controls when a lazy chunk fails', async () => {
+    host = makeWrapper(1, 'interact', '<button type="button">Save</button>');
+    const button = host.querySelector('button')!;
+    const click = vi.fn();
+    button.addEventListener('click', click);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mountIslands([() => Promise.reject(new Error('chunk unavailable'))], { root: host });
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+      for (let i = 0; i < 5; i++) await tick();
+
+      // No handler has been adopted: replaying the intercepted activation
+      // can trigger native/default actions on an unhydrated SSR control.
+      expect(click).not.toHaveBeenCalled();
+      expect(host.querySelector('button')).toBe(button);
+    } finally {
+      errors.mockRestore();
+    }
   });
 });
 
@@ -925,10 +1107,9 @@ describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', (
   type SpyIO = {
     _cb: Cb;
     observed: Element[];
-    unobserved: Element[];
+    active: Set<Element>;
     disconnected: number;
     observe(el: Element): void;
-    unobserve(el: Element): void;
     disconnect(): void;
   };
   const ios: SpyIO[] = [];
@@ -945,16 +1126,15 @@ describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', (
       const inst: SpyIO = {
         _cb: cb,
         observed: [],
-        unobserved: [],
+        active: new Set<Element>(),
         disconnected: 0,
         observe(el) {
           this.observed.push(el);
-        },
-        unobserve(el) {
-          this.unobserved.push(el);
+          this.active.add(el);
         },
         disconnect() {
           this.disconnected++;
+          this.active.clear();
         },
       };
       ios.push(inst);
@@ -971,7 +1151,7 @@ describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', (
     document.body.innerHTML = '';
   });
 
-  it('unobserves + disconnects the IO when the wrapper is removed before intersecting', async () => {
+  it('disconnects all observed targets when the wrapper is removed before intersecting', async () => {
     const View = (): unknown => html`<span>x</span>`;
     const host = makeWrapper(1, 'visible', '<span>x</span>');
     mountIslands([island(View, { hydrate: 'visible' })]);
@@ -982,6 +1162,7 @@ describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', (
     const wrapper = host.querySelector('purity-island')!;
     const visibleChild = wrapper.firstElementChild!;
     expect(io.observed).toContain(visibleChild);
+    expect(io.active.has(visibleChild)).toBe(true);
     expect(io.disconnected).toBe(0);
 
     // Detach the wrapper from its parent before any intersection fires.
@@ -989,10 +1170,33 @@ describe('mountIslands() — audit-v2 Bug #5: detached wrapper unobserves IO', (
     // jsdom MutationObservers fire on a microtask — flush.
     for (let i = 0; i < 5; i++) await tick();
 
-    // The fix: unobserve was called for the wrapper AND the observer
-    // was disconnected (no more armed reference).
-    expect(io.unobserved).toContain(visibleChild);
+    // A single disconnect stops observing every target; no target is retained.
+    expect(io.active.size).toBe(0);
     expect(io.disconnected).toBeGreaterThanOrEqual(1);
+    host.remove();
+  });
+
+  it('re-arms a visible SSR wrapper reattached before its first intersection', async () => {
+    const View = (): unknown => html`<span>x</span>`;
+    const host = makeWrapper(1, 'visible', '<span>x</span>');
+    const wrapper = host.querySelector('purity-island')!;
+    const onMount = vi.fn();
+
+    mountIslands([island(View, { hydrate: 'visible' })], { root: host, onMount });
+    expect(ios).toHaveLength(1);
+
+    wrapper.remove();
+    for (let i = 0; i < 5; i++) await tick();
+    expect(ios[0].disconnected).toBeGreaterThanOrEqual(1);
+
+    host.append(wrapper);
+    mountIslands([island(View, { hydrate: 'visible' })], { root: host, onMount });
+    expect(ios).toHaveLength(2);
+    expect(ios[1].observed).toContain(wrapper.firstElementChild!);
+
+    ios[1]._cb([{ isIntersecting: true, target: wrapper.firstElementChild! }], ios[1]);
+    for (let i = 0; i < 5; i++) await tick();
+    expect(onMount).toHaveBeenCalledTimes(1);
     host.remove();
   });
 

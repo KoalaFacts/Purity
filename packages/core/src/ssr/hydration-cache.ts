@@ -68,6 +68,18 @@ export function consumeHydrationValue(key?: string): unknown {
   return hydrationCache[hydrationCursor++];
 }
 
+/** @internal Capture module-global resource hydration state before a root attempts adoption. */
+export function checkpointHydrationCache(): () => void {
+  const values = hydrationCache;
+  const cursor = hydrationCursor;
+  const keyed = hydrationCacheByKey;
+  return () => {
+    hydrationCache = values;
+    hydrationCursor = cursor;
+    hydrationCacheByKey = keyed;
+  };
+}
+
 /** @internal */
 export function clearHydrationCache(): void {
   hydrationCache = null;

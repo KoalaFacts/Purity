@@ -39,7 +39,7 @@
 // server round-trips for shared state. See ADR 0038.
 // ---------------------------------------------------------------------------
 
-import { hydrate } from './component.ts';
+import { FAILED_HYDRATION, hydrate } from './hydrate.ts';
 import { getIslandBrand, ISLAND_TRIGGERS, type IslandTrigger } from './island.ts';
 
 const WRAPPER_SELECTOR = 'purity-island[data-pi-id]';
@@ -143,9 +143,10 @@ export function mountIslands(
     // wrapper. Without this guard, `interact` islands accumulate
     // listeners and `load` islands double-hydrate.
     if (hydrated.has(el)) continue;
-    hydrated.add(el);
+    // Do not permanently claim an invalid/missing manifest entry: callers
+    // can fix the manifest and retry without replacing the SSR wrapper.
     const rawId = el.getAttribute('data-pi-id');
-    const id = rawId != null ? Number(rawId) : NaN;
+    const id = Number(rawId);
     if (!Number.isInteger(id) || id < 1) {
       console.warn(
         `[Purity] mountIslands: skipping <purity-island> with invalid data-pi-id=${JSON.stringify(rawId)}`,
@@ -160,16 +161,17 @@ export function mountIslands(
       );
       continue;
     }
+    hydrated.add(el);
     const trigger = readTrigger(el);
     scheduleHydration(el, entry, trigger, id, () => {
-      if (onMount) onMount(id, el);
+      onMount?.(id, el);
     });
   }
 }
 
 function readTrigger(el: Element): IslandTrigger {
   const raw = el.getAttribute('data-pi-trigger');
-  if (raw == null || raw === '') return 'load';
+  if (!raw) return 'load';
   // Bug #14: reference the SAME allow-list `island.ts` uses for SSR
   // normalisation. Pre-fix, both sides duplicated the literal list — a
   // change on one side silently moved the security boundary. Importing
@@ -195,39 +197,37 @@ function scheduleHydration(
   id: number,
   done: () => void,
 ): void {
-  // `done()` is user-supplied (onMount instrumentation). Isolate it so a
-  // throwing onMount doesn't surface as a "failed to resolve island"
-  // false positive via the outer `.catch`, and so it can't kill the
-  // hydration pipeline for *other* islands sharing the same tick.
-  const safeDone = (): void => {
-    try {
-      done();
-    } catch (err) {
-      console.error(`[Purity] mountIslands: onMount threw for island ${id}:`, err);
-    }
-  };
-  const run = (onSettled?: () => void): void => {
-    const finish = (): void => {
-      if (onSettled) {
-        try {
-          onSettled();
-        } catch (err) {
-          console.error(`[Purity] mountIslands: interaction replay threw for island ${id}:`, err);
-        }
+  // Keep both user instrumentation and replay cleanup isolated from the
+  // promise chain. Only a committed hydration may replay an intercepted
+  // activation; a rejected chunk must not click an unhydrated SSR control.
+  const run = (onSettled?: (ready: boolean) => void): void => {
+    const finish = (ready: boolean): void => {
+      // Failed resolution or adoption must not strand the SSR wrapper.
+      if (!ready) hydrated.delete(el);
+      try {
+        onSettled?.(ready);
+      } catch (err) {
+        console.error(`[Purity] mountIslands: interaction replay threw for island ${id}:`, err);
       }
-      safeDone();
+      try {
+        done();
+      } catch (err) {
+        console.error(`[Purity] mountIslands: onMount threw for island ${id}:`, err);
+      }
     };
     resolveEntry(entry, id)
       .then((view) => {
-        if (!view) {
-          finish();
+        if (!view || !el.isConnected) {
+          // An unresolved view or detached wrapper has no DOM to adopt.
+          finish(false);
           return;
         }
         // A registered custom element may already have rendered itself on
         // upgrade. Purity elements with DSD instead wait for their parent
         // to bind typed props, so they still need hydrate(el, view). That
         // path inflates in place and then hydrates the shadow tree.
-        // Check after the import so the element has already upgraded.
+        // Check after import/upgrade. Query the CE's existing SSR state
+        // instead of maintaining a second pending-hydration boolean.
         const first = el.firstElementChild;
         const tag = first?.tagName.toLowerCase();
         if (
@@ -235,21 +235,24 @@ function scheduleHydration(
           tag.includes('-') &&
           typeof customElements !== 'undefined' &&
           customElements.get(tag) &&
-          (first as Element & { _pendingSSRHydration?: boolean })._pendingSSRHydration !== true
+          (first as Element & { _isSSRRoot?: () => boolean })._isSSRRoot?.() !== true
         ) {
-          finish();
+          finish(true);
           return;
         }
         try {
-          hydrate(el, view as Parameters<typeof hydrate>[1]);
+          const result = hydrate(el, view as Parameters<typeof hydrate>[1]);
+          finish(result !== FAILED_HYDRATION);
         } catch (err) {
+          // A rejected adoption leaves the original SSR wrapper intact.
+          // Release the scheduling claim so a corrected view can retry.
           console.error('[Purity] mountIslands: hydrate() threw for island', el, err);
+          finish(false);
         }
-        finish();
       })
       .catch((err) => {
         console.error(`[Purity] mountIslands: failed to resolve island ${id}:`, err);
-        finish();
+        finish(false);
       });
   };
   switch (trigger) {
@@ -298,14 +301,12 @@ async function resolveEntry(entry: IslandEntry, id: number): Promise<View | null
     return null;
   }
   if (produced != null && typeof (produced as { then?: unknown }).then === 'function') {
-    let resolved: unknown;
     try {
-      resolved = await (produced as Promise<unknown>);
+      produced = await (produced as Promise<unknown>);
     } catch (err) {
       console.error(`[Purity] mountIslands: island ${id} import rejected:`, err);
       return null;
     }
-    return unwrapModule(resolved, id);
   }
   return unwrapModule(produced, id);
 }
@@ -338,7 +339,7 @@ function unwrapModule(value: unknown, id: number): View | null {
         count++;
       }
     }
-    if (count === 1 && candidate) return candidate;
+    if (count === 1) return candidate;
     console.warn(
       `[Purity] mountIslands: island ${id} resolved to a module with ${count} function exports; ` +
         'expected exactly one, or a `default` export. Returning null.',
@@ -358,7 +359,7 @@ function waitForLoad(run: () => void): void {
   queueMicrotask(run);
 }
 
-function waitForVisible(el: Element, run: () => void): void {
+function waitForVisible(el: HTMLElement, run: () => void): void {
   const Ctor = (globalThis as { IntersectionObserver?: typeof IntersectionObserver })
     .IntersectionObserver;
   if (typeof Ctor !== 'function') {
@@ -373,8 +374,7 @@ function waitForVisible(el: Element, run: () => void): void {
   let mo: MutationObserver | null = null;
   // SSR wrappers use display:contents and have no intersection box. Observe
   // their rendered children so scrolling to a visible island starts loading.
-  const targets =
-    el instanceof HTMLElement && el.style.display === 'contents' ? Array.from(el.children) : [el];
+  const targets = el.style.display === 'contents' ? Array.from(el.children) : [el];
   if (targets.length === 0) {
     waitForLoad(run);
     return;
@@ -385,7 +385,7 @@ function waitForVisible(el: Element, run: () => void): void {
         if (fired) return;
         fired = true;
         observer.disconnect();
-        if (mo) mo.disconnect();
+        mo?.disconnect();
         run();
         return;
       }
@@ -410,9 +410,11 @@ function waitForVisible(el: Element, run: () => void): void {
       if (el.parentNode !== parent) {
         if (fired) return;
         fired = true;
-        for (let i = 0; i < targets.length; i++) obs.unobserve(targets[i]);
+        // disconnect() releases every target; per-target unobserve is redundant.
         obs.disconnect();
-        if (mo) mo.disconnect();
+        mo?.disconnect();
+        // A detached, unhydrated SSR wrapper can be reattached and scheduled again.
+        hydrated.delete(el);
       }
     });
     mo.observe(parent, { childList: true });
@@ -508,36 +510,27 @@ function liveInteractionTarget(
   return node;
 }
 
+// Keep ARIA activation roles as exact tokens; a prefix match would let
+// unknown roles replay a key event after hydration.
+const ACTIVATION_ROLE = /^(?:button|checkbox|radio|switch|menuitem(?:checkbox|radio)?|tab|option)$/;
+
 function hasActivationRole(event: Event, island: Element, key: string): boolean {
   const path = event.composedPath();
   for (let i = 0; i < path.length && path[i] !== island; i++) {
     const node = path[i];
     if (!(node instanceof Element)) continue;
     const role = node.getAttribute('role');
-    if (role === 'link' && key === 'Enter') return true;
-    if (
-      role === 'button' ||
-      role === 'checkbox' ||
-      role === 'radio' ||
-      role === 'switch' ||
-      role === 'menuitem' ||
-      role === 'menuitemcheckbox' ||
-      role === 'menuitemradio' ||
-      role === 'tab' ||
-      role === 'option'
-    ) {
-      return true;
-    }
+    if ((role === 'link' && key === 'Enter') || (role && ACTIVATION_ROLE.test(role))) return true;
   }
   return false;
 }
 
-function waitForInteract(el: Element, run: (onSettled: () => void) => void): void {
+function waitForInteract(el: Element, run: (onSettled: (ready: boolean) => void) => void): void {
   let started = false;
   let pending: (() => void) | null = null;
   const submitRoots: ShadowRoot[] = [];
 
-  const finish = (): void => {
+  const finish = (ready: boolean): void => {
     el.removeEventListener('click', onClick, true);
     el.removeEventListener('submit', onSubmit, true);
     el.removeEventListener('keydown', onKeydown, true);
@@ -548,7 +541,7 @@ function waitForInteract(el: Element, run: (onSettled: () => void) => void): voi
     pending = null;
     // hydrate() schedules mounted hooks as microtasks. Let those complete
     // before delivering the first user action to its newly bound handler.
-    if (replay) {
+    if (replay && ready) {
       queueMicrotask(() => {
         try {
           replay();

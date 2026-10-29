@@ -45,9 +45,12 @@
   "overrides": {
     "@tootallnate/once": "^2.0.1",
     "ajv": "^8.20.0",
+    "deepmerge": "npm:@stackline/deepmerge@1.1.0",
     "fast-uri": "^3.1.9",
     "minimatch": "^10.2.5",
     "path-to-regexp": "^8.4.2",
+    "seroval": "1.7.0",
+    "seroval-plugins": "1.7.0",
     "smol-toml": "^1.6.1",
     "srvx": "^0.11.16",
     "tar": "^7.5.22",

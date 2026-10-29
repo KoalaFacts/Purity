@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/jit.ts';
-import { hydrate, resource, state } from '../src/index.ts';
+import { hydrate, onDispose, onError, resource, state, when } from '../src/index.ts';
 import { primeHydrationCache } from '../src/ssr-context.ts';
+import { consumeHydrationValue } from '../src/ssr/hydration-cache.ts';
 import { tick } from './_helpers.ts';
 
 describe('hydrate + resource cache', () => {
@@ -42,32 +43,151 @@ describe('hydrate + resource cache', () => {
     expect(host.querySelector('#__purity_resources__')).toBeNull();
   });
 
-  it('retains both direct fragment roots for unmount after hydration fallback', () => {
-    host.innerHTML = '<p>server</p>';
+  it('restores both hydration scripts and global cache after a client-only render is refused', async () => {
+    primeHydrationCache({ ordered: [], keyed: { unrelated: 'untouched' } });
+    host.innerHTML =
+      '<p><!--[-->restored<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources__">' +
+      '{"ordered":[],"keyed":{"test":"initial"}}' +
+      '</script>' +
+      '<script type="application/json" id="__purity_resources_1__">' +
+      '{"keyed":{"test":"restored"}}' +
+      '</script>';
+    const nodes = Array.from(host.childNodes);
+
+    expect(() => hydrate(host, () => document.createElement('section'))).toThrow(
+      'purity({ hydratable: true })',
+    );
+    expect(Array.from(host.childNodes)).toEqual(nodes);
+    expect(consumeHydrationValue('unrelated')).toBe('untouched');
+    expect(consumeHydrationValue('test')).toBeUndefined();
+
+    let fetches = 0;
+    const handle = hydrate(host, () => {
+      const data = resource(
+        () => {
+          fetches++;
+          return Promise.resolve('fetched');
+        },
+        { key: 'test' },
+      );
+      return html`<p>${() => data() ?? 'loading'}</p>`;
+    });
+    await tick();
+    expect(fetches).toBe(0);
+    expect(host.textContent).toContain('restored');
+    expect(host.querySelector('#__purity_resources__')).toBeNull();
+    expect(host.querySelector('#__purity_resources_1__')).toBeNull();
+    handle.unmount();
+  });
+
+  it('preserves a successful reentrant hydration started by an error handler', () => {
+    primeHydrationCache({ ordered: [], keyed: { key: 'prior' } });
+    host.innerHTML =
+      '<p>server</p>' +
+      '<script type="application/json" id="__purity_resources__">' +
+      '{"ordered":[],"keyed":{"key":"root"}}' +
+      '</script>';
+    const original = host.querySelector('p')!;
+    const shellScript = host.querySelector('script')!;
+    let recovered: ReturnType<typeof hydrate> | undefined;
+    let failedOwnerDisposals = 0;
+
+    const failed = hydrate(host, () => {
+      onDispose(() => failedOwnerDisposals++);
+      onError(() => {
+        recovered = hydrate(host, () => host.querySelector('p')!);
+        expect(host.querySelector('p')).toBe(original);
+        expect(consumeHydrationValue('key')).toBe('root');
+        expect(shellScript.parentNode).toBeNull();
+      });
+      throw new Error('initial hydration failed');
+    });
+
+    expect(failedOwnerDisposals).toBe(1);
+    expect(host.querySelector('p')).toBe(original);
+    expect(shellScript.parentNode).toBeNull();
+    expect(consumeHydrationValue('key')).toBe('root');
+    failed.unmount();
+    expect(host.querySelector('p')).toBe(original);
+    recovered!.unmount();
+    expect(host.querySelector('p')).toBeNull();
+    expect(shellScript.parentNode).toBeNull();
+  });
+
+  it('does not overwrite a newer hydration started during refused-render disposal', () => {
+    primeHydrationCache({ ordered: [], keyed: { key: 'prior' } });
+    host.innerHTML =
+      '<p>server</p>' +
+      '<script type="application/json" id="__purity_resources__">' +
+      '{"ordered":[],"keyed":{"key":"new"}}' +
+      '</script>';
+    const server = host.querySelector('p')!;
+    const script = host.querySelector('script')!;
+    let recovered: ReturnType<typeof hydrate> | undefined;
+
+    expect(() =>
+      hydrate(host, () => {
+        onDispose(() => {
+          recovered = hydrate(host, () => host.querySelector('p')!);
+        });
+        return document.createElement('span');
+      }),
+    ).toThrow('purity({ hydratable: true })');
+
+    expect(host.querySelector('p')).toBe(server);
+    expect(script.parentNode).toBeNull();
+    expect(consumeHydrationValue('key')).toBe('new');
+    recovered!.unmount();
+    expect(script.parentNode).toBeNull();
+  });
+
+  it('rejects a detached fragment root without deleting SSR nodes', () => {
+    host.innerHTML = '<p><input value="server" /></p>';
+    const server = host.firstChild;
+    const input = host.querySelector('input')!;
+    input.value = 'unsaved';
     const first = document.createElement('span');
     const second = document.createElement('span');
-    first.textContent = 'first';
-    second.textContent = 'second';
     const fragment = document.createDocumentFragment();
     fragment.append(first, second);
 
-    const { unmount } = hydrate(host, () => fragment);
-
-    expect(host.children).toHaveLength(2);
-    expect(host.children[0]).toBe(first);
-    expect(host.children[1]).toBe(second);
-    unmount();
-    expect(host.childNodes).toHaveLength(0);
+    expect(() => hydrate(host, () => fragment)).toThrow('purity({ hydratable: true })');
+    expect(host.firstChild).toBe(server);
+    expect(input.value).toBe('unsaved');
+    expect(fragment.childNodes).toHaveLength(2);
+    expect(host.children).toHaveLength(1);
   });
 
-  it('retains a direct Node for unmount after hydration fallback', () => {
+  it('rejects a fresh direct Node root without deleting SSR nodes', () => {
     host.innerHTML = '<p>server</p>';
+    const server = host.firstChild;
     const replacement = document.createElement('span');
     replacement.textContent = 'client';
 
-    const { unmount } = hydrate(host, () => replacement);
+    expect(() => hydrate(host, () => replacement)).toThrow('purity({ hydratable: true })');
+    expect(host.firstChild).toBe(server);
+    expect(replacement.parentNode).toBeNull();
+    expect(host.textContent).toBe('server');
+  });
 
-    expect(host.firstChild).toBe(replacement);
+  it('keeps a top-level when control handle and SSR form nodes intact', () => {
+    // asyncRoute() uses when() as the top-level application result. This is
+    // a deferred control-flow token, not detached client-only AOT markup.
+    host.innerHTML =
+      '<!--m:false--><form data-purity-enhance><input value="server" /></form><!--/m-->';
+    const form = host.querySelector('form')!;
+    const input = host.querySelector('input')!;
+    input.value = 'unsaved';
+    const { unmount } = hydrate(host, () =>
+      when(
+        () => false,
+        () => document.createElement('p'),
+      ),
+    );
+    expect(host.querySelector('form')).toBe(form);
+    expect(host.querySelector('input')).toBe(input);
+    expect(input.value).toBe('unsaved');
     unmount();
     expect(host.childNodes).toHaveLength(0);
   });
@@ -250,6 +370,231 @@ describe('hydrate + per-boundary streaming cache (ADR 0006 Phase 6 second-half)'
     host = document.createElement('div');
     document.body.appendChild(host);
     primeHydrationCache([]);
+  });
+
+  it("does not steal another root's in-root shell and boundary scripts", async () => {
+    host.innerHTML = '<p>root-a</p>';
+    const other = document.createElement('div');
+    other.innerHTML =
+      '<p><!--[-->B-shell/B-stream<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources__">' +
+      '{"ordered":[],"keyed":{"shell":"B-shell"}}' +
+      '</script>' +
+      '<script type="application/json" id="__purity_resources_1__">' +
+      '{"keyed":{"stream":"B-stream"}}' +
+      '</script>';
+    document.body.appendChild(other);
+    const shell = other.querySelector('#__purity_resources__')!;
+    const boundary = other.querySelector('#__purity_resources_1__')!;
+    let ownerA: ReturnType<typeof hydrate> | undefined;
+    let ownerB: ReturnType<typeof hydrate> | undefined;
+    try {
+      const originalA = host.firstChild!;
+      ownerA = hydrate(host, () => originalA);
+      expect(other.contains(shell)).toBe(true);
+      expect(other.contains(boundary)).toBe(true);
+      expect(consumeHydrationValue('shell')).toBeUndefined();
+      expect(consumeHydrationValue('stream')).toBeUndefined();
+
+      let fetches = 0;
+      ownerB = hydrate(other, () => {
+        const shellResource = resource(
+          () => {
+            fetches++;
+            return Promise.resolve('refetched-shell');
+          },
+          { key: 'shell' },
+        );
+        const streamResource = resource(
+          () => {
+            fetches++;
+            return Promise.resolve('refetched-stream');
+          },
+          { key: 'stream' },
+        );
+        return html`<p>${() => `${shellResource() ?? '?'}/${streamResource() ?? '?'}`}</p>`;
+      });
+      await tick();
+      expect(fetches).toBe(0);
+      expect(other.textContent).toContain('B-shell/B-stream');
+      expect(shell.parentNode).toBeNull();
+      expect(boundary.parentNode).toBeNull();
+    } finally {
+      ownerA?.unmount();
+      ownerB?.unmount();
+      other.remove();
+    }
+  });
+
+  it('associates document-level cache scripts with their adjacent SSR root only', async () => {
+    host.innerHTML = '<p>root-a</p>';
+    const other = document.createElement('div');
+    other.innerHTML = '<p><!--[-->B-shell/B-stream<!--]--></p>';
+    document.body.appendChild(other);
+    other.insertAdjacentHTML(
+      'afterend',
+      '<script type="application/json" id="__purity_resources__">' +
+        '{"ordered":[],"keyed":{"shell":"B-shell"}}' +
+        '</script>' +
+        '<script type="application/json" id="__purity_resources_2__">' +
+        '{"keyed":{"stream":"B-stream"}}' +
+        '</script>',
+    );
+    const shell = other.nextElementSibling!;
+    const boundary = shell.nextElementSibling!;
+    let ownerA: ReturnType<typeof hydrate> | undefined;
+    let ownerB: ReturnType<typeof hydrate> | undefined;
+    try {
+      ownerA = hydrate(host, () => host.querySelector('p')!);
+      expect(shell.isConnected).toBe(true);
+      expect(boundary.isConnected).toBe(true);
+
+      let fetches = 0;
+      ownerB = hydrate(other, () => {
+        const shellResource = resource(
+          () => {
+            fetches++;
+            return Promise.resolve('network-shell');
+          },
+          { key: 'shell' },
+        );
+        const streamResource = resource(
+          () => {
+            fetches++;
+            return Promise.resolve('network-stream');
+          },
+          { key: 'stream' },
+        );
+        return html`<p>${() => `${shellResource() ?? '?'}/${streamResource() ?? '?'}`}</p>`;
+      });
+      await tick();
+      expect(fetches).toBe(0);
+      expect(other.textContent).toContain('B-shell/B-stream');
+      expect(shell.isConnected).toBe(false);
+      expect(boundary.isConnected).toBe(false);
+    } finally {
+      ownerA?.unmount();
+      ownerB?.unmount();
+      shell.remove();
+      boundary.remove();
+      other.remove();
+    }
+  });
+
+  it("does not reuse a previous root's keyed cache when the next root has no scripts", async () => {
+    host.innerHTML = '<p><!--[-->loading<!--]--></p>';
+    const other = document.createElement('div');
+    other.innerHTML =
+      '<p>root-b</p>' +
+      '<script type="application/json" id="__purity_resources__">' +
+      '{"ordered":[],"keyed":{"private":"from-root-b"}}' +
+      '</script>';
+    document.body.appendChild(other);
+    let ownerA: ReturnType<typeof hydrate> | undefined;
+    let ownerB: ReturnType<typeof hydrate> | undefined;
+    try {
+      ownerB = hydrate(other, () => other.querySelector('p')!);
+      expect(consumeHydrationValue('private')).toBe('from-root-b');
+      let fetches = 0;
+      ownerA = hydrate(host, () => {
+        const data = resource(
+          () => {
+            fetches++;
+            return Promise.resolve('fetched-for-a');
+          },
+          { key: 'private' },
+        );
+        return html`<p>${() => data() ?? 'loading'}</p>`;
+      });
+      await tick();
+      expect(fetches).toBe(1);
+      expect(host.textContent).toContain('fetched-for-a');
+      expect(host.textContent).not.toContain('from-root-b');
+    } finally {
+      ownerA?.unmount();
+      ownerB?.unmount();
+      other.remove();
+    }
+  });
+
+  it('prefers adjacent boundary keys over in-root keys', async () => {
+    host.innerHTML =
+      '<p><!--[-->adjacent-wins<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources_1__">' +
+      '{"keyed":{"shared":"inside-loses"}}' +
+      '</script>';
+    host.insertAdjacentHTML(
+      'afterend',
+      '<script type="application/json" id="__purity_resources_2__">' +
+        '{"keyed":{"shared":"adjacent-wins"}}' +
+        '</script>',
+    );
+    const outside = host.nextElementSibling!;
+    let fetches = 0;
+    const owner = hydrate(host, () => {
+      const cached = resource(
+        () => {
+          fetches++;
+          return Promise.resolve('network');
+        },
+        { key: 'shared' },
+      );
+      return html`<p>${() => cached() ?? '?'}</p>`;
+    });
+    try {
+      await tick();
+      expect(fetches).toBe(0);
+      expect(host.textContent).toContain('adjacent-wins');
+      expect(host.textContent).not.toContain('inside-loses');
+      expect(outside.isConnected).toBe(false);
+    } finally {
+      owner.unmount();
+      outside.remove();
+    }
+  });
+  it('merges in-root and adjacent boundary scripts for one SSR root', async () => {
+    host.innerHTML =
+      '<p><!--[-->in-root/adjacent<!--]--></p>' +
+      '<script type="application/json" id="__purity_resources_1__">' +
+      '{"keyed":{"inside":"in-root"}}' +
+      '</script>';
+    host.insertAdjacentHTML(
+      'afterend',
+      '<script type="application/json" id="__purity_resources_2__">' +
+        '{"keyed":{"outside":"adjacent"}}' +
+        '</script>',
+    );
+    const internal = host.querySelector('#__purity_resources_1__')!;
+    const external = host.nextElementSibling!;
+    let owner: ReturnType<typeof hydrate> | undefined;
+    try {
+      let fetches = 0;
+      owner = hydrate(host, () => {
+        const inside = resource(
+          () => {
+            fetches++;
+            return Promise.resolve('refetched-inside');
+          },
+          { key: 'inside' },
+        );
+        const outside = resource(
+          () => {
+            fetches++;
+            return Promise.resolve('refetched-outside');
+          },
+          { key: 'outside' },
+        );
+        return html`<p>${() => `${inside() ?? '?'}/${outside() ?? '?'}`}</p>`;
+      });
+      await tick();
+      expect(fetches).toBe(0);
+      expect(host.textContent).toContain('in-root/adjacent');
+      expect(internal.parentNode).toBeNull();
+      expect(external.isConnected).toBe(false);
+    } finally {
+      owner?.unmount();
+      external.remove();
+    }
   });
 
   it('merges per-boundary <script id="__purity_resources_N__"> into the keyed cache', async () => {

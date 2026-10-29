@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { isHydrating, withHydration } from '../src/compiler/hydrate-runtime.ts';
-import { hydrate, mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
+import { mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
+import { hydrate } from '../src/hydrate.ts';
 import { each, inflateDeferredEach, list, when, type DeferredEach } from '../src/control.ts';
 import { component } from '../src/elements.ts';
 import { ComponentContext, getCurrentContext, popContext, pushContext } from '../src/scope.ts';

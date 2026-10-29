@@ -36,6 +36,9 @@ jobs:
         # transitives cannot pass CI while blocking Dependabot updates.
         run: npm audit --audit-level=low
 
+      - name: 🔐 Check Svelte tooling deepmerge alias against prototype poisoning
+        run: node --experimental-strip-types benchmark/tools/svelte-merge-security.ts
+
       - name: 🔐 Verify package provenance (non-blocking)
         # npm attestation API can be flaky; log results but don't gate CI
         run: npm audit signatures || true

@@ -83,7 +83,7 @@ function unmountChildContext(
 }
 
 // Run callbacks safely
-function runCallbacks(arr: (() => void)[] | null, ctx?: ComponentContext): void {
+function runCallbacks(arr: (() => void)[] | null | undefined, ctx?: ComponentContext): void {
   if (!arr) return;
   for (let i = 0; i < arr.length; i++) {
     try {

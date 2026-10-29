@@ -374,7 +374,7 @@ function waitForVisible(el: HTMLElement, run: () => void): void {
   let mo: MutationObserver | null = null;
   // SSR wrappers use display:contents and have no intersection box. Observe
   // their rendered children so scrolling to a visible island starts loading.
-  const targets = el.style.display === 'contents' ? el.children : [el];
+  const targets = el.style.display === 'contents' ? Array.from(el.children) : [el];
   if (targets.length === 0) {
     waitForLoad(run);
     return;

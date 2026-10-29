@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { onFormReset } from '../src/component.ts';
+import { onFormReset, onMount } from '../src/component.ts';
 import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
 
 describe('SV2-015 lean component ownership', () => {
   it('does not allocate unused optional fields on ordinary owners', () => {
     const ctx = new ComponentContext();
     const optionalFields = [
+      'mounted',
+      'destroyed',
+      'errorHandlers',
+      'children',
       '_slotContent',
       '_internals',
       '_stateRefs',
@@ -26,13 +30,17 @@ describe('SV2-015 lean component ownership', () => {
     expect(ctx._isDestroyed).toBe(false);
 
     const reset = () => {};
+    const mounted = () => {};
     pushContext(ctx);
     try {
       onFormReset(reset);
+      onMount(mounted);
     } finally {
       popContext();
     }
     expect(ctx._formReset).toEqual([reset]);
+    expect(ctx.mounted).toEqual([mounted]);
     expect(Object.hasOwn(ctx, '_formReset')).toBe(true);
+    expect(Object.hasOwn(ctx, 'mounted')).toBe(true);
   });
 });

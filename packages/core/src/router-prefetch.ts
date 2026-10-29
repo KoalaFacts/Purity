@@ -129,45 +129,29 @@ export function prefetchManifestLinks(
   function onEnter(event: MouseEvent | FocusEvent): void {
     if (disposed) return;
     const target = event.target as Element | null;
-    if (!target) return;
+    const anchor = (target?.closest?.('a') ?? null) as HTMLAnchorElement | null;
+    if (!anchor) return;
     // For mouseover delegation: if the cursor merely moved between two
     // descendants of the same anchor, `event.relatedTarget` is inside
     // the anchor too — skip the expensive `should()` work. Mimics the
     // native `mouseenter` semantics ("fired once per cursor entry").
     if ('relatedTarget' in event) {
-      const related = (event as MouseEvent).relatedTarget as Node | null;
-      const fromAnchor =
-        related && 'closest' in related ? ((related as Element).closest?.('a') ?? null) : null;
-      // Walk up from the current target too, before doing it again below,
-      // so the same-anchor short-circuit is one closest() call cheaper.
-      const intoAnchor = (target.closest?.('a') ?? null) as HTMLAnchorElement | null;
-      if (!intoAnchor) return;
-      if (fromAnchor === intoAnchor) return;
-      if (pending.has(intoAnchor) || fired.has(intoAnchor)) return;
-      if (!should(event, intoAnchor)) return;
-      const timer = setTimeout(() => {
-        pending.delete(intoAnchor);
-        firePrefetch(intoAnchor);
-      }, delay);
-      pending.set(intoAnchor, timer);
-      return;
+      const related = (event as MouseEvent).relatedTarget as Element | null;
+      if ((related?.closest?.('a') ?? null) === anchor) return;
     }
-    // Focus path — `mouseenter`-style descendant noise doesn't apply.
-    const anchor = (target.closest?.('a') ?? null) as HTMLAnchorElement | null;
-    if (!anchor) return;
-    if (pending.has(anchor) || fired.has(anchor)) return;
-    if (!should(event, anchor)) return;
-    const timer = setTimeout(() => {
-      pending.delete(anchor);
-      firePrefetch(anchor);
-    }, delay);
-    pending.set(anchor, timer);
+    if (pending.has(anchor) || fired.has(anchor) || !should(event, anchor)) return;
+    pending.set(
+      anchor,
+      setTimeout(() => {
+        pending.delete(anchor);
+        firePrefetch(anchor);
+      }, delay),
+    );
   }
 
   function onLeave(event: Event): void {
     const target = event.target as Element | null;
-    if (!target) return;
-    const anchor = (target.closest?.('a') ?? null) as HTMLAnchorElement | null;
+    const anchor = (target?.closest?.('a') ?? null) as HTMLAnchorElement | null;
     if (!anchor) return;
     const timer = pending.get(anchor);
     if (timer !== undefined) {
@@ -181,20 +165,20 @@ export function prefetchManifestLinks(
   // into the link (we short-circuit via `event.relatedTarget` for moves
   // between descendants of the same anchor, plus the `pending` map +
   // `fired` WeakSet).
-  document.addEventListener('mouseover', onEnter, true);
-  document.addEventListener('mouseout', onLeave, true);
   // Also fire on focus for keyboard users navigating with Tab. Pair with
   // focusout so Tabbing past a link cancels its pending timer (otherwise
   // rapid-Tab through N links queues N concurrent prefetches).
-  document.addEventListener('focusin', onEnter, true);
-  document.addEventListener('focusout', onLeave, true);
+  const events: Array<[string, EventListener]> = [
+    ['mouseover', onEnter as EventListener],
+    ['mouseout', onLeave],
+    ['focusin', onEnter as EventListener],
+    ['focusout', onLeave],
+  ];
+  for (const [ev, fn] of events) document.addEventListener(ev, fn, true);
 
   return () => {
     disposed = true;
-    document.removeEventListener('mouseover', onEnter, true);
-    document.removeEventListener('mouseout', onLeave, true);
-    document.removeEventListener('focusin', onEnter, true);
-    document.removeEventListener('focusout', onLeave, true);
+    for (const [ev, fn] of events) document.removeEventListener(ev, fn, true);
     for (const timer of pending.values()) clearTimeout(timer);
     pending.clear();
   };

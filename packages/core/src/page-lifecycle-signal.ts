@@ -87,33 +87,17 @@ export function pageLifecycleSignal(): ComputedAccessor<PageLifecycleState> {
   };
   // Bind incrementally so a mid-wire throw can roll back every prior listener
   // without leaking handlers on document / window.
+  const pairs: Array<[EventTarget, string, EventListener]> = [
+    [document, 'visibilitychange', refresh],
+    [window, 'focus', refresh],
+    [window, 'blur', refresh],
+    [document, 'freeze', onFreeze],
+    [document, 'resume', onResume],
+    [window, 'pageshow', refresh],
+    [window, 'pagehide', onPagehide as EventListener],
+  ];
   const bound: Array<() => void> = [];
-  try {
-    document.addEventListener('visibilitychange', refresh);
-    bound.push(() => document.removeEventListener('visibilitychange', refresh));
-    window.addEventListener('focus', refresh);
-    bound.push(() => window.removeEventListener('focus', refresh));
-    window.addEventListener('blur', refresh);
-    bound.push(() => window.removeEventListener('blur', refresh));
-    document.addEventListener('freeze', onFreeze);
-    bound.push(() => document.removeEventListener('freeze', onFreeze));
-    document.addEventListener('resume', onResume);
-    bound.push(() => document.removeEventListener('resume', onResume));
-    window.addEventListener('pageshow', refresh);
-    bound.push(() => window.removeEventListener('pageshow', refresh));
-    window.addEventListener('pagehide', onPagehide as EventListener);
-    bound.push(() => window.removeEventListener('pagehide', onPagehide as EventListener));
-  } catch (err) {
-    for (let i = bound.length - 1; i >= 0; i--) {
-      try {
-        bound[i]();
-      } catch {
-        // best-effort rollback; ignore secondary teardown failures.
-      }
-    }
-    throw err;
-  }
-  teardown = () => {
+  const cleanup = (): void => {
     for (let i = bound.length - 1; i >= 0; i--) {
       try {
         bound[i]();
@@ -122,6 +106,16 @@ export function pageLifecycleSignal(): ComputedAccessor<PageLifecycleState> {
       }
     }
   };
+  try {
+    for (const [target, type, fn] of pairs) {
+      target.addEventListener(type, fn);
+      bound.push(() => target.removeEventListener(type, fn));
+    }
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
+  teardown = cleanup;
   singleton = compute(() => inner());
   return singleton;
 }

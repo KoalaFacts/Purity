@@ -264,31 +264,17 @@ export function internals(): ElementInternals | null {
 }
 
 function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node | null {
-  if (children == null) return null;
-
-  if (
-    typeof children === 'object' &&
-    !(children instanceof Node) &&
-    typeof children !== 'function'
-  ) {
-    const s = (children as Record<string, unknown>)[name];
-    if (typeof s === 'function') {
-      const r = (s as (...a: any[]) => unknown)(exposed);
-      if (r instanceof Node) return r as Node;
-      if (typeof r === 'string') return document.createTextNode(r);
-      return null;
-    }
-    return resolveContent(s);
+  const s =
+    children != null && typeof children === 'object' && !(children instanceof Node)
+      ? (children as Record<string, unknown>)[name]
+      : name === 'default'
+        ? children
+        : null;
+  if (typeof s === 'function') {
+    const r = (s as (...a: any[]) => unknown)(exposed);
+    return r instanceof Node ? r : typeof r === 'string' ? document.createTextNode(r) : null;
   }
-
-  if (name !== 'default') return null;
-  if (typeof children === 'function') {
-    const r = (children as (...a: any[]) => unknown)(exposed);
-    if (r instanceof Node) return r as Node;
-    if (typeof r === 'string') return document.createTextNode(r);
-    return null;
-  }
-  return resolveContent(children);
+  return resolveContent(s);
 }
 
 // ---------------------------------------------------------------------------
@@ -891,42 +877,28 @@ export function component<
     }
 
     if (options?.formControl) {
+      for (const [k, def] of [
+        ['form', null],
+        ['labels', null],
+        ['validity', null],
+        ['validationMessage', ''],
+        ['willValidate', false],
+      ] as const) {
+        Object.defineProperty(PurityElement.prototype, k, {
+          get(this: PurityElement) {
+            return (this._internals as any)?.[k] ?? def;
+          },
+        });
+      }
+      for (const k of ['checkValidity', 'reportValidity'] as const) {
+        Object.defineProperty(PurityElement.prototype, k, {
+          value(this: PurityElement) {
+            this._formBridge?.sync();
+            return this._internals?.[k]() ?? true;
+          },
+        });
+      }
       Object.defineProperties(PurityElement.prototype, {
-        form: {
-          get(this: PurityElement) {
-            return this._formBridge?.form ?? null;
-          },
-        },
-        labels: {
-          get(this: PurityElement) {
-            return this._formBridge?.labels ?? null;
-          },
-        },
-        validity: {
-          get(this: PurityElement) {
-            return this._formBridge?.validity ?? null;
-          },
-        },
-        validationMessage: {
-          get(this: PurityElement) {
-            return this._formBridge?.validationMessage ?? '';
-          },
-        },
-        willValidate: {
-          get(this: PurityElement) {
-            return this._formBridge?.willValidate ?? false;
-          },
-        },
-        checkValidity: {
-          value(this: PurityElement) {
-            return this._formBridge?.checkValidity() ?? true;
-          },
-        },
-        reportValidity: {
-          value(this: PurityElement) {
-            return this._formBridge?.reportValidity() ?? true;
-          },
-        },
         value: {
           get(this: PurityElement) {
             return this._formBridge?.value ?? '';
@@ -941,8 +913,9 @@ export function component<
             return this._formBridge?.checked ?? false;
           },
           set(this: PurityElement, value: unknown) {
-            this._props.checked = Boolean(value);
-            this._formBridge?.setChecked(Boolean(value));
+            const v = Boolean(value);
+            this._props.checked = v;
+            this._formBridge?.setChecked(v);
           },
         },
       });
@@ -1048,6 +1021,10 @@ export function teleport(
   // since the microtask runs outside any render context) and append
   // teleported DOM that nothing ever tears down.
   let disposed = false;
+  const clearNodes = () => {
+    for (const node of currentNodes) node.parentNode?.removeChild(node);
+    currentNodes = [];
+  };
 
   queueMicrotask(() => {
     if (disposed) return;
@@ -1060,20 +1037,12 @@ export function teleport(
       return;
     }
     dispose = watch(() => {
-      for (let i = 0; i < currentNodes.length; i++) {
-        const node = currentNodes[i];
-        if (node.parentNode) node.parentNode.removeChild(node);
-      }
-      currentNodes = [];
+      clearNodes();
       const content = viewFn();
       if (content == null) return;
-      if (content instanceof DocumentFragment) {
-        currentNodes = Array.from(content.childNodes);
-        container.appendChild(content);
-      } else {
-        currentNodes = [content];
-        container.appendChild(content);
-      }
+      currentNodes =
+        content instanceof DocumentFragment ? Array.from(content.childNodes) : [content];
+      container.appendChild(content);
     });
   });
 
@@ -1082,12 +1051,8 @@ export function teleport(
   if (ctx) {
     (ctx.disposers ??= []).push(() => {
       disposed = true;
-      if (dispose) dispose();
-      for (let i = 0; i < currentNodes.length; i++) {
-        const node = currentNodes[i];
-        if (node.parentNode) node.parentNode.removeChild(node);
-      }
-      currentNodes = [];
+      dispose?.();
+      clearNodes();
     });
   }
 

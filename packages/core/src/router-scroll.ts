@@ -13,7 +13,7 @@
 // ~10 LOC including the teardown.
 // ---------------------------------------------------------------------------
 
-import { _getNavigationGeneration, onNavigate } from './router.ts';
+import { _getNavigationGeneration, _safeDecode, onNavigate } from './router.ts';
 
 /** Options for {@link manageNavScroll}. */
 export interface ManageNavScrollOptions {
@@ -34,13 +34,7 @@ function defaultScrollHandler(url: URL): void {
     // microtask, so an uncaught throw would surface as an unhandled error
     // and skip the scroll. Fall back to the raw fragment — getElementById
     // on the undecoded id simply finds nothing and we scroll to top.
-    let id: string;
-    try {
-      id = decodeURIComponent(url.hash.slice(1));
-    } catch {
-      id = url.hash.slice(1);
-    }
-    const el = document.getElementById(id);
+    const el = document.getElementById(_safeDecode(url.hash.slice(1)));
     if (el) {
       el.scrollIntoView();
       return;

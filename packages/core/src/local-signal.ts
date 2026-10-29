@@ -128,63 +128,45 @@ function parseStored<T>(
   migrate: ((old: unknown, oldVersion: number) => T) | undefined,
 ): ParseResult<T> {
   const fallback: ParseResult<T> = { value: defaultValue, succeeded: false };
+  const ok = (value: T): ParseResult<T> => ({ value, succeeded: true });
   // Versioned envelope path.
   if (version > 0) {
     let envelope: unknown;
     try {
       envelope = JSON.parse(raw);
     } catch {
-      // Not JSON at all — treat as legacy unversioned value.
-      try {
-        const legacy = deserialize(raw);
-        if (!migrate) return fallback;
-        try {
-          return { value: migrate(legacy, 0), succeeded: true };
-        } catch {
-          return fallback;
-        }
-      } catch {
-        return fallback;
-      }
+      envelope = null;
     }
     if (isEnvelope(envelope)) {
       if (envelope.__pv === version) {
         try {
-          return { value: deserialize(envelope.d), succeeded: true };
+          return ok(deserialize(envelope.d));
         } catch {
           return fallback;
         }
       }
-      if (migrate) {
-        try {
-          const old = deserialize(envelope.d);
-          return { value: migrate(old, envelope.__pv), succeeded: true };
-        } catch {
-          try {
-            return { value: migrate(envelope.d, envelope.__pv), succeeded: true };
-          } catch {
-            return fallback;
-          }
-        }
-      }
-      return fallback;
-    }
-    // No envelope wrapper — treat as legacy unversioned raw value.
-    try {
-      const legacy = deserialize(raw);
       if (!migrate) return fallback;
       try {
-        return { value: migrate(legacy, 0), succeeded: true };
+        return ok(migrate(deserialize(envelope.d), envelope.__pv));
       } catch {
-        return fallback;
+        try {
+          return ok(migrate(envelope.d, envelope.__pv));
+        } catch {
+          return fallback;
+        }
       }
+    }
+    // Not JSON or no envelope wrapper — treat as legacy unversioned raw value.
+    try {
+      const legacy = deserialize(raw);
+      return migrate ? ok(migrate(legacy, 0)) : fallback;
     } catch {
       return fallback;
     }
   }
   // Unversioned path — raw deserialize.
   try {
-    return { value: deserialize(raw), succeeded: true };
+    return ok(deserialize(raw));
   } catch {
     return fallback;
   }

@@ -166,6 +166,35 @@ export function wireLiveReconnect(
   });
 }
 
+/** @internal Shared message parser + validator for live-data signals. */
+export function makeLiveMessageHandler<T, R = string>(
+  api: string,
+  label: string,
+  parse: (raw: R) => unknown,
+  validate: LiveValidator<T>,
+  inner: (value: NoInfer<T>) => void,
+): (e: MessageEvent<R>) => void {
+  return (e: MessageEvent<R>): void => {
+    let parsed: unknown;
+    try {
+      parsed = parse(e.data);
+    } catch (err) {
+      console.warn(`[purity] ${api}('${label}') failed to parse:`, err);
+      return;
+    }
+    try {
+      if (!validate(parsed)) {
+        console.warn(`[purity] ${api}('${label}') dropped incoming message — failed validator`);
+        return;
+      }
+    } catch (err) {
+      console.warn(`[purity] ${api}('${label}') dropped incoming message — validator threw:`, err);
+      return;
+    }
+    inner(parsed);
+  };
+}
+
 /**
  * Reactive Server-Sent Events feed (ADR 0047).
  *
@@ -212,35 +241,7 @@ export function eventSourceSignal<T>(
   // we DON'T want it to reopen the connection after the surrounding
   // component has unmounted (or after the explicit disposer ran).
   let disposed = false;
-  const onMessage = (e: MessageEvent): void => {
-    let parsed: unknown;
-    try {
-      parsed = parse(e.data as string);
-    } catch (err) {
-      console.warn(`[purity] eventSourceSignal('${label}') failed to parse:`, err);
-      return;
-    }
-    // Keep validate() inside the try AND narrow within it: the predicate
-    // refines `parsed` from `unknown` to `T`, so `inner(value)` stays
-    // typed. A separate boolean would discard that narrowing.
-    let value: T;
-    try {
-      if (!validate(parsed)) {
-        console.warn(
-          `[purity] eventSourceSignal('${label}') dropped incoming message — failed validator`,
-        );
-        return;
-      }
-      value = parsed;
-    } catch (err) {
-      console.warn(
-        `[purity] eventSourceSignal('${label}') dropped incoming message — validator threw:`,
-        err,
-      );
-      return;
-    }
-    inner(value);
-  };
+  const onMessage = makeLiveMessageHandler('eventSourceSignal', label, parse, validate, inner);
 
   const open = (): void => {
     if (disposed || es) return;

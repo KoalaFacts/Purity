@@ -21,6 +21,7 @@ import { getCurrentContext } from './scope.ts';
 import {
   type LiveReconnectPolicy,
   type LiveValidator,
+  makeLiveMessageHandler,
   redactUrl,
   wireLiveReconnect,
 } from './event-source-signal.ts';
@@ -72,11 +73,14 @@ export function webSocketSignal<T>(
   url: string | URL,
   options: WebSocketSignalOptions<T>,
 ): WebSocketSignal<T> {
-  if (getSSRRenderContext() !== null || typeof WebSocket === 'undefined') {
+  const makeInert = (): WebSocketSignal<T> => {
     const inert = compute(() => options.initialValue) as WebSocketSignal<T>;
     inert.send = () => {};
     inert.readyState = () => 'closed' as const;
     return inert;
+  };
+  if (getSSRRenderContext() !== null || typeof WebSocket === 'undefined') {
+    return makeInert();
   }
 
   const inner = state(options.initialValue);
@@ -113,10 +117,7 @@ export function webSocketSignal<T>(
     console.warn(
       `[purity] webSocketSignal('${label}') rejected — only ws:// and wss:// URLs are permitted`,
     );
-    const inert = compute(() => options.initialValue) as WebSocketSignal<T>;
-    inert.send = () => {};
-    inert.readyState = () => 'closed' as const;
-    return inert;
+    return makeInert();
   }
 
   // Subprotocol validation: per RFC 6455 §4.1, each subprotocol must be
@@ -129,9 +130,10 @@ export function webSocketSignal<T>(
     const list = typeof options.protocols === 'string' ? [options.protocols] : options.protocols;
     // RFC 7230 token: 1*tchar where tchar = !#$%&'*+-.^_`|~ / DIGIT / ALPHA.
     const tokenRe = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-    let bad = false;
-    if (!Array.isArray(list)) bad = true;
-    else {
+    // Indexed lookup must visit sparse-array holes, which .some() skips.
+    // A hole is undefined and must never reach WebSocket construction.
+    let bad = !Array.isArray(list);
+    if (!bad) {
       for (let i = 0; i < list.length; i++) {
         const p = list[i];
         if (typeof p !== 'string' || !tokenRe.test(p)) {
@@ -144,10 +146,7 @@ export function webSocketSignal<T>(
       console.warn(
         `[purity] webSocketSignal('${label}') rejected — invalid subprotocol (must be RFC 6455 tokens)`,
       );
-      const inert = compute(() => options.initialValue) as WebSocketSignal<T>;
-      inert.send = () => {};
-      inert.readyState = () => 'closed' as const;
-      return inert;
+      return makeInert();
     }
   }
 
@@ -158,38 +157,19 @@ export function webSocketSignal<T>(
   const onClose = (): void => {
     stateAccessor('closed');
   };
-  const onError = (): void => {
-    stateAccessor('closed');
-  };
-  const onMessage = (e: MessageEvent): void => {
-    let parsed: unknown;
-    try {
-      parsed = parse(e.data);
-    } catch (err) {
-      console.warn(`[purity] webSocketSignal('${label}') failed to parse:`, err);
-      return;
-    }
-    // Keep validate() inside the try AND narrow within it: the predicate
-    // refines `parsed` from `unknown` to `T`, so `inner(value)` stays
-    // typed. A separate boolean would discard that narrowing.
-    let value: T;
-    try {
-      if (!validate(parsed)) {
-        console.warn(
-          `[purity] webSocketSignal('${label}') dropped incoming message — failed validator`,
-        );
-        return;
-      }
-      value = parsed;
-    } catch (err) {
-      console.warn(
-        `[purity] webSocketSignal('${label}') dropped incoming message — validator threw:`,
-        err,
-      );
-      return;
-    }
-    inner(value);
-  };
+  const onMessage = makeLiveMessageHandler<T, MessageEvent['data']>(
+    'webSocketSignal',
+    label,
+    parse,
+    validate,
+    inner,
+  );
+  const listeners: Array<[string, EventListener]> = [
+    ['open', onOpen],
+    ['close', onClose],
+    ['error', onClose],
+    ['message', onMessage as EventListener],
+  ];
 
   const open = (): void => {
     if (ws) return;
@@ -202,10 +182,7 @@ export function webSocketSignal<T>(
       ws = null;
       return;
     }
-    ws.addEventListener('open', onOpen);
-    ws.addEventListener('close', onClose);
-    ws.addEventListener('error', onError);
-    ws.addEventListener('message', onMessage);
+    for (const [ev, fn] of listeners) ws.addEventListener(ev, fn);
   };
   const close = (): void => {
     if (!ws) return;
@@ -215,10 +192,7 @@ export function webSocketSignal<T>(
     // Detach our four listeners BEFORE close() so a late 'message' arriving
     // after the socket's async close path can't ride back into the shared
     // inner state on the next reconnect cycle. Matches eventSourceSignal.
-    closing.removeEventListener('open', onOpen);
-    closing.removeEventListener('close', onClose);
-    closing.removeEventListener('error', onError);
-    closing.removeEventListener('message', onMessage);
+    for (const [ev, fn] of listeners) closing.removeEventListener(ev, fn);
     try {
       closing.close();
     } catch (err) {

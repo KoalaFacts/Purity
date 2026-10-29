@@ -429,6 +429,33 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('rejects sparse subprotocol arrays without opening or reconnecting', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sparse = new Array<string>(2);
+    sparse[0] = 'chat.v1'; // The second entry is a hole, not an explicit undefined.
+    const sig = webSocketSignal<number>('/ws', {
+      initialValue: 7,
+      validate: isNumber,
+      protocols: sparse,
+    });
+    expect(instances).toHaveLength(0);
+    expect(sig()).toBe(7);
+    expect(sig.readyState()).toBe('closed');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('invalid subprotocol');
+
+    const restore = new Event('pageshow') as Event & { persisted: boolean };
+    Object.defineProperty(restore, 'persisted', { value: true });
+    window.dispatchEvent(restore);
+    await tick();
+    setVisibility('hidden');
+    await tick();
+    setVisibility('visible');
+    await tick();
+    expect(instances).toHaveLength(0);
+    warnSpy.mockRestore();
+  });
+
   it('accepts well-formed subprotocol tokens (happy path)', () => {
     webSocketSignal<number>('/ws', {
       initialValue: 0,

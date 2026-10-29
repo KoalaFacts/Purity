@@ -100,8 +100,6 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
       // orphaned they keep running and leak. unmountContext drains them and
       // removes ctx from parent.children itself. ctx.nodes is still null
       // (set only on the success path below), so no DOM is touched here.
-      // The failed hydration never mounted: only disposers, not onDestroy, run.
-      ctx.destroyed = null;
       unmountContext(ctx);
       while (container.firstChild) container.removeChild(container.firstChild);
       return mountHydrated(component, container);

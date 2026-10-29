@@ -41,9 +41,6 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   const revision = hydrationRevision;
   const restoreCache = checkpointHydrationCache();
   const scripts = prepareResourceHydrationCache(container);
-  const rollbackCache = (): void => {
-    if (hydrationRevision === revision) restoreCache();
-  };
 
   const ctx = new ComponentContext();
   attachToOwner(ctx, unmountContext);
@@ -66,7 +63,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
     // failed attempt's cache/scripts first and never attach recovery work to
     // the context that is about to be destroyed.
     try {
-      rollbackCache();
+      if (hydrationRevision === revision) restoreCache();
       // _handleError normally binds recovery to the failing owner. Mark
       // it unavailable only during dispatch, so a nested hydrate can
       // outlive this failed render and its cleanup.
@@ -126,7 +123,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   } catch (err) {
     ctx.destroyed = null;
     try {
-      rollbackCache();
+      if (hydrationRevision === revision) restoreCache();
     } finally {
       unmountContext(ctx);
     }

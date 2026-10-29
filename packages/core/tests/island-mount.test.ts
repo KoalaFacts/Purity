@@ -378,6 +378,38 @@ describe('mountIslands() — lazy entries (ADR 0038 Phase 3)', () => {
     }
   });
 
+  it('does not hydrate a detached wrapper after a lazy module settles', async () => {
+    let renders = 0;
+    const View = (): unknown => {
+      renders++;
+      return html`<span>x</span>`;
+    };
+    const branded = island(View);
+    host = makeWrapper(1, 'load', '<span>x</span>');
+    const wrapper = host.querySelector('purity-island')!;
+    const server = wrapper.querySelector('span')!;
+    let resolveLoad!: (view: typeof branded) => void;
+    const pending = new Promise<typeof branded>((resolve) => {
+      resolveLoad = resolve;
+    });
+
+    mountIslands([() => pending], { root: host });
+    await tick();
+    wrapper.remove();
+    resolveLoad(branded);
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(renders).toBe(0);
+    expect(wrapper.querySelector('span')).toBe(server);
+
+    host.append(wrapper);
+    mountIslands([branded], { root: host });
+    for (let i = 0; i < 5; i++) await tick();
+
+    expect(renders).toBe(1);
+    expect(wrapper.querySelector('span')).toBe(server);
+  });
+
   it('retries after a lazy module export getter throws before adoption', async () => {
     const value = state(0);
     const View = (): unknown => html`<p><!--[-->${() => value()}<!--]--></p>`;

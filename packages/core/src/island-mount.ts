@@ -217,8 +217,8 @@ function scheduleHydration(
     };
     resolveEntry(entry, id)
       .then((view) => {
-        if (!view) {
-          // A rejected import never adopted SSR DOM. Allow a later manifest retry.
+        if (!view || !el.isConnected) {
+          // An unresolved view or detached wrapper has no DOM to adopt.
           finish(false);
           return;
         }

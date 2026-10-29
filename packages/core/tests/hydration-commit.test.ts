@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vite-plus/test';
-import { onDispose, onError, onMount } from '../src/component.ts';
+import { onDestroy, onDispose, onError, onMount } from '../src/component.ts';
 import { FAILED_HYDRATION, hydrate } from '../src/hydrate.ts';
 import {
   clearHydrationCache,
@@ -110,5 +110,35 @@ describe('resource hydration prepares before it commits', () => {
     disposers.push(hydrate(host, () => p).unmount);
     expect(script.parentNode).toBeNull();
     expect(consumeHydrationValue('value')).toBe('server-value');
+  });
+
+  it('does not fire onDestroy for a deferred render abandoned before SSR adoption', () => {
+    const { host } = fixture();
+    let attempts = 0;
+    let destroyed = 0;
+    let disposed = 0;
+    const mounted = hydrate(host, () => {
+      onDestroy(() => destroyed++);
+      onDispose(() => disposed++);
+      if (++attempts === 1) {
+        return {
+          __purity_deferred__: true,
+          values: [],
+          hydrate: () => {
+            throw new Error('deliberate hydration walker mismatch');
+          },
+        } as unknown as DocumentFragment;
+      }
+      const fresh = document.createElement('p');
+      fresh.textContent = 'fresh';
+      return fresh;
+    });
+    expect(attempts).toBe(2);
+    expect(disposed).toBe(1);
+    expect(destroyed).toBe(0);
+    expect(host.textContent).toBe('fresh');
+    mounted.unmount();
+    expect(disposed).toBe(2);
+    expect(destroyed).toBe(1);
   });
 });

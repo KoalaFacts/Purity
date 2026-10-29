@@ -11,18 +11,24 @@ function isNativeControl(node: Element | null): node is NativeControl {
   );
 }
 
+function isCheckable(control: NativeControl): control is HTMLInputElement {
+  return (
+    control instanceof HTMLInputElement && (control.type === 'checkbox' || control.type === 'radio')
+  );
+}
+
+function isFileInput(control: NativeControl): control is HTMLInputElement {
+  return control instanceof HTMLInputElement && control.type === 'file';
+}
+
 function submissionValue(control: NativeControl, name: string): string | FormData | null {
-  if (control instanceof HTMLInputElement) {
-    if (control.type === 'checkbox' || control.type === 'radio') {
-      return control.checked ? control.value : null;
-    }
-    if (control.type === 'file') {
-      const files = control.files;
-      if (!files?.length) return null;
-      const data = new FormData();
-      for (const file of files) data.append(name, file);
-      return data;
-    }
+  if (isCheckable(control)) return control.checked ? control.value : null;
+  if (isFileInput(control)) {
+    const files = control.files;
+    if (!files?.length) return null;
+    const data = new FormData();
+    for (const file of files) data.append(name, file);
+    return data;
   }
   if (control instanceof HTMLSelectElement && control.multiple) {
     const data = new FormData();
@@ -33,12 +39,9 @@ function submissionValue(control: NativeControl, name: string): string | FormDat
 }
 
 function resetControl(control: NativeControl): void {
-  if (control instanceof HTMLInputElement) {
-    if (control.type === 'checkbox' || control.type === 'radio')
-      control.checked = control.defaultChecked;
-    else if (control.type === 'file') control.value = '';
-    else control.value = control.defaultValue;
-  } else if (control instanceof HTMLTextAreaElement) {
+  if (isCheckable(control)) control.checked = control.defaultChecked;
+  else if (isFileInput(control)) control.value = '';
+  else if (control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) {
     control.value = control.defaultValue;
   } else {
     let hasDefault = false;
@@ -82,36 +85,6 @@ export class FormControlBridge {
     private internals: ElementInternals,
     private selector: string | true,
   ) {}
-
-  get form(): HTMLFormElement | null {
-    return this.internals.form;
-  }
-
-  get labels(): NodeList {
-    return this.internals.labels;
-  }
-
-  get validity(): ValidityState {
-    return this.internals.validity;
-  }
-
-  get validationMessage(): string {
-    return this.internals.validationMessage;
-  }
-
-  get willValidate(): boolean {
-    return this.internals.willValidate;
-  }
-
-  checkValidity(): boolean {
-    this.sync();
-    return this.internals.checkValidity();
-  }
-
-  reportValidity(): boolean {
-    this.sync();
-    return this.internals.reportValidity();
-  }
 
   connect(): void {
     connectedBridges.add(this);
@@ -176,12 +149,9 @@ export class FormControlBridge {
 
   restore(value: File | string | FormData): void {
     if (!this.control || typeof value !== 'string') return;
-    if (
-      this.control instanceof HTMLInputElement &&
-      (this.control.type === 'checkbox' || this.control.type === 'radio')
-    ) {
+    if (isCheckable(this.control)) {
       this.control.checked = value === this.control.value;
-    } else if (!(this.control instanceof HTMLInputElement && this.control.type === 'file')) {
+    } else if (!isFileInput(this.control)) {
       this.control.value = value;
     }
     this.sync();

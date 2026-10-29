@@ -472,10 +472,11 @@ export function matchRoute(pattern: string, path?: string): RouteMatch | null {
  * route still matches and the param is non-empty; the view decides what to
  * do with an undecodable value.
  */
-function safeDecode(segment: string): string {
+export function _safeDecode(segment: string): string {
   try {
     return decodeURIComponent(segment);
   } catch {
     return segment;
   }
 }
+const safeDecode = _safeDecode;

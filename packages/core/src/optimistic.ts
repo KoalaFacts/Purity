@@ -89,7 +89,22 @@ export function optimistic<TArgs>(
       const body = options.body(args);
 
       // Apply optimistic local state synchronously, capturing rollback.
-      const rollback = options.apply ? options.apply(args) : undefined;
+      const rollback = options.apply?.(args);
+      const runRollback = (): void => {
+        if (!rollback) return;
+        try {
+          rollback();
+        } catch (err) {
+          console.error('[purity] optimistic rollback threw:', err);
+        }
+      };
+      const settle = (res?: Response, err?: unknown): void => {
+        try {
+          options.onSettle?.(args, res, err);
+        } catch (e) {
+          console.error('[purity] optimistic onSettle threw:', e);
+        }
+      };
 
       let response: Response;
       try {
@@ -98,18 +113,8 @@ export function optimistic<TArgs>(
         // Network / abort: rollback, settle, re-throw. Each user hook is
         // isolated so a throwing rollback or onSettle can't swallow the
         // original error.
-        if (rollback) {
-          try {
-            rollback();
-          } catch (err) {
-            console.error('[purity] optimistic rollback threw:', err);
-          }
-        }
-        try {
-          options.onSettle?.(args, undefined, error);
-        } catch (err) {
-          console.error('[purity] optimistic onSettle threw:', err);
-        }
+        runRollback();
+        settle(undefined, error);
         throw error;
       }
 
@@ -120,12 +125,11 @@ export function optimistic<TArgs>(
       // firing a spurious rollback. Each hook is isolated.
       // A throwing `isSuccess` can't decide pass-vs-fail; treat it as
       // failure so rollback restores the pre-optimistic state.
-      let succeeded: boolean;
+      let succeeded = false;
       try {
         succeeded = isSuccess(response);
       } catch (err) {
         console.error('[purity] optimistic isSuccess threw; treating response as failure:', err);
-        succeeded = false;
       }
       if (succeeded) {
         // Resolve the keys list with one outer try (covers a throwing
@@ -135,20 +139,18 @@ export function optimistic<TArgs>(
         // keys — the SWR cache must be fully bust on success.
         let keys: Iterable<QueryKey> | undefined;
         try {
-          if (options.invalidates) {
-            const raw =
-              typeof options.invalidates === 'function'
-                ? options.invalidates(args, response)
-                : options.invalidates;
-            if (raw) {
-              if (typeof (raw as { [Symbol.iterator]?: unknown })[Symbol.iterator] !== 'function') {
-                console.error(
-                  '[purity] optimistic invalidates returned a non-iterable; skipping:',
-                  raw,
-                );
-              } else {
-                keys = raw as Iterable<QueryKey>;
-              }
+          const raw =
+            typeof options.invalidates === 'function'
+              ? options.invalidates(args, response)
+              : options.invalidates;
+          if (raw) {
+            if (typeof (raw as { [Symbol.iterator]?: unknown })[Symbol.iterator] !== 'function') {
+              console.error(
+                '[purity] optimistic invalidates returned a non-iterable; skipping:',
+                raw,
+              );
+            } else {
+              keys = raw as Iterable<QueryKey>;
             }
           }
         } catch (err) {
@@ -163,18 +165,10 @@ export function optimistic<TArgs>(
             }
           }
         }
-      } else if (rollback) {
-        try {
-          rollback();
-        } catch (err) {
-          console.error('[purity] optimistic rollback threw:', err);
-        }
+      } else {
+        runRollback();
       }
-      try {
-        options.onSettle?.(args, response, undefined);
-      } catch (err) {
-        console.error('[purity] optimistic onSettle threw:', err);
-      }
+      settle(response);
       return response;
     },
   };

@@ -112,6 +112,15 @@ function markRouteError(): void {
     ctx.routeResponse = { status: 500, headers: ctx.routeResponse?.headers ?? new Headers() };
 }
 
+function withLoaderData<R>(data: unknown, fn: () => R): R {
+  const token: LoaderDataToken = pushLoaderData(data);
+  try {
+    return fn();
+  } finally {
+    popLoaderData(token);
+  }
+}
+
 /**
  * Loader context passed to a route or layout's `loader()` named export
  * (ADR 0022). The composer constructs this from the call's args.
@@ -424,12 +433,7 @@ async function loadStack(
 
     const renderWithBoundary = (err: unknown): unknown => {
       if (!errorView) throw err;
-      const token: LoaderDataToken = pushLoaderData(err);
-      try {
-        return errorView(err);
-      } finally {
-        popLoaderData(token);
-      }
+      return withLoaderData(err, () => errorView(err));
     };
 
     // reduceRight wraps each layout around the inner view, leaf → root.
@@ -443,12 +447,7 @@ async function loadStack(
       applyRouteResponse(responseStatus, responseHeaders);
       let view: () => unknown = () => {
         assertViewActive();
-        const token = pushLoaderData(pageData);
-        try {
-          return routeMod.default(loaderParams, pageData);
-        } finally {
-          popLoaderData(token);
-        }
+        return withLoaderData(pageData, () => routeMod.default(loaderParams, pageData));
       };
       for (let i = layoutMods.length - 1; i >= 0; i--) {
         const layout = layoutMods[i];
@@ -456,12 +455,7 @@ async function loadStack(
         const inner = view;
         view = () => {
           assertViewActive();
-          const token = pushLoaderData(data);
-          try {
-            return layout.default(inner, data);
-          } finally {
-            popLoaderData(token);
-          }
+          return withLoaderData(data, () => layout.default(inner, data));
         };
       }
       // Render-time error isolation: a throw inside a layout's / route's
@@ -495,12 +489,7 @@ async function loadStack(
       if (errorView) {
         return () => {
           assertViewActive();
-          const token = pushLoaderData(err);
-          try {
-            return errorView(err);
-          } finally {
-            popLoaderData(token);
-          }
+          return withLoaderData(err, () => errorView(err));
         };
       }
       const message = await waitForRoute(err.text(), signal);
@@ -524,12 +513,7 @@ async function loadStack(
     return () => {
       assertViewActive();
       markRouteError();
-      const token = pushLoaderData(err);
-      try {
-        return errorView(err);
-      } finally {
-        popLoaderData(token);
-      }
+      return withLoaderData(err, () => errorView(err));
     };
   } finally {
     // SSR resources stop forwarding once their operation settles. Detach the
@@ -601,9 +585,7 @@ function pickNotFoundForPath(
     // identically. The manifest plugin emits the canonical form, but
     // hand-rolled callers and integration adapters routinely pass any of
     // these — silently failing to match was a real footgun.
-    let norm = dir;
-    while (norm.length > 0 && norm.charCodeAt(0) === 47 /* '/' */) norm = norm.slice(1);
-    while (norm.length > 0 && norm.charCodeAt(norm.length - 1) === 47) norm = norm.slice(0, -1);
+    const norm = dir.replace(/^\/+|\/+$/g, '');
     if (norm === '') return entry; // dir was effectively root after normalization
     // Match `/admin`, `/admin/`, `/admin/anything` but NOT `/administrator`.
     const prefix = '/' + norm;
@@ -669,7 +651,7 @@ export function asyncNotFound(
   r.fetch();
   return when(
     () => r() !== undefined,
-    () => {
+    () =>
       // 404 has no loader data; push `undefined` so `loaderData()` inside
       // the page consistently returns undefined (vs. inheriting some
       // outer push). Tokened push/pop catches a misbehaving 404 view that
@@ -677,13 +659,7 @@ export function asyncNotFound(
       // would silently remove that orphan frame and leak the leftover
       // (undefined) frame upward instead. Matches ADR 0026's documented
       // behavior.
-      const token = pushLoaderData(undefined);
-      try {
-        return (r() as () => unknown)();
-      } finally {
-        popLoaderData(token);
-      }
-    },
+      withLoaderData(undefined, () => (r() as () => unknown)()),
     options?.fallback,
   );
 }

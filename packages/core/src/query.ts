@@ -156,17 +156,12 @@ function makeStampedFetcher<T>(
       if (e) e.lastFetchedAt = Date.now();
     };
     if (result && typeof (result as Promise<T>).then === 'function') {
-      return (result as Promise<T>).then(
-        (value) => {
-          stampIfFresh();
-          return value;
-        },
-        (err) => {
-          // Don't stamp on failure — fetch produced no fresh data.
-          // Re-throw so resource() can surface the error via .error().
-          throw err;
-        },
-      );
+      // Don't stamp on failure — fetch produced no fresh data, and the
+      // rejection propagates unchanged so resource() surfaces it via .error().
+      return (result as Promise<T>).then((value) => {
+        stampIfFresh();
+        return value;
+      });
     }
     stampIfFresh();
     return result;

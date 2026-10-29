@@ -21,7 +21,7 @@
 // No-op on the server. Returns a teardown for HMR / tests.
 // ---------------------------------------------------------------------------
 
-import { _getNavigationGeneration, onNavigate } from './router.ts';
+import { _getNavigationGeneration, _safeDecode, onNavigate } from './router.ts';
 
 const DEFAULT_SELECTOR = 'main';
 
@@ -102,13 +102,7 @@ export function manageNavFocus(options: ManageNavFocusOptions = {}): () => void 
           // (`#%`) would make decodeURIComponent throw inside this microtask
           // (uncaught → skips focus). Fall back to the raw fragment, which
           // getElementById treats as a plain miss.
-          let id: string;
-          try {
-            id = decodeURIComponent(url.hash.slice(1));
-          } catch {
-            id = url.hash.slice(1);
-          }
-          const hashEl = document.getElementById(id);
+          const hashEl = document.getElementById(_safeDecode(url.hash.slice(1)));
           if (hashEl) {
             focusElement(hashEl as HTMLElement);
             return;

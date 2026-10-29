@@ -270,7 +270,7 @@ function createStream(
         // wrapper and execute as live markup before the swap script
         // runs. Refuse to emit such a chunk and leave the shell
         // fallback in place.
-        if (containsTemplateClose(result.html)) {
+        if (/<\/template[\s>/]/i.test(result.html)) {
           console.error(
             `[Purity] renderToStream: boundary ${id} HTML contained </template>; ` +
               'refusing to emit chunk to prevent <template> breakout. Leaving shell fallback in place.',
@@ -342,14 +342,6 @@ function createStream(
 function releaseShellResources(shell: ShellResult): void {
   shell.resolvedData.length = 0;
   for (const key of Object.keys(shell.resolvedDataByKey)) delete shell.resolvedDataByKey[key];
-}
-
-// Pre-compiled regex: case-insensitive `</template` followed by `>` or
-// whitespace (per HTML spec — `</template foo>` is still a closing tag).
-const TEMPLATE_CLOSE_RE = /<\/template[\s>/]/i;
-
-function containsTemplateClose(s: string): boolean {
-  return TEMPLATE_CLOSE_RE.test(s);
 }
 
 interface ShellResult {
@@ -530,6 +522,7 @@ async function renderBoundary(
       }
     }
   };
+  const timeoutErr = () => new DOMException('Suspense boundary timed out', 'TimeoutError');
 
   let html = '';
   let viewTimedOut = false;
@@ -547,7 +540,7 @@ async function renderBoundary(
     // Streaming mode stays off here: nested boundaries render inline, and
     // boundary-local head calls remain absent from the shell's collector.
     if (deadlineExpired) {
-      cancelSSRBoundary(ctx, 0, new DOMException('Suspense boundary timed out', 'TimeoutError'));
+      cancelSSRBoundary(ctx, 0, timeoutErr());
     }
     pushSSRRenderContext(ctx);
     let viewThrewAndExhausted = false;
@@ -607,7 +600,7 @@ async function renderBoundary(
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
       const id = nearest?.id ?? (viewTimedOut ? -1 : 0);
-      cancelSSRBoundary(ctx, id, new DOMException('Suspense boundary timed out', 'TimeoutError'));
+      cancelSSRBoundary(ctx, id, timeoutErr());
       if (id > 0) continue;
       if (viewTimedOut) {
         // Fallback's resources timed out too. Same reasoning as the
@@ -631,12 +624,7 @@ async function renderBoundary(
           clearDeadline = boundaryDeadline(ctx, renderDeadline, (id) => {
             raceTimedOut = true;
             expiredId = id;
-            if (id === undefined)
-              cancelSSRBoundary(
-                ctx,
-                viewTimedOut ? -1 : 0,
-                new DOMException('Suspense boundary timed out', 'TimeoutError'),
-              );
+            if (id === undefined) cancelSSRBoundary(ctx, viewTimedOut ? -1 : 0, timeoutErr());
             resolve();
           });
         }),

@@ -205,7 +205,6 @@ describe('error bubbling in form callbacks', () => {
   });
 });
 
-
 describe('form lifecycle owner reentrancy', () => {
   it('does not run stale reset handlers after a callback reconnects its host', () => {
     const tag = nextTag();

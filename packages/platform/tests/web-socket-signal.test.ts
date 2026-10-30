@@ -456,7 +456,6 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
-
   it('accepts well-formed subprotocol tokens (happy path)', () => {
     webSocketSignal<number>('/ws', {
       initialValue: 0,

@@ -78,6 +78,7 @@ if (process.argv.includes('--child')) {
     for (const disabled of [false, true]) {
       const args = [
         '--expose-gc',
+        '--conditions=development',
         '--experimental-strip-types',
         fileURLToPath(import.meta.url),
         '--child',

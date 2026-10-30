@@ -929,7 +929,8 @@ export function component<
     const ctx = new ComponentContext();
     attachToOwner(ctx, unmountChildContext);
 
-    ctx._slotContent = children;
+    // Preserve the lean owner shape when no child content is provided.
+    if (children != null) ctx._slotContent = children;
     const registry = createRegistry();
     const slotAccessors = createAccessors(registry);
 

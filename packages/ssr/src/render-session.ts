@@ -1,4 +1,4 @@
-import type { SSRRenderContext } from '@purityjs/core/internal';
+import type { SSRRenderContext } from '@purityjs/core/ssr-bridge';
 
 // One session per string render, stream shell or streamed boundary. Only the
 // boundary marker namespace is shared between a shell and its boundaries.

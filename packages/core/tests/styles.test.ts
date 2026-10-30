@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
-import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
+import { ComponentContext, popContext, pushContext } from '@purityjs/signals';
 import { mount } from '../src/component.ts';
-import { state } from '../src/signals.ts';
+import { state } from '@purityjs/signals';
 import { css } from '../src/styles.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));

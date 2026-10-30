@@ -14,7 +14,7 @@
 //     path through every page.
 
 import { component, each } from '@purityjs/core';
-import { head, loaderData } from '@purityjs/core/router';
+import { head, loaderData } from '@purityjs/router';
 import { html } from '@purityjs/core/jit';
 import type { LoaderDataOf } from '@purityjs/vite-plugin';
 // `import type` — value-namespace binding usable in `typeof` positions

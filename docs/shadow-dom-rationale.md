@@ -72,7 +72,8 @@ A `<input>` inside a shadow root is _not_ a form-associated element from
 the host form's perspective. Native form submission won't include its
 value; React Hook Form (etc.) won't see it via DOM walking.
 
-For a component with one native input, select, or textarea, pass
+For a component with one native input, select, or textarea, call
+`enableFormControls()` from `@purityjs/core/forms`, then pass
 `{ formControl: true }` to `component()`. Purity uses
 [`ElementInternals`](https://developer.mozilla.org/en-US/docs/Web/API/ElementInternals)
 to submit its value and mirror validity, reset, and disabled state. The

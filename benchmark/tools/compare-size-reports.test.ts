@@ -1,5 +1,7 @@
 import currentBudgets from '../bundle-size/budgets-v4.json' with { type: 'json' };
 import clientBudgets from '../bundle-size/budgets.json' with { type: 'json' };
+import historicalV5 from '../bundle-size/evidence/2026-10-30-architecture-redesign/before.json' with { type: 'json' };
+import historicalV7 from '../bundle-size/evidence/2026-10-30-architecture-redesign/budget-baseline.json' with { type: 'json' };
 import budgets from '../bundle-size/budgets-v3.json' with { type: 'json' };
 import { expect, it } from 'vite-plus/test';
 import { compareSizeReports } from '../bundle-size/compare-reports.ts';
@@ -395,7 +397,7 @@ function clientExamples() {
   const { base, next } = expandedExamples();
   for (const report of [base, next]) {
     report.schemaVersion = 5;
-    report.budgets = structuredClone(clientBudgets);
+    report.budgets = structuredClone(historicalV5.budgets);
     for (const name of ['counter', 'counter-client', 'controls', 'form', 'resource']) {
       report.measurements.push({
         profile: name + '-csr-aot',
@@ -417,6 +419,80 @@ function clientExamples() {
   }
   return { base, next };
 }
+
+function splitPackageExamples() {
+  const { base, next } = clientExamples();
+  for (const report of [base, next]) {
+    Object.assign(report, {
+      schemaVersion: 7,
+      budgets: structuredClone(historicalV7.budgets),
+      versions: {
+        ...report.versions,
+        compiler: '0.5.0',
+        signals: '0.5.0',
+        router: '0.5.0',
+        platform: '0.5.0',
+      },
+      packages: Object.keys(historicalV7.budgets.packages).map((entry) => ({
+        entry,
+        functionConstructorCalls: 0,
+        rawBytes: 100,
+        gzipBytes: 50,
+        brotliBytes: 40,
+      })),
+    });
+    Object.assign(report.fixtureHashes, { 'core-all.ts': 'a'.repeat(64) });
+  }
+  return { base, next };
+}
+
+it('compares complete schema 7 package reports and rejects omitted entries or versions', () => {
+  const { base } = splitPackageExamples();
+  expect(compareSizeReports(base, structuredClone(base)).packages).toHaveLength(21);
+  const missingEntry = structuredClone(base);
+  missingEntry.packages = missingEntry.packages.filter((row) => row.entry !== 'core-virtual');
+  expect(() => compareSizeReports(missingEntry, structuredClone(missingEntry))).toThrow(
+    /Incomplete v7 coverage/,
+  );
+  const missingVersion = structuredClone(base);
+  delete (missingVersion.versions as Record<string, string>).platform;
+  expect(() => compareSizeReports(missingVersion, structuredClone(missingVersion))).toThrow(
+    /Incomplete v7 coverage/,
+  );
+});
+
+it('rejects comparisons between historical v5 and split-package v7 scopes', () => {
+  const { base: old } = clientExamples();
+  const { base: current } = splitPackageExamples();
+  expect(() => compareSizeReports(old, current)).toThrow(/INCOMPARABLE: changed schemaVersion/);
+});
+
+it('validates historical v7 reports independently of current package budgets', () => {
+  const { base } = splitPackageExamples();
+  const original = clientBudgets.packages.core.gzipBytes;
+  clientBudgets.packages.core.gzipBytes = original + 128;
+  try {
+    expect(() => compareSizeReports(base, structuredClone(base))).not.toThrow();
+  } finally {
+    clientBudgets.packages.core.gzipBytes = original;
+  }
+  const tampered = structuredClone(base);
+  tampered.budgets.packages.core.gzipBytes++;
+  expect(() => compareSizeReports(tampered, structuredClone(tampered))).toThrow(
+    /Missing or changed v7 budgets/,
+  );
+});
+
+it('validates historical v5 reports independently of current package budgets', () => {
+  const { base } = clientExamples();
+  const original = clientBudgets.packages.core.gzipBytes;
+  clientBudgets.packages.core.gzipBytes = original + 128;
+  try {
+    expect(() => compareSizeReports(base, structuredClone(base))).not.toThrow();
+  } finally {
+    clientBudgets.packages.core.gzipBytes = original;
+  }
+});
 
 it('requires all 17 v5 application profiles with explicit compilation modes', () => {
   const { base } = clientExamples();

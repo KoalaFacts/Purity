@@ -6,15 +6,10 @@ export {
   onDestroy,
   onDispose,
   onError,
-  onFormAssociated,
-  onFormDisabled,
-  onFormReset,
-  onFormStateRestore,
   onMount,
 } from './component.ts';
 export { hydrate } from './hydrate.ts';
 export {
-  type EachOptions,
   type SuspenseErrorInfo,
   type SuspenseErrorPhase,
   type SuspenseOptions,
@@ -52,5 +47,5 @@ export {
   compute,
   state,
   watch,
-} from './signals.ts';
+} from '@purityjs/signals';
 export { css } from './styles.ts';

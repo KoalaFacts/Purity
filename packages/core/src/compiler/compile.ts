@@ -5,8 +5,8 @@
 // Subsequent calls: run cached function directly. Zero overhead.
 // ---------------------------------------------------------------------------
 
-import { watch } from '../signals.ts';
-import { generateHydrateLinked, generateLinked } from './codegen.ts';
+import { watch } from '@purityjs/signals';
+import { generateHydrateLinked, generateLinked, parse } from '@purityjs/compiler';
 import {
   type CompiledCreateFactory,
   type DeferredTemplate,
@@ -14,13 +14,18 @@ import {
   isHydrating,
   type JitCompiler,
   setJitCompiler,
-} from './hydrate-runtime.ts';
-import { parse } from './parser.ts';
-import { flattenValue, swapSlot } from './value-helpers.ts';
+} from '../runtime/hydrate-runtime.ts';
+import { flattenValue, safeUrl, swapSlot, template } from '../runtime/csr-runtime.ts';
 
 // Generated code references the value helpers as free names; bind them here.
 const bindHelpers = (code: string) =>
-  new Function('__purity_fl__', '__purity_sw__', `return ${code}`)(flattenValue, swapSlot);
+  new Function(
+    '__purity_fl__',
+    '__purity_sw__',
+    '__purity_tmpl__',
+    '__purity_url__',
+    `return ${code}`,
+  )(flattenValue, swapSlot, template, safeUrl);
 
 interface CacheEntry {
   ast: ReturnType<typeof parse> | null;
@@ -130,5 +135,5 @@ export {
   exitHydration,
   isDeferred,
   isHydrating,
-} from './hydrate-runtime.ts';
-export type { DeferredTemplate } from './hydrate-runtime.ts';
+} from '../runtime/hydrate-runtime.ts';
+export type { DeferredTemplate } from '../runtime/hydrate-runtime.ts';

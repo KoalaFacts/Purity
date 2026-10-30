@@ -24,7 +24,7 @@
 // Type-only export. No runtime code; bundlers tree-shake to nothing.
 // ---------------------------------------------------------------------------
 
-import type { RouteData } from '@purityjs/core/router';
+import type { RouteData } from '@purityjs/router';
 
 /**
  * Derive the resolved loader-data shape for the route whose `pattern`

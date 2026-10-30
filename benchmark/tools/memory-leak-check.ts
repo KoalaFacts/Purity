@@ -58,36 +58,48 @@ const viteConfig = {
         replacement: resolve(benchmarkRoot, '../packages/core/src/compiler/runtime.ts'),
       },
       {
-        find: /^@purityjs\/core\/compiler$/,
-        replacement: resolve(benchmarkRoot, '../packages/core/src/compiler/index.ts'),
+        find: /^@purityjs\/compiler$/,
+        replacement: resolve(benchmarkRoot, '../packages/compiler/src/index.ts'),
       },
       {
-        find: /^@purityjs\/core\/internal$/,
-        replacement: resolve(benchmarkRoot, '../packages/core/src/internal.ts'),
+        find: /^@purityjs\/core\/ssr-bridge$/,
+        replacement: resolve(benchmarkRoot, '../packages/core/src/ssr-bridge.ts'),
       },
       {
-        find: /^@purityjs\/core\/signals$/,
-        replacement: resolve(benchmarkRoot, '../packages/core/src/browser-signals/index.ts'),
+        find: /^@purityjs\/platform\/signals$/,
+        replacement: resolve(benchmarkRoot, '../packages/platform/src/browser-signals/index.ts'),
       },
       {
-        find: /^@purityjs\/core\/router$/,
-        replacement: resolve(benchmarkRoot, '../packages/core/src/router/index.ts'),
+        find: /^@purityjs\/router$/,
+        replacement: resolve(benchmarkRoot, '../packages/router/src/index.ts'),
       },
       {
-        find: /^@purityjs\/core\/actions$/,
-        replacement: resolve(benchmarkRoot, '../packages/core/src/actions/index.ts'),
+        find: /^@purityjs\/platform\/actions$/,
+        replacement: resolve(benchmarkRoot, '../packages/platform/src/actions.ts'),
       },
       {
-        find: /^@purityjs\/core\/islands$/,
-        replacement: resolve(benchmarkRoot, '../packages/core/src/islands/index.ts'),
+        find: /^@purityjs\/platform\/islands$/,
+        replacement: resolve(benchmarkRoot, '../packages/platform/src/islands.ts'),
       },
       {
         find: /^@purityjs\/core\/list-runtime$/,
         replacement: resolve(benchmarkRoot, '../packages/core/src/control/list-runtime.ts'),
       },
       {
-        find: /^@purityjs\/core\/query$/,
-        replacement: resolve(benchmarkRoot, '../packages/core/src/query/index.ts'),
+        find: /^@purityjs\/platform\/query$/,
+        replacement: resolve(benchmarkRoot, '../packages/platform/src/query-entry.ts'),
+      },
+      {
+        find: /^@purityjs\/core\/csr-runtime$/,
+        replacement: resolve(benchmarkRoot, '../packages/core/src/runtime/csr-runtime.ts'),
+      },
+      {
+        find: /^@purityjs\/ssr\/runtime$/,
+        replacement: resolve(benchmarkRoot, '../packages/ssr/src/runtime.ts'),
+      },
+      {
+        find: /^@purityjs\/ssr$/,
+        replacement: resolve(benchmarkRoot, '../packages/ssr/src/index.ts'),
       },
       {
         find: /^@purityjs\/core$/,

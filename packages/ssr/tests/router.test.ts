@@ -3,7 +3,7 @@
 // @purityjs/core's router.test.ts; this file covers the SSR integration —
 // `currentPath()` reading the request from getRequest() during render.
 
-import { currentPath, matchRoute } from '@purityjs/core/router';
+import { currentPath, matchRoute } from '@purityjs/router';
 import { describe, expect, it } from 'vite-plus/test';
 import { html as ssrHtml, renderToString } from '../src/index.ts';
 

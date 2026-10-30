@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { mount, onMount } from '../src/component.ts';
 import { debounced } from '../src/debounced.ts';
 import { lazyResource, resource } from '../src/resource.ts';
-import { compute, state, watch } from '../src/signals.ts';
+import { compute, state, watch } from '@purityjs/signals';
 import { flushAll, tick, makeSSRContext } from './_helpers.ts';
 
 describe.each(['resource', 'lazyResource'] as const)('SSR %s cancellation', (kind) => {

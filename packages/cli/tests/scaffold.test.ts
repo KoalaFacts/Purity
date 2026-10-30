@@ -65,7 +65,8 @@ describe('scaffold — default (client-only) mode', () => {
       build: 'npm run typecheck && vite build',
       preview: 'vite preview',
     });
-    expect(Object.keys(pkg.dependencies)).toEqual(['@purityjs/core']);
+    expect(Object.keys(pkg.dependencies)).toEqual(['@purityjs/core', '@purityjs/signals']);
+    expect(pkg.devDependencies['@purityjs/compiler']).toMatch(/^file:/);
     expect(pkg.devDependencies['@purityjs/ssr']).toBeUndefined();
     expect(pkg.devDependencies['@types/node']).toBeUndefined();
   });
@@ -140,7 +141,7 @@ describe('scaffold — --ssr mode', () => {
     scaffold(['my-ssr-app', '--ssr']);
     const config = readProjectFile('my-ssr-app', 'vite.config.ts');
     expect(config).toContain('plugins: [purity({ hydratable: true })]');
-    expect(config).toContain("'@purityjs/core/compiler':");
+    expect(config).not.toContain("'@purityjs/core/compiler':");
     expect(config).toContain("'@purityjs/ssr':");
   });
 
@@ -151,6 +152,49 @@ describe('scaffold — --ssr mode', () => {
 });
 
 describe('scaffold — --app mode', () => {
+  it('uses source aliases when development exports also provide Node builds', () => {
+    scaffold(['conditional-exports-app', '--app']);
+    const config = readProjectFile('conditional-exports-app', 'vite.config.ts');
+    expect(config).toContain(
+      JSON.stringify(resolve(import.meta.dirname, '../../core/src/index.ts')),
+    );
+    expect(config).toContain(
+      JSON.stringify(resolve(import.meta.dirname, '../../platform/src/actions.ts')),
+    );
+    expect(config).toContain(
+      JSON.stringify(resolve(import.meta.dirname, '../../signals/src/index.ts')),
+    );
+    expect(config).toContain(
+      JSON.stringify(resolve(import.meta.dirname, '../../compiler/src/index.ts')),
+    );
+    expect(config).toContain(
+      JSON.stringify(resolve(import.meta.dirname, '../../ssr/src/runtime.ts')),
+    );
+    expect(config.indexOf("'@purityjs/ssr/runtime':")).toBeLessThan(
+      config.indexOf("'@purityjs/ssr':"),
+    );
+  });
+
+  it('uses the platform package for app actions', () => {
+    scaffold(['platform-app', '--app']);
+    const pkg = readPackageJson('platform-app');
+    expect(pkg.dependencies['@purityjs/platform']).toBeDefined();
+    expect(pkg.dependencies['@purityjs/router']).toBeDefined();
+    expect(readProjectFile('platform-app', 'vite.config.ts')).toContain("'@purityjs/router':");
+    expect(readProjectFile('platform-app', 'vite.config.ts')).toContain(
+      "'@purityjs/platform/actions':",
+    );
+    expect(readProjectFile('platform-app', 'src/entry.client.ts')).toContain(
+      '@purityjs/platform/actions',
+    );
+    expect(readProjectFile('platform-app', 'src/entry.server.ts')).toContain(
+      '@purityjs/platform/actions',
+    );
+    expect(readProjectFile('platform-app', 'src/actions/greet.server.ts')).toContain(
+      '@purityjs/platform/actions',
+    );
+  });
+
   it('generates the app script set, sharing build:client/build:server/build:bootstrap with --ssr, plus build:static', () => {
     scaffold(['my-full-app', '--app']);
     const pkg = readPackageJson('my-full-app');

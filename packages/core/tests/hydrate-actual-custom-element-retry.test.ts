@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from 'vite-plus/test';
 import { onDispose } from '../src/component.ts';
-import { renderCompiledTemplate } from '../src/compiler/hydrate-runtime.ts';
+import { renderCompiledTemplate } from '../src/runtime/hydrate-runtime.ts';
 import { component } from '../src/elements.ts';
 import { hydrate } from '../src/hydrate.ts';
 import { clearHydrationCache } from '../src/ssr/hydration-cache.ts';

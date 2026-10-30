@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { batch, compute, state, watch } from '../src/signals.ts';
+import { batch, compute, state, watch } from '@purityjs/signals';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 

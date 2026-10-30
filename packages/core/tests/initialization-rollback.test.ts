@@ -1,12 +1,13 @@
+import { virtualEach } from '../src/virtual.ts';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
-import { isHydrating, withHydration } from '../src/compiler/hydrate-runtime.ts';
+import { isHydrating, withHydration } from '../src/runtime/hydrate-runtime.ts';
 import { mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
 import { hydrate } from '../src/hydrate.ts';
 import { each, inflateDeferredEach, list, when, type DeferredEach } from '../src/control.ts';
 import { component } from '../src/elements.ts';
-import { ComponentContext, getCurrentContext, popContext, pushContext } from '../src/scope.ts';
-import { disposeScope, state, watch } from '../src/signals.ts';
+import { ComponentContext, getCurrentContext, popContext, pushContext } from '@purityjs/signals';
+import { disposeScope, state, watch } from '@purityjs/signals';
 
 const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 const stops: (() => void)[] = [];
@@ -160,7 +161,7 @@ describe('failed list row initialization', () => {
     const items = state([1]);
     let sourceRuns = 0;
     expect(() =>
-      each(
+      virtualEach(
         () => {
           sourceRuns++;
           return items();
@@ -168,7 +169,6 @@ describe('failed list row initialization', () => {
         () => {
           throw new Error('standalone row failed');
         },
-        { virtual: true },
       ),
     ).toThrow('standalone row failed');
     items([]);
@@ -185,7 +185,7 @@ describe('failed list row initialization', () => {
         const host = document.createElement('div');
         const result = mount(() => {
           onError(() => {});
-          return each(
+          return (virtual ? virtualEach : each)(
             [1, 2],
             (item) => {
               const id = item();
@@ -202,7 +202,6 @@ describe('failed list row initialization', () => {
               return document.createElement('li');
             },
             (item) => item,
-            { virtual },
           ) as DocumentFragment;
         }, host);
         result.unmount();
@@ -222,21 +221,17 @@ describe('failed list row initialization', () => {
       let runs = 0;
       const result = mount(() => {
         onError(() => {});
-        return each(
-          [1],
-          () => {
-            onDispose(() => {
-              stops.push(
-                watch(() => {
-                  value();
-                  runs++;
-                }),
-              );
-            });
-            throw new Error('row failed');
-          },
-          { virtual },
-        );
+        return (virtual ? virtualEach : each)([1], () => {
+          onDispose(() => {
+            stops.push(
+              watch(() => {
+                value();
+                runs++;
+              }),
+            );
+          });
+          throw new Error('row failed');
+        });
       }, document.createElement('div'));
       result.unmount();
       expect(runs).toBe(1);

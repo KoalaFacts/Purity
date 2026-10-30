@@ -52,11 +52,17 @@ if (existsSync(projectDir)) {
 const coreDir = resolve(import.meta.dirname, '../../core');
 const pluginDir = resolve(import.meta.dirname, '../../vite-plugin');
 const ssrDir = resolve(import.meta.dirname, '../../ssr');
+const platformDir = resolve(import.meta.dirname, '../../platform');
+const routerDir = resolve(import.meta.dirname, '../../router');
+const signalsDir = resolve(import.meta.dirname, '../../signals');
+const compilerDir = resolve(import.meta.dirname, '../../compiler');
 const isLocal = existsSync(resolve(coreDir, 'src/index.ts'));
 
 const coreDep = isLocal ? `file:${coreDir}` : '^0.5.0';
 const pluginDep = isLocal ? `file:${pluginDir}` : '^0.5.0';
 const ssrDep = isLocal ? `file:${ssrDir}` : '^0.5.0';
+const platformDep = isLocal ? `file:${platformDir}` : '^0.5.0';
+const routerDep = isLocal ? `file:${routerDir}` : '^0.5.0';
 
 console.log(`\n  Creating ${projectName}${appMode ? ' (app)' : ssrMode ? ' (SSR)' : ''}...`);
 if (isLocal) console.log('  Using local packages from monorepo');
@@ -98,12 +104,18 @@ const scripts = serverMode
 
 const dependencies: Record<string, string> = { '@purityjs/core': coreDep };
 if (serverMode) dependencies['@purityjs/ssr'] = ssrDep;
+if (appMode) {
+  dependencies['@purityjs/platform'] = platformDep;
+  dependencies['@purityjs/router'] = routerDep;
+}
+if (isLocal) dependencies['@purityjs/signals'] = `file:${signalsDir}`;
 
 const devDependencies: Record<string, string> = {
   '@purityjs/vite-plugin': pluginDep,
   vite: '^8.3.1',
   typescript: '^7.0.2',
 };
+if (isLocal) devDependencies['@purityjs/compiler'] = `file:${compilerDir}`;
 // Server modes need Node types for their boot and build scripts.
 if (serverMode) devDependencies['@types/node'] = '^25.9.1';
 
@@ -125,7 +137,6 @@ writeFileSync(
 );
 
 // vite.config.ts — always generated, includes purity plugin
-const ssrSrcPath = resolve(ssrDir, 'src/index.ts');
 // Embed paths via `JSON.stringify` so Windows backslashes (and any other
 // JS-significant characters) are properly escaped inside the generated source.
 const pluginImport = isLocal
@@ -135,15 +146,38 @@ const pluginImport = isLocal
 // Server modes need the compiler subpath before the core alias and the SSR alias.
 let aliasBlock = '';
 if (isLocal) {
+  type DevelopmentExport = { development: string | { default: string } };
+  const developmentSource = (entry: DevelopmentExport): string =>
+    typeof entry.development === 'string' ? entry.development : entry.development.default;
   const coreExports = JSON.parse(readFileSync(resolve(coreDir, 'package.json'), 'utf8'))
-    .exports as Record<string, { development: string }>;
+    .exports as Record<string, DevelopmentExport>;
   const aliases: string[] = [];
+  aliases.push(`'@purityjs/signals': ${JSON.stringify(resolve(signalsDir, 'src/index.ts'))}`);
+  aliases.push(`'@purityjs/compiler': ${JSON.stringify(resolve(compilerDir, 'src/index.ts'))}`);
   for (const [key, entry] of Object.entries(coreExports).sort(([a], [b]) => b.length - a.length)) {
     const name = '@purityjs/core' + (key === '.' ? '' : key.slice(1));
-    aliases.push(`'${name}': ${JSON.stringify(resolve(coreDir, entry.development))}`);
+    aliases.push(`'${name}': ${JSON.stringify(resolve(coreDir, developmentSource(entry)))}`);
+  }
+  if (appMode) {
+    aliases.push(`'@purityjs/router': ${JSON.stringify(resolve(routerDir, 'src/index.ts'))}`);
+    const platformExports = JSON.parse(readFileSync(resolve(platformDir, 'package.json'), 'utf8'))
+      .exports as Record<string, DevelopmentExport>;
+    for (const [key, entry] of Object.entries(platformExports).sort(
+      ([a], [b]) => b.length - a.length,
+    )) {
+      aliases.push(
+        `'@purityjs/platform${key.slice(1)}': ${JSON.stringify(resolve(platformDir, developmentSource(entry)))}`,
+      );
+    }
   }
   if (serverMode) {
-    aliases.push(`'@purityjs/ssr': ${JSON.stringify(ssrSrcPath)}`);
+    const ssrExports = JSON.parse(readFileSync(resolve(ssrDir, 'package.json'), 'utf8'))
+      .exports as Record<string, DevelopmentExport>;
+    for (const [key, entry] of Object.entries(ssrExports).sort(([a], [b]) => b.length - a.length)) {
+      aliases.push(
+        `'@purityjs/ssr${key === '.' ? '' : key.slice(1)}': ${JSON.stringify(resolve(ssrDir, developmentSource(entry)))}`,
+      );
+    }
   }
   aliasBlock = `\n  resolve: {\n    alias: {\n      ${aliases.join(',\n      ')},\n    },\n  },`;
 }

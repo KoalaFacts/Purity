@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { onDispose } from '../src/component.ts';
 import { each, list } from '../src/control.ts';
-import { state } from '../src/signals.ts';
+import { state } from '@purityjs/signals';
 
 const tick = () => new Promise((resolve) => queueMicrotask(resolve));
 

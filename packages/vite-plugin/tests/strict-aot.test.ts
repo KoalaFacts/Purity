@@ -8,9 +8,13 @@ import { renderToString } from '../../ssr/src/render-to-string.ts';
 
 const core = resolve(import.meta.dirname, '../../core/src');
 const aliases = [
+  {
+    find: '@purityjs/ssr/runtime',
+    replacement: resolve(import.meta.dirname, '../../ssr/src/runtime.ts'),
+  },
+  { find: '@purityjs/core/csr-runtime', replacement: join(core, 'runtime/csr-runtime.ts') },
+  { find: '@purityjs/core/ssr-bridge', replacement: join(core, 'ssr-bridge.ts') },
   { find: '@purityjs/ssr', replacement: resolve(import.meta.dirname, '../../ssr/src/html.ts') },
-  { find: '@purityjs/core/compiler', replacement: join(core, 'compiler/index.ts') },
-  { find: '@purityjs/core/internal', replacement: join(core, 'internal.ts') },
   { find: '@purityjs/core/jit', replacement: join(core, 'compiler/jit.ts') },
   { find: '@purityjs/core/runtime', replacement: join(core, 'compiler/runtime.ts') },
 ];

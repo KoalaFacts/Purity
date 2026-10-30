@@ -8,11 +8,11 @@ import {
   onError,
   onMount,
 } from '../src/component.ts';
-import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
+import { ComponentContext, popContext, pushContext } from '@purityjs/signals';
 import { each, match, when } from '../src/control.ts';
 import { component, slot } from '../src/elements.ts';
 import { css } from '../src/styles.ts';
-import { state, watch } from '../src/signals.ts';
+import { state, watch } from '@purityjs/signals';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 

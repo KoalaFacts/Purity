@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vite-plus/test';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -16,7 +17,7 @@ function run(mode = 'valid', settings: Record<string, string | undefined> = {}) 
     process.execPath,
     [
       '--import',
-      resolve(import.meta.dirname, 'fixtures/runner-playwright.ts'),
+      pathToFileURL(resolve(import.meta.dirname, 'fixtures/runner-playwright.ts')).href,
       'benchmark/run-bench.ts',
     ],
     {
@@ -71,6 +72,7 @@ describe('benchmark runner evidence (synthetic browser)', () => {
         expect(report.timings).toEqual([]);
       }
     },
+    60_000,
   );
 
   it('uses defaults only for unset numeric inputs', () => {

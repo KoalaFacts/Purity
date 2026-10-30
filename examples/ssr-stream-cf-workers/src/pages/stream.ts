@@ -3,7 +3,7 @@
 // once the resource resolves the Worker streams a chunk that
 // `__purity_swap(N)` splices into place in the browser.
 
-import { head } from '@purityjs/core/router';
+import { head } from '@purityjs/router';
 import { html } from '@purityjs/core/jit';
 import { resource, suspense } from '@purityjs/core';
 

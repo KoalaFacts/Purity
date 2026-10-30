@@ -3,7 +3,7 @@
 // take the standard hydrate(wrapper, view) path for these.
 
 import { html } from '@purityjs/core/jit';
-import { island } from '@purityjs/core/islands';
+import { island } from '@purityjs/platform/islands';
 import { state } from '@purityjs/core';
 
 // Module-scope state is local to this island's chunk — two instances of

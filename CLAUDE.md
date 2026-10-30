@@ -26,7 +26,7 @@ Each package's CLAUDE.md (or README) carries the detailed API, file layout, and 
 
 ## Architecture (the big picture)
 
-### Reactivity (`packages/core/src/signals.ts`)
+### Reactivity (`packages/signals/src/signals.ts`)
 
 A custom push-pull signal graph inspired by the TC39 Signals proposal (Stage 1) — **not** a polyfill. `state` / `compute` / `watch` / `batch` are the primitives; everything else (resources, control flow, the large library of observer/environment/capability/live-data signals) is layered on top. This file has zero dependencies and is the hot path — preserve its style (index loops not for-of, nullable arrays, lazy `??=` init).
 

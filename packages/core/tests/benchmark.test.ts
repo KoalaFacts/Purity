@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { each, match, when } from '../src/control.ts';
-import { batch, compute, state, watch } from '../src/signals.ts';
+import { batch, compute, state, watch } from '@purityjs/signals';
 
 const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 

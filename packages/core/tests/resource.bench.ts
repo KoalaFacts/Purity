@@ -14,7 +14,7 @@ import {
   resource,
   type ResourceAccessor,
 } from '../src/resource.ts';
-import { state, type StateAccessor, watch } from '../src/signals.ts';
+import { state, type StateAccessor, watch } from '@purityjs/signals';
 import { tick } from './_helpers.ts';
 
 describe('resource — construction', () => {

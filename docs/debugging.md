@@ -2,7 +2,7 @@
 
 > **Status:** the Vite plugin offers an opt-in development panel (see
 > [ADR-0002](./decisions/0002-devtools.md)). The inspection hook below
-> remains available in every build.
+> is available in development builds and omitted from production builds.
 
 ## Visual panel
 
@@ -198,22 +198,11 @@ status matches the failing operation.
 
 ## Bundle impact
 
-The inspector adds ~0.4 kB gzipped to the shared chunk. Always
-present, no `NODE_ENV` switch — Vite's library build substitutes
-`process.env.NODE_ENV` at our build time, which would strip the
-hook before downstream users could ever see it. Trade-off accepted.
-
-If you must strip it from a production bundle:
-
-```ts
-// In your app's entrypoint, after importing from '@purityjs/core':
-delete (globalThis as { __purity_inspect__?: unknown }).__purity_inspect__;
-```
-
-That removes the global; the conversion code in the framework still
-exists in the bundle (about 200–300 bytes), but no one calls it and
-modern bundlers may DCE the dead reachable code on a subsequent
-build pass.
+`@purityjs/signals` ships separate development and production artifacts.
+The production artifact omits the inspector and its tracking machinery.
+The default Node entry selects that artifact even when `NODE_ENV` is set;
+use `node --conditions=development` to select the inspector-enabled build.
+Vite development resolves the development condition automatically.
 
 ## Inspector memory regression check
 

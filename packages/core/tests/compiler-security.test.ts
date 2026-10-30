@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { generate, generateHydrate, generateSSR } from '../src/compiler/codegen.ts';
-import { parse } from '../src/compiler/parser.ts';
-import { ssrHelpers } from '../src/compiler/ssr-runtime.ts';
-import { flattenValue, swapSlot } from '../src/compiler/value-helpers.ts';
+import { generate, generateHydrate, generateSSR } from '@purityjs/compiler';
+import { parse } from '@purityjs/compiler';
+import { ssrHelpers } from '@purityjs/ssr/runtime';
+import { flattenValue, safeUrl, swapSlot, template } from '../src/runtime/csr-runtime.ts';
 
 const immediate = (fn: () => void) => fn();
 const factory = (code: string) =>
-  new Function('__purity_fl__', '__purity_sw__', `return ${code}`)(flattenValue, swapSlot);
+  new Function(
+    '__purity_fl__',
+    '__purity_sw__',
+    '__purity_tmpl__',
+    '__purity_url__',
+    `return ${code}`,
+  )(flattenValue, swapSlot, template, safeUrl);
 
 describe('executable template bindings', () => {
   it('keeps generated string literals inside an inline script boundary', () => {

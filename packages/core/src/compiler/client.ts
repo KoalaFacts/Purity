@@ -1,10 +1,9 @@
 // Client-only, no-build JIT: keep the hydration code generator outside apps
 // that only mount fresh DOM. SSR/hydration apps must use ./jit instead.
-import { watch } from '../signals.ts';
-import { generateLinked } from './codegen.ts';
-import { type CompiledCreateFactory, isHydrating } from './hydrate-runtime.ts';
-import { parse } from './parser.ts';
-import { flattenValue, swapSlot } from './value-helpers.ts';
+import { watch } from '@purityjs/signals';
+import { generateLinked, parse } from '@purityjs/compiler';
+import { type CompiledCreateFactory, isHydrating } from '../runtime/hydrate-runtime.ts';
+import { flattenValue, safeUrl, swapSlot, template } from '../runtime/csr-runtime.ts';
 
 const compiledCache = new WeakMap<TemplateStringsArray, CompiledCreateFactory>();
 
@@ -22,10 +21,13 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Node 
     const code = generateLinked(parse(strings));
     // Only source produced by the validated Purity generator is evaluated.
     // codeql[js/code-injection] — codegen.ts validates all names and literals.
-    factory = new Function('__purity_fl__', '__purity_sw__', `return ${code}`)(
-      flattenValue,
-      swapSlot,
-    ) as CompiledCreateFactory;
+    factory = new Function(
+      '__purity_fl__',
+      '__purity_sw__',
+      '__purity_tmpl__',
+      '__purity_url__',
+      `return ${code}`,
+    )(flattenValue, swapSlot, template, safeUrl) as CompiledCreateFactory;
     compiledCache.set(strings, factory);
   }
   return factory(values, watch);

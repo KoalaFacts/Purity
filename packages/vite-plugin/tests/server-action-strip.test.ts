@@ -12,7 +12,7 @@ const STUB_MARKER = '/* @purity stripped */';
 describe('stripServerActionBodies — direct helper', () => {
   it('replaces an inline arrow handler in a client build', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', async (req) => {`,
       `  await db.insert({ secret: true });`,
       `  return new Response('ok');`,
@@ -37,7 +37,7 @@ describe('stripServerActionBodies — direct helper', () => {
     // edit's stale end offset. The outer STUB subsumes the inner one, so
     // the contained edit must be dropped. Output must stay valid.
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/outer', async (req) => {`,
       `  const inner = serverAction('/api/inner', async (r) => new Response(INNER_SECRET));`,
       `  await db.insert({ outer: OUTER_SECRET });`,
@@ -66,7 +66,7 @@ describe('stripServerActionBodies — direct helper', () => {
 
   it('replaces a block-bodied function expression handler', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', async function handler(req) {`,
       `  return new Response(SECRET);`,
       `});`,
@@ -80,7 +80,7 @@ describe('stripServerActionBodies — direct helper', () => {
 
   it('replaces a single-expression arrow handler (no block body)', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', (req) => doSecretWork(req));`,
     ].join('\n');
 
@@ -92,7 +92,7 @@ describe('stripServerActionBodies — direct helper', () => {
 
   it('handles an aliased import: `serverAction as sa`', () => {
     const src = [
-      `import { serverAction as sa } from '@purityjs/core/actions';`,
+      `import { serverAction as sa } from '@purityjs/platform/actions';`,
       `export const a = sa('/api/a', async (req) => SECRET);`,
     ].join('\n');
 
@@ -103,7 +103,7 @@ describe('stripServerActionBodies — direct helper', () => {
 
   it('handles a namespace import: `import * as p from "@purityjs/core"`', () => {
     const src = [
-      `import * as p from '@purityjs/core/actions';`,
+      `import * as p from '@purityjs/platform/actions';`,
       `export const a = p.serverAction('/api/a', async (req) => SECRET);`,
     ].join('\n');
 
@@ -127,7 +127,7 @@ describe('stripServerActionBodies — direct helper', () => {
     // We can't safely strip when the handler is a separate binding — it
     // may be reused. Defense-in-depth means: only strip inline handlers.
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `const handler = async (req) => SECRET;`,
       `export const a = serverAction('/api/a', handler);`,
     ].join('\n');
@@ -142,7 +142,7 @@ describe('stripServerActionBodies — direct helper', () => {
 
   it('strips multiple serverAction() calls in one file', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', async () => SECRET_A);`,
       `export const b = serverAction('/api/b', async () => SECRET_B);`,
     ].join('\n');
@@ -157,7 +157,7 @@ describe('stripServerActionBodies — direct helper', () => {
 
   it('preserves source positions of unrelated code', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', async () => SECRET);`,
       `export const sentinel = 42;`,
     ].join('\n');
@@ -179,7 +179,7 @@ describe('stripServerActionBodies — direct helper', () => {
 
   it('handles TypeScript syntax (type annotations on params + return)', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', async (req: Request): Promise<Response> => {`,
       `  return new Response(SECRET);`,
       `});`,
@@ -198,7 +198,7 @@ describe('stripServerActionBodies — scope-aware shadowing', () => {
     // imports a same-named symbol from @purityjs/core, the inner call
     // resolves to the local binding and must not be stripped.
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `function outer() {`,
       `  function serverAction(url, fn) { return fn; }`,
       `  return serverAction('/api/x', async () => INNER_SECRET);`,
@@ -212,7 +212,7 @@ describe('stripServerActionBodies — scope-aware shadowing', () => {
 
   it('does NOT strip when shadowed by a const declaration in the same scope', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `function outer() {`,
       `  const serverAction = (url, fn) => fn;`,
       `  return serverAction('/api/x', async () => INNER_SECRET);`,
@@ -225,7 +225,7 @@ describe('stripServerActionBodies — scope-aware shadowing', () => {
 
   it('does NOT strip when shadowed by a parameter', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `function outer(serverAction) {`,
       `  return serverAction('/api/x', async () => INNER_SECRET);`,
       `}`,
@@ -237,7 +237,7 @@ describe('stripServerActionBodies — scope-aware shadowing', () => {
 
   it('strips outer calls correctly even when an inner scope shadows', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const outer = serverAction('/api/outer', async () => OUTER_SECRET);`,
       `function inner() {`,
       `  function serverAction(url, fn) { return fn; }`,
@@ -260,7 +260,7 @@ describe('stripServerActionBodies — extended shadowing patterns', () => {
     // Before the audit fix, this leaked through scope-bindings and the inner
     // call was incorrectly stripped.
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `function outer(serverAction = (url, fn) => fn) {`,
       `  return serverAction('/api/x', async () => INNER_SECRET);`,
       `}`,
@@ -272,7 +272,7 @@ describe('stripServerActionBodies — extended shadowing patterns', () => {
 
   it('does NOT strip when shadowed by a rest param `...serverAction`', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `function outer(...serverAction) {`,
       `  return serverAction[0]('/api/x', async () => INNER_SECRET);`,
       `}`,
@@ -284,7 +284,7 @@ describe('stripServerActionBodies — extended shadowing patterns', () => {
 
   it('does NOT strip when shadowed by a destructured param `{ serverAction }`', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `function outer({ serverAction }) {`,
       `  return serverAction('/api/x', async () => INNER_SECRET);`,
       `}`,
@@ -296,7 +296,7 @@ describe('stripServerActionBodies — extended shadowing patterns', () => {
 
   it('does NOT strip when shadowed by `const { serverAction } = …`', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `function outer() {`,
       `  const { serverAction } = somewhere;`,
       `  return serverAction('/api/x', async () => INNER_SECRET);`,
@@ -314,7 +314,7 @@ describe('stripServerActionBodies — TypeScript type-only wrappers', () => {
     // ArrowFunctionExpression, so the type check at the top of the walker
     // bailed and the handler body shipped to the client.
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', (async (req) => LEAKED_SECRET) as any);`,
     ].join('\n');
 
@@ -326,7 +326,7 @@ describe('stripServerActionBodies — TypeScript type-only wrappers', () => {
 
   it('strips an inline handler wrapped in `satisfies`', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', (async () => LEAKED_SECRET) satisfies unknown);`,
     ].join('\n');
 
@@ -337,7 +337,7 @@ describe('stripServerActionBodies — TypeScript type-only wrappers', () => {
 
   it('strips an inline handler wrapped in a `!` non-null assertion', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', (async () => LEAKED_SECRET)!);`,
     ].join('\n');
 
@@ -348,7 +348,7 @@ describe('stripServerActionBodies — TypeScript type-only wrappers', () => {
 
   it('strips an inline handler wrapped in a `<T>` type assertion', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', <any>(async () => LEAKED_SECRET));`,
     ].join('\n');
 
@@ -361,7 +361,7 @@ describe('stripServerActionBodies — TypeScript type-only wrappers', () => {
     // Aggressive users sometimes cast away types to silence errors. The
     // strip should still recognise the import-bound name behind the wrapper.
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = (serverAction as any)('/api/a', async () => LEAKED_SECRET);`,
     ].join('\n');
 
@@ -374,7 +374,7 @@ describe('stripServerActionBodies — TypeScript type-only wrappers', () => {
 describe('stripServerActionBodies — type-only imports', () => {
   it('ignores `import type { serverAction }` (declaration is type-only)', () => {
     const src = [
-      `import type { serverAction } from '@purityjs/core/actions';`,
+      `import type { serverAction } from '@purityjs/platform/actions';`,
       `function serverAction(url, fn) { return fn; }`,
       `export const a = serverAction('/api/a', async () => LOCAL_SECRET);`,
     ].join('\n');
@@ -387,7 +387,7 @@ describe('stripServerActionBodies — type-only imports', () => {
 
   it('ignores `import { type serverAction }` (per-specifier type-only)', () => {
     const src = [
-      `import { type serverAction } from '@purityjs/core/actions';`,
+      `import { type serverAction } from '@purityjs/platform/actions';`,
       `function serverAction(url, fn) { return fn; }`,
       `export const a = serverAction('/api/a', async () => LOCAL_SECRET);`,
     ].join('\n');
@@ -400,7 +400,7 @@ describe('stripServerActionBodies — type-only imports', () => {
 describe('stripServerActionBodies — stub form', () => {
   it('emits `(..._args) =>` so introspection of the stub is honest', () => {
     const src = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', async (req) => new Response('ok'));`,
     ].join('\n');
 
@@ -411,10 +411,23 @@ describe('stripServerActionBodies — stub form', () => {
 });
 
 describe('stripServerActions plugin option — wired into transform', () => {
+  it.each([
+    ["import { serverAction as action } from '@purityjs/platform/actions';", 'action'],
+    ["import * as actions from '@purityjs/platform/actions';", 'actions.serverAction'],
+  ])('strips platform action handlers only from client output: %s', (importLine, callee) => {
+    const plugin = purity();
+    const code = `${importLine}\nexport const result = ${callee}('/api/a', async () => SECRET);`;
+    const client = plugin.transform(code, '/app/a.ts', { ssr: false });
+    expect(client).not.toBeNull();
+    expect(client!.code).not.toContain('SECRET');
+    expect(client!.code).toContain(STUB_MARKER);
+    expect(plugin.transform(code, '/app/a.ts', { ssr: true })).toBeNull();
+  });
+
   it('strips handler bodies in client builds by default', () => {
     const plugin = purity({ hydratable: true, strictAot: false });
     const code = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', async (req) => {`,
       `  return new Response(SECRET);`,
       `});`,
@@ -428,7 +441,7 @@ describe('stripServerActions plugin option — wired into transform', () => {
   it('does NOT strip in SSR builds (handler bodies must run on the server)', () => {
     const plugin = purity({ hydratable: true, strictAot: false });
     const code = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', async (req) => {`,
       `  return new Response(SECRET);`,
       `});`,
@@ -441,7 +454,7 @@ describe('stripServerActions plugin option — wired into transform', () => {
   it('respects stripServerActions: false (opt-out)', () => {
     const plugin = purity({ hydratable: true, strictAot: false, ...{ stripServerActions: false } });
     const code = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', async (req) => {`,
       `  return new Response(SECRET);`,
       `});`,
@@ -458,7 +471,7 @@ describe('stripServerActions plugin option — wired into transform', () => {
     // never reach the per-call stripping pass.
     const plugin = purity({ hydratable: true, strictAot: false });
     const code = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', async () => SECRET);`,
     ].join('\n');
     const result = plugin.transform(code, '/app/a.server.ts', { ssr: false });
@@ -470,7 +483,7 @@ describe('stripServerActions plugin option — wired into transform', () => {
   it('composes with html`` AOT compilation in non-server files', () => {
     const plugin = purity({ hydratable: true, strictAot: false });
     const code = [
-      `import { html } from '@purityjs/core/jit'; import { serverAction } from '@purityjs/core/actions';`,
+      `import { html } from '@purityjs/core/jit'; import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', async () => SECRET);`,
       `export const view = () => html\`<p>hi</p>\`;`,
     ].join('\n');
@@ -490,7 +503,7 @@ describe('stripServerActions plugin option — wired into transform', () => {
   it('returns a non-null source map when only the strip rewrote the file', () => {
     const plugin = purity({ hydratable: true, strictAot: false });
     const code = [
-      `import { serverAction } from '@purityjs/core/actions';`,
+      `import { serverAction } from '@purityjs/platform/actions';`,
       `export const a = serverAction('/api/a', async () => SECRET);`,
     ].join('\n');
     const result = plugin.transform(code, '/app/a.ts', { ssr: false });

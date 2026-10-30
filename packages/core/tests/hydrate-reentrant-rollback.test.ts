@@ -1,5 +1,5 @@
 import { expect, it, beforeEach } from 'vite-plus/test';
-import { withoutScope } from '../src/scope.ts';
+import { withoutScope } from '@purityjs/signals';
 import { onError, onDispose } from '../src/component.ts';
 import { hydrate } from '../src/hydrate.ts';
 import { primeHydrationCache, consumeHydrationValue } from '../src/ssr/hydration-cache.ts';

@@ -36,6 +36,9 @@ jobs:
 
       - name: Build documentation, dashboard, and benchmark report
         run: |
+          for package in signals compiler core router platform ssr vite-plugin; do
+            npm run build -w "packages/$package"
+          done
           npm run build -w examples/docs-site
           npm run build -w examples/dashboard
           npm run build -w benchmark

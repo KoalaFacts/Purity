@@ -1,59 +1,40 @@
 // ---------------------------------------------------------------------------
 // Component context & lifecycle — minimal, like Solid
 //
-// Only 3 hooks: onMount, onDestroy, onDispose
-// Error handling via onError (bubbles up to parent)
+// Only 3 hooks: onMount, onDestroy, onDispose + onError
+// Form-associated hooks (onForm*) live in `@purityjs/core/forms`.
 // ---------------------------------------------------------------------------
 
-import { disposeScope, watch } from './signals.ts';
 import {
-  ComponentContext,
   attachToOwner,
+  ComponentContext,
+  disposeScope,
   getCurrentComponent,
   getCurrentContext,
-  pushContext,
   popContext,
-} from './scope.ts';
+  pushContext,
+  watch,
+} from '@purityjs/signals';
 
 /**
  * A zero-argument function that returns a DOM subtree.
  * Passed to {@link mount} to render an application root.
- *
- * @example
- * ```ts
- * const App: ComponentFn = () => html`<p-counter></p-counter>`;
- * mount(App, document.getElementById('app')!);
- * ```
  */
 export type ComponentFn = () => Node | DocumentFragment;
 
 /**
  * Handle returned by {@link mount} to tear down a mounted component tree.
- *
- * @example
- * ```ts
- * const { unmount } = mount(App, el);
- * // later…
- * unmount(); // removes DOM nodes, runs onDestroy callbacks, disposes watchers
- * ```
  */
 export interface MountResult {
   unmount: () => void;
 }
 
-// ---------------------------------------------------------------------------
-// Lifecycle hooks — only 3 + error
-// ---------------------------------------------------------------------------
-
-// Add a component callback registered from the current owner. A lean scope
-// (branch, row, re-running effect) removes it again when disposed, so hidden
-// branches don't leave callbacks on the long-lived component.
-function addCallback<T>(ctx: ComponentContext, list: T[], fn: T): void {
+/** @internal Shared callback registration helper (also used by `./forms`). */
+export function addComponentCallback<T>(ctx: ComponentContext, list: T[], fn: T): void {
   list.push(fn);
   const owner = getCurrentContext();
   if (owner && owner !== ctx) {
     (owner.disposers ??= []).push(() => {
-      // The component's own teardown keeps it: it runs with the component.
       if (ctx._isDestroyed) return;
       const i = list.indexOf(fn);
       if (i >= 0) list.splice(i, 1);
@@ -64,28 +45,14 @@ function addCallback<T>(ctx: ComponentContext, list: T[], fn: T): void {
 /**
  * Register a callback that runs after the component is inserted into the DOM.
  * Runs as a microtask — DOM is guaranteed to be ready.
- *
- * @example
- * ```ts
- * component('p-widget', () => {
- *   onMount(() => {
- *     console.log('DOM is ready');
- *     const el = document.querySelector('.my-el');
- *     // safe to query DOM here
- *   });
- *   return html`<div class="my-el">Hello</div>`;
- * });
- * ```
  */
 export function onMount(fn: () => void): void {
   const ctx = getCurrentComponent();
   if (!ctx) return;
   if (!ctx._isMounted) {
-    addCallback(ctx, (ctx.mounted ??= []), fn);
+    addComponentCallback(ctx, (ctx.mounted ??= []), fn);
     return;
   }
-  // Registered by a branch first shown after the component mounted: the
-  // mount drain already ran, so schedule this one under the current owner.
   const owner = getCurrentContext()!;
   let cancelled = false;
   if (owner !== ctx) (owner.disposers ??= []).push(() => (cancelled = true));
@@ -110,7 +77,6 @@ export function scheduleMountCallbacks(ctx: ComponentContext): void {
     if (!mounted) return;
     pushContext(ctx);
     try {
-      // A hook can unmount its owner; later hooks must not revive its work.
       for (let i = 0; i < mounted.length && !ctx._isDestroyed; i++) {
         try {
           mounted[i]();
@@ -127,38 +93,14 @@ export function scheduleMountCallbacks(ctx: ComponentContext): void {
 
 /**
  * Register a callback that runs when the component is unmounted.
- *
- * @example
- * ```ts
- * component('p-timer', () => {
- *   onDestroy(() => console.log('component removed'));
- *   return html`<p>Hello</p>`;
- * });
- * ```
  */
 export function onDestroy(fn: () => void): void {
   const ctx = getCurrentComponent();
-  if (ctx) addCallback(ctx, (ctx.destroyed ??= []), fn);
+  if (ctx) addComponentCallback(ctx, (ctx.destroyed ??= []), fn);
 }
 
 /**
- * Register a cleanup function that auto-runs on component unmount.
- * Use this to dispose of watch/effect subscriptions.
- *
- * @example
- * ```ts
- * component('p-live', () => {
- *   const stop = watch(data, (val) => updateChart(val));
- *   onDispose(stop);  // auto-cleanup when component unmounts
- *
- *   onMount(() => {
- *     const id = setInterval(() => poll(), 5000);
- *     onDispose(() => clearInterval(id));  // also works inside onMount
- *   });
- *
- *   return html`<div>Live data</div>`;
- * });
- * ```
+ * Register a cleanup function that auto-runs on component or scope unmount.
  */
 export function onDispose(fn: () => void): void {
   const ctx = getCurrentContext();
@@ -167,79 +109,11 @@ export function onDispose(fn: () => void): void {
 
 /**
  * Register an error handler. Catches errors from render, lifecycle hooks, and
- * subsequent scheduled runs of component-owned watches/effects. A watch's
- * initial run remains synchronous and throws to its caller.
- * Errors bubble up to parent components if not handled.
- *
- * @example
- * ```ts
- * component('p-safe', () => {
- *   onError((err) => {
- *     console.error('caught:', err);
- *     // could show fallback UI
- *   });
- *   return html`<p-risky-child></p-risky-child>`;
- * });
- * ```
+ * subsequent scheduled runs of component-owned watches/effects.
  */
 export function onError(fn: (err: unknown) => void): void {
   const ctx = getCurrentComponent();
-  if (ctx) addCallback(ctx, (ctx.errorHandlers ??= []), fn);
-}
-
-// ---------------------------------------------------------------------------
-// Form-associated lifecycle hooks — only invoked when the component was
-// declared with `component(tag, fn, { formAssociated: true })`. Defined on
-// the PurityElement class unconditionally; the browser only dispatches when
-// both `static formAssociated = true` and the relevant callback exist on
-// the prototype, so non-form components pay nothing.
-// ---------------------------------------------------------------------------
-
-/**
- * Register a callback that runs when the host element is associated with
- * (or disassociated from) a `<form>`. Only fires for components declared
- * with `{ formAssociated: true }`.
- *
- * @param fn Receives the new form (or `null` when disassociated).
- */
-export function onFormAssociated(fn: (form: HTMLFormElement | null) => void): void {
-  const ctx = getCurrentComponent();
-  if (ctx) addCallback(ctx, (ctx._formAssociated ??= []), fn);
-}
-
-/**
- * Register a callback that runs when the containing form's `disabled` state
- * changes (typically via a `<fieldset disabled>` ancestor). Only fires for
- * components declared with `{ formAssociated: true }`.
- */
-export function onFormDisabled(fn: (disabled: boolean) => void): void {
-  const ctx = getCurrentComponent();
-  if (ctx) addCallback(ctx, (ctx._formDisabled ??= []), fn);
-}
-
-/**
- * Register a callback that runs when the containing form is reset.
- * Components should clear their local state. Only fires for components
- * declared with `{ formAssociated: true }`.
- */
-export function onFormReset(fn: () => void): void {
-  const ctx = getCurrentComponent();
-  if (ctx) addCallback(ctx, (ctx._formReset ??= []), fn);
-}
-
-/**
- * Register a callback that runs during form state restoration — both
- * back/forward cache restore and browser autofill. `state` is whatever the
- * component last passed to `internals().setFormValue(value, state)`; `mode`
- * is `'restore'` (bfcache) or `'autocomplete'` (autofill).
- *
- * Only fires for components declared with `{ formAssociated: true }`.
- */
-export function onFormStateRestore(
-  fn: (state: string | File | FormData | null, mode: 'restore' | 'autocomplete') => void,
-): void {
-  const ctx = getCurrentComponent();
-  if (ctx) addCallback(ctx, (ctx._formStateRestore ??= []), fn);
+  if (ctx) addComponentCallback(ctx, (ctx.errorHandlers ??= []), fn);
 }
 
 /** Mount a client-rendered root with its own lifecycle. */
@@ -254,10 +128,6 @@ export function mount(component: ComponentFn, container: Element): MountResult {
     fragment = component();
   } catch (err) {
     popContext();
-    // A failed render has no usable unmount handle. Keep error propagation
-    // intact, but always tear down its subscriptions and completed children.
-    // An error handler can unmount the parent while this child is attached.
-    // Suppress the failed render's destroy lifecycle before dispatching it.
     ctx.destroyed = null;
     try {
       ctx._handleError(err);
@@ -286,39 +156,18 @@ export function mount(component: ComponentFn, container: Element): MountResult {
   return { unmount: () => unmountContext(ctx) };
 }
 
-// ---------------------------------------------------------------------------
-// bindComponentState — reactively drive an ElementInternals custom state
-//
-// Sync membership of `name` in the host element's CustomStateSet to the
-// truthiness of `accessor()`. Composes across sources: multiple binders to
-// the same state name are ref-counted, and the host flips only on the
-// 0↔1 boundary. Auto-disposed when the surrounding component unmounts.
-// ---------------------------------------------------------------------------
-
 /**
  * Reactively drive a CSS custom state on the surrounding component's host
- * element. The state is added/removed in lockstep with the truthiness of
- * `accessor()`. Users style with `:state(name)` or `:host(:state(name))`.
- *
- * No-op when called outside a `component()` render, or when running on a
- * platform without `ElementInternals.states` support.
- *
- * @example
- * ```ts
- * component('p-data', () => {
- *   const r = resource(fetchUser);   // already auto-binds 'loading' / 'error'
- *   bindComponentState('empty', () => !r() && !r.loading());
- *   return html`<div>${r}</div>`;
- * });
- * ```
+ * element (`:state(name)`). Composes across multiple sources via ref-counting.
  */
 export function bindComponentState(name: string, accessor: () => unknown): void {
   const ctx = getCurrentComponent();
   if (!ctx) return;
-  const internals = ctx._internals;
-  const states = internals?.states as
-    | { add: (s: string) => void; delete: (s: string) => void }
+  const internals = ctx._internals as
+    | { states?: { add(s: string): void; delete(s: string): void } }
+    | null
     | undefined;
+  const states = internals?.states;
   if (!states) return;
 
   const refs = (ctx._stateRefs ??= new Map());
@@ -335,24 +184,21 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
       try {
         states.add(name);
       } catch (err) {
-        /* v8 ignore next -- defensive; spec-compliant impls don't throw on valid idents */
+        /* v8 ignore next */
         console.error('[Purity] bindComponentState add failed:', err);
       }
     } else if (cur === 1 && next === 0) {
       try {
         states.delete(name);
       } catch {
-        /* v8 ignore next -- defensive; symmetrical to add() */
+        /* v8 ignore next */
       }
     }
   });
 
-  // Release with the current disposal owner (a hidden branch, a removed row),
-  // not the host: the host outlives them.
   const owner = getCurrentContext()!;
   (owner.disposers ??= []).push(() => {
     dispose();
-    // Release this binder's ref if it was contributing at dispose time.
     if (prevOn) {
       const cur = refs.get(name) ?? 0;
       const next = cur - 1;
@@ -361,7 +207,7 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
         try {
           states.delete(name);
         } catch {
-          /* v8 ignore next -- defensive */
+          /* v8 ignore next */
         }
       }
     }
@@ -369,52 +215,52 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
 }
 
 /** @internal Shared owner teardown; root hydration imports lifecycle, not the reverse. */
-export function unmountContext(ctx: ComponentContext): void {
+export function unmountContext(
+  ctx: ComponentContext,
+  rollback = ctx.parent?._rollback,
+  keepHostDOM = false,
+  bubbleDestroyError = false,
+): void {
   if (ctx._isDestroyed) return;
+  if (rollback) ctx._rollback = true;
 
-  // Unmount children first
   if (ctx.children) {
     for (let i = ctx.children.length - 1; i >= 0; i--) {
-      unmountContext(ctx.children[i]);
+      unmountContext(ctx.children[i], rollback, false, bubbleDestroyError);
     }
     ctx.children = null;
   }
 
-  // Remove DOM
-  if (ctx.nodes) {
+  if (!keepHostDOM && ctx.nodes) {
     for (let i = 0; i < ctx.nodes.length; i++) {
-      const node = ctx.nodes[i];
-      /* v8 ignore next -- defensive; nodes are attached when set */
+      const node = ctx.nodes[i] as Node;
+      /* v8 ignore next */
       if (node.parentNode) node.parentNode.removeChild(node);
     }
     ctx.nodes = null;
   }
 
-  // Mark destroyed before disposers run: lean scopes released by this teardown
-  // must not unregister their callbacks from a component that is going away.
   ctx._isDestroyed = true;
   disposeScope(ctx);
   ctx._isMounted = false;
 
-  // Run destroy callbacks
   if (ctx.destroyed) {
     for (let i = 0; i < ctx.destroyed.length; i++) {
       try {
         ctx.destroyed[i]();
       } catch (err) {
-        console.error('[Purity] Error in onDestroy:', err);
+        if (bubbleDestroyError && !rollback) ctx._handleError(err);
+        else console.error('[Purity] Error in onDestroy:', err);
       }
     }
     ctx.destroyed = null;
   }
 
-  // Remove from parent
   if (ctx.parent?.children) {
     const idx = ctx.parent.children.indexOf(ctx);
     if (idx !== -1) ctx.parent.children.splice(idx, 1);
   }
 
-  // Release remaining references for GC
   ctx.mounted = null;
   ctx.errorHandlers = null;
   ctx.parent = null;

@@ -59,7 +59,7 @@ html`
 `;
 ```
 
-The render callback receives an accessor for the current item. Call `todo()` inside a reactive slot so a changed item with the same key updates its text. For long scrollable lists, `each()` also supports `{ virtual: true }`; Purity manages the visible range and spacers.
+The render callback receives an accessor for the current item. Call `todo()` inside a reactive slot so a changed item with the same key updates its text. For long scrollable lists, use `virtualEach` from `@purityjs/core/virtual`; Purity manages the visible range and spacers.
 
 ## Run an effect only when needed
 

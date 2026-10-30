@@ -1,60 +1,88 @@
 {
   "packages": {
     "core": {
-      "gzipBytes": 16896,
-      "brotliBytes": 15360
+      "gzipBytes": 11264,
+      "brotliBytes": 10112
     },
-    "core-compiler": {
-      "gzipBytes": 8704,
-      "brotliBytes": 7808
-    },
-    "ssr": {
-      "gzipBytes": 5376,
-      "brotliBytes": 4864
-    },
-    "core-all": {
-      "gzipBytes": 46080,
-      "brotliBytes": 40704
-    },
-    "core-runtime": {
-      "gzipBytes": 3328,
-      "brotliBytes": 2944
-    },
-    "core-jit": {
-      "gzipBytes": 8448,
-      "brotliBytes": 7680
-    },
-    "core-jit-client": {
-      "gzipBytes": 8448,
-      "brotliBytes": 7680
-    },
-    "core-signals": {
-      "gzipBytes": 9216,
-      "brotliBytes": 8192
-    },
-    "core-router": {
-      "gzipBytes": 12544,
-      "brotliBytes": 11264
-    },
-    "core-actions": {
-      "gzipBytes": 5888,
-      "brotliBytes": 5248
-    },
-    "core-islands": {
-      "gzipBytes": 8192,
-      "brotliBytes": 7424
-    },
-    "core-query": {
-      "gzipBytes": 4608,
-      "brotliBytes": 4224
-    },
-    "core-internal": {
-      "gzipBytes": 4864,
-      "brotliBytes": 4352
+    "compiler": {
+      "gzipBytes": 9344,
+      "brotliBytes": 8576
     },
     "core-list-runtime": {
-      "gzipBytes": 5888,
+      "gzipBytes": 2176,
+      "brotliBytes": 2048
+    },
+    "core-runtime": {
+      "gzipBytes": 2048,
+      "brotliBytes": 1792
+    },
+    "core-jit": {
+      "gzipBytes": 1280,
+      "brotliBytes": 1152
+    },
+    "core-jit-client": {
+      "gzipBytes": 1152,
+      "brotliBytes": 1024
+    },
+    "platform-signals": {
+      "gzipBytes": 7552,
+      "brotliBytes": 6784
+    },
+    "router": {
+      "gzipBytes": 6016,
       "brotliBytes": 5376
+    },
+    "platform-actions": {
+      "gzipBytes": 4736,
+      "brotliBytes": 4224
+    },
+    "platform-islands": {
+      "gzipBytes": 3456,
+      "brotliBytes": 3072
+    },
+    "platform-query": {
+      "gzipBytes": 1664,
+      "brotliBytes": 1408
+    },
+    "reactive-signals": {
+      "gzipBytes": 2816,
+      "brotliBytes": 2688
+    },
+    "core-forms": {
+      "gzipBytes": 4736,
+      "brotliBytes": 4352
+    },
+    "core-csr": {
+      "gzipBytes": 7808,
+      "brotliBytes": 7040
+    },
+    "core-virtual": {
+      "gzipBytes": 5120,
+      "brotliBytes": 4608
+    },
+    "core-ssr-bridge": {
+      "gzipBytes": 1664,
+      "brotliBytes": 1408
+    },
+    "core-hydration-bridge": {
+      "gzipBytes": 2816,
+      "brotliBytes": 2560
+    },
+    "core-csr-runtime": {
+      "gzipBytes": 1024,
+      "brotliBytes": 896
+    },
+    "ssr-runtime": {
+      "gzipBytes": 3328,
+      "brotliBytes": 3072
+    },
+    "runtime-all": {
+      "gzipBytes": 52736,
+      "brotliBytes": 46464
+    },
+    "ssr": {
+      "gzipBytes": 9856,
+      "brotliBytes": 8960
     }
   },
   "fixtures": {

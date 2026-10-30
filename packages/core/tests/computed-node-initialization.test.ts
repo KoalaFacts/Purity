@@ -2,8 +2,8 @@
 // SV2-015 — shared compute/watch allocation must keep their different lifetimes.
 import { describe, expect, it } from 'vite-plus/test';
 
-import { popContext, pushContext, type Scope } from '../src/scope.ts';
-import { compute, disposeScope, state, watch, type ComputedAccessor } from '../src/signals.ts';
+import { popContext, pushContext, type Scope } from '@purityjs/signals';
+import { compute, disposeScope, state, watch, type ComputedAccessor } from '@purityjs/signals';
 
 const tick = (): Promise<void> => new Promise((resolve) => queueMicrotask(resolve));
 

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@purityjs/core": "*",
+    "@purityjs/router": "*",
     "@purityjs/ssr": "*",
     "@purityjs/vite-plugin": "*"
   },

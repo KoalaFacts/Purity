@@ -21,23 +21,31 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm test
       - name: Build framework packages
         run: |
-          npm run build -w packages/core
-          npm run build -w packages/ssr
-          npm run build -w packages/vite-plugin
+          for package in signals compiler core router platform ssr vite-plugin cli; do
+            npm run build -w "packages/$package"
+          done
+      - run: npm test
       - name: Package versioned consumer dependencies
         run: |
           mkdir -p consumer-kit/packages consumer-kit/bin
-          npm pack --workspace packages/core --pack-destination consumer-kit/packages
-          npm pack --workspace packages/ssr --pack-destination consumer-kit/packages
-          npm pack --workspace packages/vite-plugin --pack-destination consumer-kit/packages
+          for package in signals compiler core router platform ssr vite-plugin cli; do
+            npm pack --workspace "packages/$package" --pack-destination consumer-kit/packages
+          done
           git rev-parse HEAD > consumer-kit/REVISION
           node --version > consumer-kit/NODE_VERSION
           cp "$(command -v node)" consumer-kit/bin/node
           tar -czf consumer-kit/toolchain-linux-x64.tar.gz node_modules packages package.json package-lock.json
           (cd consumer-kit && sha256sum packages/*.tgz toolchain-linux-x64.tar.gz bin/node > SHA256SUMS)
+      - name: Verify isolated consumer installation
+        run: |
+          consumer_dir="$(mktemp -d)"
+          trap 'rm -rf "$consumer_dir"' EXIT
+          printf '%s\n' '{"name":"purity-consumer-check","version":"1.0.0","private":true,"type":"module"}' > "$consumer_dir/package.json"
+          cd "$consumer_dir"
+          npm install --ignore-scripts --no-audit --no-fund "$GITHUB_WORKSPACE"/consumer-kit/packages/*.tgz
+          node --input-type=module -e "await Promise.all(['@purityjs/signals','@purityjs/compiler','@purityjs/core','@purityjs/core/virtual','@purityjs/router','@purityjs/platform/actions','@purityjs/platform/islands','@purityjs/ssr','@purityjs/ssr/runtime','@purityjs/vite-plugin'].map((name) => import(name)))"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: purity-consumer-kit-linux-x64

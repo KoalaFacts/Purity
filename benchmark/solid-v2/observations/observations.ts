@@ -62,7 +62,7 @@ for (const expected of inputs.solid.packages) {
     throw new Error(`Exact Solid package input mismatch: ${expected.name}`);
   }
 }
-const purityEntry = `${purityRoot}/packages/core/src/signals.ts`;
+const purityEntry = `${purityRoot}/packages/signals/src/signals.ts`;
 const purityHooksEntry = `${purityRoot}/packages/core/src/component.ts`;
 // This direct file import deliberately bypasses solid-js's Node/server export.
 const solidEntry = pathToFileURL(resolve(dependencyRoot, 'solid-js/dist/solid.js'));
@@ -243,7 +243,7 @@ const report = {
     solid_branch:
       'Explicit solid-js/dist/solid.js client production entry, executed in Node; no Node SSR entry.',
     purity_source_execution: 'Node native TypeScript stripping; no source bundle/build command.',
-    purity_entry: 'packages/core/src/signals.ts',
+    purity_entry: 'packages/signals/src/signals.ts',
     purity_hooks_entry: 'packages/core/src/component.ts',
     solid_entry: 'node_modules/solid-js/dist/solid.js',
     solid_signals_entry: 'node_modules/@solidjs/signals/dist/prod/index.js',

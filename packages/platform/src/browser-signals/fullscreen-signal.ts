@@ -1,0 +1,82 @@
+// ---------------------------------------------------------------------------
+// fullscreenSignal() — reactive `document.fullscreenElement`. ADR 0041.
+//
+// Server: returns `compute(() => null)`.
+// Client: lazy singleton; initial value from `document.fullscreenElement`
+//         (with vendor-prefixed fallbacks), updated on the
+//         `fullscreenchange` event (with vendor-prefixed fallbacks).
+// ---------------------------------------------------------------------------
+
+import { bindListeners, isolate, type ListenerSpec } from './listen.ts';
+import { withoutScope } from '@purityjs/signals';
+import { compute, state, type ComputedAccessor } from '@purityjs/signals';
+import { isSSR } from './ssr.ts';
+
+let singleton: ComputedAccessor<Element | null> | null = null;
+let unbind: (() => void) | null = null;
+
+// Vendor-prefixed event names — order matches the spec → moz → webkit → MS
+// progression. We bind every event the document supports rather than
+// guessing one: some Safari builds expose both `fullscreenchange` and
+// `webkitfullscreenchange` but only fire the latter for legacy code paths.
+const FULLSCREEN_EVENTS = [
+  'fullscreenchange',
+  'mozfullscreenchange',
+  'webkitfullscreenchange',
+  'MSFullscreenChange',
+] as const;
+
+// Read `document.fullscreenElement` with vendor-prefixed fallbacks. Some
+// older Safari + Firefox + IE11 builds only expose the prefixed property.
+function readFullscreenElement(): Element | null {
+  if (typeof document === 'undefined') return null;
+  const d = document as Document & {
+    fullscreenElement?: Element | null;
+    mozFullScreenElement?: Element | null;
+    webkitFullscreenElement?: Element | null;
+    msFullscreenElement?: Element | null;
+  };
+  return (
+    d.fullscreenElement ??
+    d.mozFullScreenElement ??
+    d.webkitFullscreenElement ??
+    d.msFullscreenElement ??
+    null
+  );
+}
+
+/**
+ * Reactive `document.fullscreenElement` (ADR 0041).
+ *
+ * - **Server.** Returns a constant `null`.
+ * - **Client.** Singleton; registers one `fullscreenchange` listener
+ *   (plus vendor-prefixed variants where supported).
+ */
+export function fullscreenSignal(): ComputedAccessor<Element | null> {
+  if (
+    isSSR() ||
+    typeof document === 'undefined' ||
+    typeof document.addEventListener !== 'function'
+  ) {
+    return compute(() => null as Element | null);
+  }
+  if (singleton) return singleton;
+  const inner = state<Element | null>(readFullscreenElement());
+  // Isolate listener throws — a userland Element subclass with a throwing
+  // getter must not crash the event loop or leave the signal stuck.
+  const handler = isolate('fullscreenSignal', () => inner(readFullscreenElement()));
+  const specs = FULLSCREEN_EVENTS.map((name): ListenerSpec => [document, name, handler]);
+  unbind = bindListeners(specs, 'fullscreenSignal');
+  if (!unbind) return compute(() => readFullscreenElement());
+  // Page-lifetime singleton must not inherit the creating component's owner.
+  singleton = withoutScope(() => compute(inner.get));
+  return singleton;
+}
+
+/** @internal — test helper. Clears the cached singleton and removes the
+ * document listeners so subsequent test runs start from a clean state. */
+export function _resetFullscreenSignal(): void {
+  unbind?.();
+  unbind = null;
+  singleton = null;
+}

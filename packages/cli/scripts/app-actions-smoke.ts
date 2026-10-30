@@ -763,7 +763,16 @@ assert.equal(dirname(target), await realpath(tmpdir()));
 assert.ok(basename(target).startsWith('purity-app-actions-'));
 try {
   const tarballs = new Map<string, string>();
-  for (const pkg of ['@purityjs/core', '@purityjs/ssr', '@purityjs/vite-plugin', '@purityjs/cli']) {
+  for (const pkg of [
+    '@purityjs/core',
+    '@purityjs/signals',
+    '@purityjs/compiler',
+    '@purityjs/platform',
+    '@purityjs/router',
+    '@purityjs/ssr',
+    '@purityjs/vite-plugin',
+    '@purityjs/cli',
+  ]) {
     const output = await run(
       [npmCli!, 'pack', '--json', '--pack-destination', target, '-w', pkg],
       repo,
@@ -811,7 +820,15 @@ try {
   );
   const manifestPath = join(project, 'package.json');
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-  for (const pkg of ['@purityjs/core', '@purityjs/ssr', '@purityjs/vite-plugin']) {
+  for (const pkg of [
+    '@purityjs/core',
+    '@purityjs/signals',
+    '@purityjs/compiler',
+    '@purityjs/platform',
+    '@purityjs/router',
+    '@purityjs/ssr',
+    '@purityjs/vite-plugin',
+  ]) {
     const deps = pkg === '@purityjs/vite-plugin' ? manifest.devDependencies : manifest.dependencies;
     deps[pkg] = `file:${tarballs.get(pkg)}`;
   }
@@ -853,7 +870,7 @@ export function inspectDisconnect(id: string, release: boolean) {
   await writeFile(
     join(project, 'src/actions/disconnect.server.ts'),
     `
-import { serverAction } from '@purityjs/core/actions';
+import { serverAction } from '@purityjs/platform/actions';
 import { inspectDisconnect } from '../disconnect-probe.ts';
 export const disconnectState = serverAction('/actions/disconnect-state', async (request) => {
   const form = await request.formData();
@@ -863,7 +880,7 @@ export const disconnectState = serverAction('/actions/disconnect-state', async (
   );
   await mkdir(join(project, 'src/pages/disconnect'), { recursive: true });
   const disconnectPage = `
-import { asyncRoute, type AsyncRouteEntry, type LoaderContext } from '@purityjs/core/router'; import { html } from '@purityjs/core/jit'; import { resource, suspense } from '@purityjs/core';
+import { asyncRoute, type AsyncRouteEntry, type LoaderContext } from '@purityjs/router'; import { html } from '@purityjs/core/jit'; import { resource, suspense } from '@purityjs/core';
 import { markView, waitForDisconnect } from '../../disconnect-probe.ts';
 export async function loader({ request, signal }: LoaderContext) {
   const url = new URL(request.url);
@@ -918,7 +935,7 @@ export default function Probe(_params: unknown, data: { id: string; mode: string
   await writeFile(
     join(project, 'src/pages/disconnect/_layout.ts'),
     `
-import { type LoaderContext } from '@purityjs/core/router';
+import { type LoaderContext } from '@purityjs/router';
 import { waitForDisconnect } from '../../disconnect-probe.ts';
 export async function loader({ request, signal }: LoaderContext) {
   const url = new URL(request.url);
@@ -956,7 +973,7 @@ export default function TimeoutLookalike(): never {
   );
   await writeFile(
     join(project, 'src/actions/probe.server.ts'),
-    "import { serverAction } from '@purityjs/core/actions';\n" +
+    "import { serverAction } from '@purityjs/platform/actions';\n" +
       "export const probe = serverAction('/actions/probe', async (request) => {\n" +
       "  const headers = new Headers({ 'X-Action-Probe': 'PURITY_ACTION_HANDLER_PRIVATE_MARKER' });\n" +
       "  headers.append('Set-Cookie', 'first=1; Path=/; HttpOnly');\n" +
@@ -1001,7 +1018,7 @@ export const brokenStream = serverAction('/actions/broken-stream', () => new Res
   );
   await writeFile(
     join(project, 'src/query-probe.ts'),
-    `import { asyncRoute, type AsyncRouteEntry, type LoaderContext } from '@purityjs/core/router'; import { mount, watch } from '@purityjs/core'; import { query } from '@purityjs/core/query';
+    `import { asyncRoute, type AsyncRouteEntry, type LoaderContext } from '@purityjs/router'; import { mount, watch } from '@purityjs/core'; import { query } from '@purityjs/platform/query';
 export function installQueryProbe() {
   const section = document.createElement('section');
   section.innerHTML = '<form id="query-form" action="/actions/query-write" method="post" data-purity-enhance><label>Query value<input name="value"></label><button>Save query value</button><p data-purity-form-status></p></form><span id="query-value"></span><span id="query-reads"></span><span id="query-error"></span><span id="other-reads"></span>';

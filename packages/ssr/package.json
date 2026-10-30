@@ -29,8 +29,28 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./runtime": {
+      "development": {
+        "node": {
+          "types": "./dist/runtime.d.ts",
+          "import": "./dist/runtime.js",
+          "require": "./dist/runtime.cjs"
+        },
+        "default": "./src/runtime.ts"
+      },
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js",
+      "require": "./dist/runtime.cjs"
+    },
     ".": {
-      "development": "./src/index.ts",
+      "development": {
+        "node": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.js",
+          "require": "./dist/index.cjs"
+        },
+        "default": "./src/index.ts"
+      },
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
@@ -42,6 +62,10 @@
   "scripts": {
     "build": "vp build && tsc --emitDeclarationOnly",
     "test": "vp test run"
+  },
+  "dependencies": {
+    "@purityjs/compiler": "^0.5.0",
+    "@purityjs/signals": "^0.5.0"
   },
   "peerDependencies": {
     "@purityjs/core": "^0.5.0"

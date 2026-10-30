@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
-import { isSSRHtml, ssrHelpers } from '@purityjs/core/internal';
+import { isSSRHtml, ssrHelpers } from '@purityjs/ssr/runtime';
 
 const plugin = purity({ hydratable: true, strictAot: false });
 
@@ -31,7 +31,7 @@ describe('@purityjs/vite-plugin — SSR mode', () => {
     const result = transform(code, 'app.ts', true);
     expect(result).not.toBeNull();
     expect(result!.code).toContain('__purity_h__');
-    expect(result!.code).toContain("from '@purityjs/core/internal'");
+    expect(result!.code).toContain("from '@purityjs/ssr/runtime'");
     expect(result!.code).toContain("import '@purityjs/ssr'");
     expect(result!.code).not.toContain('__purity_w__');
   });

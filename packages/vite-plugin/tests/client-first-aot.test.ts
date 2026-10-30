@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { hydrate, mount, onDestroy, onDispose, state, watch } from '@purityjs/core';
 import { flattenValue, renderCompiledTemplate, swapSlot } from '@purityjs/core/runtime';
+import { safeUrl, template } from '@purityjs/core/csr-runtime';
 import { purity, type PurityPluginOptions } from '../src/index.ts';
 
 const disposers: Array<() => void> = [];
@@ -26,8 +27,10 @@ function execute(code: string): (...values: any[]) => Node {
     '__purity_watch__',
     '__purity_fl__',
     '__purity_sw__',
+    '__purity_url__',
+    '__purity_tmpl__',
     `${body}\nreturn make;`,
-  )(watch, flattenValue, swapSlot);
+  )(watch, flattenValue, swapSlot, safeUrl, template);
 }
 
 function executeHydratable(code: string): (...values: any[]) => Node {
@@ -37,8 +40,10 @@ function executeHydratable(code: string): (...values: any[]) => Node {
     '__purity_renderCompiled__',
     '__purity_fl__',
     '__purity_sw__',
+    '__purity_url__',
+    '__purity_tmpl__',
     `${body}\nreturn make;`,
-  )(renderCompiledTemplate, flattenValue, swapSlot);
+  )(renderCompiledTemplate, flattenValue, swapSlot, safeUrl, template);
 }
 
 function render(view: () => Node) {
@@ -49,6 +54,17 @@ function render(view: () => Node) {
 }
 
 describe('client-first AOT build contract', () => {
+  it('links lazy template and URL helpers from the client runtime', () => {
+    const code = compile(
+      "import { html } from '@purityjs/core/jit'; export const make = (url) => html`<a href=${url}><span>go</span></a>`;",
+    );
+    expect(code).toContain("from '@purityjs/core/csr-runtime'");
+    expect(code).toContain('template as __purity_tmpl__');
+    expect(code).toContain('safeUrl as __purity_url__');
+    expect(code).toContain('__purity_tmpl__(');
+    expect(code).toContain('__purity_url__(');
+  });
+
   it('default client output omits hydration walkers and mode selection', () => {
     const code = compile();
     expect(code).not.toContain('_hydrate');

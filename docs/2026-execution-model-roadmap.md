@@ -11,7 +11,7 @@ Purity's current execution surface is: client-side reactive rendering,
 string/streaming SSR with Suspense boundaries, islands (opt-in partial
 hydration), and conventional hydration (the client re-runs component
 factories and walks the SSR DOM via `DeferredTemplate` — see
-[`packages/core/src/compiler/hydrate-runtime.ts`](../packages/core/src/compiler/hydrate-runtime.ts)).
+[`packages/core/src/runtime/hydrate-runtime.ts`](../packages/core/src/runtime/hydrate-runtime.ts)).
 
 This note inventories execution modes other frameworks offer that
 Purity does not, so the gap is a documented, falsifiable list instead

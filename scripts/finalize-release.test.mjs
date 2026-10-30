@@ -44,10 +44,15 @@ async function runCase(options = {}) {
   return { calls, error };
 }
 
-test('publishes release only after four package origins and remote tag are verified', async () => {
+test('publishes release only after every package origin and remote tag are verified', async () => {
   const { calls, error } = await runCase();
   assert.equal(error, undefined);
-  assert.equal(calls.filter(([cmd]) => cmd === 'npm').length, 4);
+  assert.deepEqual(
+    calls.filter(([cmd]) => cmd === 'npm').map((call) => call[2]),
+    ['signals', 'compiler', 'core', 'router', 'platform', 'ssr', 'vite-plugin', 'cli'].map(
+      (name) => `@purityjs/${name}@0.4.0`,
+    ),
+  );
   assert.deepEqual(calls.at(-1), [
     'gh',
     'release',
@@ -85,10 +90,10 @@ test('preserves prerelease versions and marks their GitHub release as prerelease
   assert.equal(error, undefined);
   assert.ok(calls.at(-1).includes('--prerelease'));
 });
-test('checks the fourth package and refuses missing gitHead', async () => {
-  const { calls, error } = await runCase({ badPackage: 4, missingHead: true });
+test('checks the last package and refuses missing gitHead', async () => {
+  const { calls, error } = await runCase({ badPackage: 8, missingHead: true });
   assert.match(error.message, /source/);
-  assert.equal(calls.filter(([cmd]) => cmd === 'npm').length, 4);
+  assert.equal(calls.filter(([cmd]) => cmd === 'npm').length, 8);
   assert.ok(!calls.some((call) => ['tag', 'push', 'release'].includes(call[1])));
 });
 test('resolves annotated tags to their peeled commit', async () => {

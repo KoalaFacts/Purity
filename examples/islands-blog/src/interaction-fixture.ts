@@ -1,7 +1,7 @@
 // Browser regression fixture for interactions that arrive before a lazy
 // island finishes resolving. The browser check controls when resolution ends.
 import { html } from '@purityjs/core/jit';
-import { island, mountIslands } from '@purityjs/core/islands';
+import { island, mountIslands } from '@purityjs/platform/islands';
 
 type FixtureKind = 'form' | 'external-submitter' | 'shadow-form' | 'aria-button' | 'svg-click';
 let current: { release(): void; count(): number } | null = null;

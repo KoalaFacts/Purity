@@ -1,0 +1,55 @@
+{
+  "name": "@purityjs/compiler",
+  "version": "0.5.0",
+  "description": "HTML5 template parser, AST, and ahead-of-time / runtime code generator for Purity (DOM, Hydration, and SSR)",
+  "keywords": [
+    "aot",
+    "codegen",
+    "compiler",
+    "html",
+    "parser",
+    "purity",
+    "ssr"
+  ],
+  "license": "Apache-2.0",
+  "author": "KoalaFacts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KoalaFacts/Purity.git",
+    "directory": "packages/compiler"
+  },
+  "files": [
+    "dist",
+    "src",
+    "LICENSE",
+    "NOTICE",
+    "LICENSES"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": {
+        "node": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.js",
+          "require": "./dist/index.cjs"
+        },
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vp build && tsc --emitDeclarationOnly",
+    "test": "vp test run"
+  }
+}

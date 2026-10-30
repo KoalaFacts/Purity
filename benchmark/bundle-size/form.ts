@@ -1,4 +1,4 @@
-import { enhanceForms } from '@purityjs/core/actions';
+import { enhanceForms } from '@purityjs/platform/actions';
 import { html } from '@purityjs/core/jit';
 import { mount, onMount, state } from '@purityjs/core';
 

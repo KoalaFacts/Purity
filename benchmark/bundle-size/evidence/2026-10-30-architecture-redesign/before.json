@@ -1,0 +1,550 @@
+{
+  "schemaVersion": 5,
+  "revision": "08eecf9f24c3150f361a0ea97662e9189b909674",
+  "dirty": false,
+  "node": "24.22.1",
+  "zlib": "1.3.2.1-motley-285e94b",
+  "brotli": "1.2.0",
+  "versions": {
+    "core": "0.5.0",
+    "plugin": "0.5.0",
+    "ssr": "0.5.0",
+    "vite": "1.3.0",
+    "parser": "0.154.0"
+  },
+  "fixtureHashes": {
+    "counter.ts": "64b72a7f5a5339c35faa6aa307463beac0408d908140f4ac1f4ac217daabdae5",
+    "counter-client.ts": "6a03c7a839dbc545d321504e712a50512e24e015e9d4950c89abe03565af5cc4",
+    "controls.ts": "ecbfa6501bf0b2f8f284bd27ba84eac1df0ac58351735c07d726dfd712653a04",
+    "controls-view.ts": "1b3907ecad66e1bdbcb17e0be9a45e54ccfcd2c29216ceb34a7a36a5408ea6fe",
+    "form.ts": "0967f1758df095d585d01646eb882d9ebcf8e1dd4abfde9ae55271a36882369f",
+    "hydration.ts": "92ffd1b9507fca729d55f3100716c0c5ae3f6b55ec32a42a92377da7593545ca",
+    "resource.ts": "34b6ef7f4535a95fe23981b0f2039d774dfbe4e58edc5f372053088391a18273",
+    "controls-server.ts": "18358b0e1db46ae3e51e5ee0915fef0a719a904a4a4599feee329d6efd46dcf5"
+  },
+  "artifactsSha256": {
+    "core": "868cdbc6a1492a71be328f2cc3ffeb639bdb6767e2f7d892f74d4f2bd543426a",
+    "coreCompiler": "af759949ae38c46cd0de77f88cbcb8005495e0d4dbc150bd4a3926f990d799a7",
+    "ssr": "99d032248b5b0f675161ec71c29d1e436470231f57f8c44551a676b57c4f2877",
+    "plugin": "833a89d09851d8fc47ec2e7d7b8c80eb6c9b8f43d5bb71f36d0eaee02af3493b"
+  },
+  "verification": {
+    "status": "not-run",
+    "engines": {}
+  },
+  "settings": {
+    "target": "es2022",
+    "minify": true,
+    "gzipLevel": 9,
+    "brotliQuality": 11,
+    "perFileCompression": true
+  },
+  "scope": "Packages: every export of each published entry, minified, from built dist; other Purity packages and Node built-ins external. Fixtures: complete fixture JavaScript payload; selected profiles also have size budgets.",
+  "packages": [
+    {
+      "entry": "core",
+      "rawBytes": 48781,
+      "gzipBytes": 16455,
+      "brotliBytes": 14905,
+      "functionConstructorCalls": 0,
+      "sha256": "9312ba5cdf6d49db0dfeca502524b3db8bffb26b4b5f63045648a8f054b511ff"
+    },
+    {
+      "entry": "core-compiler",
+      "rawBytes": 25062,
+      "gzipBytes": 8222,
+      "brotliBytes": 7437,
+      "functionConstructorCalls": 0,
+      "sha256": "e900202bcb35d3da6d6b27dc894592dbf4752656f3fe2c4d5b869c323729a692"
+    },
+    {
+      "entry": "core-list-runtime",
+      "rawBytes": 14660,
+      "gzipBytes": 5415,
+      "brotliBytes": 4916,
+      "functionConstructorCalls": 0,
+      "sha256": "b131063ee03b9b2890a44a8d66a7d0e15de3cc090011233e01e6c98760516d82"
+    },
+    {
+      "entry": "core-runtime",
+      "rawBytes": 7807,
+      "gzipBytes": 3162,
+      "brotliBytes": 2833,
+      "functionConstructorCalls": 0,
+      "sha256": "5b0d6bee3e1572955c5e4e615b72edeb65daf2a25004f46e585a1cc49a2c6861"
+    },
+    {
+      "entry": "core-jit",
+      "rawBytes": 23464,
+      "gzipBytes": 8034,
+      "brotliBytes": 7299,
+      "functionConstructorCalls": 1,
+      "sha256": "f27ce1d1e6273fa6886cfe90026fa12fec8075023ba466d7f656d35e127406b7"
+    },
+    {
+      "entry": "core-jit-client",
+      "rawBytes": 23329,
+      "gzipBytes": 7984,
+      "brotliBytes": 7258,
+      "functionConstructorCalls": 1,
+      "sha256": "db895b3605b30ff23a4fcd77400a427671cc5baf44ec2ae51b25e662bc166927"
+    },
+    {
+      "entry": "core-signals",
+      "rawBytes": 27971,
+      "gzipBytes": 8768,
+      "brotliBytes": 7881,
+      "functionConstructorCalls": 0,
+      "sha256": "75f6f9d1ea2bc2badda7bce8cac59c91070787505d7e6789dc86dc59524bb6d5"
+    },
+    {
+      "entry": "core-router",
+      "rawBytes": 33220,
+      "gzipBytes": 12102,
+      "brotliBytes": 10906,
+      "functionConstructorCalls": 0,
+      "sha256": "b43b901cc9700236deae4cf8a7f63a9af951db28f159bedcde00fdf166b709bb"
+    },
+    {
+      "entry": "core-actions",
+      "rawBytes": 15830,
+      "gzipBytes": 5817,
+      "brotliBytes": 5236,
+      "functionConstructorCalls": 0,
+      "sha256": "96c81e6e169841988c9c91dc8182cf3115e11675bf23d2a3464512c7db1b246b"
+    },
+    {
+      "entry": "core-islands",
+      "rawBytes": 21547,
+      "gzipBytes": 8037,
+      "brotliBytes": 7207,
+      "functionConstructorCalls": 0,
+      "sha256": "40688a9ce99b45bef3719a310cb622d22def3496df97de50e11af04f78c50eea"
+    },
+    {
+      "entry": "core-query",
+      "rawBytes": 12582,
+      "gzipBytes": 4540,
+      "brotliBytes": 4157,
+      "functionConstructorCalls": 0,
+      "sha256": "feec1360ab12336d242df25b091d062369f83c9048a726c044757bf869d89b22"
+    },
+    {
+      "entry": "core-internal",
+      "rawBytes": 10442,
+      "gzipBytes": 4544,
+      "brotliBytes": 4063,
+      "functionConstructorCalls": 0,
+      "sha256": "b6377d6a8a645ee04eedc528daf67908382a707f4b41cf2d075d3c547b6f0506"
+    },
+    {
+      "entry": "core-all",
+      "rawBytes": 142884,
+      "gzipBytes": 45411,
+      "brotliBytes": 40500,
+      "functionConstructorCalls": 1,
+      "sha256": "069a077ae37ec9fea0168a7074c7c79d9b33bcf91829f6602302fcc557abb52c"
+    },
+    {
+      "entry": "ssr",
+      "rawBytes": 13185,
+      "gzipBytes": 5065,
+      "brotliBytes": 4535,
+      "functionConstructorCalls": 1,
+      "sha256": "7ec02646ad7acb0f713f557d5cd8e00f587978e9c8d52cb7e9420556465c7dbb"
+    }
+  ],
+  "measurements": [
+    {
+      "profile": "counter-runtime",
+      "compilation": "jit",
+      "rawBytes": 27033,
+      "gzipBytes": 9141,
+      "brotliBytes": 8303,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 27033,
+          "gzipBytes": 9141,
+          "brotliBytes": 8303
+        }
+      ],
+      "functionConstructorCalls": 1
+    },
+    {
+      "profile": "counter-aot",
+      "compilation": "hydrate",
+      "rawBytes": 9790,
+      "gzipBytes": 3529,
+      "brotliBytes": 3234,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 9790,
+          "gzipBytes": 3529,
+          "brotliBytes": 3234
+        }
+      ],
+      "functionConstructorCalls": 0
+    },
+    {
+      "profile": "counter-csr-aot",
+      "compilation": "client",
+      "rawBytes": 8726,
+      "gzipBytes": 3160,
+      "brotliBytes": 2895,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 8726,
+          "gzipBytes": 3160,
+          "brotliBytes": 2895
+        }
+      ],
+      "functionConstructorCalls": 0
+    },
+    {
+      "profile": "counter-client-runtime",
+      "compilation": "jit",
+      "rawBytes": 26916,
+      "gzipBytes": 9101,
+      "brotliBytes": 8273,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 26916,
+          "gzipBytes": 9101,
+          "brotliBytes": 8273
+        }
+      ],
+      "functionConstructorCalls": 1
+    },
+    {
+      "profile": "counter-client-aot",
+      "compilation": "hydrate",
+      "rawBytes": 9790,
+      "gzipBytes": 3529,
+      "brotliBytes": 3234,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 9790,
+          "gzipBytes": 3529,
+          "brotliBytes": 3234
+        }
+      ],
+      "functionConstructorCalls": 0
+    },
+    {
+      "profile": "counter-client-csr-aot",
+      "compilation": "client",
+      "rawBytes": 8726,
+      "gzipBytes": 3160,
+      "brotliBytes": 2895,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 8726,
+          "gzipBytes": 3160,
+          "brotliBytes": 2895
+        }
+      ],
+      "functionConstructorCalls": 0
+    },
+    {
+      "profile": "controls-runtime",
+      "compilation": "jit",
+      "rawBytes": 48239,
+      "gzipBytes": 16350,
+      "brotliBytes": 14848,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 48239,
+          "gzipBytes": 16350,
+          "brotliBytes": 14848
+        }
+      ],
+      "functionConstructorCalls": 1
+    },
+    {
+      "profile": "controls-aot",
+      "compilation": "hydrate",
+      "rawBytes": 24399,
+      "gzipBytes": 8275,
+      "brotliBytes": 7414,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 24399,
+          "gzipBytes": 8275,
+          "brotliBytes": 7414
+        }
+      ],
+      "functionConstructorCalls": 0
+    },
+    {
+      "profile": "controls-csr-aot",
+      "compilation": "client",
+      "rawBytes": 21192,
+      "gzipBytes": 7433,
+      "brotliBytes": 6730,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 21192,
+          "gzipBytes": 7433,
+          "brotliBytes": 6730
+        }
+      ],
+      "functionConstructorCalls": 0
+    },
+    {
+      "profile": "form-runtime",
+      "compilation": "jit",
+      "rawBytes": 36198,
+      "gzipBytes": 12307,
+      "brotliBytes": 11127,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 36198,
+          "gzipBytes": 12307,
+          "brotliBytes": 11127
+        }
+      ],
+      "functionConstructorCalls": 1
+    },
+    {
+      "profile": "form-aot",
+      "compilation": "hydrate",
+      "rawBytes": 19575,
+      "gzipBytes": 7005,
+      "brotliBytes": 6306,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 19575,
+          "gzipBytes": 7005,
+          "brotliBytes": 6306
+        }
+      ],
+      "functionConstructorCalls": 0
+    },
+    {
+      "profile": "form-csr-aot",
+      "compilation": "client",
+      "rawBytes": 18121,
+      "gzipBytes": 6530,
+      "brotliBytes": 5870,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 18121,
+          "gzipBytes": 6530,
+          "brotliBytes": 5870
+        }
+      ],
+      "functionConstructorCalls": 0
+    },
+    {
+      "profile": "hydration-runtime",
+      "compilation": "jit",
+      "rawBytes": 50740,
+      "gzipBytes": 17173,
+      "brotliBytes": 15600,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 50740,
+          "gzipBytes": 17173,
+          "brotliBytes": 15600
+        }
+      ],
+      "functionConstructorCalls": 1
+    },
+    {
+      "profile": "hydration-aot",
+      "compilation": "hydrate",
+      "rawBytes": 26900,
+      "gzipBytes": 9107,
+      "brotliBytes": 8181,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 26900,
+          "gzipBytes": 9107,
+          "brotliBytes": 8181
+        }
+      ],
+      "functionConstructorCalls": 0
+    },
+    {
+      "profile": "resource-runtime",
+      "compilation": "jit",
+      "rawBytes": 30122,
+      "gzipBytes": 10371,
+      "brotliBytes": 9526,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 30122,
+          "gzipBytes": 10371,
+          "brotliBytes": 9526
+        }
+      ],
+      "functionConstructorCalls": 1
+    },
+    {
+      "profile": "resource-aot",
+      "compilation": "hydrate",
+      "rawBytes": 13920,
+      "gzipBytes": 5123,
+      "brotliBytes": 4657,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 13920,
+          "gzipBytes": 5123,
+          "brotliBytes": 4657
+        }
+      ],
+      "functionConstructorCalls": 0
+    },
+    {
+      "profile": "resource-csr-aot",
+      "compilation": "client",
+      "rawBytes": 11955,
+      "gzipBytes": 4526,
+      "brotliBytes": 4149,
+      "chunks": [
+        {
+          "file": "entry.js",
+          "rawBytes": 11955,
+          "gzipBytes": 4526,
+          "brotliBytes": 4149
+        }
+      ],
+      "functionConstructorCalls": 0
+    }
+  ],
+  "budgets": {
+    "packages": {
+      "core": {
+        "gzipBytes": 16896,
+        "brotliBytes": 15360
+      },
+      "core-compiler": {
+        "gzipBytes": 8704,
+        "brotliBytes": 7808
+      },
+      "ssr": {
+        "gzipBytes": 5376,
+        "brotliBytes": 4864
+      },
+      "core-all": {
+        "gzipBytes": 46080,
+        "brotliBytes": 40704
+      },
+      "core-runtime": {
+        "gzipBytes": 3328,
+        "brotliBytes": 2944
+      },
+      "core-jit": {
+        "gzipBytes": 8448,
+        "brotliBytes": 7680
+      },
+      "core-jit-client": {
+        "gzipBytes": 8448,
+        "brotliBytes": 7680
+      },
+      "core-signals": {
+        "gzipBytes": 9216,
+        "brotliBytes": 8192
+      },
+      "core-router": {
+        "gzipBytes": 12544,
+        "brotliBytes": 11264
+      },
+      "core-actions": {
+        "gzipBytes": 5888,
+        "brotliBytes": 5248
+      },
+      "core-islands": {
+        "gzipBytes": 8192,
+        "brotliBytes": 7424
+      },
+      "core-query": {
+        "gzipBytes": 4608,
+        "brotliBytes": 4224
+      },
+      "core-internal": {
+        "gzipBytes": 4864,
+        "brotliBytes": 4352
+      },
+      "core-list-runtime": {
+        "gzipBytes": 5888,
+        "brotliBytes": 5376
+      }
+    },
+    "fixtures": {
+      "counter-runtime": {
+        "functionConstructorCalls": 1
+      },
+      "counter-aot": {
+        "functionConstructorCalls": 0
+      },
+      "counter-client-runtime": {
+        "functionConstructorCalls": 1
+      },
+      "counter-client-aot": {
+        "functionConstructorCalls": 0
+      },
+      "controls-runtime": {
+        "functionConstructorCalls": 1
+      },
+      "controls-aot": {
+        "functionConstructorCalls": 0,
+        "gzipBytes": 8960,
+        "brotliBytes": 7936
+      },
+      "form-runtime": {
+        "functionConstructorCalls": 1
+      },
+      "form-aot": {
+        "functionConstructorCalls": 0
+      },
+      "hydration-runtime": {
+        "functionConstructorCalls": 1
+      },
+      "hydration-aot": {
+        "functionConstructorCalls": 0,
+        "gzipBytes": 9472,
+        "brotliBytes": 8448
+      },
+      "resource-runtime": {
+        "functionConstructorCalls": 1
+      },
+      "resource-aot": {
+        "functionConstructorCalls": 0
+      },
+      "counter-csr-aot": {
+        "functionConstructorCalls": 0
+      },
+      "counter-client-csr-aot": {
+        "functionConstructorCalls": 0
+      },
+      "controls-csr-aot": {
+        "functionConstructorCalls": 0
+      },
+      "form-csr-aot": {
+        "functionConstructorCalls": 0
+      },
+      "resource-csr-aot": {
+        "functionConstructorCalls": 0
+      }
+    }
+  },
+  "violations": [],
+  "budgetEnforced": false
+}

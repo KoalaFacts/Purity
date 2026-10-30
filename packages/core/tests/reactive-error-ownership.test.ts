@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { mount, onDispose, onError } from '../src/component.ts';
 import { when } from '../src/control.ts';
-import { state, watch } from '../src/signals.ts';
+import { state, watch } from '@purityjs/signals';
 
 const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 const stops: (() => void)[] = [];

@@ -2,7 +2,7 @@
 // ahead of the root `_404.ts`, so /users/anything-unmatched lands here
 // instead of the global 404.
 
-import { currentPath, head } from '@purityjs/core/router';
+import { currentPath, head } from '@purityjs/router';
 import { html } from '@purityjs/core/jit';
 
 export default function UsersNotFound(): unknown {

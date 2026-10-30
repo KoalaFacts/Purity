@@ -136,4 +136,4 @@ mount(() => html`<p-todo></p-todo>`, document.getElementById('app'));
 - `@purityjs/vite-plugin` — AOT template compilation (dev dependency)
 - `@purityjs/cli` — project scaffolding
 
-## Zero runtime dependencies (custom push-pull reactivity in `src/signals.ts`)
+## Reactivity (`@purityjs/signals`)

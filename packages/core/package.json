@@ -31,84 +31,346 @@
   "types": "./dist/index.d.ts",
   "exports": {
     "./jit": {
-      "development": "./src/compiler/jit.ts",
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/compiler/jit.d.ts",
+            "import": "./dist/jit/index.js",
+            "require": "./dist/jit/index.cjs"
+          },
+          "default": "./src/compiler/jit.ts"
+        },
+        "types": "./dist/compiler/jit.d.ts",
+        "import": "./dist/jit/index.js",
+        "require": "./dist/jit/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/compiler/jit.d.ts",
+          "import": "./dist/jit/index.js",
+          "require": "./dist/jit/index.cjs"
+        },
+        "default": "./src/compiler/jit.ts"
+      },
       "types": "./dist/compiler/jit.d.ts",
+      "browser": {
+        "import": "./dist/browser/jit/index.js",
+        "require": "./dist/browser/jit/index.cjs"
+      },
       "import": "./dist/jit/index.js",
       "require": "./dist/jit/index.cjs"
     },
     "./jit-client": {
-      "development": "./src/compiler/client.ts",
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/compiler/client.d.ts",
+            "import": "./dist/jit-client/index.js",
+            "require": "./dist/jit-client/index.cjs"
+          },
+          "default": "./src/compiler/client.ts"
+        },
+        "types": "./dist/compiler/client.d.ts",
+        "import": "./dist/jit-client/index.js",
+        "require": "./dist/jit-client/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/compiler/client.d.ts",
+          "import": "./dist/jit-client/index.js",
+          "require": "./dist/jit-client/index.cjs"
+        },
+        "default": "./src/compiler/client.ts"
+      },
       "types": "./dist/compiler/client.d.ts",
+      "browser": {
+        "import": "./dist/browser/jit-client/index.js",
+        "require": "./dist/browser/jit-client/index.cjs"
+      },
       "import": "./dist/jit-client/index.js",
       "require": "./dist/jit-client/index.cjs"
     },
     "./runtime": {
-      "development": "./src/compiler/runtime.ts",
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/compiler/runtime.d.ts",
+            "import": "./dist/runtime/index.js",
+            "require": "./dist/runtime/index.cjs"
+          },
+          "default": "./src/compiler/runtime.ts"
+        },
+        "types": "./dist/compiler/runtime.d.ts",
+        "import": "./dist/runtime/index.js",
+        "require": "./dist/runtime/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/compiler/runtime.d.ts",
+          "import": "./dist/runtime/index.js",
+          "require": "./dist/runtime/index.cjs"
+        },
+        "default": "./src/compiler/runtime.ts"
+      },
       "types": "./dist/compiler/runtime.d.ts",
+      "browser": {
+        "import": "./dist/browser/runtime/index.js",
+        "require": "./dist/browser/runtime/index.cjs"
+      },
       "import": "./dist/runtime/index.js",
       "require": "./dist/runtime/index.cjs"
     },
-    "./compiler": {
-      "development": "./src/compiler/index.ts",
-      "types": "./dist/compiler/index.d.ts",
-      "import": "./dist/compiler/index.js",
-      "require": "./dist/compiler/index.cjs"
-    },
-    "./internal": {
-      "development": "./src/internal.ts",
-      "types": "./dist/internal.d.ts",
-      "import": "./dist/internal/index.js",
-      "require": "./dist/internal/index.cjs"
-    },
-    "./signals": {
-      "development": "./src/browser-signals/index.ts",
-      "types": "./dist/browser-signals/index.d.ts",
-      "import": "./dist/signals/index.js",
-      "require": "./dist/signals/index.cjs"
-    },
-    "./router": {
-      "development": "./src/router/index.ts",
-      "types": "./dist/router/index.d.ts",
-      "import": "./dist/router/index.js",
-      "require": "./dist/router/index.cjs"
-    },
-    "./actions": {
-      "development": "./src/actions/index.ts",
-      "types": "./dist/actions/index.d.ts",
-      "import": "./dist/actions/index.js",
-      "require": "./dist/actions/index.cjs"
-    },
-    "./islands": {
-      "development": "./src/islands/index.ts",
-      "types": "./dist/islands/index.d.ts",
-      "import": "./dist/islands/index.js",
-      "require": "./dist/islands/index.cjs"
-    },
-    "./query": {
-      "development": "./src/query/index.ts",
-      "types": "./dist/query/index.d.ts",
-      "import": "./dist/query/index.js",
-      "require": "./dist/query/index.cjs"
-    },
     ".": {
-      "development": "./src/index.ts",
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js",
+            "require": "./dist/index.cjs"
+          },
+          "default": "./src/index.ts"
+        },
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "require": "./dist/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.js",
+          "require": "./dist/index.cjs"
+        },
+        "default": "./src/index.ts"
+      },
       "types": "./dist/index.d.ts",
+      "browser": {
+        "import": "./dist/browser/index.js",
+        "require": "./dist/browser/index.cjs"
+      },
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
     "./list-runtime": {
-      "development": "./src/control/list-runtime.ts",
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/control/list-runtime.d.ts",
+            "import": "./dist/list-runtime/index.js",
+            "require": "./dist/list-runtime/index.cjs"
+          },
+          "default": "./src/control/list-runtime.ts"
+        },
+        "types": "./dist/control/list-runtime.d.ts",
+        "import": "./dist/list-runtime/index.js",
+        "require": "./dist/list-runtime/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/control/list-runtime.d.ts",
+          "import": "./dist/list-runtime/index.js",
+          "require": "./dist/list-runtime/index.cjs"
+        },
+        "default": "./src/control/list-runtime.ts"
+      },
       "types": "./dist/control/list-runtime.d.ts",
+      "browser": {
+        "import": "./dist/browser/list-runtime/index.js",
+        "require": "./dist/browser/list-runtime/index.cjs"
+      },
       "import": "./dist/list-runtime/index.js",
       "require": "./dist/list-runtime/index.cjs"
+    },
+    "./forms": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/forms.d.ts",
+            "import": "./dist/forms/index.js",
+            "require": "./dist/forms/index.cjs"
+          },
+          "default": "./src/forms.ts"
+        },
+        "types": "./dist/forms.d.ts",
+        "import": "./dist/forms/index.js",
+        "require": "./dist/forms/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/forms.d.ts",
+          "import": "./dist/forms/index.js",
+          "require": "./dist/forms/index.cjs"
+        },
+        "default": "./src/forms.ts"
+      },
+      "types": "./dist/forms.d.ts",
+      "browser": {
+        "import": "./dist/browser/forms/index.js",
+        "require": "./dist/browser/forms/index.cjs"
+      },
+      "import": "./dist/forms/index.js",
+      "require": "./dist/forms/index.cjs"
+    },
+    "./csr-runtime": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/runtime/csr-runtime.d.ts",
+            "import": "./dist/csr-runtime/index.js",
+            "require": "./dist/csr-runtime/index.cjs"
+          },
+          "default": "./src/runtime/csr-runtime.ts"
+        },
+        "types": "./dist/runtime/csr-runtime.d.ts",
+        "import": "./dist/csr-runtime/index.js",
+        "require": "./dist/csr-runtime/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/runtime/csr-runtime.d.ts",
+          "import": "./dist/csr-runtime/index.js",
+          "require": "./dist/csr-runtime/index.cjs"
+        },
+        "default": "./src/runtime/csr-runtime.ts"
+      },
+      "types": "./dist/runtime/csr-runtime.d.ts",
+      "browser": {
+        "import": "./dist/browser/csr-runtime/index.js",
+        "require": "./dist/browser/csr-runtime/index.cjs"
+      },
+      "import": "./dist/csr-runtime/index.js",
+      "require": "./dist/csr-runtime/index.cjs"
+    },
+    "./ssr-bridge": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/ssr-bridge.d.ts",
+            "import": "./dist/ssr-bridge/index.js",
+            "require": "./dist/ssr-bridge/index.cjs"
+          },
+          "default": "./src/ssr-bridge.ts"
+        },
+        "types": "./dist/ssr-bridge.d.ts",
+        "import": "./dist/ssr-bridge/index.js",
+        "require": "./dist/ssr-bridge/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/ssr-bridge.d.ts",
+          "import": "./dist/ssr-bridge/index.js",
+          "require": "./dist/ssr-bridge/index.cjs"
+        },
+        "default": "./src/ssr-bridge.ts"
+      },
+      "types": "./dist/ssr-bridge.d.ts",
+      "browser": {
+        "import": "./dist/browser/ssr-bridge/index.js",
+        "require": "./dist/browser/ssr-bridge/index.cjs"
+      },
+      "import": "./dist/ssr-bridge/index.js",
+      "require": "./dist/ssr-bridge/index.cjs"
+    },
+    "./csr": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/csr.d.ts",
+            "import": "./dist/csr/index.js",
+            "require": "./dist/csr/index.cjs"
+          },
+          "default": "./src/csr.ts"
+        },
+        "types": "./dist/csr.d.ts",
+        "import": "./dist/csr/index.js",
+        "require": "./dist/csr/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/csr.d.ts",
+          "import": "./dist/csr/index.js",
+          "require": "./dist/csr/index.cjs"
+        },
+        "default": "./src/csr.ts"
+      },
+      "types": "./dist/csr.d.ts",
+      "browser": {
+        "import": "./dist/browser/csr/index.js",
+        "require": "./dist/browser/csr/index.cjs"
+      },
+      "import": "./dist/csr/index.js",
+      "require": "./dist/csr/index.cjs"
+    },
+    "./virtual": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/virtual.d.ts",
+            "import": "./dist/virtual/index.js",
+            "require": "./dist/virtual/index.cjs"
+          },
+          "default": "./src/virtual.ts"
+        },
+        "types": "./dist/virtual.d.ts",
+        "import": "./dist/virtual/index.js",
+        "require": "./dist/virtual/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/virtual.d.ts",
+          "import": "./dist/virtual/index.js",
+          "require": "./dist/virtual/index.cjs"
+        },
+        "default": "./src/virtual.ts"
+      },
+      "types": "./dist/virtual.d.ts",
+      "browser": {
+        "import": "./dist/browser/virtual/index.js",
+        "require": "./dist/browser/virtual/index.cjs"
+      },
+      "import": "./dist/virtual/index.js",
+      "require": "./dist/virtual/index.cjs"
+    },
+    "./hydration-bridge": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/hydrate.d.ts",
+            "import": "./dist/hydration-bridge/index.js",
+            "require": "./dist/hydration-bridge/index.cjs"
+          },
+          "default": "./src/hydrate.ts"
+        },
+        "types": "./dist/hydrate.d.ts",
+        "import": "./dist/hydration-bridge/index.js",
+        "require": "./dist/hydration-bridge/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/hydrate.d.ts",
+          "import": "./dist/hydration-bridge/index.js",
+          "require": "./dist/hydration-bridge/index.cjs"
+        },
+        "default": "./src/hydrate.ts"
+      },
+      "types": "./dist/hydrate.d.ts",
+      "browser": {
+        "import": "./dist/browser/hydration-bridge/index.js",
+        "require": "./dist/browser/hydration-bridge/index.cjs"
+      },
+      "import": "./dist/hydration-bridge/index.js",
+      "require": "./dist/hydration-bridge/index.cjs"
     }
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "vp build && tsc --emitDeclarationOnly",
+    "build": "vp build && vp build -c vite.browser.config.ts && tsc --emitDeclarationOnly",
     "test": "vp test run",
     "bench": "vp test bench --run"
+  },
+  "dependencies": {
+    "@purityjs/compiler": "0.5.0",
+    "@purityjs/signals": "0.5.0"
   }
 }

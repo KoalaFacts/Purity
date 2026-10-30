@@ -8,7 +8,7 @@
 // byte-identical output.
 
 import { html as clientHtml } from '@purityjs/core/jit';
-import { island } from '@purityjs/core/islands';
+import { island } from '@purityjs/platform/islands';
 import { state } from '@purityjs/core';
 import { describe, expect, it } from 'vite-plus/test';
 import { html as ssrHtml, renderToString } from '../src/index.ts';

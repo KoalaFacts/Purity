@@ -13,7 +13,13 @@ const npmCli = process.env.npm_execpath;
 if (!npmCli) throw new Error('Run this check through npm run test:published-cli');
 
 type Mode = 'client' | 'ssr';
-const packages = ['@purityjs/cli', '@purityjs/core', '@purityjs/ssr', '@purityjs/vite-plugin'];
+const basePackages = ['@purityjs/cli', '@purityjs/core', '@purityjs/ssr', '@purityjs/vite-plugin'];
+const splitPackages = [
+  '@purityjs/signals',
+  '@purityjs/compiler',
+  '@purityjs/router',
+  '@purityjs/platform',
+];
 const maxOutput = 16_000;
 const requestedVersion = process.env.PURITY_SMOKE_VERSION;
 if (requestedVersion) {
@@ -215,12 +221,17 @@ async function checkProject(
     dependencies: Record<string, string>;
     devDependencies: Record<string, string>;
   };
-  for (const pkg of mode === 'ssr' ? packages.slice(1) : [packages[1], packages[3]]) {
+  const directPackages = [
+    '@purityjs/core',
+    '@purityjs/vite-plugin',
+    ...(mode === 'ssr' ? ['@purityjs/ssr'] : []),
+  ];
+  for (const pkg of directPackages) {
     const spec = manifest.dependencies[pkg] ?? manifest.devDependencies[pkg];
     assert.ok(spec && !spec.startsWith('file:'), `${pkg} must come from npm`);
   }
   await runNpm(['install', '--no-audit', '--no-fund'], project);
-  for (const pkg of mode === 'ssr' ? packages.slice(1) : [packages[1], packages[3]]) {
+  for (const pkg of directPackages) {
     const installed = JSON.parse(
       await readFile(join(project, 'node_modules', ...pkg.split('/'), 'package.json'), 'utf8'),
     ) as { version: string };
@@ -229,6 +240,29 @@ async function checkProject(
       versions.get(pkg),
       `${pkg} does not match the checked published version`,
     );
+  }
+  if (versions.has('@purityjs/signals')) {
+    const transitivePackages = ['@purityjs/signals', '@purityjs/compiler', '@purityjs/router'];
+    const tree = JSON.parse(
+      await runNpm(['ls', '--json', '--all', ...transitivePackages], project),
+    ) as { dependencies?: Record<string, unknown> };
+    const found = new Map<string, Set<string>>();
+    const visit = (node: { dependencies?: Record<string, unknown> }): void => {
+      for (const [dependencyName, value] of Object.entries(node.dependencies ?? {})) {
+        if (!value || typeof value !== 'object') continue;
+        const dependency = value as { version?: string; dependencies?: Record<string, unknown> };
+        if (transitivePackages.includes(dependencyName) && dependency.version) {
+          const installed = found.get(dependencyName) ?? new Set<string>();
+          installed.add(dependency.version);
+          found.set(dependencyName, installed);
+        }
+        visit(dependency);
+      }
+    };
+    visit(tree);
+    for (const pkg of transitivePackages) {
+      assert.deepEqual([...(found.get(pkg) ?? [])], [versions.get(pkg)], `${pkg} version mismatch`);
+    }
   }
   await runNpm(['run', 'build'], project);
 
@@ -280,11 +314,22 @@ assert.ok(
 );
 try {
   const versions = new Map<string, string>();
-  for (const pkg of packages) {
+  for (const pkg of basePackages) {
     const spec = requestedVersion ? `${pkg}@${requestedVersion}` : pkg;
     const version = (await runNpm(['view', spec, 'version', '--prefer-online'], root)).trim();
     assert.match(version, /^\d+\.\d+\.\d+(?:-[\w.-]+)?$/, `Invalid npm version for ${pkg}`);
     versions.set(pkg, version);
+  }
+  // Releases before the package split have no separate signals/compiler/router/platform.
+  const cliVersion = versions.get('@purityjs/cli')!;
+  const [major, minor] = cliVersion.split('.').map(Number);
+  if (major > 0 || minor >= 5) {
+    for (const pkg of splitPackages) {
+      const spec = requestedVersion ? `${pkg}@${requestedVersion}` : pkg;
+      const version = (await runNpm(['view', spec, 'version', '--prefer-online'], root)).trim();
+      assert.match(version, /^\d+\.\d+\.\d+(?:-[\w.-]+)?$/, `Invalid npm version for ${pkg}`);
+      versions.set(pkg, version);
+    }
   }
   console.log(
     `Published packages: ${[...versions].map(([pkg, version]) => `${pkg}@${version}`).join(', ')}`,

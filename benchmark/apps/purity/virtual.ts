@@ -1,3 +1,4 @@
+import { virtualEach } from '@purityjs/core/virtual';
 import { each, state } from '@purityjs/core';
 import { html } from '@purityjs/core/jit';
 
@@ -46,19 +47,17 @@ fullViewport.appendChild(
   ),
 );
 virtualViewport.appendChild(
-  each(
+  virtualEach(
     () => virtualRows(),
     renderRow,
     (row) => row.id,
-    { virtual: true },
   ),
 );
 shadowRoot.appendChild(
-  each(
+  virtualEach(
     () => shadowRows(),
     renderRow,
     (row) => row.id,
-    { virtual: true },
   ),
 );
 

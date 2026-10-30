@@ -14,8 +14,9 @@
 // ---------------------------------------------------------------------------
 
 import { bindComponentState, onDispose } from './component.ts';
-import { batch, state, untracked, watch } from './signals.ts';
+import { batch, state, untracked, watch } from '@purityjs/signals';
 import { getSSRRenderContext } from './ssr/state.ts';
+import { ENABLE_SSR } from './hooks.ts';
 import { consumeHydrationValue } from './ssr/hydration-cache.ts';
 import { ssrResources } from './resource/dispatch.ts';
 import { normalizeRetry, withRetry } from './resource/retry.ts';
@@ -206,7 +207,7 @@ export function resource<T, K>(
   // fetcher and registers the promise on the active SSRRenderContext; second
   // pass consumes the resolved value from `ctx.resolvedData`. The watch is
   // reactive and DOM-bound, neither of which applies on the server.
-  const ssrCtx = getSSRRenderContext();
+  const ssrCtx = ENABLE_SSR ? getSSRRenderContext() : null;
   if (ssrCtx) {
     return ssrResources.resource(ssrCtx, userKey, sourceFn, fetcher, retry, data, error, loading);
   }
@@ -431,7 +432,7 @@ export function lazyResource<T, A = void>(
     // through to the client-only argsState path (i.e. the existing
     // broken-on-server behavior); apps that want SSR support opt in via
     // the key option.
-    const ssrCtx = getSSRRenderContext();
+    const ssrCtx = ENABLE_SSR ? getSSRRenderContext() : null;
     if (ssrCtx && userKey !== undefined) {
       ssrResources.fetchLazy(ssrCtx, userKey, r, fetcher, a);
       return;

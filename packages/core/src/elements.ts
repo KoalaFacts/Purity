@@ -397,7 +397,16 @@ export function component<
     if (typeof children === 'function') {
       const { exposed } = runRender(renderFn, props, slotAccessors, ctx);
       const bag = { ...createConsumerBag(registry), ...exposed };
-      const consumerResult = children(bag);
+      let consumerResult: unknown;
+      try {
+        consumerResult = children(bag);
+      } catch (error) {
+        // The first render may already own reactive effects or nested contexts.
+        // A failed consumer must roll back that owner, just like a failed render.
+        ctx.destroyed = null;
+        unmountElementContext(ctx, true);
+        throw error;
+      }
       if (consumerResult instanceof Node || typeof consumerResult === 'string') {
         registry.filled.default = consumerResult;
       }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { onDestroy, onMount, unmountContext } from '../src/component.ts';
+import { onDestroy, onDispose, onMount, unmountContext } from '../src/component.ts';
 import { onFormReset } from '../src/forms.ts';
 import { component, slot } from '../src/elements.ts';
 import { ComponentContext, popContext, pushContext } from '@purityjs/signals';
@@ -195,5 +195,29 @@ describe('SV2-015 lean component ownership', () => {
     const absent = new ComponentContext();
     unmountContext(absent);
     expect(Object.hasOwn(absent, '_slotContent')).toBe(false);
+  });
+  it('rolls back a failed consumer callback without leaking its component owner', () => {
+    const parent = new ComponentContext();
+    let disposed = 0;
+    let destroyed = 0;
+    const render = component('p-sv2-consumer-rollback', () => {
+      onDispose(() => disposed++);
+      onDestroy(() => destroyed++);
+      return document.createElement('div');
+    });
+
+    pushContext(parent);
+    try {
+      expect(() =>
+        render({}, () => {
+          throw new Error('consumer failed');
+        }),
+      ).toThrow('consumer failed');
+      expect(disposed).toBe(1);
+      expect(destroyed).toBe(0);
+      expect(parent.children).toEqual([]);
+    } finally {
+      popContext();
+    }
   });
 });

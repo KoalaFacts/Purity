@@ -268,7 +268,7 @@ export function unmountContext(
   // Never initialize optional callbacks or slots merely to clear them.
   ctx.mounted &&= null;
   ctx.errorHandlers &&= null;
-  // Clearing reference-valued slots must not create optional fields on lean owners.
+  // Arbitrary slot values may include falsy host objects; clear every defined value.
   ctx.parent &&= null;
-  ctx._slotContent &&= undefined;
+  if (ctx._slotContent !== undefined) ctx._slotContent = undefined;
 }

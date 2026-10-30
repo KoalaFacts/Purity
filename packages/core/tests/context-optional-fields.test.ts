@@ -136,4 +136,17 @@ describe('SV2-015 lean component ownership', () => {
     expect(Object.hasOwn(root, 'parent')).toBe(false);
     expect(Object.hasOwn(root, '_slotContent')).toBe(false);
   });
+
+  it('clears falsy provided slot values while keeping an absent slot unallocated', () => {
+    for (const value of [null, false, 0, '']) {
+      const ctx = new ComponentContext();
+      ctx._slotContent = value;
+      unmountContext(ctx);
+      expect(ctx._slotContent).toBeUndefined();
+    }
+
+    const absent = new ComponentContext();
+    unmountContext(absent);
+    expect(Object.hasOwn(absent, '_slotContent')).toBe(false);
+  });
 });

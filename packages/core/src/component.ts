@@ -223,12 +223,15 @@ export function unmountContext(
   }
 
   const nodes = ctx.nodes;
-  if (!keepHostDOM && nodes) {
-    for (let i = 0; i < nodes.length; i++) {
-      const node = nodes[i] as Node;
-      /* v8 ignore next */
-      if (node.parentNode) node.parentNode.removeChild(node);
+  if (nodes) {
+    if (!keepHostDOM) {
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i] as Node;
+        /* v8 ignore next */
+        if (node.parentNode) node.parentNode.removeChild(node);
+      }
     }
+    // Detached custom elements keep their DOM, not an obsolete owner's references to it.
     ctx.nodes = null;
   }
 

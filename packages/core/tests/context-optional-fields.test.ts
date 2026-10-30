@@ -69,6 +69,26 @@ describe('SV2-015 lean component ownership', () => {
     }
   });
 
+  it('releases detached host node references without clearing its shadow DOM', () => {
+    let owner: ComponentContext | null = null;
+    const tag = 'p-sv2-kept-host-nodes';
+    component(tag, () => {
+      owner = getCurrentComponent();
+      return document.createElement('span');
+    });
+
+    const host = document.createElement(tag);
+    document.body.append(host);
+    const originalNode = host.shadowRoot?.firstChild;
+    expect(originalNode).toBeInstanceOf(Node);
+
+    host.remove();
+    expect(host.shadowRoot?.firstChild).toBe(originalNode);
+    expect(owner).toBeInstanceOf(ComponentContext);
+    expect(owner!._isDestroyed).toBe(true);
+    expect(owner!.nodes).toBeNull();
+  });
+
   it('releases a detached custom-element owner and preserves reentrant reconnect', () => {
     let host!: HTMLElement & { _ctx: ComponentContext | null };
     let reconnect = true;

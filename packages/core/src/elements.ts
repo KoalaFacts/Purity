@@ -33,11 +33,11 @@ export type SlotAccessor<E = void> = E extends void
 
 interface SlotRegistry {
   filled: Record<string, unknown>;
-  accessors?: Record<string, SlotAccessor<any> | undefined>;
+  accessors: Record<string, SlotAccessor<any> | undefined>;
 }
 
 function createRegistry(): SlotRegistry {
-  return { filled: Object.create(null) };
+  return { filled: Object.create(null), accessors: Object.create(null) };
 }
 
 function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<any>> {
@@ -45,12 +45,12 @@ function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<an
     get(_target, prop: string) {
       /* v8 ignore next */
       if (typeof prop !== 'string') return undefined;
-      let accessor = registry.accessors?.[prop];
+      let accessor = registry.accessors[prop];
       if (!accessor) {
         accessor = ((_exposed?: unknown): Node | null => {
           return resolveContent(registry.filled[prop]);
         }) as SlotAccessor<any>;
-        (registry.accessors ??= Object.create(null))[prop] = accessor;
+        registry.accessors[prop] = accessor;
       }
       return accessor;
     },
@@ -61,9 +61,8 @@ type ConsumerSlot = (content?: Node | DocumentFragment | string | null) => Node 
 
 function createConsumerBag(registry: SlotRegistry): Record<string, ConsumerSlot> {
   const bag: Record<string, ConsumerSlot> = Object.create(null);
-  const accessors = (registry.accessors ??= Object.create(null));
-  if (!Object.hasOwn(accessors, 'default')) accessors.default = undefined;
-  for (const name in accessors) {
+  if (!Object.hasOwn(registry.accessors, 'default')) registry.accessors.default = undefined;
+  for (const name in registry.accessors) {
     bag[name] = (content?: Node | DocumentFragment | string | null): Node | null => {
       registry.filled[name] = content ?? null;
       return null;

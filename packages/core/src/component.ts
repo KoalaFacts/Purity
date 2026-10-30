@@ -256,14 +256,16 @@ export function unmountContext(
     ctx.destroyed = null;
   }
 
-  if (ctx.parent?.children) {
-    const idx = ctx.parent.children.indexOf(ctx);
-    if (idx !== -1) ctx.parent.children.splice(idx, 1);
+  const siblings = ctx.parent?.children;
+  if (siblings) {
+    const idx = siblings.indexOf(ctx);
+    if (idx !== -1) siblings.splice(idx, 1);
   }
 
   // Never initialize optional callbacks or slots merely to clear them.
   ctx.mounted &&= null;
   ctx.errorHandlers &&= null;
-  ctx.parent = null;
-  if (ctx._slotContent !== undefined) ctx._slotContent = undefined;
+  // Clearing reference-valued slots must not create optional fields on lean owners.
+  ctx.parent &&= null;
+  ctx._slotContent &&= undefined;
 }

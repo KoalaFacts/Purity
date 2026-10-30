@@ -118,4 +118,22 @@ describe('SV2-015 lean component ownership', () => {
     }) as Element;
     expect(root.textContent).toBe('heading');
   });
+
+  it('releases used slot and parent references without allocating absent owner fields', () => {
+    const parent = new ComponentContext();
+    const child = new ComponentContext();
+    parent.children = [child];
+    child.parent = parent;
+    child._slotContent = document.createElement('span');
+
+    unmountContext(child);
+    expect(child._slotContent).toBeUndefined();
+    expect(child.parent).toBeNull();
+    expect(parent.children).toEqual([]);
+
+    const root = new ComponentContext();
+    unmountContext(root);
+    expect(Object.hasOwn(root, 'parent')).toBe(false);
+    expect(Object.hasOwn(root, '_slotContent')).toBe(false);
+  });
 });

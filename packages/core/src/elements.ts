@@ -295,13 +295,6 @@ export function component<
           props[attr.name] = attr.value;
         }
         Object.assign(props, this._props);
-        for (const key of Object.keys(this)) {
-          if (key.startsWith('_')) continue;
-          const lower = key.toLowerCase();
-          if (lower !== key && !Object.hasOwn(this, lower)) delete props[lower];
-          props[key] = (this as any)[key];
-        }
-
         const eventProps: Record<string, unknown> = {};
         for (const key of Object.keys(this)) {
           if (key.startsWith('__purity_event_')) {
@@ -309,7 +302,12 @@ export function component<
             eventProps[`on${eventName.charAt(0).toUpperCase()}${eventName.slice(1)}`] = (
               this as any
             )[key];
+            continue;
           }
+          if (key.startsWith('_')) continue;
+          const lower = key.toLowerCase();
+          if (lower !== key && !Object.hasOwn(this, lower)) delete props[lower];
+          props[key] = (this as any)[key];
         }
 
         const allProps = { ...props, ...eventProps } as P;

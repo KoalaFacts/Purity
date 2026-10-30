@@ -474,10 +474,8 @@ describe('webSocketSignal — client (ADR 0047)', () => {
 
   it('redacts native constructor exception details that echo URL credentials', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    (globalThis as { WebSocket: unknown }).WebSocket = class {
-      constructor() {
-        throw new Error('unredacted wss://user:pw@host/ws?access_token=SECRET');
-      }
+    (globalThis as { WebSocket: unknown }).WebSocket = function ThrowingWebSocket() {
+      throw new Error('unredacted wss://user:pw@host/ws?access_token=SECRET');
     };
     const signal = webSocketSignal<number>('wss://user:pw@host/ws?access_token=SECRET', {
       initialValue: 7,

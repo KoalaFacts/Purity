@@ -383,12 +383,12 @@ export function component<
     attachToOwner(ctx, unmountElementContext);
 
     const registry = createRegistry();
-    // Preserve live raw-slot lookups, but do not invoke a consumer callback
-    // while rendering: its slot bag is only available after the first pass.
-    ctx._slotContent = typeof children === 'function' ? registry.filled : children;
+    // Preserve live raw-slot lookups, but do not allocate an optional field
+    // until raw or consumer content is actually provided.
     const slotAccessors = createAccessors(registry);
 
     if (children != null && typeof children !== 'function') {
+      ctx._slotContent = children;
       if (children instanceof Node || typeof children === 'string') {
         registry.filled.default = children;
       } else if (typeof children === 'object') {
@@ -399,6 +399,8 @@ export function component<
     }
 
     if (typeof children === 'function') {
+      // The consumer bag is filled only after the first render has read slots.
+      ctx._slotContent = registry.filled;
       const { exposed } = runRender(renderFn, props, slotAccessors, ctx);
       const bag = { ...createConsumerBag(registry), ...exposed };
       let consumerResult: unknown;

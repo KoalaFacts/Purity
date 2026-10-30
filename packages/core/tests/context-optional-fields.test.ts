@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import { onDestroy, onDispose, onMount, unmountContext } from '../src/component.ts';
 import { onFormReset } from '../src/forms.ts';
 import { component, slot } from '../src/elements.ts';
-import { ComponentContext, popContext, pushContext } from '@purityjs/signals';
+import { ComponentContext, getCurrentComponent, popContext, pushContext } from '@purityjs/signals';
 
 describe('SV2-015 lean component ownership', () => {
   it('does not allocate unused optional fields on ordinary owners', () => {
@@ -44,6 +44,20 @@ describe('SV2-015 lean component ownership', () => {
     expect(ctx.mounted).toEqual([mounted]);
     expect(Object.hasOwn(ctx, '_formReset')).toBe(true);
     expect(Object.hasOwn(ctx, 'mounted')).toBe(true);
+  });
+
+  it('keeps a programmatic owner free of slot state when children are omitted', () => {
+    let owner: ComponentContext | null = null;
+    const render = component('p-sv2-no-slot-owner', () => {
+      owner = getCurrentComponent();
+      expect(slot()()).toBeNull();
+      return document.createElement('span');
+    });
+
+    render({});
+    expect(owner).toBeInstanceOf(ComponentContext);
+    expect(Object.hasOwn(owner!, '_slotContent')).toBe(false);
+    unmountContext(owner!);
   });
 
   it('keeps never-used optional fields absent after root teardown', () => {

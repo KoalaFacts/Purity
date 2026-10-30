@@ -102,6 +102,21 @@ describe('SV2-015 lean component ownership', () => {
     expect(fragment.childNodes).toHaveLength(0);
   });
 
+  it('keeps raw slot lookup live when the original bag is updated', () => {
+    let read!: () => Node | null;
+    const render = component('p-sv2-live-raw-slot-bag', () => {
+      read = slot('header');
+      return document.createElement('div');
+    });
+
+    const raw = { header: 'first' };
+    render({}, raw);
+    expect(read()?.textContent).toBe('first');
+
+    raw.header = 'second';
+    expect(read()?.textContent).toBe('second');
+  });
+
   it('defers consumer callbacks until the slot bag exists when using slot()', () => {
     let calls = 0;
     const render = component('p-sv2-deferred-raw-slot-consumer', () => {

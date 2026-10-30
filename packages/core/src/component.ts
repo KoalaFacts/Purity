@@ -264,4 +264,7 @@ export function unmountContext(
   // Arbitrary slot values may include falsy host objects; clear every defined value.
   ctx.parent &&= null;
   if (ctx._slotContent !== undefined) ctx._slotContent = undefined;
+  // The obsolete owner must not retain a detached custom element's host.
+  if (ctx._shadowRoot !== undefined) ctx._shadowRoot = undefined;
+  if (ctx._internals !== undefined) ctx._internals = null;
 }

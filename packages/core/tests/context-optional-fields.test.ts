@@ -95,6 +95,7 @@ describe('SV2-015 lean component ownership', () => {
     expect(owner!._isDestroyed).toBe(true);
     expect(owner!.nodes).toBeNull();
     expect(owner!._shadowRoot).toBeUndefined();
+    expect(owner!._internals).toBeNull();
   });
 
   it('releases a detached custom-element owner and preserves reentrant reconnect', () => {
@@ -262,11 +263,9 @@ describe('SV2-015 lean component ownership', () => {
     parent.children = [child];
     child.parent = parent;
     child._slotContent = document.createElement('span');
-    child._internals = { host: document.createElement('div') };
 
     unmountContext(child);
     expect(child._slotContent).toBeUndefined();
-    expect(child._internals).toBeNull();
     expect(child.parent).toBeNull();
     expect(parent.children).toEqual([]);
 

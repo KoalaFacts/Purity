@@ -21,7 +21,15 @@ function unmountElementContext(
   rollback = ctx.parent?._rollback,
   keepHostDOM = false,
 ): void {
-  unmountContext(ctx, rollback, keepHostDOM, true);
+  try {
+    unmountContext(ctx, rollback, keepHostDOM, true);
+  } finally {
+    // A destroyed custom-element owner must not keep the detached host alive.
+    if (ctx._shadowRoot) {
+      ctx._shadowRoot = undefined;
+      ctx._internals = null;
+    }
+  }
 }
 
 /**

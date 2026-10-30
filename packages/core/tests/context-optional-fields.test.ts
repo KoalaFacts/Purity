@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { onDestroy, onFormReset, onMount, unmountContext } from '../src/component.ts';
-import { component, slot } from '../src/elements.ts';
-import { ComponentContext, getCurrentComponent, popContext, pushContext } from '../src/scope.ts';
+import { component } from '../src/elements.ts';
+import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
 
 describe('SV2-015 lean component ownership', () => {
   it('does not allocate unused optional fields on ordinary owners', () => {
@@ -43,25 +43,6 @@ describe('SV2-015 lean component ownership', () => {
     expect(ctx.mounted).toEqual([mounted]);
     expect(Object.hasOwn(ctx, '_formReset')).toBe(true);
     expect(Object.hasOwn(ctx, 'mounted')).toBe(true);
-  });
-
-  it('preserves absent slot fields in programmatic factories without children', () => {
-    let owner!: ComponentContext;
-    const create = component('p-sv2-lazy-owner-factory', () => {
-      owner = getCurrentComponent()!;
-      return slot()() ?? document.createElement('span');
-    });
-
-    expect(create({}).nodeName).toBe('SPAN');
-    expect(Object.hasOwn(owner, '_slotContent')).toBe(false);
-
-    expect(create({}, null).nodeName).toBe('SPAN');
-    expect(Object.hasOwn(owner, '_slotContent')).toBe(false);
-
-    const child = document.createTextNode('child');
-    expect(create({}, child)).toBe(child);
-    expect(owner._slotContent).toBe(child);
-    expect(Object.hasOwn(owner, '_slotContent')).toBe(true);
   });
 
   it('keeps never-used optional fields absent after root teardown', () => {

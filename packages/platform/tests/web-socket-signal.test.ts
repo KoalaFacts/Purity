@@ -456,6 +456,22 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('rejects duplicated subprotocol tokens before construction and redacts diagnostics', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sig = webSocketSignal<number>('ws://user:pw@host/ws?access_token=SECRET', {
+      initialValue: 7,
+      validate: isNumber,
+      protocols: ['chat.v1', 'chat.v1'],
+    });
+    expect(instances).toHaveLength(0);
+    expect(sig()).toBe(7);
+    expect(sig.readyState()).toBe('closed');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('invalid subprotocol');
+    expect(warnSpy.mock.calls[0].map(String).join(' ')).not.toContain('SECRET');
+    warnSpy.mockRestore();
+  });
+
   it('accepts well-formed subprotocol tokens (happy path)', () => {
     webSocketSignal<number>('/ws', {
       initialValue: 0,

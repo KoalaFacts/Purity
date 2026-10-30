@@ -130,10 +130,12 @@ export function webSocketSignal<T>(
     const list = typeof options.protocols === 'string' ? [options.protocols] : options.protocols;
     // RFC 7230 token: 1*tchar where tchar = !#$%&'*+-.^_`|~ / DIGIT / ALPHA.
     const tokenRe = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-    // findIndex visits sparse array holes as undefined; some would skip them.
+    // findIndex visits sparse holes; duplicate tokens are also invalid per RFC 6455.
     const bad =
       !Array.isArray(list) ||
-      list.findIndex((p) => typeof p !== 'string' || !tokenRe.test(p)) !== -1;
+      list.findIndex(
+        (p, i) => typeof p !== 'string' || !tokenRe.test(p) || list.indexOf(p) !== i,
+      ) !== -1;
     if (bad) {
       console.warn(
         `[purity] webSocketSignal('${label}') rejected — invalid subprotocol (must be RFC 6455 tokens)`,

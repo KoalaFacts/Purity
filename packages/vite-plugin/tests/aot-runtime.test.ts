@@ -375,7 +375,8 @@ describe('injected identifiers do not collide with user bindings', () => {
       const { make, v, user } = runModule(
         `import { html } from '@purityjs/core/jit'; import { state } from '@purityjs/core';\n` +
           `const ${name} = 'mine'; const user = ${name}; const v = state('/safe');\n` +
-          'const make = () => html`<a href=${v}><span>go</span></a>`;',
+          'const make = () => html`<a href=$' +
+          '{v}><span>go</span></a>`;',
         false,
       );
       expect(user).toBe('mine');

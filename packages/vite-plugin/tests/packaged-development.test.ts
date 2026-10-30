@@ -87,9 +87,9 @@ describe('packed development conditions', () => {
           if (!globalThis.__purity_inspect__) throw new Error('development inspector missing');
         `;
         const scripts = [
-          `for (const specifier of ${JSON.stringify(entries)}) await import(specifier);
+          `for (const specifier of JSON.parse(process.argv[1])) await import(specifier);
            const signals = await import('@purityjs/signals'), core = await import('@purityjs/core'), ssr = await import('@purityjs/ssr'); ${exercise}`,
-          `(async () => { for (const specifier of ${JSON.stringify(entries)}) require(specifier);
+          `(async () => { for (const specifier of JSON.parse(process.argv[1])) require(specifier);
            const signals = require('@purityjs/signals'), core = require('@purityjs/core'), ssr = require('@purityjs/ssr'); ${exercise} })();`,
         ];
         for (const script of scripts) {
@@ -99,6 +99,29 @@ describe('packed development conditions', () => {
               '--conditions=development',
               ...conditions,
               ...(script.includes('await import') ? ['--input-type=module'] : []),
+              '-e',
+              script,
+              JSON.stringify(entries),
+            ],
+            { cwd: directory, env: { ...process.env, NODE_ENV: 'production' }, encoding: 'utf8' },
+          );
+        }
+      }
+
+      // Node production normally sets NODE_ENV without adding export conditions.
+      // Both module systems must select an inspector-free signals artifact.
+      for (const conditions of [[], ['--conditions=purity-server']]) {
+        for (const load of ["await import('@purityjs/signals')", "require('@purityjs/signals')"]) {
+          const script = `
+          const { state } = ${load};
+          if (state(7)() !== 7) throw new Error('signal failed');
+          if (globalThis.__purity_inspect__) throw new Error('inspector present in production');
+        `;
+          execFileSync(
+            process.execPath,
+            [
+              ...conditions,
+              ...(load.startsWith('await') ? ['--input-type=module'] : []),
               '-e',
               script,
             ],

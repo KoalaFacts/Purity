@@ -63,8 +63,8 @@ type ConsumerSlot = (content?: Node | DocumentFragment | string | null) => Node 
 
 function createConsumerBag(registry: SlotRegistry): Record<string, ConsumerSlot> {
   const bag: Record<string, ConsumerSlot> = {};
-  const names = new Set([...registry.accessorNames, 'default']);
-  for (const name of names) {
+  registry.accessorNames.add('default');
+  for (const name of registry.accessorNames) {
     bag[name] = (content?: Node | DocumentFragment | string | null): Node | null => {
       registry.filled.set(name, content ?? null);
       return null;
@@ -125,7 +125,7 @@ function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node
         : null;
   if (typeof s === 'function') {
     const r = (s as (...a: any[]) => unknown)(exposed);
-    return r instanceof Node ? r : typeof r === 'string' ? document.createTextNode(r) : null;
+    return r instanceof Node ? r : resolveContent(r);
   }
   return resolveContent(s);
 }

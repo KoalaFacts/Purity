@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { onDestroy, onMount, unmountContext } from '../src/component.ts';
 import { onFormReset } from '../src/forms.ts';
-import { component } from '../src/elements.ts';
+import { component, slot } from '../src/elements.ts';
 import { ComponentContext, popContext, pushContext } from '@purityjs/signals';
 
 describe('SV2-015 lean component ownership', () => {
@@ -85,5 +85,37 @@ describe('SV2-015 lean component ownership', () => {
     host.remove();
     expect(destroyed).toBe(2);
     expect(host._ctx).toBeNull();
+  });
+  it('preserves original function-returned fragments during raw slot projection', () => {
+    const fragment = document.createDocumentFragment();
+    const child = document.createTextNode('original');
+    fragment.append(child);
+    const render = component('p-sv2-raw-slot-fragment', () => {
+      const root = document.createElement('div');
+      const content = slot()();
+      if (content) root.append(content);
+      return root;
+    });
+
+    const root = render({}, { default: () => fragment }) as Element;
+    expect(root.firstChild).toBe(child);
+    expect(fragment.childNodes).toHaveLength(0);
+  });
+
+  it('provides the default consumer slot even when only named accessors are read', () => {
+    const render = component<Record<string, never>, { header: void }>(
+      'p-sv2-consumer-slot-set',
+      (_props, slots) => {
+        const root = document.createElement('div');
+        const header = slots.header();
+        if (header) root.append(header);
+        return root;
+      },
+    );
+    const root = render({}, (slots: Record<string, (text: string) => Node | null>) => {
+      slots.header('heading');
+      slots.default('body');
+    }) as Element;
+    expect(root.textContent).toBe('heading');
   });
 });

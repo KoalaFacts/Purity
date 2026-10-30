@@ -1000,6 +1000,55 @@ interface CompileResult {
   warnings: string[];
 }
 
+const CLIENT_HELPERS = [
+  ['fl', 'flattenValue'],
+  ['sw', 'swapSlot'],
+  ['url', 'safeUrl'],
+  ['tmpl', 'template'],
+] as const;
+
+type ClientHelper = (typeof CLIENT_HELPERS)[number][0];
+
+interface FactoryDependencies {
+  watch: boolean;
+  helpers: ClientHelper[];
+}
+
+// Inspect generated JavaScript identifiers, not raw text: template contents
+// can themselves contain names such as `_w` or `__purity_url__`.
+function factoryDependencies(body: string): FactoryDependencies {
+  const { program, errors } = parseSync('purity-factory.js', `(${body})`, {
+    preserveParens: false,
+  });
+  if (errors.length) return { watch: true, helpers: CLIENT_HELPERS.map(([name]) => name) };
+
+  let watch = false;
+  const helpers = new Set<ClientHelper>();
+  const visit = (value: unknown, parameter = false): void => {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, parameter);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    const node = value as { type?: string; name?: string; [key: string]: unknown };
+    if (node.type === 'Identifier') {
+      if (node.name === '_w' && !parameter) watch = true;
+      for (const [name] of CLIENT_HELPERS) {
+        if (node.name === `__purity_${name}__`) helpers.add(name);
+      }
+    }
+    const isFunction =
+      node.type === 'FunctionExpression' ||
+      node.type === 'FunctionDeclaration' ||
+      node.type === 'ArrowFunctionExpression';
+    for (const [key, child] of Object.entries(node)) {
+      if (child && typeof child === 'object') visit(child, isFunction && key === 'params');
+    }
+  };
+  visit(program);
+  return { watch, helpers: [...helpers] };
+}
+
 interface CompileContext {
   hoists: string[];
   nextTplId: number;
@@ -1013,6 +1062,9 @@ interface CompileContext {
   warnings: string[];
   // Templates that compiled. A file with none is left untouched.
   compiled: number;
+  // A CSR template needs watch only when its generated factory references it.
+  needsWatch: boolean;
+  helpers: Set<ClientHelper>;
   // Flipped on any compile failure (top-level OR nested). When true, we
   // must NOT strip the `html` import — the failed template stays in the
   // output and references it at runtime.
@@ -1156,18 +1208,28 @@ function renderTemplate(
   // document.createElement('template') / innerHTML parse) only runs once per
   // file, not per call from inside a loop or arrow fn.
   ctx.compiled++;
+  const dependencies = ctx.ssr ? null : factoryDependencies(fnBody);
+  const needsWatch = !ctx.ssr && !ctx.hydratable && dependencies!.watch;
+  ctx.needsWatch ||= needsWatch;
   const p = ctx.prefix;
   const tplVar = `${p}_tpl_${ctx.nextTplId++}`;
   // Client factories reference shared helpers by fixed names. Under another
   // prefix, bind those names as parameters: a
   // factory holds only generated code (slot expressions are passed in at the
   // call site), so the parameters cannot shadow anything the user wrote.
-  const bind = (body: string): string =>
-    p === '__purity' || ctx.ssr
-      ? body
-      : `((__purity_fl__, __purity_sw__, __purity_url__, __purity_tmpl__) => (${body}))(${p}_fl__, ${p}_sw__, ${p}_url__, ${p}_tmpl__)`;
-  ctx.hoists.push(`const ${tplVar} = ${bind(fnBody)};`);
-  if (hydrateBody !== null) ctx.hoists.push(`const ${tplVar}_hydrate = ${bind(hydrateBody)};`);
+  const bind = (body: string, factoryDeps: FactoryDependencies | null): string => {
+    if (!factoryDeps) return body;
+    const helpers = factoryDeps.helpers;
+    for (const name of helpers) ctx.helpers.add(name);
+    if (p === '__purity') return body;
+    if (helpers.length === 0) return body;
+    return `((${helpers.map((name) => `__purity_${name}__`).join(', ')}) => (${body}))(${helpers.map((name) => `${p}_${name}__`).join(', ')})`;
+  };
+  ctx.hoists.push(`const ${tplVar} = ${bind(fnBody, dependencies)};`);
+  if (hydrateBody !== null)
+    ctx.hoists.push(
+      `const ${tplVar}_hydrate = ${bind(hydrateBody, factoryDependencies(hydrateBody))};`,
+    );
 
   // Slot i lies between quasis[i] (which ends after `${`) and quasis[i+1]
   // (which starts at `}`).
@@ -1179,7 +1241,7 @@ function renderTemplate(
     ? `${tplVar}([${slots.join(', ')}], ${p}_h__)`
     : ctx.hydratable
       ? `${p}_renderCompiled__(${tplVar}, ${tplVar}_hydrate, [${slots.join(', ')}])`
-      : `${tplVar}([${slots.join(', ')}], ${p}_watch__)`;
+      : `${tplVar}([${slots.join(', ')}]${needsWatch ? `, ${p}_watch__` : ''})`;
 }
 
 type ModuleLang = 'ts' | 'tsx' | 'jsx';
@@ -1259,6 +1321,8 @@ function compileTemplates(
     lineStarts,
     warnings,
     compiled: 0,
+    needsWatch: false,
+    helpers: new Set(),
   };
   const edits: Edit[] = [];
   let lastEnd = -1;
@@ -1276,11 +1340,17 @@ function compileTemplates(
   // Runtime import + hoists are inserted at module top, after existing imports.
   // Modeled as a zero-length insertion edit so the source-map builder can
   // track it alongside the html`` replacements.
+  const helperImports = CLIENT_HELPERS.filter(([name]) => ctx.helpers.has(name))
+    .map(([name, exported]) => `${exported} as ${prefix}_${name}__`)
+    .join(', ');
+  const helperImport = helperImports
+    ? `import { ${helperImports} } from '@purityjs/core/csr-runtime';\n`
+    : '';
   const runtimeImport = ssr
     ? `import { ssrHelpers as ${prefix}_h__ } from '@purityjs/ssr/runtime';\nimport '@purityjs/ssr';\n`
     : hydratable
-      ? `import { renderCompiledTemplate as ${prefix}_renderCompiled__ } from '@purityjs/core/runtime';\nimport { flattenValue as ${prefix}_fl__, swapSlot as ${prefix}_sw__, safeUrl as ${prefix}_url__, template as ${prefix}_tmpl__ } from '@purityjs/core/csr-runtime';\n`
-      : `import { watch as ${prefix}_watch__ } from '@purityjs/core/csr';\nimport { flattenValue as ${prefix}_fl__, swapSlot as ${prefix}_sw__, safeUrl as ${prefix}_url__, template as ${prefix}_tmpl__ } from '@purityjs/core/csr-runtime';\n`;
+      ? `import { renderCompiledTemplate as ${prefix}_renderCompiled__ } from '@purityjs/core/runtime';\n${helperImport}`
+      : `${ctx.needsWatch ? `import { watch as ${prefix}_watch__ } from '@purityjs/core/csr';\n` : ''}${helperImport}`;
   /* v8 ignore next -- edits.length > 0 implies at least one hoist was pushed */
   const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
   const insertPos = findImportInsertionOffset(source, program);

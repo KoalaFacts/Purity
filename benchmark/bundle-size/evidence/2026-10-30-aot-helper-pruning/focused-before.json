@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "gap": "SV2-015",
+  "revision": "d6722f93a583b5274b028a33222e8d09f94539f4",
+  "dirty": true,
+  "node": "24.22.1",
+  "zlib": "1.3.2.1-motley-285e94b",
+  "brotli": "1.2.0",
+  "versions": {
+    "core": "0.5.0",
+    "plugin": "0.5.0",
+    "vite": "1.3.0",
+    "parser": "0.154.0"
+  },
+  "settings": {
+    "mode": "production",
+    "conditions": ["module", "browser", "production"],
+    "target": "es2022",
+    "minify": true,
+    "gzipLevel": 9,
+    "brotliQuality": 11,
+    "hydratable": false
+  },
+  "measurements": [
+    {
+      "fixture": "static",
+      "sourceSha256": "acc9520aded296b28b794d36efb4c1aebef71b3a923a5be43fbf3c881b4e69ba",
+      "outputSha256": "46a69a4a99666ec7a4d7d34ddee131d11bfc52c78662101439708960fb39fea2",
+      "rawBytes": 3735,
+      "gzipBytes": 1540,
+      "brotliBytes": 1387,
+      "signalRenderedBytes": 4825,
+      "containsUnsafeUrlValidator": false
+    },
+    {
+      "fixture": "event",
+      "sourceSha256": "aad82ecdc33a1dd5d317d2ac42b66e019dffe0c114090c001abed9727ed56696",
+      "outputSha256": "fc09d45fb47075b579c464e6fba0d68b23c38167fe7bea22030c5eca87f4e36f",
+      "rawBytes": 3698,
+      "gzipBytes": 1546,
+      "brotliBytes": 1391,
+      "signalRenderedBytes": 4825,
+      "containsUnsafeUrlValidator": false
+    },
+    {
+      "fixture": "static-mount",
+      "sourceSha256": "50972daa6b656bc1806acb2e8d76f88f68bbeff154919ead654a03dac9b8efb4",
+      "outputSha256": "c818df21aa62c1193f00d4da7785f321903a8e69dbcbd2ae83e38165edb8eebf",
+      "rawBytes": 5051,
+      "gzipBytes": 1991,
+      "brotliBytes": 1803,
+      "signalRenderedBytes": 4994,
+      "containsUnsafeUrlValidator": false
+    },
+    {
+      "fixture": "event-mount",
+      "sourceSha256": "5c3e97ac287eda7c66da8aa3c2b3890a888687f2988a09f032950fb701f2d961",
+      "outputSha256": "26036d83e40eb7a0d5718ab30a2060f562774375c9d224069cc41c96b870b526",
+      "rawBytes": 5018,
+      "gzipBytes": 2001,
+      "brotliBytes": 1815,
+      "signalRenderedBytes": 4994,
+      "containsUnsafeUrlValidator": false
+    },
+    {
+      "fixture": "reactive-counter",
+      "sourceSha256": "64b72a7f5a5339c35faa6aa307463beac0408d908140f4ac1f4ac217daabdae5",
+      "outputSha256": "0503b7fb578c615efaba0fadca21b03a3b5b53f97deeb995c58bdb7f3d5910b1",
+      "rawBytes": 8481,
+      "gzipBytes": 3084,
+      "brotliBytes": 2841,
+      "signalRenderedBytes": 7975,
+      "containsUnsafeUrlValidator": false
+    },
+    {
+      "fixture": "reactive-counter-prefix-collision",
+      "sourceSha256": "dde508a6730d5cba341d23bae751e60b57af44a63243e37b8d43d8a4d4ae2a2a",
+      "outputSha256": "93e5f4cccf5a2420645eb4b51c6b7d72ba4910842af27598da3c539eff1e4339",
+      "rawBytes": 8978,
+      "gzipBytes": 3327,
+      "brotliBytes": 3052,
+      "signalRenderedBytes": 7995,
+      "containsUnsafeUrlValidator": true
+    }
+  ]
+}

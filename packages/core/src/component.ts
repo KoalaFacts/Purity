@@ -174,7 +174,8 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
   let prevOn = false;
 
   // Share the same ref-count transition for signal updates and owner disposal.
-  const update = (on: boolean): void => {
+  const update = (release = false): undefined => {
+    const on = !release && !!accessor();
     if (on === prevOn) return;
     prevOn = on;
     const cur = refs.get(name) ?? 0;
@@ -195,11 +196,11 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
     }
   };
 
-  const dispose = watch(() => update(!!accessor()));
+  const dispose = watch(update);
   const owner = getCurrentContext()!;
   (owner.disposers ??= []).push(() => {
     dispose();
-    update(false);
+    update(true);
   });
 }
 

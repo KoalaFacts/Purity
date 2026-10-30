@@ -173,44 +173,33 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
   const refs = (ctx._stateRefs ??= new Map());
   let prevOn = false;
 
-  const dispose = watch(() => {
-    const on = !!accessor();
+  // Share the same ref-count transition for signal updates and owner disposal.
+  const update = (on: boolean): void => {
     if (on === prevOn) return;
     prevOn = on;
     const cur = refs.get(name) ?? 0;
-    const next = cur + (on ? 1 : -1);
-    refs.set(name, next);
-    if (cur === 0 && next === 1) {
+    refs.set(name, cur + (on ? 1 : -1));
+    if (cur === 0 && on) {
       try {
         states.add(name);
       } catch (err) {
         /* v8 ignore next */
         console.error('[Purity] bindComponentState add failed:', err);
       }
-    } else if (cur === 1 && next === 0) {
+    } else if (cur === 1 && !on) {
       try {
         states.delete(name);
       } catch {
         /* v8 ignore next */
       }
     }
-  });
+  };
 
+  const dispose = watch(() => update(!!accessor()));
   const owner = getCurrentContext()!;
   (owner.disposers ??= []).push(() => {
     dispose();
-    if (prevOn) {
-      const cur = refs.get(name) ?? 0;
-      const next = cur - 1;
-      refs.set(name, next);
-      if (cur === 1 && next === 0) {
-        try {
-          states.delete(name);
-        } catch {
-          /* v8 ignore next */
-        }
-      }
-    }
+    update(false);
   });
 }
 

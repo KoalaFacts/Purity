@@ -117,7 +117,9 @@ export function internals(): ElementInternals | null {
 function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node | null {
   const s =
     children != null && typeof children === 'object' && !(children instanceof Node)
-      ? (children as Record<string, unknown>)[name]
+      ? Object.hasOwn(children, name)
+        ? (children as Record<string, unknown>)[name]
+        : null
       : name === 'default'
         ? children
         : null;

@@ -139,6 +139,21 @@ describe('SV2-015 lean component ownership', () => {
     expect(root.textContent).toBe('body');
   });
 
+  it('ignores inherited raw slot methods instead of invoking them', () => {
+    const render = component('p-sv2-inherited-raw-slots', () => {
+      const root = document.createElement('div');
+      for (const name of ['toString', 'hasOwnProperty', 'constructor']) {
+        const content = slot(name)();
+        if (content) root.append(content);
+      }
+      const content = slot()();
+      if (content) root.append(content);
+      return root;
+    });
+
+    expect((render({}, { default: 'body' }) as Element).textContent).toBe('body');
+  });
+
   it('preserves prototype-named slot keys through raw and consumer children', () => {
     const render = component<Record<string, never>, Record<string, void>>(
       'p-sv2-prototype-slot-keys',

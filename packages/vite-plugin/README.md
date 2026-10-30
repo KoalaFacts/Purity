@@ -159,12 +159,18 @@ server renderer to retain its legitimate parser/code-generator support. The
 option enforces this Purity JIT boundary; it is not a universal CSP or security
 audit of application code, other libraries, or code loaded outside the bundle.
 
+For `ssr.target: 'webworker'`, the plugin adds the `purity-server` export
+condition so server rendering uses SSR-capable packages even when Vite also
+enables the `browser` condition. Existing custom conditions are preserved.
+If externalized packages are loaded by a Node process with a `browser`
+condition, start that process with `--conditions=purity-server` as well.
+
 ## How It Works
 
 1. Finds `html` tagged template literals in your source
 2. Extracts template strings and expression positions
-3. Parses into AST using `@purityjs/core`'s parser
-4. Generates optimized JS using `@purityjs/core`'s codegen
+3. Parses into AST using `@purityjs/compiler`
+4. Generates optimized JS using `@purityjs/compiler`
 5. Replaces the `html`...`` call with the compiled output
 6. Removes `html` from imports (dead code eliminated)
 7. Calls client create factories with the shared `watch` implementation by default; only `hydratable: true` emits hydration walkers and the mode-selecting runtime helper

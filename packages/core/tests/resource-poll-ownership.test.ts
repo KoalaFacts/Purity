@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { mount } from '../src/component.ts';
 import { resource, type ResourceAccessor } from '../src/resource.ts';
-import { state, watch } from '../src/signals.ts';
+import { state, watch } from '@purityjs/signals';
 import { flushAll } from './_helpers.ts';
 
 const stops: (() => void)[] = [];

@@ -5,13 +5,8 @@
 // (as the platform would) routes to the user's registered handlers.
 
 import { describe, expect, it, vi } from 'vite-plus/test';
-import {
-  onError,
-  onFormAssociated,
-  onFormDisabled,
-  onFormReset,
-  onFormStateRestore,
-} from '../src/component.ts';
+import { onError } from '../src/component.ts';
+import { onFormAssociated, onFormDisabled, onFormReset, onFormStateRestore } from '../src/forms.ts';
 import { component } from '../src/elements.ts';
 import { html } from '../src/compiler/compile.ts';
 
@@ -151,20 +146,12 @@ describe('form lifecycle callback routing', () => {
 });
 
 describe('form lifecycle callbacks for non-form-associated components', () => {
-  it('still defines the callback methods (browser just never dispatches them)', () => {
+  it('does not install form callbacks on components that do not opt in', () => {
     const tag = nextTag();
     component(tag, () => html`<div></div>`);
     document.body.innerHTML = `<${tag}></${tag}>`;
     const el = ensure(document.body.firstElementChild, 'element');
-    // The methods exist; calling them is a no-op when no handlers are
-    // registered. Real browsers won't dispatch these to non-form
-    // components, but the prototype shape is uniform.
-    expect(typeof (el as unknown as { formResetCallback?: unknown }).formResetCallback).toBe(
-      'function',
-    );
-    expect(() =>
-      (el as unknown as { formResetCallback: () => void }).formResetCallback(),
-    ).not.toThrow();
+    expect((el as unknown as { formResetCallback?: unknown }).formResetCallback).toBeUndefined();
   });
 });
 

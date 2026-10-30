@@ -2,7 +2,7 @@ import {
   cancelSSRBoundary,
   nextSSRBoundaryDeadline,
   type SSRRenderContext,
-} from '@purityjs/core/internal';
+} from '@purityjs/core/ssr-bridge';
 
 // Resource settlement can remove the boundary that initially owned the timer.
 // Recheck at wakeup so a completed neighbor never surrenders to its fallback.

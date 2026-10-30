@@ -19,7 +19,7 @@ import { mount } from '../src/component.ts';
 import { each } from '../src/control.ts';
 import { component } from '../src/elements.ts';
 import { html } from '../src/compiler/compile.ts';
-import { state } from '../src/signals.ts';
+import { state } from '@purityjs/signals';
 
 let tagSeq = 0;
 const nextTag = () => `p-mb-${tagSeq++}`;

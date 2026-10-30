@@ -231,7 +231,14 @@ try {
     version: string;
   };
   const tarballs = new Map<string, string>();
-  for (const pkg of ['@purityjs/core', '@purityjs/ssr', '@purityjs/vite-plugin', '@purityjs/cli']) {
+  const transitivePackages = ['@purityjs/compiler', '@purityjs/signals', '@purityjs/router'];
+  for (const pkg of [
+    '@purityjs/core',
+    '@purityjs/ssr',
+    '@purityjs/vite-plugin',
+    '@purityjs/cli',
+    ...transitivePackages,
+  ]) {
     const output = await run(
       [npmCli, 'pack', '--json', '--pack-destination', target, '-w', pkg],
       repo,
@@ -247,6 +254,29 @@ try {
   console.log(
     `Candidate packages: ${[...tarballs.keys()].map((pkg) => `${pkg}@${releaseVersion}`).join(', ')}`,
   );
+
+  // Direct file dependencies keep npm from resolving the new workspace packages
+  // from the registry. Check every lockfile occurrence so a nested registry
+  // copy cannot silently replace the candidate under test.
+  async function verifyCandidates(project: string): Promise<void> {
+    const lock = JSON.parse(await readFile(join(project, 'package-lock.json'), 'utf8')) as {
+      packages: Record<string, { version?: string; resolved?: string }>;
+    };
+    for (const pkg of transitivePackages) {
+      const matches = Object.entries(lock.packages).filter(([path]) =>
+        path.endsWith(`node_modules/${pkg}`),
+      );
+      assert.ok(matches.length, `${pkg} is missing from the consumer lockfile`);
+      for (const [path, entry] of matches) {
+        assert.equal(entry.version, releaseVersion, `${path} has the wrong version`);
+        assert.ok(
+          entry.resolved?.startsWith('file:') && entry.resolved.endsWith(tarballs.get(pkg)!),
+          `${path} did not resolve to the candidate tarball`,
+        );
+      }
+    }
+  }
+
   await run(
     [
       npmCli,
@@ -274,8 +304,12 @@ try {
     assert.equal(deps[pkg], `^${releaseVersion}`, `${pkg} client scaffold spec is outdated`);
     deps[pkg] = `file:${join(target, tarballs.get(pkg)!)}`;
   }
+  for (const pkg of transitivePackages) {
+    clientManifest.dependencies[pkg] = `file:${join(target, tarballs.get(pkg)!)}`;
+  }
   await writeFile(clientManifestPath, `${JSON.stringify(clientManifest, null, 2)}\n`);
   await run([npmCli, 'install', '--no-audit', '--no-fund'], client);
+  await verifyCandidates(client);
   for (const pkg of ['@purityjs/core', '@purityjs/vite-plugin']) {
     const { version } = JSON.parse(
       await readFile(join(client, 'node_modules', ...pkg.split('/'), 'package.json'), 'utf8'),
@@ -309,12 +343,16 @@ try {
     assert.equal(deps[pkg], `^${releaseVersion}`, `${pkg} scaffold spec is outdated`);
     deps[pkg] = `file:${join(target, tarballs.get(pkg)!)}`;
   }
+  for (const pkg of transitivePackages) {
+    manifest.dependencies[pkg] = `file:${join(target, tarballs.get(pkg)!)}`;
+  }
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   await writeFile(
     join(project, 'vite.config.ts'),
     "import { purity } from '@purityjs/vite-plugin';\nimport { defineConfig } from 'vite';\nexport default defineConfig({ plugins: [purity({ hydratable: true })] });\n",
   );
   await run([npmCli, 'install', '--no-audit', '--no-fund'], project);
+  await verifyCandidates(project);
   for (const pkg of ['@purityjs/core', '@purityjs/ssr', '@purityjs/vite-plugin']) {
     const { version } = JSON.parse(
       await readFile(join(project, 'node_modules', ...pkg.split('/'), 'package.json'), 'utf8'),

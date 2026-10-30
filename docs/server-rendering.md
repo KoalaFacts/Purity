@@ -243,7 +243,7 @@ Page and layout loaders follow a shared route cancellation scope. Each loader
 receives its own `LoaderContext.signal`. Pass it to operations that support cancellation:
 
 ```ts
-import type { LoaderContext } from '@purityjs/core/router';
+import type { LoaderContext } from '@purityjs/router';
 
 export async function loader({ params, request, signal }: LoaderContext) {
   const url = new URL(`/api/posts/${encodeURIComponent(params.slug)}`, request.url);
@@ -385,7 +385,7 @@ Use `routeData(value, { status, headers })` when a page should render with
 loader data and set HTTP metadata. The page receives only `value`:
 
 ```ts
-import { html } from '@purityjs/core/jit'; import { routeData, type LoaderContext } from '@purityjs/core/router';
+import { html } from '@purityjs/core/jit'; import { routeData, type LoaderContext } from '@purityjs/router';
 
 const posts: Record<string, string> = { hello: 'Hello' };
 

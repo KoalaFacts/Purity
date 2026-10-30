@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@purityjs/core": "*",
+    "@purityjs/platform": "*",
     "@purityjs/ssr": "*",
     "@purityjs/vite-plugin": "*"
   },

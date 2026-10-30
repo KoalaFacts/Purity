@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { mount } from '../src/component.ts';
 import { html } from '../src/compiler/client.ts';
-import { isDeferred, withHydration } from '../src/compiler/hydrate-runtime.ts';
+import { isDeferred, withHydration } from '../src/runtime/hydrate-runtime.ts';
 import { html as fullHtml } from '../src/compiler/jit.ts';
-import { state } from '../src/signals.ts';
+import { state } from '@purityjs/signals';
 
 const disposers: (() => void)[] = [];
 

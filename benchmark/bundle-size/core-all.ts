@@ -1,4 +1,6 @@
-// The pre-split core API, measured together to prevent hiding growth across subpaths.
+// Aggregate the old core surface across split packages. SSR and compiler runtime
+// exports are included as well, so this is a conservative new scope, not an
+// identical reproduction of the historical pre-split core-all fixture.
 export {
   disableHydrationTextRewrite,
   disableHydrationWarnings,
@@ -13,10 +15,6 @@ export {
   onDestroy,
   onDispose,
   onError,
-  onFormAssociated,
-  onFormDisabled,
-  onFormReset,
-  onFormStateRestore,
   onMount,
   each,
   list,
@@ -37,22 +35,15 @@ export {
   css,
 } from '@purityjs/core';
 export {
-  eachSSR,
-  listSSR,
-  matchSSR,
-  whenSSR,
-  _getRegisteredComponent,
-  _renderComponentSSR,
-  cancelSSRBoundary,
-  clearHydrationCache,
-  getSSRRenderContext,
-  nextSSRBoundaryDeadline,
-  popSSRRenderContext,
-  primeHydrationCache,
-  pushSSRRenderContext,
-  __purity_swap,
-  PURITY_SWAP_SOURCE,
-} from '@purityjs/core/internal';
+  onFormAssociated,
+  onFormDisabled,
+  onFormReset,
+  onFormStateRestore,
+} from '@purityjs/core/forms';
+export * from '@purityjs/ssr/runtime';
+export * from '@purityjs/ssr';
+export * from '@purityjs/compiler';
+export * from '@purityjs/signals';
 export {
   head,
   getRequest,
@@ -74,15 +65,15 @@ export {
   asyncRoute,
   routeData,
   loaderData,
-} from '@purityjs/core/router';
-export { getIslandBrand, island, isIsland, mountIslands } from '@purityjs/core/islands';
+} from '@purityjs/router';
+export { getIslandBrand, island, isIsland, mountIslands } from '@purityjs/platform/islands';
 export {
   findAction,
   handleAction,
   serverAction,
   enhanceForms,
   optimistic,
-} from '@purityjs/core/actions';
+} from '@purityjs/platform/actions';
 export {
   localSignal,
   broadcastSignal,
@@ -107,7 +98,7 @@ export {
   idleSignal,
   eventSourceSignal,
   webSocketSignal,
-} from '@purityjs/core/signals';
-export { invalidateQuery, query } from '@purityjs/core/query';
+} from '@purityjs/platform/signals';
+export { invalidateQuery, query } from '@purityjs/platform/query';
 
 export { each as compiledEach } from '@purityjs/core/list-runtime';

@@ -8,7 +8,16 @@ const execute = (command, args) =>
 export function finalizeRelease(version, run = execute) {
   if (!version) throw new Error('Expected an explicit release version');
   const sha = run('git', ['rev-parse', 'HEAD']).trim();
-  for (const name of ['core', 'ssr', 'vite-plugin', 'cli']) {
+  for (const name of [
+    'signals',
+    'compiler',
+    'core',
+    'router',
+    'platform',
+    'ssr',
+    'vite-plugin',
+    'cli',
+  ]) {
     const spec = `@purityjs/${name}@${version}`;
     const metadata = JSON.parse(
       run('npm', ['view', spec, 'version', 'gitHead', '--json', '--prefer-online']),

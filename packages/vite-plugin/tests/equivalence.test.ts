@@ -6,6 +6,7 @@
 
 import { html } from '@purityjs/core/jit';
 import { flattenValue, renderCompiledTemplate, swapSlot } from '@purityjs/core/runtime';
+import { safeUrl, template } from '@purityjs/core/csr-runtime';
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
@@ -22,17 +23,27 @@ function evalAot(userCode: string): { make: (...args: any[]) => Node } {
     '__purity_renderCompiled__',
     '__purity_fl__',
     '__purity_sw__',
+    '__purity_url__',
+    '__purity_tmpl__',
     'document',
     `${body}\nreturn make;`,
   );
   return {
-    make: fn(renderCompiledTemplate, flattenValue, swapSlot, globalThis.document),
+    make: fn(
+      renderCompiledTemplate,
+      flattenValue,
+      swapSlot,
+      safeUrl,
+      template,
+      globalThis.document,
+    ),
   };
 }
 
 function nodeShape(n: Node): string {
   // Compare structural HTML — ignores whitespace-only text nodes for fairness
   // since jsdom and runtime can disagree on a few stray whitespace nodes.
+  if (n.nodeType === 11) return Array.from(n.childNodes).map(nodeShape).join('|');
   if (n.nodeType === 3) return JSON.stringify((n as Text).data);
   if (n.nodeType !== 1) return `#${n.nodeType}`;
   const el = n as HTMLElement;

@@ -44,10 +44,11 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install chromium
 
-      - name: Build core + vite-plugin
+      - name: Build framework dependencies
         run: |
-          npm run build -w packages/core
-          npm run build -w packages/vite-plugin
+          for package in signals compiler core router platform ssr vite-plugin; do
+            npm run build -w "packages/$package"
+          done
 
       - name: Build benchmark (AOT compiles Purity templates)
         # Vite+ build with @purityjs/vite-plugin transforms html`` → direct DOM calls

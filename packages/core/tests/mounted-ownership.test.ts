@@ -3,8 +3,8 @@ import { html } from '../src/compiler/compile.ts';
 import { mount, onDispose, onError, onMount } from '../src/component.ts';
 import { hydrate } from '../src/hydrate.ts';
 import { component } from '../src/elements.ts';
-import { getCurrentContext } from '../src/scope.ts';
-import { state, watch } from '../src/signals.ts';
+import { getCurrentContext } from '@purityjs/signals';
+import { state, watch } from '@purityjs/signals';
 
 const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 const stops: (() => void)[] = [];

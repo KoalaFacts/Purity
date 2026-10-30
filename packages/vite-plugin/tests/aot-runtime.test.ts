@@ -10,7 +10,8 @@ import {
   isDeferred,
   renderCompiledTemplate,
 } from '@purityjs/core/runtime';
-import { ssrHelpers, valueToHtml } from '@purityjs/core/internal';
+import { ssrHelpers, valueToHtml } from '@purityjs/ssr/runtime';
+import { safeUrl, template } from '@purityjs/core/csr-runtime';
 import { purity } from '../src/index.ts';
 
 describe('AOT output runs correctly under jsdom', () => {
@@ -65,12 +66,22 @@ describe('AOT output runs correctly under jsdom', () => {
       '__purity_renderCompiled__',
       '__purity_fl__',
       '__purity_sw__',
+      '__purity_url__',
+      '__purity_tmpl__',
       'document',
       'when',
       `${body}\nreturn make;`,
     );
     return {
-      make: fn(renderCompiledTemplate, flattenValue, swapSlot, globalThis.document, when),
+      make: fn(
+        renderCompiledTemplate,
+        flattenValue,
+        swapSlot,
+        safeUrl,
+        template,
+        globalThis.document,
+        when,
+      ),
     };
   }
 
@@ -83,8 +94,8 @@ describe('AOT output runs correctly under jsdom', () => {
     expect((a.querySelector('span') as HTMLElement).textContent).toBe('Hi');
     expect((b.querySelector('span') as HTMLElement).textContent).toBe('Bye');
     // Both calls produce <div><span>...</span></div>
-    expect(a.firstChild!.nodeName).toBe('DIV');
-    expect(b.firstChild!.nodeName).toBe('DIV');
+    expect(a.nodeName).toBe('DIV');
+    expect(b.nodeName).toBe('DIV');
     // Different DOM trees — cloneNode produces fresh nodes per call
     expect(a).not.toBe(b);
   });
@@ -324,8 +335,9 @@ describe('injected identifiers do not collide with user bindings', () => {
         flattenValue,
         swapSlot,
       },
+      '@purityjs/core/csr-runtime': { flattenValue, swapSlot, safeUrl, template },
     };
-    Object.assign(modules, { '@purityjs/core/internal': { ssrHelpers } });
+    Object.assign(modules, { '@purityjs/ssr/runtime': { ssrHelpers } });
     return new Function('__modules', `${body}\nreturn { make, v, user };`)(modules);
   }
 
@@ -356,6 +368,23 @@ describe('injected identifiers do not collide with user bindings', () => {
     expect(valueToHtml(make())).toContain('<p>');
     expect(valueToHtml(make())).toContain('a');
   });
+
+  it.each(['__purity_url__', '__purity_tmpl__'])(
+    'keeps user binding %s while linking lazy template and URL helpers',
+    async (name) => {
+      const { make, v, user } = runModule(
+        `import { html } from '@purityjs/core/jit'; import { state } from '@purityjs/core';\n` +
+          `const ${name} = 'mine'; const user = ${name}; const v = state('/safe');\n` +
+          'const make = () => html`<a href=${v}><span>go</span></a>`;',
+        false,
+      );
+      expect(user).toBe('mine');
+      const link = make() as HTMLElement;
+      expect(link.getAttribute('href')).toBe('/safe');
+      v('/other');
+      await vi.waitFor(() => expect(link.getAttribute('href')).toBe('/other'));
+    },
+  );
 
   it.each(['__purity\\u005ftpl_0', '__purity\\u{5f}renderCompiled__'])(
     'client build with an escaped user %s',

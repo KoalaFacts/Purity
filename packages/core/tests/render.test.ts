@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
-import { state } from '../src/signals.ts';
+import { state } from '@purityjs/signals';
 
 // Helper: wrap result in a container for querying
 function render(result: Node | unknown): HTMLDivElement {

@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { createServer, type Server } from 'node:http';
 import { component, resource, suspense } from '@purityjs/core';
-import { handleAction, serverAction } from '@purityjs/core/actions';
+import { handleAction, serverAction } from '@purityjs/platform/actions';
 import { chromium, firefox, webkit } from 'playwright';
-import { generate, generateHydrate, generateSSR, parse } from '@purityjs/core/compiler';
-import { isSSRHtml, markSSRHtml, valueToHtml } from '@purityjs/core/internal';
+import { generate, generateHydrate, generateSSR, parse } from '@purityjs/compiler';
+import { isSSRHtml, markSSRHtml, valueToHtml } from '@purityjs/ssr/runtime';
 import {
   html,
   renderStatic,
@@ -155,7 +155,7 @@ try {
 
   // Both package formats must reject structural impersonation and retain their
   // own explicitly trusted wrappers. Trust does not come from serialization.
-  const cjs = createRequire(import.meta.url)('@purityjs/core/internal') as {
+  const cjs = createRequire(import.meta.url)('@purityjs/ssr/runtime') as {
     isSSRHtml: typeof isSSRHtml;
     markSSRHtml: typeof markSSRHtml;
     valueToHtml: typeof valueToHtml;

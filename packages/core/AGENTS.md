@@ -12,7 +12,7 @@ A minimal web framework with TC39-Signals-inspired reactivity (the framework's s
 - No virtual DOM — signals drive DOM updates directly
 - Custom Elements with Shadow DOM
 - JIT compiled templates (parse → AST → codegen → cached)
-- Zero runtime dependencies (custom push-pull reactivity in `src/signals.ts`)
+- Reactivity and ownership come from `@purityjs/signals`.
 
 ## Monorepo
 

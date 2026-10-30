@@ -1,6 +1,7 @@
 // Shared async helpers for resource() tests and benchmarks.
 
 import type { SSRRenderContext } from '../src/ssr-context.ts';
+import { ensureSSRComponentRendererInstalled } from '../../ssr/src/component.ts';
 
 export const tick = (): Promise<void> => new Promise((r) => queueMicrotask(() => r()));
 
@@ -15,6 +16,7 @@ export const flushAll = async (): Promise<void> => {
  * touching ~30 test files individually.
  */
 export function makeSSRContext(): SSRRenderContext {
+  ensureSSRComponentRendererInstalled();
   return {
     pendingPromises: [],
     resolvedData: [],

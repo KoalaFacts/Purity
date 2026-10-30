@@ -8,8 +8,8 @@ describe('each — multi-root LIS moves with moveBefore', () => {
   const previous = Object.getOwnPropertyDescriptor(Element.prototype, 'moveBefore');
   let nativeMoves = 0;
   let each: typeof import('../src/control.ts').each;
-  let state: typeof import('../src/signals.ts').state;
-  let watch: typeof import('../src/signals.ts').watch;
+  let state: typeof import('@purityjs/signals').state;
+  let watch: typeof import('@purityjs/signals').watch;
   let mount: typeof import('../src/component.ts').mount;
   let onDispose: typeof import('../src/component.ts').onDispose;
 
@@ -27,7 +27,7 @@ describe('each — multi-root LIS moves with moveBefore', () => {
     });
     vi.resetModules();
     ({ each } = await import('../src/control.ts'));
-    ({ state, watch } = await import('../src/signals.ts'));
+    ({ state, watch } = await import('@purityjs/signals'));
     ({ mount, onDispose } = await import('../src/component.ts'));
   });
 

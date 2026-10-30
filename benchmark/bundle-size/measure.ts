@@ -50,7 +50,7 @@ assert(
 const require = createRequire(import.meta.url);
 for (const load of [(id: string) => import(id), (id: string) => Promise.resolve(require(id))]) {
   const core = await load('@purityjs/core');
-  const signals = await load('@purityjs/core/signals');
+  const signals = await load('@purityjs/platform/signals');
   const value = signals.localSignal('bundle-entry-proof', 0);
   const seen: number[] = [];
   const stop = core.watch(() => {
@@ -206,7 +206,7 @@ async function measure(
 // and are not budgeted.
 const packageEntries = [
   { name: 'core', specifier: '@purityjs/core', dist: 'packages/core/dist/' },
-  { name: 'core-compiler', specifier: '@purityjs/core/compiler', dist: 'packages/core/dist/' },
+  { name: 'compiler', specifier: '@purityjs/compiler', dist: 'packages/compiler/dist/' },
   {
     name: 'core-list-runtime',
     specifier: '@purityjs/core/list-runtime',
@@ -215,15 +215,65 @@ const packageEntries = [
   { name: 'core-runtime', specifier: '@purityjs/core/runtime', dist: 'packages/core/dist/' },
   { name: 'core-jit', specifier: '@purityjs/core/jit', dist: 'packages/core/dist/' },
   { name: 'core-jit-client', specifier: '@purityjs/core/jit-client', dist: 'packages/core/dist/' },
-  { name: 'core-signals', specifier: '@purityjs/core/signals', dist: 'packages/core/dist/' },
-  { name: 'core-router', specifier: '@purityjs/core/router', dist: 'packages/core/dist/' },
-  { name: 'core-actions', specifier: '@purityjs/core/actions', dist: 'packages/core/dist/' },
-  { name: 'core-islands', specifier: '@purityjs/core/islands', dist: 'packages/core/dist/' },
-  { name: 'core-query', specifier: '@purityjs/core/query', dist: 'packages/core/dist/' },
-  { name: 'core-internal', specifier: '@purityjs/core/internal', dist: 'packages/core/dist/' },
-  { name: 'core-all', specifier: '@purityjs/core', dist: 'packages/core/dist/' },
+  {
+    name: 'platform-signals',
+    specifier: '@purityjs/platform/signals',
+    dist: 'packages/platform/dist/',
+  },
+  { name: 'router', specifier: '@purityjs/router', dist: 'packages/router/dist/' },
+  {
+    name: 'platform-actions',
+    specifier: '@purityjs/platform/actions',
+    dist: 'packages/platform/dist/',
+  },
+  {
+    name: 'platform-islands',
+    specifier: '@purityjs/platform/islands',
+    dist: 'packages/platform/dist/',
+  },
+  {
+    name: 'platform-query',
+    specifier: '@purityjs/platform/query',
+    dist: 'packages/platform/dist/',
+  },
+  { name: 'reactive-signals', specifier: '@purityjs/signals', dist: 'packages/signals/dist/' },
+  { name: 'core-forms', specifier: '@purityjs/core/forms', dist: 'packages/core/dist/' },
+  { name: 'core-csr', specifier: '@purityjs/core/csr', dist: 'packages/core/dist/' },
+  { name: 'core-virtual', specifier: '@purityjs/core/virtual', dist: 'packages/core/dist/' },
+  { name: 'core-ssr-bridge', specifier: '@purityjs/core/ssr-bridge', dist: 'packages/core/dist/' },
+  {
+    name: 'core-hydration-bridge',
+    specifier: '@purityjs/core/hydration-bridge',
+    dist: 'packages/core/dist/',
+  },
+  {
+    name: 'core-csr-runtime',
+    specifier: '@purityjs/core/csr-runtime',
+    dist: 'packages/core/dist/',
+  },
+  { name: 'ssr-runtime', specifier: '@purityjs/ssr/runtime', dist: 'packages/ssr/dist/' },
+  { name: 'runtime-all', specifier: '@purityjs/core', dist: 'packages/core/dist/' },
   { name: 'ssr', specifier: '@purityjs/ssr', dist: 'packages/ssr/dist/' },
 ];
+
+// Fail closed when a package gains an export without a corresponding size gate.
+const publishedSpecifiers: string[] = [];
+for (const pkg of ['core', 'compiler', 'signals', 'router', 'platform', 'ssr']) {
+  const manifest = JSON.parse(
+    await readFile(join(root, 'packages', pkg, 'package.json'), 'utf8'),
+  ) as {
+    name: string;
+    exports: Record<string, unknown>;
+  };
+  for (const entry of Object.keys(manifest.exports)) {
+    publishedSpecifiers.push(entry === '.' ? manifest.name : `${manifest.name}/${entry.slice(2)}`);
+  }
+}
+assert.deepEqual(
+  [...new Set(packageEntries.map((entry) => entry.specifier))].sort(),
+  publishedSpecifiers.sort(),
+  'Package size inventory must cover every published runtime entry',
+);
 
 interface PackageMeasurement extends Sizes {
   entry: string;
@@ -234,7 +284,7 @@ interface PackageMeasurement extends Sizes {
 async function measurePackage(entry: (typeof packageEntries)[number]): Promise<PackageMeasurement> {
   const virtualId = '\0purity-package-entry';
   const entrySource =
-    entry.name === 'core-all'
+    entry.name === 'runtime-all'
       ? await readFile(join(import.meta.dirname, 'core-all.ts'), 'utf8')
       : `export * from '${entry.specifier}';`;
   const result = await build({
@@ -262,7 +312,8 @@ async function measurePackage(entry: (typeof packageEntries)[number]): Promise<P
         preserveEntrySignatures: 'strict',
         external: (id) =>
           id.startsWith('node:') ||
-          (id.startsWith('@purityjs/') &&
+          (entry.name !== 'runtime-all' &&
+            id.startsWith('@purityjs/') &&
             !id.startsWith(entry.specifier.split('/').slice(0, 2).join('/'))),
         output: { entryFileNames: 'entry.js', codeSplitting: false },
       },
@@ -277,6 +328,14 @@ async function measurePackage(entry: (typeof packageEntries)[number]): Promise<P
     `Missing built ${entry.specifier}`,
   );
   assert(!rendered.some((id) => id.includes('/src/')), 'Source export measured');
+  if (entry.name === 'runtime-all') {
+    for (const pkg of ['core', 'compiler', 'signals', 'router', 'platform', 'ssr']) {
+      assert(
+        rendered.some((id) => id.includes(`/packages/${pkg}/dist/`)),
+        `Missing ${pkg} from runtime aggregate`,
+      );
+    }
+  }
   return {
     entry: entry.name,
     ...sizes(chunks[0].code),
@@ -336,6 +395,10 @@ for (const item of packageMeasurements) {
   }
   for (const metric of ['gzipBytes', 'brotliBytes'] as const) {
     const budget = budgets.packages?.[item.entry]?.[metric];
+    if (budget === undefined) {
+      violations.push(`${item.entry}: ${metric} has no approved budget`);
+      continue;
+    }
     assert(Number.isSafeInteger(budget) && budget >= 1, 'Invalid package size budget');
     if (item[metric] > budget)
       violations.push(`${item.entry}: ${metric} ${item[metric]} > ${budget}`);
@@ -370,7 +433,7 @@ for (const item of measurements) {
 const git = (...args: string[]) =>
   execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 const report = {
-  schemaVersion: 5,
+  schemaVersion: 7,
   revision: git('rev-parse', 'HEAD'),
   dirty: git('status', '--porcelain', '--untracked-files=normal').length > 0,
   node: process.versions.node,
@@ -378,6 +441,10 @@ const report = {
   brotli: process.versions.brotli,
   versions: {
     core: await packageVersion('packages/core'),
+    compiler: await packageVersion('packages/compiler'),
+    signals: await packageVersion('packages/signals'),
+    router: await packageVersion('packages/router'),
+    platform: await packageVersion('packages/platform'),
     plugin: await packageVersion('packages/vite-plugin'),
     ssr: await packageVersion('packages/ssr'),
     vite: await packageVersion('node_modules/vite'),
@@ -389,6 +456,7 @@ const report = {
         ...new Set([
           ...scenarios.flatMap((scenario) => [scenario.entry, ...scenario.templates]),
           'controls-server.ts',
+          'core-all.ts',
         ]),
       ].map(async (file) => [
         file,
@@ -404,8 +472,8 @@ const report = {
     core: createHash('sha256')
       .update(await readFile(join(root, 'packages/core/dist/index.js')))
       .digest('hex'),
-    coreCompiler: createHash('sha256')
-      .update(await readFile(join(root, 'packages/core/dist/compiler/index.js')))
+    compiler: createHash('sha256')
+      .update(await readFile(join(root, 'packages/compiler/dist/index.js')))
       .digest('hex'),
     ssr: createHash('sha256')
       .update(await readFile(join(root, 'packages/ssr/dist/index.js')))
@@ -423,7 +491,7 @@ const report = {
     perFileCompression: true,
   },
   scope:
-    'Packages: every export of each published entry, minified, from built dist; other Purity packages and Node built-ins external. Fixtures: complete fixture JavaScript payload; selected profiles also have size budgets.',
+    'Packages: every export of each published entry from built dist, with other Purity packages external; runtime-all bundles every runtime package together. runtime-all has a broader scope than historical core-all, so comparisons are not like-for-like. Budgets for this package topology are distinct from historical core-all budgets; missing budgets are reported as violations. Fixtures include their complete payload.',
   packages: packageMeasurements,
   measurements,
   budgets,
@@ -442,7 +510,7 @@ const summary = [
   '| --- | ---: | ---: | ---: | ---: | ---: |',
   ...packageMeasurements.map(
     (item) =>
-      `| ${item.entry} | ${item.rawBytes} | ${item.gzipBytes} | ${item.brotliBytes} | ${budgets.packages[item.entry].gzipBytes} | ${budgets.packages[item.entry].brotliBytes} |`,
+      `| ${item.entry} | ${item.rawBytes} | ${item.gzipBytes} | ${item.brotliBytes} | ${budgets.packages[item.entry]?.gzipBytes ?? 'not set'} | ${budgets.packages[item.entry]?.brotliBytes ?? 'not set'} |`,
   ),
   '',
   'Fixture apps (selected profiles budgeted):',

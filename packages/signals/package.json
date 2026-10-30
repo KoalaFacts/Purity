@@ -1,0 +1,76 @@
+{
+  "name": "@purityjs/signals",
+  "version": "0.5.0",
+  "description": "Platform-agnostic push-pull reactive signals, computed memos, effects, and ownership scopes for Purity",
+  "keywords": [
+    "computed",
+    "effects",
+    "purity",
+    "reactive",
+    "reactivity",
+    "signals"
+  ],
+  "license": "Apache-2.0",
+  "author": "KoalaFacts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KoalaFacts/Purity.git",
+    "directory": "packages/signals"
+  },
+  "files": [
+    "dist",
+    "src",
+    "LICENSE",
+    "NOTICE",
+    "LICENSES"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js",
+            "require": "./dist/index.cjs"
+          },
+          "default": "./src/index.ts"
+        },
+        "types": "./dist/index.d.ts",
+        "production": {
+          "import": "./dist/prod/index.js",
+          "require": "./dist/prod/index.cjs"
+        },
+        "import": "./dist/index.js",
+        "require": "./dist/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.js",
+          "require": "./dist/index.cjs"
+        },
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "production": {
+        "import": "./dist/prod/index.js",
+        "require": "./dist/prod/index.cjs"
+      },
+      "browser": "./dist/prod/index.js",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vp build && vp build -c vite.prod.config.ts && tsc --emitDeclarationOnly",
+    "test": "npm run build && vp test run"
+  }
+}

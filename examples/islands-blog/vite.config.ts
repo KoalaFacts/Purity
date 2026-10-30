@@ -18,39 +18,42 @@ export default defineConfig({
         import.meta.dirname,
         '../../packages/core/src/compiler/runtime.ts',
       ),
-      '@purityjs/core/compiler': resolve(
+      '@purityjs/compiler': resolve(import.meta.dirname, '../../packages/compiler/src/index.ts'),
+      '@purityjs/core/hydration-bridge': resolve(
         import.meta.dirname,
-        '../../packages/core/src/compiler/index.ts',
+        '../../packages/core/src/hydrate.ts',
       ),
-      '@purityjs/core/internal': resolve(
+      '@purityjs/core/ssr-bridge': resolve(
         import.meta.dirname,
-        '../../packages/core/src/internal.ts',
+        '../../packages/core/src/ssr-bridge.ts',
       ),
-      '@purityjs/core/signals': resolve(
+      '@purityjs/platform/signals': resolve(
         import.meta.dirname,
-        '../../packages/core/src/browser-signals/index.ts',
+        '../../packages/platform/src/browser-signals/index.ts',
       ),
-      '@purityjs/core/router': resolve(
+      '@purityjs/router': resolve(import.meta.dirname, '../../packages/router/src/index.ts'),
+      '@purityjs/platform/actions': resolve(
         import.meta.dirname,
-        '../../packages/core/src/router/index.ts',
+        '../../packages/platform/src/actions.ts',
       ),
-      '@purityjs/core/actions': resolve(
+      '@purityjs/platform/islands': resolve(
         import.meta.dirname,
-        '../../packages/core/src/actions/index.ts',
-      ),
-      '@purityjs/core/islands': resolve(
-        import.meta.dirname,
-        '../../packages/core/src/islands/index.ts',
+        '../../packages/platform/src/islands.ts',
       ),
       '@purityjs/core/list-runtime': resolve(
         import.meta.dirname,
         '../../packages/core/src/control/list-runtime.ts',
       ),
-      '@purityjs/core/query': resolve(
+      '@purityjs/platform/query': resolve(
         import.meta.dirname,
-        '../../packages/core/src/query/index.ts',
+        '../../packages/platform/src/query-entry.ts',
+      ),
+      '@purityjs/core/csr-runtime': resolve(
+        import.meta.dirname,
+        '../../packages/core/src/runtime/csr-runtime.ts',
       ),
       '@purityjs/core': resolve(import.meta.dirname, '../../packages/core/src/index.ts'),
+      '@purityjs/ssr/runtime': resolve(import.meta.dirname, '../../packages/ssr/src/runtime.ts'),
       '@purityjs/ssr': resolve(import.meta.dirname, '../../packages/ssr/src/index.ts'),
     },
   },

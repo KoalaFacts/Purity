@@ -389,7 +389,8 @@ opinionated choice — listing the costs honestly so you can decide:
   — Tailwind needs explicit injection per shadow root. CSS variables _do_
   pierce, so design tokens declared on `:root` work normally.
 - **Form libraries / native form participation.** For a component wrapping
-  one input, select, or textarea, use `{ formControl: true }`. Purity then
+  one input, select, or textarea, call `enableFormControls()` from
+  `@purityjs/core/forms` before registering it with `{ formControl: true }`. Purity then
   publishes its value and validity through
   [`ElementInternals`](https://developer.mozilla.org/en-US/docs/Web/API/ElementInternals).
   Libraries that only walk light DOM still cannot inspect the internal control.
@@ -454,15 +455,16 @@ each(
 );
 ```
 
-For a long list, add `{ virtual: true }` and put it in a scrollable container:
+For a long list, import `virtualEach` and put it in a scrollable container:
 
 ```ts
+import { virtualEach } from '@purityjs/core/virtual';
+
 html`<ul style="max-height: 24rem; overflow-y: auto">
-  ${each(
+  ${virtualEach(
     () => items(),
     (item) => html`<li>${() => item().name}</li>`,
     (item) => item.id,
-    { virtual: true },
   )}
 </ul>`;
 ```

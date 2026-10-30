@@ -54,8 +54,9 @@ jobs:
         run: node --experimental-vm-modules --test benchmark/solid-v2/app-fixture/workloads.test.ts
       - name: Build the unchanged Purity comparison workloads
         run: |
-          npm run build -w @purityjs/core
-          npm run build -w @purityjs/vite-plugin
+          for package in signals compiler core router platform ssr vite-plugin; do
+            npm run build -w "packages/$package"
+          done
           npm run build -w benchmark
       - name: Install engines for semantic comparison
         run: npx playwright install --with-deps chromium firefox webkit

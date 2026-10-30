@@ -4,7 +4,7 @@
 // debounced() into a resource() source.
 // ---------------------------------------------------------------------------
 
-import { type ComputedAccessor, state, watch } from './signals.ts';
+import { type ComputedAccessor, state, watch } from '@purityjs/signals';
 
 /**
  * Debounced read-only accessor with an explicit dispose. Inside a component

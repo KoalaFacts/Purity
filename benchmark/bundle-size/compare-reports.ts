@@ -6,7 +6,8 @@
  */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import currentBudgets from './budgets.json' with { type: 'json' };
+import historicalV5 from './evidence/2026-10-30-architecture-redesign/before.json' with { type: 'json' };
+import historicalV7 from './evidence/2026-10-30-architecture-redesign/budget-baseline.json' with { type: 'json' };
 import v4Budgets from './budgets-v4.json' with { type: 'json' };
 import legacyBudgets from './budgets-v3.json' with { type: 'json' };
 
@@ -162,6 +163,29 @@ const profileNames = ['counter', 'controls', 'form', 'hydration', 'resource'].fl
   name + '-aot',
 ]);
 const packageNamesV4 = [...packageNames, 'core-jit-client'];
+const packageNamesV7 = [
+  'core',
+  'compiler',
+  'core-list-runtime',
+  'core-runtime',
+  'core-jit',
+  'core-jit-client',
+  'platform-signals',
+  'router',
+  'platform-actions',
+  'platform-islands',
+  'platform-query',
+  'reactive-signals',
+  'core-forms',
+  'core-csr',
+  'core-virtual',
+  'core-ssr-bridge',
+  'core-hydration-bridge',
+  'core-csr-runtime',
+  'ssr-runtime',
+  'runtime-all',
+  'ssr',
+];
 const profileNamesV4 = [...profileNames, 'counter-client-runtime', 'counter-client-aot'];
 const profileNamesV5 = [
   ...profileNamesV4,
@@ -191,7 +215,10 @@ function validateReportContract(report: Report, label: string) {
   assert(report?.revision, 'Missing revision: ' + label);
   assert(report.dirty === false, 'Dirty build is not comparable');
   assert(
-    report.schemaVersion === 3 || report.schemaVersion === 4 || report.schemaVersion === 5,
+    report.schemaVersion === 3 ||
+      report.schemaVersion === 4 ||
+      report.schemaVersion === 5 ||
+      report.schemaVersion === 7,
     'Unsupported schemaVersion: ' + label,
   );
   const expanded = report.schemaVersion >= 4;
@@ -209,7 +236,9 @@ function validateReportContract(report: Report, label: string) {
   }
   coverage(
     Object.keys(report.versions),
-    ['core', 'ssr', 'plugin', 'vite', 'parser'],
+    report.schemaVersion === 7
+      ? ['core', 'compiler', 'signals', 'router', 'platform', 'plugin', 'ssr', 'vite', 'parser']
+      : ['core', 'ssr', 'plugin', 'vite', 'parser'],
     label + '/versions',
     report.schemaVersion,
   );
@@ -220,7 +249,11 @@ function validateReportContract(report: Report, label: string) {
     );
   coverage(
     Object.keys(report.fixtureHashes),
-    expanded ? fixtureNamesV4 : fixtureNames,
+    report.schemaVersion === 7
+      ? [...fixtureNamesV4, 'core-all.ts']
+      : expanded
+        ? fixtureNamesV4
+        : fixtureNames,
     label + '/fixtureHashes',
     report.schemaVersion,
   );
@@ -240,32 +273,45 @@ function validateReportContract(report: Report, label: string) {
     }),
     'Missing or changed v3 settings: ' + label,
   );
-  for (const [name, limit] of [
-    ['core-actions', 5248],
-    ['core-all', 40704],
-  ] as const) {
-    assert.equal(
-      report.budgets?.packages?.[name]?.brotliBytes,
-      limit,
-      'Original Brotli budget missing or changed: ' + name,
-    );
-  }
+  if (report.schemaVersion !== 7)
+    for (const [name, limit] of [
+      ['core-actions', 5248],
+      ['core-all', 40704],
+    ] as const) {
+      assert.equal(
+        report.budgets?.packages?.[name]?.brotliBytes,
+        limit,
+        'Original Brotli budget missing or changed: ' + name,
+      );
+    }
   assert.equal(
     normalized(report.budgets),
-    normalized(report.schemaVersion === 5 ? currentBudgets : expanded ? v4Budgets : legacyBudgets),
+    normalized(
+      report.schemaVersion === 7
+        ? historicalV7.budgets
+        : report.schemaVersion === 5
+          ? historicalV5.budgets
+          : expanded
+            ? v4Budgets
+            : legacyBudgets,
+    ),
     'Missing or changed v' + report.schemaVersion + ' budgets: ' + label,
   );
   assert(Array.isArray(report.packages), 'Missing package entries: ' + label);
   assert(Array.isArray(report.measurements), 'Missing application profiles: ' + label);
   coverage(
     [...unique(report.packages, 'entry').keys()],
-    expanded ? packageNamesV4 : packageNames,
+    report.schemaVersion === 7 ? packageNamesV7 : expanded ? packageNamesV4 : packageNames,
     label + '/packages',
     report.schemaVersion,
   );
   coverage(
     [...unique(report.measurements, 'profile').keys()],
-    report.schemaVersion === 5 ? profileNamesV5 : expanded ? profileNamesV4 : profileNames,
+    report.schemaVersion === 5 || report.schemaVersion === 7
+      ? profileNamesV5
+      : expanded
+        ? profileNamesV4
+        : profileNames,
     label + '/measurements',
     report.schemaVersion,
   );
@@ -277,7 +323,7 @@ function validateReportContract(report: Report, label: string) {
   }
   for (const row of report.measurements) {
     allChunks(row, label + '/' + row.profile);
-    if (report.schemaVersion === 5) {
+    if (report.schemaVersion === 5 || report.schemaVersion === 7) {
       const expected = row.profile!.endsWith('-csr-aot')
         ? 'client'
         : row.profile!.endsWith('-aot')

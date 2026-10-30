@@ -1,134 +1,35 @@
 import {
-  enterHydration,
-  exitHydration,
-  inflateDeferred,
-  isDeferred,
-} from './compiler/hydrate-runtime.ts';
-import {
-  markSSRHtml,
-  type SSRComponentRenderer,
-  type SSRHtml,
-  valueToAttr,
-  valueToHtml,
-} from './compiler/ssr-runtime.ts';
-import {
   attachToOwner,
   ComponentContext,
   getCurrentComponent,
   getCurrentContext,
   popContext,
   pushContext,
-} from './scope.ts';
-import { scheduleMountCallbacks } from './component.ts';
-import { hydratePendingCustomElements } from './compiler/hydrate-elements.ts';
-import { FormControlBridge } from './form-control.ts';
-import { disposeScope, watch } from './signals.ts';
+  watch,
+} from '@purityjs/signals';
+import { scheduleMountCallbacks, unmountContext } from './component.ts';
+import {
+  dsdHydrator,
+  ENABLE_SSR,
+  formElementSetup,
+  type PurityElementHost,
+  type SSRHtml,
+} from './hooks.ts';
 
-// Unmount a context's child contexts, depth-first in reverse order (mirrors
-// unmountContext in component.ts).
-function unmountChildren(ctx: ComponentContext): void {
-  const children = ctx.children;
-  if (!children) return;
-  for (let i = children.length; i--;) unmountChildContext(children[i]);
-  ctx.children = null;
-}
-
-// Recursively tear down a non-custom-element child ComponentContext.
-//
-// Mirrors the canonical `unmountContext` in component.ts (which is private to
-// that module): child-first recursion, DOM removal, disposers, destroyed
-// callbacks, then parent unlink. The host custom element's own teardown lives
-// in `disconnectedCallback` and intentionally skips DOM removal (the browser
-// detaches the host, taking its shadow content with it) — but factory-rendered
-// child contexts created during the host's render are NOT custom elements, so
-// nothing else tears them down. Guarded by `_isDestroyed` so a child that was
-// already unmounted (e.g. a nested custom element whose own
-// `disconnectedCallback` already ran) is skipped rather than double-torn-down.
-function unmountChildContext(
+function unmountElementContext(
   ctx: ComponentContext,
   rollback = ctx.parent?._rollback,
   keepHostDOM = false,
 ): void {
-  if (ctx._isDestroyed) return;
-  if (rollback) ctx._rollback = true;
-  unmountChildren(ctx);
-
-  // A native custom element's host is already detached by the browser.
-  // Its shadow DOM remains platform-owned, but factory descendants still
-  // need full DOM teardown before disposing the host's own scope.
-  if (!keepHostDOM && ctx.nodes) {
-    for (let i = 0; i < ctx.nodes.length; i++) {
-      const node = ctx.nodes[i];
-      if (node.parentNode) node.parentNode.removeChild(node);
-    }
-    ctx.nodes = null;
-  }
-
-  // Mark destroyed before disposers run: lean scopes released by this teardown
-  // must not unregister their callbacks from a component that is going away.
-  ctx._isDestroyed = true;
-  disposeScope(ctx);
-  ctx._isMounted = false;
-
-  // Run destroy callbacks
-  runCallbacks(ctx.destroyed, rollback ? undefined : ctx);
-  ctx.destroyed = null;
-
-  // Unlink from parent so a later parent teardown doesn't revisit this node.
-  if (ctx.parent?.children) {
-    const idx = ctx.parent.children.indexOf(ctx);
-    if (idx !== -1) ctx.parent.children.splice(idx, 1);
-  }
-  ctx.parent = null;
+  unmountContext(ctx, rollback, keepHostDOM, true);
 }
-
-// Run callbacks safely
-function runCallbacks(arr: (() => void)[] | null, ctx?: ComponentContext): void {
-  if (!arr) return;
-  for (let i = 0; i < arr.length; i++) {
-    try {
-      arr[i]();
-    } catch (err) {
-      if (ctx) {
-        ctx._handleError(err);
-      } else {
-        console.error('[Purity] Error:', err);
-      }
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Slot types
-// ---------------------------------------------------------------------------
 
 /**
  * Accessor function returned by {@link slot} to project child content into a component.
- *
- * - **Default slot** (`SlotAccessor<void>`): call with no arguments to render projected children.
- * - **Scoped slot** (`SlotAccessor<E>`): call with an exposed-data object `E` that the
- *   parent's slot template can consume.
- *
- * @typeParam E - The shape of data exposed to the parent. `void` for non-scoped slots.
- *
- * @example
- * ```ts
- * // Default slot — render projected children
- * const body = slot();        // SlotAccessor<void>
- * return html`<div>${body()}</div>`;
- *
- * // Scoped slot — expose data to the parent
- * const row = slot<{ item: Item }>('row');  // SlotAccessor<{ item: Item }>
- * return html`<li>${row({ item })}</li>`;
- * ```
  */
 export type SlotAccessor<E = void> = E extends void
   ? () => Node | null
   : (exposed: E) => Node | null;
-
-// ---------------------------------------------------------------------------
-// Internal: slot registry
-// ---------------------------------------------------------------------------
 
 interface SlotRegistry {
   filled: Map<string, unknown>;
@@ -143,7 +44,7 @@ function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<an
   const cache = new Map<string, SlotAccessor<any>>();
   return new Proxy({} as Record<string, SlotAccessor<any>>, {
     get(_target, prop: string) {
-      /* v8 ignore next -- defensive; users access slots by string name */
+      /* v8 ignore next */
       if (typeof prop !== 'string') return undefined;
       let accessor = cache.get(prop);
       if (!accessor) {
@@ -174,38 +75,14 @@ function createConsumerBag(registry: SlotRegistry): Record<string, ConsumerSlot>
 
 function resolveContent(content: unknown): Node | null {
   if (content == null) return null;
-  // Clone DocumentFragments — they empty on appendChild, breaks multi-pass rendering
   if (content instanceof DocumentFragment) return content.cloneNode(true) as DocumentFragment;
   if (content instanceof Node) return content;
   if (typeof content === 'string') return document.createTextNode(content);
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// slot(name?) — standalone context-aware primitive
-// ---------------------------------------------------------------------------
-
 /**
  * Access a slot inside a component. Must be called inside a `component()` render function.
- *
- * @example
- * ```ts
- * // Default slot (IN — static content):
- * component('p-card', ({ title }, { default: body }) => {
- *   return html`<div><h2>${title}</h2>${body()}</div>`;
- * });
- * Card({ title: 'Hi' }, html`<p>Content</p>`)
- *
- * // Named slot:
- * const header = slot('header');
- * const footer = slot('footer');
- *
- * // Scoped slot (OUT — expose data to consumer):
- * const body = slot<{ validate: () => boolean }>();
- * body({ validate: isValid })  // consumer receives { validate }
- * ```
- *
- * @param name Slot name. Defaults to `'default'`.
  */
 export function slot<E = void>(name?: string): SlotAccessor<E> {
   const ctx = getCurrentComponent();
@@ -217,17 +94,13 @@ export function slot<E = void>(name?: string): SlotAccessor<E> {
 
   const slotName = name ?? 'default';
 
-  // SSR path: ctx carries pre-rendered slot HTML wrappers instead of DOM
-  // children. Return the wrapper so valueToHtml preserves its raw-text spans
-  // raw into the surrounding template. Cast through `unknown` because the
-  // SlotAccessor type signature targets DOM consumers.
-  const ssrSlots = (ctx as unknown as { _ssrSlots?: Record<string, SSRHtml | undefined> })
-    ._ssrSlots;
-  if (ssrSlots !== undefined) {
-    return ((_exposed?: unknown): SSRHtml | null => {
-      const html = ssrSlots[slotName];
-      return html ?? null;
-    }) as unknown as SlotAccessor<E>;
+  if (ENABLE_SSR) {
+    const ssrSlots = ctx._ssrSlots as Record<string, SSRHtml | undefined> | undefined;
+    if (ssrSlots !== undefined) {
+      return ((_exposed?: unknown): SSRHtml | null => {
+        return ssrSlots[slotName] ?? null;
+      }) as unknown as SlotAccessor<E>;
+    }
   }
 
   const children = ctx._slotContent;
@@ -236,31 +109,11 @@ export function slot<E = void>(name?: string): SlotAccessor<E> {
   }) as SlotAccessor<E>;
 }
 
-// ---------------------------------------------------------------------------
-// internals() — access the host element's ElementInternals
-// ---------------------------------------------------------------------------
-
 /**
  * Access the host element's `ElementInternals` inside a `component()` render.
- * Useful for `setFormValue`, `setValidity`, the ARIA mixin properties, and
- * direct `states` manipulation. For reactive state toggling prefer
- * `bindComponentState(name, accessor)`.
- *
- * Returns `null` when called outside a `component()` render or on a runtime
- * that doesn't expose `attachInternals` (very old engines).
- *
- * @example
- * ```ts
- * component('p-toggle', () => {
- *   const open = state(false);
- *   const i = internals();
- *   onMount(() => i?.setFormValue(String(open())));
- *   return html`<button @click=${() => open((v) => !v)}>...</button>`;
- * });
- * ```
  */
 export function internals(): ElementInternals | null {
-  return getCurrentComponent()?._internals ?? null;
+  return (getCurrentComponent()?._internals as ElementInternals | null | undefined) ?? null;
 }
 
 function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node | null {
@@ -277,49 +130,24 @@ function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node
   return resolveContent(s);
 }
 
-// ---------------------------------------------------------------------------
-// RenderOutput — component can return DOM + exposed data
-// ---------------------------------------------------------------------------
-
-interface RenderOutput {
+export interface RenderOutput {
   view: Node | DocumentFragment;
   expose?: Record<string, unknown>;
 }
 
-type RenderFn<P, S> = (
+export type RenderFn<P, S> = (
   props: P,
   slots: { [K in keyof S]: SlotAccessor<S[K]> },
 ) => Node | DocumentFragment | RenderOutput;
 
-/**
- * Optional configuration passed as the third argument to `component()`.
- *
- * @example
- * ```ts
- * component('p-input', () => { … }, { formAssociated: true });
- * ```
- */
 export interface ComponentOptions {
   /** Forward host focus to a focusable descendant in the shadow tree. */
   delegatesFocus?: boolean;
-  /** Automatically bridge one native shadow control to form submission and validation. */
+  /** Automatically bridge one native shadow control (requires `@purityjs/core/forms`). */
   formControl?: true | string;
-  /**
-   * Opt the custom element into form participation. The host gets
-   * `static formAssociated = true`, joins the containing `<form>`'s
-   * FormData submission, and receives `formAssociatedCallback`,
-   * `formDisabledCallback`, `formResetCallback`, and
-   * `formStateRestoreCallback` — surfaced to render code as
-   * `onFormAssociated` / `onFormDisabled` / `onFormReset` /
-   * `onFormStateRestore`. Use `internals().setFormValue(...)` to
-   * publish the component's value to the form.
-   */
+  /** Opt the custom element into form participation (requires `@purityjs/core/forms`). */
   formAssociated?: boolean;
 }
-
-// ---------------------------------------------------------------------------
-// Internal: run component render with registry
-// ---------------------------------------------------------------------------
 
 function runRender<P, S>(
   renderFn: RenderFn<P, S>,
@@ -336,10 +164,8 @@ function runRender<P, S>(
       popContext();
     }
   } catch (error) {
-    // A failed initialization has no destroy lifecycle. Cleanup failures
-    // must not strand other work or replace the original render error.
     ctx.destroyed = null;
-    unmountChildContext(ctx, true);
+    unmountElementContext(ctx, true);
     throw error;
   }
 
@@ -350,205 +176,28 @@ function runRender<P, S>(
   return { result: output as Node | DocumentFragment, exposed: {} };
 }
 
-// ---------------------------------------------------------------------------
-// component(tagName, renderFn) — define a component as a custom element
-//
-//   const Card = component('p-card', <Props, Slots>)(
-//     ({ title }, { default: body }) => {
-//       return html`<div><h2>${title}</h2>${body()}</div>`;
-//     }
-//   );
-//
-//   // In templates:
-//   html`<p-card :title=${title} @saved=${handler}>
-//     <p>Slot content</p>
-//   </p-card>`
-//
-//   // Or programmatic:
-//   Card({ title: 'Hi' }, html`<p>Body</p>`)
-// ---------------------------------------------------------------------------
+export interface RegisteredComponentEntry {
+  renderFn: RenderFn<Record<string, unknown>, Record<string, unknown>>;
+  options: ComponentOptions;
+}
 
-// Registry of component render functions by tag name. Exposed via
-// `_getRegisteredComponent` so `@purityjs/ssr` can dispatch to render fns
-// without depending on the Custom Element registration path (which requires
-// `customElements`, absent on Node).
-const componentRegistry = new Map<string, RenderFn<any, any>>();
-const componentOptions = new Map<string, ComponentOptions>();
-
-// Mirror of codegen's SAFE_NAME (not imported — keeping the compiler out of
-// the runtime bundle). A valid custom-element tag must also contain a hyphen,
-// which this regex requires. Used to gate registry writes so a string that
-// would inject raw bytes into the SSR shell (`<${tag}…>`) can never reach
-// `_renderComponentSSR` — that function only renders tags already registered.
+const componentRegistry = new Map<string, RegisteredComponentEntry>();
 const SAFE_CE_TAG = /^[a-z][\w]*-[\w-]*$/;
-// Attribute names interpolated raw into the SSR host-attrs string. Same shape
-// as codegen's SAFE_NAME; used as a defensive filter for direct/SSR callers
-// of `_renderComponentSSR` that bypass the compiler's `assertSafeName`.
-const SAFE_ATTR_NAME = /^[a-zA-Z_][\w-]*$/;
 
-/** @internal — accessor used by `@purityjs/ssr` to look up registered render fns. */
+/** @internal — accessor used by `@purityjs/ssr` to look up registered components. */
 export function _getRegisteredComponent(
   tag: string,
 ): RenderFn<Record<string, unknown>, Record<string, unknown>> | undefined {
+  return componentRegistry.get(tag)?.renderFn;
+}
+
+/** @internal — full entry accessor used by `@purityjs/ssr` DSD renderer. */
+export function _getRegisteredComponentEntry(tag: string): RegisteredComponentEntry | undefined {
   return componentRegistry.get(tag);
 }
 
-// Build SSR slot accessors that mirror createAccessors() but yield branded
-// SSRHtml wrappers instead of cloned DOM nodes. Cast through `unknown`
-// because the SlotAccessor public type is DOM-shaped.
-function createSSRSlotAccessors(
-  slots: Record<string, SSRHtml | undefined>,
-): Record<string, SlotAccessor<any>> {
-  return new Proxy({} as Record<string, SlotAccessor<any>>, {
-    get(_target, prop) {
-      if (typeof prop !== 'string') return undefined;
-      return ((): SSRHtml | null => {
-        const html = slots[prop];
-        return html ?? null;
-      }) as unknown as SlotAccessor<any>;
-    },
-  });
-}
-
-/**
- * @internal
- * SSR component renderer hook implementation. Registered with
- * `setSSRComponentRenderer` by `@purityjs/ssr` on import — kept here so it
- * has direct access to the component registry and lifecycle context.
- *
- * Activates Declarative Shadow DOM by emitting
- * `<tag …host attrs…><template shadowrootmode="open">…</template></tag>`.
- * Modern browsers parse the inner template into a real Shadow Root before
- * any JS executes, eliminating the upgrade flash that the alternative
- * "attach Shadow at hydration" strategy would introduce.
- */
-export const _renderComponentSSR: SSRComponentRenderer = (
-  tag,
-  attrs,
-  slotHtml,
-  slotSpans,
-  spans,
-  offset = 0,
-) => {
-  const renderFn = componentRegistry.get(tag);
-  if (!renderFn) return null;
-
-  // Defensive: `tag` is interpolated raw into the SSR shell (`<${tag}…>`).
-  // It should already be safe (registry writes go through `component()` which
-  // validates), but `_renderComponentSSR` is part of the public export surface
-  // — re-validate so a malformed registry key can never inject markup.
-  /* v8 ignore next -- belt-and-suspenders; component() rejects unsafe tags before registry write */
-  if (!SAFE_CE_TAG.test(tag)) return null;
-
-  // Resolve attribute values into a props object — match the client's
-  // "every non-event attribute is a prop" behavior. Functions are treated as
-  // signal accessors and called once.
-  const props: Record<string, unknown> = {};
-  for (const k of Object.keys(attrs)) {
-    const v = attrs[k];
-    props[k] = typeof v === 'function' ? (v as () => unknown)() : v;
-  }
-
-  const ctx = new ComponentContext();
-  // Two SSR-only slots on the context:
-  //   _ssrStyles — css() pushes here instead of touching adoptedStyleSheets
-  //   _ssrSlots  — slot() reads here instead of resolving from DOM children
-  (ctx as unknown as { _ssrStyles: string[] })._ssrStyles = [];
-  const slotValue = markSSRHtml(slotHtml, slotSpans);
-  (ctx as unknown as { _ssrSlots: Record<string, SSRHtml | undefined> })._ssrSlots = {
-    default: slotValue,
-  };
-
-  pushContext(ctx);
-  let view: unknown;
-  try {
-    view = renderFn(props, createSSRSlotAccessors({ default: slotValue }));
-  } catch (e) {
-    // No shell will be serialized: release what the render created.
-    disposeScope(ctx);
-    throw e;
-  } finally {
-    popContext();
-  }
-
-  try {
-    const renderedHtml = valueToHtml(view);
-
-    // Host-element attributes mirror what was declared in the parent template.
-    // Attribute *names* are interpolated raw, so skip any key that isn't a safe
-    // name — the compiler asserts this upstream, but direct/SSR callers can pass
-    // arbitrary keys. Values are escaped by `valueToAttr`.
-    let hostAttrs = '';
-    for (const k of Object.keys(props)) {
-      if (!SAFE_ATTR_NAME.test(k)) continue;
-      // Object/function props are supplied by the parent during hydration.
-      // Reflecting them as strings is lossy and can expose server-only data.
-      if (props[k] !== null && (typeof props[k] === 'object' || typeof props[k] === 'function'))
-        continue;
-      const av = valueToAttr(props[k]);
-      if (av !== null) hostAttrs += av === '' ? ` ${k}` : ` ${k}="${av}"`;
-    }
-
-    const styles = (ctx as unknown as { _ssrStyles: string[] })._ssrStyles;
-    // `<style>` is an HTML5 "raw text element" — its content runs verbatim
-    // until the parser sees a literal `</style` sequence. An interpolated
-    // CSS value containing `</style><script>...</script>` would otherwise
-    // close the style tag early and execute the injected script (XSS).
-    // Insert a backslash between `<` and `/style`: the HTML parser only
-    // matches the literal `</style` substring (the `<` followed by `\`
-    // bounces it back to raw-text state), but CSS treats `\/` as a literal
-    // `/` escape, so the rendered styling is unchanged.
-    const styleBlock =
-      styles.length > 0
-        ? `<style>${styles.join('\n').replace(/<\/style/gi, '<\\/style')}</style>`
-        : '';
-    const options = componentOptions.get(tag);
-    const focusAttr =
-      (options?.delegatesFocus ?? !!options?.formControl) ? ' shadowrootdelegatesfocus' : '';
-
-    const prefix = `<${tag}${hostAttrs}><template shadowrootmode="open"${focusAttr}>${styleBlock}`;
-    const markup = `${prefix}${renderedHtml}</template></${tag}>`;
-    spans?.push([offset, offset + markup.length, slotHtml, slotSpans ?? []]);
-    return markup;
-  } finally {
-    // Server output is final once the shell is serialized: release the
-    // component's watches and computes so requests don't leave them
-    // subscribed to shared state.
-    disposeScope(ctx);
-  }
-};
-
 /**
  * Define a component as a Custom Element with Shadow DOM.
- *
- * @param tagName Valid custom element name (must contain a hyphen, e.g. `'p-card'`).
- * @param renderFn Render function receiving `(props, slots)`. Returns DOM or `{ view, expose }`.
- *
- * @example
- * ```ts
- * // Simple component:
- * component('p-greeting', ({ name }) => {
- *   return html`<p>Hello, ${name}!</p>`;
- * });
- *
- * // With slots and styles:
- * component('p-card', ({ title }, { default: body }) => {
- *   css`.card { padding: 1rem; }`;
- *   return html`<div class="card"><h2>${title}</h2>${body()}</div>`;
- * });
- *
- * // Expose data to slot consumer:
- * component('p-form', (_props, { default: body }) => {
- *   const isValid = compute(() => true);
- *   return {
- *     view: html`<form>${body({ validate: isValid })}</form>`,
- *     expose: { validate: isValid },
- *   };
- * });
- *
- * // In templates:
- * html`<p-card :title=${'Hello'}><p>Body</p></p-card>`
- * ```
  */
 export function component<
   P extends Record<string, unknown> = Record<string, never>,
@@ -558,12 +207,6 @@ export function component<
   renderFn: RenderFn<P, S>,
   options?: ComponentOptions,
 ): (props: P, children?: any) => Node | DocumentFragment {
-  // Validate before any side effects. Under Node SSR `customElements` is
-  // undefined, so the define() path below — which would otherwise reject an
-  // invalid name — is skipped; without this guard a malformed tag would enter
-  // the registry and become a raw-interpolation vector in `_renderComponentSSR`
-  // (`<${tag}…>`). A custom-element name must contain a hyphen and only safe
-  // name characters.
   if (!SAFE_CE_TAG.test(tagName)) {
     throw new Error(
       `[Purity] component(): invalid custom element tag name "${tagName}".\n` +
@@ -572,82 +215,56 @@ export function component<
     );
   }
 
-  // Store in registry
-  componentRegistry.set(tagName, renderFn);
-  componentOptions.set(tagName, options ?? {});
+  if (
+    typeof customElements !== 'undefined' &&
+    (options?.formAssociated || options?.formControl) &&
+    !formElementSetup
+  ) {
+    throw new Error(
+      '[Purity] Form-associated components require enableFormControls() from @purityjs/core/forms before registration.',
+    );
+  }
 
-  // Register as Custom Element
+  if (ENABLE_SSR) {
+    componentRegistry.set(tagName, {
+      renderFn: renderFn as RenderFn<Record<string, unknown>, Record<string, unknown>>,
+      options: options ?? {},
+    });
+  }
+
   if (typeof customElements !== 'undefined' && !customElements.get(tagName)) {
     const render = renderFn;
-    const formAssociated = options?.formAssociated === true || !!options?.formControl;
+    let initFormInstance: ((instance: PurityElementHost) => void) | null = null;
 
-    class PurityElement extends HTMLElement {
+    class PurityElement extends HTMLElement implements PurityElementHost {
       _ctx: ComponentContext | null = null;
       _props: Record<string, unknown> = {};
-      // True once this element has rendered at least one connectedCallback.
-      // Gates the DSD/SSR-hydration branch so it runs ONLY on the first
-      // connect (when shadow content came from the parser). On a later
-      // reconnect the shadow still holds our own prior render, which must be
-      // re-rendered fresh, not re-hydrated against marker-less DOM.
       _hasRendered = false;
       _hadDeclarativeShadowRoot = false;
       _shadow: ShadowRoot;
       _internals: ElementInternals | null = null;
-      _formBridge: FormControlBridge | null = null;
+      declare _formBridge?: { connect(): void; disconnect(): void } | null;
 
       constructor() {
         super();
         this._hadDeclarativeShadowRoot = this.shadowRoot !== null;
-        // Reuse a Declarative Shadow DOM root if the parser already attached
-        // one (the SSR-then-hydrate path emits
-        // `<tag><template shadowrootmode="open">…</template></tag>`).
-        // Calling attachShadow a second time would throw, so check first.
         this._shadow =
           this.shadowRoot ??
           this.attachShadow({
             mode: 'open',
             delegatesFocus: options?.delegatesFocus ?? !!options?.formControl,
           });
-        // ElementInternals is once-per-element. We claim it eagerly so
-        // bindComponentState() and the public `internals()` accessor always
-        // have a target. Older runtimes without attachInternals fall through
-        // gracefully — _internals stays null and state binding becomes a
-        // no-op.
         try {
           this._internals = this.attachInternals();
         } catch {
-          /* v8 ignore next -- defensive; modern engines all expose attachInternals */
+          /* v8 ignore next */
           this._internals = null;
         }
-        if (options?.formControl && this._internals) {
-          this._formBridge = new FormControlBridge(
-            this,
-            this._shadow,
-            this._internals,
-            options.formControl,
-          );
-        }
-      }
-
-      static get observedAttributes(): string[] {
-        return options?.formControl
-          ? ['aria-label', 'aria-labelledby', 'id', 'name', 'value', 'checked']
-          : [];
-      }
-
-      attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null) {
-        if (name === 'value' && newValue !== null) this._formBridge?.setValue(newValue);
-        if (name === 'checked') this._formBridge?.setChecked(newValue !== null);
-        this._formBridge?.syncLabel();
-        this._formBridge?.sync();
+        if (initFormInstance) initFormInstance(this);
       }
 
       connectedCallback() {
-        if (this._isSSRRoot()) {
-          // The parent must assign typed property bindings first. The DSD
-          // content stays visible until hydrate() walks this element.
-          return;
-        }
+        if (this._isSSRRoot()) return;
         this._renderConnected();
       }
 
@@ -658,15 +275,12 @@ export function component<
       }
 
       _hydrateSSR(): void {
-        if (!this._isSSRRoot() || !this.isConnected) return;
+        if (!dsdHydrator || !this._isSSRRoot() || !this.isConnected) return;
         try {
           this._renderConnected();
-          hydratePendingCustomElements(this._shadow);
+          dsdHydrator.hydrateNestedElements(this._shadow);
         } catch (err) {
-          // A rejected adoption must not strand a live shadow owner or turn
-          // off retries. Preserve the parsed shadow tree while disposing
-          // bindings, including when a nested Custom Element hook failed.
-          if (this._ctx) unmountChildContext(this._ctx, true, true);
+          if (this._ctx) unmountElementContext(this._ctx, true, true);
           this._ctx = null;
           this._hasRendered = false;
           this._formBridge?.disconnect();
@@ -688,11 +302,10 @@ export function component<
           props[key] = (this as any)[key];
         }
 
-        // Collect event handlers
         const eventProps: Record<string, unknown> = {};
         for (const key of Object.keys(this)) {
           if (key.startsWith('__purity_event_')) {
-            const eventName = key.slice(15); // '__purity_event_'.length
+            const eventName = key.slice(15);
             eventProps[`on${eventName.charAt(0).toUpperCase()}${eventName.slice(1)}`] = (
               this as any
             )[key];
@@ -700,8 +313,6 @@ export function component<
         }
 
         const allProps = { ...props, ...eventProps } as P;
-
-        // Collect slot content from light DOM children
         const registry = createRegistry();
         const slotAccessors = createAccessors(registry);
 
@@ -714,69 +325,25 @@ export function component<
         }
 
         const ctx = new ComponentContext();
-        // The current scope might be a lean each() scope (just disposers) or
-        // a full ComponentContext from a parent component. Only chain into
-        // a live component. A mounted hook can reconnect its own element,
-        // leaving the destroyed prior instance on the stack during this render.
         const parentCtx = getCurrentContext();
         if (parentCtx instanceof ComponentContext && !parentCtx._isDestroyed) {
           ctx.parent = parentCtx;
           (parentCtx.children ??= []).push(ctx);
         }
-        // Store shadow root on context so css() can find it
-        (ctx as any)._shadowRoot = this._shadow;
-        // Expose internals to the render scope: bindComponentState() and the
-        // public `internals()` accessor both read from `ctx._internals`.
+        ctx._shadowRoot = this._shadow;
         ctx._internals = this._internals;
         this._ctx = ctx;
 
-        // Marker-walking hydration: if the shadow has DSD-parsed SSR content,
-        // run the renderer in hydration mode so `html\`\`` returns deferred
-        // thunks, then inflate against the shadow's existing children.
-        // Otherwise fall through to the standard fresh-render path.
-        //
-        // Gate on `!this._hasRendered`: only the FIRST connect can encounter
-        // parser-produced DSD content. On a reconnect (e.g. each() reorder
-        // remove-then-readd, or any manual detach/reattach) the shadow still
-        // holds our own prior render, which has no SSR hydration markers —
-        // inflating against it would crash. Treat reconnect as a fresh render.
         let result: Node | DocumentFragment | null;
-        if (hasDSDContent) {
-          const adoptedBefore = this._shadow.adoptedStyleSheets?.length ?? 0;
-          enterHydration();
-          let renderResult: { result: Node | DocumentFragment };
-          try {
-            renderResult = runRender(render, allProps, slotAccessors, ctx);
-          } finally {
-            exitHydration();
-          }
-          const view = renderResult.result as unknown;
-          if (isDeferred(view)) {
-            // Keep the parsed shadow nodes connected while binding them.
-            // Detaching them would disconnect nested custom elements.
-            // SSR places scoped CSS before the component template. Keep the
-            // style node and start the template walker at the next sibling.
-            const hasSSRStyle = (this._shadow.adoptedStyleSheets?.length ?? 0) > adoptedBefore;
-            inflateDeferred(view, this._shadow, hasSSRStyle);
-            if (hasSSRStyle && this._shadow.firstChild?.nodeName === 'STYLE') {
-              // css() now owns the live sheet. Retain the SSR node for DOM
-              // identity but remove its rules so obsolete selectors cannot win.
-              this._shadow.firstChild.textContent = '';
-            }
-            result = null;
-          } else {
-            // Renderer returned a non-deferred node — clear and re-render.
-            while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
-            result = renderResult.result;
-          }
+        if (hasDSDContent && dsdHydrator) {
+          result = dsdHydrator.hydrateShadow(this._shadow, () =>
+            runRender(render, allProps, slotAccessors, ctx),
+          );
         } else {
-          // Fresh render. On a reconnect the shadow still holds the prior
-          // render's nodes — clear them first so we don't duplicate content.
           while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
           result = runRender(render, allProps, slotAccessors, ctx).result;
         }
 
-        // Render into shadow DOM
         if (result !== null) this._shadow.appendChild(result);
         this._formBridge?.connect();
 
@@ -792,146 +359,30 @@ export function component<
         scheduleMountCallbacks(ctx);
       }
 
-      // Empty by design — declaring this method opts the custom element
-      // into state-preserving moves on engines that support `moveBefore`.
-      // Without it, `moveBefore` falls back to the disconnect+connect
-      // lifecycle for custom elements, defeating the whole point. The
-      // call site in control.ts uses moveBefore for each() reorder; this
-      // method tells the platform "we want move semantics, not churn."
-      /* v8 ignore next 3 -- only invoked by browsers that support moveBefore */
-      connectedMoveCallback() {
-        // intentionally empty
-      }
+      /* v8 ignore next 2 */
+      connectedMoveCallback() {}
 
       disconnectedCallback() {
         this._formBridge?.disconnect();
-        // Share child-first disposal and error handling. Only the host's
-        // already-detached shadow DOM must remain intact.
-        if (this._ctx) unmountChildContext(this._ctx, false, true);
-      }
-
-      // Form-associated lifecycle. Defined unconditionally — the browser
-      // only dispatches when both `static formAssociated = true` and the
-      // callback exists on the prototype, so non-form components incur no
-      // runtime cost. Each callback is a thin shim: it walks the matching
-      // ctx array and invokes user handlers with the platform's argument.
-      //
-      // Each shim early-returns on a destroyed ctx: the spec can dispatch
-      // these for form disassociation / bfcache transitions that race a
-      // `disconnectedCallback`, and running user handlers (which may touch
-      // `internals()` on a detached host) against a torn-down context is
-      // unsafe.
-      // Share the callback loop without rest arrays or dynamic-key dispatch.
-      // Passing arity explicitly preserves the browser's exact arguments and
-      // the handler-array receiver even for zero-argument reset callbacks.
-      private _dispatchFormCallbacks(
-        arr: ((...args: any[]) => void)[] | null | undefined,
-        count: 0 | 1 | 2,
-        first?: unknown,
-        second?: unknown,
-      ) {
-        if (!this._ctx || this._ctx._isDestroyed || !arr) return;
-        for (let i = 0; i < arr.length; i++) {
-          try {
-            if (count === 0) arr[i]();
-            else if (count === 1) arr[i](first);
-            else arr[i](first, second);
-          } catch (err) {
-            // Handlers may reconnect the host before error propagation.
-            this._ctx?._handleError(err);
-          }
-        }
-      }
-
-      formAssociatedCallback(form: HTMLFormElement | null) {
-        this._dispatchFormCallbacks(this._ctx?._formAssociated, 1, form);
-      }
-
-      formDisabledCallback(disabled: boolean) {
-        this._formBridge?.setDisabled(disabled);
-        this._dispatchFormCallbacks(this._ctx?._formDisabled, 1, disabled);
-      }
-
-      formResetCallback() {
-        this._formBridge?.reset();
-        this._dispatchFormCallbacks(this._ctx?._formReset, 0);
-      }
-
-      formStateRestoreCallback(
-        state: string | File | FormData | null,
-        mode: 'restore' | 'autocomplete',
-      ) {
-        if (state !== null) this._formBridge?.restore(state);
-        this._dispatchFormCallbacks(this._ctx?._formStateRestore, 2, state, mode);
+        if (this._ctx) unmountElementContext(this._ctx, false, true);
       }
     }
 
-    // Spec reads `formAssociated` off the constructor at define-time, so
-    // it must be set before customElements.define. Conditional so the
-    // default branch produces a plain (non-form) custom element with the
-    // same static surface as before.
-    if (formAssociated) {
-      Object.defineProperty(PurityElement, 'formAssociated', { value: true });
-    }
-
-    if (options?.formControl) {
-      for (const [k, def] of [
-        ['form', null],
-        ['labels', null],
-        ['validity', null],
-        ['validationMessage', ''],
-        ['willValidate', false],
-      ] as const) {
-        Object.defineProperty(PurityElement.prototype, k, {
-          get(this: PurityElement) {
-            return (this._internals as any)?.[k] ?? def;
-          },
-        });
-      }
-      for (const k of ['checkValidity', 'reportValidity'] as const) {
-        Object.defineProperty(PurityElement.prototype, k, {
-          value(this: PurityElement) {
-            this._formBridge?.sync();
-            return this._internals?.[k]() ?? true;
-          },
-        });
-      }
-      Object.defineProperties(PurityElement.prototype, {
-        value: {
-          get(this: PurityElement) {
-            return this._formBridge?.value ?? '';
-          },
-          set(this: PurityElement, value: unknown) {
-            this._props.value = value;
-            this._formBridge?.setValue(String(value));
-          },
-        },
-        checked: {
-          get(this: PurityElement) {
-            return this._formBridge?.checked ?? false;
-          },
-          set(this: PurityElement, value: unknown) {
-            const v = Boolean(value);
-            this._props.checked = v;
-            this._formBridge?.setChecked(v);
-          },
-        },
-      });
+    if ((options?.formAssociated || options?.formControl) && formElementSetup) {
+      initFormInstance = formElementSetup(PurityElement, options);
     }
 
     customElements.define(tagName, PurityElement);
   }
 
-  // Also return a programmatic factory (for non-template usage)
   return (props: P, children?: any) => {
     const ctx = new ComponentContext();
-    attachToOwner(ctx, unmountChildContext);
+    attachToOwner(ctx, unmountElementContext);
 
     ctx._slotContent = children;
     const registry = createRegistry();
     const slotAccessors = createAccessors(registry);
 
-    // Pre-fill registry for non-callback children
     if (children != null && typeof children !== 'function') {
       if (children instanceof Node || typeof children === 'string') {
         registry.filled.set('default', children);
@@ -943,19 +394,14 @@ export function component<
     }
 
     if (typeof children === 'function') {
-      // Pass 1: discover slots + collect exposed data
       const { exposed } = runRender(renderFn, props, slotAccessors, ctx);
-
-      // Build consumer bag
       const bag = { ...createConsumerBag(registry), ...exposed };
       const consumerResult = children(bag);
-
       if (consumerResult instanceof Node || typeof consumerResult === 'string') {
         registry.filled.set('default', consumerResult);
       }
     }
 
-    // Render with filled slots; callback children completed discovery above.
     const { result } = runRender(renderFn, props, slotAccessors, ctx);
 
     if (result instanceof DocumentFragment) {
@@ -971,39 +417,8 @@ export function component<
   };
 }
 
-// ---------------------------------------------------------------------------
-// teleport(target, viewFn) — render content to a different DOM location
-//
-// Reactive by default — re-renders when signals in viewFn change.
-//
-//   teleport('#modal-root', () => html`<div>Always here</div>`)
-//   teleport('#overlay', () => visible() ? html`<div>Modal</div>` : null)
-// ---------------------------------------------------------------------------
-
 /**
- * Render content to a different DOM location. Reactive by default —
- * re-renders when signals in the view function change.
- *
- * @param target CSS selector string or DOM Element to render into.
- * @param viewFn Function returning DOM content (or null to show nothing).
- *
- * @example
- * ```ts
- * // Static teleport:
- * teleport('#modal-root', () => html`<div class="modal">Hello</div>`)
- *
- * // Reactive — show/hide based on signal:
- * teleport('#overlay', () =>
- *   visible() ? html`<div class="modal">Open</div>` : null
- * )
- *
- * // Inside a component — auto-disposed on unmount:
- * component('p-modal', () => {
- *   const content = slot();
- *   teleport('#modal-root', () => content());
- *   return html`<!--modal-->`;
- * });
- * ```
+ * Render content to a different DOM location. Reactive by default.
  */
 export function teleport(
   target: string | Element,
@@ -1012,12 +427,6 @@ export function teleport(
   const anchor = document.createComment('teleport');
   let currentNodes: Node[] = [];
   let dispose: (() => void) | null = null;
-  // Setup is deferred a microtask (so the target exists), but the owning
-  // component's disposer runs synchronously on unmount. If the component
-  // unmounts before this microtask drains, `disposed` short-circuits the
-  // setup — otherwise we'd create a watch (which can't auto-register here,
-  // since the microtask runs outside any render context) and append
-  // teleported DOM that nothing ever tears down.
   let disposed = false;
   const clearNodes = () => {
     for (const node of currentNodes) node.parentNode?.removeChild(node);
@@ -1044,7 +453,6 @@ export function teleport(
     });
   });
 
-  // Auto-register dispose in current component context
   const ctx = getCurrentContext();
   if (ctx) {
     (ctx.disposers ??= []).push(() => {

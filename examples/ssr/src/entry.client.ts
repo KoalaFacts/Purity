@@ -9,7 +9,7 @@
 //     Pass the manifest's `routes` array via `prefetch: { routes }`; the
 //     consolidator wires the listener for you.
 
-import { configureNavigation } from '@purityjs/core/router';
+import { configureNavigation } from '@purityjs/router';
 import { hydrate } from '@purityjs/core';
 import { routes } from 'purity:routes';
 import { App } from './app.ts';

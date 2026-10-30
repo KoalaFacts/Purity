@@ -1,4 +1,4 @@
-import { serverAction } from '@purityjs/core/actions';
+import { serverAction } from '@purityjs/platform/actions';
 import { greetingActionUrl } from './greet.ts';
 
 export const greet = serverAction(greetingActionUrl, async (request) => {

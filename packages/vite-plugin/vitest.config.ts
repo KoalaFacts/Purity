@@ -12,22 +12,29 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@purityjs/compiler': resolve(import.meta.dirname, '../compiler/src/index.ts'),
+      '@purityjs/ssr/runtime': resolve(import.meta.dirname, '../ssr/src/runtime.ts'),
+      '@purityjs/core/csr-runtime': resolve(
+        import.meta.dirname,
+        '../core/src/runtime/csr-runtime.ts',
+      ),
+      '@purityjs/core/csr': resolve(import.meta.dirname, '../core/src/csr.ts'),
+      '@purityjs/core/ssr-bridge': resolve(import.meta.dirname, '../core/src/ssr-bridge.ts'),
+      '@purityjs/core/hydration-bridge': resolve(import.meta.dirname, '../core/src/hydrate.ts'),
       '@purityjs/core/jit': resolve(import.meta.dirname, '../core/src/compiler/jit.ts'),
       '@purityjs/core/runtime': resolve(import.meta.dirname, '../core/src/compiler/runtime.ts'),
-      '@purityjs/core/compiler': resolve(import.meta.dirname, '../core/src/compiler/index.ts'),
-      '@purityjs/core/internal': resolve(import.meta.dirname, '../core/src/internal.ts'),
-      '@purityjs/core/signals': resolve(
+      '@purityjs/platform/signals': resolve(
         import.meta.dirname,
-        '../core/src/browser-signals/index.ts',
+        '../platform/src/browser-signals/index.ts',
       ),
-      '@purityjs/core/router': resolve(import.meta.dirname, '../core/src/router/index.ts'),
-      '@purityjs/core/actions': resolve(import.meta.dirname, '../core/src/actions/index.ts'),
-      '@purityjs/core/islands': resolve(import.meta.dirname, '../core/src/islands/index.ts'),
+      '@purityjs/router': resolve(import.meta.dirname, '../router/src/index.ts'),
+      '@purityjs/platform/actions': resolve(import.meta.dirname, '../platform/src/actions.ts'),
+      '@purityjs/platform/islands': resolve(import.meta.dirname, '../platform/src/islands.ts'),
       '@purityjs/core/list-runtime': resolve(
         import.meta.dirname,
         '../core/src/control/list-runtime.ts',
       ),
-      '@purityjs/core/query': resolve(import.meta.dirname, '../core/src/query/index.ts'),
+      '@purityjs/platform/query': resolve(import.meta.dirname, '../platform/src/query-entry.ts'),
       '@purityjs/core': resolve(import.meta.dirname, '../core/src/index.ts'),
     },
   },

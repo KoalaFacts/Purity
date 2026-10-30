@@ -5,8 +5,8 @@ import {
   exitHydration,
   inflateDeferred,
   isDeferred,
-} from './compiler/hydrate-runtime.ts';
-import { hydratePendingCustomElements } from './compiler/hydrate-elements.ts';
+} from './runtime/hydrate-runtime.ts';
+import { hydratePendingCustomElements } from './runtime/hydrate-elements.ts';
 import {
   mount,
   scheduleMountCallbacks,
@@ -14,7 +14,7 @@ import {
   type ComponentFn,
   type MountResult,
 } from './component.ts';
-import { ComponentContext, attachToOwner, pushContext, popContext } from './scope.ts';
+import { ComponentContext, attachToOwner, pushContext, popContext } from '@purityjs/signals';
 import { checkpointHydrationCache, primeHydrationCache } from './ssr/hydration-cache.ts';
 
 // A successful nested root supersedes an older cache checkpoint. No per-root

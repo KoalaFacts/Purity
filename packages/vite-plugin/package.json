@@ -30,7 +30,14 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "development": "./src/index.ts",
+      "development": {
+        "node": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.js",
+          "require": "./dist/index.cjs"
+        },
+        "default": "./src/index.ts"
+      },
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
@@ -45,6 +52,8 @@
     "test:browser:devtools": "node --experimental-strip-types tests/devtools-browser.ts"
   },
   "dependencies": {
+    "@purityjs/compiler": "0.5.0",
+    "@purityjs/router": "0.5.0",
     "oxc-parser": "0.154.0"
   },
   "devDependencies": {

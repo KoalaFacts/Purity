@@ -9,7 +9,7 @@ import { bindComponentState, mount, onDispose } from '../src/component.ts';
 import { component, internals } from '../src/elements.ts';
 import { html } from '../src/compiler/compile.ts';
 import { resource } from '../src/resource.ts';
-import { state } from '../src/signals.ts';
+import { state } from '@purityjs/signals';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 

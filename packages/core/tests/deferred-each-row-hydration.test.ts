@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/jit.ts';
 import { inflateDeferredEach, match, type DeferredEach } from '../src/control.ts';
-import { popContext, pushContext, type Scope } from '../src/scope.ts';
-import { disposeScope, state } from '../src/signals.ts';
+import { popContext, pushContext, type Scope } from '@purityjs/signals';
+import { disposeScope, state } from '@purityjs/signals';
 
 const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Exact version matching the selected checkout and all four packages (e.g. 0.4.0)'
+        description: 'Exact version matching the selected checkout and all eight packages (e.g. 0.4.0)'
         required: true
 
 permissions:
@@ -30,7 +30,7 @@ jobs:
 
       - name: Verify requested version
         run: |
-          for package_dir in . packages/core packages/ssr packages/vite-plugin packages/cli; do
+          for package_dir in . packages/signals packages/compiler packages/core packages/router packages/platform packages/ssr packages/vite-plugin packages/cli; do
             package_version="$(node -p "require('./${package_dir}/package.json').version")"
             if [ "$package_version" != "$RELEASE_VERSION" ]; then
               echo "Version mismatch in $package_dir: $package_version != $RELEASE_VERSION" >&2
@@ -45,32 +45,28 @@ jobs:
       - name: Lint (Oxlint — Vite+)
         run: npm run lint
 
-      - name: Type-check
+      # Build dependencies first: declarations and runtime exports are consumed
+      # by other packages during their build and tests.
+      - name: Build framework packages in dependency order
+        run: |
+          npm run build -w packages/signals
+          npm run build -w packages/compiler
+          npm run build -w packages/core
+          npm run build -w packages/router
+          npm run build -w packages/platform
+          npm run build -w packages/ssr
+          npm run build -w packages/vite-plugin
+          npm run build -w packages/cli
+
+      - name: Type-check core
         run: npx tsc --noEmit -p packages/core
 
-      - name: Test core
-        run: npm test -w packages/core
+      - name: Test all workspaces
+        run: |
+          npm test
+          node --test scripts/finalize-release.test.mjs
 
-      - name: Test SSR
-        run: npm test -w packages/ssr
-
-      - name: Test vite-plugin
-        run: npm test -w packages/vite-plugin
-
-      # Build in dependency order
-      - name: Build core
-        run: npm run build -w packages/core
-
-      - name: Build SSR
-        run: npm run build -w packages/ssr
-
-      - name: Build vite-plugin
-        run: npm run build -w packages/vite-plugin
-
-      - name: Build cli
-        run: npm run build -w packages/cli
-
-      - name: Verify license texts in all four npm tarballs
+      - name: Verify license texts in all npm tarballs
         run: npm run check:licenses
 
       - name: Install browser engines
@@ -85,44 +81,21 @@ jobs:
       - name: Check Node request and public file boundaries
         run: npm run test:security:requests
 
-      # Publish in dependency order
-      # Each package trusts this workflow and the production environment on npm.
-      - name: Publish core
+      # Each package trusts this workflow and its production environment.
+      - name: Publish packages in dependency order
         run: |
-          if npm view "@purityjs/core@$RELEASE_VERSION" version --prefer-online >/dev/null 2>&1; then
-            echo "@purityjs/core@$RELEASE_VERSION is already published"
-          else
-            npm publish -w packages/core
-          fi
-
-      - name: Publish SSR
-        run: |
-          if npm view "@purityjs/ssr@$RELEASE_VERSION" version --prefer-online >/dev/null 2>&1; then
-            echo "@purityjs/ssr@$RELEASE_VERSION is already published"
-          else
-            npm publish -w packages/ssr
-          fi
-
-      - name: Publish vite-plugin
-        run: |
-          if npm view "@purityjs/vite-plugin@$RELEASE_VERSION" version --prefer-online >/dev/null 2>&1; then
-            echo "@purityjs/vite-plugin@$RELEASE_VERSION is already published"
-          else
-            npm publish -w packages/vite-plugin
-          fi
-
-      - name: Publish cli
-        run: |
-          if npm view "@purityjs/cli@$RELEASE_VERSION" version --prefer-online >/dev/null 2>&1; then
-            echo "@purityjs/cli@$RELEASE_VERSION is already published"
-          else
-            npm publish -w packages/cli
-          fi
+          for package in signals compiler core router platform ssr vite-plugin cli; do
+            if npm view "@purityjs/$package@$RELEASE_VERSION" version --prefer-online >/dev/null 2>&1; then
+              echo "@purityjs/$package@$RELEASE_VERSION is already published"
+            else
+              npm publish -w "packages/$package"
+            fi
+          done
 
       - name: Wait for published packages in npm registry
         run: |
           deadline=$((SECONDS + 600))
-          for package in @purityjs/core @purityjs/ssr @purityjs/vite-plugin @purityjs/cli; do
+          for package in @purityjs/signals @purityjs/compiler @purityjs/core @purityjs/router @purityjs/platform @purityjs/ssr @purityjs/vite-plugin @purityjs/cli; do
             spec="$package@$RELEASE_VERSION"
             until npm view "$spec" version --prefer-online --fetch-retries=0 --fetch-timeout=10000 >/dev/null 2>&1; do
               if (( SECONDS >= deadline )); then

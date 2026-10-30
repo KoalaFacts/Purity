@@ -36,7 +36,7 @@ if (process.argv.includes('--child')) {
   const { state } =
     format === 'esm'
       ? await import('../dist/index.js')
-      : (createRequire(import.meta.url)('../dist/index.cjs') as typeof import('../src/signals.ts'));
+      : (createRequire(import.meta.url)('../dist/index.cjs') as typeof import('@purityjs/signals'));
   let inspectorCalls = 0;
   const hook = (globalThis as unknown as { __purity_inspect__: { nodes(): unknown[] } })
     .__purity_inspect__;

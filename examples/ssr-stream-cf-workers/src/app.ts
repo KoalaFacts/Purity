@@ -8,7 +8,7 @@
 // in `prebuild`, which causes the plugin to write `src/.purity/routes.ts`
 // without any explicit consumer.
 
-import { asyncNotFound, asyncRoute, matchRoute } from '@purityjs/core/router';
+import { asyncNotFound, asyncRoute, matchRoute } from '@purityjs/router';
 
 import { notFoundChain, routes } from './.purity/routes.ts';
 

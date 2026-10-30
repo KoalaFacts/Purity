@@ -132,6 +132,9 @@ associate labels or submit form values.
 Opt in when a component wraps one native input, select, or textarea:
 
 ```ts
+import { enableFormControls } from '@purityjs/core/forms';
+
+enableFormControls();
 component('p-name-field', () => html`<label>Full name <input required /></label>`, {
   formControl: true,
 });

@@ -45,7 +45,7 @@ scripts. A loader can read that nonce from its server-side `request` and put it
 in the policy it returns:
 
 ```ts
-import { routeData } from '@purityjs/core/router';
+import { routeData } from '@purityjs/router';
 
 export function loader({ request }) {
   const nonce = request.headers.get('X-Purity-CSP-Nonce');
@@ -147,7 +147,7 @@ Node server sends the status and headers with the rendered HTML. This is useful
 for a missing record or cache policy:
 
 ```ts
-import { routeData } from '@purityjs/core/router';
+import { routeData } from '@purityjs/router';
 
 export async function loader({ params }) {
   const post = await findPost(params.slug);
@@ -195,7 +195,7 @@ to the form with an accessible error message and HTTP 422.
 Export actions from `src/actions/**/*.server.ts` using `serverAction()`:
 
 ```ts
-import { serverAction } from '@purityjs/core/actions';
+import { serverAction } from '@purityjs/platform/actions';
 
 export const save = serverAction('/actions/save', async (request) => {
   const form = await request.formData();

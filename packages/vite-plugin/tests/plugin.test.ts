@@ -77,7 +77,7 @@ describe('@purityjs/vite-plugin', () => {
     const out = result.code;
     // The injected line should appear after both original imports.
     const injected = out.indexOf(
-      "import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, swapSlot as __purity_sw__ } from '@purityjs/core/runtime';",
+      "import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/runtime';",
     );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf("from './other.ts'"));
@@ -95,7 +95,7 @@ describe('@purityjs/vite-plugin', () => {
     expect(result).not.toBeNull();
     const out = result!.code;
     const injected = out.indexOf(
-      "import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, swapSlot as __purity_sw__ } from '@purityjs/core/runtime';",
+      "import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/runtime';",
     );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf('// last import on its own line'));
@@ -111,7 +111,7 @@ describe('@purityjs/vite-plugin', () => {
     expect(result).not.toBeNull();
     const out = result!.code;
     const injected = out.indexOf(
-      "import { renderCompiledTemplate as __purity_renderCompiled__, flattenValue as __purity_fl__, swapSlot as __purity_sw__ } from '@purityjs/core/runtime';",
+      "import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/runtime';",
     );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf("from './data.json'"));
@@ -277,6 +277,18 @@ describe('@purityjs/vite-plugin', () => {
     ).toBeNull();
     expect(plugin.transform(code, resolve(import.meta.dirname, '../src/index.ts'))).toBeNull();
   });
+
+  it.each(['signals', 'compiler', 'router', 'platform'])(
+    'skips %s package source without skipping consumer lookalikes',
+    (name) => {
+      const code = "import { html } from '@purityjs/core/jit'; const view = html`<p>x</p>`;";
+      expect(plugin.transform(code, `/x/node_modules/@purityjs/${name}/index.ts`)).toBeNull();
+      expect(
+        plugin.transform(code, resolve(import.meta.dirname, `../../${name}/src/index.ts`)),
+      ).toBeNull();
+      expect(plugin.transform(code, `/consumer/packages/${name}/index.ts`)).not.toBeNull();
+    },
+  );
 
   it('compiles consumer paths that resemble framework directories', () => {
     const code = "import { html } from '@purityjs/core/jit'; const view = html`<p>x</p>`;";

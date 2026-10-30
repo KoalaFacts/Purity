@@ -1,4 +1,4 @@
-import { currentPath, head } from '@purityjs/core/router';
+import { currentPath, head } from '@purityjs/router';
 import { html } from '@purityjs/core/jit';
 
 export default function NotFoundPage(): unknown {

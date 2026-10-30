@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { onDestroy, onFormReset, onMount, unmountContext } from '../src/component.ts';
+import { onDestroy, onMount, unmountContext } from '../src/component.ts';
+import { onFormReset } from '../src/forms.ts';
 import { component } from '../src/elements.ts';
-import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
+import { ComponentContext, popContext, pushContext } from '@purityjs/signals';
 
 describe('SV2-015 lean component ownership', () => {
   it('does not allocate unused optional fields on ordinary owners', () => {
@@ -27,8 +28,8 @@ describe('SV2-015 lean component ownership', () => {
     }
 
     // Lifecycle essentials still have their existing initial value.
-    expect(ctx.disposers).toBeNull();
-    expect(ctx._isDestroyed).toBe(false);
+    expect(ctx.disposers).toBeUndefined();
+    expect(ctx._isDestroyed).toBeFalsy();
 
     const reset = () => {};
     const mounted = () => {};

@@ -5,7 +5,7 @@
 // title updates on SPA navigation between /users/42 and /users/99.
 
 import { html } from '@purityjs/core/jit';
-import { manageTitle } from '@purityjs/core/router';
+import { manageTitle } from '@purityjs/router';
 import type { RouteParams } from '@purityjs/vite-plugin';
 
 export default function UserProfilePage(params: RouteParams<'/users/:id'>): unknown {

@@ -20,7 +20,7 @@
 
 import { component, css, slot, state } from '@purityjs/core';
 import { html } from '@purityjs/core/jit';
-import { island } from '@purityjs/core/islands';
+import { island } from '@purityjs/platform/islands';
 
 component('demo-expander', () => {
   const open = state(false);

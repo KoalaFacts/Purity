@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it } from 'vite-plus/test';
-import type { ElementNode, FragmentNode } from '../src/compiler/ast.ts';
+import type { ElementNode, FragmentNode } from '@purityjs/compiler';
 import {
   generate,
   generateHydrate,
   generateHydrateLinked,
   generateLinked,
   generateSSR,
-} from '../src/compiler/codegen.ts';
-import { parse } from '../src/compiler/parser.ts';
-import { flattenValue, swapSlot } from '../src/compiler/value-helpers.ts';
-import { ssrHelpers } from '../src/compiler/ssr-runtime.ts';
-import { state, watch } from '../src/signals.ts';
+} from '@purityjs/compiler';
+import { parse } from '@purityjs/compiler';
+import { flattenValue, safeUrl, swapSlot, template } from '../src/runtime/csr-runtime.ts';
+import { ssrHelpers } from '@purityjs/ssr/runtime';
+import { state, watch } from '@purityjs/signals';
 
 const stops: (() => void)[] = [];
 const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
@@ -57,18 +57,24 @@ function render(
     root.innerHTML = markup;
     const prior = Array.from(root.childNodes);
     const source = linked ? generateHydrateLinked(ast) : generateHydrate(ast);
-    const factory = new Function('__purity_fl__', '__purity_sw__', `return ${source}`)(
-      flattenValue,
-      swapSlot,
-    );
+    const factory = new Function(
+      '__purity_fl__',
+      '__purity_sw__',
+      '__purity_tmpl__',
+      '__purity_url__',
+      `return ${source}`,
+    )(flattenValue, swapSlot, template, safeUrl);
     factory(values, track, root);
     expect(Array.from(root.childNodes)).toEqual(prior);
   } else {
     const source = linked ? generateLinked(ast) : generate(ast);
-    const factory = new Function('__purity_fl__', '__purity_sw__', `return ${source}`)(
-      flattenValue,
-      swapSlot,
-    );
+    const factory = new Function(
+      '__purity_fl__',
+      '__purity_sw__',
+      '__purity_tmpl__',
+      '__purity_url__',
+      `return ${source}`,
+    )(flattenValue, swapSlot, template, safeUrl);
     root.appendChild(factory(values, track));
   }
   return root;

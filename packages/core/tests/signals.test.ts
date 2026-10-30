@@ -2,8 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
-import { batch, compute, state, watch, type ComputedAccessor } from '../src/signals.ts';
+import { ComponentContext, popContext, pushContext } from '@purityjs/signals';
+import { batch, compute, state, watch, type ComputedAccessor } from '@purityjs/signals';
 
 describe('state', () => {
   it('reads the initial value', () => {
@@ -882,7 +882,7 @@ describe('flush — cross-effect feedback loops', () => {
     const script = `
       (async () => {
         const { compute, state, watch } = await import(${JSON.stringify(
-          pathToFileURL(join(import.meta.dirname, '..', 'src', 'signals.ts')).href,
+          pathToFileURL(join(import.meta.dirname, '..', '..', 'signals', 'src', 'signals.ts')).href,
         )});
         const tick = () => new Promise((r) => queueMicrotask(r));
         console.error = () => {};

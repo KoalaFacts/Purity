@@ -1,5 +1,17 @@
 // Passive SSR context state. Reading it must not import server renderers.
 
+import type { SSRMarkupHooks } from '../hooks.ts';
+
+// Installed only when an SSR pass starts. Client consumers (head, island) read
+// this table without pulling ssr-runtime into client bundles.
+/** @internal */
+export let ssrMarkup: SSRMarkupHooks;
+
+/** @internal */
+export function setSSRMarkup(markup: SSRMarkupHooks): void {
+  ssrMarkup = markup;
+}
+
 export interface SSRRenderContext {
   pendingPromises: Promise<unknown>[];
   /** In-flight operations reused while another boundary triggers a new pass. @internal */

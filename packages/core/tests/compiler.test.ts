@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { generate } from '../src/compiler/codegen.ts';
+import { generate } from '@purityjs/compiler';
 import { html, makeDeferred } from '../src/compiler/compile.ts';
 import {
   checkHydrationCursor,
@@ -13,9 +13,9 @@ import {
   isHydrating,
   resetHydration,
   withHydration,
-} from '../src/compiler/hydrate-runtime.ts';
-import { parse } from '../src/compiler/parser.ts';
-import { state } from '../src/signals.ts';
+} from '../src/runtime/hydrate-runtime.ts';
+import { parse } from '@purityjs/compiler';
+import { state } from '@purityjs/signals';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 

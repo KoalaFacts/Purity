@@ -33,16 +33,27 @@ if (apache) {
 const output = mkdtempSync(join(tmpdir(), 'purity-package-licenses-'));
 const failures = [];
 try {
-  for (const short of ['core', 'ssr', 'vite-plugin', 'cli']) {
+  for (const short of [
+    'signals',
+    'compiler',
+    'core',
+    'router',
+    'platform',
+    'ssr',
+    'vite-plugin',
+    'cli',
+  ]) {
     const name = `@purityjs/${short}`;
     try {
-      const packed = JSON.parse(
+      const packedResult = JSON.parse(
         execFileSync(
           process.execPath,
           [npmCli, 'pack', '--json', '--workspace', name, '--pack-destination', output],
           { cwd: root, encoding: 'utf8', timeout: 60_000 },
         ),
-      )[0];
+      );
+      const packed = Array.isArray(packedResult) ? packedResult[0] : packedResult[name];
+      assert.ok(packed?.filename, `${name}: npm pack did not report an archive`);
       const archive = join(output, packed.filename);
       const files = new Set(packed.files.map((file) => file.path));
       const content = (path) => {

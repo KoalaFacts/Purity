@@ -3,8 +3,8 @@
 import assert from 'node:assert/strict';
 import { setImmediate as nextJob, setTimeout as delay } from 'node:timers/promises';
 
-import { popContext, pushContext, type Scope } from '../src/scope.ts';
-import { compute, disposeScope, state, watch } from '../src/signals.ts';
+import { popContext, pushContext, type Scope } from '@purityjs/signals';
+import { compute, disposeScope, state, watch } from '@purityjs/signals';
 
 const gc = globalThis.gc;
 assert.ok(gc, 'Run this probe using node --expose-gc');

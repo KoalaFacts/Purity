@@ -1,0 +1,156 @@
+{
+  "name": "@purityjs/platform",
+  "version": "0.5.0",
+  "description": "Platform integrations for Purity",
+  "license": "Apache-2.0",
+  "author": "KoalaFacts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KoalaFacts/Purity.git",
+    "directory": "packages/platform"
+  },
+  "files": [
+    "dist",
+    "src",
+    "LICENSE",
+    "NOTICE",
+    "LICENSES"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./actions": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/actions.d.ts",
+            "import": "./dist/actions.js",
+            "require": "./dist/actions.cjs"
+          },
+          "default": "./src/actions.ts"
+        },
+        "types": "./dist/actions.d.ts",
+        "import": "./dist/actions.js",
+        "require": "./dist/actions.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/actions.d.ts",
+          "import": "./dist/actions.js",
+          "require": "./dist/actions.cjs"
+        },
+        "default": "./src/actions.ts"
+      },
+      "types": "./dist/actions.d.ts",
+      "browser": {
+        "import": "./dist/browser/actions.js",
+        "require": "./dist/browser/actions.cjs"
+      },
+      "import": "./dist/actions.js",
+      "require": "./dist/actions.cjs"
+    },
+    "./signals": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/browser-signals/index.d.ts",
+            "import": "./dist/signals.js",
+            "require": "./dist/signals.cjs"
+          },
+          "default": "./src/browser-signals/index.ts"
+        },
+        "types": "./dist/browser-signals/index.d.ts",
+        "import": "./dist/signals.js",
+        "require": "./dist/signals.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/browser-signals/index.d.ts",
+          "import": "./dist/signals.js",
+          "require": "./dist/signals.cjs"
+        },
+        "default": "./src/browser-signals/index.ts"
+      },
+      "types": "./dist/browser-signals/index.d.ts",
+      "browser": {
+        "import": "./dist/browser/signals.js",
+        "require": "./dist/browser/signals.cjs"
+      },
+      "import": "./dist/signals.js",
+      "require": "./dist/signals.cjs"
+    },
+    "./query": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/query-entry.d.ts",
+            "import": "./dist/query.js",
+            "require": "./dist/query.cjs"
+          },
+          "default": "./src/query-entry.ts"
+        },
+        "types": "./dist/query-entry.d.ts",
+        "import": "./dist/query.js",
+        "require": "./dist/query.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/query-entry.d.ts",
+          "import": "./dist/query.js",
+          "require": "./dist/query.cjs"
+        },
+        "default": "./src/query-entry.ts"
+      },
+      "types": "./dist/query-entry.d.ts",
+      "browser": {
+        "import": "./dist/browser/query.js",
+        "require": "./dist/browser/query.cjs"
+      },
+      "import": "./dist/query.js",
+      "require": "./dist/query.cjs"
+    },
+    "./islands": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/islands.d.ts",
+            "import": "./dist/islands.js",
+            "require": "./dist/islands.cjs"
+          },
+          "default": "./src/islands.ts"
+        },
+        "types": "./dist/islands.d.ts",
+        "import": "./dist/islands.js",
+        "require": "./dist/islands.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/islands.d.ts",
+          "import": "./dist/islands.js",
+          "require": "./dist/islands.cjs"
+        },
+        "default": "./src/islands.ts"
+      },
+      "types": "./dist/islands.d.ts",
+      "browser": {
+        "import": "./dist/browser/islands.js",
+        "require": "./dist/browser/islands.cjs"
+      },
+      "import": "./dist/islands.js",
+      "require": "./dist/islands.cjs"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vp build && vp build -c vite.browser.config.ts && tsc --emitDeclarationOnly",
+    "test": "vp test run"
+  },
+  "dependencies": {
+    "@purityjs/signals": "^0.5.0"
+  },
+  "peerDependencies": {
+    "@purityjs/core": "^0.5.0"
+  }
+}

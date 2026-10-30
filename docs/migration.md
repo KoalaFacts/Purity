@@ -102,6 +102,6 @@ Purity uses `html\`\``tagged template literals (compiled by the`@purityjs/vite-p
 ## Check the differences before migrating
 
 - **Rendering:** Purity supports SSR and hydration through `@purityjs/ssr` and `hydrate()`. The CLI's `--ssr` starter supplies a Node server; [server rendering](./server-rendering.md) covers the path from project creation to deployment. [Islands](./islands.md) allow selected regions to hydrate.
-- **Routing:** `@purityjs/core/router` exports route and navigation primitives, including `currentPath()`, `matchRoute()`, and `navigate()`. Review their composition before replacing an app that relies on a framework-specific router.
+- **Routing:** `@purityjs/router` exports route and navigation primitives, including `currentPath()`, `matchRoute()`, and `navigate()`. Review their composition before replacing an app that relies on a framework-specific router.
 - **State:** Share `state()` from a module for app-wide values. Use `resource()` or `query()` when asynchronous data needs loading and error states.
 - **Styling and templates:** Purity uses `html` tagged templates rather than JSX. Use `css` tagged templates inside components and regular stylesheets elsewhere. The Vite plugin compiles templates ahead of time.

@@ -8,8 +8,8 @@
 // exactly once per process.
 // ---------------------------------------------------------------------------
 
-import { generateSSR, parse } from '@purityjs/core/compiler';
-import { type SSRHelpers, ssrHelpers, type SSRHtml } from '@purityjs/core/internal';
+import { generateSSR, parse } from '@purityjs/compiler';
+import { type SSRHelpers, ssrHelpers, type SSRHtml } from './runtime.ts';
 
 type SSRCompiledFn = (values: unknown[], helpers: SSRHelpers) => SSRHtml;
 

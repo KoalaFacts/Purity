@@ -1,10 +1,5 @@
 import { createServer, type ServerResponse } from 'node:http';
-import {
-  asyncRoute,
-  routeData,
-  type AsyncRouteEntry,
-  type LoaderContext,
-} from '@purityjs/core/router';
+import { asyncRoute, routeData, type AsyncRouteEntry, type LoaderContext } from '@purityjs/router';
 import { suspense } from '@purityjs/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {

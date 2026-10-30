@@ -1,4 +1,4 @@
-import { asyncNotFound, asyncRoute, matchRoute } from '@purityjs/core/router';
+import { asyncNotFound, asyncRoute, matchRoute } from '@purityjs/router';
 import { notFoundChain, routes } from 'purity:routes';
 
 export function App(): unknown {

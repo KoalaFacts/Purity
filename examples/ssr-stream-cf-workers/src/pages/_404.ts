@@ -1,7 +1,7 @@
 // Root 404 page (ADR 0021/0028). asyncNotFound(notFoundChain) lands here
 // when matchRoute() finds no entry.
 
-import { currentPath, head } from '@purityjs/core/router';
+import { currentPath, head } from '@purityjs/router';
 import { html } from '@purityjs/core/jit';
 
 export default function NotFoundPage(): unknown {

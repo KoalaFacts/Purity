@@ -1,0 +1,1504 @@
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { describe, expect, it, vi } from 'vite-plus/test';
+import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
+import { batch, compute, state, watch, type ComputedAccessor } from '../src/signals.ts';
+
+describe('state', () => {
+  it('reads the initial value', () => {
+    const count = state(0);
+    expect(count()).toBe(0);
+  });
+
+  it('writes and reads a new value', () => {
+    const count = state(0);
+    count(5);
+    expect(count()).toBe(5);
+  });
+
+  it('supports .get() and .set()', () => {
+    const count = state(10);
+    expect(count.get()).toBe(10);
+    count.set(20);
+    expect(count.get()).toBe(20);
+  });
+
+  it('keeps state.get read-only when called with callback-supplied arguments', () => {
+    const value = state(42);
+    // Array.map passes value, index and array arguments to the callback.
+    // get() must ignore them rather than turn the getter into a setter.
+    expect([1, 2].map(value.get)).toEqual([42, 42]);
+    expect(value()).toBe(42);
+  });
+
+  it('accepts updater function', () => {
+    const count = state(5);
+    count((v) => v + 1);
+    expect(count()).toBe(6);
+    count((v) => v * 3);
+    expect(count()).toBe(18);
+  });
+
+  it('updater works with arrays', () => {
+    const items = state(['a', 'b']);
+    items((v) => [...v, 'c']);
+    expect(items()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('updater works with booleans', () => {
+    const flag = state(true);
+    flag((v) => !v);
+    expect(flag()).toBe(false);
+  });
+
+  it('supports .peek() without tracking', () => {
+    const count = state(42);
+    expect(count.peek()).toBe(42);
+  });
+
+  it('works with different value types', () => {
+    const str = state('hello');
+    expect(str()).toBe('hello');
+    str('world');
+    expect(str()).toBe('world');
+
+    const obj = state({ a: 1 });
+    expect(obj()).toEqual({ a: 1 });
+    obj({ b: 2 });
+    expect(obj()).toEqual({ b: 2 });
+
+    const arr = state([1, 2, 3]);
+    expect(arr()).toEqual([1, 2, 3]);
+  });
+});
+
+describe('computed', () => {
+  it('derives a value from state', () => {
+    const count = state(5);
+    const doubled = compute(() => count() * 2);
+    expect(doubled()).toBe(10);
+  });
+
+  it('updates when dependency changes', () => {
+    const count = state(1);
+    const doubled = compute(() => count() * 2);
+
+    expect(doubled()).toBe(2);
+    count(3);
+    expect(doubled()).toBe(6);
+  });
+
+  it('chains multiple computed values', () => {
+    const a = state(1);
+    const b = compute(() => a() + 1);
+    const c = compute(() => b() * 2);
+
+    expect(c()).toBe(4);
+    a(5);
+    expect(c()).toBe(12);
+  });
+
+  it('supports .peek() without tracking', () => {
+    const count = state(3);
+    const doubled = compute(() => count() * 2);
+    expect(doubled.peek()).toBe(6);
+  });
+
+  it('converges (no stale CLEAN) when its body writes a source it just read', () => {
+    // Regression: a compute reads S once (snapshotting S.version), then writes
+    // S mid-run WITHOUT re-reading it. The write bumps S.version and
+    // markDirty()s the running compute (it is an observer of S), demoting it to
+    // DIRTY. runComputed used to then unconditionally force status = CLEAN,
+    // clobbering that DIRTY and stranding the node CLEAN with a stale
+    // sourceVersions snapshot (still the pre-write version). The node then
+    // returned its stale value on every subsequent read without re-running,
+    // because CLEAN short-circuits the pull. The fix re-runs the compute to a
+    // fixed point so it settles CLEAN with a snapshot consistent with S.
+    const s = state(0);
+    let runs = 0;
+    const c = compute(() => {
+      runs++;
+      const v = s(); // read once, snapshot version
+      if (v < 1) s(v + 1); // self-write; do NOT re-read s in this body
+      return v;
+    });
+
+    // First read drives the self-write (s 0→1) and re-runs to the fixed point:
+    // second pass reads s=1, 1 is not < 1, returns 1. Value is the stable
+    // result, not the stale 0, and it took more than one evaluation.
+    expect(c()).toBe(1);
+    expect(s()).toBe(1);
+    expect(runs).toBeGreaterThan(1);
+
+    // The node is now CLEAN with a consistent snapshot — a repeat read is a
+    // cache hit (no further re-run, no further write).
+    const runsAfterSettle = runs;
+    expect(c()).toBe(1);
+    expect(runs).toBe(runsAfterSettle);
+  });
+
+  it('stays reactive to external writes after a self-write run (pull)', () => {
+    // The stranded-CLEAN bug also broke later external writes via the pull
+    // path: a node left CLEAN with a stale snapshot would, on the next pull,
+    // see snapshot===version and never re-run. After the fix the snapshot is
+    // consistent, so a genuine external write is observed.
+    const s = state(0);
+    const c = compute(() => {
+      const v = s();
+      if (v < 1) s(v + 1);
+      return v;
+    });
+    expect(c()).toBe(1); // settled fixed point
+    s(9); // external write
+    expect(c()).toBe(9); // re-runs and picks up the new value
+  });
+
+  it('stays reactive to external writes after a self-write run (effect)', async () => {
+    // Second-order check: an effect observing such a compute must still fire
+    // when the underlying state is later written from the outside.
+    const s = state(0);
+    const c = compute(() => {
+      const v = s();
+      if (v < 1) s(v + 1);
+      return v;
+    });
+    const seen: number[] = [];
+    watch(() => {
+      seen.push(c());
+    });
+    await tick();
+    s(9);
+    await tick();
+    expect(seen[seen.length - 1]).toBe(9);
+  });
+
+  it('does not hang when a compute keeps writing a strictly-changing dep', () => {
+    // A pathological/buggy compute that never stabilises must be bounded, not
+    // hang the thread. The fixpoint loop caps re-runs and settles CLEAN after
+    // logging, so the call returns.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = state(0);
+    const c = compute(() => {
+      const v = s();
+      s(v + 1); // always writes a new value — never converges
+      return v;
+    });
+    expect(() => c()).not.toThrow();
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it('does not overflow the stack when a compute reads itself', () => {
+    // Regression (MED): a self-referential compute used to recurse without
+    // bound — readNode saw status !== CLEAN and re-entered updateValue →
+    // runComputed → fn() → readNode → … → RangeError. runComputed now marks
+    // the node CLEAN before invoking fn(), so the recursive self-read takes
+    // the cache path (returns the previous value) instead of recursing.
+    let c: ReturnType<typeof compute<number>> | undefined;
+    c = compute(() => {
+      const prev = c ? c() : 0;
+      return prev + 1;
+    });
+    expect(() => c!()).not.toThrow();
+  });
+});
+
+describe('watch (auto-track)', () => {
+  it('runs immediately on creation', () => {
+    const fn = vi.fn();
+    const count = state(0);
+
+    watch(() => {
+      fn(count());
+    });
+
+    expect(fn).toHaveBeenCalledWith(0);
+  });
+
+  it('re-runs when dependencies change', async () => {
+    const values = [];
+    const count = state(0);
+
+    watch(() => {
+      values.push(count());
+    });
+
+    expect(values).toEqual([0]);
+
+    count(1);
+    // Effects are batched via microtask
+    await new Promise((r) => queueMicrotask(r));
+    expect(values).toEqual([0, 1]);
+
+    count(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(values).toEqual([0, 1, 2]);
+  });
+
+  it('returns a dispose function', async () => {
+    const values = [];
+    const count = state(0);
+
+    const dispose = watch(() => {
+      values.push(count());
+    });
+
+    expect(values).toEqual([0]);
+    dispose();
+
+    count(1);
+    await new Promise((r) => queueMicrotask(r));
+    // Should not have re-run after dispose
+    expect(values).toEqual([0]);
+  });
+
+  it('calls cleanup function on re-run', async () => {
+    const cleanups = [];
+    const count = state(0);
+
+    watch(() => {
+      count(); // track dependency
+      return () => cleanups.push('cleanup');
+    });
+
+    count(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(cleanups).toEqual(['cleanup']);
+  });
+});
+
+describe('watch', () => {
+  it('auto-tracks like effect', () => {
+    const fn = vi.fn();
+    const count = state(0);
+
+    watch(() => fn(count()));
+    expect(fn).toHaveBeenCalledWith(0);
+  });
+
+  it('evaluates an explicit single source once on subscription and keeps tracking it', async () => {
+    const source = state(0);
+    const getter = vi.fn(() => source());
+    const calls: { value: number; oldValue: number }[] = [];
+
+    const stop = watch(getter, (value, oldValue) => {
+      calls.push({ value, oldValue });
+    });
+
+    expect(getter).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual([]);
+
+    source(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(getter).toHaveBeenCalledTimes(2);
+    expect(calls).toEqual([{ value: 1, oldValue: 0 }]);
+    stop();
+  });
+
+  it('evaluates each explicit tuple source once on subscription and retains initial values', async () => {
+    const left = state(10);
+    const right = state('a');
+    const readLeft = vi.fn(() => left());
+    const readRight = vi.fn(() => right());
+    const calls: { values: [number, string]; previous: [number, string] }[] = [];
+
+    const stop = watch([readLeft, readRight], (values, previous) => {
+      calls.push({ values: [...values], previous: [...previous] });
+    });
+
+    expect(readLeft).toHaveBeenCalledTimes(1);
+    expect(readRight).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual([]);
+
+    right('b');
+    await new Promise((r) => queueMicrotask(r));
+    expect(readLeft).toHaveBeenCalledTimes(2);
+    expect(readRight).toHaveBeenCalledTimes(2);
+    expect(calls).toEqual([{ values: [10, 'b'], previous: [10, 'a'] }]);
+    stop();
+  });
+
+  it('does not accidentally subscribe a parent effect when an explicit child watch is created', async () => {
+    const parentSource = state(0);
+    const childSource = state(0);
+    const seen: number[] = [];
+    let parentRuns = 0;
+
+    const stop = watch(() => {
+      parentRuns++;
+      parentSource();
+      watch(childSource, (value) => {
+        seen.push(value);
+      });
+    });
+
+    expect(parentRuns).toBe(1);
+    childSource(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(parentRuns).toBe(1);
+    expect(seen).toEqual([1]);
+
+    parentSource(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(parentRuns).toBe(2);
+
+    childSource(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(parentRuns).toBe(2);
+    expect(seen).toEqual([1, 2]);
+
+    stop();
+    childSource(3);
+    await new Promise((r) => queueMicrotask(r));
+    expect(seen).toEqual([1, 2]);
+  });
+
+  it('watches a single source with old/new values', async () => {
+    const calls = [];
+    const count = state(0);
+
+    watch(count, (val, old) => {
+      calls.push({ val, old });
+    });
+
+    count(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual([{ val: 1, old: 0 }]);
+
+    count(5);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual([
+      { val: 1, old: 0 },
+      { val: 5, old: 1 },
+    ]);
+  });
+
+  it('watches multiple sources', async () => {
+    const calls = [];
+    const a = state(1);
+    const b = state('x');
+
+    watch([a, b], (vals, olds) => {
+      calls.push({ vals: [...vals], olds: [...olds] });
+    });
+
+    a(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual([{ vals: [2, 'x'], olds: [1, 'x'] }]);
+
+    b('y');
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual([
+      { vals: [2, 'x'], olds: [1, 'x'] },
+      { vals: [2, 'y'], olds: [2, 'x'] },
+    ]);
+  });
+
+  it('watches a computed source', async () => {
+    const calls = [];
+    const count = state(1);
+    const doubled = compute(() => count() * 2);
+
+    watch(doubled, (val, old) => {
+      calls.push({ val, old });
+    });
+
+    count(3);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual([{ val: 6, old: 2 }]);
+  });
+
+  it('does not fire callback on initial run (explicit source)', async () => {
+    const fn = vi.fn();
+    const count = state(0);
+
+    watch(count, fn);
+    expect(fn).not.toHaveBeenCalled();
+
+    count(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns dispose function (explicit source)', async () => {
+    const calls = [];
+    const count = state(0);
+
+    const stop = watch(count, (val) => calls.push(val));
+
+    count(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual([1]);
+
+    stop();
+
+    count(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual([1]);
+  });
+
+  it('does not subscribe an explicit single-source watch to signals read by its callback', async () => {
+    const source = state(0);
+    const unrelated = state('first');
+    const calls: string[] = [];
+    const stop = watch(source, (value) => {
+      calls.push(`${value}:${unrelated()}`);
+    });
+
+    source(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual(['1:first']);
+
+    unrelated('second');
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual(['1:first']);
+
+    source(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual(['1:first', '2:second']);
+    stop();
+  });
+
+  it('tracks declared tuple sources without tracking reads in the callback', async () => {
+    const left = state(0);
+    const right = state(0);
+    const unrelated = state('first');
+    const calls: string[] = [];
+    const stop = watch([left, right], ([a, b]) => {
+      calls.push(`${a},${b}:${unrelated()}`);
+    });
+
+    left(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual(['1,0:first']);
+
+    unrelated('second');
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual(['1,0:first']);
+
+    right(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(calls).toEqual(['1,0:first', '1,2:second']);
+    stop();
+  });
+
+  it('preserves tuple watch callback value snapshots across subsequent source changes', async () => {
+    const first = state(0);
+    const second = state(0);
+    const observed: { values: number[]; oldValues: number[] }[] = [];
+    const stop = watch([first, second], (values, oldValues) => {
+      // Applications may retain arguments after a callback returns.
+      observed.push({ values, oldValues });
+    });
+
+    first(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(observed).toEqual([{ values: [1, 0], oldValues: [0, 0] }]);
+
+    second(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(observed).toEqual([
+      { values: [1, 0], oldValues: [0, 0] },
+      { values: [1, 2], oldValues: [1, 0] },
+    ]);
+
+    first(3);
+    await new Promise((r) => queueMicrotask(r));
+    expect(observed).toEqual([
+      { values: [1, 0], oldValues: [0, 0] },
+      { values: [1, 2], oldValues: [1, 0] },
+      { values: [3, 2], oldValues: [1, 2] },
+    ]);
+    stop();
+  });
+
+  it('does not reuse tuple values retained by a throwing callback', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const source = state(0);
+    const snapshots: number[][] = [];
+    const stop = watch([source], (values) => {
+      snapshots.push(values);
+      if (values[0] === 1) throw new Error('intentional callback failure');
+    });
+
+    try {
+      source(1);
+      await new Promise((r) => queueMicrotask(r));
+      expect(errSpy).toHaveBeenCalled();
+      expect(snapshots).toEqual([[1]]);
+
+      source(2);
+      await new Promise((r) => queueMicrotask(r));
+      expect(snapshots).toEqual([[1], [2]]);
+    } finally {
+      stop();
+      errSpy.mockRestore();
+    }
+  });
+});
+
+describe('batch', () => {
+  it('batches multiple updates', async () => {
+    const values = [];
+    const a = state(0);
+    const b = state(0);
+
+    watch(() => {
+      values.push(`${a()}-${b()}`);
+    });
+
+    expect(values).toEqual(['0-0']);
+
+    batch(() => {
+      a(1);
+      b(2);
+    });
+
+    await new Promise((r) => queueMicrotask(r));
+    // Should have the combined result, not intermediate states
+    expect(values[values.length - 1]).toBe('1-2');
+  });
+});
+
+describe('watch re-entrancy guard', () => {
+  it('has a max depth guard on effects', () => {
+    // The guard exists as a safety net (MAX_EFFECT_DEPTH = 100). In normal
+    // use the push-pull model already prevents synchronous self-triggering
+    // — the effect's status flips to CLEAN at the end of its run, so any
+    // self-write that re-enqueued it gets skipped on the next flush
+    // iteration. The depth guard is defense in depth for cycles between
+    // multiple effects via shared state. A direct test of that scenario
+    // lives in the "reactivity semantics" suite below.
+    expect(true).toBe(true);
+  });
+
+  it('does not corrupt the depth counter when the guard trips (guard still works on later runs)', () => {
+    // Regression: the guard used to reset effectDepth = 0 before throwing.
+    // The throw escapes before this frame's finally runs, but every enclosing
+    // runComputed frame still decrements effectDepth as the stack unwinds.
+    // Resetting to 0 first therefore left the counter deeply negative after a
+    // ~100-deep unwind, so the SECOND deep recursion would never re-trip the
+    // guard — uncapped recursion silently allowed. The fix decrements only
+    // this frame's own increment, keeping the counter balanced.
+
+    // Nested watch() inside an effect body re-runs synchronously through
+    // _effect → updateValue → runComputed, so this drives effectDepth up.
+    const recur = (n: number): void => {
+      if (n > 0) watch(() => recur(n - 1));
+    };
+
+    // First deep recursion trips the guard and throws.
+    expect(() => watch(() => recur(150))).toThrow(/Maximum effect depth/);
+
+    // With a corrupted (negative) counter the second run would complete
+    // without throwing. A healthy counter re-trips the guard.
+    expect(() => watch(() => recur(150))).toThrow(/Maximum effect depth/);
+  });
+});
+
+describe('watch dispose + cleanup', () => {
+  it('runs cleanup function on dispose', async () => {
+    const a = state(0);
+    let cleanedUp = false;
+    const dispose = watch(() => {
+      a();
+      return () => {
+        cleanedUp = true;
+      };
+    });
+    expect(cleanedUp).toBe(false);
+    dispose();
+    expect(cleanedUp).toBe(true);
+  });
+
+  it('dispose is idempotent', () => {
+    const a = state(0);
+    const dispose = watch(() => a());
+    dispose();
+    expect(() => dispose()).not.toThrow();
+  });
+
+  it('does not re-run after dispose', async () => {
+    const a = state(0);
+    const fn = vi.fn(() => {
+      a();
+    });
+    const dispose = watch(fn);
+    expect(fn).toHaveBeenCalledTimes(1);
+    dispose();
+    a(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('signal write produces same value', () => {
+  it('does not re-run watch when value is unchanged', async () => {
+    const a = state(1);
+    const fn = vi.fn(() => a());
+    watch(fn);
+    expect(fn).toHaveBeenCalledTimes(1);
+
+    a(1); // same value
+    await new Promise((r) => queueMicrotask(r));
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispose during pending flush coalesces with that flush', async () => {
+    // Write to signal first → schedules microtask. Then dispose immediately.
+    // scheduleUnwatch sees microtaskScheduled=true and skips re-scheduling.
+    const a = state(0);
+    const fn = vi.fn(() => a());
+    const dispose = watch(fn);
+    a(1);
+    dispose();
+    await new Promise((r) => queueMicrotask(r));
+    // No additional invocation after dispose
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('batch — nested', () => {
+  it('coalesces updates across nested batches', async () => {
+    const a = state(0);
+    const fn = vi.fn(() => a());
+    watch(fn);
+    expect(fn).toHaveBeenCalledTimes(1);
+
+    batch(() => {
+      a(1);
+      batch(() => {
+        a(2);
+        a(3);
+      });
+      a(4);
+    });
+    await new Promise((r) => queueMicrotask(r));
+    // Single re-run regardless of nesting
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(a()).toBe(4);
+  });
+
+  it('flushes after batch when microtask already scheduled', async () => {
+    const a = state(0);
+    const b = state(0);
+    const seen: number[] = [];
+    watch(() => {
+      seen.push(a() + b());
+    });
+    a(1);
+    batch(() => {
+      b(2);
+    });
+    await new Promise((r) => queueMicrotask(r));
+    expect(seen[seen.length - 1]).toBe(3);
+  });
+});
+
+describe('watch flush — throw isolation across pending effects', () => {
+  // Verifies the scheduler invariant: a throwing watch must not silently
+  // skip its siblings nor wedge the queue. Without per-effect isolation,
+  // when watch A (queued first) throws, watch B (queued after) is dropped
+  // on the floor and its view stays stale until some unrelated write
+  // re-triggers a flush. Worse, `pendingEffects.length = 0` at the bottom
+  // of flush() never runs after the throw, leaving the queue polluted.
+
+  it('runs sibling watches after one throws', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const a = state(0);
+    let bRuns = 0;
+    const disposers: Array<() => void> = [
+      watch(() => {
+        if (a() > 0) throw new Error('boom');
+      }),
+      watch(() => {
+        a();
+        bRuns++;
+      }),
+    ];
+    bRuns = 0; // discount the initial sync run
+    a(1);
+    await tick();
+    expect(bRuns).toBe(1);
+    expect(errSpy).toHaveBeenCalled();
+    for (const d of disposers) d();
+    errSpy.mockRestore();
+  });
+
+  it('does not wedge the queue after a throw (later writes still flush cleanly)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const a = state(0);
+    let runs = 0;
+    const dispose = watch(() => {
+      const v = a();
+      runs++;
+      if (v === 1) throw new Error('one');
+    });
+    runs = 0;
+    a(1);
+    await tick();
+    // The throwing run fired AND was logged…
+    expect(runs).toBe(1);
+    expect(errSpy).toHaveBeenCalled();
+    // …and a follow-up write still flushes — proving the queue isn't
+    // wedged with leftover state from the failed pass.
+    a(2);
+    await tick();
+    expect(runs).toBe(2);
+    dispose();
+    errSpy.mockRestore();
+  });
+});
+
+describe('flush — cross-effect feedback loops', () => {
+  // Effect A reads s1 and writes s2; effect B reads s2 and writes s1. Each
+  // write re-queues the other effect, so without a per-flush bound the loop
+  // never drains the queue.
+
+  it('terminates a two-effect ping-pong, reports it, and keeps the graph usable', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s1 = state(0);
+    const s2 = state(0);
+    // Probe cap far above the library's own per-flush cap. On code without a
+    // bound the loop never ends by itself, so the probe stops it here and the
+    // assertions below fail instead of hanging the test run.
+    const PROBE = 1_000_000;
+    let runs = 0;
+    const a = watch(() => {
+      const v = s1();
+      if (++runs > PROBE) return;
+      s2(v + 1);
+    });
+    const b = watch(() => {
+      const v = s2();
+      if (++runs > PROBE) return;
+      s1(v + 1);
+    });
+    await tick();
+    expect(runs).toBeLessThan(PROBE);
+    expect(errSpy.mock.calls.some(([msg]) => String(msg).includes('feedback loop'))).toBe(true);
+
+    // The graph recovers: the loop's effects are re-queued by later writes,
+    // and unrelated watchers still run normally.
+    errSpy.mockClear();
+    const u = state(0);
+    let seen = -1;
+    const c = watch(() => {
+      seen = u();
+    });
+    u(7);
+    await tick();
+    expect(seen).toBe(7);
+    expect(errSpy).not.toHaveBeenCalled();
+    a();
+    b();
+    c();
+    errSpy.mockRestore();
+  });
+
+  it('lets a long finite cascade (200 links, one write each) complete without tripping', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const LINKS = 200;
+    const chain = Array.from({ length: LINKS + 1 }, () => state(0));
+    const disposers: Array<() => void> = [];
+    for (let k = 0; k < LINKS; k++) {
+      disposers.push(
+        watch(() => {
+          chain[k + 1](chain[k]() + 1);
+        }),
+      );
+    }
+    chain[0](1000);
+    await tick();
+    expect(chain[LINKS]()).toBe(1000 + LINKS);
+    expect(errSpy).not.toHaveBeenCalled();
+    for (const d of disposers) d();
+    errSpy.mockRestore();
+  });
+
+  it('does not treat a large fan-out of distinct watchers as a loop', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = state(0);
+    const N = 100_001;
+    let observed = 0;
+    const disposers: Array<() => void> = [];
+    for (let k = 0; k < N; k++) {
+      disposers.push(
+        watch(() => {
+          if (s() === 1) observed++;
+        }),
+      );
+    }
+    s(1);
+    await tick();
+    expect(observed).toBe(N);
+    expect(errSpy).not.toHaveBeenCalled();
+    for (const d of disposers) d();
+    errSpy.mockRestore();
+  });
+
+  it('keeps a watcher live after a loop through computed intermediaries is cut', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s1 = state(0);
+    const s2 = state(0);
+    const c1 = compute(() => s1());
+    // Same probe idea as above; `live` lets the test switch the loop off
+    // before the recovery write.
+    const PROBE = 1_000_000;
+    let runs = 0;
+    let live = true;
+    const step = (): boolean => live && ++runs < PROBE;
+    let seen = -1;
+    const a = watch(() => {
+      const v = c1();
+      seen = v;
+      if (step()) s2(v + 1);
+    });
+    const b = watch(() => {
+      const v = s2();
+      if (step()) s1(v + 1);
+    });
+    await tick();
+    expect(runs).toBeLessThan(PROBE);
+    expect(errSpy.mock.calls.some(([msg]) => String(msg).includes('feedback loop'))).toBe(true);
+
+    // A later write to s1 must reach A through c1 and re-run it.
+    live = false;
+    seen = -1;
+    s1(500);
+    await tick();
+    expect(seen).toBe(500);
+    a();
+    b();
+    errSpy.mockRestore();
+  });
+
+  it('a direct read of a self-referential computed returns after a loop through it is cut', () => {
+    // Runs in a child process so a hang fails this test at the timeout instead
+    // of blocking the test run. A self-referential compute lists itself as a
+    // source; once the loop cut demotes it to CHECK, a direct read must still
+    // resolve it.
+    const script = `
+      (async () => {
+        const { compute, state, watch } = await import(${JSON.stringify(
+          pathToFileURL(join(import.meta.dirname, '..', 'src', 'signals.ts')).href,
+        )});
+        const tick = () => new Promise((r) => queueMicrotask(r));
+        console.error = () => {};
+        const s1 = state(0);
+        const s2 = state(0);
+        let c;
+        c = compute(() => (c ? (c() ?? 0) : 0) * 0 + s1());
+        const PROBE = 1000000;
+        let runs = 0;
+        let live = true;
+        const step = () => live && ++runs < PROBE;
+        let seen = -1;
+        const a = watch(() => {
+          const v = c();
+          seen = v;
+          if (step()) s2(v + 1);
+        });
+        const b = watch(() => {
+          const v = s2();
+          if (step()) s1(v + 1);
+        });
+        await tick();
+        const cut = runs < PROBE;
+        live = false;
+        const direct = c();
+        const expected = s1.peek();
+        s1(500);
+        await tick();
+        process.stdout.write(JSON.stringify({ cut, direct, expected, seen }));
+        a();
+        b();
+      })();
+    `;
+    const res = spawnSync(process.execPath, ['--experimental-strip-types', '-e', script], {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    expect(res.error).toBeUndefined();
+    expect(res.signal).toBeNull();
+    const out = JSON.parse(res.stdout);
+    expect(out.cut).toBe(true);
+    expect(out.direct).toBe(out.expected);
+    expect(out.seen).toBe(500);
+  });
+});
+
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
+
+// ---------------------------------------------------------------------------
+// Algorithm semantics — properties of the push-pull graph that the public
+// API tests don't exercise directly. Each one targets a specific contract
+// of the new node implementation (status propagation, source diffing,
+// cleanup ordering, etc.).
+// ---------------------------------------------------------------------------
+
+describe('reactivity semantics', () => {
+  it('diamond — effect fires once even when two branches both update', async () => {
+    // a → b ↘
+    //         e
+    // a → c ↗
+    // Writing `a` invalidates b and c; e should pull both updates and run
+    // exactly once, not once per branch.
+    const a = state(1);
+    const b = compute(() => a() * 2);
+    const c = compute(() => a() * 3);
+    let runs = 0;
+    let lastSum = 0;
+    watch(() => {
+      runs++;
+      lastSum = b() + c();
+    });
+    expect(runs).toBe(1);
+    expect(lastSum).toBe(5);
+
+    a(2);
+    await tick();
+    expect(runs).toBe(2);
+    expect(lastSum).toBe(10);
+  });
+
+  it('CHECK→CLEAN — chain where intermediate value is unchanged skips downstream re-run', async () => {
+    // a → b (always 0) → c → effect.
+    // When we write a, b is invalidated (CHECK), but on re-eval its value
+    // doesn't change, so c stays CLEAN and the effect should NOT re-fire.
+    const a = state(1);
+    const b = compute(() => a() * 0); // always 0 regardless of a
+    const c = compute(() => b() + 100);
+    let runs = 0;
+    watch(() => {
+      runs++;
+      c();
+    });
+    expect(runs).toBe(1);
+
+    a(5);
+    await tick();
+    // a moved → b checked → b's value didn't move → c didn't move → effect didn't fire.
+    expect(runs).toBe(1);
+
+    // Now actually move b's output by changing the formula's effect.
+    a(0);
+    await tick();
+    expect(runs).toBe(1); // still 0 from b's perspective
+  });
+
+  it('dynamic deps — switching reads unsubscribes from the old source', async () => {
+    const cond = state(true);
+    const a = state('A');
+    const b = state('B');
+    const seen: string[] = [];
+
+    watch(() => {
+      seen.push(cond() ? a() : b());
+    });
+    expect(seen).toEqual(['A']);
+
+    // Flip to read b. After this run, the effect should NOT subscribe to a.
+    cond(false);
+    await tick();
+    expect(seen).toEqual(['A', 'B']);
+
+    // Touch a — should be ignored, the effect dropped its subscription.
+    a('A2');
+    await tick();
+    expect(seen).toEqual(['A', 'B']);
+
+    // Touch b — should re-fire.
+    b('B2');
+    await tick();
+    expect(seen).toEqual(['A', 'B', 'B2']);
+  });
+
+  it('peek inside an effect does not subscribe', async () => {
+    const a = state(0);
+    const b = state(100);
+    let runs = 0;
+    watch(() => {
+      runs++;
+      a(); // tracked
+      b.peek(); // NOT tracked
+    });
+    expect(runs).toBe(1);
+
+    b(200);
+    await tick();
+    expect(runs).toBe(1); // peek didn't subscribe
+
+    a(1);
+    await tick();
+    expect(runs).toBe(2); // a is still tracked
+  });
+
+  it('cleanup runs before the next fn re-run, in order', async () => {
+    const a = state(0);
+    const order: string[] = [];
+    watch(() => {
+      const v = a();
+      order.push(`run(${v})`);
+      return () => order.push(`cleanup(${v})`);
+    });
+    expect(order).toEqual(['run(0)']);
+
+    a(1);
+    await tick();
+    expect(order).toEqual(['run(0)', 'cleanup(0)', 'run(1)']);
+
+    a(2);
+    await tick();
+    expect(order).toEqual(['run(0)', 'cleanup(0)', 'run(1)', 'cleanup(1)', 'run(2)']);
+  });
+
+  it('cleanup fires once on dispose, even after the latest re-run', async () => {
+    const a = state(0);
+    const cleanups: number[] = [];
+    const dispose = watch(() => {
+      const v = a();
+      return () => cleanups.push(v);
+    });
+    a(1);
+    await tick();
+    // After the second run, cleanup(0) ran; we are now holding cleanup(1).
+    expect(cleanups).toEqual([0]);
+
+    dispose();
+    expect(cleanups).toEqual([0, 1]);
+
+    // No further cleanups, ever.
+    dispose();
+    expect(cleanups).toEqual([0, 1]);
+  });
+
+  it('lazy evaluation — compute does not run until first read', () => {
+    let evals = 0;
+    const a = state(10);
+    const c = compute(() => {
+      evals++;
+      return a() * 2;
+    });
+    expect(evals).toBe(0); // pure compute is lazy
+    expect(c()).toBe(20);
+    expect(evals).toBe(1);
+    expect(c()).toBe(20); // cached, no re-eval
+    expect(evals).toBe(1);
+  });
+
+  it('write same value to a state — observers do not run', async () => {
+    const a = state({ x: 1 });
+    let runs = 0;
+    watch(() => {
+      runs++;
+      a();
+    });
+    expect(runs).toBe(1);
+
+    // Object.is says these are NOT the same (reference inequality), so
+    // observers re-run.
+    a({ x: 1 });
+    await tick();
+    expect(runs).toBe(2);
+
+    // Same reference — no re-run.
+    const ref = a();
+    a(ref);
+    await tick();
+    expect(runs).toBe(2);
+  });
+
+  it('1000-deep computed chain propagates correctly', () => {
+    // Pure-compute DAG must not trip the effect-depth guard.
+    const head = state(0);
+    let prev: () => number = () => head();
+    for (let i = 0; i < 1000; i++) {
+      const p = prev;
+      prev = compute(() => p() + 1);
+    }
+    expect(prev()).toBe(1000);
+    head(5);
+    expect(prev()).toBe(1005);
+  });
+
+  it('effect synchronously writing its own dep does not loop', async () => {
+    // Push-pull semantics: the effect is currently running, so its status
+    // is being driven by the run itself. A synchronous self-write enqueues
+    // the effect, but the run finishes by flipping status to CLEAN — the
+    // queued entry is skipped on the next flush iteration. End state: the
+    // effect ran once, the new state value is visible.
+    const a = state(0);
+    let runs = 0;
+    let observedValueAfterWrite = -1;
+    watch(() => {
+      runs++;
+      const v = a();
+      if (v === 0) {
+        a(42); // synchronous self-write
+        observedValueAfterWrite = a.peek();
+      }
+    });
+    await tick();
+    expect(runs).toBe(1); // exactly one run, no infinite loop
+    expect(observedValueAfterWrite).toBe(42); // write took effect synchronously
+    expect(a()).toBe(42);
+  });
+});
+
+describe('observer cleanup', () => {
+  const tick = () => new Promise((r) => queueMicrotask(r));
+
+  it('handles a watcher reading the same signal twice in one fn', async () => {
+    // Reproduces the cart-row pattern: html`${() => item().a * item().b}`
+    // dereferences the same signal twice in a single fn body. We must keep
+    // the producer<->consumer links coherent through dispose so the watcher
+    // doesn't leak observers after teardown.
+    const a = state(2);
+    const b = state(3);
+    const item = state({ a: 2, b: 3 });
+    let runs = 0;
+    const dispose = watch(() => {
+      // Read item twice in the same fn — each read is a separate track() call.
+      runs++;
+      return item().a * item().b + a() + b();
+    });
+    expect(runs).toBe(1);
+    a(10);
+    await tick();
+    expect(runs).toBe(2);
+    item({ a: 4, b: 5 });
+    await tick();
+    expect(runs).toBe(3);
+    dispose();
+    // After dispose, writes must not trigger the watcher again.
+    a(99);
+    item({ a: 7, b: 8 });
+    await tick();
+    expect(runs).toBe(3);
+  });
+
+  it.each(['dispose', 'truncate'] as const)(
+    'detaches repeated reads after an interleaved child is removed (%s)',
+    async (cleanup) => {
+      // Fused template bindings can create a child binding between their own
+      // reads. Removing that child permutes the parent's observer back-pointers.
+      const marker = {};
+      const shared = state(marker);
+      const active = state(true);
+      let disposeChild: () => void = () => {};
+      const disposeParent = watch(() => {
+        if (!active()) return;
+        for (let i = 0; i < 4; i++) shared();
+        disposeChild = watch(() => {
+          shared();
+        });
+        shared();
+        shared();
+      });
+      const inspector = (
+        globalThis as unknown as {
+          __purity_inspect__: { nodes(): Array<{ value: unknown; observers: unknown[] }> };
+        }
+      ).__purity_inspect__;
+      const observerCount = () =>
+        inspector.nodes().find((n) => n.value === marker)!.observers.length;
+      expect(observerCount()).toBe(7);
+      disposeChild();
+      expect(observerCount()).toBe(6);
+      if (cleanup === 'dispose') disposeParent();
+      else {
+        active(false);
+        await tick();
+      }
+      expect(observerCount()).toBe(0);
+      disposeParent();
+      // A later unrelated subscriber must still be detachable.
+      const disposeNext = watch(() => {
+        shared();
+      });
+      expect(observerCount()).toBe(1);
+      disposeNext();
+      expect(observerCount()).toBe(0);
+    },
+  );
+
+  it('a computed created inside a disposed scope is detached from its sources', () => {
+    // A derived value built inside a branch that later unmounts must stop
+    // observing its sources, otherwise it keeps receiving dirty-marks forever.
+    const marker = {};
+    const source = state(marker);
+    const scope = new ComponentContext();
+    pushContext(scope);
+    let derived: () => unknown;
+    try {
+      derived = compute(() => source());
+    } finally {
+      popContext();
+    }
+    expect(derived()).toBe(marker);
+    const inspector = (
+      globalThis as unknown as {
+        __purity_inspect__: {
+          nodes(): Array<{ kind: string; value: unknown; observers: unknown[] }>;
+        };
+      }
+    ).__purity_inspect__;
+    const sourceObservers = () =>
+      inspector.nodes().find((n) => n.kind === 'state' && n.value === marker)!.observers.length;
+    expect(sourceObservers()).toBe(1);
+    for (const dispose of scope.disposers ?? []) dispose();
+    expect(sourceObservers()).toBe(0);
+  });
+
+  it('reading a disposed computed from an active watcher does not re-subscribe it', () => {
+    // A disposed compute() is a frozen snapshot, not a live reactive source.
+    // Reading its accessor from inside another active watcher must not add
+    // that watcher to the disposed node's observer list — there is nothing
+    // left to ever notify it, so the edge would be dead weight.
+    const marker = {};
+    const source = state(marker);
+    const scope = new ComponentContext();
+    pushContext(scope);
+    let derived: () => unknown;
+    try {
+      derived = compute(() => source());
+    } finally {
+      popContext();
+    }
+    expect(derived()).toBe(marker);
+    for (const dispose of scope.disposers ?? []) dispose();
+
+    const inspector = (
+      globalThis as unknown as {
+        __purity_inspect__: {
+          nodes(): Array<{ kind: string; value: unknown; observers: unknown[] }>;
+        };
+      }
+    ).__purity_inspect__;
+    const derivedObservers = () =>
+      inspector.nodes().find((n) => n.kind === 'computed' && n.value === marker)!.observers.length;
+
+    const dispose = watch(() => {
+      derived();
+    });
+    expect(derivedObservers()).toBe(0);
+    dispose();
+  });
+
+  it('cleans up many observers on a shared signal in O(N) time', async () => {
+    // Regression for the indexOf-based removeObserver O(N²) blow-up. Disposing
+    // 5k watchers that share one signal must stay well under a second.
+    const shared = state(0);
+    const disposers: Array<() => void> = [];
+    for (let i = 0; i < 5000; i++) {
+      const item = state(i);
+      disposers.push(
+        watch(() => {
+          shared();
+          item();
+        }),
+      );
+    }
+    const t0 = performance.now();
+    for (let i = 0; i < disposers.length; i++) disposers[i]();
+    const elapsed = performance.now() - t0;
+    expect(elapsed).toBeLessThan(500);
+    // Writing to shared after all watchers disposed must not throw or fire.
+    shared(1);
+    await tick();
+    // No assertions on runs — the watchers should be fully detached.
+  });
+});
+
+describe('deep dependency chains', () => {
+  it('propagates a root write through a 20,000-level chain built incrementally without overflowing the stack', () => {
+    // A long-lived derived chain grown one link at a time (each new link read
+    // immediately, so its own build only ever touches its already-CLEAN
+    // parent) never trips the recursive-read depth limit at construction
+    // time. But a later write to the root must still mark/resolve every
+    // link in one synchronous pass — that walk (markDirty -> markCheck,
+    // and updateValue's CHECK resolution) used to recurse one JS stack
+    // frame per link, so a sufficiently long chain built exactly this way
+    // overflowed on write even though it built up without incident.
+    const root = state(0);
+    let prev = root;
+    for (let i = 0; i < 20_000; i++) {
+      const p = prev;
+      prev = compute(() => p() + 1);
+      prev(); // force shallow, incremental resolution at build time
+    }
+    expect(() => root(1)).not.toThrow();
+    expect(prev()).toBe(20_001);
+  });
+});
+
+describe('compute — error caching', () => {
+  // A throwing compute() caches its error: every read rethrows the same error
+  // until a source changes, and recovers normally when fn stops throwing. The
+  // previous behaviour settled the node CLEAN with its old value, so the second
+  // read silently returned a stale value and the error was lost.
+
+  const captureError = (read: () => unknown): unknown => {
+    try {
+      read();
+    } catch (e) {
+      return e;
+    }
+    throw new Error('expected read to throw');
+  };
+
+  it('rethrows the same error on every read instead of the stale value', () => {
+    const src = state(1);
+    const boom = new Error('boom');
+    let calls = 0;
+    const c = compute(() => {
+      calls++;
+      if (src() === 2) throw boom;
+      return src() * 10;
+    });
+    expect(c()).toBe(10);
+    src(2);
+    expect(captureError(() => c())).toBe(boom);
+    const callsAfterFirstThrow = calls;
+    expect(captureError(() => c())).toBe(boom);
+    expect(calls).toBe(callsAfterFirstThrow);
+  });
+
+  it('recomputes and returns the new value once the source no longer throws', () => {
+    const src = state(1);
+    const c = compute(() => {
+      if (src() === 2) throw new Error('boom');
+      return src() * 10;
+    });
+    expect(c()).toBe(10);
+    src(2);
+    expect(() => c()).toThrow('boom');
+    src(3);
+    expect(c()).toBe(30);
+  });
+
+  it('watcher reading a throwing compute sees the throw, then recovers after the source fix', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const src = state(1);
+    const c = compute(() => {
+      if (src() === 2) throw new Error('boom');
+      return src() * 10;
+    });
+    const seen: unknown[] = [];
+    const dispose = watch(() => {
+      try {
+        seen.push(c());
+      } catch (e) {
+        seen.push(e instanceof Error ? `error:${e.message}` : e);
+      }
+    });
+    expect(seen).toEqual([10]);
+    src(2);
+    await tick();
+    expect(seen).toEqual([10, 'error:boom']);
+    src(1);
+    await tick();
+    expect(seen).toEqual([10, 'error:boom', 10]);
+    dispose();
+    errSpy.mockRestore();
+  });
+
+  it('keeps the watcher subscribed to sources read before the throw', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const src = state(1);
+    const c = compute(() => {
+      const v = src();
+      if (v === 2) throw new Error('boom');
+      return v;
+    });
+    let runs = 0;
+    const dispose = watch(() => {
+      runs++;
+      try {
+        c();
+      } catch {
+        // swallowed: only the re-run count matters here
+      }
+    });
+    src(2);
+    await tick();
+    expect(runs).toBe(2);
+    src(3);
+    await tick();
+    expect(runs).toBe(3);
+    dispose();
+    errSpy.mockRestore();
+  });
+
+  it('recovers a self-referential compute once the failing source is fixed', () => {
+    const fail = state(true);
+    const boom = new Error('boom');
+    let c: ComputedAccessor<number> | undefined;
+    c = compute(() => {
+      if (fail()) throw boom;
+      // Self-read during recompute sees the previous value, not the cached error.
+      return (c?.() ?? 0) + 1;
+    });
+    expect(() => c!()).toThrow(boom);
+    fail(false);
+    expect(c!()).toBe(1);
+  });
+
+  it('a watch() whose initial run throws is disposed and never re-runs', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const src = state(1);
+    const boom = new Error('boom');
+    const c = compute(() => {
+      if (src() === 1) throw boom;
+      return src();
+    });
+    let runs = 0;
+    expect(() =>
+      watch(() => {
+        runs++;
+        c();
+      }),
+    ).toThrow(boom);
+    expect(runs).toBe(1);
+    src(2);
+    await tick();
+    expect(runs).toBe(1);
+    errSpy.mockRestore();
+  });
+
+  it('a watch() whose initial run throws directly is disposed and never re-runs', async () => {
+    const src = state(0);
+    let runs = 0;
+    expect(() =>
+      watch(() => {
+        runs++;
+        src();
+        throw new Error('boom');
+      }),
+    ).toThrow('boom');
+    expect(runs).toBe(1);
+    src(1);
+    await tick();
+    expect(runs).toBe(1);
+  });
+
+  it('does not re-run downstream watchers when a compute recomputes to an unchanged value', async () => {
+    const src = state(1);
+    const parity = compute(() => src() % 2);
+    let runs = 0;
+    const dispose = watch(() => {
+      runs++;
+      parity();
+    });
+    expect(runs).toBe(1);
+    src(3);
+    await tick();
+    expect(runs).toBe(1);
+    src(4);
+    await tick();
+    expect(runs).toBe(2);
+    dispose();
+  });
+});

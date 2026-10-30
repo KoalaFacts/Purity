@@ -4,7 +4,7 @@
 // after a real intersection.
 
 import { html } from '@purityjs/core/jit';
-import { island } from '@purityjs/core/islands';
+import { island } from '@purityjs/platform/islands';
 import { state } from '@purityjs/core';
 
 const liked = state(false);

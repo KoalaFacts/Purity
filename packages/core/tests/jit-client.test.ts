@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { mount } from '../src/component.ts';
 import { html } from '../src/compiler/client.ts';
-import { enterHydration, exitHydration } from '../src/compiler/hydrate-runtime.ts';
-import { state } from '../src/signals.ts';
+import { enterHydration, exitHydration } from '../src/runtime/hydrate-runtime.ts';
+import { state } from '@purityjs/signals';
 
 describe('client-only JIT entry', () => {
   it('updates ordinary DOM bindings and event listeners without hydration', async () => {

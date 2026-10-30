@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:framework": "npm run build -w @purityjs/core && npm run build -w @purityjs/ssr && npm run build -w @purityjs/vite-plugin",
+    "build:framework": "npm run build -w @purityjs/core && npm run build -w @purityjs/router && npm run build -w @purityjs/ssr && npm run build -w @purityjs/vite-plugin",
     "build": "npm run build:framework && node --experimental-strip-types scripts/generate.ts --manifest && tsc --noEmit && vp build && node --experimental-strip-types scripts/generate.ts --pages",
     "preview": "vp preview"
   },
   "dependencies": {
     "@purityjs/core": "*",
+    "@purityjs/router": "*",
     "@purityjs/ssr": "*"
   },
   "devDependencies": {

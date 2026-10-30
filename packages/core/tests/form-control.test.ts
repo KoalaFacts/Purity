@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { component } from '../src/elements.ts';
+import { enableFormControls } from '../src/forms.ts';
+
+enableFormControls();
 
 let nextTag = 0;
 const name = () => `p-form-control-${nextTag++}`;

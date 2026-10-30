@@ -30,7 +30,7 @@ describe('inspector registry retention', () => {
       }
     }
     vi.stubGlobal('FinalizationRegistry', TestFinalizationRegistry);
-    const { state } = await import('../src/signals.ts');
+    const { state } = await import('@purityjs/signals');
     const transient = state({ marker: 'transient' });
     const survivor = state({ marker: 'survivor' });
     expect(registrations).toHaveLength(2);
@@ -59,7 +59,7 @@ describe('inspector registry retention', () => {
       }
     }
     vi.stubGlobal('FinalizationRegistry', TestFinalizationRegistry);
-    const { state, compute, watch } = await import('../src/signals.ts');
+    const { state, compute, watch } = await import('@purityjs/signals');
     const count = state(1);
     const doubled = compute(() => count() * 2);
     const stop = watch(() => {
@@ -91,7 +91,7 @@ describe('inspector registry retention', () => {
     }
     vi.stubGlobal('FinalizationRegistry', undefined);
     vi.stubGlobal('WeakRef', ControlledWeakRef);
-    const { state } = await import('../src/signals.ts');
+    const { state } = await import('@purityjs/signals');
     const transient = state('transient');
     const survivor = state('survivor');
     expect(

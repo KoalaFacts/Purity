@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { dirname, posix, resolve as resolvePath, sep as pathSep } from 'node:path';
 import { parseSync, type Program } from 'oxc-parser';
 
-import { generateHydrateLinked, generateLinked, generateSSR, parse } from '@purityjs/core/compiler';
+import { generateHydrateLinked, generateLinked, generateSSR, parse } from '@purityjs/compiler';
 import { devtoolsClientSource } from './devtools-client.ts';
 
 import {
@@ -46,8 +46,13 @@ const COMPILER_ENTRIES = ['@purityjs/core/jit', '@purityjs/core/jit-client', '@p
 
 function isFrameworkInternal(id: string): boolean {
   const path = id.split('?')[0]!.replaceAll('\\', '/');
-  if (/\/node_modules\/@purityjs\/(core|ssr|vite-plugin)\//.test(path)) return true;
-  for (const name of ['core', 'ssr', 'vite-plugin']) {
+  if (
+    /\/node_modules\/@purityjs\/(core|ssr|vite-plugin|signals|compiler|router|platform)\//.test(
+      path,
+    )
+  )
+    return true;
+  for (const name of ['core', 'ssr', 'vite-plugin', 'signals', 'compiler', 'router', 'platform']) {
     const part = `/packages/${name}/`;
     const index = path.lastIndexOf(part);
     if (index === -1) continue;
@@ -272,8 +277,32 @@ export function purity(options?: PurityPluginOptions) {
     name: 'purity',
     enforce: 'pre' as const,
 
-    config(_config: unknown, env: { isPreview?: boolean }) {
+    config(
+      config: {
+        ssr?: {
+          target?: string;
+          resolve?: { conditions?: string[]; externalConditions?: string[] };
+        };
+      },
+      env: { isPreview?: boolean },
+    ) {
       isPreview = env.isPreview === true;
+      if (config.ssr?.target !== 'webworker') return;
+      // A webworker SSR build includes Vite's browser condition. Select the
+      // server exports explicitly, while retaining all user conditions.
+      const resolve = config.ssr.resolve;
+      return {
+        ssr: {
+          resolve: {
+            conditions: resolve?.conditions
+              ? ['purity-server']
+              : ['purity-server', 'module', 'browser', 'development|production'],
+            externalConditions: resolve?.externalConditions
+              ? ['purity-server']
+              : ['purity-server', 'node', 'module-sync'],
+          },
+        },
+      };
     },
 
     configResolved(
@@ -1129,14 +1158,14 @@ function renderTemplate(
   ctx.compiled++;
   const p = ctx.prefix;
   const tplVar = `${p}_tpl_${ctx.nextTplId++}`;
-  // Client factories reference the value helpers as `__purity_fl__` /
-  // `__purity_sw__`. Under another prefix, bind those names as parameters: a
+  // Client factories reference shared helpers by fixed names. Under another
+  // prefix, bind those names as parameters: a
   // factory holds only generated code (slot expressions are passed in at the
   // call site), so the parameters cannot shadow anything the user wrote.
   const bind = (body: string): string =>
     p === '__purity' || ctx.ssr
       ? body
-      : `((__purity_fl__, __purity_sw__) => (${body}))(${p}_fl__, ${p}_sw__)`;
+      : `((__purity_fl__, __purity_sw__, __purity_url__, __purity_tmpl__) => (${body}))(${p}_fl__, ${p}_sw__, ${p}_url__, ${p}_tmpl__)`;
   ctx.hoists.push(`const ${tplVar} = ${bind(fnBody)};`);
   if (hydrateBody !== null) ctx.hoists.push(`const ${tplVar}_hydrate = ${bind(hydrateBody)};`);
 
@@ -1248,10 +1277,10 @@ function compileTemplates(
   // Modeled as a zero-length insertion edit so the source-map builder can
   // track it alongside the html`` replacements.
   const runtimeImport = ssr
-    ? `import { ssrHelpers as ${prefix}_h__ } from '@purityjs/core/internal';\nimport '@purityjs/ssr';\n`
+    ? `import { ssrHelpers as ${prefix}_h__ } from '@purityjs/ssr/runtime';\nimport '@purityjs/ssr';\n`
     : hydratable
-      ? `import { renderCompiledTemplate as ${prefix}_renderCompiled__, flattenValue as ${prefix}_fl__, swapSlot as ${prefix}_sw__ } from '@purityjs/core/runtime';\n`
-      : `import { watch as ${prefix}_watch__ } from '@purityjs/core';\nimport { flattenValue as ${prefix}_fl__, swapSlot as ${prefix}_sw__ } from '@purityjs/core/runtime';\n`;
+      ? `import { renderCompiledTemplate as ${prefix}_renderCompiled__ } from '@purityjs/core/runtime';\nimport { flattenValue as ${prefix}_fl__, swapSlot as ${prefix}_sw__, safeUrl as ${prefix}_url__, template as ${prefix}_tmpl__ } from '@purityjs/core/csr-runtime';\n`
+      : `import { watch as ${prefix}_watch__ } from '@purityjs/core/csr';\nimport { flattenValue as ${prefix}_fl__, swapSlot as ${prefix}_sw__, safeUrl as ${prefix}_url__, template as ${prefix}_tmpl__ } from '@purityjs/core/csr-runtime';\n`;
   /* v8 ignore next -- edits.length > 0 implies at least one hoist was pushed */
   const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
   const insertPos = findImportInsertionOffset(source, program);

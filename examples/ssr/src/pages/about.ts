@@ -1,6 +1,6 @@
 // /about — no loader; demonstrates a plain route.
 
-import { head } from '@purityjs/core/router';
+import { head } from '@purityjs/router';
 import { html } from '@purityjs/core/jit';
 
 export default function AboutPage(): unknown {

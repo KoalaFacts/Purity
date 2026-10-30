@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vite-plus/test';
-import { compute, state, watch } from '../src/signals.ts';
+import { compute, state, watch } from '@purityjs/signals';
 
 interface InspectorNode {
   kind: 'state' | 'computed' | 'effect';

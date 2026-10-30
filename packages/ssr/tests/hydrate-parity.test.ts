@@ -13,7 +13,7 @@
 // the SSR variant for renderToString and the core variant for hydrate.
 
 import { component, css, each, hydrate, match, state, when } from '@purityjs/core';
-import { eachSSR, matchSSR, whenSSR } from '@purityjs/core/internal';
+import { eachSSR, matchSSR, whenSSR } from '@purityjs/ssr/runtime';
 import { html as clientHtml } from '@purityjs/core/jit';
 import { describe, expect, it } from 'vite-plus/test';
 import { html as ssrHtml, renderToString } from '../src/index.ts';

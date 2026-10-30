@@ -3,12 +3,28 @@ import { html } from '../src/compiler/compile.ts';
 import { mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
 import { hydrate } from '../src/hydrate.ts';
 import { resource } from '../src/resource.ts';
-import { state, watch } from '../src/signals.ts';
+import { state, watch } from '@purityjs/signals';
 import { primeHydrationCache } from '../src/ssr-context.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
 describe('mount', () => {
+  it('disposes effects created through the core signal API when the root unmounts', async () => {
+    const value = state(0);
+    const observed: number[] = [];
+    const { unmount } = mount(() => {
+      watch(() => observed.push(value()));
+      return document.createElement('div');
+    }, document.createElement('div'));
+
+    value(1);
+    await tick();
+    unmount();
+    value(2);
+    await tick();
+    expect(observed).toEqual([0, 1]);
+  });
+
   it('mounts a component into a container', () => {
     const container = document.createElement('div');
     mount(() => html`<p>Hello</p>`, container);

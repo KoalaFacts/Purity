@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { generateSSR } from '../src/compiler/codegen.ts';
-import { parse } from '../src/compiler/parser.ts';
+import { generateSSR } from '@purityjs/compiler';
+import { parse } from '@purityjs/compiler';
 import {
   isSSRHtml,
   markSSRHtml,
@@ -10,8 +10,8 @@ import {
   ssrHelpers,
   valueToAttr,
   valueToHtml,
-} from '../src/compiler/ssr-runtime.ts';
-import { eachSSR, listSSR, matchSSR, whenSSR } from '../src/control/ssr.ts';
+} from '@purityjs/ssr/runtime';
+import { eachSSR, listSSR, matchSSR, whenSSR } from '@purityjs/ssr/runtime';
 
 type SSRFactory = (
   values: unknown[],
@@ -316,7 +316,7 @@ describe('generateSSR — safety', () => {
   // parser's own validation would reject these inputs first, so we can't
   // exercise the codegen guard via parse().
   it('rejects unsafe tag names at codegen time', () => {
-    const bad: import('../src/compiler/ast.ts').FragmentNode = {
+    const bad: import('@purityjs/compiler').FragmentNode = {
       type: 'fragment',
       children: [
         {
@@ -332,7 +332,7 @@ describe('generateSSR — safety', () => {
   });
 
   it('rejects unsafe attribute names at codegen time', () => {
-    const bad: import('../src/compiler/ast.ts').FragmentNode = {
+    const bad: import('@purityjs/compiler').FragmentNode = {
       type: 'fragment',
       children: [
         {

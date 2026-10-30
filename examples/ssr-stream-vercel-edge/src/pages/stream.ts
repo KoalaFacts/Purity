@@ -1,4 +1,4 @@
-import { head } from '@purityjs/core/router';
+import { head } from '@purityjs/router';
 import { html } from '@purityjs/core/jit';
 import { resource, suspense } from '@purityjs/core';
 

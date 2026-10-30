@@ -1,16 +1,9 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
-import {
-  mount,
-  onDestroy,
-  onDispose,
-  onError,
-  onFormDisabled,
-  onFormReset,
-  onMount,
-} from '../src/component.ts';
-import { _renderComponentSSR, component, slot, teleport } from '../src/elements.ts';
-import { compute, state } from '../src/signals.ts';
+import { mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
+import { component, slot, teleport } from '../src/elements.ts';
+import { onFormDisabled, onFormReset } from '../src/forms.ts';
+import { compute, state } from '@purityjs/signals';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 let tagCounter = 0;
@@ -809,22 +802,6 @@ describe('component as custom element — lifecycle', () => {
     expect(() => component('1-bad', () => html`<i></i>`)).toThrow(/invalid custom element/i);
     // A valid hyphenated name does not throw.
     expect(() => component(tag('ok'), () => html`<i></i>`)).not.toThrow();
-  });
-
-  it('_renderComponentSSR drops unsafe attribute names from the host attrs', () => {
-    const name = tag('ssr-attrfilter');
-    component(name, () => html`<span>x</span>`);
-    const out = _renderComponentSSR(
-      name,
-      { title: 'ok', 'bad"><script>': 'evil', 'data-x': 'y' },
-      '',
-    );
-    expect(out).not.toBeNull();
-    // Safe attr names survive; the injected key is dropped entirely.
-    expect(out).toContain(' title="ok"');
-    expect(out).toContain(' data-x="y"');
-    expect(out).not.toContain('<script>');
-    expect(out).not.toContain('bad');
   });
 
   it('does not invoke form-associated handlers after disconnect', async () => {

@@ -6,9 +6,9 @@
 // end-to-end behavior when the swap script is actually executed against a
 // jsdom document.
 
-import { asyncRoute, head, routeData } from '@purityjs/core/router';
+import { asyncRoute, head, routeData } from '@purityjs/router';
 import { resource, suspense } from '@purityjs/core';
-import { markSSRHtml } from '@purityjs/core/internal';
+import { markSSRHtml } from '@purityjs/ssr/runtime';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { html as ssrHtml, renderToStream, renderToStreamResponse } from '../src/index.ts';
 

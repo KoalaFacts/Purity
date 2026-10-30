@@ -1,0 +1,65 @@
+import { ENABLE_SSR } from './ssr-enabled.ts';
+// ---------------------------------------------------------------------------
+// getRequest() — read the incoming HTTP Request from inside a component
+// during SSR. ADR 0009.
+//
+// Server: returns the `Request` passed to `renderToString({ request })` or
+//         `renderToStream({ request })`, or `null` when none was supplied.
+// Client: always returns `null` — there is no incoming request on the
+//         client side. Branch on the result if your code is dual-target.
+//
+// Uses the standard Web Platform `Request` so user code reads `.url`,
+// `.method`, `.headers.get('cookie')`, etc. without learning a Purity-
+// specific shape. Works identically on Node 18+, Bun, Deno, Cloudflare
+// Workers, and Vercel Edge.
+// ---------------------------------------------------------------------------
+
+import { getSSRRenderContext } from './ssr.ts';
+
+/**
+ * Return the incoming `Request` for the current SSR render, or `null`
+ * when not in an SSR context (client-side, tests without a request).
+ *
+ * @example
+ * ```ts
+ * import { getRequest, head } from '@purityjs/router'; import { html } from '@purityjs/core/jit';
+ *
+ * function PageHead() {
+ *   const req = getRequest();
+ *   if (!req) return; // client-side render
+ *   const url = new URL(req.url);
+ *   const canonical = url.origin + url.pathname;
+ *   head(html`<link rel="canonical" href="${canonical}">`);
+ *
+ *   const lang = req.headers.get('accept-language')?.split(',')[0] ?? 'en';
+ *   head(html`<meta http-equiv="content-language" content="${lang}">`);
+ * }
+ * ```
+ *
+ * @example
+ * ```ts
+ * // Auth-aware render: components see the request's cookies.
+ * function App() {
+ *   const req = getRequest();
+ *   const session = req?.headers.get('cookie')?.includes('session=') ?? false;
+ *   return session ? Dashboard() : SignIn();
+ * }
+ * ```
+ */
+export function getRequest(): Request | null {
+  const ssrCtx = ENABLE_SSR ? getSSRRenderContext() : null;
+  const req = ssrCtx?.request;
+  // Defensive runtime guard: if the SSR caller stuffed a non-Request
+  // value into `ssrCtx.request` (a plain object, a URL string, etc.)
+  // the declared `Request | null` return type would lie and any
+  // downstream `.headers.get(…)` / `.url` reader would crash or worse,
+  // silently consume attacker-controlled data. Coerce anything that
+  // isn't a real Request instance — including the case where the
+  // runtime lacks a `Request` global at all — back to `null`.
+  if (req == null) return null;
+  const R = (globalThis as { Request?: unknown }).Request;
+  if (typeof R !== 'function' || !(req instanceof (R as typeof Request))) {
+    return null;
+  }
+  return req;
+}

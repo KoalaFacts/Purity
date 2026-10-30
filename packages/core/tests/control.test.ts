@@ -1,11 +1,12 @@
-import { withHydration } from '../src/compiler/hydrate-runtime.ts';
+import { virtualEach } from '../src/virtual.ts';
+import { withHydration } from '../src/runtime/hydrate-runtime.ts';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
-import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
+import { ComponentContext, popContext, pushContext } from '@purityjs/signals';
 import { mount, onDispose } from '../src/component.ts';
 import { each, inflateDeferredEach, list, match, type DeferredEach } from '../src/control.ts';
-import { eachSSR, listSSR } from '../src/control/ssr.ts';
-import { state, watch } from '../src/signals.ts';
+import { eachSSR, listSSR } from '@purityjs/ssr/runtime';
+import { state, watch } from '@purityjs/signals';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
@@ -192,7 +193,7 @@ describe('each', () => {
   it('renders only a small initial range when virtual rendering is enabled', async () => {
     const items = state(Array.from({ length: 100 }, (_, index) => index));
     const renderedIndices: number[] = [];
-    const fragment = each(
+    const fragment = virtualEach(
       () => items(),
       (item, index) => {
         renderedIndices.push(index);
@@ -200,7 +201,6 @@ describe('each', () => {
         li.textContent = String(item());
         return li;
       },
-      { virtual: true },
     );
 
     expect(renderedIndices).toHaveLength(40);
@@ -225,7 +225,7 @@ describe('each', () => {
     container.style.cssText = 'height:96px;overflow-y:auto';
     Object.defineProperty(container, 'clientHeight', { configurable: true, value: 96 });
     container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 96);
-    const fragment = each(
+    const fragment = virtualEach(
       Array.from({ length: 100 }, (_, index) => index),
       (_item, index) => {
         const row = document.createElement('div');
@@ -233,7 +233,6 @@ describe('each', () => {
         row.getBoundingClientRect = () => new DOMRect(0, index * 24 - container.scrollTop, 200, 24);
         return row;
       },
-      { virtual: true },
     );
 
     await tick();
@@ -257,7 +256,7 @@ describe('each', () => {
     container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 96);
     const mounted = mount(
       () =>
-        each(
+        virtualEach(
           Array.from({ length: 100 }, (_, index) => index),
           (_item, index) => {
             const row = document.createElement('div');
@@ -267,7 +266,6 @@ describe('each', () => {
             row.getBoundingClientRect = () => new DOMRect(0, top, 200, height);
             return row;
           },
-          { virtual: true },
         ),
       container,
     );
@@ -298,7 +296,7 @@ describe('each', () => {
 
     const mounted = mount(
       () =>
-        each(
+        virtualEach(
           items,
           (item, index) => {
             renderedIndices.push(index);
@@ -309,7 +307,6 @@ describe('each', () => {
             return li;
           },
           (item) => item,
-          { virtual: true },
         ),
       container,
     );
@@ -348,7 +345,7 @@ describe('each', () => {
 
     const mounted = mount(
       () =>
-        each(
+        virtualEach(
           items,
           (_item, index) => {
             const li = document.createElement('li');
@@ -359,7 +356,6 @@ describe('each', () => {
             return li;
           },
           (item) => item,
-          { virtual: true },
         ),
       container,
     );
@@ -394,7 +390,7 @@ describe('each', () => {
 
     const mounted = mount(
       () =>
-        each(
+        virtualEach(
           () => items(),
           (item) => {
             const id = item().id;
@@ -411,7 +407,6 @@ describe('each', () => {
             return li;
           },
           (item) => item.id,
-          { virtual: true },
         ),
       container,
     );
@@ -461,7 +456,7 @@ describe('each', () => {
 
     const mounted = mount(
       () =>
-        each(
+        virtualEach(
           () => items(),
           (item) => {
             const id = item();
@@ -473,7 +468,6 @@ describe('each', () => {
             return li;
           },
           (item) => item,
-          { virtual: true },
         ),
       container,
     );
@@ -513,7 +507,7 @@ describe('each', () => {
 
     const mounted = mount(
       () =>
-        each(
+        virtualEach(
           () => items(),
           (item) => {
             const id = item();
@@ -525,7 +519,6 @@ describe('each', () => {
             return li;
           },
           (item) => item,
-          { virtual: true },
         ),
       container,
     );
@@ -572,11 +565,10 @@ describe('each', () => {
     host.appendChild(closeMarker);
     const context = new ComponentContext();
     const deferred = withHydration(() =>
-      each(
+      virtualEach(
         items,
         (item) => html`<li>${item()}</li>`,
         (item) => item,
-        { virtual: true },
       ),
     ) as DeferredEach<number>;
 
@@ -611,7 +603,7 @@ describe('each', () => {
     host.appendChild(closeMarker);
     const context = new ComponentContext();
     const deferred = withHydration(() =>
-      each(items, (item) => html`<li>${item()}</li>`, { virtual: true }),
+      virtualEach(items, (item) => html`<li>${item()}</li>`),
     ) as DeferredEach<number | undefined>;
 
     pushContext(context);
@@ -1589,10 +1581,9 @@ describe('each — SSR-context dispatch (ADR 0023)', () => {
 
   it('keeps the complete list in SSR when virtual rendering is enabled', () => {
     const result = inSSRContext(() =>
-      eachIso(
+      virtualEach(
         Array.from({ length: 100 }, (_, index) => index),
         (item) => `<li>${item()}</li>`,
-        { virtual: true },
       ),
     );
     const html = ssrHtmlText(result);
@@ -2271,7 +2262,7 @@ describe('duplicate keys — review follow-ups (hydration, virtual, listSSR, dia
       container.style.cssText = 'height:96px;overflow-y:auto';
       Object.defineProperty(container, 'clientHeight', { configurable: true, value: 96 });
       container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 96);
-      const fragment = each(
+      const fragment = virtualEach(
         items,
         (item: () => Row) => {
           const row = document.createElement('div');
@@ -2279,7 +2270,6 @@ describe('duplicate keys — review follow-ups (hydration, virtual, listSSR, dia
           return row;
         },
         (item: Row) => item.id,
-        { virtual: true },
       );
       document.body.appendChild(container);
       container.appendChild(fragment);
@@ -2362,7 +2352,7 @@ describe('each() — index-sensitive keys with a dropped duplicate', () => {
       const expected = ['a@0', 'b@2', 'c@3'];
 
       const plain = each(values, mapFn, keyFn);
-      const virtual = each(values, mapFn, keyFn, { virtual: true });
+      const virtual = virtualEach(values, mapFn, keyFn);
 
       expect(Array.from(plain.querySelectorAll('li')).map((li) => li.textContent)).toEqual(
         expected,

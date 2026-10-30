@@ -1,0 +1,225 @@
+// ---------------------------------------------------------------------------
+// webSocketSignal(url, options) — WebSocket lifted into a reactive signal,
+// plus send() / readyState() escape hatches. ADR 0047.
+//
+// Each call opens its own WebSocket. Incoming messages flow through
+// `options.parse` (default JSON.parse on string data) then
+// `options.validate`. Failing values are dropped with a console.warn.
+// Local writes via `.send()` skip validation — they don't cross the
+// trust boundary. Calling `.send()` while the socket is not 'open' logs
+// a warn and silently drops the message; queueing is explicitly out of
+// scope (see ADR 0047 non-features).
+//
+// Reconnect policy semantics match eventSourceSignal — see
+// {@link LiveReconnectPolicy}.
+//
+// SSR and browsers without WebSocket return an inert accessor returning
+// options.initialValue, with no-op send() and readyState() === 'closed'.
+// ---------------------------------------------------------------------------
+
+import { getCurrentContext } from '@purityjs/signals';
+import {
+  type LiveReconnectPolicy,
+  type LiveValidator,
+  makeLiveMessageHandler,
+  redactUrl,
+  wireLiveReconnect,
+} from './event-source-signal.ts';
+import { compute, state, type ComputedAccessor } from '@purityjs/signals';
+import { isSSR } from './ssr.ts';
+
+export type { LiveReconnectPolicy, LiveValidator } from './event-source-signal.ts';
+
+export type WebSocketReadyState = 'connecting' | 'open' | 'closing' | 'closed';
+
+/** Augmented ComputedAccessor with WebSocket send + readyState escape hatches. */
+export type WebSocketSignal<T> = ComputedAccessor<T> & {
+  send(data: string | Blob | BufferSource): void;
+  readyState(): WebSocketReadyState;
+};
+
+export interface WebSocketSignalOptions<T> {
+  /** Required default. SSR and unsupported-browser fallbacks return this. */
+  initialValue: T;
+  /** Required. Incoming messages that fail the predicate are dropped. */
+  validate: LiveValidator<T>;
+  /** Standard WebSocket subprotocols. */
+  protocols?: string | string[];
+  /** Pre-validator transform on raw message data. Defaults to `JSON.parse`. */
+  parse?: (raw: MessageEvent['data']) => unknown;
+  /** Page-lifecycle reconnect policy. Defaults to `'on-visible'`. */
+  reconnect?: LiveReconnectPolicy;
+}
+
+/**
+ * Reactive WebSocket feed (ADR 0047).
+ *
+ * @example
+ * ```ts
+ * type Presence = { userId: string; online: boolean };
+ * const isPresence = (v: unknown): v is Presence =>
+ *   !!v &&
+ *   typeof (v as Presence).userId === 'string' &&
+ *   typeof (v as Presence).online === 'boolean';
+ *
+ * const presence = webSocketSignal<Presence | null>('wss://example/presence', {
+ *   initialValue: null,
+ *   validate: (v): v is Presence | null => v === null || isPresence(v),
+ * });
+ * presence.send(JSON.stringify({ subscribe: 'team-42' }));
+ * ```
+ */
+export function webSocketSignal<T>(
+  url: string | URL,
+  options: WebSocketSignalOptions<T>,
+): WebSocketSignal<T> {
+  const makeInert = (): WebSocketSignal<T> => {
+    const inert = compute(() => options.initialValue) as WebSocketSignal<T>;
+    inert.send = () => {};
+    inert.readyState = () => 'closed' as const;
+    return inert;
+  };
+  if (isSSR() || typeof WebSocket === 'undefined') {
+    return makeInert();
+  }
+
+  const inner = state(options.initialValue);
+  const stateAccessor = state<WebSocketReadyState>('closed');
+  const parse = options.parse ?? ((raw: MessageEvent['data']) => JSON.parse(raw as string));
+  const reconnect = options.reconnect ?? 'on-visible';
+  const validate = options.validate;
+  // Use the redacted label for ALL diagnostic console.warn paths so
+  // `?access_token=…` and `user:pw@` don't leak into log sinks.
+  const label = redactUrl(url);
+
+  // Scheme allow-list: WebSocket only ever opens ws:// or wss://.
+  // The browser constructor enforces this, but a pre-check produces a
+  // single sourced warn (with a redacted URL) instead of an unredacted
+  // DOMException landing in the page's error reporter. It also collapses
+  // attacker-controlled URLs like `javascript:…` / `data:…` / a leaked
+  // `http:` token from a misconfigured backend into an inert accessor
+  // before any side effects fire.
+  let schemeOk = true;
+  try {
+    if (typeof url !== 'string') {
+      schemeOk = url.protocol === 'ws:' || url.protocol === 'wss:';
+    } else if (/^[a-z][a-z0-9+.-]*:/i.test(url)) {
+      // Absolute URL — extract scheme. Relative URLs (no scheme) are
+      // resolved against the current page's origin by the platform, so
+      // skip the scheme check for them.
+      const scheme = url.slice(0, url.indexOf(':')).toLowerCase();
+      schemeOk = scheme === 'ws' || scheme === 'wss';
+    }
+  } catch {
+    schemeOk = false;
+  }
+  if (!schemeOk) {
+    console.warn(
+      `[purity] webSocketSignal('${label}') rejected — only ws:// and wss:// URLs are permitted`,
+    );
+    return makeInert();
+  }
+
+  // Subprotocol validation: per RFC 6455 §4.1, each subprotocol must be
+  // a non-empty token (RFC 7230 §3.2.6 tchar set). Containing CR/LF or
+  // other control bytes lets a misconfigured server smuggle headers
+  // through the Sec-WebSocket-Protocol echo or trip the browser into a
+  // DOMException at construction. Reject pre-construction to a sourced,
+  // redacted warn and an inert accessor.
+  if (options.protocols !== undefined) {
+    const list = typeof options.protocols === 'string' ? [options.protocols] : options.protocols;
+    // RFC 7230 token: 1*tchar where tchar = !#$%&'*+-.^_`|~ / DIGIT / ALPHA.
+    const tokenRe = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+    // findIndex visits sparse array holes as undefined; some would skip them.
+    const bad =
+      !Array.isArray(list) ||
+      list.findIndex((p) => typeof p !== 'string' || !tokenRe.test(p)) !== -1;
+    if (bad) {
+      console.warn(
+        `[purity] webSocketSignal('${label}') rejected — invalid subprotocol (must be RFC 6455 tokens)`,
+      );
+      return makeInert();
+    }
+  }
+
+  let ws: WebSocket | null = null;
+  const onOpen = (): void => {
+    stateAccessor('open');
+  };
+  const onClose = (): void => {
+    stateAccessor('closed');
+  };
+  const onMessage = makeLiveMessageHandler<T, MessageEvent['data']>(
+    'webSocketSignal',
+    label,
+    parse,
+    validate,
+    inner,
+  );
+  const listeners: Array<[string, EventListener]> = [
+    ['open', onOpen],
+    ['close', onClose],
+    ['error', onClose],
+    ['message', onMessage as EventListener],
+  ];
+
+  const open = (): void => {
+    if (ws) return;
+    stateAccessor('connecting');
+    try {
+      ws = new WebSocket(url, options.protocols);
+    } catch (err) {
+      console.warn(`[purity] webSocketSignal('${label}') failed to open:`, err);
+      stateAccessor('closed');
+      ws = null;
+      return;
+    }
+    for (const [ev, fn] of listeners) ws.addEventListener(ev, fn);
+  };
+  const close = (): void => {
+    if (!ws) return;
+    const closing = ws;
+    ws = null;
+    stateAccessor('closing');
+    // Detach our four listeners BEFORE close() so a late 'message' arriving
+    // after the socket's async close path can't ride back into the shared
+    // inner state on the next reconnect cycle. Matches eventSourceSignal.
+    for (const [ev, fn] of listeners) closing.removeEventListener(ev, fn);
+    try {
+      closing.close();
+    } catch (err) {
+      console.warn(`[purity] webSocketSignal('${label}') close failed:`, err);
+    }
+    // Settle a manual close after subscribers observe 'closing'. A
+    // bfcache restore closes and opens in the same turn, so this task
+    // must not overwrite a replacement socket's connecting/open state.
+    queueMicrotask(() => {
+      if (ws === null) stateAccessor('closed');
+    });
+  };
+
+  wireLiveReconnect(reconnect, open, close);
+
+  // Auto-close on the surrounding component's unmount. Without this,
+  // every webSocketSignal() call inside a component opened a long-lived
+  // socket that survived unmount (wireLiveReconnect's watches handle
+  // lifecycle changes but don't close the socket on owner unmount).
+  // Module-scope callers keep "lifetime = page" semantics.
+  const ctx = getCurrentContext();
+  if (ctx) (ctx.disposers ??= []).push(close);
+
+  const accessor = compute(() => inner()) as WebSocketSignal<T>;
+  accessor.send = (data: string | Blob | BufferSource): void => {
+    if (!ws || stateAccessor.peek() !== 'open') {
+      console.warn(`[purity] webSocketSignal('${label}').send() — socket is not open; dropping`);
+      return;
+    }
+    try {
+      ws.send(data);
+    } catch (err) {
+      console.warn(`[purity] webSocketSignal('${label}').send() failed:`, err);
+    }
+  };
+  accessor.readyState = () => stateAccessor();
+  return accessor;
+}

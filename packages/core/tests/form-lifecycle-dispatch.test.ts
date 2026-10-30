@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import {
-  onFormAssociated,
-  onFormDisabled,
-  onFormReset,
-  onFormStateRestore,
-} from '../src/component.ts';
+import { onFormAssociated, onFormDisabled, onFormReset, onFormStateRestore } from '../src/forms.ts';
 import { component } from '../src/elements.ts';
 import { html } from '../src/compiler/compile.ts';
 

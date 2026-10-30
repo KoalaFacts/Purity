@@ -32,12 +32,12 @@ export type SlotAccessor<E = void> = E extends void
   : (exposed: E) => Node | null;
 
 interface SlotRegistry {
-  filled: Map<string, unknown>;
+  filled: Record<string, unknown>;
   accessors: Map<string, SlotAccessor<any> | undefined>;
 }
 
 function createRegistry(): SlotRegistry {
-  return { filled: new Map(), accessors: new Map() };
+  return { filled: Object.create(null), accessors: new Map() };
 }
 
 function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<any>> {
@@ -48,7 +48,7 @@ function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<an
       let accessor = registry.accessors.get(prop);
       if (!accessor) {
         accessor = ((_exposed?: unknown): Node | null => {
-          return resolveContent(registry.filled.get(prop));
+          return resolveContent(registry.filled[prop]);
         }) as SlotAccessor<any>;
         registry.accessors.set(prop, accessor);
       }
@@ -60,11 +60,11 @@ function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<an
 type ConsumerSlot = (content?: Node | DocumentFragment | string | null) => Node | null;
 
 function createConsumerBag(registry: SlotRegistry): Record<string, ConsumerSlot> {
-  const bag: Record<string, ConsumerSlot> = {};
+  const bag: Record<string, ConsumerSlot> = Object.create(null);
   registry.accessors.set('default', registry.accessors.get('default'));
   for (const name of registry.accessors.keys()) {
     bag[name] = (content?: Node | DocumentFragment | string | null): Node | null => {
-      registry.filled.set(name, content ?? null);
+      registry.filled[name] = content ?? null;
       return null;
     };
   }
@@ -319,7 +319,7 @@ export function component<
           while (this.firstChild) {
             frag.appendChild(this.firstChild);
           }
-          registry.filled.set('default', frag);
+          registry.filled.default = frag;
         }
 
         const ctx = new ComponentContext();
@@ -386,10 +386,10 @@ export function component<
 
     if (children != null && typeof children !== 'function') {
       if (children instanceof Node || typeof children === 'string') {
-        registry.filled.set('default', children);
+        registry.filled.default = children;
       } else if (typeof children === 'object') {
         for (const [k, v] of Object.entries(children as Record<string, unknown>)) {
-          registry.filled.set(k, v);
+          registry.filled[k] = v;
         }
       }
     }
@@ -399,7 +399,7 @@ export function component<
       const bag = { ...createConsumerBag(registry), ...exposed };
       const consumerResult = children(bag);
       if (consumerResult instanceof Node || typeof consumerResult === 'string') {
-        registry.filled.set('default', consumerResult);
+        registry.filled.default = consumerResult;
       }
     }
 

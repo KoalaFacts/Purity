@@ -139,6 +139,33 @@ describe('SV2-015 lean component ownership', () => {
     expect(root.textContent).toBe('body');
   });
 
+  it('preserves prototype-named slot keys through raw and consumer children', () => {
+    const render = component<Record<string, never>, Record<string, void>>(
+      'p-sv2-prototype-slot-keys',
+      (_props, slots) => {
+        const root = document.createElement('div');
+        for (const name of ['__proto__', 'constructor', 'toString']) {
+          const content = slots[name]();
+          if (content) root.append(content);
+        }
+        return root;
+      },
+    );
+
+    const raw: Record<string, string> = Object.create(null);
+    raw['__proto__'] = 'a';
+    raw['constructor'] = 'b';
+    raw['toString'] = 'c';
+    expect((render({}, raw) as Element).textContent).toBe('abc');
+
+    const consumer = render({}, (slots: Record<string, (value: string) => Node | null>) => {
+      slots['__proto__']('a');
+      slots['constructor']('b');
+      slots['toString']('c');
+    }) as Element;
+    expect(consumer.textContent).toBe('abc');
+  });
+
   it('releases used slot and parent references without allocating absent owner fields', () => {
     const parent = new ComponentContext();
     const child = new ComponentContext();

@@ -61,7 +61,7 @@ type ConsumerSlot = (content?: Node | DocumentFragment | string | null) => Node 
 
 function createConsumerBag(registry: SlotRegistry): Record<string, ConsumerSlot> {
   const bag: Record<string, ConsumerSlot> = Object.create(null);
-  registry.accessors.default = registry.accessors.default;
+  if (!Object.hasOwn(registry.accessors, 'default')) registry.accessors.default = undefined;
   for (const name in registry.accessors) {
     bag[name] = (content?: Node | DocumentFragment | string | null): Node | null => {
       registry.filled[name] = content ?? null;

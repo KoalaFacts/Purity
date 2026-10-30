@@ -41,16 +41,18 @@ function createRegistry(): SlotRegistry {
 }
 
 function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<any>> {
-  return new Proxy({} as Record<string, SlotAccessor<any>>, {
-    get(_target, prop: string) {
+  // Use the cached accessor record as the Proxy target instead of allocating
+  // an extra empty object for every rendered component.
+  return new Proxy(registry.accessors as Record<string, SlotAccessor<any>>, {
+    get(accessors, prop: string) {
       /* v8 ignore next */
       if (typeof prop !== 'string') return undefined;
-      let accessor = registry.accessors[prop];
+      let accessor = accessors[prop];
       if (!accessor) {
         accessor = ((_exposed?: unknown): Node | null => {
           return resolveContent(registry.filled[prop]);
         }) as SlotAccessor<any>;
-        registry.accessors[prop] = accessor;
+        accessors[prop] = accessor;
       }
       return accessor;
     },

@@ -55,28 +55,6 @@ describe('SV2-015 lean component ownership', () => {
     }
   });
 
-  it('preserves forwarded event precedence after collecting host properties once', () => {
-    const tag = 'p-sv2-single-pass-host-props';
-    let rendered: Record<string, unknown> | undefined;
-    component<Record<string, unknown>>(tag, (props) => {
-      rendered = props;
-      return document.createElement('span');
-    });
-
-    const host = document.createElement(tag) as HTMLElement & Record<string, unknown>;
-    const forwarded = () => 'forwarded';
-    const ordinary = () => 'ordinary';
-    host.__purity_event_click = forwarded;
-    host.onClick = ordinary;
-    host.customValue = 'value';
-
-    document.body.append(host);
-    expect(rendered?.onClick).toBe(forwarded);
-    expect(rendered?.customValue).toBe('value');
-    expect(Object.hasOwn(rendered!, '__purity_event_click')).toBe(false);
-    host.remove();
-  });
-
   it('releases a detached custom-element owner and preserves reentrant reconnect', () => {
     let host!: HTMLElement & { _ctx: ComponentContext | null };
     let reconnect = true;

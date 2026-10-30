@@ -832,15 +832,19 @@ export function component<
         first?: unknown,
         second?: unknown,
       ) {
-        if (!this._ctx || this._ctx._isDestroyed || !arr) return;
-        for (let i = 0; i < arr.length; i++) {
+        const ctx = this._ctx;
+        if (!ctx || ctx._isDestroyed || !arr) return;
+        // A handler may disconnect and synchronously reconnect this host.
+        // Never run remaining callbacks from its already disposed owner.
+        for (let i = 0; i < arr.length && this._ctx === ctx && !ctx._isDestroyed; i++) {
           try {
             if (count === 0) arr[i]();
             else if (count === 1) arr[i](first);
             else arr[i](first, second);
           } catch (err) {
-            // Handlers may reconnect the host before error propagation.
-            this._ctx?._handleError(err);
+            // Report to the owner that registered the handler, not a new owner
+            // created by a reentrant reconnect.
+            ctx._handleError(err);
           }
         }
       }

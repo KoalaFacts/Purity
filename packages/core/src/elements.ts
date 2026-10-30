@@ -382,8 +382,10 @@ export function component<
     const ctx = new ComponentContext();
     attachToOwner(ctx, unmountElementContext);
 
-    ctx._slotContent = children;
     const registry = createRegistry();
+    // Both raw and consumer slots must resolve against the same filled registry.
+    // A consumer callback is not slot content and must only run after first render.
+    ctx._slotContent = registry.filled;
     const slotAccessors = createAccessors(registry);
 
     if (children != null && typeof children !== 'function') {

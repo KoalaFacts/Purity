@@ -102,6 +102,24 @@ describe('SV2-015 lean component ownership', () => {
     expect(fragment.childNodes).toHaveLength(0);
   });
 
+  it('defers consumer callbacks until the slot bag exists when using slot()', () => {
+    let calls = 0;
+    const render = component('p-sv2-deferred-raw-slot-consumer', () => {
+      const root = document.createElement('div');
+      const content = slot()();
+      if (content) root.append(content);
+      return root;
+    });
+
+    const root = render({}, (slots: Record<string, (text: string) => Node | null>) => {
+      calls++;
+      slots.default('body');
+    }) as Element;
+
+    expect(calls).toBe(1);
+    expect(root.textContent).toBe('body');
+  });
+
   it('provides the default consumer slot even when only named accessors are read', () => {
     const render = component<Record<string, never>, { header: void }>(
       'p-sv2-consumer-slot-set',

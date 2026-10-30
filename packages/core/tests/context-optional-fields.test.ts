@@ -119,6 +119,26 @@ describe('SV2-015 lean component ownership', () => {
     expect(root.textContent).toBe('heading');
   });
 
+  it('reuses a previously read default accessor across consumer slot filling', () => {
+    let first!: () => Node | null;
+    const render = component<Record<string, never>, { default: void }>(
+      'p-sv2-consumer-default-cache',
+      (_props, slots) => {
+        const accessor = slots.default;
+        if (!first) first = accessor;
+        expect(accessor).toBe(first);
+        const root = document.createElement('div');
+        const content = accessor();
+        if (content) root.append(content);
+        return root;
+      },
+    );
+    const root = render({}, (slots: Record<string, (text: string) => Node | null>) => {
+      slots.default('body');
+    }) as Element;
+    expect(root.textContent).toBe('body');
+  });
+
   it('releases used slot and parent references without allocating absent owner fields', () => {
     const parent = new ComponentContext();
     const child = new ComponentContext();

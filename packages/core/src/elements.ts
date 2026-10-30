@@ -33,26 +33,24 @@ export type SlotAccessor<E = void> = E extends void
 
 interface SlotRegistry {
   filled: Map<string, unknown>;
-  accessorNames: Set<string>;
+  accessors: Map<string, SlotAccessor<any> | undefined>;
 }
 
 function createRegistry(): SlotRegistry {
-  return { filled: new Map(), accessorNames: new Set() };
+  return { filled: new Map(), accessors: new Map() };
 }
 
 function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<any>> {
-  const cache = new Map<string, SlotAccessor<any>>();
   return new Proxy({} as Record<string, SlotAccessor<any>>, {
     get(_target, prop: string) {
       /* v8 ignore next */
       if (typeof prop !== 'string') return undefined;
-      let accessor = cache.get(prop);
+      let accessor = registry.accessors.get(prop);
       if (!accessor) {
-        registry.accessorNames.add(prop);
         accessor = ((_exposed?: unknown): Node | null => {
           return resolveContent(registry.filled.get(prop));
         }) as SlotAccessor<any>;
-        cache.set(prop, accessor);
+        registry.accessors.set(prop, accessor);
       }
       return accessor;
     },
@@ -63,8 +61,8 @@ type ConsumerSlot = (content?: Node | DocumentFragment | string | null) => Node 
 
 function createConsumerBag(registry: SlotRegistry): Record<string, ConsumerSlot> {
   const bag: Record<string, ConsumerSlot> = {};
-  registry.accessorNames.add('default');
-  for (const name of registry.accessorNames) {
+  registry.accessors.set('default', registry.accessors.get('default'));
+  for (const name of registry.accessors.keys()) {
     bag[name] = (content?: Node | DocumentFragment | string | null): Node | null => {
       registry.filled.set(name, content ?? null);
       return null;

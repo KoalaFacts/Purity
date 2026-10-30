@@ -224,16 +224,18 @@ export function unmountContext(
   if (ctx._isDestroyed) return;
   if (rollback) ctx._rollback = true;
 
-  if (ctx.children) {
-    for (let i = ctx.children.length - 1; i >= 0; i--) {
-      unmountContext(ctx.children[i], rollback, false, bubbleDestroyError);
+  const children = ctx.children;
+  if (children) {
+    for (let i = children.length - 1; i >= 0; i--) {
+      unmountContext(children[i], rollback, false, bubbleDestroyError);
     }
     ctx.children = null;
   }
 
-  if (!keepHostDOM && ctx.nodes) {
-    for (let i = 0; i < ctx.nodes.length; i++) {
-      const node = ctx.nodes[i] as Node;
+  const nodes = ctx.nodes;
+  if (!keepHostDOM && nodes) {
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i] as Node;
       /* v8 ignore next */
       if (node.parentNode) node.parentNode.removeChild(node);
     }
@@ -244,10 +246,11 @@ export function unmountContext(
   disposeScope(ctx);
   ctx._isMounted = false;
 
-  if (ctx.destroyed) {
-    for (let i = 0; i < ctx.destroyed.length; i++) {
+  const destroyed = ctx.destroyed;
+  if (destroyed) {
+    for (let i = 0; i < destroyed.length; i++) {
       try {
-        ctx.destroyed[i]();
+        destroyed[i]();
       } catch (err) {
         if (bubbleDestroyError && !rollback) ctx._handleError(err);
         else console.error('[Purity] Error in onDestroy:', err);

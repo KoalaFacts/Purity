@@ -54,6 +54,35 @@ function render(view: () => Node) {
 }
 
 describe('client-first AOT build contract', () => {
+  it('does not import reactive watchers for static or event-only templates', () => {
+    const staticSource =
+      "import { html } from '@purityjs/core/jit'; export const make = () => html`<p>Hello</p>`;";
+    const eventSource =
+      "import { html } from '@purityjs/core/jit'; export const make = (handler) => html`<button @click=${handler}>Go</button>`;";
+    expect(compile(staticSource)).not.toContain('watch as __purity_watch__');
+    expect(compile(eventSource)).not.toContain('watch as __purity_watch__');
+    expect(compile(staticSource)).not.toContain("from '@purityjs/core/csr-runtime'");
+    expect(compile(eventSource)).not.toContain("from '@purityjs/core/csr-runtime'");
+    let clicks = 0;
+    const button = execute(eventSource)(() => clicks++) as HTMLButtonElement;
+    button.click();
+    expect(clicks).toBe(1);
+  });
+
+  it('retains watch for reactive templates alongside a static template', async () => {
+    const code =
+      "import { html } from '@purityjs/core/jit'; export const make = (value) => html`<section>${html`<span>Static</span>`}<p>${() => value()}</p></section>`;";
+    const compiled = compile(code);
+    expect(compiled).toContain('watch as __purity_watch__');
+    const value = state('before');
+    const make = execute(code);
+    const root = render(() => make(value));
+    expect(root.textContent).toBe('Staticbefore');
+    value('after');
+    await Promise.resolve();
+    expect(root.textContent).toBe('Staticafter');
+  });
+
   it('links lazy template and URL helpers from the client runtime', () => {
     const code = compile(
       "import { html } from '@purityjs/core/jit'; export const make = (url) => html`<a href=${url}><span>go</span></a>`;",

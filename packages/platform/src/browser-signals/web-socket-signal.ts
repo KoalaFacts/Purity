@@ -170,8 +170,9 @@ export function webSocketSignal<T>(
     stateAccessor('connecting');
     try {
       ws = new WebSocket(url, options.protocols);
-    } catch (err) {
-      console.warn(`[purity] webSocketSignal('${label}') failed to open:`, err);
+    } catch {
+      // Native exception messages may include the credential-bearing URL.
+      console.warn(`[purity] webSocketSignal('${label}') failed to open`);
       stateAccessor('closed');
       ws = null;
       return;
@@ -189,8 +190,8 @@ export function webSocketSignal<T>(
     for (const [ev, fn] of listeners) closing.removeEventListener(ev, fn);
     try {
       closing.close();
-    } catch (err) {
-      console.warn(`[purity] webSocketSignal('${label}') close failed:`, err);
+    } catch {
+      console.warn(`[purity] webSocketSignal('${label}') close failed`);
     }
     // Settle a manual close after subscribers observe 'closing'. A
     // bfcache restore closes and opens in the same turn, so this task
@@ -218,8 +219,9 @@ export function webSocketSignal<T>(
     }
     try {
       ws.send(data);
-    } catch (err) {
-      console.warn(`[purity] webSocketSignal('${label}').send() failed:`, err);
+    } catch {
+      // Never forward exception details: adapters may echo sent payloads.
+      console.warn(`[purity] webSocketSignal('${label}').send() failed`);
     }
   };
   accessor.readyState = () => stateAccessor();

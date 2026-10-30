@@ -472,6 +472,64 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('redacts native constructor exception details that echo URL credentials', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    (globalThis as { WebSocket: unknown }).WebSocket = class {
+      constructor() {
+        throw new Error('unredacted wss://user:pw@host/ws?access_token=SECRET');
+      }
+    };
+    const signal = webSocketSignal<number>('wss://user:pw@host/ws?access_token=SECRET', {
+      initialValue: 7,
+      validate: isNumber,
+      reconnect: 'never',
+    });
+    expect(signal()).toBe(7);
+    expect(signal.readyState()).toBe('closed');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+    expect(logged).toContain('failed to open');
+    expect(logged).not.toContain('SECRET');
+    expect(logged).not.toContain('user:pw');
+    warnSpy.mockRestore();
+  });
+
+  it('does not log thrown send payloads or close exception details', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const send = MockWS.prototype.send;
+    const close = MockWS.prototype.close;
+    MockWS.prototype.send = () => {
+      throw new Error('SECRET_SEND echoed by the adapter');
+    };
+    MockWS.prototype.close = () => {
+      throw new Error('SECRET_CLOSE echoed by the adapter');
+    };
+    try {
+      const host = document.createElement('div');
+      let signal!: ReturnType<typeof webSocketSignal<number>>;
+      const { unmount } = mount(() => {
+        signal = webSocketSignal<number>('wss://host/ws', {
+          initialValue: 0,
+          validate: isNumber,
+        });
+        return document.createComment('m');
+      }, host);
+      instances[0].fireOpen();
+      signal.send('SECRET_SEND');
+      unmount();
+      await tick();
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('.send() failed');
+      expect(logged).toContain('close failed');
+      expect(logged).not.toContain('SECRET_SEND');
+      expect(logged).not.toContain('SECRET_CLOSE');
+    } finally {
+      MockWS.prototype.send = send;
+      MockWS.prototype.close = close;
+      warnSpy.mockRestore();
+    }
+  });
+
   it('accepts well-formed subprotocol tokens (happy path)', () => {
     webSocketSignal<number>('/ws', {
       initialValue: 0,

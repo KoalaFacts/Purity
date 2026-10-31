@@ -1000,7 +1000,19 @@ export function watch(
     }
 
     // Read each source once; callback reads must not become dependencies.
-    const result = first ? undefined : untracked(() => cb(value, previous));
+    // Invoke explicitly-source callbacks without allocating a fresh wrapper
+    // closure on every update. Keep the same dependency isolation and
+    // exception-safe listener restoration as untracked().
+    let result: undefined | Dispose;
+    if (!first) {
+      const prevListener = activeListener;
+      activeListener = null;
+      try {
+        result = cb(value, previous);
+      } finally {
+        activeListener = prevListener;
+      }
+    }
     first = false;
     previous = value;
     return result;

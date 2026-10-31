@@ -70,6 +70,8 @@ export interface WebSocketSignalOptions<T> {
  * presence.send(JSON.stringify({ subscribe: 'team-42' }));
  * ```
  */
+const WS_EVENTS = ['open', 'close', 'error', 'message'] as const;
+
 export function webSocketSignal<T>(
   url: string | URL,
   options: WebSocketSignalOptions<T>,
@@ -145,12 +147,8 @@ export function webSocketSignal<T>(
     validate,
     inner,
   );
-  const listeners: Array<[string, EventListener]> = [
-    ['open', onOpen],
-    ['close', onClose],
-    ['error', onClose],
-    ['message', onMessage as EventListener],
-  ];
+  // Event names are shared across sockets; only the listener functions are per instance.
+  const listeners: EventListener[] = [onOpen, onClose, onClose, onMessage as EventListener];
 
   const open = (): void => {
     if (ws) return;
@@ -165,7 +163,7 @@ export function webSocketSignal<T>(
       return;
     }
     try {
-      for (const [ev, fn] of listeners) ws.addEventListener(ev, fn);
+      for (let i = 0; i < listeners.length; i++) ws.addEventListener(WS_EVENTS[i], listeners[i]);
     } catch {
       // Listener adapters may echo credential-bearing URLs in thrown errors.
       // Close the partially opened socket without reporting raw exceptions.
@@ -182,9 +180,9 @@ export function webSocketSignal<T>(
     // after the socket's async close path can't ride back into the shared
     // inner state on the next reconnect cycle. Matches eventSourceSignal.
     let detachFailed = false;
-    for (const [ev, fn] of listeners) {
+    for (let i = 0; i < listeners.length; i++) {
       try {
-        closing.removeEventListener(ev, fn);
+        closing.removeEventListener(WS_EVENTS[i], listeners[i]);
       } catch {
         // Continue detaching other handlers and close the transport.
         detachFailed = true;

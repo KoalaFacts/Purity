@@ -713,6 +713,50 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(instances[0].protocols).toEqual(['chat.v1', 'json.v2+ext']);
   });
 
+  it('keeps per-socket listeners isolated while reusing event names', async () => {
+    const firstHost = document.createElement('div');
+    const secondHost = document.createElement('div');
+    let first!: ReturnType<typeof webSocketSignal<number>>;
+    let second!: ReturnType<typeof webSocketSignal<number>>;
+    const firstMount = mount(() => {
+      first = webSocketSignal<number>('/ws/first', { initialValue: 0, validate: isNumber });
+      return document.createComment('first');
+    }, firstHost);
+    const secondMount = mount(() => {
+      second = webSocketSignal<number>('/ws/second', { initialValue: 0, validate: isNumber });
+      return document.createComment('second');
+    }, secondHost);
+
+    expect(instances).toHaveLength(2);
+    for (const event of ['open', 'close', 'error', 'message']) {
+      expect(instances[0].listeners.get(event)).toHaveLength(1);
+      expect(instances[1].listeners.get(event)).toHaveLength(1);
+    }
+    expect(instances[0].listeners.get('message')![0]).not.toBe(
+      instances[1].listeners.get('message')![0],
+    );
+
+    instances[0].fireOpen();
+    instances[1].fireOpen();
+    instances[0].fireMessage('7');
+    instances[1].fireMessage('11');
+    expect(first()).toBe(7);
+    expect(second()).toBe(11);
+
+    firstMount.unmount();
+    await tick();
+    for (const event of ['open', 'close', 'error', 'message']) {
+      expect(instances[0].listeners.get(event)).toHaveLength(0);
+      expect(instances[1].listeners.get(event)).toHaveLength(1);
+    }
+    instances[0].fireMessage('99');
+    instances[1].fireMessage('13');
+    expect(first()).toBe(7);
+    expect(second()).toBe(13);
+    secondMount.unmount();
+    await tick();
+  });
+
   it('close() detaches the four listeners so a late message after reconnect cannot ride into the new state', async () => {
     const sig = webSocketSignal<number>('/ws', {
       initialValue: 0,

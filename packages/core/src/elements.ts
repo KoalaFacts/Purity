@@ -317,9 +317,9 @@ export function component<
         for (const key of Object.keys(this)) {
           if (key.startsWith('__purity_event_')) {
             const eventName = key.slice(15);
-            allProps[`on${eventName.charAt(0).toUpperCase()}${eventName.slice(1)}`] = (
-              this as any
-            )[key];
+            allProps[`on${eventName.charAt(0).toUpperCase()}${eventName.slice(1)}`] = (this as any)[
+              key
+            ];
           }
         }
         const registry = createRegistry();

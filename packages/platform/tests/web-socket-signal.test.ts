@@ -134,6 +134,18 @@ describe('webSocketSignal — SSR (ADR 0047)', () => {
     expect(sig.readyState()).toBe('closed');
     expect(() => sig.send('x')).not.toThrow();
   });
+
+  it('shares inert methods while preserving independent fallback values', () => {
+    delete (globalThis as { WebSocket?: unknown }).WebSocket;
+    const first = webSocketSignal<number>('/one', { initialValue: 1, validate: isNumber });
+    const second = webSocketSignal<number>('/two', { initialValue: 2, validate: isNumber });
+    expect(first()).toBe(1);
+    expect(second()).toBe(2);
+    expect(first.send).toBe(second.send);
+    expect(first.readyState).toBe(second.readyState);
+    expect(first.readyState()).toBe('closed');
+    expect(instances).toEqual([]);
+  });
 });
 
 describe('webSocketSignal — client (ADR 0047)', () => {

@@ -54,6 +54,18 @@ export interface WebSocketSignalOptions<T> {
 
 const WS_EVENTS = ['open', 'close', 'error', 'message'] as const;
 
+// Inert transports can share these methods; active transports need neither
+// the methods nor a per-connection factory closure.
+const INERT_SEND = (): void => {};
+const INERT_READY_STATE = (): WebSocketReadyState => 'closed';
+
+function inertWebSocket<T>(options: WebSocketSignalOptions<T>): WebSocketSignal<T> {
+  const inert = compute(() => options.initialValue) as WebSocketSignal<T>;
+  inert.send = INERT_SEND;
+  inert.readyState = INERT_READY_STATE;
+  return inert;
+}
+
 /**
  * Reactive WebSocket feed (ADR 0047).
  *
@@ -76,14 +88,8 @@ export function webSocketSignal<T>(
   url: string | URL,
   options: WebSocketSignalOptions<T>,
 ): WebSocketSignal<T> {
-  const makeInert = (): WebSocketSignal<T> => {
-    const inert = compute(() => options.initialValue) as WebSocketSignal<T>;
-    inert.send = () => {};
-    inert.readyState = () => 'closed' as const;
-    return inert;
-  };
   if (isSSR() || typeof WebSocket === 'undefined') {
-    return makeInert();
+    return inertWebSocket(options);
   }
 
   const inner = state(options.initialValue);
@@ -106,7 +112,7 @@ export function webSocketSignal<T>(
     console.warn(
       `[purity] webSocketSignal('${label}') rejected — only ws:// and wss:// URLs are permitted`,
     );
-    return makeInert();
+    return inertWebSocket(options);
   }
 
   // Subprotocol validation: per RFC 6455 §4.1, each subprotocol must be
@@ -129,7 +135,7 @@ export function webSocketSignal<T>(
       console.warn(
         `[purity] webSocketSignal('${label}') rejected — invalid subprotocol (must be RFC 6455 tokens)`,
       );
-      return makeInert();
+      return inertWebSocket(options);
     }
   }
 

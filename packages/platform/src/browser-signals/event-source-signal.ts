@@ -231,6 +231,14 @@ export function eventSourceSignal<T>(
     return compute(() => options.initialValue);
   }
 
+  // Reject unsafe URLs before allocating state, transport handlers, or page listeners.
+  if (!isSafeEventSourceUrl(url)) {
+    console.warn(
+      `[purity] eventSourceSignal('${redactUrl(url)}') refused to open — only http(s) schemes are allowed`,
+    );
+    return compute(() => options.initialValue);
+  }
+
   const inner = state(options.initialValue);
   const eventName = options.eventName ?? 'message';
   const parse = options.parse ?? (JSON.parse as (raw: string) => unknown);
@@ -240,12 +248,6 @@ export function eventSourceSignal<T>(
   // Use the redacted label for ALL diagnostic console.warn paths so
   // `?access_token=…` and `user:pw@` don't leak into log sinks.
   const label = redactUrl(url);
-  // Refuse non-HTTP(S) URLs up-front. `javascript:`, `data:`, `blob:`,
-  // and `file:` schemes are NOT valid SSE endpoints; reflecting them
-  // through `new EventSource(url)` invites runtime-specific surprises
-  // (jsdom + custom mocks won't reject), so gate before construction.
-  const urlIsSafe = isSafeEventSourceUrl(url);
-
   let es: EventSource | null = null;
   // `disposed` guards against open() racing a unmount-triggered close():
   // wireLiveReconnect's watch may schedule an open() asynchronously, and
@@ -256,12 +258,6 @@ export function eventSourceSignal<T>(
 
   const open = (): void => {
     if (disposed || es) return;
-    if (!urlIsSafe) {
-      console.warn(
-        `[purity] eventSourceSignal('${label}') refused to open — only http(s) schemes are allowed`,
-      );
-      return;
-    }
     try {
       // codeql[js/superfluous-trailing-arguments]
       // CodeQL's web externs model EventSource as single-argument, but the

@@ -567,6 +567,34 @@ describe('eventSourceSignal — audit-v2 hardening', () => {
     warnSpy.mockRestore();
   });
 
+  it('skips reconnect listeners and repeated warnings for a refused URL', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const documentAdd = vi.spyOn(document, 'addEventListener');
+    const windowAdd = vi.spyOn(window, 'addEventListener');
+    try {
+      const sig = eventSourceSignal<number>('javascript:alert(1)', {
+        initialValue: 5,
+        validate: isNumber,
+      });
+      expect(sig()).toBe(5);
+      expect(instances).toHaveLength(0);
+      expect(documentAdd.mock.calls.some(([type]) => type === 'visibilitychange')).toBe(false);
+      expect(windowAdd.mock.calls.some(([type]) => type === 'pageshow')).toBe(false);
+      setVisibility('hidden');
+      setVisibility('visible');
+      const restore = new Event('pageshow') as Event & { persisted: boolean };
+      Object.defineProperty(restore, 'persisted', { value: true });
+      window.dispatchEvent(restore);
+      await tick();
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      warnSpy.mockRestore();
+      documentAdd.mockRestore();
+      windowAdd.mockRestore();
+    }
+  });
+
   it('refuses to open a data: URL', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     eventSourceSignal<number>('data:text/event-stream,data:%20pwned%0A%0A', {

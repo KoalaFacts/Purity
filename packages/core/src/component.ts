@@ -196,11 +196,12 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
     }
   };
 
-  // watch() already registers its disposer with this owner. Run the
-  // ref-count release after that disposal without stopping it twice.
-  watch(update);
+  const dispose = watch(update);
   const owner = getCurrentContext()!;
-  (owner.disposers ??= []).push(() => update(true));
+  (owner.disposers ??= []).push(() => {
+    dispose();
+    update(true);
+  });
 }
 
 /** @internal Shared owner teardown; root hydration imports lifecycle, not the reverse. */

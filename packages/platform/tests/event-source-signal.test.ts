@@ -572,10 +572,9 @@ describe('eventSourceSignal — audit-v2 hardening', () => {
     const documentAdd = vi.spyOn(document, 'addEventListener');
     const windowAdd = vi.spyOn(window, 'addEventListener');
     try {
-      const sig = eventSourceSignal<number>('javascript:alert(1)', {
-        initialValue: 5,
-        validate: isNumber,
-      });
+      const options = { initialValue: 5, validate: isNumber };
+      const sig = eventSourceSignal<number>('javascript:alert(1)', options);
+      options.initialValue = 99;
       expect(sig()).toBe(5);
       expect(instances).toHaveLength(0);
       expect(documentAdd.mock.calls.some(([type]) => type === 'visibilitychange')).toBe(false);

@@ -233,10 +233,12 @@ export function eventSourceSignal<T>(
 
   // Reject unsafe URLs before allocating state, transport handlers, or page listeners.
   if (!isSafeEventSourceUrl(url)) {
+    // Match the connected path: initialValue is captured at creation time.
+    const initialValue = options.initialValue;
     console.warn(
       `[purity] eventSourceSignal('${redactUrl(url)}') refused to open — only http(s) schemes are allowed`,
     );
-    return compute(() => options.initialValue);
+    return compute(() => initialValue);
   }
 
   const inner = state(options.initialValue);

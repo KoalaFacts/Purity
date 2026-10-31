@@ -86,10 +86,12 @@ describe('SV2-015 lean component ownership', () => {
     for (const child of parent.children) child.parent = parent;
     first.destroyed = [() => calls.push('first')];
     second.destroyed = [() => calls.push('second')];
-    last.destroyed = [() => {
-      calls.push('last');
-      unmountContext(second);
-    }];
+    last.destroyed = [
+      () => {
+        calls.push('last');
+        unmountContext(second);
+      },
+    ];
 
     expect(() => unmountContext(parent)).not.toThrow();
     expect(calls).toEqual(['last', 'second', 'first']);

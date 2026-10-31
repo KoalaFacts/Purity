@@ -296,39 +296,28 @@ function disconnectFromSources(node: ComputedNode): void {
 // dirty propagation
 // ---------------------------------------------------------------------------
 
+// Iterative DFS preserves the original preorder of queued effects. The
+// scratch array is lazy and reused across direct observers of one write.
 function markDirty(observers: ComputedNode[]): void {
-  // Each direct observer's transitive walk drains this stack. Reusing it
-  // avoids allocating one separate DFS array for every branch of a write.
   let stack: ComputedNode[] | null = null;
   for (let i = 0; i < observers.length; i++) {
     const o = observers[i];
     if (o.status === STATUS_DIRTY) continue;
     o.status = STATUS_DIRTY;
     if (o.isEffect) pendingEffects.push(o);
-    if (o.observers !== null) {
-      stack ??= [];
-      markCheck(o.observers, stack);
-    }
-  }
-}
-
-// Iterative (explicit stack) rather than recursive: a long-lived derived
-// chain grown one link at a time never trips a stack-depth limit while
-// building (each new link only touches its already-settled parent), but a
-// later write to the root still has to mark every link in one synchronous
-// pass. Pushing children in reverse index order preserves the same
-// pre-order visitation (and thus pendingEffects push order) the old
-// recursive version produced.
-function markCheck(observers: ComputedNode[], stack: ComputedNode[]): void {
-  for (let i = observers.length - 1; i >= 0; i--) stack.push(observers[i]);
-  while (stack.length > 0) {
-    const o = stack.pop()!;
-    if (o.status !== STATUS_CLEAN) continue;
-    o.status = STATUS_CHECK;
-    if (o.isEffect) pendingEffects.push(o);
-    const kids = o.observers;
-    if (kids !== null) {
-      for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]);
+    const children = o.observers;
+    if (children === null) continue;
+    const toCheck = (stack ??= []);
+    for (let j = children.length - 1; j >= 0; j--) toCheck.push(children[j]);
+    while (toCheck.length > 0) {
+      const next = toCheck.pop()!;
+      if (next.status !== STATUS_CLEAN) continue;
+      next.status = STATUS_CHECK;
+      if (next.isEffect) pendingEffects.push(next);
+      const descendants = next.observers;
+      if (descendants !== null) {
+        for (let j = descendants.length - 1; j >= 0; j--) toCheck.push(descendants[j]);
+      }
     }
   }
 }

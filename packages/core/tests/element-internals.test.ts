@@ -139,6 +139,10 @@ describe('bindComponentState', () => {
     expect(owner!._stateRefs?.has('ephemeral')).toBe(false);
     expect(owner!._stateRefs?.size).toBe(0);
     host.remove();
+    on(true);
+    await tick();
+    // Owner disposal unregisters the watch before releasing the ref count.
+    expect(owner!._stateRefs?.has('ephemeral')).toBe(false);
   });
 
   it('is a no-op outside a component', () => {

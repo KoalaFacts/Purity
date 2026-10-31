@@ -199,12 +199,11 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
     }
   };
 
-  const dispose = watch(update);
+  // watch() already registers its disposer with the current owner. Run the
+  // ref-count release after that subscription is detached during teardown.
+  watch(update);
   const owner = getCurrentContext()!;
-  (owner.disposers ??= []).push(() => {
-    dispose();
-    update(true);
-  });
+  (owner.disposers ??= []).push(() => update(true));
 }
 
 /** @internal Shared owner teardown; root hydration imports lifecycle, not the reverse. */

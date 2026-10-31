@@ -872,7 +872,9 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
   if (ctx) (ctx.disposers ??= []).push(dispose);
 
   const accessor = (() => readNode<T>(node)) as ComputedAccessor<T>;
-  (accessor as unknown as { get: () => T }).get = () => readNode<T>(node);
+  // A computed getter has exactly the same tracked read behavior as calling it.
+  // Reuse that function instead of allocating another closure per computed.
+  (accessor as unknown as { get: () => T }).get = accessor;
   (accessor as unknown as { peek: () => T }).peek = () => readNode<T>(node, false);
 
   return accessor;

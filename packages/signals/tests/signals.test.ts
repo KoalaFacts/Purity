@@ -99,6 +99,21 @@ describe('computed', () => {
     expect(c()).toBe(12);
   });
 
+  it('reuses its read accessor for .get() without losing subscriptions', async () => {
+    const count = state(1);
+    const doubled = compute(() => count() * 2);
+    const seen: number[] = [];
+    expect(doubled.get).toBe(doubled);
+
+    const stop = watch(() => {
+      seen.push(doubled.get());
+    });
+    count(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(seen).toEqual([2, 4]);
+    stop();
+  });
+
   it('supports .peek() without tracking', () => {
     const count = state(3);
     const doubled = compute(() => count() * 2);

@@ -219,10 +219,10 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       for (const url of [
-        'htt\\nps://user:pw@example.test/sse?access_token=SECRET_CTRL',
-        'java\\nscript:SECRET_JS',
+        'htt\nps://user:pw@example.test/sse?access_token=SECRET_CTRL',
+        'java\nscript:SECRET_JS',
       ]) {
-        const sig = eventSourceSignal<number>(url.replace('\\n', '\\n'), {
+        const sig = eventSourceSignal<number>(url, {
           initialValue: 7,
           validate: isNumber,
           reconnect: 'never',

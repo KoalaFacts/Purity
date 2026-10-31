@@ -275,7 +275,7 @@ describe('webSocketSignal — client (ADR 0047)', () => {
   it('rejects control-obfuscated WebSocket schemes without logging credentials', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      const bad = webSocketSignal<number>('ws\\ns://user:pw@host/ws?access_token=SECRET_CTRL'.replace('\\n', '\\n'), {
+      const bad = webSocketSignal<number>('ws\ns://user:pw@host/ws?access_token=SECRET_CTRL', {
         initialValue: 7,
         validate: isNumber,
       });

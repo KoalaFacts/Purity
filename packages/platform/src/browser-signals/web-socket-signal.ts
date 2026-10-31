@@ -164,7 +164,14 @@ export function webSocketSignal<T>(
       ws = null;
       return;
     }
-    for (const [ev, fn] of listeners) ws.addEventListener(ev, fn);
+    try {
+      for (const [ev, fn] of listeners) ws.addEventListener(ev, fn);
+    } catch {
+      // Listener adapters may echo credential-bearing URLs in thrown errors.
+      // Close the partially opened socket without reporting raw exceptions.
+      close();
+      console.warn(`[purity] webSocketSignal('${label}') failed to add listener`);
+    }
   };
   const close = (): void => {
     if (!ws) return;
@@ -174,7 +181,18 @@ export function webSocketSignal<T>(
     // Detach our four listeners BEFORE close() so a late 'message' arriving
     // after the socket's async close path can't ride back into the shared
     // inner state on the next reconnect cycle. Matches eventSourceSignal.
-    for (const [ev, fn] of listeners) closing.removeEventListener(ev, fn);
+    let detachFailed = false;
+    for (const [ev, fn] of listeners) {
+      try {
+        closing.removeEventListener(ev, fn);
+      } catch {
+        // Continue detaching other handlers and close the transport.
+        detachFailed = true;
+      }
+    }
+    if (detachFailed) {
+      console.warn(`[purity] webSocketSignal('${label}') listener detach failed`);
+    }
     try {
       closing.close();
     } catch {

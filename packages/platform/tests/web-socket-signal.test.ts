@@ -598,6 +598,75 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('closes a partial socket when listener registration throws', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const add = MockWS.prototype.addEventListener;
+    MockWS.prototype.addEventListener = function (this: MockWS, type, listener) {
+      if (type === 'message') throw new Error('SECRET_WS_ADD from adapter');
+      add.call(this, type, listener);
+    };
+    try {
+      const sig = webSocketSignal<number>('wss://user:pw@host/ws?access_token=SECRET_URL', {
+        initialValue: 7,
+        validate: isNumber,
+        reconnect: 'never',
+      });
+      expect(instances).toHaveLength(1);
+      expect(instances[0].closed).toBe(true);
+      for (const type of ['open', 'close', 'error', 'message']) {
+        expect(instances[0].listeners.get(type)?.length ?? 0).toBe(0);
+      }
+      await tick();
+      expect(sig()).toBe(7);
+      expect(sig.readyState()).toBe('closed');
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('failed to add listener');
+      expect(logged).not.toContain('SECRET_WS_ADD');
+      expect(logged).not.toContain('SECRET_URL');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      MockWS.prototype.addEventListener = add;
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('closes a socket even when listener removal throws', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const remove = MockWS.prototype.removeEventListener;
+    MockWS.prototype.removeEventListener = function (this: MockWS, type, listener) {
+      if (type === 'message') throw new Error('SECRET_WS_REMOVE from adapter');
+      remove.call(this, type, listener);
+    };
+    try {
+      const host = document.createElement('div');
+      let signal!: ReturnType<typeof webSocketSignal<number>>;
+      const { unmount } = mount(() => {
+        signal = webSocketSignal<number>('wss://user:pw@host/ws?access_token=SECRET_URL', {
+          initialValue: 0,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        return document.createComment('m');
+      }, host);
+      instances[0].fireOpen();
+      expect(() => unmount()).not.toThrow();
+      expect(instances[0].closed).toBe(true);
+      for (const type of ['open', 'close', 'error']) {
+        expect(instances[0].listeners.get(type)?.length ?? 0).toBe(0);
+      }
+      await tick();
+      expect(signal.readyState()).toBe('closed');
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('listener detach failed');
+      expect(logged).not.toContain('SECRET_WS_REMOVE');
+      expect(logged).not.toContain('SECRET_URL');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      MockWS.prototype.removeEventListener = remove;
+      warnSpy.mockRestore();
+    }
+  });
+
   it('does not log thrown send payloads or close exception details', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const send = MockWS.prototype.send;

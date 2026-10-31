@@ -488,6 +488,21 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(instances).toHaveLength(1);
   });
 
+  it('rejects invalid absolute ws URLs before constructing a socket', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of ['ws://', 'wss://']) {
+        const sig = webSocketSignal<number>(url, { initialValue: 7, validate: isNumber });
+        expect(sig()).toBe(7);
+        expect(sig.readyState()).toBe('closed');
+      }
+      expect(instances).toEqual([]);
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('rejects subprotocols containing CR/LF or non-token bytes (header smuggling)', () => {
     // audit-v2: Sec-WebSocket-Protocol values are echoed back by the
     // server. Passing a string with embedded CR/LF / non-token bytes

@@ -66,37 +66,30 @@ export function normalizeLiveUrl(url: string): string | null {
   return trimmed;
 }
 
-/**
- * Allow-list of URL schemes accepted by eventSourceSignal. Browsers
- * reject non-HTTP(S) schemes at `new EventSource()` time, but a hostile
- * SSR-derived URL string with an attacker-controlled `javascript:`,
- * `data:`, `blob:`, or `file:` scheme would still be reflected into our
- * `console.warn` diagnostics and (under non-conformant runtimes /
- * tests) reach the constructor. Enforce HTTP(S) before construction so
- * the trust boundary lives at the signal — not at the browser.
- *
- * @internal
- */
-export function isSafeEventSourceUrl(url: string | URL): boolean {
-  if (typeof url !== 'string') {
-    const proto = url.protocol;
-    return proto === 'http:' || proto === 'https:';
-  }
-  const normalized = normalizeLiveUrl(url);
-  if (normalized === null) return false;
-  url = normalized;
-  // Relative (no scheme) is fine — it resolves against document.baseURI
-  // which the page already trusts. Match the same RFC-3986 scheme prefix
-  // used by redactUrl() for consistency.
-  if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) return true;
+/** @internal Validate allowed live-connection protocols, including malformed absolute URLs. */
+export function isSafeLiveUrl(
+  url: string | URL,
+  firstProtocol: string,
+  secondProtocol: string,
+): boolean {
   try {
-    const proto = new URL(url).protocol;
-    return proto === 'http:' || proto === 'https:';
+    if (typeof url === 'string') {
+      const normalized = normalizeLiveUrl(url);
+      if (normalized === null) return false;
+      // Relative URLs resolve against the caller's page; do not invent a base.
+      if (!/^[a-z][a-z0-9+.-]*:/i.test(normalized)) return true;
+      url = new URL(normalized);
+    }
+    return url.protocol === firstProtocol || url.protocol === secondProtocol;
   } catch {
-    // Unparseable absolute-looking string — let the constructor reject it
-    // so the surface error matches the platform.
+    // Malformed absolute URLs and throwing URL adapters must fail closed.
     return false;
   }
+}
+
+/** Refuse unsupported SSE schemes before constructing an EventSource. */
+export function isSafeEventSourceUrl(url: string | URL): boolean {
+  return isSafeLiveUrl(url, 'http:', 'https:');
 }
 
 /**

@@ -21,8 +21,8 @@ import { getCurrentContext } from '@purityjs/signals';
 import {
   type LiveReconnectPolicy,
   type LiveValidator,
+  isSafeLiveUrl,
   makeLiveMessageHandler,
-  normalizeLiveUrl,
   redactUrl,
   wireLiveReconnect,
 } from './event-source-signal.ts';
@@ -100,23 +100,7 @@ export function webSocketSignal<T>(
   // attacker-controlled URLs like `javascript:…` / `data:…` / a leaked
   // `http:` token from a misconfigured backend into an inert accessor
   // before any side effects fire.
-  let schemeOk = true;
-  try {
-    if (typeof url !== 'string') {
-      schemeOk = url.protocol === 'ws:' || url.protocol === 'wss:';
-    } else {
-      const normalized = normalizeLiveUrl(url);
-      if (normalized === null) schemeOk = false;
-      else if (/^[a-z][a-z0-9+.-]*:/i.test(normalized)) {
-        // Check the scheme after the platform's leading/trailing trimming.
-        const scheme = normalized.slice(0, normalized.indexOf(':')).toLowerCase();
-        schemeOk = scheme === 'ws' || scheme === 'wss';
-      }
-    }
-  } catch {
-    schemeOk = false;
-  }
-  if (!schemeOk) {
+  if (!isSafeLiveUrl(url, 'ws:', 'wss:')) {
     console.warn(
       `[purity] webSocketSignal('${label}') rejected — only ws:// and wss:// URLs are permitted`,
     );

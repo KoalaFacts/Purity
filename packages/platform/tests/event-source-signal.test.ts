@@ -193,11 +193,10 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
 
   it('does not log EventSource constructor errors containing credentials', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    (globalThis as { EventSource: unknown }).EventSource = class {
-      constructor() {
-        throw new Error('SECRET_CONSTRUCTOR_MESSAGE with SECRET_URL_TOKEN');
-      }
-    };
+    function ThrowingES(): never {
+      throw new Error('SECRET_CONSTRUCTOR_MESSAGE with SECRET_URL_TOKEN');
+    }
+    (globalThis as { EventSource: unknown }).EventSource = ThrowingES;
     try {
       const sig = eventSourceSignal<number>(
         'https://user:pw@example.test/sse?access_token=SECRET_URL_TOKEN',

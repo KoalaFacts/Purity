@@ -216,10 +216,12 @@ export function unmountContext(
 
   const children = ctx.children;
   if (children) {
+    // Detach before descending: an onDestroy hook can dispose a sibling.
+    // Keep the iteration stable and avoid O(n²) parent-array removals.
+    ctx.children = null;
     for (let i = children.length - 1; i >= 0; i--) {
       unmountContext(children[i], rollback, false, bubbleDestroyError);
     }
-    ctx.children = null;
   }
 
   const nodes = ctx.nodes;

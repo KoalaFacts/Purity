@@ -191,6 +191,34 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     }
   });
 
+  it('does not echo opaque URL payloads into refused EventSource diagnostics', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of [
+        'javascript:SECRET_JS',
+        'data:text/plain,SECRET_DATA',
+        'file:///private/SECRET_FILE',
+        new URL('blob:https://host/SECRET_BLOB'),
+      ]) {
+        const sig = eventSourceSignal<number>(url, {
+          initialValue: 7,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        expect(sig()).toBe(7);
+      }
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(4);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[unsupported URL scheme]');
+      for (const secret of ['SECRET_JS', 'SECRET_DATA', 'SECRET_FILE', 'SECRET_BLOB']) {
+        expect(logged).not.toContain(secret);
+      }
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('never logs parser or validator exceptions containing raw message secrets', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

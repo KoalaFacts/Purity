@@ -245,6 +245,33 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('does not echo opaque URL payloads into rejected WebSocket diagnostics', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of [
+        'javascript:SECRET_WS_JS',
+        'data:text/plain,SECRET_WS_DATA',
+        new URL('file:///private/SECRET_WS_FILE'),
+      ]) {
+        const sig = webSocketSignal<number>(url, {
+          initialValue: 7,
+          validate: isNumber,
+        });
+        expect(sig()).toBe(7);
+        expect(sig.readyState()).toBe('closed');
+      }
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(3);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[unsupported URL scheme]');
+      for (const secret of ['SECRET_WS_JS', 'SECRET_WS_DATA', 'SECRET_WS_FILE']) {
+        expect(logged).not.toContain(secret);
+      }
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('never logs parser or validator exceptions containing WebSocket payload secrets', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

@@ -102,6 +102,8 @@ export function isSafeEventSourceUrl(url: string | URL): boolean {
 export function redactUrl(url: string | URL): string {
   // URL instance: always absolute by construction — redact directly.
   if (typeof url !== 'string') {
+    // Opaque / unsupported schemes may embed credentials in their pathname.
+    if (!/^(https?|wss?):$/.test(url.protocol)) return '[unsupported URL scheme]';
     return `${url.protocol}//${url.host}${url.pathname}`;
   }
   // For a string input, distinguish absolute from relative without
@@ -111,8 +113,7 @@ export function redactUrl(url: string | URL): string {
   //    in-place so a `?access_token=…` is removed but the path stays.
   if (/^[a-z][a-z0-9+.-]*:/i.test(url)) {
     try {
-      const u = new URL(url);
-      return `${u.protocol}//${u.host}${u.pathname}`;
+      return redactUrl(new URL(url));
     } catch {
       // Never echo an invalid absolute URL: it may contain credentials.
       return '[invalid URL]';

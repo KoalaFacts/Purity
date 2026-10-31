@@ -279,7 +279,14 @@ export function eventSourceSignal<T>(
       es = null;
       return;
     }
-    es.addEventListener(eventName, onMessage);
+    try {
+      es.addEventListener(eventName, onMessage);
+    } catch {
+      // An adapter can echo credentials from the endpoint in its exception.
+      // Close the partially opened connection without leaking that error.
+      close();
+      console.warn(`[purity] eventSourceSignal('${label}') failed to add listener`);
+    }
   };
   const close = (): void => {
     if (!es) return;
@@ -288,7 +295,12 @@ export function eventSourceSignal<T>(
     // is a fast no-op instead of double-detaching the listener.
     const closing = es;
     es = null;
-    closing.removeEventListener(eventName, onMessage);
+    try {
+      closing.removeEventListener(eventName, onMessage);
+    } catch {
+      // Still close the connection if a non-native adapter refuses to detach.
+      console.warn(`[purity] eventSourceSignal('${label}') listener detach failed`);
+    }
     try {
       closing.close();
     } catch {

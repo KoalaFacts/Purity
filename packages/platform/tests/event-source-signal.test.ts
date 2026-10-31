@@ -306,6 +306,71 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     }
   });
 
+  it('closes and redacts a connection when EventSource listener registration throws', () => {
+    const addEventListener = MockES.prototype.addEventListener;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    MockES.prototype.addEventListener = function () {
+      throw new Error('SECRET_SUBSCRIBE from https://user:pw@example.test/sse?access_token=SECRET_URL');
+    };
+    try {
+      const sig = eventSourceSignal<number>(
+        'https://user:pw@example.test/sse?access_token=SECRET_URL',
+        { initialValue: 9, validate: isNumber, reconnect: 'never' },
+      );
+      expect(sig()).toBe(9);
+      expect(instances).toHaveLength(1);
+      expect(instances[0].closed).toBe(true);
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('failed to add listener');
+      expect(logged).toContain('https://example.test/sse');
+      expect(logged).not.toContain('SECRET_SUBSCRIBE');
+      expect(logged).not.toContain('SECRET_URL');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      MockES.prototype.addEventListener = addEventListener;
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('still closes and redacts when EventSource listener removal throws on disposal', () => {
+    const removeEventListener = MockES.prototype.removeEventListener;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    MockES.prototype.removeEventListener = function () {
+      throw new Error('SECRET_UNSUBSCRIBE from https://user:pw@example.test/sse?token=SECRET_URL');
+    };
+    try {
+      const host = document.createElement('div');
+      const { unmount } = mount(() => {
+        eventSourceSignal<number>('https://user:pw@example.test/sse?token=SECRET_URL', {
+          initialValue: 0,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        return document.createComment('sse');
+      }, host);
+      expect(instances).toHaveLength(1);
+      expect(() => unmount()).not.toThrow();
+      expect(instances[0].closed).toBe(true);
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('listener detach failed');
+      expect(logged).toContain('https://example.test/sse');
+      expect(logged).not.toContain('SECRET_UNSUBSCRIBE');
+      expect(logged).not.toContain('SECRET_URL');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      MockES.prototype.removeEventListener = removeEventListener;
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
   it('does not echo opaque URL payloads into refused EventSource diagnostics', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

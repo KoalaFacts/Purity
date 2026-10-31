@@ -52,6 +52,8 @@ export interface WebSocketSignalOptions<T> {
   reconnect?: LiveReconnectPolicy;
 }
 
+const WS_EVENTS = ['open', 'close', 'error', 'message'] as const;
+
 /**
  * Reactive WebSocket feed (ADR 0047).
  *
@@ -70,8 +72,6 @@ export interface WebSocketSignalOptions<T> {
  * presence.send(JSON.stringify({ subscribe: 'team-42' }));
  * ```
  */
-const WS_EVENTS = ['open', 'close', 'error', 'message'] as const;
-
 export function webSocketSignal<T>(
   url: string | URL,
   options: WebSocketSignalOptions<T>,

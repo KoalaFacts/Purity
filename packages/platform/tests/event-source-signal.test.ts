@@ -127,6 +127,24 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     expect(instances).toHaveLength(1);
   });
 
+  it('always reconnect avoids a page-visibility listener but retains bfcache restore', () => {
+    const documentAdd = vi.spyOn(document, 'addEventListener');
+    const windowAdd = vi.spyOn(window, 'addEventListener');
+    try {
+      eventSourceSignal<number>('/sse', {
+        initialValue: 0,
+        validate: isNumber,
+        reconnect: 'always',
+      });
+      expect(instances).toHaveLength(1);
+      expect(documentAdd.mock.calls.some(([type]) => type === 'visibilitychange')).toBe(false);
+      expect(windowAdd.mock.calls.some(([type]) => type === 'pageshow')).toBe(true);
+    } finally {
+      documentAdd.mockRestore();
+      windowAdd.mockRestore();
+    }
+  });
+
   it('opens when visible by default (on-visible)', () => {
     eventSourceSignal<number>('/sse', { initialValue: 0, validate: isNumber });
     expect(instances).toHaveLength(1);

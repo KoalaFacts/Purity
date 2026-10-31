@@ -153,26 +153,22 @@ export function wireLiveReconnect(
     open();
     return;
   }
-  const visible = pageVisibilitySignal();
-  const bfcache = bfcacheRestoreSignal();
-
-  if (reconnect === 'on-visible') {
+  // 'always' must not allocate or subscribe to the page visibility signal;
+  // only the 'on-visible' policy uses it. Both still reconnect on bfcache.
+  const visible = reconnect === 'on-visible' ? pageVisibilitySignal() : null;
+  if (visible) {
     watch(visible, (v) => {
       if (v === 'visible') open();
       else close();
     });
     if (visible.peek() === 'visible') open();
   } else {
-    // 'always'
     open();
   }
 
-  // Both 'on-visible' and 'always' force a clean reconnect on bfcache
-  // restore. The underlying connection is paused during freeze; refreshing
-  // it on resume avoids stale-state surprises.
-  watch(bfcache, () => {
-    const shouldBeOpen = reconnect === 'always' || visible.peek() === 'visible';
-    if (shouldBeOpen) {
+  // A bfcache restore refreshes the live transport unless visibility gates it.
+  watch(bfcacheRestoreSignal(), () => {
+    if (visible === null || visible.peek() === 'visible') {
       close();
       open();
     }

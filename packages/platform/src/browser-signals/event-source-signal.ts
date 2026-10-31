@@ -280,7 +280,13 @@ export function eventSourceSignal<T>(
     const closing = es;
     es = null;
     closing.removeEventListener(eventName, onMessage);
-    closing.close();
+    try {
+      closing.close();
+    } catch {
+      // Non-native adapters may throw credential-bearing endpoint details.
+      // Never let disposer error reporting echo the raw exception.
+      console.warn(`[purity] eventSourceSignal('${label}') close failed`);
+    }
   };
 
   wireLiveReconnect(reconnect, open, close);

@@ -6,6 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
+import { mount } from '../../core/src/index.ts';
 import { eventSourceSignal } from '../src/browser-signals/index.ts';
 import { isSafeEventSourceUrl, redactUrl } from '../src/browser-signals/event-source-signal.ts';
 import { _resetPageVisibilitySignal } from '../src/browser-signals/page-visibility-signal.ts';
@@ -236,6 +237,42 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
       expect(logged).not.toContain('user:pw');
     } finally {
       warnSpy.mockRestore();
+    }
+  });
+
+  it('redacts EventSource close exceptions during owner disposal', () => {
+    const close = MockES.prototype.close;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    MockES.prototype.close = function () {
+      close.call(this);
+      throw new Error('SECRET_CLOSE from https://user:pw@example.test/sse?access_token=SECRET_URL');
+    };
+    try {
+      const host = document.createElement('div');
+      const { unmount } = mount(() => {
+        eventSourceSignal<number>('https://user:pw@example.test/sse?access_token=SECRET_URL', {
+          initialValue: 0,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        return document.createComment('sse');
+      }, host);
+      expect(instances).toHaveLength(1);
+      expect(() => unmount()).not.toThrow();
+      expect(instances[0].closed).toBe(true);
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('close failed');
+      expect(logged).toContain('https://example.test/sse');
+      expect(logged).not.toContain('SECRET_CLOSE');
+      expect(logged).not.toContain('SECRET_URL');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      MockES.prototype.close = close;
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
     }
   });
 

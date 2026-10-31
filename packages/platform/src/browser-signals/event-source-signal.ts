@@ -59,7 +59,11 @@ export interface EventSourceSignalOptions<T> {
 /** @internal Normalize platform-trimmed URL spellings, but reject embedded controls. */
 export function normalizeLiveUrl(url: string): string | null {
   const trimmed = url.trim();
-  return /[\u0000-\u001f\u007f]/.test(trimmed) ? null : trimmed;
+  for (let i = 0; i < trimmed.length; i++) {
+    const code = trimmed.charCodeAt(i);
+    if (code < 32 || code === 127) return null;
+  }
+  return trimmed;
 }
 
 /**

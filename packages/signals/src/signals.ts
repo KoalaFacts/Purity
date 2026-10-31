@@ -861,15 +861,15 @@ function createComputedNode(fn: () => unknown, isEffect: boolean): ComputedNode 
 export function compute<T>(fn: () => T): ComputedAccessor<T> {
   const node = createComputedNode(fn as () => unknown, false);
 
-  // Register with the current scope so a computed created inside a branch
-  // that unmounts is detached from its sources (no dangling observer links).
-  const dispose = (): void => {
-    if (node.disposed) return;
-    node.disposed = true;
-    disconnectFromSources(node);
-  };
+  // Only owner-bound computed values need a scope disposer. Module-level
+  // values can live for the page without allocating an unused closure.
   const ctx = getCurrentContext();
-  if (ctx) (ctx.disposers ??= []).push(dispose);
+  if (ctx)
+    (ctx.disposers ??= []).push(() => {
+      if (node.disposed) return;
+      node.disposed = true;
+      disconnectFromSources(node);
+    });
 
   const accessor = (() => readNode<T>(node)) as ComputedAccessor<T>;
   // A computed getter has exactly the same tracked read behavior as calling it.

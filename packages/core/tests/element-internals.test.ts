@@ -9,7 +9,7 @@ import { bindComponentState, mount, onDispose } from '../src/component.ts';
 import { component, internals } from '../src/elements.ts';
 import { html } from '../src/compiler/compile.ts';
 import { resource } from '../src/resource.ts';
-import { state } from '@purityjs/signals';
+import { getCurrentComponent, state } from '@purityjs/signals';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
@@ -113,6 +113,32 @@ describe('bindComponentState', () => {
     b(false);
     await tick();
     expect(observed!.has('busy')).toBe(false); // both off
+  });
+
+  it('allocates ref counts only for active states and releases inactive names', async () => {
+    const tag = nextTag();
+    const on = state(false);
+    let owner: ReturnType<typeof getCurrentComponent> = null;
+    component(tag, () => {
+      owner = getCurrentComponent();
+      bindComponentState('ephemeral', on);
+      return document.createElement('div');
+    });
+
+    const host = document.createElement(tag);
+    document.body.append(host);
+    expect(owner).not.toBeNull();
+    expect(Object.hasOwn(owner!, '_stateRefs')).toBe(false);
+
+    on(true);
+    await tick();
+    expect(owner!._stateRefs?.get('ephemeral')).toBe(1);
+
+    on(false);
+    await tick();
+    expect(owner!._stateRefs?.has('ephemeral')).toBe(false);
+    expect(owner!._stateRefs?.size).toBe(0);
+    host.remove();
   });
 
   it('is a no-op outside a component', () => {

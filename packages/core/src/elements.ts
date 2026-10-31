@@ -310,17 +310,18 @@ export function component<
           props[key] = (this as any)[key];
         }
 
-        const eventProps: Record<string, unknown> = {};
+        // The copied host props already form the final render bag. Merge event
+        // aliases last so they override direct properties without allocating
+        // a separate event-only object and spreading it on every connection.
+        const allProps = { ...props };
         for (const key of Object.keys(this)) {
           if (key.startsWith('__purity_event_')) {
             const eventName = key.slice(15);
-            eventProps[`on${eventName.charAt(0).toUpperCase()}${eventName.slice(1)}`] = (
+            allProps[`on${eventName.charAt(0).toUpperCase()}${eventName.slice(1)}`] = (
               this as any
             )[key];
           }
         }
-
-        const allProps = { ...props, ...eventProps } as P;
         const registry = createRegistry();
         const slotAccessors = createAccessors(registry);
 
@@ -345,11 +346,11 @@ export function component<
         let result: Node | DocumentFragment | null;
         if (hasDSDContent && dsdHydrator) {
           result = dsdHydrator.hydrateShadow(this._shadow, () =>
-            runRender(render, allProps, slotAccessors, ctx),
+            runRender(render, allProps as P, slotAccessors, ctx),
           );
         } else {
           while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
-          result = runRender(render, allProps, slotAccessors, ctx).result;
+          result = runRender(render, allProps as P, slotAccessors, ctx).result;
         }
 
         if (result !== null) this._shadow.appendChild(result);

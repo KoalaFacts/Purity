@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { eventSourceSignal } from '../src/browser-signals/index.ts';
-import { isSafeEventSourceUrl } from '../src/browser-signals/event-source-signal.ts';
+import { isSafeEventSourceUrl, redactUrl } from '../src/browser-signals/event-source-signal.ts';
 import { _resetPageVisibilitySignal } from '../src/browser-signals/page-visibility-signal.ts';
 import { _resetBfcacheRestoreSignal } from '../src/browser-signals/bfcache-restore-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../../core/src/ssr-context.ts';
@@ -186,6 +186,29 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
       expect(logged).toContain('[invalid URL]');
       expect(logged).not.toContain('SECRET_URL');
       expect(logged).not.toContain('user:pw');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('redacts scheme-relative credentials without exposing query userinfo', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const url = '//user:SECRET_USERINFO@example.test/sse?access_token=SECRET_QUERY';
+      eventSourceSignal<number>(url, {
+        initialValue: 7,
+        validate: isNumber,
+        reconnect: 'never',
+      });
+      expect(instances).toHaveLength(1);
+      instances[0].fire('message', 'invalid-json');
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('//example.test/sse');
+      expect(logged).not.toContain('SECRET_USERINFO');
+      expect(logged).not.toContain('SECRET_QUERY');
+      // An @ in a query must not be mistaken for userinfo in the authority.
+      expect(redactUrl('//example.test?access_token=user@SECRET_TAIL')).toBe('//example.test');
     } finally {
       warnSpy.mockRestore();
     }

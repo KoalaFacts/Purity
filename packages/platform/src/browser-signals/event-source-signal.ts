@@ -123,7 +123,9 @@ export function redactUrl(url: string | URL): string {
   const q = url.indexOf('?');
   const h = url.indexOf('#');
   const cut = q === -1 ? h : h === -1 ? q : Math.min(q, h);
-  return cut === -1 ? url : url.slice(0, cut);
+  // Scheme-relative authority can contain credentials; strip query first.
+  const trimmed = cut === -1 ? url : url.slice(0, cut);
+  return trimmed.replace(/^\/\/[^/]*@/, '//');
 }
 
 /**

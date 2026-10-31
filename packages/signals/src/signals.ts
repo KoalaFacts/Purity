@@ -981,37 +981,26 @@ export function watch(
     return _effect(sourceOrFn as () => undefined | Dispose);
   }
 
-  const isArray = Array.isArray(sourceOrFn);
-  const sources: WatchSource<any>[] = isArray ? sourceOrFn : [sourceOrFn as WatchSource<any>];
-  const len = sources.length;
-
-  let oldValues = new Array(len);
-  let newValues = new Array(len);
-
-  // The eager first effect run samples and subscribes to every source; the
-  // buffer swap below keeps those values as the next callback's oldValues.
-  // Do not read source getters here as well: that evaluates user code twice.
+  const sources = Array.isArray(sourceOrFn) ? sourceOrFn : null;
+  const len = sources?.length ?? 0;
+  let previous: any;
   let first = true;
 
   return _effect(() => {
-    // A callback may retain tuple arguments even if it throws. Recycle only
-    // the single-source buffers; each tuple run owns its own snapshot array.
-    if (isArray) newValues = [];
-    for (let i = 0; i < len; i++) newValues[i] = sources[i]();
+    let value: any;
+    if (sources) {
+      // Tuple callback arguments may be retained even after a thrown callback.
+      value = new Array(len);
+      for (let i = 0; i < len; i++) value[i] = sources[i]();
+    } else {
+      // A scalar watcher needs no tuple buffers, even on subscription.
+      value = (sourceOrFn as WatchSource<any>)();
+    }
 
-    // The first run only records the values; cb fires from the next change.
-    // Explicit sources alone control re-runs; callback reads are not dependencies.
-    const result = first
-      ? undefined
-      : untracked(() => {
-          return isArray ? cb(newValues, oldValues) : cb(newValues[0], oldValues[0]);
-        });
+    // Read each source once; callback reads must not become dependencies.
+    const result = first ? undefined : untracked(() => cb(value, previous));
     first = false;
-
-    const tmp = oldValues;
-    oldValues = newValues;
-    newValues = tmp;
-
+    previous = value;
     return result;
   });
 }

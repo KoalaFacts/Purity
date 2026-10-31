@@ -60,7 +60,10 @@ const INERT_SEND = (): void => {};
 const INERT_READY_STATE = (): WebSocketReadyState => 'closed';
 
 function inertWebSocket<T>(options: WebSocketSignalOptions<T>): WebSocketSignal<T> {
-  const inert = compute(() => options.initialValue) as WebSocketSignal<T>;
+  // Keep only the initial snapshot, not a mutable options object (and its
+  // potentially large validator/parse closures), for an inert connection.
+  const initialValue = options.initialValue;
+  const inert = compute(() => initialValue) as WebSocketSignal<T>;
   inert.send = INERT_SEND;
   inert.readyState = INERT_READY_STATE;
   return inert;
@@ -92,11 +95,6 @@ export function webSocketSignal<T>(
     return inertWebSocket(options);
   }
 
-  const inner = state(options.initialValue);
-  const stateAccessor = state<WebSocketReadyState>('closed');
-  const parse = options.parse ?? (JSON.parse as (raw: MessageEvent['data']) => unknown);
-  const reconnect = options.reconnect ?? 'on-visible';
-  const validate = options.validate;
   // Use the redacted label for ALL diagnostic console.warn paths so
   // `?access_token=…` and `user:pw@` don't leak into log sinks.
   const label = redactUrl(url);
@@ -138,6 +136,14 @@ export function webSocketSignal<T>(
       return inertWebSocket(options);
     }
   }
+
+  // Rejected connections only need the inert snapshot: allocate reactive
+  // nodes and message handlers after both sets of validation have passed.
+  const inner = state(options.initialValue);
+  const stateAccessor = state<WebSocketReadyState>('closed');
+  const parse = options.parse ?? (JSON.parse as (raw: MessageEvent['data']) => unknown);
+  const reconnect = options.reconnect ?? 'on-visible';
+  const validate = options.validate;
 
   let ws: WebSocket | null = null;
   const onOpen = (): void => {

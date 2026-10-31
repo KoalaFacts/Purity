@@ -135,6 +135,16 @@ describe('webSocketSignal — SSR (ADR 0047)', () => {
     expect(() => sig.send('x')).not.toThrow();
   });
 
+  it('snapshots the initial value instead of retaining mutable inert connection options', () => {
+    delete (globalThis as { WebSocket?: unknown }).WebSocket;
+    const options = { initialValue: 1, validate: isNumber };
+    const inert = webSocketSignal<number>('/ws', options);
+    options.initialValue = 9;
+    expect(inert()).toBe(1);
+    expect(inert.readyState()).toBe('closed');
+    expect(instances).toEqual([]);
+  });
+
   it('shares inert methods while preserving independent fallback values', () => {
     delete (globalThis as { WebSocket?: unknown }).WebSocket;
     const first = webSocketSignal<number>('/one', { initialValue: 1, validate: isNumber });
@@ -440,6 +450,21 @@ describe('webSocketSignal — client (ADR 0047)', () => {
       protocols: ['v1', 'v2'],
     });
     expect(instances[0].protocols).toEqual(['v1', 'v2']);
+  });
+
+  it('snapshots invalid-URL fallback values without opening a connection', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const options = { initialValue: 3, validate: isNumber };
+      const inert = webSocketSignal<number>('http://example.test/ws', options);
+      options.initialValue = 12;
+      expect(inert()).toBe(3);
+      expect(inert.readyState()).toBe('closed');
+      expect(instances).toEqual([]);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('rejects non-ws/wss URL schemes pre-construction (no side effects, redacted warn)', () => {

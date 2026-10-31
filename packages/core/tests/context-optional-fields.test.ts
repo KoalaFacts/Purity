@@ -99,6 +99,31 @@ describe('SV2-015 lean component ownership', () => {
     for (const child of [first, second, last]) expect(child._isDestroyed).toBe(true);
   });
 
+  it('finishes descendant teardown before parent hooks under reentrant unmount', () => {
+    const parent = new ComponentContext();
+    const first = new ComponentContext();
+    const last = new ComponentContext();
+    const calls: string[] = [];
+    parent.children = [first, last];
+    first.parent = parent;
+    last.parent = parent;
+    first.destroyed = [() => calls.push('first')];
+    last.destroyed = [
+      () => {
+        calls.push('last');
+        unmountContext(parent);
+      },
+    ];
+    parent.destroyed = [() => calls.push('parent')];
+
+    unmountContext(parent);
+    expect(calls).toEqual(['last', 'first', 'parent']);
+    expect(parent._isDestroyed).toBe(true);
+    expect(parent.children).toBeNull();
+    expect(first._isDestroyed).toBe(true);
+    expect(last._isDestroyed).toBe(true);
+  });
+
   it('releases detached host node references without clearing its shadow DOM', () => {
     let owner: ComponentContext | null = null;
     const tag = 'p-sv2-kept-host-nodes';

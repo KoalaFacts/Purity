@@ -212,6 +212,8 @@ export function unmountContext(
   bubbleDestroyError = false,
 ): void {
   if (ctx._isDestroyed) return;
+  // Guard reentrant parent teardown before descending into child hooks.
+  ctx._isDestroyed = true;
   if (rollback) ctx._rollback = true;
 
   const children = ctx.children;
@@ -237,7 +239,6 @@ export function unmountContext(
     ctx.nodes = null;
   }
 
-  ctx._isDestroyed = true;
   disposeScope(ctx);
   ctx._isMounted = false;
 

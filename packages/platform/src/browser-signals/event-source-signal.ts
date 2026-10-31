@@ -114,7 +114,8 @@ export function redactUrl(url: string | URL): string {
       const u = new URL(url);
       return `${u.protocol}//${u.host}${u.pathname}`;
     } catch {
-      return url;
+      // Never echo an invalid absolute URL: it may contain credentials.
+      return '[invalid URL]';
     }
   }
   // Relative: trim at the first `?` or `#`.
@@ -178,8 +179,9 @@ export function makeLiveMessageHandler<T, R = string>(
     let parsed: unknown;
     try {
       parsed = parse(e.data);
-    } catch (err) {
-      console.warn(`[purity] ${api}('${label}') failed to parse:`, err);
+    } catch {
+      // Parser errors can include the raw message or authentication secrets.
+      console.warn(`[purity] ${api}('${label}') failed to parse`);
       return;
     }
     try {
@@ -187,8 +189,9 @@ export function makeLiveMessageHandler<T, R = string>(
         console.warn(`[purity] ${api}('${label}') dropped incoming message — failed validator`);
         return;
       }
-    } catch (err) {
-      console.warn(`[purity] ${api}('${label}') dropped incoming message — validator threw:`, err);
+    } catch {
+      // Validator exceptions can echo the untrusted payload into log sinks.
+      console.warn(`[purity] ${api}('${label}') dropped incoming message — validator threw`);
       return;
     }
     inner(parsed);

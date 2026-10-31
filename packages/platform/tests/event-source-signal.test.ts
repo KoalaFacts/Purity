@@ -172,6 +172,58 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('redacts malformed absolute URLs instead of echoing credentials', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const sig = eventSourceSignal<number>(
+        'https://user:pw@%not-a-host/sse?access_token=SECRET_URL',
+        { initialValue: 7, validate: isNumber },
+      );
+      expect(sig()).toBe(7);
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[invalid URL]');
+      expect(logged).not.toContain('SECRET_URL');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('never logs parser or validator exceptions containing raw message secrets', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const parsed = eventSourceSignal<number>('/sse', {
+        initialValue: 7,
+        validate: isNumber,
+        parse: () => {
+          throw new Error('SECRET_PARSE from an untrusted message');
+        },
+      });
+      instances[0].fire('message', 'SECRET_PARSE');
+      expect(parsed()).toBe(7);
+
+      const validated = eventSourceSignal<number>('/sse', {
+        initialValue: 8,
+        validate: (_value: unknown): _value is number => {
+          throw new Error('SECRET_VALIDATE from an untrusted message');
+        },
+      });
+      instances[1].fire('message', '42');
+      expect(validated()).toBe(8);
+
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('failed to parse');
+      expect(logged).toContain('validator threw');
+      expect(logged).not.toContain('SECRET_PARSE');
+      expect(logged).not.toContain('SECRET_VALIDATE');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('honours a custom eventName', () => {
     const sig = eventSourceSignal<number>('/sse', {
       initialValue: 0,

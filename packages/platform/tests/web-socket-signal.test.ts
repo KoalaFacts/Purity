@@ -245,6 +245,41 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('never logs parser or validator exceptions containing WebSocket payload secrets', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const parsed = webSocketSignal<number>('/ws', {
+        initialValue: 7,
+        validate: isNumber,
+        parse: () => {
+          throw new Error('SECRET_WS_PARSE from an untrusted message');
+        },
+      });
+      instances[0].fireOpen();
+      instances[0].fireMessage('SECRET_WS_PARSE');
+      expect(parsed()).toBe(7);
+
+      const validated = webSocketSignal<number>('/ws', {
+        initialValue: 8,
+        validate: (_value: unknown): _value is number => {
+          throw new Error('SECRET_WS_VALIDATE from an untrusted message');
+        },
+      });
+      instances[1].fireOpen();
+      instances[1].fireMessage('42');
+      expect(validated()).toBe(8);
+
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('failed to parse');
+      expect(logged).toContain('validator threw');
+      expect(logged).not.toContain('SECRET_WS_PARSE');
+      expect(logged).not.toContain('SECRET_WS_VALIDATE');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('send() forwards to the socket when open', () => {
     const sig = webSocketSignal<string>('/ws', { initialValue: '', validate: isString });
     instances[0].fireOpen();

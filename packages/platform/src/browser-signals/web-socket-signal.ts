@@ -94,7 +94,7 @@ export function webSocketSignal<T>(
 
   const inner = state(options.initialValue);
   const stateAccessor = state<WebSocketReadyState>('closed');
-  const parse = options.parse ?? ((raw: MessageEvent['data']) => JSON.parse(raw as string));
+  const parse = options.parse ?? (JSON.parse as (raw: MessageEvent['data']) => unknown);
   const reconnect = options.reconnect ?? 'on-visible';
   const validate = options.validate;
   // Use the redacted label for ALL diagnostic console.warn paths so

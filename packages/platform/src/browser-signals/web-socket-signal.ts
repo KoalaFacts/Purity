@@ -22,6 +22,7 @@ import {
   type LiveReconnectPolicy,
   type LiveValidator,
   makeLiveMessageHandler,
+  normalizeLiveUrl,
   redactUrl,
   wireLiveReconnect,
 } from './event-source-signal.ts';
@@ -103,12 +104,14 @@ export function webSocketSignal<T>(
   try {
     if (typeof url !== 'string') {
       schemeOk = url.protocol === 'ws:' || url.protocol === 'wss:';
-    } else if (/^[a-z][a-z0-9+.-]*:/i.test(url)) {
-      // Absolute URL — extract scheme. Relative URLs (no scheme) are
-      // resolved against the current page's origin by the platform, so
-      // skip the scheme check for them.
-      const scheme = url.slice(0, url.indexOf(':')).toLowerCase();
-      schemeOk = scheme === 'ws' || scheme === 'wss';
+    } else {
+      const normalized = normalizeLiveUrl(url);
+      if (normalized === null) schemeOk = false;
+      else if (/^[a-z][a-z0-9+.-]*:/i.test(normalized)) {
+        // Check the scheme after the platform's leading/trailing trimming.
+        const scheme = normalized.slice(0, normalized.indexOf(':')).toLowerCase();
+        schemeOk = scheme === 'ws' || scheme === 'wss';
+      }
     }
   } catch {
     schemeOk = false;

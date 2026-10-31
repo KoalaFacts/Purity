@@ -56,6 +56,12 @@ export interface EventSourceSignalOptions<T> {
   reconnect?: LiveReconnectPolicy;
 }
 
+/** @internal Normalize platform-trimmed URL spellings, but reject embedded controls. */
+export function normalizeLiveUrl(url: string): string | null {
+  const trimmed = url.trim();
+  return /[\u0000-\u001f\u007f]/.test(trimmed) ? null : trimmed;
+}
+
 /**
  * Allow-list of URL schemes accepted by eventSourceSignal. Browsers
  * reject non-HTTP(S) schemes at `new EventSource()` time, but a hostile
@@ -72,6 +78,9 @@ export function isSafeEventSourceUrl(url: string | URL): boolean {
     const proto = url.protocol;
     return proto === 'http:' || proto === 'https:';
   }
+  const normalized = normalizeLiveUrl(url);
+  if (normalized === null) return false;
+  url = normalized;
   // Relative (no scheme) is fine — it resolves against document.baseURI
   // which the page already trusts. Match the same RFC-3986 scheme prefix
   // used by redactUrl() for consistency.
@@ -106,6 +115,9 @@ export function redactUrl(url: string | URL): string {
     if (!/^(https?|wss?):$/.test(url.protocol)) return '[unsupported URL scheme]';
     return `${url.protocol}//${url.host}${url.pathname}`;
   }
+  const normalized = normalizeLiveUrl(url);
+  if (normalized === null) return '[invalid URL]';
+  url = normalized;
   // For a string input, distinguish absolute from relative without
   // letting a dummy base leak into the label:
   //  - Absolute (has scheme://): parse and redact protocol+host+path.

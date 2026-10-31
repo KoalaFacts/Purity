@@ -272,6 +272,35 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     }
   });
 
+  it('rejects control-obfuscated WebSocket schemes without logging credentials', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const bad = webSocketSignal<number>('ws\\ns://user:pw@host/ws?access_token=SECRET_CTRL'.replace('\\n', '\\n'), {
+        initialValue: 7,
+        validate: isNumber,
+      });
+      expect(bad()).toBe(7);
+      expect(bad.readyState()).toBe('closed');
+      expect(instances).toHaveLength(0);
+      const good = webSocketSignal<number>('  wss://user:pw@host/ws?access_token=SECRET_TRIM', {
+        initialValue: 8,
+        validate: isNumber,
+      });
+      expect(instances).toHaveLength(1);
+      instances[0].fireOpen();
+      instances[0].fireMessage('invalid-json');
+      expect(good()).toBe(8);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[invalid URL]');
+      expect(logged).toContain('wss://host/ws');
+      expect(logged).not.toContain('SECRET_CTRL');
+      expect(logged).not.toContain('SECRET_TRIM');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('never logs parser or validator exceptions containing WebSocket payload secrets', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

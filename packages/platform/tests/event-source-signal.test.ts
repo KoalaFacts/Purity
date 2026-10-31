@@ -215,6 +215,36 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     }
   });
 
+  it('rejects embedded URL controls and safely redacts whitespace-prefixed authorities', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of [
+        'htt\\nps://user:pw@example.test/sse?access_token=SECRET_CTRL',
+        'java\\nscript:SECRET_JS',
+      ]) {
+        const sig = eventSourceSignal<number>(url.replace('\\n', '\\n'), {
+          initialValue: 7,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        expect(sig()).toBe(7);
+      }
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[invalid URL]');
+      expect(logged).not.toContain('user:pw');
+      expect(logged).not.toContain('SECRET_CTRL');
+      expect(logged).not.toContain('SECRET_JS');
+      expect(redactUrl('  https://user:pw@example.test/sse?access_token=SECRET_TRIM')).toBe(
+        'https://example.test/sse',
+      );
+      expect(isSafeEventSourceUrl('  https://example.test/sse')).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('does not log EventSource constructor errors containing credentials', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     function ThrowingES(): never {

@@ -311,7 +311,9 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     MockES.prototype.addEventListener = function () {
-      throw new Error('SECRET_SUBSCRIBE from https://user:pw@example.test/sse?access_token=SECRET_URL');
+      throw new Error(
+        'SECRET_SUBSCRIBE from https://user:pw@example.test/sse?access_token=SECRET_URL',
+      );
     };
     try {
       const sig = eventSourceSignal<number>(

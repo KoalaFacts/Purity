@@ -297,12 +297,18 @@ function disconnectFromSources(node: ComputedNode): void {
 // ---------------------------------------------------------------------------
 
 function markDirty(observers: ComputedNode[]): void {
+  // Each direct observer's transitive walk drains this stack. Reusing it
+  // avoids allocating one separate DFS array for every branch of a write.
+  let stack: ComputedNode[] | null = null;
   for (let i = 0; i < observers.length; i++) {
     const o = observers[i];
     if (o.status === STATUS_DIRTY) continue;
     o.status = STATUS_DIRTY;
     if (o.isEffect) pendingEffects.push(o);
-    if (o.observers !== null) markCheck(o.observers);
+    if (o.observers !== null) {
+      stack ??= [];
+      markCheck(o.observers, stack);
+    }
   }
 }
 
@@ -313,8 +319,7 @@ function markDirty(observers: ComputedNode[]): void {
 // pass. Pushing children in reverse index order preserves the same
 // pre-order visitation (and thus pendingEffects push order) the old
 // recursive version produced.
-function markCheck(observers: ComputedNode[]): void {
-  const stack: ComputedNode[] = [];
+function markCheck(observers: ComputedNode[], stack: ComputedNode[]): void {
   for (let i = observers.length - 1; i >= 0; i--) stack.push(observers[i]);
   while (stack.length > 0) {
     const o = stack.pop()!;

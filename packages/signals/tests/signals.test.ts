@@ -1024,6 +1024,28 @@ describe('reactivity semantics', () => {
     expect(lastSum).toBe(10);
   });
 
+  it('rechecks many independent transitive branches after one root write', async () => {
+    const root = state(0);
+    const snapshots: number[][] = Array.from({ length: 32 }, () => []);
+    const stops: Array<() => void> = [];
+    for (let i = 0; i < snapshots.length; i++) {
+      const branch = compute(() => root() + i);
+      const nested = compute(() => branch() * 2);
+      stops.push(
+        watch(() => {
+          snapshots[i].push(nested());
+        }),
+      );
+    }
+
+    root(5);
+    await tick();
+    for (let i = 0; i < snapshots.length; i++) {
+      expect(snapshots[i]).toEqual([i * 2, (i + 5) * 2]);
+    }
+    for (let i = 0; i < stops.length; i++) stops[i]();
+  });
+
   it('CHECK→CLEAN — chain where intermediate value is unchanged skips downstream re-run', async () => {
     // a → b (always 0) → c → effect.
     // When we write a, b is invalidated (CHECK), but on re-eval its value

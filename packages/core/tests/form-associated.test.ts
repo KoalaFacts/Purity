@@ -204,3 +204,42 @@ describe('error bubbling in form callbacks', () => {
     expect(secondRan).toBe(true);
   });
 });
+
+describe('form lifecycle owner reentrancy', () => {
+  it('does not run stale reset handlers after a callback reconnects its host', () => {
+    const tag = nextTag();
+    const events: string[] = [];
+    let host!: HTMLElement;
+    let generation = 0;
+
+    component(
+      tag,
+      () => {
+        const current = ++generation;
+        onFormReset(() => {
+          events.push(`first:${current}`);
+          if (current === 1) {
+            host.remove();
+            document.body.append(host);
+          }
+        });
+        onFormReset(() => events.push(`second:${current}`));
+        return html`<div></div>`;
+      },
+      { formAssociated: true },
+    );
+
+    host = document.createElement(tag);
+    document.body.append(host);
+    const reset = () =>
+      (host as HTMLElement & { formResetCallback: () => void }).formResetCallback();
+
+    reset();
+    expect(generation).toBe(2);
+    expect(events).toEqual(['first:1']);
+
+    reset();
+    expect(events).toEqual(['first:1', 'first:2', 'second:2']);
+    host.remove();
+  });
+});

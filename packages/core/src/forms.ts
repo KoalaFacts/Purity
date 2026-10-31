@@ -294,14 +294,16 @@ function dispatchFormCallbacks(
   first?: unknown,
   second?: unknown,
 ): void {
-  if (!host._ctx || host._ctx._isDestroyed || !arr) return;
-  for (let i = 0; i < arr.length; i++) {
+  const ctx = host._ctx;
+  if (!ctx || ctx._isDestroyed || !arr) return;
+  // A callback may synchronously remove/reconnect the host with a new owner.
+  for (let i = 0; i < arr.length && host._ctx === ctx && !ctx._isDestroyed; i++) {
     try {
       if (count === 0) arr[i]();
       else if (count === 1) arr[i](first);
       else arr[i](first, second);
     } catch (err) {
-      host._ctx?._handleError(err);
+      ctx._handleError(err);
     }
   }
 }

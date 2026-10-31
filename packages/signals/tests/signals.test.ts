@@ -99,6 +99,21 @@ describe('computed', () => {
     expect(c()).toBe(12);
   });
 
+  it('reuses its read accessor for .get() without losing subscriptions', async () => {
+    const count = state(1);
+    const doubled = compute(() => count() * 2);
+    const seen: number[] = [];
+    expect(doubled.get).toBe(doubled);
+
+    const stop = watch(() => {
+      seen.push(doubled.get());
+    });
+    count(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(seen).toEqual([2, 4]);
+    stop();
+  });
+
   it('supports .peek() without tracking', () => {
     const count = state(3);
     const doubled = compute(() => count() * 2);
@@ -317,6 +332,52 @@ describe('watch', () => {
     expect(readRight).toHaveBeenCalledTimes(2);
     expect(calls).toEqual([{ values: [10, 'b'], previous: [10, 'a'] }]);
     stop();
+  });
+
+  it('keeps the registered tuple arity when the caller later extends the source array', async () => {
+    const left = state(0);
+    const right = state(0);
+    const sources = [left];
+    const observed: number[][] = [];
+    const stop = watch(sources, (values) => {
+      observed.push([...values]);
+    });
+
+    sources.push(right);
+    left(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(observed).toEqual([[1]]);
+
+    right(1);
+    await new Promise((r) => queueMicrotask(r));
+    expect(observed).toEqual([[1]]);
+    stop();
+  });
+
+  it('retains the last successful scalar sample after a callback throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const source = state(0);
+    const observed: { value: number; previous: number }[] = [];
+    const stop = watch(source, (value, previous) => {
+      observed.push({ value, previous });
+      if (value === 1) throw new Error('intentional callback failure');
+    });
+
+    try {
+      source(1);
+      await new Promise((r) => queueMicrotask(r));
+      expect(errorSpy).toHaveBeenCalled();
+
+      source(2);
+      await new Promise((r) => queueMicrotask(r));
+      expect(observed).toEqual([
+        { value: 1, previous: 0 },
+        { value: 2, previous: 0 },
+      ]);
+    } finally {
+      stop();
+      errorSpy.mockRestore();
+    }
   });
 
   it('does not accidentally subscribe a parent effect when an explicit child watch is created', async () => {

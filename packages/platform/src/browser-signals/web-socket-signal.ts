@@ -21,6 +21,7 @@ import { getCurrentContext } from '@purityjs/signals';
 import {
   type LiveReconnectPolicy,
   type LiveValidator,
+  isSafeLiveUrl,
   makeLiveMessageHandler,
   redactUrl,
   wireLiveReconnect,
@@ -99,21 +100,7 @@ export function webSocketSignal<T>(
   // attacker-controlled URLs like `javascript:…` / `data:…` / a leaked
   // `http:` token from a misconfigured backend into an inert accessor
   // before any side effects fire.
-  let schemeOk = true;
-  try {
-    if (typeof url !== 'string') {
-      schemeOk = url.protocol === 'ws:' || url.protocol === 'wss:';
-    } else if (/^[a-z][a-z0-9+.-]*:/i.test(url)) {
-      // Absolute URL — extract scheme. Relative URLs (no scheme) are
-      // resolved against the current page's origin by the platform, so
-      // skip the scheme check for them.
-      const scheme = url.slice(0, url.indexOf(':')).toLowerCase();
-      schemeOk = scheme === 'ws' || scheme === 'wss';
-    }
-  } catch {
-    schemeOk = false;
-  }
-  if (!schemeOk) {
+  if (!isSafeLiveUrl(url, 'ws:', 'wss:')) {
     console.warn(
       `[purity] webSocketSignal('${label}') rejected — only ws:// and wss:// URLs are permitted`,
     );
@@ -130,7 +117,12 @@ export function webSocketSignal<T>(
     const list = typeof options.protocols === 'string' ? [options.protocols] : options.protocols;
     // RFC 7230 token: 1*tchar where tchar = !#$%&'*+-.^_`|~ / DIGIT / ALPHA.
     const tokenRe = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-    const bad = !Array.isArray(list) || list.some((p) => typeof p !== 'string' || !tokenRe.test(p));
+    // findIndex visits sparse holes; duplicate tokens are also invalid per RFC 6455.
+    const bad =
+      !Array.isArray(list) ||
+      list.findIndex(
+        (p, i) => typeof p !== 'string' || !tokenRe.test(p) || list.indexOf(p) !== i,
+      ) !== -1;
     if (bad) {
       console.warn(
         `[purity] webSocketSignal('${label}') rejected — invalid subprotocol (must be RFC 6455 tokens)`,
@@ -165,8 +157,9 @@ export function webSocketSignal<T>(
     stateAccessor('connecting');
     try {
       ws = new WebSocket(url, options.protocols);
-    } catch (err) {
-      console.warn(`[purity] webSocketSignal('${label}') failed to open:`, err);
+    } catch {
+      // Native exception messages may include the credential-bearing URL.
+      console.warn(`[purity] webSocketSignal('${label}') failed to open`);
       stateAccessor('closed');
       ws = null;
       return;
@@ -184,8 +177,8 @@ export function webSocketSignal<T>(
     for (const [ev, fn] of listeners) closing.removeEventListener(ev, fn);
     try {
       closing.close();
-    } catch (err) {
-      console.warn(`[purity] webSocketSignal('${label}') close failed:`, err);
+    } catch {
+      console.warn(`[purity] webSocketSignal('${label}') close failed`);
     }
     // Settle a manual close after subscribers observe 'closing'. A
     // bfcache restore closes and opens in the same turn, so this task
@@ -213,8 +206,9 @@ export function webSocketSignal<T>(
     }
     try {
       ws.send(data);
-    } catch (err) {
-      console.warn(`[purity] webSocketSignal('${label}').send() failed:`, err);
+    } catch {
+      // Never forward exception details: adapters may echo sent payloads.
+      console.warn(`[purity] webSocketSignal('${label}').send() failed`);
     }
   };
   accessor.readyState = () => stateAccessor();

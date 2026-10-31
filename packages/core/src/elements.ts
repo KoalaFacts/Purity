@@ -21,7 +21,15 @@ function unmountElementContext(
   rollback = ctx.parent?._rollback,
   keepHostDOM = false,
 ): void {
-  unmountContext(ctx, rollback, keepHostDOM, true);
+  try {
+    unmountContext(ctx, rollback, keepHostDOM, true);
+  } finally {
+    // A destroyed custom-element owner must not keep the detached host alive.
+    if (ctx._shadowRoot) {
+      ctx._shadowRoot = undefined;
+      ctx._internals = null;
+    }
+  }
 }
 
 /**
@@ -32,27 +40,25 @@ export type SlotAccessor<E = void> = E extends void
   : (exposed: E) => Node | null;
 
 interface SlotRegistry {
-  filled: Map<string, unknown>;
-  accessorNames: Set<string>;
+  filled: Record<string, unknown>;
+  accessors: Record<string, SlotAccessor<any> | undefined>;
 }
 
 function createRegistry(): SlotRegistry {
-  return { filled: new Map(), accessorNames: new Set() };
+  return { filled: Object.create(null), accessors: Object.create(null) };
 }
 
 function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<any>> {
-  const cache = new Map<string, SlotAccessor<any>>();
   return new Proxy({} as Record<string, SlotAccessor<any>>, {
     get(_target, prop: string) {
       /* v8 ignore next */
       if (typeof prop !== 'string') return undefined;
-      let accessor = cache.get(prop);
+      let accessor = registry.accessors[prop];
       if (!accessor) {
-        registry.accessorNames.add(prop);
         accessor = ((_exposed?: unknown): Node | null => {
-          return resolveContent(registry.filled.get(prop));
+          return resolveContent(registry.filled[prop]);
         }) as SlotAccessor<any>;
-        cache.set(prop, accessor);
+        registry.accessors[prop] = accessor;
       }
       return accessor;
     },
@@ -62,11 +68,11 @@ function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<an
 type ConsumerSlot = (content?: Node | DocumentFragment | string | null) => Node | null;
 
 function createConsumerBag(registry: SlotRegistry): Record<string, ConsumerSlot> {
-  const bag: Record<string, ConsumerSlot> = {};
-  const names = new Set([...registry.accessorNames, 'default']);
-  for (const name of names) {
+  const bag: Record<string, ConsumerSlot> = Object.create(null);
+  if (!Object.hasOwn(registry.accessors, 'default')) registry.accessors.default = undefined;
+  for (const name in registry.accessors) {
     bag[name] = (content?: Node | DocumentFragment | string | null): Node | null => {
-      registry.filled.set(name, content ?? null);
+      registry.filled[name] = content ?? null;
       return null;
     };
   }
@@ -119,13 +125,15 @@ export function internals(): ElementInternals | null {
 function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node | null {
   const s =
     children != null && typeof children === 'object' && !(children instanceof Node)
-      ? (children as Record<string, unknown>)[name]
+      ? Object.hasOwn(children, name)
+        ? (children as Record<string, unknown>)[name]
+        : null
       : name === 'default'
         ? children
         : null;
   if (typeof s === 'function') {
     const r = (s as (...a: any[]) => unknown)(exposed);
-    return r instanceof Node ? r : typeof r === 'string' ? document.createTextNode(r) : null;
+    return r instanceof Node ? r : resolveContent(r);
   }
   return resolveContent(s);
 }
@@ -302,17 +310,18 @@ export function component<
           props[key] = (this as any)[key];
         }
 
-        const eventProps: Record<string, unknown> = {};
+        // The copied host props already form the final render bag. Merge event
+        // aliases last so they override direct properties without allocating
+        // a separate event-only object and spreading it on every connection.
+        const allProps = { ...props };
         for (const key of Object.keys(this)) {
           if (key.startsWith('__purity_event_')) {
             const eventName = key.slice(15);
-            eventProps[`on${eventName.charAt(0).toUpperCase()}${eventName.slice(1)}`] = (
-              this as any
-            )[key];
+            allProps[`on${eventName.charAt(0).toUpperCase()}${eventName.slice(1)}`] = (this as any)[
+              key
+            ];
           }
         }
-
-        const allProps = { ...props, ...eventProps } as P;
         const registry = createRegistry();
         const slotAccessors = createAccessors(registry);
 
@@ -321,7 +330,7 @@ export function component<
           while (this.firstChild) {
             frag.appendChild(this.firstChild);
           }
-          registry.filled.set('default', frag);
+          registry.filled.default = frag;
         }
 
         const ctx = new ComponentContext();
@@ -337,11 +346,11 @@ export function component<
         let result: Node | DocumentFragment | null;
         if (hasDSDContent && dsdHydrator) {
           result = dsdHydrator.hydrateShadow(this._shadow, () =>
-            runRender(render, allProps, slotAccessors, ctx),
+            runRender(render, allProps as P, slotAccessors, ctx),
           );
         } else {
           while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
-          result = runRender(render, allProps, slotAccessors, ctx).result;
+          result = runRender(render, allProps as P, slotAccessors, ctx).result;
         }
 
         if (result !== null) this._shadow.appendChild(result);
@@ -364,7 +373,10 @@ export function component<
 
       disconnectedCallback() {
         this._formBridge?.disconnect();
-        if (this._ctx) unmountElementContext(this._ctx, false, true);
+        // Release the disconnected owner before teardown: onDestroy may reconnect.
+        const ctx = this._ctx;
+        this._ctx = null;
+        if (ctx) unmountElementContext(ctx, false, true);
       }
     }
 
@@ -379,26 +391,39 @@ export function component<
     const ctx = new ComponentContext();
     attachToOwner(ctx, unmountElementContext);
 
-    ctx._slotContent = children;
     const registry = createRegistry();
+    // Preserve live raw-slot lookups, but do not allocate an optional field
+    // until raw or consumer content is actually provided.
     const slotAccessors = createAccessors(registry);
 
     if (children != null && typeof children !== 'function') {
+      ctx._slotContent = children;
       if (children instanceof Node || typeof children === 'string') {
-        registry.filled.set('default', children);
+        registry.filled.default = children;
       } else if (typeof children === 'object') {
         for (const [k, v] of Object.entries(children as Record<string, unknown>)) {
-          registry.filled.set(k, v);
+          registry.filled[k] = v;
         }
       }
     }
 
     if (typeof children === 'function') {
+      // The consumer bag is filled only after the first render has read slots.
+      ctx._slotContent = registry.filled;
       const { exposed } = runRender(renderFn, props, slotAccessors, ctx);
       const bag = { ...createConsumerBag(registry), ...exposed };
-      const consumerResult = children(bag);
+      let consumerResult: unknown;
+      try {
+        consumerResult = children(bag);
+      } catch (error) {
+        // The first render may already own reactive effects or nested contexts.
+        // A failed consumer must roll back that owner, just like a failed render.
+        ctx.destroyed = null;
+        unmountElementContext(ctx, true);
+        throw error;
+      }
       if (consumerResult instanceof Node || typeof consumerResult === 'string') {
-        registry.filled.set('default', consumerResult);
+        registry.filled.default = consumerResult;
       }
     }
 

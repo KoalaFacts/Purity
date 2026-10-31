@@ -139,6 +139,38 @@ describe('bindComponentState', () => {
     await tick();
     expect(states.has('alive')).toBe(false);
   });
+
+  it('releases a shared active state once after owner disposal', async () => {
+    const tag = nextTag();
+    const a = state(true);
+    const b = state(true);
+    let elementInternals: ElementInternals | null = null;
+    component(tag, () => {
+      bindComponentState('busy', a);
+      bindComponentState('busy', b);
+      elementInternals = internals();
+      return html`<div></div>`;
+    });
+
+    const host = document.createElement(tag);
+    document.body.append(host);
+    const states = elementInternals!.states as unknown as Set<string>;
+    const remove = vi.spyOn(states, 'delete');
+    expect(states.has('busy')).toBe(true);
+
+    a(false);
+    await tick();
+    expect(states.has('busy')).toBe(true);
+    a(true);
+    await tick();
+    expect(remove).not.toHaveBeenCalled();
+
+    host.remove();
+    await tick();
+    expect(states.has('busy')).toBe(false);
+    expect(remove).toHaveBeenCalledTimes(1);
+    remove.mockRestore();
+  });
 });
 
 describe('resource() auto-wires :state(loading) / :state(error)', () => {

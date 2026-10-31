@@ -173,44 +173,34 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
   const refs = (ctx._stateRefs ??= new Map());
   let prevOn = false;
 
-  const dispose = watch(() => {
-    const on = !!accessor();
+  // Share the same ref-count transition for signal updates and owner disposal.
+  const update = (release = false): undefined => {
+    const on = !release && !!accessor();
     if (on === prevOn) return;
     prevOn = on;
     const cur = refs.get(name) ?? 0;
-    const next = cur + (on ? 1 : -1);
-    refs.set(name, next);
-    if (cur === 0 && next === 1) {
+    refs.set(name, cur + (on ? 1 : -1));
+    if (cur === 0 && on) {
       try {
         states.add(name);
       } catch (err) {
         /* v8 ignore next */
         console.error('[Purity] bindComponentState add failed:', err);
       }
-    } else if (cur === 1 && next === 0) {
+    } else if (cur === 1 && !on) {
       try {
         states.delete(name);
       } catch {
         /* v8 ignore next */
       }
     }
-  });
+  };
 
+  const dispose = watch(update);
   const owner = getCurrentContext()!;
   (owner.disposers ??= []).push(() => {
     dispose();
-    if (prevOn) {
-      const cur = refs.get(name) ?? 0;
-      const next = cur - 1;
-      refs.set(name, next);
-      if (cur === 1 && next === 0) {
-        try {
-          states.delete(name);
-        } catch {
-          /* v8 ignore next */
-        }
-      }
-    }
+    update(true);
   });
 }
 
@@ -222,32 +212,41 @@ export function unmountContext(
   bubbleDestroyError = false,
 ): void {
   if (ctx._isDestroyed) return;
+  // Guard reentrant parent teardown before descending into child hooks.
+  ctx._isDestroyed = true;
   if (rollback) ctx._rollback = true;
 
-  if (ctx.children) {
-    for (let i = ctx.children.length - 1; i >= 0; i--) {
-      unmountContext(ctx.children[i], rollback, false, bubbleDestroyError);
-    }
+  const children = ctx.children;
+  if (children) {
+    // Detach before descending: an onDestroy hook can dispose a sibling.
+    // Keep the iteration stable and avoid O(n²) parent-array removals.
     ctx.children = null;
+    for (let i = children.length - 1; i >= 0; i--) {
+      unmountContext(children[i], rollback, false, bubbleDestroyError);
+    }
   }
 
-  if (!keepHostDOM && ctx.nodes) {
-    for (let i = 0; i < ctx.nodes.length; i++) {
-      const node = ctx.nodes[i] as Node;
-      /* v8 ignore next */
-      if (node.parentNode) node.parentNode.removeChild(node);
+  const nodes = ctx.nodes;
+  if (nodes) {
+    if (!keepHostDOM) {
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i] as Node;
+        /* v8 ignore next */
+        if (node.parentNode) node.parentNode.removeChild(node);
+      }
     }
+    // Detached custom elements keep their DOM, not an obsolete owner's references to it.
     ctx.nodes = null;
   }
 
-  ctx._isDestroyed = true;
   disposeScope(ctx);
   ctx._isMounted = false;
 
-  if (ctx.destroyed) {
-    for (let i = 0; i < ctx.destroyed.length; i++) {
+  const destroyed = ctx.destroyed;
+  if (destroyed) {
+    for (let i = 0; i < destroyed.length; i++) {
       try {
-        ctx.destroyed[i]();
+        destroyed[i]();
       } catch (err) {
         if (bubbleDestroyError && !rollback) ctx._handleError(err);
         else console.error('[Purity] Error in onDestroy:', err);
@@ -256,13 +255,16 @@ export function unmountContext(
     ctx.destroyed = null;
   }
 
-  if (ctx.parent?.children) {
-    const idx = ctx.parent.children.indexOf(ctx);
-    if (idx !== -1) ctx.parent.children.splice(idx, 1);
+  const siblings = ctx.parent?.children;
+  if (siblings) {
+    const idx = siblings.indexOf(ctx);
+    if (idx !== -1) siblings.splice(idx, 1);
   }
 
-  ctx.mounted = null;
-  ctx.errorHandlers = null;
-  ctx.parent = null;
-  ctx._slotContent = undefined;
+  // Never initialize optional callbacks or slots merely to clear them.
+  ctx.mounted &&= null;
+  ctx.errorHandlers &&= null;
+  // Arbitrary slot values may include falsy host objects; clear every defined value.
+  ctx.parent &&= null;
+  if (ctx._slotContent !== undefined) ctx._slotContent = undefined;
 }

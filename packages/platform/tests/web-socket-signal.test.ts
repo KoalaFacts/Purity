@@ -245,6 +245,97 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('does not echo opaque URL payloads into rejected WebSocket diagnostics', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of [
+        'javascript:SECRET_WS_JS',
+        'data:text/plain,SECRET_WS_DATA',
+        new URL('file:///private/SECRET_WS_FILE'),
+      ]) {
+        const sig = webSocketSignal<number>(url, {
+          initialValue: 7,
+          validate: isNumber,
+        });
+        expect(sig()).toBe(7);
+        expect(sig.readyState()).toBe('closed');
+      }
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(3);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[unsupported URL scheme]');
+      for (const secret of ['SECRET_WS_JS', 'SECRET_WS_DATA', 'SECRET_WS_FILE']) {
+        expect(logged).not.toContain(secret);
+      }
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('rejects control-obfuscated WebSocket schemes without logging credentials', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const bad = webSocketSignal<number>('ws\ns://user:pw@host/ws?access_token=SECRET_CTRL', {
+        initialValue: 7,
+        validate: isNumber,
+      });
+      expect(bad()).toBe(7);
+      expect(bad.readyState()).toBe('closed');
+      expect(instances).toHaveLength(0);
+      const good = webSocketSignal<number>('  wss://user:pw@host/ws?access_token=SECRET_TRIM', {
+        initialValue: 8,
+        validate: isNumber,
+      });
+      expect(instances).toHaveLength(1);
+      instances[0].fireOpen();
+      instances[0].fireMessage('invalid-json');
+      expect(good()).toBe(8);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[invalid URL]');
+      expect(logged).toContain('wss://host/ws');
+      expect(logged).not.toContain('SECRET_CTRL');
+      expect(logged).not.toContain('SECRET_TRIM');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('never logs parser or validator exceptions containing WebSocket payload secrets', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const parsed = webSocketSignal<number>('/ws', {
+        initialValue: 7,
+        validate: isNumber,
+        parse: () => {
+          throw new Error('SECRET_WS_PARSE from an untrusted message');
+        },
+      });
+      instances[0].fireOpen();
+      instances[0].fireMessage('SECRET_WS_PARSE');
+      expect(parsed()).toBe(7);
+
+      const validated = webSocketSignal<number>('/ws', {
+        initialValue: 8,
+        validate: (_value: unknown): _value is number => {
+          throw new Error('SECRET_WS_VALIDATE from an untrusted message');
+        },
+      });
+      instances[1].fireOpen();
+      instances[1].fireMessage('42');
+      expect(validated()).toBe(8);
+
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('failed to parse');
+      expect(logged).toContain('validator threw');
+      expect(logged).not.toContain('SECRET_WS_PARSE');
+      expect(logged).not.toContain('SECRET_WS_VALIDATE');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('send() forwards to the socket when open', () => {
     const sig = webSocketSignal<string>('/ws', { initialValue: '', validate: isString });
     instances[0].fireOpen();
@@ -397,6 +488,21 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(instances).toHaveLength(1);
   });
 
+  it('rejects invalid absolute ws URLs before constructing a socket', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of ['ws://', 'wss://']) {
+        const sig = webSocketSignal<number>(url, { initialValue: 7, validate: isNumber });
+        expect(sig()).toBe(7);
+        expect(sig.readyState()).toBe('closed');
+      }
+      expect(instances).toEqual([]);
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('rejects subprotocols containing CR/LF or non-token bytes (header smuggling)', () => {
     // audit-v2: Sec-WebSocket-Protocol values are echoed back by the
     // server. Passing a string with embedded CR/LF / non-token bytes
@@ -427,6 +533,105 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(instances).toEqual([]);
     expect(warnSpy).toHaveBeenCalledTimes(1);
     warnSpy.mockRestore();
+  });
+
+  it('rejects sparse subprotocol arrays without opening or reconnecting', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sparse = new Array<string>(2);
+    sparse[0] = 'chat.v1'; // The second entry is a hole, not an explicit undefined.
+    const sig = webSocketSignal<number>('/ws', {
+      initialValue: 7,
+      validate: isNumber,
+      protocols: sparse,
+    });
+    expect(instances).toHaveLength(0);
+    expect(sig()).toBe(7);
+    expect(sig.readyState()).toBe('closed');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('invalid subprotocol');
+
+    const restore = new Event('pageshow') as Event & { persisted: boolean };
+    Object.defineProperty(restore, 'persisted', { value: true });
+    window.dispatchEvent(restore);
+    await tick();
+    setVisibility('hidden');
+    await tick();
+    setVisibility('visible');
+    await tick();
+    expect(instances).toHaveLength(0);
+    warnSpy.mockRestore();
+  });
+
+  it('rejects duplicated subprotocol tokens before construction and redacts diagnostics', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sig = webSocketSignal<number>('ws://user:pw@host/ws?access_token=SECRET', {
+      initialValue: 7,
+      validate: isNumber,
+      protocols: ['chat.v1', 'chat.v1'],
+    });
+    expect(instances).toHaveLength(0);
+    expect(sig()).toBe(7);
+    expect(sig.readyState()).toBe('closed');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('invalid subprotocol');
+    expect(warnSpy.mock.calls[0].map(String).join(' ')).not.toContain('SECRET');
+    warnSpy.mockRestore();
+  });
+
+  it('redacts native constructor exception details that echo URL credentials', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    (globalThis as { WebSocket: unknown }).WebSocket = function ThrowingWebSocket() {
+      throw new Error('unredacted wss://user:pw@host/ws?access_token=SECRET');
+    };
+    const signal = webSocketSignal<number>('wss://user:pw@host/ws?access_token=SECRET', {
+      initialValue: 7,
+      validate: isNumber,
+      reconnect: 'never',
+    });
+    expect(signal()).toBe(7);
+    expect(signal.readyState()).toBe('closed');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+    expect(logged).toContain('failed to open');
+    expect(logged).not.toContain('SECRET');
+    expect(logged).not.toContain('user:pw');
+    warnSpy.mockRestore();
+  });
+
+  it('does not log thrown send payloads or close exception details', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const send = MockWS.prototype.send;
+    const close = MockWS.prototype.close;
+    MockWS.prototype.send = () => {
+      throw new Error('SECRET_SEND echoed by the adapter');
+    };
+    MockWS.prototype.close = () => {
+      throw new Error('SECRET_CLOSE echoed by the adapter');
+    };
+    try {
+      const host = document.createElement('div');
+      let signal!: ReturnType<typeof webSocketSignal<number>>;
+      const { unmount } = mount(() => {
+        signal = webSocketSignal<number>('wss://host/ws', {
+          initialValue: 0,
+          validate: isNumber,
+        });
+        return document.createComment('m');
+      }, host);
+      instances[0].fireOpen();
+      signal.send('SECRET_SEND');
+      unmount();
+      await tick();
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('.send() failed');
+      expect(logged).toContain('close failed');
+      expect(logged).not.toContain('SECRET_SEND');
+      expect(logged).not.toContain('SECRET_CLOSE');
+    } finally {
+      MockWS.prototype.send = send;
+      MockWS.prototype.close = close;
+      warnSpy.mockRestore();
+    }
   });
 
   it('accepts well-formed subprotocol tokens (happy path)', () => {

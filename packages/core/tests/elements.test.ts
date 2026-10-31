@@ -652,10 +652,13 @@ describe('component as custom element — lifecycle', () => {
       return html`<button>x</button>`;
     });
     const el: any = document.createElement(name);
-    el.__purity_event_click = () => {};
+    const synthetic = () => {};
+    el.__purity_event_click = synthetic;
+    // The synthetic alias wins even if the ordinary property is added later.
+    el.onClick = () => {};
     document.body.appendChild(el);
     await tick();
-    expect(typeof received).toBe('function');
+    expect(received).toBe(synthetic);
     document.body.removeChild(el);
   });
 

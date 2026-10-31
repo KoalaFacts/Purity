@@ -56,34 +56,40 @@ export interface EventSourceSignalOptions<T> {
   reconnect?: LiveReconnectPolicy;
 }
 
-/**
- * Allow-list of URL schemes accepted by eventSourceSignal. Browsers
- * reject non-HTTP(S) schemes at `new EventSource()` time, but a hostile
- * SSR-derived URL string with an attacker-controlled `javascript:`,
- * `data:`, `blob:`, or `file:` scheme would still be reflected into our
- * `console.warn` diagnostics and (under non-conformant runtimes /
- * tests) reach the constructor. Enforce HTTP(S) before construction so
- * the trust boundary lives at the signal — not at the browser.
- *
- * @internal
- */
-export function isSafeEventSourceUrl(url: string | URL): boolean {
-  if (typeof url !== 'string') {
-    const proto = url.protocol;
-    return proto === 'http:' || proto === 'https:';
+/** @internal Normalize platform-trimmed URL spellings, but reject embedded controls. */
+export function normalizeLiveUrl(url: string): string | null {
+  const trimmed = url.trim();
+  for (let i = 0; i < trimmed.length; i++) {
+    const code = trimmed.charCodeAt(i);
+    if (code < 32 || code === 127) return null;
   }
-  // Relative (no scheme) is fine — it resolves against document.baseURI
-  // which the page already trusts. Match the same RFC-3986 scheme prefix
-  // used by redactUrl() for consistency.
-  if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) return true;
+  return trimmed;
+}
+
+/** @internal Validate allowed live-connection protocols, including malformed absolute URLs. */
+export function isSafeLiveUrl(
+  url: string | URL,
+  firstProtocol: string,
+  secondProtocol: string,
+): boolean {
   try {
-    const proto = new URL(url).protocol;
-    return proto === 'http:' || proto === 'https:';
+    if (typeof url === 'string') {
+      const normalized = normalizeLiveUrl(url);
+      if (normalized === null) return false;
+      // Relative URLs resolve against the caller's page; do not invent a base.
+      if (!/^[a-z][a-z0-9+.-]*:/i.test(normalized)) return true;
+      url = new URL(normalized);
+    }
+    return url.protocol === firstProtocol || url.protocol === secondProtocol;
   } catch {
-    // Unparseable absolute-looking string — let the constructor reject it
-    // so the surface error matches the platform.
+    // Malformed absolute URLs and throwing URL adapters must fail closed.
     return false;
   }
+}
+
+/** Refuse unsupported SSE schemes before constructing an EventSource. */
+export function isSafeEventSourceUrl(url: string | URL): boolean {
+  return isSafeLiveUrl(url, 'http:', 'https:');
 }
 
 /**
@@ -102,8 +108,13 @@ export function isSafeEventSourceUrl(url: string | URL): boolean {
 export function redactUrl(url: string | URL): string {
   // URL instance: always absolute by construction — redact directly.
   if (typeof url !== 'string') {
+    // Opaque / unsupported schemes may embed credentials in their pathname.
+    if (!/^(https?|wss?):$/.test(url.protocol)) return '[unsupported URL scheme]';
     return `${url.protocol}//${url.host}${url.pathname}`;
   }
+  const normalized = normalizeLiveUrl(url);
+  if (normalized === null) return '[invalid URL]';
+  url = normalized;
   // For a string input, distinguish absolute from relative without
   // letting a dummy base leak into the label:
   //  - Absolute (has scheme://): parse and redact protocol+host+path.
@@ -111,17 +122,19 @@ export function redactUrl(url: string | URL): string {
   //    in-place so a `?access_token=…` is removed but the path stays.
   if (/^[a-z][a-z0-9+.-]*:/i.test(url)) {
     try {
-      const u = new URL(url);
-      return `${u.protocol}//${u.host}${u.pathname}`;
+      return redactUrl(new URL(url));
     } catch {
-      return url;
+      // Never echo an invalid absolute URL: it may contain credentials.
+      return '[invalid URL]';
     }
   }
   // Relative: trim at the first `?` or `#`.
   const q = url.indexOf('?');
   const h = url.indexOf('#');
   const cut = q === -1 ? h : h === -1 ? q : Math.min(q, h);
-  return cut === -1 ? url : url.slice(0, cut);
+  // Scheme-relative authority can contain credentials; strip query first.
+  const trimmed = cut === -1 ? url : url.slice(0, cut);
+  return trimmed.replace(/^\/\/[^/]*@/, '//');
 }
 
 /**
@@ -178,8 +191,9 @@ export function makeLiveMessageHandler<T, R = string>(
     let parsed: unknown;
     try {
       parsed = parse(e.data);
-    } catch (err) {
-      console.warn(`[purity] ${api}('${label}') failed to parse:`, err);
+    } catch {
+      // Parser errors can include the raw message or authentication secrets.
+      console.warn(`[purity] ${api}('${label}') failed to parse`);
       return;
     }
     try {
@@ -187,8 +201,9 @@ export function makeLiveMessageHandler<T, R = string>(
         console.warn(`[purity] ${api}('${label}') dropped incoming message — failed validator`);
         return;
       }
-    } catch (err) {
-      console.warn(`[purity] ${api}('${label}') dropped incoming message — validator threw:`, err);
+    } catch {
+      // Validator exceptions can echo the untrusted payload into log sinks.
+      console.warn(`[purity] ${api}('${label}') dropped incoming message — validator threw`);
       return;
     }
     inner(parsed);
@@ -258,8 +273,9 @@ export function eventSourceSignal<T>(
       // `withCredentials` option is part of the public ADR 0047 API;
       // deleting the 2-arg call is not an option.
       es = withCredentials ? new EventSource(url, { withCredentials: true }) : new EventSource(url);
-    } catch (err) {
-      console.warn(`[purity] eventSourceSignal('${label}') failed to open:`, err);
+    } catch {
+      // Constructor exceptions can repeat the credential-bearing endpoint.
+      console.warn(`[purity] eventSourceSignal('${label}') failed to open`);
       es = null;
       return;
     }
@@ -273,7 +289,13 @@ export function eventSourceSignal<T>(
     const closing = es;
     es = null;
     closing.removeEventListener(eventName, onMessage);
-    closing.close();
+    try {
+      closing.close();
+    } catch {
+      // Non-native adapters may throw credential-bearing endpoint details.
+      // Never let disposer error reporting echo the raw exception.
+      console.warn(`[purity] eventSourceSignal('${label}') close failed`);
+    }
   };
 
   wireLiveReconnect(reconnect, open, close);

@@ -170,6 +170,7 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
   const states = internals?.states;
   if (!states) return;
 
+  const refs = (ctx._stateRefs ??= new Map());
   let prevOn = false;
 
   // Share the same ref-count transition for signal updates and owner disposal.
@@ -177,12 +178,8 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
     const on = !release && !!accessor();
     if (on === prevOn) return;
     prevOn = on;
-    // Cold component states need no ref-count map until one becomes active.
-    const refs = (ctx._stateRefs ??= new Map());
     const cur = refs.get(name) ?? 0;
-    const next = cur + (on ? 1 : -1);
-    if (next) refs.set(name, next);
-    else refs.delete(name);
+    refs.set(name, cur + (on ? 1 : -1));
     if (cur === 0 && on) {
       try {
         states.add(name);
@@ -199,11 +196,12 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
     }
   };
 
-  // watch() already registers its disposer with the current owner. Run the
-  // ref-count release after that subscription is detached during teardown.
-  watch(update);
+  const dispose = watch(update);
   const owner = getCurrentContext()!;
-  (owner.disposers ??= []).push(() => update(true));
+  (owner.disposers ??= []).push(() => {
+    dispose();
+    update(true);
+  });
 }
 
 /** @internal Shared owner teardown; root hydration imports lifecycle, not the reverse. */

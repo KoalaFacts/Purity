@@ -191,6 +191,32 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     }
   });
 
+  it('does not log EventSource constructor errors containing credentials', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    (globalThis as { EventSource: unknown }).EventSource = class {
+      constructor() {
+        throw new Error('SECRET_CONSTRUCTOR_MESSAGE with SECRET_URL_TOKEN');
+      }
+    };
+    try {
+      const sig = eventSourceSignal<number>(
+        'https://user:pw@example.test/sse?access_token=SECRET_URL_TOKEN',
+        { initialValue: 7, validate: isNumber, reconnect: 'never' },
+      );
+      expect(sig()).toBe(7);
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('failed to open');
+      expect(logged).toContain('https://example.test/sse');
+      expect(logged).not.toContain('SECRET_CONSTRUCTOR_MESSAGE');
+      expect(logged).not.toContain('SECRET_URL_TOKEN');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('does not echo opaque URL payloads into refused EventSource diagnostics', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

@@ -275,7 +275,9 @@ export function eventSourceSignal<T>(
       // spec accepts an EventSourceInit dict as the second argument. The
       // `withCredentials` option is part of the public ADR 0047 API;
       // deleting the 2-arg call is not an option.
-      es = withCredentials ? new EventSource(safeUrl, { withCredentials: true }) : new EventSource(safeUrl);
+      es = withCredentials
+        ? new EventSource(safeUrl, { withCredentials: true })
+        : new EventSource(safeUrl);
     } catch {
       // Constructor exceptions can repeat the credential-bearing endpoint.
       console.warn(`[purity] eventSourceSignal('${label}') failed to open`);

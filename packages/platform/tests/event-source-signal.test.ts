@@ -418,6 +418,16 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     }
   });
 
+  it('reads URL protocol once so a stateful getter cannot inject secrets into a label', () => {
+    const url = new URL('https://example.test/sse?access_token=SECRET_QUERY');
+    let reads = 0;
+    Object.defineProperty(url, 'protocol', {
+      get: () => (++reads === 1 ? 'https:' : 'https:SECRET_PROTOCOL'),
+    });
+    expect(redactUrl(url)).toBe('https://example.test/sse');
+    expect(reads).toBe(1);
+  });
+
   it('does not echo opaque URL payloads into refused EventSource diagnostics', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

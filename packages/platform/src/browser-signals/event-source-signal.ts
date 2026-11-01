@@ -111,8 +111,9 @@ export function redactUrl(url: string | URL): string {
     try {
       // URL subclasses and proxies may throw from their getters. Never
       // propagate an exception that can include userinfo or query secrets.
-      if (!/^(https?|wss?):$/.test(url.protocol)) return '[unsupported URL scheme]';
-      return `${url.protocol}//${url.host}${url.pathname}`;
+      const protocol = url.protocol;
+      if (!/^(https?|wss?):$/.test(protocol)) return '[unsupported URL scheme]';
+      return `${protocol}//${url.host}${url.pathname}`;
     } catch {
       return '[invalid URL]';
     }

@@ -267,6 +267,36 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('uses the validated native URL snapshot, not mutable URL properties', () => {
+    const url = new URL('wss://example.test/ws?access_token=SECRET_SNAPSHOT');
+    Object.defineProperty(url, 'toString', {
+      value: () => 'javascript:SECRET_REPLACEMENT',
+    });
+    webSocketSignal<number>(url, {
+      initialValue: 0,
+      validate: isNumber,
+      reconnect: 'never',
+    });
+    expect(instances).toHaveLength(1);
+    expect(instances[0].url).toBe('wss://example.test/ws?access_token=SECRET_SNAPSHOT');
+
+    const forged = new URL('https://example.test/not-websocket');
+    Object.defineProperty(forged, 'protocol', { value: 'wss:' });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const rejected = webSocketSignal<number>(forged, {
+        initialValue: 7,
+        validate: isNumber,
+        reconnect: 'never',
+      });
+      expect(rejected()).toBe(7);
+      expect(rejected.readyState()).toBe('closed');
+      expect(instances).toHaveLength(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('redacts throwing URL getter exceptions before constructing a WebSocket', () => {
     const url = new URL('wss://example.test/ws?access_token=SECRET_QUERY');
     Object.defineProperty(url, 'host', {

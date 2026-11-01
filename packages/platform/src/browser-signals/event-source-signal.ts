@@ -66,32 +66,29 @@ export function normalizeLiveUrl(url: string): string | null {
   return trimmed;
 }
 
-/** @internal Validate allowed live-connection protocols, including malformed absolute URLs. */
-export function isSafeLiveUrl(
+/** @internal Validate and snapshot the URL that will actually reach the transport. */
+export function snapshotLiveUrl(
   url: string | URL,
   firstProtocol: string,
   secondProtocol: string,
-): boolean {
+): string | null {
   try {
-    if (typeof url === 'string') {
-      const normalized = normalizeLiveUrl(url);
-      if (normalized === null) return false;
-      // Relative URLs resolve against the caller's page; do not invent a base.
-      if (!/^[a-z][a-z0-9+.-]*:/i.test(normalized)) return true;
-      url = new URL(normalized);
-    }
-    // A subclass/proxy getter may change between reads; validate one snapshot.
-    const protocol = url.protocol;
-    return protocol === firstProtocol || protocol === secondProtocol;
+    // Bypass custom URL getters and stringification; proxies fail closed.
+    const source = typeof url === 'string' ? url : URL.prototype.toString.call(url);
+    const normalized = normalizeLiveUrl(source);
+    if (normalized === null) return null;
+    // Preserve relative URLs without inventing a browser document base.
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(normalized)) return normalized;
+    const protocol = new URL(normalized).protocol;
+    return protocol === firstProtocol || protocol === secondProtocol ? normalized : null;
   } catch {
-    // Malformed absolute URLs and throwing URL adapters must fail closed.
-    return false;
+    return null;
   }
 }
 
 /** Refuse unsupported SSE schemes before constructing an EventSource. */
 export function isSafeEventSourceUrl(url: string | URL): boolean {
-  return isSafeLiveUrl(url, 'http:', 'https:');
+  return snapshotLiveUrl(url, 'http:', 'https:') !== null;
 }
 
 /**
@@ -242,8 +239,9 @@ export function eventSourceSignal<T>(
     return compute(() => initialValue);
   }
 
-  // Reject unsafe URLs before allocating state, transport handlers, or page listeners.
-  if (!isSafeEventSourceUrl(url)) {
+  // Reconnects must reuse the same validated URL, not a mutable URL subclass.
+  const safeUrl = snapshotLiveUrl(url, 'http:', 'https:');
+  if (safeUrl === null) {
     // Match the connected path: initialValue is captured at creation time.
     const initialValue = options.initialValue;
     console.warn(
@@ -277,7 +275,7 @@ export function eventSourceSignal<T>(
       // spec accepts an EventSourceInit dict as the second argument. The
       // `withCredentials` option is part of the public ADR 0047 API;
       // deleting the 2-arg call is not an option.
-      es = withCredentials ? new EventSource(url, { withCredentials: true }) : new EventSource(url);
+      es = withCredentials ? new EventSource(safeUrl, { withCredentials: true }) : new EventSource(safeUrl);
     } catch {
       // Constructor exceptions can repeat the credential-bearing endpoint.
       console.warn(`[purity] eventSourceSignal('${label}') failed to open`);

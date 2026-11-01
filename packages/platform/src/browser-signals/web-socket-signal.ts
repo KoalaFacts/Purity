@@ -21,7 +21,7 @@ import { getCurrentContext } from '@purityjs/signals';
 import {
   type LiveReconnectPolicy,
   type LiveValidator,
-  isSafeLiveUrl,
+  snapshotLiveUrl,
   makeLiveMessageHandler,
   redactUrl,
   wireLiveReconnect,
@@ -106,7 +106,8 @@ export function webSocketSignal<T>(
   // attacker-controlled URLs like `javascript:…` / `data:…` / a leaked
   // `http:` token from a misconfigured backend into an inert accessor
   // before any side effects fire.
-  if (!isSafeLiveUrl(url, 'ws:', 'wss:')) {
+  const safeUrl = snapshotLiveUrl(url, 'ws:', 'wss:');
+  if (safeUrl === null) {
     console.warn(
       `[purity] webSocketSignal('${label}') rejected — only ws:// and wss:// URLs are permitted`,
     );
@@ -180,7 +181,7 @@ export function webSocketSignal<T>(
     if (ws) return;
     stateAccessor('connecting');
     try {
-      ws = new WebSocket(url, protocols);
+      ws = new WebSocket(safeUrl, protocols);
     } catch {
       // Native exception messages may include the credential-bearing URL.
       console.warn(`[purity] webSocketSignal('${label}') failed to open`);

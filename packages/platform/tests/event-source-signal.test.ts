@@ -195,6 +195,20 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('uses a stable native URL snapshot rather than overridden stringification', () => {
+    const url = new URL('https://example.test/sse?access_token=SECRET_SNAPSHOT');
+    Object.defineProperty(url, 'toString', {
+      value: () => 'javascript:SECRET_REPLACEMENT',
+    });
+    eventSourceSignal<number>(url, {
+      initialValue: 0,
+      validate: isNumber,
+      reconnect: 'never',
+    });
+    expect(instances).toHaveLength(1);
+    expect(instances[0].url).toBe('https://example.test/sse?access_token=SECRET_SNAPSHOT');
+  });
+
   it('redacts malformed absolute URLs instead of echoing credentials', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
@@ -422,14 +436,17 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     }
   });
 
-  it('uses one protocol snapshot when checking a stateful URL object', () => {
+  it('uses the native URL protocol rather than an attacker-controlled getter', () => {
     const url = new URL('file:///private/secret');
     let reads = 0;
     Object.defineProperty(url, 'protocol', {
-      get: () => (++reads === 1 ? 'ftp:' : 'https:'),
+      get: () => {
+        reads++;
+        return 'https:';
+      },
     });
     expect(isSafeEventSourceUrl(url)).toBe(false);
-    expect(reads).toBe(1);
+    expect(reads).toBe(0);
   });
 
   it('reads URL protocol once so a stateful getter cannot inject secrets into a label', () => {

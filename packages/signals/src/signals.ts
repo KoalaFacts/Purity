@@ -292,6 +292,19 @@ function disconnectFromSources(node: ComputedNode): void {
   node.observerSlots = null;
 }
 
+// Share owner/memo/effect teardown. Retained stop handles and frozen computed
+// accessors should not keep the original user callback and its captured tree.
+const RELEASED_COMPUTATION = (): void => {};
+
+function disposeComputation(node: ComputedNode): void {
+  if (node.disposed) return;
+  node.disposed = true;
+  disposeScope(node);
+  disconnectFromSources(node);
+  node.component = null;
+  node.fn = RELEASED_COMPUTATION;
+}
+
 // ---------------------------------------------------------------------------
 // dirty propagation
 // ---------------------------------------------------------------------------
@@ -865,12 +878,7 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
   // Only owner-bound computed values need a scope disposer. Module-level
   // values can live for the page without allocating an unused closure.
   const ctx = getCurrentContext();
-  if (ctx)
-    (ctx.disposers ??= []).push(() => {
-      if (node.disposed) return;
-      node.disposed = true;
-      disconnectFromSources(node);
-    });
+  if (ctx) (ctx.disposers ??= []).push(() => disposeComputation(node));
 
   const accessor = (() => readNode<T>(node)) as ComputedAccessor<T>;
   // A computed getter has exactly the same tracked read behavior as calling it.
@@ -897,20 +905,11 @@ function _effect(fn: () => undefined | Dispose): Dispose {
   try {
     updateValue(node);
   } catch (e) {
-    node.disposed = true;
-    disposeScope(node);
-    disconnectFromSources(node);
+    disposeComputation(node);
     throw e;
   }
 
-  const dispose = (): void => {
-    if (node.disposed) return;
-    node.disposed = true;
-    disposeScope(node);
-    disconnectFromSources(node);
-    // A retained stop handle must not keep an unmounted component alive.
-    node.component = null;
-  };
+  const dispose = (): void => disposeComputation(node);
 
   // Auto-register with the current component/render context so reactive
   // bindings created inside a template (or inside an each() entry, a

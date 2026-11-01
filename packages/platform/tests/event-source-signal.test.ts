@@ -30,7 +30,7 @@ class MockES {
   url: string;
   listeners = new Map<string, ((e: MessageEvent) => void)[]>();
   closed = false;
-  constructor(url: string | URL) {
+  constructor(url: string | URL, _options?: EventSourceInit) {
     this.url = String(url);
     const inst: Instance = {
       url: this.url,

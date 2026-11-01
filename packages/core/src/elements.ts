@@ -474,8 +474,13 @@ export function teleport(
       clearNodes();
       const content = viewFn();
       if (content == null) return;
-      currentNodes =
-        content instanceof DocumentFragment ? Array.from(content.childNodes) : [content];
+      if (content instanceof DocumentFragment) {
+        // Snapshot before appendChild() drains the live childNodes collection.
+        const children = content.childNodes;
+        for (let i = 0; i < children.length; i++) currentNodes.push(children[i]);
+      } else {
+        currentNodes.push(content);
+      }
       container.appendChild(content);
     });
   });

@@ -280,6 +280,49 @@ describe('teleport()', () => {
 });
 
 describe('teleport() reactive', () => {
+  it('replaces fragment, single-node and empty content repeatedly without retaining old nodes', async () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const mode = state(0);
+    const container = document.createElement('div');
+    const { unmount } = mount(
+      () =>
+        teleport(target, () => {
+          const next = mode();
+          if (next === 0) {
+            const fragment = document.createDocumentFragment();
+            fragment.append('first', document.createElement('span'));
+            return fragment;
+          }
+          if (next === 1) {
+            const node = document.createElement('b');
+            node.textContent = 'second';
+            return node;
+          }
+          return null;
+        }),
+      container,
+    );
+
+    await tick();
+    for (let i = 0; i < 4; i++) {
+      expect(target.childNodes.length).toBe(2);
+      expect(target.textContent).toBe('first');
+      mode(1);
+      await tick();
+      expect(target.childNodes.length).toBe(1);
+      expect(target.textContent).toBe('second');
+      mode(2);
+      await tick();
+      expect(target.childNodes.length).toBe(0);
+      mode(0);
+      await tick();
+    }
+    unmount();
+    expect(target.childNodes.length).toBe(0);
+    target.remove();
+  });
+
   it('updates teleported content when signals change', async () => {
     const target = document.createElement('div');
     target.id = `rtp-${tagCounter++}`;

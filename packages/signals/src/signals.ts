@@ -313,20 +313,17 @@ function markDirty(observers: ComputedNode[]): void {
 // pass. Pushing children in reverse index order preserves the same
 // pre-order visitation (and thus pendingEffects push order) the old
 // recursive version produced.
-// This traversal never invokes user code and always drains its stack before
-// returning. Reuse its scratch storage instead of allocating an array on every
-// source write (including every repeated update of a wide reactive graph).
-const checkStack: ComputedNode[] = [];
 function markCheck(observers: ComputedNode[]): void {
-  for (let i = observers.length - 1; i >= 0; i--) checkStack.push(observers[i]);
-  while (checkStack.length > 0) {
-    const o = checkStack.pop()!;
+  const stack: ComputedNode[] = [];
+  for (let i = observers.length - 1; i >= 0; i--) stack.push(observers[i]);
+  while (stack.length > 0) {
+    const o = stack.pop()!;
     if (o.status !== STATUS_CLEAN) continue;
     o.status = STATUS_CHECK;
     if (o.isEffect) pendingEffects.push(o);
     const kids = o.observers;
     if (kids !== null) {
-      for (let i = kids.length - 1; i >= 0; i--) checkStack.push(kids[i]);
+      for (let i = kids.length - 1; i >= 0; i--) stack.push(kids[i]);
     }
   }
 }

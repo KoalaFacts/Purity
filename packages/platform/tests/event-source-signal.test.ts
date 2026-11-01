@@ -418,6 +418,16 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     }
   });
 
+  it('uses one protocol snapshot when checking a stateful URL object', () => {
+    const url = new URL('file:///private/secret');
+    let reads = 0;
+    Object.defineProperty(url, 'protocol', {
+      get: () => (++reads === 1 ? 'ftp:' : 'https:'),
+    });
+    expect(isSafeEventSourceUrl(url)).toBe(false);
+    expect(reads).toBe(1);
+  });
+
   it('reads URL protocol once so a stateful getter cannot inject secrets into a label', () => {
     const url = new URL('https://example.test/sse?access_token=SECRET_QUERY');
     let reads = 0;

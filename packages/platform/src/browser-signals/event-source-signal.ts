@@ -80,7 +80,9 @@ export function isSafeLiveUrl(
       if (!/^[a-z][a-z0-9+.-]*:/i.test(normalized)) return true;
       url = new URL(normalized);
     }
-    return url.protocol === firstProtocol || url.protocol === secondProtocol;
+    // A subclass/proxy getter may change between reads; validate one snapshot.
+    const protocol = url.protocol;
+    return protocol === firstProtocol || protocol === secondProtocol;
   } catch {
     // Malformed absolute URLs and throwing URL adapters must fail closed.
     return false;

@@ -310,12 +310,14 @@ export function component<
           props[key] = (this as any)[key];
         }
 
-        // Merge event aliases into the fresh per-render props bag. Synthetic
-        // aliases must still override host properties when both are present.
+        // The copied host props already form the final render bag. Merge event
+        // aliases last so they override direct properties without allocating
+        // a separate event-only object and spreading it on every connection.
+        const allProps = { ...props };
         for (const key of Object.keys(this)) {
           if (key.startsWith('__purity_event_')) {
             const eventName = key.slice(15);
-            props[`on${eventName.charAt(0).toUpperCase()}${eventName.slice(1)}`] = (this as any)[
+            allProps[`on${eventName.charAt(0).toUpperCase()}${eventName.slice(1)}`] = (this as any)[
               key
             ];
           }
@@ -344,11 +346,11 @@ export function component<
         let result: Node | DocumentFragment | null;
         if (hasDSDContent && dsdHydrator) {
           result = dsdHydrator.hydrateShadow(this._shadow, () =>
-            runRender(render, props as P, slotAccessors, ctx),
+            runRender(render, allProps as P, slotAccessors, ctx),
           );
         } else {
           while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
-          result = runRender(render, props as P, slotAccessors, ctx).result;
+          result = runRender(render, allProps as P, slotAccessors, ctx).result;
         }
 
         if (result !== null) this._shadow.appendChild(result);

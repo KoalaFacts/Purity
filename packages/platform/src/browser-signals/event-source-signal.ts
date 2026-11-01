@@ -236,7 +236,10 @@ export function eventSourceSignal<T>(
   options: EventSourceSignalOptions<T>,
 ): ComputedAccessor<T> {
   if (isSSR() || typeof EventSource === 'undefined') {
-    return compute(() => options.initialValue);
+    // An inert transport returns the value supplied at creation, not a live
+    // read of the caller's mutable options bag (and its other callbacks).
+    const initialValue = options.initialValue;
+    return compute(() => initialValue);
   }
 
   // Reject unsafe URLs before allocating state, transport handlers, or page listeners.

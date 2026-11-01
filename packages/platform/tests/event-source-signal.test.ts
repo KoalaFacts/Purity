@@ -100,7 +100,9 @@ describe('eventSourceSignal — SSR (ADR 0047)', () => {
     const ctx = makeSSRContext();
     pushSSRRenderContext(ctx);
     try {
-      const sig = eventSourceSignal<number>('/sse', { initialValue: 0, validate: isNumber });
+      const options = { initialValue: 0, validate: isNumber };
+      const sig = eventSourceSignal<number>('/sse', options);
+      options.initialValue = 9;
       expect(sig()).toBe(0);
       expect(instances).toEqual([]);
     } finally {
@@ -110,7 +112,9 @@ describe('eventSourceSignal — SSR (ADR 0047)', () => {
 
   it('returns the initialValue when EventSource is unavailable', () => {
     delete (globalThis as { EventSource?: unknown }).EventSource;
-    const sig = eventSourceSignal<number>('/sse', { initialValue: 7, validate: isNumber });
+    const options = { initialValue: 7, validate: isNumber };
+    const sig = eventSourceSignal<number>('/sse', options);
+    options.initialValue = 12;
     expect(sig()).toBe(7);
   });
 });

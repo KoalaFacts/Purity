@@ -455,7 +455,9 @@ export function teleport(
   let disposed = false;
   const clearNodes = () => {
     for (const node of currentNodes) node.parentNode?.removeChild(node);
-    currentNodes = [];
+    // Reuse the vacated array when an update renders nothing. Avoid allocating
+    // a throwaway empty array before each non-empty teleport replacement.
+    currentNodes.length = 0;
   };
 
   queueMicrotask(() => {

@@ -3,7 +3,14 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
-import { batch, compute, disposeScope, state, watch, type ComputedAccessor } from '../src/signals.ts';
+import {
+  batch,
+  compute,
+  disposeScope,
+  state,
+  watch,
+  type ComputedAccessor,
+} from '../src/signals.ts';
 
 describe('state', () => {
   it('reads the initial value', () => {

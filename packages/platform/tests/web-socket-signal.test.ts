@@ -297,7 +297,7 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     }
   });
 
-  it('redacts throwing URL getter exceptions before constructing a WebSocket', () => {
+  it('redacts throwing URL getters without invoking them in WebSocket diagnostics', () => {
     const url = new URL('wss://example.test/ws?access_token=SECRET_QUERY');
     Object.defineProperty(url, 'host', {
       get: () => {
@@ -315,7 +315,7 @@ describe('webSocketSignal — client (ADR 0047)', () => {
       instances[0].fireMessage('not-json');
       expect(sig()).toBe(7);
       const logged = warnSpy.mock.calls.flat().map(String).join(' ');
-      expect(logged).toContain('[invalid URL]');
+      expect(logged).toContain('wss://example.test/ws');
       expect(logged).not.toContain('SECRET_GETTER');
       expect(logged).not.toContain('SECRET_QUERY');
     } finally {

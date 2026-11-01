@@ -409,7 +409,7 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     }
   });
 
-  it('redacts throwing URL getter exceptions before constructing an EventSource', () => {
+  it('redacts throwing URL getters without invoking them in EventSource diagnostics', () => {
     const url = new URL('https://example.test/sse?access_token=SECRET_QUERY');
     Object.defineProperty(url, 'host', {
       get: () => {
@@ -418,7 +418,7 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     });
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      expect(redactUrl(url)).toBe('[invalid URL]');
+      expect(redactUrl(url)).toBe('https://example.test/sse');
       const sig = eventSourceSignal<number>(url, {
         initialValue: 7,
         validate: isNumber,
@@ -428,7 +428,7 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
       instances[0].fire('message', 'not-json');
       expect(sig()).toBe(7);
       const logged = warnSpy.mock.calls.flat().map(String).join(' ');
-      expect(logged).toContain('[invalid URL]');
+      expect(logged).toContain('https://example.test/sse');
       expect(logged).not.toContain('SECRET_GETTER');
       expect(logged).not.toContain('SECRET_QUERY');
     } finally {
@@ -449,14 +449,34 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     expect(reads).toBe(0);
   });
 
-  it('reads URL protocol once so a stateful getter cannot inject secrets into a label', () => {
+  it('bypasses a stateful URL protocol getter when redacting diagnostics', () => {
     const url = new URL('https://example.test/sse?access_token=SECRET_QUERY');
     let reads = 0;
     Object.defineProperty(url, 'protocol', {
       get: () => (++reads === 1 ? 'https:' : 'https:SECRET_PROTOCOL'),
     });
     expect(redactUrl(url)).toBe('https://example.test/sse');
-    expect(reads).toBe(1);
+    expect(reads).toBe(0);
+  });
+
+
+  it('never reads URL host or path overrides that inject credentials', () => {
+    const url = new URL('https://example.test/sse?access_token=SECRET_QUERY');
+    let getterReads = 0;
+    Object.defineProperty(url, 'host', {
+      get: () => {
+        getterReads++;
+        return 'example.test?access_token=SECRET_HOST';
+      },
+    });
+    Object.defineProperty(url, 'pathname', {
+      get: () => {
+        getterReads++;
+        return '/SECRET_PATH';
+      },
+    });
+    expect(redactUrl(url)).toBe('https://example.test/sse');
+    expect(getterReads).toBe(0);
   });
 
   it('does not echo opaque URL payloads into refused EventSource diagnostics', () => {

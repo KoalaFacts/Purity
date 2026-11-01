@@ -105,41 +105,29 @@ export function isSafeEventSourceUrl(url: string | URL): boolean {
  * @internal
  */
 export function redactUrl(url: string | URL): string {
-  // URL instance: always absolute by construction — redact directly.
-  if (typeof url !== 'string') {
-    try {
-      // URL subclasses and proxies may throw from their getters. Never
-      // propagate an exception that can include userinfo or query secrets.
-      const protocol = url.protocol;
-      if (!/^(https?|wss?):$/.test(protocol)) return '[unsupported URL scheme]';
-      return `${protocol}//${url.host}${url.pathname}`;
-    } catch {
-      return '[invalid URL]';
+  try {
+    // Native serialization ignores untrusted URL subclass getters and
+    // overrides. A proxy without URL internal slots fails closed.
+    if (typeof url !== 'string') url = URL.prototype.toString.call(url);
+    const normalized = normalizeLiveUrl(url);
+    if (normalized === null) return '[invalid URL]';
+
+    // Absolute URLs: parse once and reconstruct from canonical fields, never
+    // userinfo, query or hash. Reject opaque schemes before logging.
+    if (/^[a-z][a-z0-9+.-]*:/i.test(normalized)) {
+      const parsed = new URL(normalized);
+      if (!/^(https?|wss?):$/.test(parsed.protocol)) return '[unsupported URL scheme]';
+      return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
     }
+    // Relative URLs: remove query/hash before stripping authority userinfo.
+    const q = normalized.indexOf('?');
+    const h = normalized.indexOf('#');
+    const cut = q === -1 ? h : h === -1 ? q : Math.min(q, h);
+    const trimmed = cut === -1 ? normalized : normalized.slice(0, cut);
+    return trimmed.replace(/^\/\/[^/]*@/, '//');
+  } catch {
+    return '[invalid URL]';
   }
-  const normalized = normalizeLiveUrl(url);
-  if (normalized === null) return '[invalid URL]';
-  url = normalized;
-  // For a string input, distinguish absolute from relative without
-  // letting a dummy base leak into the label:
-  //  - Absolute (has scheme://): parse and redact protocol+host+path.
-  //  - Relative (/path, ./path, no scheme): strip ?query and #hash
-  //    in-place so a `?access_token=…` is removed but the path stays.
-  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) {
-    try {
-      return redactUrl(new URL(url));
-    } catch {
-      // Never echo an invalid absolute URL: it may contain credentials.
-      return '[invalid URL]';
-    }
-  }
-  // Relative: trim at the first `?` or `#`.
-  const q = url.indexOf('?');
-  const h = url.indexOf('#');
-  const cut = q === -1 ? h : h === -1 ? q : Math.min(q, h);
-  // Scheme-relative authority can contain credentials; strip query first.
-  const trimmed = cut === -1 ? url : url.slice(0, cut);
-  return trimmed.replace(/^\/\/[^/]*@/, '//');
 }
 
 /**

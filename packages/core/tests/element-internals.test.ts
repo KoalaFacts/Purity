@@ -172,35 +172,35 @@ describe('bindComponentState', () => {
     remove.mockRestore();
   });
 
-  it('releases inactive state-name entries after updates and owner disposal', async () => {
+  it('lazily allocates state-name refs and releases inactive entries', async () => {
     const tag = nextTag();
     const first = state(false);
     const second = state(false);
-    let trackedNames: Map<string, number> | null = null;
+    let owner: ReturnType<typeof getCurrentComponent> = null;
     component(tag, () => {
+      owner = getCurrentComponent();
       bindComponentState('first', first);
       bindComponentState('second', second);
-      trackedNames = getCurrentComponent()?._stateRefs ?? null;
       return html`<div></div>`;
     });
 
     const host = document.createElement(tag);
     document.body.append(host);
-    expect(trackedNames!.size).toBe(0);
+    expect(owner?._stateRefs).toBeUndefined();
 
     first(true);
     await tick();
-    expect([...trackedNames!.keys()]).toEqual(['first']);
+    expect([...owner!._stateRefs!.keys()]).toEqual(['first']);
     first(false);
     await tick();
-    expect(trackedNames!.size).toBe(0);
+    expect(owner!._stateRefs!.size).toBe(0);
 
     second(true);
     await tick();
-    expect([...trackedNames!.keys()]).toEqual(['second']);
+    expect([...owner!._stateRefs!.keys()]).toEqual(['second']);
     host.remove();
     await tick();
-    expect(trackedNames!.size).toBe(0);
+    expect(owner!._stateRefs!.size).toBe(0);
   });
 });
 

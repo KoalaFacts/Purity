@@ -119,6 +119,27 @@ describe('computed', () => {
     stop();
   });
 
+  it('settles repeated independent dirty waves without stale traversal work', async () => {
+    const leftRoot = state(0);
+    const rightRoot = state(0);
+    const left = compute(() => leftRoot() + 1);
+    const right = compute(() => rightRoot() + 2);
+    const sum = compute(() => left() + right());
+    const observed: number[] = [];
+    const stop = watch(() => {
+      observed.push(sum());
+    });
+
+    for (let i = 1; i <= 20; i++) {
+      leftRoot(i);
+      rightRoot(i);
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+    }
+
+    expect(observed).toEqual(Array.from({ length: 21 }, (_, i) => 3 + i * 2));
+    stop();
+  });
+
   it('reuses its read accessor for .get() without losing subscriptions', async () => {
     const count = state(1);
     const doubled = compute(() => count() * 2);

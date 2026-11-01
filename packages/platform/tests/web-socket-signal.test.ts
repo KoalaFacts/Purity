@@ -641,6 +641,55 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('uses only the validated WebSocket protocol snapshot across reconnections', async () => {
+    let reads = 0;
+    const source = ['chat.v1'];
+    const sig = webSocketSignal<number>('/ws', {
+      initialValue: 7,
+      validate: isNumber,
+      reconnect: 'always',
+      get protocols() {
+        reads++;
+        return reads === 1 ? source : ['chat.v1\\r\\nSECRET_HEADER'];
+      },
+    });
+    expect(reads).toBe(1);
+    expect(instances).toHaveLength(1);
+    expect(instances[0].protocols).toEqual(['chat.v1']);
+    source[0] = 'tampered\\r\\nSECRET_MUTATION';
+    const event = new Event('pageshow') as Event & { persisted: boolean };
+    Object.defineProperty(event, 'persisted', { value: true });
+    window.dispatchEvent(event);
+    await tick();
+    expect(instances).toHaveLength(2);
+    expect(instances[0].closed).toBe(true);
+    expect(instances[1].protocols).toEqual(['chat.v1']);
+    expect(sig()).toBe(7);
+    expect(reads).toBe(1);
+  });
+
+  it('rejects throwing WebSocket subprotocol getters without leaking exceptions', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const sig = webSocketSignal<number>('/ws', {
+        initialValue: 7,
+        validate: isNumber,
+        get protocols(): string[] {
+          throw new Error('SECRET_PROTOCOL_GETTER');
+        },
+      });
+      expect(sig()).toBe(7);
+      expect(sig.readyState()).toBe('closed');
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('invalid subprotocol');
+      expect(logged).not.toContain('SECRET_PROTOCOL_GETTER');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('redacts native constructor exception details that echo URL credentials', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     (globalThis as { WebSocket: unknown }).WebSocket = function ThrowingWebSocket() {

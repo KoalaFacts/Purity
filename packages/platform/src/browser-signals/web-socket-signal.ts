@@ -119,8 +119,22 @@ export function webSocketSignal<T>(
   // through the Sec-WebSocket-Protocol echo or trip the browser into a
   // DOMException at construction. Reject pre-construction to a sourced,
   // redacted warn and an inert accessor.
-  if (options.protocols !== undefined) {
-    const list = typeof options.protocols === 'string' ? [options.protocols] : options.protocols;
+  // Snapshot untrusted option getters and arrays once. A second read after
+  // validation could otherwise pass an unvalidated Sec-WebSocket-Protocol
+  // value to the browser constructor or to a later reconnect.
+  let protocols: string | string[] | undefined;
+  try {
+    const supplied = options.protocols;
+    protocols = Array.isArray(supplied) ? Array.from(supplied) : supplied;
+  } catch {
+    // Getter/iterator exceptions may contain credentials. Never log them.
+    console.warn(
+      `[purity] webSocketSignal('${label}') rejected — invalid subprotocol (must be RFC 6455 tokens)`,
+    );
+    return inertWebSocket(options);
+  }
+  if (protocols !== undefined) {
+    const list = typeof protocols === 'string' ? [protocols] : protocols;
     // RFC 7230 token: 1*tchar where tchar = !#$%&'*+-.^_`|~ / DIGIT / ALPHA.
     const tokenRe = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
     // findIndex visits sparse holes; duplicate tokens are also invalid per RFC 6455.
@@ -166,7 +180,7 @@ export function webSocketSignal<T>(
     if (ws) return;
     stateAccessor('connecting');
     try {
-      ws = new WebSocket(url, options.protocols);
+      ws = new WebSocket(url, protocols);
     } catch {
       // Native exception messages may include the credential-bearing URL.
       console.warn(`[purity] webSocketSignal('${label}') failed to open`);

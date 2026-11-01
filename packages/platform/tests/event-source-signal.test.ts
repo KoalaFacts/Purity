@@ -459,7 +459,6 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     expect(reads).toBe(0);
   });
 
-
   it('never reads URL host or path overrides that inject credentials', () => {
     const url = new URL('https://example.test/sse?access_token=SECRET_QUERY');
     let getterReads = 0;
@@ -477,6 +476,25 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     });
     expect(redactUrl(url)).toBe('https://example.test/sse');
     expect(getterReads).toBe(0);
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      eventSourceSignal<number>(url, {
+        initialValue: 0,
+        validate: isNumber,
+        reconnect: 'never',
+      });
+      expect(instances).toHaveLength(1);
+      instances[0].fire('message', 'not-json');
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('https://example.test/sse');
+      expect(logged).not.toContain('SECRET_HOST');
+      expect(logged).not.toContain('SECRET_PATH');
+      expect(logged).not.toContain('SECRET_QUERY');
+      expect(getterReads).toBe(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('does not echo opaque URL payloads into refused EventSource diagnostics', () => {

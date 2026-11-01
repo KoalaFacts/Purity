@@ -650,13 +650,13 @@ describe('webSocketSignal — client (ADR 0047)', () => {
       reconnect: 'always',
       get protocols() {
         reads++;
-        return reads === 1 ? source : ['chat.v1\\r\\nSECRET_HEADER'];
+        return reads === 1 ? source : ['chat.v1\r\nSECRET_HEADER'];
       },
     });
     expect(reads).toBe(1);
     expect(instances).toHaveLength(1);
     expect(instances[0].protocols).toEqual(['chat.v1']);
-    source[0] = 'tampered\\r\\nSECRET_MUTATION';
+    source[0] = 'tampered\r\nSECRET_MUTATION';
     const event = new Event('pageshow') as Event & { persisted: boolean };
     Object.defineProperty(event, 'persisted', { value: true });
     window.dispatchEvent(event);

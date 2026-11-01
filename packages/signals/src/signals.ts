@@ -456,7 +456,7 @@ export function disposeScope(scope: Scope): void {
 function runComputed(node: ComputedNode): void {
   // Release the previous run before fn re-evaluates; the user's cleanup
   // closure still sees the values from the run that produced it.
-  if (node.disposers) disposeScope(node);
+  if (node.disposers !== null) disposeScope(node);
   if (node.disposed) {
     node.status = STATUS_CLEAN;
     return;
@@ -837,9 +837,9 @@ export function state<T>(initial: T): StateAccessor<T> {
  * ```
  */
 function createComputedNode(fn: () => unknown, isEffect: boolean): ComputedNode {
-  // Memo nodes never use effect scheduling, component ownership or cleanup
-  // fields. Keep one stable shape for each kind instead of allocating four
-  // unused properties on every pure computed.
+  // An effect only needs flush counters after its first queued run; flush()
+  // initializes both when the current flush ID is new. Ordinary computeds
+  // never allocate either counter.
   const node = {
     fn,
     value: undefined,
@@ -849,16 +849,12 @@ function createComputedNode(fn: () => unknown, isEffect: boolean): ComputedNode 
     sourceVersions: null,
     observerSlots: null,
     observers: null,
+    disposers: null,
+    component: isEffect ? getCurrentComponent() : null,
     isEffect,
     disposed: false,
     error: null,
   } as ComputedNode;
-  if (isEffect) {
-    node.disposers = null;
-    node.component = getCurrentComponent();
-    node.flushId = 0;
-    node.flushRuns = 0;
-  }
   if (__DEV__) trackNode(node);
   return node;
 }

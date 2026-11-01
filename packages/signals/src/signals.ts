@@ -294,15 +294,14 @@ function disconnectFromSources(node: ComputedNode): void {
 
 // Share owner/memo/effect teardown. Retained stop handles and frozen computed
 // accessors should not keep the original user callback and its captured tree.
-const RELEASED_COMPUTATION = (): void => {};
-
 function disposeComputation(node: ComputedNode): void {
   if (node.disposed) return;
   node.disposed = true;
   disposeScope(node);
   disconnectFromSources(node);
   node.component = null;
-  node.fn = RELEASED_COMPUTATION;
+  // The built-in callable is never invoked: disposed memos return frozen values.
+  node.fn = Object;
 }
 
 // ---------------------------------------------------------------------------

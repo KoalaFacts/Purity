@@ -313,13 +313,8 @@ function markDirty(observers: ComputedNode[]): void {
 // pass. Pushing children in reverse index order preserves the same
 // pre-order visitation (and thus pendingEffects push order) the old
 // recursive version produced.
-// This propagation walk invokes no user callbacks and drains every entry before
-// returning. Reuse its scratch stack across writes instead of allocating an
-// array for every dirty wave; it holds no nodes between synchronous walks.
-const checkStack: ComputedNode[] = [];
-
 function markCheck(observers: ComputedNode[]): void {
-  const stack = checkStack;
+  const stack: ComputedNode[] = [];
   for (let i = observers.length - 1; i >= 0; i--) stack.push(observers[i]);
   while (stack.length > 0) {
     const o = stack.pop()!;

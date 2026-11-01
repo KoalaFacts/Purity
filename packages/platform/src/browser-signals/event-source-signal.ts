@@ -174,7 +174,7 @@ export function makeLiveMessageHandler<T, R = string>(
   label: string,
   parse: (raw: R) => unknown,
   validate: LiveValidator<T>,
-  inner: (value: NoInfer<T>) => void,
+  inner: { set(value: NoInfer<T>): void },
 ): (e: MessageEvent<R>) => void {
   return (e: MessageEvent<R>): void => {
     let parsed: unknown;
@@ -195,7 +195,8 @@ export function makeLiveMessageHandler<T, R = string>(
       console.warn(`[purity] ${api}('${label}') dropped incoming message — validator threw`);
       return;
     }
-    inner(parsed);
+    // Treat a validated function as a value, never as a state updater.
+    inner.set(parsed);
   };
 }
 

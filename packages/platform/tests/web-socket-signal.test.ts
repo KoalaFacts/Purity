@@ -204,6 +204,19 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(sig()).toBe(42);
   });
 
+  it('stores validated callable payloads without invoking them as state updaters', () => {
+    const payload = vi.fn(() => 'payload');
+    const sig = webSocketSignal<() => string>('/ws', {
+      initialValue: () => 'initial',
+      parse: () => payload,
+      validate: (value): value is () => string => typeof value === 'function',
+      reconnect: 'never',
+    });
+    instances[0].fireMessage('callable');
+    expect(payload).not.toHaveBeenCalled();
+    expect(sig()).toBe(payload);
+  });
+
   it('drops messages that fail the validator with a console.warn', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const sig = webSocketSignal<number>('/ws', { initialValue: 0, validate: isNumber });

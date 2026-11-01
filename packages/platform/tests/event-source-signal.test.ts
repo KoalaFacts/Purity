@@ -161,6 +161,19 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     expect(sig()).toBe(42);
   });
 
+  it('stores validated callable payloads without invoking them as state updaters', () => {
+    const payload = vi.fn(() => 'payload');
+    const sig = eventSourceSignal<() => string>('/sse', {
+      initialValue: () => 'initial',
+      parse: () => payload,
+      validate: (value): value is () => string => typeof value === 'function',
+      reconnect: 'never',
+    });
+    instances[0].fire('message', 'callable');
+    expect(payload).not.toHaveBeenCalled();
+    expect(sig()).toBe(payload);
+  });
+
   it('drops messages that fail the validator with a console.warn', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const sig = eventSourceSignal<number>('/sse', { initialValue: 0, validate: isNumber });

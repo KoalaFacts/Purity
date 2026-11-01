@@ -391,6 +391,33 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     }
   });
 
+  it('redacts throwing URL getter exceptions before constructing an EventSource', () => {
+    const url = new URL('https://example.test/sse?access_token=SECRET_QUERY');
+    Object.defineProperty(url, 'host', {
+      get: () => {
+        throw new Error('SECRET_GETTER');
+      },
+    });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(redactUrl(url)).toBe('[invalid URL]');
+      const sig = eventSourceSignal<number>(url, {
+        initialValue: 7,
+        validate: isNumber,
+        reconnect: 'never',
+      });
+      expect(instances).toHaveLength(1);
+      instances[0].fire('message', 'not-json');
+      expect(sig()).toBe(7);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[invalid URL]');
+      expect(logged).not.toContain('SECRET_GETTER');
+      expect(logged).not.toContain('SECRET_QUERY');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('does not echo opaque URL payloads into refused EventSource diagnostics', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

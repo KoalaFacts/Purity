@@ -267,6 +267,32 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('redacts throwing URL getter exceptions before constructing a WebSocket', () => {
+    const url = new URL('wss://example.test/ws?access_token=SECRET_QUERY');
+    Object.defineProperty(url, 'host', {
+      get: () => {
+        throw new Error('SECRET_GETTER');
+      },
+    });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const sig = webSocketSignal<number>(url, {
+        initialValue: 7,
+        validate: isNumber,
+        reconnect: 'never',
+      });
+      expect(instances).toHaveLength(1);
+      instances[0].fireMessage('not-json');
+      expect(sig()).toBe(7);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[invalid URL]');
+      expect(logged).not.toContain('SECRET_GETTER');
+      expect(logged).not.toContain('SECRET_QUERY');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('does not echo opaque URL payloads into rejected WebSocket diagnostics', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

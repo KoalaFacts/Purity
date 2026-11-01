@@ -108,9 +108,14 @@ export function isSafeEventSourceUrl(url: string | URL): boolean {
 export function redactUrl(url: string | URL): string {
   // URL instance: always absolute by construction — redact directly.
   if (typeof url !== 'string') {
-    // Opaque / unsupported schemes may embed credentials in their pathname.
-    if (!/^(https?|wss?):$/.test(url.protocol)) return '[unsupported URL scheme]';
-    return `${url.protocol}//${url.host}${url.pathname}`;
+    try {
+      // URL subclasses and proxies may throw from their getters. Never
+      // propagate an exception that can include userinfo or query secrets.
+      if (!/^(https?|wss?):$/.test(url.protocol)) return '[unsupported URL scheme]';
+      return `${url.protocol}//${url.host}${url.pathname}`;
+    } catch {
+      return '[invalid URL]';
+    }
   }
   const normalized = normalizeLiveUrl(url);
   if (normalized === null) return '[invalid URL]';

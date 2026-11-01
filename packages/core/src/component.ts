@@ -170,6 +170,7 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
   const states = internals?.states;
   if (!states) return;
 
+  const refs = (ctx._stateRefs ??= new Map());
   let prevOn = false;
 
   // Share the same ref-count transition for signal updates and owner disposal.
@@ -177,9 +178,7 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
     const on = !release && !!accessor();
     if (on === prevOn) return;
     prevOn = on;
-    // Always-false bindings need no ref-count Map until their first activation.
     // Drop inactive entries while sharing the updated count with host transitions.
-    const refs = (ctx._stateRefs ??= new Map());
     const count = (refs.get(name) ?? 0) + (on ? 1 : -1);
     if (count) refs.set(name, count);
     else refs.delete(name);

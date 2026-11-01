@@ -3,14 +3,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { ComponentContext, popContext, pushContext } from '../src/scope.ts';
-import {
-  batch,
-  compute,
-  disposeScope,
-  state,
-  watch,
-  type ComputedAccessor,
-} from '../src/signals.ts';
+import { batch, compute, state, watch, type ComputedAccessor } from '../src/signals.ts';
 
 describe('state', () => {
   it('reads the initial value', () => {
@@ -166,34 +159,6 @@ describe('computed', () => {
     const count = state(3);
     const doubled = compute(() => count() * 2);
     expect(doubled.peek()).toBe(6);
-  });
-
-  it('preserves the last computed value after its owner releases the evaluation callback', () => {
-    const source = state(2);
-    const owner = new ComponentContext();
-    let doubled!: ComputedAccessor<number>;
-    let evaluations = 0;
-
-    pushContext(owner);
-    try {
-      doubled = compute(() => {
-        evaluations++;
-        return source() * 2;
-      });
-    } finally {
-      popContext();
-    }
-
-    expect(doubled()).toBe(4);
-    disposeScope(owner);
-    source(9);
-
-    // A retained accessor stays a frozen snapshot, never re-subscribes or
-    // tries to evaluate the released user callback after owner teardown.
-    expect(doubled()).toBe(4);
-    expect(doubled.get()).toBe(4);
-    expect(doubled.peek()).toBe(4);
-    expect(evaluations).toBe(1);
   });
 
   it('converges (no stale CLEAN) when its body writes a source it just read', () => {

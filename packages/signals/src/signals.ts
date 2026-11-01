@@ -292,18 +292,6 @@ function disconnectFromSources(node: ComputedNode): void {
   node.observerSlots = null;
 }
 
-// Share owner/memo/effect teardown. Retained stop handles and frozen computed
-// accessors should not keep the original user callback and its captured tree.
-function disposeComputation(node: ComputedNode): void {
-  if (node.disposed) return;
-  node.disposed = true;
-  disposeScope(node);
-  disconnectFromSources(node);
-  node.component = null;
-  // The built-in callable is never invoked: disposed memos return frozen values.
-  node.fn = Object;
-}
-
 // ---------------------------------------------------------------------------
 // dirty propagation
 // ---------------------------------------------------------------------------
@@ -877,7 +865,12 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
   // Only owner-bound computed values need a scope disposer. Module-level
   // values can live for the page without allocating an unused closure.
   const ctx = getCurrentContext();
-  if (ctx) (ctx.disposers ??= []).push(() => disposeComputation(node));
+  if (ctx)
+    (ctx.disposers ??= []).push(() => {
+      if (node.disposed) return;
+      node.disposed = true;
+      disconnectFromSources(node);
+    });
 
   const accessor = (() => readNode<T>(node)) as ComputedAccessor<T>;
   // A computed getter has exactly the same tracked read behavior as calling it.
@@ -904,11 +897,20 @@ function _effect(fn: () => undefined | Dispose): Dispose {
   try {
     updateValue(node);
   } catch (e) {
-    disposeComputation(node);
+    node.disposed = true;
+    disposeScope(node);
+    disconnectFromSources(node);
     throw e;
   }
 
-  const dispose = (): void => disposeComputation(node);
+  const dispose = (): void => {
+    if (node.disposed) return;
+    node.disposed = true;
+    disposeScope(node);
+    disconnectFromSources(node);
+    // A retained stop handle must not keep an unmounted component alive.
+    node.component = null;
+  };
 
   // Auto-register with the current component/render context so reactive
   // bindings created inside a template (or inside an each() entry, a

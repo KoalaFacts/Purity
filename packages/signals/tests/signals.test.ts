@@ -99,6 +99,26 @@ describe('computed', () => {
     expect(c()).toBe(12);
   });
 
+  it('resolves nested CHECK chains with shared ancestors after updates', async () => {
+    const source = state(1);
+    const left = compute(() => source() * 2);
+    const right = compute(() => left() + 1);
+    const combined = compute(() => left() + right());
+    const seen: number[] = [];
+    const stop = watch(() => {
+      seen.push(combined());
+    });
+
+    expect(seen).toEqual([5]);
+    source(2);
+    await new Promise((r) => queueMicrotask(r));
+    expect(seen).toEqual([5, 9]);
+    source(3);
+    await new Promise((r) => queueMicrotask(r));
+    expect(seen).toEqual([5, 9, 13]);
+    stop();
+  });
+
   it('reuses its read accessor for .get() without losing subscriptions', async () => {
     const count = state(1);
     const doubled = compute(() => count() * 2);

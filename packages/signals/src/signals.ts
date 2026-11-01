@@ -387,7 +387,9 @@ function updateValue(startNode: ComputedNode): void {
           if (!onPath) {
             // Resolve sc before we can know whether it actually changed —
             // push a frame for it instead of recursing into updateValue(sc).
-            (onStack ??= new Set(stack.map((f) => f.node))).add(sc);
+            // The first descent has only startNode on the stack. Avoid allocating
+            // a mapping callback and an extra array for every CHECK traversal.
+            (onStack ??= new Set([startNode])).add(sc);
             stack.push({
               node: sc,
               sources: sc.sources ?? [],

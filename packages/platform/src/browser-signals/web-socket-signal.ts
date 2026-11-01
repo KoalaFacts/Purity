@@ -53,6 +53,8 @@ export interface WebSocketSignalOptions<T> {
 }
 
 const WS_EVENTS = ['open', 'close', 'error', 'message'] as const;
+// RFC 7230 tchar; reuse the stateless matcher across connections.
+const WS_PROTOCOL_TOKEN_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
 // Inert transports can share these methods; active transports need neither
 // the methods nor a per-connection factory closure.
@@ -136,13 +138,11 @@ export function webSocketSignal<T>(
   }
   if (protocols !== undefined) {
     const list = typeof protocols === 'string' ? [protocols] : protocols;
-    // RFC 7230 token: 1*tchar where tchar = !#$%&'*+-.^_`|~ / DIGIT / ALPHA.
-    const tokenRe = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
     // findIndex visits sparse holes; duplicate tokens are also invalid per RFC 6455.
     const bad =
       !Array.isArray(list) ||
       list.findIndex(
-        (p, i) => typeof p !== 'string' || !tokenRe.test(p) || list.indexOf(p) !== i,
+        (p, i) => typeof p !== 'string' || !WS_PROTOCOL_TOKEN_RE.test(p) || list.indexOf(p) !== i,
       ) !== -1;
     if (bad) {
       console.warn(

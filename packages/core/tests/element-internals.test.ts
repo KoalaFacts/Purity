@@ -9,7 +9,7 @@ import { bindComponentState, mount, onDispose } from '../src/component.ts';
 import { component, internals } from '../src/elements.ts';
 import { html } from '../src/compiler/compile.ts';
 import { resource } from '../src/resource.ts';
-import { state } from '@purityjs/signals';
+import { getCurrentComponent, state } from '@purityjs/signals';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 
@@ -170,6 +170,37 @@ describe('bindComponentState', () => {
     expect(states.has('busy')).toBe(false);
     expect(remove).toHaveBeenCalledTimes(1);
     remove.mockRestore();
+  });
+
+  it('releases inactive state-name entries after updates and owner disposal', async () => {
+    const tag = nextTag();
+    const first = state(false);
+    const second = state(false);
+    let trackedNames: Map<string, number> | null = null;
+    component(tag, () => {
+      bindComponentState('first', first);
+      bindComponentState('second', second);
+      trackedNames = getCurrentComponent()?._stateRefs ?? null;
+      return html`<div></div>`;
+    });
+
+    const host = document.createElement(tag);
+    document.body.append(host);
+    expect(trackedNames!.size).toBe(0);
+
+    first(true);
+    await tick();
+    expect([...trackedNames!.keys()]).toEqual(['first']);
+    first(false);
+    await tick();
+    expect(trackedNames!.size).toBe(0);
+
+    second(true);
+    await tick();
+    expect([...trackedNames!.keys()]).toEqual(['second']);
+    host.remove();
+    await tick();
+    expect(trackedNames!.size).toBe(0);
   });
 });
 

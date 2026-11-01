@@ -179,7 +179,9 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
     if (on === prevOn) return;
     prevOn = on;
     const cur = refs.get(name) ?? 0;
-    refs.set(name, cur + (on ? 1 : -1));
+    // Inactive state names must not accumulate on long-lived owners.
+    if (cur === 1 && !on) refs.delete(name);
+    else refs.set(name, cur + (on ? 1 : -1));
     if (cur === 0 && on) {
       try {
         states.add(name);

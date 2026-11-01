@@ -178,18 +178,18 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
     const on = !release && !!accessor();
     if (on === prevOn) return;
     prevOn = on;
-    const cur = refs.get(name) ?? 0;
-    // Inactive state names must not accumulate on long-lived owners.
-    if (cur === 1 && !on) refs.delete(name);
-    else refs.set(name, cur + (on ? 1 : -1));
-    if (cur === 0 && on) {
+    // Drop inactive entries while sharing the updated count with host transitions.
+    const count = (refs.get(name) ?? 0) + (on ? 1 : -1);
+    if (count) refs.set(name, count);
+    else refs.delete(name);
+    if (on && count === 1) {
       try {
         states.add(name);
       } catch (err) {
         /* v8 ignore next */
         console.error('[Purity] bindComponentState add failed:', err);
       }
-    } else if (cur === 1 && !on) {
+    } else if (!on && count === 0) {
       try {
         states.delete(name);
       } catch {

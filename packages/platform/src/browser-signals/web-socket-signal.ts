@@ -146,12 +146,6 @@ export function webSocketSignal<T>(
   const validate = options.validate;
 
   let ws: WebSocket | null = null;
-  const onOpen = (): void => {
-    stateAccessor('open');
-  };
-  const onClose = (): void => {
-    stateAccessor('closed');
-  };
   const onMessage = makeLiveMessageHandler<T, MessageEvent['data']>(
     'webSocketSignal',
     label,
@@ -159,8 +153,12 @@ export function webSocketSignal<T>(
     validate,
     inner,
   );
-  // Event names are shared across sockets; only the listener functions are per instance.
-  const listeners: EventListener[] = [onOpen, onClose, onClose, onMessage as EventListener];
+  // One handler handles all four events; no per-socket listener array or
+  // separate open/close callbacks. Each connection still owns its handler.
+  const onEvent = (event: Event): void => {
+    if (event.type === 'message') onMessage(event as MessageEvent);
+    else stateAccessor(event.type === 'open' ? 'open' : 'closed');
+  };
 
   const open = (): void => {
     if (ws) return;
@@ -175,7 +173,7 @@ export function webSocketSignal<T>(
       return;
     }
     try {
-      for (let i = 0; i < listeners.length; i++) ws.addEventListener(WS_EVENTS[i], listeners[i]);
+      for (let i = 0; i < WS_EVENTS.length; i++) ws.addEventListener(WS_EVENTS[i], onEvent);
     } catch {
       // Listener adapters may echo credential-bearing URLs in thrown errors.
       // Close the partially opened socket without reporting raw exceptions.
@@ -192,9 +190,9 @@ export function webSocketSignal<T>(
     // after the socket's async close path can't ride back into the shared
     // inner state on the next reconnect cycle. Matches eventSourceSignal.
     let detachFailed = false;
-    for (let i = 0; i < listeners.length; i++) {
+    for (let i = 0; i < WS_EVENTS.length; i++) {
       try {
-        closing.removeEventListener(WS_EVENTS[i], listeners[i]);
+        closing.removeEventListener(WS_EVENTS[i], onEvent);
       } catch {
         // Continue detaching other handlers and close the transport.
         detachFailed = true;

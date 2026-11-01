@@ -49,7 +49,7 @@ class MockWS {
       fireOpen: () => this.dispatch('open', new Event('open')),
       fireClose: () => this.dispatch('close', new Event('close')),
       fireError: () => this.dispatch('error', new Event('error')),
-      fireMessage: (data) => this.dispatch('message', { data } as MessageEvent),
+      fireMessage: (data) => this.dispatch('message', new MessageEvent('message', { data })),
     };
     instances.push(inst);
   }
@@ -167,6 +167,29 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(sig.readyState()).toBe('open');
     instances[0].fireClose();
     expect(sig.readyState()).toBe('closed');
+  });
+
+  it('reuses a single event handler per socket while keeping connections independent', () => {
+    const first = webSocketSignal<number>('/one', { initialValue: 0, validate: isNumber });
+    const second = webSocketSignal<number>('/two', { initialValue: 1, validate: isNumber });
+    const firstListeners = instances[0].listeners;
+    const handler = firstListeners.get('open')?.[0];
+    expect(handler).toBeTypeOf('function');
+    for (const name of ['close', 'error', 'message']) {
+      expect(firstListeners.get(name)).toEqual([handler]);
+    }
+    expect(instances[1].listeners.get('open')?.[0]).not.toBe(handler);
+
+    instances[0].fireOpen();
+    instances[0].fireMessage('2');
+    expect(first()).toBe(2);
+    expect(second()).toBe(1);
+    instances[1].fireOpen();
+    instances[1].fireMessage('3');
+    expect(second()).toBe(3);
+    instances[0].fireError();
+    expect(first.readyState()).toBe('closed');
+    expect(second.readyState()).toBe('open');
   });
 
   it('manual close transitions readyState through closing → closed (no stuck closing)', async () => {

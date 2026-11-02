@@ -473,11 +473,20 @@ export function teleport(
     dispose = watch(() => {
       clearNodes();
       const content = viewFn();
-      if (content == null) return;
+      // A render may synchronously unmount its owner. Its cleanup has
+      // already run, so never append orphaned DOM after that teardown.
+      if (disposed || content == null) return;
       currentNodes =
         content instanceof DocumentFragment ? Array.from(content.childNodes) : [content];
       container.appendChild(content);
     });
+    // The initial watch run is synchronous. If it unmounted the owner,
+    // its disposer was not yet available to the owner's cleanup callback.
+    if (disposed) {
+      dispose();
+      dispose = null;
+      clearNodes();
+    }
   });
 
   const ctx = getCurrentContext();

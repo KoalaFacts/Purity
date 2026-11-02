@@ -224,6 +224,10 @@ export class FormControlBridge {
     const selector = this.selector === true ? DEFAULT_SELECTOR : this.selector;
     const found = this.root.querySelector(selector);
     if (!isNativeControl(found)) {
+      // The missing control no longer needs external-label observations.
+      // Keeping the observer connected would retain and revisit detached labels.
+      this.labelObserver?.disconnect();
+      this.labelObserver = null;
       this.control = null;
       this.elementInternals.setFormValue(null);
       this.elementInternals.setValidity({});

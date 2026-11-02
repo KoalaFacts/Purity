@@ -120,6 +120,37 @@ describe('formControl component option', () => {
     expect(control.getAttribute('aria-label')).toBe('Your name');
   });
 
+  it('disconnects external label observation when the native control is removed', async () => {
+    const label = document.createElement('label');
+    label.textContent = 'External label';
+    const internals = {
+      labels: [label],
+      setFormValue: vi.fn(),
+      setValidity: vi.fn(),
+    };
+    Object.defineProperty(HTMLElement.prototype, 'attachInternals', {
+      configurable: true,
+      value: () => internals,
+    });
+
+    const tag = name();
+    component(tag, () => document.createElement('input'), { formControl: true });
+    const host = document.createElement(tag);
+    document.body.append(label, host);
+    const input = host.shadowRoot!.querySelector('input')!;
+    expect(input.getAttribute('aria-label')).toBe('External label');
+
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
+    try {
+      input.remove();
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(disconnect).toHaveBeenCalledTimes(1);
+      expect(internals.setFormValue).toHaveBeenLastCalledWith(null);
+    } finally {
+      disconnect.mockRestore();
+    }
+  });
+
   it('keeps same-name radio hosts exclusive within each form', () => {
     const internals = new WeakMap<HTMLElement, { setFormValue: ReturnType<typeof vi.fn> }>();
     Object.defineProperty(HTMLElement.prototype, 'attachInternals', {

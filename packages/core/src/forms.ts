@@ -83,10 +83,15 @@ function setupFormElement(
     newValue: string | null,
   ) {
     const bridge = this._formBridge;
-    if (name === 'value' && newValue !== null) bridge?.setValue(newValue);
-    else if (name === 'checked') bridge?.setChecked(newValue !== null);
-    else bridge?.sync();
-    bridge?.syncLabel();
+    if (name === 'value') {
+      if (newValue === null) bridge?.sync();
+      else bridge?.setValue(newValue);
+    } else if (name === 'checked') {
+      bridge?.setChecked(newValue !== null);
+    } else {
+      bridge?.sync();
+      bridge?.syncLabel();
+    }
   };
 
   for (const [k, def] of [

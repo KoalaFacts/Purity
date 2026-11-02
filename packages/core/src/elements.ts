@@ -349,7 +349,11 @@ export function component<
             runRender(render, allProps as P, slotAccessors, ctx),
           );
         } else {
-          while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
+          while (this._shadow.firstChild) {
+            this._shadow.removeChild(this._shadow.firstChild);
+            // A removed child may reconnect the host and replace this owner.
+            if (ctx._isDestroyed || this._ctx !== ctx) return;
+          }
           result = runRender(render, allProps as P, slotAccessors, ctx).result;
         }
 

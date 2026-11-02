@@ -82,10 +82,11 @@ function setupFormElement(
     _oldValue: string | null,
     newValue: string | null,
   ) {
-    if (name === 'value' && newValue !== null) this._formBridge?.setValue(newValue);
-    if (name === 'checked') this._formBridge?.setChecked(newValue !== null);
-    this._formBridge?.syncLabel();
-    this._formBridge?.sync();
+    const bridge = this._formBridge;
+    if (name === 'value' && newValue !== null) bridge?.setValue(newValue);
+    else if (name === 'checked') bridge?.setChecked(newValue !== null);
+    else bridge?.sync();
+    bridge?.syncLabel();
   };
 
   for (const [k, def] of [
@@ -165,32 +166,30 @@ export function formComponent<
   renderFn: RenderFn<P, S>,
   options?: ComponentOptions,
 ): (props: P, children?: any) => Node | DocumentFragment {
-  enableFormControls();
   return component(tagName, renderFn, { formAssociated: true, ...options });
 }
 
-export function onFormAssociated(fn: (form: HTMLFormElement | null) => void): void {
-  enableFormControls();
+type FormCallbackKey = '_formAssociated' | '_formDisabled' | '_formReset' | '_formStateRestore';
+
+function registerFormCallback(key: FormCallbackKey, fn: (...args: any[]) => void): void {
   const ctx = getCurrentComponent();
-  if (ctx) addComponentCallback(ctx, (ctx._formAssociated ??= []), fn);
+  if (ctx) addComponentCallback(ctx, (ctx[key] ??= []) as ((...args: any[]) => void)[], fn);
+}
+
+export function onFormAssociated(fn: (form: HTMLFormElement | null) => void): void {
+  registerFormCallback('_formAssociated', fn);
 }
 
 export function onFormDisabled(fn: (disabled: boolean) => void): void {
-  enableFormControls();
-  const ctx = getCurrentComponent();
-  if (ctx) addComponentCallback(ctx, (ctx._formDisabled ??= []), fn);
+  registerFormCallback('_formDisabled', fn);
 }
 
 export function onFormReset(fn: () => void): void {
-  enableFormControls();
-  const ctx = getCurrentComponent();
-  if (ctx) addComponentCallback(ctx, (ctx._formReset ??= []), fn);
+  registerFormCallback('_formReset', fn);
 }
 
 export function onFormStateRestore(
   fn: (state: string | File | FormData | null, mode: 'restore' | 'autocomplete') => void,
 ): void {
-  enableFormControls();
-  const ctx = getCurrentComponent();
-  if (ctx) addComponentCallback(ctx, (ctx._formStateRestore ??= []), fn);
+  registerFormCallback('_formStateRestore', fn);
 }

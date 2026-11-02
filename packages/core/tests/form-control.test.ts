@@ -135,6 +135,53 @@ describe('formControl component option', () => {
     expect(control.getAttribute('aria-label')).toBe('Your name');
   });
 
+  it('syncs host value and checked changes once without skipping name changes', () => {
+    const internals = {
+      labels: [] as HTMLLabelElement[],
+      setFormValue: vi.fn(),
+      setValidity: vi.fn(),
+    };
+    Object.defineProperty(HTMLElement.prototype, 'attachInternals', {
+      configurable: true,
+      value: () => internals,
+    });
+
+    const tag = name();
+    component(
+      tag,
+      () => {
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = 'initial';
+        return input;
+      },
+      { formControl: true },
+    );
+    const host = document.createElement(tag);
+    document.body.append(host);
+
+    internals.setFormValue.mockClear();
+    internals.setValidity.mockClear();
+    host.setAttribute('value', 'updated');
+    expect(host.shadowRoot!.querySelector('input')!.value).toBe('updated');
+    expect(internals.setFormValue).toHaveBeenCalledTimes(1);
+    expect(internals.setValidity).toHaveBeenCalledTimes(1);
+
+    internals.setFormValue.mockClear();
+    internals.setValidity.mockClear();
+    host.setAttribute('checked', '');
+    expect(internals.setFormValue).toHaveBeenCalledTimes(1);
+    expect(internals.setFormValue).toHaveBeenLastCalledWith('updated');
+    expect(internals.setValidity).toHaveBeenCalledTimes(1);
+
+    internals.setFormValue.mockClear();
+    internals.setValidity.mockClear();
+    host.setAttribute('name', 'preference');
+    expect(internals.setFormValue).toHaveBeenCalledTimes(1);
+    expect(internals.setFormValue).toHaveBeenLastCalledWith('updated');
+    expect(internals.setValidity).toHaveBeenCalledTimes(1);
+  });
+
   it('disconnects external label observation when the native control is removed', async () => {
     const label = document.createElement('label');
     label.textContent = 'External label';

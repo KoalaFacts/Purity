@@ -997,13 +997,14 @@ describe('component as custom element — lifecycle', () => {
 
     expect(relocated).toBe(true);
     expect(interruptedOwners[0]?._isDestroyed).toBe(true);
-    expect(renders).toBe(3);
-    expect(host.shadowRoot!.textContent).toBe('render:3');
-    expect(events).toEqual(['mounted:1', 'destroyed:1', 'mounted:3']);
+    // The obsolete render is not invoked after its owner was replaced.
+    expect(renders).toBe(2);
+    expect(host.shadowRoot!.textContent).toBe('render:2');
+    expect(events).toEqual(['mounted:1', 'destroyed:1', 'mounted:2']);
 
     host.remove();
     await tick();
-    expect(events).toEqual(['mounted:1', 'destroyed:1', 'mounted:3', 'destroyed:3']);
+    expect(events).toEqual(['mounted:1', 'destroyed:1', 'mounted:2', 'destroyed:2']);
   });
 
   it('rejects an invalid (non-hyphenated / unsafe) component tag name', () => {

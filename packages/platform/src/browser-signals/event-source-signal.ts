@@ -281,6 +281,11 @@ export function eventSourceSignal<T>(
       es = null;
       return;
     }
+    // Construction may synchronously dispose the owner before assigning es.
+    if (disposed) {
+      close();
+      return;
+    }
     try {
       es.addEventListener(eventName, onMessage);
     } catch {
@@ -312,7 +317,6 @@ export function eventSourceSignal<T>(
     }
   };
 
-  wireLiveReconnect(reconnect, open, close);
   // Auto-close on the surrounding component's unmount. Without this, every
   // eventSourceSignal() call inside a component opened a long-lived TCP
   // connection that survived unmount (the `wireLiveReconnect` watches
@@ -327,5 +331,6 @@ export function eventSourceSignal<T>(
       disposed = true;
       close();
     });
+  wireLiveReconnect(reconnect, open, close);
   return compute(() => inner());
 }

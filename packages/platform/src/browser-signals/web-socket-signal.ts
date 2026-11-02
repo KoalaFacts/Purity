@@ -190,6 +190,11 @@ export function webSocketSignal<T>(
       ws = null;
       return;
     }
+    // Construction may synchronously dispose the owner before assigning ws.
+    if (disposed) {
+      close();
+      return;
+    }
     try {
       for (let i = 0; i < listeners.length; i++) ws.addEventListener(WS_EVENTS[i], listeners[i]);
     } catch {
@@ -232,8 +237,6 @@ export function webSocketSignal<T>(
     });
   };
 
-  wireLiveReconnect(reconnect, open, close);
-
   // Auto-close on the surrounding component's unmount. Without this,
   // every webSocketSignal() call inside a component opened a long-lived
   // socket that survived unmount (wireLiveReconnect's watches handle
@@ -245,6 +248,8 @@ export function webSocketSignal<T>(
       disposed = true;
       close();
     });
+
+  wireLiveReconnect(reconnect, open, close);
 
   const accessor = compute(() => inner()) as WebSocketSignal<T>;
   accessor.send = (data: string | Blob | BufferSource): void => {

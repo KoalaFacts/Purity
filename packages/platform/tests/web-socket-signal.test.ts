@@ -553,7 +553,9 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(instances).toHaveLength(1);
 
     const originalClose = MockWS.prototype.close;
-    const closeSpy = vi.spyOn(MockWS.prototype, 'close').mockImplementation(function (this: MockWS) {
+    const closeSpy = vi.spyOn(MockWS.prototype, 'close').mockImplementation(function (
+      this: MockWS,
+    ) {
       originalClose.call(this);
       // A close adapter can synchronously trigger owner removal mid-refresh.
       root.unmount();

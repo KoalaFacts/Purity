@@ -915,7 +915,7 @@ describe('component as custom element — lifecycle', () => {
     const events: string[] = [];
     let host!: HTMLElement;
     let reconnected = false;
-    let obsoleteOwner: { _isMounted: boolean } | null = null;
+    const obsoleteOwners: { _isMounted: boolean }[] = [];
 
     customElements.define(
       childName,
@@ -923,7 +923,7 @@ describe('component as custom element — lifecycle', () => {
         connectedCallback() {
           if (reconnected) return;
           reconnected = true;
-          obsoleteOwner = (host as any)._ctx;
+          obsoleteOwners.push((host as any)._ctx);
           host.remove();
           document.body.appendChild(host);
         }
@@ -946,7 +946,7 @@ describe('component as custom element — lifecycle', () => {
     await tick();
 
     expect(renders).toBe(2);
-    expect(obsoleteOwner?._isMounted).toBe(false);
+    expect(obsoleteOwners[0]?._isMounted).toBe(false);
     expect(host.shadowRoot!.textContent).toBe('render:2');
     expect(events).toEqual(['destroyed:1', 'mounted:2']);
 

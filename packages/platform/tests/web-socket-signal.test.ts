@@ -310,6 +310,30 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     }
   });
 
+  it('redacts slash/backslash authority credentials before WebSocket warnings', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of [
+        '///user:SECRET_AUTH@example.test/ws?access_token=SECRET_QUERY',
+        '/\\user:SECRET_AUTH@example.test/ws?access_token=SECRET_QUERY',
+        '\\\\user:SECRET_AUTH@example.test/ws?access_token=SECRET_QUERY',
+      ]) {
+        webSocketSignal<number>(url, {
+          initialValue: 7,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        instances[instances.length - 1].fireMessage('bad-json');
+      }
+      expect(instances).toHaveLength(3);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).not.toContain('SECRET_AUTH');
+      expect(logged).not.toContain('SECRET_QUERY');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('redacts throwing URL getters without invoking them in WebSocket diagnostics', () => {
     const url = new URL('wss://example.test/ws?access_token=SECRET_QUERY');
     Object.defineProperty(url, 'host', {

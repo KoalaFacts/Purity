@@ -124,7 +124,9 @@ export function redactUrl(url: string | URL): string {
     const h = normalized.indexOf('#');
     const cut = q === -1 ? h : h === -1 ? q : Math.min(q, h);
     const trimmed = cut === -1 ? normalized : normalized.slice(0, cut);
-    return trimmed.replace(/^\/\/[^/]*@/, '//');
+    // WHATWG treats repeated leading / and \\ as an authority on http(s) pages.
+    // Redact userinfo even for mixed and triple-separator relative spellings.
+    return trimmed.replace(/^[/\\]{2,}[^/\\]*@/, '//');
   } catch {
     return '[invalid URL]';
   }

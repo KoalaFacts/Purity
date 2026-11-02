@@ -6,6 +6,12 @@
 // deferred-template machinery, zero SSR code.
 // ---------------------------------------------------------------------------
 
+import { getCurrentComponent } from '@purityjs/signals';
+import { slotNodesReplaced } from '../hooks.ts';
+
+/** @internal Single-callback effect used by generated client templates. */
+export { watchEffectInternal } from '@purityjs/signals';
+
 /**
  * Shared lazy `<template>` cloner (`__purity_tmpl__`).
  *
@@ -123,6 +129,23 @@ export function swapSlot(
     const f = document.createDocumentFragment();
     for (let i = 0; i < next.length; i++) f.appendChild(next[i]);
     parent.insertBefore(f, anchor);
+
+    const component = getCurrentComponent();
+    let root = component;
+    while (root && root._rootContainer == null) root = root.parent ?? null;
+    if (root && parent === root._rootContainer) {
+      const replaced = new Set(old);
+      for (let owner = component; owner; owner = owner.parent ?? null) {
+        const roots = owner.nodes;
+        if (!roots) continue;
+        const index = roots.findIndex((node) => replaced.has(node));
+        if (index !== -1) {
+          const updated = roots.filter((node) => !replaced.has(node));
+          owner.nodes = [...updated.slice(0, index), ...next, ...updated.slice(index)];
+        }
+      }
+    }
+    slotNodesReplaced?.(old, next);
   }
   return next.length === 1 ? next[0] : next;
 }

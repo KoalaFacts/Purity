@@ -13,7 +13,7 @@ import {
   getCurrentContext,
   popContext,
   pushContext,
-  watch,
+  watchEffectInternal,
 } from '@purityjs/signals';
 
 /**
@@ -119,6 +119,7 @@ export function onError(fn: (err: unknown) => void): void {
 /** Mount a client-rendered root with its own lifecycle. */
 export function mount(component: ComponentFn, container: Element): MountResult {
   const ctx = new ComponentContext();
+  ctx._rootContainer = container;
   attachToOwner(ctx, unmountContext);
 
   pushContext(ctx);
@@ -173,7 +174,7 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
   const refs = (ctx._stateRefs ??= new Map());
   let prevOn = false;
 
-  const dispose = watch(() => {
+  const dispose = watchEffectInternal(() => {
     const on = !!accessor();
     if (on === prevOn) return;
     prevOn = on;
@@ -264,5 +265,6 @@ export function unmountContext(
   ctx.mounted = null;
   ctx.errorHandlers = null;
   ctx.parent = null;
+  ctx._rootContainer = null;
   ctx._slotContent = undefined;
 }

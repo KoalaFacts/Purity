@@ -56,11 +56,8 @@ interface ComputedNode {
   version: number;
   status: Status;
   sources: AnyNode[] | null;
-  /** Snapshot of each source's `version` as observed during the last fn() run. */
-  sourceVersions: number[] | null;
-  /** For each source, this consumer's index in source.observers. Lets removeObserver
-   *  do O(1) swap-and-pop instead of an indexOf scan over a possibly-huge list. */
-  observerSlots: number[] | null;
+  /** Interleaved source versions and observer back-pointers. */
+  sourceMeta: number[] | null;
   observers: ComputedNode[] | null;
   /** Effects: disposers of reactive work created during the last run (nested
    *  watches, template bindings, computes), ending with the cleanup function
@@ -162,28 +159,22 @@ function trackNode(node: AnyNode): void {
 // read / write / track
 // ---------------------------------------------------------------------------
 
-function readNode<T>(node: StateNode<T> | ComputedNode, trackReads = true): T {
-  if (node.fn !== null) {
-    const c = node as ComputedNode;
-    if (c.status !== STATUS_CLEAN) updateValue(c);
-  }
+function readState<T>(node: StateNode<T>): T {
+  if (activeListener !== null && !activeListener.disposed) track(node);
+  return node.value;
+}
+
+function readNode<T>(node: ComputedNode, trackReads = true): T {
+  if (node.status !== STATUS_CLEAN) updateValue(node);
   // A disposed computed is a frozen snapshot, not a live reactive source: it
   // can never become dirty again (its own sources were cut on dispose), so
   // tracking it here would only create a dead observer edge.
-  if (
-    trackReads &&
-    activeListener !== null &&
-    !activeListener.disposed &&
-    (node.fn === null || !(node as ComputedNode).disposed)
-  ) {
+  if (trackReads && activeListener !== null && !activeListener.disposed && !node.disposed) {
     track(node);
   }
   // Track before throwing so a consumer that catches the error still re-runs
   // when a source of the failed compute changes.
-  if (node.fn !== null) {
-    const err = (node as ComputedNode).error;
-    if (err !== null) throw err.value;
-  }
+  if (node.error !== null) throw node.error.value;
   return node.value as T;
 }
 
@@ -208,25 +199,23 @@ function track(producer: AnyNode): void {
   if (sources !== null && idx < sources.length) {
     const cur = sources[idx];
     if (cur === producer) {
-      consumer.sourceVersions![idx] = producer.version;
+      consumer.sourceMeta![idx * 2] = producer.version;
       activeSourceIdx = idx + 1;
       return;
     }
     // Slot occupied by a different producer — swap.
     removeObserver(cur, consumer, idx);
     sources[idx] = producer;
-    consumer.sourceVersions![idx] = producer.version;
+    consumer.sourceMeta![idx * 2] = producer.version;
     addObserver(producer, consumer, idx);
   } else {
     // Append fresh slot.
     if (sources === null) {
       consumer.sources = [producer];
-      consumer.sourceVersions = [producer.version];
-      consumer.observerSlots = [0]; // overwritten by addObserver below
+      consumer.sourceMeta = [producer.version, 0]; // slot overwritten below
     } else {
       sources.push(producer);
-      consumer.sourceVersions!.push(producer.version);
-      consumer.observerSlots!.push(0);
+      consumer.sourceMeta!.push(producer.version, 0);
     }
     addObserver(producer, consumer, idx);
   }
@@ -243,7 +232,7 @@ function addObserver(producer: AnyNode, consumer: ComputedNode, sourceSlot: numb
     pos = obs.length;
     obs.push(consumer);
   }
-  consumer.observerSlots![sourceSlot] = pos;
+  consumer.sourceMeta![sourceSlot * 2 + 1] = pos;
 }
 
 // `sourceSlot` is the consumer's position in its own sources[] for this producer.
@@ -259,21 +248,21 @@ function addObserver(producer: AnyNode, consumer: ComputedNode, sourceSlot: numb
 function removeObserver(producer: AnyNode, consumer: ComputedNode, sourceSlot: number): void {
   const obs = producer.observers;
   if (obs === null) return;
-  const slot = consumer.observerSlots![sourceSlot];
+  const slot = consumer.sourceMeta![sourceSlot * 2 + 1];
   // A removed source slot must no longer match a later swap's back-pointer.
   // Repeated reads can be permuted by another consumer's removal; retaining
   // the old index would then update an already detached slot instead of the
   // moved live slot on this same consumer.
-  consumer.observerSlots![sourceSlot] = -1;
+  consumer.sourceMeta![sourceSlot * 2 + 1] = -1;
   const last = obs.length - 1;
   if (slot !== last) {
     const moved = obs[last];
     obs[slot] = moved;
     const ms = moved.sources!;
-    const mslots = moved.observerSlots!;
+    const mslots = moved.sourceMeta!;
     for (let k = 0; k < ms.length; k++) {
-      if (ms[k] === producer && mslots[k] === last) {
-        mslots[k] = slot;
+      if (ms[k] === producer && mslots[k * 2 + 1] === last) {
+        mslots[k * 2 + 1] = slot;
         break;
       }
     }
@@ -288,13 +277,19 @@ function disconnectFromSources(node: ComputedNode): void {
   if (sources === null) return;
   for (let i = 0; i < sources.length; i++) removeObserver(sources[i], node, i);
   node.sources = null;
-  node.sourceVersions = null;
-  node.observerSlots = null;
+  node.sourceMeta = null;
 }
 
 // ---------------------------------------------------------------------------
 // dirty propagation
 // ---------------------------------------------------------------------------
+
+// Computed-only graph traversal is installed when the first computed is
+// created, so state-and-effect-only applications can omit it entirely.
+let runDerived: ((node: ComputedNode) => void) | undefined;
+let propagateComputedCheck: ((observers: ComputedNode[]) => void) | undefined;
+let resolveComputedCheck: ((node: ComputedNode) => void) | undefined;
+let settleComputedLoop: ((from: number) => void) | undefined;
 
 function markDirty(observers: ComputedNode[]): void {
   for (let i = 0; i < observers.length; i++) {
@@ -302,7 +297,7 @@ function markDirty(observers: ComputedNode[]): void {
     if (o.status === STATUS_DIRTY) continue;
     o.status = STATUS_DIRTY;
     if (o.isEffect) pendingEffects.push(o);
-    if (o.observers !== null) markCheck(o.observers);
+    if (o.observers !== null) propagateComputedCheck!(o.observers);
   }
 }
 
@@ -356,11 +351,15 @@ function updateValue(startNode: ComputedNode): void {
     return;
   }
 
+  resolveComputedCheck!(startNode);
+}
+
+function resolveCheck(startNode: ComputedNode): void {
   const stack: CheckFrame[] = [
     {
       node: startNode,
       sources: startNode.sources ?? [],
-      versions: startNode.sourceVersions ?? [],
+      versions: startNode.sourceMeta ?? [],
       idx: 0,
     },
   ];
@@ -391,7 +390,7 @@ function updateValue(startNode: ComputedNode): void {
             stack.push({
               node: sc,
               sources: sc.sources ?? [],
-              versions: sc.sourceVersions ?? [],
+              versions: sc.sourceMeta ?? [],
               idx: 0,
             });
             descended = true;
@@ -401,7 +400,7 @@ function updateValue(startNode: ComputedNode): void {
           runComputed(sc);
         }
       }
-      if (src.version !== versions[frame.idx]) {
+      if (src.version !== versions[frame.idx * 2]) {
         node.status = STATUS_DIRTY;
         break;
       }
@@ -453,34 +452,13 @@ export function disposeScope(scope: Scope): void {
   }
 }
 
-function runComputed(node: ComputedNode): void {
+function runComputedValue(node: ComputedNode): void {
   // Release the previous run before fn re-evaluates; the user's cleanup
   // closure still sees the values from the run that produced it.
   if (node.disposers !== null) disposeScope(node);
   if (node.disposed) {
     node.status = STATUS_CLEAN;
     return;
-  }
-
-  // Re-entrancy guard for effects only — pure compute() chains form a DAG
-  // and are bounded by the graph, not by re-runs. Effects can be triggered
-  // by their own writes; cap how deep that nesting can get before we assume
-  // a feedback loop and bail.
-  if (node.isEffect) {
-    if (++effectDepth > MAX_EFFECT_DEPTH) {
-      // Undo this frame's own increment. We throw BEFORE entering the
-      // try/finally below, so this frame's finally never runs and would not
-      // decrement. Every ENCLOSING runComputed frame, however, does run its
-      // finally as the stack unwinds and decrements its own increment. So we
-      // must balance exactly this one increment here — not reset to 0, which
-      // would leave the counter ~MAX_EFFECT_DEPTH negative after the unwind
-      // and silently disable the guard for all future runs.
-      effectDepth--;
-      throw new Error(
-        '[Purity] Maximum effect depth exceeded.' +
-          (__DEV__ ? ' A watch/effect callback is likely modifying the signal it depends on.' : ''),
-      );
-    }
   }
 
   const prevListener = activeListener;
@@ -492,7 +470,7 @@ function runComputed(node: ComputedNode): void {
   // A compute that reads a source S and then writes S in the SAME fn body
   // demotes itself: the write's markDirty() flips this node's status to DIRTY
   // mid-run (the node is an observer of S). The old code then force-settled
-  // CLEAN, stranding the node with a sourceVersions snapshot that no longer
+  // CLEAN, stranding the node with a source version snapshot that no longer
   // matches S — permanently un-reactive (it never re-ran on a later pull, and
   // returned a stale value). Instead we settle CLEAN optimistically before
   // fn(), and if the body demoted us back to DIRTY we re-run to converge on a
@@ -501,8 +479,7 @@ function runComputed(node: ComputedNode): void {
   // every pass (a user bug — computes are meant to be pure).
   let runGuard = 0;
   // A compute whose fn throws caches the error (see ComputedNode.error) and
-  // settles CLEAN so it is not retried until a source changes. Effects keep
-  // propagating the throw to flush(), which reports it per effect.
+  // settles CLEAN so it is not retried until a source changes.
   let thrown = false;
   let thrownValue: unknown;
   // Suspend the cached error for the attempt: a self-read inside fn() sees the
@@ -519,19 +496,13 @@ function runComputed(node: ComputedNode): void {
     // detect after fn() returns.
     node.status = STATUS_CLEAN;
 
-    // An effect owns the reactive work its body creates: while it runs it is
-    // the current scope, so nested watches and template bindings register
-    // their disposers on it (released by disposeScope before the next run).
-    if (node.isEffect) pushContext(node);
     try {
       nextValue = node.fn();
       thrown = false;
     } catch (e) {
-      if (node.isEffect) throw e;
       thrown = true;
       thrownValue = e;
     } finally {
-      if (node.isEffect) popContext();
       // Truncate stale source slots. Anything past activeSourceIdx is no
       // longer read by this fn — drop the producer→consumer link.
       const consumed = activeSourceIdx;
@@ -541,22 +512,13 @@ function runComputed(node: ComputedNode): void {
           removeObserver(sources[i], node, i);
         }
         sources.length = consumed;
-        node.sourceVersions!.length = consumed;
-        node.observerSlots!.length = consumed;
+        node.sourceMeta!.length = consumed * 2;
       }
       activeListener = prevListener;
       activeSourceIdx = prevIdx;
-      // Decrement on every exit path of this iteration (including a throw out
-      // of fn()) so the depth counter stays balanced. Effects never loop here
-      // (they break right below), so this runs exactly once per effect run.
-      if (node.isEffect) effectDepth--;
     }
 
-    // Effects use markDirty's re-enqueue + the flush CLEAN-skip for their
-    // "run once on self-write" semantics, so they never loop here. A compute
-    // demoted mid-run must converge before it settles, so its snapshot stays
-    // consistent with the value it exposes.
-    if (node.isEffect || node.status === STATUS_CLEAN) break;
+    if (node.status === STATUS_CLEAN) break;
     if (++runGuard > MAX_EFFECT_DEPTH) {
       // Body keeps invalidating itself. Settle CLEAN to stop the loop and
       // surface the misuse rather than hang.
@@ -569,19 +531,6 @@ function runComputed(node: ComputedNode): void {
     }
   }
 
-  // Effect bodies may return a cleanup function; register it as the run's
-  // last disposer and don't treat it as a value (effects produce no
-  // observable value).
-  if (node.isEffect) {
-    if (typeof nextValue === 'function') {
-      (node.disposers ??= []).push(nextValue as () => void);
-    }
-    nextValue = undefined;
-    // The body disposed its own effect (stop() in the callback, or unmounting
-    // its owner): it will never run again, so release this run's work now.
-    if (node.disposed) disposeScope(node);
-  }
-
   let changed: boolean;
   if (thrown) {
     changed = prevError === null || !Object.is(prevError.value, thrownValue);
@@ -590,12 +539,6 @@ function runComputed(node: ComputedNode): void {
     changed = prevError !== null || !Object.is(node.value, nextValue);
     node.value = nextValue;
   }
-  // Effects: force CLEAN. An effect that synchronously writes its own dep was
-  // demoted to DIRTY and re-enqueued by markDirty; the designed semantics are
-  // "run once, the queued re-run is skipped because status is now CLEAN".
-  // Cross-effect feedback loops are bounded by MAX_EFFECT_REPEATS in flush().
-  // Computes already converged to CLEAN in the loop above.
-  if (node.isEffect) node.status = STATUS_CLEAN;
   if (changed) {
     node.version++;
     // Direct observers reading us through the CHECK→CLEAN fast path were
@@ -612,6 +555,54 @@ function runComputed(node: ComputedNode): void {
 // ---------------------------------------------------------------------------
 // Scheduler
 // ---------------------------------------------------------------------------
+
+function runComputed(node: ComputedNode): void {
+  if (node.isEffect) runEffect(node);
+  else runDerived!(node);
+}
+
+// Effects never expose a value or act as a producer, so they do not need the
+// computed evaluator's value/error cache or fixpoint loop. Their cleanup and
+// ownership behavior must match that evaluator's effect path.
+function runEffect(node: ComputedNode): void {
+  if (node.disposers !== null) disposeScope(node);
+  if (node.disposed) {
+    node.status = STATUS_CLEAN;
+    return;
+  }
+  if (++effectDepth > MAX_EFFECT_DEPTH) {
+    effectDepth--;
+    throw new Error(
+      '[Purity] Maximum effect depth exceeded.' +
+        (__DEV__ ? ' A watch/effect callback is likely modifying the signal it depends on.' : ''),
+    );
+  }
+  const prevListener = activeListener;
+  const prevIdx = activeSourceIdx;
+  activeListener = node;
+  activeSourceIdx = 0;
+  node.status = STATUS_CLEAN;
+  pushContext(node);
+  let nextValue: unknown;
+  try {
+    nextValue = node.fn();
+  } finally {
+    popContext();
+    const consumed = activeSourceIdx;
+    const sources = node.sources;
+    if (sources !== null && sources.length > consumed) {
+      for (let i = consumed; i < sources.length; i++) removeObserver(sources[i], node, i);
+      sources.length = consumed;
+      node.sourceMeta!.length = consumed * 2;
+    }
+    activeListener = prevListener;
+    activeSourceIdx = prevIdx;
+    effectDepth--;
+  }
+  if (typeof nextValue === 'function') (node.disposers ??= []).push(nextValue as () => void);
+  if (node.disposed) disposeScope(node);
+  node.status = STATUS_CLEAN;
+}
 
 function scheduleFlush(): void {
   if (microtaskScheduled) return;
@@ -696,6 +687,14 @@ function flush(): void {
 // DIRTY/CHECK ancestors to CHECK (not CLEAN) keeps them correct: a read
 // re-verifies their sources, and a write re-invalidates them.
 function settleAfterLoop(from: number): void {
+  if (settleComputedLoop) {
+    settleComputedLoop(from);
+    return;
+  }
+  for (let j = from; j < pendingEffects.length; j++) pendingEffects[j].status = STATUS_CLEAN;
+}
+
+function settleLoopWithComputeds(from: number): void {
   const stack: ComputedNode[] = [];
   for (let j = from; j < pendingEffects.length; j++) {
     const e = pendingEffects[j];
@@ -800,7 +799,7 @@ export function state<T>(initial: T): StateAccessor<T> {
   if (__DEV__) trackNode(node);
 
   const accessor = function (value?: T | ((current: T) => T)): T {
-    if (arguments.length === 0) return readNode(node);
+    if (arguments.length === 0) return readState(node);
     const next = typeof value === 'function' ? (value as (current: T) => T)(node.value) : value;
     writeState(node, next as T);
     return next as T;
@@ -808,7 +807,7 @@ export function state<T>(initial: T): StateAccessor<T> {
 
   // Avoid `bind()` and per-call closures: we can attach the property API
   // directly because every call routes through `node` already.
-  (accessor as unknown as { get: () => T }).get = () => readNode(node);
+  (accessor as unknown as { get: () => T }).get = () => readState(node);
   (accessor as unknown as { set: (v: T) => void }).set = (v: T) => {
     writeState(node, v);
   };
@@ -843,8 +842,7 @@ function createComputedNode(fn: () => unknown, isEffect: boolean): ComputedNode 
     version: 0,
     status: STATUS_DIRTY,
     sources: null,
-    sourceVersions: null,
-    observerSlots: null,
+    sourceMeta: null,
     observers: null,
     disposers: null,
     component: isEffect ? getCurrentComponent() : null,
@@ -859,8 +857,11 @@ function createComputedNode(fn: () => unknown, isEffect: boolean): ComputedNode 
 }
 
 export function compute<T>(fn: () => T): ComputedAccessor<T> {
+  runDerived = runComputedValue;
+  propagateComputedCheck = markCheck;
+  resolveComputedCheck = resolveCheck;
+  settleComputedLoop = settleLoopWithComputeds;
   const node = createComputedNode(fn as () => unknown, false);
-
   // Register with the current scope so a computed created inside a branch
   // that unmounts is detached from its sources (no dangling observer links).
   const dispose = (): void => {
@@ -882,7 +883,8 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
 // Internal effect runner
 // ---------------------------------------------------------------------------
 
-function _effect(fn: () => undefined | Dispose): Dispose {
+/** @internal Run a single auto-tracked effect for compiled templates. */
+export function watchEffectInternal(fn: () => undefined | Dispose): Dispose {
   const node = createComputedNode(fn as () => unknown, true);
 
   // Effects run their initial body eagerly (synchronous) — the templates
@@ -978,7 +980,7 @@ export function watch(
   cb?: (value: any, oldValue: any) => undefined | Dispose,
 ): Dispose {
   if (!cb) {
-    return _effect(sourceOrFn as () => undefined | Dispose);
+    return watchEffectInternal(sourceOrFn as () => undefined | Dispose);
   }
 
   const isArray = Array.isArray(sourceOrFn);
@@ -993,7 +995,7 @@ export function watch(
   // Do not read source getters here as well: that evaluates user code twice.
   let first = true;
 
-  return _effect(() => {
+  return watchEffectInternal(() => {
     // A callback may retain tuple arguments even if it throws. Recycle only
     // the single-source buffers; each tuple run owns its own snapshot array.
     if (isArray) newValues = [];

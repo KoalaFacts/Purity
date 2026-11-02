@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/jit.ts';
-import { inflateDeferredEach, match, type DeferredEach } from '../src/control.ts';
+import { defaultEachHydrationAdapter, match } from '../src/control.ts';
+import { inflateDeferredEach, type CapturedDeferredEach } from '../src/control/hydrate.ts';
 import { popContext, pushContext, type Scope } from '@purityjs/signals';
 import { disposeScope, state } from '@purityjs/signals';
 
@@ -26,13 +27,43 @@ function withOwner(run: (owner: Scope) => void): Scope {
 }
 
 describe('deferred each row hydration (SV2-015)', () => {
+  it('inserts each hydrated row before creating the next row', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<!--e--><!--/e-->';
+    const close = document.createComment('slot-end');
+    host.appendChild(close);
+    const observed: number[] = [];
+    const deferred: CapturedDeferredEach<number> = {
+      __purity_deferred_each__: true,
+      adapter: defaultEachHydrationAdapter,
+      listAccessor: () => [1, 2, 3],
+      keyFn: (item) => item,
+      mapFn: (item) => {
+        observed.push(host.querySelectorAll('i').length);
+        const row = document.createElement('i');
+        row.textContent = String(item());
+        return row;
+      },
+    };
+    const owner = withOwner(() =>
+      inflateDeferredEach(deferred, Array.from(host.childNodes).slice(0, -1), close),
+    );
+    try {
+      expect(observed).toEqual([0, 1, 2]);
+      expect(host.textContent).toBe('123');
+    } finally {
+      disposeScope(owner);
+    }
+  });
+
   for (const kind of ['fragment', 'node', 'text', 'empty'] as const) {
     it(`replaces a stale SSR row using ${kind} content and retains keyed identity`, async () => {
       const { host, close, nodes } = ssrHost();
       const items = state([{ id: 1 }]);
       let clicks = 0;
-      const deferred: DeferredEach<{ id: number }> = {
+      const deferred: CapturedDeferredEach<{ id: number }> = {
         __purity_deferred_each__: true,
+        adapter: defaultEachHydrationAdapter,
         listAccessor: () => items(),
         keyFn: (item) => item.id,
         mapFn: (item) => {
@@ -74,8 +105,9 @@ describe('deferred each row hydration (SV2-015)', () => {
   it('creates a fresh deferred template when no SSR key matches and keeps it reactive', async () => {
     const { host, close, nodes } = ssrHost();
     const label = state('initial');
-    const deferred: DeferredEach<{ id: number }> = {
+    const deferred: CapturedDeferredEach<{ id: number }> = {
       __purity_deferred_each__: true,
+      adapter: defaultEachHydrationAdapter,
       listAccessor: () => [{ id: 2 }],
       keyFn: (item) => item.id,
       mapFn: () => html`<strong>${() => label()}</strong>`,
@@ -87,6 +119,42 @@ describe('deferred each row hydration (SV2-015)', () => {
       label('updated');
       await tick();
       expect(host.querySelector('strong')?.textContent).toBe('updated');
+    } finally {
+      disposeScope(owner);
+    }
+  });
+
+  it('reorders adopted rows after root template slots replace their nodes', async () => {
+    const host = document.createElement('div');
+    host.innerHTML =
+      '<!--e--><!--er:a--><!--[-->a<!--]--><!--/er--><!--er:b--><!--[-->b<!--]--><!--/er--><!--/e-->';
+    const close = document.createComment('slot-end');
+    host.appendChild(close);
+    const nodes = Array.from(host.childNodes).slice(0, -1);
+    const items = state(['a', 'b']);
+    const showNode = state(false);
+    const created = new Map<string, HTMLElement>();
+    const deferred: CapturedDeferredEach<string> = {
+      __purity_deferred_each__: true,
+      adapter: defaultEachHydrationAdapter,
+      listAccessor: () => items(),
+      keyFn: (item) => item,
+      mapFn: (item) => {
+        const node = document.createElement('span');
+        node.textContent = item();
+        created.set(item(), node);
+        return html`${() => (showNode() ? node : item())}`;
+      },
+    };
+    const owner = withOwner(() => inflateDeferredEach(deferred, nodes, close));
+    try {
+      expect(host.textContent).toBe('ab');
+      showNode(true);
+      await tick();
+      items(['b', 'a']);
+      await tick();
+      expect(host.textContent).toBe('ba');
+      expect([...host.querySelectorAll('span')]).toEqual([created.get('b'), created.get('a')]);
     } finally {
       disposeScope(owner);
     }

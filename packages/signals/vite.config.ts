@@ -14,5 +14,6 @@ export default defineConfig({
       fileName: (format, entryName) => (format === 'es' ? `${entryName}.js` : `${entryName}.cjs`),
     },
     sourcemap: true,
+    rollupOptions: { output: { sourcemapExcludeSources: true } },
   },
 });

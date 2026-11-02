@@ -38,7 +38,10 @@ export default defineConfig({
       formats: ['es', 'cjs'],
       fileName: (format, entryName) => `${entryName}.${format === 'es' ? 'js' : 'cjs'}`,
     },
-    rolldownOptions: { external: [/^@purityjs\//], output: { exports: 'named' } },
+    rolldownOptions: {
+      external: [/^@purityjs\//],
+      output: { exports: 'named', sourcemapExcludeSources: true },
+    },
     sourcemap: true,
   },
 });

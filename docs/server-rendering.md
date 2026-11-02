@@ -117,7 +117,7 @@ handler's Web `Response` with its status, headers, cookies, and body.
 
 ```ts
 // src/actions/save.server.ts
-import { serverAction } from '@purityjs/core/actions';
+import { serverAction } from '@purityjs/platform/actions';
 
 export const save = serverAction('/actions/save', async (request) => {
   const form = await request.formData();
@@ -136,7 +136,7 @@ client entry already calls `enhanceForms(root)`. Existing forms work without
 JavaScript and keep their native submission path.
 
 ```ts
-import { enhanceForms } from '@purityjs/core/actions';
+import { enhanceForms } from '@purityjs/platform/actions';
 
 const forms = enhanceForms(document.getElementById('app')!);
 // When installing outside a component scope, dispose during application teardown.

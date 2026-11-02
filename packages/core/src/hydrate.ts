@@ -46,6 +46,7 @@ export function hydrate(container: Element, component: ComponentFn): MountResult
   };
 
   const ctx = new ComponentContext();
+  ctx._rootContainer = container;
   attachToOwner(ctx, unmountContext);
 
   pushContext(ctx);

@@ -16,6 +16,7 @@ export default defineConfig({
         'runtime/index': 'src/compiler/runtime.ts',
         'list-runtime/index': 'src/control/list-runtime.ts',
         'forms/index': 'src/forms.ts',
+        'forms/lifecycle/index': 'src/forms/lifecycle.ts',
         'csr-runtime/index': 'src/runtime/csr-runtime.ts',
         'ssr-bridge/index': 'src/ssr-bridge.ts',
         'csr/index': 'src/csr.ts',
@@ -27,6 +28,9 @@ export default defineConfig({
       fileName: (format, entryName) => (format === 'es' ? `${entryName}.js` : `${entryName}.cjs`),
     },
     sourcemap: true,
-    rollupOptions: { external: [/^@purityjs\//] },
+    rollupOptions: {
+      external: [/^@purityjs\//],
+      output: { sourcemapExcludeSources: true },
+    },
   },
 });

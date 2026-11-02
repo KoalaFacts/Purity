@@ -1,30 +1,29 @@
-import type { DeferredTemplate } from './runtime/hydrate-runtime.ts';
+import {
+  disposeScope,
+  getCurrentComponent,
+  getCurrentContext,
+  popContext,
+  pushContext,
+  type Scope,
+  type ComponentContext,
+  state as createState,
+  type StateAccessor,
+  watchEffectInternal,
+} from '@purityjs/signals';
+import { warnDuplicateKey } from './control/keys.ts';
 import {
   captureHydratingEach,
   captureHydratingMatch,
-  controlHydrationRuntime,
   ENABLE_SSR,
   isHydratingPassive,
+  setSlotNodesReplaced,
   type SSRHtml,
 } from './hooks.ts';
 import { ssrControls } from './control/dispatch.ts';
-import { warnDuplicateKey } from './control/keys.ts';
-import { getCurrentContext, popContext, pushContext, type Scope } from '@purityjs/signals';
-import { disposeScope, state, watch, type StateAccessor } from '@purityjs/signals';
 import { getSSRRenderContext } from './ssr/state.ts';
 
 // ---------------------------------------------------------------------------
 // State-preserving DOM moves (ADR 0037)
-//
-// `Element.moveBefore` keeps focus, CSS transitions/animations, iframe load
-// state, popover/dialog open state, and pointer capture across reorder.
-// `insertBefore` does not. Each-list reorder is the dominant beneficiary —
-// hovering a row, focusing inside it, or starting a CSS transition all
-// survive a keyed reorder when this path is taken.
-//
-// Support (May 2026): Chromium 133+ / Firefox 144+. Safari has not shipped.
-// Falls back to insertBefore transparently — correctness unchanged on any
-// engine.
 // ---------------------------------------------------------------------------
 
 const hasMoveBefore =
@@ -34,18 +33,12 @@ const hasMoveBefore =
 type MovableParent = Node & { moveBefore: (node: Node, ref: Node | null) => void };
 
 function moveOrInsert(parent: Node, node: Node, ref: Node | null): void {
-  // moveBefore requires both `node` and `ref` to already be children of
-  // `parent`. For fresh rows (added to the list this tick) the node isn't
-  // attached yet — there's nothing to preserve, so the insertBefore branch
-  // is correct. For existing rows already in `parent`, moveBefore preserves
-  // their state on supporting engines.
   if (hasMoveBefore && node.parentNode === parent) {
     try {
       (parent as MovableParent).moveBefore(node, ref);
       return;
     } catch {
-      /* fall through — structural mismatch (e.g. ref isn't a child of parent
-         at this exact instant). insertBefore is always safe. */
+      /* fall through */
     }
   }
   parent.insertBefore(node, ref);
@@ -53,26 +46,69 @@ function moveOrInsert(parent: Node, node: Node, ref: Node | null): void {
 
 // ---------------------------------------------------------------------------
 // match(sourceFn, cases, fallback?) — reactive pattern matching
-// The active case renders under its own scope. Switching cases disposes that
-// scope (its bindings and watchers stop) and renders the new case fresh.
 // ---------------------------------------------------------------------------
 
-// Branch views can return arbitrary user code: a Node / DocumentFragment for
-// the client DOM path, a string for SSR, or `undefined` / `null` for "render
-// nothing". `insertMatchView` already calls `String(content)` for non-Node
-// values, so the runtime contract is permissive — widen the type to match.
-type MatchView = () => unknown;
-type MatchCases<T extends string | number | boolean> = Partial<Record<`${T}`, MatchView>>;
+export type MatchView = () => unknown;
+export type MatchCases<T extends string | number | boolean> = Partial<Record<`${T}`, MatchView>>;
 
-interface MatchState {
-  currentNodes: Node[];
+interface NodeOwner {
+  nodes: Node[];
+}
+
+export interface MatchState extends NodeOwner {
   prevKey: string | null;
-  /** Scope owning the active case's reactive work; disposed on case switch. */
   branch: Scope | null;
 }
 
-// Run a case view under a fresh branch scope so its bindings register there,
-// not on match()'s own watch (which re-runs on every selector change).
+export interface DeferredMatch<T extends string | number | boolean = string | number | boolean> {
+  __purity_deferred_match__: true;
+  sourceFn: () => T;
+  cases: MatchCases<T>;
+  fallback?: MatchView;
+}
+
+const nodeOwners = new WeakMap<Node, NodeOwner | Set<NodeOwner>>();
+
+function trackOwnedNodes(state: NodeOwner, nodes: Node[]): void {
+  for (const node of nodes) {
+    const owners = nodeOwners.get(node);
+    if (!owners) nodeOwners.set(node, state);
+    else if (owners instanceof Set) owners.add(state);
+    else if (owners !== state) nodeOwners.set(node, new Set([owners, state]));
+  }
+}
+
+function untrackOwnedNodes(state: NodeOwner, nodes: Node[]): void {
+  for (const node of nodes) {
+    const owners = nodeOwners.get(node);
+    if (owners === state) nodeOwners.delete(node);
+    else if (owners instanceof Set) {
+      owners.delete(state);
+      if (owners.size === 1) nodeOwners.set(node, owners.values().next().value!);
+      else if (owners.size === 0) nodeOwners.delete(node);
+    }
+  }
+}
+
+/** @internal */
+export function replaceOwnedNodes(oldNodes: Node[], newNodes: Node[]): void {
+  const old = new Set(oldNodes);
+  const affected = new Set<NodeOwner>();
+  for (const node of oldNodes) {
+    const owners = nodeOwners.get(node);
+    if (owners instanceof Set) for (const owner of owners) affected.add(owner);
+    else if (owners) affected.add(owners);
+  }
+  for (const owner of affected) {
+    const index = owner.nodes.findIndex((node) => old.has(node));
+    if (index === -1) continue;
+    untrackOwnedNodes(owner, oldNodes);
+    const remaining = owner.nodes.filter((node) => !old.has(node));
+    owner.nodes = [...remaining.slice(0, index), ...newNodes, ...remaining.slice(index)];
+    trackOwnedNodes(owner, newNodes);
+  }
+}
+
 function renderBranch(matchState: MatchState, render: () => unknown): unknown {
   const scope: Scope = { disposers: null };
   matchState.branch = scope;
@@ -80,8 +116,6 @@ function renderBranch(matchState: MatchState, render: () => unknown): unknown {
   try {
     return render();
   } catch (e) {
-    // Nothing will render this case, so release what it created before throwing.
-    // Invalidate the failed selector along with its branch owner.
     matchState.prevKey = null;
     disposeBranch(matchState);
     throw e;
@@ -94,11 +128,10 @@ function disposeBranch(matchState: MatchState): void {
   const scope = matchState.branch;
   if (scope === null) return;
   matchState.branch = null;
+  untrackOwnedNodes(matchState, matchState.nodes);
   disposeScope(scope);
 }
 
-// Insert the result of viewFn() before endMarker and update matchState. Shared
-// between match()'s initial render and the reactive update path.
 function insertMatchView(
   matchState: MatchState,
   parent: Node,
@@ -106,17 +139,18 @@ function insertMatchView(
   content: unknown,
 ): void {
   if (content == null) {
-    // `undefined` / `null` view return → render nothing.
-    matchState.currentNodes = [];
+    replaceOwnedNodes(matchState.nodes, []);
+    matchState.nodes = [];
     return;
   }
   const nodes = extractNodes(content as Node | DocumentFragment | string);
-  matchState.currentNodes = nodes;
+  replaceOwnedNodes(matchState.nodes, nodes);
+  matchState.nodes = nodes;
+  trackOwnedNodes(matchState, nodes);
+  setSlotNodesReplaced(replaceOwnedNodes);
   parent.insertBefore(content instanceof Node ? content : nodes[0], endMarker);
 }
 
-// Detach and dispose the current case, then render the selector's current key.
-// Reused by client + hydration paths.
 function reconcileMatch<T extends string | number | boolean>(
   matchState: MatchState,
   parent: Node,
@@ -125,18 +159,16 @@ function reconcileMatch<T extends string | number | boolean>(
   cases: MatchCases<T>,
   fallback?: MatchView,
 ): void {
-  // Loop until the selector settles: an outgoing case's cleanup or an incoming
-  // case's render may write it, and that write can't re-run this watch (it is
-  // mid-run, and an effect's self-queued re-run is skipped).
   for (let runs = 0; ;) {
-    detachNodes(matchState.currentNodes);
+    detachNodes(matchState.nodes);
     disposeBranch(matchState);
     const key = String(sourceFn());
     matchState.prevKey = key;
 
     const viewFn = cases[key as `${T}`] ?? fallback;
     if (!viewFn) {
-      matchState.currentNodes = [];
+      replaceOwnedNodes(matchState.nodes, []);
+      matchState.nodes = [];
       return;
     }
     insertMatchView(matchState, parent, endMarker, renderBranch(matchState, viewFn));
@@ -155,11 +187,11 @@ function installMatchWatch<T extends string | number | boolean>(
   cases: MatchCases<T>,
   fallback?: MatchView,
 ): () => void {
-  return watch(() => {
+  return watchEffectInternal(() => {
     const key = String(sourceFn()) as `${T}`;
     if (key === matchState.prevKey) return;
     const parent = endMarker.parentNode;
-    /* v8 ignore next -- defensive; if endMarker is detached, watch is disposed */
+    /* v8 ignore next */
     if (!parent) return;
     reconcileMatch(matchState, parent, endMarker, sourceFn, cases, fallback);
   });
@@ -169,52 +201,69 @@ function registerMatchAutoDispose(
   ownerCtx: Scope | null,
   dispose: () => void,
   matchState: MatchState,
+  endMarker: Node,
 ): void {
   if (!ownerCtx) return;
+  const component = getCurrentComponent();
   (ownerCtx.disposers ??= []).push(() => {
     dispose();
+    if (removeOwnedNodesOnDispose(component, endMarker)) {
+      detachNodes(matchState.nodes);
+      endMarker.parentNode?.removeChild(endMarker);
+    }
     disposeBranch(matchState);
-    matchState.currentNodes = [];
+    matchState.nodes = [];
   });
 }
 
+export interface MatchHydrationAdapter<T extends string | number | boolean = any> {
+  renderBranch: typeof renderBranch;
+  insertMatchView: typeof insertMatchView;
+  finish(
+    ownerCtx: Scope | null,
+    matchState: MatchState,
+    endMarker: Node,
+    sourceFn: () => T,
+    cases: MatchCases<T>,
+    fallback?: MatchView,
+  ): void;
+}
+
+const matchHydrationAdapter: MatchHydrationAdapter = {
+  renderBranch,
+  insertMatchView,
+  finish(ownerCtx, matchState, endMarker, sourceFn, cases, fallback) {
+    const dispose = installMatchWatch(matchState, endMarker, sourceFn, cases, fallback);
+    registerMatchAutoDispose(ownerCtx, dispose, matchState, endMarker);
+  },
+};
+
 /**
  * Reactive pattern matching. Renders different content based on a signal value.
- * Only the active case is live: switching cases disposes the previous case's
- * bindings and watchers and renders the new case fresh.
- *
- * @example
- * ```ts
- * match(() => status(), {
- *   loading: () => html`<p>Loading...</p>`,
- *   error:   () => html`<p>Error!</p>`,
- *   success: () => html`<p>Done</p>`,
- * })
- * ```
  */
 export function match<T extends string | number | boolean>(
   sourceFn: () => T,
   cases: MatchCases<T>,
   fallback?: MatchView,
 ): DocumentFragment | DeferredMatch<T> | SSRHtml {
-  // Hydration mode: defer DOM creation. The hydrate factory sees the handle,
-  // routes through inflateDeferredMatch, which adopts the SSR-rendered case in
-  // place. Closes the when()/match() half of the ADR 0005 control-flow lossy
-  // gap.
-  if (isHydratingPassive())
-    return captureHydratingMatch!(sourceFn, cases, fallback) as DeferredMatch<T>;
+  if (isHydratingPassive() && captureHydratingMatch) {
+    return captureHydratingMatch(
+      sourceFn,
+      cases,
+      fallback,
+      matchHydrationAdapter as unknown as never,
+    ) as DeferredMatch<T>;
+  }
 
-  // SSR-context dispatch (ADR 0023). Inside a `renderToString` /
-  // `renderToStream` / `renderStatic` pass, return SSRHtml string output
-  // instead of touching `document`. Lets `match()` be called from
-  // manifest-driven composers without needing the explicit `matchSSR`.
-  if (ENABLE_SSR && getSSRRenderContext()) return ssrControls.match(sourceFn, cases, fallback);
+  if (ENABLE_SSR && getSSRRenderContext()) {
+    return ssrControls.match(sourceFn, cases, fallback);
+  }
 
   const endMarker = document.createComment('m');
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
-  const matchState: MatchState = { currentNodes: [], prevKey: null, branch: null };
+  const matchState: MatchState = { nodes: [], prevKey: null, branch: null };
 
   const initKey = String(sourceFn()) as `${T}`;
   const initView = cases[initKey] ?? fallback;
@@ -224,63 +273,43 @@ export function match<T extends string | number | boolean>(
   }
 
   const dispose = installMatchWatch(matchState, endMarker, sourceFn, cases, fallback);
-  registerMatchAutoDispose(getCurrentContext(), dispose, matchState);
+  registerMatchAutoDispose(getCurrentContext(), dispose, matchState, endMarker);
   return fragment;
 }
 
-// ---------------------------------------------------------------------------
-// when — boolean conditional, delegates to match
-// ---------------------------------------------------------------------------
-
 /**
  * Conditional rendering. Shorthand for boolean `match()`.
- * The hidden branch is disposed; showing it again renders it fresh.
- *
- * @example
- * ```ts
- * when(() => loggedIn(),
- *   () => html`<p>Welcome back!</p>`,
- *   () => html`<p>Please login</p>`
- * )
- * ```
  */
 export function when(
   conditionFn: () => boolean,
   thenFn: MatchView,
   elseFn?: MatchView,
 ): DocumentFragment | SSRHtml {
-  // SSR-context fast path (ADR 0023). Bypasses match()'s reactive plumbing
-  // entirely on the server — whenSSR returns the picked branch as a tagged
-  // string. `match()` itself ALSO dispatches in SSR (so the recursion would
-  // be safe), but going direct is clearer + slightly faster.
-  if (ENABLE_SSR && getSSRRenderContext()) return ssrControls.when(conditionFn, thenFn, elseFn);
+  if (ENABLE_SSR && getSSRRenderContext()) {
+    return ssrControls.when(conditionFn, thenFn, elseFn);
+  }
   return match(conditionFn, { true: thenFn, false: elseFn }) as DocumentFragment;
 }
 
 // ---------------------------------------------------------------------------
-// LIS (Longest Increasing Subsequence) — for minimal DOM moves in each()
-// O(n log n) algorithm used by Solid, Inferno, ivi
+// LIS (Longest Increasing Subsequence) — O(n log n) minimal DOM moves
 // ---------------------------------------------------------------------------
 
 function lis(arr: number[]): number[] {
   const len = arr.length;
-  if (len === 0) return [];
-
-  // tails[i] = smallest tail element for increasing subsequence of length i+1
-  const tails: number[] = [0];
-  // predecessor[i] = index of previous element in LIS ending at i
+  const tails: number[] = [];
   const predecessor: number[] = new Array(len);
 
-  for (let i = 1; i < len; i++) {
+  for (let i = 0; i < len; i++) {
     const val = arr[i];
+    if (val === -1) continue;
 
-    if (val > arr[tails[tails.length - 1]]) {
+    if (tails.length === 0 || val > arr[tails[tails.length - 1]]) {
       predecessor[i] = tails[tails.length - 1];
       tails.push(i);
       continue;
     }
 
-    // Binary search for the leftmost tail >= val
     let lo = 0;
     let hi = tails.length - 1;
     while (lo < hi) {
@@ -295,7 +324,6 @@ function lis(arr: number[]): number[] {
     }
   }
 
-  // Reconstruct LIS
   const result: number[] = new Array(tails.length);
   let k = tails[tails.length - 1];
   for (let i = result.length - 1; i >= 0; i--) {
@@ -307,83 +335,63 @@ function lis(arr: number[]): number[] {
 }
 
 // ---------------------------------------------------------------------------
-// each(listAccessor, mapFn, keyFn?) — list rendering
-//
-// Two modes:
-// 1. Keyed (keyFn provided): LIS-based reorder + in-place signal update
-//    Each entry owns a state signal. On update, signal value changes →
-//    existing DOM mutates in place. Zero DOM creation for existing keys.
-//
-// 2. Unkeyed (no keyFn): item identity as key, same algorithm
+// each(listAccessor, mapFn, keyFn?) — keyed/unkeyed list rendering
+// (Virtual windowing lives in `@purityjs/core/virtual` as `virtualEach`.)
 // ---------------------------------------------------------------------------
 
-export interface EachEntry<T = unknown> {
+/** @internal */
+export interface EachEntry<T = unknown> extends Scope {
   nodes: Node[];
-  // Per-item state signal. mapFn receives `() => data()` as the item accessor;
-  // on key reuse with new data, we set this signal and any reactive bindings
-  // inside the template re-fire — zero DOM creation.
   data: StateAccessor<T>;
-  // Per-entry scope. Reactive bindings created inside mapFn auto-register
-  // their dispose here (via watch() -> getCurrentContext()). Walked when the
-  // entry is removed to release the watcher references. We use a lean
-  // 1-field { disposers } shape rather than a full ComponentContext — row
-  // entries don't participate in mount/destroy/error lifecycle, and the
-  // per-row alloc cost adds up: 10k rows × ~80 bytes class instance vs
-  // ~24 bytes plain object trims about a megabyte of heap on Create 10k.
-  ctx: Scope;
 }
 
-// Run mapFn under a fresh per-entry scope so reactive bindings register
-// their dispose with the entry, not the outer scope. The scope object is
-// intentionally minimal — `disposers` is the only slot anything reads.
-function runEntryMapFn<T>(
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
-  data: StateAccessor<T>,
-  index: number,
-): { entry: EachEntry<T>; content: Node | DocumentFragment | string } {
-  const ctx: Scope = { disposers: null };
-  pushContext(ctx);
-  let content: Node | DocumentFragment | string;
-  try {
-    try {
-      content = mapFn(data, index);
-    } finally {
-      popContext();
-    }
-  } catch (error) {
-    // Cleanup-created work belongs to the enclosing owner, not this lost row.
-    disposeScope(ctx);
-    throw error;
-  }
-  return { entry: { nodes: [], data, ctx }, content };
+/** @internal */
+export function trackEntry<T>(entry: EachEntry<T>): void {
+  trackOwnedNodes(entry, entry.nodes);
+  setSlotNodesReplaced(replaceOwnedNodes);
 }
 
-function disposeEntry<T>(entry: EachEntry<T>): void {
-  disposeScope(entry.ctx);
+/** @internal */
+export function disposeEntry<T>(entry: EachEntry<T>): void {
+  untrackOwnedNodes(entry, entry.nodes);
+  disposeScope(entry);
 }
 
-/** A keyed row: the nodes it renders between its siblings. */
-interface KeyedEntry {
+/** @internal */
+export interface KeyedEntry {
   nodes: Node[];
 }
 
-// What reconcileEach needs from a row kind: each() rows own a scope and a data
-// signal; list() rows are one element with its bound event handlers.
-interface RowOps<T, E extends KeyedEntry> {
+/** @internal */
+export interface RowOps<T, E extends KeyedEntry> {
   create(item: T, index: number): E;
   update(entry: E, item: T, index: number): void;
   release(entry: E): void;
-  /** API name in duplicate-key warnings. */
   api?: string;
 }
 
+/** @internal */
 export function eachRowOps<T>(
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
 ): RowOps<T, EachEntry<T>> {
   return {
     create(item, index) {
-      const { entry, content } = runEntryMapFn(mapFn, state(item), index);
+      const data = createState(item);
+      const entry: EachEntry<T> = { nodes: [], data, disposers: null };
+      pushContext(entry);
+      let content: Node | DocumentFragment | string;
+      try {
+        try {
+          content = mapFn(data, index);
+        } finally {
+          popContext();
+        }
+      } catch (error) {
+        disposeScope(entry);
+        throw error;
+      }
       entry.nodes = extractNodes(content);
+      trackEntry(entry);
       return entry;
     },
     update(entry, item) {
@@ -391,37 +399,6 @@ export function eachRowOps<T>(
     },
     release: disposeEntry,
   };
-}
-
-/**
- * Rows kept after removing later duplicate keys (first occurrence wins). Each
- * retained row keeps the index and key it had in the source array, so keyFn
- * and mapFn see the same indices as a non-virtual each().
- */
-interface FirstOccurrenceRows<T> {
-  items: T[];
-  indices: number[];
-  keys: unknown[];
-}
-
-export function firstOccurrenceRows<T>(
-  items: T[],
-  getKey: (item: T, index: number) => unknown,
-): FirstOccurrenceRows<T> {
-  const seen = new Set<unknown>();
-  const rows: FirstOccurrenceRows<T> = { items: [], indices: [], keys: [] };
-  for (let i = 0; i < items.length; i++) {
-    const key = getKey(items[i], i);
-    if (seen.has(key)) {
-      warnDuplicateKey(key, i);
-      continue;
-    }
-    seen.add(key);
-    rows.items.push(items[i]);
-    rows.indices.push(i);
-    rows.keys.push(key);
-  }
-  return rows;
 }
 
 function canReplaceOwnedRange(
@@ -442,7 +419,6 @@ function canReplaceOwnedRange(
   );
 }
 
-// Detach all managed nodes from the parent and release their reactive scopes.
 function bulkClear<E extends KeyedEntry>(
   parent: Node,
   prevKeys: unknown[],
@@ -454,15 +430,10 @@ function bulkClear<E extends KeyedEntry>(
   if (prevLen === 0) return;
 
   const canReplaceChildren = canReplaceOwnedRange(parent, prevKeys, keyToEntry, endMarker);
-
   if (canReplaceChildren) {
     (parent as ParentNode).replaceChildren(endMarker);
   }
 
-  // Detach + dispose each entry. We walk per-entry nodes rather than calling
-  // Range.deleteContents because jsdom's Range is O(N^2) on long sibling
-  // lists; the per-node loop is O(N) and roughly the same speed in real
-  // browsers (the parent is the same for every removeChild).
   for (let i = 0; i < prevLen; i++) {
     const entry = keyToEntry.get(prevKeys[i]);
     if (!entry) continue;
@@ -471,10 +442,9 @@ function bulkClear<E extends KeyedEntry>(
   }
 }
 
-// Extract nodes from mapFn result — optimized for single-node case
-function extractNodes(content: Node | DocumentFragment | string): Node[] {
+/** @internal */
+export function extractNodes(content: Node | DocumentFragment | string): Node[] {
   if (content instanceof DocumentFragment) {
-    // Fast path: single child (common for html`` templates)
     const fc = content.firstChild;
     if (fc && !fc.nextSibling) return [fc];
     return Array.from(content.childNodes);
@@ -483,28 +453,27 @@ function extractNodes(content: Node | DocumentFragment | string): Node[] {
   return [document.createTextNode(String(content ?? ''))];
 }
 
-// Shared cold-path DOM removal for SSR hydration and mismatch cleanup.
-function detachNodes(nodes: Node[]): void {
+/** @internal */
+export function detachNodes(nodes: Node[]): void {
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
     node.parentNode?.removeChild(node);
   }
 }
 
-// Mutable state shared between each()'s watch and inflateDeferredEach's hydration
-// pre-population so a hydrated each() can fall straight through into the same
-// reconciliation logic on subsequent reactive updates.
+/** @internal */
 export interface EachState<T, E extends KeyedEntry = EachEntry<T>> {
   keyToEntry: Map<unknown, E>;
-  prevKeys: unknown[];
 }
 
-/** Optional behavior for large DOM-backed lists. */
-export interface EachOptions {
-  /** Keep only rows near the scroll viewport in the DOM. Row heights are measured automatically. */
-  virtual?: boolean;
+/** @internal */
+function ownedEntryNodes<T, E extends KeyedEntry>(state: EachState<T, E>): Node[] {
+  const nodes: Node[] = [];
+  for (const entry of state.keyToEntry.values()) for (const node of entry.nodes) nodes.push(node);
+  return nodes;
 }
 
+/** @internal */
 export function reconcileEach<T, E extends KeyedEntry>(
   eachState: EachState<T, E>,
   items: T[],
@@ -513,11 +482,39 @@ export function reconcileEach<T, E extends KeyedEntry>(
   getKey: (item: T, index: number) => unknown,
   ops: RowOps<T, E>,
 ): void {
+  const owners = nodeOwners.get(endMarker);
+  const containers = owners instanceof Set ? [...owners] : owners ? [owners] : null;
+  const oldNodes = owners ? ownedEntryNodes(eachState) : null;
+  reconcileEachImpl(eachState, items, parent, endMarker, getKey, ops);
+  if (!containers || !oldNodes) return;
+  const old = new Set(oldNodes);
+  const next = ownedEntryNodes(eachState);
+  for (const owner of containers) {
+    const currentOwners = nodeOwners.get(endMarker);
+    if (currentOwners !== owner && !(currentOwners instanceof Set && currentOwners.has(owner)))
+      continue;
+    const remaining = owner.nodes.filter((node) => !old.has(node));
+    const marker = remaining.indexOf(endMarker);
+    if (marker === -1) continue;
+    untrackOwnedNodes(owner, oldNodes);
+    owner.nodes = [...remaining.slice(0, marker), ...next, ...remaining.slice(marker)];
+    trackOwnedNodes(owner, next);
+  }
+}
+
+function reconcileEachImpl<T, E extends KeyedEntry>(
+  eachState: EachState<T, E>,
+  items: T[],
+  parent: Node,
+  endMarker: Node,
+  getKey: (item: T, index: number) => unknown,
+  ops: RowOps<T, E>,
+): void {
   const len = items.length;
-  const { keyToEntry, prevKeys } = eachState;
+  const { keyToEntry } = eachState;
+  const prevKeys = Array.from(keyToEntry.keys());
   const prevLen = prevKeys.length;
 
-  // Fast path: same keys in same order — just update data signals
   if (len === prevLen) {
     let same = true;
     for (let i = 0; i < len; i++) {
@@ -537,46 +534,12 @@ export function reconcileEach<T, E extends KeyedEntry>(
       bulkClear(parent, prevKeys, keyToEntry, endMarker, ops.release);
       eachState.keyToEntry = new Map();
     }
-    eachState.prevKeys = [];
     return;
   }
 
-  if (prevLen === 0) {
-    const newKeys2: unknown[] = [];
-    const frag = document.createDocumentFragment();
-    try {
-      for (let i = 0; i < len; i++) {
-        const item = items[i];
-        const key = getKey(item, i);
-        // Duplicate key: keep the first row only. Rendering a second entry
-        // would orphan the first one's DOM nodes and scope in keyToEntry.
-        if (keyToEntry.has(key)) {
-          warnDuplicateKey(key, i, ops.api);
-          continue;
-        }
-        newKeys2.push(key);
-        const entry = ops.create(item, i);
-        for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
-        keyToEntry.set(key, entry);
-      }
-    } catch (error) {
-      // No row has been committed to the parent yet. Release earlier rows
-      // as well as the throwing row's own rollback in runEntryMapFn.
-      for (const entry of keyToEntry.values()) ops.release(entry);
-      keyToEntry.clear();
-      throw error;
-    }
-    parent.insertBefore(frag, endMarker);
-    eachState.prevKeys = newKeys2;
-    return;
-  }
-
-  // newKeys holds first occurrences only, so newLen (not len) is the row
-  // count used by every placement loop below.
   const newKeys: unknown[] = [];
   const newEntries = new Map<unknown, E>();
-  // Unique lists use their position directly. Only duplicate keys need an
-  // index map to preserve the first occurrence's source index after planning.
+  const initialFragment = prevLen === 0 ? document.createDocumentFragment() : null;
   let sourceIndices: number[] | null = null;
   let reuseCount = 0;
 
@@ -585,11 +548,6 @@ export function reconcileEach<T, E extends KeyedEntry>(
       const item = items[i];
       const key = getKey(item, i);
 
-      // Duplicate key: keys are documented as unique, so this only warns. The
-      // first occurrence owns the entry; later occurrences reuse it without
-      // creating or reusing a second one. That keeps reuseCount counting
-      // distinct keys and means no entry is created and then orphaned in
-      // newEntries (its nodes and scope would otherwise leak).
       if (newEntries.has(key)) {
         warnDuplicateKey(key, i, ops.api);
         if (sourceIndices === null) {
@@ -606,11 +564,13 @@ export function reconcileEach<T, E extends KeyedEntry>(
         newEntries.set(key, existing);
         reuseCount++;
       } else {
-        newEntries.set(key, ops.create(item, i));
+        const entry = ops.create(item, i);
+        if (initialFragment) {
+          for (let j = 0; j < entry.nodes.length; j++) initialFragment.appendChild(entry.nodes[j]);
+        }
+        newEntries.set(key, entry);
       }
     }
-    // Key evaluation and row creation must succeed before changing committed
-    // data or DOM. Keep this inside rollback so an update error releases new rows.
     if (reuseCount > 0) {
       for (let i = 0; i < newKeys.length; i++) {
         const existing = keyToEntry.get(newKeys[i]);
@@ -621,8 +581,6 @@ export function reconcileEach<T, E extends KeyedEntry>(
       }
     }
   } catch (error) {
-    // New rows are not committed yet. Release only their scopes; existing
-    // rows remain owned so a later source update can retry.
     for (const [key, entry] of newEntries) {
       if (!keyToEntry.has(key)) ops.release(entry);
     }
@@ -633,19 +591,18 @@ export function reconcileEach<T, E extends KeyedEntry>(
 
   if (reuseCount === 0) {
     bulkClear(parent, prevKeys, keyToEntry, endMarker, ops.release);
-    const frag = document.createDocumentFragment();
-    for (let i = 0; i < newLen; i++) {
-      const entry = newEntries.get(newKeys[i])!;
-      for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
+    const frag = initialFragment ?? document.createDocumentFragment();
+    if (!initialFragment) {
+      for (let i = 0; i < newLen; i++) {
+        const entry = newEntries.get(newKeys[i])!;
+        for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
+      }
     }
     parent.insertBefore(frag, endMarker);
     eachState.keyToEntry = newEntries;
-    eachState.prevKeys = newKeys;
     return;
   }
 
-  // reuseCount counts distinct reused keys, so it is below keyToEntry.size
-  // exactly when some previous key was dropped.
   if (reuseCount < keyToEntry.size) {
     for (let i = 0; i < prevLen; i++) {
       const key = prevKeys[i];
@@ -659,7 +616,6 @@ export function reconcileEach<T, E extends KeyedEntry>(
     }
   }
 
-  // Both fast placement paths have the same number of freshly created rows.
   const newCount = newLen - prevLen;
   let isAppend = newCount > 0;
   if (isAppend) {
@@ -682,8 +638,6 @@ export function reconcileEach<T, E extends KeyedEntry>(
   }
 
   if (isAppend || isPrepend) {
-    // Both paths move only newly created rows. Preserve the same fragment
-    // insertion (and every retained row's DOM identity) with one placement loop.
     const start = isAppend ? prevLen : 0;
     const end = start + newCount;
     const frag = document.createDocumentFragment();
@@ -697,637 +651,169 @@ export function reconcileEach<T, E extends KeyedEntry>(
     const oldKeyIndex = new Map<unknown, number>();
     for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
 
-    const sources: number[] = [];
-    const newIndexToSource: number[] = new Array(newLen).fill(-1);
-
-    for (let i = 0; i < newLen; i++) {
-      const oldIdx = oldKeyIndex.get(newKeys[i]);
-      if (oldIdx !== undefined) {
-        sources.push(oldIdx);
-        newIndexToSource[i] = sources.length - 1;
-      }
-    }
+    const sources = newKeys.map((key) => oldKeyIndex.get(key) ?? -1);
 
     const lisIndices = new Set(lis(sources));
 
-    if (hasMoveBefore) {
-      // moveBefore path: per-row moves preserve focus, CSS
-      // transitions/animations, iframe load, popover/dialog state,
-      // and pointer capture across the reorder. No fragment batching —
-      // moveBefore is O(1) per node, and pulling rows into a fragment
-      // first would detach them and lose the preserved state.
-      let nextSibling: Node = endMarker;
-      for (let i = newLen - 1; i >= 0; i--) {
-        const entry = newEntries.get(newKeys[i])!;
-        const sourceIdx = newIndexToSource[i];
-        const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
-        if (needsMove) {
-          // Every root uses the following-row anchor. Move roots forward
-          // so <b>,<i> does not become <i>,<b> within a retained row.
+    let nextSibling: Node = endMarker;
+    let batch: Node[] | null = null;
+    let batchTarget: Node = endMarker;
+
+    for (let i = newLen - 1; i >= 0; i--) {
+      const entry = newEntries.get(newKeys[i])!;
+      const needsMove = !lisIndices.has(i);
+      if (needsMove) {
+        if (hasMoveBefore) {
           for (let j = 0; j < entry.nodes.length; j++) {
             moveOrInsert(parent, entry.nodes[j], nextSibling);
           }
-        }
-        nextSibling = entry.nodes[0] || nextSibling;
-      }
-    } else {
-      // Fragment-batching path for engines without moveBefore (Safari
-      // as of May 2026). Accumulates consecutive moves into a
-      // DocumentFragment and inserts them in a single DOM op. Loses
-      // focus/animation state on moved rows — acceptable fallback.
-      let nextSibling: Node = endMarker;
-      let batch: Node[] | null = null;
-      let batchTarget: Node = endMarker;
-
-      for (let i = newLen - 1; i >= 0; i--) {
-        const entry = newEntries.get(newKeys[i])!;
-        const sourceIdx = newIndexToSource[i];
-        const needsMove = sourceIdx === -1 || !lisIndices.has(sourceIdx);
-
-        if (needsMove) {
+        } else {
           if (!batch) {
             batch = [];
             batchTarget = nextSibling;
           }
-          // Reversed here, reversed again on insert: rows and their nodes
-          // keep their order.
           for (let j = entry.nodes.length - 1; j >= 0; j--) batch.push(entry.nodes[j]);
-        } else {
-          if (batch) {
-            const frag = document.createDocumentFragment();
-            for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
-            parent.insertBefore(frag, batchTarget);
-            batch = null;
-          }
         }
-
-        nextSibling = entry.nodes[0] || nextSibling;
-      }
-
-      if (batch) {
+      } else if (batch) {
         const frag = document.createDocumentFragment();
         for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
         parent.insertBefore(frag, batchTarget);
+        batch = null;
       }
+
+      nextSibling = entry.nodes[0] || nextSibling;
+    }
+
+    if (batch) {
+      const frag = document.createDocumentFragment();
+      for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
+      parent.insertBefore(frag, batchTarget);
     }
   }
 
   eachState.keyToEntry = newEntries;
-  eachState.prevKeys = newKeys;
 }
 
-// Set up the auto-disposer that releases per-row watchers and the outer
-// reconcile watch when the surrounding component unmounts. Shared between
-// each()'s synchronous build and inflateDeferredEach's hydration adoption.
-export function registerEachAutoDispose<T>(
+/** @internal */
+function removeOwnedNodesOnDispose(component: ComponentContext | null, marker: Node): boolean {
+  if (!component?._isDestroyed) return marker.parentNode === null;
+  if (component.nodes !== null) return false;
+  let owner: ComponentContext | null | undefined = component;
+  while (owner && owner._rootContainer == null) owner = owner.parent;
+  return marker.parentNode === null || marker.parentNode === owner?._rootContainer;
+}
+
+export function registerEachAutoDispose<T, E extends KeyedEntry>(
   ownerCtx: Scope | null,
   dispose: () => void,
-  eachState: EachState<T>,
+  eachState: EachState<T, E>,
+  endMarker: Node,
+  release: (entry: E) => void,
+  removeExtras?: () => void,
 ): void {
   if (!ownerCtx) return;
+  const component = getCurrentComponent();
   (ownerCtx.disposers ??= []).push(() => {
     dispose();
-    for (const entry of eachState.keyToEntry.values()) disposeEntry(entry);
+    const remove = removeOwnedNodesOnDispose(component, endMarker);
+    for (const entry of eachState.keyToEntry.values()) {
+      if (remove) detachNodes(entry.nodes);
+      release(entry);
+    }
+    if (remove) {
+      removeExtras?.();
+      endMarker.parentNode?.removeChild(endMarker);
+    }
     eachState.keyToEntry.clear();
-    eachState.prevKeys = [];
   });
 }
 
+export interface DeferredEach<T = unknown> {
+  __purity_deferred_each__: true;
+  listAccessor: (() => T[]) | T[];
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string;
+  keyFn?: (item: T, index: number) => unknown;
+}
+
+export interface EachHydrationAdapter<T = any> {
+  warnDuplicateKey: typeof warnDuplicateKey;
+  track(entry: EachEntry<T>): void;
+  release(entry: EachEntry<T>): void;
+  finish(
+    ownerCtx: Scope | null,
+    eachState: EachState<T>,
+    getList: () => T[],
+    mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+    getKey: (item: T, index: number) => unknown,
+    parent: Node,
+    endMarker: Node,
+  ): void;
+}
+
+export const defaultEachHydrationAdapter: EachHydrationAdapter = {
+  warnDuplicateKey,
+  track: trackEntry,
+  release: disposeEntry,
+  finish(ownerCtx, eachState, getList, mapFn, getKey, _parent, endMarker) {
+    const ops = eachRowOps(mapFn);
+    const dispose = watchEffectInternal(() => {
+      const next = getList() || [];
+      const p = endMarker.parentNode;
+      if (!p) return;
+      reconcileEach(eachState, next, p, endMarker, getKey, ops);
+    });
+    registerEachAutoDispose(ownerCtx, dispose, eachState, endMarker, disposeEntry);
+  },
+};
+
 /**
  * Reactive list rendering. Reuses DOM via per-item signals + LIS reorder.
- *
- * When the list changes:
- * - Existing items: signal updated → DOM mutates in place (zero creation)
- * - New items: DOM created once
- * - Removed items: DOM detached
- * - Reordered items: minimal DOM moves via LIS
- *
- * `mapFn` receives `item` as a **reactive accessor** — call `item()` to read.
- * Wrap reads in `${() => item().field}` so the binding re-fires when the
- * underlying data changes for the same key.
- *
- * @example
- * ```ts
- * each(
- *   () => todos(),
- *   (todo) => html`<li>${() => todo().text}</li>`,
- *   (todo) => todo.id,
- * )
- * ```
- *
+ * For virtualized viewport windowing of massive lists, use `virtualEach` from `@purityjs/core/virtual`.
  */
 export function each<T>(
   listAccessor: (() => T[]) | T[],
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment | DeferredEach<T> | SSRHtml {
-  if (isHydratingPassive())
-    return captureHydratingEach!(listAccessor, mapFn, keyFn) as DeferredEach<T>;
-  if (ENABLE_SSR && getSSRRenderContext()) return ssrControls.each(listAccessor, mapFn, keyFn);
-  return renderEachDOM(listAccessor, mapFn, keyFn);
-}
+  if (isHydratingPassive() && captureHydratingEach) {
+    return captureHydratingEach(
+      listAccessor,
+      mapFn,
+      keyFn,
+      defaultEachHydrationAdapter,
+    ) as DeferredEach<T>;
+  }
 
-/** @internal — compiler target for calls proven to have no virtual options. */
-export function ordinaryEach<T>(
-  listAccessor: (() => T[]) | T[],
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
-  keyFn?: (item: T, index: number) => unknown,
-): DocumentFragment | DeferredEach<T> | SSRHtml {
-  if (isHydratingPassive())
-    return captureHydratingEach!(listAccessor, mapFn, keyFn) as DeferredEach<T>;
-  if (ENABLE_SSR && getSSRRenderContext()) return ssrControls.each(listAccessor, mapFn, keyFn);
-  return renderEachDOM(listAccessor, mapFn, keyFn);
-}
+  if (ENABLE_SSR && getSSRRenderContext()) {
+    return ssrControls.each(listAccessor, mapFn, keyFn);
+  }
 
-function renderEachDOM<T>(
-  listAccessor: (() => T[]) | T[],
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
-  keyFn?: (item: T, index: number) => unknown,
-): DocumentFragment {
   const endMarker = document.createComment('e');
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
-  const eachState: EachState<T> = { keyToEntry: new Map(), prevKeys: [] };
+  const eachState: EachState<T> = { keyToEntry: new Map() };
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
   const ops = eachRowOps(mapFn);
 
-  const dispose = watch(() => {
+  const dispose = watchEffectInternal(() => {
     const items = getList() || [];
     const parent = endMarker.parentNode;
     if (!parent) return;
     reconcileEach(eachState, items, parent, endMarker, getKey, ops);
   });
 
-  registerEachAutoDispose(getCurrentContext(), dispose, eachState);
+  registerEachAutoDispose(getCurrentContext(), dispose, eachState, endMarker, disposeEntry);
   return fragment;
 }
 
 // ---------------------------------------------------------------------------
-// Deferred-each handle + hydration adoption
-//
-// `each()` is called eagerly inside `html` template values, so during a
-// `hydrate()` call it runs before the hydrate factory has located the
-// expression slot. Returning a deferred handle lets the hydrate factory
-// recognise the slot's user-supplied value and route it through a
-// keyed-row-adoption helper. See ADR 0005's "non-lossy hydration" thread —
-// this closes the per-row gap that was deferred there.
+// list() — fastest possible single-element list rendering
 // ---------------------------------------------------------------------------
 
-type HydrateEachWindow<T> = (
-  owner: Scope | null,
-  state: EachState<T>,
-  list: (() => T[]) | T[],
-  map: (item: () => T, index: number) => Node | DocumentFragment | string,
-  key: (item: T, index: number) => unknown,
-  parent: Node,
-  end: Node,
-) => void;
-
-/** A reified `each()` call captured during hydration; adopted against an SSR row run. */
-export interface DeferredEach<T = unknown> {
-  __purity_deferred_each__: true;
-  listAccessor: (() => T[]) | T[];
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string;
-  keyFn?: (item: T, index: number) => unknown;
-  options?: EachOptions;
-  hydrateWindow?: HydrateEachWindow<T>;
-}
-
-export function makeDeferredEach<T>(
-  listAccessor: (() => T[]) | T[],
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
-  keyFn?: (item: T, index: number) => unknown,
-  options?: EachOptions,
-  hydrateWindow?: HydrateEachWindow<T>,
-): DeferredEach<T> {
-  return { __purity_deferred_each__: true, listAccessor, mapFn, keyFn, options, hydrateWindow };
-}
-
-function decodeRowKey(s: string): string {
-  // SSR row markers are encoded by encodeRowKey, but the bytes flow
-  // through HTML comment content — a poisoned upstream cache or middlebox
-  // can mutate them. A bare decodeURIComponent throws URIError on
-  // malformed `%`, which aborts hydration with no recovery; fall back to
-  // the raw bytes (matches router.ts:safeDecode, cycle 1) so the
-  // hydrator at worst sees a non-matching key and re-renders the row.
-  try {
-    return decodeURIComponent(s);
-  } catch {
-    return s;
-  }
-}
-
-// Walk an each() slot's SSR content nodes and split into rows by `<!--er:K-->`
-// markers. Rows whose end marker is missing or which lack a leading marker are
-// dropped from the map (caller treats them as orphan SSR content and replaces
-// with fresh DOM). The boundary markers (`<!--e-->` / `<!--/e-->`) — and any
-// orphan stragglers — are also returned so the caller can detach them.
-interface SSRRow {
-  key: string;
-  nodes: Node[];
-}
-
-function parseSSRRows(contNodes: Node[]): { rows: SSRRow[]; boundaryNodes: Node[] } {
-  const rows: SSRRow[] = [];
-  const boundaryNodes: Node[] = [];
-  let i = 0;
-  const len = contNodes.length;
-  while (i < len) {
-    const node = contNodes[i];
-    if (node.nodeType !== 8) {
-      // Whitespace / orphan content between markers — drop it. The renderer's
-      // inner output is comment-prefixed, so only stray whitespace ends up
-      // here in practice (the template tag's own marker pair sits outside).
-      boundaryNodes.push(node);
-      i++;
-      continue;
-    }
-    const data = (node as Comment).data;
-    if (data === 'e' || data === '/e') {
-      boundaryNodes.push(node);
-      i++;
-      continue;
-    }
-    const startMatch = /^er:(.*)$/.exec(data);
-    if (!startMatch) {
-      // Unknown comment between rows — drop it.
-      boundaryNodes.push(node);
-      i++;
-      continue;
-    }
-    const key = decodeRowKey(startMatch[1]);
-    boundaryNodes.push(node);
-    i++;
-    const rowNodes: Node[] = [];
-    let closed = false;
-    while (i < len) {
-      const inner = contNodes[i];
-      if (inner.nodeType === 8 && (inner as Comment).data === '/er') {
-        boundaryNodes.push(inner);
-        i++;
-        closed = true;
-        break;
-      }
-      rowNodes.push(inner);
-      i++;
-    }
-    if (closed) rows.push({ key, nodes: rowNodes });
-    // If unclosed, the SSR was malformed — discard the partial row's nodes
-    // (they're already in rowNodes; we don't push them anywhere, but they're
-    // still in the DOM. The caller falls through to lossy replace.)
-    else {
-      // Add rowNodes to boundaryNodes so caller can detach them on lossy fallback.
-      for (let k = 0; k < rowNodes.length; k++) boundaryNodes.push(rowNodes[k]);
-    }
-  }
-  return { rows, boundaryNodes };
-}
-
-/**
- * Adopt the SSR-rendered rows in `contNodes` for a `each()` call, reusing
- * existing row DOM where keys match the current items list. Sets up the
- * reactive watch for subsequent updates.
- *
- * Called from compiled hydrate factories when an expression slot's value is
- * a {@link DeferredEach} handle (i.e. the user wrote `${each(...)}`).
- *
- * @internal
- */
-export function inflateDeferredEach<T>(
-  deferred: DeferredEach<T>,
-  contNodes: Node[],
-  closeMarker: Node,
-): void {
-  const parent = closeMarker.parentNode;
-  /* v8 ignore next -- defensive; close marker always has a parent here */
-  if (!parent) return;
-
-  const { listAccessor, mapFn, keyFn, options, hydrateWindow } = deferred;
-  const getList =
-    typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
-  const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
-
-  // Insert the live `each()` end marker just before the slot close — keeps
-  // future inserts/removes scoped to this slot the same way they would be in
-  // a fresh client render.
-  const endMarker = document.createComment('e');
-  parent.insertBefore(endMarker, closeMarker);
-
-  const { rows: ssrRows, boundaryNodes } = parseSSRRows(contNodes);
-  // Detach the SSR `<!--e-->` / `<!--/e-->` markers and any orphan content —
-  // the new endMarker replaces them. Row content is left in place and adopted.
-  detachNodes(boundaryNodes);
-
-  const ssrByKey = new Map<string, SSRRow>();
-  for (let i = 0; i < ssrRows.length; i++) ssrByKey.set(ssrRows[i].key, ssrRows[i]);
-  const adoptedRows = new Set<SSRRow>();
-
-  const ownerCtx = getCurrentContext();
-  const items = getList() || [];
-  const eachState: EachState<T> = { keyToEntry: new Map(), prevKeys: [] };
-
-  try {
-    // Adopt rows in items order. For each item, if a matching SSR row exists,
-    // run mapFn under the entry scope (yielding a DeferredTemplate when the
-    // user uses `html\`\``) and inflate against that row's nodes. Otherwise
-    // build fresh DOM.
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      const key = getKey(item, i);
-      // Duplicate key: first occurrence adopts the SSR row; later ones are
-      // skipped so prevKeys stays unique (see reconcileEach).
-      if (eachState.keyToEntry.has(key)) {
-        warnDuplicateKey(key, i);
-        continue;
-      }
-      eachState.prevKeys.push(key);
-
-      // Items match SSR rows by `String(key)` — same coercion that eachSSR's
-      // encoder applies (round-trip through encodeURIComponent / decode).
-      const ssrRow = ssrByKey.get(String(key));
-      if (ssrRow) {
-        adoptedRows.add(ssrRow);
-        // Consume the row: a distinct key with the same string form must not
-        // adopt the same DOM a second time.
-        ssrByKey.delete(String(key));
-      }
-      const data = state(item);
-      const ctx: Scope = { disposers: null };
-      const entry: EachEntry<T> = { nodes: [], data, ctx };
-      // Track ownership before user code or hydration can throw. The failed
-      // adoption below must release both this row and all earlier rows.
-      eachState.keyToEntry.set(key, entry);
-      pushContext(ctx);
-      try {
-        // Re-enter hydration mode while mapFn runs so nested `html\`\`` calls
-        // return DeferredTemplate handles (which we then inflate against the
-        // matching SSR row) instead of building fresh DOM. The outer hydrate()
-        // exits hydration mode before invoking inflate helpers, so each row
-        // toggles it locally.
-        controlHydrationRuntime!.enter();
-        let content: Node | DocumentFragment | string | DeferredTemplate;
-        try {
-          content = mapFn(data, i) as Node | DocumentFragment | string | DeferredTemplate;
-        } finally {
-          controlHydrationRuntime!.exit();
-        }
-
-        let nodes: Node[];
-        if (controlHydrationRuntime!.isDeferred(content)) {
-          // Only matching server rows are adopted. Missing rows use the
-          // existing createIfEmpty path rather than hydrating empty markup.
-          const frag = document.createDocumentFragment();
-          if (ssrRow) {
-            for (let j = 0; j < ssrRow.nodes.length; j++) frag.appendChild(ssrRow.nodes[j]);
-          }
-          controlHydrationRuntime!.inflate(content as DeferredTemplate, frag, false, !ssrRow);
-          nodes = Array.from(frag.childNodes);
-          parent.insertBefore(frag, endMarker);
-        } else {
-          // Static rows replace stale server nodes, preserving fragments,
-          // text nodes, and event-bearing DOM nodes with one extraction path.
-          if (ssrRow) detachNodes(ssrRow.nodes);
-          nodes = extractNodes(content as Node | DocumentFragment | string);
-          parent.insertBefore(content instanceof Node ? content : nodes[0], endMarker);
-        }
-
-        entry.nodes = nodes;
-      } finally {
-        // Template inflation creates bindings too; keep them in the row scope.
-        popContext();
-      }
-    }
-
-    // Detach every SSR row that was not adopted: rows whose key no longer
-    // exists (data changed between SSR and hydration) and duplicate-key rows
-    // (ssrByKey keeps only the last row per key, so they are not in it).
-    for (let i = 0; i < ssrRows.length; i++) {
-      const row = ssrRows[i];
-      if (adoptedRows.has(row)) continue;
-      detachNodes(row.nodes);
-    }
-
-    if (options?.virtual) {
-      hydrateWindow!(ownerCtx, eachState, listAccessor, mapFn, getKey, parent, endMarker);
-    } else {
-      const ops = eachRowOps(mapFn);
-      const dispose = watch(() => {
-        const next = getList() || [];
-        const p = endMarker.parentNode;
-        if (!p) return;
-        reconcileEach(eachState, next, p, endMarker, getKey, ops);
-      });
-      registerEachAutoDispose(ownerCtx, dispose, eachState);
-    }
-  } catch (error) {
-    for (const entry of eachState.keyToEntry.values()) disposeEntry(entry);
-    eachState.keyToEntry.clear();
-    eachState.prevKeys = [];
-    throw error;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Deferred-match handle + hydration adoption
-//
-// Mirrors the each() story for `match()` / `when()` (which both run through
-// match() on the client). During hydration `match()` returns a handle
-// instead of building a fresh DOM tree; the hydrate factory's expression-
-// slot dispatch routes it through inflateDeferredMatch, which adopts the
-// SSR-rendered case in place under the active case's branch scope.
-// ---------------------------------------------------------------------------
-
-/** A reified `match()` call captured during hydration. */
-export interface DeferredMatch<T extends string | number | boolean = string | number | boolean> {
-  __purity_deferred_match__: true;
-  sourceFn: () => T;
-  cases: MatchCases<T>;
-  fallback?: MatchView;
-}
-
-export function makeDeferredMatch<T extends string | number | boolean>(
-  sourceFn: () => T,
-  cases: MatchCases<T>,
-  fallback?: MatchView,
-): DeferredMatch<T> {
-  return { __purity_deferred_match__: true, sourceFn, cases, fallback };
-}
-
-// Locate the `<!--m:KEY-->...<!--/m-->` boundary inside a slot's content
-// nodes and return the boundary markers, key, and inner content nodes.
-// The slot also holds whitespace text nodes around the boundary in some
-// SSR layouts; those are returned in `boundaryNodes` so the caller can
-// detach them alongside the markers.
-interface SSRMatchBoundary {
-  key: string | null;
-  startMarker: Comment | null;
-  endMarker: Comment | null;
-  inner: Node[];
-  boundaryNodes: Node[];
-}
-
-function parseSSRMatchBoundary(contNodes: Node[]): SSRMatchBoundary {
-  let startMarker: Comment | null = null;
-  let endMarker: Comment | null = null;
-  let key: string | null = null;
-  const inner: Node[] = [];
-  const boundaryNodes: Node[] = [];
-
-  let i = 0;
-  // Skip leading non-marker noise (whitespace text nodes, etc.).
-  while (i < contNodes.length) {
-    const n = contNodes[i];
-    if (n.nodeType === 8) {
-      const data = (n as Comment).data;
-      const m = /^m:(.*)$/.exec(data);
-      if (m) {
-        startMarker = n as Comment;
-        key = decodeRowKey(m[1]);
-        boundaryNodes.push(n);
-        i++;
-        break;
-      }
-      // Bare `<!--m-->` (unkeyed legacy form) — adopt with key=null.
-      if (data === 'm') {
-        startMarker = n as Comment;
-        key = null;
-        boundaryNodes.push(n);
-        i++;
-        break;
-      }
-    }
-    boundaryNodes.push(n);
-    i++;
-  }
-
-  let depth = 1;
-  while (i < contNodes.length) {
-    const n = contNodes[i];
-    if (n.nodeType === 8) {
-      const data = (n as Comment).data;
-      // Fragment views can contain nested match boundaries as siblings.
-      // Their markers belong to the inner view, including an empty case.
-      if (data === 'm' || data.startsWith('m:')) depth++;
-      else if (data === '/m' && --depth === 0) {
-        endMarker = n as Comment;
-        boundaryNodes.push(n);
-        i++;
-        break;
-      }
-    }
-    inner.push(n);
-    i++;
-  }
-
-  // Trailing noise after `<!--/m-->` (whitespace, stray comments).
-  while (i < contNodes.length) {
-    boundaryNodes.push(contNodes[i]);
-    i++;
-  }
-
-  return { key, startMarker, endMarker, inner, boundaryNodes };
-}
-
-/**
- * Adopt the SSR-rendered case for a `match()` / `when()` slot. Inflates the
- * matching case's deferred template against the SSR boundary content under
- * the case's branch scope, and installs the reactive watch.
- *
- * Called from compiled hydrate factories when an expression slot's value is
- * a {@link DeferredMatch} handle.
- *
- * @internal
- */
-export function inflateDeferredMatch<T extends string | number | boolean>(
-  deferred: DeferredMatch<T>,
-  contNodes: Node[],
-  closeMarker: Node,
-): void {
-  const parent = closeMarker.parentNode;
-  /* v8 ignore next -- defensive; close marker always has a parent here */
-  if (!parent) return;
-
-  const { sourceFn, cases, fallback } = deferred;
-  const boundary = parseSSRMatchBoundary(contNodes);
-
-  // Insert the live end marker before the slot close and detach SSR
-  // boundary scaffolding (the `<!--m:K-->` / `<!--/m-->` markers themselves
-  // plus any whitespace text nodes around them). The view content stays put
-  // for adoption.
-  const endMarker = document.createComment('m');
-  parent.insertBefore(endMarker, closeMarker);
-  detachNodes(boundary.boundaryNodes);
-
-  const matchState: MatchState = { currentNodes: [], prevKey: null, branch: null };
-  const initKey = String(sourceFn()) as `${T}`;
-  const ssrKey = boundary.key;
-  const initView = cases[initKey] ?? fallback;
-
-  if (ssrKey === initKey && initView && boundary.inner.length > 0) {
-    // Keys match — run the view under hydration mode so html`` produces a
-    // DeferredTemplate, then inflate it against the boundary's existing
-    // nodes. Both steps create the case's bindings, so both run in its
-    // branch scope.
-    let adopted = false;
-    const content = renderBranch(matchState, () => {
-      let view: unknown;
-      controlHydrationRuntime!.enter();
-      try {
-        view = initView();
-      } finally {
-        controlHydrationRuntime!.exit();
-      }
-      if (!controlHydrationRuntime!.isDeferred(view)) return view;
-      adopted = true;
-      const frag = document.createDocumentFragment();
-      for (let i = 0; i < boundary.inner.length; i++) frag.appendChild(boundary.inner[i]);
-      controlHydrationRuntime!.inflate(view as DeferredTemplate, frag);
-      return frag;
-    });
-    if (!adopted) {
-      // View returned a non-deferred value (raw Node, string, etc.) — can't
-      // adopt; lossy-replace the boundary content with the new value.
-      detachNodes(boundary.inner);
-    }
-    insertMatchView(matchState, parent, endMarker, content);
-    matchState.prevKey = initKey;
-  } else {
-    // Either no view was rendered server-side (key === undefined / no inner
-    // content) or the SSR key disagrees with the current key. Detach SSR
-    // inner content and render the current view fresh.
-    detachNodes(boundary.inner);
-    if (initView) {
-      matchState.prevKey = initKey;
-      insertMatchView(matchState, parent, endMarker, renderBranch(matchState, initView));
-    }
-  }
-
-  const dispose = installMatchWatch(matchState, endMarker, sourceFn, cases, fallback);
-  registerMatchAutoDispose(getCurrentContext(), dispose, matchState);
-}
-
-// ---------------------------------------------------------------------------
-// list() — fastest possible list rendering
-//
-// Separates template from data. Zero per-item function call overhead
-// for DOM creation. ONE tight loop with direct createElement.
-//
-//   // Simple: tag + text
-//   list('li', () => items(), (item) => item.text, (item) => item.id)
-//
-//   // With attributes:
-//   list('li', () => items(), {
-//     text: (item) => item.name,
-//     class: (item) => item.done ? 'done' : '',
-//     '@click': (item) => () => toggle(item.id),
-//     key: (item) => item.id,
-//   })
-// ---------------------------------------------------------------------------
-
-interface ListOptions<T> {
+export interface ListOptions<T> {
   text?: (item: T, index: number) => string;
   class?: (item: T, index: number) => string;
   style?: (item: T, index: number) => string;
@@ -1339,33 +825,11 @@ interface ListOptions<T> {
 type ListTextFn<T> = (item: T, index: number) => string;
 
 interface ListEntry extends KeyedEntry {
-  node: Element;
+  nodes: [Element];
   textNode: Text | null;
-  // Bound event handlers for this entry, keyed by event name. Stored so
-  // updateEntry can `removeEventListener` the stale ones (which close over
-  // the previous `item`) and rebind with the fresh item, and so the dispose
-  // path can release them when the row is removed. `null` when no events
-  // were configured — avoids the per-row allocation in the common case.
   boundEvents: Map<string, EventListener> | null;
 }
 
-/**
- * High-performance list rendering. Separates template from data for
- * zero per-item overhead. Uses direct createElement in a tight loop.
- *
- * @example
- * ```ts
- * // Simple — tag + text accessor:
- * list('li', () => todos(), (t) => t.text, (t) => t.id)
- *
- * // With options:
- * list('div', () => users(), {
- *   text: (u) => u.name,
- *   class: (u) => u.active ? 'active' : '',
- *   key: (u) => u.id,
- * })
- * ```
- */
 export function list<T>(
   tag: string,
   listAccessor: (() => T[]) | T[],
@@ -1376,7 +840,6 @@ export function list<T>(
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
-  // Normalize options
   let getText: ListTextFn<T> | undefined;
   let getClass: ((item: T, index: number) => string) | undefined;
   let getStyle: ((item: T, index: number) => string) | undefined;
@@ -1396,14 +859,10 @@ export function list<T>(
     getKey = textOrOptions.key ?? ((item: T) => item as unknown);
   }
 
-  const listState: EachState<T, ListEntry> = { keyToEntry: new Map(), prevKeys: [] };
-
+  const listState: EachState<T, ListEntry> = { keyToEntry: new Map() };
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
 
-  // Resolve `fn(item, index)` for an attr/event resolver, isolating throws
-  // from sibling keys. One bad resolver shouldn't drop the rest of the row's
-  // attrs/events (matches the policy in signals.flush + component lifecycle).
   const safeCall = <R>(
     fn: (item: T, index: number) => R,
     item: T,
@@ -1419,7 +878,6 @@ export function list<T>(
     }
   };
 
-  // Create a single element — the tightest possible code
   const createEntry = (item: T, index: number): ListEntry => {
     const el = document.createElement(tag);
     let textNode: Text | null = null;
@@ -1428,59 +886,34 @@ export function list<T>(
       textNode = document.createTextNode(getText(item, index));
       el.appendChild(textNode);
     }
-    if (getClass) (el as HTMLElement).className = getClass(item, index);
-    if (getStyle) (el as HTMLElement).style.cssText = getStyle(item, index);
-    if (getAttrs) {
-      for (const [k, fn] of Object.entries(getAttrs)) {
-        const v = safeCall(fn, item, index, 'getAttrs', k);
-        // Mirror listSSR's `v != null` gate so client + SSR produce the same
-        // attribute set for nullable resolvers (the SSR path explicitly omits
-        // the attribute when the resolver returns null/undefined).
-        if (v != null) el.setAttribute(k, v);
-      }
-    }
-    let boundEvents: Map<string, EventListener> | null = null;
-    if (getEvents) {
-      boundEvents = new Map();
-      for (const [k, fn] of Object.entries(getEvents)) {
-        const handler = safeCall(fn, item, index, 'getEvents', k);
-        if (typeof handler === 'function') {
-          el.addEventListener(k, handler);
-          boundEvents.set(k, handler);
-        }
-      }
-    }
-
-    return { nodes: [el], node: el, textNode, boundEvents };
+    const entry: ListEntry = { nodes: [el], textNode, boundEvents: null };
+    applyEntry(entry, item, index, true);
+    return entry;
   };
 
-  // Update an existing element in place — zero DOM creation
-  const updateEntry = (entry: ListEntry, item: T, index: number): void => {
-    if (getText && entry.textNode) entry.textNode.data = getText(item, index);
-    if (getClass) (entry.node as HTMLElement).className = getClass(item, index);
-    if (getStyle) (entry.node as HTMLElement).style.cssText = getStyle(item, index);
+  const applyEntry = (entry: ListEntry, item: T, index: number, initial = false): void => {
+    const node = entry.nodes[0];
+    if (!initial && getText && entry.textNode) entry.textNode.data = getText(item, index);
+    if (getClass) (node as HTMLElement).className = getClass(item, index);
+    if (getStyle) (node as HTMLElement).style.cssText = getStyle(item, index);
     if (getAttrs) {
       for (const [k, fn] of Object.entries(getAttrs)) {
         const v = safeCall(fn, item, index, 'getAttrs', k);
-        if (v != null) entry.node.setAttribute(k, v);
-        // Match SSR semantics: nullable resolver → attribute absent.
-        else entry.node.removeAttribute(k);
+        if (v != null) node.setAttribute(k, v);
+        else if (!initial) node.removeAttribute(k);
       }
     }
-    // Rebind event handlers — each `fn(item, index)` closes over the row's
-    // current `item`, so reused entries whose underlying item changed need
-    // their handlers refreshed or clicks fire with stale data.
     if (getEvents) {
       const prev = entry.boundEvents;
       if (prev) {
-        for (const [k, h] of prev) entry.node.removeEventListener(k, h);
+        for (const [k, h] of prev) node.removeEventListener(k, h);
         prev.clear();
       }
       const next = prev ?? new Map<string, EventListener>();
       for (const [k, fn] of Object.entries(getEvents)) {
         const handler = safeCall(fn, item, index, 'getEvents', k);
         if (typeof handler === 'function') {
-          entry.node.addEventListener(k, handler);
+          node.addEventListener(k, handler);
           next.set(k, handler);
         }
       }
@@ -1488,129 +921,47 @@ export function list<T>(
     }
   };
 
-  // Release any handlers attached by createEntry/updateEntry so the entry
-  // (and its captured item closure) can be GC'd even if an external reference
-  // pins the row node. Centralised so both the dispose path and the removal
-  // path use the same teardown.
   const releaseEntry = (entry: ListEntry): void => {
     const events = entry.boundEvents;
     if (!events) return;
-    for (const [k, h] of events) entry.node.removeEventListener(k, h);
+    for (const [k, h] of events) entry.nodes[0].removeEventListener(k, h);
     events.clear();
     entry.boundEvents = null;
   };
 
   const ops: RowOps<T, ListEntry> = {
     create: createEntry,
-    update: updateEntry,
+    update: applyEntry,
     release: releaseEntry,
     api: 'list()',
   };
-  const dispose = watch(() => {
+  const dispose = watchEffectInternal(() => {
     const items = getList() || [];
     const parent = endMarker.parentNode;
     if (parent) reconcileEach(listState, items, parent, endMarker, getKey, ops);
   });
 
-  // Auto-dispose watcher + clean up entries on component unmount
-  const ctx = getCurrentContext();
-  if (ctx) {
-    (ctx.disposers ??= []).push(() => {
-      dispose();
-      // Release every row's bound event handlers so external references to
-      // the row nodes (focus restoration, popover anchors, ref callbacks) can
-      // no longer pin the captured `item` closure. The row nodes themselves
-      // are left to GC alongside their parent — the same shape as each()'s
-      // disposeEntry walk.
-      for (const entry of listState.keyToEntry.values()) releaseEntry(entry);
-      listState.keyToEntry.clear();
-      listState.prevKeys = [];
-    });
-  }
+  registerEachAutoDispose(getCurrentContext(), dispose, listState, endMarker, releaseEntry);
 
   return fragment;
 }
 
 // ---------------------------------------------------------------------------
 // suspense(view, fallback) — error-isolating render boundary
-//
-// Phase 1 of ADR 0006. The boundary serves two purposes today and one
-// forward-compat purpose:
-//
-//   - **SSR error isolation.** If `view()` throws synchronously during
-//     server render, the boundary catches the error, logs it, and emits
-//     `fallback()` instead. The outer renderToString call still completes;
-//     a single failing region can't take down the page.
-//   - **Marker grammar in SSR output.** The rendered region is wrapped in
-//     `<!--s:N--><!--/s:N-->` comment markers (N from the per-render
-//     suspenseCounter on SSRRenderContext). The hydrate factory's
-//     deferred-template inflate path strips these markers when carving
-//     the slot's subtree.
-//   - **Forward-compat for streaming (Phase 3).** The same markers will
-//     let `__purity_swap(N)` find and replace each boundary's content as
-//     it resolves over a `ReadableStream`.
-//
-// SSR deadlines cancel a view's active resource subtree independently.
-// Fallback work stays in the surrounding active render scope.
 // ---------------------------------------------------------------------------
 
-/** Why `onError` was invoked. */
 export type SuspenseErrorPhase = 'view' | 'fallback' | 'timeout';
 
-/** Metadata passed to a `suspense({ onError })` callback. */
 export interface SuspenseErrorInfo {
-  /** Monotonic per-render boundary ID (matches the `<!--s:N-->` marker). */
   boundaryId: number;
-  /**
-   * What raised the error:
-   *   * `'view'`     — `view()` threw synchronously; fallback is being rendered.
-   *   * `'fallback'` — the fallback ALSO threw; an empty boundary is emitted.
-   *   * `'timeout'`  — the per-boundary deadline fired; fallback is being rendered.
-   *                    `error` is undefined for this phase.
-   */
   phase: SuspenseErrorPhase;
 }
 
-/** Per-boundary options for `suspense()`. */
 export interface SuspenseOptions {
-  /**
-   * Maximum ms `view()` may take before the boundary surrenders to its
-   * fallback. Measured from the first SSR pass that encounters the
-   * boundary, including the streaming shell. When unset, the renderer's
-   * timeout bounds the work. Expiry cancels unfinished view resources
-   * (including descendants) and renders the fallback. An expired queued
-   * streaming view is skipped. Other boundaries keep loading.
-   */
   timeout?: number;
-  /**
-   * Observer for per-boundary errors and timeouts. Receives the original
-   * error (if any) plus a small info object. Use to forward to error
-   * tracking (Sentry, Honeybadger, …) or to log richer context than
-   * `console.error` does. The framework still emits its own
-   * `console.error` after the hook returns, so the hook can replace
-   * tracking but not silence the default log — use a separate logger
-   * config for that.
-   */
   onError?: (error: unknown, info: SuspenseErrorInfo) => void;
 }
 
-/**
- * Render `view()` with synchronous error isolation and an optional
- * per-boundary timeout. On error or timeout, render `fallback()` instead.
- * In SSR mode the rendered region is wrapped in `<!--s:N--><!--/s:N-->`
- * boundary markers; on the client this is just `view()` (the fallback is
- * unused — use `when()` against your resource's `loading()` accessor for
- * client loading states).
- *
- * @example
- * ```ts
- * suspense(
- *   () => html`<aside>${() => slowResource()}</aside>`,
- *   () => html`<aside class="loading">…</aside>`,
- *   { timeout: 1000 },
- * )
- * ```
- */
 export function suspense<T>(
   view: () => T,
   fallback: () => T,

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vite-plus/test';
 import { hydrate, mount, onDestroy, onDispose, state, watch } from '@purityjs/core';
-import { flattenValue, renderCompiledTemplate, swapSlot } from '@purityjs/core/runtime';
+import { flattenValue, renderCompiledTemplateAot, swapSlot } from '@purityjs/core/runtime';
 import { safeUrl, template } from '@purityjs/core/csr-runtime';
 import { purity, type PurityPluginOptions } from '../src/index.ts';
 
@@ -43,7 +43,7 @@ function executeHydratable(code: string): (...values: any[]) => Node {
     '__purity_url__',
     '__purity_tmpl__',
     `${body}\nreturn make;`,
-  )(renderCompiledTemplate, flattenValue, swapSlot, safeUrl, template);
+  )(renderCompiledTemplateAot, flattenValue, swapSlot, safeUrl, template);
 }
 
 function render(view: () => Node) {
@@ -59,8 +59,8 @@ describe('client-first AOT build contract', () => {
       "import { html } from '@purityjs/core/jit'; export const make = () => html`<p>Hello</p>`;";
     const eventSource =
       "import { html } from '@purityjs/core/jit'; export const make = (handler) => html`<button @click=${handler}>Go</button>`;";
-    expect(compile(staticSource)).not.toContain('watch as __purity_watch__');
-    expect(compile(eventSource)).not.toContain('watch as __purity_watch__');
+    expect(compile(staticSource)).not.toContain('watchEffectInternal as __purity_watch__');
+    expect(compile(eventSource)).not.toContain('watchEffectInternal as __purity_watch__');
     expect(compile(staticSource)).not.toContain("from '@purityjs/core/csr-runtime'");
     expect(compile(eventSource)).not.toContain("from '@purityjs/core/csr-runtime'");
     let clicks = 0;
@@ -73,7 +73,7 @@ describe('client-first AOT build contract', () => {
     const code =
       "import { html } from '@purityjs/core/jit'; export const make = (value) => html`<section>${html`<span>Static</span>`}<p>${() => value()}</p></section>`;";
     const compiled = compile(code);
-    expect(compiled).toContain('watch as __purity_watch__');
+    expect(compiled).toContain('watchEffectInternal as __purity_watch__');
     const value = state('before');
     const make = execute(code);
     const root = render(() => make(value));
@@ -98,15 +98,37 @@ describe('client-first AOT build contract', () => {
     const code = compile();
     expect(code).not.toContain('_hydrate');
     expect(code).not.toContain('renderCompiledTemplate');
-    expect(code).toContain('watch as __purity_watch__');
-    expect(code).toContain('__purity_tpl_0([value], __purity_watch__)');
+    expect(code).toContain('watchEffectInternal as __purity_watch__');
+    expect(code).toContain('__purity_tpl_0([(value)], __purity_watch__)');
   });
 
   it('generates hydration only when explicitly requested', () => {
     const code = compile(source, { hydratable: true } as PurityPluginOptions);
     expect(code).toContain('_hydrate');
     expect(code).toContain('renderCompiledTemplate');
-    expect(code).not.toContain('watch as __purity_watch__');
+    expect(code).not.toContain('watchEffectInternal as __purity_watch__');
+  });
+
+  it('uses the specialized renderer for hydratable generated templates', () => {
+    const code = compile(source, { hydratable: true });
+    expect(code).toContain('renderCompiledTemplateAot as __purity_renderCompiled__');
+  });
+
+  it('shares hydration slot handling only when the module uses multiple slots', () => {
+    const single = compile(source, { hydratable: true });
+    expect(single).not.toContain('__purity_hslot__');
+    const two = compile(
+      "import { html } from '@purityjs/core/jit'; export const make = (a,b) => html`<p>${a}</p><p>${b}</p>`;",
+      { hydratable: true },
+    );
+    expect(two).toContain('__purity_hslot__');
+    expect(two.match(/function __purity_hslot__/g)).toHaveLength(1);
+    const acrossTemplates = compile(
+      "import { html } from '@purityjs/core/jit'; const __purity_hslot__ = 1; export const make = (a,b) => [html`<p>${a}</p>`, html`<p>${b}</p>`];",
+      { hydratable: true },
+    );
+    expect(acrossTemplates.match(/function __purity0_hslot__/g)).toHaveLength(1);
+    expect(acrossTemplates).not.toContain(' as __purity0_hslot__');
   });
 
   it('defaults to strict AOT instead of silently retaining a malformed template', () => {
@@ -140,8 +162,8 @@ describe('client-first AOT build contract', () => {
     const code = compile(
       "import { html } from '@purityjs/core/jit'; const __purity_watch__ = 'user'; export const make = () => html`<p>${__purity_watch__}</p>`;",
     );
-    expect(code).toContain('watch as __purity0_watch__');
-    expect(code).toContain('[__purity_watch__], __purity0_watch__)');
+    expect(code).toContain('watchEffectInternal as __purity0_watch__');
+    expect(code).toContain('[(__purity_watch__)], __purity0_watch__)');
   });
 
   it('runs nested reactive DOM and events without runtime code generation', async () => {
@@ -282,11 +304,33 @@ describe('client-first AOT build contract', () => {
     expect(host.querySelector('p')!.textContent).toBe('server');
   });
 
+  it('adopts and updates multiple shared hydration slots', async () => {
+    const make = executeHydratable(
+      "import { html } from '@purityjs/core/jit'; export const make = (a,b) => html`<section><p>${a}</p><p>${b}</p></section>`;",
+    );
+    const host = document.createElement('main');
+    host.innerHTML = '<section><p><!--[-->first<!--]--></p><p><!--[-->second<!--]--></p></section>';
+    const paragraphs = [...host.querySelectorAll('p')];
+    const first = paragraphs[0].childNodes[1];
+    const second = paragraphs[1].childNodes[1];
+    const a = state('first');
+    const b = state('second');
+    document.body.append(host);
+    disposers.push(hydrate(host, () => make(a, b)).unmount);
+    expect(paragraphs[0].childNodes[1]).toBe(first);
+    expect(paragraphs[1].childNodes[1]).toBe(second);
+    a('updated');
+    b('changed');
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(paragraphs.map((p) => p.textContent)).toEqual(['updated', 'changed']);
+  });
+
   it.each([false, true])('preserves explicit server output with hydratable=%s', (hydratable) => {
     const plugin = purity({ hydratable } as PurityPluginOptions);
     const result = plugin.transform(source, 'consumer.ts', { ssr: true });
-    expect(result?.code).toContain('ssrHelpers');
+    expect(result?.code).toContain("from '@purityjs/ssr/runtime'");
     expect(result?.code).not.toContain('document.createElement');
-    expect(result?.code).not.toContain('watch as __purity_watch__');
+    expect(result?.code).not.toContain('watchEffectInternal as __purity_watch__');
   });
 });

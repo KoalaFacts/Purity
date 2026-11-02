@@ -85,9 +85,21 @@ jobs:
       - name: Verify license texts in all npm tarballs
         run: npm run check:licenses
 
+      - name: Verify published source map references
+        run: |
+          mkdir -p benchmark/dist
+          npm pack --dry-run --json -w @purityjs/core -w @purityjs/signals -w @purityjs/compiler -w @purityjs/router -w @purityjs/platform -w @purityjs/ssr -w @purityjs/vite-plugin > benchmark/dist/source-map-pack.json
+          node benchmark/bundle-size/verify-published-source-maps.mjs benchmark/dist/source-map-pack.json
+
+      - name: Check core installation archive budget
+        run: node benchmark/bundle-size/check-core-install-budget.mjs benchmark/dist/source-map-pack.json
+
       - name: Measure production JavaScript bundle sizes
         id: bundle_size
         run: node --experimental-strip-types benchmark/bundle-size/measure.ts
+
+      - name: Check form lifecycle entry budget
+        run: node benchmark/bundle-size/verify-form-lifecycle-budget.mjs
 
       - name: Save bundle size evidence
         if: ${{ !cancelled() && steps.bundle_size.outcome != 'skipped' }}

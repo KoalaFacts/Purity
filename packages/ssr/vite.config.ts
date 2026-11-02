@@ -18,6 +18,7 @@ export default defineConfig({
       external: [/^@purityjs\//],
       output: {
         exports: 'named',
+        sourcemapExcludeSources: true,
       },
     },
     sourcemap: true,

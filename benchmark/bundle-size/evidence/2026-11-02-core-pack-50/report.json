@@ -1,0 +1,51 @@
+{
+  "gap": "SV2-015",
+  "metric": "combined compressed npm archives in core dependency closure",
+  "baseline": {
+    "package": "@purityjs/core",
+    "version": "0.4.0",
+    "bytes": 947461,
+    "integrity": "sha512-HO1gK1r3eDkskXLIZfUWxSYvt4NHON2GPTkIXpfBFjzAux2ENdZTFgI+/kxPwoX40Ufv8svSvoXKKei0Q5M64Q=="
+  },
+  "current": {
+    "version": "0.5.0",
+    "published": false,
+    "archives": [
+      {
+        "package": "@purityjs/core",
+        "bytes": 218693,
+        "integrity": "sha512-0ISyRYDIRRScNGJV+XkVqLYcpQTF4UTR+kGbuxepI2vbZhAKB1mzVoNAzRXQgVzHD8ivXMegjmEPwf00lMuW3w=="
+      },
+      {
+        "package": "@purityjs/signals",
+        "bytes": 40433,
+        "integrity": "sha512-EmFkVO42vDtg/RLzzCroof1PFYqsdPKenBlKWojWSbZRojxY2bqAGEwZKbabUF4HFzDQBRmBe6tZcUNltfRlIA=="
+      },
+      {
+        "package": "@purityjs/compiler",
+        "bytes": 71499,
+        "integrity": "sha512-/gnqr/1v+Oz7KiNS5/c8OhxgERFpGIYkszx0E2HoEp7XAiyxmsXMTC3JiZpXcuu0IiYfWwSLB/d3LOIjcKk+AQ=="
+      }
+    ],
+    "totalBytes": 330625,
+    "reductionPercent": 65.10410454889436
+  },
+  "verification": {
+    "offlineInstalledPackages": 3,
+    "rootExportCount": 28,
+    "esmCjsExportCounts": { "core": 28, "signals": 15, "compiler": 13 },
+    "installedSourceMapReferences": 124,
+    "focusedFormTestsPassed": 66,
+    "browserSmoke": {
+      "chromium": "156.0.8078.4",
+      "firefox": "157.0",
+      "webkit": "27.2"
+    }
+  },
+  "browserBundle": {
+    "baselineGzipBytes": 16571,
+    "baselineSha256": "564a1d11eeba79b110b14e8c31afe565ca8fac824a2de314e316ac73a21a9192",
+    "currentGzipBytes": 13535,
+    "currentSha256": "4ecc48e2b1474a1ad2307a686377ac05b96ebd0cc4c0018801df5f03413a931e"
+  }
+}

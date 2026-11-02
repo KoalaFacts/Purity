@@ -19,6 +19,11 @@ CI runs measurement after building the shipped packages. The browser job also
 runs the interaction checks. Both write a job summary and upload `report.json`
 and `report.md` as workflow artifacts, including on budget or browser failures.
 
+The `@purityjs/core/forms/lifecycle` entry has a separate CI budget check:
+`node benchmark/bundle-size/verify-form-lifecycle-budget.mjs`. It bundles all
+entry exports with their dependencies and caps gzip at 3,072 B and Brotli at
+2,688 B. It does not alter the frozen schema-7 comparison inventory.
+
 ## What is measured
 
 - **Package entries (budgeted):** `@purityjs/core`, all its feature subpaths,
@@ -139,6 +144,39 @@ unused-code removal for this fixture, not a measured rendering-speed gain or
 a promise that applications using each/match remove those dependencies.
 
 ## Budget changes
+
+The accepted 0.5.0 target compares the combined compressed core installation
+archives against published 0.4.0. The [core pack audit](./evidence/2026-11-02-core-pack-50/README.md)
+counts core and its required compiler and signals packages, verifies the
+actual archives and installed dependency closure, and checks the target:
+
+```bash
+node benchmark/bundle-size/verify-core-pack-budget.mjs
+```
+
+That audit requires the freshly packed archives, isolated installation and
+browser smoke report described in its reproduction instructions. It does not
+publish a release or establish complete behavior parity.
+
+The separate complete-API browser comparison can enforce a stricter 50% gzip
+threshold for that different metric:
+
+```bash
+node --experimental-strip-types benchmark/bundle-size/compare-public-api-040.ts --require-50
+```
+
+It exits nonzero when the current 28-export bundle exceeds half of the published
+baseline. Install the pinned baseline as described in the
+[release comparison evidence](./evidence/2026-10-31-release-040-comparison/README.md)
+before running it. This opt-in size gate is separate from the entry budgets and
+does not establish behavior parity; add `--verify` for its limited browser smoke
+check and run relevant feature tests separately.
+
+To verify that the local baseline files match the published 0.4.0 archive,
+run `node benchmark/bundle-size/verify-published-baseline.mjs`. This downloads
+the archive recorded in the baseline lockfile, verifies its integrity, and
+compares its file list and contents to the installed core package. It requires
+network access and `tar`; it does not verify dependencies or application behavior.
 
 Budgets are per published package entry: gzip and Brotli must stay within the
 limit, which allows roughly 5% growth over the measurement and is rounded up to

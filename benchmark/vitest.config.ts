@@ -5,6 +5,10 @@ export default defineConfig({
   resolve: {
     alias: [
       {
+        find: /^@purityjs\/signals$/,
+        replacement: resolve(import.meta.dirname, '../packages/signals/src/index.ts'),
+      },
+      {
         find: /^@purityjs\/core\/jit$/,
         replacement: resolve(import.meta.dirname, '../packages/core/src/compiler/jit.ts'),
       },

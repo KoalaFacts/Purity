@@ -1,0 +1,10 @@
+{
+  "baseline": {
+    "package": "@purityjs/core",
+    "version": "0.4.0",
+    "compressedBytes": 947461,
+    "integrity": "sha512-HO1gK1r3eDkskXLIZfUWxSYvt4NHON2GPTkIXpfBFjzAux2ENdZTFgI+/kxPwoX40Ufv8svSvoXKKei0Q5M64Q=="
+  },
+  "maxCombinedCompressedBytes": 473730,
+  "packages": ["@purityjs/core", "@purityjs/signals", "@purityjs/compiler"]
+}

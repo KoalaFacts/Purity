@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "gap": "SV2-015",
+  "revision": "76a7430a0e0d54e541197ff6cafb8e56b4b3d1eb",
+  "dirty": true,
+  "node": "24.22.1",
+  "zlib": "1.3.2.1-motley-285e94b",
+  "brotli": "1.2.0",
+  "versions": {
+    "vite": "1.3.0",
+    "parser": "0.154.0"
+  },
+  "baselinePackages": {
+    "@purityjs/core": {
+      "version": "0.4.0",
+      "resolved": "https://registry.npmjs.org/@purityjs/core/-/core-0.4.0.tgz",
+      "integrity": "sha512-HO1gK1r3eDkskXLIZfUWxSYvt4NHON2GPTkIXpfBFjzAux2ENdZTFgI+/kxPwoX40Ufv8svSvoXKKei0Q5M64Q==",
+      "license": "MIT"
+    },
+    "@purityjs/vite-plugin": {
+      "version": "0.4.0",
+      "resolved": "https://registry.npmjs.org/@purityjs/vite-plugin/-/vite-plugin-0.4.0.tgz",
+      "integrity": "sha512-fJbxrSp+SOReMFN3N7zK4L7KlnyvZkjbYu+KN3uZPCo72Ggc7XaiWF8BnnvtYr4WWMhizI6f9DysepBMRhEQLw==",
+      "license": "MIT",
+      "dependencies": {
+        "oxc-parser": "0.154.0"
+      },
+      "peerDependencies": {
+        "@purityjs/core": "^0.4.0",
+        "vite": ">=6.0.0"
+      }
+    }
+  },
+  "fixtureHashes": {
+    "counter.ts": "64b72a7f5a5339c35faa6aa307463beac0408d908140f4ac1f4ac217daabdae5",
+    "controls.ts": "ecbfa6501bf0b2f8f284bd27ba84eac1df0ac58351735c07d726dfd712653a04",
+    "controls-view.ts": "1b3907ecad66e1bdbcb17e0be9a45e54ccfcd2c29216ceb34a7a36a5408ea6fe",
+    "resource.ts": "34b6ef7f4535a95fe23981b0f2039d774dfbe4e58edc5f372053088391a18273"
+  },
+  "verification": {
+    "status": "passed",
+    "engines": {
+      "chromium": "156.0.8078.4",
+      "firefox": "157.0",
+      "webkit": "27.2"
+    }
+  },
+  "settings": {
+    "target": "es2022",
+    "mode": "production",
+    "gzipLevel": 9,
+    "brotliQuality": 11,
+    "currentAotHydratable": true,
+    "currentClientAotHydratable": false
+  },
+  "results": [
+    {
+      "version": "0.4.0",
+      "profile": "counter",
+      "mode": "jit",
+      "outputSha256": "eed42be7b662cbf6427e2b9893fc2aae98097e59409a99cf21c4f8a281b72f67",
+      "rawBytes": 26881,
+      "gzipBytes": 9098,
+      "brotliBytes": 8274
+    },
+    {
+      "version": "0.4.0",
+      "profile": "counter",
+      "mode": "aot",
+      "outputSha256": "d6a1bf88b62c3ff85792f691e27a560a82533f6db51f8dacf056473bee8b306f",
+      "rawBytes": 9638,
+      "gzipBytes": 3484,
+      "brotliBytes": 3193
+    },
+    {
+      "version": "0.4.0",
+      "profile": "controls",
+      "mode": "jit",
+      "outputSha256": "820558597e9f834e940a621f7bc53ce4fb91396e749895bbe4f758f7165aef82",
+      "rawBytes": 49762,
+      "gzipBytes": 16591,
+      "brotliBytes": 15012
+    },
+    {
+      "version": "0.4.0",
+      "profile": "controls",
+      "mode": "aot",
+      "outputSha256": "b2faa7a4c35c8738ae08f49bc83d5f8851ef4dd50ea93fadc6893011423955ff",
+      "rawBytes": 25923,
+      "gzipBytes": 8502,
+      "brotliBytes": 7591
+    },
+    {
+      "version": "0.4.0",
+      "profile": "resource",
+      "mode": "jit",
+      "outputSha256": "96410674465d6d50a325f0e94d099ae7e2381260257a94da9241f6f66fd58c1c",
+      "rawBytes": 29970,
+      "gzipBytes": 10329,
+      "brotliBytes": 9460
+    },
+    {
+      "version": "0.4.0",
+      "profile": "resource",
+      "mode": "aot",
+      "outputSha256": "1e0a2811f55d768b09af5c60bf264b25b972b64d852f3cb890a21727f5a5b737",
+      "rawBytes": 13768,
+      "gzipBytes": 5079,
+      "brotliBytes": 4616
+    },
+    {
+      "version": "current",
+      "profile": "counter",
+      "mode": "jit",
+      "outputSha256": "6b8986dcd567ac4c974112e9f2b0862111bc5fd46eaab703bcaf1bfce580e35c",
+      "rawBytes": 25528,
+      "gzipBytes": 8701,
+      "brotliBytes": 7960
+    },
+    {
+      "version": "current",
+      "profile": "counter",
+      "mode": "aot",
+      "outputSha256": "d056890689710506dbb5da18a98cb89a3fbedefd94573e57fd5ca90258fe61bf",
+      "rawBytes": 7603,
+      "gzipBytes": 2868,
+      "brotliBytes": 2624
+    },
+    {
+      "version": "current",
+      "profile": "counter",
+      "mode": "client-aot",
+      "outputSha256": "b5b5961292e3ebe2e129f19e94db54dbb2f00ba8fead42a16290a511d18041e6",
+      "rawBytes": 6539,
+      "gzipBytes": 2504,
+      "brotliBytes": 2277
+    },
+    {
+      "version": "current",
+      "profile": "controls",
+      "mode": "jit",
+      "outputSha256": "821271863a90fd4110f38a54e04007eee880263e462cc8637685c67737ac4d2a",
+      "rawBytes": 31716,
+      "gzipBytes": 10712,
+      "brotliBytes": 9776
+    },
+    {
+      "version": "current",
+      "profile": "controls",
+      "mode": "aot",
+      "outputSha256": "fc93fe1c4c5bfcd3b7f0ae3f88856ef5872ec4aa903a10bbff5400ab6bdf3d67",
+      "rawBytes": 15970,
+      "gzipBytes": 5580,
+      "brotliBytes": 5030
+    },
+    {
+      "version": "current",
+      "profile": "controls",
+      "mode": "client-aot",
+      "outputSha256": "29cbab493c81aed81a4fceaaaac8379a794c1a3b0c64a20d50748281d71debbb",
+      "rawBytes": 13788,
+      "gzipBytes": 4868,
+      "brotliBytes": 4426
+    },
+    {
+      "version": "current",
+      "profile": "resource",
+      "mode": "jit",
+      "outputSha256": "137fcf7b1475c74d775134f8a1e7bf0e66a9a368113e5920dd016bcc1842a48a",
+      "rawBytes": 28453,
+      "gzipBytes": 9846,
+      "brotliBytes": 9004
+    },
+    {
+      "version": "current",
+      "profile": "resource",
+      "mode": "aot",
+      "outputSha256": "ae09ce75f652346ecd48ac93c96d487c086f4e4c1eecb631e0c78669e6c6f972",
+      "rawBytes": 11259,
+      "gzipBytes": 4370,
+      "brotliBytes": 3990
+    },
+    {
+      "version": "current",
+      "profile": "resource",
+      "mode": "client-aot",
+      "outputSha256": "aabb4a72b87b11d66d30303630f5fefa1b1da18a18c9821938e35bcac7ead826",
+      "rawBytes": 9779,
+      "gzipBytes": 3828,
+      "brotliBytes": 3510
+    }
+  ]
+}

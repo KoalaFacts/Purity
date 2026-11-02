@@ -68,6 +68,21 @@ describe('component() with tag name', () => {
 });
 
 describe('slots — callback syntax', () => {
+  it('reuses named accessors while exposing each discovered name to the consumer', () => {
+    let sameAccessor = false;
+    const Card = component(tag('slot-cache'), (_props, slots) => {
+      sameAccessor = slots.header === slots.header;
+      return html`<header>${slots.header()}</header><main>${slots.default()}</main>`;
+    });
+    const result = Card({}, ({ header, default: fill }) => {
+      header('Title');
+      fill('Body');
+    });
+
+    expect(sameAccessor).toBe(true);
+    expect(result.textContent).toBe('TitleBody');
+  });
+
   it('consumer fills default slot via callback', () => {
     const Card = component(tag('sc1'), ({ title }, { default: body }) => {
       return html`<div class="card">

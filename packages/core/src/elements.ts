@@ -5,13 +5,14 @@ import {
   getCurrentContext,
   popContext,
   pushContext,
-  watch,
+  watchEffectInternal,
 } from '@purityjs/signals';
-import { scheduleMountCallbacks, unmountContext } from './component.ts';
+import { bindComponentState, scheduleMountCallbacks, unmountContext } from './component.ts';
 import {
   dsdHydrator,
   ENABLE_SSR,
   formElementSetup,
+  setResourceStateBinder,
   type PurityElementHost,
   type SSRHtml,
 } from './hooks.ts';
@@ -33,22 +34,21 @@ export type SlotAccessor<E = void> = E extends void
 
 interface SlotRegistry {
   filled: Map<string, unknown>;
-  accessorNames: Set<string>;
+  accessors: Map<string, SlotAccessor<any>>;
 }
 
 function createRegistry(): SlotRegistry {
-  return { filled: new Map(), accessorNames: new Set() };
+  return { filled: new Map(), accessors: new Map() };
 }
 
 function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<any>> {
-  const cache = new Map<string, SlotAccessor<any>>();
+  const cache = registry.accessors;
   return new Proxy({} as Record<string, SlotAccessor<any>>, {
     get(_target, prop: string) {
       /* v8 ignore next */
       if (typeof prop !== 'string') return undefined;
       let accessor = cache.get(prop);
       if (!accessor) {
-        registry.accessorNames.add(prop);
         accessor = ((_exposed?: unknown): Node | null => {
           return resolveContent(registry.filled.get(prop));
         }) as SlotAccessor<any>;
@@ -63,7 +63,7 @@ type ConsumerSlot = (content?: Node | DocumentFragment | string | null) => Node 
 
 function createConsumerBag(registry: SlotRegistry): Record<string, ConsumerSlot> {
   const bag: Record<string, ConsumerSlot> = {};
-  const names = new Set([...registry.accessorNames, 'default']);
+  const names = new Set([...registry.accessors.keys(), 'default']);
   for (const name of names) {
     bag[name] = (content?: Node | DocumentFragment | string | null): Node | null => {
       registry.filled.set(name, content ?? null);
@@ -145,7 +145,7 @@ export interface ComponentOptions {
   delegatesFocus?: boolean;
   /** Automatically bridge one native shadow control (requires `@purityjs/core/forms`). */
   formControl?: true | string;
-  /** Opt the custom element into form participation (requires `@purityjs/core/forms`). */
+  /** Opt into form participation (enable lifecycle or full form support first). */
   formAssociated?: boolean;
 }
 
@@ -221,9 +221,11 @@ export function component<
     !formElementSetup
   ) {
     throw new Error(
-      '[Purity] Form-associated components require enableFormControls() from @purityjs/core/forms before registration.',
+      '[Purity] Form-associated components require enableFormLifecycle() or enableFormControls() before registration.',
     );
   }
+
+  setResourceStateBinder(bindComponentState);
 
   if (ENABLE_SSR) {
     componentRegistry.set(tagName, {
@@ -239,15 +241,15 @@ export function component<
     class PurityElement extends HTMLElement implements PurityElementHost {
       _ctx: ComponentContext | null = null;
       _props: Record<string, unknown> = {};
-      _hasRendered = false;
-      _hadDeclarativeShadowRoot = false;
+      #hasRendered = false;
+      #hadDeclarativeShadowRoot = false;
       _shadow: ShadowRoot;
       _internals: ElementInternals | null = null;
       declare _formBridge?: { connect(): void; disconnect(): void } | null;
 
       constructor() {
         super();
-        this._hadDeclarativeShadowRoot = this.shadowRoot !== null;
+        this.#hadDeclarativeShadowRoot = this.shadowRoot !== null;
         this._shadow =
           this.shadowRoot ??
           this.attachShadow({
@@ -265,30 +267,30 @@ export function component<
 
       connectedCallback() {
         if (this._isSSRRoot()) return;
-        this._renderConnected();
+        this.#renderConnected();
       }
 
       _isSSRRoot(): boolean {
         return (
-          !this._hasRendered && (this._hadDeclarativeShadowRoot || this._shadow.firstChild !== null)
+          !this.#hasRendered && (this.#hadDeclarativeShadowRoot || this._shadow.firstChild !== null)
         );
       }
 
       _hydrateSSR(): void {
         if (!dsdHydrator || !this._isSSRRoot() || !this.isConnected) return;
         try {
-          this._renderConnected();
+          this.#renderConnected();
           dsdHydrator.hydrateNestedElements(this._shadow);
         } catch (err) {
           if (this._ctx) unmountElementContext(this._ctx, true, true);
           this._ctx = null;
-          this._hasRendered = false;
+          this.#hasRendered = false;
           this._formBridge?.disconnect();
           throw err;
         }
       }
 
-      _renderConnected(): void {
+      #renderConnected(): void {
         const hasDSDContent = this._isSSRRoot();
         const props: Record<string, unknown> = Object.create(null);
         for (const attr of this.attributes) {
@@ -354,7 +356,7 @@ export function component<
         }
 
         ctx._isMounted = true;
-        this._hasRendered = true;
+        this.#hasRendered = true;
 
         scheduleMountCallbacks(ctx);
       }
@@ -443,7 +445,7 @@ export function teleport(
       );
       return;
     }
-    dispose = watch(() => {
+    dispose = watchEffectInternal(() => {
       clearNodes();
       const content = viewFn();
       if (content == null) return;

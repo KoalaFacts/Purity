@@ -1,4 +1,4 @@
-import { getCurrentComponent, getCurrentContext, watch } from '@purityjs/signals';
+import { getCurrentComponent, getCurrentContext, watchEffectInternal } from '@purityjs/signals';
 import { ENABLE_SSR } from './hooks.ts';
 
 /**
@@ -48,7 +48,7 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
 
     if (hasReactive) {
       let prevCss = '';
-      watch(() => {
+      watchEffectInternal(() => {
         const newCss = buildCss();
         if (newCss !== prevCss) {
           prevCss = newCss;
@@ -77,7 +77,7 @@ export function css(strings: TemplateStringsArray, ...values: unknown[]): string
 
   if (hasReactive) {
     let prevCss = '';
-    watch(() => {
+    watchEffectInternal(() => {
       const newCss = buildScoped();
       /* v8 ignore next */
       if (newCss !== prevCss) {

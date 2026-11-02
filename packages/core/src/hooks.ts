@@ -147,46 +147,46 @@ export type CaptureMatchHydrationFn = <T extends string | number | boolean>(
   sourceFn: () => T,
   cases: Partial<Record<`${T}`, () => unknown>>,
   fallback?: () => unknown,
+  adapter?: unknown,
 ) => unknown;
 
 export type CaptureEachHydrationFn = <T>(
   listAccessor: (() => T[]) | T[],
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
   keyFn?: (item: T, index: number) => unknown,
-  options?: import('./control.ts').EachOptions,
-  hydrateWindow?: unknown,
+  adapter?: unknown,
 ) => unknown;
-
-export interface ControlHydrationRuntime {
-  enter(): void;
-  exit(): void;
-  isDeferred(value: unknown): boolean;
-  inflate(value: unknown, target: Node, skipFirstNode?: boolean, createIfEmpty?: boolean): void;
-}
-
-export let controlHydrationRuntime: ControlHydrationRuntime | null = null;
-
-export function setControlHydrationRuntime(runtime: ControlHydrationRuntime): void {
-  controlHydrationRuntime = runtime;
-}
 
 export let captureHydratingMatch: CaptureMatchHydrationFn | null = null;
 export let captureHydratingEach: CaptureEachHydrationFn | null = null;
 
+/** @internal Optional control-flow ownership notification for template slots. */
+export let slotNodesReplaced: ((oldNodes: Node[], newNodes: Node[]) => void) | null = null;
+
 /** @internal */
-export function setControlHydrationHooks(
-  matchHook: CaptureMatchHydrationFn | null,
-  eachHook: CaptureEachHydrationFn | null,
-): void {
+export function setSlotNodesReplaced(fn: (oldNodes: Node[], newNodes: Node[]) => void): void {
+  slotNodesReplaced = fn;
+}
+
+/** @internal */
+export function setMatchHydrationHook(matchHook: CaptureMatchHydrationFn | null): void {
   captureHydratingMatch = matchHook;
+}
+
+/** @internal */
+export function setEachHydrationHook(eachHook: CaptureEachHydrationFn | null): void {
   captureHydratingEach = eachHook;
 }
 
-export let consumeHydrationValueHook: ((key?: string) => unknown) | null = null;
+// A custom element installs this when component() is registered. Resources
+// used outside custom elements need no CSS custom-state implementation.
+export let resourceStateBinder: ((name: string, accessor: () => unknown) => void) | null = null;
 
 /** @internal */
-export function setHydrationCacheConsumer(fn: ((key?: string) => unknown) | null): void {
-  consumeHydrationValueHook = fn;
+export function setResourceStateBinder(
+  binder: (name: string, accessor: () => unknown) => void,
+): void {
+  resourceStateBinder = binder;
 }
 
 // ---------------------------------------------------------------------------

@@ -253,7 +253,16 @@ export function generateLinked(ast: FragmentNode): string {
   const slots: Slot[] = [];
   const html = buildDynamicHtml(singleRoot ? ast.children[0] : ast, slots, []);
 
-  const bindCode = genPositionalBindings(slots);
+  const sharedGroup =
+    slots.reduce(
+      (count, slot) =>
+        count +
+        (slot.type === 'attr'
+          ? slot.attrs.filter((attr) => attr.kind === 'bind' && attr.name === 'group').length
+          : 0),
+      0,
+    ) >= 2;
+  const bindCode = genPositionalBindings(slots, sharedGroup);
   const templatePrep = genTemplateCommentToTextConversion(slots, singleRoot);
   const prepArg = templatePrep ? `,function(_c){${templatePrep}}` : '';
   const singleArg = singleRoot ? ',1' : prepArg ? ',0' : '';
@@ -265,6 +274,7 @@ export function generateLinked(ast: FragmentNode): string {
   return [
     '(function(){',
     `var _t=__purity_tmpl__(${jsString(html)}${singleArg}${prepArg});`,
+    sharedGroup ? GROUP_BINDING_HELPER : '',
     'return function(_v,_w,_d){',
     'var _r=_t();',
     bindCode,
@@ -321,11 +331,16 @@ function genTemplateCommentToTextConversion(slots: Slot[], singleRoot = false): 
 interface HydrateCtx {
   setup: string[];
   reactive: string[];
+  groups: Array<{ position: number; code: string }>;
   id: number;
+  sharedSlots: boolean;
 }
 
 /** Hydrate factory source with the same free-name contract as generateLinked. */
-export function generateHydrateLinked(ast: FragmentNode): string {
+export function generateHydrateLinked(
+  ast: FragmentNode,
+  options?: { sharedSlots?: boolean },
+): string {
   assertSafeScriptContent(ast);
   ast = condenseWhitespace(ast) as FragmentNode;
 
@@ -333,11 +348,20 @@ export function generateHydrateLinked(ast: FragmentNode): string {
     return 'function(_v,_w,_r,_i,_c,_e,_m,_s){return _r;}';
   }
 
-  const ctx: HydrateCtx = { setup: [], reactive: [], id: 0 };
+  const ctx: HydrateCtx = {
+    setup: [],
+    reactive: [],
+    groups: [],
+    id: 0,
+    sharedSlots: options?.sharedSlots === true,
+  };
   // Top-level cursor = first child of the SSR root container.
   ctx.setup.push('var _c0=_s===undefined?_r.firstChild:_s;');
   emitHydrateChildren(ast.children, ctx, '_c0');
 
+  if (ctx.groups.length > 1) {
+    for (const group of ctx.groups) ctx.setup[group.position] = group.code;
+  }
   let body = ctx.setup.join('');
   if (ctx.reactive.length > 0) {
     body += `_w(function(){${ctx.reactive.join('')}});`;
@@ -354,7 +378,10 @@ export function generateHydrateLinked(ast: FragmentNode): string {
   // Parsed indices are numeric; names are validated above and literal text
   // is emitted with JSON.stringify.
   // codeql[js/bad-code-sanitization]
-  return `function(_v,_w,_r,_i,_c,_e,_m,_s){${body}}`;
+  const factory = `function(_v,_w,_r,_i,_c,_e,_m,_s){${body}}`;
+  return ctx.groups.length > 1
+    ? `(function(){${GROUP_BINDING_HELPER}return ${factory};})()`
+    : factory;
 }
 
 // Standalone helper definitions, equivalent to flattenValue / swapSlot /
@@ -390,7 +417,7 @@ const TMPL_DEF =
 // emitted from several generator paths; keeping one copy keeps the runtime
 // compiler small and the paths from drifting.
 
-// Re-render a slot from its accessor through swapSlot (value-helpers.ts),
+// Re-render a slot from its accessor through the shared swapSlot helper,
 // which keeps `tn` pointing at the slot's current Text node or Node list.
 // Hydration passes `_i` so templates captured as deferred are built.
 function slotUpdate(xv: string, tn: string, hydrating = false): string {
@@ -506,6 +533,18 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
       const depth = `_depth${id}`;
       const val = `_v[${node.index}]`;
 
+      if (ctx.sharedSlots) {
+        const result = `_hs${id}`;
+        ctx.setup.push(
+          `var ${result}=__purity_hslot__(${cursor},_v,${node.index},_i,_c,_e,_m);`,
+          `var ${close}=${result}[0],${xv}=${result}[1],${fl}=${result}[2],${tn}=${result}[3];`,
+          `${result}.length=0;`,
+          `${cursor}=${close}.nextSibling;`,
+        );
+        ctx.reactive.push(`if(${fl}){`, slotUpdate(xv, tn, true), `}`);
+        return;
+      }
+
       // Cursor is on the open marker `<!--[-->`. Walk siblings until we hit
       // the matching `<!--]-->`, collecting content nodes (may be empty).
       ctx.setup.push(
@@ -573,6 +612,12 @@ function emitHydrate(node: ASTNode, ctx: HydrateCtx, cursor: string): void {
       for (const attr of node.attributes) {
         if (attr.kind !== 'static') {
           const { setup, reactive } = genAttrBinding(el, attr, node.tag);
+          if (attr.kind === 'bind' && attr.name === 'group') {
+            ctx.groups.push({
+              position: ctx.setup.length,
+              code: `_gb(${el},_v,${attr.index},_w);`,
+            });
+          }
           if (setup) ctx.setup.push(setup);
           if (reactive) ctx.reactive.push(reactive);
         }
@@ -670,23 +715,12 @@ function genSimpleTemplate(tpl: SimpleTemplate): string {
         setupParts.push(`_e.appendChild(document.createTextNode(${jsString(ch.value)}));`);
       }
     } else if (ch.type === 'expression') {
-      const val = `_v[${ch.index}]`;
-      const id = bindVarCounter++;
-      const xv = `_x${id}`;
-      const tn = `_t${id}`;
-      const fl = `_xf${id}`;
-      // Text-slot value coercion MUST match valueToHtml() on the SSR side
-      // (compiler/ssr-runtime.ts): null / undefined / false render as empty
-      // string, everything else stringifies. The previous client path
-      // skipped `=== false` in the reactive (function-call) branch AND in
-      // the array-item branch — so a signal returning `false` produced
-      // the literal text "false" on the client while SSR rendered nothing.
-      // Symmetric `==null||===false` filter at every text-emit site.
-      setupParts.push(
-        `var ${xv}=_d?_d(${val}):${val};var ${fl}=typeof ${xv}==='function';`,
-        `var ${tn}=_e.appendChild(document.createTextNode(''));if(!${fl})__purity_sw__(${tn},${xv});`,
+      const { setup, reactive } = genExprBinding(
+        "_e.appendChild(document.createTextNode(''))",
+        ch.index,
       );
-      reactiveParts.push(`if(${fl}){${slotUpdate(xv, tn)}}`);
+      setupParts.push(setup);
+      if (reactive) reactiveParts.push(reactive);
     }
   }
 
@@ -937,7 +971,17 @@ interface BindingParts {
   reactive: string; // body for the shared watch — guarded by per-binding _f* flags
 }
 
-function genPositionalBindings(slots: Slot[]): string {
+function groupBinding(el: string, value: string, watch: string): string {
+  return (
+    `if(typeof ${value}==='function'){` +
+    `if(${el}.type==='radio'){${watch}(function(){${el}.checked=${value}()===${el}.value;});${el}.addEventListener('change',function(){if(${el}.checked)${value}(${el}.value);});}` +
+    `else{${watch}(function(){${el}.checked=${value}().includes(${el}.value);});${el}.addEventListener('change',function(){var a=[...${value}()],j=a.indexOf(${el}.value);if(${el}.checked){if(j===-1)a.push(${el}.value);}else if(j!==-1)a.splice(j,1);${value}(a);});}}`
+  );
+}
+
+const GROUP_BINDING_HELPER = `function _gb(e,v,i,w){${groupBinding('e', 'v[i]', 'w')}}`;
+
+function genPositionalBindings(slots: Slot[], sharedGroup = false): string {
   // Cache paths used by multiple slots so cloned instances traverse them once.
   const prefixCounts = new Map<string, number>();
   for (const slot of slots) {
@@ -979,7 +1023,7 @@ function genPositionalBindings(slots: Slot[]): string {
     }
 
     if (slot.type === 'expr') {
-      const { setup, reactive } = genExprBinding(nodeVar, slot.index, slot.textPlaceholder);
+      const { setup, reactive } = genExprBinding(nodeVar, slot.index);
       setupParts.push(setup);
       if (reactive) reactiveParts.push(reactive);
     } else if (slot.type === 'raw') {
@@ -989,7 +1033,7 @@ function genPositionalBindings(slots: Slot[]): string {
     } else {
       for (const attr of slot.attrs) {
         if (attr.kind !== 'static') {
-          const { setup, reactive } = genAttrBinding(nodeVar, attr, slot.tag);
+          const { setup, reactive } = genAttrBinding(nodeVar, attr, slot.tag, sharedGroup);
           setupParts.push(setup);
           if (reactive) reactiveParts.push(reactive);
         }
@@ -1015,7 +1059,7 @@ function genPositionalBindings(slots: Slot[]): string {
 // old comment-placeholder behavior.
 // ---------------------------------------------------------------------------
 
-function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolean): BindingParts {
+function genExprBinding(slotVar: string, index: number): BindingParts {
   // The slot is always a Text node by the time the per-row factory runs:
   // - textPlaceholder=true: ZWSP text node stamped directly in the HTML.
   // - textPlaceholder=false: was a comment in the HTML, but converted to a
@@ -1043,7 +1087,12 @@ function genExprBinding(slotVar: string, index: number, _textPlaceholder: boolea
 // Returns { setup, reactive }: same fold contract as genExprBinding.
 // ---------------------------------------------------------------------------
 
-function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingParts {
+function genAttrBinding(
+  el: string,
+  attr: AttributeNode,
+  tag: string,
+  sharedGroup = false,
+): BindingParts {
   if (attr.kind === 'static') return { setup: '', reactive: '' };
   assertSafeName(attr.name, 'attribute');
   assertSafeBinding(attr.name, attr.kind);
@@ -1095,12 +1144,9 @@ function genAttrBinding(el: string, attr: AttributeNode, tag: string): BindingPa
       const evt = attr.name === 'checked' || attr.name === 'group' ? 'change' : 'input';
       const qevt = jsString(evt);
       if (attr.name === 'group') {
+        if (sharedGroup) return { setup: `_gb(${el},_v,${attr.index},_w);`, reactive: '' };
         return {
-          setup: [
-            `if(typeof ${val}==='function'){`,
-            `if(${el}.type==='radio'){_w(function(){${el}.checked=${val}()===${el}.value;});${el}.addEventListener('change',function(){if(${el}.checked)${val}(${el}.value);});}`,
-            `else{_w(function(){${el}.checked=${val}().includes(${el}.value);});${el}.addEventListener('change',function(){var a=[...${val}()],i=a.indexOf(${el}.value);if(${el}.checked){if(i===-1)a.push(${el}.value);}else if(i!==-1)a.splice(i,1);${val}(a);});}}`,
-          ].join(''),
+          setup: groupBinding(el, val, '_w'),
           reactive: '',
         };
       }

@@ -25,7 +25,18 @@
     "LICENSES"
   ],
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/index.ts",
+    "./dist/index.js",
+    "./dist/index.cjs",
+    "./dist/browser/index.js",
+    "./dist/browser/index.cjs",
+    "./src/forms.ts",
+    "./dist/forms/index.js",
+    "./dist/forms/index.cjs",
+    "./dist/browser/forms/index.js",
+    "./dist/browser/forms/index.cjs"
+  ],
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -209,6 +220,36 @@
       },
       "import": "./dist/forms/index.js",
       "require": "./dist/forms/index.cjs"
+    },
+    "./forms/lifecycle": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/forms/lifecycle.d.ts",
+            "import": "./dist/forms/lifecycle/index.js",
+            "require": "./dist/forms/lifecycle/index.cjs"
+          },
+          "default": "./src/forms/lifecycle.ts"
+        },
+        "types": "./dist/forms/lifecycle.d.ts",
+        "import": "./dist/forms/lifecycle/index.js",
+        "require": "./dist/forms/lifecycle/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/forms/lifecycle.d.ts",
+          "import": "./dist/forms/lifecycle/index.js",
+          "require": "./dist/forms/lifecycle/index.cjs"
+        },
+        "default": "./src/forms/lifecycle.ts"
+      },
+      "types": "./dist/forms/lifecycle.d.ts",
+      "browser": {
+        "import": "./dist/browser/forms/lifecycle/index.js",
+        "require": "./dist/browser/forms/lifecycle/index.cjs"
+      },
+      "import": "./dist/forms/lifecycle/index.js",
+      "require": "./dist/forms/lifecycle/index.cjs"
     },
     "./csr-runtime": {
       "purity-server": {

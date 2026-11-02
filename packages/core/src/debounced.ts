@@ -4,7 +4,7 @@
 // debounced() into a resource() source.
 // ---------------------------------------------------------------------------
 
-import { type ComputedAccessor, state, watch } from '@purityjs/signals';
+import { type ComputedAccessor, state, watchEffectInternal } from '@purityjs/signals';
 
 /**
  * Debounced read-only accessor with an explicit dispose. Inside a component
@@ -52,7 +52,7 @@ export function debounced<T>(source: () => T, ms: number): DebouncedAccessor<T> 
     }
   };
 
-  const stop = watch(() => {
+  const stop = watchEffectInternal(() => {
     // Isolate source-throw: a throwing source() on a subsequent run would
     // otherwise (a) tear down the watcher's source slots and (b) leave us
     // without a re-arm path on the next dependency change. Catch, log, and

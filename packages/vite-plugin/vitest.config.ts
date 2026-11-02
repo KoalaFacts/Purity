@@ -12,6 +12,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@purityjs/signals': resolve(import.meta.dirname, '../signals/src/index.ts'),
       '@purityjs/compiler': resolve(import.meta.dirname, '../compiler/src/index.ts'),
       '@purityjs/ssr/runtime': resolve(import.meta.dirname, '../ssr/src/runtime.ts'),
       '@purityjs/core/csr-runtime': resolve(

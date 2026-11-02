@@ -5,7 +5,7 @@
 // Subsequent calls: run cached function directly. Zero overhead.
 // ---------------------------------------------------------------------------
 
-import { watch } from '@purityjs/signals';
+import { watchEffectInternal, type watch } from '@purityjs/signals';
 import { generateHydrateLinked, generateLinked, parse } from '@purityjs/compiler';
 import {
   type CompiledCreateFactory,
@@ -120,7 +120,8 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Docum
   if (isHydrating()) {
     return makeDeferred(strings, values) as unknown as Node;
   }
-  return ensureClient(strings)(values, watch);
+  // Generated JIT bindings only call the single-effect overload.
+  return ensureClient(strings)(values, watchEffectInternal as typeof watch);
 }
 
 // Re-export hydration helpers for callers (hydrate(), Custom Element

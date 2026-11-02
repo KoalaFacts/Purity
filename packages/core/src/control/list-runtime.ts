@@ -1,2 +1,2 @@
-// Compiler-selected ordinary list rendering. Public callers use each() from core.
-export { ordinaryEach as each } from '../control.ts';
+// Direct list-runtime entry. Public callers can also use each() from core.
+export { each } from '../control.ts';

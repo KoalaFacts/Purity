@@ -1,8 +1,10 @@
 import { defineConfig } from 'vite-plus';
+import { omitPublishedSources } from '../../scripts/vite-sourcemaps.ts';
 
 export default defineConfig({
   define: { __SSR__: 'false' },
   plugins: [
+    omitPublishedSources(import.meta.dirname),
     {
       name: 'purity-browser-ssr-stub',
       resolveId(id) {

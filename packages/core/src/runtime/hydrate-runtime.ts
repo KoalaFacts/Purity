@@ -2,20 +2,9 @@
 // Hydration runtime — deferred-template thunks + mode flag.
 // ---------------------------------------------------------------------------
 
-import { watch } from '@purityjs/signals';
-import {
-  type CaptureEachHydrationFn,
-  setControlHydrationHooks,
-  setControlHydrationRuntime,
-  setDSDHydrator,
-  setIsHydratingHook,
-} from '../hooks.ts';
-import {
-  inflateDeferredEach,
-  inflateDeferredMatch,
-  makeDeferredEach,
-  makeDeferredMatch,
-} from '../control.ts';
+import { watch, watchEffectInternal } from '@purityjs/signals';
+import { setDSDHydrator, setIsHydratingHook } from '../hooks.ts';
+import { installControlHydration } from '../control/hydrate.ts';
 import { hydratePendingCustomElements } from './hydrate-elements.ts';
 
 /** A reified `html\`\`` call captured during hydration; inflated against an SSR subtree. */
@@ -75,16 +64,7 @@ export function enableDomHydration(): void {
   if (domHydrationInstalled) return;
   domHydrationInstalled = true;
   setIsHydratingHook(isHydrating);
-  setControlHydrationHooks(
-    (...args) => {
-      setInflateDeferredMatch(inflateDeferredMatch as (d: unknown, c: Node[], m: Node) => void);
-      return makeDeferredMatch(...args);
-    },
-    ((...args: Parameters<CaptureEachHydrationFn>) => {
-      setInflateDeferredEach(inflateDeferredEach as (d: unknown, c: Node[], m: Node) => void);
-      return makeDeferredEach(...(args as Parameters<typeof makeDeferredEach>));
-    }) as CaptureEachHydrationFn,
-  );
+  installControlHydration();
   setDSDHydrator({
     hydrateShadow(shadow, renderInContext) {
       const adoptedBefore = shadow.adoptedStyleSheets?.length ?? 0;
@@ -184,6 +164,21 @@ export function renderCompiledTemplate(
     : create(values, watch);
 }
 
+/** @internal Generated AOT factories use only single-callback effects. */
+export function renderCompiledTemplateAot(
+  create: (
+    values: unknown[],
+    effect: typeof watchEffectInternal,
+    materializeChild?: (value: unknown) => unknown,
+  ) => Node | DocumentFragment,
+  hydrate: HydrateFactory,
+  values: unknown[],
+): Node | DocumentFragment {
+  return isHydrating()
+    ? (makeCompiledDeferred(create as CompiledCreateFactory, hydrate, values) as unknown as Node)
+    : create(values, watchEffectInternal);
+}
+
 /**
  * Inflate a DeferredTemplate against the SSR-rendered subtree in `target`.
  * @internal
@@ -202,14 +197,12 @@ export function inflateDeferred(
     return target;
   }
   const fn = deferred.hydrate ?? jit!.hydrate(deferred.strings!);
-  const check =
-    hydrationWarningsEnabled() || hydrationTextRewriteEnabled() ? checkHydrationCursor : undefined;
   return fn(
     deferred.values,
     watch,
     target,
     inflateDeferred,
-    check,
+    hydrationCheck,
     inflateDeferredEachThunk,
     inflateDeferredMatchThunk,
     firstNode,
@@ -280,15 +273,18 @@ function stripSuspenseMarkers(target: Node): void {
 
 let warnMismatches = false;
 let rewriteText = false;
+let hydrationCheck: typeof checkHydrationCursor | undefined;
 
 /** Enable console.warn diagnostics for hydration mismatches. Off by default. */
 export function enableHydrationWarnings(): void {
   warnMismatches = true;
+  hydrationCheck = checkHydrationCursor;
 }
 
 /** Disable console.warn diagnostics for hydration mismatches. */
 export function disableHydrationWarnings(): void {
   warnMismatches = false;
+  if (!rewriteText) hydrationCheck = undefined;
 }
 
 /** True if hydration warnings are currently enabled. @internal */
@@ -299,11 +295,13 @@ export function hydrationWarningsEnabled(): boolean {
 /** Opt in to rewriting SSR static-text-node content when it diverges from AST text. */
 export function enableHydrationTextRewrite(): void {
   rewriteText = true;
+  hydrationCheck = checkHydrationCursor;
 }
 
 /** Disable text-rewrite hydration mode (the default). */
 export function disableHydrationTextRewrite(): void {
   rewriteText = false;
+  if (!warnMismatches) hydrationCheck = undefined;
 }
 
 /** True if hydration text-rewrite is currently enabled. @internal */
@@ -370,11 +368,3 @@ function formatExpected(expected: ExpectedKind): string {
   if (expected === 'comment') return 'comment node';
   return `<${expected}>`;
 }
-
-setControlHydrationRuntime({
-  enter: enterHydration,
-  exit: exitHydration,
-  isDeferred,
-  inflate: (value, target, skipFirstNode, createIfEmpty) =>
-    inflateDeferred(value as DeferredTemplate, target, skipFirstNode, createIfEmpty),
-});

@@ -10,7 +10,7 @@ Start with the [five-minute guide](./getting-started.md), then choose a topic be
 
 ## Try the reactive core
 
-The counter below runs on `state()`, `compute()`, and `html` from `@purityjs/core`.
+The counter below runs on `state()` and `compute()` from `@purityjs/core` and `html` from `@purityjs/core/jit`.
 
 [LIVE_EXAMPLE]
 

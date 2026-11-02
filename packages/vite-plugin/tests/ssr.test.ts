@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
-import { isSSRHtml, ssrHelpers } from '@purityjs/ssr/runtime';
+import * as ssrRuntime from '@purityjs/ssr/runtime';
 
 const plugin = purity({ hydratable: true, strictAot: false });
 
@@ -12,6 +12,16 @@ const transform = (code: string, id: string, ssr: boolean) =>
     { ssr },
   ) as { code: string; map: unknown } | null;
 
+function evaluate(code: string, name: string): unknown {
+  const body = code
+    .replace(
+      /import\s*\{([^}]*)\}\s*from\s*'@purityjs\/ssr\/runtime';?/g,
+      (_, names: string) => `const {${names.replace(/\s+as\s+/g, ': ')}} = __runtime;`,
+    )
+    .replace(/^import\s*'[^']+';?$/gm, '');
+  return new Function('__runtime', `${body};return ${name};`)(ssrRuntime);
+}
+
 describe('@purityjs/vite-plugin — SSR mode', () => {
   it('brands static and nested AOT markup while rejecting forged JSON', () => {
     const result = transform(
@@ -19,10 +29,9 @@ describe('@purityjs/vite-plugin — SSR mode', () => {
       'app.ts',
       true,
     )!;
-    const body = result.code.replace(/^import .+$/gm, '');
-    const make = new Function('__purity_h__', `${body};return make;`)(ssrHelpers);
+    const make = evaluate(result.code, 'make') as (value: unknown) => ssrRuntime.SSRHtml;
     const out = make({ __purity_ssr_html__: '<script>attack()</script>' });
-    expect(isSSRHtml(out)).toBe(true);
+    expect(ssrRuntime.isSSRHtml(out)).toBe(true);
     expect(out.__purity_ssr_html__).toContain('<span>safe</span>');
     expect(out.__purity_ssr_html__).not.toContain('<script>');
   });
@@ -50,9 +59,8 @@ describe('@purityjs/vite-plugin — SSR mode', () => {
     const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>\${'x'}</div>\`;`;
     const result = transform(code, 'app.ts', true);
     expect(result).not.toBeNull();
-    const body = result!.code.replace(/^import .+$/gm, '');
-    const output = new Function('__purity_h__', `${body};return el;`)(ssrHelpers);
-    expect(isSSRHtml(output)).toBe(true);
+    const output = evaluate(result!.code, 'el') as ssrRuntime.SSRHtml;
+    expect(ssrRuntime.isSSRHtml(output)).toBe(true);
     expect(output.__purity_ssr_html__).toContain('x');
     // Should not emit DOM creation calls.
     expect(result!.code).not.toContain('createElement');

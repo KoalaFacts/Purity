@@ -77,7 +77,7 @@ describe('@purityjs/vite-plugin', () => {
     const out = result.code;
     // The injected line should appear after both original imports.
     const injected = out.indexOf(
-      "import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/runtime';",
+      "import { renderCompiledTemplateAot as __purity_renderCompiled__ } from '@purityjs/core/runtime';",
     );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf("from './other.ts'"));
@@ -95,7 +95,7 @@ describe('@purityjs/vite-plugin', () => {
     expect(result).not.toBeNull();
     const out = result!.code;
     const injected = out.indexOf(
-      "import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/runtime';",
+      "import { renderCompiledTemplateAot as __purity_renderCompiled__ } from '@purityjs/core/runtime';",
     );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf('// last import on its own line'));
@@ -111,7 +111,7 @@ describe('@purityjs/vite-plugin', () => {
     expect(result).not.toBeNull();
     const out = result!.code;
     const injected = out.indexOf(
-      "import { renderCompiledTemplate as __purity_renderCompiled__ } from '@purityjs/core/runtime';",
+      "import { renderCompiledTemplateAot as __purity_renderCompiled__ } from '@purityjs/core/runtime';",
     );
     expect(injected).toBeGreaterThanOrEqual(0);
     expect(injected).toBeGreaterThan(out.indexOf("from './data.json'"));
@@ -238,7 +238,7 @@ describe('@purityjs/vite-plugin', () => {
     // The arrow body should reference the hoisted tpl, NOT have its own IIFE
     expect(result.code).toContain('const __purity_tpl_0 = ');
     expect(result.code).toMatch(
-      /=> __purity_renderCompiled__\(__purity_tpl_0, __purity_tpl_0_hydrate, \[item\]\)/,
+      /=> __purity_renderCompiled__\(__purity_tpl_0, __purity_tpl_0_hydrate, \[\(item\)\]\)/,
     );
     // Confirm no `(function(){...})()` IIFE remains in the arrow body
     const arrowBody = result.code.slice(result.code.indexOf('(item) =>'));

@@ -66,6 +66,12 @@ test('publishes release only after every package origin and remote tag are verif
   assert.ok(calls.findIndex((call) => call[1] === 'push') < calls.length - 1);
 });
 
+test('uses the prepared 0.5.0 release notes when creating the release', async () => {
+  const { calls, error } = await runCase({ version: '0.5.0' });
+  assert.equal(error, undefined);
+  assert.deepEqual(calls.at(-1).slice(-2), ['--notes-file', 'docs/releases/0.5.0.md']);
+});
+
 test('refuses mixed package source commits before any tag or release mutation', async () => {
   const { calls, error } = await runCase({ packageSha: 'b'.repeat(40) });
   assert.match(error.message, /source/);

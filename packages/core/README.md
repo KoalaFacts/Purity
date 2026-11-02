@@ -21,7 +21,7 @@ npm install @purityjs/core
 ### Reactive Primitives
 
 ```ts
-import { state, compute, watch, batch } from '@purityjs/core';
+import { state, compute, watch, batch } from "@purityjs/core";
 
 const count = state(0);
 count(); // read → 0
@@ -50,7 +50,8 @@ The fetcher receives an `AbortSignal` that fires on dep change or unmount,
 so callers don't need to wire `AbortController` themselves.
 
 ```ts
-import { state, resource } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
+import { state, resource } from "@purityjs/core";
+import { html } from "@purityjs/core/jit";
 
 const userId = state(1);
 
@@ -107,14 +108,14 @@ shape as `resource()`, but does not run on creation. Call `r.fetch(args)` to
 trigger; `r.refresh()` re-runs with the most recent args.
 
 ```ts
-import { lazyResource } from '@purityjs/core';
+import { lazyResource } from "@purityjs/core";
 
 const save = lazyResource((data: { name: string }, { signal }) =>
-  fetch('/save', { method: 'POST', body: JSON.stringify(data), signal }),
+  fetch("/save", { method: "POST", body: JSON.stringify(data), signal }),
 );
 
 html`
-  <button @click=${() => save.fetch({ name: 'Jane' })}>Save</button>
+  <button @click=${() => save.fetch({ name: "Jane" })}>Save</button>
   ${() => (save.loading() ? html`<p>Saving…</p>` : null)}
   ${() => (save.error() ? html`<p>Failed</p>` : null)}
 `;
@@ -126,9 +127,9 @@ A read-only derived signal that mirrors a source after `ms` of quiet. Useful
 for search-as-you-type and other rate-limited inputs.
 
 ```ts
-import { state, debounced, resource } from '@purityjs/core';
+import { state, debounced, resource } from "@purityjs/core";
 
-const search = state('');
+const search = state("");
 const query = debounced(search, 300);
 
 const results = resource(
@@ -151,7 +152,7 @@ const items = resource(
   (p, { signal }) => fetch(`/items?page=${p}`, { signal }).then((r) => r.json()),
 );
 
-component('p-paginated', () => {
+component("p-paginated", () => {
   return html`
     <ul>
       ${each(
@@ -172,8 +173,8 @@ strings, and let the resource's AbortSignal cancel the in-flight HTTP
 request when a newer keystroke arrives.
 
 ```ts
-component('p-search', () => {
-  const term = state('');
+component("p-search", () => {
+  const term = state("");
   const query = debounced(term, 300);
   const results = resource(
     () => query().trim() || null,
@@ -199,15 +200,15 @@ then call the lazy save resource. If the save errors, restore the
 previous value.
 
 ```ts
-component('p-todo-row', ({ todo }) => {
+component("p-todo-row", ({ todo }) => {
   const local = state(todo);
   const save = lazyResource((next: typeof todo, { signal }) =>
     fetch(`/todos/${next.id}`, {
-      method: 'PUT',
+      method: "PUT",
       body: JSON.stringify(next),
       signal,
     }).then((r) => {
-      if (!r.ok) throw new Error('save failed');
+      if (!r.ok) throw new Error("save failed");
       return r.json();
     }),
   );
@@ -238,17 +239,17 @@ tearing the resource down. (`r.dispose()` is terminal — for permanent
 teardown, not pause/resume.)
 
 ```ts
-component('p-dashboard', () => {
+component("p-dashboard", () => {
   const paused = state(false);
   const stats = resource(
-    () => (paused() ? null : 'tick'),
-    (_, { signal }) => fetch('/stats', { signal }).then((r) => r.json()),
+    () => (paused() ? null : "tick"),
+    (_, { signal }) => fetch("/stats", { signal }).then((r) => r.json()),
     { pollInterval: 5_000, retry: 2 },
   );
   return html`
     <h2>Live stats</h2>
     <pre>${() => JSON.stringify(stats(), null, 2)}</pre>
-    <button @click=${() => paused((v) => !v)}>${() => (paused() ? 'Resume' : 'Pause')}</button>
+    <button @click=${() => paused((v) => !v)}>${() => (paused() ? "Resume" : "Pause")}</button>
     ${() => (stats.error() ? html`<p>connection lost</p>` : null)}
   `;
 });
@@ -311,10 +312,10 @@ cd benchmark && node --expose-gc \
 JIT compiled: `html` tagged literals → parse → AST → codegen → cached DOM factory.
 
 ```ts
-import { html } from '@purityjs/core/jit';
+import { html } from "@purityjs/core/jit";
 
 html`
-  <div class=${() => (active() ? 'on' : 'off')}>
+  <div class=${() => (active() ? "on" : "off")}>
     <p>${() => count()}</p>
     <input ::value=${text} />
     <button @click=${save} ?disabled=${() => !valid()}>Save</button>
@@ -342,17 +343,17 @@ html`
 Custom Elements with Shadow DOM. Registered globally by tag name.
 
 ```ts
-import { component, slot, onMount, onDestroy, onDispose } from '@purityjs/core';
+import { component, slot, onMount, onDestroy, onDispose } from "@purityjs/core";
 
-component('p-card', ({ title }, { default: body, header }) => {
+component("p-card", ({ title }, { default: body, header }) => {
   css`
     .card {
       padding: 1rem;
     }
   `;
 
-  onMount(() => console.log('ready'));
-  onDestroy(() => console.log('gone'));
+  onMount(() => console.log("ready"));
+  onDestroy(() => console.log("gone"));
 
   return html`
     <div class="card">
@@ -366,7 +367,7 @@ component('p-card', ({ title }, { default: body, header }) => {
 **Scoped slots** — expose data from component to consumer:
 
 ```ts
-component('p-form', (_props, { default: body }) => {
+component("p-form", (_props, { default: body }) => {
   const isValid = compute(() => true);
   return {
     view: html`<form>${body({ validate: isValid })}</form>`,
@@ -388,12 +389,18 @@ opinionated choice — listing the costs honestly so you can decide:
   utility CSS works via [`adoptedStyleSheets`](https://developer.mozilla.org/en-US/docs/Web/API/Document/adoptedStyleSheets)
   — Tailwind needs explicit injection per shadow root. CSS variables _do_
   pierce, so design tokens declared on `:root` work normally.
-- **Form libraries / native form participation.** For a component wrapping
-  one input, select, or textarea, call `enableFormControls()` from
-  `@purityjs/core/forms` before registering it with `{ formControl: true }`. Purity then
+- **Form libraries / native form participation.** The `@purityjs/core` root
+  entry automatically enables form controls. For a component wrapping one
+  input, select, or textarea, register it with `{ formControl: true }`. Purity then
   publishes its value and validity through
   [`ElementInternals`](https://developer.mozilla.org/en-US/docs/Web/API/ElementInternals).
   Libraries that only walk light DOM still cannot inspect the internal control.
+  For lifecycle callbacks without a native-control bridge, import
+  `formComponent` and the `onForm*` hooks from `@purityjs/core/forms/lifecycle`.
+  Alternatively, call `enableFormLifecycle()` from that entry before using
+  `component(..., { formAssociated: true })` from a lighter entry such as
+  `@purityjs/core/csr`. With that entry, import `@purityjs/core/forms` to
+  enable `formControl` support.
 - **Accessibility across shadow boundaries.** `aria-labelledby` /
   `aria-describedby` cannot reference IDs across a shadow root. Use
   `aria-label` directly or expose explicit ARIA attributes on the host.
@@ -426,7 +433,7 @@ css`
 `;
 css`
   .box {
-    background: ${() => (dark() ? '#333' : '#fff')};
+    background: ${() => (dark() ? "#333" : "#fff")};
   }
 `;
 ```
@@ -434,7 +441,7 @@ css`
 ### Control Flow
 
 ```ts
-import { match, when, each } from '@purityjs/core';
+import { match, when, each } from "@purityjs/core";
 
 when(
   () => ok(),
@@ -458,7 +465,7 @@ each(
 For a long list, import `virtualEach` and put it in a scrollable container:
 
 ```ts
-import { virtualEach } from '@purityjs/core/virtual';
+import { virtualEach } from "@purityjs/core/virtual";
 
 html`<ul style="max-height: 24rem; overflow-y: auto">
   ${virtualEach(
@@ -476,9 +483,9 @@ the full list; hydration adopts those rows before windowing them.
 ### Teleport
 
 ```ts
-import { teleport } from '@purityjs/core';
+import { teleport } from "@purityjs/core";
 
-teleport('#modal-root', () => (visible() ? html`<div class="modal">Open</div>` : null));
+teleport("#modal-root", () => (visible() ? html`<div class="modal">Open</div>` : null));
 ```
 
 ### Lifecycle
@@ -493,9 +500,9 @@ onError(fn); // error boundary
 ### Mount
 
 ```ts
-import { mount } from '@purityjs/core';
+import { mount } from "@purityjs/core";
 
-const { unmount } = mount(() => html`<p-app></p-app>`, document.getElementById('app')!);
+const { unmount } = mount(() => html`<p-app></p-app>`, document.getElementById("app")!);
 ```
 
 ## Further reading

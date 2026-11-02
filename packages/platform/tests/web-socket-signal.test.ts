@@ -574,6 +574,41 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     }
   });
 
+  it('closes a replacement WebSocket when its constructor synchronously unmounts the owner', async () => {
+    const root = mount(() => {
+      webSocketSignal<number>('/ws', {
+        initialValue: 0,
+        validate: isNumber,
+        reconnect: 'always',
+      });
+      return document.createElement('div');
+    }, document.createElement('div'));
+    expect(instances).toHaveLength(1);
+
+    class ReentrantWS extends MockWS {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+        if (instances.length === 2) root.unmount();
+      }
+    }
+    (globalThis as { WebSocket: unknown }).WebSocket = ReentrantWS;
+    try {
+      const event = new Event('pageshow') as Event & { persisted: boolean };
+      Object.defineProperty(event, 'persisted', { value: true });
+      window.dispatchEvent(event);
+      await tick();
+
+      expect(instances).toHaveLength(2);
+      expect(instances[0].closed).toBe(true);
+      expect(instances[1].closed).toBe(true);
+      for (const type of ['open', 'close', 'error', 'message']) {
+        expect(instances[1].listeners.get(type)?.length ?? 0).toBe(0);
+      }
+    } finally {
+      root.unmount();
+    }
+  });
+
   it('never: opens once and never reopens on lifecycle events', async () => {
     webSocketSignal<number>('/ws', {
       initialValue: 0,

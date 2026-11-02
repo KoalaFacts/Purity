@@ -694,6 +694,39 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     expect(instances[0].closed).toBe(true);
   });
 
+  it('closes a replacement EventSource when its constructor synchronously unmounts the owner', async () => {
+    const root = mount(() => {
+      eventSourceSignal<number>('/sse', {
+        initialValue: 0,
+        validate: isNumber,
+        reconnect: 'always',
+      });
+      return document.createElement('div');
+    }, document.createElement('div'));
+    expect(instances).toHaveLength(1);
+
+    class ReentrantES extends MockES {
+      constructor(url: string | URL, options?: EventSourceInit) {
+        super(url, options);
+        if (instances.length === 2) root.unmount();
+      }
+    }
+    (globalThis as { EventSource: unknown }).EventSource = ReentrantES;
+    try {
+      const event = new Event('pageshow') as Event & { persisted: boolean };
+      Object.defineProperty(event, 'persisted', { value: true });
+      window.dispatchEvent(event);
+      await tick();
+
+      expect(instances).toHaveLength(2);
+      expect(instances[0].closed).toBe(true);
+      expect(instances[1].closed).toBe(true);
+      expect(instances[1].listeners.get('message')?.length ?? 0).toBe(0);
+    } finally {
+      root.unmount();
+    }
+  });
+
   it('never: opens once and never reopens on lifecycle events', async () => {
     eventSourceSignal<number>('/sse', {
       initialValue: 0,

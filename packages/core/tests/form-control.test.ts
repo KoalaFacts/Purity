@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { component } from '../src/elements.ts';
 import { enableFormControls } from '../src/forms.ts';
+import { FormControlBridge } from '../src/form-control.ts';
 
 enableFormControls();
 
@@ -141,12 +142,19 @@ describe('formControl component option', () => {
     expect(input.getAttribute('aria-label')).toBe('External label');
 
     const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
+    const syncLabel = vi.spyOn(FormControlBridge.prototype, 'syncLabel');
     try {
       input.remove();
       await new Promise((resolve) => queueMicrotask(resolve));
       expect(disconnect).toHaveBeenCalledTimes(1);
       expect(internals.setFormValue).toHaveBeenLastCalledWith(null);
+      // A removed native control must no longer respond to external label mutations.
+      syncLabel.mockClear();
+      label.textContent = 'Changed after removal';
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(syncLabel).not.toHaveBeenCalled();
     } finally {
+      syncLabel.mockRestore();
       disconnect.mockRestore();
     }
   });

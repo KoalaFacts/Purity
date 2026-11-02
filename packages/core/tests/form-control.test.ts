@@ -82,17 +82,19 @@ describe('formControl component option', () => {
 
     const label = document.createElement('label');
     label.textContent = 'Full name';
-    internals.labels.push(label);
+    const extraLabel = document.createElement('label');
+    extraLabel.textContent = 'Required';
+    internals.labels.push(label, extraLabel);
     const host = document.createElement(tag);
     host.setAttribute('name', 'person');
-    document.body.append(label, host);
+    document.body.append(label, extraLabel, host);
     const control = host.shadowRoot!.querySelector('input')!;
 
     expect(
       (customElements.get(tag) as typeof HTMLElement & { formAssociated: boolean }).formAssociated,
     ).toBe(true);
     expect(internals.setFormValue).toHaveBeenLastCalledWith('Ada');
-    expect(control.getAttribute('aria-label')).toBe('Full name');
+    expect(control.getAttribute('aria-label')).toBe('Full name Required');
 
     control.value = '';
     control.dispatchEvent(new Event('input', { bubbles: true }));
@@ -132,7 +134,11 @@ describe('formControl component option', () => {
 
     label.textContent = 'Your name';
     await new Promise((resolve) => queueMicrotask(resolve));
-    expect(control.getAttribute('aria-label')).toBe('Your name');
+    expect(control.getAttribute('aria-label')).toBe('Your name Required');
+
+    extraLabel.textContent = 'Mandatory';
+    await new Promise((resolve) => queueMicrotask(resolve));
+    expect(control.getAttribute('aria-label')).toBe('Your name Mandatory');
   });
 
   it('syncs host value and checked changes once without skipping name changes', () => {

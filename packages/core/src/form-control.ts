@@ -170,11 +170,14 @@ export class FormControlBridge {
     if (!targets.length && !hostLabel) {
       for (const label of this.internals.labels) if (label instanceof Element) targets.push(label);
     }
-    const label =
-      targets
-        .map((target) => target.textContent?.trim())
-        .filter(Boolean)
-        .join(' ') || hostLabel;
+    // Build the accessible name directly; syncing external labels should not
+    // allocate intermediate map/filter arrays on every mutation.
+    let label = '';
+    for (const target of targets) {
+      const text = target.textContent?.trim();
+      if (text) label += (label ? ' ' : '') + text;
+    }
+    label ||= hostLabel ?? '';
     if (label) {
       control.setAttribute('aria-label', label);
       this.autoLabel = label;

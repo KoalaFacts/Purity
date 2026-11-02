@@ -313,7 +313,7 @@ export function component<
         // The copied host props already form the final render bag. Merge event
         // aliases last so they override direct properties without allocating
         // a separate event-only object and spreading it on every connection.
-        const allProps = props;
+        const allProps = Object.setPrototypeOf(props, Object.prototype);
         for (const key of Object.keys(this)) {
           if (key.startsWith('__purity_event_')) {
             const eventName = key.slice(15);

@@ -357,6 +357,9 @@ export function component<
         // Never append its stale DOM over the replacement owner's render.
         if (ctx._isDestroyed || this._ctx !== ctx) return;
 
+        // The result is now a client-owned render, not staged DSD. A child
+        // connectedCallback can reconnect the host during appendChild().
+        this._hasRendered = true;
         if (result !== null) this._shadow.appendChild(result);
         // Child custom elements can reconnect this host synchronously while
         // appendChild() invokes their connectedCallback().
@@ -370,7 +373,6 @@ export function component<
         }
 
         ctx._isMounted = true;
-        this._hasRendered = true;
 
         scheduleMountCallbacks(ctx);
       }

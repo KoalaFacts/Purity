@@ -27,6 +27,9 @@
 - Update development/deployment transitives to fast-uri 3.1.9, Undici 7.30.1,
   and Zod 4.6.6. Scope the Zod override to Vercel and verify the installed
   builder and schema consumers; see the [tooling scope and remaining v3 use](docs/security.md#development-and-deployment-dependencies).
+- Update the development glob and minimatch overrides to address the
+  filesystem traversal and glob amplification advisories. Verify the Vercel
+  Edge builder and isolated streaming responses with the updated dependencies.
 
 ### Changed
 

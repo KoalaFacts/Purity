@@ -102,6 +102,12 @@ overrides to 3.1.9 and 7.30.1, and pins Zod 4.6.6 under Vercel. These are
 development/deployment dependencies; the published framework packages keep
 their existing runtime dependency boundaries.
 
+The 2026-11-02 development dependency update overrides minimatch to 11.0.4 or
+later and Vercel's glob to 14.0.3 or later for GHSA-g3hv-75wg-m249 and
+GHSA-3g3m-2fjr-6pw4. Both are major-version overrides of transitive tooling;
+the Vercel Edge builder and isolated streaming response checks exercise the
+updated dependency tree. Recheck compatibility when changing these overrides.
+
 The scoped Zod override also replaces four Vercel dependencies' pinned Zod 3.22.4
 packages. It was checked against the installed Vercel 64.5.0 builder and its
 isolated Edge responses, plus positive and negative fixtures for seven

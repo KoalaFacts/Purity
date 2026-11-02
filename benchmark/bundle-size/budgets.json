@@ -1,16 +1,16 @@
 {
   "packages": {
     "core": {
-      "gzipBytes": 11264,
-      "brotliBytes": 10112
+      "gzipBytes": 12544,
+      "brotliBytes": 11264
     },
     "compiler": {
       "gzipBytes": 9344,
       "brotliBytes": 8576
     },
     "core-list-runtime": {
-      "gzipBytes": 2176,
-      "brotliBytes": 2048
+      "gzipBytes": 2560,
+      "brotliBytes": 2304
     },
     "core-runtime": {
       "gzipBytes": 2048,
@@ -21,8 +21,8 @@
       "brotliBytes": 1152
     },
     "core-jit-client": {
-      "gzipBytes": 1152,
-      "brotliBytes": 1024
+      "gzipBytes": 1280,
+      "brotliBytes": 1280
     },
     "platform-signals": {
       "gzipBytes": 7552,
@@ -52,6 +52,10 @@
       "gzipBytes": 4736,
       "brotliBytes": 4352
     },
+    "core-forms-lifecycle": {
+      "gzipBytes": 3072,
+      "brotliBytes": 2688
+    },
     "core-csr": {
       "gzipBytes": 7808,
       "brotliBytes": 7040
@@ -69,8 +73,8 @@
       "brotliBytes": 2560
     },
     "core-csr-runtime": {
-      "gzipBytes": 1024,
-      "brotliBytes": 896
+      "gzipBytes": 1280,
+      "brotliBytes": 1024
     },
     "ssr-runtime": {
       "gzipBytes": 3328,

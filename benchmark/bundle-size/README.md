@@ -22,7 +22,8 @@ and `report.md` as workflow artifacts, including on budget or browser failures.
 The `@purityjs/core/forms/lifecycle` entry has a separate CI budget check:
 `node benchmark/bundle-size/verify-form-lifecycle-budget.mjs`. It bundles all
 entry exports with their dependencies and caps gzip at 3,072 B and Brotli at
-2,688 B. It does not alter the frozen schema-7 comparison inventory.
+2,688 B. The entry is also included in the package inventory, where other
+Purity packages are external.
 
 ## What is measured
 
@@ -144,6 +145,12 @@ unused-code removal for this fixture, not a measured rendering-speed gain or
 a promise that applications using each/match remove those dependencies.
 
 ## Budget changes
+
+The 0.5.0 runtime refactor preserves the default form bridge and changes shared
+code retained by several entries. For the resulting production build, the
+core, list-runtime, jit-client and csr-runtime budgets were recalibrated from
+their measured gzip and Brotli sizes with at least 5% headroom, rounded up to
+256 bytes. These per-entry limits are separate from the installation target.
 
 The accepted 0.5.0 target compares the combined compressed core installation
 archives against published 0.4.0. The [core pack audit](./evidence/2026-11-02-core-pack-50/README.md)

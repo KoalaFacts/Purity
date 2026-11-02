@@ -161,6 +161,7 @@ export function webSocketSignal<T>(
   const validate = options.validate;
 
   let ws: WebSocket | null = null;
+  let disposed = false;
   const onOpen = (): void => {
     stateAccessor('open');
   };
@@ -178,7 +179,7 @@ export function webSocketSignal<T>(
   const listeners: EventListener[] = [onOpen, onClose, onClose, onMessage as EventListener];
 
   const open = (): void => {
-    if (ws) return;
+    if (disposed || ws) return;
     stateAccessor('connecting');
     try {
       ws = new WebSocket(safeUrl, protocols);
@@ -239,7 +240,11 @@ export function webSocketSignal<T>(
   // lifecycle changes but don't close the socket on owner unmount).
   // Module-scope callers keep "lifetime = page" semantics.
   const ctx = getCurrentContext();
-  if (ctx) (ctx.disposers ??= []).push(close);
+  if (ctx)
+    (ctx.disposers ??= []).push(() => {
+      disposed = true;
+      close();
+    });
 
   const accessor = compute(() => inner()) as WebSocketSignal<T>;
   accessor.send = (data: string | Blob | BufferSource): void => {

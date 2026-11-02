@@ -289,6 +289,32 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     }
   });
 
+  it('does not disclose credentials in malformed scheme-relative URL warnings', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of [
+        '//user:SECRET_PASS?access_token=SECRET_QUERY@host/sse',
+        '///user:SECRET_PASS#SECRET_FRAGMENT@host/sse',
+      ]) {
+        expect(redactUrl(url)).toBe('[invalid URL]');
+        eventSourceSignal<number>(url, {
+          initialValue: 7,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        instances[instances.length - 1].fire('message', 'bad-json');
+      }
+      expect(instances).toHaveLength(2);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[invalid URL]');
+      expect(logged).not.toContain('SECRET_PASS');
+      expect(logged).not.toContain('SECRET_QUERY');
+      expect(logged).not.toContain('SECRET_FRAGMENT');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('rejects embedded URL controls and safely redacts whitespace-prefixed authorities', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

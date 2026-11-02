@@ -119,6 +119,9 @@ export function redactUrl(url: string | URL): string {
       if (!/^(https?|wss?):$/.test(parsed.protocol)) return '[unsupported URL scheme]';
       return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
     }
+    // Validate scheme-relative authorities before cutting query/hash. Otherwise
+    // malformed `//user:secret?query@host` can expose credentials in logs.
+    if (/^[/\\]{2}/.test(normalized)) new URL(normalized, 'https://redaction.invalid/');
     // Relative URLs: remove query/hash before stripping authority userinfo.
     const q = normalized.indexOf('?');
     const h = normalized.indexOf('#');

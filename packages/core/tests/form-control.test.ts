@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { component } from '../src/elements.ts';
-import { enableFormControls } from '../src/forms.ts';
+import { enableFormControls, FormControlBridge as PublicFormControlBridge } from '../src/forms.ts';
 import { FormControlBridge } from '../src/form-control.ts';
 
 enableFormControls();
@@ -22,6 +22,10 @@ afterEach(() => {
 });
 
 describe('formControl component option', () => {
+  it('uses the same bridge for public form components and direct mounting', () => {
+    expect(PublicFormControlBridge).toBe(FormControlBridge);
+  });
+
   it('passes explicit value and checked assignments to the render function', () => {
     const internals = {
       labels: [] as HTMLLabelElement[],

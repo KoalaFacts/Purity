@@ -53,21 +53,6 @@ function resetControl(control: NativeControl): void {
   }
 }
 
-function validityFlags(validity: ValidityState): ValidityStateFlags {
-  return {
-    badInput: validity.badInput,
-    customError: validity.customError,
-    patternMismatch: validity.patternMismatch,
-    rangeOverflow: validity.rangeOverflow,
-    rangeUnderflow: validity.rangeUnderflow,
-    stepMismatch: validity.stepMismatch,
-    tooLong: validity.tooLong,
-    tooShort: validity.tooShort,
-    typeMismatch: validity.typeMismatch,
-    valueMissing: validity.valueMissing,
-  };
-}
-
 /** Bridges one native shadow-tree control to its form-associated host. */
 export class FormControlBridge {
   private control: NativeControl | null = null;
@@ -252,13 +237,11 @@ export class FormControlBridge {
       }
     }
     this.internals.setFormValue(submissionValue(control, this.host.getAttribute('name') ?? ''));
-    if (control.validity.valid) this.internals.setValidity({});
-    else
-      this.internals.setValidity(
-        validityFlags(control.validity),
-        control.validationMessage,
-        control,
-      );
+    if (control.validity.valid) {
+      this.internals.setValidity({});
+    } else {
+      this.internals.setValidity(control.validity, control.validationMessage, control);
+    }
   }
 
   private onValueChange = (event: Event): void => {

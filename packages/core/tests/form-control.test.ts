@@ -102,6 +102,16 @@ describe('formControl component option', () => {
       expect.any(String),
       control,
     );
+    // Pass the browser's native ValidityState dictionary directly to
+    // ElementInternals rather than allocating a copy on every invalid event.
+    expect(internals.setValidity.mock.lastCall?.[0]).toBe(control.validity);
+
+    control.required = false;
+    control.type = 'email';
+    control.value = 'not-an-email';
+    control.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(control.validity.typeMismatch).toBe(true);
+    expect(internals.setValidity.mock.lastCall?.[0]).toBe(control.validity);
 
     (
       host as HTMLElement & { formDisabledCallback: (disabled: boolean) => void }

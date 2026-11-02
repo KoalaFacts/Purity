@@ -955,6 +955,57 @@ describe('component as custom element — lifecycle', () => {
     expect(events).toEqual(['destroyed:1', 'mounted:2', 'destroyed:2']);
   });
 
+  it('preserves a replacement owner when shadow child removal reconnects the host', async () => {
+    const hostName = tag('cel-teardown-reconnect');
+    const childName = tag('cel-teardown-child');
+    const events: string[] = [];
+    const interruptedOwners: { _isDestroyed: boolean }[] = [];
+    let host!: HTMLElement;
+    let relocated = false;
+
+    customElements.define(
+      childName,
+      class extends HTMLElement {
+        disconnectedCallback() {
+          if (relocated || !host.isConnected) return;
+          relocated = true;
+          interruptedOwners.push((host as any)._ctx);
+          host.remove();
+          document.body.appendChild(host);
+        }
+      },
+    );
+
+    let renders = 0;
+    component(hostName, () => {
+      const generation = ++renders;
+      onMount(() => events.push(`mounted:${generation}`));
+      onDestroy(() => events.push(`destroyed:${generation}`));
+      const view = document.createElement('section');
+      view.append(`render:${generation}`, document.createElement(childName));
+      return view;
+    });
+
+    host = document.createElement(hostName);
+    document.body.appendChild(host);
+    await tick();
+    expect(host.shadowRoot!.textContent).toBe('render:1');
+
+    host.remove();
+    document.body.appendChild(host);
+    await tick();
+
+    expect(relocated).toBe(true);
+    expect(interruptedOwners[0]?._isDestroyed).toBe(true);
+    expect(renders).toBe(3);
+    expect(host.shadowRoot!.textContent).toBe('render:3');
+    expect(events).toEqual(['mounted:1', 'destroyed:1', 'mounted:3']);
+
+    host.remove();
+    await tick();
+    expect(events).toEqual(['mounted:1', 'destroyed:1', 'mounted:3', 'destroyed:3']);
+  });
+
   it('rejects an invalid (non-hyphenated / unsafe) component tag name', () => {
     expect(() => component('nohyphen', () => html`<i></i>`)).toThrow(/invalid custom element/i);
     expect(() => component('bad><script>', () => html`<i></i>`)).toThrow(/invalid custom element/i);

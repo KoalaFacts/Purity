@@ -876,6 +876,52 @@ describe('component as custom element — lifecycle', () => {
     err.mockRestore();
   });
 
+  it('does not create a second owner during reentrant light DOM slot extraction', async () => {
+    const hostName = tag('cel-light-reconnect');
+    const childName = tag('cel-light-child');
+    const events: string[] = [];
+    let host!: HTMLElement;
+    let reconnected = false;
+    let renders = 0;
+
+    customElements.define(
+      childName,
+      class extends HTMLElement {
+        disconnectedCallback() {
+          if (reconnected || !host.isConnected) return;
+          reconnected = true;
+          // Moving a connected light child into the temporary slot fragment
+          // fires disconnectedCallback while its host is still rendering.
+          host.remove();
+          document.body.appendChild(host);
+        }
+      },
+    );
+
+    component(hostName, (_props, { default: body }) => {
+      const generation = ++renders;
+      onMount(() => events.push(`mounted:${generation}`));
+      onDestroy(() => events.push(`destroyed:${generation}`));
+      const view = document.createElement('section');
+      view.append(body() ?? '');
+      return view;
+    });
+
+    host = document.createElement(hostName);
+    host.appendChild(document.createElement(childName));
+    document.body.appendChild(host);
+    await tick();
+
+    expect(reconnected).toBe(true);
+    expect(renders).toBe(1);
+    expect(host.shadowRoot!.querySelectorAll(childName)).toHaveLength(1);
+    expect(events).toEqual(['mounted:1']);
+
+    host.remove();
+    await tick();
+    expect(events).toEqual(['mounted:1', 'destroyed:1']);
+  });
+
   it('does not append stale DOM when a custom element reconnects during render', async () => {
     const hostName = tag('cel-render-reconnect');
     const events: string[] = [];

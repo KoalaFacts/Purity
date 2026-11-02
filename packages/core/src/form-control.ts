@@ -72,6 +72,9 @@ export class FormControlBridge {
   ) {}
 
   connect(): void {
+    // A disconnected bridge retains its control, but not its label observer.
+    // Recreate that observer when reconnecting to the same native element.
+    const previousControl = this.control;
     connectedBridges.add(this);
     this.root.addEventListener('input', this.onValueChange);
     this.root.addEventListener('change', this.onValueChange);
@@ -79,6 +82,7 @@ export class FormControlBridge {
     this.rootObserver = new MutationObserver(() => this.bind());
     this.rootObserver.observe(this.root, { childList: true, subtree: true });
     this.bind();
+    if (previousControl && previousControl === this.control) this.syncLabel();
   }
 
   disconnect(): void {

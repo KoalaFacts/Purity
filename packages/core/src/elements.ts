@@ -252,6 +252,7 @@ export function component<
       _shadow: ShadowRoot;
       _internals: ElementInternals | null = null;
       declare _formBridge?: { connect(): void; disconnect(): void } | null;
+      declare _movingLightChildren?: boolean;
 
       constructor() {
         super();
@@ -272,7 +273,9 @@ export function component<
       }
 
       connectedCallback() {
-        if (this._isSSRRoot()) return;
+        // Moving a light child to the slot fragment can synchronously reconnect
+        // the host; finish this render instead of creating a second owner.
+        if (this._movingLightChildren || this._isSSRRoot()) return;
         this._renderConnected();
       }
 
@@ -327,8 +330,19 @@ export function component<
 
         if (this.childNodes.length > 0) {
           const frag = document.createDocumentFragment();
-          while (this.firstChild) {
-            frag.appendChild(this.firstChild);
+          this._movingLightChildren = true;
+          try {
+            while (this.firstChild) {
+              frag.appendChild(this.firstChild);
+            }
+          } finally {
+            this._movingLightChildren = false;
+          }
+          // A child may disconnect its host without reconnecting it. Restore
+          // its light content rather than mounting an owner on a detached host.
+          if (!this.isConnected) {
+            this.appendChild(frag);
+            return;
           }
           registry.filled.default = frag;
         }

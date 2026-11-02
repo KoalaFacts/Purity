@@ -159,6 +159,46 @@ describe('formControl component option', () => {
     }
   });
 
+  it('releases observation of a detached control without a custom element', async () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const input = document.createElement('input');
+    const label = document.createElement('label');
+    label.textContent = 'Original label';
+    shadow.appendChild(input);
+    const internals = {
+      labels: [label],
+      setFormValue: vi.fn(),
+      setValidity: vi.fn(),
+    };
+    const bridge = new FormControlBridge(
+      host,
+      shadow,
+      internals as unknown as ElementInternals,
+      true,
+    );
+    bridge.connect();
+    expect(input.getAttribute('aria-label')).toBe('Original label');
+
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
+    const syncLabel = vi.spyOn(bridge, 'syncLabel');
+    try {
+      input.remove();
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(disconnect).toHaveBeenCalledTimes(1);
+      expect(internals.setFormValue).toHaveBeenLastCalledWith(null);
+
+      syncLabel.mockClear();
+      label.textContent = 'Changed after removal';
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(syncLabel).not.toHaveBeenCalled();
+    } finally {
+      syncLabel.mockRestore();
+      disconnect.mockRestore();
+      bridge.disconnect();
+    }
+  });
+
   it('keeps same-name radio hosts exclusive within each form', () => {
     const internals = new WeakMap<HTMLElement, { setFormValue: ReturnType<typeof vi.fn> }>();
     Object.defineProperty(HTMLElement.prototype, 'attachInternals', {

@@ -158,6 +158,9 @@ export class FormControlBridge {
   }
 
   syncLabel(): void {
+    // Retire the prior observer before selecting (or losing) the active control.
+    this.labelObserver?.disconnect();
+    this.labelObserver = null;
     const control = this.control;
     if (!control) return;
     const authoredLabel = control.getAttribute('aria-label');
@@ -166,7 +169,6 @@ export class FormControlBridge {
       control.hasAttribute('aria-labelledby') ||
       control.labels?.length
     ) {
-      this.labelObserver?.disconnect();
       return;
     }
     const targets: Element[] = [];
@@ -195,7 +197,6 @@ export class FormControlBridge {
       control.removeAttribute('aria-label');
       this.autoLabel = null;
     }
-    this.labelObserver?.disconnect();
     if (targets.length) {
       this.labelObserver = new MutationObserver(() => this.syncLabel());
       for (const target of targets)
@@ -208,6 +209,7 @@ export class FormControlBridge {
     const found = this.root.querySelector(selector);
     if (!isNativeControl(found)) {
       this.control = null;
+      this.syncLabel();
       this.internals.setFormValue(null);
       this.internals.setValidity({});
       return;

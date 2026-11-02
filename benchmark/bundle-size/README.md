@@ -27,13 +27,13 @@ Purity packages are external.
 
 ## What is measured
 
-- **Package entries (budgeted):** `@purityjs/core`, all its feature subpaths,
-  and `@purityjs/ssr`. The `core-all` fixture combines the pre-split root API
-  under its original budget to prevent hiding growth across subpaths. Each is built as `export * from <entry>`, so every export
-  is kept, then minified from the built dist into one payload. Other Purity
-  packages and Node built-ins are external, so each figure is that package's
-  own code. The Vite plugin and CLI are build-time Node tools and are not
-  budgeted.
+- **Package entries (budgeted):** the published runtime entries of core,
+  signals, compiler, router, platform and SSR. Each is built as
+  `export * from <entry>`, keeping every export, then minified from the built
+  dist into one payload. Other Purity packages and Node built-ins are external.
+  The separate `runtime-all` measurement includes the runtime packages together;
+  its scope differs from the historical pre-split `core-all` fixture. The Vite
+  plugin and CLI are build-time Node tools and are not budgeted.
 - **Fixture apps (reported):** production ES2022, minified ESM JavaScript from
   built package exports. Controls/hydration AOT enforce size budgets and
   reject retained virtual-list spacer code.
@@ -49,7 +49,7 @@ The root and AOT runtime entries must contain no Function constructors.
 Both ESM and CommonJS exports must share working subscriptions across entries.
 Each package measurement also records a hash of its complete bundled payload.
 
-Report schema version 4 records the package entry sizes and, as before, the Git revision and dirty state, package
+Report schema version 7 records the package entry sizes and the Git revision and dirty state, package
 versions, Node and compression-library versions, normalized hashes for all
 fixture sources, built entry hashes, settings, per-chunk sizes, budgets, and
 optional browser verification with exact engine versions. A verified SSR

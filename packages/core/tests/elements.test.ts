@@ -341,6 +341,67 @@ describe('teleport() reactive', () => {
     document.body.removeChild(target);
   });
 
+  it('disposes a teleport when its first view unmounts the owner', async () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const source = state(0);
+    const container = document.createElement('div');
+    let unmount = () => {};
+    let renders = 0;
+    const result = mount(
+      () =>
+        teleport(target, () => {
+          source();
+          renders++;
+          unmount();
+          return document.createElement('span');
+        }),
+      container,
+    );
+    unmount = result.unmount;
+
+    await tick();
+    expect(target.childNodes.length).toBe(0);
+    source(1);
+    await tick();
+    expect(renders).toBe(1);
+    expect(target.childNodes.length).toBe(0);
+    target.remove();
+  });
+
+  it('does not reinsert teleport DOM when a reactive view unmounts its owner', async () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const source = state(0);
+    const container = document.createElement('div');
+    let unmount = () => {};
+    let renders = 0;
+    const result = mount(
+      () =>
+        teleport(target, () => {
+          const value = source();
+          renders++;
+          if (value === 1) unmount();
+          const child = document.createElement('span');
+          child.textContent = String(value);
+          return child;
+        }),
+      container,
+    );
+    unmount = result.unmount;
+
+    await tick();
+    expect(target.textContent).toBe('0');
+    source(1);
+    await tick();
+    expect(target.textContent).toBe('');
+    source(2);
+    await tick();
+    expect(renders).toBe(2);
+    expect(target.childNodes.length).toBe(0);
+    target.remove();
+  });
+
   it('does not leak when the owner unmounts before the deferred setup runs', async () => {
     const target = document.createElement('div');
     target.id = `tpre-${tagCounter++}`;

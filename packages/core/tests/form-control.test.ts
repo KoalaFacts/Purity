@@ -260,6 +260,44 @@ describe('formControl component option', () => {
     }
   });
 
+  it('resumes external label observation when a direct bridge reconnects to its existing control', async () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const input = document.createElement('input');
+    shadow.append(input);
+    const label = document.createElement('label');
+    label.textContent = 'Before disconnect';
+    const internals = {
+      labels: [label],
+      setFormValue: vi.fn(),
+      setValidity: vi.fn(),
+    };
+    const bridge = new FormControlBridge(
+      host,
+      shadow,
+      internals as unknown as ElementInternals,
+      true,
+    );
+    try {
+      bridge.connect();
+      expect(input.getAttribute('aria-label')).toBe('Before disconnect');
+      bridge.disconnect();
+
+      label.textContent = 'While disconnected';
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(input.getAttribute('aria-label')).toBe('Before disconnect');
+
+      bridge.connect();
+      expect(input.getAttribute('aria-label')).toBe('While disconnected');
+
+      label.textContent = 'After reconnect';
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(input.getAttribute('aria-label')).toBe('After reconnect');
+    } finally {
+      bridge.disconnect();
+    }
+  });
+
   it('keeps same-name radio hosts exclusive within each form', () => {
     const internals = new WeakMap<HTMLElement, { setFormValue: ReturnType<typeof vi.fn> }>();
     Object.defineProperty(HTMLElement.prototype, 'attachInternals', {

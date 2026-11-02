@@ -121,7 +121,10 @@ export function redactUrl(url: string | URL): string {
     }
     // Validate scheme-relative authorities before cutting query/hash. Otherwise
     // malformed `//user:secret?query@host` can expose credentials in logs.
-    if (/^[/\\]{2}/.test(normalized)) new URL(normalized, 'https://redaction.invalid/');
+    if (/^[/\\]{2}/.test(normalized)) {
+      const authority = new URL(normalized, 'https://redaction.invalid/');
+      if (!authority.host) return '[invalid URL]';
+    }
     // Relative URLs: remove query/hash before stripping authority userinfo.
     const q = normalized.indexOf('?');
     const h = normalized.indexOf('#');

@@ -358,6 +358,9 @@ export function component<
         if (ctx._isDestroyed || this._ctx !== ctx) return;
 
         if (result !== null) this._shadow.appendChild(result);
+        // Child custom elements can reconnect this host synchronously while
+        // appendChild() invokes their connectedCallback().
+        if (ctx._isDestroyed || this._ctx !== ctx) return;
         this._formBridge?.connect();
 
         if (result === null || result instanceof DocumentFragment) {

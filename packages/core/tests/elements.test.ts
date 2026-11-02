@@ -909,6 +909,52 @@ describe('component as custom element — lifecycle', () => {
     expect(events).toEqual(['destroyed:1', 'mounted:2', 'destroyed:2']);
   });
 
+  it('does not remount an obsolete owner when a child reconnects the host during append', async () => {
+    const hostName = tag('cel-append-reconnect');
+    const childName = tag('cel-reentrant-child');
+    const events: string[] = [];
+    let host!: HTMLElement;
+    let reconnected = false;
+    let obsoleteOwner: { _isMounted: boolean } | null = null;
+
+    customElements.define(
+      childName,
+      class extends HTMLElement {
+        connectedCallback() {
+          if (reconnected) return;
+          reconnected = true;
+          obsoleteOwner = (host as any)._ctx;
+          host.remove();
+          document.body.appendChild(host);
+        }
+      },
+    );
+
+    let renders = 0;
+    component(hostName, () => {
+      const generation = ++renders;
+      onMount(() => events.push(`mounted:${generation}`));
+      onDestroy(() => events.push(`destroyed:${generation}`));
+      const container = document.createElement('div');
+      container.textContent = `render:${generation}`;
+      container.appendChild(document.createElement(childName));
+      return container;
+    });
+
+    host = document.createElement(hostName);
+    document.body.appendChild(host);
+    await tick();
+
+    expect(renders).toBe(2);
+    expect(obsoleteOwner?._isMounted).toBe(false);
+    expect(host.shadowRoot!.textContent).toBe('render:2');
+    expect(events).toEqual(['destroyed:1', 'mounted:2']);
+
+    host.remove();
+    await tick();
+    expect(events).toEqual(['destroyed:1', 'mounted:2', 'destroyed:2']);
+  });
+
   it('rejects an invalid (non-hyphenated / unsafe) component tag name', () => {
     expect(() => component('nohyphen', () => html`<i></i>`)).toThrow(/invalid custom element/i);
     expect(() => component('bad><script>', () => html`<i></i>`)).toThrow(/invalid custom element/i);

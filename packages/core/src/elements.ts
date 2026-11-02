@@ -353,6 +353,10 @@ export function component<
           result = runRender(render, allProps as P, slotAccessors, ctx).result;
         }
 
+        // A render can synchronously disconnect and reconnect the host.
+        // Never append its stale DOM over the replacement owner's render.
+        if (ctx._isDestroyed || this._ctx !== ctx) return;
+
         if (result !== null) this._shadow.appendChild(result);
         this._formBridge?.connect();
 

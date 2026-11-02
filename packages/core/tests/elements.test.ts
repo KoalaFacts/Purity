@@ -876,6 +876,39 @@ describe('component as custom element — lifecycle', () => {
     err.mockRestore();
   });
 
+  it('does not append stale DOM when a custom element reconnects during render', async () => {
+    const hostName = tag('cel-render-reconnect');
+    const events: string[] = [];
+    let host!: HTMLElement;
+    let renders = 0;
+
+    component(hostName, () => {
+      const generation = ++renders;
+      onMount(() => events.push(`mounted:${generation}`));
+      onDestroy(() => events.push(`destroyed:${generation}`));
+      if (generation === 1) {
+        host.remove();
+        document.body.appendChild(host);
+      }
+      const node = document.createElement('span');
+      node.textContent = `render:${generation}`;
+      return node;
+    });
+
+    host = document.createElement(hostName);
+    document.body.appendChild(host);
+    await tick();
+
+    expect(renders).toBe(2);
+    expect(host.shadowRoot!.textContent).toBe('render:2');
+    expect(host.shadowRoot!.querySelectorAll('span')).toHaveLength(1);
+    expect(events).toEqual(['destroyed:1', 'mounted:2']);
+
+    host.remove();
+    await tick();
+    expect(events).toEqual(['destroyed:1', 'mounted:2', 'destroyed:2']);
+  });
+
   it('rejects an invalid (non-hyphenated / unsafe) component tag name', () => {
     expect(() => component('nohyphen', () => html`<i></i>`)).toThrow(/invalid custom element/i);
     expect(() => component('bad><script>', () => html`<i></i>`)).toThrow(/invalid custom element/i);

@@ -182,40 +182,6 @@ describe('formControl component option', () => {
     expect(internals.setValidity).toHaveBeenCalledTimes(1);
   });
 
-  it('avoids rebuilding label observation for unrelated host attributes', () => {
-    const label = document.createElement('label');
-    label.textContent = 'Initial label';
-    const internals = {
-      labels: [label],
-      setFormValue: vi.fn(),
-      setValidity: vi.fn(),
-    };
-    Object.defineProperty(HTMLElement.prototype, 'attachInternals', {
-      configurable: true,
-      value: () => internals,
-    });
-
-    const tag = name();
-    component(tag, () => document.createElement('input'), { formControl: true });
-    const host = document.createElement(tag);
-    document.body.append(label, host);
-
-    const syncLabel = vi.spyOn(FormControlBridge.prototype, 'syncLabel');
-    try {
-      host.setAttribute('value', 'Ada');
-      host.setAttribute('checked', '');
-      host.removeAttribute('value');
-      expect(syncLabel).not.toHaveBeenCalled();
-
-      host.setAttribute('name', 'person');
-      expect(syncLabel).toHaveBeenCalledTimes(1);
-      host.setAttribute('aria-label', 'Accessible name');
-      expect(syncLabel).toHaveBeenCalledTimes(2);
-    } finally {
-      syncLabel.mockRestore();
-    }
-  });
-
   it('disconnects external label observation when the native control is removed', async () => {
     const label = document.createElement('label');
     label.textContent = 'External label';

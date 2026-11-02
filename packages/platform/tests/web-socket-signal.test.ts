@@ -541,6 +541,37 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(instances[1].closed).toBe(false);
   });
 
+  it('does not reconnect after a bfcache close unmounts its owner', async () => {
+    const root = mount(() => {
+      webSocketSignal<number>('/ws', {
+        initialValue: 0,
+        validate: isNumber,
+        reconnect: 'always',
+      });
+      return document.createElement('div');
+    }, document.createElement('div'));
+    expect(instances).toHaveLength(1);
+
+    const originalClose = MockWS.prototype.close;
+    const closeSpy = vi.spyOn(MockWS.prototype, 'close').mockImplementation(function (this: MockWS) {
+      originalClose.call(this);
+      // A close adapter can synchronously trigger owner removal mid-refresh.
+      root.unmount();
+    });
+    try {
+      const event = new Event('pageshow') as Event & { persisted: boolean };
+      Object.defineProperty(event, 'persisted', { value: true });
+      window.dispatchEvent(event);
+      await tick();
+
+      expect(instances[0].closed).toBe(true);
+      expect(instances).toHaveLength(1);
+    } finally {
+      closeSpy.mockRestore();
+      root.unmount();
+    }
+  });
+
   it('never: opens once and never reopens on lifecycle events', async () => {
     webSocketSignal<number>('/ws', {
       initialValue: 0,

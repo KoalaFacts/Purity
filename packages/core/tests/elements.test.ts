@@ -590,13 +590,16 @@ describe('component as custom element — lifecycle', () => {
     const previousOwner = (el as any)._ctx;
     const paragraph = el.shadowRoot!.querySelector('p');
     expect(previousOwner.nodes).toContain(paragraph);
+    expect(previousOwner._shadowRoot).toBe(el.shadowRoot);
 
     el.remove();
 
     // A detached host retains its DOM for reconnection, but a stale retained
-    // owner must not also keep those DOM descendants alive.
+    // owner must not also keep those DOM descendants or their host alive.
     expect(el.shadowRoot!.querySelector('p')).toBe(paragraph);
     expect(previousOwner.nodes).toBeNull();
+    expect(previousOwner._shadowRoot).toBeUndefined();
+    expect(previousOwner._internals).toBeNull();
   });
 
   it('runs disconnectedCallback dispose on removal', async () => {

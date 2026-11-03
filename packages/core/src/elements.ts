@@ -22,7 +22,15 @@ function unmountElementContext(
   rollback = ctx.parent?._rollback,
   keepHostDOM = false,
 ): void {
-  unmountContext(ctx, rollback, keepHostDOM, true);
+  try {
+    unmountContext(ctx, rollback, keepHostDOM, true);
+  } finally {
+    // A retired custom-element owner must not retain its host via the shadow root.
+    if (ctx._shadowRoot) {
+      ctx._shadowRoot = undefined;
+      ctx._internals = null;
+    }
+  }
 }
 
 /**

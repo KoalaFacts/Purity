@@ -152,6 +152,50 @@ describe('mount', () => {
     expect(observed).toEqual([0]);
   });
 
+  it('preserves an existing ancestor when native append rejects a hierarchy cycle', () => {
+    const outer = document.createElement('div');
+    const ancestor = document.createElement('section');
+    const container = document.createElement('div');
+    outer.appendChild(ancestor);
+    ancestor.appendChild(container);
+    const dispose = vi.fn();
+
+    expect(() =>
+      mount(() => {
+        onDispose(dispose);
+        return ancestor;
+      }, container),
+    ).toThrow();
+
+    expect(outer.firstChild).toBe(ancestor);
+    expect(ancestor.firstChild).toBe(container);
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps uninserted fragment children when append partially moves content then throws', () => {
+    const container = document.createElement('div');
+    const fragment = document.createDocumentFragment();
+    const inserted = document.createElement('span');
+    const remaining = document.createElement('strong');
+    fragment.append(inserted, remaining);
+    const failure = new Error('partial append');
+    const nativeAppend = container.appendChild.bind(container);
+    const append = vi.spyOn(container, 'appendChild').mockImplementation(() => {
+      nativeAppend(inserted);
+      throw failure;
+    });
+
+    try {
+      expect(() => mount(() => fragment, container)).toThrow(failure);
+    } finally {
+      append.mockRestore();
+    }
+
+    expect(container.childNodes).toHaveLength(0);
+    expect(fragment.firstChild).toBe(remaining);
+    expect(remaining.parentNode).toBe(fragment);
+  });
+
   it('does not insert a root after its parent destroys the owner during render', () => {
     const parent = new ComponentContext();
     const container = document.createElement('div');

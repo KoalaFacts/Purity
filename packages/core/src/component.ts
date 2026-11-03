@@ -116,6 +116,14 @@ export function onError(fn: (err: unknown) => void): void {
   if (ctx) addComponentCallback(ctx, (ctx.errorHandlers ??= []), fn);
 }
 
+function removeInsertedRoots(nodes: Node[] | null, container: Element): void {
+  if (!nodes) return;
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i] as Node;
+    if (node.parentNode === container) container.removeChild(node);
+  }
+}
+
 /** Mount a client-rendered root with its own lifecycle. */
 export function mount(component: ComponentFn, container: Element): MountResult {
   const ctx = new ComponentContext();
@@ -159,18 +167,15 @@ export function mount(component: ComponentFn, container: Element): MountResult {
       // Release reactive work and any DOM inserted before a failing append.
       // A root that failed to mount never executes destruction callbacks.
       ctx.destroyed = null;
-      unmountContext(ctx, true);
+      // Keep roots that still belong to another parent or the source fragment.
+      unmountContext(ctx, true, true);
+      removeInsertedRoots(insertedNodes, container);
       throw err;
     }
     if (ctx._isDestroyed) {
       // connectedCallback can synchronously destroy the owner before append ends.
       // Remove only our roots still in this container, not reparented nodes.
-      if (insertedNodes) {
-        for (let i = 0; i < insertedNodes.length; i++) {
-          const node = insertedNodes[i] as Node;
-          if (node.parentNode === container) container.removeChild(node);
-        }
-      }
+      removeInsertedRoots(insertedNodes, container);
       return { unmount: () => {} };
     }
   }

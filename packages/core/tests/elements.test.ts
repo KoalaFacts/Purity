@@ -872,3 +872,25 @@ describe('component as custom element — lifecycle', () => {
     document.body.removeChild(el);
   });
 });
+
+describe('prototype-sensitive raw and consumer slots', () => {
+  it('does not treat inherited Object prototype functions as supplied raw slots', () => {
+    const render = component(tag('raw-prototype-slot'), () => {
+      return slot('toString')() ?? document.createTextNode('empty');
+    });
+    expect(render({}, {}).textContent).toBe('empty');
+  });
+
+  it('retains an own __proto__ slot name in the consumer bag', () => {
+    const render = component(tag('consumer-prototype-slot'), (_props, slots) => {
+      void (slots as Record<string, () => Node | null>)['__proto__'];
+      return document.createElement('div');
+    });
+    let hasReservedSlot = false;
+    render({}, (bag: Record<string, unknown>) => {
+      hasReservedSlot = Object.hasOwn(bag, '__proto__');
+      return null;
+    });
+    expect(hasReservedSlot).toBe(true);
+  });
+});

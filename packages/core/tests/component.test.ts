@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
+import { component } from '../src/elements.ts';
 import { mount, onDestroy, onDispose, onError, onMount, unmountContext } from '../src/component.ts';
 import { hydrate } from '../src/hydrate.ts';
 import { resource } from '../src/resource.ts';
-import { ComponentContext, state, watch } from '@purityjs/signals';
+import { ComponentContext, popContext, pushContext, state, watch } from '@purityjs/signals';
 import { primeHydrationCache } from '../src/ssr-context.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
@@ -571,5 +572,32 @@ describe('reentrant owner teardown', () => {
     expect(parent.children).toBeNull();
     expect(first._isDestroyed).toBe(true);
     expect(last._isDestroyed).toBe(true);
+  });
+});
+
+describe('consumer callback rollback', () => {
+  it('disposes a first-render owner when the consumer throws', () => {
+    const parent = new ComponentContext();
+    let disposed = 0;
+    let destroyed = 0;
+    const render = component('p-sv2-split-consumer-failure', () => {
+      onDispose(() => disposed++);
+      onDestroy(() => destroyed++);
+      return document.createElement('div');
+    });
+
+    pushContext(parent);
+    try {
+      expect(() =>
+        render({}, () => {
+          throw new Error('consumer failed');
+        }),
+      ).toThrow('consumer failed');
+      expect(disposed).toBe(1);
+      expect(destroyed).toBe(0);
+      expect(parent.children).toEqual([]);
+    } finally {
+      popContext();
+    }
   });
 });

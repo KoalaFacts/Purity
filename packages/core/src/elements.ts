@@ -62,7 +62,7 @@ function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<an
 type ConsumerSlot = (content?: Node | DocumentFragment | string | null) => Node | null;
 
 function createConsumerBag(registry: SlotRegistry): Record<string, ConsumerSlot> {
-  const bag: Record<string, ConsumerSlot> = {};
+  const bag: Record<string, ConsumerSlot> = Object.create(null);
   const names = new Set([...registry.accessors.keys(), 'default']);
   for (const name of names) {
     bag[name] = (content?: Node | DocumentFragment | string | null): Node | null => {
@@ -119,7 +119,9 @@ export function internals(): ElementInternals | null {
 function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node | null {
   const s =
     children != null && typeof children === 'object' && !(children instanceof Node)
-      ? (children as Record<string, unknown>)[name]
+      ? Object.hasOwn(children, name)
+        ? (children as Record<string, unknown>)[name]
+        : null
       : name === 'default'
         ? children
         : null;
@@ -398,7 +400,16 @@ export function component<
     if (typeof children === 'function') {
       const { exposed } = runRender(renderFn, props, slotAccessors, ctx);
       const bag = { ...createConsumerBag(registry), ...exposed };
-      const consumerResult = children(bag);
+      let consumerResult: unknown;
+      try {
+        consumerResult = children(bag);
+      } catch (error) {
+        // The first render may already own effects and nested component scopes.
+        // Do not retain that owner when its consumer fails.
+        ctx.destroyed = null;
+        unmountElementContext(ctx, true);
+        throw error;
+      }
       if (consumerResult instanceof Node || typeof consumerResult === 'string') {
         registry.filled.set('default', consumerResult);
       }

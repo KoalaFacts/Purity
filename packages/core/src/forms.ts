@@ -110,18 +110,11 @@ export class FormControlBridge {
     this.#root.addEventListener('input', this.#onValueChange);
     this.#root.addEventListener('change', this.#onValueChange);
     this.#root.addEventListener('invalid', this.#onValueChange, true);
-    // Reuse the existing root observer to notice native accessible-name takeover.
-    this.#rootObserver = new MutationObserver((mutations) => {
+    // The same input can acquire a wrapping native label without changing
+    // its identity or aria-labelledby. Recheck naming on any root mutation.
+    this.#rootObserver = new MutationObserver(() => {
       this.#bind();
-      for (let i = 0; i < mutations.length; i++) {
-        if (
-          mutations[i].attributeName === 'aria-labelledby' &&
-          mutations[i].target === this.#control
-        ) {
-          this.syncLabel();
-          break;
-        }
-      }
+      this.syncLabel();
     });
     this.#rootObserver.observe(this.#root, {
       childList: true,

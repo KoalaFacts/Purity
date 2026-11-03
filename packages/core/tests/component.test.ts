@@ -93,6 +93,32 @@ describe('mount', () => {
     expect(container.querySelector('p')).toBeNull();
   });
 
+  it('removes root DOM inserted after reentrant teardown inside appendChild', () => {
+    const parent = new ComponentContext();
+    const container = document.createElement('div');
+    const node = document.createElement('span');
+    let destroyCount = 0;
+    const nativeAppend = container.appendChild.bind(container);
+    const append = vi.spyOn(container, 'appendChild').mockImplementation((child) => {
+      unmountContext(parent);
+      return nativeAppend(child);
+    });
+    pushContext(parent);
+    try {
+      const mounted = mount(() => {
+        onDestroy(() => destroyCount++);
+        return node;
+      }, container);
+      expect(destroyCount).toBe(1);
+      expect(container.childNodes).toHaveLength(0);
+      mounted.unmount();
+      expect(destroyCount).toBe(1);
+    } finally {
+      popContext();
+      append.mockRestore();
+    }
+  });
+
   it('does not insert a root after its parent destroys the owner during render', () => {
     const parent = new ComponentContext();
     const container = document.createElement('div');

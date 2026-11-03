@@ -6,8 +6,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
+import { mount } from '../../core/src/index.ts';
 import { eventSourceSignal } from '../src/browser-signals/index.ts';
-import { isSafeEventSourceUrl } from '../src/browser-signals/event-source-signal.ts';
+import { isSafeEventSourceUrl, redactUrl } from '../src/browser-signals/event-source-signal.ts';
 import { _resetPageVisibilitySignal } from '../src/browser-signals/page-visibility-signal.ts';
 import { _resetBfcacheRestoreSignal } from '../src/browser-signals/bfcache-restore-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../../core/src/ssr-context.ts';
@@ -29,7 +30,7 @@ class MockES {
   url: string;
   listeners = new Map<string, ((e: MessageEvent) => void)[]>();
   closed = false;
-  constructor(url: string | URL) {
+  constructor(url: string | URL, _options?: EventSourceInit) {
     this.url = String(url);
     const inst: Instance = {
       url: this.url,
@@ -99,7 +100,9 @@ describe('eventSourceSignal — SSR (ADR 0047)', () => {
     const ctx = makeSSRContext();
     pushSSRRenderContext(ctx);
     try {
-      const sig = eventSourceSignal<number>('/sse', { initialValue: 0, validate: isNumber });
+      const options = { initialValue: 0, validate: isNumber };
+      const sig = eventSourceSignal<number>('/sse', options);
+      options.initialValue = 9;
       expect(sig()).toBe(0);
       expect(instances).toEqual([]);
     } finally {
@@ -109,7 +112,9 @@ describe('eventSourceSignal — SSR (ADR 0047)', () => {
 
   it('returns the initialValue when EventSource is unavailable', () => {
     delete (globalThis as { EventSource?: unknown }).EventSource;
-    const sig = eventSourceSignal<number>('/sse', { initialValue: 7, validate: isNumber });
+    const options = { initialValue: 7, validate: isNumber };
+    const sig = eventSourceSignal<number>('/sse', options);
+    options.initialValue = 12;
     expect(sig()).toBe(7);
   });
 });
@@ -126,6 +131,24 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     expect(instances).toHaveLength(1);
   });
 
+  it('always reconnect avoids a page-visibility listener but retains bfcache restore', () => {
+    const documentAdd = vi.spyOn(document, 'addEventListener');
+    const windowAdd = vi.spyOn(window, 'addEventListener');
+    try {
+      eventSourceSignal<number>('/sse', {
+        initialValue: 0,
+        validate: isNumber,
+        reconnect: 'always',
+      });
+      expect(instances).toHaveLength(1);
+      expect(documentAdd.mock.calls.some(([type]) => type === 'visibilitychange')).toBe(false);
+      expect(windowAdd.mock.calls.some(([type]) => type === 'pageshow')).toBe(true);
+    } finally {
+      documentAdd.mockRestore();
+      windowAdd.mockRestore();
+    }
+  });
+
   it('opens when visible by default (on-visible)', () => {
     eventSourceSignal<number>('/sse', { initialValue: 0, validate: isNumber });
     expect(instances).toHaveLength(1);
@@ -136,6 +159,19 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     expect(sig()).toBe(0);
     instances[0].fire('message', '42');
     expect(sig()).toBe(42);
+  });
+
+  it('stores validated callable payloads without invoking them as state updaters', () => {
+    const payload = vi.fn(() => 'payload');
+    const sig = eventSourceSignal<() => string>('/sse', {
+      initialValue: () => 'initial',
+      parse: () => payload,
+      validate: (value): value is () => string => typeof value === 'function',
+      reconnect: 'never',
+    });
+    instances[0].fire('message', 'callable');
+    expect(payload).not.toHaveBeenCalled();
+    expect(sig()).toBe(payload);
   });
 
   it('drops messages that fail the validator with a console.warn', () => {
@@ -170,6 +206,420 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(warnSpy.mock.calls[0][0]).toContain('validator threw');
     warnSpy.mockRestore();
+  });
+
+  it('uses a stable native URL snapshot rather than overridden stringification', () => {
+    const url = new URL('https://example.test/sse?access_token=SECRET_SNAPSHOT');
+    Object.defineProperty(url, 'toString', {
+      value: () => 'javascript:SECRET_REPLACEMENT',
+    });
+    eventSourceSignal<number>(url, {
+      initialValue: 0,
+      validate: isNumber,
+      reconnect: 'never',
+    });
+    expect(instances).toHaveLength(1);
+    expect(instances[0].url).toBe('https://example.test/sse?access_token=SECRET_SNAPSHOT');
+  });
+
+  it('redacts malformed absolute URLs instead of echoing credentials', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const sig = eventSourceSignal<number>(
+        'https://user:pw@%not-a-host/sse?access_token=SECRET_URL',
+        { initialValue: 7, validate: isNumber },
+      );
+      expect(sig()).toBe(7);
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[invalid URL]');
+      expect(logged).not.toContain('SECRET_URL');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('redacts scheme-relative credentials without exposing query userinfo', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const url = '//user:SECRET_USERINFO@example.test/sse?access_token=SECRET_QUERY';
+      eventSourceSignal<number>(url, {
+        initialValue: 7,
+        validate: isNumber,
+        reconnect: 'never',
+      });
+      expect(instances).toHaveLength(1);
+      instances[0].fire('message', 'invalid-json');
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('//example.test/sse');
+      expect(logged).not.toContain('SECRET_USERINFO');
+      expect(logged).not.toContain('SECRET_QUERY');
+      // An @ in a query must not be mistaken for userinfo in the authority.
+      expect(redactUrl('//example.test?access_token=user@SECRET_TAIL')).toBe('//example.test');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('redacts slash/backslash authority credentials before SSE warnings', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of [
+        '///user:SECRET_AUTH@example.test/sse?access_token=SECRET_QUERY',
+        '/\\user:SECRET_AUTH@example.test/sse?access_token=SECRET_QUERY',
+        '\\\\user:SECRET_AUTH@example.test/sse?access_token=SECRET_QUERY',
+      ]) {
+        expect(redactUrl(url)).toBe('//example.test/sse');
+        eventSourceSignal<number>(url, {
+          initialValue: 7,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        instances[instances.length - 1].fire('message', 'bad-json');
+      }
+      expect(instances).toHaveLength(3);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).not.toContain('SECRET_AUTH');
+      expect(logged).not.toContain('SECRET_QUERY');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('does not disclose credentials in malformed scheme-relative URL warnings', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of [
+        '//user:SECRET_PASS?access_token=SECRET_QUERY@host/sse',
+        '///user:SECRET_PASS#SECRET_FRAGMENT@host/sse',
+      ]) {
+        expect(redactUrl(url)).toBe('[invalid URL]');
+        eventSourceSignal<number>(url, {
+          initialValue: 7,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        instances[instances.length - 1].fire('message', 'bad-json');
+      }
+      expect(instances).toHaveLength(2);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[invalid URL]');
+      expect(logged).not.toContain('SECRET_PASS');
+      expect(logged).not.toContain('SECRET_QUERY');
+      expect(logged).not.toContain('SECRET_FRAGMENT');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('rejects embedded URL controls and safely redacts whitespace-prefixed authorities', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of [
+        'htt\nps://user:pw@example.test/sse?access_token=SECRET_CTRL',
+        'java\nscript:SECRET_JS',
+      ]) {
+        const sig = eventSourceSignal<number>(url, {
+          initialValue: 7,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        expect(sig()).toBe(7);
+      }
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[invalid URL]');
+      expect(logged).not.toContain('user:pw');
+      expect(logged).not.toContain('SECRET_CTRL');
+      expect(logged).not.toContain('SECRET_JS');
+      expect(redactUrl('  https://user:pw@example.test/sse?access_token=SECRET_TRIM')).toBe(
+        'https://example.test/sse',
+      );
+      expect(isSafeEventSourceUrl('  https://example.test/sse')).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('does not log EventSource constructor errors containing credentials', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    function ThrowingES(): never {
+      throw new Error('SECRET_CONSTRUCTOR_MESSAGE with SECRET_URL_TOKEN');
+    }
+    (globalThis as { EventSource: unknown }).EventSource = ThrowingES;
+    try {
+      const sig = eventSourceSignal<number>(
+        'https://user:pw@example.test/sse?access_token=SECRET_URL_TOKEN',
+        { initialValue: 7, validate: isNumber, reconnect: 'never' },
+      );
+      expect(sig()).toBe(7);
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('failed to open');
+      expect(logged).toContain('https://example.test/sse');
+      expect(logged).not.toContain('SECRET_CONSTRUCTOR_MESSAGE');
+      expect(logged).not.toContain('SECRET_URL_TOKEN');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('redacts EventSource close exceptions during owner disposal', () => {
+    const close = MockES.prototype.close;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    MockES.prototype.close = function () {
+      close.call(this);
+      throw new Error('SECRET_CLOSE from https://user:pw@example.test/sse?access_token=SECRET_URL');
+    };
+    try {
+      const host = document.createElement('div');
+      const { unmount } = mount(() => {
+        eventSourceSignal<number>('https://user:pw@example.test/sse?access_token=SECRET_URL', {
+          initialValue: 0,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        return document.createComment('sse');
+      }, host);
+      expect(instances).toHaveLength(1);
+      expect(() => unmount()).not.toThrow();
+      expect(instances[0].closed).toBe(true);
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('close failed');
+      expect(logged).toContain('https://example.test/sse');
+      expect(logged).not.toContain('SECRET_CLOSE');
+      expect(logged).not.toContain('SECRET_URL');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      MockES.prototype.close = close;
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('closes and redacts a connection when EventSource listener registration throws', () => {
+    const addEventListener = MockES.prototype.addEventListener;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    MockES.prototype.addEventListener = function () {
+      throw new Error(
+        'SECRET_SUBSCRIBE from https://user:pw@example.test/sse?access_token=SECRET_URL',
+      );
+    };
+    try {
+      const sig = eventSourceSignal<number>(
+        'https://user:pw@example.test/sse?access_token=SECRET_URL',
+        { initialValue: 9, validate: isNumber, reconnect: 'never' },
+      );
+      expect(sig()).toBe(9);
+      expect(instances).toHaveLength(1);
+      expect(instances[0].closed).toBe(true);
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('failed to add listener');
+      expect(logged).toContain('https://example.test/sse');
+      expect(logged).not.toContain('SECRET_SUBSCRIBE');
+      expect(logged).not.toContain('SECRET_URL');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      MockES.prototype.addEventListener = addEventListener;
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('still closes and redacts when EventSource listener removal throws on disposal', () => {
+    const removeEventListener = MockES.prototype.removeEventListener;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    MockES.prototype.removeEventListener = function () {
+      throw new Error('SECRET_UNSUBSCRIBE from https://user:pw@example.test/sse?token=SECRET_URL');
+    };
+    try {
+      const host = document.createElement('div');
+      const { unmount } = mount(() => {
+        eventSourceSignal<number>('https://user:pw@example.test/sse?token=SECRET_URL', {
+          initialValue: 0,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        return document.createComment('sse');
+      }, host);
+      expect(instances).toHaveLength(1);
+      expect(() => unmount()).not.toThrow();
+      expect(instances[0].closed).toBe(true);
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('listener detach failed');
+      expect(logged).toContain('https://example.test/sse');
+      expect(logged).not.toContain('SECRET_UNSUBSCRIBE');
+      expect(logged).not.toContain('SECRET_URL');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      MockES.prototype.removeEventListener = removeEventListener;
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('redacts throwing URL getters without invoking them in EventSource diagnostics', () => {
+    const url = new URL('https://example.test/sse?access_token=SECRET_QUERY');
+    Object.defineProperty(url, 'host', {
+      get: () => {
+        throw new Error('SECRET_GETTER');
+      },
+    });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(redactUrl(url)).toBe('https://example.test/sse');
+      const sig = eventSourceSignal<number>(url, {
+        initialValue: 7,
+        validate: isNumber,
+        reconnect: 'never',
+      });
+      expect(instances).toHaveLength(1);
+      instances[0].fire('message', 'not-json');
+      expect(sig()).toBe(7);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('https://example.test/sse');
+      expect(logged).not.toContain('SECRET_GETTER');
+      expect(logged).not.toContain('SECRET_QUERY');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('uses the native URL protocol rather than an attacker-controlled getter', () => {
+    const url = new URL('file:///private/secret');
+    let reads = 0;
+    Object.defineProperty(url, 'protocol', {
+      get: () => {
+        reads++;
+        return 'https:';
+      },
+    });
+    expect(isSafeEventSourceUrl(url)).toBe(false);
+    expect(reads).toBe(0);
+  });
+
+  it('bypasses a stateful URL protocol getter when redacting diagnostics', () => {
+    const url = new URL('https://example.test/sse?access_token=SECRET_QUERY');
+    let reads = 0;
+    Object.defineProperty(url, 'protocol', {
+      get: () => (++reads === 1 ? 'https:' : 'https:SECRET_PROTOCOL'),
+    });
+    expect(redactUrl(url)).toBe('https://example.test/sse');
+    expect(reads).toBe(0);
+  });
+
+  it('never reads URL host or path overrides that inject credentials', () => {
+    const url = new URL('https://example.test/sse?access_token=SECRET_QUERY');
+    let getterReads = 0;
+    Object.defineProperty(url, 'host', {
+      get: () => {
+        getterReads++;
+        return 'example.test?access_token=SECRET_HOST';
+      },
+    });
+    Object.defineProperty(url, 'pathname', {
+      get: () => {
+        getterReads++;
+        return '/SECRET_PATH';
+      },
+    });
+    expect(redactUrl(url)).toBe('https://example.test/sse');
+    expect(getterReads).toBe(0);
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      eventSourceSignal<number>(url, {
+        initialValue: 0,
+        validate: isNumber,
+        reconnect: 'never',
+      });
+      expect(instances).toHaveLength(1);
+      instances[0].fire('message', 'not-json');
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('https://example.test/sse');
+      expect(logged).not.toContain('SECRET_HOST');
+      expect(logged).not.toContain('SECRET_PATH');
+      expect(logged).not.toContain('SECRET_QUERY');
+      expect(getterReads).toBe(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('does not echo opaque URL payloads into refused EventSource diagnostics', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of [
+        'javascript:SECRET_JS',
+        'data:text/plain,SECRET_DATA',
+        'file:///private/SECRET_FILE',
+        new URL('blob:https://host/SECRET_BLOB'),
+      ]) {
+        const sig = eventSourceSignal<number>(url, {
+          initialValue: 7,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        expect(sig()).toBe(7);
+      }
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(4);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[unsupported URL scheme]');
+      for (const secret of ['SECRET_JS', 'SECRET_DATA', 'SECRET_FILE', 'SECRET_BLOB']) {
+        expect(logged).not.toContain(secret);
+      }
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('never logs parser or validator exceptions containing raw message secrets', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const parsed = eventSourceSignal<number>('/sse', {
+        initialValue: 7,
+        validate: isNumber,
+        parse: () => {
+          throw new Error('SECRET_PARSE from an untrusted message');
+        },
+      });
+      instances[0].fire('message', 'SECRET_PARSE');
+      expect(parsed()).toBe(7);
+
+      const validated = eventSourceSignal<number>('/sse', {
+        initialValue: 8,
+        validate: (_value: unknown): _value is number => {
+          throw new Error('SECRET_VALIDATE from an untrusted message');
+        },
+      });
+      instances[1].fire('message', '42');
+      expect(validated()).toBe(8);
+
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('failed to parse');
+      expect(logged).toContain('validator threw');
+      expect(logged).not.toContain('SECRET_PARSE');
+      expect(logged).not.toContain('SECRET_VALIDATE');
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('honours a custom eventName', () => {
@@ -244,6 +694,39 @@ describe('eventSourceSignal — client (ADR 0047)', () => {
     expect(instances[0].closed).toBe(true);
   });
 
+  it('closes a replacement EventSource when its constructor synchronously unmounts the owner', async () => {
+    const root = mount(() => {
+      eventSourceSignal<number>('/sse', {
+        initialValue: 0,
+        validate: isNumber,
+        reconnect: 'always',
+      });
+      return document.createElement('div');
+    }, document.createElement('div'));
+    expect(instances).toHaveLength(1);
+
+    class ReentrantES extends MockES {
+      constructor(url: string | URL, options?: EventSourceInit) {
+        super(url, options);
+        if (instances.length === 2) root.unmount();
+      }
+    }
+    (globalThis as { EventSource: unknown }).EventSource = ReentrantES;
+    try {
+      const event = new Event('pageshow') as Event & { persisted: boolean };
+      Object.defineProperty(event, 'persisted', { value: true });
+      window.dispatchEvent(event);
+      await tick();
+
+      expect(instances).toHaveLength(2);
+      expect(instances[0].closed).toBe(true);
+      expect(instances[1].closed).toBe(true);
+      expect(instances[1].listeners.get('message')?.length ?? 0).toBe(0);
+    } finally {
+      root.unmount();
+    }
+  });
+
   it('never: opens once and never reopens on lifecycle events', async () => {
     eventSourceSignal<number>('/sse', {
       initialValue: 0,
@@ -285,6 +768,33 @@ describe('eventSourceSignal — audit-v2 hardening', () => {
     expect(msg).toContain('refused to open');
     expect(msg).toContain('http(s)');
     warnSpy.mockRestore();
+  });
+
+  it('skips reconnect listeners and repeated warnings for a refused URL', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const documentAdd = vi.spyOn(document, 'addEventListener');
+    const windowAdd = vi.spyOn(window, 'addEventListener');
+    try {
+      const options = { initialValue: 5, validate: isNumber };
+      const sig = eventSourceSignal<number>('javascript:alert(1)', options);
+      options.initialValue = 99;
+      expect(sig()).toBe(5);
+      expect(instances).toHaveLength(0);
+      expect(documentAdd.mock.calls.some(([type]) => type === 'visibilitychange')).toBe(false);
+      expect(windowAdd.mock.calls.some(([type]) => type === 'pageshow')).toBe(false);
+      setVisibility('hidden');
+      setVisibility('visible');
+      const restore = new Event('pageshow') as Event & { persisted: boolean };
+      Object.defineProperty(restore, 'persisted', { value: true });
+      window.dispatchEvent(restore);
+      await tick();
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      warnSpy.mockRestore();
+      documentAdd.mockRestore();
+      windowAdd.mockRestore();
+    }
   });
 
   it('refuses to open a data: URL', () => {

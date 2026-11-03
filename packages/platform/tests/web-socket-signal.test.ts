@@ -134,6 +134,28 @@ describe('webSocketSignal — SSR (ADR 0047)', () => {
     expect(sig.readyState()).toBe('closed');
     expect(() => sig.send('x')).not.toThrow();
   });
+
+  it('snapshots the initial value instead of retaining mutable inert connection options', () => {
+    delete (globalThis as { WebSocket?: unknown }).WebSocket;
+    const options = { initialValue: 1, validate: isNumber };
+    const inert = webSocketSignal<number>('/ws', options);
+    options.initialValue = 9;
+    expect(inert()).toBe(1);
+    expect(inert.readyState()).toBe('closed');
+    expect(instances).toEqual([]);
+  });
+
+  it('shares inert methods while preserving independent fallback values', () => {
+    delete (globalThis as { WebSocket?: unknown }).WebSocket;
+    const first = webSocketSignal<number>('/one', { initialValue: 1, validate: isNumber });
+    const second = webSocketSignal<number>('/two', { initialValue: 2, validate: isNumber });
+    expect(first()).toBe(1);
+    expect(second()).toBe(2);
+    expect(first.send).toBe(second.send);
+    expect(first.readyState).toBe(second.readyState);
+    expect(first.readyState()).toBe('closed');
+    expect(instances).toEqual([]);
+  });
 });
 
 describe('webSocketSignal — client (ADR 0047)', () => {
@@ -180,6 +202,19 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(sig()).toBe(0);
     instances[0].fireMessage('42'); // parse → 42
     expect(sig()).toBe(42);
+  });
+
+  it('stores validated callable payloads without invoking them as state updaters', () => {
+    const payload = vi.fn(() => 'payload');
+    const sig = webSocketSignal<() => string>('/ws', {
+      initialValue: () => 'initial',
+      parse: () => payload,
+      validate: (value): value is () => string => typeof value === 'function',
+      reconnect: 'never',
+    });
+    instances[0].fireMessage('callable');
+    expect(payload).not.toHaveBeenCalled();
+    expect(sig()).toBe(payload);
   });
 
   it('drops messages that fail the validator with a console.warn', () => {
@@ -243,6 +278,202 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(warnSpy.mock.calls[0][0]).toContain('validator threw');
     warnSpy.mockRestore();
+  });
+
+  it('uses the validated native URL snapshot, not mutable URL properties', () => {
+    const url = new URL('wss://example.test/ws?access_token=SECRET_SNAPSHOT');
+    Object.defineProperty(url, 'toString', {
+      value: () => 'javascript:SECRET_REPLACEMENT',
+    });
+    webSocketSignal<number>(url, {
+      initialValue: 0,
+      validate: isNumber,
+      reconnect: 'never',
+    });
+    expect(instances).toHaveLength(1);
+    expect(instances[0].url).toBe('wss://example.test/ws?access_token=SECRET_SNAPSHOT');
+
+    const forged = new URL('https://example.test/not-websocket');
+    Object.defineProperty(forged, 'protocol', { value: 'wss:' });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const rejected = webSocketSignal<number>(forged, {
+        initialValue: 7,
+        validate: isNumber,
+        reconnect: 'never',
+      });
+      expect(rejected()).toBe(7);
+      expect(rejected.readyState()).toBe('closed');
+      expect(instances).toHaveLength(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('redacts slash/backslash authority credentials before WebSocket warnings', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of [
+        '///user:SECRET_AUTH@example.test/ws?access_token=SECRET_QUERY',
+        '/\\user:SECRET_AUTH@example.test/ws?access_token=SECRET_QUERY',
+        '\\\\user:SECRET_AUTH@example.test/ws?access_token=SECRET_QUERY',
+      ]) {
+        webSocketSignal<number>(url, {
+          initialValue: 7,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        instances[instances.length - 1].fireMessage('bad-json');
+      }
+      expect(instances).toHaveLength(3);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).not.toContain('SECRET_AUTH');
+      expect(logged).not.toContain('SECRET_QUERY');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('does not disclose credentials in malformed scheme-relative WebSocket warnings', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of [
+        '//user:SECRET_PASS?access_token=SECRET_QUERY@host/ws',
+        '///user:SECRET_PASS#SECRET_FRAGMENT@host/ws',
+      ]) {
+        webSocketSignal<number>(url, {
+          initialValue: 7,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        instances[instances.length - 1].fireMessage('bad-json');
+      }
+      expect(instances).toHaveLength(2);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[invalid URL]');
+      expect(logged).not.toContain('SECRET_PASS');
+      expect(logged).not.toContain('SECRET_QUERY');
+      expect(logged).not.toContain('SECRET_FRAGMENT');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('redacts throwing URL getters without invoking them in WebSocket diagnostics', () => {
+    const url = new URL('wss://example.test/ws?access_token=SECRET_QUERY');
+    Object.defineProperty(url, 'host', {
+      get: () => {
+        throw new Error('SECRET_GETTER');
+      },
+    });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const sig = webSocketSignal<number>(url, {
+        initialValue: 7,
+        validate: isNumber,
+        reconnect: 'never',
+      });
+      expect(instances).toHaveLength(1);
+      instances[0].fireMessage('not-json');
+      expect(sig()).toBe(7);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('wss://example.test/ws');
+      expect(logged).not.toContain('SECRET_GETTER');
+      expect(logged).not.toContain('SECRET_QUERY');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('does not echo opaque URL payloads into rejected WebSocket diagnostics', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of [
+        'javascript:SECRET_WS_JS',
+        'data:text/plain,SECRET_WS_DATA',
+        new URL('file:///private/SECRET_WS_FILE'),
+      ]) {
+        const sig = webSocketSignal<number>(url, {
+          initialValue: 7,
+          validate: isNumber,
+        });
+        expect(sig()).toBe(7);
+        expect(sig.readyState()).toBe('closed');
+      }
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(3);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[unsupported URL scheme]');
+      for (const secret of ['SECRET_WS_JS', 'SECRET_WS_DATA', 'SECRET_WS_FILE']) {
+        expect(logged).not.toContain(secret);
+      }
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('rejects control-obfuscated WebSocket schemes without logging credentials', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const bad = webSocketSignal<number>('ws\ns://user:pw@host/ws?access_token=SECRET_CTRL', {
+        initialValue: 7,
+        validate: isNumber,
+      });
+      expect(bad()).toBe(7);
+      expect(bad.readyState()).toBe('closed');
+      expect(instances).toHaveLength(0);
+      const good = webSocketSignal<number>('  wss://user:pw@host/ws?access_token=SECRET_TRIM', {
+        initialValue: 8,
+        validate: isNumber,
+      });
+      expect(instances).toHaveLength(1);
+      instances[0].fireOpen();
+      instances[0].fireMessage('invalid-json');
+      expect(good()).toBe(8);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('[invalid URL]');
+      expect(logged).toContain('wss://host/ws');
+      expect(logged).not.toContain('SECRET_CTRL');
+      expect(logged).not.toContain('SECRET_TRIM');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('never logs parser or validator exceptions containing WebSocket payload secrets', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const parsed = webSocketSignal<number>('/ws', {
+        initialValue: 7,
+        validate: isNumber,
+        parse: () => {
+          throw new Error('SECRET_WS_PARSE from an untrusted message');
+        },
+      });
+      instances[0].fireOpen();
+      instances[0].fireMessage('SECRET_WS_PARSE');
+      expect(parsed()).toBe(7);
+
+      const validated = webSocketSignal<number>('/ws', {
+        initialValue: 8,
+        validate: (_value: unknown): _value is number => {
+          throw new Error('SECRET_WS_VALIDATE from an untrusted message');
+        },
+      });
+      instances[1].fireOpen();
+      instances[1].fireMessage('42');
+      expect(validated()).toBe(8);
+
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('failed to parse');
+      expect(logged).toContain('validator threw');
+      expect(logged).not.toContain('SECRET_WS_PARSE');
+      expect(logged).not.toContain('SECRET_WS_VALIDATE');
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('send() forwards to the socket when open', () => {
@@ -310,6 +541,74 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(instances[1].closed).toBe(false);
   });
 
+  it('does not reconnect after a bfcache close unmounts its owner', async () => {
+    const root = mount(() => {
+      webSocketSignal<number>('/ws', {
+        initialValue: 0,
+        validate: isNumber,
+        reconnect: 'always',
+      });
+      return document.createElement('div');
+    }, document.createElement('div'));
+    expect(instances).toHaveLength(1);
+
+    const originalClose = MockWS.prototype.close;
+    const closeSpy = vi.spyOn(MockWS.prototype, 'close').mockImplementation(function (
+      this: MockWS,
+    ) {
+      originalClose.call(this);
+      // A close adapter can synchronously trigger owner removal mid-refresh.
+      root.unmount();
+    });
+    try {
+      const event = new Event('pageshow') as Event & { persisted: boolean };
+      Object.defineProperty(event, 'persisted', { value: true });
+      window.dispatchEvent(event);
+      await tick();
+
+      expect(instances[0].closed).toBe(true);
+      expect(instances).toHaveLength(1);
+    } finally {
+      closeSpy.mockRestore();
+      root.unmount();
+    }
+  });
+
+  it('closes a replacement WebSocket when its constructor synchronously unmounts the owner', async () => {
+    const root = mount(() => {
+      webSocketSignal<number>('/ws', {
+        initialValue: 0,
+        validate: isNumber,
+        reconnect: 'always',
+      });
+      return document.createElement('div');
+    }, document.createElement('div'));
+    expect(instances).toHaveLength(1);
+
+    class ReentrantWS extends MockWS {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+        if (instances.length === 2) root.unmount();
+      }
+    }
+    (globalThis as { WebSocket: unknown }).WebSocket = ReentrantWS;
+    try {
+      const event = new Event('pageshow') as Event & { persisted: boolean };
+      Object.defineProperty(event, 'persisted', { value: true });
+      window.dispatchEvent(event);
+      await tick();
+
+      expect(instances).toHaveLength(2);
+      expect(instances[0].closed).toBe(true);
+      expect(instances[1].closed).toBe(true);
+      for (const type of ['open', 'close', 'error', 'message']) {
+        expect(instances[1].listeners.get(type)?.length ?? 0).toBe(0);
+      }
+    } finally {
+      root.unmount();
+    }
+  });
+
   it('never: opens once and never reopens on lifecycle events', async () => {
     webSocketSignal<number>('/ws', {
       initialValue: 0,
@@ -337,6 +636,21 @@ describe('webSocketSignal — client (ADR 0047)', () => {
       protocols: ['v1', 'v2'],
     });
     expect(instances[0].protocols).toEqual(['v1', 'v2']);
+  });
+
+  it('snapshots invalid-URL fallback values without opening a connection', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const options = { initialValue: 3, validate: isNumber };
+      const inert = webSocketSignal<number>('http://example.test/ws', options);
+      options.initialValue = 12;
+      expect(inert()).toBe(3);
+      expect(inert.readyState()).toBe('closed');
+      expect(instances).toEqual([]);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('rejects non-ws/wss URL schemes pre-construction (no side effects, redacted warn)', () => {
@@ -397,6 +711,21 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     expect(instances).toHaveLength(1);
   });
 
+  it('rejects invalid absolute ws URLs before constructing a socket', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      for (const url of ['ws://', 'wss://']) {
+        const sig = webSocketSignal<number>(url, { initialValue: 7, validate: isNumber });
+        expect(sig()).toBe(7);
+        expect(sig.readyState()).toBe('closed');
+      }
+      expect(instances).toEqual([]);
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('rejects subprotocols containing CR/LF or non-token bytes (header smuggling)', () => {
     // audit-v2: Sec-WebSocket-Protocol values are echoed back by the
     // server. Passing a string with embedded CR/LF / non-token bytes
@@ -429,6 +758,223 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     warnSpy.mockRestore();
   });
 
+  it('rejects sparse subprotocol arrays without opening or reconnecting', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sparse = new Array<string>(2);
+    sparse[0] = 'chat.v1'; // The second entry is a hole, not an explicit undefined.
+    const sig = webSocketSignal<number>('/ws', {
+      initialValue: 7,
+      validate: isNumber,
+      protocols: sparse,
+    });
+    expect(instances).toHaveLength(0);
+    expect(sig()).toBe(7);
+    expect(sig.readyState()).toBe('closed');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('invalid subprotocol');
+
+    const restore = new Event('pageshow') as Event & { persisted: boolean };
+    Object.defineProperty(restore, 'persisted', { value: true });
+    window.dispatchEvent(restore);
+    await tick();
+    setVisibility('hidden');
+    await tick();
+    setVisibility('visible');
+    await tick();
+    expect(instances).toHaveLength(0);
+    warnSpy.mockRestore();
+  });
+
+  it('rejects duplicated subprotocol tokens before construction and redacts diagnostics', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const sig = webSocketSignal<number>('ws://user:pw@host/ws?access_token=SECRET', {
+      initialValue: 7,
+      validate: isNumber,
+      protocols: ['chat.v1', 'chat.v1'],
+    });
+    expect(instances).toHaveLength(0);
+    expect(sig()).toBe(7);
+    expect(sig.readyState()).toBe('closed');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain('invalid subprotocol');
+    expect(warnSpy.mock.calls[0].map(String).join(' ')).not.toContain('SECRET');
+    warnSpy.mockRestore();
+  });
+
+  it('uses only the validated WebSocket protocol snapshot across reconnections', async () => {
+    let reads = 0;
+    const source = ['chat.v1'];
+    const sig = webSocketSignal<number>('/ws', {
+      initialValue: 7,
+      validate: isNumber,
+      reconnect: 'always',
+      get protocols() {
+        reads++;
+        return reads === 1 ? source : ['chat.v1\r\nSECRET_HEADER'];
+      },
+    });
+    expect(reads).toBe(1);
+    expect(instances).toHaveLength(1);
+    expect(instances[0].protocols).toEqual(['chat.v1']);
+    source[0] = 'tampered\r\nSECRET_MUTATION';
+    const event = new Event('pageshow') as Event & { persisted: boolean };
+    Object.defineProperty(event, 'persisted', { value: true });
+    window.dispatchEvent(event);
+    await tick();
+    expect(instances).toHaveLength(2);
+    expect(instances[0].closed).toBe(true);
+    expect(instances[1].protocols).toEqual(['chat.v1']);
+    expect(sig()).toBe(7);
+    expect(reads).toBe(1);
+  });
+
+  it('rejects throwing WebSocket subprotocol getters without leaking exceptions', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const sig = webSocketSignal<number>('/ws', {
+        initialValue: 7,
+        validate: isNumber,
+        get protocols(): string[] {
+          throw new Error('SECRET_PROTOCOL_GETTER');
+        },
+      });
+      expect(sig()).toBe(7);
+      expect(sig.readyState()).toBe('closed');
+      expect(instances).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('invalid subprotocol');
+      expect(logged).not.toContain('SECRET_PROTOCOL_GETTER');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('redacts native constructor exception details that echo URL credentials', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    (globalThis as { WebSocket: unknown }).WebSocket = function ThrowingWebSocket() {
+      throw new Error('unredacted wss://user:pw@host/ws?access_token=SECRET');
+    };
+    const signal = webSocketSignal<number>('wss://user:pw@host/ws?access_token=SECRET', {
+      initialValue: 7,
+      validate: isNumber,
+      reconnect: 'never',
+    });
+    expect(signal()).toBe(7);
+    expect(signal.readyState()).toBe('closed');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+    expect(logged).toContain('failed to open');
+    expect(logged).not.toContain('SECRET');
+    expect(logged).not.toContain('user:pw');
+    warnSpy.mockRestore();
+  });
+
+  it('closes a partial socket when listener registration throws', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const add = MockWS.prototype.addEventListener;
+    MockWS.prototype.addEventListener = function (this: MockWS, type, listener) {
+      if (type === 'message') throw new Error('SECRET_WS_ADD from adapter');
+      add.call(this, type, listener);
+    };
+    try {
+      const sig = webSocketSignal<number>('wss://user:pw@host/ws?access_token=SECRET_URL', {
+        initialValue: 7,
+        validate: isNumber,
+        reconnect: 'never',
+      });
+      expect(instances).toHaveLength(1);
+      expect(instances[0].closed).toBe(true);
+      for (const type of ['open', 'close', 'error', 'message']) {
+        expect(instances[0].listeners.get(type)?.length ?? 0).toBe(0);
+      }
+      await tick();
+      expect(sig()).toBe(7);
+      expect(sig.readyState()).toBe('closed');
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('failed to add listener');
+      expect(logged).not.toContain('SECRET_WS_ADD');
+      expect(logged).not.toContain('SECRET_URL');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      MockWS.prototype.addEventListener = add;
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('closes a socket even when listener removal throws', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const remove = MockWS.prototype.removeEventListener;
+    MockWS.prototype.removeEventListener = function (this: MockWS, type, listener) {
+      if (type === 'message') throw new Error('SECRET_WS_REMOVE from adapter');
+      remove.call(this, type, listener);
+    };
+    try {
+      const host = document.createElement('div');
+      let signal!: ReturnType<typeof webSocketSignal<number>>;
+      const { unmount } = mount(() => {
+        signal = webSocketSignal<number>('wss://user:pw@host/ws?access_token=SECRET_URL', {
+          initialValue: 0,
+          validate: isNumber,
+          reconnect: 'never',
+        });
+        return document.createComment('m');
+      }, host);
+      instances[0].fireOpen();
+      expect(() => unmount()).not.toThrow();
+      expect(instances[0].closed).toBe(true);
+      for (const type of ['open', 'close', 'error']) {
+        expect(instances[0].listeners.get(type)?.length ?? 0).toBe(0);
+      }
+      await tick();
+      expect(signal.readyState()).toBe('closed');
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('listener detach failed');
+      expect(logged).not.toContain('SECRET_WS_REMOVE');
+      expect(logged).not.toContain('SECRET_URL');
+      expect(logged).not.toContain('user:pw');
+    } finally {
+      MockWS.prototype.removeEventListener = remove;
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('does not log thrown send payloads or close exception details', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const send = MockWS.prototype.send;
+    const close = MockWS.prototype.close;
+    MockWS.prototype.send = () => {
+      throw new Error('SECRET_SEND echoed by the adapter');
+    };
+    MockWS.prototype.close = () => {
+      throw new Error('SECRET_CLOSE echoed by the adapter');
+    };
+    try {
+      const host = document.createElement('div');
+      let signal!: ReturnType<typeof webSocketSignal<number>>;
+      const { unmount } = mount(() => {
+        signal = webSocketSignal<number>('wss://host/ws', {
+          initialValue: 0,
+          validate: isNumber,
+        });
+        return document.createComment('m');
+      }, host);
+      instances[0].fireOpen();
+      signal.send('SECRET_SEND');
+      unmount();
+      await tick();
+      const logged = warnSpy.mock.calls.flat().map(String).join(' ');
+      expect(logged).toContain('.send() failed');
+      expect(logged).toContain('close failed');
+      expect(logged).not.toContain('SECRET_SEND');
+      expect(logged).not.toContain('SECRET_CLOSE');
+    } finally {
+      MockWS.prototype.send = send;
+      MockWS.prototype.close = close;
+      warnSpy.mockRestore();
+    }
+  });
+
   it('accepts well-formed subprotocol tokens (happy path)', () => {
     webSocketSignal<number>('/ws', {
       initialValue: 0,
@@ -437,6 +983,50 @@ describe('webSocketSignal — client (ADR 0047)', () => {
     });
     expect(instances).toHaveLength(1);
     expect(instances[0].protocols).toEqual(['chat.v1', 'json.v2+ext']);
+  });
+
+  it('keeps per-socket listeners isolated while reusing event names', async () => {
+    const firstHost = document.createElement('div');
+    const secondHost = document.createElement('div');
+    let first!: ReturnType<typeof webSocketSignal<number>>;
+    let second!: ReturnType<typeof webSocketSignal<number>>;
+    const firstMount = mount(() => {
+      first = webSocketSignal<number>('/ws/first', { initialValue: 0, validate: isNumber });
+      return document.createComment('first');
+    }, firstHost);
+    const secondMount = mount(() => {
+      second = webSocketSignal<number>('/ws/second', { initialValue: 0, validate: isNumber });
+      return document.createComment('second');
+    }, secondHost);
+
+    expect(instances).toHaveLength(2);
+    for (const event of ['open', 'close', 'error', 'message']) {
+      expect(instances[0].listeners.get(event)).toHaveLength(1);
+      expect(instances[1].listeners.get(event)).toHaveLength(1);
+    }
+    expect(instances[0].listeners.get('message')![0]).not.toBe(
+      instances[1].listeners.get('message')![0],
+    );
+
+    instances[0].fireOpen();
+    instances[1].fireOpen();
+    instances[0].fireMessage('7');
+    instances[1].fireMessage('11');
+    expect(first()).toBe(7);
+    expect(second()).toBe(11);
+
+    firstMount.unmount();
+    await tick();
+    for (const event of ['open', 'close', 'error', 'message']) {
+      expect(instances[0].listeners.get(event)).toHaveLength(0);
+      expect(instances[1].listeners.get(event)).toHaveLength(1);
+    }
+    instances[0].fireMessage('99');
+    instances[1].fireMessage('13');
+    expect(first()).toBe(7);
+    expect(second()).toBe(13);
+    secondMount.unmount();
+    await tick();
   });
 
   it('close() detaches the four listeners so a late message after reconnect cannot ride into the new state', async () => {

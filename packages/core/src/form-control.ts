@@ -196,27 +196,38 @@ export class FormControlBridge {
   private bind(): void {
     const selector = this.selector === true ? DEFAULT_SELECTOR : this.selector;
     const found = this.root.querySelector(selector);
-    if (!isNativeControl(found)) {
-      this.control = null;
+    const nextControl = isNativeControl(found) ? found : null;
+    if (nextControl !== this.control) {
+      const previousControl = this.control;
+      // A detached or replaced control must not carry the old host's
+      // generated accessible name into another component.
+      if (
+        previousControl &&
+        this.autoLabel !== null &&
+        previousControl.getAttribute('aria-label') === this.autoLabel
+      ) {
+        previousControl.removeAttribute('aria-label');
+      }
+      this.control = nextControl;
+      this.autoLabel = null;
+      if (nextControl) {
+        this.controlDisabled = nextControl.disabled;
+        if (this.pendingValue !== undefined) {
+          nextControl.value = this.pendingValue;
+          this.pendingValue = undefined;
+        }
+        if (this.pendingChecked !== undefined && nextControl instanceof HTMLInputElement) {
+          nextControl.checked = this.pendingChecked;
+          this.pendingChecked = undefined;
+        }
+        nextControl.disabled = this.hostDisabled || this.controlDisabled;
+      }
       this.syncLabel();
+    }
+    if (!nextControl) {
       this.internals.setFormValue(null);
       this.internals.setValidity({});
       return;
-    }
-    if (found !== this.control) {
-      this.control = found;
-      this.controlDisabled = found.disabled;
-      this.autoLabel = null;
-      if (this.pendingValue !== undefined) {
-        found.value = this.pendingValue;
-        this.pendingValue = undefined;
-      }
-      if (this.pendingChecked !== undefined && found instanceof HTMLInputElement) {
-        found.checked = this.pendingChecked;
-        this.pendingChecked = undefined;
-      }
-      found.disabled = this.hostDisabled || this.controlDisabled;
-      this.syncLabel();
     }
     this.sync();
   }

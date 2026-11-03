@@ -1,13 +1,57 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { component } from '../src/elements.ts';
-import { mount, onDestroy, onDispose, onError, onMount, unmountContext } from '../src/component.ts';
+import { bindComponentState, mount, onDestroy, onDispose, onError, onMount, unmountContext } from '../src/component.ts';
 import { hydrate } from '../src/hydrate.ts';
 import { resource } from '../src/resource.ts';
 import { ComponentContext, popContext, pushContext, state, watch } from '@purityjs/signals';
 import { primeHydrationCache } from '../src/ssr-context.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
+
+describe('bindComponentState', () => {
+  it('releases inactive custom state counts without affecting another active source', async () => {
+    const added: string[] = [];
+    const removed: string[] = [];
+    const ctx = new ComponentContext();
+    ctx._internals = {
+      states: {
+        add: (name: string) => added.push(name),
+        delete: (name: string) => removed.push(name),
+      },
+    };
+    const first = state(true);
+    const second = state(true);
+
+    pushContext(ctx);
+    try {
+      bindComponentState('active', first);
+      bindComponentState('active', second);
+    } finally {
+      popContext();
+    }
+
+    expect(added).toEqual(['active']);
+    expect(ctx._stateRefs?.get('active')).toBe(2);
+
+    first(false);
+    await tick();
+    expect(removed).toEqual([]);
+    expect(ctx._stateRefs?.get('active')).toBe(1);
+
+    second(false);
+    await tick();
+    expect(removed).toEqual(['active']);
+    expect(ctx._stateRefs?.has('active')).toBe(false);
+
+    first(true);
+    await tick();
+    expect(added).toEqual(['active', 'active']);
+    unmountContext(ctx);
+    expect(removed).toEqual(['active', 'active']);
+    expect(ctx._stateRefs?.has('active')).toBe(false);
+  });
+});
 
 describe('mount', () => {
   it('disposes effects created through the core signal API when the root unmounts', async () => {

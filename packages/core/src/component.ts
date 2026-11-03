@@ -13,7 +13,7 @@ import {
   getCurrentContext,
   popContext,
   pushContext,
-  watchEffectInternal,
+  watch,
 } from '@purityjs/signals';
 
 /**
@@ -174,44 +174,36 @@ export function bindComponentState(name: string, accessor: () => unknown): void 
   const refs = (ctx._stateRefs ??= new Map());
   let prevOn = false;
 
-  const dispose = watchEffectInternal(() => {
-    const on = !!accessor();
+  // Share the same ref-count transition for signal updates and owner disposal.
+  const update = (release = false): undefined => {
+    const on = !release && !!accessor();
     if (on === prevOn) return;
     prevOn = on;
-    const cur = refs.get(name) ?? 0;
-    const next = cur + (on ? 1 : -1);
-    refs.set(name, next);
-    if (cur === 0 && next === 1) {
+    // Drop inactive entries while sharing the updated count with host transitions.
+    const count = (refs.get(name) ?? 0) + (on ? 1 : -1);
+    if (count) refs.set(name, count);
+    else refs.delete(name);
+    if (on && count === 1) {
       try {
         states.add(name);
       } catch (err) {
         /* v8 ignore next */
         console.error('[Purity] bindComponentState add failed:', err);
       }
-    } else if (cur === 1 && next === 0) {
+    } else if (!on && count === 0) {
       try {
         states.delete(name);
       } catch {
         /* v8 ignore next */
       }
     }
-  });
+  };
 
+  const dispose = watch(update);
   const owner = getCurrentContext()!;
   (owner.disposers ??= []).push(() => {
     dispose();
-    if (prevOn) {
-      const cur = refs.get(name) ?? 0;
-      const next = cur - 1;
-      refs.set(name, next);
-      if (cur === 1 && next === 0) {
-        try {
-          states.delete(name);
-        } catch {
-          /* v8 ignore next */
-        }
-      }
-    }
+    update(true);
   });
 }
 

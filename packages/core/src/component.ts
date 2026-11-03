@@ -116,7 +116,7 @@ export function onError(fn: (err: unknown) => void): void {
   if (ctx) addComponentCallback(ctx, (ctx.errorHandlers ??= []), fn);
 }
 
-function removeInsertedRoots(nodes: Node[] | null, container: Element): void {
+function removeInsertedRoots(nodes: Node[] | null | undefined, container: Element): void {
   if (!nodes) return;
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i] as Node;

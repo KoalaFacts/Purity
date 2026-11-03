@@ -140,6 +140,10 @@ export function mount(component: ComponentFn, container: Element): MountResult {
 
   popContext();
 
+  // A nested root may be destroyed by its parent while its render is running.
+  // Do not append content after the owner has already been torn down.
+  if (ctx._isDestroyed) return { unmount: () => {} };
+
   if (fragment instanceof DocumentFragment) {
     ctx.nodes = Array.from(fragment.childNodes);
   } else if (fragment instanceof Node) {

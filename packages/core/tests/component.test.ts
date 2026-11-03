@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { component } from '../src/elements.ts';
-import { bindComponentState, mount, onDestroy, onDispose, onError, onMount, unmountContext } from '../src/component.ts';
+import {
+  bindComponentState,
+  mount,
+  onDestroy,
+  onDispose,
+  onError,
+  onMount,
+  unmountContext,
+} from '../src/component.ts';
 import { hydrate } from '../src/hydrate.ts';
 import { resource } from '../src/resource.ts';
 import { ComponentContext, popContext, pushContext, state, watch } from '@purityjs/signals';

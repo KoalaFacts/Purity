@@ -260,6 +260,45 @@ describe('formControl component option', () => {
     }
   });
 
+  it('removes only bridge-authored labels when a native control is replaced', async () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const oldInput = document.createElement('input');
+    shadow.append(oldInput);
+    const label = document.createElement('label');
+    label.textContent = 'External name';
+    const internals = {
+      labels: [label],
+      setFormValue: vi.fn(),
+      setValidity: vi.fn(),
+    };
+    const bridge = new FormControlBridge(
+      host,
+      shadow,
+      internals as unknown as ElementInternals,
+      true,
+    );
+    try {
+      bridge.connect();
+      expect(oldInput.getAttribute('aria-label')).toBe('External name');
+
+      const newInput = document.createElement('input');
+      oldInput.remove();
+      shadow.append(newInput);
+      await new Promise((resolve) => queueMicrotask(resolve));
+
+      expect(oldInput.hasAttribute('aria-label')).toBe(false);
+      expect(newInput.getAttribute('aria-label')).toBe('External name');
+
+      newInput.setAttribute('aria-label', 'Authored override');
+      newInput.remove();
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(newInput.getAttribute('aria-label')).toBe('Authored override');
+    } finally {
+      bridge.disconnect();
+    }
+  });
+
   it('resumes external label observation when a direct bridge reconnects to its existing control', async () => {
     const host = document.createElement('div');
     const shadow = host.attachShadow({ mode: 'open' });

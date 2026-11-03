@@ -153,7 +153,15 @@ export function mount(component: ComponentFn, container: Element): MountResult {
   // Retain the inserted roots locally: teardown during appendChild clears ctx.nodes.
   const insertedNodes = ctx.nodes;
   if (container && fragment) {
-    container.appendChild(fragment);
+    try {
+      container.appendChild(fragment);
+    } catch (err) {
+      // Release reactive work and any DOM inserted before a failing append.
+      // A root that failed to mount never executes destruction callbacks.
+      ctx.destroyed = null;
+      unmountContext(ctx, true);
+      throw err;
+    }
     if (ctx._isDestroyed) {
       // connectedCallback can synchronously destroy the owner before append ends.
       // Remove only our roots still in this container, not reparented nodes.

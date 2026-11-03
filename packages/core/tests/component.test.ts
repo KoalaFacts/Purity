@@ -119,6 +119,39 @@ describe('mount', () => {
     }
   });
 
+  it('rolls back subscriptions and partially inserted roots if appendChild throws', async () => {
+    const container = document.createElement('div');
+    const node = document.createElement('span');
+    const signal = state(0);
+    const observed: number[] = [];
+    const hooks: string[] = [];
+    const failure = new Error('append failed');
+    const nativeAppend = container.appendChild.bind(container);
+    const append = vi.spyOn(container, 'appendChild').mockImplementation((child) => {
+      nativeAppend(child);
+      throw failure;
+    });
+
+    try {
+      expect(() =>
+        mount(() => {
+          watch(() => observed.push(signal()));
+          onDispose(() => hooks.push('dispose'));
+          onDestroy(() => hooks.push('destroy'));
+          return node;
+        }, container),
+      ).toThrow(failure);
+    } finally {
+      append.mockRestore();
+    }
+
+    expect(container.childNodes).toHaveLength(0);
+    expect(hooks).toEqual(['dispose']);
+    signal(1);
+    await tick();
+    expect(observed).toEqual([0]);
+  });
+
   it('does not insert a root after its parent destroys the owner during render', () => {
     const parent = new ComponentContext();
     const container = document.createElement('div');

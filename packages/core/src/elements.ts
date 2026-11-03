@@ -248,6 +248,7 @@ export function component<
       _shadow: ShadowRoot;
       _internals: ElementInternals | null = null;
       declare _formBridge?: { connect(): void; disconnect(): void } | null;
+      declare _movingLightChildren?: boolean;
 
       constructor() {
         super();
@@ -268,7 +269,9 @@ export function component<
       }
 
       connectedCallback() {
-        if (this._isSSRRoot()) return;
+        // Moving light children into a slot fragment may synchronously
+        // disconnect and reconnect this host. Keep one owner per render.
+        if (this._movingLightChildren || this._isSSRRoot()) return;
         this.#renderConnected();
       }
 
@@ -322,8 +325,18 @@ export function component<
 
         if (this.childNodes.length > 0) {
           const frag = document.createDocumentFragment();
-          while (this.firstChild) {
-            frag.appendChild(this.firstChild);
+          this._movingLightChildren = true;
+          try {
+            while (this.firstChild) {
+              frag.appendChild(this.firstChild);
+            }
+          } finally {
+            this._movingLightChildren = false;
+          }
+          // A moved child's callback may detach this host without reconnecting.
+          if (!this.isConnected) {
+            this.appendChild(frag);
+            return;
           }
           registry.filled.set('default', frag);
         }
@@ -344,11 +357,19 @@ export function component<
             runRender(render, allProps, slotAccessors, ctx),
           );
         } else {
-          while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
+          while (this._shadow.firstChild) {
+            this._shadow.removeChild(this._shadow.firstChild);
+            // A child's disconnectedCallback can replace this owner.
+            if (ctx._isDestroyed || this._ctx !== ctx) return;
+          }
           result = runRender(render, allProps, slotAccessors, ctx).result;
         }
 
+        // Consumer code or child reactions can synchronously replace this owner.
+        if (ctx._isDestroyed || this._ctx !== ctx) return;
+        this.#hasRendered = true;
         if (result !== null) this._shadow.appendChild(result);
+        if (ctx._isDestroyed || this._ctx !== ctx) return;
         this._formBridge?.connect();
 
         if (result === null || result instanceof DocumentFragment) {
@@ -358,7 +379,6 @@ export function component<
         }
 
         ctx._isMounted = true;
-        this.#hasRendered = true;
 
         scheduleMountCallbacks(ctx);
       }
@@ -368,7 +388,10 @@ export function component<
 
       disconnectedCallback() {
         this._formBridge?.disconnect();
-        if (this._ctx) unmountElementContext(this._ctx, false, true);
+        // onDestroy may reconnect the host; detach the obsolete owner first.
+        const ctx = this._ctx;
+        this._ctx = null;
+        if (ctx) unmountElementContext(ctx, false, true);
       }
     }
 

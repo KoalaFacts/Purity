@@ -811,6 +811,183 @@ describe('component as custom element — lifecycle', () => {
     err.mockRestore();
   });
 
+  it('does not create a second owner during reentrant light DOM slot extraction', async () => {
+    const hostName = tag('cel-light-reconnect');
+    const childName = tag('cel-light-child');
+    const events: string[] = [];
+    let host!: HTMLElement;
+    let reconnected = false;
+    let renders = 0;
+
+    customElements.define(
+      childName,
+      class extends HTMLElement {
+        disconnectedCallback() {
+          if (reconnected || !host.isConnected) return;
+          reconnected = true;
+          // Moving a connected light child into the temporary slot fragment
+          // fires disconnectedCallback while its host is still rendering.
+          host.remove();
+          document.body.appendChild(host);
+        }
+      },
+    );
+
+    component(hostName, (_props, { default: body }) => {
+      const generation = ++renders;
+      onMount(() => events.push(`mounted:${generation}`));
+      onDestroy(() => events.push(`destroyed:${generation}`));
+      const view = document.createElement('section');
+      view.append(body() ?? '');
+      return view;
+    });
+
+    host = document.createElement(hostName);
+    host.appendChild(document.createElement(childName));
+    document.body.appendChild(host);
+    await tick();
+
+    expect(reconnected).toBe(true);
+    expect(renders).toBe(1);
+    expect(host.shadowRoot!.querySelectorAll(childName)).toHaveLength(1);
+    expect(events).toEqual(['mounted:1']);
+
+    host.remove();
+    await tick();
+    expect(events).toEqual(['mounted:1', 'destroyed:1']);
+  });
+
+  it('does not append stale DOM when a custom element reconnects during render', async () => {
+    const hostName = tag('cel-render-reconnect');
+    const events: string[] = [];
+    let host!: HTMLElement;
+    let renders = 0;
+
+    component(hostName, () => {
+      const generation = ++renders;
+      onMount(() => events.push(`mounted:${generation}`));
+      onDestroy(() => events.push(`destroyed:${generation}`));
+      if (generation === 1) {
+        host.remove();
+        document.body.appendChild(host);
+      }
+      const node = document.createElement('span');
+      node.textContent = `render:${generation}`;
+      return node;
+    });
+
+    host = document.createElement(hostName);
+    document.body.appendChild(host);
+    await tick();
+
+    expect(renders).toBe(2);
+    expect(host.shadowRoot!.textContent).toBe('render:2');
+    expect(host.shadowRoot!.querySelectorAll('span')).toHaveLength(1);
+    expect(events).toEqual(['destroyed:1', 'mounted:2']);
+
+    host.remove();
+    await tick();
+    expect(events).toEqual(['destroyed:1', 'mounted:2', 'destroyed:2']);
+  });
+
+  it('does not remount an obsolete owner when a child reconnects the host during append', async () => {
+    const hostName = tag('cel-append-reconnect');
+    const childName = tag('cel-reentrant-child');
+    const events: string[] = [];
+    let host!: HTMLElement;
+    let reconnected = false;
+    const obsoleteOwners: { _isMounted: boolean }[] = [];
+
+    customElements.define(
+      childName,
+      class extends HTMLElement {
+        connectedCallback() {
+          if (reconnected) return;
+          reconnected = true;
+          obsoleteOwners.push((host as any)._ctx);
+          host.remove();
+          document.body.appendChild(host);
+        }
+      },
+    );
+
+    let renders = 0;
+    component(hostName, () => {
+      const generation = ++renders;
+      onMount(() => events.push(`mounted:${generation}`));
+      onDestroy(() => events.push(`destroyed:${generation}`));
+      const container = document.createElement('div');
+      container.textContent = `render:${generation}`;
+      container.appendChild(document.createElement(childName));
+      return container;
+    });
+
+    host = document.createElement(hostName);
+    document.body.appendChild(host);
+    await tick();
+
+    expect(renders).toBe(2);
+    expect(obsoleteOwners[0]?._isMounted).toBe(false);
+    expect(host.shadowRoot!.textContent).toBe('render:2');
+    expect(events).toEqual(['destroyed:1', 'mounted:2']);
+
+    host.remove();
+    await tick();
+    expect(events).toEqual(['destroyed:1', 'mounted:2', 'destroyed:2']);
+  });
+
+  it('preserves a replacement owner when shadow child removal reconnects the host', async () => {
+    const hostName = tag('cel-teardown-reconnect');
+    const childName = tag('cel-teardown-child');
+    const events: string[] = [];
+    const interruptedOwners: { _isDestroyed: boolean }[] = [];
+    let host!: HTMLElement;
+    let relocated = false;
+
+    customElements.define(
+      childName,
+      class extends HTMLElement {
+        disconnectedCallback() {
+          if (relocated || !host.isConnected) return;
+          relocated = true;
+          interruptedOwners.push((host as any)._ctx);
+          host.remove();
+          document.body.appendChild(host);
+        }
+      },
+    );
+
+    let renders = 0;
+    component(hostName, () => {
+      const generation = ++renders;
+      onMount(() => events.push(`mounted:${generation}`));
+      onDestroy(() => events.push(`destroyed:${generation}`));
+      const view = document.createElement('section');
+      view.append(`render:${generation}`, document.createElement(childName));
+      return view;
+    });
+
+    host = document.createElement(hostName);
+    document.body.appendChild(host);
+    await tick();
+    expect(host.shadowRoot!.textContent).toBe('render:1');
+
+    host.remove();
+    document.body.appendChild(host);
+    await tick();
+
+    expect(relocated).toBe(true);
+    expect(interruptedOwners[0]?._isDestroyed).toBe(true);
+    // The obsolete render is not invoked after its owner was replaced.
+    expect(renders).toBe(2);
+    expect(host.shadowRoot!.textContent).toBe('render:2');
+    expect(events).toEqual(['mounted:1', 'destroyed:1', 'mounted:2']);
+
+    host.remove();
+    await tick();
+    expect(events).toEqual(['mounted:1', 'destroyed:1', 'mounted:2', 'destroyed:2']);
+  });
+
   it('rejects an invalid (non-hyphenated / unsafe) component tag name', () => {
     expect(() => component('nohyphen', () => html`<i></i>`)).toThrow(/invalid custom element/i);
     expect(() => component('bad><script>', () => html`<i></i>`)).toThrow(/invalid custom element/i);

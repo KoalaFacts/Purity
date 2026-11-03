@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
-import { mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
+import { mount, onDestroy, onDispose, onError, onMount, unmountContext } from '../src/component.ts';
 import { hydrate } from '../src/hydrate.ts';
 import { resource } from '../src/resource.ts';
-import { state, watch } from '@purityjs/signals';
+import { ComponentContext, state, watch } from '@purityjs/signals';
 import { primeHydrationCache } from '../src/ssr-context.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
@@ -521,5 +521,55 @@ describe('hydrate — multi-root per-boundary cache scoping (audit HIGH componen
     expect(hostB.textContent).toBe('B-primed');
     expect(fetchesA).toBe(0);
     expect(fetchesB).toBe(0);
+  });
+});
+
+describe('reentrant owner teardown', () => {
+  it('tears down every child once when a destroy hook disposes a sibling', () => {
+    const parent = new ComponentContext();
+    const first = new ComponentContext();
+    const second = new ComponentContext();
+    const last = new ComponentContext();
+    const calls: string[] = [];
+    parent.children = [first, second, last];
+    for (const child of parent.children) child.parent = parent;
+    first.destroyed = [() => calls.push('first')];
+    second.destroyed = [() => calls.push('second')];
+    last.destroyed = [
+      () => {
+        calls.push('last');
+        unmountContext(second);
+      },
+    ];
+
+    expect(() => unmountContext(parent)).not.toThrow();
+    expect(calls).toEqual(['last', 'second', 'first']);
+    expect(parent.children).toBeNull();
+    for (const child of [first, second, last]) expect(child._isDestroyed).toBe(true);
+  });
+
+  it('finishes descendant teardown before parent hooks under reentrant unmount', () => {
+    const parent = new ComponentContext();
+    const first = new ComponentContext();
+    const last = new ComponentContext();
+    const calls: string[] = [];
+    parent.children = [first, last];
+    first.parent = parent;
+    last.parent = parent;
+    first.destroyed = [() => calls.push('first')];
+    last.destroyed = [
+      () => {
+        calls.push('last');
+        unmountContext(parent);
+      },
+    ];
+    parent.destroyed = [() => calls.push('parent')];
+
+    unmountContext(parent);
+    expect(calls).toEqual(['last', 'first', 'parent']);
+    expect(parent._isDestroyed).toBe(true);
+    expect(parent.children).toBeNull();
+    expect(first._isDestroyed).toBe(true);
+    expect(last._isDestroyed).toBe(true);
   });
 });

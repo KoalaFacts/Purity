@@ -223,13 +223,17 @@ export function unmountContext(
   bubbleDestroyError = false,
 ): void {
   if (ctx._isDestroyed) return;
+  // Destroy is reentrant: mark the owner before descending, and detach its
+  // child list so sibling teardown cannot mutate the active iteration.
+  ctx._isDestroyed = true;
   if (rollback) ctx._rollback = true;
 
-  if (ctx.children) {
-    for (let i = ctx.children.length - 1; i >= 0; i--) {
-      unmountContext(ctx.children[i], rollback, false, bubbleDestroyError);
-    }
+  const children = ctx.children;
+  if (children) {
     ctx.children = null;
+    for (let i = children.length - 1; i >= 0; i--) {
+      unmountContext(children[i], rollback, false, bubbleDestroyError);
+    }
   }
 
   if (!keepHostDOM && ctx.nodes) {
@@ -241,7 +245,6 @@ export function unmountContext(
     ctx.nodes = null;
   }
 
-  ctx._isDestroyed = true;
   disposeScope(ctx);
   ctx._isMounted = false;
 

@@ -213,28 +213,24 @@ describe('@event on components', () => {
 });
 
 describe('slot() standalone', () => {
-  it('clones DocumentFragments returned by raw slot callbacks on repeated reads', () => {
-    const original = document.createDocumentFragment();
-    const span = document.createElement('span');
-    span.textContent = 'shared fragment';
-    original.appendChild(span);
-
-    const rendered: (Node | null)[] = [];
-    const Card = component(tag('raw-callback-fragment'), () => {
-      const content = slot('body');
-      rendered.push(content(), content());
-      return document.createElement('section');
+  it('preserves event handlers and reactive bindings from raw callback fragments', async () => {
+    const count = state(0);
+    const clicked = vi.fn();
+    const Card = component(tag('raw-callback-live'), () => {
+      const body = slot('body');
+      return html`<section>${body()}</section>`;
     });
+    const child = () =>
+      html`<button @click=${clicked}>Click</button><output>${() => count()}</output>`;
+    const container = document.createElement('div');
+    container.appendChild(Card({}, { body: child }));
 
-    Card({}, { body: () => original });
-    expect(rendered).toHaveLength(2);
-    expect(rendered[0]).toBeInstanceOf(DocumentFragment);
-    expect(rendered[1]).toBeInstanceOf(DocumentFragment);
-    expect(rendered[0]).not.toBe(rendered[1]);
-    expect(rendered[0]).not.toBe(original);
-    expect(rendered[0]?.textContent).toBe('shared fragment');
-    expect(rendered[1]?.textContent).toBe('shared fragment');
-    expect(original.textContent).toBe('shared fragment');
+    expect(container.querySelector('output')?.textContent).toBe('0');
+    container.querySelector('button')!.click();
+    expect(clicked).toHaveBeenCalledTimes(1);
+    count(1);
+    await tick();
+    expect(container.querySelector('output')?.textContent).toBe('1');
   });
 
   it('still works as context-aware primitive', () => {

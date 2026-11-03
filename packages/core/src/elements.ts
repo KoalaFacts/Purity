@@ -135,7 +135,8 @@ function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node
         : null;
   if (typeof s === 'function') {
     const r = (s as (...a: any[]) => unknown)(exposed);
-    return resolveContent(r);
+    // Rendered nodes may own listeners and live signal bindings; never clone them.
+    return r instanceof Node ? r : resolveContent(r);
   }
   return resolveContent(s);
 }

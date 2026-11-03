@@ -580,6 +580,25 @@ describe('component as custom element — lifecycle', () => {
     expect(order).toEqual(['dispose', 'first-destroy', 'second-destroy', 'host-destroy']);
   });
 
+  it('releases disconnected owner node references without removing shadow DOM', async () => {
+    const name = tag('cel-detached-nodes');
+    component(name, () => html`<p>preserved</p>`);
+    const el = document.createElement(name);
+    document.body.appendChild(el);
+    await tick();
+
+    const previousOwner = (el as any)._ctx;
+    const paragraph = el.shadowRoot!.querySelector('p');
+    expect(previousOwner.nodes).toContain(paragraph);
+
+    el.remove();
+
+    // A detached host retains its DOM for reconnection, but a stale retained
+    // owner must not also keep those DOM descendants alive.
+    expect(el.shadowRoot!.querySelector('p')).toBe(paragraph);
+    expect(previousOwner.nodes).toBeNull();
+  });
+
   it('runs disconnectedCallback dispose on removal', async () => {
     const name = tag('cel-dispose');
     const calls: string[] = [];

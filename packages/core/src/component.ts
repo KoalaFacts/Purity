@@ -236,12 +236,16 @@ export function unmountContext(
     }
   }
 
-  if (!keepHostDOM && ctx.nodes) {
-    for (let i = 0; i < ctx.nodes.length; i++) {
-      const node = ctx.nodes[i] as Node;
-      /* v8 ignore next */
-      if (node.parentNode) node.parentNode.removeChild(node);
+  const nodes = ctx.nodes;
+  if (nodes) {
+    if (!keepHostDOM) {
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i] as Node;
+        /* v8 ignore next */
+        if (node.parentNode) node.parentNode.removeChild(node);
+      }
     }
+    // A disconnected custom element keeps its DOM, not stale owner references.
     ctx.nodes = null;
   }
 

@@ -92,6 +92,28 @@ describe('mount', () => {
     unmount();
     expect(container.querySelector('p')).toBeNull();
   });
+
+  it('does not insert a root after its parent destroys the owner during render', () => {
+    const parent = new ComponentContext();
+    const container = document.createElement('div');
+    const node = document.createElement('span');
+    let destroyCount = 0;
+    pushContext(parent);
+    let mounted: ReturnType<typeof mount>;
+    try {
+      mounted = mount(() => {
+        onDestroy(() => destroyCount++);
+        unmountContext(parent);
+        return node;
+      }, container);
+    } finally {
+      popContext();
+    }
+    expect(destroyCount).toBe(1);
+    expect(container.childNodes).toHaveLength(0);
+    mounted.unmount();
+    expect(destroyCount).toBe(1);
+  });
 });
 
 describe('lifecycle hooks', () => {

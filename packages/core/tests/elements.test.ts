@@ -83,6 +83,18 @@ describe('slots — callback syntax', () => {
     expect(result.textContent).toBe('TitleBody');
   });
 
+  it('keeps reserved object property names as independent callback slots', () => {
+    const Card = component(tag('slot-reserved'), (_props, slots: any) => {
+      return html`<p>${slots.toString()}</p><span>${slots.__proto__()}</span>`;
+    });
+    const result = Card({}, (slots: any) => {
+      slots.toString('string-slot');
+      slots.__proto__('proto-slot');
+    });
+
+    expect(result.textContent).toBe('string-slotproto-slot');
+  });
+
   it('consumer fills default slot via callback', () => {
     const Card = component(tag('sc1'), ({ title }, { default: body }) => {
       return html`<div class="card">

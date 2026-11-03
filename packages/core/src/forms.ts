@@ -104,6 +104,9 @@ export class FormControlBridge {
   }
 
   connect(): void {
+    // Each connection owns one root observer. Repeated calls must not leak the
+    // previous observer or duplicate label synchronization.
+    if (this.#rootObserver) return;
     // Reconnecting to the same native control must reinstate its label observer.
     connectedBridges.add(this);
     this.#root.addEventListener('input', this.#onValueChange);

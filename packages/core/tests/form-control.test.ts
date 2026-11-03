@@ -160,6 +160,44 @@ describe('formControl component option', () => {
     }
   });
 
+  it('does not register duplicate root observers when a form bridge connects twice', async () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const input = document.createElement('input');
+    shadow.append(input);
+    const internals = {
+      labels: [] as HTMLLabelElement[],
+      setFormValue: vi.fn(),
+      setValidity: vi.fn(),
+    };
+    const bridge = new FormControlBridge(
+      host,
+      shadow,
+      internals as unknown as ElementInternals,
+      true,
+    );
+    const syncLabel = vi.spyOn(bridge, 'syncLabel');
+    try {
+      bridge.connect();
+      bridge.connect();
+      expect(syncLabel).toHaveBeenCalledTimes(1);
+
+      input.setAttribute('aria-labelledby', 'native-label');
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(syncLabel).toHaveBeenCalledTimes(2);
+
+      bridge.disconnect();
+      input.removeAttribute('aria-labelledby');
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(syncLabel).toHaveBeenCalledTimes(2);
+
+      bridge.connect();
+      expect(syncLabel).toHaveBeenCalledTimes(3);
+    } finally {
+      bridge.disconnect();
+    }
+  });
+
   it('retires a generated name on control replacement without deleting authored overrides', async () => {
     const host = document.createElement('div');
     const shadow = host.attachShadow({ mode: 'open' });

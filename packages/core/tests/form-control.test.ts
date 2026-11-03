@@ -120,6 +120,46 @@ describe('formControl component option', () => {
     expect(control.getAttribute('aria-label')).toBe('Your name');
   });
 
+  it('synchronizes each observed native control change once while preserving its label', async () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const first = document.createElement('input');
+    shadow.append(first);
+    const label = document.createElement('label');
+    label.textContent = 'External name';
+    const internals = {
+      labels: [label],
+      setFormValue: vi.fn(),
+      setValidity: vi.fn(),
+    };
+    const bridge = new FormControlBridge(
+      host,
+      shadow,
+      internals as unknown as ElementInternals,
+      true,
+    );
+    const syncLabel = vi.spyOn(bridge, 'syncLabel');
+    try {
+      bridge.connect();
+      expect(syncLabel).toHaveBeenCalledTimes(1);
+      expect(first.getAttribute('aria-label')).toBe('External name');
+
+      const replacement = document.createElement('input');
+      shadow.replaceChildren(replacement);
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(syncLabel).toHaveBeenCalledTimes(2);
+      expect(first.hasAttribute('aria-label')).toBe(false);
+      expect(replacement.getAttribute('aria-label')).toBe('External name');
+
+      replacement.setAttribute('aria-labelledby', 'native-name');
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(syncLabel).toHaveBeenCalledTimes(3);
+      expect(replacement.hasAttribute('aria-label')).toBe(false);
+    } finally {
+      bridge.disconnect();
+    }
+  });
+
   it('retires a generated name on control replacement without deleting authored overrides', async () => {
     const host = document.createElement('div');
     const shadow = host.attachShadow({ mode: 'open' });

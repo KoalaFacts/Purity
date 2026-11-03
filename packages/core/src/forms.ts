@@ -104,13 +104,33 @@ export class FormControlBridge {
   }
 
   connect(): void {
+    // Reconnecting to the same native control must reinstate its label observer.
+    const previousControl = this.#control;
     connectedBridges.add(this);
     this.#root.addEventListener('input', this.#onValueChange);
     this.#root.addEventListener('change', this.#onValueChange);
     this.#root.addEventListener('invalid', this.#onValueChange, true);
-    this.#rootObserver = new MutationObserver(() => this.#bind());
-    this.#rootObserver.observe(this.#root, { childList: true, subtree: true });
+    // Reuse the existing root observer to notice native accessible-name takeover.
+    this.#rootObserver = new MutationObserver((mutations) => {
+      this.#bind();
+      for (let i = 0; i < mutations.length; i++) {
+        if (
+          mutations[i].attributeName === 'aria-labelledby' &&
+          mutations[i].target === this.#control
+        ) {
+          this.syncLabel();
+          break;
+        }
+      }
+    });
+    this.#rootObserver.observe(this.#root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['aria-labelledby'],
+    });
     this.#bind();
+    if (previousControl && previousControl === this.#control) this.syncLabel();
   }
 
   disconnect(): void {
@@ -175,6 +195,9 @@ export class FormControlBridge {
   }
 
   syncLabel(): void {
+    // Stop watching a label as soon as its native control is lost or renamed.
+    this.#labelObserver?.disconnect();
+    this.#labelObserver = null;
     const control = this.#control;
     if (!control) return;
     const authoredLabel = control.getAttribute('aria-label');
@@ -183,7 +206,10 @@ export class FormControlBridge {
       control.hasAttribute('aria-labelledby') ||
       control.labels?.length
     ) {
-      this.#labelObserver?.disconnect();
+      // A native accessible name must not be overridden by the bridge's old one.
+      if (this.#autoLabel !== null && authoredLabel === this.#autoLabel)
+        control.removeAttribute('aria-label');
+      this.#autoLabel = null;
       return;
     }
     const targets: Element[] = [];
@@ -213,7 +239,6 @@ export class FormControlBridge {
       control.removeAttribute('aria-label');
       this.#autoLabel = null;
     }
-    this.#labelObserver?.disconnect();
     if (targets.length) {
       this.#labelObserver = new MutationObserver(() => this.syncLabel());
       for (const target of targets)
@@ -228,26 +253,37 @@ export class FormControlBridge {
   #bind(): void {
     const selector = this.#selector === true ? DEFAULT_SELECTOR : this.#selector;
     const found = this.#root.querySelector(selector);
-    if (!isNativeControl(found)) {
-      this.#control = null;
+    const nextControl = isNativeControl(found) ? found : null;
+    if (nextControl !== this.#control) {
+      const previousControl = this.#control;
+      // Detaching or replacing a native control retires only our generated name.
+      if (
+        previousControl &&
+        this.#autoLabel !== null &&
+        previousControl.getAttribute('aria-label') === this.#autoLabel
+      ) {
+        previousControl.removeAttribute('aria-label');
+      }
+      this.#control = nextControl;
+      this.#autoLabel = null;
+      if (nextControl) {
+        this.#controlDisabled = nextControl.disabled;
+        if (this.#pendingValue !== undefined) {
+          nextControl.value = this.#pendingValue;
+          this.#pendingValue = undefined;
+        }
+        if (this.#pendingChecked !== undefined && nextControl instanceof HTMLInputElement) {
+          nextControl.checked = this.#pendingChecked;
+          this.#pendingChecked = undefined;
+        }
+        nextControl.disabled = this.#hostDisabled || this.#controlDisabled;
+      }
+      this.syncLabel();
+    }
+    if (!nextControl) {
       this.#elementInternals.setFormValue(null);
       this.#elementInternals.setValidity({});
       return;
-    }
-    if (found !== this.#control) {
-      this.#control = found;
-      this.#controlDisabled = found.disabled;
-      this.#autoLabel = null;
-      if (this.#pendingValue !== undefined) {
-        found.value = this.#pendingValue;
-        this.#pendingValue = undefined;
-      }
-      if (this.#pendingChecked !== undefined && found instanceof HTMLInputElement) {
-        found.checked = this.#pendingChecked;
-        this.#pendingChecked = undefined;
-      }
-      found.disabled = this.#hostDisabled || this.#controlDisabled;
-      this.syncLabel();
     }
     this.sync();
   }

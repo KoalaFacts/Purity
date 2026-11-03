@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { component } from '../src/elements.ts';
-import { enableFormControls } from '../src/forms.ts';
+import { enableFormControls, FormControlBridge } from '../src/forms.ts';
 
 enableFormControls();
 
@@ -118,6 +118,116 @@ describe('formControl component option', () => {
     label.textContent = 'Your name';
     await new Promise((resolve) => queueMicrotask(resolve));
     expect(control.getAttribute('aria-label')).toBe('Your name');
+  });
+
+  it('retires a generated name on control replacement without deleting authored overrides', async () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const oldInput = document.createElement('input');
+    shadow.append(oldInput);
+    const label = document.createElement('label');
+    label.textContent = 'External name';
+    const internals = {
+      labels: [label],
+      setFormValue: vi.fn(),
+      setValidity: vi.fn(),
+    };
+    const bridge = new FormControlBridge(
+      host,
+      shadow,
+      internals as unknown as ElementInternals,
+      true,
+    );
+    try {
+      bridge.connect();
+      expect(oldInput.getAttribute('aria-label')).toBe('External name');
+
+      const newInput = document.createElement('input');
+      oldInput.remove();
+      shadow.append(newInput);
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(oldInput.hasAttribute('aria-label')).toBe(false);
+      expect(newInput.getAttribute('aria-label')).toBe('External name');
+
+      newInput.setAttribute('aria-label', 'Authored override');
+      newInput.remove();
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(newInput.getAttribute('aria-label')).toBe('Authored override');
+      expect(internals.setFormValue).toHaveBeenLastCalledWith(null);
+    } finally {
+      bridge.disconnect();
+    }
+  });
+
+  it('reacts automatically when the native control adopts aria-labelledby', async () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const nativeLabel = document.createElement('span');
+    nativeLabel.id = 'native-name';
+    nativeLabel.textContent = 'Native name';
+    const input = document.createElement('input');
+    shadow.append(nativeLabel, input);
+    const externalLabel = document.createElement('label');
+    externalLabel.textContent = 'Host name';
+    const internals = {
+      labels: [externalLabel],
+      setFormValue: vi.fn(),
+      setValidity: vi.fn(),
+    };
+    const bridge = new FormControlBridge(
+      host,
+      shadow,
+      internals as unknown as ElementInternals,
+      true,
+    );
+    try {
+      bridge.connect();
+      expect(input.getAttribute('aria-label')).toBe('Host name');
+      input.setAttribute('aria-labelledby', nativeLabel.id);
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(input.hasAttribute('aria-label')).toBe(false);
+
+      input.removeAttribute('aria-labelledby');
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(input.getAttribute('aria-label')).toBe('Host name');
+    } finally {
+      bridge.disconnect();
+    }
+  });
+
+  it('recreates label observation when a bridge reconnects to its existing native input', async () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const input = document.createElement('input');
+    shadow.append(input);
+    const label = document.createElement('label');
+    label.textContent = 'Before disconnect';
+    const internals = {
+      labels: [label],
+      setFormValue: vi.fn(),
+      setValidity: vi.fn(),
+    };
+    const bridge = new FormControlBridge(
+      host,
+      shadow,
+      internals as unknown as ElementInternals,
+      true,
+    );
+    try {
+      bridge.connect();
+      expect(input.getAttribute('aria-label')).toBe('Before disconnect');
+      bridge.disconnect();
+      label.textContent = 'While disconnected';
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(input.getAttribute('aria-label')).toBe('Before disconnect');
+      bridge.connect();
+      expect(input.getAttribute('aria-label')).toBe('While disconnected');
+      label.textContent = 'After reconnect';
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(input.getAttribute('aria-label')).toBe('After reconnect');
+    } finally {
+      bridge.disconnect();
+    }
   });
 
   it('keeps same-name radio hosts exclusive within each form', () => {

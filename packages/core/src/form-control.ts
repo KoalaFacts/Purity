@@ -79,8 +79,26 @@ export class FormControlBridge {
     this.root.addEventListener('input', this.onValueChange);
     this.root.addEventListener('change', this.onValueChange);
     this.root.addEventListener('invalid', this.onValueChange, true);
-    this.rootObserver = new MutationObserver(() => this.bind());
-    this.rootObserver.observe(this.root, { childList: true, subtree: true });
+    // Reuse the root observer for native accessible-name takeovers rather than
+    // allocating a second observer for each control.
+    this.rootObserver = new MutationObserver((mutations) => {
+      this.bind();
+      for (let i = 0; i < mutations.length; i++) {
+        if (
+          mutations[i].attributeName === 'aria-labelledby' &&
+          mutations[i].target === this.control
+        ) {
+          this.syncLabel();
+          break;
+        }
+      }
+    });
+    this.rootObserver.observe(this.root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['aria-labelledby'],
+    });
     this.bind();
     if (previousControl && previousControl === this.control) this.syncLabel();
   }

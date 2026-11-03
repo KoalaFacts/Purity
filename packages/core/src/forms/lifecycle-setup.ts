@@ -17,14 +17,16 @@ function dispatchFormCallbacks(
   first?: unknown,
   second?: unknown,
 ): void {
-  if (!host._ctx || host._ctx._isDestroyed || !arr) return;
+  const ctx = host._ctx;
+  if (!ctx || ctx._isDestroyed || !arr) return;
   for (let i = 0; i < arr.length; i++) {
+    if (host._ctx !== ctx || ctx._isDestroyed) return;
     try {
       if (count === 0) arr[i]();
       else if (count === 1) arr[i](first);
       else arr[i](first, second);
     } catch (err) {
-      host._ctx?._handleError(err);
+      ctx._handleError(err);
     }
   }
 }

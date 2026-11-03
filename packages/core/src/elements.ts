@@ -354,7 +354,7 @@ export function component<
         let result: Node | DocumentFragment | null;
         if (hasDSDContent && dsdHydrator) {
           result = dsdHydrator.hydrateShadow(this._shadow, () =>
-            runRender(render, allProps, slotAccessors, ctx),
+            runRender(render, allProps as P, slotAccessors, ctx),
           );
         } else {
           while (this._shadow.firstChild) {
@@ -362,7 +362,7 @@ export function component<
             // A child's disconnectedCallback can replace this owner.
             if (ctx._isDestroyed || this._ctx !== ctx) return;
           }
-          result = runRender(render, allProps, slotAccessors, ctx).result;
+          result = runRender(render, allProps as P, slotAccessors, ctx).result;
         }
 
         // Consumer code or child reactions can synchronously replace this owner.

@@ -135,7 +135,7 @@ function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node
         : null;
   if (typeof s === 'function') {
     const r = (s as (...a: any[]) => unknown)(exposed);
-    return r instanceof Node ? r : typeof r === 'string' ? document.createTextNode(r) : null;
+    return resolveContent(r);
   }
   return resolveContent(s);
 }

@@ -213,6 +213,30 @@ describe('@event on components', () => {
 });
 
 describe('slot() standalone', () => {
+  it('clones DocumentFragments returned by raw slot callbacks on repeated reads', () => {
+    const original = document.createDocumentFragment();
+    const span = document.createElement('span');
+    span.textContent = 'shared fragment';
+    original.appendChild(span);
+
+    const rendered: (Node | null)[] = [];
+    const Card = component(tag('raw-callback-fragment'), () => {
+      const content = slot('body');
+      rendered.push(content(), content());
+      return document.createElement('section');
+    });
+
+    Card({}, { body: () => original });
+    expect(rendered).toHaveLength(2);
+    expect(rendered[0]).toBeInstanceOf(DocumentFragment);
+    expect(rendered[1]).toBeInstanceOf(DocumentFragment);
+    expect(rendered[0]).not.toBe(rendered[1]);
+    expect(rendered[0]).not.toBe(original);
+    expect(rendered[0]?.textContent).toBe('shared fragment');
+    expect(rendered[1]?.textContent).toBe('shared fragment');
+    expect(original.textContent).toBe('shared fragment');
+  });
+
   it('still works as context-aware primitive', () => {
     const Card = component(tag('ss1'), ({ title }) => {
       const body = slot();

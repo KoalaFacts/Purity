@@ -195,6 +195,45 @@ describe('formControl component option', () => {
     }
   });
 
+  it('retires a generated name when a native label wraps the existing control', async () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const input = document.createElement('input');
+    shadow.append(input);
+    const externalLabel = document.createElement('label');
+    externalLabel.textContent = 'Host name';
+    const internals = {
+      labels: [externalLabel],
+      setFormValue: vi.fn(),
+      setValidity: vi.fn(),
+    };
+    const bridge = new FormControlBridge(
+      host,
+      shadow,
+      internals as unknown as ElementInternals,
+      true,
+    );
+    try {
+      bridge.connect();
+      expect(input.getAttribute('aria-label')).toBe('Host name');
+
+      const nativeLabel = document.createElement('label');
+      nativeLabel.append('Native name');
+      shadow.append(nativeLabel);
+      nativeLabel.append(input);
+      expect(input.labels?.length).toBe(1);
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(input.hasAttribute('aria-label')).toBe(false);
+
+      nativeLabel.replaceWith(input);
+      expect(input.labels?.length).toBe(0);
+      await new Promise((resolve) => queueMicrotask(resolve));
+      expect(input.getAttribute('aria-label')).toBe('Host name');
+    } finally {
+      bridge.disconnect();
+    }
+  });
+
   it('recreates label observation when a bridge reconnects to its existing native input', async () => {
     const host = document.createElement('div');
     const shadow = host.attachShadow({ mode: 'open' });

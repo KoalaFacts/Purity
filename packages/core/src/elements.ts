@@ -482,11 +482,19 @@ export function teleport(
     dispose = watchEffectInternal(() => {
       clearNodes();
       const content = viewFn();
-      if (content == null) return;
+      // A view may synchronously unmount the owner. Do not reinsert DOM
+      // after its cleanup has already run.
+      if (disposed || content == null) return;
       currentNodes =
         content instanceof DocumentFragment ? Array.from(content.childNodes) : [content];
       container.appendChild(content);
     });
+    // A synchronous first effect can unmount before the disposer is assigned.
+    if (disposed) {
+      dispose();
+      dispose = null;
+      clearNodes();
+    }
   });
 
   const ctx = getCurrentContext();

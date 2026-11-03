@@ -158,6 +158,10 @@ export class FormControlBridge {
       control.hasAttribute('aria-labelledby') ||
       control.labels?.length
     ) {
+      // A native label takes precedence over the bridge's generated name.
+      if (this.autoLabel !== null && authoredLabel === this.autoLabel)
+        control.removeAttribute('aria-label');
+      this.autoLabel = null;
       return;
     }
     const targets: Element[] = [];

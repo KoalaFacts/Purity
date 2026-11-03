@@ -299,6 +299,44 @@ describe('formControl component option', () => {
     }
   });
 
+  it('retires the generated aria-label when a native control gets its own accessible name', () => {
+    const host = document.createElement('div');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const nativeLabel = document.createElement('span');
+    nativeLabel.id = 'native-name';
+    nativeLabel.textContent = 'Native name';
+    const input = document.createElement('input');
+    shadow.append(nativeLabel, input);
+    const externalLabel = document.createElement('label');
+    externalLabel.textContent = 'Host name';
+    const internals = {
+      labels: [externalLabel],
+      setFormValue: vi.fn(),
+      setValidity: vi.fn(),
+    };
+    const bridge = new FormControlBridge(
+      host,
+      shadow,
+      internals as unknown as ElementInternals,
+      true,
+    );
+    try {
+      bridge.connect();
+      expect(input.getAttribute('aria-label')).toBe('Host name');
+
+      input.setAttribute('aria-labelledby', nativeLabel.id);
+      bridge.syncLabel();
+      expect(input.hasAttribute('aria-label')).toBe(false);
+      expect(input.getAttribute('aria-labelledby')).toBe('native-name');
+
+      input.removeAttribute('aria-labelledby');
+      bridge.syncLabel();
+      expect(input.getAttribute('aria-label')).toBe('Host name');
+    } finally {
+      bridge.disconnect();
+    }
+  });
+
   it('resumes external label observation when a direct bridge reconnects to its existing control', async () => {
     const host = document.createElement('div');
     const shadow = host.attachShadow({ mode: 'open' });

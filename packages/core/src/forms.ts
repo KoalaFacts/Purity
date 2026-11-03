@@ -105,7 +105,6 @@ export class FormControlBridge {
 
   connect(): void {
     // Reconnecting to the same native control must reinstate its label observer.
-    const previousControl = this.#control;
     connectedBridges.add(this);
     this.#root.addEventListener('input', this.#onValueChange);
     this.#root.addEventListener('change', this.#onValueChange);
@@ -123,7 +122,7 @@ export class FormControlBridge {
       attributeFilter: ['aria-labelledby'],
     });
     this.#bind();
-    if (previousControl && previousControl === this.#control) this.syncLabel();
+    this.syncLabel();
   }
 
   disconnect(): void {
@@ -271,7 +270,6 @@ export class FormControlBridge {
         }
         nextControl.disabled = this.#hostDisabled || this.#controlDisabled;
       }
-      this.syncLabel();
     }
     if (!nextControl) {
       this.#elementInternals.setFormValue(null);

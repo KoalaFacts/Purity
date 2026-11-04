@@ -809,7 +809,14 @@ export function each<T>(
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
   const ops = eachRowOps(mapFn);
 
-  observeEach(getCurrentContext(), eachState, getList, getKey, endMarker, ops);
+  const dispose = watchEffectInternal(() => {
+    const items = getList() || [];
+    const parent = endMarker.parentNode;
+    if (!parent) return;
+    reconcileEach(eachState, items, parent, endMarker, getKey, ops);
+  });
+
+  registerEachAutoDispose(getCurrentContext(), dispose, eachState, endMarker, disposeEntry);
   return fragment;
 }
 

@@ -116,7 +116,8 @@ export function onError(fn: (err: unknown) => void): void {
   if (ctx) addComponentCallback(ctx, (ctx.errorHandlers ??= []), fn);
 }
 
-function removeInsertedRoots(nodes: Node[] | null | undefined, container: Element): void {
+/** @internal Shared rollback guard for partially inserted DOM roots. */
+export function removeInsertedRoots(nodes: Node[] | null | undefined, container: Node): void {
   if (!nodes) return;
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i] as Node;

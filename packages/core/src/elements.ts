@@ -7,7 +7,12 @@ import {
   pushContext,
   watchEffectInternal,
 } from '@purityjs/signals';
-import { bindComponentState, scheduleMountCallbacks, unmountContext } from './component.ts';
+import {
+  bindComponentState,
+  removeInsertedRoots,
+  scheduleMountCallbacks,
+  unmountContext,
+} from './component.ts';
 import {
   dsdHydrator,
   ENABLE_SSR,
@@ -376,7 +381,34 @@ export function component<
         // Consumer code or child reactions can synchronously replace this owner.
         if (ctx._isDestroyed || this._ctx !== ctx) return;
         this.#hasRendered = true;
-        if (result !== null) this._shadow.appendChild(result);
+        // Snapshot fragment children before appendChild drains the fragment.
+        // A throwing custom-element callback may leave only some roots inserted.
+        const insertedNodes =
+          result instanceof DocumentFragment
+            ? Array.from(result.childNodes)
+            : result === null
+              ? null
+              : [result];
+        try {
+          if (result !== null) this._shadow.appendChild(result);
+        } catch (error) {
+          // Failed mounts must release their effects without running onDestroy
+          // or detaching nodes that still belong to another parent.
+          ctx.destroyed = null;
+          try {
+            unmountElementContext(ctx, true, true);
+          } catch (cleanupError) {
+            console.error('[Purity] Failed to roll back component:', cleanupError);
+          } finally {
+            if (this._ctx === ctx) {
+              this._ctx = null;
+              this.#hasRendered = false;
+              this._formBridge?.disconnect();
+            }
+            removeInsertedRoots(insertedNodes, this._shadow);
+          }
+          throw error;
+        }
         if (ctx._isDestroyed || this._ctx !== ctx) return;
         this._formBridge?.connect();
 

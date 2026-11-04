@@ -1275,6 +1275,37 @@ describe('ShadowRoot rollback reentrancy and root ownership', () => {
     expect(ancestor.contains(host)).toBe(true);
   });
 
+  it('tears down a separately connected custom element owned by a failing render', () => {
+    const externalContainer = document.createElement('aside');
+    document.body.appendChild(externalContainer);
+    const childName = tag('cel-independent-host');
+    const disposed = vi.fn();
+    component(childName, () => {
+      onDispose(disposed);
+      const span = document.createElement('span');
+      span.textContent = 'external child';
+      return span;
+    });
+    const independentHost = document.createElement(childName);
+    const ancestor = document.createElement('article');
+    const holder = document.createElement('div');
+    holder.appendChild(ancestor);
+    const parentName = tag('cel-failed-parent');
+    component(parentName, () => {
+      externalContainer.appendChild(independentHost);
+      return ancestor;
+    });
+    const host = document.createElement(parentName) as HTMLElement & { connectedCallback(): void };
+    ancestor.appendChild(host);
+
+    expect(() => host.connectedCallback()).toThrow();
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect(independentHost.shadowRoot?.childNodes).toHaveLength(0);
+    expect(ancestor.parentNode).toBe(holder);
+
+    externalContainer.remove();
+  });
+
   it('does not detach an uninserted preparented root from nested factory owners', () => {
     const ancestor = document.createElement('section');
     const outer = document.createElement('div');

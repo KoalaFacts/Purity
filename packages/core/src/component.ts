@@ -263,7 +263,11 @@ export function unmountContext(
       unmountContext(
         child,
         rollback,
-        keepHostDOM && !!rollback && child._rootContainer == null,
+        // Mounted roots and connected Custom Elements have committed DOM.
+        keepHostDOM &&
+          !!rollback &&
+          child._rootContainer == null &&
+          child._shadowRoot == null,
         bubbleDestroyError,
       );
     }

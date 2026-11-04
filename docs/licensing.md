@@ -1,6 +1,6 @@
 # Licensing scope
 
-Purity 0.5.0 is unreleased. Its source and package metadata use Apache-2.0.
+Purity 0.5.0 source and package metadata use Apache-2.0.
 Published releases through 0.4.0 remain MIT; their npm artifacts and version tags
 are not changed by this transition.
 
@@ -41,5 +41,5 @@ license text and retained notices. It also checks the original Purity MIT text
 and the external parser notice for accidental removal or changes. Normal CI and
 the manually triggered publish workflow run this check before publication.
 
-Preparing 0.5.0 does not publish it. The existing publish workflow still requires
-an explicit matching version and its normal production environment approval.
+The publish workflow requires an explicit matching version and its normal
+production environment approval.

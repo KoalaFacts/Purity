@@ -153,8 +153,7 @@ each, mount): [koalafacts.github.io/Purity/dashboard](https://koalafacts.github.
 
 ## Status
 
-**Pre-1.0; 0.5.0 is unreleased.** The latest published release is 0.4.0 (MIT).
-This checkout prepares Apache-2.0 licensing from 0.5.0; see the
+**Pre-1.0.** Purity uses Apache-2.0 from 0.5.0; see the
 [licensing scope](./docs/licensing.md). The API may break between minor versions until 1.0.
 For the 0.3.4 → 0.4.0 upgrade, read the [changelog](./CHANGELOG.md#upgrade-notes)
 and [entry-point migration guide](./docs/core-entry-points.md) before upgrading.

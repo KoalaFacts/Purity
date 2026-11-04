@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — 0.5.0
+## 0.5.0
 
 ### Added
 
@@ -40,9 +40,10 @@
   `@purityjs/core/virtual`. The former `@purityjs/core/internal` entry is no
   longer exported; see the [upgrade mapping](docs/core-entry-points.md#upgrading-from-040).
 - Reduce the local 0.5.0 core installation archives, including signals and
-  compiler, to 330,625 bytes compressed versus 947,461 bytes for the published
-  0.4.0 core archive (65.1% less). This measures npm archives, not browser
-  bundle size. See the [measurement](benchmark/bundle-size/evidence/2026-11-02-core-pack-50/README.md).
+  compiler, to 333,157 bytes compressed versus 947,461 bytes for the published
+  0.4.0 core archive (64.8% less). This measures npm archives, not browser
+  bundle size. See the [merged-source measurement](benchmark/bundle-size/evidence/2026-11-02-core-pack-50/merged-main-local.json)
+  and [earlier audit](benchmark/bundle-size/evidence/2026-11-02-core-pack-50/README.md).
 - Share the programmatic component factory's final render/mount path while
   preserving callback-slot discovery and lifecycle order. Remove redundant
   ownership lookups and cleanup wrappers, keeping the original bundle limits;

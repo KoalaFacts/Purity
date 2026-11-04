@@ -1,0 +1,28 @@
+{
+  "sourceCommit": "de06b067d5a34084a43bf7445eb53f3e50df5c4a",
+  "node": "v24.22.1",
+  "baseline": {
+    "package": "@purityjs/core",
+    "version": "0.4.0",
+    "compressedBytes": 947461,
+    "integrity": "sha512-HO1gK1r3eDkskXLIZfUWxSYvt4NHON2GPTkIXpfBFjzAux2ENdZTFgI+/kxPwoX40Ufv8svSvoXKKei0Q5M64Q=="
+  },
+  "archives": {
+    "@purityjs/core": {
+      "version": "0.5.0",
+      "compressedBytes": 221246,
+      "integrity": "sha512-b4tC3mfz10feByf36ZLaFb701+ZJxzVZjPJ0t7k+lL+YgyR7H9o/UCC2nO0YzCdmPzMM125zVznTPbD+WFinTw=="
+    },
+    "@purityjs/signals": {
+      "version": "0.5.0",
+      "compressedBytes": 40412,
+      "integrity": "sha512-wb5LlKutPLBAF1eofiu/FR6WrbUpXP8c+WNIxyLdCA4ocBT0gKiMnadojhfpJcPmUobIKebCZekik0b7vL2x9g=="
+    },
+    "@purityjs/compiler": {
+      "version": "0.5.0",
+      "compressedBytes": 71499,
+      "integrity": "sha512-/gnqr/1v+Oz7KiNS5/c8OhxgERFpGIYkszx0E2HoEp7XAiyxmsXMTC3JiZpXcuu0IiYfWwSLB/d3LOIjcKk+AQ=="
+    }
+  },
+  "totalCompressedBytes": 333157
+}

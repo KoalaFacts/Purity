@@ -402,10 +402,12 @@ export function component<
           } finally {
             if (this._ctx === ctx) {
               this._ctx = null;
-              this.#hasRendered = false;
               this._formBridge?.disconnect();
             }
+            // Keep #hasRendered true until the partial roots are removed.
+            // A reentrant reconnect during removal must not mistake them for DSD.
             removeInsertedRoots(insertedNodes, this._shadow);
+            if (this._ctx === null) this.#hasRendered = false;
           }
           throw error;
         }

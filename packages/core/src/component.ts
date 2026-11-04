@@ -255,7 +255,9 @@ export function unmountContext(
   if (children) {
     ctx.children = null;
     for (let i = children.length - 1; i >= 0; i--) {
-      unmountContext(children[i], rollback, false, bubbleDestroyError);
+      // A failed insertion leaves some descendant roots outside the target.
+      // Only the explicit insertion rollback should remove target-owned DOM.
+      unmountContext(children[i], rollback, keepHostDOM && !!rollback, bubbleDestroyError);
     }
   }
 

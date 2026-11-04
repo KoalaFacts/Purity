@@ -1203,6 +1203,72 @@ describe('Custom Element append failure rollback', () => {
   });
 });
 
+describe('ShadowRoot rollback reentrancy and root ownership', () => {
+  it('renders a replacement owner when removing partial roots reenters connect', () => {
+    const name = tag('cel-rollback-reconnect');
+    let renders = 0;
+    component(name, () => {
+      const view = document.createDocumentFragment();
+      const span = document.createElement('span');
+      span.textContent = `render-${++renders}`;
+      view.append(span, document.createElement('small'));
+      return view;
+    });
+
+    const host = document.createElement(name) as HTMLElement & {
+      connectedCallback(): void;
+      disconnectedCallback(): void;
+      _ctx: unknown;
+    };
+    const shadow = host.shadowRoot!;
+    const append = shadow.appendChild.bind(shadow);
+    const remove = shadow.removeChild.bind(shadow);
+    const appendSpy = vi.spyOn(shadow, 'appendChild').mockImplementation((node) => {
+      const result = append(node);
+      if (renders === 1) throw new Error('reentrant append failure');
+      return result;
+    });
+    let reentered = false;
+    const removeSpy = vi.spyOn(shadow, 'removeChild').mockImplementation((node) => {
+      const result = remove(node);
+      if (!reentered) {
+        reentered = true;
+        host.connectedCallback();
+      }
+      return result;
+    });
+
+    expect(() => host.connectedCallback()).toThrow('reentrant append failure');
+    expect(reentered).toBe(true);
+    expect(renders).toBe(2);
+    expect(shadow.querySelector('span')?.textContent).toBe('render-2');
+    expect(host._ctx).not.toBeNull();
+
+    appendSpy.mockRestore();
+    removeSpy.mockRestore();
+    host.disconnectedCallback();
+  });
+
+  it('does not detach an uninserted preparented root from nested factory owners', () => {
+    const ancestor = document.createElement('section');
+    const name = tag('cel-rollback-nested');
+    const disposed = vi.fn();
+    const Inner = component(tag('nested-preparented'), () => {
+      onDispose(disposed);
+      return ancestor;
+    });
+    component(name, () => Inner({}));
+    const host = document.createElement(name) as HTMLElement & { connectedCallback(): void };
+    ancestor.appendChild(host);
+
+    expect(() => host.connectedCallback()).toThrow();
+    expect(ancestor.contains(host)).toBe(true);
+    expect(ancestor.parentNode).toBeNull();
+    expect(host.shadowRoot?.childNodes).toHaveLength(0);
+    expect(disposed).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('prototype-sensitive raw and consumer slots', () => {
   it('does not treat inherited Object prototype functions as supplied raw slots', () => {
     const render = component(tag('raw-prototype-slot'), () => {

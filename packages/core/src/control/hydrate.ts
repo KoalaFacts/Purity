@@ -18,7 +18,6 @@ import type {
   MatchView,
 } from '../control.ts';
 import { setEachHydrationHook, setMatchHydrationHook } from '../hooks.ts';
-import { detachNodes, extractNodes } from './nodes.ts';
 import {
   type DeferredTemplate,
   enterHydration,
@@ -28,6 +27,23 @@ import {
   setInflateDeferredEach,
   setInflateDeferredMatch,
 } from '../runtime/hydrate-runtime.ts';
+
+function extractHydrateNodes(content: Node | DocumentFragment | string): Node[] {
+  if (content instanceof DocumentFragment) {
+    const fc = content.firstChild;
+    if (fc && !fc.nextSibling) return [fc];
+    return Array.from(content.childNodes);
+  }
+  if (content instanceof Node) return [content];
+  return [document.createTextNode(String(content ?? ''))];
+}
+
+function detachHydrateNodes(nodes: Node[]): void {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    node.parentNode?.removeChild(node);
+  }
+}
 
 function decodeRowKey(s: string): string {
   try {
@@ -109,7 +125,7 @@ export function inflateDeferredEach<T>(
   parent.insertBefore(endMarker, closeMarker);
 
   const { rows: ssrRows, boundaryNodes, rowsByKey: ssrByKey } = parseSSRRows(contNodes);
-  detachNodes(boundaryNodes);
+  detachHydrateNodes(boundaryNodes);
 
   const ownerCtx = getCurrentContext();
   const items = getList() || [];
@@ -151,8 +167,8 @@ export function inflateDeferredEach<T>(
           nodes = Array.from(frag.childNodes);
           parent.insertBefore(frag, endMarker);
         } else {
-          if (ssrRow) detachNodes(ssrRow);
-          nodes = extractNodes(content as Node | DocumentFragment | string);
+          if (ssrRow) detachHydrateNodes(ssrRow);
+          nodes = extractHydrateNodes(content as Node | DocumentFragment | string);
           parent.insertBefore(content instanceof Node ? content : nodes[0], endMarker);
         }
 
@@ -169,7 +185,7 @@ export function inflateDeferredEach<T>(
 
     for (let i = 0; i < ssrRows.length; i++) {
       const row = ssrRows[i];
-      detachNodes(row);
+      detachHydrateNodes(row);
     }
 
     adapter.finish(ownerCtx, eachState, getList, mapFn, getKey, parent, endMarker);
@@ -261,7 +277,7 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
 
   const endMarker = document.createComment('m');
   parent.insertBefore(endMarker, closeMarker);
-  detachNodes(boundary.boundaryNodes);
+  detachHydrateNodes(boundary.boundaryNodes);
 
   const matchState: MatchState = { nodes: [], prevKey: null, branch: null };
   const initKey = String(sourceFn()) as `${T}`;
@@ -286,12 +302,12 @@ export function inflateDeferredMatch<T extends string | number | boolean>(
       return frag;
     });
     if (!adopted) {
-      detachNodes(boundary.inner);
+      detachHydrateNodes(boundary.inner);
     }
     adapter.insertMatchView(matchState, parent, endMarker, content);
     matchState.prevKey = initKey;
   } else {
-    detachNodes(boundary.inner);
+    detachHydrateNodes(boundary.inner);
     if (initView) {
       matchState.prevKey = initKey;
       adapter.insertMatchView(

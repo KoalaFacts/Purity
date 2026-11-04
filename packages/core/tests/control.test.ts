@@ -5,7 +5,14 @@ import { html } from '../src/compiler/compile.ts';
 import { ComponentContext, popContext, pushContext } from '@purityjs/signals';
 import { mount, onDispose } from '../src/component.ts';
 import { component } from '../src/elements.ts';
-import { defaultEachHydrationAdapter, detachNodes, each, extractNodes, list, match } from '../src/control.ts';
+import {
+  defaultEachHydrationAdapter,
+  detachNodes,
+  each,
+  extractNodes,
+  list,
+  match,
+} from '../src/control.ts';
 import { inflateDeferredEach, type CapturedDeferredEach } from '../src/control/hydrate.ts';
 import { eachSSR, listSSR } from '@purityjs/ssr/runtime';
 import { state, watch } from '@purityjs/signals';

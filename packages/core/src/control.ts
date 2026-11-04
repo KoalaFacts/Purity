@@ -728,6 +728,24 @@ export function registerEachAutoDispose<T, E extends KeyedEntry>(
   });
 }
 
+/** Shared list subscription and owner teardown across CSR, hydration, and list(). */
+function observeEach<T, E extends KeyedEntry>(
+  ownerCtx: Scope | null,
+  eachState: EachState<T, E>,
+  getList: () => T[],
+  getKey: (item: T, index: number) => unknown,
+  endMarker: Node,
+  ops: RowOps<T, E>,
+): void {
+  const dispose = watchEffectInternal(() => {
+    const items = getList() || [];
+    const parent = endMarker.parentNode;
+    if (!parent) return;
+    reconcileEach(eachState, items, parent, endMarker, getKey, ops);
+  });
+  registerEachAutoDispose(ownerCtx, dispose, eachState, endMarker, ops.release);
+}
+
 export interface DeferredEach<T = unknown> {
   __purity_deferred_each__: true;
   listAccessor: (() => T[]) | T[];
@@ -755,14 +773,7 @@ export const defaultEachHydrationAdapter: EachHydrationAdapter = {
   track: trackEntry,
   release: disposeEntry,
   finish(ownerCtx, eachState, getList, mapFn, getKey, _parent, endMarker) {
-    const ops = eachRowOps(mapFn);
-    const dispose = watchEffectInternal(() => {
-      const next = getList() || [];
-      const p = endMarker.parentNode;
-      if (!p) return;
-      reconcileEach(eachState, next, p, endMarker, getKey, ops);
-    });
-    registerEachAutoDispose(ownerCtx, dispose, eachState, endMarker, disposeEntry);
+    observeEach(ownerCtx, eachState, getList, getKey, endMarker, eachRowOps(mapFn));
   },
 };
 
@@ -798,14 +809,7 @@ export function each<T>(
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
   const ops = eachRowOps(mapFn);
 
-  const dispose = watchEffectInternal(() => {
-    const items = getList() || [];
-    const parent = endMarker.parentNode;
-    if (!parent) return;
-    reconcileEach(eachState, items, parent, endMarker, getKey, ops);
-  });
-
-  registerEachAutoDispose(getCurrentContext(), dispose, eachState, endMarker, disposeEntry);
+  observeEach(getCurrentContext(), eachState, getList, getKey, endMarker, ops);
   return fragment;
 }
 
@@ -935,13 +939,7 @@ export function list<T>(
     release: releaseEntry,
     api: 'list()',
   };
-  const dispose = watchEffectInternal(() => {
-    const items = getList() || [];
-    const parent = endMarker.parentNode;
-    if (parent) reconcileEach(listState, items, parent, endMarker, getKey, ops);
-  });
-
-  registerEachAutoDispose(getCurrentContext(), dispose, listState, endMarker, releaseEntry);
+  observeEach(getCurrentContext(), listState, getList, getKey, endMarker, ops);
 
   return fragment;
 }

@@ -292,7 +292,7 @@ describe('SV2-015 lean component ownership', () => {
     );
 
     const raw: Record<string, string> = Object.create(null);
-    raw['__proto__'] = 'a';
+    Object.defineProperty(raw, '__proto__', { value: 'a', enumerable: true });
     raw['constructor'] = 'b';
     raw['toString'] = 'c';
     expect((render({}, raw) as Element).textContent).toBe('abc');

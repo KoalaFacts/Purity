@@ -257,7 +257,15 @@ export function unmountContext(
     for (let i = children.length - 1; i >= 0; i--) {
       // A failed insertion leaves some descendant roots outside the target.
       // Only the explicit insertion rollback should remove target-owned DOM.
-      unmountContext(children[i], rollback, keepHostDOM && !!rollback, bubbleDestroyError);
+      const child = children[i];
+      // Independently mounted children own committed DOM in their own container;
+      // only uncommitted factory roots require preservation.
+      unmountContext(
+        child,
+        rollback,
+        keepHostDOM && !!rollback && child._rootContainer == null,
+        bubbleDestroyError,
+      );
     }
   }
 

@@ -1249,6 +1249,32 @@ describe('ShadowRoot rollback reentrancy and root ownership', () => {
     host.disconnectedCallback();
   });
 
+  it('removes independently mounted child roots when a host insertion fails', () => {
+    const externalContainer = document.createElement('aside');
+    const ancestor = document.createElement('article');
+    const holder = document.createElement('div');
+    holder.appendChild(ancestor);
+    const name = tag('cel-rollback-external-mount');
+    const disposed = vi.fn();
+    component(name, () => {
+      mount(() => {
+        onDispose(disposed);
+        const button = document.createElement('button');
+        button.textContent = 'external child';
+        return button;
+      }, externalContainer);
+      return ancestor;
+    });
+    const host = document.createElement(name) as HTMLElement & { connectedCallback(): void };
+    ancestor.appendChild(host);
+
+    expect(() => host.connectedCallback()).toThrow();
+    expect(externalContainer.childNodes).toHaveLength(0);
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect(ancestor.parentNode).toBe(holder);
+    expect(ancestor.contains(host)).toBe(true);
+  });
+
   it('does not detach an uninserted preparented root from nested factory owners', () => {
     const ancestor = document.createElement('section');
     const outer = document.createElement('div');

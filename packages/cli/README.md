@@ -4,7 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/@purityjs/cli.svg)](https://www.npmjs.com/package/@purityjs/cli)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-Scaffold a new Purity project in seconds.
+Scaffold a new Purity project in seconds. The client starter is the default; use `--ssr` or `--app` for server-rendered starters.
 
 ## Usage
 
@@ -110,7 +110,7 @@ No need to publish packages for local development.
 
 ## License
 
-[Apache-2.0](./LICENSE) starting with 0.5.0 (currently unreleased). Releases
+[Apache-2.0](./LICENSE) starting with 0.5.0. Releases
 through 0.4.0 remain MIT; their copyright and permission notice is retained in
 [LICENSES/Purity-MIT.txt](./LICENSES/Purity-MIT.txt). Third-party components retain
 their own licenses.

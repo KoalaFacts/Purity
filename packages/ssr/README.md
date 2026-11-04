@@ -19,21 +19,21 @@ const out = await renderToString(() => html`<h1>Hi</h1>`, { doctype: '<!doctype 
 npm install @purityjs/ssr
 ```
 
-`@purityjs/ssr` has a peer dependency on `@purityjs/core`. Node 18+, Bun, Deno, Cloudflare Workers, and Vercel Edge are all supported runtimes — anything with `ReadableStream<Uint8Array>` and `TextEncoder`.
+Install a compatible `@purityjs/core` version alongside `@purityjs/ssr`. Node 18+, Bun, Deno, Cloudflare Workers, and Vercel Edge are all supported runtimes — anything with `ReadableStream<Uint8Array>` and `TextEncoder`.
 
 ## Module surface
 
-| Export                                        | Kind     | Purpose                                                                                                                                |
-| --------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `html`                                        | function | Server counterpart of `@purityjs/core`'s `html` — returns a branded `SSRHtml` string instead of building DOM. Drop-in API replacement. |
-| `renderToString(component, options?)`         | function | Buffered render. Returns `Promise<string>`, or `Promise<{ body, head }>` when `extractHead: true` is set.                              |
-| `renderToStream(component, options?)`         | function | Progressive render. Returns `ReadableStream<Uint8Array>` that flushes the shell first, then per-`suspense()` boundary chunks.          |
-| `renderToStreamResponse(component, options?)` | function | Prepares the shell and returns its head, status, headers, and progressive body before HTTP headers are sent.                           |
-| `RenderToStringOptions`                       | type     | Options for `renderToString` (timeout, doctype, nonce, serialize toggle, extractHead).                                                 |
-| `RenderToStringWithHead`                      | type     | `{ body: string; head: string }` — return shape when `extractHead: true`.                                                              |
-| `RenderToStreamOptions`                       | type     | Options for `renderToStream` (timeout, doctype, nonce, serialize toggle, AbortSignal).                                                 |
-| `RenderToStreamResponse`                      | type     | `{ body, head, status?, headers? }` returned after preparing the streaming shell.                                                      |
-| `SSRHtml`                                     | type     | Branded string `{ __purity_ssr_html__: string }` — emitted by `html` and the `*SSR` control-flow helpers.                              |
+| Export                                        | Kind     | Purpose                                                                                                                                    |
+| --------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `html`                                        | function | Server counterpart of `@purityjs/core/jit`'s `html` — returns a branded `SSRHtml` string instead of building DOM. Drop-in API replacement. |
+| `renderToString(component, options?)`         | function | Buffered render. Returns `Promise<string>`, or `Promise<{ body, head }>` when `extractHead: true` is set.                                  |
+| `renderToStream(component, options?)`         | function | Progressive render. Returns `ReadableStream<Uint8Array>` that flushes the shell first, then per-`suspense()` boundary chunks.              |
+| `renderToStreamResponse(component, options?)` | function | Prepares the shell and returns its head, status, headers, and progressive body before HTTP headers are sent.                               |
+| `RenderToStringOptions`                       | type     | Options for `renderToString` (timeout, doctype, nonce, serialize toggle, extractHead).                                                     |
+| `RenderToStringWithHead`                      | type     | `{ body: string; head: string }` — return shape when `extractHead: true`.                                                                  |
+| `RenderToStreamOptions`                       | type     | Options for `renderToStream` (timeout, doctype, nonce, serialize toggle, AbortSignal).                                                     |
+| `RenderToStreamResponse`                      | type     | `{ body, head, status?, headers? }` returned after preparing the streaming shell.                                                          |
+| `SSRHtml`                                     | type     | Branded string `{ __purity_ssr_html__: string }` — emitted by `html` and the `*SSR` control-flow helpers.                                  |
 
 `head()` itself is exported from `@purityjs/core` — see [Head / meta tags](#head--meta-tags-adr-0008) below for the call-site pattern.
 
@@ -55,7 +55,7 @@ Every export is re-exported from `@purityjs/ssr`'s root entry. There are no subp
 
 ### `html`
 
-Identical signature to `@purityjs/core`'s `html`, but its compiled factory emits **HTML strings** rather than DOM nodes. Returns `SSRHtml`.
+Identical signature to `@purityjs/core/jit`'s `html`, but its compiled factory emits **HTML strings** rather than DOM nodes. Returns `SSRHtml`.
 
 ```ts
 import { html } from '@purityjs/ssr';
@@ -65,7 +65,7 @@ greeting('Ada').__purity_ssr_html__;
 //   → '<h1>Hello, <!--[-->Ada<!--]--></h1>'
 ```
 
-The `<!--[-->VALUE<!--]-->` marker pair brackets every `${expression}` slot. The client-side hydrator walks these markers and binds reactivity in place — see [ADR 0005](../../docs/decisions/0005-non-lossy-hydration.md).
+The `<!--[-->VALUE<!--]-->` marker pair brackets every `${expression}` slot. The client-side hydrator walks these markers and binds reactivity in place — see [ADR 0005](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0005-non-lossy-hydration.md).
 
 In a Vite SSR build, the `@purityjs/vite-plugin` AOT-compiles `html\`\``calls directly to the SSR factory output and the runtime`html` function is not invoked. It still ships for unit tests and for ad-hoc SSR-without-Vite scripts.
 
@@ -118,7 +118,7 @@ Browsers since 2024 (Chrome 124+, Safari 16.4+, Firefox 123+) parse the inline s
 
 Property bindings such as `:count=${count}` preserve numbers, booleans, objects, and null because the client provides those values before the child renders. The client app must produce the values again during hydration. Object and function props are not written into HTML attributes; primitive host attributes can still appear in page source, so do not pass secrets as SSR props.
 
-ADR [0004](../../docs/decisions/0004-ssr-mvp.md) covers the contract; pre-2024 browsers fall through to client-only render.
+ADR [0004](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0004-ssr-mvp.md) covers the contract; pre-2024 browsers fall through to client-only render.
 
 ### `renderToStream(component, options?)`
 
@@ -195,7 +195,7 @@ and active work; there is no implicit overall connection deadline. A direct
 stream starts shell work on its first automatic pull; the prepared response
 entry still finishes shell rendering before resolving.
 
-`__purity_swap(N)` walks the document's comment nodes via `TreeWalker` to find the matching `<!--s:N-->` / `<!--/s:N-->` pair, removes the fallback nodes between them, and inserts the template's content in place. ADR [0006](../../docs/decisions/0006-streaming-suspense.md) Phase 3.
+`__purity_swap(N)` walks the document's comment nodes via `TreeWalker` to find the matching `<!--s:N-->` / `<!--/s:N-->` pair, removes the fallback nodes between them, and inserts the template's content in place. ADR [0006](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0006-streaming-suspense.md) Phase 3.
 
 **Per-boundary budgets.** Each boundary renders in its own `SSRRenderContext` with its own multi-pass loop and its own `{ timeout }` budget (the option is per-boundary, not per-response). When a boundary's deadline fires the renderer falls back to its `fallback()` HTML for the streamed chunk — siblings continue resolving normally. Use `suspense({ onError })` to observe view / fallback / timeout phases.
 
@@ -359,7 +359,7 @@ Contract:
 
 - `getRequest()` returns the same `Request` instance on every render pass and inside every `suspense()` boundary's view (`renderToStream` propagates through both shell and per-boundary contexts).
 - On the client (and in tests / ad-hoc renders without a `request` option), `getRequest()` returns `null`. Branch on the result if your component is dual-target.
-- `getRequest()` exposes the raw request; the [router primitives (ADR 0011)](../../docs/decisions/0011-router-primitives.md) layer dispatch on top — see below.
+- `getRequest()` exposes the raw request; the [router primitives (ADR 0011)](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0011-router-primitives.md) layer dispatch on top — see below.
 
 ### Router primitives (ADR 0011)
 
@@ -395,7 +395,7 @@ html`<a
 
 Pattern grammar: literals (`/about`), `:name` captures (`/users/:id`), and `*` splat tail (`/blog/*`). Captured `:name` values are URI-decoded. Returns `{ params } | null`.
 
-Link auto-interception via [`interceptLinks()`](../../docs/decisions/0013-link-interception.md) drops the per-`<a>` `@click` boilerplate; `manageNavScroll()` ([ADR 0015](../../docs/decisions/0015-nav-scroll-management.md)) closes the "SPA keeps the previous page's scroll position" UX gap on forward navigation:
+Link auto-interception via [`interceptLinks()`](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0013-link-interception.md) drops the per-`<a>` `@click` boilerplate; `manageNavScroll()` ([ADR 0015](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0015-nav-scroll-management.md)) closes the "SPA keeps the previous page's scroll position" UX gap on forward navigation:
 
 ```ts
 // entry.client.ts
@@ -411,9 +411,9 @@ Then templates use plain `<a href>` — same-origin clicks become `navigate()` c
 
 `manageNavScroll()` subscribes to `onNavigate()` and scrolls to the URL's hash target (if any) or to the top after every forward `navigate()`. Browser-driven back/forward scroll restoration and `hashchange`-anchor scrolling are native — `manageNavScroll` only fills the pushState gap. Pass a custom `onNavigate` handler to take over (e.g. for smooth scroll, view transitions).
 
-`manageNavFocus()` ([ADR 0016](../../docs/decisions/0016-nav-focus-management.md)) closes the accessibility gap on the same nav event — focus moves into the URL's hash target (or the page's `<main>` landmark by default) so screen readers announce the new region's accessible name. Pairs with `manageNavScroll()` via `preventScroll: true` so the two don't fight. Pass `{ selector }` to target a different landmark (e.g. `'h1'`, `'.app-content'`) or `{ onNavigate }` to replace the default with a custom focus / live-region flow.
+`manageNavFocus()` ([ADR 0016](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0016-nav-focus-management.md)) closes the accessibility gap on the same nav event — focus moves into the URL's hash target (or the page's `<main>` landmark by default) so screen readers announce the new region's accessible name. Pairs with `manageNavScroll()` via `preventScroll: true` so the two don't fight. Pass `{ selector }` to target a different landmark (e.g. `'h1'`, `'.app-content'`) or `{ onNavigate }` to replace the default with a custom focus / live-region flow.
 
-`manageNavTransitions()` ([ADR 0017](../../docs/decisions/0017-view-transitions.md)) wraps `navigate()`-driven URL + DOM updates in `document.startViewTransition()` so route changes can cross-fade. No-op on browsers without the API (Safari < 18, all Firefox as of 2026-05); honors `prefers-reduced-motion`. Pass `{ shouldTransition }` to opt out per-nav. Style the cross-fade or per-element morph via the standard `::view-transition-*` CSS pseudo-elements.
+`manageNavTransitions()` ([ADR 0017](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0017-view-transitions.md)) wraps `navigate()`-driven URL + DOM updates in `document.startViewTransition()` so route changes can cross-fade. No-op on browsers without the API (Safari < 18, all Firefox as of 2026-05); honors `prefers-reduced-motion`. Pass `{ shouldTransition }` to opt out per-nav. Style the cross-fade or per-element morph via the standard `::view-transition-*` CSS pseudo-elements.
 
 Still not in scope: `<Route>` / `<Routes>` component, layout nesting, URL search / hash reactivity, file-system route discovery, scroll restoration, focus management, view transitions, prefetch-on-hover. See ADR 0011 + ADR 0013's "Explicit non-features" sections.
 
@@ -454,7 +454,7 @@ if (actionResponse) return actionResponse;
 | `findAction(request)`         | `handler \| null`           | Look up handler by `new URL(request.url).pathname`. No invocation.                                              |
 | `handleAction(request)`       | `Promise<Response \| null>` | Find + invoke + await. `null` on no match so caller falls through.                                              |
 
-Action handlers belong in `*.server.{ts,js,tsx,jsx}` files — the `@purityjs/vite-plugin` strips those from client bundles automatically (default-on, [ADR 0018](../../docs/decisions/0018-server-module-strip.md)). Handler bodies + their transitive imports (DB driver, secrets, API tokens) stop shipping to the browser. Apps sharing the URL between client + server pull it into a non-server module:
+Action handlers belong in `*.server.{ts,js,tsx,jsx}` files — the `@purityjs/vite-plugin` strips those from client bundles automatically (default-on, [ADR 0018](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0018-server-module-strip.md)). Handler bodies + their transitive imports (DB driver, secrets, API tokens) stop shipping to the browser. Apps sharing the URL between client + server pull it into a non-server module:
 
 ```ts
 // app/api-urls.ts (shared)
@@ -553,7 +553,7 @@ The hydrator:
 - Adopts `each()` rows by key via `<!--er:KEY-->row<!--/er-->` per-row markers, and `when()` / `match()` cases via `<!--m:KEY-->view<!--/m-->` boundary markers. Same node references survive across hydration.
 - Strips `<!--s:N-->` / `<!--/s:N-->` Suspense markers (or treats them as opaque if a boundary hasn't streamed yet — Phase 3 MVP defers full hydration until the stream closes).
 - Falls back to a fresh `mount()` if the SSR DOM diverges structurally from the client template; never crashes the page.
-- Optional `enableHydrationWarnings()` logs structural mismatches; opt-in `enableHydrationTextRewrite()` overwrites SSR text content to match the template (ADR [0007](../../docs/decisions/0007-text-rewrite-on-mismatch.md)).
+- Optional `enableHydrationWarnings()` logs structural mismatches; opt-in `enableHydrationTextRewrite()` overwrites SSR text content to match the template (ADR [0007](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0007-text-rewrite-on-mismatch.md)).
 
 ## SSR control-flow helpers
 
@@ -594,7 +594,7 @@ The `<!--[-->` / `<!--]-->` markers are 14 bytes per slot; the cost is fixed and
 - **One `pushSSRRenderContext` per render.** Both `renderToString` and `renderToStream` push their own `SSRRenderContext`; user code reads it through `getSSRRenderContext()`. Don't push your own.
 - **Async by default.** Both render entries are async (the multi-pass resource loop awaits between passes). `renderToStream` returns the `ReadableStream` synchronously but the `start()` controller is `async`.
 - **`html` is two different functions.** `@purityjs/core/html` builds DOM (or returns a deferred-template thunk during hydration). `@purityjs/ssr/html` returns `SSRHtml`. Vite's SSR transform picks the right one per build target — apps written for both targets parametrise the user code on the html tag.
-- **Shadow DOM scope.** Components are isolated. Global stylesheets that need to pierce the shadow root use `adoptedStyleSheets` per component; CSS variables work normally. See [`docs/shadow-dom-rationale.md`](../../docs/shadow-dom-rationale.md).
+- **Shadow DOM scope.** Components are isolated. Global stylesheets that need to pierce the shadow root use `adoptedStyleSheets` per component; CSS variables work normally. See [`docs/shadow-dom-rationale.md`](https://github.com/KoalaFacts/Purity/blob/main/docs/shadow-dom-rationale.md).
 - **Resources need keys for streaming.** Inside a `suspense(view)` view, prefer `resource(..., { key: 'unique-string' })` so the per-boundary cache (Phase 6 second-half) addresses values stably across the SSR/hydrate boundary.
 - **Output is byte-for-byte deterministic** for a fixed input: marker IDs reset per render, resource counters reset per pass, and per-boundary IDs are monotonic. Snapshot tests are reliable.
 
@@ -613,14 +613,14 @@ The `<!--[-->` / `<!--]-->` markers are 14 bytes per slot; the cost is fixed and
 
 The SSR feature set is documented through ADRs — start here when you need to dig deeper:
 
-- [0004 — SSR MVP](../../docs/decisions/0004-ssr-mvp.md) — `renderToString`, DSD, resource awaiting, lossy hydration baseline.
-- [0005 — Marker-walking, non-lossy hydration](../../docs/decisions/0005-non-lossy-hydration.md) — `<!--[-->` slot markers, deferred-template thunks, per-row / per-case adoption.
-- [0006 — Streaming + Suspense](../../docs/decisions/0006-streaming-suspense.md) — `<!--s:N-->` boundary grammar, `renderToStream` MVP, `__purity_swap` client splice.
-- [0007 — Text-content rewriting on mismatch](../../docs/decisions/0007-text-rewrite-on-mismatch.md) — opt-in self-heal for stale-CDN drift.
+- [0004 — SSR MVP](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0004-ssr-mvp.md) — `renderToString`, DSD, resource awaiting, lossy hydration baseline.
+- [0005 — Marker-walking, non-lossy hydration](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0005-non-lossy-hydration.md) — `<!--[-->` slot markers, deferred-template thunks, per-row / per-case adoption.
+- [0006 — Streaming + Suspense](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0006-streaming-suspense.md) — `<!--s:N-->` boundary grammar, `renderToStream` MVP, `__purity_swap` client splice.
+- [0007 — Text-content rewriting on mismatch](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0007-text-rewrite-on-mismatch.md) — opt-in self-heal for stale-CDN drift.
 
 ## License
 
-[Apache-2.0](./LICENSE) starting with 0.5.0 (currently unreleased). Releases
+[Apache-2.0](./LICENSE) starting with 0.5.0. Releases
 through 0.4.0 remain MIT; their copyright and permission notice is retained in
 [LICENSES/Purity-MIT.txt](./LICENSES/Purity-MIT.txt). Third-party components retain
 their own licenses.

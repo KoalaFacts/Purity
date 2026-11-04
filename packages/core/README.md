@@ -7,7 +7,7 @@
 
 The core Purity framework. Signal-driven rendering without a virtual DOM.
 
-Use the feature entry points described in the [0.4 import guide](../../docs/core-entry-points.md).
+Use the feature entry points described in the [entry point and migration guide](https://github.com/KoalaFacts/Purity/blob/main/docs/core-entry-points.md).
 Production sizes depend on the APIs used; run `npm run check:bundle` for current measurements.
 
 ## Install
@@ -404,7 +404,7 @@ opinionated choice — listing the costs honestly so you can decide:
 - **Accessibility across shadow boundaries.** `aria-labelledby` /
   `aria-describedby` cannot reference IDs across a shadow root. Use
   `aria-label` directly or expose explicit ARIA attributes on the host.
-  See [`docs/accessibility.md`](../../docs/accessibility.md) for the
+  See [`docs/accessibility.md`](https://github.com/KoalaFacts/Purity/blob/main/docs/accessibility.md) for the
   browser checks and remaining manual acceptance criteria.
 - **Third-party DOM queries.** `document.querySelector('.my-class')` from
   outside a component will not find elements inside its shadow root. Inspect
@@ -507,15 +507,15 @@ const { unmount } = mount(() => html`<p-app></p-app>`, document.getElementById("
 
 ## Further reading
 
-- [Live demo](https://koalafacts.github.io/Purity/dashboard/) — polling dashboard with `resource` (retry + pollInterval), `lazyResource`, `debounced`, mock-data backend. Source: [`examples/dashboard`](../../examples/dashboard).
-- [TypeScript guide](../../docs/typescript.md) — inference patterns for `state` / `compute` / `resource`, generic component props, scoped slots, custom `WatchSource`-based helpers
-- [Why Shadow DOM by default](../../docs/shadow-dom-rationale.md) — when the encapsulation pays, when it hurts, escape hatches, Tailwind / global-CSS integration
-- [Accessibility under Shadow DOM](../../docs/accessibility.md) — ARIA across boundaries, focus delegation, screen-reader patterns, a worked `p-tabs` example
-- [Migration cheatsheet](../../docs/migration.md) — side-by-side translations from React / SolidJS / Vue / Svelte to Purity
+- [Live demo](https://koalafacts.github.io/Purity/dashboard/) — polling dashboard with `resource` (retry + pollInterval), `lazyResource`, `debounced`, mock-data backend. Source: [`examples/dashboard`](https://github.com/KoalaFacts/Purity/tree/main/examples/dashboard).
+- [TypeScript guide](https://github.com/KoalaFacts/Purity/blob/main/docs/typescript.md) — inference patterns for `state` / `compute` / `resource`, generic component props, scoped slots, custom `WatchSource`-based helpers
+- [Why Shadow DOM by default](https://github.com/KoalaFacts/Purity/blob/main/docs/shadow-dom-rationale.md) — when the encapsulation pays, when it hurts, escape hatches, Tailwind / global-CSS integration
+- [Accessibility under Shadow DOM](https://github.com/KoalaFacts/Purity/blob/main/docs/accessibility.md) — ARIA across boundaries, focus delegation, screen-reader patterns, a worked `p-tabs` example
+- [Migration cheatsheet](https://github.com/KoalaFacts/Purity/blob/main/docs/migration.md) — side-by-side translations from React / SolidJS / Vue / Svelte to Purity
 
 ## License
 
-[Apache-2.0](./LICENSE) starting with 0.5.0 (currently unreleased). Releases
+[Apache-2.0](./LICENSE) starting with 0.5.0. Releases
 through 0.4.0 remain MIT; their copyright and permission notice is retained in
 [LICENSES/Purity-MIT.txt](./LICENSES/Purity-MIT.txt). Third-party components retain
 their own licenses.

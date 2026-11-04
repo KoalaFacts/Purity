@@ -873,7 +873,7 @@ export function compute<T>(fn: () => T): ComputedAccessor<T> {
   if (ctx) (ctx.disposers ??= []).push(dispose);
 
   const accessor = (() => readNode<T>(node)) as ComputedAccessor<T>;
-  (accessor as unknown as { get: () => T }).get = () => readNode<T>(node);
+  (accessor as unknown as { get: () => T }).get = accessor;
   (accessor as unknown as { peek: () => T }).peek = () => readNode<T>(node, false);
 
   return accessor;

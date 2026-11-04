@@ -778,15 +778,34 @@ describe('component as custom element — lifecycle', () => {
   it('forwards on<Event> properties from custom element instance', async () => {
     const name = tag('cel-evt');
     let received: any = null;
-    component(name, ({ onClick }: { onClick?: (...a: any[]) => void }) => {
-      received = onClick;
+    component(name, (props: any) => {
+      received = props;
       return html`<button>x</button>`;
     });
     const el: any = document.createElement(name);
-    el.__purity_event_click = () => {};
+    const synthetic = () => {};
+    el.setAttribute('title', 'attribute');
+    el.setAttribute('__proto__', 'literal-data');
+    el.value = 'property';
+    el.__purity_event_click = synthetic;
+    // The synthetic alias wins even if the ordinary property is added later.
+    el.onClick = () => {};
     document.body.appendChild(el);
     await tick();
-    expect(typeof received).toBe('function');
+    expect(received.onClick).toBe(synthetic);
+    expect(Object.getPrototypeOf(received)).toBe(Object.prototype);
+    expect(Object.hasOwn(received, '__proto__')).toBe(true);
+    expect(received.__proto__).toBe('literal-data');
+    expect(received.title).toBe('attribute');
+    expect(received.value).toBe('property');
+    const firstProps = received;
+    document.body.removeChild(el);
+    document.body.appendChild(el);
+    await tick();
+    expect(received).not.toBe(firstProps);
+    expect(received.onClick).toBe(synthetic);
+    expect(received.title).toBe('attribute');
+    expect(received.value).toBe('property');
     document.body.removeChild(el);
   });
 

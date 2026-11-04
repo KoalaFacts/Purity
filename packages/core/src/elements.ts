@@ -118,6 +118,7 @@ export function slot<E = void>(name?: string): SlotAccessor<E> {
 
   const children = ctx._slotContent;
   return ((_exposed?: unknown): Node | null => {
+    if (children instanceof Map) return resolveContent(children.get(slotName));
     return resolveFromRaw(children, slotName, _exposed);
   }) as SlotAccessor<E>;
 }
@@ -448,11 +449,11 @@ export function component<
     const ctx = new ComponentContext();
     attachToOwner(ctx, unmountElementContext);
 
-    ctx._slotContent = children;
     const registry = createRegistry();
     const slotAccessors = createAccessors(registry);
 
     if (children != null && typeof children !== 'function') {
+      ctx._slotContent = children;
       if (children instanceof Node || typeof children === 'string') {
         registry.filled.set('default', children);
       } else if (typeof children === 'object') {
@@ -463,6 +464,7 @@ export function component<
     }
 
     if (typeof children === 'function') {
+      ctx._slotContent = registry.filled;
       const { exposed } = runRender(renderFn, props, slotAccessors, ctx);
       const bag = { ...createConsumerBag(registry), ...exposed };
       let consumerResult: unknown;

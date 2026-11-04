@@ -303,9 +303,9 @@ export function unmountContext(
     if (idx !== -1) ctx.parent.children.splice(idx, 1);
   }
 
-  ctx.mounted = null;
-  ctx.errorHandlers = null;
-  ctx.parent = null;
-  ctx._rootContainer = null;
-  ctx._slotContent = undefined;
+  if (ctx.mounted) ctx.mounted = null;
+  if (ctx.errorHandlers) ctx.errorHandlers = null;
+  if (ctx.parent) ctx.parent = null;
+  if (ctx._rootContainer) ctx._rootContainer = null;
+  if (ctx._slotContent !== undefined) ctx._slotContent = undefined;
 }

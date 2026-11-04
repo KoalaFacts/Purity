@@ -1251,6 +1251,8 @@ describe('ShadowRoot rollback reentrancy and root ownership', () => {
 
   it('does not detach an uninserted preparented root from nested factory owners', () => {
     const ancestor = document.createElement('section');
+    const outer = document.createElement('div');
+    outer.appendChild(ancestor);
     const name = tag('cel-rollback-nested');
     const disposed = vi.fn();
     const Inner = component(tag('nested-preparented'), () => {
@@ -1263,7 +1265,8 @@ describe('ShadowRoot rollback reentrancy and root ownership', () => {
 
     expect(() => host.connectedCallback()).toThrow();
     expect(ancestor.contains(host)).toBe(true);
-    expect(ancestor.parentNode).toBeNull();
+    expect(ancestor.parentNode).toBe(outer);
+    expect(outer.contains(host)).toBe(true);
     expect(host.shadowRoot?.childNodes).toHaveLength(0);
     expect(disposed).toHaveBeenCalledTimes(1);
   });

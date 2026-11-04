@@ -3,7 +3,7 @@ import { html } from '../src/compiler/compile.ts';
 import { mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
 import { component, slot, teleport } from '../src/elements.ts';
 import { onFormDisabled, onFormReset } from '../src/forms.ts';
-import { compute, state } from '@purityjs/signals';
+import { compute, state, watch } from '@purityjs/signals';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 let tagCounter = 0;
@@ -1150,6 +1150,56 @@ describe('component as custom element — lifecycle', () => {
     expect(el.shadowRoot!.firstChild).toBe(ssrSpan);
     expect(el.shadowRoot!.querySelector('span')!.textContent).toBe('fresh');
     document.body.removeChild(el);
+  });
+});
+
+describe('Custom Element append failure rollback', () => {
+  it('releases its reactive owner and partial shadow roots after append throws', async () => {
+    const name = tag('cel-append-failure');
+    const count = state(0);
+    const changes = vi.fn();
+    const disposed = vi.fn();
+    const destroyed = vi.fn();
+    component(name, () => {
+      watch(() => {
+        count();
+        changes();
+      });
+      onDispose(disposed);
+      onDestroy(destroyed);
+      return html`<span>first</span><span>second</span>`;
+    });
+
+    const host = document.createElement(name) as HTMLElement & {
+      connectedCallback(): void;
+      disconnectedCallback(): void;
+      _ctx: unknown;
+    };
+    const shadow = host.shadowRoot!;
+    const append = shadow.appendChild.bind(shadow);
+    const fail = vi.spyOn(shadow, 'appendChild').mockImplementation((node) => {
+      append(node);
+      throw new Error('forced shadow append error');
+    });
+
+    expect(() => host.connectedCallback()).toThrow('forced shadow append error');
+    expect(shadow.childNodes).toHaveLength(0);
+    expect(host._ctx).toBeNull();
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect(destroyed).not.toHaveBeenCalled();
+
+    count(1);
+    await tick();
+    expect(changes).toHaveBeenCalledTimes(1);
+
+    fail.mockRestore();
+    host.connectedCallback();
+    await tick();
+    expect(shadow.textContent).toBe('firstsecond');
+    expect(changes).toHaveBeenCalledTimes(2);
+    host.disconnectedCallback();
+    expect(disposed).toHaveBeenCalledTimes(2);
+    expect(destroyed).toHaveBeenCalledTimes(1);
   });
 });
 

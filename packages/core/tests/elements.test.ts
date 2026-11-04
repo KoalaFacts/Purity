@@ -83,6 +83,19 @@ describe('slots — callback syntax', () => {
     expect(result.textContent).toBe('TitleBody');
   });
 
+  it('preserves prototype-named consumer slots without inherited properties', () => {
+    const Named = component(tag('slot-prototype-keys'), (_props, slots: any) => {
+      return html`<span>${slots.constructor()}${slots.__proto__()}${slots.toString()}</span>`;
+    });
+    const result = Named({}, (bag: any) => {
+      bag.constructor('C');
+      bag.__proto__('P');
+      bag.toString('T');
+    });
+
+    expect(result.textContent).toBe('CPT');
+  });
+
   it('consumer fills default slot via callback', () => {
     const Card = component(tag('sc1'), ({ title }, { default: body }) => {
       return html`<div class="card">

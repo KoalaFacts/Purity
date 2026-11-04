@@ -58,11 +58,11 @@ const signalsDir = resolve(import.meta.dirname, '../../signals');
 const compilerDir = resolve(import.meta.dirname, '../../compiler');
 const isLocal = existsSync(resolve(coreDir, 'src/index.ts'));
 
-const coreDep = isLocal ? `file:${coreDir}` : '^0.5.0';
-const pluginDep = isLocal ? `file:${pluginDir}` : '^0.5.0';
-const ssrDep = isLocal ? `file:${ssrDir}` : '^0.5.0';
-const platformDep = isLocal ? `file:${platformDir}` : '^0.5.0';
-const routerDep = isLocal ? `file:${routerDir}` : '^0.5.0';
+const coreDep = isLocal ? `file:${coreDir}` : '^0.5.1';
+const pluginDep = isLocal ? `file:${pluginDir}` : '^0.5.1';
+const ssrDep = isLocal ? `file:${ssrDir}` : '^0.5.1';
+const platformDep = isLocal ? `file:${platformDir}` : '^0.5.1';
+const routerDep = isLocal ? `file:${routerDir}` : '^0.5.1';
 
 console.log(`\n  Creating ${projectName}${appMode ? ' (app)' : ssrMode ? ' (SSR)' : ''}...`);
 if (isLocal) console.log('  Using local packages from monorepo');

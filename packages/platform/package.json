@@ -1,6 +1,6 @@
 {
   "name": "@purityjs/platform",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Platform integrations for Purity",
   "license": "Apache-2.0",
   "author": "KoalaFacts",
@@ -148,9 +148,9 @@
     "test": "vp test run"
   },
   "dependencies": {
-    "@purityjs/signals": "^0.5.0"
+    "@purityjs/signals": "^0.5.1"
   },
   "peerDependencies": {
-    "@purityjs/core": "^0.5.0"
+    "@purityjs/core": "^0.5.1"
   }
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+- Complete the coordinated package release with README documentation for every package.
+- Update new project scaffolds to install the 0.5.1 package set.
+
 ## 0.5.0
 
 ### Added
@@ -8,7 +13,8 @@
   `@purityjs/core`, `@purityjs/router`, `@purityjs/platform`, `@purityjs/ssr`,
   `@purityjs/vite-plugin`, and `@purityjs/cli`. See the
   [entry-point guide](docs/core-entry-points.md) before upgrading.
-- Add opt-in `purity({ strictAot: true })` builds. Template transformation
+- Use strict client-only AOT by default; opt in to hydration with
+  `purity({ hydratable: true })`. Template transformation
   failures report source locations instead of falling back to JIT, and client
   output checks reject retained Purity runtime compilation. SSR keeps its
   server compiler support. See [strict AOT builds](packages/vite-plugin/README.md#strict-aot-builds).

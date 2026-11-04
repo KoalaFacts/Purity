@@ -1,6 +1,6 @@
 {
   "name": "@purityjs/compiler",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "HTML5 template parser, AST, and ahead-of-time / runtime code generator for Purity (DOM, Hydration, and SSR)",
   "keywords": [
     "aot",

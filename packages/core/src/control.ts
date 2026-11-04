@@ -11,6 +11,8 @@ import {
   watchEffectInternal,
 } from '@purityjs/signals';
 import { warnDuplicateKey } from './control/keys.ts';
+import { detachNodes, extractNodes } from './control/nodes.ts';
+export { detachNodes, extractNodes } from './control/nodes.ts';
 import {
   captureHydratingEach,
   captureHydratingMatch,
@@ -439,25 +441,6 @@ function bulkClear<E extends KeyedEntry>(
     if (!entry) continue;
     if (!canReplaceChildren) detachNodes(entry.nodes);
     release(entry);
-  }
-}
-
-/** @internal */
-export function extractNodes(content: Node | DocumentFragment | string): Node[] {
-  if (content instanceof DocumentFragment) {
-    const fc = content.firstChild;
-    if (fc && !fc.nextSibling) return [fc];
-    return Array.from(content.childNodes);
-  }
-  if (content instanceof Node) return [content];
-  return [document.createTextNode(String(content ?? ''))];
-}
-
-/** @internal */
-export function detachNodes(nodes: Node[]): void {
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i];
-    node.parentNode?.removeChild(node);
   }
 }
 

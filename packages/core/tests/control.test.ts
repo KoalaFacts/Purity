@@ -5,12 +5,29 @@ import { html } from '../src/compiler/compile.ts';
 import { ComponentContext, popContext, pushContext } from '@purityjs/signals';
 import { mount, onDispose } from '../src/component.ts';
 import { component } from '../src/elements.ts';
-import { defaultEachHydrationAdapter, each, list, match } from '../src/control.ts';
+import { defaultEachHydrationAdapter, detachNodes, each, extractNodes, list, match } from '../src/control.ts';
 import { inflateDeferredEach, type CapturedDeferredEach } from '../src/control/hydrate.ts';
 import { eachSSR, listSSR } from '@purityjs/ssr/runtime';
 import { state, watch } from '@purityjs/signals';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
+
+describe('shared CSR/hydration node helpers', () => {
+  it('snapshots multi-root and singleton fragments without moving their children', () => {
+    const fragment = document.createDocumentFragment();
+    const first = document.createElement('span');
+    const second = document.createElement('b');
+    fragment.append(first, second);
+    expect(extractNodes(fragment)).toEqual([first, second]);
+    expect(fragment.childNodes.length).toBe(2);
+
+    detachNodes([first]);
+    expect(fragment.firstChild).toBe(second);
+    expect(extractNodes(fragment)).toEqual([second]);
+    detachNodes([second]);
+    expect(fragment.childNodes.length).toBe(0);
+  });
+});
 
 describe('match', () => {
   it('renders the matching case', async () => {

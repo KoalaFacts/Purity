@@ -1,6 +1,6 @@
 # @purityjs/vite-plugin
 
-**Breaking default:** `purity()` now produces strict client-only AOT. SSR clients and hydrated component libraries must explicitly use `purity({ hydratable: true })`. Runtime fallback requires `strictAot: false`. See [migration and complete-application evidence](../../docs/client-first-aot.md).
+**Breaking default:** `purity()` now produces strict client-only AOT. SSR clients and hydrated component libraries must explicitly use `purity({ hydratable: true })`. Runtime fallback requires `strictAot: false`. See [migration and complete-application evidence](https://github.com/KoalaFacts/Purity/blob/main/docs/client-first-aot.md).
 
 [![npm version](https://img.shields.io/npm/v/@purityjs/vite-plugin.svg)](https://www.npmjs.com/package/@purityjs/vite-plugin)
 [![npm downloads](https://img.shields.io/npm/dm/@purityjs/vite-plugin.svg)](https://www.npmjs.com/package/@purityjs/vite-plugin)
@@ -22,7 +22,7 @@ By default, compilation failures stop the build and client output must not retai
 ## Install
 
 ```bash
-npm install -D @purityjs/vite-plugin
+npm install -D vite @purityjs/vite-plugin
 ```
 
 ## Setup
@@ -75,7 +75,7 @@ purity({
 The **Purity** button opens a searchable snapshot of state, computed and
 effect nodes, including versions and source/observer connections. Close or
 Escape stops polling and clears the snapshot. Production builds and preview
-exclude the panel. See [Debugging Purity apps](../../docs/debugging.md) for details.
+exclude the panel. See [Debugging Purity apps](https://github.com/KoalaFacts/Purity/blob/main/docs/debugging.md) for details.
 
 ## Strict AOT builds
 
@@ -179,7 +179,7 @@ The plugin only transforms user code — framework internals are skipped.
 
 ## License
 
-[Apache-2.0](./LICENSE) starting with 0.5.0 (currently unreleased). Releases
+[Apache-2.0](./LICENSE) starting with 0.5.0. Releases
 through 0.4.0 remain MIT; their copyright and permission notice is retained in
 [LICENSES/Purity-MIT.txt](./LICENSES/Purity-MIT.txt). Third-party components retain
 their own licenses.

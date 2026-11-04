@@ -9,6 +9,7 @@ export {
   state,
   untracked,
   watch,
+  watchEffectInternal,
 } from './signals.ts';
 export { type DebouncedAccessor, debounced } from './debounced.ts';
 export {

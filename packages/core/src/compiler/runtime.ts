@@ -14,5 +14,6 @@ export {
   isHydrating,
   makeCompiledDeferred,
   renderCompiledTemplate,
+  renderCompiledTemplateAot,
 } from '../runtime/hydrate-runtime.ts';
-export { flattenValue, swapSlot } from './value-helpers.ts';
+export { flattenValue, swapSlot } from '../runtime/csr-runtime.ts';

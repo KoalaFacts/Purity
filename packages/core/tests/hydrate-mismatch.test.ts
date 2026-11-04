@@ -197,6 +197,26 @@ describe('hydrate text-rewrite on mismatch (opt-in)', () => {
     expect(msg).toContain('rewritten');
   });
 
+  it('keeps rewriting when warnings are turned off independently', () => {
+    enableHydrationWarnings();
+    enableHydrationTextRewrite();
+    disableHydrationWarnings();
+    host.innerHTML = '<p>Hello <!--[-->world<!--]--></p>';
+    hydrate(host, () => html`<p>Hi ${'world'}</p>`);
+    expect(host.textContent).toBe('Hi world');
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('keeps warnings when rewriting is turned off independently', () => {
+    enableHydrationTextRewrite();
+    enableHydrationWarnings();
+    disableHydrationTextRewrite();
+    host.innerHTML = '<p>Hello <!--[-->world<!--]--></p>';
+    hydrate(host, () => html`<p>Hi ${'world'}</p>`);
+    expect(host.textContent).toBe('Hello world');
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
   it('does not touch text when SSR matches the template', () => {
     enableHydrationTextRewrite();
     host.innerHTML = '<p>Hi <!--[-->world<!--]--></p>';

@@ -3,7 +3,7 @@ import { html } from '../src/compiler/compile.ts';
 import { mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
 import { component, slot, teleport } from '../src/elements.ts';
 import { onFormDisabled, onFormReset } from '../src/forms.ts';
-import { compute, state } from '@purityjs/signals';
+import { compute, state, watch } from '@purityjs/signals';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 let tagCounter = 0;
@@ -68,6 +68,34 @@ describe('component() with tag name', () => {
 });
 
 describe('slots — callback syntax', () => {
+  it('reuses named accessors while exposing each discovered name to the consumer', () => {
+    let sameAccessor = false;
+    const Card = component(tag('slot-cache'), (_props, slots) => {
+      sameAccessor = slots.header === slots.header;
+      return html`<header>${slots.header()}</header><main>${slots.default()}</main>`;
+    });
+    const result = Card({}, ({ header, default: fill }) => {
+      header('Title');
+      fill('Body');
+    });
+
+    expect(sameAccessor).toBe(true);
+    expect(result.textContent).toBe('TitleBody');
+  });
+
+  it('preserves prototype-named consumer slots without inherited properties', () => {
+    const Named = component(tag('slot-prototype-keys'), (_props, slots: any) => {
+      return html`<span>${slots.constructor()}${slots.__proto__()}${slots.toString()}</span>`;
+    });
+    const result = Named({}, (bag: any) => {
+      bag.constructor('C');
+      bag.__proto__('P');
+      bag.toString('T');
+    });
+
+    expect(result.textContent).toBe('CPT');
+  });
+
   it('consumer fills default slot via callback', () => {
     const Card = component(tag('sc1'), ({ title }, { default: body }) => {
       return html`<div class="card">
@@ -198,6 +226,26 @@ describe('@event on components', () => {
 });
 
 describe('slot() standalone', () => {
+  it('preserves event handlers and reactive bindings from raw callback fragments', async () => {
+    const count = state(0);
+    const clicked = vi.fn();
+    const Card = component(tag('raw-callback-live'), () => {
+      const body = slot('body');
+      return html`<section>${body()}</section>`;
+    });
+    const child = () =>
+      html`<button @click=${clicked}>Click</button><output>${() => count()}</output>`;
+    const container = document.createElement('div');
+    container.appendChild(Card({}, { body: child }));
+
+    expect(container.querySelector('output')?.textContent).toBe('0');
+    container.querySelector('button')!.click();
+    expect(clicked).toHaveBeenCalledTimes(1);
+    count(1);
+    await tick();
+    expect(container.querySelector('output')?.textContent).toBe('1');
+  });
+
   it('still works as context-aware primitive', () => {
     const Card = component(tag('ss1'), ({ title }) => {
       const body = slot();
@@ -339,6 +387,67 @@ describe('teleport() reactive', () => {
     unmount();
     expect(target.querySelector('.ported')).toBeNull();
     document.body.removeChild(target);
+  });
+
+  it('disposes a teleport when its first view unmounts the owner', async () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const source = state(0);
+    const container = document.createElement('div');
+    let unmount = () => {};
+    let renders = 0;
+    const result = mount(
+      () =>
+        teleport(target, () => {
+          source();
+          renders++;
+          unmount();
+          return document.createElement('span');
+        }),
+      container,
+    );
+    unmount = result.unmount;
+
+    await tick();
+    expect(target.childNodes.length).toBe(0);
+    source(1);
+    await tick();
+    expect(renders).toBe(1);
+    expect(target.childNodes.length).toBe(0);
+    target.remove();
+  });
+
+  it('does not reinsert teleport DOM when a reactive view unmounts its owner', async () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const source = state(0);
+    const container = document.createElement('div');
+    let unmount = () => {};
+    let renders = 0;
+    const result = mount(
+      () =>
+        teleport(target, () => {
+          const value = source();
+          renders++;
+          if (value === 1) unmount();
+          const child = document.createElement('span');
+          child.textContent = String(value);
+          return child;
+        }),
+      container,
+    );
+    unmount = result.unmount;
+
+    await tick();
+    expect(target.textContent).toBe('0');
+    source(1);
+    await tick();
+    expect(target.textContent).toBe('');
+    source(2);
+    await tick();
+    expect(renders).toBe(2);
+    expect(target.childNodes.length).toBe(0);
+    target.remove();
   });
 
   it('does not leak when the owner unmounts before the deferred setup runs', async () => {
@@ -504,6 +613,28 @@ describe('component as custom element — lifecycle', () => {
     expect(order).toEqual(['dispose', 'first-destroy', 'second-destroy', 'host-destroy']);
   });
 
+  it('releases disconnected owner node references without removing shadow DOM', async () => {
+    const name = tag('cel-detached-nodes');
+    component(name, () => html`<p>preserved</p>`);
+    const el = document.createElement(name);
+    document.body.appendChild(el);
+    await tick();
+
+    const previousOwner = (el as any)._ctx;
+    const paragraph = el.shadowRoot!.querySelector('p');
+    expect(previousOwner.nodes).toContain(paragraph);
+    expect(previousOwner._shadowRoot).toBe(el.shadowRoot);
+
+    el.remove();
+
+    // A detached host retains its DOM for reconnection, but a stale retained
+    // owner must not also keep those DOM descendants or their host alive.
+    expect(el.shadowRoot!.querySelector('p')).toBe(paragraph);
+    expect(previousOwner.nodes).toBeNull();
+    expect(previousOwner._shadowRoot).toBeUndefined();
+    expect(previousOwner._internals).toBeNull();
+  });
+
   it('runs disconnectedCallback dispose on removal', async () => {
     const name = tag('cel-dispose');
     const calls: string[] = [];
@@ -647,15 +778,34 @@ describe('component as custom element — lifecycle', () => {
   it('forwards on<Event> properties from custom element instance', async () => {
     const name = tag('cel-evt');
     let received: any = null;
-    component(name, ({ onClick }: { onClick?: (...a: any[]) => void }) => {
-      received = onClick;
+    component(name, (props: any) => {
+      received = props;
       return html`<button>x</button>`;
     });
     const el: any = document.createElement(name);
-    el.__purity_event_click = () => {};
+    const synthetic = () => {};
+    el.setAttribute('title', 'attribute');
+    el.setAttribute('__proto__', 'literal-data');
+    el.value = 'property';
+    el.__purity_event_click = synthetic;
+    // The synthetic alias wins even if the ordinary property is added later.
+    el.onClick = () => {};
     document.body.appendChild(el);
     await tick();
-    expect(typeof received).toBe('function');
+    expect(received.onClick).toBe(synthetic);
+    expect(Object.getPrototypeOf(received)).toBe(Object.prototype);
+    expect(Object.hasOwn(received, '__proto__')).toBe(true);
+    expect(received.__proto__).toBe('literal-data');
+    expect(received.title).toBe('attribute');
+    expect(received.value).toBe('property');
+    const firstProps = received;
+    document.body.removeChild(el);
+    document.body.appendChild(el);
+    await tick();
+    expect(received).not.toBe(firstProps);
+    expect(received.onClick).toBe(synthetic);
+    expect(received.title).toBe('attribute');
+    expect(received.value).toBe('property');
     document.body.removeChild(el);
   });
 
@@ -796,6 +946,183 @@ describe('component as custom element — lifecycle', () => {
     err.mockRestore();
   });
 
+  it('does not create a second owner during reentrant light DOM slot extraction', async () => {
+    const hostName = tag('cel-light-reconnect');
+    const childName = tag('cel-light-child');
+    const events: string[] = [];
+    let host!: HTMLElement;
+    let reconnected = false;
+    let renders = 0;
+
+    customElements.define(
+      childName,
+      class extends HTMLElement {
+        disconnectedCallback() {
+          if (reconnected || !host.isConnected) return;
+          reconnected = true;
+          // Moving a connected light child into the temporary slot fragment
+          // fires disconnectedCallback while its host is still rendering.
+          host.remove();
+          document.body.appendChild(host);
+        }
+      },
+    );
+
+    component(hostName, (_props, { default: body }) => {
+      const generation = ++renders;
+      onMount(() => events.push(`mounted:${generation}`));
+      onDestroy(() => events.push(`destroyed:${generation}`));
+      const view = document.createElement('section');
+      view.append(body() ?? '');
+      return view;
+    });
+
+    host = document.createElement(hostName);
+    host.appendChild(document.createElement(childName));
+    document.body.appendChild(host);
+    await tick();
+
+    expect(reconnected).toBe(true);
+    expect(renders).toBe(1);
+    expect(host.shadowRoot!.querySelectorAll(childName)).toHaveLength(1);
+    expect(events).toEqual(['mounted:1']);
+
+    host.remove();
+    await tick();
+    expect(events).toEqual(['mounted:1', 'destroyed:1']);
+  });
+
+  it('does not append stale DOM when a custom element reconnects during render', async () => {
+    const hostName = tag('cel-render-reconnect');
+    const events: string[] = [];
+    let host!: HTMLElement;
+    let renders = 0;
+
+    component(hostName, () => {
+      const generation = ++renders;
+      onMount(() => events.push(`mounted:${generation}`));
+      onDestroy(() => events.push(`destroyed:${generation}`));
+      if (generation === 1) {
+        host.remove();
+        document.body.appendChild(host);
+      }
+      const node = document.createElement('span');
+      node.textContent = `render:${generation}`;
+      return node;
+    });
+
+    host = document.createElement(hostName);
+    document.body.appendChild(host);
+    await tick();
+
+    expect(renders).toBe(2);
+    expect(host.shadowRoot!.textContent).toBe('render:2');
+    expect(host.shadowRoot!.querySelectorAll('span')).toHaveLength(1);
+    expect(events).toEqual(['destroyed:1', 'mounted:2']);
+
+    host.remove();
+    await tick();
+    expect(events).toEqual(['destroyed:1', 'mounted:2', 'destroyed:2']);
+  });
+
+  it('does not remount an obsolete owner when a child reconnects the host during append', async () => {
+    const hostName = tag('cel-append-reconnect');
+    const childName = tag('cel-reentrant-child');
+    const events: string[] = [];
+    let host!: HTMLElement;
+    let reconnected = false;
+    const obsoleteOwners: { _isMounted: boolean }[] = [];
+
+    customElements.define(
+      childName,
+      class extends HTMLElement {
+        connectedCallback() {
+          if (reconnected) return;
+          reconnected = true;
+          obsoleteOwners.push((host as any)._ctx);
+          host.remove();
+          document.body.appendChild(host);
+        }
+      },
+    );
+
+    let renders = 0;
+    component(hostName, () => {
+      const generation = ++renders;
+      onMount(() => events.push(`mounted:${generation}`));
+      onDestroy(() => events.push(`destroyed:${generation}`));
+      const container = document.createElement('div');
+      container.textContent = `render:${generation}`;
+      container.appendChild(document.createElement(childName));
+      return container;
+    });
+
+    host = document.createElement(hostName);
+    document.body.appendChild(host);
+    await tick();
+
+    expect(renders).toBe(2);
+    expect(obsoleteOwners[0]?._isMounted).toBe(false);
+    expect(host.shadowRoot!.textContent).toBe('render:2');
+    expect(events).toEqual(['destroyed:1', 'mounted:2']);
+
+    host.remove();
+    await tick();
+    expect(events).toEqual(['destroyed:1', 'mounted:2', 'destroyed:2']);
+  });
+
+  it('preserves a replacement owner when shadow child removal reconnects the host', async () => {
+    const hostName = tag('cel-teardown-reconnect');
+    const childName = tag('cel-teardown-child');
+    const events: string[] = [];
+    const interruptedOwners: { _isDestroyed: boolean }[] = [];
+    let host!: HTMLElement;
+    let relocated = false;
+
+    customElements.define(
+      childName,
+      class extends HTMLElement {
+        disconnectedCallback() {
+          if (relocated || !host.isConnected) return;
+          relocated = true;
+          interruptedOwners.push((host as any)._ctx);
+          host.remove();
+          document.body.appendChild(host);
+        }
+      },
+    );
+
+    let renders = 0;
+    component(hostName, () => {
+      const generation = ++renders;
+      onMount(() => events.push(`mounted:${generation}`));
+      onDestroy(() => events.push(`destroyed:${generation}`));
+      const view = document.createElement('section');
+      view.append(`render:${generation}`, document.createElement(childName));
+      return view;
+    });
+
+    host = document.createElement(hostName);
+    document.body.appendChild(host);
+    await tick();
+    expect(host.shadowRoot!.textContent).toBe('render:1');
+
+    host.remove();
+    document.body.appendChild(host);
+    await tick();
+
+    expect(relocated).toBe(true);
+    expect(interruptedOwners[0]?._isDestroyed).toBe(true);
+    // The obsolete render is not invoked after its owner was replaced.
+    expect(renders).toBe(2);
+    expect(host.shadowRoot!.textContent).toBe('render:2');
+    expect(events).toEqual(['mounted:1', 'destroyed:1', 'mounted:2']);
+
+    host.remove();
+    await tick();
+    expect(events).toEqual(['mounted:1', 'destroyed:1', 'mounted:2', 'destroyed:2']);
+  });
+
   it('rejects an invalid (non-hyphenated / unsafe) component tag name', () => {
     expect(() => component('nohyphen', () => html`<i></i>`)).toThrow(/invalid custom element/i);
     expect(() => component('bad><script>', () => html`<i></i>`)).toThrow(/invalid custom element/i);
@@ -855,5 +1182,203 @@ describe('component as custom element — lifecycle', () => {
     expect(el.shadowRoot!.firstChild).toBe(ssrSpan);
     expect(el.shadowRoot!.querySelector('span')!.textContent).toBe('fresh');
     document.body.removeChild(el);
+  });
+});
+
+describe('Custom Element append failure rollback', () => {
+  it('releases its reactive owner and partial shadow roots after append throws', async () => {
+    const name = tag('cel-append-failure');
+    const count = state(0);
+    const changes = vi.fn();
+    const disposed = vi.fn();
+    const destroyed = vi.fn();
+    component(name, () => {
+      watch(() => {
+        count();
+        changes();
+      });
+      onDispose(disposed);
+      onDestroy(destroyed);
+      return html`<span>first</span><span>second</span>`;
+    });
+
+    const host = document.createElement(name) as HTMLElement & {
+      connectedCallback(): void;
+      disconnectedCallback(): void;
+      _ctx: unknown;
+    };
+    const shadow = host.shadowRoot!;
+    const append = shadow.appendChild.bind(shadow);
+    const fail = vi.spyOn(shadow, 'appendChild').mockImplementation((node) => {
+      append(node);
+      throw new Error('forced shadow append error');
+    });
+
+    expect(() => host.connectedCallback()).toThrow('forced shadow append error');
+    expect(shadow.childNodes).toHaveLength(0);
+    expect(host._ctx).toBeNull();
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect(destroyed).not.toHaveBeenCalled();
+
+    count(1);
+    await tick();
+    expect(changes).toHaveBeenCalledTimes(1);
+
+    fail.mockRestore();
+    host.connectedCallback();
+    await tick();
+    expect(shadow.textContent).toBe('firstsecond');
+    expect(changes).toHaveBeenCalledTimes(2);
+    host.disconnectedCallback();
+    expect(disposed).toHaveBeenCalledTimes(2);
+    expect(destroyed).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ShadowRoot rollback reentrancy and root ownership', () => {
+  it('renders a replacement owner when removing partial roots reenters connect', () => {
+    const name = tag('cel-rollback-reconnect');
+    let renders = 0;
+    component(name, () => {
+      const view = document.createDocumentFragment();
+      const span = document.createElement('span');
+      span.textContent = `render-${++renders}`;
+      view.append(span, document.createElement('small'));
+      return view;
+    });
+
+    const host = document.createElement(name) as HTMLElement & {
+      connectedCallback(): void;
+      disconnectedCallback(): void;
+      _ctx: unknown;
+    };
+    const shadow = host.shadowRoot!;
+    const append = shadow.appendChild.bind(shadow);
+    const remove = shadow.removeChild.bind(shadow);
+    const appendSpy = vi.spyOn(shadow, 'appendChild').mockImplementation((node) => {
+      const result = append(node);
+      if (renders === 1) throw new Error('reentrant append failure');
+      return result;
+    });
+    let reentered = false;
+    const removeSpy = vi.spyOn(shadow, 'removeChild').mockImplementation((node) => {
+      const result = remove(node);
+      if (!reentered) {
+        reentered = true;
+        host.connectedCallback();
+      }
+      return result;
+    });
+
+    expect(() => host.connectedCallback()).toThrow('reentrant append failure');
+    expect(reentered).toBe(true);
+    expect(renders).toBe(2);
+    expect(shadow.querySelector('span')?.textContent).toBe('render-2');
+    expect(host._ctx).not.toBeNull();
+
+    appendSpy.mockRestore();
+    removeSpy.mockRestore();
+    host.disconnectedCallback();
+  });
+
+  it('removes independently mounted child roots when a host insertion fails', () => {
+    const externalContainer = document.createElement('aside');
+    const ancestor = document.createElement('article');
+    const holder = document.createElement('div');
+    holder.appendChild(ancestor);
+    const name = tag('cel-rollback-external-mount');
+    const disposed = vi.fn();
+    component(name, () => {
+      mount(() => {
+        onDispose(disposed);
+        const button = document.createElement('button');
+        button.textContent = 'external child';
+        return button;
+      }, externalContainer);
+      return ancestor;
+    });
+    const host = document.createElement(name) as HTMLElement & { connectedCallback(): void };
+    ancestor.appendChild(host);
+
+    expect(() => host.connectedCallback()).toThrow();
+    expect(externalContainer.childNodes).toHaveLength(0);
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect(ancestor.parentNode).toBe(holder);
+    expect(ancestor.contains(host)).toBe(true);
+  });
+
+  it('tears down a separately connected custom element owned by a failing render', () => {
+    const externalContainer = document.createElement('aside');
+    document.body.appendChild(externalContainer);
+    const childName = tag('cel-independent-host');
+    const disposed = vi.fn();
+    component(childName, () => {
+      onDispose(disposed);
+      const span = document.createElement('span');
+      span.textContent = 'external child';
+      return span;
+    });
+    const independentHost = document.createElement(childName);
+    const ancestor = document.createElement('article');
+    const holder = document.createElement('div');
+    holder.appendChild(ancestor);
+    const parentName = tag('cel-failed-parent');
+    component(parentName, () => {
+      externalContainer.appendChild(independentHost);
+      return ancestor;
+    });
+    const host = document.createElement(parentName) as HTMLElement & { connectedCallback(): void };
+    ancestor.appendChild(host);
+
+    expect(() => host.connectedCallback()).toThrow();
+    expect(disposed).toHaveBeenCalledTimes(1);
+    expect(independentHost.shadowRoot?.childNodes).toHaveLength(0);
+    expect(ancestor.parentNode).toBe(holder);
+
+    externalContainer.remove();
+  });
+
+  it('does not detach an uninserted preparented root from nested factory owners', () => {
+    const ancestor = document.createElement('section');
+    const outer = document.createElement('div');
+    outer.appendChild(ancestor);
+    const name = tag('cel-rollback-nested');
+    const disposed = vi.fn();
+    const Inner = component(tag('nested-preparented'), () => {
+      onDispose(disposed);
+      return ancestor;
+    });
+    component(name, () => Inner({}));
+    const host = document.createElement(name) as HTMLElement & { connectedCallback(): void };
+    ancestor.appendChild(host);
+
+    expect(() => host.connectedCallback()).toThrow();
+    expect(ancestor.contains(host)).toBe(true);
+    expect(ancestor.parentNode).toBe(outer);
+    expect(outer.contains(host)).toBe(true);
+    expect(host.shadowRoot?.childNodes).toHaveLength(0);
+    expect(disposed).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('prototype-sensitive raw and consumer slots', () => {
+  it('does not treat inherited Object prototype functions as supplied raw slots', () => {
+    const render = component(tag('raw-prototype-slot'), () => {
+      return slot('toString')() ?? document.createTextNode('empty');
+    });
+    expect(render({}, {}).textContent).toBe('empty');
+  });
+
+  it('retains an own __proto__ slot name in the consumer bag', () => {
+    const render = component(tag('consumer-prototype-slot'), (_props, slots) => {
+      void (slots as Record<string, () => Node | null>)['__proto__'];
+      return document.createElement('div');
+    });
+    let hasReservedSlot = false;
+    render({}, (bag: Record<string, unknown>) => {
+      hasReservedSlot = Object.hasOwn(bag, '__proto__');
+      return null;
+    });
+    expect(hasReservedSlot).toBe(true);
   });
 });

@@ -22,6 +22,8 @@ export class ComponentContext implements Scope {
   declare errorHandlers?: ((err: unknown) => void)[] | null;
   declare disposers?: (() => void)[] | null;
   declare nodes?: any[] | null;
+  /** Root container owned by mount/hydrate, without a DOM dependency here. */
+  declare _rootContainer?: unknown;
   declare parent?: ComponentContext | null;
   declare children?: ComponentContext[] | null;
   declare _isMounted?: boolean;

@@ -9,7 +9,18 @@
 // ---------------------------------------------------------------------------
 
 import { generateSSR, parse } from '@purityjs/compiler';
-import { type SSRHelpers, ssrHelpers, type SSRHtml } from './runtime.ts';
+import {
+  escAttr,
+  escHtml,
+  isSSRHtml,
+  markSSRHtml,
+  ssrElement,
+  valueToAttr,
+  valueToHtml,
+  valueToRawText,
+  type SSRHelpers,
+  type SSRHtml,
+} from './runtime.ts';
 
 type SSRCompiledFn = (values: unknown[], helpers: SSRHelpers) => SSRHtml;
 
@@ -19,16 +30,17 @@ const cache = new WeakMap<TemplateStringsArray, SSRCompiledFn>();
 // so a downstream consumer that mutates `ssrHelpers.esc = (s) => s` (whether
 // by accident or as a deliberate XSS escalation) cannot strip escaping out
 // of templates compiled through this entry point. The bound references are
-// captured eagerly from the imported `ssrHelpers` object, then frozen.
-const FROZEN_HELPERS: SSRHelpers = Object.freeze({
-  esc: ssrHelpers.esc,
-  attr: ssrHelpers.attr,
-  toHtml: ssrHelpers.toHtml,
-  rawText: ssrHelpers.rawText,
-  toAttr: ssrHelpers.toAttr,
-  isHtml: ssrHelpers.isHtml,
-  mark: ssrHelpers.mark,
-  element: ssrHelpers.element,
+// captured from the runtime functions, then frozen. The snapshot can be
+// removed by bundlers when the JIT html tag is not used.
+const FROZEN_HELPERS: SSRHelpers = /* @__PURE__ */ Object.freeze({
+  esc: escHtml,
+  attr: escAttr,
+  toHtml: valueToHtml,
+  rawText: valueToRawText,
+  toAttr: valueToAttr,
+  isHtml: isSSRHtml,
+  mark: markSSRHtml,
+  element: ssrElement,
 });
 
 /**

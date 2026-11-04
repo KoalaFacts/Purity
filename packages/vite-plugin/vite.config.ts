@@ -25,6 +25,7 @@ export default defineConfig({
       external: [/^@purityjs\//, /^node:/, 'oxc-parser', /^@oxc-parser\//],
       output: {
         exports: 'named',
+        sourcemapExcludeSources: true,
       },
     },
     sourcemap: true,

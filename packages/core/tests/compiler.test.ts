@@ -281,6 +281,15 @@ describe('parser', () => {
     expect((ast.children[0] as any).value).toBe(' debug:  ');
   });
 
+  it('drops multiple comment expressions without shifting later live slots', () => {
+    const ast = parse(['<!-- first ', ' middle ', ' end --><p>', '</p>']);
+    expect(ast.children[0]).toEqual({ type: 'comment', value: ' first  middle  end ' });
+    const element = ast.children[1];
+    expect(element.type === 'element' && element.children).toEqual([
+      { type: 'expression', index: 2 },
+    ]);
+  });
+
   it('uppercase void tag `<BR>` is treated as void (case-insensitive)', () => {
     const ast = parse(['<BR>after']);
     const br = ast.children[0];

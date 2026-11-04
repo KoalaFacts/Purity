@@ -4,7 +4,8 @@ import { html } from '../src/compiler/compile.ts';
 import { isHydrating, withHydration } from '../src/runtime/hydrate-runtime.ts';
 import { mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
 import { hydrate } from '../src/hydrate.ts';
-import { each, inflateDeferredEach, list, when, type DeferredEach } from '../src/control.ts';
+import { each, list, when } from '../src/control.ts';
+import { inflateDeferredEach, type CapturedDeferredEach } from '../src/control/hydrate.ts';
 import { component } from '../src/elements.ts';
 import { ComponentContext, getCurrentContext, popContext, pushContext } from '@purityjs/signals';
 import { disposeScope, state, watch } from '@purityjs/signals';
@@ -438,7 +439,7 @@ describe('failed list row initialization', () => {
           },
           (item) => item,
         ),
-      ) as DeferredEach<number>;
+      ) as CapturedDeferredEach<number>;
       expect(() =>
         inflateDeferredEach(deferred, Array.from(host.childNodes).slice(0, -1), close),
       ).toThrow('hydrated row failed');

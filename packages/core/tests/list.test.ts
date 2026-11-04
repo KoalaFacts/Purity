@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { mount } from '../src/component.ts';
 import { each, list } from '../src/control.ts';
@@ -111,6 +111,36 @@ describe('list() correctness', () => {
     expect(btns[1].getAttribute('data-id')).toBe('1');
     btns[2].click();
     expect(clicks).toEqual([2]);
+  });
+
+  it('preserves initial absent attributes and replaces event handlers on updates', async () => {
+    const values = state([{ id: 1, enabled: false }]);
+    const clicks: boolean[] = [];
+    const container = document.createElement('div');
+    const remove = vi.spyOn(Element.prototype, 'removeAttribute');
+    try {
+      container.appendChild(
+        list('button', values, {
+          key: (item) => item.id,
+          attrs: { 'data-value': (item) => (item.enabled ? 'on' : undefined) as string },
+          events: { click: (item) => () => clicks.push(item.enabled) },
+        }),
+      );
+      const button = container.querySelector('button')!;
+      expect(remove).not.toHaveBeenCalledWith('data-value');
+      button.click();
+      values([{ id: 1, enabled: true }]);
+      await tick();
+      button.click();
+      expect(button.getAttribute('data-value')).toBe('on');
+      values([{ id: 1, enabled: false }]);
+      await tick();
+      button.click();
+      expect(button.hasAttribute('data-value')).toBe(false);
+      expect(clicks).toEqual([false, true, false]);
+    } finally {
+      remove.mockRestore();
+    }
   });
 
   it('updates accessors in place on key match', async () => {

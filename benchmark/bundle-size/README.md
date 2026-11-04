@@ -19,15 +19,21 @@ CI runs measurement after building the shipped packages. The browser job also
 runs the interaction checks. Both write a job summary and upload `report.json`
 and `report.md` as workflow artifacts, including on budget or browser failures.
 
+The `@purityjs/core/forms/lifecycle` entry has a separate CI budget check:
+`node benchmark/bundle-size/verify-form-lifecycle-budget.mjs`. It bundles all
+entry exports with their dependencies and caps gzip at 3,072 B and Brotli at
+2,688 B. The entry is also included in the package inventory, where other
+Purity packages are external.
+
 ## What is measured
 
-- **Package entries (budgeted):** `@purityjs/core`, all its feature subpaths,
-  and `@purityjs/ssr`. The `core-all` fixture combines the pre-split root API
-  under its original budget to prevent hiding growth across subpaths. Each is built as `export * from <entry>`, so every export
-  is kept, then minified from the built dist into one payload. Other Purity
-  packages and Node built-ins are external, so each figure is that package's
-  own code. The Vite plugin and CLI are build-time Node tools and are not
-  budgeted.
+- **Package entries (budgeted):** the published runtime entries of core,
+  signals, compiler, router, platform and SSR. Each is built as
+  `export * from <entry>`, keeping every export, then minified from the built
+  dist into one payload. Other Purity packages and Node built-ins are external.
+  The separate `runtime-all` measurement includes the runtime packages together;
+  its scope differs from the historical pre-split `core-all` fixture. The Vite
+  plugin and CLI are build-time Node tools and are not budgeted.
 - **Fixture apps (reported):** production ES2022, minified ESM JavaScript from
   built package exports. Controls/hydration AOT enforce size budgets and
   reject retained virtual-list spacer code.
@@ -43,7 +49,7 @@ The root and AOT runtime entries must contain no Function constructors.
 Both ESM and CommonJS exports must share working subscriptions across entries.
 Each package measurement also records a hash of its complete bundled payload.
 
-Report schema version 4 records the package entry sizes and, as before, the Git revision and dirty state, package
+Report schema version 7 records the package entry sizes and the Git revision and dirty state, package
 versions, Node and compression-library versions, normalized hashes for all
 fixture sources, built entry hashes, settings, per-chunk sizes, budgets, and
 optional browser verification with exact engine versions. A verified SSR
@@ -139,6 +145,45 @@ unused-code removal for this fixture, not a measured rendering-speed gain or
 a promise that applications using each/match remove those dependencies.
 
 ## Budget changes
+
+The 0.5.0 runtime refactor preserves the default form bridge and changes shared
+code retained by several entries. For the resulting production build, the
+core, list-runtime, jit-client and csr-runtime budgets were recalibrated from
+their measured gzip and Brotli sizes with at least 5% headroom, rounded up to
+256 bytes. These per-entry limits are separate from the installation target.
+
+The accepted 0.5.0 target compares the combined compressed core installation
+archives against published 0.4.0. The [core pack audit](./evidence/2026-11-02-core-pack-50/README.md)
+counts core and its required compiler and signals packages, verifies the
+actual archives and installed dependency closure, and checks the target:
+
+```bash
+node benchmark/bundle-size/verify-core-pack-budget.mjs
+```
+
+That audit requires the freshly packed archives, isolated installation and
+browser smoke report described in its reproduction instructions. It does not
+publish a release or establish complete behavior parity.
+
+The separate complete-API browser comparison can enforce a stricter 50% gzip
+threshold for that different metric:
+
+```bash
+node --experimental-strip-types benchmark/bundle-size/compare-public-api-040.ts --require-50
+```
+
+It exits nonzero when the current 28-export bundle exceeds half of the published
+baseline. Install the pinned baseline as described in the
+[release comparison evidence](./evidence/2026-10-31-release-040-comparison/README.md)
+before running it. This opt-in size gate is separate from the entry budgets and
+does not establish behavior parity; add `--verify` for its limited browser smoke
+check and run relevant feature tests separately.
+
+To verify that the local baseline files match the published 0.4.0 archive,
+run `node benchmark/bundle-size/verify-published-baseline.mjs`. This downloads
+the archive recorded in the baseline lockfile, verifies its integrity, and
+compares its file list and contents to the installed core package. It requires
+network access and `tar`; it does not verify dependencies or application behavior.
 
 Budgets are per published package entry: gzip and Brotli must stay within the
 limit, which allows roughly 5% growth over the measurement and is rounded up to

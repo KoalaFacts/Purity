@@ -1,16 +1,59 @@
-import { getCurrentContext, state, watch, type Scope, type StateAccessor } from '@purityjs/signals';
+// ---------------------------------------------------------------------------
+// Purity Virtualized List Rendering (`@purityjs/core/virtual`)
+//
+// Extracted from `each()` so standard list rendering pays 0 bytes for Fenwick
+// height-index trees, ResizeObserver row tracking, and spacer management.
+// ---------------------------------------------------------------------------
+
+import {
+  getCurrentContext,
+  type Scope,
+  state,
+  type StateAccessor,
+  watchEffectInternal,
+} from '@purityjs/signals';
+import {
+  type DeferredEach,
+  type EachEntry,
+  type EachHydrationAdapter,
+  disposeEntry,
+  eachRowOps,
+  type EachState,
+  reconcileEach,
+  registerEachAutoDispose,
+  replaceOwnedNodes,
+  trackEntry,
+} from './control.ts';
+import { warnDuplicateKey } from './control/keys.ts';
 import { captureHydratingEach, ENABLE_SSR, isHydratingPassive, type SSRHtml } from './hooks.ts';
 import { ssrControls } from './control/dispatch.ts';
 import { getSSRRenderContext } from './ssr/state.ts';
-import {
-  eachRowOps,
-  firstOccurrenceRows,
-  reconcileEach,
-  registerEachAutoDispose,
-  type EachEntry,
-  type EachState,
-  type DeferredEach,
-} from './control.ts';
+
+interface FirstOccurrenceRows<T> {
+  items: T[];
+  indices: number[];
+  keys: unknown[];
+}
+
+function firstOccurrenceRows<T>(
+  items: T[],
+  getKey: (item: T, index: number) => unknown,
+): FirstOccurrenceRows<T> {
+  const seen = new Set<unknown>();
+  const rows: FirstOccurrenceRows<T> = { items: [], indices: [], keys: [] };
+  for (let i = 0; i < items.length; i++) {
+    const key = getKey(items[i], i);
+    if (seen.has(key)) {
+      warnDuplicateKey(key, i, 'virtualEach()');
+      continue;
+    }
+    seen.add(key);
+    rows.items.push(items[i]);
+    rows.indices.push(i);
+    rows.keys.push(key);
+  }
+  return rows;
+}
 
 interface EachWindowRange {
   start: number;
@@ -30,15 +73,15 @@ type EachScrollViewport = HTMLElement | Window;
 
 /** Stores measured row heights and answers prefix/range queries in O(log n). */
 class EachWindowHeightIndex {
-  private keys: unknown[] = [];
-  private positions = new Map<unknown, number>();
-  private measured = new Map<unknown, number>();
-  private tree: number[] = [];
-  private estimatedHeight = EACH_WINDOW_ESTIMATED_ROW_HEIGHT;
-  private estimateLocked = false;
+  #keys: unknown[] = [];
+  #positions = new Map<unknown, number>();
+  #measured = new Map<unknown, number>();
+  #tree: number[] = [];
+  #estimatedHeight = EACH_WINDOW_ESTIMATED_ROW_HEIGHT;
+  #estimateLocked = false;
 
   get length(): number {
-    return this.keys.length;
+    return this.#keys.length;
   }
 
   rebuild(keys: unknown[]): void {
@@ -48,38 +91,38 @@ class EachWindowHeightIndex {
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
       positions.set(key, i);
-      const height = this.measured.get(key);
+      const height = this.#measured.get(key);
       if (height !== undefined) measured.set(key, height);
     }
 
-    this.keys = keys;
-    this.positions = positions;
-    this.measured = measured;
-    this.estimateLocked = measured.size >= Math.min(EACH_WINDOW_INITIAL_ROWS, keys.length);
-    this.rebuildTree();
+    this.#keys = keys;
+    this.#positions = positions;
+    this.#measured = measured;
+    this.#estimateLocked = measured.size >= Math.min(EACH_WINDOW_INITIAL_ROWS, keys.length);
+    this.#rebuildTree();
   }
 
-  private rebuildTree(): void {
+  #rebuildTree(): void {
     const tree = new Array<number>(this.length + 1).fill(0);
     for (let i = 0; i < this.length; i++) {
-      tree[i + 1] = this.measured.get(this.keys[i]) ?? this.estimatedHeight;
+      tree[i + 1] = this.#measured.get(this.#keys[i]) ?? this.#estimatedHeight;
     }
     for (let i = 1; i < tree.length; i++) {
       const parent = i + (i & -i);
       if (parent < tree.length) tree[parent] += tree[i];
     }
-    this.tree = tree;
+    this.#tree = tree;
   }
 
   indexOf(key: unknown): number | undefined {
-    return this.positions.get(key);
+    return this.#positions.get(key);
   }
 
   prefix(count: number): number {
     let index = Math.max(0, Math.min(this.length, count));
     let total = 0;
     while (index > 0) {
-      total += this.tree[index];
+      total += this.#tree[index];
       index -= index & -index;
     }
     return total;
@@ -89,7 +132,6 @@ class EachWindowHeightIndex {
     return this.prefix(this.length);
   }
 
-  /** Return the row whose start is at or immediately before the given offset. */
   indexAt(offset: number): number {
     if (offset <= 0) return 0;
     if (offset >= this.total()) return this.length;
@@ -100,45 +142,45 @@ class EachWindowHeightIndex {
     while (bit << 1 <= this.length) bit <<= 1;
     for (; bit > 0; bit >>= 1) {
       const next = index + bit;
-      if (next <= this.length && prefix + this.tree[next] <= offset) {
+      if (next <= this.length && prefix + this.#tree[next] <= offset) {
         index = next;
-        prefix += this.tree[next];
+        prefix += this.#tree[next];
       }
     }
     return index;
   }
 
   measure(key: unknown, value: number): boolean {
-    const index = this.positions.get(key);
+    const index = this.#positions.get(key);
     if (index === undefined || !Number.isFinite(value) || value <= 0) return false;
 
     const height = Math.max(1, value);
-    const wasMeasured = this.measured.has(key);
-    const previous = this.measured.get(key) ?? this.estimatedHeight;
+    const wasMeasured = this.#measured.has(key);
+    const previous = this.#measured.get(key) ?? this.#estimatedHeight;
     if (wasMeasured && Math.abs(height - previous) < 0.5) return false;
-    this.measured.set(key, height);
+    this.#measured.set(key, height);
 
     let node = index + 1;
     const delta = height - previous;
     if (Math.abs(delta) >= 0.5) {
-      while (node < this.tree.length) {
-        this.tree[node] += delta;
+      while (node < this.#tree.length) {
+        this.#tree[node] += delta;
         node += node & -node;
       }
     }
 
     let estimateChanged = false;
     if (
-      !this.estimateLocked &&
-      this.measured.size >= Math.min(EACH_WINDOW_INITIAL_ROWS, this.length)
+      !this.#estimateLocked &&
+      this.#measured.size >= Math.min(EACH_WINDOW_INITIAL_ROWS, this.length)
     ) {
       let total = 0;
-      for (const measuredHeight of this.measured.values()) total += measuredHeight;
-      const nextEstimate = total / this.measured.size;
-      estimateChanged = Math.abs(nextEstimate - this.estimatedHeight) >= 0.5;
-      this.estimatedHeight = nextEstimate;
-      this.estimateLocked = true;
-      if (estimateChanged) this.rebuildTree();
+      for (const measuredHeight of this.#measured.values()) total += measuredHeight;
+      const nextEstimate = total / this.#measured.size;
+      estimateChanged = Math.abs(nextEstimate - this.#estimatedHeight) >= 0.5;
+      this.#estimatedHeight = nextEstimate;
+      this.#estimateLocked = true;
+      if (estimateChanged) this.#rebuildTree();
     }
     return Math.abs(delta) >= 0.5 || estimateChanged;
   }
@@ -274,7 +316,7 @@ function measureEachWindowRows(
   parent: Element,
   view: Window,
 ): boolean {
-  const keys = eachState.prevKeys;
+  const keys = Array.from(eachState.keyToEntry.keys());
   const metrics = new Array<EachEntryMetrics | undefined>(keys.length);
   let changed = false;
   const computedParent = view.getComputedStyle(parent);
@@ -343,11 +385,13 @@ function registerEachWindow<T>(
     const expectedTop = createEachSpacer(doc, parent);
     if (expectedTop.localName !== spacers.top.localName) {
       spacers.top.replaceWith(expectedTop);
+      replaceOwnedNodes([spacers.top], [expectedTop]);
       spacers.top = expectedTop;
     }
     const expectedBottom = createEachSpacer(doc, parent);
     if (expectedBottom.localName !== spacers.bottom.localName) {
       spacers.bottom.replaceWith(expectedBottom);
+      replaceOwnedNodes([spacers.bottom], [expectedBottom]);
       spacers.bottom = expectedBottom;
     }
 
@@ -385,9 +429,7 @@ function registerEachWindow<T>(
     onUpdateReady(scheduleUpdate);
     syncObservedRows = () => {
       const nextRows = new Set<Element>();
-      for (let i = 0; i < eachState.prevKeys.length; i++) {
-        const entry = eachState.keyToEntry.get(eachState.prevKeys[i]);
-        if (!entry) continue;
+      for (const entry of eachState.keyToEntry.values()) {
         for (let j = 0; j < entry.nodes.length; j++) {
           const node = entry.nodes[j];
           if (node.nodeType === 1) nextRows.add(node as Element);
@@ -426,8 +468,6 @@ function registerEachWindow<T>(
       timeout = undefined;
     };
   };
-  // each() returns a fragment before its caller inserts it. Deferring setup
-  // one microtask lets ordinary template/mount insertion finish first.
   queueMicrotask(initialize);
 
   return () => {
@@ -489,7 +529,7 @@ function createEachWindowController<T>(
   let notifyRowsChanged = () => {};
   let requestEachWindowUpdate: (() => void) | undefined;
 
-  const disposeItems = watch(() => {
+  const disposeItems = watchEffectInternal(() => {
     const rows = firstOccurrenceRows(getList() || [], getKey);
     items = rows.items;
     indices = rows.indices;
@@ -500,7 +540,7 @@ function createEachWindowController<T>(
 
   let disposeRender: () => void;
   try {
-    disposeRender = watch(() => {
+    disposeRender = watchEffectInternal(() => {
       itemsVersion();
       const parent = spacers.bottom.parentNode;
       if (!parent) return;
@@ -518,8 +558,6 @@ function createEachWindowController<T>(
       notifyRowsChanged();
     });
   } catch (error) {
-    // The controller never returns a disposer if its initial rows fail.
-    // This source watch also needs cleanup when there is no component owner.
     disposeItems();
     throw error;
   }
@@ -546,19 +584,76 @@ function createEachWindowController<T>(
   };
 }
 
-function eachWindow<T>(
+function registerVirtualAutoDispose<T>(
+  ownerCtx: Scope | null,
+  dispose: () => void,
+  eachState: EachState<T>,
+  endMarker: Node,
+  spacers: EachWindowSpacers,
+): void {
+  registerEachAutoDispose(ownerCtx, dispose, eachState, endMarker, disposeEntry, () => {
+    spacers.top.remove();
+    spacers.bottom.remove();
+  });
+}
+
+const virtualHydrationAdapter: EachHydrationAdapter = {
+  track: trackEntry,
+  release: disposeEntry,
+  warnDuplicateKey(key, index) {
+    warnDuplicateKey(key, index, 'virtualEach()');
+  },
+  finish(ownerCtx, eachState, getList, mapFn, getKey, parent, endMarker) {
+    const doc = parent.ownerDocument ?? document;
+    const top = createEachSpacer(doc, parent);
+    const bottom = createEachSpacer(doc, parent);
+    const firstNode = eachState.keyToEntry.values().next().value?.nodes[0];
+    parent.insertBefore(top, firstNode?.parentNode === parent ? firstNode : endMarker);
+    parent.insertBefore(bottom, endMarker);
+    const spacers = { top, bottom };
+    const dispose = createEachWindowController(
+      ownerCtx,
+      eachState,
+      getList,
+      mapFn,
+      getKey,
+      spacers,
+    );
+    registerVirtualAutoDispose(ownerCtx, dispose, eachState, endMarker, spacers);
+  },
+};
+
+/**
+ * Virtualized list rendering for large scrollable lists.
+ * Automatically measures dynamic row heights via `ResizeObserver` and maintains
+ * O(log n) Fenwick-tree prefix offsets with top/bottom spacers.
+ */
+export function virtualEach<T>(
   listAccessor: (() => T[]) | T[],
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
-  keyFn: ((item: T, index: number) => unknown) | undefined,
-  ownerCtx: Scope | null,
-): DocumentFragment {
+  keyFn?: (item: T, index: number) => unknown,
+): DocumentFragment | DeferredEach<T> | SSRHtml {
+  if (isHydratingPassive() && captureHydratingEach) {
+    return captureHydratingEach(
+      listAccessor,
+      mapFn,
+      keyFn,
+      virtualHydrationAdapter,
+    ) as DeferredEach<T>;
+  }
+
+  if (ENABLE_SSR && getSSRRenderContext()) {
+    return ssrControls.each(listAccessor, mapFn, keyFn);
+  }
+
+  const ownerCtx = getCurrentContext();
   const fragment = document.createDocumentFragment();
   const topSpacer = createEachSpacer(document, fragment);
   const bottomSpacer = createEachSpacer(document, fragment);
   const endMarker = document.createComment('e');
   fragment.append(topSpacer, bottomSpacer, endMarker);
 
-  const eachState: EachState<T> = { keyToEntry: new Map(), prevKeys: [] };
+  const eachState: EachState<T> = { keyToEntry: new Map() };
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
   const spacers: EachWindowSpacers = { top: topSpacer, bottom: bottomSpacer };
   const dispose = createEachWindowController(
@@ -569,54 +664,6 @@ function eachWindow<T>(
     getKey,
     spacers,
   );
-  registerEachAutoDispose(ownerCtx, dispose, eachState);
+  registerVirtualAutoDispose(ownerCtx, dispose, eachState, endMarker, spacers);
   return fragment;
-}
-
-function hydrateEachWindow<T>(
-  ownerCtx: Scope | null,
-  eachState: EachState<T>,
-  listAccessor: (() => T[]) | T[],
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
-  getKey: (item: T, index: number) => unknown,
-  parent: Node,
-  endMarker: Node,
-): void {
-  const doc = parent.ownerDocument ?? document;
-  const top = createEachSpacer(doc, parent);
-  const bottom = createEachSpacer(doc, parent);
-  const firstNode =
-    eachState.prevKeys.length > 0
-      ? eachState.keyToEntry.get(eachState.prevKeys[0])?.nodes[0]
-      : undefined;
-  parent.insertBefore(top, firstNode?.parentNode === parent ? firstNode : endMarker);
-  parent.insertBefore(bottom, endMarker);
-  const spacers = { top, bottom };
-  const dispose = createEachWindowController(
-    ownerCtx,
-    eachState,
-    listAccessor,
-    mapFn,
-    getKey,
-    spacers,
-  );
-  registerEachAutoDispose(ownerCtx, dispose, eachState);
-}
-
-/** Render a measured, windowed list inside a scrollable container. */
-export function virtualEach<T>(
-  listAccessor: (() => T[]) | T[],
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
-  keyFn?: (item: T, index: number) => unknown,
-): DocumentFragment | DeferredEach<T> | SSRHtml {
-  if (isHydratingPassive())
-    return captureHydratingEach!(
-      listAccessor,
-      mapFn,
-      keyFn,
-      { virtual: true },
-      hydrateEachWindow,
-    ) as DeferredEach<T>;
-  if (ENABLE_SSR && getSSRRenderContext()) return ssrControls.each(listAccessor, mapFn, keyFn);
-  return eachWindow(listAccessor, mapFn, keyFn, getCurrentContext());
 }

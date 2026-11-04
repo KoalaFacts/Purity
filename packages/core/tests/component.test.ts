@@ -1,12 +1,65 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
-import { mount, onDestroy, onDispose, onError, onMount } from '../src/component.ts';
+import { component } from '../src/elements.ts';
+import {
+  bindComponentState,
+  mount,
+  onDestroy,
+  onDispose,
+  onError,
+  onMount,
+  unmountContext,
+} from '../src/component.ts';
 import { hydrate } from '../src/hydrate.ts';
 import { resource } from '../src/resource.ts';
-import { state, watch } from '@purityjs/signals';
+import { ComponentContext, popContext, pushContext, state, watch } from '@purityjs/signals';
 import { primeHydrationCache } from '../src/ssr-context.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
+
+describe('bindComponentState', () => {
+  it('releases inactive custom state counts without affecting another active source', async () => {
+    const added: string[] = [];
+    const removed: string[] = [];
+    const ctx = new ComponentContext();
+    ctx._internals = {
+      states: {
+        add: (name: string) => added.push(name),
+        delete: (name: string) => removed.push(name),
+      },
+    };
+    const first = state(true);
+    const second = state(true);
+
+    pushContext(ctx);
+    try {
+      bindComponentState('active', first);
+      bindComponentState('active', second);
+    } finally {
+      popContext();
+    }
+
+    expect(added).toEqual(['active']);
+    expect(ctx._stateRefs?.get('active')).toBe(2);
+
+    first(false);
+    await tick();
+    expect(removed).toEqual([]);
+    expect(ctx._stateRefs?.get('active')).toBe(1);
+
+    second(false);
+    await tick();
+    expect(removed).toEqual(['active']);
+    expect(ctx._stateRefs?.has('active')).toBe(false);
+
+    first(true);
+    await tick();
+    expect(added).toEqual(['active', 'active']);
+    unmountContext(ctx);
+    expect(removed).toEqual(['active', 'active']);
+    expect(ctx._stateRefs?.has('active')).toBe(false);
+  });
+});
 
 describe('mount', () => {
   it('disposes effects created through the core signal API when the root unmounts', async () => {
@@ -38,6 +91,131 @@ describe('mount', () => {
 
     unmount();
     expect(container.querySelector('p')).toBeNull();
+  });
+
+  it('removes root DOM inserted after reentrant teardown inside appendChild', () => {
+    const parent = new ComponentContext();
+    const container = document.createElement('div');
+    const node = document.createElement('span');
+    let destroyCount = 0;
+    const nativeAppend = container.appendChild.bind(container);
+    const append = vi.spyOn(container, 'appendChild').mockImplementation((child) => {
+      unmountContext(parent);
+      return nativeAppend(child);
+    });
+    pushContext(parent);
+    try {
+      const mounted = mount(() => {
+        onDestroy(() => destroyCount++);
+        return node;
+      }, container);
+      expect(destroyCount).toBe(1);
+      expect(container.childNodes).toHaveLength(0);
+      mounted.unmount();
+      expect(destroyCount).toBe(1);
+    } finally {
+      popContext();
+      append.mockRestore();
+    }
+  });
+
+  it('rolls back subscriptions and partially inserted roots if appendChild throws', async () => {
+    const container = document.createElement('div');
+    const node = document.createElement('span');
+    const signal = state(0);
+    const observed: number[] = [];
+    const hooks: string[] = [];
+    const failure = new Error('append failed');
+    const nativeAppend = container.appendChild.bind(container);
+    const append = vi.spyOn(container, 'appendChild').mockImplementation((child) => {
+      nativeAppend(child);
+      throw failure;
+    });
+
+    try {
+      expect(() =>
+        mount(() => {
+          watch(() => observed.push(signal()));
+          onDispose(() => hooks.push('dispose'));
+          onDestroy(() => hooks.push('destroy'));
+          return node;
+        }, container),
+      ).toThrow(failure);
+    } finally {
+      append.mockRestore();
+    }
+
+    expect(container.childNodes).toHaveLength(0);
+    expect(hooks).toEqual(['dispose']);
+    signal(1);
+    await tick();
+    expect(observed).toEqual([0]);
+  });
+
+  it('preserves an existing ancestor when native append rejects a hierarchy cycle', () => {
+    const outer = document.createElement('div');
+    const ancestor = document.createElement('section');
+    const container = document.createElement('div');
+    outer.appendChild(ancestor);
+    ancestor.appendChild(container);
+    const dispose = vi.fn();
+
+    expect(() =>
+      mount(() => {
+        onDispose(dispose);
+        return ancestor;
+      }, container),
+    ).toThrow();
+
+    expect(outer.firstChild).toBe(ancestor);
+    expect(ancestor.firstChild).toBe(container);
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps uninserted fragment children when append partially moves content then throws', () => {
+    const container = document.createElement('div');
+    const fragment = document.createDocumentFragment();
+    const inserted = document.createElement('span');
+    const remaining = document.createElement('strong');
+    fragment.append(inserted, remaining);
+    const failure = new Error('partial append');
+    const nativeAppend = container.appendChild.bind(container);
+    const append = vi.spyOn(container, 'appendChild').mockImplementation(() => {
+      nativeAppend(inserted);
+      throw failure;
+    });
+
+    try {
+      expect(() => mount(() => fragment, container)).toThrow(failure);
+    } finally {
+      append.mockRestore();
+    }
+
+    expect(container.childNodes).toHaveLength(0);
+    expect(fragment.firstChild).toBe(remaining);
+    expect(remaining.parentNode).toBe(fragment);
+  });
+
+  it('does not insert a root after its parent destroys the owner during render', () => {
+    const parent = new ComponentContext();
+    const container = document.createElement('div');
+    const node = document.createElement('span');
+    let destroyCount = 0;
+    pushContext(parent);
+    let mounted: ReturnType<typeof mount>;
+    try {
+      mounted = mount(() => {
+        onDestroy(() => destroyCount++);
+        unmountContext(parent);
+        return node;
+      }, container);
+    } finally {
+      popContext();
+    }
+    expect(destroyCount).toBe(1);
+    expect(container.childNodes).toHaveLength(0);
+    mounted.unmount();
+    expect(destroyCount).toBe(1);
   });
 });
 
@@ -521,5 +699,82 @@ describe('hydrate — multi-root per-boundary cache scoping (audit HIGH componen
     expect(hostB.textContent).toBe('B-primed');
     expect(fetchesA).toBe(0);
     expect(fetchesB).toBe(0);
+  });
+});
+
+describe('reentrant owner teardown', () => {
+  it('tears down every child once when a destroy hook disposes a sibling', () => {
+    const parent = new ComponentContext();
+    const first = new ComponentContext();
+    const second = new ComponentContext();
+    const last = new ComponentContext();
+    const calls: string[] = [];
+    parent.children = [first, second, last];
+    for (const child of parent.children) child.parent = parent;
+    first.destroyed = [() => calls.push('first')];
+    second.destroyed = [() => calls.push('second')];
+    last.destroyed = [
+      () => {
+        calls.push('last');
+        unmountContext(second);
+      },
+    ];
+
+    expect(() => unmountContext(parent)).not.toThrow();
+    expect(calls).toEqual(['last', 'second', 'first']);
+    expect(parent.children).toBeNull();
+    for (const child of [first, second, last]) expect(child._isDestroyed).toBe(true);
+  });
+
+  it('finishes descendant teardown before parent hooks under reentrant unmount', () => {
+    const parent = new ComponentContext();
+    const first = new ComponentContext();
+    const last = new ComponentContext();
+    const calls: string[] = [];
+    parent.children = [first, last];
+    first.parent = parent;
+    last.parent = parent;
+    first.destroyed = [() => calls.push('first')];
+    last.destroyed = [
+      () => {
+        calls.push('last');
+        unmountContext(parent);
+      },
+    ];
+    parent.destroyed = [() => calls.push('parent')];
+
+    unmountContext(parent);
+    expect(calls).toEqual(['last', 'first', 'parent']);
+    expect(parent._isDestroyed).toBe(true);
+    expect(parent.children).toBeNull();
+    expect(first._isDestroyed).toBe(true);
+    expect(last._isDestroyed).toBe(true);
+  });
+});
+
+describe('consumer callback rollback', () => {
+  it('disposes a first-render owner when the consumer throws', () => {
+    const parent = new ComponentContext();
+    let disposed = 0;
+    let destroyed = 0;
+    const render = component('p-sv2-split-consumer-failure', () => {
+      onDispose(() => disposed++);
+      onDestroy(() => destroyed++);
+      return document.createElement('div');
+    });
+
+    pushContext(parent);
+    try {
+      expect(() =>
+        render({}, () => {
+          throw new Error('consumer failed');
+        }),
+      ).toThrow('consumer failed');
+      expect(disposed).toBe(1);
+      expect(destroyed).toBe(0);
+      expect(parent.children).toEqual([]);
+    } finally {
+      popContext();
+    }
   });
 });

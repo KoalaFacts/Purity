@@ -35,7 +35,7 @@ purity({ include: ['.ts', '.js', '.tsx', '.jsx'] });
 - Auto-injects `renderCompiledTemplate` from `@purityjs/core/runtime` in client builds
 - Uses the precompiled hydration walker against SSR nodes; hydration does not invoke the runtime parser or code generator
 
-- Redirects proven ordinary named `each` imports to `@purityjs/core/list-runtime`; dynamic options and virtual lists retain the public implementation.
+- Leaves ordinary `each` imports unchanged; virtual lists use `@purityjs/core/virtual`.
 
 ## Client-first default (breaking)
 

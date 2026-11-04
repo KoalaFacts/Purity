@@ -1,6 +1,8 @@
 # 0053: Compile proven ordinary list calls to a smaller runtime
 
-**Status:** Proposed
+**Status:** Superseded: virtual lists now use `@purityjs/core/virtual`, and
+ordinary `each` already excludes virtual windowing. The import rewrite was
+removed because both entries resolve to the same implementation.
 **Date:** 2026-10-13
 
 ## Context

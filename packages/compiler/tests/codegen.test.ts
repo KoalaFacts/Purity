@@ -32,6 +32,32 @@ describe('extracted compiler', () => {
     expect(wrapper.innerHTML).toBe('<p>A1B2</p><p>3</p>');
   });
 
+  it('uses the current value-array entry for shared group bindings', () => {
+    const render = compile(
+      generate(
+        parse([
+          '<div><input type="checkbox" value="a" ::group=',
+          '><input type="radio" value="b" ::group=',
+          '></div>',
+        ]),
+      ),
+    );
+    const old = vi.fn(() => []);
+    const replacement = vi.fn(() => []);
+    const radio = vi.fn(() => '');
+    const values = [old, radio];
+    const element = render(values, immediate) as HTMLElement;
+    const [checkbox, radioButton] = element.querySelectorAll('input');
+    values[0] = replacement;
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change'));
+    expect(replacement).toHaveBeenCalledWith(['a']);
+    expect(old).toHaveBeenCalledTimes(1);
+    radioButton.checked = true;
+    radioButton.dispatchEvent(new Event('change'));
+    expect(radio).toHaveBeenCalledWith('b');
+  });
+
   it('rejects unsafe dynamic URLs while coercing the value only once', () => {
     const render = compile(generate(parse(['<a href=', '><span>link</span></a>'])));
     const value = {

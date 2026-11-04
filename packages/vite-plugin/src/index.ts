@@ -27,7 +27,6 @@ import {
   generateRouteManifestTypes,
 } from './routes.ts';
 import { stripServerActionBodies } from './server-action-strip.ts';
-import { specializeOrdinaryLists, supportsOrdinaryListRuntime } from './ordinary-lists.ts';
 import {
   applyEdits,
   buildLineStarts,
@@ -263,7 +262,6 @@ export function purity(options?: PurityPluginOptions) {
   let devtoolsBase = '/';
   let serverBuild = false;
   let productionBuild = false;
-  let ordinaryListRuntime = true;
 
   const routesOpts = normaliseRoutesOption(options?.routes);
   // Resolved at configResolved time once Vite tells us the project root.
@@ -320,7 +318,6 @@ export function purity(options?: PurityPluginOptions) {
     ) {
       serverBuild = !!config.build?.ssr;
       productionBuild = config.command === 'build';
-      ordinaryListRuntime = supportsOrdinaryListRuntime(config.resolve?.alias ?? []);
       if (stripServerModules && !serverBuild && config.build) {
         const limit = config.build.assetsInlineLimit;
         config.build.assetsInlineLimit = (file, content) => {
@@ -492,13 +489,7 @@ export function purity(options?: PurityPluginOptions) {
       // `@purityjs/core` and `serverAction`). Returns null when nothing to
       // do, in which case we fall through to the html`` template pass.
       let workingCode = code;
-      const ordinaryLists =
-        transformOpts?.ssr === true || !ordinaryListRuntime
-          ? null
-          : specializeOrdinaryLists(workingCode, id);
-      if (ordinaryLists !== null) workingCode = ordinaryLists;
-      const specializedLists = ordinaryLists !== null;
-      let rewritten = specializedLists;
+      let rewritten = false;
       if (stripServerActions && transformOpts?.ssr !== true) {
         const stripped = stripServerActionBodies(workingCode, id);
         if (stripped !== null) {
@@ -552,7 +543,7 @@ export function purity(options?: PurityPluginOptions) {
         if (rewritten) return { code: workingCode, map: emptyV3Map(id, code) };
         return null;
       }
-      return { code: result.code, map: specializedLists ? emptyV3Map(id, code) : result.map };
+      return { code: result.code, map: result.map };
     },
   };
 }
@@ -1005,13 +996,80 @@ const CLIENT_HELPERS = [
   ['sw', 'swapSlot'],
   ['url', 'safeUrl'],
   ['tmpl', 'template'],
+  ['hslot', ''],
 ] as const;
 
 type ClientHelper = (typeof CLIENT_HELPERS)[number][0];
 
+const SSR_HELPERS = [
+  ['esc', 'escHtml'],
+  ['attr', 'escAttr'],
+  ['toHtml', 'valueToHtml'],
+  ['rawText', 'valueToRawText'],
+  ['toAttr', 'valueToAttr'],
+  ['isHtml', 'isSSRHtml'],
+  ['mark', 'markSSRHtml'],
+  ['element', 'ssrElement'],
+] as const;
+
+type SSRHelper = (typeof SSR_HELPERS)[number][0];
+
+// Only known, direct helper accesses can be narrowed. A future code generator
+// may use a computed property or pass the helper object elsewhere; retaining
+// the complete object in those cases preserves its runtime behavior.
+function ssrFactoryDependencies(body: string): SSRHelper[] | null {
+  const { program, errors } = parseSync('purity-ssr-factory.js', `(${body})`, {
+    preserveParens: false,
+  });
+  if (errors.length) return null;
+  const helpers = new Set<SSRHelper>();
+  let unknown = false;
+  const visit = (
+    value: unknown,
+    parameter = false,
+    parentType?: string,
+    parentKey?: string,
+  ): void => {
+    if (Array.isArray(value)) {
+      for (const child of value) visit(child, parameter, parentType, parentKey);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    const node = value as { type?: string; name?: string; [key: string]: unknown };
+    const object = node.object as { type?: string; name?: string } | undefined;
+    const property = node.property as { type?: string; name?: string } | undefined;
+    if (node.type === 'MemberExpression' && object?.type === 'Identifier' && object.name === '_h') {
+      const helper = SSR_HELPERS.find(([name]) => name === property?.name)?.[0];
+      if (
+        node.computed ||
+        node.optional ||
+        property?.type !== 'Identifier' ||
+        !helper ||
+        parentType !== 'CallExpression' ||
+        parentKey !== 'callee'
+      )
+        unknown = true;
+      else helpers.add(helper);
+      return;
+    }
+    if (node.type === 'Identifier' && node.name === '_h' && !parameter) unknown = true;
+    const isFunction =
+      node.type === 'FunctionExpression' ||
+      node.type === 'FunctionDeclaration' ||
+      node.type === 'ArrowFunctionExpression';
+    for (const [key, child] of Object.entries(node)) {
+      if (child && typeof child === 'object')
+        visit(child, isFunction && key === 'params', node.type, key);
+    }
+  };
+  visit(program);
+  return unknown ? null : [...helpers];
+}
+
 interface FactoryDependencies {
   watch: boolean;
   helpers: ClientHelper[];
+  hydrationSlots: number;
 }
 
 // Inspect generated JavaScript identifiers, not raw text: template contents
@@ -1020,9 +1078,11 @@ function factoryDependencies(body: string): FactoryDependencies {
   const { program, errors } = parseSync('purity-factory.js', `(${body})`, {
     preserveParens: false,
   });
-  if (errors.length) return { watch: true, helpers: CLIENT_HELPERS.map(([name]) => name) };
+  if (errors.length)
+    return { watch: true, helpers: CLIENT_HELPERS.map(([name]) => name), hydrationSlots: 0 };
 
   let watch = false;
+  let hydrationSlots = 0;
   const helpers = new Set<ClientHelper>();
   const visit = (value: unknown, parameter = false): void => {
     if (Array.isArray(value)) {
@@ -1032,6 +1092,7 @@ function factoryDependencies(body: string): FactoryDependencies {
     if (!value || typeof value !== 'object') return;
     const node = value as { type?: string; name?: string; [key: string]: unknown };
     if (node.type === 'Identifier') {
+      if (node.name === '__purity_hslot__') hydrationSlots++;
       if (node.name === '_w' && !parameter) watch = true;
       for (const [name] of CLIENT_HELPERS) {
         if (node.name === `__purity_${name}__`) helpers.add(name);
@@ -1046,11 +1107,13 @@ function factoryDependencies(body: string): FactoryDependencies {
     }
   };
   visit(program);
-  return { watch, helpers: [...helpers] };
+  return { watch, helpers: [...helpers], hydrationSlots };
 }
 
 interface CompileContext {
   hoists: string[];
+  hydrationSlots: number;
+  hydrationAlternatives: Array<{ index: number; fallback: () => string }>;
   nextTplId: number;
   // Prefix of every identifier injected into the module. `__purity` unless the
   // source already mentions `__purity_`, in which case a numbered prefix that
@@ -1065,6 +1128,8 @@ interface CompileContext {
   // A CSR template needs watch only when its generated factory references it.
   needsWatch: boolean;
   helpers: Set<ClientHelper>;
+  ssrHelpers: Set<SSRHelper>;
+  ssrHelperFallback: boolean;
   // Flipped on any compile failure (top-level OR nested). When true, we
   // must NOT strip the `html` import — the failed template stays in the
   // output and references it at runtime.
@@ -1188,10 +1253,14 @@ function renderTemplate(
   const { quasis, expressions } = node.quasi;
   let fnBody: string;
   let hydrateBody: string | null = null;
+  let hydrateFallback: (() => string) | null = null;
   try {
     const ast = parse(quasis.map((q) => q.value.raw));
     fnBody = (ctx.ssr ? generateSSR : generateLinked)(ast);
-    if (!ctx.ssr && ctx.hydratable) hydrateBody = generateHydrateLinked(ast);
+    if (!ctx.ssr && ctx.hydratable) {
+      hydrateBody = generateHydrateLinked(ast, { sharedSlots: true });
+      hydrateFallback = () => generateHydrateLinked(ast);
+    }
   } catch (err) {
     // Security failures must not fall back to an uncompiled template.
     if (isFatalTemplateError(err) && !ctx.strictAot) throw err;
@@ -1208,6 +1277,11 @@ function renderTemplate(
   // document.createElement('template') / innerHTML parse) only runs once per
   // file, not per call from inside a loop or arrow fn.
   ctx.compiled++;
+  if (ctx.ssr) {
+    const ssrDependencies = ssrFactoryDependencies(fnBody);
+    if (ssrDependencies) for (const name of ssrDependencies) ctx.ssrHelpers.add(name);
+    else ctx.ssrHelperFallback = true;
+  }
   const dependencies = ctx.ssr ? null : factoryDependencies(fnBody);
   const needsWatch = !ctx.ssr && !ctx.hydratable && dependencies!.watch;
   ctx.needsWatch ||= needsWatch;
@@ -1226,16 +1300,34 @@ function renderTemplate(
     return `((${helpers.map((name) => `__purity_${name}__`).join(', ')}) => (${body}))(${helpers.map((name) => `${p}_${name}__`).join(', ')})`;
   };
   ctx.hoists.push(`const ${tplVar} = ${bind(fnBody, dependencies)};`);
-  if (hydrateBody !== null)
-    ctx.hoists.push(
-      `const ${tplVar}_hydrate = ${bind(hydrateBody, factoryDependencies(hydrateBody))};`,
-    );
+  if (hydrateBody !== null) {
+    const hydrationDependencies = factoryDependencies(hydrateBody);
+    ctx.hydrationSlots += hydrationDependencies.hydrationSlots;
+    const index = ctx.hoists.length;
+    ctx.hoists.push(`const ${tplVar}_hydrate = ${bind(hydrateBody, hydrationDependencies)};`);
+    ctx.hydrationAlternatives.push({
+      index,
+      fallback: () => {
+        const body = hydrateFallback!();
+        return `const ${tplVar}_hydrate = ${bind(body, factoryDependencies(body))};`;
+      },
+    });
+  }
 
-  // Slot i lies between quasis[i] (which ends after `${`) and quasis[i+1]
-  // (which starts at `}`).
+  // OXC includes `${` and `}` in TypeScript quasi spans but excludes them in
+  // JavaScript spans. Preserve the original expression text, including its
+  // parentheses and comments, while removing only the template delimiters.
   const slots: string[] = [];
   for (let i = 0; i < expressions.length; i++) {
-    slots.push(renderSpan(source, quasis[i]!.end, quasis[i + 1]!.start, nodes, ctx));
+    let start = quasis[i]!.end;
+    let end = quasis[i + 1]!.start;
+    if (source.startsWith('${', start)) {
+      start += 2;
+      end--;
+    }
+    // Each interpolation is one array element even when it is a sequence
+    // expression such as `${a, b}`.
+    slots.push(`(${renderSpan(source, start, end, nodes, ctx)})`);
   }
   return ctx.ssr
     ? `${tplVar}([${slots.join(', ')}], ${p}_h__)`
@@ -1311,6 +1403,8 @@ function compileTemplates(
   for (let n = 0; decoded.includes(`${prefix}_`); n++) prefix = `__purity${n}`;
   const ctx: CompileContext = {
     hoists: [],
+    hydrationSlots: 0,
+    hydrationAlternatives: [],
     nextTplId: 0,
     prefix,
     failed: false,
@@ -1323,6 +1417,8 @@ function compileTemplates(
     compiled: 0,
     needsWatch: false,
     helpers: new Set(),
+    ssrHelpers: new Set(),
+    ssrHelperFallback: false,
   };
   const edits: Edit[] = [];
   let lastEnd = -1;
@@ -1337,24 +1433,68 @@ function compileTemplates(
     return { changed: false, code: source, map: null, warnings };
   }
 
-  // Runtime import + hoists are inserted at module top, after existing imports.
-  // Modeled as a zero-length insertion edit so the source-map builder can
-  // track it alongside the html`` replacements.
-  const helperImports = CLIENT_HELPERS.filter(([name]) => ctx.helpers.has(name))
+  if (ctx.hydrationSlots < 2) {
+    for (const alternative of ctx.hydrationAlternatives)
+      ctx.hoists[alternative.index] = alternative.fallback();
+  } else {
+    ctx.helpers.add('sw');
+    // Nested hydration can reenter this helper. Write the result only after
+    // callbacks return; generated callers copy and clear it immediately.
+    ctx.hoists.unshift(`var ${prefix}_hscratch__=[];
+function ${prefix}_hhold__(a,w){return a.length>1?a:a[0]||w.parentNode.insertBefore(document.createTextNode(''),w);}
+function ${prefix}_hslot__(o,v,j,i,c,e,m){
+c&&c(o,'open');var a=[],d=1,w=o.nextSibling;
+while(w){if(w.nodeType===8){if(w.data==='[')d++;else if(w.data===']'&&--d===0)break;}a.push(w);w=w.nextSibling;}
+var x=v[j],f=typeof x==='function',t;
+if(f)t=${prefix}_hhold__(a,w);
+else if(x!=null&&typeof x==='object'){
+if(x.__purity_deferred__===true){var df=document.createDocumentFragment();df.append.apply(df,a);i(x,df);w.before(df);}
+else if(x.__purity_deferred_each__===true)e(x,a,w);
+else if(x.__purity_deferred_match__===true)m(x,a,w);
+else if(typeof x.__purity_ssr_html__==='string'){}
+else ${prefix}_sw__(${prefix}_hhold__(a,w),x,i);
+}
+${prefix}_hscratch__[0]=w;${prefix}_hscratch__[1]=x;${prefix}_hscratch__[2]=f;${prefix}_hscratch__[3]=t;return ${prefix}_hscratch__;
+}`);
+  }
+
+  // Preserve the order of user imports, including imports after statements.
+  // Hoists must nevertheless precede executable statements that use them.
+  const helperImports = CLIENT_HELPERS.filter(([name]) => name !== 'hslot' && ctx.helpers.has(name))
     .map(([name, exported]) => `${exported} as ${prefix}_${name}__`)
     .join(', ');
   const helperImport = helperImports
     ? `import { ${helperImports} } from '@purityjs/core/csr-runtime';\n`
     : '';
+  const ssrImports = SSR_HELPERS.filter(([name]) => ctx.ssrHelpers.has(name));
+  const ssrRuntimeImport = ctx.ssrHelperFallback
+    ? `import { ssrHelpers as ${prefix}_h__ } from '@purityjs/ssr/runtime';\n`
+    : `import { ${ssrImports.map(([name, exported]) => `${exported} as ${prefix}_ssr_${name}__`).join(', ')} } from '@purityjs/ssr/runtime';\n`;
+  const ssrRuntimeInit =
+    ssr && !ctx.ssrHelperFallback
+      ? `const ${prefix}_h__ = { ${ssrImports.map(([name]) => `${name}: ${prefix}_ssr_${name}__`).join(', ')} };\n`
+      : '';
   const runtimeImport = ssr
-    ? `import { ssrHelpers as ${prefix}_h__ } from '@purityjs/ssr/runtime';\nimport '@purityjs/ssr';\n`
+    ? `${ssrRuntimeImport}import '@purityjs/ssr';\n`
     : hydratable
-      ? `import { renderCompiledTemplate as ${prefix}_renderCompiled__ } from '@purityjs/core/runtime';\n${helperImport}`
-      : `${ctx.needsWatch ? `import { watch as ${prefix}_watch__ } from '@purityjs/core/csr';\n` : ''}${helperImport}`;
+      ? `import { renderCompiledTemplateAot as ${prefix}_renderCompiled__ } from '@purityjs/core/runtime';\n${helperImport}`
+      : `${ctx.needsWatch ? `import { watchEffectInternal as ${prefix}_watch__ } from '@purityjs/core/csr-runtime';\n` : ''}${helperImport}`;
   /* v8 ignore next -- edits.length > 0 implies at least one hoist was pushed */
   const hoistsBlock = ctx.hoists.length > 0 ? `${ctx.hoists.join('\n')}\n` : '';
-  const insertPos = findImportInsertionOffset(source, program);
-  edits.push({ start: insertPos, end: insertPos, out: '\n' + runtimeImport + hoistsBlock });
+  const hoistPos = findHoistInsertionOffset(source, program);
+  const importPos = program.body.some((node) => node.type === 'ImportDeclaration')
+    ? findImportInsertionOffset(source, program)
+    : hoistPos;
+  if (importPos === hoistPos) {
+    edits.push({
+      start: importPos,
+      end: importPos,
+      out: '\n' + runtimeImport + ssrRuntimeInit + hoistsBlock,
+    });
+  } else {
+    edits.push({ start: importPos, end: importPos, out: '\n' + runtimeImport });
+    edits.push({ start: hoistPos, end: hoistPos, out: '\n' + ssrRuntimeInit + hoistsBlock });
+  }
 
   // Removing `html` from `@purityjs/core/jit` import statements — but ONLY when
   // every template compiled. If any failed, the failed `html\`\`` is left in
@@ -1457,6 +1597,28 @@ function findImportInsertionOffset(code: string, program: Program): number {
   if (!hasImport) return end;
   // Keep a same-line import comment before the insertion. Leading comments
   // on the next statement (including PURE annotations) must stay with it.
+  let tail = end;
+  while (tail < code.length && /[^\S\r\n\u2028\u2029]/.test(code[tail]!)) tail++;
+  return code.startsWith('//', tail) ? lineCommentEnd(code, tail + 2) : end;
+}
+
+function findHoistInsertionOffset(code: string, program: Program): number {
+  let end = program.hashbang?.end ?? 0;
+  let inDirectives = true;
+  let hasBoundary = false;
+  for (const node of program.body) {
+    if (inDirectives && node.type === 'ExpressionStatement' && typeof node.directive === 'string') {
+      end = node.end;
+      hasBoundary = true;
+      continue;
+    }
+    inDirectives = false;
+    if (node.type !== 'ImportDeclaration') break;
+    end = node.end;
+    hasBoundary = true;
+  }
+  if (!hasBoundary) return end;
+  // Preserve a same-line comment on the preceding directive or import.
   let tail = end;
   while (tail < code.length && /[^\S\r\n\u2028\u2029]/.test(code[tail]!)) tail++;
   return code.startsWith('//', tail) ? lineCommentEnd(code, tail + 2) : end;

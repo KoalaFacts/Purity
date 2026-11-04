@@ -1,10 +1,26 @@
 import { component, css } from '@purityjs/core';
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { html, renderToString } from '../src/index.ts';
 import { ensureSSRComponentRendererInstalled } from '../src/component.ts';
-import { ssrElement } from '../src/runtime.ts';
+import { setSSRComponentRenderer, ssrElement } from '../src/runtime.ts';
 
 describe('server component rendering', () => {
+  it('rejects unsafe tag names before invoking the element renderer', () => {
+    const renderer = vi.fn(() => null);
+    setSSRComponentRenderer(renderer);
+    try {
+      expect(() => ssrElement('x-card><script>alert(1)</script><x-card', {}, '')).toThrow(
+        /Invalid tag name/,
+      );
+      expect(renderer).not.toHaveBeenCalled();
+    } finally {
+      setSSRComponentRenderer(null);
+    }
+    expect(ssrElement('unknown-card', { title: 'safe' }, '')).toBe(
+      '<unknown-card title="safe"></unknown-card>',
+    );
+  });
+
   it('retains safe host attributes and rejects injected attribute names', () => {
     component('test-ssr-safe-attrs', () => html`<span>x</span>` as unknown as Node);
     ensureSSRComponentRendererInstalled();

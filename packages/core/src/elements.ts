@@ -5,13 +5,19 @@ import {
   getCurrentContext,
   popContext,
   pushContext,
-  watch,
+  watchEffectInternal,
 } from '@purityjs/signals';
-import { scheduleMountCallbacks, unmountContext } from './component.ts';
+import {
+  bindComponentState,
+  removeInsertedRoots,
+  scheduleMountCallbacks,
+  unmountContext,
+} from './component.ts';
 import {
   dsdHydrator,
   ENABLE_SSR,
   formElementSetup,
+  setResourceStateBinder,
   type PurityElementHost,
   type SSRHtml,
 } from './hooks.ts';
@@ -21,7 +27,15 @@ function unmountElementContext(
   rollback = ctx.parent?._rollback,
   keepHostDOM = false,
 ): void {
-  unmountContext(ctx, rollback, keepHostDOM, true);
+  try {
+    unmountContext(ctx, rollback, keepHostDOM, true);
+  } finally {
+    // A retired custom-element owner must not retain its host via the shadow root.
+    if (ctx._shadowRoot) {
+      ctx._shadowRoot = undefined;
+      ctx._internals = null;
+    }
+  }
 }
 
 /**
@@ -33,22 +47,21 @@ export type SlotAccessor<E = void> = E extends void
 
 interface SlotRegistry {
   filled: Map<string, unknown>;
-  accessorNames: Set<string>;
+  accessors: Map<string, SlotAccessor<any>>;
 }
 
 function createRegistry(): SlotRegistry {
-  return { filled: new Map(), accessorNames: new Set() };
+  return { filled: new Map(), accessors: new Map() };
 }
 
 function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<any>> {
-  const cache = new Map<string, SlotAccessor<any>>();
+  const cache = registry.accessors;
   return new Proxy({} as Record<string, SlotAccessor<any>>, {
     get(_target, prop: string) {
       /* v8 ignore next */
       if (typeof prop !== 'string') return undefined;
       let accessor = cache.get(prop);
       if (!accessor) {
-        registry.accessorNames.add(prop);
         accessor = ((_exposed?: unknown): Node | null => {
           return resolveContent(registry.filled.get(prop));
         }) as SlotAccessor<any>;
@@ -62,8 +75,8 @@ function createAccessors(registry: SlotRegistry): Record<string, SlotAccessor<an
 type ConsumerSlot = (content?: Node | DocumentFragment | string | null) => Node | null;
 
 function createConsumerBag(registry: SlotRegistry): Record<string, ConsumerSlot> {
-  const bag: Record<string, ConsumerSlot> = {};
-  const names = new Set([...registry.accessorNames, 'default']);
+  const bag: Record<string, ConsumerSlot> = Object.create(null);
+  const names = new Set([...registry.accessors.keys(), 'default']);
   for (const name of names) {
     bag[name] = (content?: Node | DocumentFragment | string | null): Node | null => {
       registry.filled.set(name, content ?? null);
@@ -105,6 +118,7 @@ export function slot<E = void>(name?: string): SlotAccessor<E> {
 
   const children = ctx._slotContent;
   return ((_exposed?: unknown): Node | null => {
+    if (children instanceof Map) return resolveContent(children.get(slotName));
     return resolveFromRaw(children, slotName, _exposed);
   }) as SlotAccessor<E>;
 }
@@ -119,7 +133,9 @@ export function internals(): ElementInternals | null {
 function resolveFromRaw(children: unknown, name: string, exposed: unknown): Node | null {
   const s =
     children != null && typeof children === 'object' && !(children instanceof Node)
-      ? (children as Record<string, unknown>)[name]
+      ? Object.hasOwn(children, name)
+        ? (children as Record<string, unknown>)[name]
+        : null
       : name === 'default'
         ? children
         : null;
@@ -145,7 +161,7 @@ export interface ComponentOptions {
   delegatesFocus?: boolean;
   /** Automatically bridge one native shadow control (requires `@purityjs/core/forms`). */
   formControl?: true | string;
-  /** Opt the custom element into form participation (requires `@purityjs/core/forms`). */
+  /** Opt into form participation (enable lifecycle or full form support first). */
   formAssociated?: boolean;
 }
 
@@ -221,9 +237,11 @@ export function component<
     !formElementSetup
   ) {
     throw new Error(
-      '[Purity] Form-associated components require enableFormControls() from @purityjs/core/forms before registration.',
+      '[Purity] Form-associated components require enableFormLifecycle() or enableFormControls() before registration.',
     );
   }
+
+  setResourceStateBinder(bindComponentState);
 
   if (ENABLE_SSR) {
     componentRegistry.set(tagName, {
@@ -239,15 +257,16 @@ export function component<
     class PurityElement extends HTMLElement implements PurityElementHost {
       _ctx: ComponentContext | null = null;
       _props: Record<string, unknown> = {};
-      _hasRendered = false;
-      _hadDeclarativeShadowRoot = false;
+      #hasRendered = false;
+      #hadDeclarativeShadowRoot = false;
       _shadow: ShadowRoot;
       _internals: ElementInternals | null = null;
       declare _formBridge?: { connect(): void; disconnect(): void } | null;
+      declare _movingLightChildren?: boolean;
 
       constructor() {
         super();
-        this._hadDeclarativeShadowRoot = this.shadowRoot !== null;
+        this.#hadDeclarativeShadowRoot = this.shadowRoot !== null;
         this._shadow =
           this.shadowRoot ??
           this.attachShadow({
@@ -264,31 +283,33 @@ export function component<
       }
 
       connectedCallback() {
-        if (this._isSSRRoot()) return;
-        this._renderConnected();
+        // Moving light children into a slot fragment may synchronously
+        // disconnect and reconnect this host. Keep one owner per render.
+        if (this._movingLightChildren || this._isSSRRoot()) return;
+        this.#renderConnected();
       }
 
       _isSSRRoot(): boolean {
         return (
-          !this._hasRendered && (this._hadDeclarativeShadowRoot || this._shadow.firstChild !== null)
+          !this.#hasRendered && (this.#hadDeclarativeShadowRoot || this._shadow.firstChild !== null)
         );
       }
 
       _hydrateSSR(): void {
         if (!dsdHydrator || !this._isSSRRoot() || !this.isConnected) return;
         try {
-          this._renderConnected();
+          this.#renderConnected();
           dsdHydrator.hydrateNestedElements(this._shadow);
         } catch (err) {
           if (this._ctx) unmountElementContext(this._ctx, true, true);
           this._ctx = null;
-          this._hasRendered = false;
+          this.#hasRendered = false;
           this._formBridge?.disconnect();
           throw err;
         }
       }
 
-      _renderConnected(): void {
+      #renderConnected(): void {
         const hasDSDContent = this._isSSRRoot();
         const props: Record<string, unknown> = Object.create(null);
         for (const attr of this.attributes) {
@@ -318,8 +339,18 @@ export function component<
 
         if (this.childNodes.length > 0) {
           const frag = document.createDocumentFragment();
-          while (this.firstChild) {
-            frag.appendChild(this.firstChild);
+          this._movingLightChildren = true;
+          try {
+            while (this.firstChild) {
+              frag.appendChild(this.firstChild);
+            }
+          } finally {
+            this._movingLightChildren = false;
+          }
+          // A moved child's callback may detach this host without reconnecting.
+          if (!this.isConnected) {
+            this.appendChild(frag);
+            return;
           }
           registry.filled.set('default', frag);
         }
@@ -340,11 +371,48 @@ export function component<
             runRender(render, allProps, slotAccessors, ctx),
           );
         } else {
-          while (this._shadow.firstChild) this._shadow.removeChild(this._shadow.firstChild);
+          while (this._shadow.firstChild) {
+            this._shadow.removeChild(this._shadow.firstChild);
+            // A child's disconnectedCallback can replace this owner.
+            if (ctx._isDestroyed || this._ctx !== ctx) return;
+          }
           result = runRender(render, allProps, slotAccessors, ctx).result;
         }
 
-        if (result !== null) this._shadow.appendChild(result);
+        // Consumer code or child reactions can synchronously replace this owner.
+        if (ctx._isDestroyed || this._ctx !== ctx) return;
+        this.#hasRendered = true;
+        // Snapshot fragment children before appendChild drains the fragment.
+        // A throwing custom-element callback may leave only some roots inserted.
+        const insertedNodes =
+          result instanceof DocumentFragment
+            ? Array.from(result.childNodes)
+            : result === null
+              ? null
+              : [result];
+        try {
+          if (result !== null) this._shadow.appendChild(result);
+        } catch (error) {
+          // Failed mounts must release their effects without running onDestroy
+          // or detaching nodes that still belong to another parent.
+          ctx.destroyed = null;
+          try {
+            unmountElementContext(ctx, true, true);
+          } catch (cleanupError) {
+            console.error('[Purity] Failed to roll back component:', cleanupError);
+          } finally {
+            if (this._ctx === ctx) {
+              this._ctx = null;
+              this._formBridge?.disconnect();
+            }
+            // Keep #hasRendered true until the partial roots are removed.
+            // A reentrant reconnect during removal must not mistake them for DSD.
+            removeInsertedRoots(insertedNodes, this._shadow);
+            if (this._ctx === null) this.#hasRendered = false;
+          }
+          throw error;
+        }
+        if (ctx._isDestroyed || this._ctx !== ctx) return;
         this._formBridge?.connect();
 
         if (result === null || result instanceof DocumentFragment) {
@@ -354,7 +422,6 @@ export function component<
         }
 
         ctx._isMounted = true;
-        this._hasRendered = true;
 
         scheduleMountCallbacks(ctx);
       }
@@ -364,7 +431,10 @@ export function component<
 
       disconnectedCallback() {
         this._formBridge?.disconnect();
-        if (this._ctx) unmountElementContext(this._ctx, false, true);
+        // onDestroy may reconnect the host; detach the obsolete owner first.
+        const ctx = this._ctx;
+        this._ctx = null;
+        if (ctx) unmountElementContext(ctx, false, true);
       }
     }
 
@@ -379,11 +449,11 @@ export function component<
     const ctx = new ComponentContext();
     attachToOwner(ctx, unmountElementContext);
 
-    ctx._slotContent = children;
     const registry = createRegistry();
     const slotAccessors = createAccessors(registry);
 
     if (children != null && typeof children !== 'function') {
+      ctx._slotContent = children;
       if (children instanceof Node || typeof children === 'string') {
         registry.filled.set('default', children);
       } else if (typeof children === 'object') {
@@ -394,9 +464,19 @@ export function component<
     }
 
     if (typeof children === 'function') {
+      ctx._slotContent = registry.filled;
       const { exposed } = runRender(renderFn, props, slotAccessors, ctx);
       const bag = { ...createConsumerBag(registry), ...exposed };
-      const consumerResult = children(bag);
+      let consumerResult: unknown;
+      try {
+        consumerResult = children(bag);
+      } catch (error) {
+        // The first render may already own effects and nested component scopes.
+        // Do not retain that owner when its consumer fails.
+        ctx.destroyed = null;
+        unmountElementContext(ctx, true);
+        throw error;
+      }
       if (consumerResult instanceof Node || typeof consumerResult === 'string') {
         registry.filled.set('default', consumerResult);
       }
@@ -443,14 +523,22 @@ export function teleport(
       );
       return;
     }
-    dispose = watch(() => {
+    dispose = watchEffectInternal(() => {
       clearNodes();
       const content = viewFn();
-      if (content == null) return;
+      // A view may synchronously unmount the owner. Do not reinsert DOM
+      // after its cleanup has already run.
+      if (disposed || content == null) return;
       currentNodes =
         content instanceof DocumentFragment ? Array.from(content.childNodes) : [content];
       container.appendChild(content);
     });
+    // A synchronous first effect can unmount before the disposer is assigned.
+    if (disposed) {
+      dispose();
+      dispose = null;
+      clearNodes();
+    }
   });
 
   const ctx = getCurrentContext();

@@ -4,6 +4,10 @@
 
 ### Added
 
+- Split the framework into `@purityjs/signals`, `@purityjs/compiler`,
+  `@purityjs/core`, `@purityjs/router`, `@purityjs/platform`, `@purityjs/ssr`,
+  `@purityjs/vite-plugin`, and `@purityjs/cli`. See the
+  [entry-point guide](docs/core-entry-points.md) before upgrading.
 - Add opt-in `purity({ strictAot: true })` builds. Template transformation
   failures report source locations instead of falling back to JIT, and client
   output checks reject retained Purity runtime compilation. SSR keeps its
@@ -23,9 +27,22 @@
 - Update development/deployment transitives to fast-uri 3.1.9, Undici 7.30.1,
   and Zod 4.6.6. Scope the Zod override to Vercel and verify the installed
   builder and schema consumers; see the [tooling scope and remaining v3 use](docs/security.md#development-and-deployment-dependencies).
+- Update the development glob and minimatch overrides to address the
+  filesystem traversal and glob amplification advisories. Verify the Vercel
+  Edge builder and isolated streaming responses with the updated dependencies.
 
 ### Changed
 
+- Upgrade Purity packages together to 0.5.0 and rebuild client and server
+  output. Router and platform features use their own package imports, and
+  templates use the core JIT entry when runtime compilation is needed.
+- Replace the `each(..., { virtual: true })` option with `virtualEach()` from
+  `@purityjs/core/virtual`. The former `@purityjs/core/internal` entry is no
+  longer exported; see the [upgrade mapping](docs/core-entry-points.md#upgrading-from-040).
+- Reduce the local 0.5.0 core installation archives, including signals and
+  compiler, to 330,625 bytes compressed versus 947,461 bytes for the published
+  0.4.0 core archive (65.1% less). This measures npm archives, not browser
+  bundle size. See the [measurement](benchmark/bundle-size/evidence/2026-11-02-core-pack-50/README.md).
 - Share the programmatic component factory's final render/mount path while
   preserving callback-slot discovery and lifecycle order. Remove redundant
   ownership lookups and cleanup wrappers, keeping the original bundle limits;
@@ -33,7 +50,7 @@
 - Use Apache-2.0 for Purity from 0.5.0. Preserve the original MIT copyright and
   permission notice for earlier source; published releases through 0.4.0 remain
   MIT. Third-party components retain their own licenses.
-- Include the full license and applicable retained notices in each of the four
+- Include the full license and applicable retained notices in each of the eight
   npm tarballs, with package-level checks in CI and the manual publish preflight.
   See [licensing scope](docs/licensing.md).
 

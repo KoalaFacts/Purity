@@ -21,6 +21,7 @@ import { getCurrentContext } from '@purityjs/signals';
 import {
   type LiveReconnectPolicy,
   type LiveValidator,
+  snapshotLiveUrl,
   makeLiveMessageHandler,
   redactUrl,
   wireLiveReconnect,
@@ -51,6 +52,25 @@ export interface WebSocketSignalOptions<T> {
   reconnect?: LiveReconnectPolicy;
 }
 
+const WS_EVENTS = ['open', 'close', 'error', 'message'] as const;
+// RFC 7230 tchar; reuse the stateless matcher across connections.
+const WS_PROTOCOL_TOKEN_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+// Inert transports can share these methods; active transports need neither
+// the methods nor a per-connection factory closure.
+const INERT_SEND = (): void => {};
+const INERT_READY_STATE = (): WebSocketReadyState => 'closed';
+
+function inertWebSocket<T>(options: WebSocketSignalOptions<T>): WebSocketSignal<T> {
+  // Keep only the initial snapshot, not a mutable options object (and its
+  // potentially large validator/parse closures), for an inert connection.
+  const initialValue = options.initialValue;
+  const inert = compute(() => initialValue) as WebSocketSignal<T>;
+  inert.send = INERT_SEND;
+  inert.readyState = INERT_READY_STATE;
+  return inert;
+}
+
 /**
  * Reactive WebSocket feed (ADR 0047).
  *
@@ -73,21 +93,10 @@ export function webSocketSignal<T>(
   url: string | URL,
   options: WebSocketSignalOptions<T>,
 ): WebSocketSignal<T> {
-  const makeInert = (): WebSocketSignal<T> => {
-    const inert = compute(() => options.initialValue) as WebSocketSignal<T>;
-    inert.send = () => {};
-    inert.readyState = () => 'closed' as const;
-    return inert;
-  };
   if (isSSR() || typeof WebSocket === 'undefined') {
-    return makeInert();
+    return inertWebSocket(options);
   }
 
-  const inner = state(options.initialValue);
-  const stateAccessor = state<WebSocketReadyState>('closed');
-  const parse = options.parse ?? ((raw: MessageEvent['data']) => JSON.parse(raw as string));
-  const reconnect = options.reconnect ?? 'on-visible';
-  const validate = options.validate;
   // Use the redacted label for ALL diagnostic console.warn paths so
   // `?access_token=…` and `user:pw@` don't leak into log sinks.
   const label = redactUrl(url);
@@ -99,25 +108,12 @@ export function webSocketSignal<T>(
   // attacker-controlled URLs like `javascript:…` / `data:…` / a leaked
   // `http:` token from a misconfigured backend into an inert accessor
   // before any side effects fire.
-  let schemeOk = true;
-  try {
-    if (typeof url !== 'string') {
-      schemeOk = url.protocol === 'ws:' || url.protocol === 'wss:';
-    } else if (/^[a-z][a-z0-9+.-]*:/i.test(url)) {
-      // Absolute URL — extract scheme. Relative URLs (no scheme) are
-      // resolved against the current page's origin by the platform, so
-      // skip the scheme check for them.
-      const scheme = url.slice(0, url.indexOf(':')).toLowerCase();
-      schemeOk = scheme === 'ws' || scheme === 'wss';
-    }
-  } catch {
-    schemeOk = false;
-  }
-  if (!schemeOk) {
+  const safeUrl = snapshotLiveUrl(url, 'ws:', 'wss:');
+  if (safeUrl === null) {
     console.warn(
       `[purity] webSocketSignal('${label}') rejected — only ws:// and wss:// URLs are permitted`,
     );
-    return makeInert();
+    return inertWebSocket(options);
   }
 
   // Subprotocol validation: per RFC 6455 §4.1, each subprotocol must be
@@ -126,20 +122,46 @@ export function webSocketSignal<T>(
   // through the Sec-WebSocket-Protocol echo or trip the browser into a
   // DOMException at construction. Reject pre-construction to a sourced,
   // redacted warn and an inert accessor.
-  if (options.protocols !== undefined) {
-    const list = typeof options.protocols === 'string' ? [options.protocols] : options.protocols;
-    // RFC 7230 token: 1*tchar where tchar = !#$%&'*+-.^_`|~ / DIGIT / ALPHA.
-    const tokenRe = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
-    const bad = !Array.isArray(list) || list.some((p) => typeof p !== 'string' || !tokenRe.test(p));
+  // Snapshot untrusted option getters and arrays once. A second read after
+  // validation could otherwise pass an unvalidated Sec-WebSocket-Protocol
+  // value to the browser constructor or to a later reconnect.
+  let protocols: string | string[] | undefined;
+  try {
+    const supplied = options.protocols;
+    protocols = Array.isArray(supplied) ? Array.from(supplied) : supplied;
+  } catch {
+    // Getter/iterator exceptions may contain credentials. Never log them.
+    console.warn(
+      `[purity] webSocketSignal('${label}') rejected — invalid subprotocol (must be RFC 6455 tokens)`,
+    );
+    return inertWebSocket(options);
+  }
+  if (protocols !== undefined) {
+    const list = typeof protocols === 'string' ? [protocols] : protocols;
+    // findIndex visits sparse holes; duplicate tokens are also invalid per RFC 6455.
+    const bad =
+      !Array.isArray(list) ||
+      list.findIndex(
+        (p, i) => typeof p !== 'string' || !WS_PROTOCOL_TOKEN_RE.test(p) || list.indexOf(p) !== i,
+      ) !== -1;
     if (bad) {
       console.warn(
         `[purity] webSocketSignal('${label}') rejected — invalid subprotocol (must be RFC 6455 tokens)`,
       );
-      return makeInert();
+      return inertWebSocket(options);
     }
   }
 
+  // Rejected connections only need the inert snapshot: allocate reactive
+  // nodes and message handlers after both sets of validation have passed.
+  const inner = state(options.initialValue);
+  const stateAccessor = state<WebSocketReadyState>('closed');
+  const parse = options.parse ?? (JSON.parse as (raw: MessageEvent['data']) => unknown);
+  const reconnect = options.reconnect ?? 'on-visible';
+  const validate = options.validate;
+
   let ws: WebSocket | null = null;
+  let disposed = false;
   const onOpen = (): void => {
     stateAccessor('open');
   };
@@ -153,25 +175,34 @@ export function webSocketSignal<T>(
     validate,
     inner,
   );
-  const listeners: Array<[string, EventListener]> = [
-    ['open', onOpen],
-    ['close', onClose],
-    ['error', onClose],
-    ['message', onMessage as EventListener],
-  ];
+  // Event names are shared across sockets; only the listener functions are per instance.
+  const listeners: EventListener[] = [onOpen, onClose, onClose, onMessage as EventListener];
 
   const open = (): void => {
-    if (ws) return;
+    if (disposed || ws) return;
     stateAccessor('connecting');
     try {
-      ws = new WebSocket(url, options.protocols);
-    } catch (err) {
-      console.warn(`[purity] webSocketSignal('${label}') failed to open:`, err);
+      ws = new WebSocket(safeUrl, protocols);
+    } catch {
+      // Native exception messages may include the credential-bearing URL.
+      console.warn(`[purity] webSocketSignal('${label}') failed to open`);
       stateAccessor('closed');
       ws = null;
       return;
     }
-    for (const [ev, fn] of listeners) ws.addEventListener(ev, fn);
+    // Construction may synchronously dispose the owner before assigning ws.
+    if (disposed) {
+      close();
+      return;
+    }
+    try {
+      for (let i = 0; i < listeners.length; i++) ws.addEventListener(WS_EVENTS[i], listeners[i]);
+    } catch {
+      // Listener adapters may echo credential-bearing URLs in thrown errors.
+      // Close the partially opened socket without reporting raw exceptions.
+      close();
+      console.warn(`[purity] webSocketSignal('${label}') failed to add listener`);
+    }
   };
   const close = (): void => {
     if (!ws) return;
@@ -181,11 +212,22 @@ export function webSocketSignal<T>(
     // Detach our four listeners BEFORE close() so a late 'message' arriving
     // after the socket's async close path can't ride back into the shared
     // inner state on the next reconnect cycle. Matches eventSourceSignal.
-    for (const [ev, fn] of listeners) closing.removeEventListener(ev, fn);
+    let detachFailed = false;
+    for (let i = 0; i < listeners.length; i++) {
+      try {
+        closing.removeEventListener(WS_EVENTS[i], listeners[i]);
+      } catch {
+        // Continue detaching other handlers and close the transport.
+        detachFailed = true;
+      }
+    }
+    if (detachFailed) {
+      console.warn(`[purity] webSocketSignal('${label}') listener detach failed`);
+    }
     try {
       closing.close();
-    } catch (err) {
-      console.warn(`[purity] webSocketSignal('${label}') close failed:`, err);
+    } catch {
+      console.warn(`[purity] webSocketSignal('${label}') close failed`);
     }
     // Settle a manual close after subscribers observe 'closing'. A
     // bfcache restore closes and opens in the same turn, so this task
@@ -195,15 +237,19 @@ export function webSocketSignal<T>(
     });
   };
 
-  wireLiveReconnect(reconnect, open, close);
-
   // Auto-close on the surrounding component's unmount. Without this,
   // every webSocketSignal() call inside a component opened a long-lived
   // socket that survived unmount (wireLiveReconnect's watches handle
   // lifecycle changes but don't close the socket on owner unmount).
   // Module-scope callers keep "lifetime = page" semantics.
   const ctx = getCurrentContext();
-  if (ctx) (ctx.disposers ??= []).push(close);
+  if (ctx)
+    (ctx.disposers ??= []).push(() => {
+      disposed = true;
+      close();
+    });
+
+  wireLiveReconnect(reconnect, open, close);
 
   const accessor = compute(() => inner()) as WebSocketSignal<T>;
   accessor.send = (data: string | Blob | BufferSource): void => {
@@ -213,8 +259,9 @@ export function webSocketSignal<T>(
     }
     try {
       ws.send(data);
-    } catch (err) {
-      console.warn(`[purity] webSocketSignal('${label}').send() failed:`, err);
+    } catch {
+      // Never forward exception details: adapters may echo sent payloads.
+      console.warn(`[purity] webSocketSignal('${label}').send() failed`);
     }
   };
   accessor.readyState = () => stateAccessor();

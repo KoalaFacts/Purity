@@ -1,6 +1,6 @@
 // Client-only, no-build JIT: keep the hydration code generator outside apps
 // that only mount fresh DOM. SSR/hydration apps must use ./jit instead.
-import { watch } from '@purityjs/signals';
+import { watchEffectInternal, type watch } from '@purityjs/signals';
 import { generateLinked, parse } from '@purityjs/compiler';
 import { type CompiledCreateFactory, isHydrating } from '../runtime/hydrate-runtime.ts';
 import { flattenValue, safeUrl, swapSlot, template } from '../runtime/csr-runtime.ts';
@@ -30,5 +30,6 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Node 
     )(flattenValue, swapSlot, template, safeUrl) as CompiledCreateFactory;
     compiledCache.set(strings, factory);
   }
-  return factory(values, watch);
+  // Generated JIT bindings only call the single-effect overload.
+  return factory(values, watchEffectInternal as typeof watch);
 }

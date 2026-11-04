@@ -13,10 +13,10 @@
 // fresher data. data() is preserved across refetches (SWR by default).
 // ---------------------------------------------------------------------------
 
-import { bindComponentState, onDispose } from './component.ts';
-import { batch, state, untracked, watch } from '@purityjs/signals';
+import { onDispose } from './component.ts';
+import { batch, state, untracked, watchEffectInternal } from '@purityjs/signals';
 import { getSSRRenderContext } from './ssr/state.ts';
-import { ENABLE_SSR } from './hooks.ts';
+import { ENABLE_SSR, resourceStateBinder } from './hooks.ts';
 import { consumeHydrationValue } from './ssr/hydration-cache.ts';
 import { ssrResources } from './resource/dispatch.ts';
 import { normalizeRetry, withRetry } from './resource/retry.ts';
@@ -216,7 +216,7 @@ export function resource<T, K>(
   // unchanged source keys must retain both in-flight work and pending polls.
   // Register before the eager fetch, which can synchronously stop its owner.
   onDispose(stopResource);
-  const dispose = watch(() => {
+  const dispose = watchEffectInternal(() => {
     if (disposed) return;
     refreshTick();
     if (skipFirstFetch) {
@@ -384,8 +384,8 @@ export function resource<T, K>(
   // when `ElementInternals.states` is unavailable. Multiple resources
   // compose via bindComponentState()'s ref-counting — the host is
   // `:state(loading)` if *any* resource is loading.
-  bindComponentState('loading', loading.get);
-  bindComponentState('error', () => error.get() !== undefined);
+  resourceStateBinder?.('loading', loading.get);
+  resourceStateBinder?.('error', () => error.get() !== undefined);
 
   return accessor;
 }

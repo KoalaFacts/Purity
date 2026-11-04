@@ -155,6 +155,72 @@ describe('form lifecycle callbacks for non-form-associated components', () => {
   });
 });
 
+describe('form lifecycle owner reentrancy', () => {
+  it('does not run stale reset handlers after a callback reconnects its host', () => {
+    const tag = nextTag();
+    const events: string[] = [];
+    let host!: HTMLElement;
+    let generation = 0;
+    component(
+      tag,
+      () => {
+        const current = ++generation;
+        onFormReset(() => {
+          events.push(`first:${current}`);
+          if (current === 1) {
+            host.remove();
+            document.body.append(host);
+          }
+        });
+        onFormReset(() => events.push(`second:${current}`));
+        return html`<div></div>`;
+      },
+      { formAssociated: true },
+    );
+    host = document.createElement(tag);
+    document.body.append(host);
+    const reset = () =>
+      (host as HTMLElement & { formResetCallback: () => void }).formResetCallback();
+    reset();
+    expect(generation).toBe(2);
+    expect(events).toEqual(['first:1']);
+    reset();
+    expect(events).toEqual(['first:1', 'first:2', 'second:2']);
+    host.remove();
+  });
+
+  it('does not send an old owner error to a reconnected owner', () => {
+    const tag = nextTag();
+    const handled: number[] = [];
+    let host!: HTMLElement;
+    let generation = 0;
+    component(
+      tag,
+      () => {
+        const current = ++generation;
+        onError(() => handled.push(current));
+        onFormReset(() => {
+          if (current === 1) {
+            host.remove();
+            document.body.append(host);
+            throw new Error('old owner failure');
+          }
+        });
+        return html`<div></div>`;
+      },
+      { formAssociated: true },
+    );
+    host = document.createElement(tag);
+    document.body.append(host);
+    expect(() =>
+      (host as HTMLElement & { formResetCallback: () => void }).formResetCallback(),
+    ).toThrow('old owner failure');
+    expect(generation).toBe(2);
+    expect(handled).not.toContain(2);
+    host.remove();
+  });
+});
+
 describe('error bubbling in form callbacks', () => {
   it('routes errors thrown inside onFormReset to the component onError handler', () => {
     const tag = nextTag();

@@ -20,11 +20,12 @@ does not relicense dependencies or remove their notices.
 dependency. The plugin build does not bundle the parser or its native bindings.
 Its MIT attribution to VoidZero Inc. & Contributors and Boshen is retained in the
 plugin's NOTICE and [LICENSES/oxc-parser-MIT.txt](../LICENSES/oxc-parser-MIT.txt).
-The dependency's own distribution remains separately licensed. Core, SSR and CLI
-declare no external runtime dependencies.
+The dependency's own distribution remains separately licensed. The other Purity
+packages can depend on other `@purityjs` packages; consult their package manifests
+for the exact dependency and peer dependency declarations.
 
 The current source attribution scan and emitted source maps found no other
-embedded dependency source in these four packages. That bounded check is not
+embedded dependency source in the packages checked at the time. That bounded check is not
 permission to delete notices from future imported or copied code. Preserve the
 applicable copyright, permission and attribution text when adding such code.
 
@@ -34,7 +35,7 @@ Each package includes its own full LICENSE, NOTICE and retained Purity MIT text.
 The Vite plugin also includes the parser MIT text. These files are explicit in
 the package file lists so they survive packing outside the monorepo.
 
-After building all four packages, run `npm run check:licenses`. It packs each
+After building the eight packages, run `npm run check:licenses`. It packs each
 package, reads the actual tarball, and checks its version, SPDX identifier, full
 license text and retained notices. It also checks the original Purity MIT text
 and the external parser notice for accidental removal or changes. Normal CI and

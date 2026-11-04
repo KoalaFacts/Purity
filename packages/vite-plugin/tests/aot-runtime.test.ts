@@ -8,9 +8,9 @@ import {
   swapSlot,
   inflateDeferred,
   isDeferred,
-  renderCompiledTemplate,
+  renderCompiledTemplateAot,
 } from '@purityjs/core/runtime';
-import { ssrHelpers, valueToHtml } from '@purityjs/ssr/runtime';
+import * as ssrRuntime from '@purityjs/ssr/runtime';
 import { safeUrl, template } from '@purityjs/core/csr-runtime';
 import { purity } from '../src/index.ts';
 
@@ -74,7 +74,7 @@ describe('AOT output runs correctly under jsdom', () => {
     );
     return {
       make: fn(
-        renderCompiledTemplate,
+        renderCompiledTemplateAot,
         flattenValue,
         swapSlot,
         safeUrl,
@@ -331,13 +331,13 @@ describe('injected identifiers do not collide with user bindings', () => {
     const modules = {
       '@purityjs/core': { state },
       '@purityjs/core/runtime': {
-        renderCompiledTemplate,
+        renderCompiledTemplateAot,
         flattenValue,
         swapSlot,
       },
       '@purityjs/core/csr-runtime': { flattenValue, swapSlot, safeUrl, template },
     };
-    Object.assign(modules, { '@purityjs/ssr/runtime': { ssrHelpers } });
+    Object.assign(modules, { '@purityjs/ssr/runtime': ssrRuntime });
     return new Function('__modules', `${body}\nreturn { make, v, user };`)(modules);
   }
 
@@ -365,8 +365,8 @@ describe('injected identifiers do not collide with user bindings', () => {
   it.each(['__purity_h__', '__purity_tpl_0'])('SSR build with a user %s', (name) => {
     const { make, user } = runModule(source(name), true);
     expect(user).toBe('mine');
-    expect(valueToHtml(make())).toContain('<p>');
-    expect(valueToHtml(make())).toContain('a');
+    expect(ssrRuntime.valueToHtml(make())).toContain('<p>');
+    expect(ssrRuntime.valueToHtml(make())).toContain('a');
   });
 
   it.each(['__purity_url__', '__purity_tmpl__'])(

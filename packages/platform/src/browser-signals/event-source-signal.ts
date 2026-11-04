@@ -56,34 +56,39 @@ export interface EventSourceSignalOptions<T> {
   reconnect?: LiveReconnectPolicy;
 }
 
-/**
- * Allow-list of URL schemes accepted by eventSourceSignal. Browsers
- * reject non-HTTP(S) schemes at `new EventSource()` time, but a hostile
- * SSR-derived URL string with an attacker-controlled `javascript:`,
- * `data:`, `blob:`, or `file:` scheme would still be reflected into our
- * `console.warn` diagnostics and (under non-conformant runtimes /
- * tests) reach the constructor. Enforce HTTP(S) before construction so
- * the trust boundary lives at the signal — not at the browser.
- *
- * @internal
- */
-export function isSafeEventSourceUrl(url: string | URL): boolean {
-  if (typeof url !== 'string') {
-    const proto = url.protocol;
-    return proto === 'http:' || proto === 'https:';
+/** @internal Normalize platform-trimmed URL spellings, but reject embedded controls. */
+export function normalizeLiveUrl(url: string): string | null {
+  const trimmed = url.trim();
+  for (let i = 0; i < trimmed.length; i++) {
+    const code = trimmed.charCodeAt(i);
+    if (code < 32 || code === 127) return null;
   }
-  // Relative (no scheme) is fine — it resolves against document.baseURI
-  // which the page already trusts. Match the same RFC-3986 scheme prefix
-  // used by redactUrl() for consistency.
-  if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) return true;
+  return trimmed;
+}
+
+/** @internal Validate and snapshot the URL that will actually reach the transport. */
+export function snapshotLiveUrl(
+  url: string | URL,
+  firstProtocol: string,
+  secondProtocol: string,
+): string | null {
   try {
-    const proto = new URL(url).protocol;
-    return proto === 'http:' || proto === 'https:';
+    // Bypass custom URL getters and stringification; proxies fail closed.
+    const source = typeof url === 'string' ? url : URL.prototype.toString.call(url);
+    const normalized = normalizeLiveUrl(source);
+    if (normalized === null) return null;
+    // Preserve relative URLs without inventing a browser document base.
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(normalized)) return normalized;
+    const protocol = new URL(normalized).protocol;
+    return protocol === firstProtocol || protocol === secondProtocol ? normalized : null;
   } catch {
-    // Unparseable absolute-looking string — let the constructor reject it
-    // so the surface error matches the platform.
-    return false;
+    return null;
   }
+}
+
+/** Refuse unsupported SSE schemes before constructing an EventSource. */
+export function isSafeEventSourceUrl(url: string | URL): boolean {
+  return snapshotLiveUrl(url, 'http:', 'https:') !== null;
 }
 
 /**
@@ -100,28 +105,37 @@ export function isSafeEventSourceUrl(url: string | URL): boolean {
  * @internal
  */
 export function redactUrl(url: string | URL): string {
-  // URL instance: always absolute by construction — redact directly.
-  if (typeof url !== 'string') {
-    return `${url.protocol}//${url.host}${url.pathname}`;
-  }
-  // For a string input, distinguish absolute from relative without
-  // letting a dummy base leak into the label:
-  //  - Absolute (has scheme://): parse and redact protocol+host+path.
-  //  - Relative (/path, ./path, no scheme): strip ?query and #hash
-  //    in-place so a `?access_token=…` is removed but the path stays.
-  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) {
-    try {
-      const u = new URL(url);
-      return `${u.protocol}//${u.host}${u.pathname}`;
-    } catch {
-      return url;
+  try {
+    // Native serialization ignores untrusted URL subclass getters and
+    // overrides. A proxy without URL internal slots fails closed.
+    if (typeof url !== 'string') url = URL.prototype.toString.call(url);
+    const normalized = normalizeLiveUrl(url);
+    if (normalized === null) return '[invalid URL]';
+
+    // Absolute URLs: parse once and reconstruct from canonical fields, never
+    // userinfo, query or hash. Reject opaque schemes before logging.
+    if (/^[a-z][a-z0-9+.-]*:/i.test(normalized)) {
+      const parsed = new URL(normalized);
+      if (!/^(https?|wss?):$/.test(parsed.protocol)) return '[unsupported URL scheme]';
+      return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
     }
+    // Validate scheme-relative authorities before cutting query/hash. Otherwise
+    // malformed `//user:secret?query@host` can expose credentials in logs.
+    if (/^[/\\]{2}/.test(normalized)) {
+      const authority = new URL(normalized, 'https://redaction.invalid/');
+      if (!authority.host) return '[invalid URL]';
+    }
+    // Relative URLs: remove query/hash before stripping authority userinfo.
+    const q = normalized.indexOf('?');
+    const h = normalized.indexOf('#');
+    const cut = q === -1 ? h : h === -1 ? q : Math.min(q, h);
+    const trimmed = cut === -1 ? normalized : normalized.slice(0, cut);
+    // WHATWG treats repeated leading / and \\ as an authority on http(s) pages.
+    // Redact userinfo even for mixed and triple-separator relative spellings.
+    return trimmed.replace(/^[/\\]{2,}[^/\\]*@/, '//');
+  } catch {
+    return '[invalid URL]';
   }
-  // Relative: trim at the first `?` or `#`.
-  const q = url.indexOf('?');
-  const h = url.indexOf('#');
-  const cut = q === -1 ? h : h === -1 ? q : Math.min(q, h);
-  return cut === -1 ? url : url.slice(0, cut);
 }
 
 /**
@@ -140,26 +154,22 @@ export function wireLiveReconnect(
     open();
     return;
   }
-  const visible = pageVisibilitySignal();
-  const bfcache = bfcacheRestoreSignal();
-
-  if (reconnect === 'on-visible') {
+  // 'always' must not allocate or subscribe to the page visibility signal;
+  // only the 'on-visible' policy uses it. Both still reconnect on bfcache.
+  const visible = reconnect === 'on-visible' ? pageVisibilitySignal() : null;
+  if (visible) {
     watch(visible, (v) => {
       if (v === 'visible') open();
       else close();
     });
     if (visible.peek() === 'visible') open();
   } else {
-    // 'always'
     open();
   }
 
-  // Both 'on-visible' and 'always' force a clean reconnect on bfcache
-  // restore. The underlying connection is paused during freeze; refreshing
-  // it on resume avoids stale-state surprises.
-  watch(bfcache, () => {
-    const shouldBeOpen = reconnect === 'always' || visible.peek() === 'visible';
-    if (shouldBeOpen) {
+  // A bfcache restore refreshes the live transport unless visibility gates it.
+  watch(bfcacheRestoreSignal(), () => {
+    if (visible === null || visible.peek() === 'visible') {
       close();
       open();
     }
@@ -172,14 +182,15 @@ export function makeLiveMessageHandler<T, R = string>(
   label: string,
   parse: (raw: R) => unknown,
   validate: LiveValidator<T>,
-  inner: (value: NoInfer<T>) => void,
+  inner: { set(value: NoInfer<T>): void },
 ): (e: MessageEvent<R>) => void {
   return (e: MessageEvent<R>): void => {
     let parsed: unknown;
     try {
       parsed = parse(e.data);
-    } catch (err) {
-      console.warn(`[purity] ${api}('${label}') failed to parse:`, err);
+    } catch {
+      // Parser errors can include the raw message or authentication secrets.
+      console.warn(`[purity] ${api}('${label}') failed to parse`);
       return;
     }
     try {
@@ -187,11 +198,13 @@ export function makeLiveMessageHandler<T, R = string>(
         console.warn(`[purity] ${api}('${label}') dropped incoming message — failed validator`);
         return;
       }
-    } catch (err) {
-      console.warn(`[purity] ${api}('${label}') dropped incoming message — validator threw:`, err);
+    } catch {
+      // Validator exceptions can echo the untrusted payload into log sinks.
+      console.warn(`[purity] ${api}('${label}') dropped incoming message — validator threw`);
       return;
     }
-    inner(parsed);
+    // Treat a validated function as a value, never as a state updater.
+    inner.set(parsed);
   };
 }
 
@@ -217,7 +230,21 @@ export function eventSourceSignal<T>(
   options: EventSourceSignalOptions<T>,
 ): ComputedAccessor<T> {
   if (isSSR() || typeof EventSource === 'undefined') {
-    return compute(() => options.initialValue);
+    // An inert transport returns the value supplied at creation, not a live
+    // read of the caller's mutable options bag (and its other callbacks).
+    const initialValue = options.initialValue;
+    return compute(() => initialValue);
+  }
+
+  // Reconnects must reuse the same validated URL, not a mutable URL subclass.
+  const safeUrl = snapshotLiveUrl(url, 'http:', 'https:');
+  if (safeUrl === null) {
+    // Match the connected path: initialValue is captured at creation time.
+    const initialValue = options.initialValue;
+    console.warn(
+      `[purity] eventSourceSignal('${redactUrl(url)}') refused to open — only http(s) schemes are allowed`,
+    );
+    return compute(() => initialValue);
   }
 
   const inner = state(options.initialValue);
@@ -229,12 +256,6 @@ export function eventSourceSignal<T>(
   // Use the redacted label for ALL diagnostic console.warn paths so
   // `?access_token=…` and `user:pw@` don't leak into log sinks.
   const label = redactUrl(url);
-  // Refuse non-HTTP(S) URLs up-front. `javascript:`, `data:`, `blob:`,
-  // and `file:` schemes are NOT valid SSE endpoints; reflecting them
-  // through `new EventSource(url)` invites runtime-specific surprises
-  // (jsdom + custom mocks won't reject), so gate before construction.
-  const urlIsSafe = isSafeEventSourceUrl(url);
-
   let es: EventSource | null = null;
   // `disposed` guards against open() racing a unmount-triggered close():
   // wireLiveReconnect's watch may schedule an open() asynchronously, and
@@ -245,25 +266,34 @@ export function eventSourceSignal<T>(
 
   const open = (): void => {
     if (disposed || es) return;
-    if (!urlIsSafe) {
-      console.warn(
-        `[purity] eventSourceSignal('${label}') refused to open — only http(s) schemes are allowed`,
-      );
-      return;
-    }
     try {
       // codeql[js/superfluous-trailing-arguments]
       // CodeQL's web externs model EventSource as single-argument, but the
       // spec accepts an EventSourceInit dict as the second argument. The
       // `withCredentials` option is part of the public ADR 0047 API;
       // deleting the 2-arg call is not an option.
-      es = withCredentials ? new EventSource(url, { withCredentials: true }) : new EventSource(url);
-    } catch (err) {
-      console.warn(`[purity] eventSourceSignal('${label}') failed to open:`, err);
+      es = withCredentials
+        ? new EventSource(safeUrl, { withCredentials: true })
+        : new EventSource(safeUrl);
+    } catch {
+      // Constructor exceptions can repeat the credential-bearing endpoint.
+      console.warn(`[purity] eventSourceSignal('${label}') failed to open`);
       es = null;
       return;
     }
-    es.addEventListener(eventName, onMessage);
+    // Construction may synchronously dispose the owner before assigning es.
+    if (disposed) {
+      close();
+      return;
+    }
+    try {
+      es.addEventListener(eventName, onMessage);
+    } catch {
+      // An adapter can echo credentials from the endpoint in its exception.
+      // Close the partially opened connection without leaking that error.
+      close();
+      console.warn(`[purity] eventSourceSignal('${label}') failed to add listener`);
+    }
   };
   const close = (): void => {
     if (!es) return;
@@ -272,11 +302,21 @@ export function eventSourceSignal<T>(
     // is a fast no-op instead of double-detaching the listener.
     const closing = es;
     es = null;
-    closing.removeEventListener(eventName, onMessage);
-    closing.close();
+    try {
+      closing.removeEventListener(eventName, onMessage);
+    } catch {
+      // Still close the connection if a non-native adapter refuses to detach.
+      console.warn(`[purity] eventSourceSignal('${label}') listener detach failed`);
+    }
+    try {
+      closing.close();
+    } catch {
+      // Non-native adapters may throw credential-bearing endpoint details.
+      // Never let disposer error reporting echo the raw exception.
+      console.warn(`[purity] eventSourceSignal('${label}') close failed`);
+    }
   };
 
-  wireLiveReconnect(reconnect, open, close);
   // Auto-close on the surrounding component's unmount. Without this, every
   // eventSourceSignal() call inside a component opened a long-lived TCP
   // connection that survived unmount (the `wireLiveReconnect` watches
@@ -291,5 +331,6 @@ export function eventSourceSignal<T>(
       disposed = true;
       close();
     });
+  wireLiveReconnect(reconnect, open, close);
   return compute(() => inner());
 }

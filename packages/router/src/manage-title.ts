@@ -14,7 +14,7 @@ import { ENABLE_SSR } from './ssr-enabled.ts';
 // ---------------------------------------------------------------------------
 
 import { head } from './head.ts';
-import { watch } from '@purityjs/signals';
+import { watchEffectInternal } from '@purityjs/signals';
 import { getSSRRenderContext, ssrMarkup } from './ssr.ts';
 
 /**
@@ -61,7 +61,7 @@ export function manageTitle(fn: () => string): () => void {
     // still track, but no DOM write happens. Per-run throws are isolated
     // by the watch flush, but the initial synchronous run is not — wrap
     // it so a throw can't escape the helper and break the caller.
-    return watch(() => {
+    return watchEffectInternal(() => {
       try {
         void fn();
       } catch (err) {
@@ -76,7 +76,7 @@ export function manageTitle(fn: () => string): () => void {
   //   and unwind the surrounding render).
   // - String() coerces so a non-string return (e.g. a number signal)
   //   doesn't land as `"undefined"` / `"[object Object]"` on the tab.
-  return watch(() => {
+  return watchEffectInternal(() => {
     try {
       document.title = String(fn() ?? '');
     } catch (err) {

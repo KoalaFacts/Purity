@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const execute = (command, args) =>
@@ -69,7 +70,10 @@ export function finalizeRelease(version, run = execute) {
   }
   if (existing) return;
   // Never infer a release's source from the moving default branch or move a tag.
-  const args = ['release', 'create', tag, '--verify-tag', '--target', sha, '--generate-notes'];
+  const args = ['release', 'create', tag, '--verify-tag', '--target', sha];
+  const notes = `docs/releases/${version}.md`;
+  if (existsSync(notes)) args.push('--notes-file', notes);
+  else args.push('--generate-notes');
   if (prerelease) args.push('--prerelease');
   run('gh', args);
 }

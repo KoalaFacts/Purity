@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 
 import { intersectionSignal } from '../src/browser-signals/index.ts';
-import { mount, watch } from '../../core/src/index.ts';
+import { batch, mount, watch } from '../../core/src/index.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../../core/src/ssr-context.ts';
 import { makeSSRContext } from '../../core/tests/_helpers.ts';
 
@@ -126,6 +126,25 @@ describe('intersectionSignal — client (ADR 0040)', () => {
     instances[0].fire(el, false);
     await tick();
     expect(seen).toEqual([false, true, false]);
+    dispose();
+  });
+
+  it('does not notify watchers when a batch returns to the previous value', async () => {
+    const el = document.createElement('div');
+    const signal = intersectionSignal(el);
+    const seen: boolean[] = [];
+    const dispose = watch(() => {
+      seen.push(signal());
+    });
+    batch(() => {
+      instances[0].fire(el, true);
+      instances[0].fire(el, false);
+    });
+    await tick();
+    expect(seen).toEqual([false]);
+    instances[0].fire(el, true);
+    await tick();
+    expect(seen).toEqual([false, true]);
     dispose();
   });
 

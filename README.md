@@ -8,7 +8,7 @@
 A minimal web framework with TC39-Signals-inspired reactivity and templates that compile to direct DOM operations.
 
 Our goal is to make Purity a strong Solid v2 competitor through direct DOM updates,
-Web Components, modular AOT compilation, and zero runtime dependencies. The
+Web Components, and modular AOT compilation. The
 [Solid v2 gap comparison](./docs/solid-v2-gap-analysis.md) records the exact target,
 current differences, priorities, and acceptance scenarios. The [competitive roadmap](./docs/solid-competitor-roadmap.md)
 turns those gaps into implementation and published-consumer milestones.
@@ -16,7 +16,7 @@ turns those gaps into implementation and published-consumer milestones.
 - **A tiny API** — that's the whole thing
 - **No virtual DOM** — signals drive DOM updates directly
 - **CSP-safe** — no `eval`, no `new Function` (with the Vite plugin)
-- **Zero runtime dependencies**
+- **Modular packages** — core uses Purity's signals and compiler packages
 - **Web Components by design** — `component()` registers a Custom Element with Shadow DOM (see tradeoffs in the package README)
 - **Race-safe async** — first-class `resource()` with built-in cancellation, retry, polling, debouncing, and SWR by default
 - **Server-side rendering** — `renderToString` + `hydrate()` ship with Declarative Shadow DOM and resource-aware SSR via the `@purityjs/ssr` package
@@ -38,6 +38,10 @@ npm run dev
 | Package                                           | Description                                                   | Docs                                       |
 | ------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------ |
 | [`@purityjs/core`](./packages/core)               | The framework                                                 | [README](./packages/core/README.md)        |
+| [`@purityjs/signals`](./packages/signals)         | Reactive primitives and ownership                             | Package source                             |
+| [`@purityjs/compiler`](./packages/compiler)       | Template parsing and code generation                          | Package source                             |
+| [`@purityjs/router`](./packages/router)           | Routing and navigation                                        | Package source                             |
+| [`@purityjs/platform`](./packages/platform)       | Browser signals, actions, queries and islands                 | Package source                             |
 | [`@purityjs/ssr`](./packages/ssr)                 | `renderToString` + `renderToStream` + DSD + resource awaiting | [README](./packages/ssr/README.md)         |
 | [`@purityjs/vite-plugin`](./packages/vite-plugin) | AOT template compilation (client + SSR)                       | [README](./packages/vite-plugin/README.md) |
 | [`@purityjs/cli`](./packages/cli)                 | Project scaffolding (`--ssr` flag available)                  | [README](./packages/cli/README.md)         |
@@ -45,7 +49,8 @@ npm run dev
 ## At a Glance
 
 ```ts
-import { state, compute, css, component, mount } from '@purityjs/core'; import { html } from '@purityjs/core/jit';
+import { state, compute, css, component, mount } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 
 component('p-counter', () => {
   const count = state(0);
@@ -153,6 +158,7 @@ This checkout prepares Apache-2.0 licensing from 0.5.0; see the
 [licensing scope](./docs/licensing.md). The API may break between minor versions until 1.0.
 For the 0.3.4 → 0.4.0 upgrade, read the [changelog](./CHANGELOG.md#upgrade-notes)
 and [entry-point migration guide](./docs/core-entry-points.md) before upgrading.
+For 0.4.0 → 0.5.0, use the [0.5.0 import mapping](./docs/core-entry-points.md#upgrading-from-040).
 There is no public versioning policy yet, and we don't know of any production
 users. If you ship Purity to users, please open an issue so we can keep your
 use case in mind for the breaking-change discussions.

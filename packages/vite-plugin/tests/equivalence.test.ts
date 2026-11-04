@@ -5,7 +5,7 @@
 // template + values.
 
 import { html } from '@purityjs/core/jit';
-import { flattenValue, renderCompiledTemplate, swapSlot } from '@purityjs/core/runtime';
+import { flattenValue, renderCompiledTemplateAot, swapSlot } from '@purityjs/core/runtime';
 import { safeUrl, template } from '@purityjs/core/csr-runtime';
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
@@ -30,7 +30,7 @@ function evalAot(userCode: string): { make: (...args: any[]) => Node } {
   );
   return {
     make: fn(
-      renderCompiledTemplate,
+      renderCompiledTemplateAot,
       flattenValue,
       swapSlot,
       safeUrl,

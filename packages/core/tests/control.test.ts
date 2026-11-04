@@ -4,11 +4,37 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { ComponentContext, popContext, pushContext } from '@purityjs/signals';
 import { mount, onDispose } from '../src/component.ts';
-import { each, inflateDeferredEach, list, match, type DeferredEach } from '../src/control.ts';
+import { component } from '../src/elements.ts';
+import {
+  defaultEachHydrationAdapter,
+  detachNodes,
+  each,
+  extractNodes,
+  list,
+  match,
+} from '../src/control.ts';
+import { inflateDeferredEach, type CapturedDeferredEach } from '../src/control/hydrate.ts';
 import { eachSSR, listSSR } from '@purityjs/ssr/runtime';
 import { state, watch } from '@purityjs/signals';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
+
+describe('shared CSR/hydration node helpers', () => {
+  it('snapshots multi-root and singleton fragments without moving their children', () => {
+    const fragment = document.createDocumentFragment();
+    const first = document.createElement('span');
+    const second = document.createElement('b');
+    fragment.append(first, second);
+    expect(extractNodes(fragment)).toEqual([first, second]);
+    expect(fragment.childNodes.length).toBe(2);
+
+    detachNodes([first]);
+    expect(fragment.firstChild).toBe(second);
+    expect(extractNodes(fragment)).toEqual([second]);
+    detachNodes([second]);
+    expect(fragment.childNodes.length).toBe(0);
+  });
+});
 
 describe('match', () => {
   it('renders the matching case', async () => {
@@ -168,6 +194,20 @@ describe('match', () => {
 });
 
 describe('each', () => {
+  it('stages earlier initial rows in a fragment before creating the next row', () => {
+    let first: HTMLElement | undefined;
+    const parentDuringSecondRow: Node[] = [];
+    const fragment = each([1, 2], (item) => {
+      if (item() === 2) parentDuringSecondRow.push(first!.parentNode!);
+      const node = document.createElement('li');
+      if (item() === 1) first = node;
+      return node;
+    });
+
+    expect(parentDuringSecondRow[0]).toBeInstanceOf(DocumentFragment);
+    expect((fragment as DocumentFragment).childNodes).toHaveLength(3); // Two rows and the end marker.
+  });
+
   it('renders a list of items', async () => {
     const items = state(['A', 'B', 'C']);
     const fragment = each(
@@ -326,12 +366,40 @@ describe('each', () => {
     expect(rows[0].textContent).toBe('42');
     expect(rows[rows.length - 1].textContent).toBe('61');
 
+    const unrelated = document.createElement('aside');
+    container.appendChild(unrelated);
     mounted.unmount();
+    expect(container.querySelectorAll('li')).toHaveLength(0);
+    expect(unrelated.parentNode).toBe(container);
     const renderCountAfterUnmount = renderedIndices.length;
     container.scrollTop = 0;
     container.dispatchEvent(new Event('scroll'));
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(renderedIndices).toHaveLength(renderCountAfterUnmount);
+  });
+
+  it('preserves a disconnected custom element shadow tree containing a virtual list', async () => {
+    const items = state([1, 2, 3]);
+    component(
+      'p-virtual-preserve-shadow',
+      () =>
+        virtualEach(items, (item) => {
+          const row = document.createElement('span');
+          row.textContent = String(item());
+          return row;
+        }) as DocumentFragment,
+    );
+    const host = document.createElement('p-virtual-preserve-shadow');
+    host.style.cssText = 'height:96px;overflow-y:auto';
+    document.body.appendChild(host);
+    items([3, 4]);
+    await tick();
+    const shadow = host.shadowRoot!;
+    const before = [...shadow.childNodes];
+    expect(shadow.textContent).toBe('34');
+    host.remove();
+    expect([...shadow.childNodes]).toEqual(before);
+    expect(shadow.textContent).toBe('34');
   });
 
   it('keeps the scroll range accurate when row heights vary', async () => {
@@ -570,7 +638,7 @@ describe('each', () => {
         (item) => html`<li>${item()}</li>`,
         (item) => item,
       ),
-    ) as DeferredEach<number>;
+    ) as CapturedDeferredEach<number>;
 
     pushContext(context);
     try {
@@ -604,7 +672,7 @@ describe('each', () => {
     const context = new ComponentContext();
     const deferred = withHydration(() =>
       virtualEach(items, (item) => html`<li>${item()}</li>`),
-    ) as DeferredEach<number | undefined>;
+    ) as CapturedDeferredEach<number | undefined>;
 
     pushContext(context);
     try {
@@ -1316,6 +1384,61 @@ describe('each — extractNodes paths via update', () => {
 });
 
 describe('each — LIS binary search exercise', () => {
+  it('preserves order and reused identity across permutations with inserts and removals', async () => {
+    const permutations = (values: string[]): string[][] =>
+      values.length <= 1
+        ? [values]
+        : values.flatMap((value, i) =>
+            permutations(values.filter((_, j) => i !== j)).map((tail) => [value, ...tail]),
+          );
+    const items = state(['A', 'B', 'C']);
+    const host = document.createElement('div');
+    host.appendChild(
+      each(items, (item) => {
+        const node = document.createElement('span');
+        node.textContent = item();
+        return node;
+      }),
+    );
+    const sequences = permutations(['A', 'B', 'C', 'D', 'E']);
+    for (let i = 0; i < sequences.length; i++) {
+      const previous = new Map([...host.querySelectorAll('span')].map((n) => [n.textContent, n]));
+      const expected = sequences[i].slice(0, 3 + (i % 3));
+      items(expected);
+      await tick();
+      const rows = [...host.querySelectorAll('span')];
+      expect(rows.map((node) => node.textContent)).toEqual(expected);
+      for (let j = 0; j < rows.length; j++) {
+        const oldNode = previous.get(expected[j]);
+        if (oldNode) expect(rows[j]).toBe(oldNode);
+      }
+    }
+  });
+
+  it('keeps reused row identity when new rows surround and split a reordered sequence', async () => {
+    const items = state(['A', 'B', 'C', 'D']);
+    const host = document.createElement('div');
+    host.appendChild(
+      each(items, (item) => {
+        const node = document.createElement('span');
+        node.textContent = item();
+        return node;
+      }),
+    );
+    const before = Object.fromEntries(
+      [...host.querySelectorAll('span')].map((n) => [n.textContent!, n]),
+    );
+
+    items(['X', 'C', 'Y', 'A', 'B', 'Z']);
+    await tick();
+    const rows = [...host.querySelectorAll('span')];
+    expect(rows.map((n) => n.textContent)).toEqual(['X', 'C', 'Y', 'A', 'B', 'Z']);
+    expect(rows[1]).toBe(before.C);
+    expect(rows[3]).toBe(before.A);
+    expect(rows[4]).toBe(before.B);
+    expect(before.D.parentNode).toBeNull();
+  });
+
   it('handles 7-item shuffle that exercises LIS binary search', async () => {
     const items = state(['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((id) => ({ id, t: id })));
     const fragment = each(
@@ -2182,12 +2305,12 @@ describe('duplicate keys — initial render, SSR and hydration', () => {
       const closeMarker = document.createComment('slot-close');
       host.appendChild(closeMarker);
       const context = new ComponentContext();
-      const deferred: DeferredEach<number> = {
+      const deferred: CapturedDeferredEach<number> = {
         __purity_deferred_each__: true,
         listAccessor: [1, 2],
         mapFn: (item) => html`<li>${item()}</li>`,
         keyFn: (item) => item,
-        options: {},
+        adapter: defaultEachHydrationAdapter,
       };
       pushContext(context);
       try {
@@ -2225,12 +2348,12 @@ describe('duplicate keys — review follow-ups (hydration, virtual, listSSR, dia
         { k: 1, t: 'num' },
         { k: '1', t: 'str' },
       ];
-      const deferred: DeferredEach<{ k: unknown; t: string }> = {
+      const deferred: CapturedDeferredEach<{ k: unknown; t: string }> = {
         __purity_deferred_each__: true,
         listAccessor: items,
         mapFn: (item) => html`<li>${() => item().t}</li>`,
         keyFn: (item) => item.k,
-        options: {},
+        adapter: defaultEachHydrationAdapter,
       };
       pushContext(context);
       try {

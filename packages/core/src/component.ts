@@ -86,8 +86,8 @@ export function scheduleMountCallbacks(ctx: ComponentContext): void {
       }
     } finally {
       popContext();
+      ctx.mounted = null;
     }
-    ctx.mounted = null;
   });
 }
 

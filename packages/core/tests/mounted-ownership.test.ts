@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
-import { mount, onDispose, onError, onMount } from '../src/component.ts';
+import { mount, onDispose, onError, onMount, scheduleMountCallbacks } from '../src/component.ts';
 import { hydrate } from '../src/hydrate.ts';
 import { component } from '../src/elements.ts';
-import { getCurrentContext } from '@purityjs/signals';
+import { ComponentContext, getCurrentContext, popContext, pushContext } from '@purityjs/signals';
 import { state, watch } from '@purityjs/signals';
 
 const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
@@ -114,6 +114,38 @@ describe.each(modes)('mounted callback ownership: %s', (mode) => {
     expect(staleCalls).toBe(0);
     expect(getCurrentContext()).toBeNull();
   });
+});
+
+it('releases mounted callback closures after an unhandled onMount error', () => {
+  const queued: (() => void)[] = [];
+  const scheduler = vi
+    .spyOn(globalThis, 'queueMicrotask')
+    .mockImplementation((fn) => queued.push(fn));
+  const ctx = new ComponentContext();
+  const original = new Error('mounted callback failure');
+  let laterCalled = false;
+  try {
+    pushContext(ctx);
+    try {
+      onMount(() => {
+        throw original;
+      });
+      onMount(() => {
+        laterCalled = true;
+      });
+    } finally {
+      popContext();
+    }
+    expect(ctx.mounted).toHaveLength(2);
+    scheduleMountCallbacks(ctx);
+    expect(queued).toHaveLength(1);
+    expect(() => queued.shift()!()).toThrow(original);
+    expect(laterCalled).toBe(false);
+    expect(ctx.mounted).toBeNull();
+    expect(getCurrentContext()).toBeNull();
+  } finally {
+    scheduler.mockRestore();
+  }
 });
 
 it('does not inherit a destroyed boundary when a mounted element reconnects', () => {

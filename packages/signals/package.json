@@ -1,6 +1,6 @@
 {
   "name": "@purityjs/signals",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Platform-agnostic push-pull reactive signals, computed memos, effects, and ownership scopes for Purity",
   "keywords": [
     "computed",

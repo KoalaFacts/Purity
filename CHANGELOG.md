@@ -18,11 +18,10 @@
 - `each()` and `list()` compute each row key once per update (twice before for
   any change of order) and before any new row is created, so a throwing key
   function no longer creates and then discards rows. The keyed diff skips the
-  unchanged rows at the start and end of the list and indexes and reorders only
-  the changed range. An `each()` inside a `when()`/`match()` branch or inside
-  another row no longer rewrites the branch's whole node list on every update:
-  not at all when the keys are unchanged, and only for added or removed rows
-  otherwise.
+  unchanged rows at the start and end of the list and releases, indexes and
+  reorders only the changed range. An `each()` inside a `when()`/`match()`
+  branch or inside another row no longer rewrites the branch's node list when
+  its keys are unchanged.
 
 ## 0.5.2
 

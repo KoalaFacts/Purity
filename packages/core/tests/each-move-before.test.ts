@@ -188,4 +188,52 @@ describe('each — multi-root LIS moves with moveBefore', () => {
     await tick();
     expect(['Y', 'C'].map((key) => runs.get(key))).toEqual(retainedRuns.map((count) => count! + 1));
   });
+
+  it('keeps order and row identity for random keyed sequences with insertions and moves', async () => {
+    const fc = (await import('fast-check')).default;
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.uniqueArray(fc.integer({ min: 0, max: 9 }), { maxLength: 9 }), {
+          minLength: 1,
+          maxLength: 8,
+        }),
+        async (sequence) => {
+          const keys = state<number[]>([]);
+          const container = document.createElement('div');
+          const { unmount } = mount(
+            () =>
+              each(
+                () => keys(),
+                (item) => {
+                  const fragment = document.createDocumentFragment();
+                  for (const tag of ['b', 'i']) {
+                    const node = document.createElement(tag);
+                    node.textContent = String(item());
+                    fragment.appendChild(node);
+                  }
+                  return fragment;
+                },
+              ) as DocumentFragment,
+            container,
+          );
+          let previous = new Map<string, Element>();
+          for (const ids of sequence) {
+            keys(ids);
+            await tick();
+            const nodes = Array.from(container.children);
+            expect(nodes.map((n) => n.textContent).join('')).toBe(
+              ids.map((id) => `${id}${id}`).join(''),
+            );
+            const current = new Map(nodes.map((n) => [`${n.tagName}${n.textContent}`, n]));
+            for (const [key, node] of current) {
+              if (previous.has(key)) expect(node).toBe(previous.get(key));
+            }
+            previous = current;
+          }
+          unmount();
+        },
+      ),
+      { numRuns: 150 },
+    );
+  });
 });

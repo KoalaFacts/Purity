@@ -25,15 +25,18 @@ Every Purity change in these pages is inside the run-to-run spread of the Solid 
 ## Deterministic and jsdom evidence
 
 - `packages/core/tests/each-reconcile.test.ts`: the key function runs once per item per reconcile (twice before for any order change); a two-row swap in 1,000 rows moves exactly two rows; a middle insertion removes no node; property tests (fast-check) for `each()`/`list()` first-occurrence order, row identity and disposal, `each()` inside a `when()` branch, and an `each()` that is the root of another `each()` row (fails if the owner node list is not updated).
-- jsdom probe (before and after interleaved, 5 runs × 30 updates per case, median ms per update, `each()` keyed by id, Node 24.22.2, same machine). Before = `34b21d8`; after = the PR head, which differs from `8215705` only by bundle-size trims (fragment `prepend` for batched moves, spread pushes). jsdom has no `moveBefore`, so this exercises the batched-fragment path; the browser runs above use `moveBefore`.
+- jsdom probe of the **first revision** (`d46657b`, window map + incremental owner re-tracking), before = `34b21d8`, interleaved, median of 5 × 30 updates, ms per update: one-row update of 5k inside `when()` 2.41 → 1.10; swap two of 10k 4.57 → 3.04 (8.48 → 3.77 inside `when()`); remove one + append one of 10k 4.98 → 2.93 (9.18 → 4.29 inside `when()`). That revision grew 5 of 17 complete application fixtures by 211–239 B Brotli and was replaced (see the PR review thread).
+- jsdom probe of the **size-neutral revision** (the PR head: keys array, one key call per item, unchanged-keys owner skip, head/tail trimming and LIS on the window, append/prepend fast paths folded into the window path), same method:
 
 | Case                                           | Before | After |
 | ---------------------------------------------- | -----: | ----: |
-| Update one row of 5k                           |   1.13 |  1.16 |
-| Update one row of 5k inside `when()`           |   2.41 |  1.10 |
-| Swap two rows of 10k                           |   4.57 |  3.04 |
-| Swap two rows of 10k inside `when()`           |   8.48 |  3.77 |
-| Remove one + append one of 10k                 |   4.98 |  2.93 |
-| Remove one + append one of 10k inside `when()` |   9.18 |  4.29 |
+| Update one row of 5k                           |   1.22 |  1.16 |
+| Update one row of 5k inside `when()`           |   2.29 |  1.20 |
+| Swap two rows of 10k                           |   4.53 |  4.62 |
+| Swap two rows of 10k inside `when()`           |   7.95 |  8.50 |
+| Remove one + append one of 10k                 |   5.28 |  3.97 |
+| Remove one + append one of 10k inside `when()` |   8.80 |  8.61 |
+
+The size-neutral revision keeps the full-list `newEntries` map and the old owner rebuild for structural changes, so swaps and owned structural updates do not improve; the unchanged-keys owner skip and one key call per item remain. jsdom has no `moveBefore`, so these probes exercise the batched-fragment path; the browser runs above (first revision) use `moveBefore`.
 
 A one-shot jsdom probe of whole-list operations (reverse, sort, filter, unfilter, replace 10k) moved by ±15% in both directions across three repeats and is not used as evidence.

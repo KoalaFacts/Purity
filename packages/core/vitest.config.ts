@@ -19,6 +19,11 @@ export default defineConfig({
         replacement: resolve(import.meta.dirname, '../ssr/src/runtime.ts'),
       },
       {
+        // CQ-06: test the compiler source, not the last dist build.
+        find: /^@purityjs\/compiler$/,
+        replacement: resolve(import.meta.dirname, '../compiler/src/index.ts'),
+      },
+      {
         find: /^@purityjs\/signals$/,
         replacement: resolve(import.meta.dirname, '../signals/src/index.ts'),
       },

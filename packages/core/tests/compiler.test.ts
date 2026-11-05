@@ -1170,16 +1170,25 @@ describe('compiler — extra coverage', () => {
     expect(spans[1].textContent).toBe('2');
   });
 
-  it('fold: all-static template instantiates without creating a watch', async () => {
-    // Indirect proof: a static template with no reactive bindings should not
-    // pay the watch-creation cost. We verify by instantiating many copies and
-    // checking the work stays cheap (sub-paint-floor).
-    const start = performance.now();
-    for (let i = 0; i < 1000; i++) {
-      html`<div><span>a</span><span>b</span><span>c</span></div>`;
-    }
-    const elapsed = performance.now() - start;
-    expect(elapsed).toBeLessThan(200);
+  it('fold: all-static template instantiates without creating a watch', () => {
+    // Deterministic replacement for a wall-clock check that flaked under
+    // parallel load: count the watches the generated factory creates.
+    const compileFactory = (strings: string[]) =>
+      new Function(`return ${generate(parse(strings))}`)() as (
+        values: unknown[],
+        watchFn: (fn: () => void) => void,
+      ) => Node;
+    const watchFn = vi.fn((fn: () => void) => fn());
+
+    const staticFactory = compileFactory(['<div><span>a</span><span>b</span><span>c</span></div>']);
+    for (let i = 0; i < 100; i++) staticFactory([], watchFn);
+    expect(watchFn).not.toHaveBeenCalled();
+
+    // Control: one reactive slot folds into exactly one watch per instance.
+    const reactiveFactory = compileFactory(['<div><span>a</span><span>', '</span></div>']);
+    const node = reactiveFactory([() => 'x'], watchFn) as DocumentFragment;
+    expect(watchFn).toHaveBeenCalledTimes(1);
+    expect(node.textContent).toBe('ax');
   });
 });
 

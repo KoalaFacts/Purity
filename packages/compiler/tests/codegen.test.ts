@@ -84,3 +84,100 @@ describe('extracted compiler', () => {
     expect(() => render(['javascript:alert(1)'], ssrHelpers)).toThrow('Unsafe URL binding');
   });
 });
+
+// HTML parsing rules move or drop character data in table contexts: text in
+// <table>, <tbody>, <thead>, <tfoot>, <tr> is foster-parented out of the
+// table, and non-whitespace text in <colgroup> closes the colgroup and is
+// then foster-parented too. A U+200B text placeholder there ends up outside
+// the element, so slot paths miss. Comments stay where they are written.
+describe('expression slots in table contexts', () => {
+  const ZWSP = '​';
+  const nodes = (...tags: string[]) => tags.map((tag) => document.createElement(tag));
+  const serialize = (result: Node) => {
+    const wrapper = document.createElement('div');
+    wrapper.append(result);
+    return wrapper.innerHTML;
+  };
+
+  const cases: Array<{ name: string; strings: string[]; rows: string[]; expected: string }> = [
+    {
+      name: 'tbody',
+      strings: ['<table><tbody>', '</tbody></table>'],
+      rows: ['tr', 'tr'],
+      expected: '<table><tbody><tr></tr><tr></tr></tbody></table>',
+    },
+    {
+      name: 'thead',
+      strings: ['<table><thead>', '</thead></table>'],
+      rows: ['tr'],
+      expected: '<table><thead><tr></tr></thead></table>',
+    },
+    {
+      name: 'tfoot',
+      strings: ['<table><tfoot>', '</tfoot></table>'],
+      rows: ['tr'],
+      expected: '<table><tfoot><tr></tr></tfoot></table>',
+    },
+    {
+      name: 'tr',
+      strings: ['<table><tbody><tr>', '</tr></tbody></table>'],
+      rows: ['td', 'td'],
+      expected: '<table><tbody><tr><td></td><td></td></tr></tbody></table>',
+    },
+    {
+      name: 'table',
+      strings: ['<table>', '</table>'],
+      rows: ['tbody'],
+      expected: '<table><tbody></tbody></table>',
+    },
+    {
+      name: 'colgroup',
+      strings: ['<table><colgroup>', '</colgroup></table>'],
+      rows: ['col', 'col'],
+      expected: '<table><colgroup><col><col></colgroup></table>',
+    },
+  ];
+
+  for (const { name, strings, rows, expected } of cases) {
+    it(`uses a comment placeholder for a lone expression inside <${name}>`, () => {
+      const source = generate(parse(strings));
+      expect(source).not.toContain(ZWSP);
+      const render = compile(source);
+      expect(serialize(render([nodes(...rows)], immediate))).toBe(expected);
+      // Second clone reuses the prepared template.
+      expect(serialize(render([nodes(...rows)], immediate))).toBe(expected);
+    });
+
+    it(`keeps a lone expression inside <${name}> in place within a fragment`, () => {
+      const render = compile(generate(parse([`<p>a</p>${strings[0]}`, ...strings.slice(1)])));
+      expect(serialize(render([nodes(...rows)], immediate))).toBe(`<p>a</p>${expected}`);
+    });
+  }
+
+  it('binds reactive text placed in a table row slot', () => {
+    const render = compile(
+      generate(parse(['<table><tbody><tr><td>', '</td>', '</tr></tbody></table>'])),
+    );
+    const cell = document.createElement('td');
+    cell.textContent = 'x';
+    const result = render([() => 'name', [cell]], immediate) as HTMLElement;
+    expect(serialize(result)).toBe(
+      '<table><tbody><tr><td>name</td><td>x</td></tr></tbody></table>',
+    );
+  });
+
+  it('keeps the text placeholder outside table contexts', () => {
+    expect(generate(parse(['<div><span>', '</span></div>']))).toContain(ZWSP);
+    expect(generate(parse(['<table><tbody><tr><td>', '</td></tr></tbody></table>']))).toContain(
+      ZWSP,
+    );
+    expect(generate(parse(['<div><select>', '</select></div>']))).toContain(ZWSP);
+  });
+
+  it('keeps <select> option slots working with the text placeholder', () => {
+    const render = compile(generate(parse(['<div><select>', '</select></div>'])));
+    expect(serialize(render([nodes('option', 'option')], immediate))).toBe(
+      '<div><select><option></option><option></option></select></div>',
+    );
+  });
+});

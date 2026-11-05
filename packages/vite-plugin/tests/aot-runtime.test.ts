@@ -100,6 +100,24 @@ describe('AOT output runs correctly under jsdom', () => {
     expect(a).not.toBe(b);
   });
 
+  it('keeps a lone slot inside <tbody> in place (no foster-parented text placeholder)', () => {
+    const source =
+      "import { html } from '@purityjs/core/jit';\nconst make = (rows) => html`<table><tbody>${rows}</tbody></table>`;";
+    expect(plugin.transform(source, 'app.ts')!.code).not.toContain('​');
+    const { make } = evalAot(source);
+    const rows = () =>
+      ['a', 'b'].map((name) => {
+        const tr = document.createElement('tr');
+        tr.textContent = name;
+        return tr;
+      });
+    for (let i = 0; i < 2; i++) {
+      const table = make(rows()) as HTMLTableElement;
+      expect(table.nodeName).toBe('TABLE');
+      expect(table.outerHTML).toBe('<table><tbody><tr>a</tr><tr>b</tr></tbody></table>');
+    }
+  });
+
   it('rejects executable URL values in AOT factories', () => {
     const { make } = evalAot(
       "import { html } from '@purityjs/core/jit';\nconst make = (url) => html`<a href=${url}>go</a>`;",

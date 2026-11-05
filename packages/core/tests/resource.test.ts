@@ -1587,8 +1587,12 @@ describe('resource — retry delay is clamped to a finite non-negative ms', () =
       ...rest: unknown[]
     ) => {
       seen.push(ms as number);
-      return (orig as (...a: unknown[]) => ReturnType<typeof setTimeout>)(fn, ms, ...rest);
-    }) as typeof setTimeout;
+      return (orig as unknown as (...a: unknown[]) => ReturnType<typeof setTimeout>)(
+        fn,
+        ms,
+        ...rest,
+      );
+    }) as unknown as typeof setTimeout;
     return run(seen).finally(() => {
       (globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout = orig;
     });

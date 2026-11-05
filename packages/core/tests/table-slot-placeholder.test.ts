@@ -22,7 +22,7 @@ describe('each() rows directly inside table sections', () => {
   type Row = { id: number; name: string };
   const rowView = (row: () => Row) => html`<tr><td>${() => row().name}</td></tr>`;
   const key = (row: Row) => row.id;
-  const views: Record<string, (rows: () => Row[]) => unknown> = {
+  const views: Record<string, (rows: () => Row[]) => Node> = {
     tbody: (rows) => html`<table><tbody>${each(rows, rowView, key)}</tbody></table>`,
     thead: (rows) => html`<table><thead>${each(rows, rowView, key)}</thead></table>`,
     tfoot: (rows) => html`<table><tfoot>${each(rows, rowView, key)}</tfoot></table>`,

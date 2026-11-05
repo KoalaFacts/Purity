@@ -216,8 +216,8 @@ export function _getRegisteredComponentEntry(tag: string): RegisteredComponentEn
  * Define a component as a Custom Element with Shadow DOM.
  */
 export function component<
-  P extends Record<string, unknown> = Record<string, never>,
-  S extends Record<string, unknown> = Record<string, never>,
+  P extends Record<string, unknown> = Record<string, any>,
+  S extends Record<string, unknown> = Record<string, void>,
 >(
   tagName: string,
   renderFn: RenderFn<P, S>,

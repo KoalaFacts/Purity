@@ -125,7 +125,7 @@ for (const empty of [false, true])
                 hydrate: () => {
                   throw Error('controlled walker mismatch');
                 },
-              };
+              } as unknown as Node;
             const node = document.createElement('p');
             node.textContent = 'mounted recovery';
             return node;

@@ -456,7 +456,7 @@ describe('list() vs each() benchmark', () => {
     c2.appendChild(
       each(
         () => eachItems(),
-        (i) => html`<li>${i.text}</li>`,
+        (i) => html`<li>${i().text}</li>`,
         (i) => i.id,
       ),
     );

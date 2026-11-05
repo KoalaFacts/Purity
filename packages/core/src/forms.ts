@@ -409,8 +409,8 @@ enableFormControls();
  * Define a Form-Associated Custom Element component (`formAssociated: true` by default).
  */
 export function formComponent<
-  P extends Record<string, unknown> = Record<string, never>,
-  S extends Record<string, unknown> = Record<string, never>,
+  P extends Record<string, unknown> = Record<string, any>,
+  S extends Record<string, unknown> = Record<string, void>,
 >(
   tagName: string,
   renderFn: RenderFn<P, S>,

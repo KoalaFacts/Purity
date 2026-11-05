@@ -54,7 +54,7 @@ describe('hydrate mismatch warnings (opt-in dev diagnostics)', () => {
     host.innerHTML = '<p><!--hi--></p>';
     hydrate(host, () => html`<p>hi${'expr'}</p>`);
     expect(warnSpy).toHaveBeenCalled();
-    const msg = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    const msg = warnSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
     expect(msg).toContain('expected text node');
   });
 
@@ -78,7 +78,7 @@ describe('hydrate mismatch warnings (opt-in dev diagnostics)', () => {
     hydrate(host, () => html`<div>${html`<span>${() => name()}</span>`}</div>`);
     await tick();
     expect(warnSpy).toHaveBeenCalled();
-    const msg = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    const msg = warnSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
     expect(msg).toContain('<span>');
     expect(msg).toContain('<em>');
   });
@@ -122,7 +122,7 @@ describe('hydrate mismatch warnings (opt-in dev diagnostics)', () => {
     host.innerHTML = '<p>Hello <!--[-->world<!--]--></p>';
     hydrate(host, () => html`<p>Hi ${'world'}</p>`);
     expect(warnSpy).toHaveBeenCalled();
-    const msg = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    const msg = warnSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
     expect(msg).toContain('text content differs');
     expect(msg).toContain('"Hi "');
     expect(msg).toContain('"Hello "');
@@ -192,7 +192,7 @@ describe('hydrate text-rewrite on mismatch (opt-in)', () => {
     hydrate(host, () => html`<p>Hi ${'world'}</p>`);
     expect(host.textContent).toBe('Hi world');
     expect(warnSpy).toHaveBeenCalled();
-    const msg = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    const msg = warnSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
     expect(msg).toContain('text content differs');
     expect(msg).toContain('rewritten');
   });

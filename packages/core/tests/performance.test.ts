@@ -74,7 +74,7 @@ describe('performance', () => {
   describe('computed propagation', () => {
     it('propagates through 1000-deep chain', () => {
       const source = state(0);
-      let current = source;
+      let current: () => number = source;
       for (let i = 0; i < 1000; i++) {
         const prev = current;
         current = compute(() => prev() + 1);
@@ -181,7 +181,7 @@ describe('performance', () => {
 
   describe('batch', () => {
     it('10k writes triggers effect once', async () => {
-      const signals = [];
+      const signals: ReturnType<typeof state<number>>[] = [];
       for (let i = 0; i < 100; i++) signals.push(state(0));
 
       let runs = 0;

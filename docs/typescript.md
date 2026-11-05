@@ -70,6 +70,9 @@ watch([first, last], ([f, l], [oldF, oldL]) => {
 });
 ```
 
+A function returned from an effect or callback runs as cleanup; any other
+return value is ignored, so `watch(() => console.log(count()))` is fine.
+
 The `[first, last]` overload uses `as const` inference internally
 (`<const S extends readonly WatchSource<any>[]>`), so positional types
 flow through without manual annotation.
@@ -112,6 +115,11 @@ Tag({ label: 1 }); // type error: number not assignable to string
 ```
 
 The first generic parameter is the props shape. Defaults flow naturally.
+
+Without generics, props are `Record<string, any>` and every slot is a
+no-argument accessor, so untyped components such as
+``component('p-card', ({ title }, { default: body }) => html`<h2>${title}</h2>${body()}`)``
+compile; pass the generics when you want call sites checked.
 
 ### Slots — three flavors
 

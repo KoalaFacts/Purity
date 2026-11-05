@@ -29,6 +29,14 @@
   function still runs as cleanup and other values are ignored, as at runtime;
   before, `watch(() => console.log(count()))` — the README example — and
   `watch(count, (v) => list.push(v))` failed to type-check under `strict`.
+- Untyped `component()` calls type-check: props default to
+  `Record<string, any>` and slots to no-argument accessors (they defaulted to
+  `never`, so `({ title }, { default: body }) => … ${body()}` from the README
+  failed under `strict`). Explicit generics are unchanged.
+- `each()`, `when()`, `match()` and `virtualEach()` are typed as returning
+  `DocumentFragment`, like `html`, so `parent.appendChild(each(…))` and a
+  `when()` returned from an `each()` row compile. The runtime values are
+  unchanged.
 
 ## 0.5.2
 

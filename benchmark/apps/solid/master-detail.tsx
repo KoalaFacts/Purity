@@ -174,9 +174,8 @@ function App() {
               <div
                 role="button"
                 tabIndex={0}
-                class="list-item"
+                class={['list-item', { selected: person.id === selectedId() }]}
                 style={{ padding: '4px 8px', cursor: 'pointer' }}
-                classList={{ selected: person.id === selectedId() }}
                 onClick={() => setSelectedId(person.id)}
               >
                 {person.name}

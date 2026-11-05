@@ -22,16 +22,16 @@
     "@purityjs/core": "*",
     "@purityjs/router": "*",
     "@purityjs/vite-plugin": "*",
-    "@solidjs/vite-plugin": "3.0.0-next.50",
-    "@solidjs/web": "2.0.0-rc.14",
+    "@solidjs/vite-plugin": "3.0.0-next.55",
+    "@solidjs/web": "2.0.0-rc.20",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@vitejs/plugin-react": "6.1.2",
     "@vitejs/plugin-vue": "^6.0.10",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "solid-js": "2.0.0-rc.15",
-    "svelte": "^5.57.1",
-    "vue": "3.6.0-rc.13"
+    "solid-js": "2.0.0-rc.20",
+    "svelte": "^5.57.3",
+    "vue": "3.6.0-rc.14"
   },
   "devDependencies": {
     "axe-core": "4.14.0",

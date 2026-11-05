@@ -61,7 +61,7 @@ All rows remain open at the broad acceptance level. That does **not** mean Purit
 
 ## 3. What Purity already has
 
-Purity already implements dynamic dependency tracking, equality-aware state/memos, lazy derivations, batching, owned cleanup, computed error recovery, keyed DOM reuse, same-key object replacement and initialization rollback. Its resource/query layer already provides cancellation signals, stale-result suppression, retained data during refresh, retry, mutation and shared caching. Those are foundations to preserve, not new absence claims. [Signals](../packages/signals/src/signals.ts) · [Resources](../packages/core/src/resource.ts) · [Query ownership](../packages/core/tests/query-ownership.test.ts)
+Purity already implements dynamic dependency tracking, equality-aware state/memos, lazy derivations, batching, owned cleanup, computed error recovery, keyed DOM reuse, same-key object replacement and initialization rollback. Its resource/query layer already provides cancellation signals, stale-result suppression, retained data during refresh, retry, mutation and shared caching. Those are foundations to preserve, not new absence claims. [Signals](../packages/signals/src/signals.ts) · [Resources](../packages/core/src/resource.ts) · [Query ownership](../packages/platform/tests/query-ownership.test.ts)
 
 Strict AOT, DOM-preserving hydration, typed DSD properties, island first-activation replay, route loaders/cancellation, native and enhanced actions, production bundle budgets, and client/SSR retention checks also exist. Candidate tarball checks and actual registry client/SSR checks are different evidence sets. [Capability audit](./framework-capabilities.md) · [Islands](./islands.md) · [Strict AOT](../packages/vite-plugin/README.md#strict-aot-builds)
 
@@ -89,6 +89,8 @@ The cleanup case compares source-free Purity watches with nested Solid roots. It
 **P0; Evidence gap; open.** Prerequisites: none. Workload: W0.
 
 **Solid v2 target:** The selected target is rc.18 for core, signals and web, with separately versioned build and router packages.
+
+**Comparator drift (recorded 2026-11-05):** the general benchmark workspace now resolves `solid-js`/`@solidjs/web` 2.0.0-rc.20 and `@solidjs/signals` rc.21 (since #345). `benchmark/run-bench.ts` results against it are exploratory, not baseline evidence; the frozen rc.18 target is unchanged and recorded with the drift in [`target.json`](../benchmark/solid-v2/target.json).
 
 **Purity at the audited source:** Existing benchmark resolves core/signals rc.15, web/compiler/babel-plugin rc.14 and Vite plugin next.50. Its historical results remain valid only for those inputs.
 

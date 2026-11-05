@@ -82,8 +82,8 @@ client-side beyond applying diffs and forwarding events.
 
 **Why Purity doesn't have this:** Purity already ships client-side
 persistent-connection primitives —
-[`eventSourceSignal`](../packages/core/src/event-source-signal.ts) and
-[`webSocketSignal`](../packages/core/src/web-socket-signal.ts) (the
+[`eventSourceSignal`](../packages/platform/src/browser-signals/event-source-signal.ts) and
+[`webSocketSignal`](../packages/platform/src/browser-signals/web-socket-signal.ts) (the
 latter with `send`/`readyState`, reconnect handling) — but nothing on
 the server side turns a WebSocket into a live circuit: no server-held
 reactive graph per connection and no "apply this diff to the live
@@ -111,7 +111,7 @@ propagate without a server round trip.
 transport — its bidirectional `send`/receive shape is what this needs,
 not `eventSourceSignal` (receive-only: a plain `ComputedAccessor<T>`
 with no way to forward a user event back to the server, see
-[`packages/core/src/event-source-signal.ts`](../packages/core/src/event-source-signal.ts));
+[`packages/platform/src/browser-signals/event-source-signal.ts`](../packages/platform/src/browser-signals/event-source-signal.ts));
 a server-side process holding one live reactive graph per connected
 client; a diffing/patch protocol; and explicit backpressure/reconnect/
 session-affinity handling for the scaling story (this is the

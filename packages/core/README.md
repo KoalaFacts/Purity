@@ -285,7 +285,7 @@ steady state is essentially `runId++` plus a no-op `batch()` because
 `writeState` short-circuits on `Object.is`.
 
 **Memory (per resource lifecycle, after dispose)** — measured with
-`benchmark/tools/resource-heap.mjs` over 1 000 cycles:
+`benchmark/tools/resource-heap.ts` over 1 000 cycles:
 
 | Cycle                                            | Retained per cycle |
 | ------------------------------------------------ | ------------------ |

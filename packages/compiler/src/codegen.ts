@@ -1137,8 +1137,7 @@ function genAttrBinding(
   // even when an accessor returns the caller-owned `_v` array or NaN.
   // Boolean bindings normalize to booleans, so `_v` is a safe sentinel there.
   const last = `_l${id}`;
-  const memo = (x: string, write: string) =>
-    `var ${x}=${av}();if(${x}!==${last}){${write}}`;
+  const memo = (x: string, write: string) => `var ${x}=${av}();if(${x}!==${last}){${write}}`;
 
   switch (attr.kind) {
     case 'event':

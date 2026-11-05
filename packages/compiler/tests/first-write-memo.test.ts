@@ -113,5 +113,6 @@ for (const mode of ['dom', 'hydrate'] as const) {
       });
       rerun();
       expect(writes).toBe(1);
+    });
   });
 }

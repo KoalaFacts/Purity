@@ -241,7 +241,7 @@ describe('each', () => {
         li.textContent = String(item());
         return li;
       },
-    );
+    ) as DocumentFragment;
 
     expect(renderedIndices).toHaveLength(40);
     expect(renderedIndices[0]).toBe(0);
@@ -273,7 +273,7 @@ describe('each', () => {
         row.getBoundingClientRect = () => new DOMRect(0, index * 24 - container.scrollTop, 200, 24);
         return row;
       },
-    );
+    ) as DocumentFragment;
 
     await tick();
     document.body.appendChild(container);
@@ -306,7 +306,7 @@ describe('each', () => {
             row.getBoundingClientRect = () => new DOMRect(0, top, 200, height);
             return row;
           },
-        ),
+        ) as DocumentFragment,
       container,
     );
     await tick();
@@ -347,7 +347,7 @@ describe('each', () => {
             return li;
           },
           (item) => item,
-        ),
+        ) as DocumentFragment,
       container,
     );
     await tick();
@@ -424,7 +424,7 @@ describe('each', () => {
             return li;
           },
           (item) => item,
-        ),
+        ) as DocumentFragment,
       container,
     );
     await tick();
@@ -475,7 +475,7 @@ describe('each', () => {
             return li;
           },
           (item) => item.id,
-        ),
+        ) as DocumentFragment,
       container,
     );
     await tick();
@@ -536,7 +536,7 @@ describe('each', () => {
             return li;
           },
           (item) => item,
-        ),
+        ) as DocumentFragment,
       container,
     );
     await tick();
@@ -587,7 +587,7 @@ describe('each', () => {
             return li;
           },
           (item) => item,
-        ),
+        ) as DocumentFragment,
       container,
     );
     await tick();
@@ -638,7 +638,7 @@ describe('each', () => {
         (item) => html`<li>${item()}</li>`,
         (item) => item,
       ),
-    ) as CapturedDeferredEach<number>;
+    ) as unknown as CapturedDeferredEach<number>;
 
     pushContext(context);
     try {
@@ -672,7 +672,7 @@ describe('each', () => {
     const context = new ComponentContext();
     const deferred = withHydration(() =>
       virtualEach(items, (item) => html`<li>${item()}</li>`),
-    ) as CapturedDeferredEach<number | undefined>;
+    ) as unknown as CapturedDeferredEach<number | undefined>;
 
     pushContext(context);
     try {
@@ -1703,11 +1703,12 @@ describe('each — SSR-context dispatch (ADR 0023)', () => {
   });
 
   it('keeps the complete list in SSR when virtual rendering is enabled', () => {
-    const result = inSSRContext(() =>
-      virtualEach(
-        Array.from({ length: 100 }, (_, index) => index),
-        (item) => `<li>${item()}</li>`,
-      ),
+    const result = inSSRContext(
+      () =>
+        virtualEach(
+          Array.from({ length: 100 }, (_, index) => index),
+          (item) => `<li>${item()}</li>`,
+        ) as DocumentFragment,
     );
     const html = ssrHtmlText(result);
     expect(html.match(/<!--er:/g)).toHaveLength(100);
@@ -2393,7 +2394,7 @@ describe('duplicate keys — review follow-ups (hydration, virtual, listSSR, dia
           return row;
         },
         (item: Row) => item.id,
-      );
+      ) as DocumentFragment;
       document.body.appendChild(container);
       container.appendChild(fragment);
       await tick();
@@ -2422,7 +2423,7 @@ describe('duplicate keys — review follow-ups (hydration, virtual, listSSR, dia
   it('listSSR uses the options key (not the 4th argument) when an options object is passed, like list()', () => {
     const warn = warnSpy();
     try {
-      const out = listSSR(
+      const out = listSSR<Row & { k: string }>(
         'li',
         [
           { id: 1, k: 'x', v: 'a' },
@@ -2475,7 +2476,7 @@ describe('each() — index-sensitive keys with a dropped duplicate', () => {
       const expected = ['a@0', 'b@2', 'c@3'];
 
       const plain = each(values, mapFn, keyFn);
-      const virtual = virtualEach(values, mapFn, keyFn);
+      const virtual = virtualEach(values, mapFn, keyFn) as DocumentFragment;
 
       expect(Array.from(plain.querySelectorAll('li')).map((li) => li.textContent)).toEqual(
         expected,

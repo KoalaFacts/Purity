@@ -81,7 +81,7 @@ describe('mount', () => {
   it('mounts a component into a container', () => {
     const container = document.createElement('div');
     mount(() => html`<p>Hello</p>`, container);
-    expect(container.querySelector('p').textContent).toBe('Hello');
+    expect(container.querySelector('p')!.textContent).toBe('Hello');
   });
 
   it('returns an unmount function', () => {
@@ -222,7 +222,7 @@ describe('mount', () => {
 describe('lifecycle hooks', () => {
   it('calls onMount after DOM insertion', async () => {
     const container = document.createElement('div');
-    let mountedEl = null;
+    let mountedEl = null as Element | null;
 
     mount(() => {
       onMount(() => {
@@ -233,12 +233,12 @@ describe('lifecycle hooks', () => {
 
     await new Promise<void>((r) => queueMicrotask(r));
     expect(mountedEl).not.toBeNull();
-    expect(mountedEl.textContent).toBe('Mounted');
+    expect(mountedEl!.textContent).toBe('Mounted');
   });
 
   it('calls onDestroy on unmount', () => {
     const container = document.createElement('div');
-    const order = [];
+    const order: string[] = [];
 
     const { unmount } = mount(() => {
       onDestroy(() => order.push('destroyed'));
@@ -267,10 +267,10 @@ describe('lifecycle hooks', () => {
 
   it('calls onError when component throws', () => {
     const container = document.createElement('div');
-    const errors = [];
+    const errors: string[] = [];
 
     mount(() => {
-      onError((err) => errors.push(err.message));
+      onError((err) => errors.push((err as Error).message));
       throw new Error('test error');
     }, container);
 
@@ -279,7 +279,7 @@ describe('lifecycle hooks', () => {
 
   it('supports nested onDestroy inside onMount', async () => {
     const container = document.createElement('div');
-    const order = [];
+    const order: string[] = [];
 
     const { unmount } = mount(() => {
       onMount(() => {
@@ -323,7 +323,7 @@ describe('lifecycle hooks', () => {
     const errors: string[] = [];
 
     mount(() => {
-      onError((err: Error) => errors.push(err.message));
+      onError((err) => errors.push((err as Error).message));
       onMount(() => {
         throw new Error('mount-fail');
       });
@@ -355,7 +355,7 @@ describe('lifecycle hooks', () => {
     const errors: string[] = [];
 
     mount(() => {
-      onError((err: Error) => errors.push(`parent:${err.message}`));
+      onError((err) => errors.push(`parent:${(err as Error).message}`));
       mount(() => {
         throw new Error('child-fail');
       }, document.createElement('div'));
@@ -492,7 +492,7 @@ describe('lifecycle hooks', () => {
     const errors: string[] = [];
 
     const { unmount } = mount(() => {
-      onError((err: Error) => errors.push(err.message));
+      onError((err) => errors.push((err as Error).message));
       // Failed child — bubbles 'boom' to the parent's onError.
       mount(() => {
         onDestroy(() => order.push('bad-destroyed'));

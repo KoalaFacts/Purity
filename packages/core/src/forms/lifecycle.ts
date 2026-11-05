@@ -6,8 +6,8 @@ export { enableFormLifecycle } from './lifecycle-setup.ts';
 
 /** Define a form-associated element that does not bridge a native control. */
 export function formComponent<
-  P extends Record<string, unknown> = Record<string, never>,
-  S extends Record<string, unknown> = Record<string, never>,
+  P extends Record<string, unknown> = Record<string, any>,
+  S extends Record<string, unknown> = Record<string, void>,
 >(
   tagName: string,
   renderFn: RenderFn<P, S>,

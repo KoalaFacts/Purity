@@ -24,7 +24,9 @@ describe('hydrate arrays of templates', () => {
       host,
       () => html`<main>${[html`<section><div .payload=${payload}></div></section>`]}</main>`,
     ).unmount;
-    expect((host.querySelector('div') as HTMLElement & { payload: unknown }).payload).toBe(payload);
+    expect(
+      (host.querySelector('div') as unknown as HTMLElement & { payload: unknown }).payload,
+    ).toBe(payload);
     expect(payload).toEqual([['x']]);
   });
 

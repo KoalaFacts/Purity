@@ -232,7 +232,7 @@ describe('failed list row initialization', () => {
             );
           });
           throw new Error('row failed');
-        });
+        }) as DocumentFragment;
       }, document.createElement('div'));
       result.unmount();
       expect(runs).toBe(1);
@@ -440,7 +440,7 @@ describe('failed list row initialization', () => {
           },
           (item) => item,
         ),
-      ) as CapturedDeferredEach<number>;
+      ) as unknown as CapturedDeferredEach<number>;
       expect(() =>
         inflateDeferredEach(deferred, Array.from(host.childNodes).slice(0, -1), close),
       ).toThrow('hydrated row failed');

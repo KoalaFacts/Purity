@@ -408,6 +408,7 @@
   "scripts": {
     "build": "vp build && vp build -c vite.browser.config.ts && tsc --emitDeclarationOnly",
     "test": "vp test run",
+    "typecheck": "tsc -p tsconfig.tests.json",
     "bench": "vp test bench --run"
   },
   "dependencies": {

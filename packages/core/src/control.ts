@@ -240,7 +240,15 @@ const matchHydrationAdapter: MatchHydrationAdapter = {
 
 /**
  * Reactive pattern matching. Renders different content based on a signal value.
+ *
+ * Typed as `DocumentFragment` like `html`: during SSR or hydration the value is
+ * an internal handle that only a template interpolation should consume.
  */
+export function match<T extends string | number | boolean>(
+  sourceFn: () => T,
+  cases: MatchCases<T>,
+  fallback?: MatchView,
+): DocumentFragment;
 export function match<T extends string | number | boolean>(
   sourceFn: () => T,
   cases: MatchCases<T>,
@@ -278,8 +286,13 @@ export function match<T extends string | number | boolean>(
 }
 
 /**
- * Conditional rendering. Shorthand for boolean `match()`.
+ * Conditional rendering. Shorthand for boolean `match()`. Typed like `match()`.
  */
+export function when(
+  conditionFn: () => boolean,
+  thenFn: MatchView,
+  elseFn?: MatchView,
+): DocumentFragment;
 export function when(
   conditionFn: () => boolean,
   thenFn: MatchView,
@@ -731,7 +744,13 @@ export const defaultEachHydrationAdapter: EachHydrationAdapter = {
 /**
  * Reactive list rendering. Reuses DOM via per-item signals + LIS reorder.
  * For virtualized viewport windowing of massive lists, use `virtualEach` from `@purityjs/core/virtual`.
+ * Typed as `DocumentFragment` like `html` (see `match()`).
  */
+export function each<T>(
+  listAccessor: (() => T[]) | T[],
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  keyFn?: (item: T, index: number) => unknown,
+): DocumentFragment;
 export function each<T>(
   listAccessor: (() => T[]) | T[],
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,

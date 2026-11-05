@@ -1,5 +1,7 @@
 # 0038: Islands — implementation plan
 
+> **Status: historical (archived 2026-11-05).** Implementation plan for ADR 0038; all phases shipped. File paths refer to the pre-split `packages/core` layout. The current guide is [`docs/islands.md`](../islands.md).
+
 Companion to ADR [0038](../decisions/0038-islands.md). The ADR fixes
 the design; this plan fixes the order, the file-level touchpoints, and
 the acceptance criteria for each PR. Line numbers are accurate as of

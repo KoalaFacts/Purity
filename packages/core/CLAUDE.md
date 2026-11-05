@@ -2,81 +2,11 @@
 
 Purity core framework — no virtual DOM, TC39-Signals-inspired reactivity.
 
-## API
+## Scope
 
-```ts
-state(initial)              // read: count(), write: count(5), update: count(v => v+1)
-compute(fn)                 // derived: doubled = compute(() => count() * 2)
-watch(fn)                   // auto-track: watch(() => console.log(count()))
-watch(source, cb)           // explicit: watch(count, (val, old) => {})
-watch([a, b], cb)           // multi: watch([a, b], ([va, vb], [oa, ob]) => {})
-batch(fn)                   // batch: batch(() => { a(1); b(2); }) — single flush
-debounced(source, ms)        // delayed mirror: const q = debounced(search, 300)
-resource(fetcher)            // async data: r(), r.loading(), r.error(), r.refresh(), r.mutate()
-resource(source, fetcher)    // re-fetches on source change; falsy source = skip
-lazyResource(fetcher)        // imperative: r.fetch(args) triggers, r.refresh() reuses last
-html`<div>...</div>`        // JIT compiled template → DOM nodes
-css`.box { color: red; }`   // scoped styles (Shadow DOM in components, <style> + class scoping outside)
-component('p-tag', renderFn, options?) // custom element with Shadow DOM; options={formAssociated} per ADR 0036
-slot<E>(name?)               // context-aware slot accessor
-internals()                  // host element ElementInternals (inside component())
-bindComponentState(name, fn) // reactive :state(name) on host, ref-counted (ADR 0035)
-teleport(target, viewFn)     // render to different DOM location, reactive
-mount(componentFn, el)       // mount to DOM, returns { unmount }
-onMount(fn)                  // after DOM insertion (microtask)
-onDestroy(fn)                // on unmount
-onDispose(fn)                // register cleanup
-onError(fn)                  // error boundary
-onFormAssociated(fn)         // form participation (ADR 0036)
-onFormDisabled(fn)           // form/fieldset disabled flips (ADR 0036)
-onFormReset(fn)              // form reset (ADR 0036)
-onFormStateRestore(fn)       // bfcache / autofill restore (ADR 0036)
-match(sourceFn, cases)       // pattern matching
-when(condFn, thenFn, elseFn?) // boolean conditional
-each(listFn, mapFn, keyFn?)  // list rendering — mapFn receives item as accessor: (item: () => T, i: number)
-list(tag, listAccessor, textOrOptions, keyFn?) // leaner list of single-tag rows
-suspense(view, fallback, { timeout? }) // SSR error/timeout isolation boundary — emits `<!--s:N--><!--/s:N-->` markers (ADR 0006 Phase 1+2)
+`@purityjs/core` owns templates (`html`, JIT), components (`component`, `slot`, `teleport`, `mount`, lifecycle hooks), control flow (`when`, `match`, `each`, `list`, `suspense`), `resource`/`lazyResource`/`debounced`, `css`, forms (`@purityjs/core/forms`), virtual lists (`@purityjs/core/virtual`) and client hydration. Reactivity (`state`, `compute`, `watch`, `batch`, scopes) lives in [`@purityjs/signals`](../signals/README.md); the template parser and code generators in [`@purityjs/compiler`](../compiler/README.md); browser/live-data signals, `query`, `optimistic`, server actions and islands in [`@purityjs/platform`](../platform/README.md); routing in [`@purityjs/router`](../router/README.md).
 
-// Persistence + lifecycle signal primitives — ADR 0039
-localSignal(key, default, options?)      // localStorage/sessionStorage-backed, cross-tab synced
-broadcastSignal(channel, default, validate)  // BroadcastChannel-backed cross-tab signal — validate is a required type-predicate; incoming messages that fail are dropped
-pageVisibilitySignal()                   // 'visible' | 'hidden' — visibilitychange
-pageLifecycleSignal()                    // 'active' | 'passive' | 'hidden' | 'frozen' | 'terminated'
-bfcacheRestoreSignal()                   // counter — increments on each bfcache restore
-
-// Observer-as-signal primitives — ADR 0040
-intersectionSignal(target, options?)     // IntersectionObserver → boolean
-mutationSignal(target, options?)         // MutationObserver → MutationRecord[] (latest batch)
-mediaSignal(query)                       // matchMedia → boolean (cached per query)
-resizeSignal(target, options?)           // ResizeObserver → DOMRectReadOnly (contentRect)
-
-// Environment + system preference signals — ADR 0041
-onlineSignal()                           // boolean — navigator.onLine + online/offline events
-prefersColorSchemeSignal()               // 'light' | 'dark'
-prefersReducedMotionSignal()             // boolean
-prefersContrastSignal()                  // 'no-preference' | 'more' | 'less' | 'custom'
-screenOrientationSignal()                // 'portrait' | 'landscape'
-localeSignal()                           // string — navigator.language + languagechange
-devicePixelRatioSignal()                 // number — re-binds on DPR change
-fullscreenSignal()                       // Element | null — document.fullscreenElement
-
-// Capability + permission signals — ADR 0042
-permissionSignal(name)                   // PermissionState — async navigator.permissions.query
-batterySignal()                          // BatteryInfo | null — async navigator.getBattery
-networkInformationSignal()               // NetworkInformation — navigator.connection
-idleSignal(detector)                     // IdleSignalState — wraps a user-started IdleDetector
-
-// Live data signals — ADR 0047
-eventSourceSignal(url, opts)             // SSE → ComputedAccessor<T>; required validate; on-visible reconnect by default
-webSocketSignal(url, opts)               // WS → ComputedAccessor<T> & { send, readyState }; validate required; send-on-closed = warn+drop
-
-// Query SWR — ADR 0048
-query({ key, fetcher, ...opts })         // stale-while-revalidate over resource(); module-level cache; revalidate on visible/online/bfcache
-invalidateQuery(key)                     // imperative cache-bust + refresh; no-op for unknown key
-
-// Optimistic-update wrapper — ADR 0049
-optimistic(action, opts)                 // typed wrapper over serverAction; apply→rollback→invalidate; default isSuccess = res.ok
-```
+The public API with examples is in [README.md](./README.md); which entry provides which feature is in [docs/core-entry-points.md](../../docs/core-entry-points.md). Keep this file to layout and conventions.
 
 ## Hydration
 
@@ -179,32 +109,32 @@ ${() => signal()}     reactive text
 ## File Layout (src/)
 
 ```
-signals.ts          — state, compute, watch, batch (push-pull graph, no deps)
-resource.ts         — resource() / lazyResource() async data (built on watch)
-debounced.ts        — debounced() derived signal helper
-compiler/
-  ast.ts            — AST node types
-  parser.ts         — charcode-based template parser
-  codegen.ts        — AST → optimized JS DOM code (generate / generateSSR / generateHydrate)
-  compile.ts        — JIT html`` with WeakMap cache; registers the compiler for hydration
-  hydrate-runtime.ts — isHydrating flag, DeferredTemplate thunk, inflateDeferred (ADR 0005)
-  index.ts          — re-exports for the @purityjs/core/compiler subpath
-component.ts        — ComponentContext, Scope, mount, lifecycle
-elements.ts         — component(), slot(), teleport(), Custom Element
-control.ts          — match(), when(), each() + LIS reorder
+index.ts            — default entry: CSR surface (csr.ts) + hydrate + form hooks
+csr.ts              — CSR entry (`@purityjs/core/csr`): public client API without hydration
+component.ts        — ComponentContext, mount, lifecycle
+elements.ts         — component(), slot(), teleport(), Custom Element wiring
+control.ts          — match(), when(), each() + keyed reconcile (LIS reorder)
+control/            — dispatch.ts (SSR hooks), hydrate.ts (control-flow adoption), keys.ts, list-runtime.ts (`./list-runtime` entry)
+resource.ts         — resource() / lazyResource(); resource/ holds dispatch and retry
+debounced.ts        — debounced() (same implementation as @purityjs/signals)
 styles.ts           — css() scoped styles
-index.ts            — public API exports
+forms.ts, forms/    — form-associated elements (`./forms`, `./forms/lifecycle`)
+virtual.ts          — virtualized lists (`./virtual`)
+hydrate.ts          — root hydrate()
+hooks.ts            — passive cross-package / optional-feature hook bridge
+ssr-bridge.ts, ssr-context.ts, ssr/ — server integration points and hydration cache
+__purity_swap.ts    — client splice helper for streamed Suspense boundaries
+compiler/           — compile.ts (JIT html`` with WeakMap cache), jit.ts (`./jit`), client.ts (`./jit-client`, no hydration codegen), runtime.ts (`./runtime`)
+runtime/            — csr-runtime.ts (`./csr-runtime`, swapSlot etc.), hydrate-runtime.ts (deferred templates, ADR 0005), hydrate-elements.ts
 ```
 
-The compiler is exposed under the `@purityjs/core/compiler` subpath
-(`packages/core/package.json` `exports`) so `@purityjs/vite-plugin` can
-import it without pulling in runtime code.
+Parser, AST and the three code generators (`generate` / `generateSSR` / `generateHydrate`) are in `packages/compiler/src/`, published as `@purityjs/compiler` so `@purityjs/vite-plugin` can import them without runtime code.
 
 ## Testing
 
 ```bash
 npx vitest run          # run all tests
-npm run bench           # run vitest micro-benchmarks (resource.bench.ts)
+npm run bench           # vitest micro-benchmarks (from packages/core)
 ```
 
 - Use `const tick = () => new Promise(r => queueMicrotask(r))` for async updates

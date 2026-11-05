@@ -1,5 +1,7 @@
 # Client-first AOT implementation plan
 
+> **Status: historical (archived 2026-11-05).** Implementation plan for strict client-first AOT; it shipped. The current guide is [`docs/client-first-aot.md`](../client-first-aot.md). Formerly `docs/superpowers/plans/2026-10-28-client-first-aot.md`.
+
 > Execute inline, one work package, using the existing TypeScript/Vite+/Vitest/Playwright toolchain. The user explicitly authorized major breaking changes on 2026-10-28 and waived backward compatibility. Do not ask again for routine development approval.
 
 **Goal:** Stop generating and shipping hydration template machinery in applications that only create client DOM, without removing hydration from applications that need it.

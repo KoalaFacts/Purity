@@ -22,10 +22,11 @@ npm run preview &   # likewise
 ```
 
 `npm run build` and `npm run preview` set `NODE_OPTIONS='--conditions=development'`,
-which makes Node resolve `@purityjs/core/compiler` to the package's source via
-the `"development"` conditional export (see `packages/core/package.json`). This
-means edits to `packages/core/src/compiler/codegen.ts` flow through one bench
-build — you do not need to `npm run build -w @purityjs/core` first.
+and `benchmark/vite.config.ts` aliases the `@purityjs/core` entries to their
+source files, so edits to core runtime source flow through one bench build. The
+Vite plugin loads `@purityjs/compiler` in Node, where its `development`
+condition resolves to `dist` (see `packages/compiler/package.json`), so after editing
+`packages/compiler/src/codegen.ts` run `npm run build -w @purityjs/compiler` first.
 
 ## Single-framework profile
 

@@ -8,8 +8,8 @@ When asked to write tests for Purity components or features:
 import { describe, expect, it, vi } from 'vitest';
 import { state, compute, watch, component, mount, onMount, onDestroy, onDispose } from '../../core/src/index.ts'; import { html } from '../../core/src/compiler/jit.ts';
 // Or for compiler tests:
-import { parse } from '../../core/src/compiler/parser.ts';
-import { generate } from '../../core/src/compiler/codegen.ts';
+import { parse } from '../../compiler/src/parser.ts';
+import { generate } from '../../compiler/src/codegen.ts';
 
 const tick = () => new Promise((r) => queueMicrotask(r));
 ```

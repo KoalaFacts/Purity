@@ -1,6 +1,6 @@
 {
   "name": "@purityjs/core",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Minimal web framework with TC39-Signals-inspired reactivity, no virtual DOM",
   "keywords": [
     "framework",
@@ -411,7 +411,7 @@
     "bench": "vp test bench --run"
   },
   "dependencies": {
-    "@purityjs/compiler": "0.5.1",
-    "@purityjs/signals": "0.5.1"
+    "@purityjs/compiler": "0.5.2",
+    "@purityjs/signals": "0.5.2"
   }
 }

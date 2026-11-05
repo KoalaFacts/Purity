@@ -6,7 +6,7 @@
 // Exit code 1 and one line per problem when anything is wrong.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, normalize, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -117,6 +117,15 @@ export function linksOf(text: string): MarkdownLink[] {
   return out;
 }
 
+/** Percent-decodes a link part; a malformed escape is kept as written. */
+function safeDecode(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
+}
+
 function isExternal(target: string): boolean {
   return /^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('//');
 }
@@ -160,7 +169,7 @@ function scriptTable(root: string): Map<string, Set<string>> {
     if (p.endsWith('/*')) {
       const base = join(root, p.slice(0, -2));
       if (existsSync(base)) {
-        const entries = execFileSync('ls', ['-1', base], { encoding: 'utf8' }).split('\n');
+        const entries = readdirSync(base);
         for (let j = 0; j < entries.length; j++)
           if (entries[j]) dirs.push(`${p.slice(0, -2)}/${entries[j]}`);
       }
@@ -264,8 +273,7 @@ function checkNamedPaths(root: string, file: string, text: string, problems: Doc
 function checkAdrs(root: string, problems: DocsProblem[]): void {
   const dir = join(root, 'docs/decisions');
   if (!existsSync(dir)) return;
-  const names = execFileSync('ls', ['-1', dir], { encoding: 'utf8' })
-    .split('\n')
+  const names = readdirSync(dir)
     .filter((n) => /^\d{4}-.*\.md$/.test(n))
     .sort();
   const index = existsSync(join(dir, 'README.md'))
@@ -327,8 +335,11 @@ export function checkDocs(root: string): DocsProblem[] {
       const { target, line } = links[j];
       if (isExternal(target)) continue;
       const hash = target.indexOf('#');
-      const pathPart = decodeURI(hash === -1 ? target : target.slice(0, hash)).replace(/\?.*$/, '');
-      const anchor = hash === -1 ? '' : decodeURIComponent(target.slice(hash + 1));
+      const pathPart = safeDecode(hash === -1 ? target : target.slice(0, hash)).replace(
+        /\?.*$/,
+        '',
+      );
+      const anchor = hash === -1 ? '' : safeDecode(target.slice(hash + 1));
       const abs = pathPart === '' ? join(root, file) : resolve(dirname(join(root, file)), pathPart);
       const rel = relative(root, abs).split(sep).join('/');
       if (rel.startsWith('..')) {

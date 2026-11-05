@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { parseSync } from 'oxc-parser';
-import { SourceMapConsumer } from 'source-map-js';
+import { parseSync, type ImportDeclaration } from 'oxc-parser';
+import { SourceMapConsumer, type RawSourceMap } from 'source-map-js';
 import { purity } from '../src/index.ts';
 
 for (const ssr of [false, true]) {
@@ -53,7 +53,8 @@ for (const ssr of [false, true]) {
         const parsed = parseSync('app.ts', result!.code);
         expect(parsed.errors).toEqual([]);
         const imports = parsed.program.body.filter(
-          (node) => node.type === 'ImportDeclaration' && node.source.value === '@purityjs/core/jit',
+          (node): node is ImportDeclaration =>
+            node.type === 'ImportDeclaration' && node.source.value === '@purityjs/core/jit',
         );
         const names = imports.flatMap((node) =>
           node.specifiers.map((specifier) => specifier.local.name),
@@ -116,9 +117,9 @@ for (const ssr of [false, true]) {
       });
       const lines = result!.code.split('\n');
       const line = lines.findIndex((text) => text.includes('throw new Error(message)')) + 1;
-      const map = new SourceMapConsumer(result!.map);
+      const map = new SourceMapConsumer(result!.map as unknown as RawSourceMap);
       expect(map.originalPositionFor({ line, column: 0 }).line).toBe(4);
-      expect(result!.map.sourcesContent).toEqual([source]);
+      expect(result!.map!.sourcesContent).toEqual([source]);
     });
   });
 }

@@ -1,3 +1,4 @@
+import type { Plugin } from 'vite';
 // ---------------------------------------------------------------------------
 // @purityjs/vite-plugin — AOT template compilation + file-system routing
 //
@@ -545,7 +546,7 @@ export function purity(options?: PurityPluginOptions) {
       }
       return { code: result.code, map: result.map };
     },
-  };
+  } satisfies Plugin;
 }
 
 // Check the owner of the rendered module, including symlinked packages and

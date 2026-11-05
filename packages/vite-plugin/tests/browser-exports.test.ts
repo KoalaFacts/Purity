@@ -1,6 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { build } from 'vite';
+import { build, type Rolldown } from 'vite';
 import { describe, expect, it } from 'vite-plus/test';
 
 const core = resolve(import.meta.dirname, '../../core');
@@ -26,7 +26,7 @@ describe('core browser entry points', () => {
         resolve: { alias: { '@purityjs/core/csr': resolve(core, 'src/csr.ts') } },
         build: { write: false, minify: false, lib: { entry, formats: ['es'] } },
       });
-      const result = Array.isArray(built) ? built[0] : built;
+      const result = (Array.isArray(built) ? built[0] : built) as Rolldown.RolldownOutput;
       const code = result.output
         .filter((part) => part.type === 'chunk')
         .map((part) => part.code)

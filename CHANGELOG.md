@@ -41,6 +41,9 @@
   rows: `component()` render functions and `each()`/`virtualEach()` row
   callbacks accept its `SSRHtml` result (``component('x', () => html`…`)``
   with the server `html` failed to type-check).
+- `purity()` from `@purityjs/vite-plugin` is checked against Vite's `Plugin`
+  type at build time, so a hook that drifts from Vite's signature fails the
+  package build instead of a consumer's strict config.
 
 ## 0.5.2
 

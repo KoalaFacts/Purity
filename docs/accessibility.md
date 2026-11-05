@@ -270,9 +270,9 @@ These are real limitations of the current implementation, not bugs:
    with Declarative Shadow DOM; the core package does not include a server
    renderer. See the [SSR guide](../packages/ssr/README.md) for supported
    rendering and hydration paths.
-2. **Automated checks are partial.** Run `npm run a11y -- <page-url> all`
-   from `benchmark` to scan Chromium, Firefox, and WebKit with axe-core.
-   `npm run a11y:matrix -- <benchmark-base-url>` checks the measurable
+2. **Automated checks are partial.** Run `npm run a11y -w benchmark -- <page-url> all`
+   to scan Chromium, Firefox, and WebKit with axe-core.
+   `npm run a11y:matrix -w benchmark -- <benchmark-base-url>` checks the measurable
    visual and complex-form scenarios. Actual browser zoom, operating-system
    high contrast, and screen-reader behavior are not covered by those commands.
 3. **Form bridge scope.** `{ formControl: true }` supports one selected native

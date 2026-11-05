@@ -1,0 +1,2885 @@
+{
+  "schemaVersion": 1,
+  "capturedAtUTC": "2026-11-05T10:29:17.487Z",
+  "purpose": "Historical production benchmark; not a matched Solid v2 rc.18 comparison",
+  "provenance": {
+    "sourceRevision": "1c76af6cf7fed1c0167f81327931b99a8d2ecbdf",
+    "sourceDirty": false,
+    "rootLockfileSHA256": "e66806cfc5550ee4aeda8a06dd8fe42abc818da74435fff08e878ababa3df5ef",
+    "targetMetadataSHA256": "9c6457d01d5b622380e0533eb31512f384c78dc3efa8ee8b42a78a7f8bc98a4f",
+    "lockedVersions": {
+      "solid-js": "2.0.0-rc.20",
+      "@solidjs/signals": "2.0.0-rc.21",
+      "@solidjs/web": "2.0.0-rc.20",
+      "@solidjs/vite-plugin": "3.0.0-next.55",
+      "@purityjs/core": "0.5.2",
+      "@purityjs/vite-plugin": "0.5.2",
+      "vite-plus": "1.3.0",
+      "vite": "1.3.0"
+    }
+  },
+  "environment": {
+    "node": "v24.22.2",
+    "v8": "13.6.233.17-node.63",
+    "platform": "linux",
+    "arch": "x64",
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "logicalCpus": 2,
+    "totalMemoryBytes": 8412143616,
+    "chromiumVersion": "153.0.8010.12"
+  },
+  "settings": {
+    "warmup": 3,
+    "iterations": 5,
+    "memoryIterations": 3,
+    "dropOutliers": 1,
+    "port": 4173
+  },
+  "rawSettings": {
+    "WARMUP": "3",
+    "ITERATIONS": "5",
+    "FRAMEWORKS": "purity,solid"
+  },
+  "frameworks": ["purity", "solid"],
+  "scenarioPages": [
+    "index",
+    "filter",
+    "sort",
+    "computed-chain",
+    "diamond",
+    "cart",
+    "conditional",
+    "lifecycle",
+    "tree",
+    "master-detail",
+    "binding",
+    "selection",
+    "ticker"
+  ],
+  "executionOrder": [
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Create 10 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Create 100 rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Create 1,000 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Create 10,000 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Append 10 rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Append 100 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Append 1,000 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Append 10,000 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Replace 10 rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Replace 100 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Replace 1,000 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Replace 10,000 rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Update every 10th (10)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Update every 10th (100)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Update every 10th (1k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Update every 10th (10k)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Swap rows (1k)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Swap rows (10k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Clear 10 rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Clear 100 rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Clear 1,000 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Clear 10,000 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "filter",
+      "operation": "Filter 10 (type \"e\")",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "filter",
+      "operation": "Filter 100 (type \"e\")",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "filter",
+      "operation": "Filter 1k (type \"e\")",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "filter",
+      "operation": "Filter 10k (type \"e\")",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "filter",
+      "operation": "Clear filter (10)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "filter",
+      "operation": "Clear filter (100)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "filter",
+      "operation": "Clear filter (1k)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "filter",
+      "operation": "Clear filter (10k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "sort",
+      "operation": "Sort 100 by ID ↑",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "sort",
+      "operation": "Sort 1k by ID ↑",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "sort",
+      "operation": "Sort 10k by ID ↑",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "sort",
+      "operation": "Sort 100 by ID ↓",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "sort",
+      "operation": "Sort 1k by ID ↓",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "sort",
+      "operation": "Sort 10k by ID ↓",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "sort",
+      "operation": "Sort 100 by label",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "sort",
+      "operation": "Sort 1k by label",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "sort",
+      "operation": "Sort 10k by label",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "computed-chain",
+      "operation": "Computed chain (10 levels)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "computed-chain",
+      "operation": "Computed chain (100 levels)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "computed-chain",
+      "operation": "Computed chain (1,000 levels)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "computed-chain",
+      "operation": "Computed chain (10,000 levels)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "diamond",
+      "operation": "Diamond (10) update all",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "diamond",
+      "operation": "Diamond (100) update all",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "diamond",
+      "operation": "Diamond (1,000) update all",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "diamond",
+      "operation": "Diamond (10,000) update all",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "cart",
+      "operation": "Add 10 cart items",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "cart",
+      "operation": "Add 100 cart items",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "cart",
+      "operation": "Add 1,000 cart items",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "cart",
+      "operation": "Add 10,000 cart items",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "cart",
+      "operation": "Increment all (10)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "cart",
+      "operation": "Increment all (100)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "cart",
+      "operation": "Increment all (1k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "cart",
+      "operation": "Increment all (10k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "cart",
+      "operation": "Clear cart (10)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "cart",
+      "operation": "Clear cart (100)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "cart",
+      "operation": "Clear cart (1k)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "cart",
+      "operation": "Clear cart (10k)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "conditional",
+      "operation": "Toggle 10 section (show)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "conditional",
+      "operation": "Toggle 100 section (show)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "conditional",
+      "operation": "Toggle 1k section (show)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "conditional",
+      "operation": "Toggle 10k section (show)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "conditional",
+      "operation": "Toggle 1k section (hide)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "conditional",
+      "operation": "Toggle 10x",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "lifecycle",
+      "operation": "Create 10 components",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "lifecycle",
+      "operation": "Create 100 components",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "lifecycle",
+      "operation": "Create 1k components",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "lifecycle",
+      "operation": "Create 10k components",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "lifecycle",
+      "operation": "Destroy 10 components",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "lifecycle",
+      "operation": "Destroy 100 components",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "lifecycle",
+      "operation": "Destroy 1k components",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "lifecycle",
+      "operation": "Destroy 10k components",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "lifecycle",
+      "operation": "Replace 10 components",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "lifecycle",
+      "operation": "Replace 100 components",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "lifecycle",
+      "operation": "Replace 1k components",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "lifecycle",
+      "operation": "Replace 10k components",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "tree",
+      "operation": "Expand all tree nodes",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "tree",
+      "operation": "Collapse all tree nodes",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "master-detail",
+      "operation": "Select detail (first)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "master-detail",
+      "operation": "Select detail (last)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "master-detail",
+      "operation": "Cycle 10 selections",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Create 10 bound inputs",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Create 100 bound inputs",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Create 1,000 bound inputs",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Create 10,000 bound inputs",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Update all (10)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Update all (100)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Update all (1k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Update all (10k)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Clear all (10)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Clear all (100)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Clear all (1k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Clear all (10k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "selection",
+      "operation": "Select all (10)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "selection",
+      "operation": "Select all (100)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "selection",
+      "operation": "Select all (1k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "selection",
+      "operation": "Select all (10k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "selection",
+      "operation": "Deselect all (10)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "selection",
+      "operation": "Deselect all (100)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "selection",
+      "operation": "Deselect all (1k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "selection",
+      "operation": "Deselect all (10k)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "selection",
+      "operation": "Toggle all (10)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "selection",
+      "operation": "Toggle all (100)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "selection",
+      "operation": "Toggle all (1k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "selection",
+      "operation": "Toggle all (10k)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "ticker",
+      "operation": "Stock ticker (10 frames)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "ticker",
+      "operation": "Stock ticker (100 frames)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "ticker",
+      "operation": "Stock ticker (500 frames)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "ticker",
+      "operation": "Stock ticker (1,000 frames)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "ticker",
+      "operation": "Stock ticker (10,000 frames)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "memory",
+      "scenario": "index",
+      "operation": "Create 1k rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "memory",
+      "scenario": "index",
+      "operation": "Create 10k rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "memory",
+      "scenario": "lifecycle",
+      "operation": "Create 1k components",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "memory",
+      "scenario": "lifecycle",
+      "operation": "Create 10k components",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "memory",
+      "scenario": "filter",
+      "operation": "Populate 10k filtered",
+      "frameworks": ["purity", "solid"]
+    }
+  ],
+  "timings": [
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 10 rows",
+      "framework": "solid",
+      "median": 1,
+      "raw": [1.2000000000698492, 1.099999999976717, 0.9000000000232831, 1, 1]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 10 rows",
+      "framework": "purity",
+      "median": 1.2000000000698492,
+      "raw": [
+        1.900000000023283, 1.2000000000698492, 0.8000000000465661, 1.400000000023283,
+        1.099999999976717
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 100 rows",
+      "framework": "purity",
+      "median": 4.300000000046566,
+      "raw": [
+        3.700000000069849, 5.300000000046566, 6.599999999976717, 4.300000000046566,
+        3.700000000069849
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 100 rows",
+      "framework": "solid",
+      "median": 7.599999999976717,
+      "raw": [9.5, 9.099999999976717, 6.300000000046566, 7.599999999976717, 3.5]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 1,000 rows",
+      "framework": "solid",
+      "median": 37.39999999990687,
+      "raw": [48, 41.89999999990687, 35.90000000002328, 37.39999999990687, 26.800000000046566]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 1,000 rows",
+      "framework": "purity",
+      "median": 37.199999999953434,
+      "raw": [
+        72.80000000004657, 53.90000000002328, 34.09999999997672, 37.199999999953434,
+        36.39999999990687
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 10,000 rows",
+      "framework": "solid",
+      "median": 375.69999999995343,
+      "raw": [419.5999999999767, 334, 375.69999999995343, 299.5999999999767, 402.9000000000233]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 10,000 rows",
+      "framework": "purity",
+      "median": 449,
+      "raw": [441.39999999990687, 501.80000000004657, 485.5, 329.79999999993015, 449]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 10 rows",
+      "framework": "purity",
+      "median": 1.3000000000465661,
+      "raw": [1.599999999976717, 1.400000000023283, 1, 1.3000000000465661, 0.7999999999301508]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 10 rows",
+      "framework": "solid",
+      "median": 1.2000000000698492,
+      "raw": [1.599999999976717, 1.099999999976717, 1, 1.2000000000698492, 1.5]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 100 rows",
+      "framework": "solid",
+      "median": 5.5,
+      "raw": [5.5, 9.900000000023283, 8.79999999993015, 5.5, 4.799999999930151]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 100 rows",
+      "framework": "purity",
+      "median": 7.099999999976717,
+      "raw": [
+        5.300000000046566, 8.099999999976717, 10.300000000046566, 7.099999999976717,
+        4.700000000069849
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 1,000 rows",
+      "framework": "solid",
+      "median": 37.70000000006985,
+      "raw": [37.70000000006985, 48, 44.199999999953434, 37.699999999953434, 35.79999999993015]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 1,000 rows",
+      "framework": "purity",
+      "median": 59.5,
+      "raw": [74.60000000009313, 76.20000000006985, 49.10000000009313, 37.800000000046566, 59.5]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 10,000 rows",
+      "framework": "solid",
+      "median": 384,
+      "raw": [354.70000000006985, 451.20000000006985, 384, 384.4000000000233, 375]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 10,000 rows",
+      "framework": "purity",
+      "median": 343.4000000001397,
+      "raw": [337.5, 473.9000000001397, 393.89999999990687, 343.4000000001397, 306]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 10 rows",
+      "framework": "purity",
+      "median": 1.1999999999534339,
+      "raw": [1.5999999998603016, 1.1999999999534339, 1.1999999999534339, 1.5, 1]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 10 rows",
+      "framework": "solid",
+      "median": 1.4000000001396984,
+      "raw": [1.4000000001396984, 2, 1.1000000000931323, 1.3999999999068677, 1.8999999999068677]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 100 rows",
+      "framework": "solid",
+      "median": 5.300000000046566,
+      "raw": [
+        5.300000000046566, 7.699999999953434, 5.100000000093132, 4.899999999906868,
+        7.600000000093132
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 100 rows",
+      "framework": "purity",
+      "median": 5.300000000046566,
+      "raw": [9.800000000046566, 9, 4.699999999953434, 5.300000000046566, 4.899999999906868]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 1,000 rows",
+      "framework": "solid",
+      "median": 59.5,
+      "raw": [59.5, 36.10000000009313, 79.60000000009313, 59.5, 47]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 1,000 rows",
+      "framework": "purity",
+      "median": 46.4000000001397,
+      "raw": [56.299999999813735, 41.699999999953434, 46.4000000001397, 35, 82.79999999981374]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 10,000 rows",
+      "framework": "purity",
+      "median": 368.60000000009313,
+      "raw": [
+        365.69999999995343, 388.30000000004657, 376.69999999995343, 368.60000000009313,
+        355.69999999995343
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 10,000 rows",
+      "framework": "solid",
+      "median": 396.4000000001397,
+      "raw": [
+        378.89999999990687, 363.89999999990687, 503.89999999990687, 464.80000000004657,
+        396.4000000001397
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (10)",
+      "framework": "purity",
+      "median": 0.5,
+      "raw": [0.5, 0.5999999998603016, 0.39999999990686774, 0.4000000001396984, 0.5]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (10)",
+      "framework": "solid",
+      "median": 0.5,
+      "raw": [0.5, 0.6000000000931323, 0.5, 0.5, 0.4000000001396984]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (100)",
+      "framework": "solid",
+      "median": 1.4000000001396984,
+      "raw": [0.9000000001396984, 1.4000000001396984, 1.5, 1.8999999999068677, 0.6999999999534339]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (100)",
+      "framework": "purity",
+      "median": 1.1000000000931323,
+      "raw": [0.8000000000465661, 1.1000000000931323, 0.8000000000465661, 1.5, 1.5]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (1k)",
+      "framework": "solid",
+      "median": 9.5,
+      "raw": [14.5, 8.800000000046566, 9.5, 8.5, 14.5]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (1k)",
+      "framework": "purity",
+      "median": 9.199999999953434,
+      "raw": [9.199999999953434, 11, 9.099999999860302, 9.199999999953434, 9.399999999906868]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (10k)",
+      "framework": "purity",
+      "median": 133.5,
+      "raw": [97.30000000004657, 160.4000000001397, 146.19999999995343, 133.5, 132.0999999998603]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (10k)",
+      "framework": "solid",
+      "median": 98.80000000004657,
+      "raw": [98.80000000004657, 92.5, 112.80000000004657, 93.10000000009313, 171.4000000001397]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Swap rows (1k)",
+      "framework": "purity",
+      "median": 4.199999999953434,
+      "raw": [
+        5.100000000093132, 4.199999999953434, 3.800000000046566, 4.300000000046566,
+        4.199999999953434
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Swap rows (1k)",
+      "framework": "solid",
+      "median": 3.7000000001862645,
+      "raw": [3.5, 3.7000000001862645, 3.6000000000931323, 3.8999999999068677, 4.100000000093132]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Swap rows (10k)",
+      "framework": "solid",
+      "median": 39.300000000046566,
+      "raw": [39.300000000046566, 36.200000000186265, 45.5, 33.800000000046566, 66]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Swap rows (10k)",
+      "framework": "purity",
+      "median": 36.89999999990687,
+      "raw": [36.89999999990687, 34, 37.800000000046566, 38.4000000001397, 33.89999999990687]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 10 rows",
+      "framework": "purity",
+      "median": 0.30000000004656613,
+      "raw": [
+        0.4000000001396984, 0.30000000004656613, 0.30000000004656613, 0.4000000001396984,
+        0.30000000004656613
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 10 rows",
+      "framework": "solid",
+      "median": 0.39999999990686774,
+      "raw": [
+        0.5999999998603016, 0.30000000004656613, 0.2999999998137355, 0.39999999990686774,
+        0.4000000001396984
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 100 rows",
+      "framework": "purity",
+      "median": 0.8000000000465661,
+      "raw": [
+        0.8000000000465661, 0.7999999998137355, 1.0999999998603016, 0.8000000000465661,
+        1.2999999998137355
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 100 rows",
+      "framework": "solid",
+      "median": 0.7999999998137355,
+      "raw": [0.6000000000931323, 1, 0.7999999998137355, 1.8000000000465661, 0.6999999999534339]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 1,000 rows",
+      "framework": "solid",
+      "median": 6.199999999953434,
+      "raw": [
+        3.2999999998137355, 6.600000000093132, 4.699999999953434, 6.199999999953434,
+        6.300000000046566
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 1,000 rows",
+      "framework": "purity",
+      "median": 4.400000000139698,
+      "raw": [4.400000000139698, 4.5, 3.5, 4.099999999860302, 4.699999999953434]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 10,000 rows",
+      "framework": "solid",
+      "median": 44.199999999953434,
+      "raw": [36.39999999990687, 44.199999999953434, 35.0999999998603, 47.5, 45.699999999953434]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 10,000 rows",
+      "framework": "purity",
+      "median": 46.5,
+      "raw": [44.39999999990687, 45.800000000046566, 52.5, 46.5, 61.4000000001397]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Filter 10 (type \"e\")",
+      "framework": "solid",
+      "median": 0.5,
+      "raw": [0.5, 0.39999999990686774, 0.5, 0.7000000001862645, 0.6000000000931323]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Filter 10 (type \"e\")",
+      "framework": "purity",
+      "median": 0.5,
+      "raw": [0.5, 0.5, 0.4000000001396984, 0.4000000001396984, 0.6999999999534339]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Filter 100 (type \"e\")",
+      "framework": "purity",
+      "median": 1,
+      "raw": [1.4000000001396984, 1.1999999999534339, 0.9000000001396984, 1, 0.8999999999068677]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Filter 100 (type \"e\")",
+      "framework": "solid",
+      "median": 0.8000000000465661,
+      "raw": [
+        0.8000000000465661, 1.1999999999534339, 0.6999999999534339, 2.300000000046566,
+        0.8000000000465661
+      ]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Filter 1k (type \"e\")",
+      "framework": "purity",
+      "median": 3.199999999953434,
+      "raw": [3.5, 2.9000000001396984, 3.5, 2.1000000000931323, 3.199999999953434]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Filter 1k (type \"e\")",
+      "framework": "solid",
+      "median": 3.199999999953434,
+      "raw": [3.5, 2.300000000046566, 4, 3.199999999953434, 2.800000000046566]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Filter 10k (type \"e\")",
+      "framework": "purity",
+      "median": 27.600000000093132,
+      "raw": [21.0999999998603, 25.600000000093132, 28.0999999998603, 27.600000000093132, 37.5]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Filter 10k (type \"e\")",
+      "framework": "solid",
+      "median": 21.300000000046566,
+      "raw": [
+        21.300000000046566, 17.300000000046566, 27.199999999953434, 19.899999999906868,
+        26.699999999953434
+      ]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Clear filter (10)",
+      "framework": "solid",
+      "median": 0.9000000001396984,
+      "raw": [
+        0.9000000001396984, 0.8000000000465661, 0.8000000000465661, 1.2999999998137355,
+        0.9000000001396984
+      ]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Clear filter (10)",
+      "framework": "purity",
+      "median": 0.9000000001396984,
+      "raw": [
+        1.1999999999534339, 0.9000000001396984, 0.5999999998603016, 0.6999999999534339,
+        0.9000000001396984
+      ]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Clear filter (100)",
+      "framework": "solid",
+      "median": 2.3999999999068677,
+      "raw": [2.1000000000931323, 1.8999999999068677, 3.5, 3.699999999953434, 2.3999999999068677]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Clear filter (100)",
+      "framework": "purity",
+      "median": 2.6000000000931323,
+      "raw": [
+        3.3999999999068677, 2.4000000001396984, 2.5999999998603016, 4.899999999906868,
+        2.6000000000931323
+      ]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Clear filter (1k)",
+      "framework": "purity",
+      "median": 19.199999999953434,
+      "raw": [18.699999999953434, 41.300000000046566, 19.199999999953434, 19.300000000046566, 16.5]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Clear filter (1k)",
+      "framework": "solid",
+      "median": 18.5,
+      "raw": [15.399999999906868, 21.399999999906868, 13.299999999813735, 18.5, 22.600000000093132]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Clear filter (10k)",
+      "framework": "solid",
+      "median": 198.80000000004657,
+      "raw": [
+        193.69999999995343, 287.19999999995343, 198.80000000004657, 220.89999999990687,
+        158.69999999995343
+      ]
+    },
+    {
+      "scenario": "filter",
+      "category": "Computed",
+      "op": "Clear filter (10k)",
+      "framework": "purity",
+      "median": 166.5,
+      "raw": [136.4000000001397, 187.69999999995343, 166.5, 181.5999999998603, 165.80000000004657]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 100 by ID ↑",
+      "framework": "purity",
+      "median": 0.10000000009313226,
+      "raw": [
+        0.10000000009313226, 0.10000000009313226, 0.09999999986030161, 0.10000000009313226,
+        0.19999999995343387
+      ]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 100 by ID ↑",
+      "framework": "solid",
+      "median": 0.20000000018626451,
+      "raw": [
+        0.30000000004656613, 0.20000000018626451, 0.39999999990686774, 0.10000000009313226,
+        0.19999999995343387
+      ]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 1k by ID ↑",
+      "framework": "purity",
+      "median": 0.10000000009313226,
+      "raw": [
+        0.30000000004656613, 0.10000000009313226, 0.10000000009313226, 0.09999999986030161,
+        0.09999999986030161
+      ]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 1k by ID ↑",
+      "framework": "solid",
+      "median": 0.2999999998137355,
+      "raw": [
+        0.2999999998137355, 0.19999999995343387, 0.19999999995343387, 0.4000000001396984,
+        0.30000000004656613
+      ]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 10k by ID ↑",
+      "framework": "solid",
+      "median": 0.39999999990686774,
+      "raw": [0.39999999990686774, 0.5, 0.39999999990686774, 2.5, 0.39999999990686774]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 10k by ID ↑",
+      "framework": "purity",
+      "median": 0.5,
+      "raw": [0.6000000000931323, 0.30000000004656613, 0.39999999990686774, 0.7999999998137355, 0.5]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 100 by ID ↓",
+      "framework": "purity",
+      "median": 2.2999999998137355,
+      "raw": [
+        2.3999999999068677, 2.0999999998603016, 2.199999999953434, 2.2999999998137355,
+        2.2999999998137355
+      ]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 100 by ID ↓",
+      "framework": "solid",
+      "median": 3.300000000046566,
+      "raw": [2.5, 3.300000000046566, 3.300000000046566, 3.3999999999068677, 2.4000000001396984]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 1k by ID ↓",
+      "framework": "solid",
+      "median": 16.800000000046566,
+      "raw": [16, 20.399999999906868, 17.199999999953434, 16.800000000046566, 15.199999999953434]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 1k by ID ↓",
+      "framework": "purity",
+      "median": 18.5,
+      "raw": [22.9000000001397, 14.599999999860302, 14.699999999953434, 23.199999999953434, 18.5]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 10k by ID ↓",
+      "framework": "solid",
+      "median": 171.5999999998603,
+      "raw": [231.89999999990687, 171.5999999998603, 170.5, 193.30000000004657, 163]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 10k by ID ↓",
+      "framework": "purity",
+      "median": 198.0999999998603,
+      "raw": [194, 293.89999999990687, 198.0999999998603, 205.5999999998603, 168.29999999981374]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 100 by label",
+      "framework": "solid",
+      "median": 2.800000000046566,
+      "raw": [2.5999999998603016, 8.399999999906868, 2, 2.800000000046566, 4.300000000046566]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 100 by label",
+      "framework": "purity",
+      "median": 2.800000000046566,
+      "raw": [
+        2.300000000046566, 2.800000000046566, 2.800000000046566, 2.6000000000931323,
+        2.9000000001396984
+      ]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 1k by label",
+      "framework": "purity",
+      "median": 21.699999999953434,
+      "raw": [27.5, 37, 20, 21.699999999953434, 20.4000000001397]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 1k by label",
+      "framework": "solid",
+      "median": 17.0999999998603,
+      "raw": [
+        19.9000000001397, 27.100000000093132, 15.600000000093132, 17.0999999998603,
+        15.800000000046566
+      ]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 10k by label",
+      "framework": "purity",
+      "median": 241.19999999995343,
+      "raw": [236.5, 241.19999999995343, 238.10000000009313, 242.9000000001397, 267.30000000004657]
+    },
+    {
+      "scenario": "sort",
+      "category": "Computed",
+      "op": "Sort 10k by label",
+      "framework": "solid",
+      "median": 225,
+      "raw": [201.60000000009313, 225, 200.0999999998603, 240.5999999998603, 320.80000000004657]
+    },
+    {
+      "scenario": "computed-chain",
+      "category": "Computed",
+      "op": "Computed chain (10 levels)",
+      "framework": "solid",
+      "median": 0.4000000001396984,
+      "raw": [0.6999999999534339, 0.30000000004656613, 0.5, 0.4000000001396984, 0.39999999990686774]
+    },
+    {
+      "scenario": "computed-chain",
+      "category": "Computed",
+      "op": "Computed chain (10 levels)",
+      "framework": "purity",
+      "median": 0.30000000004656613,
+      "raw": [
+        0.4000000001396984, 0.30000000004656613, 0.19999999995343387, 0.30000000004656613,
+        0.09999999986030161
+      ]
+    },
+    {
+      "scenario": "computed-chain",
+      "category": "Computed",
+      "op": "Computed chain (100 levels)",
+      "framework": "purity",
+      "median": 0.30000000004656613,
+      "raw": [
+        0.19999999995343387, 0.39999999990686774, 0.30000000004656613, 0.39999999990686774,
+        0.2999999998137355
+      ]
+    },
+    {
+      "scenario": "computed-chain",
+      "category": "Computed",
+      "op": "Computed chain (100 levels)",
+      "framework": "solid",
+      "median": 0.5,
+      "raw": [0.7000000001862645, 0.6000000000931323, 0.5, 0.30000000004656613, 0.19999999995343387]
+    },
+    {
+      "scenario": "computed-chain",
+      "category": "Computed",
+      "op": "Computed chain (1,000 levels)",
+      "framework": "solid",
+      "median": 0.5,
+      "raw": [0.8000000000465661, 0.30000000004656613, 0.5, 0.5, 0.6999999999534339]
+    },
+    {
+      "scenario": "computed-chain",
+      "category": "Computed",
+      "op": "Computed chain (1,000 levels)",
+      "framework": "purity",
+      "median": 0.5,
+      "raw": [0.4000000001396984, 0.5, 0.6000000000931323, 0.5999999998603016, 0.39999999990686774]
+    },
+    {
+      "scenario": "computed-chain",
+      "category": "Computed",
+      "op": "Computed chain (10,000 levels)",
+      "framework": "purity",
+      "median": 0.09999999986030161,
+      "raw": [0.10000000009313226, 0.09999999986030161, 0, 0, 0.10000000009313226]
+    },
+    {
+      "scenario": "computed-chain",
+      "category": "Computed",
+      "op": "Computed chain (10,000 levels)",
+      "framework": "solid",
+      "median": 2.6000000000931323,
+      "raw": [2.7000000001862645, 2.6000000000931323, 1.9000000001396984, 3, 1.5999999998603016]
+    },
+    {
+      "scenario": "diamond",
+      "category": "Computed",
+      "op": "Diamond (10) update all",
+      "framework": "solid",
+      "median": 0.5,
+      "raw": [0.5, 0.4000000001396984, 0.6000000000931323, 0.5, 0.5]
+    },
+    {
+      "scenario": "diamond",
+      "category": "Computed",
+      "op": "Diamond (10) update all",
+      "framework": "purity",
+      "median": 0.39999999990686774,
+      "raw": [
+        0.39999999990686774, 0.2999999998137355, 0.39999999990686774, 0.6000000000931323,
+        0.39999999990686774
+      ]
+    },
+    {
+      "scenario": "diamond",
+      "category": "Computed",
+      "op": "Diamond (100) update all",
+      "framework": "solid",
+      "median": 0.4000000001396984,
+      "raw": [
+        0.8999999999068677, 0.6999999999534339, 0.4000000001396984, 0.39999999990686774,
+        0.39999999990686774
+      ]
+    },
+    {
+      "scenario": "diamond",
+      "category": "Computed",
+      "op": "Diamond (100) update all",
+      "framework": "purity",
+      "median": 0.39999999990686774,
+      "raw": [
+        0.5, 0.39999999990686774, 0.19999999995343387, 0.30000000004656613, 0.4000000001396984
+      ]
+    },
+    {
+      "scenario": "diamond",
+      "category": "Computed",
+      "op": "Diamond (1,000) update all",
+      "framework": "solid",
+      "median": 1,
+      "raw": [1, 1, 1, 0.8000000000465661, 1.0999999998603016]
+    },
+    {
+      "scenario": "diamond",
+      "category": "Computed",
+      "op": "Diamond (1,000) update all",
+      "framework": "purity",
+      "median": 1,
+      "raw": [1.1000000000931323, 1, 0.5999999998603016, 0.8999999999068677, 1]
+    },
+    {
+      "scenario": "diamond",
+      "category": "Computed",
+      "op": "Diamond (10,000) update all",
+      "framework": "solid",
+      "median": 7.099999999860302,
+      "raw": [
+        8.600000000093132, 10.899999999906868, 4.7000000001862645, 7.099999999860302,
+        5.899999999906868
+      ]
+    },
+    {
+      "scenario": "diamond",
+      "category": "Computed",
+      "op": "Diamond (10,000) update all",
+      "framework": "purity",
+      "median": 5.199999999953434,
+      "raw": [6, 5.199999999953434, 7.300000000046566, 3.6000000000931323, 4.199999999953434]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Add 10 cart items",
+      "framework": "purity",
+      "median": 1.3000000000465661,
+      "raw": [0.8999999999068677, 1.1000000000931323, 1.5, 1.3000000000465661, 1.5]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Add 10 cart items",
+      "framework": "solid",
+      "median": 1,
+      "raw": [1.4000000001396984, 1, 1.5, 1, 1]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Add 100 cart items",
+      "framework": "solid",
+      "median": 4.100000000093132,
+      "raw": [6, 4.100000000093132, 3.9000000001396984, 4.699999999953434, 3.699999999953434]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Add 100 cart items",
+      "framework": "purity",
+      "median": 4.199999999953434,
+      "raw": [
+        4.099999999860302, 4.199999999953434, 5.800000000046566, 4.300000000046566,
+        4.099999999860302
+      ]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Add 1,000 cart items",
+      "framework": "solid",
+      "median": 34.39999999990687,
+      "raw": [59.5999999998603, 58, 34.39999999990687, 20.4000000001397, 19.199999999953434]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Add 1,000 cart items",
+      "framework": "purity",
+      "median": 28,
+      "raw": [56.60000000009313, 25.100000000093132, 19.300000000046566, 40.60000000009313, 28]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Add 10,000 cart items",
+      "framework": "solid",
+      "median": 307.30000000004657,
+      "raw": [
+        373.19999999995343, 257.29999999981374, 497.89999999990687, 307.30000000004657,
+        260.9000000001397
+      ]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Add 10,000 cart items",
+      "framework": "purity",
+      "median": 327.0999999998603,
+      "raw": [393, 236.69999999995343, 327.0999999998603, 224.19999999995343, 480.5]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Increment all (10)",
+      "framework": "purity",
+      "median": 0.6999999999534339,
+      "raw": [0.6999999999534339, 1, 0.5, 0.8000000000465661, 0.5999999998603016]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Increment all (10)",
+      "framework": "solid",
+      "median": 1.0999999998603016,
+      "raw": [1.6999999999534339, 1, 1.5, 1.0999999998603016, 0.8999999999068677]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Increment all (100)",
+      "framework": "solid",
+      "median": 3.9000000001396984,
+      "raw": [4, 4.199999999953434, 3.699999999953434, 3.8999999999068677, 3.9000000001396984]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Increment all (100)",
+      "framework": "purity",
+      "median": 2.300000000046566,
+      "raw": [2, 2.199999999953434, 2.300000000046566, 2.5, 3.3999999999068677]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Increment all (1k)",
+      "framework": "solid",
+      "median": 24.199999999953434,
+      "raw": [32, 21.9000000001397, 22.199999999953434, 24.199999999953434, 28.5]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Increment all (1k)",
+      "framework": "purity",
+      "median": 18.300000000046566,
+      "raw": [13.5, 18.300000000046566, 19.800000000046566, 13.100000000093132, 18.9000000001397]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Increment all (10k)",
+      "framework": "solid",
+      "median": 297.89999999990687,
+      "raw": [
+        284.10000000009313, 298.0999999998603, 286.9000000001397, 297.89999999990687,
+        335.20000000018626
+      ]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Increment all (10k)",
+      "framework": "purity",
+      "median": 153.60000000009313,
+      "raw": [
+        166.19999999995343, 153.5999999998603, 296.39999999990687, 153.60000000009313,
+        132.60000000009313
+      ]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Clear cart (10)",
+      "framework": "solid",
+      "median": 0.8000000000465661,
+      "raw": [0.8000000000465661, 0.8000000000465661, 0.5, 0.5999999998603016, 1]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Clear cart (10)",
+      "framework": "purity",
+      "median": 0.5,
+      "raw": [0.5, 0.5, 0.5, 0.4000000001396984, 0.6000000000931323]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Clear cart (100)",
+      "framework": "solid",
+      "median": 1,
+      "raw": [1.5999999998603016, 1.6000000000931323, 1, 0.8999999999068677, 1]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Clear cart (100)",
+      "framework": "purity",
+      "median": 0.8999999999068677,
+      "raw": [0.8000000000465661, 1.4000000001396984, 0.8000000000465661, 1, 0.8999999999068677]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Clear cart (1k)",
+      "framework": "purity",
+      "median": 5.800000000046566,
+      "raw": [3.5, 5.800000000046566, 8.800000000046566, 4.600000000093132, 6.099999999860302]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Clear cart (1k)",
+      "framework": "solid",
+      "median": 4.399999999906868,
+      "raw": [7.099999999860302, 6.5, 4.399999999906868, 4.100000000093132, 3.5]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Clear cart (10k)",
+      "framework": "purity",
+      "median": 45.89999999990687,
+      "raw": [37.699999999953434, 45.89999999990687, 73.30000000004657, 31, 79.10000000009313]
+    },
+    {
+      "scenario": "cart",
+      "category": "Components",
+      "op": "Clear cart (10k)",
+      "framework": "solid",
+      "median": 37.89999999990687,
+      "raw": [
+        39.699999999953434, 37.89999999990687, 35.299999999813735, 51.10000000009313,
+        36.800000000046566
+      ]
+    },
+    {
+      "scenario": "conditional",
+      "category": "Components",
+      "op": "Toggle 10 section (show)",
+      "framework": "purity",
+      "median": 0.30000000004656613,
+      "raw": [
+        0.30000000004656613, 0.39999999990686774, 4.5, 0.19999999995343387, 0.30000000004656613
+      ]
+    },
+    {
+      "scenario": "conditional",
+      "category": "Components",
+      "op": "Toggle 10 section (show)",
+      "framework": "solid",
+      "median": 0.5,
+      "raw": [0.5, 0.39999999990686774, 0.5, 0.7000000001862645, 0.7000000001862645]
+    },
+    {
+      "scenario": "conditional",
+      "category": "Components",
+      "op": "Toggle 100 section (show)",
+      "framework": "purity",
+      "median": 0.6000000000931323,
+      "raw": [0.6999999999534339, 0.6999999999534339, 0.6000000000931323, 0.5, 0.39999999990686774]
+    },
+    {
+      "scenario": "conditional",
+      "category": "Components",
+      "op": "Toggle 100 section (show)",
+      "framework": "solid",
+      "median": 0.8000000000465661,
+      "raw": [1.1999999999534339, 0.9000000001396984, 0.7999999998137355, 0.8000000000465661, 0.5]
+    },
+    {
+      "scenario": "conditional",
+      "category": "Components",
+      "op": "Toggle 1k section (show)",
+      "framework": "purity",
+      "median": 2.800000000046566,
+      "raw": [2.5, 2, 2.800000000046566, 3.199999999953434, 3.199999999953434]
+    },
+    {
+      "scenario": "conditional",
+      "category": "Components",
+      "op": "Toggle 1k section (show)",
+      "framework": "solid",
+      "median": 2.300000000046566,
+      "raw": [
+        2.300000000046566, 1.6999999999534339, 2.300000000046566, 3.300000000046566,
+        2.8999999999068677
+      ]
+    },
+    {
+      "scenario": "conditional",
+      "category": "Components",
+      "op": "Toggle 10k section (show)",
+      "framework": "solid",
+      "median": 18.800000000046566,
+      "raw": [15.5, 19.300000000046566, 24.800000000046566, 18.5, 18.800000000046566]
+    },
+    {
+      "scenario": "conditional",
+      "category": "Components",
+      "op": "Toggle 10k section (show)",
+      "framework": "purity",
+      "median": 17.5,
+      "raw": [24.700000000186265, 17.5, 14.199999999953434, 17.5, 16.899999999906868]
+    },
+    {
+      "scenario": "conditional",
+      "category": "Components",
+      "op": "Toggle 1k section (hide)",
+      "framework": "purity",
+      "median": 15.699999999953434,
+      "raw": [27.100000000093132, 20, 12.800000000046566, 14.299999999813735, 15.699999999953434]
+    },
+    {
+      "scenario": "conditional",
+      "category": "Components",
+      "op": "Toggle 1k section (hide)",
+      "framework": "solid",
+      "median": 15.600000000093132,
+      "raw": [15.600000000093132, 16.800000000046566, 9.899999999906868, 14, 16.9000000001397]
+    },
+    {
+      "scenario": "conditional",
+      "category": "Components",
+      "op": "Toggle 10x",
+      "framework": "solid",
+      "median": 0.20000000018626451,
+      "raw": [
+        0.30000000004656613, 0.2999999998137355, 0.19999999995343387, 0.19999999995343387,
+        0.20000000018626451
+      ]
+    },
+    {
+      "scenario": "conditional",
+      "category": "Components",
+      "op": "Toggle 10x",
+      "framework": "purity",
+      "median": 0.19999999995343387,
+      "raw": [0.19999999995343387, 0.20000000018626451, 0, 0.09999999986030161, 0.19999999995343387]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Create 10 components",
+      "framework": "solid",
+      "median": 0.7999999998137355,
+      "raw": [
+        0.7999999998137355, 0.7999999998137355, 0.5999999998603016, 0.8000000000465661,
+        0.8999999999068677
+      ]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Create 10 components",
+      "framework": "purity",
+      "median": 0.6000000000931323,
+      "raw": [
+        0.8999999999068677, 0.6000000000931323, 0.6000000000931323, 0.4000000001396984,
+        0.6999999999534339
+      ]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Create 100 components",
+      "framework": "purity",
+      "median": 2.2999999998137355,
+      "raw": [
+        1.8000000000465661, 3.7999999998137355, 2.300000000046566, 2.2999999998137355,
+        1.9000000001396984
+      ]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Create 100 components",
+      "framework": "solid",
+      "median": 2.199999999953434,
+      "raw": [
+        5.400000000139698, 1.6999999999534339, 2.3999999999068677, 1.6999999999534339,
+        2.199999999953434
+      ]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Create 1k components",
+      "framework": "solid",
+      "median": 12.300000000046566,
+      "raw": [
+        11.699999999953434, 9.300000000046566, 13.300000000046566, 12.300000000046566,
+        14.399999999906868
+      ]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Create 1k components",
+      "framework": "purity",
+      "median": 14,
+      "raw": [16.299999999813735, 14, 12.100000000093132, 19.4000000001397, 13.199999999953434]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Create 10k components",
+      "framework": "solid",
+      "median": 173.5,
+      "raw": [173.5, 129.89999999990687, 186, 120.60000000009313, 207]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Create 10k components",
+      "framework": "purity",
+      "median": 120.30000000004657,
+      "raw": [225.5, 92.10000000009313, 120.30000000004657, 155.9000000001397, 98.10000000009313]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Destroy 10 components",
+      "framework": "purity",
+      "median": 0.30000000004656613,
+      "raw": [
+        0.30000000004656613, 0.30000000004656613, 0.39999999990686774, 0.30000000004656613,
+        0.39999999990686774
+      ]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Destroy 10 components",
+      "framework": "solid",
+      "median": 0.4000000001396984,
+      "raw": [0.4000000001396984, 0.2999999998137355, 0.4000000001396984, 0.6000000000931323, 0.5]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Destroy 100 components",
+      "framework": "solid",
+      "median": 0.5,
+      "raw": [0.5999999998603016, 0.7000000001862645, 0.39999999990686774, 0.5, 0.5]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Destroy 100 components",
+      "framework": "purity",
+      "median": 0.7000000001862645,
+      "raw": [1, 0.7000000001862645, 0.8999999999068677, 0.7000000001862645, 0.5]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Destroy 1k components",
+      "framework": "solid",
+      "median": 2.300000000046566,
+      "raw": [
+        2.7999999998137355, 2.300000000046566, 2.199999999953434, 2.199999999953434,
+        4.199999999953434
+      ]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Destroy 1k components",
+      "framework": "purity",
+      "median": 2,
+      "raw": [3.800000000046566, 3.699999999953434, 2, 1.8999999999068677, 1.9000000001396984]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Destroy 10k components",
+      "framework": "solid",
+      "median": 16.899999999906868,
+      "raw": [16.199999999953434, 19.399999999906868, 16.899999999906868, 16.5999999998603, 17]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Destroy 10k components",
+      "framework": "purity",
+      "median": 18.9000000001397,
+      "raw": [
+        19.4000000001397, 14.899999999906868, 25.0999999998603, 18.9000000001397, 16.0999999998603
+      ]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Replace 10 components",
+      "framework": "solid",
+      "median": 0.8999999999068677,
+      "raw": [0.8000000000465661, 0.9000000001396984, 0.8999999999068677, 1, 0.8000000000465661]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Replace 10 components",
+      "framework": "purity",
+      "median": 0.6999999999534339,
+      "raw": [
+        0.6999999999534339, 0.6999999999534339, 0.6000000000931323, 0.6999999999534339,
+        0.6999999999534339
+      ]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Replace 100 components",
+      "framework": "solid",
+      "median": 2.199999999953434,
+      "raw": [
+        2.1000000000931323, 2.0999999998603016, 2.7000000001862645, 2.199999999953434,
+        2.6000000000931323
+      ]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Replace 100 components",
+      "framework": "purity",
+      "median": 1.8000000000465661,
+      "raw": [
+        1.8000000000465661, 2.699999999953434, 1.8000000000465661, 1.5999999998603016,
+        2.0999999998603016
+      ]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Replace 1k components",
+      "framework": "purity",
+      "median": 14.400000000139698,
+      "raw": [14, 16.600000000093132, 17.0999999998603, 14.400000000139698, 14.399999999906868]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Replace 1k components",
+      "framework": "solid",
+      "median": 12.600000000093132,
+      "raw": [12, 22.200000000186265, 12.600000000093132, 10.800000000046566, 12.800000000046566]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Replace 10k components",
+      "framework": "solid",
+      "median": 107.19999999995343,
+      "raw": [
+        94.89999999990687, 111.60000000009313, 171.29999999981374, 107.19999999995343,
+        95.69999999995343
+      ]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Components",
+      "op": "Replace 10k components",
+      "framework": "purity",
+      "median": 115.5,
+      "raw": [113.19999999995343, 115.5, 116, 110.9000000001397, 119.5]
+    },
+    {
+      "scenario": "tree",
+      "category": "Components",
+      "op": "Expand all tree nodes",
+      "framework": "solid",
+      "median": 10.199999999953434,
+      "raw": [6.899999999906868, 14.100000000093132, 10.5, 10.199999999953434, 9.800000000046566]
+    },
+    {
+      "scenario": "tree",
+      "category": "Components",
+      "op": "Expand all tree nodes",
+      "framework": "purity",
+      "median": 11.5,
+      "raw": [12.399999999906868, 10.199999999953434, 12.899999999906868, 7.400000000139698, 11.5]
+    },
+    {
+      "scenario": "tree",
+      "category": "Components",
+      "op": "Collapse all tree nodes",
+      "framework": "purity",
+      "median": 2.300000000046566,
+      "raw": [2.699999999953434, 2.800000000046566, 2.300000000046566, 2, 1.9000000001396984]
+    },
+    {
+      "scenario": "tree",
+      "category": "Components",
+      "op": "Collapse all tree nodes",
+      "framework": "solid",
+      "median": 1.8999999999068677,
+      "raw": [1.8999999999068677, 2.300000000046566, 1.5, 1.3999999999068677, 7.399999999906868]
+    },
+    {
+      "scenario": "master-detail",
+      "category": "Components",
+      "op": "Select detail (first)",
+      "framework": "purity",
+      "median": 0.6000000000931323,
+      "raw": [0.5, 0.6000000000931323, 0.5999999998603016, 0.9000000001396984, 0.7999999998137355]
+    },
+    {
+      "scenario": "master-detail",
+      "category": "Components",
+      "op": "Select detail (first)",
+      "framework": "solid",
+      "median": 0.9000000001396984,
+      "raw": [
+        1.1000000000931323, 0.6999999999534339, 0.9000000001396984, 0.9000000001396984,
+        0.8000000000465661
+      ]
+    },
+    {
+      "scenario": "master-detail",
+      "category": "Components",
+      "op": "Select detail (last)",
+      "framework": "purity",
+      "median": 0.6999999999534339,
+      "raw": [1, 0.9000000001396984, 0.6999999999534339, 0.6999999999534339, 0.5]
+    },
+    {
+      "scenario": "master-detail",
+      "category": "Components",
+      "op": "Select detail (last)",
+      "framework": "solid",
+      "median": 1,
+      "raw": [1.5999999998603016, 0.7000000001862645, 1, 1, 0.6999999999534339]
+    },
+    {
+      "scenario": "master-detail",
+      "category": "Components",
+      "op": "Cycle 10 selections",
+      "framework": "solid",
+      "median": 0.39999999990686774,
+      "raw": [
+        0.30000000004656613, 0.39999999990686774, 0.6000000000931323, 0.39999999990686774,
+        0.30000000004656613
+      ]
+    },
+    {
+      "scenario": "master-detail",
+      "category": "Components",
+      "op": "Cycle 10 selections",
+      "framework": "purity",
+      "median": 0.10000000009313226,
+      "raw": [0.19999999995343387, 0.19999999995343387, 0.10000000009313226, 0.09999999986030161, 0]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 10 bound inputs",
+      "framework": "solid",
+      "median": 1,
+      "raw": [1, 1.3000000000465661, 1.0999999998603016, 0.8000000000465661, 1]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 10 bound inputs",
+      "framework": "purity",
+      "median": 0.8000000000465661,
+      "raw": [
+        1.3000000000465661, 0.8000000000465661, 0.9000000001396984, 0.7999999998137355,
+        0.8000000000465661
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 100 bound inputs",
+      "framework": "purity",
+      "median": 3.800000000046566,
+      "raw": [3.800000000046566, 3.6000000000931323, 3.199999999953434, 5, 4.400000000139698]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 100 bound inputs",
+      "framework": "solid",
+      "median": 4.199999999953434,
+      "raw": [
+        4.199999999953434, 4.600000000093132, 5.899999999906868, 3.4000000001396984,
+        2.8999999999068677
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 1,000 bound inputs",
+      "framework": "purity",
+      "median": 26.300000000046566,
+      "raw": [
+        20.800000000046566, 26.199999999953434, 26.300000000046566, 36.699999999953434,
+        34.0999999998603
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 1,000 bound inputs",
+      "framework": "solid",
+      "median": 38.9000000001397,
+      "raw": [
+        40.699999999953434, 43.4000000001397, 38.9000000001397, 38.0999999998603, 20.699999999953434
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 10,000 bound inputs",
+      "framework": "solid",
+      "median": 297.9000000001397,
+      "raw": [
+        312.69999999995343, 261.89999999990687, 241.39999999990687, 298.19999999995343,
+        297.9000000001397
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 10,000 bound inputs",
+      "framework": "purity",
+      "median": 313.69999999995343,
+      "raw": [280.5999999998603, 404.5999999998603, 232.30000000004657, 313.69999999995343, 436.5]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (10)",
+      "framework": "solid",
+      "median": 0.6999999999534339,
+      "raw": [0.7000000001862645, 0.5, 0.9000000001396984, 0.5, 0.6999999999534339]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (10)",
+      "framework": "purity",
+      "median": 0.6000000000931323,
+      "raw": [
+        0.6000000000931323, 0.4000000001396984, 0.6000000000931323, 0.8000000000465661,
+        0.30000000004656613
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (100)",
+      "framework": "purity",
+      "median": 1.8000000000465661,
+      "raw": [
+        2.6000000000931323, 1.4000000001396984, 1.4000000001396984, 2.199999999953434,
+        1.8000000000465661
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (100)",
+      "framework": "solid",
+      "median": 2.2000000001862645,
+      "raw": [
+        2.199999999953434, 2.800000000046566, 2.7000000001862645, 1.6999999999534339,
+        2.2000000001862645
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (1k)",
+      "framework": "solid",
+      "median": 10.5,
+      "raw": [21.800000000046566, 9.200000000186265, 10.5, 10.399999999906868, 12.599999999860302]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (1k)",
+      "framework": "purity",
+      "median": 12,
+      "raw": [15.800000000046566, 12, 21.0999999998603, 10.600000000093132, 11.600000000093132]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (10k)",
+      "framework": "purity",
+      "median": 135.19999999995343,
+      "raw": [
+        234.0999999998603, 124.30000000004657, 152.89999999990687, 135.19999999995343,
+        117.4000000001397
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (10k)",
+      "framework": "solid",
+      "median": 130.80000000004657,
+      "raw": [
+        103.10000000009313, 151.10000000009313, 128.30000000004657, 189.20000000018626,
+        130.80000000004657
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (10)",
+      "framework": "purity",
+      "median": 0.20000000018626451,
+      "raw": [
+        0.6000000000931323, 0.10000000009313226, 0.19999999995343387, 0.20000000018626451,
+        0.39999999990686774
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (10)",
+      "framework": "solid",
+      "median": 0.4000000001396984,
+      "raw": [
+        0.4000000001396984, 0.39999999990686774, 0.4000000001396984, 0.4000000001396984,
+        0.30000000004656613
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (100)",
+      "framework": "solid",
+      "median": 0.4000000001396984,
+      "raw": [0.5, 0.2999999998137355, 0.4000000001396984, 0.30000000004656613, 0.6000000000931323]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (100)",
+      "framework": "purity",
+      "median": 0.30000000004656613,
+      "raw": [
+        0.19999999995343387, 0.30000000004656613, 0.39999999990686774, 0.39999999990686774,
+        0.19999999995343387
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (1k)",
+      "framework": "solid",
+      "median": 0.4000000001396984,
+      "raw": [0.5, 0.4000000001396984, 0.4000000001396984, 0.5, 0.30000000004656613]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (1k)",
+      "framework": "purity",
+      "median": 0.39999999990686774,
+      "raw": [
+        0.30000000004656613, 0.39999999990686774, 0.4000000001396984, 0.5, 0.39999999990686774
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (10k)",
+      "framework": "solid",
+      "median": 1,
+      "raw": [1, 1, 0.8999999999068677, 0.6999999999534339, 1]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (10k)",
+      "framework": "purity",
+      "median": 0.6999999999534339,
+      "raw": [0.6999999999534339, 0.6999999999534339, 0.5, 0.7999999998137355, 0.5]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Select all (10)",
+      "framework": "solid",
+      "median": 0.8000000000465661,
+      "raw": [
+        0.7999999998137355, 0.7999999998137355, 0.9000000001396984, 0.8999999999068677,
+        0.8000000000465661
+      ]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Select all (10)",
+      "framework": "purity",
+      "median": 0.5999999998603016,
+      "raw": [0.6000000000931323, 0.5, 0.6000000000931323, 0.5999999998603016, 0.5999999998603016]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Select all (100)",
+      "framework": "purity",
+      "median": 0.6999999999534339,
+      "raw": [
+        0.6999999999534339, 1.1000000000931323, 0.6999999999534339, 0.8999999999068677,
+        0.6999999999534339
+      ]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Select all (100)",
+      "framework": "solid",
+      "median": 1.8999999999068677,
+      "raw": [
+        2.300000000046566, 1.7999999998137355, 3.3999999999068677, 1.8999999999068677,
+        1.7999999998137355
+      ]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Select all (1k)",
+      "framework": "solid",
+      "median": 18.699999999953434,
+      "raw": [15.400000000139698, 25.799999999813735, 19.5, 18.699999999953434, 10.299999999813735]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Select all (1k)",
+      "framework": "purity",
+      "median": 3.300000000046566,
+      "raw": [3.300000000046566, 3.199999999953434, 3.300000000046566, 6.699999999953434, 3]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Select all (10k)",
+      "framework": "solid",
+      "median": 116.5999999998603,
+      "raw": [271.20000000018626, 159.39999999990687, 80.19999999995343, 105, 116.5999999998603]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Select all (10k)",
+      "framework": "purity",
+      "median": 34.5,
+      "raw": [34.0999999998603, 34.5, 36.199999999953434, 45.5999999998603, 30.199999999953434]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Deselect all (10)",
+      "framework": "solid",
+      "median": 0.8999999999068677,
+      "raw": [
+        1.1999999999534339, 1.1000000000931323, 0.8999999999068677, 0.8000000000465661,
+        0.6999999999534339
+      ]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Deselect all (10)",
+      "framework": "purity",
+      "median": 0.5,
+      "raw": [0.39999999990686774, 0.5, 0.4000000001396984, 0.5, 0.6000000000931323]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Deselect all (100)",
+      "framework": "solid",
+      "median": 2.9000000001396984,
+      "raw": [2.800000000046566, 2.9000000001396984, 3, 3.5999999998603016, 2.699999999953434]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Deselect all (100)",
+      "framework": "purity",
+      "median": 0.7999999998137355,
+      "raw": [0.7999999998137355, 0.7000000001862645, 0.9000000001396984, 0.8999999999068677, 0.5]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Deselect all (1k)",
+      "framework": "solid",
+      "median": 17.399999999906868,
+      "raw": [
+        20.9000000001397, 18.800000000046566, 12.199999999953434, 17.399999999906868,
+        15.199999999953434
+      ]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Deselect all (1k)",
+      "framework": "purity",
+      "median": 4.800000000046566,
+      "raw": [3, 3.699999999953434, 6, 4.800000000046566, 4.800000000046566]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Deselect all (10k)",
+      "framework": "purity",
+      "median": 28.899999999906868,
+      "raw": [
+        65.4000000001397, 28.899999999906868, 27.300000000046566, 28.5999999998603,
+        49.10000000009313
+      ]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Deselect all (10k)",
+      "framework": "solid",
+      "median": 109.5999999998603,
+      "raw": [117.30000000004657, 103.4000000001397, 113.80000000004657, 83.5, 109.5999999998603]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Toggle all (10)",
+      "framework": "solid",
+      "median": 0.8999999999068677,
+      "raw": [0.8999999999068677, 1, 0.6999999999534339, 0.9000000001396984, 0.6999999999534339]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Toggle all (10)",
+      "framework": "purity",
+      "median": 0.5,
+      "raw": [0.5, 0.39999999990686774, 0.5, 0.6999999999534339, 0.6999999999534339]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Toggle all (100)",
+      "framework": "purity",
+      "median": 0.8000000000465661,
+      "raw": [0.8000000000465661, 0.8999999999068677, 0.6000000000931323, 0.5, 0.8000000000465661]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Toggle all (100)",
+      "framework": "solid",
+      "median": 1.9000000001396984,
+      "raw": [
+        1.9000000001396984, 2.2000000001862645, 2.300000000046566, 1.9000000001396984,
+        1.8999999999068677
+      ]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Toggle all (1k)",
+      "framework": "solid",
+      "median": 12.800000000046566,
+      "raw": [
+        20.4000000001397, 22.199999999953434, 12.800000000046566, 11.100000000093132,
+        11.799999999813735
+      ]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Toggle all (1k)",
+      "framework": "purity",
+      "median": 3.2000000001862645,
+      "raw": [3.4000000001396984, 3.199999999953434, 3, 4.699999999953434, 3.2000000001862645]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Toggle all (10k)",
+      "framework": "purity",
+      "median": 54.9000000001397,
+      "raw": [47, 68.80000000004657, 59.800000000046566, 54.9000000001397, 29.300000000046566]
+    },
+    {
+      "scenario": "selection",
+      "category": "Interaction",
+      "op": "Toggle all (10k)",
+      "framework": "solid",
+      "median": 176.10000000009313,
+      "raw": [249.60000000009313, 208.69999999995343, 110, 148.19999999995343, 176.10000000009313]
+    },
+    {
+      "scenario": "ticker",
+      "category": "Interaction",
+      "op": "Stock ticker (10 frames)",
+      "framework": "purity",
+      "median": 0.09999999986030161,
+      "raw": [
+        0.09999999986030161, 0.10000000009313226, 0.09999999986030161, 0.09999999986030161,
+        0.09999999986030161
+      ]
+    },
+    {
+      "scenario": "ticker",
+      "category": "Interaction",
+      "op": "Stock ticker (10 frames)",
+      "framework": "solid",
+      "median": 1.5999999998603016,
+      "raw": [2.300000000046566, 1.5999999998603016, 2.3999999999068677, 1.3000000000465661, 1.5]
+    },
+    {
+      "scenario": "ticker",
+      "category": "Interaction",
+      "op": "Stock ticker (100 frames)",
+      "framework": "purity",
+      "median": 0.10000000009313226,
+      "raw": [
+        0.19999999995343387, 0.10000000009313226, 0.09999999986030161, 0.10000000009313226,
+        0.19999999995343387
+      ]
+    },
+    {
+      "scenario": "ticker",
+      "category": "Interaction",
+      "op": "Stock ticker (100 frames)",
+      "framework": "solid",
+      "median": 1.9000000001396984,
+      "raw": [
+        1.8000000000465661, 1.9000000001396984, 2.199999999953434, 1.6999999999534339,
+        2.6000000000931323
+      ]
+    },
+    {
+      "scenario": "ticker",
+      "category": "Interaction",
+      "op": "Stock ticker (500 frames)",
+      "framework": "solid",
+      "median": 0.10000000009313226,
+      "raw": [
+        0.19999999995343387, 0.10000000009313226, 0.10000000009313226, 0.19999999995343387,
+        0.09999999986030161
+      ]
+    },
+    {
+      "scenario": "ticker",
+      "category": "Interaction",
+      "op": "Stock ticker (500 frames)",
+      "framework": "purity",
+      "median": 0.10000000009313226,
+      "raw": [0.10000000009313226, 0.10000000009313226, 0.10000000009313226, 0, 0]
+    },
+    {
+      "scenario": "ticker",
+      "category": "Interaction",
+      "op": "Stock ticker (1,000 frames)",
+      "framework": "purity",
+      "median": 0.10000000009313226,
+      "raw": [0.39999999990686774, 0.10000000009313226, 0.09999999986030161, 0.10000000009313226, 0]
+    },
+    {
+      "scenario": "ticker",
+      "category": "Interaction",
+      "op": "Stock ticker (1,000 frames)",
+      "framework": "solid",
+      "median": 2.7999999998137355,
+      "raw": [4.5, 2, 2.7999999998137355, 2.199999999953434, 4.800000000046566]
+    },
+    {
+      "scenario": "ticker",
+      "category": "Interaction",
+      "op": "Stock ticker (10,000 frames)",
+      "framework": "purity",
+      "median": 0.10000000009313226,
+      "raw": [
+        0.09999999986030161, 0.19999999995343387, 0.09999999986030161, 0.20000000018626451,
+        0.10000000009313226
+      ]
+    },
+    {
+      "scenario": "ticker",
+      "category": "Interaction",
+      "op": "Stock ticker (10,000 frames)",
+      "framework": "solid",
+      "median": 7.900000000139698,
+      "raw": [
+        7.699999999953434, 13.600000000093132, 12.899999999906868, 7.900000000139698,
+        5.2999999998137355
+      ]
+    }
+  ],
+  "memory": [
+    {
+      "scenario": "index",
+      "category": "Memory",
+      "op": "Create 1k rows",
+      "framework": "purity",
+      "createKB": 1371.30859375,
+      "retainedKB": 26.6875,
+      "createSamplesKB": [1498.591796875, 1334.48828125, 1371.30859375],
+      "retainedSamplesKB": [199.1767578125, 26.6875, 18.84765625]
+    },
+    {
+      "scenario": "index",
+      "category": "Memory",
+      "op": "Create 1k rows",
+      "framework": "solid",
+      "createKB": 1299.77734375,
+      "retainedKB": 49.4453125,
+      "createSamplesKB": [1337.7802734375, 1255.24609375, 1299.77734375],
+      "retainedSamplesKB": [167.134765625, 49.4453125, 43.04296875]
+    },
+    {
+      "scenario": "index",
+      "category": "Memory",
+      "op": "Create 10k rows",
+      "framework": "purity",
+      "createKB": 13289.75,
+      "retainedKB": 51.1015625,
+      "createSamplesKB": [13270.7998046875, 13289.75, 13480.76171875],
+      "retainedSamplesKB": [204.7197265625, 51.1015625, 34.28125]
+    },
+    {
+      "scenario": "index",
+      "category": "Memory",
+      "op": "Create 10k rows",
+      "framework": "solid",
+      "createKB": 12491.05078125,
+      "retainedKB": 54.48046875,
+      "createSamplesKB": [12336.71875, 12491.05078125, 12653.8671875],
+      "retainedSamplesKB": [167.216796875, 54.48046875, 48.5234375]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Memory",
+      "op": "Create 1k components",
+      "framework": "purity",
+      "createKB": 736.19140625,
+      "retainedKB": 19.9609375,
+      "createSamplesKB": [846.646484375, 732.9375, 736.19140625],
+      "retainedSamplesKB": [179.1787109375, 16.54296875, 19.9609375]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Memory",
+      "op": "Create 1k components",
+      "framework": "solid",
+      "createKB": 776.1875,
+      "retainedKB": 41.640625,
+      "createSamplesKB": [880.087890625, 744.51171875, 776.1875],
+      "retainedSamplesKB": [200.537109375, 30.13671875, 41.640625]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Memory",
+      "op": "Create 10k components",
+      "framework": "purity",
+      "createKB": 7194.142578125,
+      "retainedKB": 34.2890625,
+      "createSamplesKB": [7194.142578125, 6977.6484375, 7274.3203125],
+      "retainedSamplesKB": [177.50390625, 34.2890625, 22.75390625]
+    },
+    {
+      "scenario": "lifecycle",
+      "category": "Memory",
+      "op": "Create 10k components",
+      "framework": "solid",
+      "createKB": 7372.29296875,
+      "retainedKB": 48.5078125,
+      "createSamplesKB": [7565.4931640625, 7372.29296875, 7366.10546875],
+      "retainedSamplesKB": [184.6591796875, 48.5078125, 21.734375]
+    },
+    {
+      "scenario": "filter",
+      "category": "Memory",
+      "op": "Populate 10k filtered",
+      "framework": "purity",
+      "createKB": 717.59375,
+      "retainedKB": 717.68359375,
+      "createSamplesKB": [7741.5771484375, -68.0634765625, 717.59375],
+      "retainedSamplesKB": [7752.6904296875, -68.2041015625, 717.68359375]
+    },
+    {
+      "scenario": "filter",
+      "category": "Memory",
+      "op": "Populate 10k filtered",
+      "framework": "solid",
+      "createKB": 357.2421875,
+      "retainedKB": 357.6171875,
+      "createSamplesKB": [7995.859375, -37.732421875, 357.2421875],
+      "retainedSamplesKB": [8008.67578125, -37.533203125, 357.6171875]
+    }
+  ],
+  "errors": [],
+  "validationErrors": [],
+  "complete": true,
+  "memoryCoverage": "measured-or-failed",
+  "solidV2Rc18Installed": false,
+  "measurementNotes": {
+    "timing": "Each raw value is page-side click(s) + microtask flush + forced layout in ms.",
+    "memory": "Raw values are usedJSHeapSize KB deltas after forced GC, not allocation sampling.",
+    "comparability": "A version tag alone does not prove same-workload or application parity."
+  }
+}

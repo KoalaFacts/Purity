@@ -17,9 +17,11 @@ This is a **code-level** audit: hot paths, duplication, test placement, type gat
 
 The codebase is in good shape by the usual static measures. The findings are therefore about **where the remaining cost and risk concentrate**, not about broad cleanup.
 
-## 2. Benchmark snapshot: where Purity trails Solid v2 rc.20
+## 2. Exploratory benchmark snapshot (not an SV2-015 baseline)
 
-`benchmark/run-bench.ts` with `FRAMEWORKS=purity,solid`, warmup 3, iterations 5, drop fastest+slowest: the rendering page (`index`) was run twice, every other page once. The container is noisy (Append 1k moved 36.6 → 59.5 ms between the two index runs), so single-run rows are indicative only and the index rows list both runs. Raw runs are in `benchmark/dist/benchmark-runs/` for this session only; they are not a new SV2-015 baseline.
+> **Status: exploratory.** These numbers locate bottlenecks for the findings below. They are not the formal paired Solid v2 baseline, not evidence of SV2-015 progress, and must not be quoted as a framework ranking: one 2-vCPU container, few iterations, and a comparator (rc.20) that differs from the frozen rc.18 target. The raw artifacts are archived in [`benchmark/solid-v2/exploratory/2026-11-05/`](../benchmark/solid-v2/exploratory/2026-11-05/README.md) with source SHA, package identities, browser, invocation and environment.
+
+`benchmark/run-bench.ts` with `FRAMEWORKS=purity,solid`, warmup 3, iterations 5, drop fastest+slowest: the rendering page (`index`) was run twice, every other page once. The container is noisy (Append 1k moved 36.6 → 59.5 ms between the two index runs), so single-run rows are indicative only and the index rows list both runs.
 
 | Scenario                        | Purity (run 1 / run 2) | Solid (run 1 / run 2) | Pattern            |
 | ------------------------------- | ---------------------- | --------------------- | ------------------ |
@@ -35,7 +37,7 @@ The codebase is in good shape by the usual static measures. The findings are the
 
 Reading: Purity wins where fine-grained signal updates dominate and trails where **row creation/teardown and keyed reordering** dominate. The profiles below point at specific code for both.
 
-`tools/profile.ts purity create` (10k rows): script 169 ms, GC **78.5 ms**, `cloneNode` 30.6 ms, `swapSlot` **11.4 ms self**, `insertBefore` 11.2 ms, `trackOwnedNodes` 1.6 ms; heap +13.35 MB (Solid +12.2 MB).
+`tools/profile.ts purity create` (10k rows; run with the local `CHROMIUM_PATH` patch described in CQ-13, recorded in the archive README): script 169 ms, GC **78.5 ms**, `cloneNode` 30.6 ms, `swapSlot` **11.4 ms self**, `insertBefore` 11.2 ms, `trackOwnedNodes` 1.6 ms; heap +13.35 MB. (Solid's +12.2 MB is from the runner's separate memory benchmark, not a profile.)
 `tools/profile.ts purity swap` (10k rows, swap 2): JS 12.8 ms, GC **12.3 ms**, `reconcileEachImpl` 8.9 ms total, `lis` 2.8 ms — for a two-row move.
 
 ## 3. Findings

@@ -1,0 +1,52 @@
+# purity / create
+# wall: 765ms (sampled 774ms, 5290 samples)
+# tr: 10000
+
+## CPU breakdown (self ms)
+  jsUser            : 50.8
+  domOps (native)   : 48.7
+  garbage collector : 78.5
+  (program)         : 589.0     (V8 internal: layout/paint/parse)
+  (idle)            : 6.4
+
+## Memory & DOM
+  JS heap used delta : 13.35 MB
+  JS heap total delta: 16.62 MB
+  DOM nodes added    : 100000
+  DOM listeners added: 0
+  layout count       : 1  (339.0 ms)
+  recalc style count : 1  (106.3 ms)
+  script duration    : 169.2 ms
+  task duration      : 770.3 ms
+
+## Network (from page load through capture)
+  requests: 9, bytes received: 15.7 KB
+
+## Top 25 by self time
+ self ms   total ms  function (file:line)
+------------------------------------------------------------------------------------------------
+   589.0      589.0  (program)                                :-1
+    78.5       78.5  (garbage collector)                      :-1
+    30.6       30.6  cloneNode                                :-1
+    11.4       11.4  swapSlot                                 csr-runtime.ts:0
+    11.2       11.2  insertBefore                             :-1
+     8.5       94.5  (anon)                                   app.ts:12
+     6.4        6.4  (idle)                                   :-1
+     5.1        5.1  W                                        index.js:0
+     4.6        4.6  appendChild                              :-1
+     3.5       93.0  reconcileEachImpl                        control.ts:0
+     3.1        4.9  b                                        index.js:0
+     2.3      117.2  N                                        index.js:0
+     2.2        2.2  setAttribute                             :-1
+     2.2        5.2  click                                    :-1
+     1.6        1.6  trackOwnedNodes                          control.ts:0
+     1.4       66.5  item                                     app.ts:12
+     1.4       25.6  q                                        index.js:0
+     1.3        6.2  s                                        index.js:0
+     1.2        1.2  extractNodes                             control.ts:0
+     1.1        1.9  C                                        index.js:0
+     1.0      115.0  z                                        index.js:0
+     0.9        0.9  w                                        index.js:0
+     0.8        0.8  Si                                       app.ts:12
+     0.8       31.4  (anon)                                   csr-runtime.ts:0
+     0.8       73.4  create                                   control.ts:0

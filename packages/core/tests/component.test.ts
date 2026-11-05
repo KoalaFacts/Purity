@@ -15,7 +15,7 @@ import { resource } from '../src/resource.ts';
 import { ComponentContext, popContext, pushContext, state, watch } from '@purityjs/signals';
 import { primeHydrationCache } from '../src/ssr-context.ts';
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 describe('bindComponentState', () => {
   it('releases inactive custom state counts without affecting another active source', async () => {
@@ -231,7 +231,7 @@ describe('lifecycle hooks', () => {
       return html`<p>Mounted</p>`;
     }, container);
 
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(mountedEl).not.toBeNull();
     expect(mountedEl.textContent).toBe('Mounted');
   });
@@ -289,7 +289,7 @@ describe('lifecycle hooks', () => {
       return html`<p>Test</p>`;
     }, container);
 
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(order).toEqual(['mounted']);
 
     unmount();
@@ -311,7 +311,7 @@ describe('lifecycle hooks', () => {
       return html`<p>x</p>`;
     }, container);
 
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(log).toEqual(['mounted']);
 
     unmount();
@@ -330,7 +330,7 @@ describe('lifecycle hooks', () => {
       return html`<p>x</p>`;
     }, container);
 
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(errors).toEqual(['mount-fail']);
   });
 

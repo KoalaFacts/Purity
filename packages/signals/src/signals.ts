@@ -963,21 +963,21 @@ type InferSources<S extends readonly WatchSource<any>[]> = {
  * stop(); // dispose the watcher
  * ```
  *
+ * A returned function runs as cleanup; any other return value is ignored, so
+ * expression bodies such as `() => console.log(x())` type-check.
+ *
  * @returns Dispose function — call to stop watching.
  */
-export function watch(fn: () => undefined | Dispose): Dispose;
-export function watch<T>(
-  source: WatchSource<T>,
-  cb: (value: T, oldValue: T) => undefined | Dispose,
-): Dispose;
+export function watch(fn: () => unknown): Dispose;
+export function watch<T>(source: WatchSource<T>, cb: (value: T, oldValue: T) => unknown): Dispose;
 export function watch<const S extends readonly WatchSource<any>[]>(
   sources: [...S],
-  cb: (values: InferSources<S>, oldValues: InferSources<S>) => undefined | Dispose,
+  cb: (values: InferSources<S>, oldValues: InferSources<S>) => unknown,
 ): Dispose;
 
 export function watch(
-  sourceOrFn: WatchSource<any> | WatchSource<any>[] | (() => undefined | Dispose),
-  cb?: (value: any, oldValue: any) => undefined | Dispose,
+  sourceOrFn: WatchSource<any> | WatchSource<any>[] | (() => unknown),
+  cb?: (value: any, oldValue: any) => unknown,
 ): Dispose {
   if (!cb) {
     return watchEffectInternal(sourceOrFn as () => undefined | Dispose);
@@ -1014,7 +1014,7 @@ export function watch(
     oldValues = newValues;
     newValues = tmp;
 
-    return result;
+    return result as undefined | Dispose;
   });
 }
 

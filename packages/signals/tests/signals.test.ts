@@ -63,7 +63,7 @@ describe('state', () => {
     str('world');
     expect(str()).toBe('world');
 
-    const obj = state({ a: 1 });
+    const obj = state<Record<string, number>>({ a: 1 });
     expect(obj()).toEqual({ a: 1 });
     obj({ b: 2 });
     expect(obj()).toEqual({ b: 2 });
@@ -111,10 +111,10 @@ describe('computed', () => {
 
     expect(seen).toEqual([5]);
     source(2);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(seen).toEqual([5, 9]);
     source(3);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(seen).toEqual([5, 9, 13]);
     stop();
   });
@@ -150,7 +150,7 @@ describe('computed', () => {
       seen.push(doubled.get());
     });
     count(2);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(seen).toEqual([2, 4]);
     stop();
   });
@@ -273,7 +273,7 @@ describe('watch (auto-track)', () => {
   });
 
   it('re-runs when dependencies change', async () => {
-    const values = [];
+    const values: unknown[] = [];
     const count = state(0);
 
     watch(() => {
@@ -284,16 +284,16 @@ describe('watch (auto-track)', () => {
 
     count(1);
     // Effects are batched via microtask
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(values).toEqual([0, 1]);
 
     count(2);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(values).toEqual([0, 1, 2]);
   });
 
   it('returns a dispose function', async () => {
-    const values = [];
+    const values: unknown[] = [];
     const count = state(0);
 
     const dispose = watch(() => {
@@ -304,13 +304,13 @@ describe('watch (auto-track)', () => {
     dispose();
 
     count(1);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     // Should not have re-run after dispose
     expect(values).toEqual([0]);
   });
 
   it('calls cleanup function on re-run', async () => {
-    const cleanups = [];
+    const cleanups: unknown[] = [];
     const count = state(0);
 
     watch(() => {
@@ -319,7 +319,7 @@ describe('watch (auto-track)', () => {
     });
 
     count(1);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(cleanups).toEqual(['cleanup']);
   });
 });
@@ -346,7 +346,7 @@ describe('watch', () => {
     expect(calls).toEqual([]);
 
     source(1);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(getter).toHaveBeenCalledTimes(2);
     expect(calls).toEqual([{ value: 1, oldValue: 0 }]);
     stop();
@@ -368,7 +368,7 @@ describe('watch', () => {
     expect(calls).toEqual([]);
 
     right('b');
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(readLeft).toHaveBeenCalledTimes(2);
     expect(readRight).toHaveBeenCalledTimes(2);
     expect(calls).toEqual([{ values: [10, 'b'], previous: [10, 'a'] }]);
@@ -386,11 +386,11 @@ describe('watch', () => {
 
     sources.push(right);
     left(1);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(observed).toEqual([[1]]);
 
     right(1);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(observed).toEqual([[1]]);
     stop();
   });
@@ -406,11 +406,11 @@ describe('watch', () => {
 
     try {
       source(1);
-      await new Promise((r) => queueMicrotask(r));
+      await new Promise<void>((r) => queueMicrotask(r));
       expect(errorSpy).toHaveBeenCalled();
 
       source(2);
-      await new Promise((r) => queueMicrotask(r));
+      await new Promise<void>((r) => queueMicrotask(r));
       expect(observed).toEqual([
         { value: 1, previous: 0 },
         { value: 2, previous: 0 },
@@ -437,27 +437,27 @@ describe('watch', () => {
 
     expect(parentRuns).toBe(1);
     childSource(1);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(parentRuns).toBe(1);
     expect(seen).toEqual([1]);
 
     parentSource(1);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(parentRuns).toBe(2);
 
     childSource(2);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(parentRuns).toBe(2);
     expect(seen).toEqual([1, 2]);
 
     stop();
     childSource(3);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(seen).toEqual([1, 2]);
   });
 
   it('watches a single source with old/new values', async () => {
-    const calls = [];
+    const calls: unknown[] = [];
     const count = state(0);
 
     watch(count, (val, old) => {
@@ -465,11 +465,11 @@ describe('watch', () => {
     });
 
     count(1);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(calls).toEqual([{ val: 1, old: 0 }]);
 
     count(5);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(calls).toEqual([
       { val: 1, old: 0 },
       { val: 5, old: 1 },
@@ -477,7 +477,7 @@ describe('watch', () => {
   });
 
   it('watches multiple sources', async () => {
-    const calls = [];
+    const calls: unknown[] = [];
     const a = state(1);
     const b = state('x');
 
@@ -486,11 +486,11 @@ describe('watch', () => {
     });
 
     a(2);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(calls).toEqual([{ vals: [2, 'x'], olds: [1, 'x'] }]);
 
     b('y');
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(calls).toEqual([
       { vals: [2, 'x'], olds: [1, 'x'] },
       { vals: [2, 'y'], olds: [2, 'x'] },
@@ -498,7 +498,7 @@ describe('watch', () => {
   });
 
   it('watches a computed source', async () => {
-    const calls = [];
+    const calls: unknown[] = [];
     const count = state(1);
     const doubled = compute(() => count() * 2);
 
@@ -507,7 +507,7 @@ describe('watch', () => {
     });
 
     count(3);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(calls).toEqual([{ val: 6, old: 2 }]);
   });
 
@@ -519,24 +519,24 @@ describe('watch', () => {
     expect(fn).not.toHaveBeenCalled();
 
     count(1);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
   it('returns dispose function (explicit source)', async () => {
-    const calls = [];
+    const calls: unknown[] = [];
     const count = state(0);
 
     const stop = watch(count, (val) => calls.push(val));
 
     count(1);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(calls).toEqual([1]);
 
     stop();
 
     count(2);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(calls).toEqual([1]);
   });
 
@@ -549,15 +549,15 @@ describe('watch', () => {
     });
 
     source(1);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(calls).toEqual(['1:first']);
 
     unrelated('second');
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(calls).toEqual(['1:first']);
 
     source(2);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(calls).toEqual(['1:first', '2:second']);
     stop();
   });
@@ -572,15 +572,15 @@ describe('watch', () => {
     });
 
     left(1);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(calls).toEqual(['1,0:first']);
 
     unrelated('second');
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(calls).toEqual(['1,0:first']);
 
     right(2);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(calls).toEqual(['1,0:first', '1,2:second']);
     stop();
   });
@@ -595,18 +595,18 @@ describe('watch', () => {
     });
 
     first(1);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(observed).toEqual([{ values: [1, 0], oldValues: [0, 0] }]);
 
     second(2);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(observed).toEqual([
       { values: [1, 0], oldValues: [0, 0] },
       { values: [1, 2], oldValues: [1, 0] },
     ]);
 
     first(3);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(observed).toEqual([
       { values: [1, 0], oldValues: [0, 0] },
       { values: [1, 2], oldValues: [1, 0] },
@@ -626,12 +626,12 @@ describe('watch', () => {
 
     try {
       source(1);
-      await new Promise((r) => queueMicrotask(r));
+      await new Promise<void>((r) => queueMicrotask(r));
       expect(errSpy).toHaveBeenCalled();
       expect(snapshots).toEqual([[1]]);
 
       source(2);
-      await new Promise((r) => queueMicrotask(r));
+      await new Promise<void>((r) => queueMicrotask(r));
       expect(snapshots).toEqual([[1], [2]]);
     } finally {
       stop();
@@ -642,7 +642,7 @@ describe('watch', () => {
 
 describe('batch', () => {
   it('batches multiple updates', async () => {
-    const values = [];
+    const values: unknown[] = [];
     const a = state(0);
     const b = state(0);
 
@@ -657,7 +657,7 @@ describe('batch', () => {
       b(2);
     });
 
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     // Should have the combined result, not intermediate states
     expect(values[values.length - 1]).toBe('1-2');
   });
@@ -730,7 +730,7 @@ describe('watch dispose + cleanup', () => {
     expect(fn).toHaveBeenCalledTimes(1);
     dispose();
     a(1);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(fn).toHaveBeenCalledTimes(1);
   });
 });
@@ -743,7 +743,7 @@ describe('signal write produces same value', () => {
     expect(fn).toHaveBeenCalledTimes(1);
 
     a(1); // same value
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
@@ -755,7 +755,7 @@ describe('signal write produces same value', () => {
     const dispose = watch(fn);
     a(1);
     dispose();
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     // No additional invocation after dispose
     expect(fn).toHaveBeenCalledTimes(1);
   });
@@ -776,7 +776,7 @@ describe('batch — nested', () => {
       });
       a(4);
     });
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     // Single re-run regardless of nesting
     expect(fn).toHaveBeenCalledTimes(2);
     expect(a()).toBe(4);
@@ -793,7 +793,7 @@ describe('batch — nested', () => {
     batch(() => {
       b(2);
     });
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(seen[seen.length - 1]).toBe(3);
   });
 });
@@ -986,7 +986,7 @@ describe('flush — cross-effect feedback loops', () => {
         const { compute, state, watch } = await import(${JSON.stringify(
           pathToFileURL(join(import.meta.dirname, '..', 'src', 'signals.ts')).href,
         )});
-        const tick = () => new Promise((r) => queueMicrotask(r));
+        const tick = () => new Promise<void>((r) => queueMicrotask(r));
         console.error = () => {};
         const s1 = state(0);
         const s2 = state(0);
@@ -1272,7 +1272,7 @@ describe('reactivity semantics', () => {
 });
 
 describe('observer cleanup', () => {
-  const tick = () => new Promise((r) => queueMicrotask(r));
+  const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
   it('handles a watcher reading the same signal twice in one fn', async () => {
     // Reproduces the cart-row pattern: html`${() => item().a * item().b}`
@@ -1447,7 +1447,7 @@ describe('deep dependency chains', () => {
     // frame per link, so a sufficiently long chain built exactly this way
     // overflowed on write even though it built up without incident.
     const root = state(0);
-    let prev = root;
+    let prev: () => number = root;
     for (let i = 0; i < 20_000; i++) {
       const p = prev;
       prev = compute(() => p() + 1);

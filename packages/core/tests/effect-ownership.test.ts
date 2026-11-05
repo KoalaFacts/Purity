@@ -14,7 +14,7 @@ import { component, slot } from '../src/elements.ts';
 import { css } from '../src/styles.ts';
 import { state, watch } from '@purityjs/signals';
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 // Reactive work created while an effect runs belongs to that effect: it is
 // disposed before the effect re-runs and when the effect is disposed. Without

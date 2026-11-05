@@ -14,7 +14,7 @@ import {
 } from '../src/browser-signals/page-visibility-signal.ts';
 import { watch, type ComputedAccessor } from '@purityjs/signals';
 
-const tick = (): Promise<void> => new Promise((resolve) => queueMicrotask(resolve));
+const tick = (): Promise<void> => new Promise<void>((resolve) => queueMicrotask(resolve));
 const disposers: Array<() => void> = [];
 const restores: Array<() => void> = [];
 type Kind = 'locale' | 'fullscreen' | 'online' | 'visibility';

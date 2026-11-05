@@ -9,7 +9,7 @@ import { resizeSignal } from '../src/browser-signals/index.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../../core/src/ssr-context.ts';
 import { makeSSRContext } from '../../core/tests/_helpers.ts';
 
-const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+const tick = (): Promise<void> => new Promise<void>((r) => queueMicrotask(r));
 
 type Instance = {
   callback: ResizeObserverCallback;
@@ -156,7 +156,7 @@ describe('resizeSignal — client (ADR 0040)', () => {
     // observer outlives the component and pins captured closures until the
     // accessor is GC'd.
     let disconnects = 0;
-    const OrigMockRO = (globalThis as { ResizeObserver: typeof MockRO }).ResizeObserver;
+    const OrigMockRO = (globalThis as unknown as { ResizeObserver: typeof MockRO }).ResizeObserver;
     class CountingRO extends OrigMockRO {
       disconnect(): void {
         disconnects++;

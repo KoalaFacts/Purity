@@ -9,7 +9,7 @@ import { _resetLocaleSignal } from '../src/browser-signals/locale-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../../core/src/ssr-context.ts';
 import { makeSSRContext } from '../../core/tests/_helpers.ts';
 
-const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+const tick = (): Promise<void> => new Promise<void>((r) => queueMicrotask(r));
 
 function setLanguage(lang: unknown): void {
   Object.defineProperty(navigator, 'language', { configurable: true, get: () => lang });

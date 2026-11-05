@@ -24,7 +24,7 @@ import { state } from '@purityjs/signals';
 let tagSeq = 0;
 const nextTag = () => `p-mb-${tagSeq++}`;
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 describe('connectedMoveCallback opt-in', () => {
   it('is defined on PurityElement so moveBefore preserves CE state', () => {

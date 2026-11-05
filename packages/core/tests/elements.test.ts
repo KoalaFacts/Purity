@@ -5,7 +5,7 @@ import { component, slot, teleport } from '../src/elements.ts';
 import { onFormDisabled, onFormReset } from '../src/forms.ts';
 import { compute, state, watch } from '@purityjs/signals';
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 let tagCounter = 0;
 const tag = (base) => `p-${base}-${tagCounter++}`;
 

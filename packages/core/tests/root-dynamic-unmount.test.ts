@@ -6,7 +6,7 @@ import { each, list, match } from '../src/control.ts';
 import { html } from '../src/compiler/compile.ts';
 import { component } from '../src/elements.ts';
 
-const tick = () => new Promise((resolve) => queueMicrotask(resolve));
+const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 
 describe('dynamic root ownership', () => {
   it('reorders NaN and signed-zero keys without replacing their rows', async () => {

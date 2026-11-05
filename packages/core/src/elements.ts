@@ -154,7 +154,7 @@ export interface RenderOutput {
 export type RenderFn<P, S> = (
   props: P,
   slots: { [K in keyof S]: SlotAccessor<S[K]> },
-) => Node | DocumentFragment | RenderOutput;
+) => Node | DocumentFragment | RenderOutput | SSRHtml;
 
 export interface ComponentOptions {
   /** Forward host focus to a focusable descendant in the shadow tree. */
@@ -172,7 +172,7 @@ function runRender<P, S>(
   ctx: ComponentContext,
 ): { result: Node | DocumentFragment; exposed: Record<string, unknown> } {
   pushContext(ctx);
-  let output: Node | DocumentFragment | RenderOutput;
+  let output: ReturnType<RenderFn<P, S>>;
   try {
     try {
       output = renderFn(props, slotAccessors);

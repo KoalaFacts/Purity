@@ -37,6 +37,10 @@
   `DocumentFragment`, like `html`, so `parent.appendChild(each(…))` and a
   `when()` returned from an `each()` row compile. The runtime values are
   unchanged.
+- `@purityjs/ssr`'s `html` is a typed drop-in inside components and list
+  rows: `component()` render functions and `each()`/`virtualEach()` row
+  callbacks accept its `SSRHtml` result (``component('x', () => html`…`)``
+  with the server `html` failed to type-check).
 
 ## 0.5.2
 

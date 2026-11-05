@@ -336,3 +336,40 @@ describe('each() with rows that render no nodes', () => {
     );
   });
 });
+
+describe('each() rows with very many root nodes', () => {
+  // Spreading a row's nodes into one call (`append(...nodes)`, `push(...nodes)`)
+  // throws RangeError past the engine's argument limit; row node lists have no
+  // documented bound, so every per-row node operation must stay indexed.
+  it('creates, reorders and clears a 150,000-node row inside when()', async () => {
+    const big = 150_000;
+    const items = state(['big', 'small']);
+    const host = document.createElement('div');
+    const app = mount(
+      () =>
+        when(
+          () => true,
+          () =>
+            each(items, (item) => {
+              const fragment = document.createDocumentFragment();
+              const count = item() === 'big' ? big : 1;
+              for (let i = 0; i < count; i++) fragment.appendChild(document.createTextNode('x'));
+              return fragment;
+            }) as DocumentFragment,
+        ) as DocumentFragment,
+      host,
+    );
+    try {
+      expect(host.childNodes.length).toBe(big + 1 + 2); // rows + each marker + match marker
+      items(['small', 'big']);
+      await tick();
+      expect(host.firstChild?.nextSibling?.textContent).toBe('x');
+      expect(host.childNodes.length).toBe(big + 1 + 2);
+      items(['small']);
+      await tick();
+      expect(host.childNodes.length).toBe(1 + 2);
+    } finally {
+      app.unmount();
+    }
+  }, 60_000);
+});

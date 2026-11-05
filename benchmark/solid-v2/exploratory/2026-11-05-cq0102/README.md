@@ -41,6 +41,6 @@ The size-neutral revision keeps the full-list `newEntries` map and the old owner
 
 A one-shot jsdom probe of whole-list operations (reverse, sort, filter, unfilter, replace 10k) moved by ±15% in both directions across three repeats and is not used as evidence.
 
-## Final size (PR head after the size review)
+## Final size (PR head after the size and review fixes)
 
-All 22 package entries and 17 complete apps against main `34b21d8` (local `check:bundle`, same container): every row is smaller or equal in raw, gzip and Brotli. `runtime-all` Brotli is equal at 43,020 B (raw −534 B, gzip −63 B). The full table is in the PR thread. Behaviour is unchanged from `4d61432`; only equivalent source forms differ.
+All 22 package entries and 17 complete apps against main `34b21d8` (local `check:bundle`, same container): every row is smaller or equal in raw, gzip and Brotli (`runtime-all` Brotli 43,020 → 43,013). Per-row node operations are indexed (no argument spreads), after a review showed spreads throw RangeError on very large row fragments. The full table is in the PR thread.

@@ -472,7 +472,10 @@ export interface EachState<T, E extends KeyedEntry = EachEntry<T>> {
 function ownedEntryNodes<T, E extends KeyedEntry>(state: EachState<T, E>): Node[] {
   const nodes: Node[] = [];
   const { keys, keyToEntry } = state;
-  for (let i = 0; i < keys.length; i++) nodes.push(...keyToEntry.get(keys[i])!.nodes);
+  for (let i = 0; i < keys.length; i++) {
+    const rowNodes = keyToEntry.get(keys[i])!.nodes;
+    for (let j = 0; j < rowNodes.length; j++) nodes.push(rowNodes[j]);
+  }
   return nodes;
 }
 
@@ -492,7 +495,7 @@ export function reconcileEach<T, E extends KeyedEntry>(
   for (let i = 0; i < len; i++) {
     const key = getKey(items[i], i);
     keys.push(key);
-    same &&= key === prevKeys[i];
+    if (key !== prevKeys[i]) same = false;
   }
   // Same keys in the same order: no row is created, removed or moved, so the
   // owner node lists stay valid and need no rewrite (CQ-02).
@@ -501,10 +504,10 @@ export function reconcileEach<T, E extends KeyedEntry>(
     return;
   }
   const owners = nodeOwners.get(endMarker);
-  const containers = owners instanceof Set ? [...owners] : owners ? [owners] : null;
-  const oldNodes = owners ? ownedEntryNodes(eachState) : null;
+  if (!owners) return reconcileKeys(eachState, items, keys, parent, endMarker, ops);
+  const containers = owners instanceof Set ? [...owners] : [owners];
+  const oldNodes = ownedEntryNodes(eachState);
   reconcileKeys(eachState, items, keys, parent, endMarker, ops);
-  if (!containers || !oldNodes) return;
   const old = new Set(oldNodes);
   const next = ownedEntryNodes(eachState);
   for (const owner of containers) {
@@ -555,7 +558,9 @@ function reconcileKeys<T, E extends KeyedEntry>(
         reuseCount++;
       } else {
         const entry = ops.create(items[i], i);
-        initialFragment?.append(...entry.nodes);
+        if (initialFragment) {
+          for (let j = 0; j < entry.nodes.length; j++) initialFragment.appendChild(entry.nodes[j]);
+        }
         newEntries.set(key, entry);
       }
     }
@@ -581,12 +586,14 @@ function reconcileKeys<T, E extends KeyedEntry>(
 
   if (reuseCount === 0) {
     bulkClear(parent, prevKeys, keyToEntry, endMarker, ops.release);
-    if (initialFragment) parent.insertBefore(initialFragment, endMarker);
-    else {
-      const frag = document.createDocumentFragment();
-      for (let i = 0; i < newLen; i++) frag.append(...newEntries.get(newKeys[i])!.nodes);
-      parent.insertBefore(frag, endMarker);
+    const frag = initialFragment ?? document.createDocumentFragment();
+    if (!initialFragment) {
+      for (let i = 0; i < newLen; i++) {
+        const entry = newEntries.get(newKeys[i])!;
+        for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
+      }
     }
+    parent.insertBefore(frag, endMarker);
     return;
   }
 
@@ -636,14 +643,14 @@ function reconcileKeys<T, E extends KeyedEntry>(
         batch = document.createDocumentFragment();
         batchTarget = nextSibling;
       }
-      batch.prepend(...nodes);
+      for (let k = nodes.length - 1; k >= 0; k--) batch.insertBefore(nodes[k], batch.firstChild);
     } else {
       if (batch) parent.insertBefore(batch, batchTarget);
       batch = null;
       if (!stays)
         for (let k = 0; k < nodes.length; k++) moveOrInsert(parent, nodes[k], nextSibling);
     }
-    nextSibling = nodes[0] || nextSibling;
+    nextSibling = nodes[0] ?? nextSibling;
   }
   if (batch) parent.insertBefore(batch, batchTarget);
 }

@@ -164,6 +164,19 @@ Real-browser behavior of `moveBefore` (focus retention, animation
 state, iframe state) is covered by web-platform-tests at the
 platform level.
 
+## Follow-up: windowed keyed diff (2026-11-05, CQ-01+02)
+
+The reorder now runs on the changed window only. After building the next
+key → entry map (first occurrence wins for duplicate keys), the reconcile
+trims the keys that match at the start and end of the previous and next lists
+(as Solid's `reconcileArrays` does); releasing removed rows, the old-key index,
+the LIS and the move loop cover only the rows between them, and the first
+trimmed tail row is the insertion anchor. New rows are never moved with
+`moveBefore` (they are not yet children); runs of them are inserted as one
+fragment. Row keys live in `EachState.keys` in DOM order, and each key is
+computed once per update before any row is created. Tests:
+`packages/core/tests/each-reconcile.test.ts`, `each-move-before.test.ts`.
+
 ## References
 
 - [MDN — Element.moveBefore](https://developer.mozilla.org/en-US/docs/Web/API/Element/moveBefore)

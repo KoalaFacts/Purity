@@ -129,7 +129,7 @@ export function inflateDeferredEach<T>(
 
   const ownerCtx = getCurrentContext();
   const items = getList() || [];
-  const eachState: EachState<T> = { keyToEntry: new Map() };
+  const eachState: EachState<T> = { keyToEntry: new Map(), keys: [] };
 
   try {
     for (let i = 0; i < items.length; i++) {
@@ -147,6 +147,7 @@ export function inflateDeferredEach<T>(
       const data = state(item);
       const entry: EachEntry<T> = { nodes: [], data, disposers: null };
       eachState.keyToEntry.set(key, entry);
+      eachState.keys.push(key);
       pushContext(entry);
       try {
         enterHydration();
@@ -192,6 +193,7 @@ export function inflateDeferredEach<T>(
   } catch (error) {
     for (const entry of eachState.keyToEntry.values()) adapter.release(entry);
     eachState.keyToEntry.clear();
+    eachState.keys = [];
     throw error;
   }
 }

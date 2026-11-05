@@ -15,6 +15,13 @@
   attributes no longer trigger style invalidation. A binding still writes when
   its own value changes; a DOM value changed outside Purity is no longer
   overwritten by a sibling's update.
+- `each()` and `list()` compute each row key once per update (twice before for
+  any change of order) and before any new row is created, so a throwing key
+  function no longer creates and then discards rows. The keyed diff skips the
+  unchanged rows at the start and end of the list and releases, indexes and
+  reorders only the changed range. An `each()` inside a `when()`/`match()`
+  branch or inside another row no longer rewrites the branch's node list when
+  its keys are unchanged.
 
 ## 0.5.2
 

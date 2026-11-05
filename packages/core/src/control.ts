@@ -464,12 +464,18 @@ export function detachNodes(nodes: Node[]): void {
 /** @internal */
 export interface EachState<T, E extends KeyedEntry = EachEntry<T>> {
   keyToEntry: Map<unknown, E>;
+  /** Row keys in DOM order. `keyToEntry` insertion order is not maintained. */
+  keys: unknown[];
 }
 
 /** @internal */
 function ownedEntryNodes<T, E extends KeyedEntry>(state: EachState<T, E>): Node[] {
   const nodes: Node[] = [];
-  for (const entry of state.keyToEntry.values()) for (const node of entry.nodes) nodes.push(node);
+  const { keys, keyToEntry } = state;
+  for (let i = 0; i < keys.length; i++) {
+    const rowNodes = keyToEntry.get(keys[i])!.nodes;
+    for (let j = 0; j < rowNodes.length; j++) nodes.push(rowNodes[j]);
+  }
   return nodes;
 }
 
@@ -482,11 +488,26 @@ export function reconcileEach<T, E extends KeyedEntry>(
   getKey: (item: T, index: number) => unknown,
   ops: RowOps<T, E>,
 ): void {
+  const len = items.length;
+  const prevKeys = eachState.keys;
+  const keys: unknown[] = [];
+  let same = len === prevKeys.length;
+  for (let i = 0; i < len; i++) {
+    const key = getKey(items[i], i);
+    keys.push(key);
+    if (key !== prevKeys[i]) same = false;
+  }
+  // Same keys in the same order: no row is created, removed or moved, so the
+  // owner node lists stay valid and need no rewrite (CQ-02).
+  if (same) {
+    for (let i = 0; i < len; i++) ops.update(eachState.keyToEntry.get(keys[i])!, items[i], i);
+    return;
+  }
   const owners = nodeOwners.get(endMarker);
-  const containers = owners instanceof Set ? [...owners] : owners ? [owners] : null;
-  const oldNodes = owners ? ownedEntryNodes(eachState) : null;
-  reconcileEachImpl(eachState, items, parent, endMarker, getKey, ops);
-  if (!containers || !oldNodes) return;
+  if (!owners) return reconcileKeys(eachState, items, keys, parent, endMarker, ops);
+  const containers = owners instanceof Set ? [...owners] : [owners];
+  const oldNodes = ownedEntryNodes(eachState);
+  reconcileKeys(eachState, items, keys, parent, endMarker, ops);
   const old = new Set(oldNodes);
   const next = ownedEntryNodes(eachState);
   for (const owner of containers) {
@@ -502,61 +523,33 @@ export function reconcileEach<T, E extends KeyedEntry>(
   }
 }
 
-function reconcileEachImpl<T, E extends KeyedEntry>(
+function reconcileKeys<T, E extends KeyedEntry>(
   eachState: EachState<T, E>,
   items: T[],
+  keys: unknown[],
   parent: Node,
   endMarker: Node,
-  getKey: (item: T, index: number) => unknown,
   ops: RowOps<T, E>,
 ): void {
   const len = items.length;
   const { keyToEntry } = eachState;
-  const prevKeys = Array.from(keyToEntry.keys());
+  const prevKeys = eachState.keys;
   const prevLen = prevKeys.length;
-
-  if (len === prevLen) {
-    let same = true;
-    for (let i = 0; i < len; i++) {
-      if (prevKeys[i] !== getKey(items[i], i)) {
-        same = false;
-        break;
-      }
-    }
-    if (same) {
-      for (let i = 0; i < len; i++) ops.update(keyToEntry.get(prevKeys[i])!, items[i], i);
-      return;
-    }
-  }
-
-  if (len === 0) {
-    if (prevLen > 0) {
-      bulkClear(parent, prevKeys, keyToEntry, endMarker, ops.release);
-      eachState.keyToEntry = new Map();
-    }
-    return;
-  }
 
   const newKeys: unknown[] = [];
   const newEntries = new Map<unknown, E>();
   const initialFragment = prevLen === 0 ? document.createDocumentFragment() : null;
-  let sourceIndices: number[] | null = null;
+  const sourceIndices: number[] = [];
   let reuseCount = 0;
 
   try {
     for (let i = 0; i < len; i++) {
-      const item = items[i];
-      const key = getKey(item, i);
-
+      const key = keys[i];
       if (newEntries.has(key)) {
         warnDuplicateKey(key, i, ops.api);
-        if (sourceIndices === null) {
-          sourceIndices = [];
-          for (let j = 0; j < newKeys.length; j++) sourceIndices.push(j);
-        }
         continue;
       }
-      sourceIndices?.push(i);
+      sourceIndices.push(i);
       newKeys.push(key);
 
       const existing = keyToEntry.get(key);
@@ -564,7 +557,7 @@ function reconcileEachImpl<T, E extends KeyedEntry>(
         newEntries.set(key, existing);
         reuseCount++;
       } else {
-        const entry = ops.create(item, i);
+        const entry = ops.create(items[i], i);
         if (initialFragment) {
           for (let j = 0; j < entry.nodes.length; j++) initialFragment.appendChild(entry.nodes[j]);
         }
@@ -575,7 +568,7 @@ function reconcileEachImpl<T, E extends KeyedEntry>(
       for (let i = 0; i < newKeys.length; i++) {
         const existing = keyToEntry.get(newKeys[i]);
         if (existing) {
-          const index = sourceIndices === null ? i : sourceIndices[i];
+          const index = sourceIndices[i];
           ops.update(existing, items[index], index);
         }
       }
@@ -588,6 +581,8 @@ function reconcileEachImpl<T, E extends KeyedEntry>(
   }
 
   const newLen = newKeys.length;
+  eachState.keyToEntry = newEntries;
+  eachState.keys = newKeys;
 
   if (reuseCount === 0) {
     bulkClear(parent, prevKeys, keyToEntry, endMarker, ops.release);
@@ -599,99 +594,65 @@ function reconcileEachImpl<T, E extends KeyedEntry>(
       }
     }
     parent.insertBefore(frag, endMarker);
-    eachState.keyToEntry = newEntries;
     return;
   }
 
-  if (reuseCount < keyToEntry.size) {
-    for (let i = 0; i < prevLen; i++) {
-      const key = prevKeys[i];
-      if (!newEntries.has(key)) {
-        const entry = keyToEntry.get(key);
-        if (entry) {
-          detachNodes(entry.nodes);
-          ops.release(entry);
-        }
-      }
+  // Trim the equal head and tail (as Solid's reconcileArrays): only rows in
+  // the changed window are released, indexed and moved.
+  let start = 0;
+  while (start < newLen && start < prevLen && newKeys[start] === prevKeys[start]) start++;
+  let oldEnd = prevLen;
+  let newEnd = newLen;
+  while (oldEnd > start && newEnd > start && newKeys[newEnd - 1] === prevKeys[oldEnd - 1]) {
+    oldEnd--;
+    newEnd--;
+  }
+
+  const oldKeyIndex = new Map<unknown, number>();
+  for (let i = start; i < oldEnd; i++) {
+    const key = prevKeys[i];
+    if (newEntries.has(key)) oldKeyIndex.set(key, i);
+    else {
+      const entry = keyToEntry.get(key)!;
+      detachNodes(entry.nodes);
+      ops.release(entry);
     }
   }
 
-  const newCount = newLen - prevLen;
-  let isAppend = newCount > 0;
-  if (isAppend) {
-    for (let i = 0; i < prevLen; i++) {
-      if (prevKeys[i] !== newKeys[i]) {
-        isAppend = false;
-        break;
+  const sources = newKeys.slice(start, newEnd).map((key) => oldKeyIndex.get(key) ?? -1);
+  const stay = lis(sources);
+  let s = stay.length - 1;
+
+  // The anchor is the first node of the retained tail. Rows may render no
+  // nodes (an empty fragment), so walk the tail back to its first real node.
+  let nextSibling: Node = endMarker;
+  for (let i = newLen; i-- > newEnd;)
+    nextSibling = newEntries.get(newKeys[i])!.nodes[0] || nextSibling;
+  let batch: DocumentFragment | null = null;
+  let batchTarget = nextSibling;
+
+  // Walk the window backwards. LIS rows stay; existing rows move with
+  // moveBefore where available; new rows and the fallback batch into one
+  // fragment per run.
+  for (let j = newEnd - start - 1; j >= 0; j--) {
+    const nodes = newEntries.get(newKeys[start + j])!.nodes;
+    const stays = s >= 0 && stay[s] === j;
+    if (stays) s--;
+    if (!stays && (!hasMoveBefore || sources[j] < 0)) {
+      if (!batch) {
+        batch = document.createDocumentFragment();
+        batchTarget = nextSibling;
       }
+      for (let k = nodes.length - 1; k >= 0; k--) batch.insertBefore(nodes[k], batch.firstChild);
+    } else {
+      if (batch) parent.insertBefore(batch, batchTarget);
+      batch = null;
+      if (!stays)
+        for (let k = 0; k < nodes.length; k++) moveOrInsert(parent, nodes[k], nextSibling);
     }
+    nextSibling = nodes[0] ?? nextSibling;
   }
-
-  let isPrepend = !isAppend && newCount > 0;
-  if (isPrepend) {
-    for (let i = 0; i < prevLen; i++) {
-      if (prevKeys[i] !== newKeys[i + newCount]) {
-        isPrepend = false;
-        break;
-      }
-    }
-  }
-
-  if (isAppend || isPrepend) {
-    const start = isAppend ? prevLen : 0;
-    const end = start + newCount;
-    const frag = document.createDocumentFragment();
-    for (let i = start; i < end; i++) {
-      const entry = newEntries.get(newKeys[i])!;
-      for (let j = 0; j < entry.nodes.length; j++) frag.appendChild(entry.nodes[j]);
-    }
-    const anchor = isAppend ? endMarker : newEntries.get(newKeys[end])!.nodes[0];
-    parent.insertBefore(frag, anchor);
-  } else {
-    const oldKeyIndex = new Map<unknown, number>();
-    for (let i = 0; i < prevLen; i++) oldKeyIndex.set(prevKeys[i], i);
-
-    const sources = newKeys.map((key) => oldKeyIndex.get(key) ?? -1);
-
-    const lisIndices = new Set(lis(sources));
-
-    let nextSibling: Node = endMarker;
-    let batch: Node[] | null = null;
-    let batchTarget: Node = endMarker;
-
-    for (let i = newLen - 1; i >= 0; i--) {
-      const entry = newEntries.get(newKeys[i])!;
-      const needsMove = !lisIndices.has(i);
-      if (needsMove) {
-        if (hasMoveBefore) {
-          for (let j = 0; j < entry.nodes.length; j++) {
-            moveOrInsert(parent, entry.nodes[j], nextSibling);
-          }
-        } else {
-          if (!batch) {
-            batch = [];
-            batchTarget = nextSibling;
-          }
-          for (let j = entry.nodes.length - 1; j >= 0; j--) batch.push(entry.nodes[j]);
-        }
-      } else if (batch) {
-        const frag = document.createDocumentFragment();
-        for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
-        parent.insertBefore(frag, batchTarget);
-        batch = null;
-      }
-
-      nextSibling = entry.nodes[0] || nextSibling;
-    }
-
-    if (batch) {
-      const frag = document.createDocumentFragment();
-      for (let j = batch.length - 1; j >= 0; j--) frag.appendChild(batch[j]);
-      parent.insertBefore(frag, batchTarget);
-    }
-  }
-
-  eachState.keyToEntry = newEntries;
+  if (batch) parent.insertBefore(batch, batchTarget);
 }
 
 /** @internal */
@@ -725,6 +686,7 @@ export function registerEachAutoDispose<T, E extends KeyedEntry>(
       endMarker.parentNode?.removeChild(endMarker);
     }
     eachState.keyToEntry.clear();
+    eachState.keys = [];
   });
 }
 
@@ -792,7 +754,7 @@ export function each<T>(
   const fragment = document.createDocumentFragment();
   fragment.appendChild(endMarker);
 
-  const eachState: EachState<T> = { keyToEntry: new Map() };
+  const eachState: EachState<T> = { keyToEntry: new Map(), keys: [] };
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
@@ -859,7 +821,7 @@ export function list<T>(
     getKey = textOrOptions.key ?? ((item: T) => item as unknown);
   }
 
-  const listState: EachState<T, ListEntry> = { keyToEntry: new Map() };
+  const listState: EachState<T, ListEntry> = { keyToEntry: new Map(), keys: [] };
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
 

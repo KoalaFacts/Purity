@@ -31,7 +31,7 @@
     "build:packages": "npm run build -w @purityjs/compiler && npm run build -w @purityjs/signals && npm run build -w @purityjs/core && npm run build -w @purityjs/ssr && npm run build -w @purityjs/router && npm run build -w @purityjs/platform && npm run build -w @purityjs/vite-plugin && npm run build -w @purityjs/cli"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@vitest/coverage-v8": "5.0.5",
     "cross-env": "10.1.0",
     "fast-check": "4.10.2",

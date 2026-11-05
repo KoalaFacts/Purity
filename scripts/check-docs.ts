@@ -45,7 +45,6 @@ export function slugify(text: string): string {
   return text
     .trim()
     .toLowerCase()
-    .replace(/<[^>]+>/g, '')
     .replace(/[`*~]/g, '')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/[^\p{L}\p{N}\s_-]/gu, '')

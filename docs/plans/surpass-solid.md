@@ -1,0 +1,50 @@
+# Plan: surpass SolidJS v2
+
+**Status:** active ledger. Updated in every PR of the scheduled "Purity 推进计划" task.
+
+## Goal
+
+Make Purity clearly better than SolidJS v2 for the applications it targets, while staying different on purpose: Web Components with Shadow DOM, direct DOM templates with a no-build JIT path and a CSP-safe strict AOT path, zero runtime dependencies, modular entry points, and non-lossy SSR, hydration and islands. Every capability ships typed, documented and easy to use; every performance claim is measured against an exact Solid version.
+
+Inputs: [code quality audit](../code-quality-audit-2026-11-05.md) (CQ rows), [Solid v2 gap analysis](../solid-v2-gap-analysis.md) and [`solid-v2-gaps.json`](../solid-v2-gaps.json) (SV2 rows), [competitor roadmap](../solid-competitor-roadmap.md) (SV2 order), [capability audit](../framework-capabilities.md).
+
+## Rules for this ledger
+
+- One reviewable PR per row (or per numbered sub-step). Status is `todo`, `in progress (PR #n)`, `done (PR #n, commit)` or `blocked (reason; owner decision: …)`.
+- Performance rows record `benchmark/run-bench.ts` medians for Purity and Solid before and after (warmup 3, iterations ≥ 5), the exact Solid version, Purity commit, browser and machine.
+- Bundle budgets are never raised; new capability bytes go into an opt-in entry with its own budget.
+- SV2 capability rows start with an ADR in `docs/decisions/` (next free number).
+
+## Items
+
+| ID          | Item                                                                                                                                                                                       | Why it matters for users / vs Solid                                                                                                                      | Status                          | Evidence        |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | --------------- |
+| CQ-AUD      | Code quality audit and this ledger                                                                                                                                                         | Locates where Purity trails Solid (row create/teardown, keyed reorder) so later rows target measured costs                                               | in progress (PR #346 successor) | audit doc §1–§4 |
+| CQ-06+07+10 | Compiler alias in core/vite-plugin vitest configs; delete the duplicate core signals suite; fix both `CLAUDE.md`s; record the rc.20 comparator change                                      | Compiler edits are tested against source, not a stale build; agents read a correct layout; the Solid comparator is honest                                | todo                            |                 |
+| CQ-04+03    | `swapSlot` text fast path (keeps `undefined`/`false` → empty); per-binding last-value memo with a private sentinel; MutationObserver counts per binding kind; focused-input selection test | Fewer DOM writes per update; editing state (caret/selection) survives sibling updates — matches Solid's per-binding effects without its per-binding cost | todo                            |                 |
+| CQ-01+02    | `each()`: keys array in `EachState`, head/tail trimming, LIS on the changed window, incremental owner update                                                                               | Swap/sort/filter rows trail Solid by 7–30% in the exploratory snapshot; trimming is what Solid's `reconcileArrays` does                                  | todo                            |                 |
+| CQ-05       | Shared accessor methods; less row-ownership churn while keeping dynamic-row-root registrations                                                                                             | Create/clear 10k rows and heap trail Solid                                                                                                               | todo                            |                 |
+| CQ-09       | Type-check tests of every package in CI; typed Vite `Plugin` surface                                                                                                                       | Public type contracts cannot silently regress; strict Vite configs accept the plugin                                                                     | todo                            |                 |
+| CQ-08       | Standalone `__purity_sw__` matches runtime `swapSlot`                                                                                                                                      | Public `generate()` consumers get the same DOM behaviour as JIT/AOT                                                                                      | todo                            |                 |
+| CQ-11–13    | Long-function splits, signal-graph allocation trims, tooling consistency (`profile.ts` honours `CHROMIUM_PATH`)                                                                            | Cheaper review and profiling                                                                                                                             | todo                            |                 |
+| SV2-003     | Async derivation (ADR first)                                                                                                                                                               | Solid v2 makes async a first-class derived value                                                                                                         | todo                            |                 |
+| SV2-006     | Error/reset boundaries                                                                                                                                                                     | Recoverable failures per region                                                                                                                          | todo                            |                 |
+| SV2-004     | Client loading / retained content                                                                                                                                                          | No flashes of fallback on refetch                                                                                                                        | todo                            |                 |
+| SV2-005     | Property-granular stores                                                                                                                                                                   | Nested forms and collections update one field at a time                                                                                                  | todo                            |                 |
+| SV2-008     | Current keyed index                                                                                                                                                                        | Row index without re-rendering rows                                                                                                                      | todo                            |                 |
+| SV2-007     | Async transactions / optimistic updates                                                                                                                                                    | Mutations without tearing                                                                                                                                | todo                            |                 |
+| SV2-009/010 | Independent streaming and early interactivity                                                                                                                                              | Ready server regions become usable without waiting on slow ones                                                                                          | todo                            |                 |
+| SV2-017     | Owner composition                                                                                                                                                                          | Reusable lifetimes                                                                                                                                       | todo                            |                 |
+| SV2-013     | Diagnostics                                                                                                                                                                                | Clear dev-mode errors                                                                                                                                    | todo                            |                 |
+
+## Unreleased
+
+User-visible changes are recorded in [`CHANGELOG.md`](../../CHANGELOG.md) under `[Unreleased]`.
+
+## Docs housekeeping
+
+Last docs housekeeping: never (first pass due 2026-11-05).
+
+## Run log
+
+- 2026-11-05 (22:46 Sydney run): ledger created on the audit branch. Baseline on `1c76af6` (Node 24.22.2, npm 11.19.1, 2 vCPU): `check` clean, `build:packages` ok, `npm test` 3,464 tests with one failure on the first run — `packages/core/tests/compiler.test.ts` "fold: all-static template instantiates without creating a watch" measured 253 ms against a 200 ms wall-clock limit under parallel workspace load; it passed 3/3 when re-run alone (timing-flaky, not a regression). `check:bundle` budgets pass (`runtime-all` 43,024 B Brotli).

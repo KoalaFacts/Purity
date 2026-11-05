@@ -103,12 +103,14 @@ export function swapSlot(
     if (y instanceof Node) nodes = true;
     else text += leaves[i] = String(y);
   }
+  // CQ-04: reuse the Text node, skip equal writes, and allocate the node
+  // list only when nodes change. A node list has no nodeType.
+  if (!nodes && (cur as Text).nodeType === 3) {
+    if ((cur as Text).data !== text) (cur as Text).data = text;
+    return cur;
+  }
   const next: ChildNode[] = [];
   if (!nodes) {
-    if (!Array.isArray(cur) && cur.nodeType === 3) {
-      (cur as Text).data = text;
-      return cur;
-    }
     next.push(document.createTextNode(text));
   } else {
     for (let i = 0; i < leaves.length; i++) {

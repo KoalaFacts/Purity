@@ -1,0 +1,999 @@
+{
+  "schemaVersion": 1,
+  "capturedAtUTC": "2026-11-05T12:41:32.963Z",
+  "purpose": "Historical production benchmark; not a matched Solid v2 rc.18 comparison",
+  "provenance": {
+    "sourceRevision": "826d5cea0be3e1f6b3921c2f73a4dc63cbce1d2e",
+    "sourceDirty": false,
+    "rootLockfileSHA256": "e66806cfc5550ee4aeda8a06dd8fe42abc818da74435fff08e878ababa3df5ef",
+    "targetMetadataSHA256": "9c6457d01d5b622380e0533eb31512f384c78dc3efa8ee8b42a78a7f8bc98a4f",
+    "lockedVersions": {
+      "solid-js": "2.0.0-rc.20",
+      "@solidjs/signals": "2.0.0-rc.21",
+      "@solidjs/web": "2.0.0-rc.20",
+      "@solidjs/vite-plugin": "3.0.0-next.55",
+      "@purityjs/core": "0.5.2",
+      "@purityjs/vite-plugin": "0.5.2",
+      "vite-plus": "1.3.0",
+      "vite": "1.3.0"
+    }
+  },
+  "environment": {
+    "node": "v24.22.2",
+    "v8": "13.6.233.17-node.63",
+    "platform": "linux",
+    "arch": "x64",
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "logicalCpus": 2,
+    "totalMemoryBytes": 8412143616,
+    "chromiumVersion": "153.0.8010.12"
+  },
+  "settings": {
+    "warmup": 3,
+    "iterations": 7,
+    "memoryIterations": 0,
+    "dropOutliers": 1,
+    "port": 4173
+  },
+  "rawSettings": {
+    "WARMUP": "3",
+    "ITERATIONS": "7",
+    "MEM_ITERATIONS": "0",
+    "FRAMEWORKS": "purity,solid",
+    "PAGES": "index,binding"
+  },
+  "frameworks": ["purity", "solid"],
+  "scenarioPages": ["index", "binding"],
+  "executionOrder": [
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Create 10 rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Create 100 rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Create 1,000 rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Create 10,000 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Append 10 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Append 100 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Append 1,000 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Append 10,000 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Replace 10 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Replace 100 rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Replace 1,000 rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Replace 10,000 rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Update every 10th (10)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Update every 10th (100)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Update every 10th (1k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Update every 10th (10k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Swap rows (1k)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Swap rows (10k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Clear 10 rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Clear 100 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Clear 1,000 rows",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "index",
+      "operation": "Clear 10,000 rows",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Create 10 bound inputs",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Create 100 bound inputs",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Create 1,000 bound inputs",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Create 10,000 bound inputs",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Update all (10)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Update all (100)",
+      "frameworks": ["purity", "solid"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Update all (1k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Update all (10k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Clear all (10)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Clear all (100)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Clear all (1k)",
+      "frameworks": ["solid", "purity"]
+    },
+    {
+      "phase": "timing",
+      "scenario": "binding",
+      "operation": "Clear all (10k)",
+      "frameworks": ["solid", "purity"]
+    }
+  ],
+  "timings": [
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 10 rows",
+      "framework": "purity",
+      "median": 0.900000000372529,
+      "raw": [
+        0.6999999997206032, 0.900000000372529, 1.5, 1.3999999999068677, 2.3000000002793968,
+        0.6999999997206032, 0.8999999999068677
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 10 rows",
+      "framework": "solid",
+      "median": 0.8999999999068677,
+      "raw": [
+        1, 0.7999999998137355, 1.1999999997206032, 0.8999999999068677, 0.8999999999068677,
+        0.7999999998137355, 0.8999999999068677
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 100 rows",
+      "framework": "purity",
+      "median": 5,
+      "raw": [
+        4.899999999906868, 5, 6.2999999998137355, 5, 4.7000000001862645, 5.099999999627471,
+        4.2000000001862645
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 100 rows",
+      "framework": "solid",
+      "median": 6,
+      "raw": [8, 7.899999999906868, 6, 6.7999999998137355, 5.2999999998137355, 6, 4.399999999906868]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 1,000 rows",
+      "framework": "purity",
+      "median": 37.39999999990687,
+      "raw": [
+        50.39999999990687, 35, 37.39999999990687, 42.8000000002794, 35.39999999990687,
+        36.8000000002794, 39.799999999813735
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 1,000 rows",
+      "framework": "solid",
+      "median": 45.299999999813735,
+      "raw": [
+        52.90000000037253, 36.5, 33.89999999990687, 45.299999999813735, 38.8000000002794, 48,
+        46.89999999990687
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 10,000 rows",
+      "framework": "solid",
+      "median": 387.70000000018626,
+      "raw": [
+        481.20000000018626, 357.79999999981374, 387.70000000018626, 345, 416.89999999990687,
+        344.79999999981374, 449.40000000037253
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Create 10,000 rows",
+      "framework": "purity",
+      "median": 405.3000000002794,
+      "raw": [
+        469.5, 359.79999999981374, 405.3000000002794, 394.40000000037253, 429.60000000009313,
+        343.70000000018626, 463.6999999997206
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 10 rows",
+      "framework": "solid",
+      "median": 1.099999999627471,
+      "raw": [
+        1.6000000000931323, 1.099999999627471, 0.900000000372529, 1.2000000001862645,
+        0.8999999999068677, 1.1000000000931323, 0.8999999999068677
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 10 rows",
+      "framework": "purity",
+      "median": 1,
+      "raw": [
+        1.1000000000931323, 1.2000000001862645, 0.8999999999068677, 1.1000000000931323,
+        0.7999999998137355, 0.7999999998137355, 1
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 100 rows",
+      "framework": "solid",
+      "median": 8.300000000279397,
+      "raw": [
+        10.200000000186265, 9.800000000279397, 9.099999999627471, 8.300000000279397,
+        5.2000000001862645, 4.900000000372529, 5.5
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 100 rows",
+      "framework": "purity",
+      "median": 6.300000000279397,
+      "raw": [
+        5.699999999720603, 6.300000000279397, 6.100000000093132, 6.5, 8.5, 23.200000000186265,
+        6.199999999720603
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 1,000 rows",
+      "framework": "solid",
+      "median": 45.5,
+      "raw": [
+        44.700000000186265, 48.90000000037253, 45.39999999990687, 45.5, 54.8000000002794,
+        45.8000000002794, 44.39999999990687
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 1,000 rows",
+      "framework": "purity",
+      "median": 41.90000000037253,
+      "raw": [
+        41.90000000037253, 53.200000000186265, 47.5, 38.89999999990687, 42.200000000186265,
+        38.3000000002794, 41.39999999990687
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 10,000 rows",
+      "framework": "solid",
+      "median": 414.29999999981374,
+      "raw": [
+        429.60000000009313, 579.1000000000931, 414.29999999981374, 364.39999999990687,
+        381.20000000018626, 373.5, 454.60000000009313
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Append 10,000 rows",
+      "framework": "purity",
+      "median": 390.5,
+      "raw": [
+        378.20000000018626, 1051.3999999999069, 350.29999999981374, 596.7999999998137,
+        380.20000000018626, 592.3999999999069, 390.5
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 10 rows",
+      "framework": "solid",
+      "median": 1.1000000000931323,
+      "raw": [
+        1.2999999998137355, 1, 0.8999999999068677, 1.6000000000931323, 1.1000000000931323,
+        1.1000000000931323, 1.1000000000931323
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 10 rows",
+      "framework": "purity",
+      "median": 0.900000000372529,
+      "raw": [
+        0.8000000002793968, 1, 0.7999999998137355, 0.8999999999068677, 1, 1, 0.900000000372529
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 100 rows",
+      "framework": "purity",
+      "median": 5.699999999720603,
+      "raw": [
+        4.899999999906868, 8.899999999906868, 5.5, 5.2000000001862645, 5.699999999720603,
+        6.300000000279397, 7.7000000001862645
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 100 rows",
+      "framework": "solid",
+      "median": 5.599999999627471,
+      "raw": [
+        4.900000000372529, 8.199999999720603, 5.699999999720603, 5.599999999627471, 5,
+        6.800000000279397, 5.100000000093132
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 1,000 rows",
+      "framework": "purity",
+      "median": 53.5,
+      "raw": [
+        63.89999999990687, 42.60000000009313, 53.5, 70.5, 56, 39.299999999813735, 47.40000000037253
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 1,000 rows",
+      "framework": "solid",
+      "median": 45.89999999990687,
+      "raw": [
+        91.10000000009313, 45.89999999990687, 71.40000000037253, 36.799999999813735,
+        55.90000000037253, 40.59999999962747, 44.799999999813735
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 10,000 rows",
+      "framework": "purity",
+      "median": 422.79999999981374,
+      "raw": [
+        426.8000000002794, 413.79999999981374, 435.40000000037253, 405.89999999990687,
+        422.79999999981374, 526.5, 400
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Replace 10,000 rows",
+      "framework": "solid",
+      "median": 427.1999999997206,
+      "raw": [
+        447.79999999981374, 436.39999999990687, 424.09999999962747, 419.5, 516.3999999999069,
+        427.1999999997206, 403.60000000009313
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (10)",
+      "framework": "solid",
+      "median": 0.39999999990686774,
+      "raw": [
+        1, 0.40000000037252903, 0.19999999972060323, 0.39999999990686774, 0.39999999990686774,
+        0.40000000037252903, 0.39999999990686774
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (10)",
+      "framework": "purity",
+      "median": 0.39999999990686774,
+      "raw": [
+        0.39999999990686774, 0.5, 0.2999999998137355, 1.5, 0.39999999990686774, 0.19999999972060323,
+        0.5
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (100)",
+      "framework": "purity",
+      "median": 0.7999999998137355,
+      "raw": [
+        0.6000000000931323, 0.599999999627471, 0.7999999998137355, 1.1000000000931323,
+        0.6000000000931323, 1.2000000001862645, 1.5
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (100)",
+      "framework": "solid",
+      "median": 0.8999999999068677,
+      "raw": [
+        0.6999999997206032, 0.8999999999068677, 0.7000000001862645, 1.3000000002793968,
+        0.7000000001862645, 1.3000000002793968, 1.2999999998137355
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (1k)",
+      "framework": "solid",
+      "median": 8.599999999627471,
+      "raw": [
+        8.599999999627471, 9.899999999906868, 8.5, 8.100000000093132, 9, 10, 8.100000000093132
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (1k)",
+      "framework": "purity",
+      "median": 9.400000000372529,
+      "raw": [
+        8.199999999720603, 12.100000000093132, 9.400000000372529, 14.200000000186265,
+        9.600000000093132, 8.699999999720603, 9.200000000186265
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (10k)",
+      "framework": "solid",
+      "median": 107.20000000018626,
+      "raw": [
+        101, 164.89999999990687, 107.20000000018626, 98.60000000009313, 108.70000000018626,
+        95.39999999990687, 112.39999999990687
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Update every 10th (10k)",
+      "framework": "purity",
+      "median": 94.6999999997206,
+      "raw": [
+        92.10000000009313, 90.40000000037253, 97.60000000009313, 94.6999999997206,
+        115.70000000018626, 94.59999999962747, 114.10000000009313
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Swap rows (1k)",
+      "framework": "purity",
+      "median": 3.5,
+      "raw": [
+        3.2999999998137355, 3.7000000001862645, 3.1000000000931323, 6.2000000001862645,
+        3.3999999999068677, 3.7999999998137355, 3.5
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Swap rows (1k)",
+      "framework": "solid",
+      "median": 3.5,
+      "raw": [3.5, 3.2000000001862645, 3.5, 3.3999999999068677, 3.5, 6.5, 3.1000000000931323]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Swap rows (10k)",
+      "framework": "solid",
+      "median": 38.3000000002794,
+      "raw": [
+        38.3000000002794, 33.6999999997206, 58.60000000009313, 30.699999999720603,
+        47.200000000186265, 34.6999999997206, 49.1999999997206
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Swap rows (10k)",
+      "framework": "purity",
+      "median": 37.89999999990687,
+      "raw": [
+        51.90000000037253, 36.5, 37.89999999990687, 30.5, 46.5, 36.1999999997206, 40.89999999990687
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 10 rows",
+      "framework": "purity",
+      "median": 0.2999999998137355,
+      "raw": [
+        0.2999999998137355, 0.3000000002793968, 0.39999999990686774, 0.19999999972060323,
+        0.2999999998137355, 0.20000000018626451, 0.3000000002793968
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 10 rows",
+      "framework": "solid",
+      "median": 0.39999999990686774,
+      "raw": [
+        0.39999999990686774, 0.2999999998137355, 0.39999999990686774, 0.3000000002793968,
+        0.39999999990686774, 0.39999999990686774, 0.39999999990686774
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 100 rows",
+      "framework": "solid",
+      "median": 0.7999999998137355,
+      "raw": [
+        0.7000000001862645, 1.1000000000931323, 0.6999999997206032, 0.7999999998137355,
+        1.2000000001862645, 0.7999999998137355, 0.7999999998137355
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 100 rows",
+      "framework": "purity",
+      "median": 0.7000000001862645,
+      "raw": [
+        0.7000000001862645, 0.6000000000931323, 0.8000000002793968, 0.8999999999068677,
+        0.7000000001862645, 0.599999999627471, 0.7999999998137355
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 1,000 rows",
+      "framework": "solid",
+      "median": 4.100000000093132,
+      "raw": [
+        4.2000000001862645, 4.2000000001862645, 4, 5.899999999906868, 4.100000000093132,
+        3.8999999999068677, 3.7000000001862645
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 1,000 rows",
+      "framework": "purity",
+      "median": 4.699999999720603,
+      "raw": [
+        4.699999999720603, 4.899999999906868, 4.100000000093132, 4.300000000279397,
+        5.100000000093132, 4.699999999720603, 9.199999999720603
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 10,000 rows",
+      "framework": "purity",
+      "median": 47.799999999813735,
+      "raw": [
+        46.10000000009313, 51.3000000002794, 52.5, 49.10000000009313, 45.5, 42.799999999813735,
+        47.799999999813735
+      ]
+    },
+    {
+      "scenario": "index",
+      "category": "Rendering",
+      "op": "Clear 10,000 rows",
+      "framework": "solid",
+      "median": 49.39999999990687,
+      "raw": [
+        64.6999999997206, 44.5, 44.299999999813735, 50.5, 49, 50.39999999990687, 49.39999999990687
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 10 bound inputs",
+      "framework": "solid",
+      "median": 0.8999999999068677,
+      "raw": [
+        0.7000000001862645, 0.8999999999068677, 0.7999999998137355, 0.7000000001862645, 1,
+        0.8999999999068677, 0.900000000372529
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 10 bound inputs",
+      "framework": "purity",
+      "median": 0.7999999998137355,
+      "raw": [
+        1, 0.7999999998137355, 0.8000000002793968, 0.6000000000931323, 1.1000000000931323,
+        0.7000000001862645, 0.6000000000931323
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 100 bound inputs",
+      "framework": "purity",
+      "median": 4,
+      "raw": [
+        4, 5.100000000093132, 3.6000000000931323, 5, 3.3999999999068677, 3.2999999998137355,
+        4.699999999720603
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 100 bound inputs",
+      "framework": "solid",
+      "median": 3.8000000002793968,
+      "raw": [
+        6, 3.8999999999068677, 4.2000000001862645, 3.8000000002793968, 3, 2.8999999999068677,
+        2.8999999999068677
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 1,000 bound inputs",
+      "framework": "purity",
+      "median": 27.40000000037253,
+      "raw": [
+        26, 27.40000000037253, 27.800000000279397, 38.3000000002794, 23.299999999813735,
+        21.299999999813735, 27.5
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 1,000 bound inputs",
+      "framework": "solid",
+      "median": 28.90000000037253,
+      "raw": [
+        28.90000000037253, 30.700000000186265, 33.1999999997206, 32.6999999997206,
+        28.800000000279397, 23.90000000037253, 20.100000000093132
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 10,000 bound inputs",
+      "framework": "solid",
+      "median": 311.89999999990687,
+      "raw": [
+        420.29999999981374, 267.3000000002794, 268.6999999997206, 311.89999999990687,
+        345.09999999962747, 340.90000000037253, 262.79999999981374
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Create 10,000 bound inputs",
+      "framework": "purity",
+      "median": 253,
+      "raw": [293.10000000009313, 338, 239.5, 253, 332.5, 229.5, 247.79999999981374]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (10)",
+      "framework": "solid",
+      "median": 0.5,
+      "raw": [
+        0.5, 0.39999999990686774, 0.39999999990686774, 0.6999999997206032, 0.599999999627471, 0.5,
+        0.5
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (10)",
+      "framework": "purity",
+      "median": 0.39999999990686774,
+      "raw": [
+        0.39999999990686774, 0.19999999972060323, 0.39999999990686774, 0.39999999990686774,
+        0.39999999990686774, 0.39999999990686774, 0.5
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (100)",
+      "framework": "purity",
+      "median": 1.8999999999068677,
+      "raw": [
+        1.6999999997206032, 1.900000000372529, 1.7999999998137355, 1.8000000002793968, 2,
+        1.8999999999068677, 2.599999999627471
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (100)",
+      "framework": "solid",
+      "median": 1.7999999998137355,
+      "raw": [
+        1.8000000002793968, 1.7999999998137355, 1.7000000001862645, 1.7000000001862645,
+        1.6999999997206032, 2.1000000000931323, 1.7999999998137355
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (1k)",
+      "framework": "solid",
+      "median": 11.5,
+      "raw": [
+        14.299999999813735, 11.5, 10.799999999813735, 11.600000000093132, 10.700000000186265,
+        11.100000000093132, 20.199999999720603
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (1k)",
+      "framework": "purity",
+      "median": 11.399999999906868,
+      "raw": [
+        21, 9.899999999906868, 10.899999999906868, 11.399999999906868, 17.5, 11.199999999720603, 12
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (10k)",
+      "framework": "solid",
+      "median": 134.89999999990687,
+      "raw": [
+        121.60000000009313, 137.79999999981374, 134.89999999990687, 127, 143, 148.5,
+        126.70000000018626
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Update all (10k)",
+      "framework": "purity",
+      "median": 126.39999999990687,
+      "raw": [
+        119.10000000009313, 115.5, 122.8000000002794, 126.39999999990687, 137.70000000018626,
+        251.89999999990687, 130.89999999990687
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (10)",
+      "framework": "solid",
+      "median": 0.20000000018626451,
+      "raw": [
+        0.3000000002793968, 0.20000000018626451, 0.20000000018626451, 0.20000000018626451,
+        0.19999999972060323, 0.19999999972060323, 0.20000000018626451
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (10)",
+      "framework": "purity",
+      "median": 0.20000000018626451,
+      "raw": [
+        0.3000000002793968, 0.20000000018626451, 0.09999999962747097, 0.20000000018626451,
+        0.19999999972060323, 0.10000000009313226, 0.20000000018626451
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (100)",
+      "framework": "solid",
+      "median": 0.2999999998137355,
+      "raw": [
+        0.6000000000931323, 0.2999999998137355, 0.39999999990686774, 0.19999999972060323,
+        0.39999999990686774, 0.20000000018626451, 0.2999999998137355
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (100)",
+      "framework": "purity",
+      "median": 0.20000000018626451,
+      "raw": [
+        0.2999999998137355, 0.20000000018626451, 0.19999999972060323, 0.10000000009313226,
+        0.20000000018626451, 0.19999999972060323, 0.3000000002793968
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (1k)",
+      "framework": "solid",
+      "median": 0.2999999998137355,
+      "raw": [
+        0.39999999990686774, 0.2999999998137355, 0.20000000018626451, 0.39999999990686774,
+        0.20000000018626451, 0.2999999998137355, 0.10000000009313226
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (1k)",
+      "framework": "purity",
+      "median": 0.20000000018626451,
+      "raw": [
+        0.2999999998137355, 0.20000000018626451, 0.19999999972060323, 0.3000000002793968,
+        0.20000000018626451, 0.20000000018626451, 0.3000000002793968
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (10k)",
+      "framework": "solid",
+      "median": 0.8000000002793968,
+      "raw": [
+        1, 0.7999999998137355, 0.7999999998137355, 0.900000000372529, 0.8000000002793968,
+        0.8999999999068677, 0.6000000000931323
+      ]
+    },
+    {
+      "scenario": "binding",
+      "category": "Interaction",
+      "op": "Clear all (10k)",
+      "framework": "purity",
+      "median": 0.599999999627471,
+      "raw": [
+        0.599999999627471, 0.5, 0.5, 0.7000000001862645, 0.6000000000931323, 0.8000000002793968,
+        0.40000000037252903
+      ]
+    }
+  ],
+  "memory": [],
+  "errors": [],
+  "validationErrors": [],
+  "complete": true,
+  "memoryCoverage": "disabled",
+  "solidV2Rc18Installed": false,
+  "measurementNotes": {
+    "timing": "Each raw value is page-side click(s) + microtask flush + forced layout in ms.",
+    "memory": "Raw values are usedJSHeapSize KB deltas after forced GC, not allocation sampling.",
+    "comparability": "A version tag alone does not prove same-workload or application parity."
+  }
+}

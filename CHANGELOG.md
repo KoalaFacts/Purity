@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Text slots (`${() => value}` rendering a string, number or boolean) skip the
+  DOM write when the text is unchanged and no longer allocate a node list for a
+  text update. Re-running a grouped template watcher for a sibling binding no
+  longer queues a `characterData` mutation on unchanged text.
+
 ## 0.5.2
 
 ### Fixed

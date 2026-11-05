@@ -69,7 +69,7 @@ describe('html tagged template', () => {
     expect(p.textContent).toBe('0');
 
     count(5);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(p.textContent).toBe('5');
 
     p.remove();

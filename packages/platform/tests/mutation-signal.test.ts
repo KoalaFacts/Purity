@@ -8,8 +8,8 @@ import { mutationSignal } from '../src/browser-signals/index.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../../core/src/ssr-context.ts';
 import { makeSSRContext } from '../../core/tests/_helpers.ts';
 
-const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
-const flushMO = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+const tick = (): Promise<void> => new Promise<void>((r) => queueMicrotask(r));
+const flushMO = (): Promise<void> => new Promise<void>((r) => setTimeout(r, 0));
 
 describe('mutationSignal — SSR (ADR 0040)', () => {
   it('returns a constant empty array in an SSR context', () => {

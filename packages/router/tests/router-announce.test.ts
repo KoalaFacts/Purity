@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { manageNavAnnounce, navigate } from '../src/index.ts';
 
 const DEFAULT_ID = '__purity_announce__';
-const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+const tick = (): Promise<void> => new Promise<void>((r) => queueMicrotask(r));
 
 let teardown: (() => void) | null = null;
 
@@ -310,7 +310,6 @@ describe('manageNavAnnounce() — throw isolation', () => {
 describe('manageNavAnnounce() — server', () => {
   it('returns a no-op teardown when document is unavailable', () => {
     const realDocument = globalThis.document;
-    // @ts-expect-error — simulating Node.js env
     delete (globalThis as { document?: Document }).document;
     try {
       const t = manageNavAnnounce();

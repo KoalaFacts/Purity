@@ -7,7 +7,7 @@ import { html, renderToString } from '../src/index.ts';
 
 // queueMicrotask-as-promise — lets us yield to the renderToString await
 // loop without a setTimeout dependency.
-const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+const tick = (): Promise<void> => new Promise<void>((r) => queueMicrotask(r));
 
 describe('html`` SSR tag', () => {
   it('returns a branded SSR HTML wrapper', () => {

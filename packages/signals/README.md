@@ -22,7 +22,7 @@ stop();
 ```
 
 Use `batch` to group updates and `untracked` to read without tracking a
-dependency. `watch` returns a function that disposes the effect.
+dependency. `watch` returns a function that disposes the effect. A function returned from the effect (or from a `watch(source, cb)` callback) runs as cleanup before the next run and on dispose; any other return value is ignored, so expression bodies like `watch(() => console.log(count()))` are fine.
 
 See the [entry point and migration guide](https://github.com/KoalaFacts/Purity/blob/main/docs/core-entry-points.md) for the full package map.
 

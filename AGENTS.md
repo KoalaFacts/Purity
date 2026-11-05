@@ -34,4 +34,5 @@ npx @purityjs/cli my-app && cd my-app && npm install && npm run dev
 ```bash
 npm test                  # all workspace test scripts
 npm run check:fix         # format + lint (Vite+: oxfmt + oxlint)
+npm run typecheck         # tsc over src + tests where a tsconfig.tests.json exists
 ```

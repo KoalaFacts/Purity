@@ -9,7 +9,7 @@ import { _resetPageVisibilitySignal } from '../src/browser-signals/page-visibili
 import { popSSRRenderContext, pushSSRRenderContext } from '../../core/src/ssr-context.ts';
 import { makeSSRContext } from '../../core/tests/_helpers.ts';
 
-const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+const tick = (): Promise<void> => new Promise<void>((r) => queueMicrotask(r));
 
 function setVisibility(value: 'visible' | 'hidden'): void {
   Object.defineProperty(document, 'visibilityState', {

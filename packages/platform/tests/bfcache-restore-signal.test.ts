@@ -9,7 +9,7 @@ import { _resetBfcacheRestoreSignal } from '../src/browser-signals/bfcache-resto
 import { popSSRRenderContext, pushSSRRenderContext } from '../../core/src/ssr-context.ts';
 import { makeSSRContext } from '../../core/tests/_helpers.ts';
 
-const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+const tick = (): Promise<void> => new Promise<void>((r) => queueMicrotask(r));
 
 beforeEach(() => {
   _resetBfcacheRestoreSignal();
@@ -138,10 +138,11 @@ describe('bfcacheRestoreSignal (ADR 0039)', () => {
     // Patch only `pageshow` registrations so the rest of the env keeps working.
     const spy = vi.spyOn(window, 'addEventListener').mockImplementation(((
       type: string,
-      ...rest: Parameters<typeof window.addEventListener>
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions,
     ) => {
       if (type === 'pageshow') throw new Error('addEventListener forbidden');
-      return original(type as keyof WindowEventMap, ...(rest as []));
+      return original(type, listener, options);
     }) as typeof window.addEventListener);
 
     const s1 = bfcacheRestoreSignal();

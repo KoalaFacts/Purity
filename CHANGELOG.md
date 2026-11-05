@@ -23,6 +23,13 @@
   branch or inside another row no longer rewrites the branch's node list when
   its keys are unchanged.
 
+### Fixed
+
+- `watch()` accepts effects and callbacks with any return type. A returned
+  function still runs as cleanup and other values are ignored, as at runtime;
+  before, `watch(() => console.log(count()))` — the README example — and
+  `watch(count, (v) => list.push(v))` failed to type-check under `strict`.
+
 ## 0.5.2
 
 ### Fixed

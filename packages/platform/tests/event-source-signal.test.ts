@@ -14,7 +14,7 @@ import { _resetBfcacheRestoreSignal } from '../src/browser-signals/bfcache-resto
 import { popSSRRenderContext, pushSSRRenderContext } from '../../core/src/ssr-context.ts';
 import { makeSSRContext } from '../../core/tests/_helpers.ts';
 
-const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+const tick = (): Promise<void> => new Promise<void>((r) => queueMicrotask(r));
 
 type Instance = {
   url: string;

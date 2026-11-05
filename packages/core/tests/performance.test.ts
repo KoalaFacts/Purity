@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { batch, compute, state, watch } from '@purityjs/signals';
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 // Generous thresholds — perf tests verify O(n) behavior, not absolute speed.
 // Actual timings are logged for manual review.

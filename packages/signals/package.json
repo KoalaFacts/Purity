@@ -71,6 +71,7 @@
   },
   "scripts": {
     "build": "vp build && vp build -c vite.prod.config.ts && tsc --emitDeclarationOnly",
-    "test": "npm run build && vp test run"
+    "test": "npm run build && vp test run",
+    "typecheck": "tsc -p tsconfig.tests.json"
   }
 }

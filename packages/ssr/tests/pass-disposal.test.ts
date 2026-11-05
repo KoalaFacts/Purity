@@ -2,7 +2,7 @@ import { component, compute, onDispose, state, watch } from '@purityjs/core';
 import { describe, expect, it } from 'vite-plus/test';
 import { html, renderToString } from '../src/index.ts';
 
-const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+const tick = (): Promise<void> => new Promise<void>((r) => queueMicrotask(r));
 
 // Watches created while a request renders belong to that render pass. Before
 // passes owned their reactive work, every request left a watcher subscribed

@@ -35,7 +35,7 @@ describe('manageNavTransitions() — capability detection', () => {
   });
 
   it('installs the wrapper when the API is supported', () => {
-    let captured: (() => void) | null = null;
+    let captured = null as (() => void) | null;
     (document as DocStub).startViewTransition = (cb) => {
       captured = cb as () => void;
       return {} as unknown;
@@ -287,7 +287,7 @@ describe('manageNavTransitions() — audit-v2 regressions', () => {
   // top of a partial URL state. `safeUpdate` wraps update() in
   // try/catch + console.error so the transition unwinds cleanly.
   it('isolates a throwing update() inside the view-transition callback', () => {
-    const errors: unknown[] = [];
+    const errors: unknown[][] = [];
     const origError = console.error;
     const origPushState = window.history.pushState.bind(window.history);
     let pushCount = 0;
@@ -333,7 +333,7 @@ describe('manageNavTransitions() — audit-v2 regressions', () => {
   // "Uncaught (in promise)" in test runners / Sentry. Wrapper now
   // attaches a `.catch` that logs via console.error.
   it('observes updateCallbackDone rejections and logs them via console.error', async () => {
-    const errors: unknown[] = [];
+    const errors: unknown[][] = [];
     const origError = console.error;
     console.error = (...args: unknown[]) => {
       errors.push(args);
@@ -468,7 +468,7 @@ describe('manageNavTransitions() — audit-v2 regressions', () => {
   // Finding: abort-driven updateCallbackDone rejections should not
   // pollute the console (re-entrant nav, teardown — expected outcomes).
   it('does not log an error for AbortError rejections in updateCallbackDone', async () => {
-    const errors: unknown[] = [];
+    const errors: unknown[][] = [];
     const origError = console.error;
     console.error = (...args: unknown[]) => {
       errors.push(args);
@@ -524,7 +524,7 @@ describe('unanimated navigation supersedes pending loaders', () => {
       let skip = false;
       window.matchMedia = (() => ({
         matches: bypass === 'reduced-motion' && skip,
-      })) as typeof window.matchMedia;
+      })) as unknown as typeof window.matchMedia;
       const signals: AbortSignal[] = [];
       const pending: Promise<void>[] = [];
       teardown = manageNavTransitions({

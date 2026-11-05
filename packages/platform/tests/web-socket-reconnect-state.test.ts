@@ -30,7 +30,7 @@ class MockWebSocket extends EventTarget {
 }
 
 let unmount: (() => void) | undefined;
-const tick = (): Promise<void> => new Promise((resolve) => queueMicrotask(resolve));
+const tick = (): Promise<void> => new Promise<void>((resolve) => queueMicrotask(resolve));
 
 function createFeed(reconnect: ReconnectPolicy) {
   let feed!: ReturnType<typeof webSocketSignal<number>>;

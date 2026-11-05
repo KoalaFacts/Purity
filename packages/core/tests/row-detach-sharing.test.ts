@@ -3,7 +3,7 @@ import { onDispose } from '../src/component.ts';
 import { each, list } from '../src/control.ts';
 import { state } from '@purityjs/signals';
 
-const tick = () => new Promise((resolve) => queueMicrotask(resolve));
+const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 
 describe('SV2-015 shared cold-path row detachment', () => {
   it('detaches every root and disposes each scope once across removal modes', async () => {

@@ -137,7 +137,7 @@ describe('idleSignal (ADR 0042)', () => {
 
     const root = document.createElement('div');
     document.body.appendChild(root);
-    const { unmount } = mount(App, root);
+    const { unmount } = mount(() => App({}), root);
     await tick();
     expect(captured).not.toBeNull();
 

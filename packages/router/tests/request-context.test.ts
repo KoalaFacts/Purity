@@ -113,7 +113,6 @@ describe('getRequest() — SSR context guards (audit-v2)', () => {
     // The guard must degrade to "return null" rather than throwing on
     // `instanceof Request`.
     const originalRequest = (globalThis as { Request?: unknown }).Request;
-    // @ts-expect-error — deliberately removing the global for the test
     delete (globalThis as { Request?: unknown }).Request;
     const ctx = makeCtx({ request: { url: 'x' } as unknown as Request });
     pushSSRRenderContext(ctx);

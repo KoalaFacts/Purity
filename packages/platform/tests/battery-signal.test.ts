@@ -8,7 +8,7 @@ import { _resetBatterySignal } from '../src/browser-signals/battery-signal.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../../core/src/ssr-context.ts';
 import { makeSSRContext } from '../../core/tests/_helpers.ts';
 
-const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+const flush = (): Promise<void> => new Promise<void>((r) => setTimeout(r, 0));
 
 class MockBatteryManager extends EventTarget {
   charging = true;

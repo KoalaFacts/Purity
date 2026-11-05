@@ -11,7 +11,7 @@ import { _resetOnlineSignal } from '../src/browser-signals/online-signal.ts';
 import { _resetBfcacheRestoreSignal } from '../src/browser-signals/bfcache-restore-signal.ts';
 import { _clearActionRegistry } from '../src/server-action.ts';
 
-const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+const tick = (): Promise<void> => new Promise<void>((r) => queueMicrotask(r));
 const drain = async (): Promise<void> => {
   for (let i = 0; i < 5; i++) await tick();
 };

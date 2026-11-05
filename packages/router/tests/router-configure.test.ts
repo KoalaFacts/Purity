@@ -136,7 +136,7 @@ describe('configureNavigation — per-helper option pass-through (ADR 0027)', ()
       announce: true,
     });
     navigate('/somewhere');
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     const region = document.getElementById('__purity_announce__');
     expect(region).not.toBeNull();
     expect(region!.textContent).toBe('My Page');
@@ -151,7 +151,7 @@ describe('configureNavigation — per-helper option pass-through (ADR 0027)', ()
       announce: { regionId: 'my-region', message: (url) => `at ${url.pathname}` },
     });
     navigate('/about');
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     const region = document.getElementById('my-region');
     expect(region).not.toBeNull();
     expect(region!.textContent).toBe('at /about');
@@ -162,7 +162,7 @@ describe('configureNavigation — per-helper option pass-through (ADR 0027)', ()
   it('announce defaults to off — no live region without opting in', async () => {
     teardown = configureNavigation();
     navigate('/x');
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(document.getElementById('__purity_announce__')).toBeNull();
   });
 });

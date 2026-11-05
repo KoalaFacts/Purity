@@ -63,6 +63,7 @@ npm test -w packages/core       # one package
 npm run build                   # build all packages
 npm run check                   # format check + lint (oxfmt + oxlint, --deny-warnings)
 npm run check:fix               # auto-fix formatting and lint
+npm run typecheck               # tsc over src + tests (packages with a tsconfig.tests.json)
 
 # Single test / file (run from the package dir, e.g. packages/core):
 npx vitest run tests/resource.test.ts      # one file

@@ -4,7 +4,7 @@ import { mount } from '../src/component.ts';
 import { each, list } from '../src/control.ts';
 import { state } from '@purityjs/signals';
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 const items1k = Array.from({ length: 1000 }, (_, i) => ({ id: i, text: `Item ${i}` }));
 const items5k = Array.from({ length: 5000 }, (_, i) => ({ id: i, text: `Item ${i}` }));

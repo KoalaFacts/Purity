@@ -54,7 +54,7 @@
   "dependencies": {
     "@purityjs/compiler": "0.5.2",
     "@purityjs/router": "0.5.2",
-    "oxc-parser": "0.154.0"
+    "oxc-parser": "0.156.0"
   },
   "devDependencies": {
     "fast-check": "4.10.2"

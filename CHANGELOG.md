@@ -13,6 +13,10 @@
   unhandled error, so their closures are not retained.
 - Update new project scaffolds to install the 0.5.2 package set.
 
+### Changed
+
+- Update the Vite plugin's `oxc-parser` dependency from 0.154.0 to 0.156.0.
+
 ## 0.5.1
 
 - Complete the coordinated package release with README documentation for every package.

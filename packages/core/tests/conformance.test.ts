@@ -447,6 +447,46 @@ describe('SSR / CSR / hydrate conformance', () => {
       }
     }
 
+    // CQ-08: the standalone `__purity_sw__` has the runtime swapSlot's text
+    // fast path — a text update rewrites the Text node in place and an
+    // unchanged text writes nothing.
+    for (const standalone of [false, true]) {
+      it(`text updates reuse the Text node${standalone ? ' (standalone generate)' : ''}`, async () => {
+        const text = state('a');
+        const host = document.createElement('div');
+        const strings = ['<p>', '</p>'];
+        const make = standalone
+          ? (new Function(`return ${generate(parse(tpl(strings)))}`)() as (
+              v: unknown[],
+              w: typeof watch,
+            ) => Node)
+          : null;
+        const slot = () => text();
+        host.appendChild(make ? make([slot], watch) : (html(tpl(strings), slot) as Node));
+        const node = host.querySelector('p')!.firstChild;
+        const records: MutationRecord[] = [];
+        const observer = new MutationObserver((list) => records.push(...list));
+        observer.observe(host, { subtree: true, childList: true, characterData: true });
+        const flush = async () => {
+          await tick();
+          records.push(...observer.takeRecords());
+        };
+
+        text('b');
+        await flush();
+        expect(records.map((r) => r.type)).toEqual(['characterData']);
+        expect(host.querySelector('p')!.firstChild).toBe(node);
+        expect(host.textContent).toBe('b');
+
+        records.length = 0;
+        text('b ');
+        text('b');
+        await flush();
+        expect(records).toEqual([]);
+        observer.disconnect();
+      });
+    }
+
     it('disconnects replaced nodes before connecting their successors', async () => {
       const log: string[] = [];
       class Probe extends HTMLElement {

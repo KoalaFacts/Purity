@@ -1138,7 +1138,7 @@ function genAttrBinding(
   // Boolean bindings normalize to booleans, so `_v` is a safe sentinel there.
   const last = `_l${id}`;
   const memo = (x: string, write: string) =>
-    `var ${x}=${av}();if(${x}!==${last}){${last}=${x};${write}}`;
+    `var ${x}=${av}();if(${x}!==${last}){${write}}`;
 
   switch (attr.kind) {
     case 'event':
@@ -1149,7 +1149,7 @@ function genAttrBinding(
         `${el}.setAttribute(${qname},${x}===true?'':String(${safeBindingValue(attr.name, x)}));`;
       return {
         setup: `${head}var ${last}=0/0;if(!${fl}&&${av}!=null&&${av}!==false)${set(av)}`,
-        reactive: `if(${fl}){${memo(`v${id}`, `if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});else ${set(`v${id}`)}`)}}`,
+        reactive: `if(${fl}){${memo(`v${id}`, `${last}=v${id};if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});else ${set(`v${id}`)}`)}}`,
       };
     }
 
@@ -1163,7 +1163,7 @@ function genAttrBinding(
     case 'reactive-prop':
       return {
         setup: `${head}var ${last}=0/0;if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
-        reactive: `if(${fl}){${memo(`v${id}`, `${el}[${qname}]=${propertyValue(`v${id}`)};`)}}`,
+        reactive: `if(${fl}){${memo(`v${id}`, `${el}[${qname}]=${propertyValue(`${last}=v${id}`)};`)}}`,
       };
 
     case 'bind': {

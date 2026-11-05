@@ -54,17 +54,15 @@ for (const mode of ['dom', 'hydrate'] as const) {
       let rerun: () => void = () => {
         throw new Error('watcher was not registered');
       };
-      values.push(() => items, () => title);
-
-      const node = render(
-        ['<x-data .items=', ' title=', '></x-data>'],
-        values,
-        mode,
-        (effect) => {
-          rerun = effect;
-          effect();
-        },
+      values.push(
+        () => items,
+        () => title,
       );
+
+      const node = render(['<x-data .items=', ' title=', '></x-data>'], values, mode, (effect) => {
+        rerun = effect;
+        effect();
+      });
 
       expect((node as HTMLElement & { items?: unknown }).items).toBe(values);
       let writes = 0;

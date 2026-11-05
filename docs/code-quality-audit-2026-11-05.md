@@ -57,17 +57,17 @@ _Serves:_ SV2-015, SV2-008. _Fix:_ represent an owned `each` in `owner.nodes` as
 <a id="cq-03"></a>
 
 **CQ-03 · Grouped template watcher re-applies sibling bindings with no per-binding memo.** `packages/compiler/src/codegen.ts:974-1068` folds every reactive binding of a template into one `_w()`; the reactive lines (lines 1099, 1141, 1148, 1155) call the accessor and write the DOM unconditionally. Probe: in `<div class=${cls}><input .value=${val}><span>${label}</span></div>`, changing **only** `label` calls `setAttribute('class')` once and sets `input.value` once; changing `cls` does the same to the other two. The comment at 980-983 budgets this as "~50 ns text writes"; it misses that attribute re-sets trigger style invalidation and that re-assigning `.value` on a focused input disturbs caret, selection and IME composition in several engines — the editing-state contract SV2-008 asks for.
-_Serves:_ SV2-008, SV2-015 (update every 10th). _Fix:_ keep the single effect, add one `var _l<id>` per binding and guard each write with `if (v !== _l<id>) { _l<id> = v; … }` (strings/numbers/booleans compare by value; nodes/arrays by identity). No new effect nodes, so the bundle budgets and the 10k-watches argument are unaffected.
+_Serves:_ SV2-008, SV2-015 (update every 10th). _Fix:_ keep the single effect, add one `var _l<id>` per binding, initialised to a private sentinel (for example a module-level `UNSET = {}`) so the first run always writes, and guard each later write with `if (v !== _l<id>) { _l<id> = v; … }` (strings/numbers/booleans compare by value; nodes/arrays by identity). The sentinel matters: reactive slots are left untouched during setup (`codegen.ts:1095-1099`) and still hold the zero-width `EXPR_PLACEHOLDER`, so an uninitialised cache would skip the first write of an accessor that returns `undefined` and leave the placeholder in place. No new effect nodes, so the bundle budgets and the 10k-watches argument are unaffected.
 
 <a id="cq-04"></a>
 
 **CQ-04 · `swapSlot` allocates before its text fast path and writes unchanged text.** `packages/core/src/runtime/csr-runtime.ts:88-112`. `leaves = [v]` and `next = []` are built before the `cur.nodeType === 3` check, and `cur.data = text` runs even when equal. Every text binding goes through this on first render and on every group re-run (CQ-03); in the create profile it is the hottest Purity-owned function (11.4 ms self for 10k rows).
-_Fix:_ first statement: `if (typeof v !== 'object' && typeof v !== 'function' && !Array.isArray(cur) && cur.nodeType === 3) { const s = String(v); if (cur.data !== s) cur.data = s; return cur; }`.
+_Fix:_ first statement: `if (typeof v !== 'object' && typeof v !== 'function' && !Array.isArray(cur) && cur.nodeType === 3) { const s = v === undefined || v === false ? '' : String(v); if (cur.data !== s) cur.data = s; return cur; }`. It must keep the existing normalisation of `undefined` and `false` to empty content (`csr-runtime.ts:93`; `null` is an object and takes the normal path), or conditional and optional bindings would render the strings `"undefined"`/`"false"`. Pin it with tests for `undefined`, `false`, `null`, `0` and `''`.
 
 <a id="cq-05"></a>
 
 **CQ-05 · Per-row allocation profile.** Each `each()` row creates an `EachEntry`, a `nodes` array, one `state()` (a node plus **four** function objects — the accessor and `get`/`set`/`peek` closures, `packages/signals/src/signals.ts:801-814`), a grouped effect node with 13 fields plus `sources`/`sourceMeta`/`disposers` arrays, and a `WeakMap.set` per root node (`trackOwnedNodes`, `control.ts:72-78`; undone per node in `untrackOwnedNodes` on clear). Create 10k: GC 78 ms, heap +13.35 MB vs Solid +12.2 MB; Clear 10k trails by 5–10%.
-_Fix candidates, cheapest first:_ share `get`/`set`/`peek` as prototype-style functions reading the node from the accessor (saves three closures per signal everywhere, not only rows); make `trackOwnedNodes` lazy — register row nodes only when the `each` itself is owned (the only reader is `reconcileEach`/`replaceOwnedNodes`), which also removes the `WeakMap` churn from the common top-level list.
+_Fix candidates, cheapest first:_ share `get`/`set`/`peek` as prototype-style functions reading the node from the accessor (saves three closures per signal everywhere, not only rows); reduce `trackOwnedNodes` churn without losing the registrations `replaceOwnedNodes` needs. Gating on whether the `each` is owned is **not** safe: a top-level list whose row root is a slot that swaps nodes relies on those registrations to update `entry.nodes`, or the next reorder moves detached roots (pinned by `root-dynamic-unmount.test.ts` "reorders list rows whose root template slots have replaced their nodes"). Viable options are registering a row only when one of its root nodes is a dynamic slot (known at compile time from the row template), or registering lazily on the first slot replacement; either must keep that test green.
 
 ### P1 — evidence and type gates
 
@@ -128,9 +128,13 @@ None of this replaces the capability rows (SV2-003 async derivation, SV2-005 sto
 npm ci && npm run check && npm run build:packages && npm test && npm run check:bundle
 
 # benchmark (Purity vs Solid, all pages)
-cd benchmark && npm run build && npm run preview -- --port 4173 &
+cd benchmark
+npm run build
+npm run preview -- --port 4173 &   # only the server is backgrounded
+until curl -s -o /dev/null http://localhost:4173/; do sleep 1; done
 CHROMIUM_PATH=/usr/bin/google-chrome FRAMEWORKS=purity,solid WARMUP=3 ITERATIONS=5 \
   node --conditions=development --experimental-strip-types run-bench.ts
+cd ..
 
 # CQ-06: core tests resolve the compiler from dist
 mv packages/compiler/dist packages/compiler/dist.bak && (cd packages/core && npx vitest run tests/compiler.test.ts); mv packages/compiler/dist.bak packages/compiler/dist

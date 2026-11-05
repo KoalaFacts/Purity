@@ -748,18 +748,18 @@ export const defaultEachHydrationAdapter: EachHydrationAdapter = {
  */
 export function each<T>(
   listAccessor: (() => T[]) | T[],
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string | SSRHtml,
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment;
 export function each<T>(
   listAccessor: (() => T[]) | T[],
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string | SSRHtml,
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment | DeferredEach<T> | SSRHtml {
   if (isHydratingPassive() && captureHydratingEach) {
     return captureHydratingEach(
       listAccessor,
-      mapFn,
+      mapFn as (item: () => T, index: number) => Node | DocumentFragment | string,
       keyFn,
       defaultEachHydrationAdapter,
     ) as DeferredEach<T>;
@@ -777,7 +777,9 @@ export function each<T>(
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
-  const ops = eachRowOps(mapFn);
+  const ops = eachRowOps(
+    mapFn as (item: () => T, index: number) => Node | DocumentFragment | string,
+  );
 
   const dispose = watchEffectInternal(() => {
     const items = getList() || [];

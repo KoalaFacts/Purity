@@ -55,7 +55,7 @@ describe('matchSSR + html', () => {
       () =>
         html`<section>
           ${matchSSR(
-            () => 'unknown',
+            () => 'unknown' as string,
             { a: () => html`<p>A</p>` },
             () => html`<p>fallback</p>`,
           )}

@@ -61,7 +61,7 @@ describe('renderToStreamResponse — HTTP metadata before flush', () => {
     const out = await streamToString(
       renderToStream(
         () =>
-          ssrHtml`<textarea>${ssrHtml`<template>${suspense(
+          ssrHtml`<textarea>${ssrHtml`<template>${suspense<unknown>(
             () => {
               calls++;
               return slowResource('HIDDEN', 100)();

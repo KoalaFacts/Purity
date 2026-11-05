@@ -979,8 +979,10 @@ function childPathFromParent(parentPath: PathStep[], childIndex: number): PathSt
 //
 // Tradeoff: when a downstream signal changes, the body of the shared watch
 // re-runs all reactive lines (gated by per-line `_f*` booleans frozen at
-// setup), so unchanged bindings still execute their assignment. Text-node
-// writes are ~50ns; this overhead is dwarfed by the watch-creation savings.
+// setup), so every accessor is called again. Attribute and property bindings
+// keep their last value (`_l*`, CQ-03) and skip unchanged writes; text slots
+// skip unchanged writes in swapSlot (CQ-04). The re-run accessor calls are
+// dwarfed by the watch-creation savings.
 // ---------------------------------------------------------------------------
 
 let bindVarCounter = 0;
@@ -1128,6 +1130,14 @@ function genAttrBinding(
   // Shared prefix of the value bindings: read the value once, note whether it
   // is an accessor (applied in the shared watch) or a static value.
   const head = `var ${av}=${val};var ${fl}=typeof ${av}==='function';`;
+  // CQ-03: per-binding last value for the shared watch, so a sibling's change
+  // does not re-apply this binding (attribute writes invalidate style; `.value`
+  // writes reset caret, selection and IME state). It starts as the template's
+  // values array `_v`, which no accessor can return, so the first run always
+  // writes — including over SSR or placeholder state.
+  const last = `_l${id}`;
+  const memo = (x: string, write: string) =>
+    `var ${x}=${av}();if(${x}!==${last}){${last}=${x};${write}}`;
 
   switch (attr.kind) {
     case 'event':
@@ -1137,22 +1147,22 @@ function genAttrBinding(
       const set = (x: string) =>
         `${el}.setAttribute(${qname},${x}===true?'':String(${safeBindingValue(attr.name, x)}));`;
       return {
-        setup: `${head}if(!${fl}&&${av}!=null&&${av}!==false)${set(av)}`,
-        reactive: `if(${fl}){var v${id}=${av}();if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});else ${set(`v${id}`)}}`,
+        setup: `${head}var ${last}=_v;if(!${fl}&&${av}!=null&&${av}!==false)${set(av)}`,
+        reactive: `if(${fl}){${memo(`v${id}`, `if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});else ${set(`v${id}`)}`)}}`,
       };
     }
 
     case 'bool':
       return {
-        setup: `${head}if(!${fl}&&${av})${el}.setAttribute(${qname},'');`,
-        reactive: `if(${fl}){if(${av}())${el}.setAttribute(${qname},'');else ${el}.removeAttribute(${qname});}`,
+        setup: `${head}var ${last}=_v;if(!${fl}&&${av})${el}.setAttribute(${qname},'');`,
+        reactive: `if(${fl}){var v${id}=!!${av}();if(v${id}!==${last}){${last}=v${id};if(v${id})${el}.setAttribute(${qname},'');else ${el}.removeAttribute(${qname});}}`,
       };
 
     case 'prop':
     case 'reactive-prop':
       return {
-        setup: `${head}if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
-        reactive: `if(${fl})${el}[${qname}]=${propertyValue(`${av}()`)};`,
+        setup: `${head}var ${last}=_v;if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
+        reactive: `if(${fl}){${memo(`v${id}`, `${el}[${qname}]=${propertyValue(`v${id}`)};`)}}`,
       };
 
     case 'bind': {

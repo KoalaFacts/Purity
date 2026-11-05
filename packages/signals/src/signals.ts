@@ -816,6 +816,34 @@ export function state<T>(initial: T): StateAccessor<T> {
   return accessor;
 }
 
+/**
+ * Row item signal for `each()`/`list()`: `item()` reads (tracked) and
+ * `item(value)` stores `value` as-is — a function item is stored, never
+ * called as an updater. Unlike `state()` it carries no `get`/`set`/`peek`
+ * closures, so a row costs one function object instead of four (CQ-05).
+ *
+ * @internal
+ */
+export interface ItemSignal<T> {
+  (): T;
+  (value: T): void;
+}
+
+/** @internal */
+export function itemSignalInternal<T>(initial: T): ItemSignal<T> {
+  const node: StateNode<T> = {
+    fn: null,
+    value: initial,
+    version: 0,
+    observers: null,
+  };
+  if (__DEV__) trackNode(node);
+  return function (value?: T) {
+    if (arguments.length === 0) return readState(node);
+    writeState(node, value as T);
+  } as ItemSignal<T>;
+}
+
 // ---------------------------------------------------------------------------
 // compute(fn)
 // ---------------------------------------------------------------------------

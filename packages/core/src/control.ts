@@ -6,8 +6,8 @@ import {
   pushContext,
   type Scope,
   type ComponentContext,
-  state as createState,
-  type StateAccessor,
+  itemSignalInternal,
+  type ItemSignal,
   watchEffectInternal,
 } from '@purityjs/signals';
 import { warnDuplicateKey } from './control/keys.ts';
@@ -342,7 +342,7 @@ function lis(arr: number[]): number[] {
 /** @internal */
 export interface EachEntry<T = unknown> extends Scope {
   nodes: Node[];
-  data: StateAccessor<T>;
+  data: ItemSignal<T>;
 }
 
 /** @internal */
@@ -376,7 +376,7 @@ export function eachRowOps<T>(
 ): RowOps<T, EachEntry<T>> {
   return {
     create(item, index) {
-      const data = createState(item);
+      const data = itemSignalInternal(item);
       const entry: EachEntry<T> = { nodes: [], data, disposers: null };
       pushContext(entry);
       let content: Node | DocumentFragment | string;

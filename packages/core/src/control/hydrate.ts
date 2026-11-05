@@ -7,7 +7,7 @@
 // free of `control.ts` (`lis`, `reconcileEach`, `list`).
 // ---------------------------------------------------------------------------
 
-import { getCurrentContext, popContext, pushContext, state } from '@purityjs/signals';
+import { getCurrentContext, itemSignalInternal, popContext, pushContext } from '@purityjs/signals';
 import type {
   EachEntry,
   EachHydrationAdapter,
@@ -140,11 +140,10 @@ export function inflateDeferredEach<T>(
         continue;
       }
 
-      const ssrRow = ssrByKey.get(String(key));
-      if (ssrRow) {
-        ssrByKey.delete(String(key));
-      }
-      const data = state(item);
+      const ssrKey = String(key);
+      const ssrRow = ssrByKey.get(ssrKey);
+      if (ssrRow) ssrByKey.delete(ssrKey);
+      const data = itemSignalInternal(item);
       const entry: EachEntry<T> = { nodes: [], data, disposers: null };
       eachState.keyToEntry.set(key, entry);
       eachState.keys.push(key);

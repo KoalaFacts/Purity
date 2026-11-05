@@ -1154,7 +1154,7 @@ function genAttrBinding(
 
     case 'bool':
       return {
-        setup: `${head}var ${last}=_v;if(!${fl}&&${av})${el}.setAttribute(${qname},'');`,
+        setup: `${head}var ${last};if(!${fl}&&${av})${el}.setAttribute(${qname},'');`,
         reactive: `if(${fl}){var v${id}=!!${av}();if(v${id}!==${last}){${last}=v${id};if(v${id})${el}.setAttribute(${qname},'');else ${el}.removeAttribute(${qname});}}`,
       };
 

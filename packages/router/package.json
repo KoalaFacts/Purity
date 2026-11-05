@@ -1,6 +1,6 @@
 {
   "name": "@purityjs/router",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Routing and navigation for Purity",
   "license": "Apache-2.0",
   "author": "KoalaFacts",
@@ -61,9 +61,9 @@
     "test": "vp test run"
   },
   "dependencies": {
-    "@purityjs/signals": "^0.5.1"
+    "@purityjs/signals": "^0.5.2"
   },
   "peerDependencies": {
-    "@purityjs/core": "^0.5.1"
+    "@purityjs/core": "^0.5.2"
   }
 }

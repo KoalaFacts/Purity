@@ -9,8 +9,8 @@
 
 ## When adding new template syntax
 
-1. Update `@purityjs/core`'s parser (packages/core/src/compiler/parser.ts) first
-2. Update codegen (packages/core/src/compiler/codegen.ts)
+1. Update the `@purityjs/compiler` parser (`packages/compiler/src/parser.ts`) first
+2. Update codegen (`packages/compiler/src/codegen.ts`) in all three modes: `generate`, `generateSSR`, `generateHydrate`
 3. The vite-plugin calls these directly — no changes needed here
 
 ## Testing

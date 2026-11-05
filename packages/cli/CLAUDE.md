@@ -32,7 +32,7 @@ src/
 **SSR (`--ssr`):**
 
 - package.json (adds @purityjs/ssr dep, @types/node devDep, build:client/build:server/build:bootstrap/start scripts)
-- vite.config.ts with `@purityjs/core/compiler` + `@purityjs/ssr` aliases for monorepo-local development
+- vite.config.ts with `@purityjs/compiler` + `@purityjs/ssr` aliases for monorepo-local development
 - tsconfig.json with `types: ['node']` and `allowImportingTsExtensions`
 - index.html with `<!--ssr-outlet-->` marker
 - src/app.ts (shared by client + server)

@@ -57,6 +57,13 @@ jobs:
         # Uses the root Vite+ lint configuration.
         run: npm run lint
 
+      - name: 📚 Docs check
+        # Broken relative links/anchors, docs missing from docs/README.md,
+        # stale named paths and npm scripts, ADR numbering/index gaps.
+        run: |
+          npm run check:docs
+          npm run test:docs
+
       - name: Build packages in dependency order
         run: |
           npm run build -w packages/signals

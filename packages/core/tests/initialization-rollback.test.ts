@@ -357,7 +357,8 @@ describe('failed list row initialization', () => {
       const original = host.querySelector('li');
       items([1, 2, 3]);
       await tick();
-      expect(disposed.toSorted()).toEqual(failureKind === 'map' ? [2, 3] : [2]);
+      // Keys are computed before any row is created, so a key error creates no row.
+      expect(disposed.toSorted()).toEqual(failureKind === 'map' ? [2, 3] : []);
       expect(host.querySelector('li')).toBe(original);
       expect(host.textContent).toBe('1');
       runs.length = 0;
@@ -369,7 +370,7 @@ describe('failed list row initialization', () => {
       expect(host.textContent).toBe('14');
       expect(host.querySelector('li')).toBe(original);
       result.unmount();
-      expect(disposed.toSorted()).toEqual(failureKind === 'map' ? [1, 2, 3, 4] : [1, 2, 4]);
+      expect(disposed.toSorted()).toEqual(failureKind === 'map' ? [1, 2, 3, 4] : [1, 4]);
     });
   }
 

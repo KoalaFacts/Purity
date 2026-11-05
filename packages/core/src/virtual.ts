@@ -316,7 +316,7 @@ function measureEachWindowRows(
   parent: Element,
   view: Window,
 ): boolean {
-  const keys = Array.from(eachState.keyToEntry.keys());
+  const { keys } = eachState;
   const metrics = new Array<EachEntryMetrics | undefined>(keys.length);
   let changed = false;
   const computedParent = view.getComputedStyle(parent);
@@ -607,7 +607,7 @@ const virtualHydrationAdapter: EachHydrationAdapter = {
     const doc = parent.ownerDocument ?? document;
     const top = createEachSpacer(doc, parent);
     const bottom = createEachSpacer(doc, parent);
-    const firstNode = eachState.keyToEntry.values().next().value?.nodes[0];
+    const firstNode = eachState.keyToEntry.get(eachState.keys[0])?.nodes[0];
     parent.insertBefore(top, firstNode?.parentNode === parent ? firstNode : endMarker);
     parent.insertBefore(bottom, endMarker);
     const spacers = { top, bottom };
@@ -653,7 +653,7 @@ export function virtualEach<T>(
   const endMarker = document.createComment('e');
   fragment.append(topSpacer, bottomSpacer, endMarker);
 
-  const eachState: EachState<T> = { keyToEntry: new Map() };
+  const eachState: EachState<T> = { keyToEntry: new Map(), keys: [] };
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
   const spacers: EachWindowSpacers = { top: topSpacer, bottom: bottomSpacer };
   const dispose = createEachWindowController(

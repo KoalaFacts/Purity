@@ -79,11 +79,6 @@ export function flattenValue(v: unknown, out: unknown[], seen: WeakSet<object> |
   return out;
 }
 
-function setText(node: Text, text: string): Text {
-  if (node.data !== text) node.data = text;
-  return node;
-}
-
 type Inflate = (deferred: never, target: Node, skipFirstNode: boolean, create: boolean) => unknown;
 
 /**
@@ -95,11 +90,6 @@ export function swapSlot(
   v: unknown,
   inflate?: Inflate,
 ): ChildNode | ChildNode[] {
-  // Fast path (CQ-04): a primitive (Object(v) !== v) into a Text slot
-  // allocates nothing and skips equal writes, with the slow path's mapping of
-  // null/undefined/false to empty content. A node list has no nodeType.
-  if (Object(v) !== v && (cur as Text).nodeType === 3)
-    return setText(cur as Text, v == null || v === false ? '' : String(v));
   const leaves = Array.isArray(v) ? flattenValue(v, [], null) : v == null || v === false ? [] : [v];
   let text = '';
   let nodes = false;
@@ -113,9 +103,14 @@ export function swapSlot(
     if (y instanceof Node) nodes = true;
     else text += leaves[i] = String(y);
   }
+  // CQ-04: reuse the Text node, skip equal writes, and allocate the node
+  // list only when nodes change. A node list has no nodeType.
+  if (!nodes && (cur as Text).nodeType === 3) {
+    if ((cur as Text).data !== text) (cur as Text).data = text;
+    return cur;
+  }
   const next: ChildNode[] = [];
   if (!nodes) {
-    if ((cur as Text).nodeType === 3) return setText(cur as Text, text);
     next.push(document.createTextNode(text));
   } else {
     for (let i = 0; i < leaves.length; i++) {

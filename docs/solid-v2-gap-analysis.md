@@ -90,6 +90,8 @@ The cleanup case compares source-free Purity watches with nested Solid roots. It
 
 **Solid v2 target:** The selected target is rc.18 for core, signals and web, with separately versioned build and router packages.
 
+**Comparator drift (recorded 2026-11-05):** the general benchmark workspace now resolves `solid-js`/`@solidjs/web` 2.0.0-rc.20 and `@solidjs/signals` rc.21 (since #345). `benchmark/run-bench.ts` results against it are exploratory, not baseline evidence; the frozen rc.18 target is unchanged and recorded with the drift in [`target.json`](../benchmark/solid-v2/target.json).
+
 **Purity at the audited source:** Existing benchmark resolves core/signals rc.15, web/compiler/babel-plugin rc.14 and Vite plugin next.50. Its historical results remain valid only for those inputs.
 
 **Application consequence:** Without matched versioned inputs, changes cannot establish progress against the agreed Solid v2 target.

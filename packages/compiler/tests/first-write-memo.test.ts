@@ -31,7 +31,8 @@ function render(
   return root.firstElementChild as HTMLElement;
 }
 
-describe.each<Mode>(['dom', 'hydrate'])('per-binding first-write memo (%s)', (mode) => {
+for (const mode of ['dom', 'hydrate'] as const) {
+  describe(`per-binding first-write memo (${mode})`, () => {
   for (const kind of ['.items', ':items', 'data-items']) {
     it(`writes ${kind} when the accessor returns the public values array`, () => {
       const values: unknown[] = [];
@@ -53,10 +54,7 @@ describe.each<Mode>(['dom', 'hydrate'])('per-binding first-write memo (%s)', (mo
     let rerun: () => void = () => {
       throw new Error('watcher was not registered');
     };
-    values.push(
-      () => items,
-      () => title,
-    );
+    values.push(() => items, () => title);
 
     const node = render(
       ['<x-data .items=', ' title=', '></x-data>'],
@@ -116,4 +114,4 @@ describe.each<Mode>(['dom', 'hydrate'])('per-binding first-write memo (%s)', (mo
     rerun();
     expect(writes).toBe(1);
   });
-});
+}

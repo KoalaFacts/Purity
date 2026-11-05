@@ -33,85 +33,85 @@ function render(
 
 for (const mode of ['dom', 'hydrate'] as const) {
   describe(`per-binding first-write memo (${mode})`, () => {
-  for (const kind of ['.items', ':items', 'data-items']) {
-    it(`writes ${kind} when the accessor returns the public values array`, () => {
+    for (const kind of ['.items', ':items', 'data-items']) {
+      it(`writes ${kind} when the accessor returns the public values array`, () => {
+        const values: unknown[] = [];
+        values.push(() => values);
+        const node = render([`<x-data ${kind}=`, '></x-data>'], values, mode);
+
+        if (kind === 'data-items') {
+          expect(node.getAttribute('data-items')).toBe(String(values));
+        } else {
+          expect((node as HTMLElement & { items?: unknown }).items).toBe(values);
+        }
+      });
+    }
+
+    it('does not reapply a property when an unrelated sibling changes', () => {
       const values: unknown[] = [];
-      values.push(() => values);
-      const node = render([`<x-data ${kind}=`, '></x-data>'], values, mode);
+      let items: unknown = values;
+      let title = 'first';
+      let rerun: () => void = () => {
+        throw new Error('watcher was not registered');
+      };
+      values.push(() => items, () => title);
 
-      if (kind === 'data-items') {
-        expect(node.getAttribute('data-items')).toBe(String(values));
-      } else {
-        expect((node as HTMLElement & { items?: unknown }).items).toBe(values);
-      }
+      const node = render(
+        ['<x-data .items=', ' title=', '></x-data>'],
+        values,
+        mode,
+        (effect) => {
+          rerun = effect;
+          effect();
+        },
+      );
+
+      expect((node as HTMLElement & { items?: unknown }).items).toBe(values);
+      let writes = 0;
+      let current: unknown = values;
+      Object.defineProperty(node, 'items', {
+        configurable: true,
+        get: () => current,
+        set: (next) => {
+          current = next;
+          writes++;
+        },
+      });
+
+      title = 'second';
+      rerun();
+      expect(node.getAttribute('title')).toBe('second');
+      expect(writes).toBe(0);
+
+      const replacement: unknown[] = [];
+      items = replacement;
+      rerun();
+      expect(current).toBe(replacement);
+      expect(writes).toBe(1);
+
+      rerun();
+      expect(writes).toBe(1);
     });
-  }
 
-  it('does not reapply a property when an unrelated sibling changes', () => {
-    const values: unknown[] = [];
-    let items: unknown = values;
-    let title = 'first';
-    let rerun: () => void = () => {
-      throw new Error('watcher was not registered');
-    };
-    values.push(() => items, () => title);
-
-    const node = render(
-      ['<x-data .items=', ' title=', '></x-data>'],
-      values,
-      mode,
-      (effect) => {
+    it('keeps the existing repeated-NaN comparison behavior', () => {
+      const values: unknown[] = [() => NaN];
+      let rerun: () => void = () => {
+        throw new Error('watcher was not registered');
+      };
+      const node = render(['<x-data .items=', '></x-data>'], values, mode, (effect) => {
         rerun = effect;
         effect();
-      },
-    );
+      });
+      expect(Number.isNaN((node as HTMLElement & { items?: unknown }).items)).toBe(true);
 
-    expect((node as HTMLElement & { items?: unknown }).items).toBe(values);
-    let writes = 0;
-    let current: unknown = values;
-    Object.defineProperty(node, 'items', {
-      configurable: true,
-      get: () => current,
-      set: (next) => {
-        current = next;
-        writes++;
-      },
-    });
-
-    title = 'second';
-    rerun();
-    expect(node.getAttribute('title')).toBe('second');
-    expect(writes).toBe(0);
-
-    const replacement: unknown[] = [];
-    items = replacement;
-    rerun();
-    expect(current).toBe(replacement);
-    expect(writes).toBe(1);
-
-    rerun();
-    expect(writes).toBe(1);
-  });
-
-  it('keeps the existing repeated-NaN comparison behavior', () => {
-    const values: unknown[] = [() => NaN];
-    let rerun: () => void = () => {
-      throw new Error('watcher was not registered');
-    };
-    const node = render(['<x-data .items=', '></x-data>'], values, mode, (effect) => {
-      rerun = effect;
-      effect();
-    });
-    expect(Number.isNaN((node as HTMLElement & { items?: unknown }).items)).toBe(true);
-
-    let writes = 0;
-    Object.defineProperty(node, 'items', {
-      configurable: true,
-      set: () => {
-        writes++;
-      },
-    });
-    rerun();
-    expect(writes).toBe(1);
+      let writes = 0;
+      Object.defineProperty(node, 'items', {
+        configurable: true,
+        set: () => {
+          writes++;
+        },
+      });
+      rerun();
+      expect(writes).toBe(1);
   });
 }

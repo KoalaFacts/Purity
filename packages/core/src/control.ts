@@ -492,7 +492,7 @@ export function reconcileEach<T, E extends KeyedEntry>(
   for (let i = 0; i < len; i++) {
     const key = getKey(items[i], i);
     keys.push(key);
-    if (key !== prevKeys[i]) same = false;
+    same &&= key === prevKeys[i];
   }
   // Same keys in the same order: no row is created, removed or moved, so the
   // owner node lists stay valid and need no rewrite (CQ-02).
@@ -533,17 +533,10 @@ function reconcileKeys<T, E extends KeyedEntry>(
   const prevKeys = eachState.keys;
   const prevLen = prevKeys.length;
 
-  if (len === 0) {
-    bulkClear(parent, prevKeys, keyToEntry, endMarker, ops.release);
-    eachState.keyToEntry = new Map();
-    eachState.keys = [];
-    return;
-  }
-
   const newKeys: unknown[] = [];
   const newEntries = new Map<unknown, E>();
   const initialFragment = prevLen === 0 ? document.createDocumentFragment() : null;
-  let sourceIndices: number[] | null = null;
+  const sourceIndices: number[] = [];
   let reuseCount = 0;
 
   try {
@@ -551,13 +544,9 @@ function reconcileKeys<T, E extends KeyedEntry>(
       const key = keys[i];
       if (newEntries.has(key)) {
         warnDuplicateKey(key, i, ops.api);
-        if (sourceIndices === null) {
-          sourceIndices = [];
-          for (let j = 0; j < newKeys.length; j++) sourceIndices.push(j);
-        }
         continue;
       }
-      sourceIndices?.push(i);
+      sourceIndices.push(i);
       newKeys.push(key);
 
       const existing = keyToEntry.get(key);
@@ -574,7 +563,7 @@ function reconcileKeys<T, E extends KeyedEntry>(
       for (let i = 0; i < newKeys.length; i++) {
         const existing = keyToEntry.get(newKeys[i]);
         if (existing) {
-          const index = sourceIndices === null ? i : sourceIndices[i];
+          const index = sourceIndices[i];
           ops.update(existing, items[index], index);
         }
       }
@@ -592,10 +581,12 @@ function reconcileKeys<T, E extends KeyedEntry>(
 
   if (reuseCount === 0) {
     bulkClear(parent, prevKeys, keyToEntry, endMarker, ops.release);
-    const frag = initialFragment ?? document.createDocumentFragment();
-    if (!initialFragment)
+    if (initialFragment) parent.insertBefore(initialFragment, endMarker);
+    else {
+      const frag = document.createDocumentFragment();
       for (let i = 0; i < newLen; i++) frag.append(...newEntries.get(newKeys[i])!.nodes);
-    parent.insertBefore(frag, endMarker);
+      parent.insertBefore(frag, endMarker);
+    }
     return;
   }
 
@@ -621,8 +612,7 @@ function reconcileKeys<T, E extends KeyedEntry>(
     }
   }
 
-  const sources: number[] = [];
-  for (let i = start; i < newEnd; i++) sources.push(oldKeyIndex.get(newKeys[i]) ?? -1);
+  const sources = newKeys.slice(start, newEnd).map((key) => oldKeyIndex.get(key) ?? -1);
   const stay = lis(sources);
   let s = stay.length - 1;
 

@@ -40,3 +40,7 @@ Every Purity change in these pages is inside the run-to-run spread of the Solid 
 The size-neutral revision keeps the full-list `newEntries` map and the old owner rebuild for structural changes, so swaps and owned structural updates do not improve; the unchanged-keys owner skip and one key call per item remain. jsdom has no `moveBefore`, so these probes exercise the batched-fragment path; the browser runs above (first revision) use `moveBefore`.
 
 A one-shot jsdom probe of whole-list operations (reverse, sort, filter, unfilter, replace 10k) moved by ±15% in both directions across three repeats and is not used as evidence.
+
+## Final size (PR head after the size review)
+
+All 22 package entries and 17 complete apps against main `34b21d8` (local `check:bundle`, same container): every row is smaller or equal in raw, gzip and Brotli. `runtime-all` Brotli is equal at 43,020 B (raw −534 B, gzip −63 B). The full table is in the PR thread. Behaviour is unchanged from `4d61432`; only equivalent source forms differ.

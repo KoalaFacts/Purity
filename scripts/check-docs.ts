@@ -94,7 +94,7 @@ export function anchorsOf(text: string): Set<string> {
   }
   const idRe = /<a\s+(?:id|name)="([^"]+)"/g;
   let m: RegExpExecArray | null;
-  while ((m = idRe.exec(text)) !== null) anchors.add(m[1]);
+  while ((m = idRe.exec(prose)) !== null) anchors.add(m[1]);
   return anchors;
 }
 

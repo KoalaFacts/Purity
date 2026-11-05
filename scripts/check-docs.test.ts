@@ -56,6 +56,14 @@ describe('check-docs helpers', () => {
     assert.deepEqual([...anchors].sort(), ['a', 'a-1', 'cq-01']);
   });
 
+  it('ignores explicit HTML ids that appear only in fenced examples', () => {
+    const markdown =
+      '# Guide\n\n```html\n<a id="phantom"></a>\n```\n\n<a id="real"></a>\n\n[Broken](#phantom)\n';
+    const anchors = anchorsOf(markdown);
+    assert.equal(anchors.has('phantom'), false);
+    assert.equal(anchors.has('real'), true);
+  });
+
   it('extracts links but not inline-code or fenced examples', () => {
     const links = linksOf('[a](./a.md) `[b](./b.md)`\n\n```\n[c](./c.md)\n```\n[d]: ./d.md\n');
     assert.deepEqual(

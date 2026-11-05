@@ -1,0 +1,29 @@
+{
+  "framework": "purity",
+  "scenario": "swap",
+  "page": "index",
+  "url": "http://localhost:4173/Purity/apps/purity/index.html",
+  "outDir": "/tmp/profiles/purity-swap-2026-11-05_10-29-57",
+  "pageLoad": 624,
+  "heapBeforeBytes": 112918468,
+  "captureWallMs": 150,
+  "cpuSamples": 680,
+  "heapAfterBytes": 112926780,
+  "trCount": 10000,
+  "network": {
+    "bytesIn": 16071,
+    "requestCount": 9
+  },
+  "metricsDelta": {
+    "jsHeapUsedSize": 28164,
+    "jsHeapTotalSize": 2883584,
+    "domNodes": 0,
+    "domListeners": 0,
+    "layoutCount": 1,
+    "recalcStyleCount": 1,
+    "layoutDuration": 0.07356799999999997,
+    "recalcStyleDuration": 0.0021919999999999995,
+    "scriptDuration": 0.013066999999999995,
+    "taskDuration": 0.2059249999999997
+  }
+}

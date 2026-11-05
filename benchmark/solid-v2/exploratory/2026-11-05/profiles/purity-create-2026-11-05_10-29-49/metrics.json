@@ -1,0 +1,29 @@
+{
+  "framework": "purity",
+  "scenario": "create",
+  "page": "index",
+  "url": "http://localhost:4173/Purity/apps/purity/index.html",
+  "outDir": "/tmp/profiles/purity-create-2026-11-05_10-29-49",
+  "pageLoad": 564,
+  "heapBeforeBytes": 3449567,
+  "captureWallMs": 765,
+  "cpuSamples": 5290,
+  "heapAfterBytes": 112738084,
+  "trCount": 10000,
+  "network": {
+    "bytesIn": 16071,
+    "requestCount": 9
+  },
+  "metricsDelta": {
+    "jsHeapUsedSize": 13354172,
+    "jsHeapTotalSize": 16621568,
+    "domNodes": 100000,
+    "domListeners": 0,
+    "layoutCount": 1,
+    "recalcStyleCount": 1,
+    "layoutDuration": 0.33901200000000004,
+    "recalcStyleDuration": 0.10626800000000002,
+    "scriptDuration": 0.16919200000000004,
+    "taskDuration": 0.770295
+  }
+}

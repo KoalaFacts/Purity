@@ -626,7 +626,11 @@ function reconcileKeys<T, E extends KeyedEntry>(
   const stay = lis(sources);
   let s = stay.length - 1;
 
-  let nextSibling: Node = newEnd < newLen ? newEntries.get(newKeys[newEnd])!.nodes[0] : endMarker;
+  // The anchor is the first node of the retained tail. Rows may render no
+  // nodes (an empty fragment), so walk the tail back to its first real node.
+  let nextSibling: Node = endMarker;
+  for (let i = newLen; i-- > newEnd;)
+    nextSibling = newEntries.get(newKeys[i])!.nodes[0] || nextSibling;
   let batch: DocumentFragment | null = null;
   let batchTarget = nextSibling;
 

@@ -264,3 +264,75 @@ describe('each() nested as a row root of another each() — row node list (CQ-02
     );
   });
 });
+
+describe('each() window anchor with empty rows in the retained tail', () => {
+  for (const suffix of [['E'], ['E', 'C']]) {
+    it(`keeps a changed row before an empty tail row and a trailing sibling (tail ${suffix.join(',')})`, async () => {
+      const items = state(['A', 'B', ...suffix]);
+      const host = document.createElement('div');
+      const app = mount(() => {
+        const fragment = document.createDocumentFragment();
+        fragment.appendChild(
+          each(items, (item) => {
+            if (item() === 'E') return document.createDocumentFragment();
+            const row = document.createElement('span');
+            row.textContent = item();
+            return row;
+          }) as DocumentFragment,
+        );
+        const footer = document.createElement('footer');
+        footer.textContent = 'FOOT';
+        fragment.appendChild(footer);
+        return fragment;
+      }, host);
+      try {
+        items(['A', 'X', ...suffix]);
+        await tick();
+        expect(host.textContent).toBe(`AX${suffix.includes('C') ? 'C' : ''}FOOT`);
+        expect(host.lastChild?.nodeName).toBe('FOOTER');
+      } finally {
+        app.unmount();
+      }
+    });
+  }
+});
+
+describe('each() with rows that render no nodes', () => {
+  it('keeps order before a trailing sibling for random key sequences', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.uniqueArray(fc.integer({ min: 0, max: 9 }), { maxLength: 9 }), {
+          minLength: 1,
+          maxLength: 8,
+        }),
+        async (sequence) => {
+          const items = state<number[]>([]);
+          const host = document.createElement('div');
+          const app = mount(() => {
+            const fragment = document.createDocumentFragment();
+            fragment.appendChild(
+              each(items, (item) => {
+                // Even ids render an empty fragment.
+                if (item() % 2 === 0) return document.createDocumentFragment();
+                const row = document.createElement('span');
+                row.textContent = String(item());
+                return row;
+              }) as DocumentFragment,
+            );
+            const footer = document.createElement('footer');
+            footer.textContent = 'F';
+            fragment.appendChild(footer);
+            return fragment;
+          }, host);
+          for (const ids of sequence) {
+            items(ids);
+            await tick();
+            expect(host.textContent).toBe(`${ids.filter((id) => id % 2 === 1).join('')}F`);
+          }
+          app.unmount();
+        },
+      ),
+      { numRuns: 150 },
+    );
+  });
+});

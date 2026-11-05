@@ -8,6 +8,13 @@
   DOM write when the text is unchanged and no longer allocate a node list for a
   text update. Re-running a grouped template watcher for a sibling binding no
   longer queues a `characterData` mutation on unchanged text.
+- Attribute (`name=${() => v}`), boolean-attribute (`?name=`) and property
+  (`.name=`) bindings remember their last value and skip the write when a
+  sibling binding in the same template changes. A focused input's typed value,
+  caret and selection are no longer reset by an unrelated update, and unchanged
+  attributes no longer trigger style invalidation. A binding still writes when
+  its own value changes; a DOM value changed outside Purity is no longer
+  overwritten by a sibling's update.
 
 ## 0.5.2
 

@@ -462,6 +462,13 @@ each(
 );
 ```
 
+`each()` keys rows with the third argument (item identity when omitted). On an
+update it calls the key function once per item before creating any row, keeps
+the rows whose keys match at the start and end of the list in place, and moves
+only rows inside the changed range (fewest moves, via `moveBefore` where the
+browser has it). Keys must be unique; a repeated key renders only its first
+occurrence and logs a warning.
+
 For a long list, import `virtualEach` and put it in a scrollable container:
 
 ```ts

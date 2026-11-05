@@ -472,10 +472,7 @@ export interface EachState<T, E extends KeyedEntry = EachEntry<T>> {
 function ownedEntryNodes<T, E extends KeyedEntry>(state: EachState<T, E>): Node[] {
   const nodes: Node[] = [];
   const { keys, keyToEntry } = state;
-  for (let i = 0; i < keys.length; i++) {
-    const rowNodes = keyToEntry.get(keys[i])!.nodes;
-    for (let j = 0; j < rowNodes.length; j++) nodes.push(rowNodes[j]);
-  }
+  for (let i = 0; i < keys.length; i++) nodes.push(...keyToEntry.get(keys[i])!.nodes);
   return nodes;
 }
 
@@ -524,11 +521,7 @@ export function reconcileEach<T, E extends KeyedEntry>(
     const marker = nodes.lastIndexOf(endMarker);
     if (marker === -1) continue;
     const from = marker - oldLen;
-    if (
-      !diff.all &&
-      from >= 0 &&
-      (oldLen === 0 || (nodes[from] === oldNodes[0] && nodes[marker - 1] === oldNodes[oldLen - 1]))
-    ) {
+    if (!diff.all && nodes[from] === oldNodes[0] && nodes[marker - 1] === oldNodes[oldLen - 1]) {
       // The rows sit as one run just before the end marker: splice the run and
       // re-track only the rows this reconcile added or removed.
       owner.nodes = nodes.slice(0, from).concat(next, nodes.slice(marker));
@@ -553,10 +546,6 @@ interface RowDiff {
   all: boolean;
 }
 
-function pushNodes(target: Node[], nodes: Node[]): void {
-  for (let k = 0; k < nodes.length; k++) target.push(nodes[k]);
-}
-
 // Window-map values: an unclaimed old row stores its old index (>= 0), a
 // claimed old row stores `CLAIMED - oldIndex`, a new row stores NEW_ROW.
 const NEW_ROW = -1;
@@ -576,14 +565,6 @@ function reconcileKeys<T, E extends KeyedEntry>(
   const prevLen = prevKeys.length;
   const len = items.length;
 
-  if (len === 0) {
-    if (diff) diff.all = true;
-    bulkClear(parent, prevKeys, keyToEntry, endMarker, ops.release);
-    keyToEntry.clear();
-    eachState.keys = [];
-    return;
-  }
-
   // Trim the common head and tail (Solid's reconcileArrays does the same):
   // only the changed window is indexed, diffed and moved. Head and tail keys
   // match unique previous keys, so they cannot be duplicates.
@@ -597,6 +578,9 @@ function reconcileKeys<T, E extends KeyedEntry>(
     newEnd--;
   }
 
+  // `win` maps each old-window key to its old index (>= 0) until a new key
+  // claims it (CLAIMED - index); keys of new rows map to NEW_ROW. It is left
+  // empty when no new key falls in the window (pure removal or clear).
   let win: Map<unknown, number>;
   let winKeys: unknown[];
   let winItems: number[];
@@ -605,7 +589,7 @@ function reconcileKeys<T, E extends KeyedEntry>(
   let reused: number;
   scan: for (;;) {
     win = new Map();
-    for (let i = start; i < oldEnd; i++) win.set(prevKeys[i], i);
+    if (newEnd > start) for (let i = start; i < oldEnd; i++) win.set(prevKeys[i], i);
     winKeys = [];
     winItems = [];
     sources = [];
@@ -642,8 +626,9 @@ function reconcileKeys<T, E extends KeyedEntry>(
     break;
   }
 
-  if (dupes)
+  if (dupes) {
     for (let d = 0; d < dupes.length; d++) warnDuplicateKey(nextKeys[dupes[d]], dupes[d], ops.api);
+  }
 
   const winLen = winKeys.length;
   const winEntries: E[] = [];
@@ -653,13 +638,10 @@ function reconcileKeys<T, E extends KeyedEntry>(
   try {
     for (let j = 0; j < winLen; j++) {
       const index = winItems[j];
-      if (sources[j] !== -1) {
-        winEntries.push(keyToEntry.get(winKeys[j])!);
-        continue;
-      }
-      const entry = ops.create(items[index], index);
+      const entry =
+        sources[j] === -1 ? ops.create(items[index], index) : keyToEntry.get(winKeys[j])!;
       winEntries.push(entry);
-      if (staged) for (let k = 0; k < entry.nodes.length; k++) staged.appendChild(entry.nodes[k]);
+      staged?.append(...entry.nodes);
     }
     for (let i = 0; i < start; i++) ops.update(keyToEntry.get(nextKeys[i])!, items[i], i);
     for (let j = 0; j < winLen; j++) {
@@ -676,29 +658,26 @@ function reconcileKeys<T, E extends KeyedEntry>(
     : nextKeys;
 
   if (start === 0 && newEnd === len && reused === 0) {
-    // Nothing survives: clear in bulk and insert every row in one fragment.
+    // Nothing survives: clear in bulk (one replaceChildren when possible).
     if (diff) diff.all = true;
     bulkClear(parent, prevKeys, keyToEntry, endMarker, ops.release);
     keyToEntry.clear();
-    for (let j = 0; j < winLen; j++) keyToEntry.set(winKeys[j], winEntries[j]);
-    parent.insertBefore(staged!, endMarker);
-    return;
-  }
-
-  for (let i = start; i < oldEnd; i++) {
-    const key = prevKeys[i];
-    if (win.get(key)! >= 0) {
-      const entry = keyToEntry.get(key)!;
-      if (diff) pushNodes(diff.removed, entry.nodes);
-      detachNodes(entry.nodes);
-      ops.release(entry);
-      keyToEntry.delete(key);
+  } else {
+    for (let i = start; i < oldEnd; i++) {
+      const key = prevKeys[i];
+      if ((win.get(key) ?? 0) >= 0) {
+        const entry = keyToEntry.get(key)!;
+        diff?.removed.push(...entry.nodes);
+        detachNodes(entry.nodes);
+        ops.release(entry);
+        keyToEntry.delete(key);
+      }
     }
   }
   for (let j = 0; j < winLen; j++) {
     if (sources[j] !== -1) continue;
     keyToEntry.set(winKeys[j], winEntries[j]);
-    if (diff) pushNodes(diff.added, winEntries[j].nodes);
+    diff?.added.push(...winEntries[j].nodes);
   }
 
   let anchor: Node = endMarker;
@@ -715,40 +694,31 @@ function reconcileKeys<T, E extends KeyedEntry>(
     return;
   }
 
+  // Walk the window backwards; rows outside the LIS move before the row after
+  // them. Without moveBefore, runs of moved rows are batched in one fragment.
   const stay = lis(sources);
   let s = stay.length - 1;
   let nextSibling: Node = anchor;
-  let batch: Node[] | null = null;
+  let batch: DocumentFragment | null = null;
   let batchTarget: Node = anchor;
-
   for (let j = winLen - 1; j >= 0; j--) {
-    const entry = winEntries[j];
+    const nodes = winEntries[j].nodes;
     if (s >= 0 && stay[s] === j) {
       s--;
-      if (batch) {
-        const frag = document.createDocumentFragment();
-        for (let k = batch.length - 1; k >= 0; k--) frag.appendChild(batch[k]);
-        parent.insertBefore(frag, batchTarget);
-        batch = null;
-      }
+      if (batch) parent.insertBefore(batch, batchTarget);
+      batch = null;
     } else if (hasMoveBefore) {
-      for (let k = 0; k < entry.nodes.length; k++)
-        moveOrInsert(parent, entry.nodes[k], nextSibling);
+      for (let k = 0; k < nodes.length; k++) moveOrInsert(parent, nodes[k], nextSibling);
     } else {
       if (!batch) {
-        batch = [];
+        batch = document.createDocumentFragment();
         batchTarget = nextSibling;
       }
-      for (let k = entry.nodes.length - 1; k >= 0; k--) batch.push(entry.nodes[k]);
+      batch.prepend(...nodes);
     }
-    nextSibling = entry.nodes[0] || nextSibling;
+    nextSibling = nodes[0] || nextSibling;
   }
-
-  if (batch) {
-    const frag = document.createDocumentFragment();
-    for (let k = batch.length - 1; k >= 0; k--) frag.appendChild(batch[k]);
-    parent.insertBefore(frag, batchTarget);
-  }
+  if (batch) parent.insertBefore(batch, batchTarget);
 }
 
 /** @internal */

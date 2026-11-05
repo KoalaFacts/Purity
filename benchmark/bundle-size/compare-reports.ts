@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import historicalV5 from './evidence/2026-10-30-architecture-redesign/before.json' with { type: 'json' };
 import historicalV7 from './evidence/2026-10-30-architecture-redesign/budget-baseline.json' with { type: 'json' };
+import currentV7Budgets from './budgets.json' with { type: 'json' };
 import v4Budgets from './budgets-v4.json' with { type: 'json' };
 import legacyBudgets from './budgets-v3.json' with { type: 'json' };
 
@@ -284,17 +285,21 @@ function validateReportContract(report: Report, label: string) {
         'Original Brotli budget missing or changed: ' + name,
       );
     }
-  assert.equal(
-    normalized(report.budgets),
-    normalized(
-      report.schemaVersion === 7
-        ? historicalV7.budgets
-        : report.schemaVersion === 5
-          ? historicalV5.budgets
-          : expanded
-            ? v4Budgets
-            : legacyBudgets,
-    ),
+  // Historical v7 results and current v7 results have different approved
+  // budget inventories. Never substitute one for another mid-comparison:
+  // compareSizeReports still requires identical base/candidate budgets.
+  const frozenBudgets =
+    report.schemaVersion === 7
+      ? [historicalV7.budgets, currentV7Budgets]
+      : [
+          report.schemaVersion === 5
+            ? historicalV5.budgets
+            : expanded
+              ? v4Budgets
+              : legacyBudgets,
+        ];
+  assert(
+    frozenBudgets.some((value) => normalized(report.budgets) === normalized(value)),
     'Missing or changed v' + report.schemaVersion + ' budgets: ' + label,
   );
   assert(Array.isArray(report.packages), 'Missing package entries: ' + label);

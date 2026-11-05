@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.2
+
+### Fixed
+
+- Compile a lone `${...}` directly inside `<table>`, `<tbody>`, `<thead>`,
+  `<tfoot>`, `<tr>` or `<colgroup>` to a comment placeholder instead of a text
+  placeholder. The HTML parser moves text out of these elements, so the old
+  placeholder broke slot paths and stopped `each()` rows rendering inside a
+  table section unless an adjacent `${null}` was added.
+- Release a component's `onMount` callbacks even when one of them throws an
+  unhandled error, so their closures are not retained.
+- Update new project scaffolds to install the 0.5.2 package set.
+
 ## 0.5.1
 
 - Complete the coordinated package release with README documentation for every package.

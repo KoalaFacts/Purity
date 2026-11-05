@@ -904,7 +904,12 @@ function buildDynamicHtml(
         if (!hasExpressionChild(node)) return buildStaticHtml(node);
         slots.push({ type: 'raw', children: node.children, path: [...currentPath] });
       } else {
-        s += emitChildrenHtml(node.children, slots, currentPath);
+        s += emitChildrenHtml(
+          node.children,
+          slots,
+          currentPath,
+          !node.ns && TEXT_HOSTILE_TAGS.test(node.tag),
+        );
       }
       return `${s}</${node.tag}>`;
     }
@@ -918,17 +923,31 @@ function buildDynamicHtml(
   }
 }
 
+// HTML elements whose parser insertion mode does not keep non-whitespace
+// character data as a child: text in table / tbody / thead / tfoot / tr is
+// foster-parented to before the table, and text in colgroup closes the
+// colgroup and is then foster-parented. A text placeholder there would leave
+// the element, so its slot path would point at the wrong node. Comments are
+// inserted in place in all of these modes.
+const TEXT_HOSTILE_TAGS = /^(?:table|tbody|thead|tfoot|tr|colgroup)$/i;
+
 // Emit children of an element or fragment, deciding per-child whether an
 // expression can use the cheap text-node placeholder. An expression that
 // touches a text or expression sibling must use a comment placeholder so the
 // DOM parser doesn't coalesce adjacent text nodes and shift our path
-// navigation.
-function emitChildrenHtml(children: ASTNode[], slots: Slot[], currentPath: PathStep[]): string {
+// navigation. `textHostile` (see TEXT_HOSTILE_TAGS) forces comment
+// placeholders for every expression child.
+function emitChildrenHtml(
+  children: ASTNode[],
+  slots: Slot[],
+  currentPath: PathStep[],
+  textHostile = false,
+): string {
   let s = '';
   for (let i = 0; i < children.length; i++) {
     const ch = children[i];
-    let useTextPlaceholder = true;
-    if (ch.type === 'expression') {
+    let useTextPlaceholder = !textHostile;
+    if (ch.type === 'expression' && useTextPlaceholder) {
       const prev = children[i - 1];
       const next = children[i + 1];
       if (prev && (prev.type === 'text' || prev.type === 'expression')) useTextPlaceholder = false;

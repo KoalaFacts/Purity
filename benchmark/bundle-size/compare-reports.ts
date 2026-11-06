@@ -322,11 +322,7 @@ function validateReportContract(report: Report, label: string) {
   assert(Array.isArray(report.measurements), 'Missing application profiles: ' + label);
   coverage(
     [...unique(report.packages, 'entry').keys()],
-    report.schemaVersion === 7
-      ? v7Contract!.packages
-      : expanded
-        ? packageNamesV4
-        : packageNames,
+    report.schemaVersion === 7 ? v7Contract!.packages : expanded ? packageNamesV4 : packageNames,
     label + '/packages',
     report.schemaVersion,
   );

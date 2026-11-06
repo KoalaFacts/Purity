@@ -8,6 +8,12 @@ import { describe, expect, it } from 'vite-plus/test';
 
 const root = resolve(import.meta.dirname, '../..');
 const engines = resolve(import.meta.dirname, 'browser-engines.ts');
+// The a11y scanners take a page URL as their argument, which browser-engines.ts
+// would reject; they always scan every engine (README: Accessibility fixtures).
+const allEngineScanners = new Set([
+  'benchmark/tools/a11y-form-check.ts',
+  'benchmark/tools/a11y-matrix.ts',
+]);
 
 function select(args: string[], env: Record<string, string | undefined> = {}) {
   const probe = `const { browserEngines } = await import(${JSON.stringify(engines)}); console.log(browserEngines.map(([n]) => n).join(','));`;
@@ -59,7 +65,12 @@ describe('browser engine selection', () => {
         continue; // package without scripts/ or tests/
       }
       for (const file of files) {
-        if (/\[\s*chromium\s*,\s*firefox\s*,\s*webkit\s*\]/.test(readFileSync(file, 'utf8')))
+        if (allEngineScanners.has(relative(root, file))) continue;
+        if (
+          /\bof\s+(?:Object\.entries\(\s*)?[[{]\s*chromium\s*,\s*firefox\s*,\s*webkit\s*[\]}]/.test(
+            readFileSync(file, 'utf8'),
+          )
+        )
           offenders.push(relative(root, file));
       }
     }

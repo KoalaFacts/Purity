@@ -4,7 +4,8 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { chromium, firefox, webkit } from 'playwright';
+import { chromium } from 'playwright';
+import { browserEngines } from '../../../benchmark/tools/browser-engines.ts';
 import { build, createServer, preview } from 'vite';
 import { purity } from '../dist/index.js';
 
@@ -54,7 +55,7 @@ document.querySelector('#increment').addEventListener('click', () => count(count
       const response = await fetch(new URL(`${base}@id/__x00__virtual:purity-devtools`, url));
       assert.equal(response.status, 200);
       assert.match(await response.text(), /Purity DevTools/);
-      for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
+      for (const [name, engine] of browserEngines) {
         if (format === 'CJS' && name !== 'chromium') continue;
         const browser = await engine.launch();
         try {

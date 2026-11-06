@@ -80,7 +80,8 @@ describe('extracted compiler', () => {
 
   it('builds static text and comment children without disposable node aliases', () => {
     const source = generate(parse(['<div>one<!--note--><span>two</span></div>']));
-    expect(source).not.toMatch(/var _n\\d+=document\\.create(?:TextNode|Comment)\\(/);
+    expect(source).not.toContain('=document.createTextNode(');
+    expect(source).not.toContain('=document.createComment(');
     const render = compile(source);
     const first = render();
     const second = render();

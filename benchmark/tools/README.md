@@ -28,6 +28,10 @@ Vite plugin loads `@purityjs/compiler` in Node, where its `development`
 condition resolves to `dist` (see `packages/compiler/package.json`), so after editing
 `packages/compiler/src/codegen.ts` run `npm run build -w @purityjs/compiler` first.
 
+Set `CHROMIUM_PATH` to use a system Chrome/Chromium instead of Playwright's
+bundled browser. `run-bench.ts`, `tools/profile.ts`, `tools/sanity.ts` and
+`tools/memory-leak-check.ts` honour it.
+
 ## Single-framework profile
 
 ```bash

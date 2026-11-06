@@ -65,7 +65,9 @@ export function asyncCompute<T>(
   const settled = state(0);
 
   const settle = (run: number, result: Outcome<T>): void => {
-    current = result;
+    // An equal value keeps the retained outcome object, so the outcome
+    // compute's equality cut-off does not re-run downstream readers.
+    if (!(current?.ok && result.ok && Object.is(current.value, result.value))) current = result;
     settledRun = run;
   };
 
@@ -93,7 +95,12 @@ export function asyncCompute<T>(
       // settles after the current pull, never inside it.
       Promise.resolve(result).then(
         (value) => finish({ ok: true, value }),
-        (error) => finish({ ok: false, error }),
+        (error) => {
+          // An async fn that read an unresolved upstream stays pending, like
+          // the synchronous PendingError path; the upstream settlement re-runs it.
+          if (isPending(error)) return;
+          finish({ ok: false, error });
+        },
       );
     } else {
       settle(run, { ok: true, value: result as T });

@@ -215,7 +215,7 @@ describe('asyncCompute (ADR 0054)', () => {
     expect(value()).toBe(7);
   });
 
-  it('a chained asyncCompute re-runs only when the upstream value changes', async () => {
+  it('a chained asyncCompute re-runs only when the upstream settles to a new value', async () => {
     const id = state(1);
     const ups: ReturnType<typeof deferred<number>>[] = [];
     const a = asyncCompute(() => {
@@ -245,6 +245,54 @@ describe('asyncCompute (ADR 0054)', () => {
     await flush();
     expect(b()).toBe(20);
     expect(inputs).toEqual([1, 2]);
+  });
+
+  it('a chained asyncCompute does not re-run when the upstream re-settles to an equal value', async () => {
+    const other = state(0);
+    const a = asyncCompute(() => {
+      other();
+      return Promise.resolve('small');
+    });
+    const inputs: string[] = [];
+    const b = asyncCompute(() => {
+      const v = a();
+      inputs.push(v);
+      return Promise.resolve(`${v}!`);
+    });
+    // A live reader keeps the chain eager (computes are pull-based).
+    const stop = watch(() => void outcome(b));
+    await flush();
+    await flush();
+    expect(b()).toBe('small!');
+    other(1);
+    expect(a.pending()).toBe(true);
+    await flush();
+    expect(a.pending()).toBe(false);
+    expect(a()).toBe('small');
+    await flush();
+    expect(b()).toBe('small!');
+    expect(b.pending()).toBe(false);
+    expect(inputs).toEqual(['small']);
+    stop();
+  });
+
+  it('an async fn reading an unresolved upstream stays pending until the upstream settles', async () => {
+    const up = deferred<number>();
+    const a = asyncCompute(() => up.promise);
+    const b = asyncCompute(async () => {
+      const v = a();
+      return v * 2;
+    });
+    const stop = watch(() => void outcome(b));
+    await flush();
+    expect(b.pending()).toBe(true);
+    expect(() => b()).toThrow(PendingError);
+    up.resolve(4);
+    await flush();
+    await flush();
+    expect(b.pending()).toBe(false);
+    expect(b()).toBe(8);
+    stop();
   });
 
   it('an unguarded watch read of an unresolved value throws from watch()', () => {

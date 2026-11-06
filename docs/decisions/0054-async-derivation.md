@@ -46,7 +46,9 @@ Contract:
    `PendingError` (exported; `isPending(err)` tests for it). A downstream
    `compute()` caches and rethrows it like any other error, so no `undefined`
    and no `Promise` reaches application code as resolved data. When the value
-   settles, the version bump re-runs every downstream reader.
+   settles to a new value, downstream readers re-run; a run that settles to a
+   value `Object.is`-equal to the current one keeps the current outcome, so
+   downstream readers (including a chained `asyncCompute`) do not re-run.
 3. **Retained content.** After a run has settled once, a later run keeps the
    previous outcome (value, or rejection) while it is in flight;
    `user.pending()` (tracked) is `true` meanwhile. Only the very first load
@@ -54,7 +56,9 @@ Contract:
    a run that has not settled yet does not re-run downstream derivations.
 4. **Supersession.** Each run gets a fresh `AbortSignal`; starting run B aborts
    run A's signal. A settlement from any run other than the latest is
-   ignored, so if A resolves after B only B becomes current.
+   ignored, so if A resolves after B only B becomes current. A superseded
+   run's rejection is dropped without logging: it is a stale result, not an
+   error of the current value.
 5. **Rejection.** A rejected run that is still the latest becomes the current
    outcome: reading throws the rejection reason (downstream computes cache
    it) and `pending()` is `false`. A rejection caused by its own abort is
@@ -62,9 +66,12 @@ Contract:
 6. **Synchronous results.** If `fn` returns a non-thenable value, it settles in
    the same pull with no `PendingError`. A thenable always settles after the
    current pull, even one that calls back synchronously.
-7. **Chaining.** If `fn` throws `PendingError` synchronously (it read an
-   unresolved upstream async value), the run stays pending rather than
-   settling as an error; the upstream settlement re-runs `fn`.
+7. **Chaining.** If `fn` throws `PendingError` (it read an unresolved upstream
+   async value), synchronously or as the rejection of an `async` function,
+   the run stays pending rather than settling as an error; the upstream
+   settlement re-runs `fn`. Only reads before the first `await` are tracked
+   (as everywhere in the graph), so read upstream values before awaiting;
+   an untracked unresolved read stays pending with nothing to re-run it.
 8. **Disposal.** `user.dispose()`, or disposal of the owning component, row or
    watch scope, aborts the in-flight run and ignores its settlement. Reading
    a disposed accessor returns the last settled outcome, or keeps throwing

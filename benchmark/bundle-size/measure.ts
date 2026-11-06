@@ -243,6 +243,7 @@ const packageEntries = [
     specifier: '@purityjs/core/forms/lifecycle',
     dist: 'packages/core/dist/',
   },
+  { name: 'core-boundary', specifier: '@purityjs/core/boundary', dist: 'packages/core/dist/' },
   { name: 'core-csr', specifier: '@purityjs/core/csr', dist: 'packages/core/dist/' },
   { name: 'core-virtual', specifier: '@purityjs/core/virtual', dist: 'packages/core/dist/' },
   { name: 'core-ssr-bridge', specifier: '@purityjs/core/ssr-bridge', dist: 'packages/core/dist/' },

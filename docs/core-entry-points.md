@@ -39,6 +39,7 @@ virtualEach(items, render, key);
 | `@purityjs/compiler`         | Template parser, AST and code generators                     |
 | `@purityjs/core`             | Components, control flow, resources, styles and hydration    |
 | `@purityjs/core/csr`         | Core APIs for client rendering without `hydrate`             |
+| `@purityjs/core/boundary`    | `errorBoundary` error fallback and reset (ADR 0054)          |
 | `@purityjs/core/virtual`     | `virtualEach` for measured windowed lists                    |
 | `@purityjs/core/forms`       | Form-associated component features                           |
 | `@purityjs/core/jit`         | Runtime template compilation, including hydration            |

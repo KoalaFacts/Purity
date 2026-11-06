@@ -18,6 +18,7 @@ export default defineConfig({
         'forms/index': 'src/forms.ts',
         'forms/lifecycle/index': 'src/forms/lifecycle.ts',
         'csr-runtime/index': 'src/runtime/csr-runtime.ts',
+        'boundary/index': 'src/boundary.ts',
         'ssr-bridge/index': 'src/ssr-bridge.ts',
         'csr/index': 'src/csr.ts',
         'virtual/index': 'src/virtual.ts',

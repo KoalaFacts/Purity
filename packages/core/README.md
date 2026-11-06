@@ -487,6 +487,27 @@ Purity manages the visible range, spacers, and row-height measurements. Supply
 stable keys when items can be inserted, removed, or reordered. SSR still renders
 the full list; hydration adopts those rows before windowing them.
 
+To replace a part of the page when it fails, wrap it in `errorBoundary`:
+
+```ts
+import { errorBoundary } from "@purityjs/core/boundary";
+
+html`<section>
+  ${errorBoundary(
+    () => html`<p>${() => total().toFixed(2)}</p>`,
+    (error, reset) => html`<p role="alert">${String(error)}</p>
+      <button @click=${reset}>Retry</button>`,
+  )}
+</section>`;
+```
+
+A throw while the view renders, or later from one of its bindings or watches,
+disposes the view and shows `fallback(error, reset)`; the rest of the page keeps
+updating. `reset()` renders the view again. A throwing fallback goes to the next
+outer boundary or the component's `onError`. Event-handler errors are not
+caught. On the server a synchronous throw renders the fallback; hydrated
+content is not guarded yet ([ADR 0054](../../docs/decisions/0054-error-boundary.md)).
+
 ### Teleport
 
 ```ts

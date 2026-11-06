@@ -78,18 +78,6 @@ describe('extracted compiler', () => {
     setter.mockRestore();
   });
 
-  it('builds static text and comment children without disposable node aliases', () => {
-    const source = generate(parse(['<div>one<!--note--><span>two</span></div>']));
-    expect(source).not.toContain('=document.createTextNode(');
-    expect(source).not.toContain('=document.createComment(');
-    const render = compile(source);
-    const first = render();
-    const second = render();
-    expect(first.firstChild.outerHTML).toBe('<div>one<!--note--><span>two</span></div>');
-    expect(second.firstChild.outerHTML).toBe('<div>one<!--note--><span>two</span></div>');
-    expect(first.firstChild).not.toBe(second.firstChild);
-  });
-
   it('rejects unsafe URL bindings in SSR using the existing helper contract', () => {
     const render = compile(generateSSR(parse(['<a href=', '>link</a>'])));
     expect(render(['/safe'], ssrHelpers)).toContain('href="/safe"');

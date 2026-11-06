@@ -34,8 +34,19 @@ graph and every existing entry stay byte-for-byte unchanged.
   signal; array writes that change `length` bump `length`, the structural
   signal and every dropped index. Store values assigned into a draft are
   stored as their plain objects, never as proxies.
-- **Not supported in slice 1:** frozen objects or non-writable properties
-  inside a store (proxy invariants forbid returning a wrapped view for them).
+- **Edges.** Getters and setters run with the proxy as `this`, so they read
+  tracked properties and write through the draft. Symbol keys are tracked
+  like string keys. Array `indexOf`/`lastIndexOf`/`includes` compare plain
+  values, so an item read from the view is found in a draft (and the other
+  way round). Drafts never expose or replace a prototype: reading
+  `__proto__` returns the real prototype unwrapped, assigning it throws.
+  `Object.defineProperty` on a draft notifies like an assignment. Values
+  under a frozen object are returned as they are (proxy invariants forbid a
+  wrapped view; frozen data cannot change anyway).
+- **Not covered in slice 1:** `Object.getOwnPropertyDescriptor(view, k).value`
+  returns the plain object (writing to it bypasses notification), and a
+  draft kept after `update` returns still writes and notifies outside a
+  batch. Both are documented misuse; use `update` for every write.
 - **Errors.** A throwing `update` keeps the writes made before the throw
   (no transaction rollback), notifies their readers and rethrows.
 - **Disposal.** Signals are created lazily on first read and are held in
@@ -58,15 +69,17 @@ deleted keys rerun `Object.keys`/`in`/`for…in` readers and a reader of a
 missing key; array `push`/`splice`/`reverse`/`length = 0`; one effect run
 per update; writes through the view throw; store values assign as plain
 objects; non-plain objects are not wrapped; a throwing update; draft reads
-inside an enclosing derivation are untracked; a template text binding and a
+inside an enclosing derivation are untracked; view items found in a draft;
+accessors; `__proto__` refused; `defineProperty`; symbol keys and frozen
+data; `pop`/`shift`/`unshift`/`sort` and sparse index writes; a template text binding and a
 keyed `each()` update from store writes and keep existing row nodes.
 `each()` accepts `readonly` arrays (type-only change) so store arrays pass
 directly.
 
 ## Consequences
 
-- New entry `core-store` with its own budget (gzip 832 B, Brotli 768 B;
-  measured 760 / 679). No existing entry changes size.
+- New entry `core-store` with its own budget (gzip 1,024 B, Brotli 960 B;
+  measured 946 / 865). No existing entry changes size.
 - Numbering: open PRs for SV2-003 and SV2-006 also propose ADR 0054; the
   first to merge keeps the number and the others renumber (the docs checker
   rejects gaps, so each PR takes the next free number on `main`).

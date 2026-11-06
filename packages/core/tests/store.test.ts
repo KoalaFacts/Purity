@@ -205,6 +205,107 @@ describe('store()', () => {
     expect(s.a).toBe(2);
   });
 
+  it('finds view items inside a draft (remove-this-row handlers)', () => {
+    const [s, update] = store({ list: [{ id: 1 }, { id: 2 }, { id: 3 }] });
+    const item = s.list[1];
+    const len = compute(() => s.list.length);
+    expect(len()).toBe(3);
+    update((d) => {
+      expect(d.list.indexOf(item)).toBe(1);
+      expect(d.list.includes(item)).toBe(true);
+      expect(d.list.lastIndexOf(item)).toBe(1);
+      d.list.splice(d.list.indexOf(item), 1);
+    });
+    expect(len()).toBe(2);
+    expect(s.list.includes(s.list[1])).toBe(true);
+    expect(s.list.map((r) => r.id)).toEqual([1, 3]);
+  });
+
+  it('getters read and setters write through the tracked proxies', () => {
+    const [s, update] = store({
+      a: 1,
+      _b: 1,
+      get double() {
+        return this.a * 2;
+      },
+      set b(value: number) {
+        this._b = value;
+      },
+    });
+    const double = compute(() => s.double);
+    const b = compute(() => s._b);
+    expect([double(), b()]).toEqual([2, 1]);
+    update((d) => {
+      d.a = 5;
+      d.b = 7;
+    });
+    expect([double(), b()]).toEqual([10, 7]);
+  });
+
+  it('drafts cannot reach or replace the prototype', () => {
+    const [s, update] = store<Record<string, unknown>>({ a: 1 });
+    expect(() =>
+      update((d) => {
+        d['__proto__'] = { evil: 1 };
+      }),
+    ).toThrow(/__proto__/);
+    update((d) => {
+      const proto = d['__proto__'] as Record<string, unknown>;
+      expect(proto).toBe(Object.prototype);
+    });
+    expect(s.evil).toBeUndefined();
+    expect(Object.getPrototypeOf(s)).toBe(Object.prototype);
+  });
+
+  it('Object.defineProperty on a draft notifies key readers', () => {
+    const [s, update] = store<Record<string, number>>({});
+    const keys = compute(() => Object.keys(s).length);
+    expect(keys()).toBe(0);
+    update((d) => {
+      Object.defineProperty(d, 'x', {
+        value: 1,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    });
+    expect(keys()).toBe(1);
+    expect(s.x).toBe(1);
+  });
+
+  it('tracks symbol keys and returns frozen nested data as is', () => {
+    const sym = Symbol('k');
+    const frozen = Object.freeze({ inner: { v: 1 } });
+    const [s, update] = store<{ [sym]?: number; f: typeof frozen }>({ f: frozen });
+    const symRead = compute(() => s[sym] ?? 0);
+    expect(symRead()).toBe(0);
+    update((d) => {
+      d[sym] = 4;
+    });
+    expect(symRead()).toBe(4);
+    expect(s.f.inner).toBe(frozen.inner);
+    expect(s.f.inner.v).toBe(1);
+  });
+
+  it('array pop, shift, unshift, sort and sparse writes update readers', () => {
+    const [s, update] = store({ list: [3, 1, 2] });
+    const joined = compute(() => `${s.list.length}:${s.list.join(',')}`);
+    update((d) => {
+      d.list.sort();
+    });
+    expect(joined()).toBe('3:1,2,3');
+    update((d) => {
+      d.list.pop();
+      d.list.shift();
+      d.list.unshift(9);
+    });
+    expect(joined()).toBe('2:9,2');
+    update((d) => {
+      d.list[4] = 5;
+    });
+    expect(joined()).toBe('5:9,2,,,5');
+  });
+
   it('rejects a non-object initial value', () => {
     expect(() => store(1 as unknown as object)).toThrow(TypeError);
   });

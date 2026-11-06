@@ -30,7 +30,10 @@ const drafts = new WeakMap<object, object>();
 const isWrappable = (value: unknown): value is object => {
   if (value === null || typeof value !== 'object') return false;
   const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null || Array.isArray(value);
+  return (
+    value !== Object.prototype &&
+    (proto === Object.prototype || proto === null || Array.isArray(value))
+  );
 };
 
 const unwrap = (value: unknown): unknown =>
@@ -49,16 +52,32 @@ const bump = (target: object, key: PropertyKey): void => {
   if (sig) sig(sig.peek() + 1);
 };
 
+// Search arrays by plain value, so view and draft items (different proxies of
+// the same object) are found: `d.list.indexOf(view.list[0])`.
+const SEARCH = new Set<PropertyKey>(['indexOf', 'lastIndexOf', 'includes']);
+const search = (target: unknown[], key: 'indexOf'): typeof Array.prototype.indexOf =>
+  function (this: unknown[], item, ...rest) {
+    // Read through the proxy so a view search tracks length and every index.
+    for (let i = 0; i < this.length; i++) void this[i];
+    return target[key](unwrap(item), ...rest);
+  };
+
+// Values read from frozen objects are returned as they are: proxy invariants
+// forbid a different value for a non-writable, non-configurable property.
+const wrapIn = (target: object, value: unknown, wrap: (value: object) => object): unknown =>
+  isWrappable(value) && !Object.isFrozen(target) ? wrap(value) : value;
+
 const readOnly = (): never => {
   throw new TypeError('[Purity] store views are read-only; write inside update(draft => …)');
 };
 
 const viewHandler: ProxyHandler<object> = {
-  get(target, key) {
+  get(target, key, receiver) {
     if (key === RAW) return target;
-    if (typeof key !== 'symbol') signalFor(target, key)();
-    const value = Reflect.get(target, key);
-    return isWrappable(value) ? view(value) : value;
+    if (Array.isArray(target) && SEARCH.has(key)) return search(target, key as 'indexOf');
+    signalFor(target, key)();
+    // The proxy is the receiver, so getters read tracked properties.
+    return wrapIn(target, Reflect.get(target, key, receiver), view);
   },
   has(target, key) {
     if (key === RAW) return true;
@@ -76,12 +95,19 @@ const viewHandler: ProxyHandler<object> = {
 };
 
 const draftHandler: ProxyHandler<object> = {
-  get(target, key) {
+  get(target, key, receiver) {
     if (key === RAW) return target;
-    const value = Reflect.get(target, key);
-    return isWrappable(value) ? draft(value) : value;
+    if (key === '__proto__') return Object.getPrototypeOf(target);
+    if (Array.isArray(target) && SEARCH.has(key)) return search(target, key as 'indexOf');
+    return wrapIn(target, Reflect.get(target, key, receiver), draft);
   },
-  set(target, key, value) {
+  set(target, key, value, receiver) {
+    if (key === '__proto__') {
+      throw new TypeError('[Purity] store drafts cannot set __proto__');
+    }
+    const desc = Object.getOwnPropertyDescriptor(target, key);
+    // Setters run with the draft as `this`, so their writes notify.
+    if (desc?.set) return Reflect.set(target, key, value, receiver);
     const next = unwrap(value);
     const had = Object.prototype.hasOwnProperty.call(target, key);
     const prev = (target as Record<PropertyKey, unknown>)[key];
@@ -98,6 +124,14 @@ const draftHandler: ProxyHandler<object> = {
       } else if (!had) bump(target, KEYS);
     } else if (!had) bump(target, KEYS);
     return true;
+  },
+  defineProperty(target, key, desc) {
+    if (key === '__proto__') return false;
+    const had = Object.prototype.hasOwnProperty.call(target, key);
+    const ok = Reflect.defineProperty(target, key, desc);
+    bump(target, key);
+    if (!had) bump(target, KEYS);
+    return ok;
   },
   deleteProperty(target, key) {
     if (!Object.prototype.hasOwnProperty.call(target, key)) return true;

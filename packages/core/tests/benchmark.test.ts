@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { each, match, when } from '../src/control.ts';
 import { batch, compute, state, watch } from '@purityjs/signals';
@@ -282,43 +282,49 @@ describe('5. template rendering', () => {
     );
   });
 
-  it('1k complex elements — runtime html() vs hoisted (AOT-equivalent)', () => {
-    // Runtime path: html`` does WeakMap.get for the cached compiled fn, then invokes.
-    const runtimeWork = () => {
-      for (let i = 0; i < 1000; i++) html`<div><span>Hello ${String(i)}</span></div>`;
-    };
+  it('1k complex elements — runtime html() reuses one parsed template (no per-call compile)', () => {
+    // Deterministic replacement for a wall-clock AOT/runtime ratio (< 2.5x)
+    // that flaked under parallel workspace load (3.65x seen with core alone
+    // green). The regression it guarded — the runtime path re-compiling or
+    // re-parsing per call and so falling far behind hoisted AOT output — is
+    // structural: after the first call, html\`\` must neither create a
+    // <template> nor parse markup; it only clones the cached root.
+    const render = (i: number) => html`<div><span>Hello ${String(i)}</span></div>` as Node;
+    render(-1); // first call compiles, hoists and parses once
 
-    // AOT-equivalent: hoisted compiled fn invoked directly (what the Vite
-    // plugin produces after the template-hoisting fix).
-    const tplFactory = (() => {
-      const _t = document.createElement('template');
-      _t.innerHTML = '<div><span>Hello <!----></span></div>';
-      return (_v: unknown[]) => {
-        const _r = _t.content.cloneNode(true) as DocumentFragment;
-        const _n0 = _r.firstChild!.firstChild!.firstChild!;
-        (_n0 as Comment).replaceWith(document.createTextNode(_v[0] as string));
-        return _r;
-      };
-    })();
-    const aotWork = () => {
-      for (let i = 0; i < 1000; i++) tplFactory([String(i)]);
-    };
+    const createElement = vi.spyOn(document, 'createElement');
+    const innerHTML = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')!;
+    let parses = 0;
+    const parseSpy = vi.spyOn(Element.prototype, 'innerHTML', 'set').mockImplementation(function (
+      this: Element,
+      value: string,
+    ) {
+      parses++;
+      innerHTML.set!.call(this, value);
+    });
+    const cloneNode = vi.spyOn(Node.prototype, 'cloneNode');
+    try {
+      const nodes: Node[] = [];
+      const elapsed = bench('1k complex via runtime html()', () => {
+        nodes.length = 0;
+        for (let i = 0; i < 1000; i++) nodes.push(render(i));
+      });
+      console.log(`    → ${(elapsed / 1000).toFixed(4)}ms/el (informational; not asserted)`);
 
-    // Pair measurements so one noisy CI timeslice cannot decide the result.
-    const ratios: number[] = [];
-    for (let sample = 0; sample < 5; sample++) {
-      const runtimeElapsed = bench('1k complex via runtime html()', runtimeWork);
-      const aotElapsed = bench('1k complex via hoisted (AOT-equivalent)', aotWork);
-      ratios.push(aotElapsed / runtimeElapsed);
+      const templates = createElement.mock.calls.filter(([tag]) => tag === 'template');
+      expect(templates).toHaveLength(0);
+      expect(parses).toBe(0);
+      // bench() runs the body twice (warmup + measured): one clone per render.
+      expect(cloneNode).toHaveBeenCalledTimes(2000);
+      expect(nodes).toHaveLength(1000);
+      expect(new Set(nodes).size).toBe(1000);
+      expect(nodes[0].textContent).toBe('Hello 0');
+      expect(nodes[999].textContent).toBe('Hello 999');
+    } finally {
+      createElement.mockRestore();
+      parseSpy.mockRestore();
+      cloneNode.mockRestore();
     }
-    ratios.sort((a, b) => a - b);
-    const medianRatio = ratios[2];
-    console.log(`    → median AOT/runtime ratio: ${medianRatio.toFixed(2)}x`);
-    // AOT should be no slower than runtime path (runtime adds WeakMap.get + indirection).
-    // Slack 2.5x because shared-CI runners + jsdom + cold-JIT make the
-    // delta noisy; the regression we'd catch (AOT 5–10x slower than
-    // runtime) still trips this comfortably.
-    expect(medianRatio).toBeLessThan(2.5);
   });
 
   it('100 with reactive + event bindings', () => {

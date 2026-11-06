@@ -86,6 +86,6 @@ directly.
 ## Consequences
 
 - New entry `core-store` with its own budget (gzip 1,024 B, Brotli 960 B;
-  measured 977 / 885). No existing entry changes size.
+  measured 983 / 894). No existing entry changes size.
 - Numbering: first proposed as 0054; renumbered to 0055 because SV2-003's
   ADR 0054 (async derivation) merged first.

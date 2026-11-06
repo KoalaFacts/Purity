@@ -59,7 +59,8 @@ const search = (target: unknown[], key: 'indexOf'): typeof Array.prototype.index
   function (this: unknown[], item, ...rest) {
     // Read through the proxy so a view search tracks length and every index.
     for (let i = 0; i < this.length; i++) void this[i];
-    return target[key](unwrap(item), ...rest);
+    // Elements may be stored proxies (`d.list = [...view.list]`): compare raw.
+    return target.map(unwrap)[key](unwrap(item), ...rest);
   };
 
 // Store proxies nested inside newly assigned objects (`d.list = [...view.list]`)

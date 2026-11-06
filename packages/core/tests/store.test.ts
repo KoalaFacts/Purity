@@ -338,6 +338,21 @@ describe('store()', () => {
     expect(c()).toBe('r');
   });
 
+  it('finds view items in arrays rebuilt with spread or filter', () => {
+    const [s, update] = store({ list: [{ n: 'a' }, { n: 'b' }] });
+    const first = s.list[0];
+    update((d) => {
+      d.list = [...s.list, { n: 'c' }];
+    });
+    expect(s.list.indexOf(s.list[1])).toBe(1);
+    expect(s.list.includes(first)).toBe(true);
+    update((d) => {
+      d.list = s.list.filter((item) => item.n !== 'a');
+      expect(d.list.indexOf(first)).toBe(-1);
+      expect(d.list.lastIndexOf(s.list[0])).toBe(0);
+    });
+  });
+
   it('reads a non-writable, non-configurable property of an unfrozen object without throwing', () => {
     const data: { a: { b: number }; c: number } = { a: { b: 1 }, c: 1 };
     Object.defineProperty(data, 'a', { value: { b: 1 }, writable: false, configurable: false });

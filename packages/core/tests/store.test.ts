@@ -306,6 +306,51 @@ describe('store()', () => {
     expect(joined()).toBe('5:9,2,,,5');
   });
 
+  it('store values nested inside new objects and arrays stay writable and tracked', () => {
+    const [s, update] = store({
+      list: [{ n: 'a' }, { n: 'b' }],
+      b: null as null | { inner: { n: string } },
+    });
+    update((d) => {
+      d.list = [...s.list, { n: 'c' }];
+    });
+    const first = vi.fn(() => s.list[0].n);
+    const c = compute(first);
+    expect(c()).toBe('a');
+    update((d) => {
+      d.list[0].n = 'q';
+    });
+    expect(c()).toBe('q');
+    update((d) => {
+      d.list = s.list.filter((item) => item.n !== 'b');
+    });
+    update((d) => {
+      d.list[1].n = 'z';
+    });
+    expect(s.list.map((item) => item.n)).toEqual(['q', 'z']);
+    update((d) => {
+      d.b = { inner: s.list[0] };
+    });
+    expect(s.b!.inner).toBe(s.list[0]);
+    update((d) => {
+      d.b!.inner.n = 'r';
+    });
+    expect(c()).toBe('r');
+  });
+
+  it('reads a non-writable, non-configurable property of an unfrozen object without throwing', () => {
+    const data: { a: { b: number }; c: number } = { a: { b: 1 }, c: 1 };
+    Object.defineProperty(data, 'a', { value: { b: 1 }, writable: false, configurable: false });
+    const [s, update] = store(data);
+    expect(s.a.b).toBe(1);
+    const c = compute(() => s.c);
+    c();
+    update((d) => {
+      d.c = 2;
+    });
+    expect(c()).toBe(2);
+  });
+
   it('rejects a non-object initial value', () => {
     expect(() => store(1 as unknown as object)).toThrow(TypeError);
   });

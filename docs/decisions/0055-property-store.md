@@ -32,17 +32,24 @@ graph and every existing entry stay byte-for-byte unchanged.
   `batch()`, so effects see all of its writes once. A write equal by
   `Object.is` notifies nobody. Adding or deleting a key bumps the structural
   signal; array writes that change `length` bump `length`, the structural
-  signal and every dropped index. Store values assigned into a draft are
+  signal and every dropped index. Store values assigned directly to a draft are
   stored as their plain objects, never as proxies.
 - **Edges.** Getters and setters run with the proxy as `this`, so they read
   tracked properties and write through the draft. Symbol keys are tracked
   like string keys. Array `indexOf`/`lastIndexOf`/`includes` compare plain
   values, so an item read from the view is found in a draft (and the other
-  way round). Drafts never expose or replace a prototype: reading
-  `__proto__` returns the real prototype unwrapped, assigning it throws.
-  `Object.defineProperty` on a draft notifies like an assignment. Values
-  under a frozen object are returned as they are (proxy invariants forbid a
-  wrapped view; frozen data cannot change anyway).
+  way round). Store values nested inside a newly built object or array
+  (`d.list = [...view.list, x]`, `d.list = view.list.filter(…)`,
+  `d.b = { inner: view.a }`) stay writable and tracked: proxies stored that
+  way are unwrapped on read. Drafts never replace a prototype: reading
+  `__proto__` returns the real prototype unwrapped (like a plain object, so
+  writing a property onto it changes that prototype; never index drafts with
+  untrusted keys), assigning `__proto__` throws. `Object.defineProperty` on a
+  draft notifies like an assignment. A value under a non-writable,
+  non-configurable property (every property of a frozen object) is returned
+  as it is, untracked: proxy invariants forbid a wrapped view there.
+  `Object.freeze` is shallow, so writes inside such a value do not notify;
+  freeze data you put in a store deeply or not at all.
 - **Not covered in slice 1:** `Object.getOwnPropertyDescriptor(view, k).value`
   returns the plain object (writing to it bypasses notification), and a
   draft kept after `update` returns still writes and notifies outside a
@@ -79,6 +86,6 @@ directly.
 ## Consequences
 
 - New entry `core-store` with its own budget (gzip 1,024 B, Brotli 960 B;
-  measured 946 / 865). No existing entry changes size.
+  measured 977 / 885). No existing entry changes size.
 - Numbering: first proposed as 0054; renumbered to 0055 because SV2-003's
   ADR 0054 (async derivation) merged first.

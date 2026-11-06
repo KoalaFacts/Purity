@@ -62,10 +62,21 @@ const search = (target: unknown[], key: 'indexOf'): typeof Array.prototype.index
     return target[key](unwrap(item), ...rest);
   };
 
-// Values read from frozen objects are returned as they are: proxy invariants
-// forbid a different value for a non-writable, non-configurable property.
-const wrapIn = (target: object, value: unknown, wrap: (value: object) => object): unknown =>
-  isWrappable(value) && !Object.isFrozen(target) ? wrap(value) : value;
+// Store proxies nested inside newly assigned objects (`d.list = [...view.list]`)
+// are unwrapped on read. Values under non-writable, non-configurable properties
+// (e.g. of frozen objects) are returned as they are: proxy invariants forbid a
+// different value there.
+const wrapIn = (
+  target: object,
+  key: PropertyKey,
+  value: unknown,
+  wrap: (value: object) => object,
+): unknown => {
+  const raw = unwrap(value);
+  if (!isWrappable(raw)) return value;
+  const desc = Object.getOwnPropertyDescriptor(target, key);
+  return desc && desc.writable === false && !desc.configurable ? value : wrap(raw);
+};
 
 const readOnly = (): never => {
   throw new TypeError('[Purity] store views are read-only; write inside update(draft => …)');
@@ -77,7 +88,7 @@ const viewHandler: ProxyHandler<object> = {
     if (Array.isArray(target) && SEARCH.has(key)) return search(target, key as 'indexOf');
     signalFor(target, key)();
     // The proxy is the receiver, so getters read tracked properties.
-    return wrapIn(target, Reflect.get(target, key, receiver), view);
+    return wrapIn(target, key, Reflect.get(target, key, receiver), view);
   },
   has(target, key) {
     if (key === RAW) return true;
@@ -99,7 +110,7 @@ const draftHandler: ProxyHandler<object> = {
     if (key === RAW) return target;
     if (key === '__proto__') return Object.getPrototypeOf(target);
     if (Array.isArray(target) && SEARCH.has(key)) return search(target, key as 'indexOf');
-    return wrapIn(target, Reflect.get(target, key, receiver), draft);
+    return wrapIn(target, key, Reflect.get(target, key, receiver), draft);
   },
   set(target, key, value, receiver) {
     if (key === '__proto__') {
@@ -110,7 +121,7 @@ const draftHandler: ProxyHandler<object> = {
     if (desc?.set) return Reflect.set(target, key, value, receiver);
     const next = unwrap(value);
     const had = Object.prototype.hasOwnProperty.call(target, key);
-    const prev = (target as Record<PropertyKey, unknown>)[key];
+    const prev = unwrap((target as Record<PropertyKey, unknown>)[key]);
     const length = Array.isArray(target) ? target.length : 0;
     if (had && Object.is(prev, next)) return true;
     (target as Record<PropertyKey, unknown>)[key] = next;

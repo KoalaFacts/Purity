@@ -153,6 +153,12 @@ selectors, including `#result-container` (now present in Solid too).
 Both checks default to all three engines. For an explicitly scoped local run,
 use `node benchmark/tools/binding-browser-check.ts chromium` and
 `node benchmark/tools/fixture-parity-browser-check.ts chromium` after building.
+Every browser check selects engines through `browser-engines.ts` (enforced by
+`browser-engines.test.ts`), so the same trailing engine name works for
+`virtual-browser-check.ts`, `packages/ssr/tests/browser-security.ts`,
+`packages/ssr/tests/browser-retention.ts` and, through npm, for
+`npm run test:browser:app-actions -- chromium` and
+`npm run test:published-cli -- chromium`.
 CI rejects a single-engine selection; a local Chromium result never implies
 Firefox or WebKit passed.
 

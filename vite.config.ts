@@ -50,6 +50,13 @@ export default defineConfig({
         },
       },
       {
+        // CQ-09e: the plugin source is any-free; keep it that way.
+        files: ['packages/vite-plugin/src/**'],
+        rules: {
+          'typescript/no-explicit-any': 'error',
+        },
+      },
+      {
         files: ['**/tests/**', '**/*.test.ts'],
         rules: {
           'no-unused-expressions': 'off',

@@ -187,6 +187,7 @@ const packageNamesV7 = [
   'runtime-all',
   'ssr',
 ];
+const currentPackageNamesV7 = [...packageNamesV7, 'core-forms-lifecycle'];
 const profileNamesV4 = [...profileNames, 'counter-client-runtime', 'counter-client-aot'];
 const profileNamesV5 = [
   ...profileNamesV4,
@@ -291,13 +292,7 @@ function validateReportContract(report: Report, label: string) {
   const frozenBudgets =
     report.schemaVersion === 7
       ? [historicalV7.budgets, currentV7Budgets]
-      : [
-          report.schemaVersion === 5
-            ? historicalV5.budgets
-            : expanded
-              ? v4Budgets
-              : legacyBudgets,
-        ];
+      : [report.schemaVersion === 5 ? historicalV5.budgets : expanded ? v4Budgets : legacyBudgets];
   assert(
     frozenBudgets.some((value) => normalized(report.budgets) === normalized(value)),
     'Missing or changed v' + report.schemaVersion + ' budgets: ' + label,
@@ -306,7 +301,13 @@ function validateReportContract(report: Report, label: string) {
   assert(Array.isArray(report.measurements), 'Missing application profiles: ' + label);
   coverage(
     [...unique(report.packages, 'entry').keys()],
-    report.schemaVersion === 7 ? packageNamesV7 : expanded ? packageNamesV4 : packageNames,
+    report.schemaVersion === 7
+      ? normalized(report.budgets) === normalized(historicalV7.budgets)
+        ? packageNamesV7
+        : currentPackageNamesV7
+      : expanded
+        ? packageNamesV4
+        : packageNames,
     label + '/packages',
     report.schemaVersion,
   );

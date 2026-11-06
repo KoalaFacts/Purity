@@ -1,3 +1,7 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import currentBudgets from '../bundle-size/budgets-v4.json' with { type: 'json' };
 import clientBudgets from '../bundle-size/budgets.json' with { type: 'json' };
 import historicalV5 from '../bundle-size/evidence/2026-10-30-architecture-redesign/before.json' with { type: 'json' };
@@ -529,5 +533,93 @@ it.each(['rawBytes', 'gzipBytes', 'brotliBytes'] as const)(
     const result = compareSizeReports(base, next);
     expect(result.appGrowth.map((row) => row.name)).toContain('controls-csr-aot');
     expect(result.chunkGrowth.map((row) => row.name)).toContain('controls-csr-aot/entry.js');
+  },
+);
+
+// Synthetic contract fixtures, not production measurements. Exercise the whole CLI.
+function currentSplitExample() {
+  const { base } = splitPackageExamples();
+  const current = { ...base, budgets: structuredClone(clientBudgets) };
+  base.packages.push({
+    entry: 'core-forms-lifecycle',
+    functionConstructorCalls: 0,
+    rawBytes: 100,
+    gzipBytes: 50,
+    brotliBytes: 40,
+  });
+  return current;
+}
+
+function compareCLI(base: unknown, candidate: unknown) {
+  const dir = mkdtempSync(join(tmpdir(), 'purity-size-contract-'));
+  try {
+    const paths = ['base', 'candidate'].map((name, index) => {
+      const path = join(dir, name + '.json');
+      writeFileSync(path, JSON.stringify(index === 0 ? base : candidate));
+      return path;
+    });
+    return spawnSync(
+      process.execPath,
+      [
+        join(import.meta.dirname, '../bundle-size/compare-reports.ts'),
+        ...paths,
+        '--reject-app-growth',
+      ],
+      { encoding: 'utf8' },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+it('CLI pairs historical 21 and current 22 package inventories with their exact v7 budgets', () => {
+  for (const base of [splitPackageExamples().base, currentSplitExample()]) {
+    const result = compareCLI(base, base);
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Application payload regressions: 0 / 17');
+  }
+  const result = compareCLI(splitPackageExamples().base, currentSplitExample());
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain('INCOMPARABLE: changed budgets');
+});
+
+it('CLI rejects missing current lifecycle, unknown historical packages and altered budgets on both sides', () => {
+  const missing = currentSplitExample();
+  missing.packages = missing.packages.filter((row) => row.entry !== 'core-forms-lifecycle');
+  const extra = splitPackageExamples().base;
+  extra.packages.push({ ...extra.packages[0], entry: 'unknown-package' });
+  for (const base of [missing, extra]) {
+    const result = compareCLI(base, base);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Incomplete v7 coverage: baseline/packages');
+  }
+  for (const base of [splitPackageExamples().base, currentSplitExample()]) {
+    base.budgets.packages.core.gzipBytes++;
+    const result = compareCLI(base, base);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Missing or changed v7 budgets');
+  }
+});
+
+it.each(['rawBytes', 'gzipBytes', 'brotliBytes'] as const)(
+  'CLI still rejects v7 app and compensated required-chunk %s growth',
+  (metric) => {
+    for (const base of [splitPackageExamples().base, currentSplitExample()]) {
+      for (const compensated of [false, true]) {
+        const next = structuredClone(base);
+        next.measurements[0].chunks[1][metric]++;
+        if (compensated) next.measurements[0].chunks[0][metric]--;
+        else next.measurements[0][metric]++;
+        const result = compareCLI(base, next);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain(
+          compensated ? 'Individual JS chunk payload grew' : 'Same-function app JS payload grew',
+        );
+      }
+      const hidden = structuredClone(base);
+      hidden.measurements[0].chunks.pop();
+      expect(compareCLI(base, hidden).stderr).toContain('Unaccounted JS chunk bytes');
+    }
   },
 );

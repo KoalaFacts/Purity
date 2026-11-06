@@ -1132,12 +1132,12 @@ function genAttrBinding(
   const head = `var ${av}=${val};var ${fl}=typeof ${av}==='function';`;
   // CQ-03: per-binding last value for the shared watch, so a sibling's change
   // does not re-apply this binding (attribute writes invalidate style; `.value`
-  // writes reset caret, selection and IME state). It starts as the template's
-  // values array `_v`, which no accessor can return, so the first run always
-  // writes — including over SSR or placeholder state.
+  // writes reset caret, selection and IME state). Reactive value bindings
+  // start at 0/0 (NaN): strict inequality always forces the first write,
+  // even when an accessor returns the caller-owned `_v` array or NaN.
+  // Boolean bindings normalize to booleans, so `_v` is a safe sentinel there.
   const last = `_l${id}`;
-  const memo = (x: string, write: string) =>
-    `var ${x}=${av}();if(${x}!==${last}){${last}=${x};${write}}`;
+  const memo = (x: string, write: string) => `var ${x}=${av}();if(${x}!==${last}){${write}}`;
 
   switch (attr.kind) {
     case 'event':
@@ -1147,8 +1147,8 @@ function genAttrBinding(
       const set = (x: string) =>
         `${el}.setAttribute(${qname},${x}===true?'':String(${safeBindingValue(attr.name, x)}));`;
       return {
-        setup: `${head}var ${last}=_v;if(!${fl}&&${av}!=null&&${av}!==false)${set(av)}`,
-        reactive: `if(${fl}){${memo(`v${id}`, `if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});else ${set(`v${id}`)}`)}}`,
+        setup: `${head}var ${last}=0/0;if(!${fl}&&${av}!=null&&${av}!==false)${set(av)}`,
+        reactive: `if(${fl}){${memo(`v${id}`, `${last}=v${id};if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});else ${set(`v${id}`)}`)}}`,
       };
     }
 
@@ -1161,8 +1161,8 @@ function genAttrBinding(
     case 'prop':
     case 'reactive-prop':
       return {
-        setup: `${head}var ${last}=_v;if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
-        reactive: `if(${fl}){${memo(`v${id}`, `${el}[${qname}]=${propertyValue(`v${id}`)};`)}}`,
+        setup: `${head}var ${last}=0/0;if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
+        reactive: `if(${fl}){${memo(`v${id}`, `${el}[${qname}]=${propertyValue(`${last}=v${id}`)};`)}}`,
       };
 
     case 'bind': {

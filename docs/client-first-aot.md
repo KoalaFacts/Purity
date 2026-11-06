@@ -18,6 +18,8 @@ The original 14 package entries and 12 full-hydration/JIT application profiles r
 
 Compare client-only and hydratable builds only for workloads that do not require hydration. Do not relabel that mode choice as a reduction in the all-feature core, and do not add independent application payloads together as one download. The frozen core-all 40,679 B baseline, <=34,577 B goal and original hard caps are unchanged. This work alone does not establish Solid v2 parity, speed, allocation or retained-heap improvements.
 
+Decision and rejected approaches (from the original plan): the owner authorised major breaking changes and waived backward compatibility for this work on 2026-10-28. Adding another JIT alias saved only tens of bytes and was rejected as the primary approach; splitting npm package names without removing implementation dependencies could not demonstrate savings. The intended failure was observed on unchanged source under Node 24 first (run 40591881426, job 122497938596: default output contained hydration walkers).
+
 Implementation receipt (from the original plan): compiler implementation `d7615346` passed pinned Node24 format/lint/types/workspace tests/builds and all original full-app/chunk non-growth checks in preflight 40594390437. The CLI generated SSR/app configuration required an additional explicit hydration migration, with its own observed failing test before the fix. Formal exact-head CI and independent review remain mandatory; no merge or Solid ranking follows from preflight.
 
 ## SSR resource cache ownership

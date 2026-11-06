@@ -147,6 +147,10 @@ would each have their own module-scope counter.
   hydration after host props are bound).
 - html-rooted islands (single-element root).
 
+## How the shipped design differs from ADR 0038
+
+ADR [0038](./decisions/0038-islands.md) proposed per-island inline `<script type="module">` bootstraps and chunk splitting by the Vite plugin. What shipped (phases P1 `e23e00b`, P2 `dbd92a4`, P3/P4 `c154ec2`, P5 `6490a74`) is one `mountIslands(views)` runtime that walks `<purity-island data-pi-id="N">` wrappers and dispatches each to its trigger waiter, with chunk splitting through user-written `() => import('./island.ts').then((m) => m.View)` thunks (one Rollup dynamic import each). Per-island bootstraps stay a possible optimisation for zero-JS shells; plugin auto-detection would only rewrite `mountIslands([X, Y])` into the lazy form.
+
 ## Known limitations
 
 - **Multi-rooted islands** (a view that returns a fragment with multiple

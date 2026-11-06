@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { resolve } from 'node:path';
-import { SourceMapConsumer } from 'source-map-js';
+import { SourceMapConsumer, type RawSourceMap } from 'source-map-js';
 import { build, type Plugin } from 'vite';
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
@@ -63,14 +63,16 @@ describe('template expressions in JavaScript and TypeScript modules', () => {
       const result = purity().transform(source, `fixture.${ext}`, { ssr });
       expect(result).not.toBeNull();
       expect(result!.code).toContain('/* keep slot */ (a, b)');
-      expect(result!.map.sourcesContent).toEqual([source]);
+      expect(result!.map!.sourcesContent).toEqual([source]);
       const outputLines = result!.code.split('\n');
       const generatedLine =
         outputLines.findIndex((line) => line.includes("export const tail = '🌟'")) + 1;
       expect(generatedLine).toBeGreaterThan(0);
       expect(
-        new SourceMapConsumer(result!.map).originalPositionFor({ line: generatedLine, column: 0 })
-          .line,
+        new SourceMapConsumer(result!.map as unknown as RawSourceMap).originalPositionFor({
+          line: generatedLine,
+          column: 0,
+        }).line,
       ).toBe(5);
 
       const code = await bundle(ext, ssr);

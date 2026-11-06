@@ -176,7 +176,7 @@ describe('client-first AOT build contract', () => {
     try {
       globalThis.Function = (() => {
         throw new Error('Unexpected runtime code generation');
-      }) as FunctionConstructor;
+      }) as unknown as FunctionConstructor;
       host = render(() => make(count, () => count((n) => n + 1)));
       expect(host.querySelector('button')!.textContent).toBe('1');
       host.querySelector('button')!.click();

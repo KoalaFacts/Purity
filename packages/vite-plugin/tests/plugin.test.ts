@@ -25,8 +25,8 @@ describe('@purityjs/vite-plugin', () => {
     const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>Hello</div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    expect(result.code).toContain('createElement');
-    expect(result.code).not.toContain('html`');
+    expect(result!.code).toContain('createElement');
+    expect(result!.code).not.toContain('html`');
   });
 
   it('compiles client-only JIT imports without retaining a runtime compiler', () => {
@@ -34,33 +34,33 @@ describe('@purityjs/vite-plugin', () => {
       "import { html } from '@purityjs/core/jit-client';\nconst el = html`<p>Client</p>`;";
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    expect(result.code).toContain('createElement');
-    expect(result.code).not.toContain('@purityjs/core/jit-client');
-    expect(result.code).toContain("from '@purityjs/core/runtime'");
+    expect(result!.code).toContain('createElement');
+    expect(result!.code).not.toContain('@purityjs/core/jit-client');
+    expect(result!.code).toContain("from '@purityjs/core/runtime'");
   });
 
   it('compiles template with expression', () => {
     const code = `import { html } from '@purityjs/core/jit';\nconst name = 'World';\nconst el = html\`<p>\${name}</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    expect(result.code).toContain('createElement');
-    expect(result.code).toContain('name');
+    expect(result!.code).toContain('createElement');
+    expect(result!.code).toContain('name');
   });
 
   it('compiles template with @event', () => {
     const code = `import { html } from '@purityjs/core/jit';\nconst fn = () => {};\nconst el = html\`<button @click=\${fn}>Go</button>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    expect(result.code).toContain('addEventListener');
+    expect(result!.code).toContain('addEventListener');
   });
 
   it('adds the compiled hydration runtime import', () => {
     const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>Test</div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    expect(result.code).toContain('__purity_renderCompiled__');
-    expect(result.code).toContain('__purity_tpl_0_hydrate');
-    expect(result.code).toContain("from '@purityjs/core/runtime'");
+    expect(result!.code).toContain('__purity_renderCompiled__');
+    expect(result!.code).toContain('__purity_tpl_0_hydrate');
+    expect(result!.code).toContain("from '@purityjs/core/runtime'");
   });
 
   it('handles multi-line imports without splitting them', () => {
@@ -74,7 +74,7 @@ describe('@purityjs/vite-plugin', () => {
     // not in the middle of it. Easiest invariant: the rewritten code must
     // be parseable by re-running the regex for any `import {` open without
     // an unmatched close before the next `import` keyword.
-    const out = result.code;
+    const out = result!.code;
     // The injected line should appear after both original imports.
     const injected = out.indexOf(
       "import { renderCompiledTemplateAot as __purity_renderCompiled__ } from '@purityjs/core/runtime';",
@@ -122,9 +122,9 @@ describe('@purityjs/vite-plugin', () => {
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     // html should be removed from the import
-    expect(result.code).not.toMatch(/import\s*\{[^}]*html[^}]*\}/);
+    expect(result!.code).not.toMatch(/import\s*\{[^}]*html[^}]*\}/);
     // state should remain
-    expect(result.code).toContain('state');
+    expect(result!.code).toContain('state');
   });
 
   // Regression: findHtmlImportEdits' whitespace eater previously stopped at
@@ -146,16 +146,16 @@ describe('@purityjs/vite-plugin', () => {
     const code = `import { html } from '@purityjs/core/jit';\nconst a = html\`<div>A</div>\`;\nconst b = html\`<p>B</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    const matches = result.code.match(/createElement/g);
-    expect(matches.length).toBeGreaterThanOrEqual(2);
+    const matches = result!.code.match(/createElement/g);
+    expect(matches!.length).toBeGreaterThanOrEqual(2);
   });
 
   it('preserves non-template code', () => {
     const code = `import { html } from '@purityjs/core/jit'; import { state } from '@purityjs/core';\nconst count = state(0);\nconsole.log('hi');\nconst el = html\`<p>Test</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    expect(result.code).toContain('state(0)');
-    expect(result.code).toContain("console.log('hi')");
+    expect(result!.code).toContain('state(0)');
+    expect(result!.code).toContain("console.log('hi')");
   });
 
   it('respects custom include option', () => {
@@ -180,29 +180,29 @@ describe('@purityjs/vite-plugin', () => {
     const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>\${ok ? html\`<span>yes</span>\` : ""}</div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    expect(result.code).toContain('createElement');
-    expect(result.code).not.toContain('html`');
+    expect(result!.code).toContain('createElement');
+    expect(result!.code).not.toContain('html`');
   });
 
   it('handles each() with nested html template in mapFn', () => {
     const code = `import { html } from '@purityjs/core/jit'; import { each } from '@purityjs/core';\nconst el = html\`<ul>\${each(items, (item) => html\`<li>\${item.name}</li>\`, (item) => item.id)}</ul>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    expect(result.code).toContain('createElement');
+    expect(result!.code).toContain('createElement');
   });
 
   it('handles deeply nested templates (3 levels)', () => {
     const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>\${show ? html\`<ul>\${items.map(i => html\`<li>\${i}</li>\`)}</ul>\` : ""}</div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    expect(result.code).toContain('createElement');
+    expect(result!.code).toContain('createElement');
   });
 
   it('handles ternary with string literals in expression', () => {
     const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<span class=\${() => x() ? 'pill active' : 'pill'}>\${label}</span>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    expect(result.code).toContain('pill');
+    expect(result!.code).toContain('pill');
   });
 
   it('handles object literal inside expression', () => {
@@ -223,11 +223,11 @@ describe('@purityjs/vite-plugin', () => {
     const code = `import { html } from '@purityjs/core/jit';\nconst a = html\`<p>A</p>\`;\nconst b = html\`<p>B</p>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    expect(result.code).toContain('const __purity_tpl_0 = ');
-    expect(result.code).toContain('const __purity_tpl_1 = ');
+    expect(result!.code).toContain('const __purity_tpl_0 = ');
+    expect(result!.code).toContain('const __purity_tpl_1 = ');
     // Hoists must precede the user lines that reference them
-    expect(result.code.indexOf('const __purity_tpl_0')).toBeLessThan(
-      result.code.indexOf('const a ='),
+    expect(result!.code.indexOf('const __purity_tpl_0')).toBeLessThan(
+      result!.code.indexOf('const a ='),
     );
   });
 
@@ -236,12 +236,12 @@ describe('@purityjs/vite-plugin', () => {
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     // The arrow body should reference the hoisted tpl, NOT have its own IIFE
-    expect(result.code).toContain('const __purity_tpl_0 = ');
-    expect(result.code).toMatch(
+    expect(result!.code).toContain('const __purity_tpl_0 = ');
+    expect(result!.code).toMatch(
       /=> __purity_renderCompiled__\(__purity_tpl_0, __purity_tpl_0_hydrate, \[\(item\)\]\)/,
     );
     // Confirm no `(function(){...})()` IIFE remains in the arrow body
-    const arrowBody = result.code.slice(result.code.indexOf('(item) =>'));
+    const arrowBody = result!.code.slice(result!.code.indexOf('(item) =>'));
     expect(arrowBody.includes('(function()')).toBe(false);
   });
 
@@ -250,11 +250,11 @@ describe('@purityjs/vite-plugin', () => {
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
     // One hoist declaration
-    const decls = result.code.match(/const __purity_tpl_\d+ = /g);
+    const decls = result!.code.match(/const __purity_tpl_\d+ = /g);
     expect(decls).not.toBeNull();
     expect(decls!.length).toBe(1);
     // One usage in the arrow body
-    const usages = result.code.match(/__purity_renderCompiled__\(__purity_tpl_0,/g);
+    const usages = result!.code.match(/__purity_renderCompiled__\(__purity_tpl_0,/g);
     expect(usages).not.toBeNull();
     expect(usages!.length).toBe(1);
   });
@@ -263,8 +263,8 @@ describe('@purityjs/vite-plugin', () => {
     const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<div>\${ok ? html\`<span>yes</span>\` : ""}</div>\`;`;
     const result = plugin.transform(code, 'app.ts');
     expect(result).not.toBeNull();
-    expect(result.code).toContain('const __purity_tpl_0');
-    expect(result.code).toContain('const __purity_tpl_1');
+    expect(result!.code).toContain('const __purity_tpl_0');
+    expect(result!.code).toContain('const __purity_tpl_1');
   });
 
   // --- Edge cases for transform skip / identifier-prefix / import shapes ---

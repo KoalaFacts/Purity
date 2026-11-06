@@ -630,6 +630,7 @@ describe('generateRouteManifestSource', () => {
           { pattern: '/', filePath: 'index.ts', layouts: [] },
           { pattern: '/users/:id', filePath: 'users/[id].ts', layouts: [] },
         ],
+        notFoundChain: [],
       },
       (rel) => `/abs/pages/${rel}`,
     );
@@ -648,7 +649,10 @@ describe('generateRouteManifestSource', () => {
 
   it('escapes patterns with quotes via JSON.stringify', () => {
     const src = generateRouteManifestSource(
-      { routes: [{ pattern: "/weird'path", filePath: "weird'path.ts", layouts: [] }] },
+      {
+        routes: [{ pattern: "/weird'path", filePath: "weird'path.ts", layouts: [] }],
+        notFoundChain: [],
+      },
       (rel) => `/abs/${rel}`,
     );
     // Single quotes inside double-quoted JSON strings need no escaping —
@@ -667,6 +671,7 @@ describe('generateRouteManifestSource', () => {
             layouts: [{ filePath: '_layout.ts' }, { filePath: 'users/_layout.ts' }],
           },
         ],
+        notFoundChain: [],
       },
       (rel) => `/abs/pages/${rel}`,
     );
@@ -690,6 +695,7 @@ describe('generateRouteManifestSource', () => {
             errorBoundary: { filePath: 'admin/_error.ts' },
           },
         ],
+        notFoundChain: [],
       },
       (rel) => `/abs/pages/${rel}`,
     );
@@ -700,7 +706,7 @@ describe('generateRouteManifestSource', () => {
 
   it('omits errorBoundary on entries that lack one', () => {
     const src = generateRouteManifestSource(
-      { routes: [{ pattern: '/', filePath: 'index.ts', layouts: [] }] },
+      { routes: [{ pattern: '/', filePath: 'index.ts', layouts: [] }], notFoundChain: [] },
       (rel) => `/abs/pages/${rel}`,
     );
     expect(src).not.toContain('errorBoundary');
@@ -717,6 +723,7 @@ describe('generateRouteManifestSource', () => {
             hasLoader: true,
           },
         ],
+        notFoundChain: [],
       },
       (rel) => `/abs/pages/${rel}`,
     );
@@ -729,7 +736,7 @@ describe('generateRouteManifestSource', () => {
 
   it('omits hasLoader on entries that lack one', () => {
     const src = generateRouteManifestSource(
-      { routes: [{ pattern: '/', filePath: 'index.ts', layouts: [] }] },
+      { routes: [{ pattern: '/', filePath: 'index.ts', layouts: [] }], notFoundChain: [] },
       (rel) => `/abs/pages/${rel}`,
     );
     expect(src).not.toContain('hasLoader');

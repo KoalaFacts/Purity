@@ -128,7 +128,7 @@ describe('asyncCompute (ADR 0054)', () => {
     expect(plusOne()).toBe(2);
   });
 
-  it('ignores a stale rejection and an abort-caused rejection', async () => {
+  it('ignores a rejection that its own supersession abort caused', async () => {
     const key = state('a');
     const runs: Record<string, ReturnType<typeof deferred<string>>> = {};
     const value = asyncCompute(({ signal }) => {
@@ -213,6 +213,51 @@ describe('asyncCompute (ADR 0054)', () => {
     expect(() => value()).toThrow(PendingError);
     await flush();
     expect(value()).toBe(7);
+  });
+
+  it('a chained asyncCompute re-runs only when the upstream value changes', async () => {
+    const id = state(1);
+    const ups: ReturnType<typeof deferred<number>>[] = [];
+    const a = asyncCompute(() => {
+      id();
+      const d = deferred<number>();
+      ups.push(d);
+      return d.promise;
+    });
+    const inputs: number[] = [];
+    const b = asyncCompute(() => {
+      const v = a();
+      inputs.push(v);
+      return Promise.resolve(v * 10);
+    });
+    expect(b.pending()).toBe(true);
+    ups[0].resolve(1);
+    await flush();
+    expect(b.pending()).toBe(true);
+    await flush();
+    expect(b()).toBe(10);
+    id(2);
+    // a refetches with its retained value; b must not refetch with it.
+    expect(b()).toBe(10);
+    ups[1].resolve(2);
+    await flush();
+    expect(b()).toBe(10);
+    await flush();
+    expect(b()).toBe(20);
+    expect(inputs).toEqual([1, 2]);
+  });
+
+  it('an unguarded watch read of an unresolved value throws from watch()', () => {
+    const value = asyncCompute(() => new Promise<number>(() => {}));
+    expect(() => watch(() => void value())).toThrow(PendingError);
+  });
+
+  it('dispose() before any settlement: reads keep throwing PendingError', () => {
+    const value = asyncCompute(() => new Promise<number>(() => {}));
+    expect(value.pending()).toBe(true);
+    value.dispose();
+    expect(() => value()).toThrow(PendingError);
+    expect(value.pending()).toBe(false);
   });
 
   it('does not start a run until it is read', () => {

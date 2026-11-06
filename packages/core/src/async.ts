@@ -85,7 +85,7 @@ export function asyncCompute<T>(
     }
     if (typeof (result as PromiseLike<T> | null)?.then === 'function') {
       const finish = (outcome: Outcome<T>): void => {
-        if (run !== latest || disposed || ctrl.signal.aborted) return;
+        if (run !== latest || disposed) return;
         settle(run, outcome);
         settled(settled.peek() + 1);
       };
@@ -101,12 +101,20 @@ export function asyncCompute<T>(
     return run;
   });
 
-  const read = (() => {
+  // Readers depend on the outcome, not on run starts: a new run that keeps
+  // the retained outcome returns the same object, so the equality cut-off
+  // stops it from re-running downstream derivations with stale input.
+  const outcome = compute((): Outcome<T> | null => {
     runner();
     settled();
-    if (current === null) throw new PendingError();
-    if (current.ok) return current.value;
-    throw current.error;
+    return current;
+  });
+
+  const read = (() => {
+    const result = outcome();
+    if (result === null) throw new PendingError();
+    if (result.ok) return result.value;
+    throw result.error;
   }) as AsyncComputed<T>;
 
   read.pending = () => {

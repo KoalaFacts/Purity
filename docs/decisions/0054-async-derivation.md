@@ -47,10 +47,11 @@ Contract:
    `compute()` caches and rethrows it like any other error, so no `undefined`
    and no `Promise` reaches application code as resolved data. When the value
    settles, the version bump re-runs every downstream reader.
-3. **Retained content.** After a value has settled once, a later run keeps
-   returning the previous value while it is in flight; `user.pending()`
-   (tracked) is `true` meanwhile. Only the very first load throws
-   `PendingError`.
+3. **Retained content.** After a run has settled once, a later run keeps the
+   previous outcome (value, or rejection) while it is in flight;
+   `user.pending()` (tracked) is `true` meanwhile. Only the very first load
+   throws `PendingError`. Readers depend on the outcome, not on run starts, so
+   a run that has not settled yet does not re-run downstream derivations.
 4. **Supersession.** Each run gets a fresh `AbortSignal`; starting run B aborts
    run A's signal. A settlement from any run other than the latest is
    ignored, so if A resolves after B only B becomes current.
@@ -66,7 +67,10 @@ Contract:
    settling as an error; the upstream settlement re-runs `fn`.
 8. **Disposal.** `user.dispose()`, or disposal of the owning component, row or
    watch scope, aborts the in-flight run and ignores its settlement. Reading
-   a disposed accessor returns the last settled value.
+   a disposed accessor returns the last settled outcome, or keeps throwing
+   `PendingError` if none settled; `pending()` is `false` once disposed.
+   Abort listeners run synchronously inside the read that starts the next run,
+   so they should not write signals.
 
 Deferred to later slices of SV2-003 (each recorded in the ledger before it
 ships): `AsyncIterable` results with iterator closure on supersession and
@@ -80,9 +84,10 @@ view-level loading boundary, which belongs to SV2-004.
   existing code and the zero-dependency signal graph are unchanged and apps
   that do not use it pay no bytes.
 - **Pending is an error value.** Unresolved state travels through the existing
-  cached-error path. A `watch()` that reads an unresolved value sees
-  `PendingError` like any thrown error; `isPending()` lets it tell the two
-  apart.
+  cached-error path. A `watch()` whose first run reads an unresolved value
+  without a guard throws `PendingError` from `watch()` like any throwing
+  effect, so effects guard the read (`try` + `isPending()`) or check
+  `pending()` first until the SV2-004 boundary handles it in views.
 - **No `AsyncIterable` in the first slice** (see Deferred).
 
 ## Acceptance tests
@@ -97,7 +102,8 @@ view-level loading boundary, which belongs to SV2-004.
   `pending()` is `true` until the new one lands.
 - Disposal mid-flight aborts the signal and ignores the settlement.
 - `asyncCompute` reading an unresolved `asyncCompute` stays pending, then
-  settles from the upstream value.
+  settles from the upstream value; an upstream refetch re-runs the downstream
+  only once, with the new value.
 
 ## Consequences
 

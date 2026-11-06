@@ -339,6 +339,9 @@ watch(() => {
 - A rejection of the latest run is rethrown to readers until a later run
   succeeds. `user.dispose()` (or disposing the owning scope) aborts the run.
 - The first run starts when the value is first read.
+- A `watch` that reads an unresolved value without a guard throws
+  `PendingError` from `watch()`; guard the read as above until the view
+  boundary (SV2-004) lands.
 
 ### Templates
 

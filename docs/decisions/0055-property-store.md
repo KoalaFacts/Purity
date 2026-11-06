@@ -1,4 +1,4 @@
-# 0054: Add a property-granular store as an opt-in core entry
+# 0055: Add a property-granular store as an opt-in core entry
 
 **Status:** Proposed
 **Date:** 2026-11-06
@@ -80,6 +80,5 @@ directly.
 
 - New entry `core-store` with its own budget (gzip 1,024 B, Brotli 960 B;
   measured 946 / 865). No existing entry changes size.
-- Numbering: open PRs for SV2-003 and SV2-006 also propose ADR 0054; the
-  first to merge keeps the number and the others renumber (the docs checker
-  rejects gaps, so each PR takes the next free number on `main`).
+- Numbering: first proposed as 0054; renumbered to 0055 because SV2-003's
+  ADR 0054 (async derivation) merged first.

@@ -1,5 +1,5 @@
 // store() — property-granular structured state (`@purityjs/core/store`,
-// ADR 0054 property store). Reads go through a read-only proxy that tracks one
+// ADR 0055 property store). Reads go through a read-only proxy that tracks one
 // version signal per (object, property) plus one structural signal per object
 // for key sets (`in`, `Object.keys`, `for…in`, array length). Writes happen
 // only inside `update(draft => …)`, which runs untracked inside one batch().

@@ -22,6 +22,7 @@ export default defineConfig({
         'csr/index': 'src/csr.ts',
         'store/index': 'src/store.ts',
         'virtual/index': 'src/virtual.ts',
+        'async/index': 'src/async.ts',
         'hydration-bridge/index': 'src/hydrate.ts',
         index: 'src/index.ts',
       },

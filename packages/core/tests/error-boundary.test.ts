@@ -473,7 +473,9 @@ describe('errorBoundary()', () => {
     expect(root.textContent).toBe('ok:slotted3');
   });
 
-  it('a form hook registered inside the view reaches the host component', () => {
+  it('a form hook registered inside the view reaches the host and is released with it', async () => {
+    const fail = state(false);
+    let doReset: (() => void) | null = null;
     let host: ReturnType<typeof getCurrentComponent> = null;
     const render = component('p-eb-form-hook-host', () => {
       host = getCurrentComponent();
@@ -482,13 +484,27 @@ describe('errorBoundary()', () => {
         errorBoundary(
           () => {
             onFormReset(() => {});
-            return document.createTextNode('view');
+            return text(() => {
+              if (fail()) throw new Error('later');
+              return 'view';
+            });
           },
-          () => document.createTextNode('failed'),
+          (_error, reset) => {
+            doReset = reset;
+            return document.createTextNode('failed');
+          },
         ),
       );
     });
     render({});
+    expect(host!._formReset?.length).toBe(1);
+    // A failed view releases its hook; a reset registers exactly one again.
+    fail(true);
+    await tick();
+    expect(host!._formReset?.length).toBe(0);
+    fail(false);
+    doReset!();
+    await tick();
     expect(host!._formReset?.length).toBe(1);
   });
 

@@ -108,7 +108,7 @@ once and a stale reset is a no-op; a reset that fails again; a throwing
 fallback reaches an outer boundary, or the component `onError` with no outer
 boundary; nested `when()` nodes are removed; `onMount` in view and fallback;
 owner disposal and disposal of an enclosing `when()` branch; host `slot()`
-inside the view, and after a failure and reset; a form hook registered in the view; a `reset()` from inside the fallback render; a nested failure
+inside the view, and after a failure and reset; a form hook registered in the view is released with it; a `reset()` from inside the fallback render; a nested failure
 in an inner fallback; work registered after a nested failure is released;
 event-handler errors are not caught; no surrounding component; the README
 template example; SSR view and fallback output.

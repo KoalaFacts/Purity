@@ -72,11 +72,26 @@ export function errorBoundary(view: () => unknown, fallback: ErrorFallback): Doc
     owner.parent = parent;
     if (handle) owner.errorHandlers = [handle];
     current = owner;
+    // Form hooks registered directly by this attempt land on the host's
+    // lists with no disposer (addComponentCallback skips one when the owner
+    // is the current component), so release them with the attempt.
+    const marks = parent && HOST_LISTS.map((key) => parent[key]?.length ?? 0);
     pushContext(owner);
     try {
       return render();
     } finally {
       popContext();
+      if (marks) {
+        const added = HOST_LISTS.map((key, i) => parent![key]?.slice(marks[i]));
+        (owner.disposers ??= []).push(() =>
+          added.forEach((fns, i) =>
+            fns?.forEach((fn) => {
+              const list = parent![HOST_LISTS[i]] as unknown[];
+              list.splice(list.indexOf(fn) >>> 0, 1);
+            }),
+          ),
+        );
+      }
     }
   };
 
@@ -177,6 +192,14 @@ const HOST_FIELDS = [
   '_formReset',
   '_formStateRestore',
 ] as const;
+
+// Host callback lists (the form hooks) that attempts may register into directly.
+const HOST_LISTS = HOST_FIELDS.slice(6) as [
+  '_formAssociated',
+  '_formDisabled',
+  '_formReset',
+  '_formStateRestore',
+];
 
 class HostedContext extends ComponentContext {
   declare _host: ComponentContext;

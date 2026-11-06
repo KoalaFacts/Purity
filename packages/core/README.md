@@ -504,8 +504,8 @@ html`<section>
 A throw while the view renders, or later from one of its bindings or watches,
 disposes the view and shows `fallback(error, reset)`; the rest of the page keeps
 updating. `reset()` renders the view again. A throwing fallback goes to the next
-outer boundary or the component's `onError`. Event-handler errors are not
-caught. On the server a synchronous throw renders the fallback; hydrated
+outer boundary or the component's `onError`. Event-handler errors, and errors
+inside a nested `component()` custom element, are not caught. On the server a synchronous throw renders the fallback; hydrated
 content is not guarded yet ([ADR 0054](../../docs/decisions/0054-error-boundary.md)).
 
 ### Teleport

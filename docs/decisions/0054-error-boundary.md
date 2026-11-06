@@ -43,9 +43,13 @@ Contract:
 
 1. **What is caught.** A throw while `view()` renders, and a throw from a later
    scheduled run of any watch, effect or template binding the view created
-   (for example a binding reading a `compute()` that now throws). Errors in
-   nested components reach the boundary through the normal `onError` chain
-   when no nearer handler takes them.
+   (for example a binding reading a `compute()` that now throws). Owners
+   created while the view renders (nested `mount()` roots, `when()`/`each()`
+   branches and rows) report to the boundary when no nearer `onError` takes
+   the error. A `component()` custom element is its own error unit: it finds
+   its owner when it connects, after the view rendered, so its failures go to
+   its own `onError` and are not caught by this slice. The view and fallback
+   return a `Node`, a string or `null`.
 2. **What happens.** The view's owner is disposed (its watches, `onDispose`
    callbacks and child components run their teardown once), every node between
    the boundary's `<!--eb-->` and `<!--/eb-->` markers is removed, including
@@ -57,18 +61,29 @@ Contract:
    is no longer shown, or after the boundary's owner was disposed, does nothing.
 4. **Fallback failure.** A throw from `fallback()` leaves the boundary empty and
    goes to the next outer `errorBoundary`, else the surrounding component's
-   `onError`, else it is thrown to the caller (no surrounding component).
+   `onError`. With no surrounding component it is thrown to the caller during
+   the first render, and logged with `console.error` when it happens in a later
+   scheduled run.
 5. **Not caught.** DOM event-handler errors are not routed to the boundary;
    they reach the browser's error reporting as today.
-6. **Lifecycle.** `onMount` registered inside the view or the fallback runs
-   after that content is inserted. Disposing the boundary's owner tears down
+6. **Host and lifecycle.** Inside the view and the fallback, component APIs
+   (`slot()`, `css()`, `internals()`, custom states, form hooks) act on the
+   surrounding component's host. `onMount` registered inside the view or the
+   fallback runs after that content is inserted. A `reset()` called while the
+   fallback is still rendering wins: the view is shown and the work the
+   fallback registers afterwards is released. Disposing the boundary's owner tears down
    the current view or fallback and removes both markers.
 7. **Server and hydration (slice 1).** During SSR the view renders inside
    `try`/`catch` and the fallback replaces it on a synchronous throw (no
    markers, no reset). During hydration the view hydrates without a boundary,
-   so hydrated subtrees report to `onError` as before. Slice 2 adds hydration
-   adoption with SSR boundary markers so the client boundary also guards
-   hydrated content.
+   so hydrated subtrees report to `onError` as before. When the server rendered
+   the fallback, the client hydrates `view()` against the fallback's markup,
+   which is a divergent SSR: the outcome is whatever the hydrator does for any
+   mismatch (a warning under `enableHydrationWarnings()`, a fresh client render
+   of the root when the walker fails). Until slice 2, a view that must hydrate
+   should not rely on a server-rendered fallback. Slice 2 adds SSR boundary markers
+   that record which side rendered, and hydration adoption so the client
+   boundary also guards hydrated content.
 
 ### Intentional differences from Solid
 
@@ -90,8 +105,11 @@ updating; a synchronous render throw; reset disposes failed and fallback work
 once and a stale reset is a no-op; a reset that fails again; a throwing
 fallback reaches an outer boundary, or the component `onError` with no outer
 boundary; nested `when()` nodes are removed; `onMount` in view and fallback;
-owner disposal; event-handler errors are not caught; no surrounding component;
-SSR view and fallback output.
+owner disposal and disposal of an enclosing `when()` branch; host `slot()`
+inside the view; a `reset()` from inside the fallback render; a nested failure
+in an inner fallback; work registered after a nested failure is released;
+event-handler errors are not caught; no surrounding component; the README
+template example; SSR view and fallback output.
 
 ## Consequences
 

@@ -57,8 +57,8 @@
       "brotliBytes": 2688
     },
     "core-boundary": {
-      "gzipBytes": 1152,
-      "brotliBytes": 1024
+      "gzipBytes": 1280,
+      "brotliBytes": 1152
     },
     "core-csr": {
       "gzipBytes": 7808,

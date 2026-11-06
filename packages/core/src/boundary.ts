@@ -65,8 +65,10 @@ export function errorBoundary(view: () => unknown, fallback: ErrorFallback): Doc
 
   // Each attempt (view or fallback) gets its own owner whose error parent is
   // the surrounding component, so a fallback failure escapes this boundary.
+  // It forwards host fields to that component, so slot(), css(), internals(),
+  // custom states and form hooks inside the boundary see the real host.
   const run = (render: () => unknown, handle: ((error: unknown) => void) | null): unknown => {
-    const owner = new ComponentContext();
+    const owner = parent ? (new HostedContext(parent) as ComponentContext) : new ComponentContext();
     owner.parent = parent;
     if (handle) owner.errorHandlers = [handle];
     current = owner;
@@ -78,15 +80,26 @@ export function errorBoundary(view: () => unknown, fallback: ErrorFallback): Doc
     }
   };
 
+  // Insert the attempt's content, or, when the attempt was replaced while it
+  // rendered (a nested failure or a reset from inside the fallback), release
+  // what it registered after it was torn down.
   const show = (owner: ComponentContext, content: unknown): void => {
-    if (current !== owner || content == null) return;
-    const container = end.parentNode!;
-    container.insertBefore(
-      content instanceof Node ? content : document.createTextNode(String(content)),
-      end,
-    );
-    owner._isMounted = true;
-    scheduleMountCallbacks(owner);
+    if (current === owner) {
+      if (content != null) {
+        end.parentNode!.insertBefore(
+          content instanceof Node ? content : document.createTextNode(String(content)),
+          end,
+        );
+      }
+      owner._isMounted = true;
+      scheduleMountCallbacks(owner);
+      return;
+    }
+    const children = owner.children;
+    owner.children = null;
+    if (children) for (let i = 0; i < children.length; i++) unmountContext(children[i]);
+    owner.mounted = null;
+    disposeScope(owner);
   };
 
   const fail = (failed: ComponentContext, error: unknown): void => {
@@ -107,18 +120,18 @@ export function errorBoundary(view: () => unknown, fallback: ErrorFallback): Doc
         return fallback(error, reset);
       }, null);
     } catch (fallbackError) {
-      clear();
+      if (current === shown) clear();
       if (parent) parent._handleError(fallbackError);
       else throw fallbackError;
       return;
     }
-    show(current!, content);
+    show(shown!, content);
   };
 
   const renderView = (): void => {
     let attempt: ComponentContext | null = null;
     const handle = (error: unknown): void => fail(attempt!, error);
-    let content: unknown;
+    let content: unknown = null;
     try {
       content = run(() => {
         attempt = current;
@@ -126,23 +139,13 @@ export function errorBoundary(view: () => unknown, fallback: ErrorFallback): Doc
       }, handle);
     } catch (error) {
       // After a nested failure already replaced this attempt, the render's own
-      // throw is a consequence of it; release the attempt's late work below.
+      // throw is a consequence of it; show() releases the attempt's late work.
       if (current === attempt) {
         fail(attempt!, error);
         return;
       }
     }
-    // A nested failure during this render already replaced the attempt: release
-    // what the view registered on it afterwards.
-    if (current === attempt) {
-      show(attempt!, content);
-      return;
-    }
-    const late = attempt!;
-    const children = late.children;
-    late.children = null;
-    if (children) for (let i = 0; i < children.length; i++) unmountContext(children[i]);
-    disposeScope(late);
+    show(attempt!, content);
   };
 
   renderView();
@@ -160,3 +163,37 @@ export function errorBoundary(view: () => unknown, fallback: ErrorFallback): Doc
 }
 
 function noop(): void {}
+
+// Component fields that belong to the host element, not to an ownership scope.
+const HOST_FIELDS = [
+  '_internals',
+  '_stateRefs',
+  '_shadowRoot',
+  '_slotContent',
+  '_ssrSlots',
+  '_ssrStyles',
+  '_formAssociated',
+  '_formDisabled',
+  '_formReset',
+  '_formStateRestore',
+] as const;
+
+class HostedContext extends ComponentContext {
+  declare _host: ComponentContext;
+  constructor(host: ComponentContext) {
+    super();
+    this._host = host;
+  }
+}
+
+for (let i = 0; i < HOST_FIELDS.length; i++) {
+  const key = HOST_FIELDS[i];
+  Object.defineProperty(HostedContext.prototype, key, {
+    get(this: HostedContext) {
+      return this._host[key];
+    },
+    set(this: HostedContext, value: unknown) {
+      (this._host as unknown as Record<string, unknown>)[key] = value;
+    },
+  });
+}

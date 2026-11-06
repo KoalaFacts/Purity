@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { compute, state, watch } from '@purityjs/signals';
 import { errorBoundary } from '../src/boundary.ts';
 import { mount, onDispose, onError, onMount } from '../src/component.ts';
+import { component, slot } from '../src/elements.ts';
 import { html } from '../src/compiler/compile.ts';
 import { when } from '../src/control.ts';
 
@@ -409,6 +410,107 @@ describe('errorBoundary()', () => {
     );
     expect(host.textContent).toBe('fallback');
     expect(seen).toEqual(['nested']);
+  });
+
+  it('slot() inside the view reads the host component slot content', () => {
+    const render = component('p-eb-slot-host', () =>
+      el(
+        'div',
+        errorBoundary(
+          () => {
+            const content = slot()();
+            return el('b', (content as Node) ?? document.createTextNode('empty'));
+          },
+          () => document.createTextNode('failed'),
+        ),
+      ),
+    );
+    const root = render({}, { default: () => document.createTextNode('slotted') }) as Element;
+    expect(root.textContent).toBe('slotted');
+  });
+
+  it('a reset() called while the fallback renders shows only the view', () => {
+    let fail = true;
+    let lateFallbackRuns = 0;
+    const input = state(0);
+    const host = render(() =>
+      el(
+        'div',
+        errorBoundary(
+          () => {
+            if (fail) throw new Error('first');
+            return document.createTextNode('VIEW');
+          },
+          (_error, reset) => {
+            fail = false;
+            reset();
+            watch(() => {
+              input();
+              lateFallbackRuns++;
+            });
+            return document.createTextNode('FALLBACK');
+          },
+        ),
+      ),
+    );
+    expect(host.querySelector('div')!.innerHTML).toBe('<!--eb-->VIEW<!--/eb-->');
+    input(1);
+    return tick().then(() => expect(lateFallbackRuns).toBe(1));
+  });
+
+  it('a nested failure in an inner fallback reaches the outer boundary without extra errors', () => {
+    const reported = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const host = render(() =>
+      errorBoundary(
+        () =>
+          el(
+            'div',
+            errorBoundary(
+              () => {
+                throw new Error('inner view');
+              },
+              () => {
+                mount(() => {
+                  throw new Error('child in fallback');
+                }, document.createElement('div'));
+                return document.createTextNode('inner fallback');
+              },
+            ),
+          ),
+        (error) => document.createTextNode(`OUTER: ${(error as Error).message}`),
+      ),
+    );
+    expect(host.textContent).toBe('OUTER: child in fallback');
+    expect(reported).not.toHaveBeenCalled();
+  });
+
+  it('disposing the enclosing branch removes the markers while the component stays mounted', async () => {
+    const show = state(true);
+    const fail = state(false);
+    let runs = 0;
+    const host = render(() =>
+      el(
+        'div',
+        when(show, () =>
+          errorBoundary(
+            () =>
+              text(() => {
+                runs++;
+                if (fail()) throw new Error('x');
+                return 'view';
+              }),
+            () => document.createTextNode('fallback'),
+          ),
+        ),
+      ),
+    );
+    expect(host.querySelector('div')!.innerHTML).toContain('<!--eb-->view<!--/eb-->');
+    show(false);
+    await tick();
+    expect(host.querySelector('div')!.innerHTML).not.toContain('eb');
+    fail(true);
+    await tick();
+    expect(runs).toBe(1);
   });
 
   it('works without a surrounding component', () => {

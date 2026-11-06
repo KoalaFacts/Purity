@@ -91,7 +91,8 @@ function assertSafeScriptContent(node: ASTNode, inScript = false): void {
   for (const child of node.children) assertSafeScriptContent(child, script);
 }
 
-const URL_BINDINGS = /^(?:href|src|action|formaction|poster|background|cite|data|codebase|manifest|longdesc|profile|usemap)$/i;
+const URL_BINDINGS =
+  /^(?:href|src|action|formaction|poster|background|cite|data|codebase|manifest|longdesc|profile|usemap)$/i;
 
 function safeBindingValue(name: string, expr: string): string {
   if (!URL_BINDINGS.test(name)) return expr;

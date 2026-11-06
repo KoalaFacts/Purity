@@ -4,7 +4,7 @@ Purity core framework — no virtual DOM, TC39-Signals-inspired reactivity.
 
 ## Scope
 
-`@purityjs/core` owns templates (`html`, JIT), components (`component`, `slot`, `teleport`, `mount`, lifecycle hooks), control flow (`when`, `match`, `each`, `list`, `suspense`), `resource`/`lazyResource`/`debounced`, `css`, forms (`@purityjs/core/forms`), virtual lists (`@purityjs/core/virtual`) and client hydration. Reactivity (`state`, `compute`, `watch`, `batch`, scopes) lives in [`@purityjs/signals`](../signals/README.md); the template parser and code generators in [`@purityjs/compiler`](../compiler/README.md); browser/live-data signals, `query`, `optimistic`, server actions and islands in [`@purityjs/platform`](../platform/README.md); routing in [`@purityjs/router`](../router/README.md).
+`@purityjs/core` owns templates (`html`, JIT), components (`component`, `slot`, `teleport`, `mount`, lifecycle hooks), control flow (`when`, `match`, `each`, `list`, `suspense`), `resource`/`lazyResource`/`debounced`, `css`, forms (`@purityjs/core/forms`), virtual lists (`@purityjs/core/virtual`), property-granular stores (`store`, `@purityjs/core/store`, ADR 0054) and client hydration. Reactivity (`state`, `compute`, `watch`, `batch`, scopes) lives in [`@purityjs/signals`](../signals/README.md); the template parser and code generators in [`@purityjs/compiler`](../compiler/README.md); browser/live-data signals, `query`, `optimistic`, server actions and islands in [`@purityjs/platform`](../platform/README.md); routing in [`@purityjs/router`](../router/README.md).
 
 The public API with examples is in [README.md](./README.md); which entry provides which feature is in [docs/core-entry-points.md](../../docs/core-entry-points.md). Keep this file to layout and conventions.
 
@@ -119,6 +119,7 @@ resource.ts         — resource() / lazyResource(); resource/ holds dispatch an
 debounced.ts        — debounced() (same implementation as @purityjs/signals)
 styles.ts           — css() scoped styles
 forms.ts, forms/    — form-associated elements (`./forms`, `./forms/lifecycle`)
+store.ts            — store() property-granular state (`./store`, ADR 0054)
 virtual.ts          — virtualized lists (`./virtual`)
 hydrate.ts          — root hydrate()
 hooks.ts            — passive cross-package / optional-feature hook bridge

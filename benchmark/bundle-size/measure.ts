@@ -245,6 +245,7 @@ const packageEntries = [
   },
   { name: 'core-csr', specifier: '@purityjs/core/csr', dist: 'packages/core/dist/' },
   { name: 'core-virtual', specifier: '@purityjs/core/virtual', dist: 'packages/core/dist/' },
+  { name: 'core-store', specifier: '@purityjs/core/store', dist: 'packages/core/dist/' },
   { name: 'core-ssr-bridge', specifier: '@purityjs/core/ssr-bridge', dist: 'packages/core/dist/' },
   {
     name: 'core-hydration-bridge',

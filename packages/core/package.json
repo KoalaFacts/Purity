@@ -341,6 +341,36 @@
       "import": "./dist/csr/index.js",
       "require": "./dist/csr/index.cjs"
     },
+    "./store": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/store.d.ts",
+            "import": "./dist/store/index.js",
+            "require": "./dist/store/index.cjs"
+          },
+          "default": "./src/store.ts"
+        },
+        "types": "./dist/store.d.ts",
+        "import": "./dist/store/index.js",
+        "require": "./dist/store/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/store.d.ts",
+          "import": "./dist/store/index.js",
+          "require": "./dist/store/index.cjs"
+        },
+        "default": "./src/store.ts"
+      },
+      "types": "./dist/store.d.ts",
+      "browser": {
+        "import": "./dist/browser/store/index.js",
+        "require": "./dist/browser/store/index.cjs"
+      },
+      "import": "./dist/store/index.js",
+      "require": "./dist/store/index.cjs"
+    },
     "./virtual": {
       "purity-server": {
         "development": {

@@ -20,6 +20,7 @@ export default defineConfig({
         'csr-runtime/index': 'src/runtime/csr-runtime.ts',
         'ssr-bridge/index': 'src/ssr-bridge.ts',
         'csr/index': 'src/csr.ts',
+        'store/index': 'src/store.ts',
         'virtual/index': 'src/virtual.ts',
         'hydration-bridge/index': 'src/hydrate.ts',
         index: 'src/index.ts',

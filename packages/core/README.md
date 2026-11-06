@@ -41,6 +41,22 @@ batch(() => {
 }); // single flush
 ```
 
+Nested objects and arrays: `store()` from `@purityjs/core/store` tracks each
+property separately, so a write reruns only the readers of what changed
+([ADR 0054](../../docs/decisions/0054-property-store.md)).
+
+```ts
+import { store } from "@purityjs/core/store";
+
+const [form, update] = store({ name: "", address: { city: "" }, tags: ["a"] });
+compute(() => form.address.city); // reruns only when city changes
+update((draft) => {
+  draft.address.city = "Sydney"; // all writes in one batch
+  draft.tags.push("b");
+});
+// form.name = "x" throws: the view is read-only
+```
+
 ### Async Resources
 
 Race-safe async data, built on signals. Each `resource()` exposes reactive

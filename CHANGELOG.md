@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- `store(initial)` in the new entry `@purityjs/core/store` (ADR 0054):
+  property-granular nested state. Reads through the returned read-only view
+  track one property at a time (key sets and array length separately);
+  `update(draft => …)` applies writes in one batch and notifies only readers
+  of changed properties. New bundle budget `core-store`; no existing entry
+  changes size.
+
 ### Changed
 
 - Text slots (`${() => value}` rendering a string, number or boolean) skip the

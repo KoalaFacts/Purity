@@ -39,6 +39,50 @@ import {
 
 export type { PuritySourceMap } from './text-edits.ts';
 
+/**
+ * The parts of the Vite/Rolldown plugin context Purity's hooks read. Hooks
+ * also run without one (direct calls, non-Vite hosts), so they take
+ * `this: unknown` and every member here is optional.
+ */
+export interface PurityHookContext {
+  warn?: (message: string) => void;
+  environment?: { config?: { consumer?: string } };
+}
+
+/** The hook's plugin context, or null when a hook runs without one. */
+function hookContext(ctx: unknown): PurityHookContext | null {
+  return ctx !== null && typeof ctx === 'object' ? (ctx as PurityHookContext) : null;
+}
+
+/** Reports through the plugin context's `warn()` when present, else `console.warn`. */
+function hookWarn(ctx: unknown): (message: string) => void {
+  const host = hookContext(ctx);
+  return (message) => {
+    if (host && typeof host.warn === 'function') host.warn(message);
+    else console.warn(message);
+  };
+}
+
+/** Output options the `strictAot` bundle check reads. */
+export interface PurityOutputOptions {
+  format?: string;
+  paths?: Record<string, string> | ((id: string) => string);
+  globals?: Record<string, string> | ((id: string) => string);
+}
+
+/** Emitted bundle entries as the `generateBundle` checks read them. */
+export type PurityOutputBundle = Record<
+  string,
+  | { type: 'asset'; originalFileNames?: readonly string[] }
+  | {
+      type: 'chunk';
+      fileName: string;
+      code: string;
+      imports?: readonly string[];
+      modules?: Record<string, { code?: string | null }>;
+    }
+>;
+
 const DEVTOOLS_ID = 'virtual:purity-devtools';
 const RESOLVED_DEVTOOLS_ID = '\0' + DEVTOOLS_ID;
 const frameworkPackages = new Map<string, boolean>();
@@ -305,7 +349,7 @@ export function purity(options?: PurityPluginOptions) {
     },
 
     configResolved(
-      this: any,
+      this: unknown,
       config: {
         root: string;
         command?: string;
@@ -343,7 +387,7 @@ export function purity(options?: PurityPluginOptions) {
       emitToAbs = routesOpts.emitTo ? resolvePath(config.root, routesOpts.emitTo) : null;
     },
 
-    buildStart(this: any) {
+    buildStart(this: unknown) {
       // ADR 0033 — eager manifest emit. When `emitTo` is set we regenerate
       // the on-disk file at the start of every `vite build` / `vite dev`,
       // regardless of whether anything imports `purity:routes` in this run.
@@ -357,16 +401,13 @@ export function purity(options?: PurityPluginOptions) {
       // import from `'purity:routes'` get the same strong typing as apps
       // that import from the on-disk `.ts`.
       if (!routesOpts || emitToAbs === null || routesAbsDir === null) return;
-      const { source, types } = generateManifestSources(this, routesAbsDir, routesExt);
-      const warn = (msg: string): void => {
-        if (this && typeof this.warn === 'function') this.warn(msg);
-        else console.warn(msg);
-      };
+      const { source, types } = generateManifestSources(hookContext(this), routesAbsDir, routesExt);
+      const warn = hookWarn(this);
       emitManifestToDisk(emitToAbs, source, warn);
       emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
     },
 
-    resolveId(this: any, source: string, _importer?: string, opts?: { ssr?: boolean }) {
+    resolveId(this: unknown, source: string, _importer?: string, opts?: { ssr?: boolean }) {
       // Reject before Vite's asset loader can publish the original source.
       if (stripServerModules && opts?.ssr !== true && isServerOnlyId(source)) {
         rejectServerAsset(source);
@@ -377,7 +418,7 @@ export function purity(options?: PurityPluginOptions) {
       return null;
     },
 
-    load(this: any, id: string, opts?: { ssr?: boolean }) {
+    load(this: unknown, id: string, opts?: { ssr?: boolean }) {
       if (stripServerModules && opts?.ssr !== true && isServerOnlyId(id)) {
         rejectServerAsset(id);
         return '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\nexport {};\n';
@@ -385,26 +426,27 @@ export function purity(options?: PurityPluginOptions) {
       if (serveDevtools && id === RESOLVED_DEVTOOLS_ID) return devtoolsClientSource;
       if (!routesOpts || id !== resolvedVirtualId) return null;
       // routesAbsDir is set in configResolved (always called before load).
-      const { source, types } = generateManifestSources(this, routesAbsDir as string, routesExt);
+      const { source, types } = generateManifestSources(
+        hookContext(this),
+        routesAbsDir as string,
+        routesExt,
+      );
       // ADR 0032: optional on-disk emit. Skip the write when content
       // matches to avoid filesystem-watch loops in dev. Failures are
       // non-fatal — virtual module still returns `source`.
       // ADR 0044: alongside the `.ts`, write a sibling `.d.ts` so apps
       // importing from `'purity:routes'` get the per-route typed `importFn`.
       if (emitToAbs !== null) {
-        const warn = (msg: string): void => {
-          if (this && typeof this.warn === 'function') this.warn(msg);
-          else console.warn(msg);
-        };
+        const warn = hookWarn(this);
         emitManifestToDisk(emitToAbs, source, warn);
         emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
       }
       return source;
     },
 
-    generateBundle(this: any, _options: any, bundle: Record<string, any>) {
-      const ssr = serverBuild || this?.environment?.config?.consumer === 'server';
-      if (strictAot && productionBuild && !ssr) assertStrictAotOutput(bundle, _options);
+    generateBundle(this: unknown, outputOptions: PurityOutputOptions, bundle: PurityOutputBundle) {
+      const ssr = serverBuild || hookContext(this)?.environment?.config?.consumer === 'server';
+      if (strictAot && productionBuild && !ssr) assertStrictAotOutput(bundle, outputOptions);
       if (!stripServerModules || ssr) return;
       for (const output of Object.values(bundle)) {
         if (output.type !== 'asset') continue;
@@ -426,7 +468,18 @@ export function purity(options?: PurityPluginOptions) {
       };
     },
 
-    handleHotUpdate(this: any, ctx: { file: string; server: { moduleGraph: any } }) {
+    handleHotUpdate(
+      this: unknown,
+      ctx: {
+        file: string;
+        server: {
+          moduleGraph: {
+            getModuleById(id: string): object | null | undefined;
+            invalidateModule(mod: object): void;
+          };
+        };
+      },
+    ) {
       if (!routesOpts || !routesAbsDir) return;
       // Only invalidate the manifest when a file under the routes dir was
       // added / removed / renamed. In-place edits to a route module HMR
@@ -449,17 +502,18 @@ export function purity(options?: PurityPluginOptions) {
       // track filesystem changes regardless of which import path
       // consumers use.
       if (emitToAbs !== null) {
-        const { source, types } = generateManifestSources(this, routesAbsDir, routesExt);
-        const warn = (msg: string): void => {
-          if (this && typeof this.warn === 'function') this.warn(msg);
-          else console.warn(msg);
-        };
+        const { source, types } = generateManifestSources(
+          hookContext(this),
+          routesAbsDir,
+          routesExt,
+        );
+        const warn = hookWarn(this);
         emitManifestToDisk(emitToAbs, source, warn);
         emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
       }
     },
 
-    transform(this: any, code: string, id: string, transformOpts?: { ssr?: boolean }) {
+    transform(this: unknown, code: string, id: string, transformOpts?: { ssr?: boolean }) {
       // Strip *.server.{ts,js,tsx,jsx} modules from client builds (ADR 0018).
       // Server builds (transformOpts.ssr === true) pass through unchanged
       // so handler bodies still execute on the server. Runs BEFORE the
@@ -535,10 +589,8 @@ export function purity(options?: PurityPluginOptions) {
             '\n[purity] strictAot requires every template to compile. Fix the template or module syntax reported above; use strictAot: false only if runtime compilation is intended.',
         );
       }
-      for (const w of result.warnings) {
-        if (this && typeof this.warn === 'function') this.warn(w);
-        else console.warn(w);
-      }
+      const warn = hookWarn(this);
+      for (const w of result.warnings) warn(w);
 
       if (!result.changed) {
         if (rewritten) return { code: workingCode, map: emptyV3Map(id, code) };
@@ -732,7 +784,11 @@ function hasExternalNamespaceArgument(node: any): boolean {
   );
 }
 
-function retainedIifeCompiler(program: Program, outputOptions: any, imports: string[]): boolean {
+function retainedIifeCompiler(
+  program: Program,
+  outputOptions: PurityOutputOptions,
+  imports: readonly string[],
+): boolean {
   if (outputOptions.format !== 'iife') return false;
   const globals = new Set<string>();
   for (const source of COMPILER_ENTRIES) {
@@ -742,7 +798,7 @@ function retainedIifeCompiler(program: Program, outputOptions: any, imports: str
       typeof outputOptions.paths === 'function'
         ? outputOptions.paths(source)
         : outputOptions.paths?.[source];
-    if (!imports.includes(source) && !imports.includes(mapped)) continue;
+    if (!imports.includes(source) && (mapped === undefined || !imports.includes(mapped))) continue;
     const global =
       typeof outputOptions.globals === 'function'
         ? outputOptions.globals(source)
@@ -776,7 +832,10 @@ function externalCompilerError(fileName: string): Error {
   );
 }
 
-function assertStrictAotOutput(bundle: Record<string, any>, outputOptions: any): void {
+function assertStrictAotOutput(
+  bundle: PurityOutputBundle,
+  outputOptions: PurityOutputOptions,
+): void {
   const sources = new Set(COMPILER_ENTRIES);
   for (const source of COMPILER_ENTRIES) {
     const mapped =

@@ -27,7 +27,7 @@ src/
 
 ## Key Functions
 
-- `purity(options?)` — Vite plugin factory, checked with `satisfies Plugin` (type-only import from the `vite` peer); hooks keep their concrete types for direct calls in tests
+- `purity(options?)` — Vite plugin factory, checked with `satisfies Plugin` (type-only import from the `vite` peer); hooks keep their concrete types for direct calls in tests. Hooks take `this: unknown` and read the context only through `hookContext()` / `hookWarn()` (`PurityHookContext`), because tests and non-Vite hosts call them without one
 - `compileTemplates(source, id)` — collects `Edit[]` for each html``, hoist insert, and `html`import strip; defers all writes to`applyEdits`
 - `compileNestedTemplates(source, ctx)` — handles `html` inside `${...}` expressions
 - `extractTemplateLiteral(source, pos)` — extracts strings + expression sources

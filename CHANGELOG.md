@@ -44,6 +44,12 @@
 - `purity()` from `@purityjs/vite-plugin` is checked against Vite's `Plugin`
   type at build time, so a hook that drifts from Vite's signature fails the
   package build instead of a consumer's strict config.
+- `@purityjs/vite-plugin`'s published hook types no longer use `any`: hooks
+  take `this: unknown` and read only the exported `PurityHookContext` members
+  (`warn`, `environment.config.consumer`); `generateBundle` takes the exported
+  `PurityOutputOptions` and `PurityOutputBundle`. The stale hand-written
+  `src/index.d.ts` (it declared only `include`/`strictAot` and `transform`)
+  is removed; the generated `dist/index.d.ts` is the declaration file.
 
 ## 0.5.2
 

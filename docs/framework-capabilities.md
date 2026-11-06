@@ -61,6 +61,7 @@ The primary competitive reference is now the [versioned Solid v2 gap analysis](.
 3. Add debugging source locations and component context if required by real debugging journeys.
 4. Record deployment evidence for each supported host and refresh controlled performance measurements. Production feature profiles and CI budgets are implemented. The current AOT profiles exclude direct Function constructors, and ordinary controls exclude virtual-list spacer code. Broader application profiles and live deployment evidence remain open.
 5. Review and adopt the [1.0 policy and checklist](./decisions/0003-path-to-1.0.md); this audit does not mark that Proposed ADR accepted.
+6. Not designed yet (no ADR): ISR/PPR on top of `renderStatic` (ADR 0010), build-time stable IDs for server actions (ADR 0012 non-feature), and a Declarative Shadow DOM fallback for pre-2024 browsers (out of scope per ADR 0004). Per-boundary hydration timing is tracked as SV2-009/010 in the [ledger](./plans/surpass-solid.md).
 
 ### Execution checklist
 

@@ -37,16 +37,13 @@ Every Markdown file under `docs/` is reachable from this page; `npm run check:do
 
 ## Dated records (historical, for reference)
 
-| Doc                                                                                            | What it records                                                                              |
-| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| [`code-quality-audit-2026-11-05.md`](./code-quality-audit-2026-11-05.md)                       | Code-level audit CQ-01..CQ-13 against Solid v2 rc.20; findings tracked in the ledger         |
-| [`security-audit-2026-10-03.md`](./security-audit-2026-10-03.md)                               | Request and script security audit of 0.3.2 and its fixes                                     |
-| [`releases/0.5.0.md`](./releases/0.5.0.md)                                                     | 0.5.0 release notes                                                                          |
-| [`releases/0.5.1.md`](./releases/0.5.1.md)                                                     | 0.5.1 release notes                                                                          |
-| [`releases/0.5.2.md`](./releases/0.5.2.md)                                                     | 0.5.2 release notes                                                                          |
-| [`archive/next-handoff-adr-0007-0034.md`](./archive/next-handoff-adr-0007-0034.md)             | Handoff note from the branch that added ADRs 0007–0034 (formerly the root `NEXT_HANDOFF.md`) |
-| [`archive/0038-islands-plan.md`](./archive/0038-islands-plan.md)                               | Shipped implementation plan for islands (ADR 0038)                                           |
-| [`archive/2026-10-28-client-first-aot-plan.md`](./archive/2026-10-28-client-first-aot-plan.md) | Shipped implementation plan for client-first AOT                                             |
+| Doc                                                                      | What it records                                                                      |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| [`code-quality-audit-2026-11-05.md`](./code-quality-audit-2026-11-05.md) | Code-level audit CQ-01..CQ-13 against Solid v2 rc.20; findings tracked in the ledger |
+| [`security-audit-2026-10-03.md`](./security-audit-2026-10-03.md)         | Request and script security audit of 0.3.2 and its fixes                             |
+| [`releases/0.5.0.md`](./releases/0.5.0.md)                               | 0.5.0 release notes                                                                  |
+| [`releases/0.5.1.md`](./releases/0.5.1.md)                               | 0.5.1 release notes                                                                  |
+| [`releases/0.5.2.md`](./releases/0.5.2.md)                               | 0.5.2 release notes                                                                  |
 
 These are pre-1.0 working docs. If something's wrong or missing, please
 open an issue.

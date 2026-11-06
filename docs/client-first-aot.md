@@ -18,6 +18,8 @@ The original 14 package entries and 12 full-hydration/JIT application profiles r
 
 Compare client-only and hydratable builds only for workloads that do not require hydration. Do not relabel that mode choice as a reduction in the all-feature core, and do not add independent application payloads together as one download. The frozen core-all 40,679 B baseline, <=34,577 B goal and original hard caps are unchanged. This work alone does not establish Solid v2 parity, speed, allocation or retained-heap improvements.
 
+Implementation receipt (from the original plan): compiler implementation `d7615346` passed pinned Node24 format/lint/types/workspace tests/builds and all original full-app/chunk non-growth checks in preflight 40594390437. The CLI generated SSR/app configuration required an additional explicit hydration migration, with its own observed failing test before the fix. Formal exact-head CI and independent review remain mandatory; no merge or Solid ranking follows from preflight.
+
 ## SSR resource cache ownership
 
 Hydration resource JSON scripts must be **inside their SSR root** or **consecutive adjacent script siblings immediately after that root**. Document-wide script ID lookup is not supported, because separate SSR roots can use the same shell and boundary IDs and must never consume one another's cache. A root without cache scripts starts with an empty cache rather than borrowing stale global values left by a previous hydration; failures still restore the prior cache/script nodes before invoking recovery handlers. This preserves the normal append-whole and in-root streaming layouts without crossing a different root's boundary.

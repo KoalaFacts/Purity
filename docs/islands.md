@@ -162,6 +162,9 @@ would each have their own module-scope counter.
   lazy form automatically.
 - **Cross-page island state** is bounded by your storage / URL choices.
   An SPA navigation re-mounts islands on the destination page.
+- **No per-island Suspense boundaries** (ADR 0006) and no `client:only`
+  shortcut: gate client-only content inside the island with
+  `when(typeof window !== 'undefined', …)`.
 
 ## Example
 

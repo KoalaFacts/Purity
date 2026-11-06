@@ -225,7 +225,7 @@ const probes: Probe[] = [
   },
 ];
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH });
 const page = await browser.newPage();
 
 const errors: string[] = [];

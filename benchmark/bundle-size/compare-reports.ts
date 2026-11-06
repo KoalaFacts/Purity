@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import historicalV5 from './evidence/2026-10-30-architecture-redesign/before.json' with { type: 'json' };
 import historicalV7 from './evidence/2026-10-30-architecture-redesign/budget-baseline.json' with { type: 'json' };
-import currentV7Budgets from './budgets.json' with { type: 'json' };
+import frozenV7Budgets22 from './evidence/2026-11-06-v7-22-packages/budgets.json' with { type: 'json' };
 import v4Budgets from './budgets-v4.json' with { type: 'json' };
 import legacyBudgets from './budgets-v3.json' with { type: 'json' };
 
@@ -188,6 +188,21 @@ const packageNamesV7 = [
   'ssr',
 ];
 const currentPackageNamesV7 = [...packageNamesV7, 'core-forms-lifecycle'];
+const latestPackageNamesV7 = [...currentPackageNamesV7, 'core-async'];
+// Frozen, explicit v7 identities. Future producer expansion must add a reviewed
+// contract rather than silently making previous CI reports incomparable.
+const frozenV7Budgets23 = {
+  ...frozenV7Budgets22,
+  packages: {
+    ...frozenV7Budgets22.packages,
+    'core-async': { gzipBytes: 640, brotliBytes: 576 },
+  },
+};
+const approvedV7Contracts = [
+  { budgets: historicalV7.budgets, packages: packageNamesV7 },
+  { budgets: frozenV7Budgets22, packages: currentPackageNamesV7 },
+  { budgets: frozenV7Budgets23, packages: latestPackageNamesV7 },
+];
 const profileNamesV4 = [...profileNames, 'counter-client-runtime', 'counter-client-aot'];
 const profileNamesV5 = [
   ...profileNamesV4,
@@ -289,9 +304,15 @@ function validateReportContract(report: Report, label: string) {
   // Historical v7 results and current v7 results have different approved
   // budget inventories. Never substitute one for another mid-comparison:
   // compareSizeReports still requires identical base/candidate budgets.
+  const v7Contract =
+    report.schemaVersion === 7
+      ? approvedV7Contracts.find(
+          (contract) => normalized(report.budgets) === normalized(contract.budgets),
+        )
+      : undefined;
   const frozenBudgets =
     report.schemaVersion === 7
-      ? [historicalV7.budgets, currentV7Budgets]
+      ? approvedV7Contracts.map((contract) => contract.budgets)
       : [report.schemaVersion === 5 ? historicalV5.budgets : expanded ? v4Budgets : legacyBudgets];
   assert(
     frozenBudgets.some((value) => normalized(report.budgets) === normalized(value)),
@@ -302,9 +323,7 @@ function validateReportContract(report: Report, label: string) {
   coverage(
     [...unique(report.packages, 'entry').keys()],
     report.schemaVersion === 7
-      ? normalized(report.budgets) === normalized(historicalV7.budgets)
-        ? packageNamesV7
-        : currentPackageNamesV7
+      ? v7Contract!.packages
       : expanded
         ? packageNamesV4
         : packageNames,

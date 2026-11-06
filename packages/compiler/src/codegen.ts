@@ -1149,7 +1149,10 @@ function genAttrBinding(
         `${el}.setAttribute(${qname},${x}===true?'':String(${safeBindingValue(attr.name, x)}));`;
       return {
         setup: `${head}var ${last}=0/0;if(!${fl}&&${av}!=null&&${av}!==false)${set(av)}`,
-        reactive: memo(`v${id}`, `${last}=v${id};if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});else ${set(`v${id}`)}`),
+        reactive: memo(
+          `v${id}`,
+          `${last}=v${id};if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});else ${set(`v${id}`)}`,
+        ),
       };
     }
 

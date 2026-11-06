@@ -91,14 +91,10 @@ function assertSafeScriptContent(node: ASTNode, inScript = false): void {
   for (const child of node.children) assertSafeScriptContent(child, script);
 }
 
-const URL_BINDINGS = new Set(
-  'href src action formaction poster background cite data codebase manifest longdesc profile usemap'.split(
-    ' ',
-  ),
-);
+const URL_BINDINGS = /^(?:href|src|action|formaction|poster|background|cite|data|codebase|manifest|longdesc|profile|usemap)$/i;
 
 function safeBindingValue(name: string, expr: string): string {
-  if (!URL_BINDINGS.has(name.toLowerCase())) return expr;
+  if (!URL_BINDINGS.test(name)) return expr;
   // Escape-only attribute binding does not stop executable URL schemes.
   // Return the checked string so stateful toString() cannot change it later.
   return `__purity_url__(${expr})`;
@@ -1391,7 +1387,7 @@ function emitCustomElement(node: import('./ast.ts').ElementNode, ctx: SSRGenCtx)
     } else {
       const val = `_v[${a.index}]`;
       const resolved =
-        a.kind === 'dynamic' && URL_BINDINGS.has(a.name.toLowerCase())
+        a.kind === 'dynamic' && URL_BINDINGS.test(a.name)
           ? safeBindingValue(a.name, `(typeof ${val}==='function'?${val}():${val})`)
           : val;
       pushRaw(ctx, `${attrsVar}[${jsString(a.name)}]=${resolved};`);
@@ -1475,7 +1471,7 @@ function emitSSRAttr(a: AttributeNode, ctx: SSRGenCtx, node: import('./ast.ts').
       // The remaining kinds read the current value (calling the accessor if
       // it's a function) and emit it as a quoted attribute. `bind` skips the
       // listener install — that's a hydration-time concern.
-      const resolved = URL_BINDINGS.has(a.name.toLowerCase())
+      const resolved = URL_BINDINGS.test(a.name)
         ? safeBindingValue(a.name, `(typeof ${val}==='function'?${val}():${val})`)
         : val;
       pushRaw(ctx, `var ${av}=_h.toAttr(${resolved});`);

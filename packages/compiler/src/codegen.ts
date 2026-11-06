@@ -800,12 +800,10 @@ function genStaticDOM(
   counter: { n: number },
 ): void {
   switch (node.type) {
-    case 'text': {
-      stmts.push(`${parent}.appendChild(document.createTextNode(${jsString(node.value)}));`);
-      break;
-    }
+    case 'text':
     case 'comment': {
-      stmts.push(`${parent}.appendChild(document.createComment(${jsString(node.value)}));`);
+      const creator = node.type === 'text' ? 'createTextNode' : 'createComment';
+      stmts.push(`${parent}.appendChild(document.${creator}(${jsString(node.value)}));`);
       break;
     }
     case 'element': {

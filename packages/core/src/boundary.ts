@@ -192,8 +192,12 @@ for (let i = 0; i < HOST_FIELDS.length; i++) {
     get(this: HostedContext) {
       return this._host[key];
     },
+    // Lazy initialisation (`ctx._stateRefs ??= new Map()`, form hook lists)
+    // reaches the host; clears do not: tearing down a failed attempt
+    // (unmountContext sets _slotContent = undefined) must not wipe the host
+    // component's slot content or other host state.
     set(this: HostedContext, value: unknown) {
-      (this._host as unknown as Record<string, unknown>)[key] = value;
+      if (value != null) (this._host as unknown as Record<string, unknown>)[key] = value;
     },
   });
 }

@@ -27,7 +27,7 @@ Add `errorBoundary(view, fallback)` in an opt-in entry,
 `@purityjs/signals` do not change.
 
 ```ts
-import { html } from '@purityjs/core';
+import { html } from '@purityjs/core/jit';
 import { errorBoundary } from '@purityjs/core/boundary';
 
 html`<section>
@@ -68,7 +68,9 @@ Contract:
    they reach the browser's error reporting as today.
 6. **Host and lifecycle.** Inside the view and the fallback, component APIs
    (`slot()`, `css()`, `internals()`, custom states, form hooks) act on the
-   surrounding component's host. `onMount` registered inside the view or the
+   surrounding component's host; tearing down a failed view or fallback never
+   clears host state, so `slot()` keeps working after a failure and reset,
+   inside and outside the boundary. `onMount` registered inside the view or the
    fallback runs after that content is inserted. A `reset()` called while the
    fallback is still rendering wins: the view is shown and the work the
    fallback registers afterwards is released. Disposing the boundary's owner tears down
@@ -106,7 +108,7 @@ once and a stale reset is a no-op; a reset that fails again; a throwing
 fallback reaches an outer boundary, or the component `onError` with no outer
 boundary; nested `when()` nodes are removed; `onMount` in view and fallback;
 owner disposal and disposal of an enclosing `when()` branch; host `slot()`
-inside the view; a `reset()` from inside the fallback render; a nested failure
+inside the view, and after a failure and reset; a form hook registered in the view; a `reset()` from inside the fallback render; a nested failure
 in an inner fallback; work registered after a nested failure is released;
 event-handler errors are not caught; no surrounding component; the README
 template example; SSR view and fallback output.

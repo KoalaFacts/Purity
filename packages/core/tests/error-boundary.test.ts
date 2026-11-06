@@ -3,6 +3,8 @@ import { compute, state, watch } from '@purityjs/signals';
 import { errorBoundary } from '../src/boundary.ts';
 import { mount, onDispose, onError, onMount } from '../src/component.ts';
 import { component, slot } from '../src/elements.ts';
+import { onFormReset } from '../src/forms/lifecycle.ts';
+import { getCurrentComponent } from '@purityjs/signals';
 import { html } from '../src/compiler/compile.ts';
 import { when } from '../src/control.ts';
 
@@ -427,6 +429,67 @@ describe('errorBoundary()', () => {
     );
     const root = render({}, { default: () => document.createTextNode('slotted') }) as Element;
     expect(root.textContent).toBe('slotted');
+  });
+
+  it('a failed view does not clear the host slot content (inside after reset, and outside)', async () => {
+    const fail = state(false);
+    let doReset: (() => void) | null = null;
+    const render = component('p-eb-slot-reset-host', () =>
+      el(
+        'div',
+        errorBoundary(
+          () => {
+            const content = slot()();
+            return el(
+              'b',
+              text(() => {
+                if (fail()) throw new Error('later');
+                return 'ok:';
+              }),
+              (content as Node) ?? document.createTextNode('EMPTY'),
+            );
+          },
+          (_error, reset) => {
+            doReset = reset;
+            return document.createTextNode('fallback');
+          },
+        ),
+        when(
+          () => fail(),
+          () => el('i', (slot()() as Node) ?? document.createTextNode('GONE')),
+        ),
+      ),
+    );
+    let n = 0;
+    const root = render({}, { default: () => document.createTextNode(`slotted${++n}`) }) as Element;
+    expect(root.textContent).toBe('ok:slotted1');
+    fail(true);
+    await tick();
+    expect(root.textContent).toBe('fallbackslotted2');
+    fail(false);
+    await tick();
+    doReset!();
+    await tick();
+    expect(root.textContent).toBe('ok:slotted3');
+  });
+
+  it('a form hook registered inside the view reaches the host component', () => {
+    let host: ReturnType<typeof getCurrentComponent> = null;
+    const render = component('p-eb-form-hook-host', () => {
+      host = getCurrentComponent();
+      return el(
+        'div',
+        errorBoundary(
+          () => {
+            onFormReset(() => {});
+            return document.createTextNode('view');
+          },
+          () => document.createTextNode('failed'),
+        ),
+      );
+    });
+    render({});
+    expect(host!._formReset?.length).toBe(1);
   });
 
   it('a reset() called while the fallback renders shows only the view', () => {

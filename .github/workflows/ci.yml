@@ -163,6 +163,9 @@ jobs:
           done
 
       - name: 🌐 Install browser engines
+        # This step has hung for 35-45+ minutes on hosted runners (#359, #361);
+        # fail fast so the job can be re-run instead of blocking for hours.
+        timeout-minutes: 10
         run: npx playwright install --with-deps chromium firefox webkit
 
       - name: 🧪 Check first island interactions

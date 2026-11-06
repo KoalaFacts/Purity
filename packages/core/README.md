@@ -307,6 +307,42 @@ cd benchmark && node --expose-gc \
   --conditions=development tools/resource-heap.ts   # heap diff per cycle
 ```
 
+### Async derivation (`@purityjs/core/async`)
+
+`asyncCompute` turns a Promise-returning computation into a value that ordinary
+`compute()` chains can read ([ADR 0054](../../docs/decisions/0054-async-derivation.md)).
+
+```ts
+import { compute, state, watch } from "@purityjs/core";
+import { asyncCompute, isPending } from "@purityjs/core/async";
+
+const id = state(1);
+const user = asyncCompute(({ signal }) =>
+  fetch(`/u/${id()}`, { signal }).then((r) => r.json() as Promise<{ name: string }>),
+);
+const greeting = compute(() => `Hello, ${user().name}`);
+
+watch(() => {
+  try {
+    console.log(greeting());
+  } catch (err) {
+    if (!isPending(err)) throw err; // first load: not ready yet
+  }
+});
+```
+
+- Reads made before the first `await` are tracked; changing one starts a new run
+  and aborts the previous run's `signal`. Only the latest run can become current.
+- Before the first settlement, reading throws `PendingError`; downstream
+  computes cache and rethrow it like any error. After that, a refetch keeps the
+  previous value while `user.pending()` is `true`.
+- A rejection of the latest run is rethrown to readers until a later run
+  succeeds. `user.dispose()` (or disposing the owning scope) aborts the run.
+- The first run starts when the value is first read.
+- A `watch` that reads an unresolved value without a guard throws
+  `PendingError` from `watch()`; guard the read as above until the view
+  boundary (SV2-004) lands.
+
 ### Templates
 
 JIT compiled: `html` tagged literals → parse → AST → codegen → cached DOM factory.
@@ -486,6 +522,27 @@ html`<ul style="max-height: 24rem; overflow-y: auto">
 Purity manages the visible range, spacers, and row-height measurements. Supply
 stable keys when items can be inserted, removed, or reordered. SSR still renders
 the full list; hydration adopts those rows before windowing them.
+
+To replace a part of the page when it fails, wrap it in `errorBoundary`:
+
+```ts
+import { errorBoundary } from "@purityjs/core/boundary";
+
+html`<section>
+  ${errorBoundary(
+    () => html`<p>${() => total().toFixed(2)}</p>`,
+    (error, reset) => html`<p role="alert">${String(error)}</p>
+      <button @click=${reset}>Retry</button>`,
+  )}
+</section>`;
+```
+
+A throw while the view renders, or later from one of its bindings or watches,
+disposes the view and shows `fallback(error, reset)`; the rest of the page keeps
+updating. `reset()` renders the view again. A throwing fallback goes to the next
+outer boundary or the component's `onError`. Event-handler errors, and errors
+inside a nested `component()` custom element, are not caught. On the server a synchronous throw renders the fallback; hydrated
+content is not guarded yet ([ADR 0055](../../docs/decisions/0055-error-boundary.md)).
 
 ### Teleport
 

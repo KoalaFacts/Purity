@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Added
+
+- `asyncCompute(fn)` in the new opt-in entry `@purityjs/core/async`
+  ([ADR 0054](./docs/decisions/0054-async-derivation.md)): feed a
+  Promise-returning computation into ordinary `compute()` chains. Unresolved
+  reads throw `PendingError` (test with `isPending`), which downstream computes
+  cache and rethrow, so no `undefined` or `Promise` reaches application code as
+  data; refetches keep the previous value while `pending()` is `true`; a newer
+  run aborts the previous run's `AbortSignal` and only the latest run can become
+  current. Existing entries do not change size.
+- `errorBoundary(view, fallback)` in the new opt-in entry
+  `@purityjs/core/boundary` (ADR 0055): a throw while the view renders, or later
+  from one of its bindings or watches, replaces only that part of the page with
+  `fallback(error, reset)`; `reset()` renders the view again, and a throwing
+  fallback reaches the next outer boundary or the component's `onError`. On the
+  server a synchronous throw renders the fallback. Hydrated content is not
+  guarded yet.
+
 ### Changed
 
 - Text slots (`${() => value}` rendering a string, number or boolean) skip the

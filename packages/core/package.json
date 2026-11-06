@@ -341,6 +341,36 @@
       "import": "./dist/csr/index.js",
       "require": "./dist/csr/index.cjs"
     },
+    "./boundary": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/boundary.d.ts",
+            "import": "./dist/boundary/index.js",
+            "require": "./dist/boundary/index.cjs"
+          },
+          "default": "./src/boundary.ts"
+        },
+        "types": "./dist/boundary.d.ts",
+        "import": "./dist/boundary/index.js",
+        "require": "./dist/boundary/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/boundary.d.ts",
+          "import": "./dist/boundary/index.js",
+          "require": "./dist/boundary/index.cjs"
+        },
+        "default": "./src/boundary.ts"
+      },
+      "types": "./dist/boundary.d.ts",
+      "browser": {
+        "import": "./dist/browser/boundary/index.js",
+        "require": "./dist/browser/boundary/index.cjs"
+      },
+      "import": "./dist/boundary/index.js",
+      "require": "./dist/boundary/index.cjs"
+    },
     "./virtual": {
       "purity-server": {
         "development": {
@@ -370,6 +400,36 @@
       },
       "import": "./dist/virtual/index.js",
       "require": "./dist/virtual/index.cjs"
+    },
+    "./async": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/async.d.ts",
+            "import": "./dist/async/index.js",
+            "require": "./dist/async/index.cjs"
+          },
+          "default": "./src/async.ts"
+        },
+        "types": "./dist/async.d.ts",
+        "import": "./dist/async/index.js",
+        "require": "./dist/async/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/async.d.ts",
+          "import": "./dist/async/index.js",
+          "require": "./dist/async/index.cjs"
+        },
+        "default": "./src/async.ts"
+      },
+      "types": "./dist/async.d.ts",
+      "browser": {
+        "import": "./dist/browser/async/index.js",
+        "require": "./dist/browser/async/index.cjs"
+      },
+      "import": "./dist/async/index.js",
+      "require": "./dist/async/index.cjs"
     },
     "./hydration-bridge": {
       "purity-server": {

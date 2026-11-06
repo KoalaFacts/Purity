@@ -56,6 +56,10 @@
       "gzipBytes": 3072,
       "brotliBytes": 2688
     },
+    "core-boundary": {
+      "gzipBytes": 1344,
+      "brotliBytes": 1216
+    },
     "core-csr": {
       "gzipBytes": 7808,
       "brotliBytes": 7040
@@ -63,6 +67,10 @@
     "core-virtual": {
       "gzipBytes": 5120,
       "brotliBytes": 4608
+    },
+    "core-async": {
+      "gzipBytes": 640,
+      "brotliBytes": 576
     },
     "core-ssr-bridge": {
       "gzipBytes": 1664,

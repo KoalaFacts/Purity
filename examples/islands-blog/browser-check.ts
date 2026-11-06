@@ -226,8 +226,10 @@ try {
     await delay(100);
   }
   assert.ok(ready, `islands demo server did not start:\n${serverOutput}`);
+  let checked = 0;
   for (const [name, engine] of browserEngines) {
     if (process.env.PURITY_BROWSER && process.env.PURITY_BROWSER !== name) continue;
+    checked++;
     const browser = await engine.launch();
     try {
       await checkBrowser(name, browser, base);
@@ -235,6 +237,7 @@ try {
       await browser.close();
     }
   }
+  assert.ok(checked > 0, `PURITY_BROWSER=${process.env.PURITY_BROWSER} selects no engine from the chosen set`);
 } finally {
   server.kill();
 }

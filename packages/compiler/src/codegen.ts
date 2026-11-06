@@ -801,17 +801,11 @@ function genStaticDOM(
 ): void {
   switch (node.type) {
     case 'text': {
-      const id = `_n${counter.n++}`;
-      stmts.push(
-        `var ${id}=document.createTextNode(${jsString(node.value)});${parent}.appendChild(${id});`,
-      );
+      stmts.push(`${parent}.appendChild(document.createTextNode(${jsString(node.value)}));`);
       break;
     }
     case 'comment': {
-      const id = `_n${counter.n++}`;
-      stmts.push(
-        `var ${id}=document.createComment(${jsString(node.value)});${parent}.appendChild(${id});`,
-      );
+      stmts.push(`${parent}.appendChild(document.createComment(${jsString(node.value)}));`);
       break;
     }
     case 'element': {

@@ -237,7 +237,10 @@ try {
       await browser.close();
     }
   }
-  assert.ok(checked > 0, `PURITY_BROWSER=${process.env.PURITY_BROWSER} selects no engine from the chosen set`);
+  assert.ok(
+    checked > 0,
+    `PURITY_BROWSER=${process.env.PURITY_BROWSER} selects no engine from the chosen set`,
+  );
 } finally {
   server.kill();
 }

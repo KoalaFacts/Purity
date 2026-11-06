@@ -814,6 +814,12 @@ function usesCompilerNamespace(value: unknown, namespace: string, parent?: AstOb
   return someAstChild(node, (child) => usesCompilerNamespace(child, namespace, node));
 }
 
+/** `require('<source>')` whose string argument is one of `sources`. */
+function requiresSource(node: AstObject, sources: Set<string>): boolean {
+  const source = astObject(astList(node.arguments)[0])?.value;
+  return typeof source === 'string' && sources.has(source);
+}
+
 function isIifeCall(node: AstObject): boolean {
   const calleeType = astObject(node.callee)?.type;
   return (
@@ -899,7 +905,7 @@ function assertStrictAotOutput(
   for (const chunk of Object.values(bundle)) {
     if (chunk.type !== 'chunk') continue;
     for (const [id, rendered] of Object.entries(chunk.modules ?? {})) {
-      const code = (rendered as { code?: string | null }).code;
+      const code = rendered.code;
       // Rendered code has already been tree-shaken. The presence of the
       // original module in the graph alone must never reject a build.
       if (!code || !isCompilerPackageModule(id, owners)) continue;
@@ -931,7 +937,7 @@ function assertStrictAotOutput(
           retainedJitImport(node, sources) ||
           (node.type === 'CallExpression' &&
             astObject(node.callee)?.name === 'require' &&
-            sources.has(astObject(astList(node.arguments)[0])?.value as string)),
+            requiresSource(node, sources)),
       )
     ) {
       throw externalCompilerError(chunk.fileName);

@@ -327,14 +327,10 @@ function markCheck(observers: ComputedNode[]): void {
 // updateValue — pull a node back to CLEAN
 // ---------------------------------------------------------------------------
 
-interface CheckFrame {
-  node: ComputedNode;
-  sources: AnyNode[];
-  versions: number[];
-  idx: number;
-}
+// A parent suspended while one of its CHECK sources is resolved.
+type CheckFrame = [node: ComputedNode, sources: AnyNode[], versions: number[], idx: number];
 
-// Iterative (explicit heap-allocated stack of frames) equivalent of the
+// Iterative (explicit heap-allocated stack of suspended frames) equivalent of the
 // natural recursive formulation: to resolve a CHECK node, first resolve each
 // CHECK/DIRTY source (depth-first), then compare versions and either settle
 // CLEAN or recompute. A long incrementally-built chain can be arbitrarily
@@ -355,26 +351,24 @@ function updateValue(startNode: ComputedNode): void {
 }
 
 function resolveCheck(startNode: ComputedNode): void {
-  const stack: CheckFrame[] = [
-    {
-      node: startNode,
-      sources: startNode.sources ?? [],
-      versions: startNode.sourceMeta ?? [],
-      idx: 0,
-    },
-  ];
-  // Nodes with a frame on the stack. A self-referential computed lists itself
+  // The frame being walked lives in locals; only the frames of parents
+  // suspended while a CHECK source is resolved are heap-allocated, so the
+  // common case (no CHECK source below startNode) allocates nothing.
+  let stack: CheckFrame[] | null = null;
+  let idx = 0;
+  let node = startNode;
+  let sources: AnyNode[] = node.sources ?? [];
+  // sourceMeta is null exactly when sources is, and is only read for an
+  // existing source, so it needs no fallback.
+  let versions = node.sourceMeta as number[];
+  // Nodes with a frame on the path. A self-referential computed lists itself
   // as a source; descending into it again would push frames forever. Created
-  // lazily at the first descent, when the stack holds only startNode.
+  // lazily at the first descent, when the path holds only startNode.
   let onStack: Set<ComputedNode> | null = null;
 
-  while (stack.length > 0) {
-    const frame = stack[stack.length - 1];
-    const { node, sources, versions } = frame;
-    let descended = false;
-
-    while (frame.idx < sources.length) {
-      const src = sources[frame.idx];
+  walk: for (;;) {
+    while (idx < sources.length) {
+      const src = sources[idx];
       if (src.fn !== null) {
         const sc = src as ComputedNode;
         if (sc.disposed) {
@@ -385,29 +379,25 @@ function resolveCheck(startNode: ComputedNode): void {
           const onPath = onStack !== null ? onStack.has(sc) : sc === node;
           if (!onPath) {
             // Resolve sc before we can know whether it actually changed —
-            // push a frame for it instead of recursing into updateValue(sc).
-            (onStack ??= new Set(stack.map((f) => f.node))).add(sc);
-            stack.push({
-              node: sc,
-              sources: sc.sources ?? [],
-              versions: sc.sourceMeta ?? [],
-              idx: 0,
-            });
-            descended = true;
-            break;
+            // suspend this frame instead of recursing into updateValue(sc).
+            (onStack ??= new Set([node])).add(sc);
+            (stack ??= []).push([node, sources, versions, idx]);
+            node = sc;
+            sources = sc.sources ?? [];
+            versions = sc.sourceMeta as number[];
+            idx = 0;
+            continue walk;
           }
         } else if (sc.status !== STATUS_CLEAN) {
           runComputed(sc);
         }
       }
-      if (src.version !== versions[frame.idx * 2]) {
+      if (src.version !== versions[idx * 2]) {
         node.status = STATUS_DIRTY;
         break;
       }
-      frame.idx++;
+      idx++;
     }
-
-    if (descended) continue;
 
     if (node.status === STATUS_CHECK) {
       node.status = STATUS_CLEAN;
@@ -415,7 +405,9 @@ function resolveCheck(startNode: ComputedNode): void {
       runComputed(node);
     }
     onStack?.delete(node);
-    stack.pop();
+    const parent = stack?.pop();
+    if (parent === undefined) return;
+    [node, sources, versions, idx] = parent;
   }
 }
 

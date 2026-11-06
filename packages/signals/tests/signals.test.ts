@@ -1626,3 +1626,98 @@ describe('compute — error caching', () => {
     dispose();
   });
 });
+
+describe('CHECK resolution walk', () => {
+  it('resumes a parent at the source it descended from and recomputes it once', () => {
+    const a = state(1);
+    const b = state(1);
+    // Two CHECK sources under one parent: the first settles unchanged (parity
+    // cutoff), the second changes. The walk must descend into each, resume the
+    // parent at the same source index, and recompute the parent exactly once.
+    const parityA = compute(() => a() % 2);
+    const midA = compute(() => parityA() * 10);
+    const midB = compute(() => b() * 100);
+    let parentRuns = 0;
+    const parent = compute(() => {
+      parentRuns++;
+      return midA() + midB();
+    });
+    expect(parent()).toBe(110);
+    parentRuns = 0;
+    batch(() => {
+      a(3); // parity unchanged
+      b(2);
+    });
+    expect(parent()).toBe(210);
+    expect(parentRuns).toBe(1);
+  });
+
+  it('settles a three-level chain CLEAN without recomputing when the leaf value is unchanged', () => {
+    const s = state(2);
+    const even = compute(() => s() % 2 === 0);
+    let midRuns = 0;
+    const mid = compute(() => {
+      midRuns++;
+      return even() ? 'even' : 'odd';
+    });
+    let topRuns = 0;
+    const top = compute(() => {
+      topRuns++;
+      return mid().toUpperCase();
+    });
+    expect(top()).toBe('EVEN');
+    midRuns = 0;
+    topRuns = 0;
+    s(4);
+    expect(top()).toBe('EVEN');
+    expect(midRuns).toBe(0);
+    expect(topRuns).toBe(0);
+  });
+
+  it('keeps suspended frames separate when a recompute resolves another CHECK chain', () => {
+    const x = state(1);
+    const y = state(1);
+    const yDeep = compute(() => y() + 1);
+    const yTop = compute(() => yDeep() + 1);
+    // outer's recompute reads yTop, which is itself in CHECK, so a nested walk
+    // starts while the outer walk still has a suspended frame for outerTop.
+    const xMid = compute(() => x() * 2);
+    const outer = compute(() => xMid() + (x() > 1 ? yTop() : 0));
+    const outerTop = compute(() => outer() + 1000);
+    expect(outerTop()).toBe(1002);
+    batch(() => {
+      x(2);
+      y(5);
+    });
+    expect(outerTop()).toBe(1011);
+    y(6);
+    expect(outerTop()).toBe(1012);
+  });
+
+  it('marks every observer again on later writes, including writes made by effects during a flush', async () => {
+    const tick = () => new Promise<void>((r) => queueMicrotask(r));
+    const a = state(0);
+    const b = state(0);
+    const aDouble = compute(() => a() * 2);
+    const sum = compute(() => aDouble() + b());
+    const seen: number[] = [];
+    watch(() => {
+      seen.push(sum());
+    });
+    watch(() => {
+      // Writes b from inside the flush started by the write to a.
+      b(a() * 10);
+    });
+    a(1);
+    await tick();
+    expect(sum()).toBe(12);
+    a(2);
+    await tick();
+    expect(sum()).toBe(24);
+    expect(seen[seen.length - 1]).toBe(24);
+    b(1);
+    expect(sum()).toBe(5);
+    await tick();
+    expect(seen[seen.length - 1]).toBe(5);
+  });
+});

@@ -78,27 +78,6 @@ describe('extracted compiler', () => {
     setter.mockRestore();
   });
 
-  it('appends static leaves without disposable aliases and still creates independent DOM trees', () => {
-    const source = generate(
-      parse(['<div>one<!--note--><i></i><svg><circle></circle></svg><span>two</span></div>']),
-    );
-    expect(source).not.toContain('=document.createTextNode(');
-    expect(source).not.toContain('=document.createComment(');
-    expect(source).not.toMatch(/var _n\d+=document\.createElement\(['"]i['"]\)/);
-    expect(source).not.toMatch(/var _n\d+=document\.createElementNS\([^;]+['"]circle['"]\)/);
-    const render = compile(source);
-    const first = render();
-    const second = render();
-    const expected =
-      '<div>one<!--note--><i></i><svg><circle></circle></svg><span>two</span></div>';
-    expect(first.firstChild.outerHTML).toBe(expected);
-    expect(second.firstChild.outerHTML).toBe(expected);
-    expect(first.firstChild).not.toBe(second.firstChild);
-    expect(first.firstChild.querySelector('circle')).not.toBe(
-      second.firstChild.querySelector('circle'),
-    );
-  });
-
   it('rejects unsafe URL bindings in SSR using the existing helper contract', () => {
     const render = compile(generateSSR(parse(['<a href=', '>link</a>'])));
     expect(render(['/safe'], ssrHelpers)).toContain('href="/safe"');

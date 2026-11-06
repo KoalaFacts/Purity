@@ -801,28 +801,25 @@ function genStaticDOM(
 ): void {
   switch (node.type) {
     case 'text': {
-      const id = `_n${counter.n++}`;
-      stmts.push(
-        `var ${id}=document.createTextNode(${jsString(node.value)});${parent}.appendChild(${id});`,
-      );
+      stmts.push(`${parent}.appendChild(document.createTextNode(${jsString(node.value)}));`);
       break;
     }
     case 'comment': {
-      const id = `_n${counter.n++}`;
-      stmts.push(
-        `var ${id}=document.createComment(${jsString(node.value)});${parent}.appendChild(${id});`,
-      );
+      stmts.push(`${parent}.appendChild(document.createComment(${jsString(node.value)}));`);
       break;
     }
     case 'element': {
       assertSafeName(node.tag, 'tag');
-      const id = `_n${counter.n++}`;
       const tag = node.tag.toLowerCase();
       const namespaceURI =
         'http://www.w3.org/' + (node.ns === 'svg' ? '2000/svg' : '1998/Math/MathML');
-      stmts.push(
-        `var ${id}=document.${node.ns ? `createElementNS(${jsString(namespaceURI)},` : 'createElement('}${jsString(node.tag)});`,
-      );
+      const create = `document.${node.ns ? `createElementNS(${jsString(namespaceURI)},` : 'createElement('}${jsString(node.tag)})`;
+      if (node.attributes.length === 0 && node.children.length === 0) {
+        stmts.push(`${parent}.appendChild(${create});`);
+        break;
+      }
+      const id = `_n${counter.n++}`;
+      stmts.push(`var ${id}=${create};`);
       for (const a of node.attributes) {
         if (a.kind === 'static') {
           stmts.push(

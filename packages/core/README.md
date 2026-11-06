@@ -307,6 +307,39 @@ cd benchmark && node --expose-gc \
   --conditions=development tools/resource-heap.ts   # heap diff per cycle
 ```
 
+### Async derivation (`@purityjs/core/async`)
+
+`asyncCompute` turns a Promise-returning computation into a value that ordinary
+`compute()` chains can read ([ADR 0054](../../docs/decisions/0054-async-derivation.md)).
+
+```ts
+import { compute, state, watch } from "@purityjs/core";
+import { asyncCompute, isPending } from "@purityjs/core/async";
+
+const id = state(1);
+const user = asyncCompute(({ signal }) =>
+  fetch(`/u/${id()}`, { signal }).then((r) => r.json() as Promise<{ name: string }>),
+);
+const greeting = compute(() => `Hello, ${user().name}`);
+
+watch(() => {
+  try {
+    console.log(greeting());
+  } catch (err) {
+    if (!isPending(err)) throw err; // first load: not ready yet
+  }
+});
+```
+
+- Reads made before the first `await` are tracked; changing one starts a new run
+  and aborts the previous run's `signal`. Only the latest run can become current.
+- Before the first settlement, reading throws `PendingError`; downstream
+  computes cache and rethrow it like any error. After that, a refetch keeps the
+  previous value while `user.pending()` is `true`.
+- A rejection of the latest run is rethrown to readers until a later run
+  succeeds. `user.dispose()` (or disposing the owning scope) aborts the run.
+- The first run starts when the value is first read.
+
 ### Templates
 
 JIT compiled: `html` tagged literals → parse → AST → codegen → cached DOM factory.

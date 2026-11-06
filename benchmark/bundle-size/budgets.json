@@ -64,6 +64,10 @@
       "gzipBytes": 5120,
       "brotliBytes": 4608
     },
+    "core-async": {
+      "gzipBytes": 640,
+      "brotliBytes": 576
+    },
     "core-ssr-bridge": {
       "gzipBytes": 1664,
       "brotliBytes": 1408

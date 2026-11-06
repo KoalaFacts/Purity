@@ -75,6 +75,7 @@ accept. Numbered sequentially.
 | [0051](./0051-server-control-boundary.md)        | Register server control-flow rendering at SSR entry                           | Proposed                |
 | [0052](./0052-server-resource-boundary.md)       | Register server resource handling at SSR entry                                | Proposed                |
 | [0053](./0053-ordinary-list-specialization.md)   | Compile proven ordinary list calls to a smaller runtime                       | Superseded              |
+| [0054](./0054-async-derivation.md)               | Async derivation through the reactive graph                                   | Proposed                |
 
 ## Template
 

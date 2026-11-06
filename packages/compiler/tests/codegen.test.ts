@@ -84,8 +84,8 @@ describe('extracted compiler', () => {
     );
     expect(source).not.toContain('=document.createTextNode(');
     expect(source).not.toContain('=document.createComment(');
-    expect(source).not.toMatch(/var _n\\d+=document\\.createElement\\(['"]i['"]\\)/);
-    expect(source).not.toMatch(/var _n\\d+=document\\.createElementNS\\([^;]+['"]circle['"]\\)/);
+    expect(source).not.toMatch(/var _n\d+=document\.createElement\(['"]i['"]\)/);
+    expect(source).not.toMatch(/var _n\d+=document\.createElementNS\([^;]+['"]circle['"]\)/);
     const render = compile(source);
     const first = render();
     const second = render();
@@ -94,7 +94,9 @@ describe('extracted compiler', () => {
     expect(first.firstChild.outerHTML).toBe(expected);
     expect(second.firstChild.outerHTML).toBe(expected);
     expect(first.firstChild).not.toBe(second.firstChild);
-    expect(first.firstChild.querySelector('circle')).not.toBe(second.firstChild.querySelector('circle'));
+    expect(first.firstChild.querySelector('circle')).not.toBe(
+      second.firstChild.querySelector('circle'),
+    );
   });
 
   it('rejects unsafe URL bindings in SSR using the existing helper contract', () => {

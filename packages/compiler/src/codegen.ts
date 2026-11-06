@@ -813,7 +813,9 @@ function genStaticDOM(
       const tag = node.tag.toLowerCase();
       const namespaceURI =
         'http://www.w3.org/' + (node.ns === 'svg' ? '2000/svg' : '1998/Math/MathML');
-      const create = `document.${node.ns ? `createElementNS(${jsString(namespaceURI)},` : 'createElement('}${jsString(node.tag)})`;
+      const create = `document.${
+        node.ns ? `createElementNS(${jsString(namespaceURI)},` : 'createElement('
+      }${jsString(node.tag)})`;
       if (node.attributes.length === 0 && node.children.length === 0) {
         stmts.push(`${parent}.appendChild(${create});`);
         break;

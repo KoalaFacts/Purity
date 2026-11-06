@@ -4,7 +4,7 @@ Purity core framework — no virtual DOM, TC39-Signals-inspired reactivity.
 
 ## Scope
 
-`@purityjs/core` owns templates (`html`, JIT), components (`component`, `slot`, `teleport`, `mount`, lifecycle hooks), control flow (`when`, `match`, `each`, `list`, `suspense`), `resource`/`lazyResource`/`debounced`, `css`, forms (`@purityjs/core/forms`), virtual lists (`@purityjs/core/virtual`), error boundaries (`errorBoundary`, `@purityjs/core/boundary`, ADR 0054) and client hydration. Reactivity (`state`, `compute`, `watch`, `batch`, scopes) lives in [`@purityjs/signals`](../signals/README.md); the template parser and code generators in [`@purityjs/compiler`](../compiler/README.md); browser/live-data signals, `query`, `optimistic`, server actions and islands in [`@purityjs/platform`](../platform/README.md); routing in [`@purityjs/router`](../router/README.md).
+`@purityjs/core` owns templates (`html`, JIT), components (`component`, `slot`, `teleport`, `mount`, lifecycle hooks), control flow (`when`, `match`, `each`, `list`, `suspense`), `resource`/`lazyResource`/`debounced`, `css`, forms (`@purityjs/core/forms`), virtual lists (`@purityjs/core/virtual`), async derivation (`asyncCompute`, `@purityjs/core/async`, ADR 0055), error boundaries (`errorBoundary`, `@purityjs/core/boundary`, ADR 0055) and client hydration. Reactivity (`state`, `compute`, `watch`, `batch`, scopes) lives in [`@purityjs/signals`](../signals/README.md); the template parser and code generators in [`@purityjs/compiler`](../compiler/README.md); browser/live-data signals, `query`, `optimistic`, server actions and islands in [`@purityjs/platform`](../platform/README.md); routing in [`@purityjs/router`](../router/README.md).
 
 The public API with examples is in [README.md](./README.md); which entry provides which feature is in [docs/core-entry-points.md](../../docs/core-entry-points.md). Keep this file to layout and conventions.
 
@@ -17,10 +17,11 @@ inflates against its slot's subtree. See ADR
 [0005](../../docs/decisions/0005-non-lossy-hydration.md).
 
 ```ts
-import { enableHydrationWarnings } from '@purityjs/core/runtime'; import { hydrate } from '@purityjs/core';
+import { enableHydrationWarnings } from "@purityjs/core/runtime";
+import { hydrate } from "@purityjs/core";
 
 if (import.meta.env.DEV) enableHydrationWarnings();
-hydrate(document.getElementById('app')!, App);
+hydrate(document.getElementById("app")!, App);
 ```
 
 `enableHydrationWarnings()` makes the hydrator log `console.warn` on
@@ -70,12 +71,12 @@ const user = resource(
 
 // Imperative form for mutations / button-triggered fetches
 const save = lazyResource((data: SaveArgs, { signal }) =>
-  fetch('/save', { method: 'POST', body: JSON.stringify(data), signal }),
+  fetch("/save", { method: "POST", body: JSON.stringify(data), signal }),
 );
-save.fetch({ name: 'x' });
+save.fetch({ name: "x" });
 
 // Debounce a signal before feeding it into a resource
-const search = state('');
+const search = state("");
 const query = debounced(search, 300);
 const results = resource(
   () => query() || null,
@@ -119,8 +120,9 @@ resource.ts         — resource() / lazyResource(); resource/ holds dispatch an
 debounced.ts        — debounced() (same implementation as @purityjs/signals)
 styles.ts           — css() scoped styles
 forms.ts, forms/    — form-associated elements (`./forms`, `./forms/lifecycle`)
-boundary.ts         — errorBoundary() (`./boundary`, ADR 0054)
+boundary.ts         — errorBoundary() (`./boundary`, ADR 0055)
 virtual.ts          — virtualized lists (`./virtual`)
+async.ts            — asyncCompute() / PendingError (`./async`, ADR 0054)
 hydrate.ts          — root hydrate()
 hooks.ts            — passive cross-package / optional-feature hook bridge
 ssr-bridge.ts, ssr-context.ts, ssr/ — server integration points and hydration cache

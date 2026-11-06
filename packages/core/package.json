@@ -401,6 +401,36 @@
       "import": "./dist/virtual/index.js",
       "require": "./dist/virtual/index.cjs"
     },
+    "./async": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/async.d.ts",
+            "import": "./dist/async/index.js",
+            "require": "./dist/async/index.cjs"
+          },
+          "default": "./src/async.ts"
+        },
+        "types": "./dist/async.d.ts",
+        "import": "./dist/async/index.js",
+        "require": "./dist/async/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/async.d.ts",
+          "import": "./dist/async/index.js",
+          "require": "./dist/async/index.cjs"
+        },
+        "default": "./src/async.ts"
+      },
+      "types": "./dist/async.d.ts",
+      "browser": {
+        "import": "./dist/browser/async/index.js",
+        "require": "./dist/browser/async/index.cjs"
+      },
+      "import": "./dist/async/index.js",
+      "require": "./dist/async/index.cjs"
+    },
     "./hydration-bridge": {
       "purity-server": {
         "development": {

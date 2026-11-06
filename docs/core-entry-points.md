@@ -27,7 +27,7 @@ fourth argument (with a key):
 
 ```ts
 // 0.4.0: each(items, render, key, { virtual: true })
-import { virtualEach } from '@purityjs/core/virtual';
+import { virtualEach } from "@purityjs/core/virtual";
 virtualEach(items, render, key);
 ```
 
@@ -39,8 +39,9 @@ virtualEach(items, render, key);
 | `@purityjs/compiler`         | Template parser, AST and code generators                     |
 | `@purityjs/core`             | Components, control flow, resources, styles and hydration    |
 | `@purityjs/core/csr`         | Core APIs for client rendering without `hydrate`             |
-| `@purityjs/core/boundary`    | `errorBoundary` error fallback and reset (ADR 0054)          |
+| `@purityjs/core/boundary`    | `errorBoundary` error fallback and reset (ADR 0055)          |
 | `@purityjs/core/virtual`     | `virtualEach` for measured windowed lists                    |
+| `@purityjs/core/async`       | `asyncCompute` async derivation (ADR 0054)                   |
 | `@purityjs/core/forms`       | Form-associated component features                           |
 | `@purityjs/core/jit`         | Runtime template compilation, including hydration            |
 | `@purityjs/core/jit-client`  | Client-only runtime template compilation                     |
@@ -58,11 +59,11 @@ need windowing. The virtual entry shares keyed reconciliation and ownership
 with core, but ordinary lists do not import its windowing implementation.
 
 ```ts
-import { mount, state } from '@purityjs/core/csr';
-import { virtualEach } from '@purityjs/core/virtual';
-import { html } from '@purityjs/core/jit-client';
-import { navigate } from '@purityjs/router';
-import { serverAction } from '@purityjs/platform/actions';
+import { mount, state } from "@purityjs/core/csr";
+import { virtualEach } from "@purityjs/core/virtual";
+import { html } from "@purityjs/core/jit-client";
+import { navigate } from "@purityjs/router";
+import { serverAction } from "@purityjs/platform/actions";
 ```
 
 The Vite plugin compiles `html` templates ahead of time when possible and

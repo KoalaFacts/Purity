@@ -4,8 +4,16 @@
 
 ### Added
 
+- `asyncCompute(fn)` in the new opt-in entry `@purityjs/core/async`
+  ([ADR 0054](./docs/decisions/0054-async-derivation.md)): feed a
+  Promise-returning computation into ordinary `compute()` chains. Unresolved
+  reads throw `PendingError` (test with `isPending`), which downstream computes
+  cache and rethrow, so no `undefined` or `Promise` reaches application code as
+  data; refetches keep the previous value while `pending()` is `true`; a newer
+  run aborts the previous run's `AbortSignal` and only the latest run can become
+  current. Existing entries do not change size.
 - `errorBoundary(view, fallback)` in the new opt-in entry
-  `@purityjs/core/boundary` (ADR 0054): a throw while the view renders, or later
+  `@purityjs/core/boundary` (ADR 0055): a throw while the view renders, or later
   from one of its bindings or watches, replaces only that part of the page with
   `fallback(error, reset)`; `reset()` renders the view again, and a throwing
   fallback reaches the next outer boundary or the component's `onError`. On the
@@ -54,6 +62,12 @@
 - `purity()` from `@purityjs/vite-plugin` is checked against Vite's `Plugin`
   type at build time, so a hook that drifts from Vite's signature fails the
   package build instead of a consumer's strict config.
+- `@purityjs/vite-plugin`'s published hook types no longer use `any`: hooks
+  take `this: unknown` and read only the exported `PurityHookContext` members
+  (`warn`, `environment.config.consumer`); `generateBundle` takes the exported
+  `PurityOutputOptions` and `PurityOutputBundle`. The stale hand-written
+  `src/index.d.ts` (it declared only `include`/`strictAot` and `transform`)
+  is removed; the generated `dist/index.d.ts` is the declaration file.
 
 ## 0.5.2
 

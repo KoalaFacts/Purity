@@ -285,9 +285,9 @@ describe('5. template rendering', () => {
   it('1k complex elements — runtime html() reuses one parsed template (no per-call compile)', () => {
     // Deterministic replacement for a wall-clock AOT/runtime ratio (< 2.5x)
     // that flaked under parallel workspace load (3.65x seen with core alone
-    // green). The regression it guarded — the runtime path re-compiling or
-    // re-parsing per call and so falling far behind hoisted AOT output — is
-    // structural: after the first call, html\`\` must neither create a
+    // green). It could not catch the runtime path re-compiling or
+    // re-parsing per call (that slows the denominator). The property is
+    // structural: after the first call, html`` must neither create a
     // <template> nor parse markup; it only clones the cached root.
     const render = (i: number) => html`<div><span>Hello ${String(i)}</span></div>` as Node;
     render(-1); // first call compiles, hoists and parses once

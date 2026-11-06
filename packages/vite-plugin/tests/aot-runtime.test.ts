@@ -100,6 +100,33 @@ describe('AOT output runs correctly under jsdom', () => {
     expect(a).not.toBe(b);
   });
 
+  it('hoisted template parses its markup once across many calls', () => {
+    const { make } = evalAot(
+      `import { html } from '@purityjs/core/jit';\nconst make = (label) => html\`<div><span>\${label}</span></div>\`;`,
+    );
+    make('first'); // first call parses and caches the hoisted <template>
+    const createElement = vi.spyOn(document, 'createElement');
+    const innerHTML = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')!;
+    let parses = 0;
+    const parseSpy = vi.spyOn(Element.prototype, 'innerHTML', 'set').mockImplementation(function (
+      this: Element,
+      value: string,
+    ) {
+      parses++;
+      innerHTML.set!.call(this, value);
+    });
+    try {
+      for (let i = 0; i < 100; i++) {
+        expect((make(String(i)) as HTMLElement).textContent).toBe(String(i));
+      }
+      expect(createElement.mock.calls.filter(([tag]) => tag === 'template')).toHaveLength(0);
+      expect(parses).toBe(0);
+    } finally {
+      createElement.mockRestore();
+      parseSpy.mockRestore();
+    }
+  });
+
   it('keeps a lone slot inside <tbody> in place (no foster-parented text placeholder)', () => {
     const source =
       "import { html } from '@purityjs/core/jit';\nconst make = (rows) => html`<table><tbody>${rows}</tbody></table>`;";

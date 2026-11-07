@@ -747,18 +747,18 @@ export const defaultEachHydrationAdapter: EachHydrationAdapter = {
  * Typed as `DocumentFragment` like `html` (see `match()`).
  */
 export function each<T>(
-  listAccessor: (() => T[]) | T[],
+  listAccessor: (() => readonly T[]) | readonly T[],
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string | SSRHtml,
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment;
 export function each<T>(
-  listAccessor: (() => T[]) | T[],
+  listAccessor: (() => readonly T[]) | readonly T[],
   mapFn: (item: () => T, index: number) => Node | DocumentFragment | string | SSRHtml,
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment | DeferredEach<T> | SSRHtml {
   if (isHydratingPassive() && captureHydratingEach) {
     return captureHydratingEach(
-      listAccessor,
+      listAccessor as (() => T[]) | T[],
       mapFn as (item: () => T, index: number) => Node | DocumentFragment | string,
       keyFn,
       defaultEachHydrationAdapter,
@@ -766,7 +766,7 @@ export function each<T>(
   }
 
   if (ENABLE_SSR && getSSRRenderContext()) {
-    return ssrControls.each(listAccessor, mapFn, keyFn);
+    return ssrControls.each(listAccessor as (() => T[]) | T[], mapFn, keyFn);
   }
 
   const endMarker = document.createComment('e');
@@ -775,7 +775,7 @@ export function each<T>(
 
   const eachState: EachState<T> = { keyToEntry: new Map(), keys: [] };
   const getList =
-    typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor;
+    typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor as T[];
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
   const ops = eachRowOps(
     mapFn as (item: () => T, index: number) => Node | DocumentFragment | string,

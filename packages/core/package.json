@@ -401,6 +401,36 @@
       "import": "./dist/boundary/index.js",
       "require": "./dist/boundary/index.cjs"
     },
+    "./loading": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/loading.d.ts",
+            "import": "./dist/loading/index.js",
+            "require": "./dist/loading/index.cjs"
+          },
+          "default": "./src/loading.ts"
+        },
+        "types": "./dist/loading.d.ts",
+        "import": "./dist/loading/index.js",
+        "require": "./dist/loading/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/loading.d.ts",
+          "import": "./dist/loading/index.js",
+          "require": "./dist/loading/index.cjs"
+        },
+        "default": "./src/loading.ts"
+      },
+      "types": "./dist/loading.d.ts",
+      "browser": {
+        "import": "./dist/browser/loading/index.js",
+        "require": "./dist/browser/loading/index.cjs"
+      },
+      "import": "./dist/loading/index.js",
+      "require": "./dist/loading/index.cjs"
+    },
     "./virtual": {
       "purity-server": {
         "development": {

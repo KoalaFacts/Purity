@@ -41,6 +41,7 @@ virtualEach(items, render, key);
 | `@purityjs/core/csr`         | Core APIs for client rendering without `hydrate`             |
 | `@purityjs/core/store`       | `store` property-granular nested state (ADR 0055)            |
 | `@purityjs/core/boundary`    | `errorBoundary` error fallback and reset (ADR 0056)          |
+| `@purityjs/core/loading`     | `loading` fallback on first load, retained view (ADR 0057)   |
 | `@purityjs/core/virtual`     | `virtualEach` for measured windowed lists                    |
 | `@purityjs/core/async`       | `asyncCompute` async derivation (ADR 0054)                   |
 | `@purityjs/core/forms`       | Form-associated component features                           |

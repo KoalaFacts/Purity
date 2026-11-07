@@ -25,6 +25,13 @@
   fallback reaches the next outer boundary or the component's `onError`. On the
   server a synchronous throw renders the fallback. Hydrated content is not
   guarded yet.
+- `loading(view, fallback)` in the new opt-in entry `@purityjs/core/loading`
+  (ADR 0057): while the view's first render reads an unresolved
+  `asyncCompute()` value it shows `fallback()`, and renders the view once that
+  value settles; after that a refetch keeps the shown view, its DOM nodes and
+  edited input state. Rejections go to the surrounding `errorBoundary()` or
+  `onError`. On the server an unresolved read renders the fallback.
+  `PendingError` gains an optional `source`. New bundle budget `core-loading`.
 
 ### Changed
 

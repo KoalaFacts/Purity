@@ -1,6 +1,8 @@
 import { eachSSR, listSSR, matchSSR, whenSSR } from '@purityjs/ssr/runtime';
 import { state } from '@purityjs/core';
+import { asyncCompute } from '@purityjs/core/async';
 import { errorBoundary } from '@purityjs/core/boundary';
+import { loading } from '@purityjs/core/loading';
 import { describe, expect, it } from 'vite-plus/test';
 import { html, renderToString } from '../src/index.ts';
 
@@ -176,5 +178,42 @@ describe('errorBoundary() on the server', () => {
         )}</div>`,
     );
     expect(out).toBe('<div><!--[--><p><!--[-->server view<!--]--></p><!--]--></div>');
+  });
+});
+
+describe('loading() on the server', () => {
+  it('renders the view when nothing is pending', async () => {
+    const out = await renderToString(
+      () =>
+        html`<div>${loading(
+          () => html`<p>ready</p>`,
+          () => html`<p>wait</p>`,
+        )}</div>`,
+    );
+    expect(out).toBe('<div><!--[--><p>ready</p><!--]--></div>');
+  });
+
+  it('renders the fallback for an unresolved async read and rethrows other errors', async () => {
+    const value = asyncCompute(() => new Promise<string>(() => {}));
+    const out = await renderToString(
+      () =>
+        html`<div>${loading(
+          () => html`<p>${value()}</p>`,
+          () => html`<p>wait</p>`,
+        )}</div>`,
+    );
+    expect(out).toBe('<div><!--[--><p>wait</p><!--]--></div>');
+    value.dispose();
+    await expect(
+      renderToString(
+        () =>
+          html`<div>${loading(
+            () => {
+              throw new Error('server view');
+            },
+            () => html`<p>wait</p>`,
+          )}</div>`,
+      ),
+    ).rejects.toThrow('server view');
   });
 });

@@ -78,6 +78,7 @@ accept. Numbered sequentially.
 | [0054](./0054-async-derivation.md)               | Async derivation through the reactive graph                                   | Proposed                |
 | [0055](./0055-property-store.md)                 | Add a property-granular store as an opt-in core entry                         | Proposed                |
 | [0056](./0056-error-boundary.md)                 | Client error fallback and reset boundary                                      | Proposed                |
+| [0057](./0057-loading-boundary.md)               | Client loading boundary with retained content                                 | Proposed                |
 
 ## Template
 

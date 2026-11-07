@@ -11,9 +11,15 @@ import { compute, getCurrentContext, state } from '@purityjs/signals';
 
 /** Thrown by reading an {@link asyncCompute} value that has never settled. */
 export class PendingError extends Error {
-  constructor() {
+  /**
+   * The unresolved {@link asyncCompute} value whose read threw this error;
+   * `loading()` waits on its `pending()` before rendering again.
+   */
+  source?: AsyncComputed<unknown>;
+  constructor(source?: AsyncComputed<unknown>) {
     super('[Purity] async value is not ready yet');
     this.name = 'PendingError';
+    this.source = source;
   }
 }
 
@@ -119,7 +125,7 @@ export function asyncCompute<T>(
 
   const read = (() => {
     const result = outcome();
-    if (result === null) throw new PendingError();
+    if (result === null) throw new PendingError(read);
     if (result.ok) return result.value;
     throw result.error;
   }) as AsyncComputed<T>;

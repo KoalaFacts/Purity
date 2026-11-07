@@ -560,6 +560,30 @@ outer boundary or the component's `onError`. Event-handler errors, and errors
 inside a nested `component()` custom element, are not caught. On the server a synchronous throw renders the fallback; hydrated
 content is not guarded yet ([ADR 0056](../../docs/decisions/0056-error-boundary.md)).
 
+To show a placeholder until an `asyncCompute()` value first settles, wrap the
+part that reads it in `loading`:
+
+```ts
+import { asyncCompute } from "@purityjs/core/async";
+import { loading } from "@purityjs/core/loading";
+
+const user = asyncCompute(({ signal }) => fetchUser(id(), { signal }));
+
+html`<section>
+  ${loading(
+    () => html`<h2>${() => user().name}</h2><input placeholder="Note" />`,
+    () => html`<p aria-busy="true">Loading…</p>`,
+  )}
+</section>`;
+```
+
+The fallback shows until the view renders without an unresolved read. After
+that a refetch keeps the view as it is (same nodes, focus and typed input);
+use `user.pending()` for a busy indicator. A rejection goes to the surrounding
+`errorBoundary` or `onError`. Content created later (a new `when()` branch
+reading a new async value) needs its own `loading`. On the server an unresolved
+read renders the fallback ([ADR 0057](../../docs/decisions/0057-loading-boundary.md)).
+
 ### Teleport
 
 ```ts

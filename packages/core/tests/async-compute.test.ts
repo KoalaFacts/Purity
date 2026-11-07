@@ -52,6 +52,18 @@ describe('asyncCompute (ADR 0054)', () => {
     expect(value.pending()).toBe(true);
   });
 
+  it('names the unresolved value as the PendingError source, also through a compute()', () => {
+    const value = asyncCompute(() => new Promise<number>(() => {}));
+    const derived = compute(() => value() + 1);
+    let caught: unknown;
+    try {
+      derived();
+    } catch (error) {
+      caught = error;
+    }
+    expect(isPending(caught) && caught.source).toBe(value);
+  });
+
   it('settles synchronous results in the same read', () => {
     const n = state(2);
     const doubled = asyncCompute(() => n() * 2);

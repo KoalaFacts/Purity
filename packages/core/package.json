@@ -431,6 +431,36 @@
       "import": "./dist/loading/index.js",
       "require": "./dist/loading/index.cjs"
     },
+    "./transaction": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/transaction.d.ts",
+            "import": "./dist/transaction/index.js",
+            "require": "./dist/transaction/index.cjs"
+          },
+          "default": "./src/transaction.ts"
+        },
+        "types": "./dist/transaction.d.ts",
+        "import": "./dist/transaction/index.js",
+        "require": "./dist/transaction/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/transaction.d.ts",
+          "import": "./dist/transaction/index.js",
+          "require": "./dist/transaction/index.cjs"
+        },
+        "default": "./src/transaction.ts"
+      },
+      "types": "./dist/transaction.d.ts",
+      "browser": {
+        "import": "./dist/browser/transaction/index.js",
+        "require": "./dist/browser/transaction/index.cjs"
+      },
+      "import": "./dist/transaction/index.js",
+      "require": "./dist/transaction/index.cjs"
+    },
     "./virtual": {
       "purity-server": {
         "development": {

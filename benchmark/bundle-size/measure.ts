@@ -245,6 +245,11 @@ const packageEntries = [
   },
   { name: 'core-boundary', specifier: '@purityjs/core/boundary', dist: 'packages/core/dist/' },
   { name: 'core-loading', specifier: '@purityjs/core/loading', dist: 'packages/core/dist/' },
+  {
+    name: 'core-transaction',
+    specifier: '@purityjs/core/transaction',
+    dist: 'packages/core/dist/',
+  },
   { name: 'core-csr', specifier: '@purityjs/core/csr', dist: 'packages/core/dist/' },
   { name: 'core-virtual', specifier: '@purityjs/core/virtual', dist: 'packages/core/dist/' },
   { name: 'core-async', specifier: '@purityjs/core/async', dist: 'packages/core/dist/' },

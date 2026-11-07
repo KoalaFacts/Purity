@@ -1,0 +1,93 @@
+# 0059: Async transactions with optimistic overlays
+
+**Status:** Proposed (SV2-007; implementation slices tracked in
+[the surpass-Solid ledger](../plans/surpass-solid.md))
+**Date:** 2026-11-08
+
+## Context
+
+`batch()` groups synchronous writes into one flush, but a change that spans
+async work (save, then update the title and the timestamp from the response)
+is written as separate `set()` calls after the `await`, and a tentative value
+shown before the request is rolled back by hand. `optimistic()` in
+`@purityjs/platform` (ADR 0049) wraps a server action with apply/rollback and
+query invalidation, but it is tied to server actions and leaves overlapping
+tentative values on the same signal to application code
+([SV2-007](../solid-v2-gap-analysis.md#sv2-007)). Solid v2 (rc.20) actions
+hold writes across transaction-safe yields, and optimistic signals show
+tentative values that settle with the action.
+
+## Decision
+
+A new opt-in entry `@purityjs/core/transaction` exports
+`transaction(fn): Promise<R>`. `fn` receives `tx`:
+
+```ts
+import { transaction } from '@purityjs/core/transaction';
+
+await transaction(async (tx) => {
+  tx.optimistic(title, draft); // shown now
+  const saved = await save(draft, { signal: tx.signal });
+  tx.set(title, saved.title); // applied together…
+  tx.set(updatedAt, saved.updatedAt); // …in one batch
+});
+```
+
+Contract (slice 1):
+
+1. **Coherent commit.** `tx.set(state, value)` stages a write (the last one per
+   signal wins). Nothing staged is visible until `fn` resolves; then every
+   staged write is applied in one `batch()`, so no reader sees part of the
+   update. A rejection (or a synchronous throw) discards them, and the
+   returned promise rejects with the same error.
+2. **Tentative values.** `tx.optimistic(state, value)` shows `value` at once
+   and removes it exactly once when the transaction settles, in the same batch
+   as the commit. With no commit for that signal it returns to its
+   authoritative value.
+3. **Overlap.** Each signal keeps a stack of tentative layers over an
+   authoritative base. The newest live layer is shown; a commit from any
+   transaction updates the base, which becomes visible when the last layer
+   on that signal settles. A direct `state.set()` made while a layer is shown
+   becomes the new base. No conflict resolution beyond this is attempted
+   (server-side business conflicts stay application code).
+4. **Disposal.** Started inside a component or scope, the transaction is
+   aborted when that owner is disposed first: `tx.signal` aborts, staged writes
+   are discarded, tentative values are removed and the promise rejects with
+   the abort reason (`AbortError`). A later settlement of `fn` is ignored.
+5. **Misuse.** `tx.set()` / `tx.optimistic()` after settlement throw
+   `[Purity] transaction already settled`. Reads inside `fn` are untracked, so
+   starting a transaction from a `watch()` does not subscribe it.
+
+Intentional differences from Solid: a promise-returning function instead of a
+generator (no transform, works in the JIT and strict AOT paths alike);
+tentative values are layers over ordinary `state()` signals rather than a
+separate optimistic signal type.
+
+Out of scope for slice 1: a tracked `pending()` for running transactions,
+`store()` draft overlays, and wiring platform `optimistic()` onto these layers.
+
+## Acceptance tests
+
+`packages/core/tests/transaction.test.ts`: two signals written around an
+`await` reach a watcher as one change (`['0:0', '1:1']`); rejection discards
+writes; an optimistic value is shown, then replaced by the commit or rolled
+back exactly once (`[0, 1, 0]`); overlapping overlays; a commit under another
+live overlay; adopted direct writes; owner disposal; settled misuse; untracked
+callback reads.
+
+## Consequences
+
+- Multi-signal updates around async work and tentative UI values need no
+  hand-written rollback.
+- New entry with its own budget (`core-transaction`); no existing entry grows.
+- A module-level map holds an entry only while a signal has live layers.
+
+## Alternatives considered
+
+- **Generator actions (Solid's shape).** Needs a build transform or a
+  runner that every `await` site must respect; promises compose with
+  `fetch` and `AbortSignal` as written today.
+- **Make `batch()` async.** Would change the semantics of every existing
+  `batch()` call and hold unrelated writes made by other code.
+- **Extend platform `optimistic()`.** Keeps the feature tied to server
+  actions; core-level layers serve any async work and can back it later.

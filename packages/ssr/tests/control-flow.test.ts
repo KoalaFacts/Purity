@@ -89,6 +89,23 @@ describe('eachSSR + html', () => {
     );
   });
 
+  it('passes the current position as the third argument (SV2-008)', async () => {
+    const out = await renderToString(
+      () =>
+        html`<ol>
+          ${eachSSR(
+            () => ['x', 'x', 'y'],
+            (item, _index, position) => html`<li>${() => `${position()}:${item()}`}</li>`,
+            (item) => item,
+          )}
+        </ol>`,
+    );
+    // Duplicate key 'x' renders once; 'y' is the second rendered row but its
+    // position is its index in the source list, matching the client.
+    expect(out).toContain('<li><!--[-->0:x<!--]--></li>');
+    expect(out).toContain('<li><!--[-->2:y<!--]--></li>');
+  });
+
   it('renders an empty list', async () => {
     const out = await renderToString(
       () =>

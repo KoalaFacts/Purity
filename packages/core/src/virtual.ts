@@ -615,7 +615,8 @@ const virtualHydrationAdapter: EachHydrationAdapter = {
       ownerCtx,
       eachState,
       getList,
-      mapFn,
+      // virtualEach() renderers take (item, index); they have no position.
+      mapFn as (item: () => any, index: number) => Node | DocumentFragment | string,
       getKey,
       spacers,
     );

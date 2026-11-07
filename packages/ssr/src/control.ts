@@ -81,11 +81,10 @@ export function whenSSR(
  */
 export function eachSSR<T>(
   listAccessor: (() => T[]) | T[],
-  mapFn: (item: () => T, index: number) => unknown,
+  mapFn: (item: () => T, index: number, position: () => number) => unknown,
   keyFn?: (item: T, index: number) => unknown,
 ): SSRHtml {
   const items = (typeof listAccessor === 'function' ? listAccessor() : listAccessor) || [];
-  const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
   let inner = '<!--e-->';
   const spans: RawTextSpan[] = [];
   const seenKeys = new Set<unknown>();
@@ -93,16 +92,24 @@ export function eachSSR<T>(
     // Pass a frozen accessor so user code that calls `item()` works the same
     // shape as the client. No reactivity — the value is captured at render.
     const value = items[i];
-    const key = getKey(value, i);
+    const key = keyFn ? keyFn(value, i) : value;
     // Duplicate key: emit only the first row, matching the client render.
     if (seenKeys.has(key)) {
       warnDuplicateKey(key, i);
       continue;
     }
     seenKeys.add(key);
-    const accessor = () => value;
     inner += `<!--er:${encodeRowKey(key)}-->`;
-    inner += valueToHtml(mapFn(accessor, i), spans, inner.length) + '<!--/er-->';
+    inner +=
+      valueToHtml(
+        mapFn(
+          () => value,
+          i,
+          () => i,
+        ),
+        spans,
+        inner.length,
+      ) + '<!--/er-->';
   }
   return markSSRHtml(`${inner}<!--/e-->`, spans);
 }

@@ -11,6 +11,7 @@ import { getCurrentContext, popContext, pushContext, state } from '@purityjs/sig
 import type {
   EachEntry,
   EachHydrationAdapter,
+  EachMapFn,
   EachState,
   MatchCases,
   MatchHydrationAdapter,
@@ -18,6 +19,7 @@ import type {
   MatchView,
 } from '../control.ts';
 import { setEachHydrationHook, setMatchHydrationHook } from '../hooks.ts';
+import { rowPosition } from './position.ts';
 import {
   type DeferredTemplate,
   enterHydration,
@@ -102,7 +104,7 @@ function parseSSRRows(contNodes: Node[]): {
 export interface CapturedDeferredEach<T = unknown> {
   __purity_deferred_each__: true;
   listAccessor: (() => T[]) | T[];
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string;
+  mapFn: EachMapFn<T>;
   keyFn?: (item: T, index: number) => unknown;
   adapter: EachHydrationAdapter<T>;
 }
@@ -153,7 +155,11 @@ export function inflateDeferredEach<T>(
         enterHydration();
         let content: Node | DocumentFragment | string | DeferredTemplate;
         try {
-          content = mapFn(data, i) as Node | DocumentFragment | string | DeferredTemplate;
+          content = mapFn(data, i, rowPosition(entry, i)) as
+            | Node
+            | DocumentFragment
+            | string
+            | DeferredTemplate;
         } finally {
           exitHydration();
         }
@@ -352,7 +358,7 @@ export function installControlHydration(): void {
   setEachHydrationHook(
     <T>(
       listAccessor: (() => T[]) | T[],
-      mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+      mapFn: EachMapFn<T>,
       keyFn?: (item: T, index: number) => unknown,
       adapter?: unknown,
     ) => {

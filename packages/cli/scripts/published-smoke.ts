@@ -7,7 +7,8 @@ import { createServer } from 'node:net';
 import { basename, dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { tmpdir } from 'node:os';
-import { chromium, firefox, webkit, type BrowserType } from 'playwright';
+import type { BrowserType } from 'playwright';
+import { browserEngines } from '../../../benchmark/tools/browser-engines.ts';
 
 const npmCli = process.env.npm_execpath;
 if (!npmCli) throw new Error('Run this check through npm run test:published-cli');
@@ -297,7 +298,7 @@ async function checkProject(
     const [, major, minor, patch] = versionParts.map(Number);
     const expectNodeRetention =
       mode === 'ssr' && (major > 0 || minor > 2 || (minor === 2 && patch >= 4));
-    for (const browserType of [chromium, firefox, webkit]) {
+    for (const [, browserType] of browserEngines) {
       await checkBrowser(browserType, mode, url, expectNodeRetention);
     }
   } finally {

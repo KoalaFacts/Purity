@@ -76,7 +76,8 @@ accept. Numbered sequentially.
 | [0052](./0052-server-resource-boundary.md)       | Register server resource handling at SSR entry                                | Proposed                |
 | [0053](./0053-ordinary-list-specialization.md)   | Compile proven ordinary list calls to a smaller runtime                       | Superseded              |
 | [0054](./0054-async-derivation.md)               | Async derivation through the reactive graph                                   | Proposed                |
-| [0055](./0055-error-boundary.md)                 | Client error fallback and reset boundary                                      | Proposed                |
+| [0055](./0055-property-store.md)                 | Add a property-granular store as an opt-in core entry                         | Proposed                |
+| [0056](./0056-error-boundary.md)                 | Client error fallback and reset boundary                                      | Proposed                |
 
 ## Template
 

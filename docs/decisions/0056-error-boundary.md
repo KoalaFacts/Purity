@@ -1,4 +1,4 @@
-# 0055: Client error fallback and reset boundary
+# 0056: Client error fallback and reset boundary
 
 **Status:** Proposed (SV2-006; implementation slices tracked in
 [the surpass-Solid ledger](../plans/surpass-solid.md))

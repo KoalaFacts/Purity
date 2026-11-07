@@ -41,6 +41,22 @@ batch(() => {
 }); // single flush
 ```
 
+Nested objects and arrays: `store()` from `@purityjs/core/store` tracks each
+property separately, so a write reruns only the readers of what changed
+([ADR 0055](../../docs/decisions/0055-property-store.md)).
+
+```ts
+import { store } from "@purityjs/core/store";
+
+const [form, update] = store({ name: "", address: { city: "" }, tags: ["a"] });
+compute(() => form.address.city); // reruns only when city changes
+update((draft) => {
+  draft.address.city = "Sydney"; // all writes in one batch
+  draft.tags.push("b");
+});
+// form.name = "x" throws: the view is read-only
+```
+
 ### Async Resources
 
 Race-safe async data, built on signals. Each `resource()` exposes reactive
@@ -542,7 +558,7 @@ disposes the view and shows `fallback(error, reset)`; the rest of the page keeps
 updating. `reset()` renders the view again. A throwing fallback goes to the next
 outer boundary or the component's `onError`. Event-handler errors, and errors
 inside a nested `component()` custom element, are not caught. On the server a synchronous throw renders the fallback; hydrated
-content is not guarded yet ([ADR 0055](../../docs/decisions/0055-error-boundary.md)).
+content is not guarded yet ([ADR 0056](../../docs/decisions/0056-error-boundary.md)).
 
 ### Teleport
 

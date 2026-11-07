@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// errorBoundary(view, fallback) — client error fallback with reset (ADR 0055)
+// errorBoundary(view, fallback) — client error fallback with reset (ADR 0056)
 //
 // Opt-in entry `@purityjs/core/boundary`. Errors from the view's render and
 // from later scheduled runs of its watches/effects (a template binding reading

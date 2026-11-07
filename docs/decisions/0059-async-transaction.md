@@ -48,12 +48,17 @@ Contract (slice 1):
    authoritative base. The newest live layer is shown; a commit from any
    transaction updates the base, which becomes visible when the last layer
    on that signal settles. A direct `state.set()` made while a layer is shown
-   becomes the new base. No conflict resolution beyond this is attempted
+   becomes the new base (a direct write equal to the shown tentative value
+   cannot be told apart from it and is not adopted). No conflict resolution beyond this is attempted
    (server-side business conflicts stay application code).
-4. **Disposal.** Started inside a component or scope, the transaction is
-   aborted when that owner is disposed first: `tx.signal` aborts, staged writes
+4. **Disposal.** Called synchronously inside an owner (component setup, a
+   render, a `watch()` run), the transaction is aborted when that owner is
+   disposed first, or when the watch re-runs: `tx.signal` aborts, staged writes
    are discarded, tentative values are removed and the promise rejects with
-   the abort reason (`AbortError`). A later settlement of `fn` is ignored.
+   the abort reason (`AbortError`). A later settlement of `fn` is ignored. A
+   settled transaction removes its disposer from the owner. Event handlers run
+   outside any owner, so a transaction started from `@click` always settles;
+   pass `tx.signal` to the request to make the work itself cancellable.
 5. **Misuse.** `tx.set()` / `tx.optimistic()` after settlement throw
    `[Purity] transaction already settled`. Reads inside `fn` are untracked, so
    starting a transaction from a `watch()` does not subscribe it.

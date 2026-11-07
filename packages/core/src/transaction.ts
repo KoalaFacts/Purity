@@ -77,9 +77,11 @@ const drop = (tx: object, targets: Target[] | null): void => {
  * Run async work whose state writes become visible together. Writes staged
  * with `tx.set()` are applied in one batch when `fn` resolves and discarded
  * when it rejects; values shown with `tx.optimistic()` are removed when it
- * settles either way. Created inside a component or scope, the transaction is
- * aborted on disposal: its writes are discarded, its tentative values removed
- * and the returned promise rejects with the abort reason.
+ * settles either way. Called synchronously inside an owner (component setup,
+ * a render, a `watch()` run), the transaction is aborted when that owner is
+ * disposed or the watch re-runs: its writes are discarded, its tentative
+ * values removed and the returned promise rejects with the abort reason.
+ * Event handlers run outside any owner, so their transactions always settle.
  *
  * ```ts
  * await transaction(async (tx) => {
@@ -96,6 +98,7 @@ export function transaction<R>(fn: (tx: Transaction) => R | PromiseLike<R>): Pro
   let staged: Map<Target, unknown> | null = null;
   let shownOn: Target[] | null = null;
   let settled = false;
+  let release: (() => void) | null = null;
 
   const assertOpen = (): void => {
     if (settled) throw new Error('[Purity] transaction already settled');
@@ -109,6 +112,7 @@ export function transaction<R>(fn: (tx: Transaction) => R | PromiseLike<R>): Pro
       if (commit && staged) for (const [target, value] of staged) write(target, value);
     });
     staged = shownOn = null;
+    release?.();
     return true;
   };
 
@@ -131,14 +135,23 @@ export function transaction<R>(fn: (tx: Transaction) => R | PromiseLike<R>): Pro
 
   return new Promise<R>((resolve, reject) => {
     const ctx = getCurrentContext();
-    if (ctx)
-      (ctx.disposers ??= []).push(() => {
+    if (ctx) {
+      const onDispose = (): void => {
+        release = null;
         if (!settled) {
           controller.abort();
           finish(false);
           reject(controller.signal.reason);
         }
-      });
+      };
+      (ctx.disposers ??= []).push(onDispose);
+      // Settled transactions leave no disposer behind on long-lived owners.
+      release = () => {
+        const list = ctx.disposers;
+        const i = list ? list.indexOf(onDispose) : -1;
+        if (i >= 0) list!.splice(i, 1);
+      };
+    }
     let result: R | PromiseLike<R>;
     try {
       result = untracked(() => fn(tx));

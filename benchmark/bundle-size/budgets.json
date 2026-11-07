@@ -65,8 +65,8 @@
       "brotliBytes": 1344
     },
     "core-transaction": {
-      "gzipBytes": 704,
-      "brotliBytes": 640
+      "gzipBytes": 768,
+      "brotliBytes": 704
     },
     "core-csr": {
       "gzipBytes": 7808,

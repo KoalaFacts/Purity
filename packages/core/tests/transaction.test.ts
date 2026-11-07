@@ -183,6 +183,17 @@ describe('transaction()', () => {
     expect(a.peek()).toBe('base');
   });
 
+  it('releases its owner disposer once settled', async () => {
+    const scope: Scope = { disposers: null } as Scope;
+    pushContext(scope);
+    const done = transaction(async () => {});
+    popContext();
+    expect(scope.disposers?.length).toBe(1);
+    await done;
+    expect(scope.disposers?.length).toBe(0);
+    disposeScope(scope);
+  });
+
   it('throws when set or optimistic is called after settlement', async () => {
     const a = state(0);
     let saved!: Parameters<Parameters<typeof transaction>[0]>[0];

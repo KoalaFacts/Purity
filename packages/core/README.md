@@ -620,8 +620,9 @@ await transaction(async (tx) => {
 
 Overlapping transactions show the newest tentative value; a commit underneath
 it becomes visible when the last tentative value on that signal settles.
-Started inside a component, a transaction is aborted on unmount (writes
-dropped, tentative values removed, the promise rejects with `AbortError`).
+Started during component setup or render, a transaction is aborted on unmount
+(writes dropped, tentative values removed, the promise rejects with
+`AbortError`); one started from an event handler always settles.
 
 ### Teleport
 

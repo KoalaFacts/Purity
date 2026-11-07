@@ -9,7 +9,8 @@
   `tx.set()` are applied in one batch when the async work resolves and
   discarded when it rejects; `tx.optimistic()` shows a tentative value at once
   and removes it exactly once when the transaction settles. Overlapping
-  tentative values stack per signal; owner disposal aborts the transaction.
+  tentative values stack per signal; disposing the owner it was started in
+  (setup or render) aborts it.
   New bundle budget `core-transaction`.
 - `each()` passes the row renderer a third argument, `position: () => number`,
   the row's current index ([ADR 0058](./docs/decisions/0058-each-current-position.md)).

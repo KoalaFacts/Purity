@@ -81,3 +81,24 @@ export function uninstallMatchMediaMock(): void {
   }
   mockMqls.clear();
 }
+
+// ---------------------------------------------------------------------------
+// Wall-clock threshold helper — used by the coarse O(n) timing tests.
+// ---------------------------------------------------------------------------
+
+/**
+ * Run `fn` `runs` times and return the fastest wall-clock duration in ms.
+ * The minimum filters scheduler noise from parallel test workers (a slow
+ * sample is the machine, not the code) without loosening any threshold:
+ * an implementation that is really too slow is slow in every run.
+ */
+export function bestOfMs(fn: () => void, runs = 3): number {
+  let best = Infinity;
+  for (let i = 0; i < runs; i++) {
+    const start = performance.now();
+    fn();
+    const elapsed = performance.now() - start;
+    if (elapsed < best) best = elapsed;
+  }
+  return best;
+}

@@ -27,7 +27,7 @@ fourth argument (with a key):
 
 ```ts
 // 0.4.0: each(items, render, key, { virtual: true })
-import { virtualEach } from "@purityjs/core/virtual";
+import { virtualEach } from '@purityjs/core/virtual';
 virtualEach(items, render, key);
 ```
 
@@ -60,11 +60,11 @@ need windowing. The virtual entry shares keyed reconciliation and ownership
 with core, but ordinary lists do not import its windowing implementation.
 
 ```ts
-import { mount, state } from "@purityjs/core/csr";
-import { virtualEach } from "@purityjs/core/virtual";
-import { html } from "@purityjs/core/jit-client";
-import { navigate } from "@purityjs/router";
-import { serverAction } from "@purityjs/platform/actions";
+import { mount, state } from '@purityjs/core/csr';
+import { virtualEach } from '@purityjs/core/virtual';
+import { html } from '@purityjs/core/jit-client';
+import { navigate } from '@purityjs/router';
+import { serverAction } from '@purityjs/platform/actions';
 ```
 
 The Vite plugin compiles `html` templates ahead of time when possible and

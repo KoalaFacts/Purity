@@ -72,26 +72,11 @@ export function errorBoundary(view: () => unknown, fallback: ErrorFallback): Doc
     owner.parent = parent;
     if (handle) owner.errorHandlers = [handle];
     current = owner;
-    // Form hooks registered directly by this attempt land on the host's
-    // lists with no disposer (addComponentCallback skips one when the owner
-    // is the current component), so release them with the attempt.
-    const marks = parent && HOST_LISTS.map((key) => parent[key]?.length ?? 0);
     pushContext(owner);
     try {
       return render();
     } finally {
       popContext();
-      if (marks) {
-        const added = HOST_LISTS.map((key, i) => parent![key]?.slice(marks[i]));
-        (owner.disposers ??= []).push(() =>
-          added.forEach((fns, i) =>
-            fns?.forEach((fn) => {
-              const list = parent![HOST_LISTS[i]] as unknown[];
-              list.splice(list.indexOf(fn) >>> 0, 1);
-            }),
-          ),
-        );
-      }
     }
   };
 
@@ -187,40 +172,61 @@ const HOST_FIELDS = [
   '_slotContent',
   '_ssrSlots',
   '_ssrStyles',
-  '_formAssociated',
-  '_formDisabled',
-  '_formReset',
-  '_formStateRestore',
 ] as const;
 
-// Host callback lists (the form hooks) that attempts may register into directly.
-const HOST_LISTS = HOST_FIELDS.slice(6) as [
-  '_formAssociated',
-  '_formDisabled',
-  '_formReset',
-  '_formStateRestore',
-];
+// Host callback lists (the form hooks). An attempt sees its own list whose
+// push/splice also add to / remove from the host's list, so every hook it or
+// one of its nested scopes registers, at any time, is released with it.
+const HOST_LISTS = ['_formAssociated', '_formDisabled', '_formReset', '_formStateRestore'] as const;
+
+type List = unknown[];
 
 class HostedContext extends ComponentContext {
   declare _host: ComponentContext;
+  declare _own?: Record<string, List>;
   constructor(host: ComponentContext) {
     super();
     this._host = host;
   }
 }
 
-for (let i = 0; i < HOST_FIELDS.length; i++) {
-  const key = HOST_FIELDS[i];
+for (const key of HOST_FIELDS) {
   Object.defineProperty(HostedContext.prototype, key, {
     get(this: HostedContext) {
       return this._host[key];
     },
-    // Lazy initialisation (`ctx._stateRefs ??= new Map()`, form hook lists)
-    // reaches the host; clears do not: tearing down a failed attempt
-    // (unmountContext sets _slotContent = undefined) must not wipe the host
-    // component's slot content or other host state.
+    // Lazy initialisation (`ctx._stateRefs ??= new Map()`) reaches the host;
+    // clears do not: tearing down a failed attempt (unmountContext sets
+    // _slotContent = undefined) must not wipe the host's slot content.
     set(this: HostedContext, value: unknown) {
       if (value != null) (this._host as unknown as Record<string, unknown>)[key] = value;
     },
+  });
+}
+
+for (const key of HOST_LISTS) {
+  Object.defineProperty(HostedContext.prototype, key, {
+    get(this: HostedContext) {
+      const host = this._host as unknown as Record<string, List | null | undefined>;
+      const own = (this._own ??= {});
+      if (own[key]) return own[key];
+      // Teardown removes whatever is still registered from the host's list.
+      (this.disposers ??= []).push(() => own[key].splice(0, 1e9));
+      return (own[key] = Object.assign([] as List, {
+        push(this: List, fn: unknown) {
+          (host[key] ??= []).push(fn);
+          return ([] as List).push.call(this, fn);
+        },
+        splice(this: List, start: number, count: number) {
+          const removed = ([] as List).splice.call(this, start, count);
+          for (const fn of removed) {
+            const list = host[key];
+            list?.splice(list.indexOf(fn) >>> 0, 1);
+          }
+          return removed;
+        },
+      }));
+    },
+    set() {},
   });
 }

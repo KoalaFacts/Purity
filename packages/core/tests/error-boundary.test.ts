@@ -508,6 +508,59 @@ describe('errorBoundary()', () => {
     expect(host!._formReset?.length).toBe(1);
   });
 
+  it('form hooks registered by a nested scope inside the view are released on failure and when the scope closes', async () => {
+    const fail = state(false);
+    const open = state(false);
+    let doReset: (() => void) | null = null;
+    let host: ReturnType<typeof getCurrentComponent> = null;
+    const render = component('p-eb-nested-form-hook-host', () => {
+      host = getCurrentComponent();
+      return el(
+        'div',
+        errorBoundary(
+          () =>
+            el(
+              'span',
+              when(open, () => {
+                onFormReset(() => {});
+                return document.createTextNode('open');
+              }) as unknown as Node,
+              text(() => {
+                if (fail()) throw new Error('later');
+                return 'view';
+              }),
+            ),
+          (_error, reset) => {
+            doReset = reset;
+            return document.createTextNode('failed');
+          },
+        ),
+      );
+    });
+    render({});
+    expect(host!._formReset?.length ?? 0).toBe(0);
+    // A branch opening after the first render registers on the host.
+    open(true);
+    await tick();
+    expect(host!._formReset?.length).toBe(1);
+    // Closing the branch while the view is alive releases it.
+    open(false);
+    await tick();
+    expect(host!._formReset?.length).toBe(0);
+    open(true);
+    await tick();
+    expect(host!._formReset?.length).toBe(1);
+    // The view failing releases the nested registration.
+    fail(true);
+    await tick();
+    expect(host!._formReset?.length).toBe(0);
+    // Reset re-renders with the branch open: exactly one again, not two.
+    fail(false);
+    doReset!();
+    await tick();
+    expect(host!._formReset?.length).toBe(1);
+  });
+
   it('a reset() called while the fallback renders shows only the view', () => {
     let fail = true;
     let lateFallbackRuns = 0;

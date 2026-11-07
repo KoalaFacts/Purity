@@ -521,6 +521,21 @@ only rows inside the changed range (fewest moves, via `moveBefore` where the
 browser has it). Keys must be unique; a repeated key renders only its first
 occurrence and logs a warning.
 
+The renderer's second argument is the index the row was created at; the third,
+`position`, is an accessor for its current index, so ordinal labels and
+position-based actions stay right after a keyed reorder without re-rendering
+the row ([ADR 0058](../../docs/decisions/0058-each-current-position.md)):
+
+```ts
+each(
+  () => todos(),
+  (todo, _index, position) =>
+    html`<li>${() => `${position() + 1}. ${todo().title}`}
+      <button @click=${() => removeAt(position())}>×</button></li>`,
+  (todo) => todo.id,
+);
+```
+
 For a long list, import `virtualEach` and put it in a scrollable container:
 
 ```ts

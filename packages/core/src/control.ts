@@ -10,6 +10,7 @@ import {
   type StateAccessor,
   watchEffectInternal,
 } from '@purityjs/signals';
+import { rowPosition } from './control/position.ts';
 import { warnDuplicateKey } from './control/keys.ts';
 import {
   captureHydratingEach,
@@ -356,7 +357,17 @@ function lis(arr: number[]): number[] {
 export interface EachEntry<T = unknown> extends Scope {
   nodes: Node[];
   data: StateAccessor<T>;
+  /** Current position (SV2-008); `p` is its signal, created on first read. */
+  i?: number;
+  p?: StateAccessor<number>;
 }
+
+/** Each row renderer: `item` is reactive, `index` is the creation index, `position` the current one. */
+export type EachMapFn<T, R = Node | DocumentFragment | string> = (
+  item: () => T,
+  index: number,
+  position: () => number,
+) => R;
 
 /** @internal */
 export function trackEntry<T>(entry: EachEntry<T>): void {
@@ -384,9 +395,7 @@ export interface RowOps<T, E extends KeyedEntry> {
 }
 
 /** @internal */
-export function eachRowOps<T>(
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
-): RowOps<T, EachEntry<T>> {
+export function eachRowOps<T>(mapFn: EachMapFn<T>): RowOps<T, EachEntry<T>> {
   return {
     create(item, index) {
       const data = createState(item);
@@ -395,7 +404,7 @@ export function eachRowOps<T>(
       let content: Node | DocumentFragment | string;
       try {
         try {
-          content = mapFn(data, index);
+          content = mapFn(data, index, rowPosition(entry, index));
         } finally {
           popContext();
         }
@@ -407,8 +416,10 @@ export function eachRowOps<T>(
       trackEntry(entry);
       return entry;
     },
-    update(entry, item) {
+    update(entry, item, index) {
       entry.data(item);
+      entry.i = index;
+      entry.p?.(index);
     },
     release: disposeEntry,
   };
@@ -706,7 +717,7 @@ export function registerEachAutoDispose<T, E extends KeyedEntry>(
 export interface DeferredEach<T = unknown> {
   __purity_deferred_each__: true;
   listAccessor: (() => T[]) | T[];
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string;
+  mapFn: EachMapFn<T>;
   keyFn?: (item: T, index: number) => unknown;
 }
 
@@ -718,7 +729,7 @@ export interface EachHydrationAdapter<T = any> {
     ownerCtx: Scope | null,
     eachState: EachState<T>,
     getList: () => T[],
-    mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+    mapFn: EachMapFn<T>,
     getKey: (item: T, index: number) => unknown,
     parent: Node,
     endMarker: Node,
@@ -748,18 +759,18 @@ export const defaultEachHydrationAdapter: EachHydrationAdapter = {
  */
 export function each<T>(
   listAccessor: (() => readonly T[]) | readonly T[],
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string | SSRHtml,
+  mapFn: EachMapFn<T, Node | DocumentFragment | string | SSRHtml>,
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment;
 export function each<T>(
   listAccessor: (() => readonly T[]) | readonly T[],
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string | SSRHtml,
+  mapFn: EachMapFn<T, Node | DocumentFragment | string | SSRHtml>,
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment | DeferredEach<T> | SSRHtml {
   if (isHydratingPassive() && captureHydratingEach) {
     return captureHydratingEach(
       listAccessor as (() => T[]) | T[],
-      mapFn as (item: () => T, index: number) => Node | DocumentFragment | string,
+      mapFn as EachMapFn<T>,
       keyFn,
       defaultEachHydrationAdapter,
     ) as DeferredEach<T>;
@@ -777,9 +788,7 @@ export function each<T>(
   const getList =
     typeof listAccessor === 'function' ? (listAccessor as () => T[]) : () => listAccessor as T[];
   const getKey = keyFn ?? ((item: T, _i: number) => item as unknown);
-  const ops = eachRowOps(
-    mapFn as (item: () => T, index: number) => Node | DocumentFragment | string,
-  );
+  const ops = eachRowOps(mapFn as EachMapFn<T>);
 
   const dispose = watchEffectInternal(() => {
     const items = getList() || [];

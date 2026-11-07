@@ -4,6 +4,11 @@
 
 ### Added
 
+- `each()` passes the row renderer a third argument, `position: () => number`,
+  the row's current index ([ADR 0058](./docs/decisions/0058-each-current-position.md)).
+  It follows keyed reorders without re-rendering the row (same nodes, focus
+  and input state), is created lazily on first read, and is supplied on the
+  server (`eachSSR`) and to hydrated rows. Existing arguments are unchanged.
 - `asyncCompute(fn)` in the new opt-in entry `@purityjs/core/async`
   ([ADR 0054](./docs/decisions/0054-async-derivation.md)): feed a
   Promise-returning computation into ordinary `compute()` chains. Unresolved

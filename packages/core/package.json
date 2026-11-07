@@ -371,6 +371,36 @@
       "import": "./dist/store/index.js",
       "require": "./dist/store/index.cjs"
     },
+    "./boundary": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/boundary.d.ts",
+            "import": "./dist/boundary/index.js",
+            "require": "./dist/boundary/index.cjs"
+          },
+          "default": "./src/boundary.ts"
+        },
+        "types": "./dist/boundary.d.ts",
+        "import": "./dist/boundary/index.js",
+        "require": "./dist/boundary/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/boundary.d.ts",
+          "import": "./dist/boundary/index.js",
+          "require": "./dist/boundary/index.cjs"
+        },
+        "default": "./src/boundary.ts"
+      },
+      "types": "./dist/boundary.d.ts",
+      "browser": {
+        "import": "./dist/browser/boundary/index.js",
+        "require": "./dist/browser/boundary/index.cjs"
+      },
+      "import": "./dist/boundary/index.js",
+      "require": "./dist/boundary/index.cjs"
+    },
     "./virtual": {
       "purity-server": {
         "development": {

@@ -1,5 +1,6 @@
 import { eachSSR, listSSR, matchSSR, whenSSR } from '@purityjs/ssr/runtime';
 import { state } from '@purityjs/core';
+import { errorBoundary } from '@purityjs/core/boundary';
 import { describe, expect, it } from 'vite-plus/test';
 import { html, renderToString } from '../src/index.ts';
 
@@ -149,5 +150,31 @@ describe('listSSR + html', () => {
         </ul>`,
     );
     expect(out).toContain('<li class="a&quot;b">&lt;x&gt;</li>');
+  });
+});
+
+describe('errorBoundary() on the server', () => {
+  it('renders the view when it does not throw', async () => {
+    const out = await renderToString(
+      () =>
+        html`<div>${errorBoundary(
+          () => html`<p>ok</p>`,
+          () => html`<p>failed</p>`,
+        )}</div>`,
+    );
+    expect(out).toBe('<div><!--[--><p>ok</p><!--]--></div>');
+  });
+
+  it('renders the fallback on a synchronous throw', async () => {
+    const out = await renderToString(
+      () =>
+        html`<div>${errorBoundary(
+          () => {
+            throw new Error('server view');
+          },
+          (error) => html`<p>${(error as Error).message}</p>`,
+        )}</div>`,
+    );
+    expect(out).toBe('<div><!--[--><p><!--[-->server view<!--]--></p><!--]--></div>');
   });
 });

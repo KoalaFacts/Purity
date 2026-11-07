@@ -60,6 +60,10 @@
       "gzipBytes": 7808,
       "brotliBytes": 7040
     },
+    "core-store": {
+      "gzipBytes": 1024,
+      "brotliBytes": 960
+    },
     "core-virtual": {
       "gzipBytes": 5120,
       "brotliBytes": 4608

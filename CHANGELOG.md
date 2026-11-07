@@ -12,6 +12,12 @@
   data; refetches keep the previous value while `pending()` is `true`; a newer
   run aborts the previous run's `AbortSignal` and only the latest run can become
   current. Existing entries do not change size.
+- `store(initial)` in the new entry `@purityjs/core/store` ([ADR 0055](./docs/decisions/0055-property-store.md)):
+  property-granular nested state. Reads through the returned read-only view
+  track one property at a time (key sets and array length separately);
+  `update(draft => …)` applies writes in one batch and notifies only readers
+  of changed properties. New bundle budget `core-store`; no existing entry
+  changes size.
 
 ### Changed
 

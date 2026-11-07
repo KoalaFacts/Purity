@@ -39,6 +39,7 @@ virtualEach(items, render, key);
 | `@purityjs/compiler`         | Template parser, AST and code generators                     |
 | `@purityjs/core`             | Components, control flow, resources, styles and hydration    |
 | `@purityjs/core/csr`         | Core APIs for client rendering without `hydrate`             |
+| `@purityjs/core/store`       | `store` property-granular nested state (ADR 0055)            |
 | `@purityjs/core/virtual`     | `virtualEach` for measured windowed lists                    |
 | `@purityjs/core/async`       | `asyncCompute` async derivation (ADR 0054)                   |
 | `@purityjs/core/forms`       | Form-associated component features                           |

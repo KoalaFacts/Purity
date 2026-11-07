@@ -18,6 +18,13 @@
   `update(draft => …)` applies writes in one batch and notifies only readers
   of changed properties. New bundle budget `core-store`; no existing entry
   changes size.
+- `errorBoundary(view, fallback)` in the new opt-in entry
+  `@purityjs/core/boundary` (ADR 0056): a throw while the view renders, or later
+  from one of its bindings or watches, replaces only that part of the page with
+  `fallback(error, reset)`; `reset()` renders the view again, and a throwing
+  fallback reaches the next outer boundary or the component's `onError`. On the
+  server a synchronous throw renders the fallback. Hydrated content is not
+  guarded yet.
 
 ### Changed
 

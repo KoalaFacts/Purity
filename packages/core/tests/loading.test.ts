@@ -170,6 +170,36 @@ describe('loading()', () => {
     expect(host.textContent).toBe('3');
   });
 
+  it('keeps one fallback while a re-render waits on a second value', async () => {
+    const a = deferred<string>();
+    const b = deferred<string>();
+    const first = asyncCompute(() => a.promise);
+    const second = asyncCompute(() => b.promise);
+    let fallbacks = 0;
+    const host = render(() =>
+      p(
+        loading(
+          () =>
+            p(
+              text(() => first()),
+              text(() => second()),
+            ),
+          () => {
+            fallbacks++;
+            return document.createTextNode('…');
+          },
+        ),
+      ),
+    );
+    a.resolve('a');
+    await flush();
+    expect(host.textContent).toBe('…');
+    b.resolve('b');
+    await flush();
+    expect(host.textContent).toBe('ab');
+    expect(fallbacks).toBe(1);
+  });
+
   it('passes a rejection to the surrounding errorBoundary', async () => {
     const d = deferred<string>();
     const value = asyncCompute(() => d.promise);
@@ -274,6 +304,42 @@ describe('loading()', () => {
     );
     app.unmount();
     d.resolve('late');
+    await flush();
+    expect(views).toBe(1);
+    expect(host.textContent).toBe('');
+  });
+
+  it('renders nothing when unmounted after settlement but before the queued retry', async () => {
+    const d = deferred<string>();
+    const value = asyncCompute(() => d.promise);
+    let views = 0;
+    const host = document.createElement('div');
+    const app = mount(
+      () =>
+        p(
+          loading(
+            () => {
+              views++;
+              return p(text(() => value()));
+            },
+            () => document.createTextNode('…'),
+          ),
+        ),
+      host,
+    );
+    // Hold back the retry the settlement queues, unmount, then run it.
+    const held: (() => void)[] = [];
+    const queue = globalThis.queueMicrotask;
+    vi.spyOn(globalThis, 'queueMicrotask').mockImplementation((cb) => {
+      if (cb.name === 'retry') held.push(cb);
+      else queue(cb);
+    });
+    d.resolve('late');
+    await flush();
+    expect(held.length).toBe(1);
+    expect(views).toBe(1);
+    app.unmount();
+    held[0]();
     await flush();
     expect(views).toBe(1);
     expect(host.textContent).toBe('');

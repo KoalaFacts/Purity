@@ -59,6 +59,8 @@ Beyond AOT compilation, the plugin keeps server code out of the browser bundle: 
 
 Before claiming a change works, follow `.claude/skills/verification-first/SKILL.md` and exercise the affected rows of `.claude/skills/verify-purity/SKILL.md` (built packages in headless Chromium, SSR then hydration, CLI scaffold, benchmark against Solid); keep that feature map current when a feature changes.
 
+The scheduled development task follows `.claude/skills/advance-purity/SKILL.md` (goal, gate, work order, project rules).
+
 ## Commands
 
 ```bash

@@ -81,6 +81,12 @@
 
 ### Fixed
 
+- `@purityjs/vite-plugin`: a `.ts` `emitTo` manifest types the way ADR 0034
+  documents. Its `pattern`, `renderMode` and `hasLoader` fields widened to
+  `string`/`boolean`, so `LoaderDataOf<'/users/:id', typeof routes>` imported
+  from `./.purity/routes.ts` was `undefined` and `asyncRoute(routes[i], …)`
+  failed to type-check. They are now emitted with per-field `as const`;
+  `.js` emits and the virtual `purity:routes` module are unchanged.
 - `@purityjs/vite-plugin` declarations compile without Node types. The built
   `index.d.ts` named Node's global `Buffer`, so a client tsconfig without
   `@types/node` and with `skipLibCheck: false` failed with TS2591 as soon as

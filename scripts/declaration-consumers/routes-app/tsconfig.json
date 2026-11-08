@@ -3,5 +3,5 @@
   "compilerOptions": {
     "allowImportingTsExtensions": true
   },
-  "include": ["consumer.ts", "pages/**/*.ts", ".purity/routes.d.ts"]
+  "include": ["disk.ts", "consumer.ts", "pages/**/*.ts", ".purity/routes.d.ts"]
 }

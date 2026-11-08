@@ -1124,7 +1124,30 @@ describe('purity({ routes: { emitTo } }) — on-disk manifest emit (ADR 0032)', 
 
       const emittedPath = join(root, '.purity/routes.ts');
       expect(existsSync(emittedPath)).toBe(true);
-      expect(readFileSync(emittedPath, 'utf8')).toBe(src);
+      // A `.ts` target is the virtual module source plus per-field `as const`.
+      const emitted = readFileSync(emittedPath, 'utf8');
+      expect(emitted).toContain('pattern: "/about" as const');
+      expect(emitted.replaceAll(' as const', '')).toBe(src);
+      expect(src).not.toContain(' as const');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('keeps a non-TypeScript emitTo byte-identical to the virtual module source', () => {
+    const { root, cleanup } = makeTmpPages({
+      'pages/index.ts': 'export const loader = () => 1;',
+      'pages/about.ts': "export const renderMode = 'static';",
+    });
+    try {
+      const plugin = purity({ routes: { dir: 'pages', emitTo: '.purity/routes.js' } });
+      (plugin as { configResolved: (c: { root: string }) => void }).configResolved({ root });
+      const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
+        'purity:routes',
+      ) as string;
+      const src = (plugin as { load: (id: string) => string | null }).load(resolved) as string;
+      expect(src).toContain('hasLoader: true');
+      expect(readFileSync(join(root, '.purity/routes.js'), 'utf8')).toBe(src);
     } finally {
       cleanup();
     }

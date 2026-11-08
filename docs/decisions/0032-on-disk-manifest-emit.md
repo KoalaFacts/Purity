@@ -1,6 +1,6 @@
 # 0032: `emitTo` — on-disk manifest emit
 
-**Status:** Accepted
+**Status:** Accepted; amended 2026-11-08 (SV2-014: a `.ts` emit target keeps `pattern`, `renderMode` and `hasLoader` literal with per-field `as const`, see "No type-narrowing tweaks")
 **Date:** 2026-05-11
 
 ## Context
@@ -107,6 +107,14 @@ Concretely:
   want narrow types use `RouteParams<P>` per ADR 0031 — the
   pattern is a string literal the author writes, not derived
   from manifest iteration.
+  _Amended 2026-11-08:_ the widened fields made the documented
+  on-disk import untypeable — `LoaderDataOf<'/x', typeof routes>`
+  (ADR 0034) resolved to `undefined` and `asyncRoute()` rejected
+  `hasLoader: boolean`. A `.ts`/`.tsx`/`.mts`/`.cts` target now
+  emits `pattern`, `renderMode` and `hasLoader` with per-field
+  `as const`; arrays and objects stay mutable, so `RouteEntry[]`
+  consumers are unaffected. Other targets (`.js`) and the virtual
+  module stay byte-identical plain JavaScript.
 - **No multi-target emit.** One file per plugin instance. Apps
   with multiple manifests (rare) configure separate plugin
   instances.

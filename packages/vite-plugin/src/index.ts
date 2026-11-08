@@ -423,9 +423,14 @@ export function purity(options?: PurityPluginOptions) {
       // import from `'purity:routes'` get the same strong typing as apps
       // that import from the on-disk `.ts`.
       if (!routesOpts || emitToAbs === null || routesAbsDir === null) return;
-      const { source, types } = generateManifestSources(hookContext(this), routesAbsDir, routesExt);
+      const { disk, types } = generateManifestSources(
+        hookContext(this),
+        routesAbsDir,
+        routesExt,
+        emitToAbs,
+      );
       const warn = hookWarn(this);
-      emitManifestToDisk(emitToAbs, source, warn);
+      emitManifestToDisk(emitToAbs, disk, warn);
       emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
     },
 
@@ -453,10 +458,11 @@ export function purity(options?: PurityPluginOptions) {
       if (serveDevtools && id === RESOLVED_DEVTOOLS_ID) return devtoolsClientSource;
       if (!routesOpts || id !== resolvedVirtualId) return null;
       // routesAbsDir is set in configResolved (always called before load).
-      const { source, types } = generateManifestSources(
+      const { source, disk, types } = generateManifestSources(
         hookContext(this),
         routesAbsDir as string,
         routesExt,
+        emitToAbs,
       );
       // ADR 0032: optional on-disk emit. Skip the write when content
       // matches to avoid filesystem-watch loops in dev. Failures are
@@ -465,7 +471,7 @@ export function purity(options?: PurityPluginOptions) {
       // importing from `'purity:routes'` get the per-route typed `importFn`.
       if (emitToAbs !== null) {
         const warn = hookWarn(this);
-        emitManifestToDisk(emitToAbs, source, warn);
+        emitManifestToDisk(emitToAbs, disk, warn);
         emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
       }
       return source;
@@ -529,13 +535,14 @@ export function purity(options?: PurityPluginOptions) {
       // track filesystem changes regardless of which import path
       // consumers use.
       if (emitToAbs !== null) {
-        const { source, types } = generateManifestSources(
+        const { disk, types } = generateManifestSources(
           hookContext(this),
           routesAbsDir,
           routesExt,
+          emitToAbs,
         );
         const warn = hookWarn(this);
-        emitManifestToDisk(emitToAbs, source, warn);
+        emitManifestToDisk(emitToAbs, disk, warn);
         emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
       }
     },
@@ -1013,7 +1020,8 @@ function generateManifestSources(
   pluginCtx: { warn?: (m: string) => void } | null,
   dir: string,
   extensions: string[],
-): { source: string; types: string } {
+  emitToAbs: string | null,
+): { source: string; disk: string; types: string } {
   const files = listRouteFiles(dir);
   const manifest = buildRouteManifest(files, extensions, (pattern, kept, dropped) => {
     const msg =
@@ -1047,8 +1055,15 @@ function generateManifestSources(
   // POSIX filenames on Linux/macOS (rare but legal).
   const posixDir = pathSep === '\\' ? dir.replace(/\\/g, '/') : dir;
   const absPathFor = (filePath: string): string => posix.join(posixDir, filePath);
+  const source = generateRouteManifestSource(manifest, absPathFor);
   return {
-    source: generateRouteManifestSource(manifest, absPathFor),
+    source,
+    // A TypeScript emit target gets literal field types; anything else is
+    // the virtual module's JavaScript verbatim.
+    disk:
+      emitToAbs !== null && /\.[cm]?tsx?$/.test(emitToAbs) && !emitToAbs.endsWith('.d.ts')
+        ? generateRouteManifestSource(manifest, absPathFor, true)
+        : source,
     types: generateRouteManifestTypes(manifest, absPathFor),
   };
 }

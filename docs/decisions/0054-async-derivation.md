@@ -89,7 +89,9 @@ Contract:
    as a promise. A superseded or disposed run aborts its `signal`, drops every
    later value, and closes the iterator (`for await` + `break`, so `return()`
    runs) when its next value arrives; a source parked on a wait that never
-   yields again must listen to `signal` to stop sooner. An iterable that ends
+   yields again must listen to `signal` to stop sooner. An error thrown while closing a
+   superseded iterator is a stale result and is dropped like a stale
+   rejection (point 4). An iterable that ends
    without yielding settles nothing: on first load the value stays pending.
    As in point 1, only synchronous reads are tracked: `fn` itself and, for an
    `async function*`, its body up to the first `await`/`yield` (the first

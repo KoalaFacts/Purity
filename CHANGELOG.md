@@ -4,6 +4,13 @@
 
 ### Added
 
+- `getOwner()`, `runWithOwner(owner, fn)` and `root(fn)` in the new opt-in
+  entry `@purityjs/core/owner`
+  ([ADR 0060](./docs/decisions/0060-owner-composition.md)): bind work created
+  in a later callback to a component, effect run or row so it is released with
+  it (released at once if that owner is already gone), and create detached
+  owners whose `dispose` releases them exactly once. New bundle budget
+  `core-owner`.
 - `transaction(fn)` in the new opt-in entry `@purityjs/core/transaction`
   ([ADR 0059](./docs/decisions/0059-async-transaction.md)): writes staged with
   `tx.set()` are applied in one batch when the async work resolves and

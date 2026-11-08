@@ -21,6 +21,7 @@ export default defineConfig({
         'boundary/index': 'src/boundary.ts',
         'loading/index': 'src/loading.ts',
         'transaction/index': 'src/transaction.ts',
+        'owner/index': 'src/owner.ts',
         'ssr-bridge/index': 'src/ssr-bridge.ts',
         'csr/index': 'src/csr.ts',
         'store/index': 'src/store.ts',

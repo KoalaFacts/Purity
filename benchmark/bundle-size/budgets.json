@@ -68,6 +68,10 @@
       "gzipBytes": 768,
       "brotliBytes": 704
     },
+    "core-owner": {
+      "gzipBytes": 512,
+      "brotliBytes": 448
+    },
     "core-csr": {
       "gzipBytes": 7808,
       "brotliBytes": 7040

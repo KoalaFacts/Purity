@@ -65,21 +65,21 @@ function hookWarn(ctx: unknown): (message: string) => void {
 
 /** Output options the `strictAot` bundle check reads. */
 export interface PurityOutputOptions {
-  format?: string;
-  paths?: Record<string, string> | ((id: string) => string);
-  globals?: Record<string, string> | ((id: string) => string);
+  format?: string | undefined;
+  paths?: Record<string, string> | ((id: string) => string) | undefined;
+  globals?: Record<string, string> | ((id: string) => string) | undefined;
 }
 
 /** Emitted bundle entries as the `generateBundle` checks read them. */
 export type PurityOutputBundle = Record<
   string,
-  | { type: 'asset'; originalFileNames?: readonly string[] }
+  | { type: 'asset'; originalFileNames?: readonly string[] | undefined }
   | {
       type: 'chunk';
       fileName: string;
       code: string;
-      imports?: readonly string[];
-      modules?: Record<string, { code?: string | null }>;
+      imports?: readonly string[] | undefined;
+      modules?: Record<string, { code?: string | null | undefined }> | undefined;
     }
 >;
 
@@ -324,11 +324,13 @@ export function purity(options?: PurityPluginOptions) {
     config(
       config: {
         ssr?: {
-          target?: string;
-          resolve?: { conditions?: string[]; externalConditions?: string[] };
+          target?: string | undefined;
+          resolve?:
+            | { conditions?: string[] | undefined; externalConditions?: string[] | undefined }
+            | undefined;
         };
       },
-      env: { isPreview?: boolean },
+      env: { isPreview?: boolean | undefined },
     ) {
       isPreview = env.isPreview === true;
       if (config.ssr?.target !== 'webworker') return;
@@ -353,12 +355,15 @@ export function purity(options?: PurityPluginOptions) {
       this: unknown,
       config: {
         root: string;
-        command?: string;
-        base?: string;
-        resolve?: { alias?: readonly { find: string | RegExp }[] };
+        command?: string | undefined;
+        base?: string | undefined;
+        resolve?: { alias?: readonly { find: string | RegExp }[] | undefined } | undefined;
         build?: {
           ssr?: unknown;
-          assetsInlineLimit?: number | ((file: string, content: Buffer) => boolean | undefined);
+          assetsInlineLimit?:
+            | number
+            | ((file: string, content: Buffer) => boolean | undefined)
+            | undefined;
         };
       },
     ) {
@@ -408,7 +413,12 @@ export function purity(options?: PurityPluginOptions) {
       emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
     },
 
-    resolveId(this: unknown, source: string, _importer?: string, opts?: { ssr?: boolean }) {
+    resolveId(
+      this: unknown,
+      source: string,
+      _importer?: string,
+      opts?: { ssr?: boolean | undefined },
+    ) {
       // Reject before Vite's asset loader can publish the original source.
       if (stripServerModules && opts?.ssr !== true && isServerOnlyId(source)) {
         rejectServerAsset(source);
@@ -419,7 +429,7 @@ export function purity(options?: PurityPluginOptions) {
       return null;
     },
 
-    load(this: unknown, id: string, opts?: { ssr?: boolean }) {
+    load(this: unknown, id: string, opts?: { ssr?: boolean | undefined }) {
       if (stripServerModules && opts?.ssr !== true && isServerOnlyId(id)) {
         rejectServerAsset(id);
         return '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\nexport {};\n';
@@ -514,7 +524,12 @@ export function purity(options?: PurityPluginOptions) {
       }
     },
 
-    transform(this: unknown, code: string, id: string, transformOpts?: { ssr?: boolean }) {
+    transform(
+      this: unknown,
+      code: string,
+      id: string,
+      transformOpts?: { ssr?: boolean | undefined },
+    ) {
       // Strip *.server.{ts,js,tsx,jsx} modules from client builds (ADR 0018).
       // Server builds (transformOpts.ssr === true) pass through unchanged
       // so handler bodies still execute on the server. Runs BEFORE the

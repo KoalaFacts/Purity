@@ -232,3 +232,15 @@ for (const mode of ['dom', 'hydrate'] as const) {
     });
   });
 }
+
+it('emits stable binding identifiers independent of other compiled templates', () => {
+  const nested = parse(['<section><x-data .items=', '></x-data></section>']);
+  const simple = parse(['<x-data data-items=', '></x-data>']);
+  const firstDom = generate(nested);
+  const firstHydrate = generateHydrate(nested);
+
+  generate(simple);
+  generateHydrate(simple);
+  expect(generate(nested)).toBe(firstDom);
+  expect(generateHydrate(nested)).toBe(firstHydrate);
+});

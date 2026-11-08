@@ -822,6 +822,43 @@ describe('purity({ routes }) — Vite plugin integration', () => {
     }
   });
 
+  it('keeps route state per plugin instance (two roots, custom virtual id, no routes)', () => {
+    const a = makeTmpPages({ 'pages/alpha.ts': '// a' });
+    const b = makeTmpPages({ 'views/beta.ts': '// b' });
+    try {
+      type Hooks = {
+        configResolved: (c: { root: string }) => void;
+        resolveId: (s: string) => string | null;
+        load: (id: string) => string | null;
+      };
+      const pa = purity({ strictAot: false, routes: { dir: 'pages' } }) as unknown as Hooks;
+      const pb = purity({
+        strictAot: false,
+        routes: { dir: 'views', virtualId: 'app:routes' },
+      }) as unknown as Hooks;
+      const none = purity({ strictAot: false }) as unknown as Hooks;
+      pa.configResolved({ root: a.root });
+      pb.configResolved({ root: b.root });
+      none.configResolved({ root: a.root });
+      expect(pa.resolveId('purity:routes')).toBe('\0purity:routes');
+      expect(pa.resolveId('app:routes')).toBeNull();
+      expect(pb.resolveId('app:routes')).toBe('\0app:routes');
+      expect(pb.resolveId('purity:routes')).toBeNull();
+      expect(none.resolveId('purity:routes')).toBeNull();
+      expect(none.load('\0purity:routes')).toBeNull();
+      const srcA = pa.load('\0purity:routes') as string;
+      const srcB = pb.load('\0app:routes') as string;
+      expect(srcA).toContain('pattern: "/alpha"');
+      expect(srcA).not.toContain('/beta');
+      expect(srcB).toContain('pattern: "/beta"');
+      expect(srcB).not.toContain('/alpha');
+      expect(pb.load('\0purity:routes')).toBeNull();
+    } finally {
+      a.cleanup();
+      b.cleanup();
+    }
+  });
+
   it('returns an empty manifest when the routes dir does not exist', () => {
     const { root, cleanup } = makeTmpPages({});
     try {

@@ -573,6 +573,40 @@ function latestSplitExample() {
   return latest;
 }
 
+// Exercise post-23-entry schemas from immutable contracts, not mutable budgets.json.
+function extendedSplitExamples() {
+  let prior = latestSplitExample();
+  const additions = [
+    ['core-store', 1024, 960],
+    ['core-boundary', 1344, 1216],
+    ['core-loading', 1472, 1344],
+    ['core-transaction', 768, 704],
+    ['core-owner', 576, 512],
+  ] as const;
+  return additions.map(([entry, gzipBytes, brotliBytes]) => {
+    const next = structuredClone(prior);
+    Object.assign(next.budgets.packages, { [entry]: { gzipBytes, brotliBytes } });
+    next.packages.push({
+      entry,
+      functionConstructorCalls: 0,
+      rawBytes: 100,
+      gzipBytes: 50,
+      brotliBytes: 40,
+    });
+    prior = next;
+    return next;
+  });
+}
+
+function approvedV7Examples() {
+  return [
+    splitPackageExamples().base,
+    currentSplitExample(),
+    latestSplitExample(),
+    ...extendedSplitExamples(),
+  ];
+}
+
 function compareCLI(base: unknown, candidate: unknown) {
   const dir = mkdtempSync(join(tmpdir(), 'purity-size-contract-'));
   try {
@@ -595,30 +629,28 @@ function compareCLI(base: unknown, candidate: unknown) {
   }
 }
 
-it('CLI pairs historical 21, current 22 and latest 23 package inventories with exact v7 budgets', () => {
-  for (const base of [splitPackageExamples().base, currentSplitExample(), latestSplitExample()]) {
+it('CLI pairs frozen 21 through 28 entry inventories with their exact v7 budgets', () => {
+  const approved = approvedV7Examples();
+  for (const base of approved) {
     const result = compareCLI(base, base);
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('Application payload regressions: 0 / 17');
   }
-  for (const [older, newer] of [
-    [splitPackageExamples().base, currentSplitExample()],
-    [currentSplitExample(), latestSplitExample()],
-  ]) {
+  for (let i = 1; i < approved.length; i++) {
+    const older = approved[i - 1];
+    const newer = approved[i];
     const result = compareCLI(older, newer);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('INCOMPARABLE: changed budgets');
   }
 });
 
-it('pins 22/23 package budgets instead of following mutable current budgets', () => {
-  const local = Object.keys(clientBudgets.packages).length;
-  expect([22, 23]).toContain(local);
-  const accepted = local === 22 ? currentSplitExample() : latestSplitExample();
-  expect(clientBudgets).toEqual(accepted.budgets);
-  const baseline = latestSplitExample();
-  expect(compareSizeReports(baseline, structuredClone(baseline)).packages).toHaveLength(23);
+it('pins current 28-entry budgets independently of historical budget contracts', () => {
+  const baseline = approvedV7Examples().at(-1)!;
+  expect(Object.keys(clientBudgets.packages)).toHaveLength(28);
+  expect(clientBudgets).toEqual(baseline.budgets);
+  expect(compareSizeReports(baseline, structuredClone(baseline)).packages).toHaveLength(28);
 
   const tampered = latestSplitExample();
   tampered.budgets.packages['core-async'].brotliBytes++;
@@ -630,6 +662,26 @@ it('pins 22/23 package budgets instead of following mutable current budgets', ()
   expect(() => compareSizeReports(missing, structuredClone(missing))).toThrow(
     /Incomplete v7 coverage/,
   );
+});
+
+it('rejects missing and budget-tampered entries for every additional v7 schema', () => {
+  for (const current of extendedSplitExamples()) {
+    const missing = structuredClone(current);
+    missing.packages.pop();
+    expect(() => compareSizeReports(missing, structuredClone(missing))).toThrow(
+      /Incomplete v7 coverage/,
+    );
+    const altered = structuredClone(current);
+    const entry = current.packages.at(-1)!.entry;
+    const packageBudgets = altered.budgets.packages as Record<
+      string,
+      { gzipBytes: number; brotliBytes: number }
+    >;
+    packageBudgets[entry].brotliBytes++;
+    expect(() => compareSizeReports(altered, structuredClone(altered))).toThrow(
+      /Missing or changed v7 budgets/,
+    );
+  }
 });
 
 it('CLI rejects missing current/latest entries, unknown historical packages and altered budgets', () => {
@@ -644,7 +696,7 @@ it('CLI rejects missing current/latest entries, unknown historical packages and 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('Incomplete v7 coverage: baseline/packages');
   }
-  for (const base of [splitPackageExamples().base, currentSplitExample(), latestSplitExample()]) {
+  for (const base of approvedV7Examples()) {
     base.budgets.packages.core.gzipBytes++;
     const result = compareCLI(base, base);
     expect(result.status).toBe(1);
@@ -655,7 +707,7 @@ it('CLI rejects missing current/latest entries, unknown historical packages and 
 it.each(['rawBytes', 'gzipBytes', 'brotliBytes'] as const)(
   'CLI still rejects v7 app and compensated required-chunk %s growth',
   (metric) => {
-    for (const base of [splitPackageExamples().base, currentSplitExample(), latestSplitExample()]) {
+    for (const base of [splitPackageExamples().base, latestSplitExample(), approvedV7Examples().at(-1)!]) {
       for (const compensated of [false, true]) {
         const next = structuredClone(base);
         next.measurements[0].chunks[1][metric]++;

@@ -189,6 +189,11 @@ const packageNamesV7 = [
 ];
 const currentPackageNamesV7 = [...packageNamesV7, 'core-forms-lifecycle'];
 const latestPackageNamesV7 = [...currentPackageNamesV7, 'core-async'];
+const packageNamesV7_24 = [...latestPackageNamesV7, 'core-store'];
+const packageNamesV7_25 = [...packageNamesV7_24, 'core-boundary'];
+const packageNamesV7_26 = [...packageNamesV7_25, 'core-loading'];
+const packageNamesV7_27 = [...packageNamesV7_26, 'core-transaction'];
+const packageNamesV7_28 = [...packageNamesV7_27, 'core-owner'];
 // Frozen, explicit v7 identities. Future producer expansion must add a reviewed
 // contract rather than silently making previous CI reports incomparable.
 const frozenV7Budgets23 = {
@@ -198,10 +203,50 @@ const frozenV7Budgets23 = {
     'core-async': { gzipBytes: 640, brotliBytes: 576 },
   },
 };
+const frozenV7Budgets24 = {
+  ...frozenV7Budgets23,
+  packages: {
+    ...frozenV7Budgets23.packages,
+    'core-store': { gzipBytes: 1024, brotliBytes: 960 },
+  },
+};
+const frozenV7Budgets25 = {
+  ...frozenV7Budgets24,
+  packages: {
+    ...frozenV7Budgets24.packages,
+    'core-boundary': { gzipBytes: 1344, brotliBytes: 1216 },
+  },
+};
+const frozenV7Budgets26 = {
+  ...frozenV7Budgets25,
+  packages: {
+    ...frozenV7Budgets25.packages,
+    'core-loading': { gzipBytes: 1472, brotliBytes: 1344 },
+  },
+};
+const frozenV7Budgets27 = {
+  ...frozenV7Budgets26,
+  packages: {
+    ...frozenV7Budgets26.packages,
+    'core-transaction': { gzipBytes: 768, brotliBytes: 704 },
+  },
+};
+const frozenV7Budgets28 = {
+  ...frozenV7Budgets27,
+  packages: {
+    ...frozenV7Budgets27.packages,
+    'core-owner': { gzipBytes: 576, brotliBytes: 512 },
+  },
+};
 const approvedV7Contracts = [
   { budgets: historicalV7.budgets, packages: packageNamesV7 },
   { budgets: frozenV7Budgets22, packages: currentPackageNamesV7 },
   { budgets: frozenV7Budgets23, packages: latestPackageNamesV7 },
+  { budgets: frozenV7Budgets24, packages: packageNamesV7_24 },
+  { budgets: frozenV7Budgets25, packages: packageNamesV7_25 },
+  { budgets: frozenV7Budgets26, packages: packageNamesV7_26 },
+  { budgets: frozenV7Budgets27, packages: packageNamesV7_27 },
+  { budgets: frozenV7Budgets28, packages: packageNamesV7_28 },
 ];
 const profileNamesV4 = [...profileNames, 'counter-client-runtime', 'counter-client-aot'];
 const profileNamesV5 = [

@@ -4,6 +4,13 @@
 
 ### Added
 
+- `renderToStream()` / `renderToStreamResponse()` option `boundaryConcurrency`
+  ([ADR 0060](./docs/decisions/0060-independent-boundary-progress.md)): with
+  `n > 1`, up to `n` deferred `suspense()` views render at once and each chunk
+  is flushed as soon as its view settles, so a fast region no longer waits for
+  a slow sibling declared before it. Views still start only on consumer
+  demand, so at most `n` rendered chunks are buffered. Default `1` keeps
+  declaration order.
 - `transaction(fn)` in the new opt-in entry `@purityjs/core/transaction`
   ([ADR 0059](./docs/decisions/0059-async-transaction.md)): writes staged with
   `tx.set()` are applied in one batch when the async work resolves and

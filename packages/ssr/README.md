@@ -139,6 +139,8 @@ interface RenderToStreamOptions {
   nonce?: string;
   /** Abort mid-stream — closes the controller and drops in-flight boundary renders. */
   signal?: AbortSignal;
+  /** Deferred views rendered at once; n > 1 flushes chunks as they settle. Default 1. */
+  boundaryConcurrency?: number;
 }
 ```
 
@@ -198,6 +200,12 @@ entry still finishes shell rendering before resolving.
 `__purity_swap(N)` walks the document's comment nodes via `TreeWalker` to find the matching `<!--s:N-->` / `<!--/s:N-->` pair, removes the fallback nodes between them, and inserts the template's content in place. ADR [0006](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0006-streaming-suspense.md) Phase 3.
 
 **Per-boundary budgets.** Each boundary renders in its own `SSRRenderContext` with its own multi-pass loop and its own `{ timeout }` budget (the option is per-boundary, not per-response). When a boundary's deadline fires the renderer falls back to its `fallback()` HTML for the streamed chunk — siblings continue resolving normally. Use `suspense({ onError })` to observe view / fallback / timeout phases.
+
+**Independent progress.** By default deferred views render one at a time and their chunks arrive in declaration order. `boundaryConcurrency: n` (a positive integer or `Infinity`) lets up to `n` views render at once and flushes each chunk as soon as its view settles — a fast sidebar declared after a slow feed is swapped in without waiting for the feed. New views still start only when the consumer pulls, so `n` also bounds how many rendered chunks wait in memory. ADR [0060](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0060-independent-boundary-progress.md).
+
+```ts
+renderToStream(App, { boundaryConcurrency: 4 });
+```
 
 **Per-boundary resource cache.** When a boundary's view resolves any `resource(..., { key })`, the streamed chunk also includes a `<script type="application/json" id="__purity_resources_N__">{"keyed":{…}}</script>` payload alongside the `<template id="purity-s-N">`. On the client, `hydrate()` scans every `script[id^="__purity_resources_"]` and merges the keyed entries before priming — boundary-side keyed resources hit the cache and skip refetching. Positional resources inside a boundary collide with the shell's index space, so streamed-boundary resources should always opt into a key.
 

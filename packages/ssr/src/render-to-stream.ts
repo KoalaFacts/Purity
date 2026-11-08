@@ -79,6 +79,15 @@ export interface RenderToStreamOptions {
    * Cloudflare Workers, and Vercel Edge. ADR 0009.
    */
   request?: Request;
+  /**
+   * How many deferred `suspense()` views may render at once (ADR 0060).
+   * Default 1: views render one after another and chunks arrive in
+   * declaration order. With n > 1 (or `Infinity`), up to n views render
+   * concurrently and each chunk is flushed as soon as its view settles, so a
+   * fast region is not held behind a slow sibling. New views still start only
+   * when the consumer pulls, so at most n rendered chunks wait in memory.
+   */
+  boundaryConcurrency?: number;
 }
 
 /** Shell metadata available before a streaming response is sent. */
@@ -102,11 +111,13 @@ export function renderToStream(
   component: () => unknown,
   options: RenderToStreamOptions = {},
 ): ReadableStream<Uint8Array> {
+  const concurrency = readBoundaryConcurrency(options, 'renderToStream');
   options = snapshotRenderOptions(options, 'stream');
   validateRenderOptions(options, 'renderToStream');
   return createStream(
     (signal) => renderShell(component, options.timeout ?? DEFAULT_TIMEOUT, options.request, signal),
     options,
+    concurrency,
   );
 }
 
@@ -119,6 +130,7 @@ export async function renderToStreamResponse(
   component: () => unknown,
   options: RenderToStreamOptions = {},
 ): Promise<RenderToStreamResponse> {
+  const concurrency = readBoundaryConcurrency(options, 'renderToStreamResponse');
   options = snapshotRenderOptions(options, 'stream');
   validateRenderOptions(options, 'renderToStreamResponse');
   const cancellation = renderCancellation(options.request, options.signal);
@@ -138,7 +150,7 @@ export async function renderToStreamResponse(
     cancellation.finish();
   }
   const result: RenderToStreamResponse = {
-    body: createStream(() => Promise.resolve(shell), options),
+    body: createStream(() => Promise.resolve(shell), options, concurrency),
     head: shell.head,
   };
   if (shell.status !== undefined) result.status = shell.status;
@@ -146,9 +158,20 @@ export async function renderToStreamResponse(
   return result;
 }
 
+// Read once, before user code runs, like the other render options.
+function readBoundaryConcurrency(options: RenderToStreamOptions, renderer: string): number {
+  const value = options.boundaryConcurrency ?? 1;
+  // Also rejects NaN and non-numbers: neither is >= 1 and a safe integer.
+  if (value >= 1 && (value === Infinity || Number.isSafeInteger(value))) return value;
+  throw new Error(
+    `[Purity] ${renderer}: boundaryConcurrency must be a positive integer or Infinity.`,
+  );
+}
+
 function createStream(
   getShell: (signal: AbortSignal) => Promise<ShellResult>,
   options: RenderToStreamOptions,
+  concurrency: number,
 ): ReadableStream<Uint8Array> {
   const timeout = options.timeout ?? DEFAULT_TIMEOUT;
   const serialize = options.serializeResources ?? true;
@@ -229,32 +252,50 @@ function createStream(
       yield* encodeChunks(buildShellOutput(shell));
 
       // ----- Boundary chunks ----------------------------------------------
-      for (const [id, boundary] of shell.boundaries) {
-        if (isAborted()) break;
-        // The active boundary lives in this iteration. Remove its callbacks
-        // from the queue so completed views do not stay pinned by later work.
-        shell.boundaries.delete(id);
-        // Defense-in-depth: even though `id` is typed as `number` from the
-        // Map, validate it's a finite non-negative integer before
-        // interpolating it into an inline `<script>__purity_swap(${id})`
-        // body. If a future refactor lets a non-numeric id slip in, this
-        // prevents code injection through the swap call site.
-        if (!Number.isSafeInteger(id) || id < 0) {
-          console.error(
-            `[Purity] renderToStream: refusing to emit chunk for non-integer boundary id ${String(
-              id,
-            )}; skipping.`,
-          );
-          continue;
+      // Up to `concurrency` views render at once; each chunk is emitted when
+      // its view settles (ADR 0060). With the default of 1 this is the
+      // declaration-order loop of ADR 0006. New views start only after the
+      // consumer has taken the previous chunk, so backpressure still bounds
+      // how many rendered chunks wait in memory.
+      const queue = shell.boundaries.entries();
+      const active = new Map<number, Promise<SettledBoundary>>();
+      while (!isAborted()) {
+        while (active.size < concurrency) {
+          const entry = queue.next();
+          if (entry.done) break;
+          const [id, boundary] = entry.value;
+          // The active boundary leaves the queue. Remove its callbacks so
+          // completed views do not stay pinned by later work.
+          shell.boundaries.delete(id);
+          // Defense-in-depth: even though `id` is typed as `number` from the
+          // Map, validate it's a finite non-negative integer before
+          // interpolating it into an inline `<script>__purity_swap(${id})`
+          // body. If a future refactor lets a non-numeric id slip in, this
+          // prevents code injection through the swap call site.
+          if (!Number.isSafeInteger(id) || id < 0) {
+            console.error(
+              `[Purity] renderToStream: refusing to emit chunk for non-integer boundary id ${String(
+                id,
+              )}; skipping.`,
+            );
+            continue;
+          }
+          const settled = renderBoundary(
+            id,
+            boundary,
+            timeout,
+            request,
+            workAbort.signal,
+            shell.boundaryIds,
+          ).then((result): SettledBoundary => ({ id, result }));
+          // A sibling's rejection surfaces through the race below; keep the
+          // ones still waiting from becoming unhandled after the stream ends.
+          settled.catch(() => {});
+          active.set(id, settled);
         }
-        const result = await renderBoundary(
-          id,
-          boundary,
-          timeout,
-          request,
-          workAbort.signal,
-          shell.boundaryIds,
-        );
+        if (active.size === 0) break;
+        const { id, result } = await Promise.race(active.values());
+        active.delete(id);
         if (isAborted()) break;
         // null signals "boundary couldn't produce content; leave the
         // shell-rendered fallback in place." Without this skip, an
@@ -482,6 +523,11 @@ async function renderShell(
     `[Purity] renderToStream shell did not converge within ${MAX_PASSES} passes — ` +
       'a top-level resource is likely creating new resources on every pass.',
   );
+}
+
+interface SettledBoundary {
+  id: number;
+  result: BoundaryResult | null;
 }
 
 interface BoundaryResult {

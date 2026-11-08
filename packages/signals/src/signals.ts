@@ -159,39 +159,43 @@ const ownerPaths: WeakMap<ComponentContext, readonly string[]> | null = __DEV__
   : null;
 const nodeSources: WeakMap<AnyNode, string> | null = __DEV__ ? new WeakMap() : null;
 let captureSources = false;
-// Frames from Purity's own source or built packages; the first other frame is
-// the creation site. Test and example files under packages/*/tests are user code.
+// Frames from Purity's own files are skipped; the first other frame is the
+// creation site. Built packages are matched by path (`@purityjs/…` installs,
+// Vite's `@purityjs_*` deps, this repo's `packages/<name>/{src,dist}`), and
+// this module's own file by URL, which also covers bundles that inline Purity
+// under another name (Vite's shared `.vite/deps/<chunk>.js`).
 const FRAMEWORK_FRAME =
-  /[\\/](?:signals|core|compiler|ssr|router|platform)[\\/](?:src|dist)[\\/]|@purityjs[\\/_]/;
+  /@purityjs[\\/_]|[\\/]packages[\\/](?:signals|core|compiler|ssr|router|platform)[\\/](?:src|dist)[\\/]/;
+const FRAME_FILE = /(?:\(|@|^at\s+)([^\s()]+?):\d+(?::\d+)?\)?$/;
+const frameFile = (line: string): string | undefined => FRAME_FILE.exec(line.trim())?.[1];
+const ownFile: string | undefined = __DEV__
+  ? frameFile(new Error().stack?.split('\n')[1] ?? '')
+  : undefined;
 
 interface InspectHost {
   localName?: string;
   getRootNode?: () => { host?: InspectHost };
 }
 
-// Custom element instances are named by their shadow-host chain (outermost
-// first), which follows the composed DOM even though connectedCallback runs
-// outside the parent's render. Other owners fall back to their parent links.
+// Walks owner links from the creating context outwards. A custom element
+// contributes its composed shadow-host chain (connectedCallback runs outside
+// the parent's render, so its parent link is not the DOM parent) and ends the
+// walk; other owners (factory-called components, boundaries) are `#owner`,
+// and a mount()/hydrate() root is `#root`.
 function ownerPathOf(ctx: ComponentContext): readonly string[] {
   let path = ownerPaths!.get(ctx);
   if (path !== undefined) return path;
   const names: string[] = [];
-  let host = (ctx._shadowRoot as { host?: InspectHost } | undefined)?.host;
-  for (let depth = 0; host?.localName !== undefined && depth < 64; depth++) {
-    names.push(host.localName);
-    host = host.getRootNode?.().host;
-  }
-  if (names.length === 0) {
-    for (let c: ComponentContext | null | undefined = ctx; c; c = c.parent) {
-      const h = (c._shadowRoot as { host?: InspectHost } | undefined)?.host;
-      names.push(
-        h?.localName !== undefined
-          ? h.localName
-          : c._rootContainer !== undefined
-            ? '#root'
-            : '#component',
-      );
+  for (let c: ComponentContext | null | undefined = ctx; c; c = c.parent) {
+    let host = (c._shadowRoot as { host?: InspectHost } | undefined)?.host;
+    if (host?.localName !== undefined) {
+      for (let depth = 0; host?.localName !== undefined && depth < 64; depth++) {
+        names.push(host.localName);
+        host = host.getRootNode?.().host;
+      }
+      break;
     }
+    names.push(c._rootContainer !== undefined ? '#root' : '#owner');
   }
   path = names.reverse();
   ownerPaths!.set(ctx, path);
@@ -199,12 +203,19 @@ function ownerPathOf(ctx: ComponentContext): readonly string[] {
 }
 
 function creationSite(): string | undefined {
+  // V8 keeps 10 frames by default; deep creation stacks (a watch inside a
+  // template binding inside each()) would cut the user's frame off.
+  const V8Error = Error as { stackTraceLimit?: number };
+  const limit = V8Error.stackTraceLimit;
+  if (limit !== undefined) V8Error.stackTraceLimit = 64;
   const stack = new Error().stack;
+  if (limit !== undefined) V8Error.stackTraceLimit = limit;
   if (stack === undefined) return undefined;
   const lines = stack.split('\n');
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (line === '' || FRAMEWORK_FRAME.test(line)) continue;
+    if (ownFile !== undefined && frameFile(line) === ownFile) continue;
     return line.replace(/^at\s+/, '');
   }
   return undefined;

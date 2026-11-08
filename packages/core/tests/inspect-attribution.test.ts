@@ -74,7 +74,26 @@ describe('__purity_inspect__ owner and source attribution (SV2-013)', () => {
     const host = document.createElement('div');
     const mounted = mount(() => Factory({}), host);
     disposers.push(() => mounted.unmount());
-    expect(byValue(marker)?.owner).toEqual(['#root', '#component']);
+    expect(byValue(marker)?.owner).toEqual(['#root', '#owner']);
+  });
+
+  it('keeps the host chain above a factory-called component', async () => {
+    const marker = 'factory-in-element-marker';
+    const Fac = component('p-attr-fac', () => {
+      const s = state(marker);
+      return html`<u>${() => s()}</u>`;
+    });
+    component('p-attr-fac-leaf', () => html`<div>${Fac({})}</div>`);
+    component('p-attr-fac-app', () => html`<p-attr-fac-leaf></p-attr-fac-leaf>`);
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const mounted = mount(() => html`<p-attr-fac-app></p-attr-fac-app>`, host);
+    disposers.push(() => {
+      mounted.unmount();
+      host.remove();
+    });
+    await tick();
+    expect(byValue(marker)?.owner).toEqual(['p-attr-fac-app', 'p-attr-fac-leaf', '#owner']);
   });
 
   it('leaves owner undefined for nodes created outside any component', () => {
@@ -83,7 +102,7 @@ describe('__purity_inspect__ owner and source attribution (SV2-013)', () => {
     expect(byValue('free-floating-marker')?.owner).toBeUndefined();
   });
 
-  it('does not keep a destroyed component alive through attribution', async () => {
+  it('keeps owner names readable after unmount (names only, no context reference)', async () => {
     const marker = 'dead-owner-marker';
     let kept: (() => string) | null = null;
     const Leaf = component('p-attr-leaf', () => {
@@ -120,6 +139,14 @@ describe('__purity_inspect__ owner and source attribution (SV2-013)', () => {
     expect(node?.source).toMatch(/inspect-attribution\.test\.ts:\d+/);
     expect(node?.source).not.toMatch(/[\\/]signals[\\/]src[\\/]/);
     expect(byValue('source-marker-derived')?.source).toMatch(/inspect-attribution\.test\.ts:\d+/);
+  });
+
+  it('reports the nearest user frame through deep user call chains', () => {
+    hook().captureSources(true);
+    const viaHelper = () => state('deep-marker');
+    const nest = (n: number): unknown => (n === 0 ? viaHelper() : nest(n - 1));
+    nest(20);
+    expect(byValue('deep-marker')?.source).toMatch(/inspect-attribution\.test\.ts:\d+/);
   });
 
   it('stops capturing after captureSources(false)', () => {

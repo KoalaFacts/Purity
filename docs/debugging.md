@@ -89,7 +89,7 @@ interface InspectorNode {
 | `version`   | Bumps every time the value actually changed. Useful for "did this update?"                  |
 | `status`    | `clean` = up to date, `check` = ancestor moved, may need re-eval, `dirty` = known stale     |
 | `value`     | The current cached value (for state, the live value; for computed, the last computed value) |
-| `owner`     | Component path that created the node, outermost first (`#root`/`#component` for unnamed)    |
+| `owner`     | Component path that created the node, outermost first (`#root`/`#owner` for unnamed)        |
 | `source`    | Creation stack frame outside Purity; recorded only while `captureSources(true)` is on       |
 | `sources`   | Nodes this node reads from. Empty for `state`.                                              |
 | `observers` | Nodes that read this one. Forms a cycle with `sources`.                                     |

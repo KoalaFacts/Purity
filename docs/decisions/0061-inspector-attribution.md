@@ -31,14 +31,20 @@ __purity_inspect__.captureSources(true); // record creation sites from now on
 - `owner` is recorded for every node created while a component is the
   current owner. Custom element instances are named by their composed
   shadow-host chain, outermost first. Components called as factories
-  (`Child({})`) and `mount()` roots have no tag of their own and appear as
-  `#component` / `#root` along their parent links. Nodes created outside any
+  (`Child({})`) and other non-element owners (`errorBoundary()`, `loading()`
+  outside a custom element) have no tag of their own and appear as `#owner`;
+  a `mount()` / `hydrate()` root is `#root`. The walk follows owner links
+  outwards and, at the first custom element, appends its shadow-host chain. Nodes created outside any
   component have no `owner`.
 - The path is a snapshot of names shared per component instance: a node never
   holds its owner context (or that context's DOM) alive, and the names stay
   readable after the owner unmounts.
-- `source` is the first creation-stack frame outside Purity's own `src` /
-  `dist` files. Capture is off by default because each creation then pays for
+- `source` is the first creation-stack frame outside Purity: frames from
+  `@purityjs/…` installs, Vite's `@purityjs_*` deps, this repository's
+  `packages/<name>/{src,dist}` and the signals module's own file URL (which
+  covers bundles that inline Purity under another name, such as Vite's shared
+  `.vite/deps/<chunk>.js`) are skipped. V8's stack limit is raised to 64 frames
+  for the capture. Capture is off by default because each creation then pays for
   one `new Error().stack`; `captureSources(true)` turns it on for nodes created
   afterwards, `captureSources(false)` turns it off, and a non-boolean argument
   throws `TypeError`.
@@ -60,7 +66,7 @@ __purity_inspect__.captureSources(true); // record creation sites from now on
 
 `packages/core/tests/inspect-attribution.test.ts`: nested custom elements
 report `['outer', 'inner']` on the state and on the text-binding effect that
-reads it; factory-called components report `['#root', '#component']`; nodes
+reads it; factory-called components report `['#root', '#owner']` at a root and keep the host chain above them inside a custom element; nodes
 outside components have no owner; the path survives unmount; no source by
 default; sources point at the test file (not Purity's `src`) while capture is
 on and stop after it is turned off; a non-boolean argument throws.

@@ -707,7 +707,11 @@ it('CLI rejects missing current/latest entries, unknown historical packages and 
 it.each(['rawBytes', 'gzipBytes', 'brotliBytes'] as const)(
   'CLI still rejects v7 app and compensated required-chunk %s growth',
   (metric) => {
-    for (const base of [splitPackageExamples().base, latestSplitExample(), approvedV7Examples().at(-1)!]) {
+    for (const base of [
+      splitPackageExamples().base,
+      latestSplitExample(),
+      approvedV7Examples().at(-1)!,
+    ]) {
       for (const compensated of [false, true]) {
         const next = structuredClone(base);
         next.measurements[0].chunks[1][metric]++;

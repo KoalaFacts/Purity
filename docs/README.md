@@ -33,7 +33,6 @@ Every Markdown file under `docs/` is reachable from this page; `npm run check:do
 | [`solid-competitor-roadmap.md`](./solid-competitor-roadmap.md)         | Execution roadmap against Solid v2 (SV2 row order)                                                                      |
 | [`solid-v2-gap-analysis.md`](./solid-v2-gap-analysis.md)               | Capability-level gaps versus Solid v2 with acceptance scenarios; machine-readable rows in `solid-v2-gaps.json`          |
 | [`2026-execution-model-roadmap.md`](./2026-execution-model-roadmap.md) | Research note: execution modes (resumability, server-driven interactivity) other frameworks ship and Purity doesn't yet |
-| [`2026-platform-opportunities.md`](./2026-platform-opportunities.md)   | Research note (May 2026): web platform specs Purity could build on                                                      |
 
 ## Dated records (historical, for reference)
 

@@ -71,6 +71,19 @@ const resolvedConfig: Parameters<Hooks['configResolved']>[0] = {
   resolve: undefined,
   build: undefined,
 };
+// With Node types loaded (Vite's own declarations load them), the inline-limit
+// callback receives Node's Buffer, so Vite's resolved config stays assignable.
+type InlineLimit = NonNullable<
+  NonNullable<Parameters<Hooks['configResolved']>[0]['build']>['assetsInlineLimit']
+>;
+type InlineContent = Parameters<Extract<InlineLimit, (...args: never[]) => unknown>>[1];
+// A Node Buffer (`Buffer.alloc()`'s type), never `any`.
+expectType<Equal<0 extends 1 & InlineContent ? true : false, false>>();
+expectType<InlineContent extends Buffer ? true : false>();
+const inlineLimit: Parameters<Hooks['configResolved']>[0] = {
+  root: '/app',
+  build: { assetsInlineLimit: (_file: string, content: Buffer) => content.readUInt8(0) > 0 },
+};
 const resolvedBuild: Parameters<Hooks['configResolved']>[0] = {
   root: '/app',
   resolve: { alias: undefined },
@@ -116,6 +129,7 @@ void [
   configArgs,
   resolvedConfig,
   resolvedBuild,
+  inlineLimit,
   configNoSsr,
   configSsr,
   noRoutes,

@@ -8,13 +8,19 @@
 //   `.d.ts` under a package's `dist/`. A consumer that reaches `src/` (a
 //   `paths` alias, a `development` condition) fails the gate.
 //
+// - The `routes-app/` consumer type-checks the `routes.d.ts` that the BUILT
+//   @purityjs/vite-plugin emits for its `pages/` (ADR 0044): the plugin's
+//   `configResolved` + `buildStart` hooks regenerate `.purity/routes.{ts,d.ts}`
+//   first, so a codegen change that breaks the emitted types fails the gate.
+//
 // Usage: node scripts/check-declarations.ts [consumerDir]
 // Run `npm run build:packages` first: the gate reads whatever is in dist/, so a
 // local run after source edits without a rebuild checks stale declarations
 // (CI always builds first). Exit code 1 with one line per problem.
 
 import { spawnSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,6 +32,39 @@ export interface DeclarationReport {
   consumers: number;
   negatives: number;
   declarationFiles: number;
+}
+
+/** Folder of the consumer that type-checks a real emitted `routes.d.ts`. */
+export const routesConsumerDir = join(repoRoot, 'scripts', 'declaration-consumers', 'routes-app');
+
+interface RoutesEmitPlugin {
+  configResolved(config: { root: string; command: string }): void;
+  buildStart(): void;
+}
+
+/**
+ * Regenerate `<dir>/.purity/routes.{ts,d.ts}` from `<dir>/pages` with the
+ * built plugin (`dist/index.cjs`), exactly as `vite build` does at build start.
+ * Returns the problems found (missing build or pages, no emitted declarations).
+ */
+export function emitRoutesFixture(dir: string): string[] {
+  const entry = join(repoRoot, 'packages', 'vite-plugin', 'dist', 'index.cjs');
+  if (!existsSync(entry)) {
+    return [`${relative(repoRoot, entry)} is missing; run \`npm run build:packages\` first`];
+  }
+  const pages = join(dir, 'pages');
+  if (!existsSync(pages))
+    return [`${relative(repoRoot, pages)}: no pages directory to emit routes from`];
+  // Remove the previous emit so a plugin that stops writing cannot pass on stale files.
+  rmSync(join(dir, '.purity'), { recursive: true, force: true });
+  const { purity } = createRequire(import.meta.url)(entry) as {
+    purity: (options: { routes: { dir: string; emitTo: string } }) => RoutesEmitPlugin;
+  };
+  const plugin = purity({ routes: { dir: 'pages', emitTo: '.purity/routes.ts' } });
+  plugin.configResolved({ root: resolve(dir), command: 'build' });
+  plugin.buildStart();
+  const types = join(dir, '.purity', 'routes.d.ts');
+  return existsSync(types) ? [] : [`${relative(repoRoot, types)} was not emitted`];
 }
 
 export function checkDeclarations(
@@ -79,13 +118,28 @@ export function checkDeclarations(
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const report = checkDeclarations(process.argv[2]);
-  for (let i = 0; i < report.problems.length; i++) console.error(report.problems[i]);
-  if (report.problems.length > 0) {
-    console.error(`check-declarations: ${report.problems.length} problem(s)`);
-    process.exit(1);
+  const dirs = process.argv[2] ? [process.argv[2]] : [undefined, routesConsumerDir];
+  let failed = false;
+  for (let d = 0; d < dirs.length; d++) {
+    const isRoutes = dirs[d] !== undefined && resolve(dirs[d]) === routesConsumerDir;
+    const emitProblems = isRoutes ? emitRoutesFixture(routesConsumerDir) : [];
+    const report =
+      emitProblems.length > 0
+        ? { problems: emitProblems, consumers: 0, negatives: 0, declarationFiles: 0 }
+        : checkDeclarations(dirs[d]);
+    const label = relative(
+      repoRoot,
+      resolve(dirs[d] ?? join(repoRoot, 'scripts', 'declaration-consumers')),
+    );
+    for (let i = 0; i < report.problems.length; i++) console.error(report.problems[i]);
+    if (report.problems.length > 0) {
+      failed = true;
+      console.error(`check-declarations: ${label}: ${report.problems.length} problem(s)`);
+      continue;
+    }
+    console.log(
+      `check-declarations: ${label} ok (${report.consumers} consumers, ${report.negatives} negative contracts, ${report.declarationFiles} built declaration files)`,
+    );
   }
-  console.log(
-    `check-declarations: ok (${report.consumers} consumers, ${report.negatives} negative contracts, ${report.declarationFiles} built declaration files)`,
-  );
+  if (failed) process.exit(1);
 }

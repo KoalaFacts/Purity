@@ -40,6 +40,18 @@ import {
 export type { PuritySourceMap } from './text-edits.ts';
 
 /**
+ * Node's `Buffer` when `@types/node` is loaded, otherwise `Uint8Array`. Naming
+ * the global `Buffer` directly made the built declarations fail to compile in
+ * client tsconfigs without Node types (`types: ["vite/client"]`), which load
+ * them through `LoaderDataOf` or the emitted `routes.d.ts` (SV2-014).
+ */
+// Read through `alloc()`: `BufferConstructor` declares no `prototype`, so
+// inferring from it yields `Function.prototype` (`any`).
+type NodeBuffer = typeof globalThis extends { Buffer: { alloc(size: number): infer B } }
+  ? B
+  : Uint8Array;
+
+/**
  * The parts of the Vite/Rolldown plugin context Purity's hooks read. Hooks
  * also run without one (direct calls, non-Vite hosts), so they take
  * `this: unknown` and every member here is optional.
@@ -365,7 +377,7 @@ export function purity(options?: PurityPluginOptions) {
               ssr?: unknown;
               assetsInlineLimit?:
                 | number
-                | ((file: string, content: Buffer) => boolean | undefined)
+                | ((file: string, content: NodeBuffer) => boolean | undefined)
                 | undefined;
             }
           | undefined;

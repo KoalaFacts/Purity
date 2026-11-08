@@ -50,7 +50,7 @@ Tests first; cover error/disposal paths; keep `generate` / `generateSSR` / `gene
 
 ## Authority
 
-- Branch prefixes opened by this task: `perf/`, `feat/`, `fix/`, `test/`, `docs/`; housekeeping `docs/tidy-YYYY-MM-DD`; plus the PR for branch `audit/code-quality-2026-11-05`. Squash merge pinned to the head SHA.
+- Branch prefixes opened by this task: `perf/`, `feat/`, `fix/`, `test/`, `docs/`; housekeeping branch docs/tidy-YYYY-MM-DD; plus the PR for branch `audit/code-quality-2026-11-05`. Squash merge pinned to the head SHA.
 - Other sessions and Dependabot work in this repo: never push to, merge or close their PRs or branches (e.g. a PR another session is actively pushing to).
 - Publishing to npm stays the owner's: never run or dispatch the publish workflow, never bump versions for a release, never tag or create Releases. Merging deploys nothing beyond what the repo's workflows do on `main`.
 
@@ -76,7 +76,7 @@ Tests first; cover error/disposal paths; keep `generate` / `generateSSR` / `gene
 - Ledger `docs/plans/surpass-solid.md`. The audit, gap and roadmap docs (`docs/code-quality-audit-2026-11-05.md`, `docs/solid-v2-gap-analysis.md`, `docs/solid-v2-gaps.json`, `docs/solid-competitor-roadmap.md`, `docs/framework-capabilities.md`) are edited in place; a finished one is folded into the ledger or `framework-capabilities.md` and deleted. Handoff notes are folded and deleted.
 - One exception to "no new docs": each SV2 capability may get one new numbered ADR in `docs/decisions/` (next free number), only one per capability.
 - `benchmark/history` and recorded benchmark runs are data.
-- Housekeeping (branch `docs/tidy-` plus the date, once per Sydney day): every `*.md` — broken relative links and anchors, references to missing files/exports, ADR numbering/index gaps (`scripts/check-docs.ts` finds these); stale facts against the tree and manifests (package lists and paths, versions, test/ADR/scenario counts, commands, comparator versions), preferring wording that does not go stale. Consolidate superseded docs and delete the rest. Never delete or renumber ADRs (mark superseded ones in their status line). Agent-facing files (root and package `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) match the tree, stay short and point to the canonical doc. Update the ledger's "Last docs tidy" line.
+- Housekeeping (branch docs/tidy-YYYY-MM-DD, once per Sydney day): every `*.md` — broken relative links and anchors, references to missing files/exports, ADR numbering/index gaps (`scripts/check-docs.ts` finds these); stale facts against the tree and manifests (package lists and paths, versions, test/ADR/scenario counts, commands, comparator versions), preferring wording that does not go stale. Consolidate superseded docs and delete the rest. Never delete or renumber ADRs (mark superseded ones in their status line). Agent-facing files (root and package `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) match the tree, stay short and point to the canonical doc. Update the ledger's "Last docs tidy" line.
 
 ## Report extras
 

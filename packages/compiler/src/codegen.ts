@@ -1127,9 +1127,6 @@ function genAttrBinding(
   const propertyValue = (expr: string): string =>
     tag.includes('-') ? expr : safeBindingValue(attr.name, expr);
 
-  // Shared prefix of the value bindings: read the value once, note whether it
-  // is an accessor (applied in the shared watch) or a static value.
-  const head = `var ${av}=${val};var ${fl}=typeof ${av}==='function';`;
   // CQ-03: per-binding last value for the shared watch, so a sibling's change
   // does not re-apply this binding (attribute writes invalidate style; `.value`
   // writes reset caret, selection and IME state). Reactive value bindings
@@ -1137,6 +1134,10 @@ function genAttrBinding(
   // even when an accessor returns the caller-owned `_v` array or NaN.
   // Boolean bindings normalize to booleans, so `_v` is a safe sentinel there.
   const last = `_l${id}`;
+  // Group the three sequential var initializers into one declaration in
+  // generated factories. This removes two redundant 'var' keywords per
+  // value binding without changing the initializers' evaluation order.
+  const head = `var ${av}=${val},${fl}=typeof ${av}==='function',${last}=`;
   const memo = (x: string, write: string) => `var ${x}=${av}();if(${x}!==${last}){${write}}`;
 
   switch (attr.kind) {
@@ -1147,21 +1148,21 @@ function genAttrBinding(
       const set = (x: string) =>
         `${el}.setAttribute(${qname},${x}===true?'':String(${safeBindingValue(attr.name, x)}));`;
       return {
-        setup: `${head}var ${last}=0/0;if(!${fl}&&${av}!=null&&${av}!==false)${set(av)}`,
+        setup: `${head}0/0;if(!${fl}&&${av}!=null&&${av}!==false)${set(av)}`,
         reactive: `if(${fl}){${memo(`v${id}`, `${last}=v${id};if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});else ${set(`v${id}`)}`)}}`,
       };
     }
 
     case 'bool':
       return {
-        setup: `${head}var ${last}=_v;if(!${fl}&&${av})${el}.setAttribute(${qname},'');`,
+        setup: `${head}_v;if(!${fl}&&${av})${el}.setAttribute(${qname},'');`,
         reactive: `if(${fl}){var v${id}=!!${av}();if(v${id}!==${last}){${last}=v${id};if(v${id})${el}.setAttribute(${qname},'');else ${el}.removeAttribute(${qname});}}`,
       };
 
     case 'prop':
     case 'reactive-prop':
       return {
-        setup: `${head}var ${last}=0/0;if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
+        setup: `${head}0/0;if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
         reactive: `if(${fl}){${memo(`v${id}`, `${el}[${qname}]=${propertyValue(`${last}=v${id}`)};`)}}`,
       };
 

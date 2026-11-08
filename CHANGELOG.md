@@ -4,6 +4,11 @@
 
 ### Added
 
+- `pendingTransactions()` from `@purityjs/core/transaction`
+  ([ADR 0059](./docs/decisions/0059-async-transaction.md) slice 2): the
+  tracked number of running transactions, falling in the same batch as each
+  commit or rollback. `core-transaction` stays inside its budget.
+
 - `asyncCompute(fn)` accepts `AsyncIterable` results
   ([ADR 0054](./docs/decisions/0054-async-derivation.md) slice 2): each yielded
   value becomes current, `pending()` is `true` until the first one, rejections

@@ -62,13 +62,24 @@ Contract (slice 1):
 5. **Misuse.** `tx.set()` / `tx.optimistic()` after settlement throw
    `[Purity] transaction already settled`. Reads inside `fn` are untracked, so
    starting a transaction from a `watch()` does not subscribe it.
+6. **Tracked pending count (slice 2).** `pendingTransactions()` returns the
+   number of transactions that have started and not yet settled, as a tracked
+   read. It rises when `transaction()` is called and falls in the same batch
+   as that transaction's commit or rollback (resolve, rejection, synchronous
+   throw or owner disposal), so a reader never sees the count drop before the
+   committed values. The count is module-wide, not per signal; on the server
+   it counts every transaction in the process, so server rendering should not
+   read it.
+   A `watch()` that reads the count must not also start a transaction: the
+   start re-runs that watch, and the re-run aborts the transaction it started
+   (point 4). Read the count in the view, start transactions from handlers.
 
 Intentional differences from Solid: a promise-returning function instead of a
 generator (no transform, works in the JIT and strict AOT paths alike);
 tentative values are layers over ordinary `state()` signals rather than a
 separate optimistic signal type.
 
-Out of scope for slice 1: a tracked `pending()` for running transactions,
+Out of scope for slices 1–2: per-signal pending state,
 `store()` draft overlays, and wiring platform `optimistic()` onto these layers.
 
 ## Acceptance tests
@@ -79,6 +90,10 @@ writes; an optimistic value is shown, then replaced by the commit or rolled
 back exactly once (`[0, 1, 0]`); overlapping overlays; a commit under another
 live overlay; adopted direct writes; owner disposal; settled misuse; untracked
 callback reads.
+`packages/core/tests/transaction-pending.test.ts` (slice 2): the count reaches
+a watcher (`0 → 2 → 0`); it falls in the commit's batch (`['a:0', 'a:1',
+'b:0']`); it falls on rejection, synchronous throw and owner disposal; a
+`watch()` that starts a transaction is not subscribed to the count.
 
 ## Consequences
 

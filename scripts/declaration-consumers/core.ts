@@ -1,6 +1,7 @@
 // Consumer of the built `@purityjs/core` declarations (SV2-014).
 import { asyncCompute, isPending } from '@purityjs/core/async';
 import { type StoreView, store } from '@purityjs/core/store';
+import { pendingTransactions, transaction } from '@purityjs/core/transaction';
 import {
   type ResourceAccessor,
   type SlotAccessor,
@@ -118,5 +119,12 @@ update((draft) => {
   // @ts-expect-error the draft keeps the store's shape
   draft.todos.push({ done: 'yes' });
 });
+
+// Transactions (ADR 0059): the result type and the tracked pending count.
+const saved = transaction(async () => 1);
+expectType<Equal<typeof saved, Promise<number>>>();
+expectType<Equal<ReturnType<typeof pendingTransactions>, number>>();
+// @ts-expect-error the pending count takes no arguments
+pendingTransactions(saved);
 
 void [current, loading, eager, asString, done, typedView];

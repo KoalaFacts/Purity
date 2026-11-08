@@ -637,6 +637,16 @@ Started during component setup or render, a transaction is aborted on unmount
 (writes dropped, tentative values removed, the promise rejects with
 `AbortError`); one started from an event handler always settles.
 
+`pendingTransactions()` is the tracked number of transactions still running;
+it drops in the same batch as the commit, so a "Saving…" label never
+disappears before the saved values appear:
+
+```ts
+import { pendingTransactions } from "@purityjs/core/transaction";
+
+html`<button ?disabled=${() => pendingTransactions() > 0}>Save</button>`;
+```
+
 ### Owner composition
 
 Work created in a later callback (a timer, a socket message, a resolved

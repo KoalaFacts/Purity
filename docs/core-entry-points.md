@@ -33,30 +33,30 @@ virtualEach(items, render, key);
 
 ## Current entries
 
-| Import                       | APIs                                                            |
-| ---------------------------- | --------------------------------------------------------------- |
-| `@purityjs/signals`          | Reactive primitives and ownership scopes                        |
-| `@purityjs/compiler`         | Template parser, AST and code generators                        |
-| `@purityjs/core`             | Components, control flow, resources, styles and hydration       |
-| `@purityjs/core/csr`         | Core APIs for client rendering without `hydrate`                |
-| `@purityjs/core/store`       | `store` property-granular nested state (ADR 0055)               |
-| `@purityjs/core/boundary`    | `errorBoundary` error fallback and reset (ADR 0056)             |
-| `@purityjs/core/loading`     | `loading` fallback on first load, retained view (ADR 0057)      |
-| `@purityjs/core/transaction` | `transaction` coherent async writes, optimistic (ADR 0059)      |
-| `@purityjs/core/owner`       | `getOwner`, `runWithOwner`, `root` owner composition (ADR 0060) |
-| `@purityjs/core/virtual`     | `virtualEach` for measured windowed lists                       |
-| `@purityjs/core/async`       | `asyncCompute` async derivation (ADR 0054)                      |
-| `@purityjs/core/forms`       | Form-associated component features                              |
-| `@purityjs/core/jit`         | Runtime template compilation, including hydration               |
-| `@purityjs/core/jit-client`  | Client-only runtime template compilation                        |
-| `@purityjs/core/csr-runtime` | Shared helpers used by compiled client templates                |
-| `@purityjs/core/runtime`     | Precompiled template hydration helpers                          |
-| `@purityjs/router`           | Routing, navigation, loader data, head and request helpers      |
-| `@purityjs/platform/actions` | Server actions, forms and optimistic updates                    |
-| `@purityjs/platform/signals` | Browser storage, observer, environment and live-data signals    |
-| `@purityjs/platform/query`   | Query and invalidation helpers                                  |
-| `@purityjs/platform/islands` | Island registration and client hydration helpers                |
-| `@purityjs/ssr`              | Server rendering and server template compilation                |
+| Import                       | APIs                                                                              |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| `@purityjs/signals`          | Reactive primitives and ownership scopes                                          |
+| `@purityjs/compiler`         | Template parser, AST and code generators                                          |
+| `@purityjs/core`             | Components, control flow, resources, styles and hydration                         |
+| `@purityjs/core/csr`         | Core APIs for client rendering without `hydrate`                                  |
+| `@purityjs/core/store`       | `store` property-granular nested state (ADR 0055)                                 |
+| `@purityjs/core/boundary`    | `errorBoundary` error fallback and reset (ADR 0056)                               |
+| `@purityjs/core/loading`     | `loading` fallback on first load, retained view (ADR 0057)                        |
+| `@purityjs/core/transaction` | `transaction` coherent async writes, optimistic; `pendingTransactions` (ADR 0059) |
+| `@purityjs/core/owner`       | `getOwner`, `runWithOwner`, `root` owner composition (ADR 0060)                   |
+| `@purityjs/core/virtual`     | `virtualEach` for measured windowed lists                                         |
+| `@purityjs/core/async`       | `asyncCompute` async derivation (ADR 0054)                                        |
+| `@purityjs/core/forms`       | Form-associated component features                                                |
+| `@purityjs/core/jit`         | Runtime template compilation, including hydration                                 |
+| `@purityjs/core/jit-client`  | Client-only runtime template compilation                                          |
+| `@purityjs/core/csr-runtime` | Shared helpers used by compiled client templates                                  |
+| `@purityjs/core/runtime`     | Precompiled template hydration helpers                                            |
+| `@purityjs/router`           | Routing, navigation, loader data, head and request helpers                        |
+| `@purityjs/platform/actions` | Server actions, forms and optimistic updates                                      |
+| `@purityjs/platform/signals` | Browser storage, observer, environment and live-data signals                      |
+| `@purityjs/platform/query`   | Query and invalidation helpers                                                    |
+| `@purityjs/platform/islands` | Island registration and client hydration helpers                                  |
+| `@purityjs/ssr`              | Server rendering and server template compilation                                  |
 
 Use `each` for ordinary keyed lists and `virtualEach` for scrollable lists that
 need windowing. The virtual entry shares keyed reconciliation and ownership

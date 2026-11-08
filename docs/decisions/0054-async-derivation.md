@@ -79,10 +79,19 @@ Contract:
    Abort listeners run synchronously inside the read that starts the next run,
    so they should not write signals.
 
+Slice 2: `fn` may return an `AsyncIterable`. Each yielded value settles the
+run like a resolved promise (so a first yield ends the initial pending state
+and later yields replace the current value, with the same equality cut-off);
+a rejection from `next()` becomes the current error; an iterator that ends
+without yielding leaves the run pending. Supersession and disposal abort the
+run, and its abort listener calls `return()` once, so async generators run
+their `finally` blocks; a generator suspended on an `await` closes after that
+await settles, and nothing it yields after supersession is delivered. Promise
+results share this path as a one-value stream.
+
 Deferred to later slices of SV2-003 (each recorded in the ledger before it
-ships): `AsyncIterable` results with iterator closure on supersession and
-disposal; SSR priming through `SSRRenderContext` like `resource()`; and the
-view-level loading boundary, which belongs to SV2-004.
+ships): SSR priming through `SSRRenderContext` like `resource()`. The
+view-level loading boundary belongs to SV2-004.
 
 ## Intentional differences from Solid
 
@@ -95,7 +104,9 @@ view-level loading boundary, which belongs to SV2-004.
   without a guard throws `PendingError` from `watch()` like any throwing
   effect, so effects guard the read (`try` + `isPending()`) or check
   `pending()` first until the SV2-004 boundary handles it in views.
-- **No `AsyncIterable` in the first slice** (see Deferred).
+- **`AsyncIterable` closes through the run's abort.** `return()` is driven by
+  the `AbortSignal` the run already has, so promises and streams share one
+  cancellation path.
 
 ## Acceptance tests
 
@@ -111,6 +122,11 @@ view-level loading boundary, which belongs to SV2-004.
 - `asyncCompute` reading an unresolved `asyncCompute` stays pending, then
   settles from the upstream value; an upstream refetch re-runs the downstream
   only once, with the new value.
+- Slice 2 (`tests/async-compute-iterable.test.ts`): every yield reaches a
+  downstream `compute` → `watch`; supersession and disposal (direct or owner
+  scope) call `return()` and drop later values; an async generator's `finally`
+  runs; a `next()` rejection is the current error; an iterator that ends
+  without yielding stays pending.
 
 ## Consequences
 

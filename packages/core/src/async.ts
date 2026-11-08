@@ -46,13 +46,16 @@ export interface AsyncComputed<T> {
   dispose(): void;
 }
 
-type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
+// `v` is the value when `ok`, otherwise the error.
+type Outcome = { ok: boolean; v: unknown };
 
 /**
  * Derive a value from an async computation. `fn` is tracked like `compute()`
  * until it returns; a change to a tracked read starts a new run and aborts the
  * previous one. Only the latest run can become current. After a first value
- * settles, later runs keep returning it while they are in flight.
+ * settles, later runs keep returning it while they are in flight. When `fn`
+ * returns an `AsyncIterable`, every yielded value becomes current in turn and
+ * the iterator is closed (`return()`) when the run is superseded or disposed.
  *
  * ```ts
  * const user = asyncCompute(({ signal }) => fetchUser(id(), { signal }));
@@ -60,20 +63,20 @@ type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
  * ```
  */
 export function asyncCompute<T>(
-  fn: (info: AsyncComputeInfo) => T | PromiseLike<T>,
+  fn: (info: AsyncComputeInfo) => T | PromiseLike<T> | AsyncIterable<T>,
 ): AsyncComputed<T> {
   let latest = 0;
   let settledRun = 0;
-  let current: Outcome<T> | null = null;
+  let current: Outcome | null = null;
   let controller: AbortController | null = null;
   let disposed = false;
   // Bumped when an async run settles, outside any pull.
   const settled = state(0);
 
-  const settle = (run: number, result: Outcome<T>): void => {
+  const settle = (run: number, ok: boolean, v: unknown): void => {
     // An equal value keeps the retained outcome object, so the outcome
     // compute's equality cut-off does not re-run downstream readers.
-    if (!(current?.ok && result.ok && Object.is(current.value, result.value))) current = result;
+    if (!(current?.ok && ok && Object.is(current.v, v))) current = { ok, v };
     settledRun = run;
   };
 
@@ -82,34 +85,50 @@ export function asyncCompute<T>(
     controller?.abort();
     const ctrl = (controller = new AbortController());
     const run = ++latest;
-    let result: T | PromiseLike<T>;
+    let result: T | PromiseLike<T> | AsyncIterable<T>;
     try {
       result = fn({ signal: ctrl.signal });
     } catch (error) {
       // An unresolved upstream async value keeps this run pending; the
       // upstream settlement re-runs fn through the tracked read.
-      if (!isPending(error)) settle(run, { ok: false, error });
+      if (!isPending(error)) settle(run, false, error);
       return run;
     }
-    if (typeof (result as PromiseLike<T> | null)?.then === 'function') {
-      const finish = (outcome: Outcome<T>): void => {
-        if (run !== latest || disposed) return;
-        settle(run, outcome);
+    const iterate = (result as AsyncIterable<T> | null)?.[Symbol.asyncIterator];
+    if (iterate || typeof (result as PromiseLike<T> | null)?.then === 'function') {
+      // True when the outcome was accepted (the run is still current).
+      const finish = (ok: boolean, v: unknown): boolean => {
+        if (run !== latest || disposed) return false;
+        settle(run, ok, v);
         settled(settled.peek() + 1);
+        return true;
       };
-      // Promise.resolve: a thenable that calls back synchronously still
-      // settles after the current pull, never inside it.
-      Promise.resolve(result).then(
-        (value) => finish({ ok: true, value }),
-        (error) => {
-          // An async fn that read an unresolved upstream stays pending, like
-          // the synchronous PendingError path; the upstream settlement re-runs it.
-          if (isPending(error)) return;
-          finish({ ok: false, error });
-        },
-      );
+      // Every yielded value becomes current; a promise is a one-value stream.
+      // The generator also defers a thenable that calls back synchronously
+      // until after the current pull. Supersession and disposal abort the
+      // run, which closes the iterator; a rejecting return() surfaces as an
+      // unhandled rejection rather than being swallowed.
+      const it: AsyncIterator<T> = iterate
+        ? iterate.call(result)
+        : (async function* () {
+            yield await (result as PromiseLike<T>);
+          })();
+      ctrl.signal.onabort = () => it.return?.();
+      const step = (): void => {
+        it.next().then(
+          (r) => {
+            if (!r.done && finish(true, r.value)) step();
+          },
+          (error) => {
+            // An async fn that read an unresolved upstream stays pending, like
+            // the synchronous PendingError path; the upstream settlement re-runs it.
+            if (!isPending(error)) finish(false, error);
+          },
+        );
+      };
+      step();
     } else {
-      settle(run, { ok: true, value: result as T });
+      settle(run, true, result);
     }
     return run;
   });
@@ -117,7 +136,7 @@ export function asyncCompute<T>(
   // Readers depend on the outcome, not on run starts: a new run that keeps
   // the retained outcome returns the same object, so the equality cut-off
   // stops it from re-running downstream derivations with stale input.
-  const outcome = compute((): Outcome<T> | null => {
+  const outcome = compute((): Outcome | null => {
     runner();
     settled();
     return current;
@@ -126,8 +145,8 @@ export function asyncCompute<T>(
   const read = (() => {
     const result = outcome();
     if (result === null) throw new PendingError(read);
-    if (result.ok) return result.value;
-    throw result.error;
+    if (result.ok) return result.v as T;
+    throw result.v;
   }) as AsyncComputed<T>;
 
   read.pending = () => {

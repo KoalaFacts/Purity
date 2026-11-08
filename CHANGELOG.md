@@ -37,6 +37,9 @@
   data; refetches keep the previous value while `pending()` is `true`; a newer
   run aborts the previous run's `AbortSignal` and only the latest run can become
   current. Existing entries do not change size.
+- `asyncCompute(fn)` also accepts an `AsyncIterable` result (SV2-003 slice 2,
+  [ADR 0054](./docs/decisions/0054-async-derivation.md)): every yielded value
+  becomes current, and the iterator is closed on supersession and disposal.
 - `store(initial)` in the new entry `@purityjs/core/store` ([ADR 0055](./docs/decisions/0055-property-store.md)):
   property-granular nested state. Reads through the returned read-only view
   track one property at a time (key sets and array length separately);

@@ -476,7 +476,7 @@
       "title": "Enforced public declaration and negative typing contracts",
       "kind": "evidence",
       "priority": "P1",
-      "state": "open",
+      "state": "in_progress",
       "dependsOn": ["SV2-001"],
       "solid": "Compare actual public declarations and generated route APIs for the pinned v2 stack with an explicitly selected TypeScript version.",
       "purity": "Public declarations and strict scaffold builds exist. Core/plugin tsconfigs exclude tests; ordinary Vitest runs do not type-check compile-shaped cases or enforce their negative assertions.",
@@ -500,7 +500,15 @@
         "https://v2.solidjs.com/reference/solid-router"
       ],
       "workload": "W0",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "executed_gate",
+          "artifact": "../scripts/check-declarations.ts",
+          "reproduction": "../scripts/declaration-consumers/",
+          "scope": "Slice 1: strict consumers of @purityjs/signals, @purityjs/core (root, async, store) and @purityjs/platform/actions compiled against built dist/*.d.ts with no source aliases; 27 @ts-expect-error negative contracts and exact Equal return-type checks (watch overloads, component props/slots, resources, each, asyncCompute, store, serverAction); self-tests prove an unused negative fails with TS2578 and a development-condition alias fails. Router, generated routes, SSR and vite-plugin consumers remain open.",
+          "wholeRowAccepted": false
+        }
+      ]
     },
     {
       "id": "SV2-015",

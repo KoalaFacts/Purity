@@ -47,6 +47,8 @@ npm ci
 npm run check            # oxfmt + oxlint --deny-warnings + check-docs
 npm run typecheck        # CI runs it too
 npm run build:packages
+npm run check:declarations  # strict consumers vs built dist/*.d.ts (after the build)
+npm run test:declarations
 npm test                 # all workspaces
 npm run check:bundle
 ```

@@ -1094,9 +1094,11 @@ function genExprBinding(slotVar: string, index: number): BindingParts {
   const fl = `_f${id}`;
   const val = `_v[${index}]`;
 
+  // Keep expression value, accessor flag, and text node in one ordered
+  // declaration; multiple var statements add bytes to every generated slot.
   const setup =
-    `var ${xv}=_d?_d(${val}):${val};var ${fl}=typeof ${xv}==='function';` +
-    `var ${tn}=${slotVar};if(!${fl})__purity_sw__(${tn},${xv});`;
+    `var ${xv}=_d?_d(${val}):${val},${fl}=typeof ${xv}==='function',` +
+    `${tn}=${slotVar};if(!${fl})__purity_sw__(${tn},${xv});`;
 
   const reactive = `if(${fl}){${slotUpdate(xv, tn)}}`;
 

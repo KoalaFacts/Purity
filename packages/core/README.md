@@ -624,6 +624,33 @@ Started during component setup or render, a transaction is aborted on unmount
 (writes dropped, tentative values removed, the promise rejects with
 `AbortError`); one started from an event handler always settles.
 
+### Owner composition
+
+Work created in a later callback (a timer, a socket message, a resolved
+promise) has no owner, so it is not stopped on unmount. `@purityjs/core/owner`
+lets an integration bind it explicitly
+([ADR 0060](../../docs/decisions/0060-owner-composition.md)):
+
+```ts
+import { getOwner, root, runWithOwner } from "@purityjs/core/owner";
+
+const Ticker = () => {
+  const owner = getOwner()!;
+  socket.on("price", (p) => {
+    // Stopped when Ticker unmounts; released at once if it already has.
+    runWithOwner(owner, () => watch(p.signal, render));
+  });
+  return html`<p>…</p>`;
+};
+
+// A detached cache with an explicit lifetime.
+const cache = root((dispose) => ({ total: compute(() => sum(items())), dispose }));
+cache.dispose(); // exactly once; later calls do nothing
+```
+
+`owner.alive` is `false` once the owner is disposed. Cleanup inside one owner
+runs in registration order.
+
 ### Teleport
 
 ```ts

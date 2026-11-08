@@ -250,6 +250,11 @@ const packageEntries = [
     specifier: '@purityjs/core/transaction',
     dist: 'packages/core/dist/',
   },
+  {
+    name: 'core-owner',
+    specifier: '@purityjs/core/owner',
+    dist: 'packages/core/dist/',
+  },
   { name: 'core-csr', specifier: '@purityjs/core/csr', dist: 'packages/core/dist/' },
   { name: 'core-virtual', specifier: '@purityjs/core/virtual', dist: 'packages/core/dist/' },
   { name: 'core-async', specifier: '@purityjs/core/async', dist: 'packages/core/dist/' },

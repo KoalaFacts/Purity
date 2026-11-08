@@ -81,6 +81,7 @@ accept. Numbered sequentially.
 | [0057](./0057-loading-boundary.md)               | Client loading boundary with retained content                                 | Proposed                |
 | [0058](./0058-each-current-position.md)          | Current keyed position in each()                                              | Proposed                |
 | [0059](./0059-async-transaction.md)              | Async transactions with optimistic overlays                                   | Proposed                |
+| [0060](./0060-owner-composition.md)              | Public owner composition: getOwner, runWithOwner, root                        | Proposed                |
 
 ## Template
 

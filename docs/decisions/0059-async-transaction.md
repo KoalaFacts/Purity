@@ -70,9 +70,12 @@ Contract (slice 1):
    committed values. The count is module-wide, not per signal; on the server
    it counts every transaction in the process, so server rendering should not
    read it.
-   A `watch()` that reads the count must not also start a transaction: the
-   start re-runs that watch, and the re-run aborts the transaction it started
-   (point 4). Read the count in the view, start transactions from handlers.
+   A `watch()` that reads the count should not also start a transaction: any
+   other transaction starting or settling re-runs that watch, and the re-run
+   aborts the transaction it started (point 4). Read the count in the view,
+   start transactions from handlers. A transaction started under an owner
+   that is already disposed is not aborted, so if its work never settles the
+   count stays raised.
 
 Intentional differences from Solid: a promise-returning function instead of a
 generator (no transform, works in the JIT and strict AOT paths alike);
@@ -92,7 +95,9 @@ live overlay; adopted direct writes; owner disposal; settled misuse; untracked
 callback reads.
 `packages/core/tests/transaction-pending.test.ts` (slice 2): the count reaches
 a watcher (`0 → 2 → 0`); it falls in the commit's batch (`['a:0', 'a:1',
-'b:0']`); it falls on rejection, synchronous throw and owner disposal; a
+'b:0']`, frame order only: a decrement outside the batch is not observable
+by watchers); it falls on rejection, synchronous throw and owner disposal, and never twice
+(settle after disposal, disposal after settle, nested: `[1, 2, 1]`); a
 `watch()` that starts a transaction is not subscribed to the count.
 
 ## Consequences

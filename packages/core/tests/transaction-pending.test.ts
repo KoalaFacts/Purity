@@ -39,6 +39,8 @@ describe('pendingTransactions()', () => {
     stop();
   });
 
+  // Frame order only: watchers run on a microtask, so a decrement placed just
+  // outside the commit's batch is not observable here (ADR 0059 point 6).
   it('drops in the same batch as the commit', async () => {
     const title = state('a');
     const frames: string[] = [];
@@ -78,6 +80,40 @@ describe('pendingTransactions()', () => {
     disposeScope(scope);
     expect(pendingTransactions()).toBe(0);
     await expect(aborted).rejects.toBeDefined();
+  });
+
+  it('never decrements twice: settle after disposal, disposal after settle, nested', async () => {
+    const gate = deferred();
+    const first: Scope = { disposers: null } as Scope;
+    pushContext(first);
+    const aborted = transaction(() => gate.promise);
+    popContext();
+    disposeScope(first);
+    await expect(aborted).rejects.toBeDefined();
+    gate.resolve();
+    await tick();
+    await tick();
+    expect(pendingTransactions()).toBe(0);
+
+    const second: Scope = { disposers: null } as Scope;
+    pushContext(second);
+    const settled = transaction(async () => {});
+    popContext();
+    await settled;
+    expect(second.disposers?.length).toBe(0);
+    disposeScope(second);
+    expect(pendingTransactions()).toBe(0);
+
+    const inner: number[] = [];
+    await transaction(async () => {
+      inner.push(pendingTransactions());
+      await transaction(async () => {
+        inner.push(pendingTransactions());
+      });
+      inner.push(pendingTransactions());
+    });
+    expect(inner).toEqual([1, 2, 1]);
+    expect(pendingTransactions()).toBe(0);
   });
 
   it('starting a transaction inside a watch does not subscribe the watch to the count', async () => {

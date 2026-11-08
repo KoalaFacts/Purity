@@ -81,6 +81,12 @@
 
 ### Fixed
 
+- `@purityjs/vite-plugin` declarations compile without Node types. The built
+  `index.d.ts` named Node's global `Buffer`, so a client tsconfig without
+  `@types/node` and with `skipLibCheck: false` failed with TS2591 as soon as
+  it imported `LoaderDataOf` or the emitted `routes.d.ts`. The inline-limit
+  callback now receives Node's `Buffer` when Node types are loaded and
+  `Uint8Array` otherwise. Emitted JavaScript is unchanged.
 - `@purityjs/vite-plugin` types work under `exactOptionalPropertyTypes`:
   `const plugin: Plugin = purity()` failed because the `resolveId`/`load`/
   `transform` options and `PurityOutputOptions.paths` rejected the

@@ -1,0 +1,7 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true
+  },
+  "include": ["consumer.ts", "pages/**/*.ts", ".purity/routes.d.ts"]
+}

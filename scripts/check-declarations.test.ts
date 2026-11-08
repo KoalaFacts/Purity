@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { checkDeclarations } from './check-declarations.ts';
+import { checkDeclarations, emitRoutesFixture, routesConsumerDir } from './check-declarations.ts';
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const fixtureConfig = readFileSync(
@@ -85,5 +93,51 @@ describe('check-declarations', () => {
       ),
       report.problems.join('\n'),
     );
+  });
+
+  it('passes the routes consumer against a freshly emitted routes.d.ts', () => {
+    assert.deepEqual(emitRoutesFixture(routesConsumerDir), []);
+    const report = checkDeclarations(routesConsumerDir);
+    assert.deepEqual(report.problems, []);
+    assert.ok(report.negatives >= 2, `negatives: ${report.negatives}`);
+  });
+
+  it('fails the routes consumer when the emitted declarations lose a loader flag', () => {
+    // A copy of the routes app, so corrupting the emitted file leaves the real fixture alone.
+    const base = join(repoRoot, 'node_modules', '.cache');
+    mkdirSync(base, { recursive: true });
+    dir = mkdtempSync(join(base, 'check-declarations-routes-'));
+    cpSync(join(routesConsumerDir, 'pages'), join(dir, 'pages'), { recursive: true });
+    const config = JSON.parse(readFileSync(join(routesConsumerDir, 'tsconfig.json'), 'utf8')) as {
+      extends: string;
+    };
+    config.extends = join(routesConsumerDir, config.extends);
+    writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify(config));
+    writeFileSync(
+      join(dir, 'consumer.ts'),
+      readFileSync(join(routesConsumerDir, 'consumer.ts'), 'utf8').replace(
+        "from '../expect'",
+        `from ${JSON.stringify(join(routesConsumerDir, '..', 'expect'))}`,
+      ),
+    );
+    assert.deepEqual(emitRoutesFixture(dir), []);
+    assert.deepEqual(checkDeclarations(dir).problems, []);
+    const types = join(dir, '.purity', 'routes.d.ts');
+    writeFileSync(types, readFileSync(types, 'utf8').replaceAll('; readonly hasLoader: true', ''));
+    const report = checkDeclarations(dir);
+    assert.ok(
+      report.problems.some((p) => /consumer\.ts\(\d+,\d+\): error TS\d+/.test(p)),
+      report.problems.join('\n'),
+    );
+  });
+
+  it('refuses to emit for a folder without pages and clears a stale emit first', () => {
+    const app = consumer(header);
+    assert.match(emitRoutesFixture(app)[0] ?? '', /no pages directory/);
+    mkdirSync(join(app, 'pages'));
+    mkdirSync(join(app, '.purity'));
+    writeFileSync(join(app, '.purity', 'stale.d.ts'), 'export {};');
+    assert.deepEqual(emitRoutesFixture(app), []);
+    assert.deepEqual(readdirSync(join(app, '.purity')).sort(), ['routes.d.ts', 'routes.ts']);
   });
 });

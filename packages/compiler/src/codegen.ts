@@ -1140,6 +1140,8 @@ function genAttrBinding(
   // generated factories. This removes two redundant 'var' keywords per
   // value binding without changing the initializers' evaluation order.
   const head = `var ${av}=${val},${fl}=typeof ${av}==='function',${last}=`;
+  // Cache the original accessor result only after a DOM write/URL check succeeds.
+  // Otherwise a throwing setter or rejected URL incorrectly suppresses retries.
   const memo = (x: string, write: string) => `var ${x}=${av}();if(${x}!==${last}){${write}}`;
 
   switch (attr.kind) {
@@ -1151,21 +1153,21 @@ function genAttrBinding(
         `${el}.setAttribute(${qname},${x}===true?'':String(${safeBindingValue(attr.name, x)}));`;
       return {
         setup: `${head}0/0;if(!${fl}&&${av}!=null&&${av}!==false)${set(av)}`,
-        reactive: `if(${fl}){${memo(`v${id}`, `${last}=v${id};if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});else ${set(`v${id}`)}`)}}`,
+        reactive: `if(${fl}){${memo(`v${id}`, `if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});else ${set(`v${id}`)}${last}=v${id};`)}}`,
       };
     }
 
     case 'bool':
       return {
         setup: `${head}_v;if(!${fl}&&${av})${el}.setAttribute(${qname},'');`,
-        reactive: `if(${fl}){var v${id}=!!${av}();if(v${id}!==${last}){${last}=v${id};if(v${id})${el}.setAttribute(${qname},'');else ${el}.removeAttribute(${qname});}}`,
+        reactive: `if(${fl}){var v${id}=!!${av}();if(v${id}!==${last}){if(v${id})${el}.setAttribute(${qname},'');else ${el}.removeAttribute(${qname});${last}=v${id};}}`,
       };
 
     case 'prop':
     case 'reactive-prop':
       return {
         setup: `${head}0/0;if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
-        reactive: `if(${fl}){${memo(`v${id}`, `${el}[${qname}]=${propertyValue(`${last}=v${id}`)};`)}}`,
+        reactive: `if(${fl}){${memo(`v${id}`, `${el}[${qname}]=${propertyValue(`v${id}`)};${last}=v${id};`)}}`,
       };
 
     case 'bind': {

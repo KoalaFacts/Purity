@@ -76,6 +76,8 @@ interface InspectorNode {
   version: number;
   status?: 'clean' | 'check' | 'dirty'; // present on computed and effect
   value: unknown;
+  owner?: readonly string[]; // creating component path, e.g. ['app-shell', 'todo-item']
+  source?: string; // creation stack frame, only while captureSources(true) is on
   sources: InspectorNode[]; // empty for state
   observers: InspectorNode[];
 }
@@ -87,6 +89,8 @@ interface InspectorNode {
 | `version`   | Bumps every time the value actually changed. Useful for "did this update?"                  |
 | `status`    | `clean` = up to date, `check` = ancestor moved, may need re-eval, `dirty` = known stale     |
 | `value`     | The current cached value (for state, the live value; for computed, the last computed value) |
+| `owner`     | Component path that created the node, outermost first (`#root`/`#component` for unnamed)    |
+| `source`    | Creation stack frame outside Purity; recorded only while `captureSources(true)` is on       |
 | `sources`   | Nodes this node reads from. Empty for `state`.                                              |
 | `observers` | Nodes that read this one. Forms a cycle with `sources`.                                     |
 
@@ -170,9 +174,9 @@ queueMicrotask(() => snap('after'));
 By design (see [ADR-0002](./decisions/0002-devtools.md)):
 
 - **Variable names.** Each node is identified by its kind/value/version, not by the JS variable that holds the accessor. `state(0)` and `state(0)` look identical from the hook's view.
-- **Source location.** No file:line of where the node was created.
+- **Source location by default.** Call `__purity_inspect__.captureSources(true)` before the code you want to trace; nodes created afterwards carry `source` (ADR [0061](./decisions/0061-inspector-attribution.md)). It is off by default because each creation then captures a stack.
 - **Time travel.** Every snapshot is current. There is no replay log.
-- **The component tree.** `mount()`/`component()` lifecycle is separate from the reactive graph; the hook only sees `state`/`compute`/`watch` nodes.
+- **The component tree.** The hook only sees `state`/`compute`/`watch` nodes; each node's `owner` names the component path that created it, but there is no separate tree of components.
 
 If your debugging case needs any of those, today the answer is
 `console.log` in the relevant render functions or watchers. A real

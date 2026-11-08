@@ -148,11 +148,79 @@ const nodeFinalization: FinalizationRegistry<WeakRef<AnyNode>> | null =
       })
     : null;
 
+// Development-only attribution (ADR 0061). Owner paths are snapshots of
+// component names, shared per component instance, so a node never keeps its
+// owner context (and that context's DOM) alive. Source capture is off until
+// `__purity_inspect__.captureSources(true)`: each creation then pays for one
+// `new Error().stack`.
+const nodeOwners: WeakMap<AnyNode, readonly string[]> | null = __DEV__ ? new WeakMap() : null;
+const ownerPaths: WeakMap<ComponentContext, readonly string[]> | null = __DEV__
+  ? new WeakMap()
+  : null;
+const nodeSources: WeakMap<AnyNode, string> | null = __DEV__ ? new WeakMap() : null;
+let captureSources = false;
+// Frames from Purity's own source or built packages; the first other frame is
+// the creation site. Test and example files under packages/*/tests are user code.
+const FRAMEWORK_FRAME =
+  /[\\/](?:signals|core|compiler|ssr|router|platform)[\\/](?:src|dist)[\\/]|@purityjs[\\/_]/;
+
+interface InspectHost {
+  localName?: string;
+  getRootNode?: () => { host?: InspectHost };
+}
+
+// Custom element instances are named by their shadow-host chain (outermost
+// first), which follows the composed DOM even though connectedCallback runs
+// outside the parent's render. Other owners fall back to their parent links.
+function ownerPathOf(ctx: ComponentContext): readonly string[] {
+  let path = ownerPaths!.get(ctx);
+  if (path !== undefined) return path;
+  const names: string[] = [];
+  let host = (ctx._shadowRoot as { host?: InspectHost } | undefined)?.host;
+  for (let depth = 0; host?.localName !== undefined && depth < 64; depth++) {
+    names.push(host.localName);
+    host = host.getRootNode?.().host;
+  }
+  if (names.length === 0) {
+    for (let c: ComponentContext | null | undefined = ctx; c; c = c.parent) {
+      const h = (c._shadowRoot as { host?: InspectHost } | undefined)?.host;
+      names.push(
+        h?.localName !== undefined
+          ? h.localName
+          : c._rootContainer !== undefined
+            ? '#root'
+            : '#component',
+      );
+    }
+  }
+  path = names.reverse();
+  ownerPaths!.set(ctx, path);
+  return path;
+}
+
+function creationSite(): string | undefined {
+  const stack = new Error().stack;
+  if (stack === undefined) return undefined;
+  const lines = stack.split('\n');
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line === '' || FRAMEWORK_FRAME.test(line)) continue;
+    return line.replace(/^at\s+/, '');
+  }
+  return undefined;
+}
+
 function trackNode(node: AnyNode): void {
   if (trackedNodes === null) return;
   const ref = new WeakRef(node);
   trackedNodes.add(ref);
   nodeFinalization?.register(node, ref);
+  const owner = getCurrentComponent();
+  if (owner !== null) nodeOwners!.set(node, ownerPathOf(owner));
+  if (captureSources) {
+    const site = creationSite();
+    if (site !== undefined) nodeSources!.set(node, site);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1060,6 +1128,10 @@ interface InspectorNode {
   version: number;
   status?: InspectorStatus;
   value: unknown;
+  /** Component names, outermost first, of the creating component (ADR 0061). */
+  owner?: readonly string[];
+  /** Creation stack frame, recorded while `captureSources(true)` is on. */
+  source?: string;
   sources: InspectorNode[];
   observers: InspectorNode[];
 }
@@ -1088,6 +1160,11 @@ if (__DEV__) {
       observers: [],
     };
     if (n.fn !== null) out.status = INSPECTOR_STATUS_LABELS[(n as ComputedNode).status];
+    const owner = nodeOwners!.get(n);
+    // A copy: the stored path is shared by every node of that component.
+    if (owner !== undefined) out.owner = owner.slice();
+    const source = nodeSources!.get(n);
+    if (source !== undefined) out.source = source;
     seen.set(n, out);
     if (n.fn !== null) {
       const sources = (n as ComputedNode).sources;
@@ -1128,6 +1205,12 @@ if (__DEV__) {
       nodes(): InspectorNode[] {
         const seen = new Map<AnyNode, InspectorNode>();
         return inspectorLiveNodes().map((n) => toInspectorNode(n, seen));
+      },
+      captureSources(on: boolean): void {
+        if (typeof on !== 'boolean') {
+          throw new TypeError('[Purity] __purity_inspect__.captureSources() expects a boolean.');
+        }
+        captureSources = on;
       },
     };
   }

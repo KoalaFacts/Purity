@@ -4,6 +4,11 @@
 
 ### Added
 
+- `__purity_inspect__` nodes carry `owner` (component tag path, outermost
+  first) and, after `__purity_inspect__.captureSources(true)`, `source` (the
+  creation stack frame) in development builds
+  ([ADR 0061](./docs/decisions/0061-inspector-attribution.md)); production
+  builds are unchanged.
 - `getOwner()`, `runWithOwner(owner, fn)` and `root(fn)` in the new opt-in
   entry `@purityjs/core/owner`
   ([ADR 0060](./docs/decisions/0060-owner-composition.md)): bind work created

@@ -11,6 +11,8 @@ import {
   state,
 } from '@purityjs/core';
 
+import { type Equal, expectType } from './expect';
+
 // component(): typed props and slots.
 const Greeting = component<{ name: string; count?: number }, { footer: void; row: { id: number } }>(
   'x-greeting',
@@ -45,7 +47,8 @@ exposed({ open: true });
 plain({ open: true });
 
 // resource(): fetcher-only and source-keyed overloads.
-const user: ResourceAccessor<{ id: number }> = resource(async () => ({ id: 1 }));
+const user = resource(async () => ({ id: 1 }));
+expectType<Equal<typeof user, ResourceAccessor<{ id: number }>>>();
 const id = state<number | null>(1);
 const byId = resource(id, async (key, info) => {
   const n: number = key;
@@ -82,6 +85,7 @@ each(rows, (row) => {
 
 // asyncCompute() and store() from their opt-in entries.
 const total = asyncCompute(async () => 42);
+expectType<Equal<ReturnType<typeof total>, number>>();
 try {
   const value: number = total();
   void value;
@@ -93,6 +97,9 @@ try {
 const asString: string = total();
 
 const [view, update] = store({ todos: [{ done: false, text: 'a' }] });
+expectType<
+  Equal<typeof view.todos, readonly { readonly done: boolean; readonly text: string }[]>
+>();
 const done: boolean = view.todos[0]!.done;
 update((draft) => {
   draft.todos.push({ done: true, text: 'b' });

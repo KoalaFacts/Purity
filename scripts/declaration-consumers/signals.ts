@@ -11,8 +11,16 @@ import {
   watch,
 } from '@purityjs/signals';
 
-const count: StateAccessor<number> = state(0);
-const label: ComputedAccessor<string> = compute(() => `n=${count()}`);
+import { type Equal, expectType } from './expect';
+
+// Inferred, then pinned exactly: a widened or swapped return type fails here.
+const count = state(0);
+const label = compute(() => `n=${count()}`);
+expectType<Equal<typeof count, StateAccessor<number>>>();
+expectType<Equal<typeof label, ComputedAccessor<string>>>();
+expectType<Equal<ReturnType<typeof watch>, Dispose>>();
+// @ts-expect-error a computed accessor is not a writable state accessor
+expectType<Equal<typeof label, StateAccessor<string>>>();
 
 count(1);
 count((n) => n + 1);

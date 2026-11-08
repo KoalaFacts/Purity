@@ -9,11 +9,13 @@
 //   `paths` alias, a `development` condition) fails the gate.
 //
 // Usage: node scripts/check-declarations.ts [consumerDir]
-// Run `npm run build:packages` first. Exit code 1 with one line per problem.
+// Run `npm run build:packages` first: the gate reads whatever is in dist/, so a
+// local run after source edits without a rebuild checks stale declarations
+// (CI always builds first). Exit code 1 with one line per problem.
 
 import { spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -35,7 +37,7 @@ export function checkDeclarations(
   let negatives = 0;
   for (let i = 0; i < files.length; i++) {
     const text = readFileSync(join(dir, files[i]!), 'utf8');
-    const count = text.match(/\/\/ @ts-expect-error\b/g)?.length ?? 0;
+    const count = text.match(/\/[/*]\s*@ts-expect-error\b/g)?.length ?? 0;
     if (count === 0) problems.push(`${files[i]}: no @ts-expect-error negative contract`);
     negatives += count;
   }
@@ -56,6 +58,8 @@ export function checkDeclarations(
       problems.push(line);
       continue;
     }
+    // `--listFiles` prints absolute paths; anything else is error detail.
+    if (!isAbsolute(line)) continue;
     const file = resolve(line);
     if (!file.startsWith(packagesDir)) continue;
     const inPackage = relative(packagesDir, file).split(sep);

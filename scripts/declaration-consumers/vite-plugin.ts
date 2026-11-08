@@ -48,22 +48,33 @@ const forwarded: PurityPluginOptions = {
   stripServerActions: undefined,
   routes: { dir: 'src/pages', extensions: undefined, virtualId: undefined, emitTo: undefined },
 };
+const noRoutes: PurityPluginOptions = { routes: undefined };
 const output: PurityOutputOptions = { format: undefined, paths: undefined, globals: undefined };
 const bundle: PurityOutputBundle = {
   a: { type: 'asset', originalFileNames: undefined },
   c: { type: 'chunk', fileName: 'c.js', code: '', imports: undefined, modules: undefined },
+  m: { type: 'chunk', fileName: 'm.js', code: '', modules: { x: { code: undefined } } },
 };
 type Hooks = ReturnType<typeof purity>;
 const configArgs: Parameters<Hooks['config']> = [
   { ssr: { target: undefined, resolve: undefined } },
   { isPreview: undefined },
 ];
+const configNoSsr: Parameters<Hooks['config']>[0] = { ssr: undefined };
+const configSsr: Parameters<Hooks['config']>[0] = {
+  ssr: { resolve: { conditions: undefined, externalConditions: undefined } },
+};
 const resolvedConfig: Parameters<Hooks['configResolved']>[0] = {
   root: '/app',
   command: undefined,
   base: undefined,
   resolve: undefined,
   build: undefined,
+};
+const resolvedBuild: Parameters<Hooks['configResolved']>[0] = {
+  root: '/app',
+  resolve: { alias: undefined },
+  build: { ssr: undefined, assetsInlineLimit: undefined },
 };
 
 // RouteParams<P> derives the params object from the pattern string.
@@ -104,6 +115,10 @@ void [
   bundle,
   configArgs,
   resolvedConfig,
+  resolvedBuild,
+  configNoSsr,
+  configSsr,
+  noRoutes,
   extraParam,
 ];
 export type { BadManifest };

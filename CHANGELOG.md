@@ -84,6 +84,26 @@
 
 ### Fixed
 
+- `@purityjs/vite-plugin`: the on-disk `routes.ts` written for a TypeScript
+  `emitTo` path is const-asserted, so `import { routes } from
+  './.purity/routes.ts'` keeps literal patterns and `hasLoader` flags.
+  Before, `pattern` widened to `string`, `LoaderDataOf<'/users/:id', typeof
+  routes>` was `undefined`, and `asyncRoute(routes[i], …)` failed under
+  `exactOptionalPropertyTypes` (ADR 0032 amended, ADR 0034). The virtual
+  module and non-TypeScript emit paths are unchanged.
+- `@purityjs/vite-plugin` declarations compile without Node types. The built
+  `index.d.ts` named Node's global `Buffer`, so a client tsconfig without
+  `@types/node` and with `skipLibCheck: false` failed with TS2591 as soon as
+  it imported `LoaderDataOf` or the emitted `routes.d.ts`. The inline-limit
+  callback now receives Node's `Buffer` when Node types are loaded and
+  `Uint8Array` otherwise. Emitted JavaScript is unchanged.
+- `@purityjs/vite-plugin` types work under `exactOptionalPropertyTypes`:
+  `const plugin: Plugin = purity()` failed because the `resolveId`/`load`/
+  `transform` options and `PurityOutputOptions.paths` rejected the
+  `undefined` Vite passes, and `purity({ hydratable: flag })` with
+  `flag: boolean | undefined` was rejected. Every optional member of
+  `PurityPluginOptions`, `RoutesOptions` and the hook parameter types now
+  accepts `undefined`. Emitted JavaScript is unchanged.
 - `watch()` accepts effects and callbacks with any return type. A returned
   function still runs as cleanup and other values are ignored, as at runtime;
   before, `watch(() => console.log(count()))` — the README example — and

@@ -30,6 +30,8 @@
     "check:fix": "vp fmt . && vp lint --fix --deny-warnings",
     "check:docs": "node scripts/check-docs.ts",
     "test:docs": "node --test scripts/check-docs.test.ts",
+    "check:declarations": "node scripts/check-declarations.ts",
+    "test:declarations": "node --test scripts/check-declarations.test.ts",
     "check:licenses": "node scripts/check-package-licenses.mjs",
     "build:packages": "npm run build -w @purityjs/compiler && npm run build -w @purityjs/signals && npm run build -w @purityjs/core && npm run build -w @purityjs/ssr && npm run build -w @purityjs/router && npm run build -w @purityjs/platform && npm run build -w @purityjs/vite-plugin && npm run build -w @purityjs/cli"
   },

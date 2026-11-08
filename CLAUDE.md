@@ -59,6 +59,8 @@ Beyond AOT compilation, the plugin keeps server code out of the browser bundle: 
 
 Before claiming a change works, follow `.claude/skills/verification-first/SKILL.md` and exercise the affected rows of `.claude/skills/verify-purity/SKILL.md` (built packages in headless Chromium, SSR then hydration, CLI scaffold, benchmark against Solid); keep that feature map current when a feature changes.
 
+The scheduled development task follows `.claude/skills/advance-purity/SKILL.md` (goal, gate, work order, project rules).
+
 ## Commands
 
 ```bash
@@ -68,6 +70,7 @@ npm run build                   # build all packages
 npm run check                   # format check + lint (oxfmt + oxlint, --deny-warnings)
 npm run check:fix               # auto-fix formatting and lint
 npm run typecheck               # tsc over src + tests (packages with a tsconfig.tests.json)
+npm run check:declarations      # strict consumers vs built dist/*.d.ts, @ts-expect-error contracts (after build)
 
 # Single test / file (run from the package dir, e.g. packages/core):
 npx vitest run tests/resource.test.ts      # one file

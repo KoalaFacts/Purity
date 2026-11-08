@@ -215,9 +215,6 @@ export function condenseWhitespace(node: ASTNode): ASTNode {
  * modules. Static templates reference neither.
  */
 export function generateLinked(ast: FragmentNode): string {
-  // Each generated factory has its own lexical scope; unrelated compilations
-  // must not inflate identifiers or make the output depend on call order.
-  bindVarCounter = 0;
   assertSafeScriptContent(ast);
   // Strip pure-indentation text nodes from the entire tree (not just edges).
   // Indentation between sibling tags becomes real text nodes after innerHTML,
@@ -344,7 +341,6 @@ export function generateHydrateLinked(
   ast: FragmentNode,
   options?: { sharedSlots?: boolean },
 ): string {
-  bindVarCounter = 0;
   assertSafeScriptContent(ast);
   ast = condenseWhitespace(ast) as FragmentNode;
 

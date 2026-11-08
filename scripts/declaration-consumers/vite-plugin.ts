@@ -2,6 +2,8 @@
 import purityDefault, {
   type LoaderDataOf,
   type LoaderDataOfEntry,
+  type PurityOutputBundle,
+  type PurityOutputOptions,
   type PurityPluginOptions,
   type RouteParams,
   purity,
@@ -19,7 +21,7 @@ const config: UserConfig = defineConfig({
     purity({
       hydratable: true,
       strictAot: true,
-      include: ['src/**/*.ts'],
+      include: ['.ts', '.tsx'],
       routes: { dir: 'src/pages', extensions: ['.ts'], emitTo: 'src/.purity/routes.ts' },
     }),
   ],
@@ -31,8 +33,38 @@ purity({ routes: 'src/pages' });
 purity({ routes: { extensions: ['.ts'] } });
 // @ts-expect-error unknown options are rejected
 purity({ strictAOT: true });
-// @ts-expect-error include is a list of globs
-const badOptions: PurityPluginOptions = { include: 'src/**' };
+// @ts-expect-error include is a list of file extensions
+const badOptions: PurityPluginOptions = { include: '.ts' };
+
+// Under exactOptionalPropertyTypes, optional members accept an explicit
+// undefined (an unset flag forwarded from app config, or what Vite passes).
+declare const flag: boolean | undefined;
+const forwarded: PurityPluginOptions = {
+  hydratable: flag,
+  strictAot: undefined,
+  devtools: undefined,
+  include: undefined,
+  stripServerModules: undefined,
+  stripServerActions: undefined,
+  routes: { dir: 'src/pages', extensions: undefined, virtualId: undefined, emitTo: undefined },
+};
+const output: PurityOutputOptions = { format: undefined, paths: undefined, globals: undefined };
+const bundle: PurityOutputBundle = {
+  a: { type: 'asset', originalFileNames: undefined },
+  c: { type: 'chunk', fileName: 'c.js', code: '', imports: undefined, modules: undefined },
+};
+type Hooks = ReturnType<typeof purity>;
+const configArgs: Parameters<Hooks['config']> = [
+  { ssr: { target: undefined, resolve: undefined } },
+  { isPreview: undefined },
+];
+const resolvedConfig: Parameters<Hooks['configResolved']>[0] = {
+  root: '/app',
+  command: undefined,
+  base: undefined,
+  resolve: undefined,
+  build: undefined,
+};
 
 // RouteParams<P> derives the params object from the pattern string.
 expectType<Equal<RouteParams<'/users/:id/posts/:postId'>, { id: string; postId: string }>>();
@@ -63,5 +95,15 @@ expectType<Equal<LoaderDataOfEntry<(typeof routes)[0]>, { posts: number[] }>>();
 // @ts-expect-error the manifest argument must be a tuple of entries
 type BadManifest = LoaderDataOf<'/', { pattern: '/' }>;
 
-void [plugin, config, badOptions, extraParam];
+void [
+  plugin,
+  config,
+  badOptions,
+  forwarded,
+  output,
+  bundle,
+  configArgs,
+  resolvedConfig,
+  extraParam,
+];
 export type { BadManifest };

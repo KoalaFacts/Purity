@@ -212,12 +212,12 @@ export interface RoutesOptions {
    * File extensions counted as route modules.
    * @default ['.ts', '.tsx', '.js', '.jsx']
    */
-  extensions?: string[];
+  extensions?: string[] | undefined;
   /**
    * Virtual-module specifier the manifest is exposed under.
    * @default 'purity:routes'
    */
-  virtualId?: string;
+  virtualId?: string | undefined;
   /**
    * Optional on-disk emit (ADR 0032). When set, the plugin writes the
    * generated manifest source to this path (relative to Vite's project
@@ -227,7 +227,7 @@ export interface RoutesOptions {
    * already matches the new content. Add the emit path to `.gitignore`.
    * @example 'src/.purity/routes.ts'
    */
-  emitTo?: string;
+  emitTo?: string | undefined;
 }
 
 /**
@@ -236,24 +236,24 @@ export interface RoutesOptions {
 export interface PurityPluginOptions {
   /** Generate DOM-adoption walkers for SSR clients. Default false.
    * Client-only builds call create factories directly and cannot hydrate server DOM. */
-  hydratable?: boolean;
+  hydratable?: boolean | undefined;
   /** Fail template compilation instead of falling back to JIT, and reject
    * retained Purity runtime compilation in production client output. Default true. */
-  strictAot?: boolean;
+  strictAot?: boolean | undefined;
   /** Show the reactive graph panel during Vite dev. Off by default; excluded from builds and preview. */
-  devtools?: boolean;
+  devtools?: boolean | undefined;
   /**
    * File extensions to process for `html` tagged template compilation.
    * @default ['.ts', '.js', '.tsx', '.jsx']
    */
-  include?: string[];
+  include?: string[] | undefined;
   /**
    * Strip `*.server.{ts,js,tsx,jsx}` modules from client bundles
    * (replacing the file with `export {};`). Server-side builds pass
    * through unchanged. Default `true` — opt out by passing `false` for
    * apps that want a different convention. ADR 0018.
    */
-  stripServerModules?: boolean;
+  stripServerModules?: boolean | undefined;
   /**
    * Strip the inline handler body of `serverAction(url, handler)` calls
    * in client builds (ADR 0043). `.url` and `.invoke()` survive; the
@@ -263,7 +263,7 @@ export interface PurityPluginOptions {
    * mix server-action registration with client-bundled code. Default
    * `true` — opt out with `false`.
    */
-  stripServerActions?: boolean;
+  stripServerActions?: boolean | undefined;
   /**
    * Enable file-system routing (ADR 0019). Pass `true` for the default
    * `pages/` directory at the project root, or `{ dir, extensions?,
@@ -271,7 +271,7 @@ export interface PurityPluginOptions {
    * module (`purity:routes` by default) exporting a sorted route
    * manifest. Off by default — opt in.
    */
-  routes?: boolean | RoutesOptions;
+  routes?: boolean | RoutesOptions | undefined;
 }
 
 /**
@@ -323,12 +323,14 @@ export function purity(options?: PurityPluginOptions) {
 
     config(
       config: {
-        ssr?: {
-          target?: string | undefined;
-          resolve?:
-            | { conditions?: string[] | undefined; externalConditions?: string[] | undefined }
-            | undefined;
-        };
+        ssr?:
+          | {
+              target?: string | undefined;
+              resolve?:
+                | { conditions?: string[] | undefined; externalConditions?: string[] | undefined }
+                | undefined;
+            }
+          | undefined;
       },
       env: { isPreview?: boolean | undefined },
     ) {
@@ -358,13 +360,15 @@ export function purity(options?: PurityPluginOptions) {
         command?: string | undefined;
         base?: string | undefined;
         resolve?: { alias?: readonly { find: string | RegExp }[] | undefined } | undefined;
-        build?: {
-          ssr?: unknown;
-          assetsInlineLimit?:
-            | number
-            | ((file: string, content: Buffer) => boolean | undefined)
-            | undefined;
-        };
+        build?:
+          | {
+              ssr?: unknown;
+              assetsInlineLimit?:
+                | number
+                | ((file: string, content: Buffer) => boolean | undefined)
+                | undefined;
+            }
+          | undefined;
       },
     ) {
       serverBuild = !!config.build?.ssr;

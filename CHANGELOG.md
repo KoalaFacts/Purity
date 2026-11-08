@@ -81,12 +81,13 @@
 
 ### Fixed
 
-- `purity()` from `@purityjs/vite-plugin` is assignable to Vite's `Plugin`
-  under `exactOptionalPropertyTypes`: optional members of its hook parameter
-  types (`resolveId`/`load`/`transform` options, `config`, `configResolved`,
-  `PurityOutputOptions`, `PurityOutputBundle`) accept `undefined`, as Vite
-  passes it. Before, `const plugin: Plugin = purity()` failed in such a
-  project. Emitted JavaScript is unchanged.
+- `@purityjs/vite-plugin` types work under `exactOptionalPropertyTypes`:
+  `const plugin: Plugin = purity()` failed because the `resolveId`/`load`/
+  `transform` options and `PurityOutputOptions.paths` rejected the
+  `undefined` Vite passes, and `purity({ hydratable: flag })` with
+  `flag: boolean | undefined` was rejected. Every optional member of
+  `PurityPluginOptions`, `RoutesOptions` and the hook parameter types now
+  accepts `undefined`. Emitted JavaScript is unchanged.
 - `watch()` accepts effects and callbacks with any return type. A returned
   function still runs as cleanup and other values are ignored, as at runtime;
   before, `watch(() => console.log(count()))` — the README example — and

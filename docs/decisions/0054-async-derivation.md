@@ -79,22 +79,26 @@ Contract:
    Abort listeners run synchronously inside the read that starts the next run,
    so they should not write signals.
 
-Slice 2: `fn` may return an `AsyncIterable`. Each yielded value settles the
-run like a resolved promise (so a first yield ends the initial pending state
-and later yields replace the current value, with the same equality cut-off);
-a rejection from `next()` becomes the current error; an iterator that ends
-without yielding leaves the run pending. Supersession and disposal abort the
-run, and its abort listener calls `return()` once, so async generators run
-their `finally` blocks; a generator suspended on an `await` closes after that
-await settles, and nothing it yields after supersession is delivered. The
-first `next()` runs inside the tracked run, so a generator's reads before its
-first `await` are tracked, like an async function's. Promise results keep
-their timing (settled one microtask after the promise). The listener is added
-with `addEventListener`, so an `onabort` set by `fn` stays in place.
+9. **`AsyncIterable` results (slice 2).** If `fn` returns a non-thenable
+   object with `Symbol.asyncIterator` (for example an `async function*`), the
+   run iterates it: each yielded value becomes the current outcome in turn
+   (equal values keep it, as in point 2), `pending()` is `true` until the
+   first value and `false` from then on, and a rejection of `next()` becomes
+   the current outcome like a rejected promise (a `PendingError` rejection
+   stays pending, as in point 7). A thenable that is also iterable is treated
+   as a promise. A superseded or disposed run aborts its `signal`, drops every
+   later value, and closes the iterator (`for await` + `break`, so `return()`
+   runs) when its next value arrives; a source parked on a wait that never
+   yields again must listen to `signal` to stop sooner. An iterable that ends
+   without yielding settles nothing: on first load the value stays pending.
+   As in point 1, only synchronous reads are tracked: `fn` itself and, for an
+   `async function*`, its body up to the first `await`/`yield` (the first
+   `next()` runs inside the same pull), so a generator can chain an upstream
+   `asyncCompute` like an `async` function.
 
 Deferred to later slices of SV2-003 (each recorded in the ledger before it
-ships): SSR priming through `SSRRenderContext` like `resource()`. The
-view-level loading boundary belongs to SV2-004.
+ships): SSR priming through `SSRRenderContext` like `resource()`; and the
+view-level loading boundary, which belongs to SV2-004.
 
 ## Intentional differences from Solid
 
@@ -107,9 +111,10 @@ view-level loading boundary belongs to SV2-004.
   without a guard throws `PendingError` from `watch()` like any throwing
   effect, so effects guard the read (`try` + `isPending()`) or check
   `pending()` first until the SV2-004 boundary handles it in views.
-- **`AsyncIterable` closes through the run's abort.** `return()` is driven by
-  the `AbortSignal` the run already has, so promises and streams share one
-  cancellation path.
+- **`AsyncIterable` closure is cooperative.** Solid closes a superseded
+  iterator; Purity closes it at its next value and gives every run an
+  `AbortSignal` for waits in flight, so the opt-in entry stays inside its
+  existing bundle budget (slice 2).
 
 ## Acceptance tests
 
@@ -122,15 +127,13 @@ view-level loading boundary belongs to SV2-004.
 - Refetch after a settled value: readers keep the old value and
   `pending()` is `true` until the new one lands.
 - Disposal mid-flight aborts the signal and ignores the settlement.
+- Slice 2: an `AsyncIterable` result delivers every yielded value in order;
+  a superseded or disposed run's later values are dropped and its iterator is
+  closed exactly once; a `next()` rejection becomes the outcome, a stale one is
+  ignored.
 - `asyncCompute` reading an unresolved `asyncCompute` stays pending, then
   settles from the upstream value; an upstream refetch re-runs the downstream
   only once, with the new value.
-- Slice 2 (`tests/async-compute-iterable.test.ts`): every yield reaches a
-  downstream `compute` → `watch`; supersession and disposal (direct or owner
-  scope) call `return()` and drop later values; an async generator's `finally`
-  runs; a `next()` rejection is the current error; an iterator that ends
-  without yielding stays pending; reads before the first `await` are tracked;
-  `fn`'s own `signal.onabort` still fires; promise timing is unchanged.
 
 ## Consequences
 

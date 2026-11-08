@@ -156,6 +156,8 @@ Executed bounded evidence: [four-observation trace](../benchmark/solid-v2/observ
 
 **Next bounded action:** Specify and implement the smallest owned async-derivation contract with deterministic settlement traces.
 
+**Purity now (slices 1–2):** `asyncCompute` in `@purityjs/core/async` ([ADR 0054](./decisions/0054-async-derivation.md)) accepts PromiseLike and AsyncIterable results; superseded iterators are closed at their next value. Remaining: SSR priming.
+
 Purity evidence paths: [packages/core/src/signals.ts](https://github.com/KoalaFacts/Purity/blob/58ff714a336ee1fb34a3d9f77f4e0601e64a2d8f/packages/core/src/signals.ts) · [packages/core/src/resource.ts](https://github.com/KoalaFacts/Purity/blob/58ff714a336ee1fb34a3d9f77f4e0601e64a2d8f/packages/core/src/resource.ts) · [packages/core/tests/resource-request-ownership.test.ts](https://github.com/KoalaFacts/Purity/blob/58ff714a336ee1fb34a3d9f77f4e0601e64a2d8f/packages/core/tests/resource-request-ownership.test.ts).
 
 Solid / comparison references: [1](https://v2.solidjs.com/reference/solid-js/reactivity/create-memo) · [2](https://v2.solidjs.com/concepts/async-reactivity).

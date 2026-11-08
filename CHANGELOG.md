@@ -4,6 +4,12 @@
 
 ### Added
 
+- `asyncCompute(fn)` accepts `AsyncIterable` results
+  ([ADR 0054](./docs/decisions/0054-async-derivation.md) slice 2): each yielded
+  value becomes current, `pending()` is `true` until the first one, rejections
+  become the outcome, and a superseded or disposed run drops later values and
+  closes its iterator. `core-async` stays inside its budget.
+
 - `__purity_inspect__` nodes carry `owner` (component tag path, outermost
   first) and, after `__purity_inspect__.captureSources(true)`, `source` (the
   creation stack frame) in development builds
@@ -37,9 +43,6 @@
   data; refetches keep the previous value while `pending()` is `true`; a newer
   run aborts the previous run's `AbortSignal` and only the latest run can become
   current. Existing entries do not change size.
-- `asyncCompute(fn)` also accepts an `AsyncIterable` result (SV2-003 slice 2,
-  [ADR 0054](./docs/decisions/0054-async-derivation.md)): every yielded value
-  becomes current, and the iterator is closed on supersession and disposal.
 - `store(initial)` in the new entry `@purityjs/core/store` ([ADR 0055](./docs/decisions/0055-property-store.md)):
   property-granular nested state. Reads through the returned read-only view
   track one property at a time (key sets and array length separately);

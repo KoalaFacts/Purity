@@ -131,31 +131,33 @@ describe('asyncCompute AsyncIterable results (ADR 0054, SV2-003 slice 2)', () =>
     await flush();
     id(2);
     await flush();
-    expect(first.closed()).toBe(1);
+    // Closure is cooperative (ADR 0054 point 9): at the superseded run's next value.
+    expect(first.closed()).toBe(0);
     first.yieldValue('stale');
     second.yieldValue('two');
     await flush();
+    expect(first.closed()).toBe(1);
     expect(value()).toBe('two');
     stop();
     value.dispose();
   });
 
-  it('dispose() closes the iterator and stops delivering values', async () => {
+  it('dispose() stops delivering values and closes the iterator at its next value', async () => {
     const ch = channel<number>();
     const value = asyncCompute(() => ch.iterable);
     const stop = watch(() => void outcome(value));
     ch.yieldValue(1);
     await flush();
     value.dispose();
-    expect(ch.closed()).toBe(1);
     ch.yieldValue(2);
     await flush();
+    expect(ch.closed()).toBe(1);
     expect(value()).toBe(1);
     expect(value.pending()).toBe(false);
     stop();
   });
 
-  it('owner scope disposal closes the iterator', async () => {
+  it('owner scope disposal closes the iterator at its next value', async () => {
     const ch = channel<number>();
     const scope: Scope = { disposers: null } as Scope;
     pushContext(scope);
@@ -165,7 +167,10 @@ describe('asyncCompute AsyncIterable results (ADR 0054, SV2-003 slice 2)', () =>
     ch.yieldValue(1);
     await flush();
     disposeScope(scope);
+    ch.yieldValue(2);
+    await flush();
     expect(ch.closed()).toBe(1);
+    expect(value()).toBe(1);
     stop();
   });
 
@@ -229,7 +234,6 @@ describe('asyncCompute AsyncIterable results (ADR 0054, SV2-003 slice 2)', () =>
     id(2);
     await flush();
     expect(aborts).toBe(2);
-    expect(ch.closed()).toBe(1);
     stop();
     promised.dispose();
     streamed.dispose();

@@ -355,17 +355,18 @@ watch(() => {
 - A rejection of the latest run is rethrown to readers until a later run
   succeeds. `user.dispose()` (or disposing the owning scope) aborts the run.
 - The first run starts when the value is first read.
-- `fn` may return an `AsyncIterable` (for example an async generator): each
-  yielded value becomes current in turn (reads before its first `await` are
-  tracked), and the iterator is closed with `return()` when a newer run starts
-  or the value is disposed. A generator
-  waiting on an `await` closes once that await settles (JavaScript queues
-  `return()` behind it); none of its later values are delivered. An iterator
-  that ends without yielding stays pending.
+- `fn` may also return an `AsyncIterable` (e.g. an `async function*`): each
+  yielded value becomes current in turn, `pending()` is `true` only until the
+  first value, and a newer run or disposal drops later values and closes the
+  iterator at its next value — listen to `signal` to stop a wait sooner.
 
   ```ts
-  const messages = asyncCompute(() => subscribe(room())); // AsyncIterable<Message>
+  // priceFeed(symbol, { signal }) returns an AsyncIterable<number>
+  const price = asyncCompute(({ signal }) => priceFeed(symbol(), { signal }));
   ```
+
+  As with `async` functions, only reads before the first `await` are tracked;
+  in an `async function*` that is the body up to its first `await`/`yield`.
 
 - A `watch` that reads an unresolved value without a guard throws
   `PendingError` from `watch()`; guard the read as above until the view

@@ -331,3 +331,79 @@ describe('asyncCompute (ADR 0054)', () => {
     expect(runs).toBe(1);
   });
 });
+
+describe('asyncCompute AsyncIterable edge cases (ADR 0054 slice 2)', () => {
+  it('Object.is-equal yields do not re-run readers', async () => {
+    const value = asyncCompute(async function* () {
+      yield 1;
+      yield 1;
+      yield 2;
+    });
+    let runs = 0;
+    const derived = compute(() => {
+      runs++;
+      return outcome(value);
+    });
+    const seen: unknown[] = [];
+    const stop = watch(() => {
+      seen.push(derived());
+    });
+    await flush();
+    await flush();
+    expect(seen).toEqual(['pending', 1, 2]);
+    expect(runs).toBe(3);
+    stop();
+  });
+
+  it('a stale iterator rejection after supersession is ignored', async () => {
+    const id = state(1);
+    const gates: Array<(e: unknown) => void> = [];
+    const value = asyncCompute(() => {
+      const key = id();
+      return (async function* () {
+        yield key;
+        await new Promise((_, reject) => gates.push(reject));
+      })();
+    });
+    const stop = watch(() => {
+      outcome(value);
+    });
+    await flush();
+    id(2);
+    await flush();
+    gates[0]!(new Error('stale'));
+    await flush();
+    expect(value()).toBe(2);
+    stop();
+    value.dispose();
+  });
+
+  it('an iterator rejecting with PendingError stays pending', async () => {
+    const upstream = asyncCompute(() => new Promise<number>(() => {}));
+    const value = asyncCompute(async function* () {
+      yield upstream();
+    });
+    const stop = watch(() => {
+      outcome(value);
+    });
+    await flush();
+    expect(() => value()).toThrow(PendingError);
+    expect(value.pending()).toBe(true);
+    stop();
+  });
+
+  it('a thenable result wins over an async iterator on the same object', async () => {
+    const both = Object.assign(Promise.resolve(7), {
+      async *[Symbol.asyncIterator]() {
+        yield 99;
+      },
+    });
+    const value = asyncCompute(() => both);
+    const stop = watch(() => {
+      outcome(value);
+    });
+    await flush();
+    expect(value()).toBe(7);
+    stop();
+  });
+});

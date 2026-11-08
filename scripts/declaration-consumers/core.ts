@@ -95,6 +95,13 @@ try {
 }
 // @ts-expect-error async results unwrap the promise
 const asString: string = total();
+// AsyncIterable results (ADR 0054 slice 2) unwrap to the yielded type.
+const ticks = asyncCompute(async function* () {
+  yield 1;
+});
+expectType<Equal<ReturnType<typeof ticks>, number>>();
+const syncValue = asyncCompute(() => 'x');
+expectType<Equal<ReturnType<typeof syncValue>, string>>();
 
 const [view, update] = store({ todos: [{ done: false, text: 'a' }] });
 expectType<

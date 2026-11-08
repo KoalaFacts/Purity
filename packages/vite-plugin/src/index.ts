@@ -423,10 +423,8 @@ export function purity(options?: PurityPluginOptions) {
       // import from `'purity:routes'` get the same strong typing as apps
       // that import from the on-disk `.ts`.
       if (!routesOpts || emitToAbs === null || routesAbsDir === null) return;
-      const { source, types } = generateManifestSources(hookContext(this), routesAbsDir, routesExt);
-      const warn = hookWarn(this);
-      emitManifestToDisk(emitToAbs, source, warn);
-      emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
+      const sources = generateManifestSources(hookContext(this), routesAbsDir, routesExt);
+      emitManifestFiles(emitToAbs, sources, hookWarn(this));
     },
 
     resolveId(
@@ -453,22 +451,14 @@ export function purity(options?: PurityPluginOptions) {
       if (serveDevtools && id === RESOLVED_DEVTOOLS_ID) return devtoolsClientSource;
       if (!routesOpts || id !== resolvedVirtualId) return null;
       // routesAbsDir is set in configResolved (always called before load).
-      const { source, types } = generateManifestSources(
-        hookContext(this),
-        routesAbsDir as string,
-        routesExt,
-      );
+      const sources = generateManifestSources(hookContext(this), routesAbsDir as string, routesExt);
       // ADR 0032: optional on-disk emit. Skip the write when content
       // matches to avoid filesystem-watch loops in dev. Failures are
       // non-fatal — virtual module still returns `source`.
       // ADR 0044: alongside the `.ts`, write a sibling `.d.ts` so apps
       // importing from `'purity:routes'` get the per-route typed `importFn`.
-      if (emitToAbs !== null) {
-        const warn = hookWarn(this);
-        emitManifestToDisk(emitToAbs, source, warn);
-        emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
-      }
-      return source;
+      if (emitToAbs !== null) emitManifestFiles(emitToAbs, sources, hookWarn(this));
+      return sources.source;
     },
 
     generateBundle(this: unknown, outputOptions: PurityOutputOptions, bundle: PurityOutputBundle) {
@@ -529,14 +519,8 @@ export function purity(options?: PurityPluginOptions) {
       // track filesystem changes regardless of which import path
       // consumers use.
       if (emitToAbs !== null) {
-        const { source, types } = generateManifestSources(
-          hookContext(this),
-          routesAbsDir,
-          routesExt,
-        );
-        const warn = hookWarn(this);
-        emitManifestToDisk(emitToAbs, source, warn);
-        emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
+        const sources = generateManifestSources(hookContext(this), routesAbsDir, routesExt);
+        emitManifestFiles(emitToAbs, sources, hookWarn(this));
       }
     },
 
@@ -1013,7 +997,7 @@ function generateManifestSources(
   pluginCtx: { warn?: (m: string) => void } | null,
   dir: string,
   extensions: string[],
-): { source: string; types: string } {
+): { source: string; diskSource: string; types: string } {
   const files = listRouteFiles(dir);
   const manifest = buildRouteManifest(files, extensions, (pattern, kept, dropped) => {
     const msg =
@@ -1049,6 +1033,7 @@ function generateManifestSources(
   const absPathFor = (filePath: string): string => posix.join(posixDir, filePath);
   return {
     source: generateRouteManifestSource(manifest, absPathFor),
+    diskSource: generateRouteManifestSource(manifest, absPathFor, true),
     types: generateRouteManifestTypes(manifest, absPathFor),
   };
 }
@@ -1063,6 +1048,22 @@ function typesPathFor(absPath: string): string {
     return absPath.slice(0, -3) + '.d.ts';
   }
   return absPath + '.d.ts';
+}
+
+/**
+ * Write the `emitTo` manifest and its sibling `.d.ts`. A TypeScript emit
+ * path gets the `as const` source so direct imports of the file keep the
+ * literal types the `.d.ts` declares (ADR 0034); any other extension gets
+ * the plain JS source.
+ */
+function emitManifestFiles(
+  absPath: string,
+  sources: { source: string; diskSource: string; types: string },
+  warn: (m: string) => void,
+): void {
+  const typed = /\.[cm]?tsx?$/.test(absPath) && !absPath.endsWith('.d.ts');
+  emitManifestToDisk(absPath, typed ? sources.diskSource : sources.source, warn);
+  emitManifestToDisk(typesPathFor(absPath), sources.types, warn);
 }
 
 function emitManifestToDisk(absPath: string, source: string, warn: (m: string) => void): void {

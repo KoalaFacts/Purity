@@ -47,7 +47,7 @@ npm ci
 npm run check            # oxfmt + oxlint --deny-warnings + check-docs
 npm run typecheck        # CI runs it too
 npm run build:packages
-npm run check:declarations  # strict consumers vs built dist/*.d.ts (after the build); also re-emits and checks routes-app/.purity/routes.d.ts
+npm run check:declarations  # strict consumers vs built dist/*.d.ts (after the build); also re-emits routes-app/.purity/routes.{ts,d.ts} and checks both import paths
 npm run test:declarations
 npm test                 # all workspaces
 npm run check:bundle

@@ -307,6 +307,29 @@ describe('nearestErrorDir — deepest-wins boundary resolution', () => {
 });
 
 describe('detectLoaderExport — recognising named loader exports (ADR 0022)', () => {
+  it('matches a loader exported on the same line as other code', () => {
+    expect(detectLoaderExport('export default () => 1; export const loader = () => 1;')).toBe(true);
+    expect(detectLoaderExport('const x = 1; export async function loader() { return x; }')).toBe(
+      true,
+    );
+  });
+
+  it('matches a loader in a multi-declarator export', () => {
+    expect(detectLoaderExport('export const meta = {}, loader = () => 1;')).toBe(true);
+  });
+
+  it('matches a loader re-exported from another module', () => {
+    expect(detectLoaderExport("export { load as loader } from './data.ts';")).toBe(true);
+  });
+
+  it('ignores `export const loader` text inside a string', () => {
+    expect(detectLoaderExport('export const doc = `\nexport const loader = 1;\n`;')).toBe(false);
+  });
+
+  it('falls back to the text scan for a file that does not parse', () => {
+    expect(detectLoaderExport('export const loader = () => {\n  return (;\n};')).toBe(true);
+  });
+
   it('matches `export const loader = …`', () => {
     expect(detectLoaderExport('export const loader = async () => {}')).toBe(true);
   });

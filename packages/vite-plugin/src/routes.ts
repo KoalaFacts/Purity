@@ -9,6 +9,8 @@
 // route-derivation logic is unit-testable without touching the filesystem.
 // ---------------------------------------------------------------------------
 
+import { parseSync } from 'oxc-parser';
+
 /** A layout / error-boundary / 404 module discovered for a directory. */
 export interface LayoutEntry {
   /** Path of the module relative to the routes directory. */
@@ -342,8 +344,10 @@ export function nearestErrorDir(routeDir: string, errorDirs: Set<string>): strin
 }
 
 /**
- * Detect whether `source` exports a named `loader` (ADR 0022). Regex-
- * based — handles the common forms apps actually write:
+ * Detect whether `source` exports a named `loader` (ADR 0022). Uses the
+ * `oxc-parser` static export table; a source that does not parse falls
+ * back to the regex scan in `detectLoaderExportByText`, which handles the
+ * common forms apps actually write:
  *
  *   export const loader = …
  *   export let loader = …
@@ -359,7 +363,27 @@ export function nearestErrorDir(routeDir: string, errorDirs: Set<string>): strin
  * remain possible for `/* export const loader = … *\/` block comments;
  * documented in the ADR.
  */
-export function detectLoaderExport(source: string): boolean {
+export function detectLoaderExport(source: string, filePath = 'route.ts'): boolean {
+  // Exact answer from the module's static export table when the file
+  // parses: catches same-line and multi-declarator exports
+  // (`export default Page; export const loader = …`,
+  // `export const a = 1, loader = …`) and ignores text inside strings
+  // and comments. Files that do not parse fall back to the regex scan.
+  const parsed = parseSync(filePath, source);
+  if (parsed.errors.length === 0) {
+    const exports = parsed.module.staticExports;
+    for (let i = 0; i < exports.length; i++) {
+      const entries = exports[i]!.entries;
+      for (let j = 0; j < entries.length; j++) {
+        if (entries[j]!.exportName.name === 'loader') return true;
+      }
+    }
+    return false;
+  }
+  return detectLoaderExportByText(source);
+}
+
+function detectLoaderExportByText(source: string): boolean {
   // Strip block comments first so neither Form 1 nor Form 2 trips on
   // an `export …` line that lives inside a `/* … */` block. The Form 1
   // anchor only blocks `/* export … */` written on a single line — a
@@ -418,7 +442,7 @@ export function attachLoaderInfo(
     const cached = cache.get(filePath);
     if (cached !== undefined) return cached;
     const src = readSource(filePath);
-    const result = src !== null && detectLoaderExport(src);
+    const result = src !== null && detectLoaderExport(src, filePath);
     cache.set(filePath, result);
     return result;
   };

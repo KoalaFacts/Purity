@@ -81,6 +81,12 @@
 
 ### Fixed
 
+- `@purityjs/vite-plugin` file-system routes: a `loader` exported on the same
+  line as other code (`export default Page; export const loader = …`) or in a
+  multi-declarator export (`export const meta = {}, loader = …`) is now
+  flagged `hasLoader: true`, so the router runs it; before, the line-anchored
+  scan missed it and the loader never ran. Detection now uses the module's
+  static exports via `oxc-parser` (ADR 0022 amended).
 - `@purityjs/vite-plugin` declarations compile without Node types. The built
   `index.d.ts` named Node's global `Buffer`, so a client tsconfig without
   `@types/node` and with `skipLibCheck: false` failed with TS2591 as soon as

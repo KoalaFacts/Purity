@@ -406,7 +406,7 @@ Solid / comparison references: [1](https://v2.solidjs.com/reference/solid-js/adv
 
 **P1; Evidence gap; in progress.** Prerequisites: SV2-001. Workload: W0.
 
-**Purity now (slice 1):** `npm run check:declarations` ([`scripts/check-declarations.ts`](../scripts/check-declarations.ts)) compiles strict consumers in [`scripts/declaration-consumers/`](../scripts/declaration-consumers/) against the built `dist/*.d.ts` of signals, core (root, `async`, `store`) and `platform/actions`, fails if any `src/` file is resolved, and enforces 27 `@ts-expect-error` negative contracts, exact `Equal` return-type checks (watch overloads, props/slots, resources, `each`, `asyncCompute`, `store`, `serverAction`); runs in CI after the package build. Router, generated routes, SSR and vite-plugin consumers are the next slice.
+**Purity now (slices 1–2):** `npm run check:declarations` ([`scripts/check-declarations.ts`](../scripts/check-declarations.ts)) compiles strict consumers in [`scripts/declaration-consumers/`](../scripts/declaration-consumers/) against the built `dist/*.d.ts` of signals, core (root, `async`, `store`), `platform/actions`, ssr and router, fails if any `src/` file is resolved, and enforces 36 `@ts-expect-error` negative contracts plus exact `Equal<>` return-type checks (watch overloads, props/slots, resources, `each`, `asyncCompute`, `store`, `serverAction`, `renderToString` overloads, `renderToStream`, `routeData`, `loaderData`); runs in CI after the package build. Generated `routes.d.ts` and vite-plugin consumers are the next slice.
 
 **Solid v2 target:** Compare actual public declarations and generated route APIs for the pinned v2 stack with an explicitly selected TypeScript version.
 

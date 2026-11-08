@@ -505,7 +505,7 @@
           "kind": "executed_gate",
           "artifact": "../scripts/check-declarations.ts",
           "reproduction": "../scripts/declaration-consumers/",
-          "scope": "Slice 1: strict consumers of @purityjs/signals, @purityjs/core (root, async, store) and @purityjs/platform/actions compiled against built dist/*.d.ts with no source aliases; 27 @ts-expect-error negative contracts and exact Equal return-type checks (watch overloads, component props/slots, resources, each, asyncCompute, store, serverAction); self-tests prove an unused negative fails with TS2578 and a development-condition alias fails. Router, generated routes, SSR and vite-plugin consumers remain open.",
+          "scope": "Slices 1-2: strict consumers of @purityjs/signals, @purityjs/core (root, async, store), @purityjs/platform/actions, @purityjs/ssr and @purityjs/router compiled against built dist/*.d.ts with no source aliases; 36 @ts-expect-error negative contracts and exact Equal return-type checks (watch overloads, component props/slots, resources, each, asyncCompute, store, serverAction, renderToString overloads, renderToStream, routeData, loaderData); self-tests prove an unused negative fails with TS2578 and a development-condition alias fails. Generated routes.d.ts and vite-plugin consumers remain open.",
           "wholeRowAccepted": false
         }
       ]

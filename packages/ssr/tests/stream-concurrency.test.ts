@@ -117,7 +117,8 @@ describe.each(renderers)('renderToStream boundaryConcurrency — $name', ({ rend
     try {
       await reader.read();
       await vi.advanceTimersByTimeAsync(0);
-      expect(views.filter((view) => view.mock.calls.length > 0).length).toBeLessThanOrEqual(3);
+      // Exactly n views run ahead of the paused consumer: more than one, no more than n.
+      expect(views.filter((view) => view.mock.calls.length > 0)).toHaveLength(3);
       const decoder = new TextDecoder();
       let body = '';
       while (true) {
@@ -219,10 +220,15 @@ describe('renderToStream boundaryConcurrency validation', () => {
     ).rejects.toThrow(/boundaryConcurrency/);
   });
 
-  it('accepts Infinity', async () => {
+  it('accepts Infinity and starts every view', async () => {
+    const views = Array.from({ length: 5 }, (_, index) => vi.fn(() => html`<p>v${index}</p>`));
     const body = await readAll(
-      renderToStream(() => html`<p>x</p>`, { boundaryConcurrency: Number.POSITIVE_INFINITY }),
+      renderToStream(
+        () => html`<main>${views.map((view) => suspense(view, () => html`<p>w</p>`))}</main>`,
+        { boundaryConcurrency: Number.POSITIVE_INFINITY },
+      ),
     );
-    expect(body).toContain('<p>x</p>');
+    for (let id = 1; id <= views.length; id++) expect(body).toContain(`__purity_swap(${id});`);
+    expect(views.every((view) => view.mock.calls.length === 1)).toBe(true);
   });
 });

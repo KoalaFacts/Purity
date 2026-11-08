@@ -150,7 +150,7 @@ interface RenderToStreamOptions {
 2. The shell HTML — every `suspense(view, fallback)` call emits its **fallback** HTML wrapped in `<!--s:N-->FALLBACK<!--/s:N-->` markers. Top-level resources still block the shell via the multi-pass loop; wrap async data in `suspense()` to defer it.
 3. `<script type="application/json" id="__purity_resources__">…</script>` with shell-resolved resources (suppressible via `serializeResources: false`).
 4. `<script>window.__purity_swap = …</script>` — the ~330-byte client splice helper, inlined exactly once when there is at least one queued boundary.
-5. Per boundary, in declaration order:
+5. Per boundary, in declaration order (or as each settles with `boundaryConcurrency > 1`):
    ```html
    <template id="purity-s-N">RESOLVED_HTML</template>
    <script>

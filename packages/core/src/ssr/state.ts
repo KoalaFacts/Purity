@@ -115,10 +115,9 @@ export interface SSRRenderContext {
   /**
    * Boundaries deferred for streaming. Populated by `suspense()` when
    * `streamingMode` is on; consumed by `renderToStream` after the
-   * shell has been flushed. Insertion order is the boundary's wire
-   * order in the response — boundaries stream in the same order they
-   * were declared in the source, regardless of resolution order, to
-   * keep the wire model deterministic for the simplest MVP.
+   * shell has been flushed. Insertion order is the order views start;
+   * with the default `boundaryConcurrency: 1` it is also the wire order
+   * (ADR 0006), otherwise chunks follow settlement order (ADR 0060).
    */
   streamingBoundaries?: Map<
     number,

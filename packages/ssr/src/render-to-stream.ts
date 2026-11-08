@@ -288,9 +288,15 @@ function createStream(
             workAbort.signal,
             shell.boundaryIds,
           ).then((result): SettledBoundary => ({ id, result }));
-          // A sibling's rejection surfaces through the race below; keep the
-          // ones still waiting from becoming unhandled after the stream ends.
-          settled.catch(() => {});
+          // A rejection that wins the race below is rethrown there. One that
+          // settles after the stream already ended is logged, not unhandled.
+          settled.catch((error) => {
+            if (workAbort.signal.aborted)
+              console.error(
+                `[Purity] renderToStream: boundary ${id} failed after the stream ended:`,
+                error,
+              );
+          });
           active.set(id, settled);
         }
         if (active.size === 0) break;

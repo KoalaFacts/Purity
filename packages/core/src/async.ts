@@ -103,30 +103,30 @@ export function asyncCompute<T>(
         settled(settled.peek() + 1);
         return true;
       };
-      // Every yielded value becomes current; a promise is a one-value stream.
-      // The generator also defers a thenable that calls back synchronously
-      // until after the current pull. Supersession and disposal abort the
-      // run, which closes the iterator; a rejecting return() surfaces as an
-      // unhandled rejection rather than being swallowed.
-      const it: AsyncIterator<T> = iterate
-        ? iterate.call(result)
-        : (async function* () {
-            yield await (result as PromiseLike<T>);
-          })();
-      ctrl.signal.onabort = () => it.return?.();
-      const step = (): void => {
-        it.next().then(
-          (r) => {
-            if (!r.done && finish(true, r.value)) step();
-          },
-          (error) => {
-            // An async fn that read an unresolved upstream stays pending, like
-            // the synchronous PendingError path; the upstream settlement re-runs it.
-            if (!isPending(error)) finish(false, error);
-          },
-        );
+      const fail = (error: unknown): void => {
+        // An async fn that read an unresolved upstream stays pending, like
+        // the synchronous PendingError path; the upstream settlement re-runs it.
+        if (!isPending(error)) finish(false, error);
       };
-      step();
+      if (iterate) {
+        // Every yielded value becomes current. The first next() runs inside
+        // this pull, so reads before the generator's first await are tracked.
+        // Supersession and disposal abort the run, which closes the iterator;
+        // a rejecting return() surfaces as an unhandled rejection rather than
+        // being swallowed.
+        const it = iterate.call(result);
+        ctrl.signal.addEventListener('abort', () => it.return?.());
+        const step = (): void => {
+          it.next().then((r) => {
+            if (!r.done && finish(true, r.value)) step();
+          }, fail);
+        };
+        step();
+      } else {
+        // Promise.resolve: a thenable that calls back synchronously still
+        // settles after the current pull, never inside it.
+        Promise.resolve(result as PromiseLike<T>).then((value) => finish(true, value), fail);
+      }
     } else {
       settle(run, true, result);
     }

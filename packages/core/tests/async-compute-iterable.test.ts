@@ -196,4 +196,60 @@ describe('asyncCompute AsyncIterable results (ADR 0054, SV2-003 slice 2)', () =>
     stop();
     value.dispose();
   });
+
+  it('keeps a Promise result settling on the next microtask (no extra wrapping)', async () => {
+    let resolve!: (v: number) => void;
+    const p = new Promise<number>((r) => (resolve = r));
+    const value = asyncCompute(() => p);
+    expect(outcome(value)).toBe('pending');
+    resolve(9);
+    await p;
+    expect(value()).toBe(9);
+    value.dispose();
+  });
+
+  it('leaves an onabort handler set by fn in place, for promises and iterators', async () => {
+    const id = state(1);
+    let aborts = 0;
+    const promised = asyncCompute(({ signal }) => {
+      id();
+      signal.onabort = () => aborts++;
+      return new Promise<number>(() => {});
+    });
+    const ch = channel<number>();
+    const streamed = asyncCompute(({ signal }) => {
+      id();
+      signal.onabort = () => aborts++;
+      return ch.iterable;
+    });
+    const stop = watch(() => {
+      outcome(promised);
+      outcome(streamed);
+    });
+    id(2);
+    await flush();
+    expect(aborts).toBe(2);
+    expect(ch.closed()).toBe(1);
+    stop();
+    promised.dispose();
+    streamed.dispose();
+  });
+
+  it('tracks reads an async generator makes before its first await', async () => {
+    const id = state('a');
+    const value = asyncCompute(() =>
+      (async function* () {
+        const key = id();
+        yield key;
+      })(),
+    );
+    const stop = watch(() => void outcome(value));
+    await flush();
+    expect(value()).toBe('a');
+    id('b');
+    await flush();
+    expect(value()).toBe('b');
+    stop();
+    value.dispose();
+  });
 });

@@ -356,8 +356,9 @@ watch(() => {
   succeeds. `user.dispose()` (or disposing the owning scope) aborts the run.
 - The first run starts when the value is first read.
 - `fn` may return an `AsyncIterable` (for example an async generator): each
-  yielded value becomes current in turn, and the iterator is closed with
-  `return()` when a newer run starts or the value is disposed. A generator
+  yielded value becomes current in turn (reads before its first `await` are
+  tracked), and the iterator is closed with `return()` when a newer run starts
+  or the value is disposed. A generator
   waiting on an `await` closes once that await settles (JavaScript queues
   `return()` behind it); none of its later values are delivered. An iterator
   that ends without yielding stays pending.

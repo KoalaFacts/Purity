@@ -86,8 +86,11 @@ a rejection from `next()` becomes the current error; an iterator that ends
 without yielding leaves the run pending. Supersession and disposal abort the
 run, and its abort listener calls `return()` once, so async generators run
 their `finally` blocks; a generator suspended on an `await` closes after that
-await settles, and nothing it yields after supersession is delivered. Promise
-results share this path as a one-value stream.
+await settles, and nothing it yields after supersession is delivered. The
+first `next()` runs inside the tracked run, so a generator's reads before its
+first `await` are tracked, like an async function's. Promise results keep
+their timing (settled one microtask after the promise). The listener is added
+with `addEventListener`, so an `onabort` set by `fn` stays in place.
 
 Deferred to later slices of SV2-003 (each recorded in the ledger before it
 ships): SSR priming through `SSRRenderContext` like `resource()`. The
@@ -126,7 +129,8 @@ view-level loading boundary belongs to SV2-004.
   downstream `compute` → `watch`; supersession and disposal (direct or owner
   scope) call `return()` and drop later values; an async generator's `finally`
   runs; a `next()` rejection is the current error; an iterator that ends
-  without yielding stays pending.
+  without yielding stays pending; reads before the first `await` are tracked;
+  `fn`'s own `signal.onabort` still fires; promise timing is unchanged.
 
 ## Consequences
 

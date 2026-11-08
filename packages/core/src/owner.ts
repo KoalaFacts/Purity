@@ -11,6 +11,7 @@
 import {
   type ComponentContext,
   disposeScope,
+  getCurrentComponent,
   getCurrentContext,
   popContext,
   pushContext,
@@ -28,7 +29,13 @@ export interface Owner {
 interface OwnerHandle extends Owner {
   alive: boolean;
   scope: Scope;
+  /** Component that component-only hooks inside the owner report to. */
+  component: ComponentContext | null;
 }
+
+// Scopes whose release has started: a root's dispose(), or a destroyed
+// component (which sets `_isDestroyed` before its disposers run).
+type Released = Scope & { _isDestroyed?: boolean };
 
 // One handle per live owner run; a re-running effect gets a new one.
 const handles = new WeakMap<Scope, OwnerHandle>();
@@ -40,12 +47,19 @@ export function getOwner(): Owner | null {
   if (!scope) return null;
   let handle = handles.get(scope);
   if (!handle) {
-    const h: OwnerHandle = { alive: !(scope as ComponentContext)._isDestroyed, scope };
+    const h: OwnerHandle = {
+      alive: !(scope as Released)._isDestroyed,
+      scope,
+      component: getCurrentComponent(),
+    };
     handles.set(scope, (handle = h));
     issued.add(h);
+    // First in the list, so the owner reads as dead before any other cleanup
+    // runs: work re-entered from a sibling disposer is released, not leaked.
     if (h.alive)
-      (scope.disposers ??= []).push(() => {
+      (scope.disposers ??= []).unshift(() => {
         h.alive = false;
+        h.component = null;
         if (handles.get(scope) === h) handles.delete(scope);
       });
   }
@@ -63,15 +77,19 @@ export function runWithOwner<T>(owner: Owner, fn: () => T): T {
   if (!issued.has(handle)) {
     throw new TypeError('[Purity] runWithOwner() expects a handle returned by getOwner().');
   }
-  const dead = !handle.alive || !!(handle.scope as ComponentContext)._isDestroyed;
+  const dead = !handle.alive || !!(handle.scope as Released)._isDestroyed;
   const scope: Scope = dead ? {} : handle.scope;
-  // Only the re-entered owner is visible to fn, never the caller's owners.
+  const component = dead ? null : handle.component;
+  // Only the re-entered owner (and the component it belongs to) is visible
+  // to fn, never the caller's owners.
   return withoutScope(() => {
+    if (component && component !== scope) pushContext(component);
     pushContext(scope);
     try {
       return untracked(fn);
     } finally {
       popContext();
+      if (component && component !== scope) popContext();
       if (dead) disposeScope(scope);
     }
   });
@@ -84,11 +102,10 @@ export function runWithOwner<T>(owner: Owner, fn: () => T): T {
  * error rethrown.
  */
 export function root<T>(fn: (dispose: () => void) => T): T {
-  const scope: Scope = {};
-  let released = false;
+  const scope: Released = {};
   const dispose = (): void => {
-    if (released) return;
-    released = true;
+    if (scope._isDestroyed) return;
+    scope._isDestroyed = true;
     disposeScope(scope);
   };
   return withoutScope(() => {

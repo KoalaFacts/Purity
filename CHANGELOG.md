@@ -8,7 +8,7 @@
   entry `@purityjs/core/owner`
   ([ADR 0060](./docs/decisions/0060-owner-composition.md)): bind work created
   in a later callback to a component, effect run or row so it is released with
-  it (released at once if that owner is already gone), and create detached
+  it (released at once if that owner is already gone or being released), and create detached
   owners whose `dispose` releases them exactly once. New bundle budget
   `core-owner`.
 - `transaction(fn)` in the new opt-in entry `@purityjs/core/transaction`

@@ -48,10 +48,13 @@ cache.dispose(); // released exactly once; further calls do nothing
   do not subscribe the caller. If the owner is already disposed, `fn` still
   runs, and everything it registered is released before `runWithOwner`
   returns — late work is never leaked and never revives a dead owner.
-  `owner.alive` tells the caller in advance. Only the re-entered owner is
-  visible to `fn`: the caller's owners are hidden, so component hooks
-  (`onMount`, `onDestroy`, `onError`) reach the re-entered owner's component,
-  never the caller's. A value that is not a handle from `getOwner()` throws
+  `owner.alive` tells the caller in advance; it turns `false` as soon as the
+  owner's release starts (before its other cleanups run), so work re-entered
+  from a sibling cleanup is released too. Only the re-entered owner and the
+  component it was captured in are visible to `fn`: the caller's owners are
+  hidden, so component hooks (`onMount`, `onDestroy`, `onError`) reach the
+  re-entered owner's component — also for a row or branch owner — never the
+  caller's. A value that is not a handle from `getOwner()` throws
   `TypeError`.
 - `root(fn): T` runs `fn` under a new detached owner that the caller's owner
   does not release. `fn` receives `dispose`, which releases everything the
@@ -70,6 +73,10 @@ released at that point in the order.
   while mounted and stops on unmount.
 - `runWithOwner` on a disposed root, a destroyed component, or a superseded
   effect run releases `onDispose` callbacks and watches at once.
+- Work re-entered into a root or a row from one of its own cleanups is
+  released, and a root released inside its own `fn` hands out dead handles.
+- A re-entered `each()` row routes `onDestroy` and watch errors to its
+  component.
 - A root is not released by its creator's unmount; `dispose()` twice runs
   cleanup once; a throwing `fn` releases the root and rethrows.
 - Nested cleanup order is recorded: `parent A, child A, child B, parent B`.

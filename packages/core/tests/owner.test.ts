@@ -308,3 +308,87 @@ describe('root (SV2-017)', () => {
     dispose();
   });
 });
+
+describe('owner edge cases from verifier round 1 (SV2-017)', () => {
+  it('a re-entered each() row owner still routes hooks and errors to its component', async () => {
+    const s = state(0);
+    const items = state([1]);
+    const log: string[] = [];
+    let rowOwner: ReturnType<typeof getOwner> = null;
+    const App = () => {
+      onError((e) => log.push('onError:' + (e as Error).message));
+      return html`<ul>
+        ${each(
+          items,
+          (item) => {
+            rowOwner = getOwner();
+            return html`<li>${item}</li>`;
+          },
+          (n) => n,
+        )}
+      </ul>`;
+    };
+    const { unmount } = mount(App, document.createElement('div'));
+    runWithOwner(rowOwner!, () => {
+      onDestroy(() => log.push('destroyed'));
+      watch(s, () => {
+        throw new Error('row-late');
+      });
+    });
+    s.set(1);
+    await tick();
+    expect(log).toEqual(['onError:row-late']);
+    unmount();
+    expect(log).toEqual(['onError:row-late', 'destroyed']);
+  });
+
+  it('work re-entered into a root while it is being disposed is released, not leaked', () => {
+    const late = vi.fn();
+    let owner: ReturnType<typeof getOwner> = null;
+    const dispose = root((dispose) => {
+      onDispose(() => runWithOwner(owner!, () => onDispose(late)));
+      owner = getOwner();
+      return dispose;
+    });
+    dispose();
+    expect(late).toHaveBeenCalledTimes(1);
+    expect(owner!.alive).toBe(false);
+  });
+
+  it('a watch re-entered into a row from its own cleanup does not outlive the row', async () => {
+    const items = state([1]);
+    const s = state(0);
+    const seen: number[] = [];
+    const App = () =>
+      html`<ul>
+        ${each(
+          items,
+          (item) => {
+            onDispose(() => runWithOwner(owner, () => watch(s, (v) => seen.push(v))));
+            const owner = getOwner()!;
+            return html`<li>${item}</li>`;
+          },
+          (n) => n,
+        )}
+      </ul>`;
+    const { unmount } = mount(App, document.createElement('div'));
+    items.set([]);
+    await tick();
+    s.set(5);
+    await tick();
+    expect(seen).toEqual([]);
+    unmount();
+  });
+
+  it('a root released inside its own callback hands out dead handles', () => {
+    const late = vi.fn();
+    let owner: ReturnType<typeof getOwner> = null;
+    root((dispose) => {
+      dispose();
+      owner = getOwner();
+    });
+    expect(owner!.alive).toBe(false);
+    runWithOwner(owner!, () => onDispose(late));
+    expect(late).toHaveBeenCalledTimes(1);
+  });
+});

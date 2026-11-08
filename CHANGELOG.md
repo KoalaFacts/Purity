@@ -81,6 +81,13 @@
 
 ### Fixed
 
+- `@purityjs/vite-plugin`: the on-disk `routes.ts` written for a TypeScript
+  `emitTo` path is const-asserted, so `import { routes } from
+  './.purity/routes.ts'` keeps literal patterns and `hasLoader` flags.
+  Before, `pattern` widened to `string`, `LoaderDataOf<'/users/:id', typeof
+  routes>` was `undefined`, and `asyncRoute(routes[i], …)` failed under
+  `exactOptionalPropertyTypes` (ADR 0032 amended, ADR 0034). The virtual
+  module and non-TypeScript emit paths are unchanged.
 - `@purityjs/vite-plugin` declarations compile without Node types. The built
   `index.d.ts` named Node's global `Buffer`, so a client tsconfig without
   `@types/node` and with `skipLibCheck: false` failed with TS2591 as soon as

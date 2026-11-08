@@ -1124,7 +1124,8 @@ describe('purity({ routes: { emitTo } }) — on-disk manifest emit (ADR 0032)', 
 
       const emittedPath = join(root, '.purity/routes.ts');
       expect(existsSync(emittedPath)).toBe(true);
-      expect(readFileSync(emittedPath, 'utf8')).toBe(src);
+      // A `.ts` emit is the virtual source plus `as const` on each export (ADR 0034).
+      expect(readFileSync(emittedPath, 'utf8').replaceAll(' as const;', ';')).toBe(src);
     } finally {
       cleanup();
     }

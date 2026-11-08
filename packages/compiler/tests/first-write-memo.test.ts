@@ -152,15 +152,10 @@ for (const mode of ['dom', 'hydrate'] as const) {
     it('retries a failed dynamic attribute write', () => {
       let value = 'first';
       let rerun: () => void = () => {};
-      const node = render(
-        ['<x-data data-items=', '></x-data>'],
-        [() => value],
-        mode,
-        (effect) => {
-          rerun = effect;
-          effect();
-        },
-      );
+      const node = render(['<x-data data-items=', '></x-data>'], [() => value], mode, (effect) => {
+        rerun = effect;
+        effect();
+      });
       expect(node.getAttribute('data-items')).toBe('first');
 
       const originalSet = node.setAttribute.bind(node);

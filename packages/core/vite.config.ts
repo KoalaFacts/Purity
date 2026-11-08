@@ -20,6 +20,7 @@ export default defineConfig({
         'csr-runtime/index': 'src/runtime/csr-runtime.ts',
         'boundary/index': 'src/boundary.ts',
         'loading/index': 'src/loading.ts',
+        'transaction/index': 'src/transaction.ts',
         'ssr-bridge/index': 'src/ssr-bridge.ts',
         'csr/index': 'src/csr.ts',
         'store/index': 'src/store.ts',

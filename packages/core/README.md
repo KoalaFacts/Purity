@@ -599,6 +599,31 @@ use `user.pending()` for a busy indicator. A rejection goes to the surrounding
 reading a new async value) needs its own `loading`. On the server an unresolved
 read renders the fallback ([ADR 0057](../../docs/decisions/0057-loading-boundary.md)).
 
+### Async transactions
+
+`transaction()` from `@purityjs/core/transaction` keeps writes made around
+async work together: values staged with `tx.set()` are applied in one batch
+when the work resolves and dropped when it rejects; `tx.optimistic()` shows a
+tentative value at once and removes it exactly once when the transaction
+settles ([ADR 0059](../../docs/decisions/0059-async-transaction.md)).
+
+```ts
+import { transaction } from "@purityjs/core/transaction";
+
+await transaction(async (tx) => {
+  tx.optimistic(title, draft); // shown now
+  const saved = await save(draft, { signal: tx.signal });
+  tx.set(title, saved.title); // both applied together
+  tx.set(updatedAt, saved.updatedAt);
+});
+```
+
+Overlapping transactions show the newest tentative value; a commit underneath
+it becomes visible when the last tentative value on that signal settles.
+Started during component setup or render, a transaction is aborted on unmount
+(writes dropped, tentative values removed, the promise rejects with
+`AbortError`); one started from an event handler always settles.
+
 ### Teleport
 
 ```ts

@@ -4,6 +4,14 @@
 
 ### Added
 
+- `transaction(fn)` in the new opt-in entry `@purityjs/core/transaction`
+  ([ADR 0059](./docs/decisions/0059-async-transaction.md)): writes staged with
+  `tx.set()` are applied in one batch when the async work resolves and
+  discarded when it rejects; `tx.optimistic()` shows a tentative value at once
+  and removes it exactly once when the transaction settles. Overlapping
+  tentative values stack per signal; disposing the owner it was started in
+  (setup or render) aborts it.
+  New bundle budget `core-transaction`.
 - `each()` passes the row renderer a third argument, `position: () => number`,
   the row's current index ([ADR 0058](./docs/decisions/0058-each-current-position.md)).
   It follows keyed reorders without re-rendering the row (same nodes, focus

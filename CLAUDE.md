@@ -68,6 +68,7 @@ npm run build                   # build all packages
 npm run check                   # format check + lint (oxfmt + oxlint, --deny-warnings)
 npm run check:fix               # auto-fix formatting and lint
 npm run typecheck               # tsc over src + tests (packages with a tsconfig.tests.json)
+npm run check:declarations      # strict consumers vs built dist/*.d.ts, @ts-expect-error contracts (after build)
 
 # Single test / file (run from the package dir, e.g. packages/core):
 npx vitest run tests/resource.test.ts      # one file

@@ -45,7 +45,11 @@ export type { PuritySourceMap } from './text-edits.ts';
  * client tsconfigs without Node types (`types: ["vite/client"]`), which load
  * them through `LoaderDataOf` or the emitted `routes.d.ts` (SV2-014).
  */
-type NodeBuffer = typeof globalThis extends { Buffer: { prototype: infer B } } ? B : Uint8Array;
+// Read through `alloc()`: `BufferConstructor` declares no `prototype`, so
+// inferring from it yields `Function.prototype` (`any`).
+type NodeBuffer = typeof globalThis extends { Buffer: { alloc(size: number): infer B } }
+  ? B
+  : Uint8Array;
 
 /**
  * The parts of the Vite/Rolldown plugin context Purity's hooks read. Hooks

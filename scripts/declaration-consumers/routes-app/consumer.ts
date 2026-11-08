@@ -21,6 +21,13 @@ expectType<Equal<LoaderDataOf<'/about', typeof routes>, undefined>>();
 expectType<Equal<LoaderDataOfEntry<(typeof routes)[2]['layouts'][0]>, { user: string | null }>>();
 // `hasLoader` is a literal flag only where the plugin detected a loader.
 expectType<Equal<(typeof routes)[2]['hasLoader'], true>>();
+expectType<Equal<(typeof routes)[2]['layouts'][0]['hasLoader'], true>>();
+expectType<Equal<'hasLoader' extends keyof (typeof routes)[0] ? true : false, false>>();
+
+// A literal `renderMode` export and the nearest `_error` module are emitted too.
+expectType<Equal<(typeof routes)[0]['renderMode'], 'static'>>();
+expectType<Equal<(typeof routes)[1]['errorBoundary']['filePath'], 'users/_error.ts'>>();
+expectType<Equal<'errorBoundary' extends keyof (typeof routes)[0] ? true : false, false>>();
 
 // `importFn` resolves to the route module itself.
 const home = await routes[2].importFn();
@@ -39,6 +46,6 @@ asyncNotFound(notFound);
 asyncNotFound(notFoundChain);
 const stopPrefetch: () => void = prefetchManifestLinks(routes);
 // @ts-expect-error the tuple is readonly
-routes[0] = routes[1];
+routes[0] = routes[0];
 
 void stopPrefetch;

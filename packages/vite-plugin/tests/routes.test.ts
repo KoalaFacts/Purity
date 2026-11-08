@@ -859,6 +859,36 @@ describe('purity({ routes }) — Vite plugin integration', () => {
     }
   });
 
+  it('handleHotUpdate reads server.moduleGraph only for files under the routes dir', () => {
+    const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
+    try {
+      let reads = 0;
+      const server = {
+        get moduleGraph() {
+          reads++;
+          return { getModuleById: () => null, invalidateModule: () => {} };
+        },
+      };
+      type Hooks = {
+        configResolved: (c: { root: string }) => void;
+        handleHotUpdate: (c: { file: string; server: typeof server }) => void;
+      };
+      const none = purity({ strictAot: false }) as unknown as Hooks;
+      none.configResolved({ root });
+      none.handleHotUpdate({ file: join(root, 'pages/new.ts'), server });
+      // Hosts that pass no dev server at all stay a no-op without routes.
+      (none.handleHotUpdate as (c: { file: string }) => void)({ file: join(root, 'a.ts') });
+      const withRoutes = purity({ strictAot: false, routes: { dir: 'pages' } }) as unknown as Hooks;
+      withRoutes.configResolved({ root });
+      withRoutes.handleHotUpdate({ file: join(root, 'src/other.ts'), server });
+      expect(reads).toBe(0);
+      withRoutes.handleHotUpdate({ file: join(root, 'pages/new.ts'), server });
+      expect(reads).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
+
   it('returns an empty manifest when the routes dir does not exist', () => {
     const { root, cleanup } = makeTmpPages({});
     try {

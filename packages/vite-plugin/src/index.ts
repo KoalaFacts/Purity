@@ -464,7 +464,7 @@ export function purity(options?: PurityPluginOptions) {
         };
       },
     ) {
-      routes.handleHotUpdate(this, ctx.file, ctx.server.moduleGraph);
+      routes.handleHotUpdate(this, ctx.file, ctx.server);
     },
 
     transform(
@@ -487,10 +487,16 @@ interface TransformSettings {
   stripServerActions: boolean;
 }
 
-/** Module graph surface `handleHotUpdate` needs to invalidate the manifest. */
-interface RoutesModuleGraph {
-  getModuleById(id: string): object | null | undefined;
-  invalidateModule(mod: object): void;
+/**
+ * Dev-server surface `handleHotUpdate` needs to invalidate the manifest.
+ * `moduleGraph` is read only after the routes-dir check: Vite's getter can
+ * print a future-deprecation warning, and non-routing apps never need it.
+ */
+interface RoutesDevServer {
+  moduleGraph: {
+    getModuleById(id: string): object | null | undefined;
+    invalidateModule(mod: object): void;
+  };
 }
 
 /**
@@ -553,7 +559,7 @@ function createRoutesWiring(opt: PurityPluginOptions['routes']) {
       return sources.source;
     },
 
-    handleHotUpdate(ctx: unknown, changedFile: string, moduleGraph: RoutesModuleGraph): void {
+    handleHotUpdate(ctx: unknown, changedFile: string, server: RoutesDevServer): void {
       if (!routesAbsDir) return;
       // Only invalidate the manifest when a file under the routes dir was
       // added / removed / renamed. In-place edits to a route module HMR
@@ -566,6 +572,7 @@ function createRoutesWiring(opt: PurityPluginOptions['routes']) {
       const file = changedFile.replace(/\\/g, '/');
       const dir = routesAbsDir.replace(/\\/g, '/');
       if (!file.startsWith(dir + '/')) return;
+      const moduleGraph = server.moduleGraph;
       const mod = moduleGraph.getModuleById(resolvedVirtualId);
       if (mod) moduleGraph.invalidateModule(mod);
       // When `emitTo` is configured, consumers may import the on-disk

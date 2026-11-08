@@ -39,11 +39,13 @@ __purity_inspect__.captureSources(true); // record creation sites from now on
 - The path is a snapshot of names shared per component instance: a node never
   holds its owner context (or that context's DOM) alive, and the names stay
   readable after the owner unmounts.
-- `source` is the first creation-stack frame outside Purity: frames from
-  `@purityjs/…` installs, Vite's `@purityjs_*` deps, this repository's
-  `packages/<name>/{src,dist}` and the signals module's own file URL (which
-  covers bundles that inline Purity under another name, such as Vite's shared
-  `.vite/deps/<chunk>.js`) are skipped. V8's stack limit is raised to 64 frames
+- `source` is the first creation-stack frame outside Purity and other
+  dependencies: frames under `node_modules`, Vite's `.vite/deps` chunks,
+  `@purityjs/…`, this repository's `packages/<name>/{src,dist}` and the signals
+  module's own file URL (bundles that inline Purity under another name) are
+  skipped. A user project whose own files live under
+  `packages/{signals,core,compiler,ssr,router,platform}/{src,dist}` is
+  misread as Purity; that is a known limit of path matching. V8's stack limit is raised to 64 frames
   for the capture. Capture is off by default because each creation then pays for
   one `new Error().stack`; `captureSources(true)` turns it on for nodes created
   afterwards, `captureSources(false)` turns it off, and a non-boolean argument

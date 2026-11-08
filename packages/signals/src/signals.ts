@@ -159,18 +159,26 @@ const ownerPaths: WeakMap<ComponentContext, readonly string[]> | null = __DEV__
   : null;
 const nodeSources: WeakMap<AnyNode, string> | null = __DEV__ ? new WeakMap() : null;
 let captureSources = false;
-// Frames from Purity's own files are skipped; the first other frame is the
-// creation site. Built packages are matched by path (`@purityjs/…` installs,
-// Vite's `@purityjs_*` deps, this repo's `packages/<name>/{src,dist}`), and
-// this module's own file by URL, which also covers bundles that inline Purity
-// under another name (Vite's shared `.vite/deps/<chunk>.js`).
+// Frames from Purity and other dependencies are skipped; the first other
+// frame is the creation site. Matched by path (`node_modules`, Vite's
+// `.vite/deps` chunks, `@purityjs/…`, this repo's `packages/<name>/{src,dist}`)
+// and by this module's own file URL, which covers bundles that inline Purity
+// under another name.
 const FRAMEWORK_FRAME =
-  /@purityjs[\\/_]|[\\/]packages[\\/](?:signals|core|compiler|ssr|router|platform)[\\/](?:src|dist)[\\/]/;
+  /[\\/]node_modules[\\/]|[\\/]\.vite[\\/]deps[\\/]|@purityjs[\\/_]|[\\/]packages[\\/](?:signals|core|compiler|ssr|router|platform)[\\/](?:src|dist)[\\/]/;
 const FRAME_FILE = /(?:\(|@|^at\s+)([^\s()]+?):\d+(?::\d+)?\)?$/;
 const frameFile = (line: string): string | undefined => FRAME_FILE.exec(line.trim())?.[1];
-const ownFile: string | undefined = __DEV__
-  ? frameFile(new Error().stack?.split('\n')[1] ?? '')
-  : undefined;
+// The first stack line with a file is this module (V8 prints an `Error`
+// header line first, Firefox and Safari do not).
+const firstFile = (stack: string | undefined): string | undefined => {
+  const lines = stack === undefined ? [] : stack.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const file = frameFile(lines[i]);
+    if (file !== undefined) return file;
+  }
+  return undefined;
+};
+const ownFile: string | undefined = __DEV__ ? firstFile(new Error().stack) : undefined;
 
 interface InspectHost {
   localName?: string;
@@ -212,9 +220,9 @@ function creationSite(): string | undefined {
   if (limit !== undefined) V8Error.stackTraceLimit = limit;
   if (stack === undefined) return undefined;
   const lines = stack.split('\n');
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
-    if (line === '' || FRAMEWORK_FRAME.test(line)) continue;
+    if (frameFile(line) === undefined || FRAMEWORK_FRAME.test(line)) continue;
     if (ownFile !== undefined && frameFile(line) === ownFile) continue;
     return line.replace(/^at\s+/, '');
   }

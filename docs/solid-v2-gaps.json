@@ -486,7 +486,7 @@
         "Cover overloaded watches, props/slots/events, resources, generated routes and action payloads.",
         "Prove an intended type error makes the negative test pass, and a removed diagnostic makes it fail."
       ],
-      "nextSlice": "Create a small declaration-consumer type gate with real negative cases using the existing compiler.",
+      "nextSlice": "Type-check a generated routes.d.ts and emitted manifest from a real vite-plugin route build in the declaration gate.",
       "files": [
         "packages/core/tsconfig.json",
         "packages/core/vitest.config.ts",

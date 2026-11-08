@@ -65,21 +65,21 @@ function hookWarn(ctx: unknown): (message: string) => void {
 
 /** Output options the `strictAot` bundle check reads. */
 export interface PurityOutputOptions {
-  format?: string;
-  paths?: Record<string, string> | ((id: string) => string);
-  globals?: Record<string, string> | ((id: string) => string);
+  format?: string | undefined;
+  paths?: Record<string, string> | ((id: string) => string) | undefined;
+  globals?: Record<string, string> | ((id: string) => string) | undefined;
 }
 
 /** Emitted bundle entries as the `generateBundle` checks read them. */
 export type PurityOutputBundle = Record<
   string,
-  | { type: 'asset'; originalFileNames?: readonly string[] }
+  | { type: 'asset'; originalFileNames?: readonly string[] | undefined }
   | {
       type: 'chunk';
       fileName: string;
       code: string;
-      imports?: readonly string[];
-      modules?: Record<string, { code?: string | null }>;
+      imports?: readonly string[] | undefined;
+      modules?: Record<string, { code?: string | null | undefined }> | undefined;
     }
 >;
 
@@ -212,12 +212,12 @@ export interface RoutesOptions {
    * File extensions counted as route modules.
    * @default ['.ts', '.tsx', '.js', '.jsx']
    */
-  extensions?: string[];
+  extensions?: string[] | undefined;
   /**
    * Virtual-module specifier the manifest is exposed under.
    * @default 'purity:routes'
    */
-  virtualId?: string;
+  virtualId?: string | undefined;
   /**
    * Optional on-disk emit (ADR 0032). When set, the plugin writes the
    * generated manifest source to this path (relative to Vite's project
@@ -227,7 +227,7 @@ export interface RoutesOptions {
    * already matches the new content. Add the emit path to `.gitignore`.
    * @example 'src/.purity/routes.ts'
    */
-  emitTo?: string;
+  emitTo?: string | undefined;
 }
 
 /**
@@ -236,24 +236,24 @@ export interface RoutesOptions {
 export interface PurityPluginOptions {
   /** Generate DOM-adoption walkers for SSR clients. Default false.
    * Client-only builds call create factories directly and cannot hydrate server DOM. */
-  hydratable?: boolean;
+  hydratable?: boolean | undefined;
   /** Fail template compilation instead of falling back to JIT, and reject
    * retained Purity runtime compilation in production client output. Default true. */
-  strictAot?: boolean;
+  strictAot?: boolean | undefined;
   /** Show the reactive graph panel during Vite dev. Off by default; excluded from builds and preview. */
-  devtools?: boolean;
+  devtools?: boolean | undefined;
   /**
    * File extensions to process for `html` tagged template compilation.
    * @default ['.ts', '.js', '.tsx', '.jsx']
    */
-  include?: string[];
+  include?: string[] | undefined;
   /**
    * Strip `*.server.{ts,js,tsx,jsx}` modules from client bundles
    * (replacing the file with `export {};`). Server-side builds pass
    * through unchanged. Default `true` — opt out by passing `false` for
    * apps that want a different convention. ADR 0018.
    */
-  stripServerModules?: boolean;
+  stripServerModules?: boolean | undefined;
   /**
    * Strip the inline handler body of `serverAction(url, handler)` calls
    * in client builds (ADR 0043). `.url` and `.invoke()` survive; the
@@ -263,7 +263,7 @@ export interface PurityPluginOptions {
    * mix server-action registration with client-bundled code. Default
    * `true` — opt out with `false`.
    */
-  stripServerActions?: boolean;
+  stripServerActions?: boolean | undefined;
   /**
    * Enable file-system routing (ADR 0019). Pass `true` for the default
    * `pages/` directory at the project root, or `{ dir, extensions?,
@@ -271,7 +271,7 @@ export interface PurityPluginOptions {
    * module (`purity:routes` by default) exporting a sorted route
    * manifest. Off by default — opt in.
    */
-  routes?: boolean | RoutesOptions;
+  routes?: boolean | RoutesOptions | undefined;
 }
 
 /**
@@ -323,12 +323,16 @@ export function purity(options?: PurityPluginOptions) {
 
     config(
       config: {
-        ssr?: {
-          target?: string;
-          resolve?: { conditions?: string[]; externalConditions?: string[] };
-        };
+        ssr?:
+          | {
+              target?: string | undefined;
+              resolve?:
+                | { conditions?: string[] | undefined; externalConditions?: string[] | undefined }
+                | undefined;
+            }
+          | undefined;
       },
-      env: { isPreview?: boolean },
+      env: { isPreview?: boolean | undefined },
     ) {
       isPreview = env.isPreview === true;
       if (config.ssr?.target !== 'webworker') return;
@@ -353,13 +357,18 @@ export function purity(options?: PurityPluginOptions) {
       this: unknown,
       config: {
         root: string;
-        command?: string;
-        base?: string;
-        resolve?: { alias?: readonly { find: string | RegExp }[] };
-        build?: {
-          ssr?: unknown;
-          assetsInlineLimit?: number | ((file: string, content: Buffer) => boolean | undefined);
-        };
+        command?: string | undefined;
+        base?: string | undefined;
+        resolve?: { alias?: readonly { find: string | RegExp }[] | undefined } | undefined;
+        build?:
+          | {
+              ssr?: unknown;
+              assetsInlineLimit?:
+                | number
+                | ((file: string, content: Buffer) => boolean | undefined)
+                | undefined;
+            }
+          | undefined;
       },
     ) {
       serverBuild = !!config.build?.ssr;
@@ -408,7 +417,12 @@ export function purity(options?: PurityPluginOptions) {
       emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
     },
 
-    resolveId(this: unknown, source: string, _importer?: string, opts?: { ssr?: boolean }) {
+    resolveId(
+      this: unknown,
+      source: string,
+      _importer?: string,
+      opts?: { ssr?: boolean | undefined },
+    ) {
       // Reject before Vite's asset loader can publish the original source.
       if (stripServerModules && opts?.ssr !== true && isServerOnlyId(source)) {
         rejectServerAsset(source);
@@ -419,7 +433,7 @@ export function purity(options?: PurityPluginOptions) {
       return null;
     },
 
-    load(this: unknown, id: string, opts?: { ssr?: boolean }) {
+    load(this: unknown, id: string, opts?: { ssr?: boolean | undefined }) {
       if (stripServerModules && opts?.ssr !== true && isServerOnlyId(id)) {
         rejectServerAsset(id);
         return '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\nexport {};\n';
@@ -514,7 +528,12 @@ export function purity(options?: PurityPluginOptions) {
       }
     },
 
-    transform(this: unknown, code: string, id: string, transformOpts?: { ssr?: boolean }) {
+    transform(
+      this: unknown,
+      code: string,
+      id: string,
+      transformOpts?: { ssr?: boolean | undefined },
+    ) {
       // Strip *.server.{ts,js,tsx,jsx} modules from client builds (ADR 0018).
       // Server builds (transformOpts.ssr === true) pass through unchanged
       // so handler bodies still execute on the server. Runs BEFORE the

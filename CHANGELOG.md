@@ -4,6 +4,12 @@
 
 ### Added
 
+- `asyncCompute(fn)` accepts `AsyncIterable` results
+  ([ADR 0054](./docs/decisions/0054-async-derivation.md) slice 2): each yielded
+  value becomes current, `pending()` is `true` until the first one, rejections
+  become the outcome, and a superseded or disposed run drops later values and
+  closes its iterator. `core-async` stays inside its budget.
+
 - `__purity_inspect__` nodes carry `owner` (component tag path, outermost
   first) and, after `__purity_inspect__.captureSources(true)`, `source` (the
   creation stack frame) in development builds

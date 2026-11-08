@@ -15,7 +15,7 @@ export class PendingError extends Error {
    * The unresolved {@link asyncCompute} value whose read threw this error;
    * `loading()` waits on its `pending()` before rendering again.
    */
-  source?: AsyncComputed<unknown>;
+  declare source?: AsyncComputed<unknown>;
   constructor(source?: AsyncComputed<unknown>) {
     super('[Purity] async value is not ready yet');
     this.name = 'PendingError';
@@ -60,7 +60,7 @@ type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
  * ```
  */
 export function asyncCompute<T>(
-  fn: (info: AsyncComputeInfo) => T | PromiseLike<T>,
+  fn: (info: AsyncComputeInfo) => T | PromiseLike<T> | AsyncIterable<T>,
 ): AsyncComputed<T> {
   let latest = 0;
   let settledRun = 0;
@@ -82,7 +82,7 @@ export function asyncCompute<T>(
     controller?.abort();
     const ctrl = (controller = new AbortController());
     const run = ++latest;
-    let result: T | PromiseLike<T>;
+    let result: T | PromiseLike<T> | AsyncIterable<T>;
     try {
       result = fn({ signal: ctrl.signal });
     } catch (error) {
@@ -91,23 +91,26 @@ export function asyncCompute<T>(
       if (!isPending(error)) settle(run, { ok: false, error });
       return run;
     }
+    const finish = (outcome: Outcome<T>): unknown =>
+      run !== latest || disposed || (settle(run, outcome), settled(settled.peek() + 1));
+    // An async fn or iterable that read an unresolved upstream stays pending,
+    // like the synchronous PendingError path; the upstream settlement re-runs it.
+    const fail = (error: unknown): unknown => isPending(error) || finish({ ok: false, error });
     if (typeof (result as PromiseLike<T> | null)?.then === 'function') {
-      const finish = (outcome: Outcome<T>): void => {
-        if (run !== latest || disposed) return;
-        settle(run, outcome);
-        settled(settled.peek() + 1);
-      };
       // Promise.resolve: a thenable that calls back synchronously still
       // settles after the current pull, never inside it.
-      Promise.resolve(result).then(
-        (value) => finish({ ok: true, value }),
-        (error) => {
-          // An async fn that read an unresolved upstream stays pending, like
-          // the synchronous PendingError path; the upstream settlement re-runs it.
-          if (isPending(error)) return;
-          finish({ ok: false, error });
-        },
-      );
+      Promise.resolve(result as PromiseLike<T>).then((value) => finish({ ok: true, value }), fail);
+    } else if ((result as AsyncIterable<T> | null)?.[Symbol.asyncIterator]) {
+      // Each yielded value becomes current. The first next() runs inside this
+      // pull, so reads before a generator's first await are tracked. A
+      // superseded or disposed run stops at its next value and closes the
+      // iterator (break -> return()); fn's signal stops an in-flight wait sooner.
+      (async () => {
+        for await (const value of result as AsyncIterable<T>) {
+          if (run !== latest || disposed) break;
+          finish({ ok: true, value });
+        }
+      })().catch(fail);
     } else {
       settle(run, { ok: true, value: result as T });
     }

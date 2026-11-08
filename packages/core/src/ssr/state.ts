@@ -117,7 +117,7 @@ export interface SSRRenderContext {
    * `streamingMode` is on; consumed by `renderToStream` after the
    * shell has been flushed. Insertion order is the order views start;
    * with the default `boundaryConcurrency: 1` it is also the wire order
-   * (ADR 0006), otherwise chunks follow settlement order (ADR 0060).
+   * (ADR 0006), otherwise chunks follow settlement order (ADR 0061).
    */
   streamingBoundaries?: Map<
     number,

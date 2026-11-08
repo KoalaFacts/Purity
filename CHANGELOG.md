@@ -4,8 +4,15 @@
 
 ### Added
 
+- `getOwner()`, `runWithOwner(owner, fn)` and `root(fn)` in the new opt-in
+  entry `@purityjs/core/owner`
+  ([ADR 0060](./docs/decisions/0060-owner-composition.md)): bind work created
+  in a later callback to a component, effect run or row so it is released with
+  it (released at once if that owner is already gone or being released), and create detached
+  owners whose `dispose` releases them exactly once. New bundle budget
+  `core-owner`.
 - `renderToStream()` / `renderToStreamResponse()` option `boundaryConcurrency`
-  ([ADR 0060](./docs/decisions/0060-independent-boundary-progress.md)): with
+  ([ADR 0061](./docs/decisions/0061-independent-boundary-progress.md)): with
   `n > 1`, up to `n` deferred `suspense()` views render at once and each chunk
   is flushed as soon as its view settles, so a fast region no longer waits for
   a slow sibling declared before it. Views still start only on consumer

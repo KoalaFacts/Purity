@@ -201,7 +201,7 @@ entry still finishes shell rendering before resolving.
 
 **Per-boundary budgets.** Each boundary renders in its own `SSRRenderContext` with its own multi-pass loop and its own `{ timeout }` budget (the option is per-boundary, not per-response). When a boundary's deadline fires the renderer falls back to its `fallback()` HTML for the streamed chunk — siblings continue resolving normally. Use `suspense({ onError })` to observe view / fallback / timeout phases.
 
-**Independent progress.** By default deferred views render one at a time and their chunks arrive in declaration order. `boundaryConcurrency: n` (a positive integer or `Infinity`) lets up to `n` views render at once and flushes each chunk as soon as its view settles — a fast sidebar declared after a slow feed is swapped in without waiting for the feed. New views still start only when the consumer pulls, so `n` also bounds how many rendered chunks wait in memory. ADR [0060](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0060-independent-boundary-progress.md).
+**Independent progress.** By default deferred views render one at a time and their chunks arrive in declaration order. `boundaryConcurrency: n` (a positive integer or `Infinity`) lets up to `n` views render at once and flushes each chunk as soon as its view settles — a fast sidebar declared after a slow feed is swapped in without waiting for the feed. New views still start only when the consumer pulls, so `n` also bounds how many rendered chunks wait in memory. ADR [0061](https://github.com/KoalaFacts/Purity/blob/main/docs/decisions/0061-independent-boundary-progress.md).
 
 ```ts
 renderToStream(App, { boundaryConcurrency: 4 });

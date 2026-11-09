@@ -4,8 +4,7 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { chromium } from 'playwright';
-import { browserEngines } from '../../../benchmark/tools/browser-engines.ts';
+import { browserEngines, chromium } from '../../../benchmark/tools/browser-engines.ts';
 import { build, createServer, preview } from 'vite';
 import { purity } from '../dist/index.js';
 

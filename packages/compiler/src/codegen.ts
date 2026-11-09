@@ -1062,12 +1062,7 @@ function genPositionalBindings(slots: Slot[], sharedGroup = false): string {
     }
   }
 
-  // Navigation variables are ordered plain var initializers. Keep every
-  // traversal before binding setup while avoiding one 'var' per shared path.
-  let result =
-    (navigationParts.length
-      ? `var ${navigationParts.map((part) => part.slice(4, -1)).join(',')};`
-      : '') + setupParts.join('');
+  let result = navigationParts.join('') + setupParts.join('');
   if (reactiveParts.length > 0) {
     result += `_w(function(){${reactiveParts.join('')}});`;
   }

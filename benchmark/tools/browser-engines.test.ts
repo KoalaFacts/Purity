@@ -46,8 +46,9 @@ function scripts(dir: string): string[] {
   return out;
 }
 
-function checkDirs(): string[] {
+function checkDirs(extra: string[] = []): string[] {
   return [
+    ...extra,
     'benchmark/tools',
     'examples',
     ...readdirSync(join(root, 'packages')).flatMap((pkg) => [
@@ -82,7 +83,9 @@ describe('browser engine selection', () => {
 
   it('no browser check or scanner imports Playwright engines around CHROMIUM_PATH', () => {
     const offenders: string[] = [];
-    for (const dir of checkDirs()) {
+    // The bundle-size verifiers run every engine on purpose (no selector), so
+    // only this rule scans them.
+    for (const dir of checkDirs(['benchmark/bundle-size'])) {
       for (const file of scripts(join(root, dir))) {
         const source = readFileSync(file, 'utf8');
         if (

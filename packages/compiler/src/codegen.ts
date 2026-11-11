@@ -1094,9 +1094,11 @@ function genExprBinding(slotVar: string, index: number): BindingParts {
   const fl = `_f${id}`;
   const val = `_v[${index}]`;
 
+  // Keep expression value, accessor flag, and text node in one ordered
+  // declaration; multiple var statements add bytes to every generated slot.
   const setup =
-    `var ${xv}=_d?_d(${val}):${val};var ${fl}=typeof ${xv}==='function';` +
-    `var ${tn}=${slotVar};if(!${fl})__purity_sw__(${tn},${xv});`;
+    `var ${xv}=_d?_d(${val}):${val},${fl}=typeof ${xv}==='function',` +
+    `${tn}=${slotVar};if(!${fl})__purity_sw__(${tn},${xv});`;
 
   const reactive = `if(${fl}){${slotUpdate(xv, tn)}}`;
 
@@ -1127,17 +1129,20 @@ function genAttrBinding(
   const propertyValue = (expr: string): string =>
     tag.includes('-') ? expr : safeBindingValue(attr.name, expr);
 
-  // Shared prefix of the value bindings: read the value once, note whether it
-  // is an accessor (applied in the shared watch) or a static value.
-  const head = `var ${av}=${val};var ${fl}=typeof ${av}==='function';`;
   // CQ-03: per-binding last value for the shared watch, so a sibling's change
   // does not re-apply this binding (attribute writes invalidate style; `.value`
-  // writes reset caret, selection and IME state). It starts as the template's
-  // values array `_v`, which no accessor can return, so the first run always
-  // writes — including over SSR or placeholder state.
+  // writes reset caret, selection and IME state). Reactive value bindings
+  // start at 0/0 (NaN): strict inequality always forces the first write,
+  // even when an accessor returns the caller-owned `_v` array or NaN.
+  // Boolean bindings normalize to booleans, so `_v` is a safe sentinel there.
   const last = `_l${id}`;
-  const memo = (x: string, write: string) =>
-    `var ${x}=${av}();if(${x}!==${last}){${last}=${x};${write}}`;
+  // Group the three sequential var initializers into one declaration in
+  // generated factories. This removes two redundant 'var' keywords per
+  // value binding without changing the initializers' evaluation order.
+  const head = `var ${av}=${val},${fl}=typeof ${av}==='function',${last}=`;
+  // Cache the original accessor result only after a DOM write/URL check succeeds.
+  // Otherwise a throwing setter or rejected URL incorrectly suppresses retries.
+  const memo = (x: string, write: string) => `var ${x}=${av}();if(${x}!==${last}){${write}}`;
 
   switch (attr.kind) {
     case 'event':
@@ -1147,22 +1152,22 @@ function genAttrBinding(
       const set = (x: string) =>
         `${el}.setAttribute(${qname},${x}===true?'':String(${safeBindingValue(attr.name, x)}));`;
       return {
-        setup: `${head}var ${last}=_v;if(!${fl}&&${av}!=null&&${av}!==false)${set(av)}`,
-        reactive: `if(${fl}){${memo(`v${id}`, `if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});else ${set(`v${id}`)}`)}}`,
+        setup: `${head}0/0;if(!${fl}&&${av}!=null&&${av}!==false)${set(av)}`,
+        reactive: `if(${fl}){${memo(`v${id}`, `if(v${id}==null||v${id}===false)${el}.removeAttribute(${qname});else ${set(`v${id}`)}${last}=v${id};`)}}`,
       };
     }
 
     case 'bool':
       return {
-        setup: `${head}var ${last}=_v;if(!${fl}&&${av})${el}.setAttribute(${qname},'');`,
-        reactive: `if(${fl}){var v${id}=!!${av}();if(v${id}!==${last}){${last}=v${id};if(v${id})${el}.setAttribute(${qname},'');else ${el}.removeAttribute(${qname});}}`,
+        setup: `${head}_v;if(!${fl}&&${av})${el}.setAttribute(${qname},'');`,
+        reactive: `if(${fl}){var v${id}=!!${av}();if(v${id}!==${last}){if(v${id})${el}.setAttribute(${qname},'');else ${el}.removeAttribute(${qname});${last}=v${id};}}`,
       };
 
     case 'prop':
     case 'reactive-prop':
       return {
-        setup: `${head}var ${last}=_v;if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
-        reactive: `if(${fl}){${memo(`v${id}`, `${el}[${qname}]=${propertyValue(`v${id}`)};`)}}`,
+        setup: `${head}0/0;if(!${fl})${el}[${qname}]=${propertyValue(av)};`,
+        reactive: `if(${fl}){${memo(`v${id}`, `${el}[${qname}]=${propertyValue(`v${id}`)};${last}=v${id};`)}}`,
       };
 
     case 'bind': {

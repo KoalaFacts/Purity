@@ -42,6 +42,19 @@
       "import": "./dist/runtime.js",
       "require": "./dist/runtime.cjs"
     },
+    "./concurrency": {
+      "development": {
+        "node": {
+          "types": "./dist/concurrency.d.ts",
+          "import": "./dist/concurrency.js",
+          "require": "./dist/concurrency.cjs"
+        },
+        "default": "./src/concurrency.ts"
+      },
+      "types": "./dist/concurrency.d.ts",
+      "import": "./dist/concurrency.js",
+      "require": "./dist/concurrency.cjs"
+    },
     ".": {
       "development": {
         "node": {

@@ -18,10 +18,15 @@ per-boundary deadlines, request abort and bounded buffering; those must hold.
 
 ## Decision
 
-1. `RenderToStreamOptions.boundaryConcurrency?: number` (also accepted by
-   `renderToStreamResponse()`). Default `1`, which is ADR 0006's behaviour
-   exactly: one view at a time, chunks in declaration order.
-2. With `n > 1` (or `Infinity`), up to `n` deferred views render at once.
+1. `RenderToStreamOptions.boundaries?: BoundaryScheduler` (also accepted by
+   `renderToStreamResponse()`) decides when deferred views start and when
+   their chunks are written. A scheduler receives the boundaries lazily as
+   `[id, start]` pairs and yields `[id, result]` in write order. The default
+   is ADR 0006's behaviour exactly: one view at a time, chunks in declaration
+   order.
+2. `boundaryConcurrency(n)` lives in the opt-in entry
+   `@purityjs/ssr/concurrency`, so streams that keep declaration order do not
+   ship it. With `n > 1` (or `Infinity`), up to `n` deferred views render at once.
    Each chunk (`<template id="purity-s-N">`, its keyed resource script and
    `__purity_swap(N)`) is emitted as soon as its view settles — ready, thrown
    (fallback chunk), timed out (fallback chunk) or skipped. The swap helper
@@ -36,7 +41,12 @@ per-boundary deadlines, request abort and bounded buffering; those must hold.
 5. Consumer cancel or request/`signal` abort aborts every in-flight view;
    their late settlement writes nothing and no chunk follows.
 6. Invalid values (non-number, `< 1`, non-integer finite numbers, `NaN`) throw
-   before any user code runs, like the other render-option checks.
+   when `boundaryConcurrency()` is called, before any render starts.
+7. Size: the scheduler hook costs the main `ssr` entry 49 B gzip / 31 B
+   Brotli over ADR 0006's loop; the concurrent scheduler is 380 B gzip /
+   320 B Brotli in its own entry (budget `ssr-concurrency`). The first slice
+   put the option and scheduler in the main entry (+187 B gzip / +159 B
+   Brotli); the owner chose the opt-in entry instead.
 
 ### Intentional differences from Solid
 
@@ -54,7 +64,7 @@ the default keeps declaration order; with 16 large views and
 a throwing sibling and a ready sibling are flushed before a timed-out one,
 which still reports `onError(undefined, { phase: 'timeout' })`; consumer
 cancel and external abort drop every in-flight view and leave no timers;
-invalid values are rejected. The existing `stream-backpressure.test.ts` and
+invalid values are rejected by `boundaryConcurrency()`. The existing `stream-backpressure.test.ts` and
 `render-to-stream.test.ts` suites stay unchanged and green.
 
 ## Consequences

@@ -1,8 +1,9 @@
 // Independent boundary progress — ADR 0062 (SV2-009 slice 1).
 //
-// `boundaryConcurrency: n` lets up to n deferred suspense() views render at
-// once and flushes each chunk as soon as it settles. The default (1) keeps
-// ADR 0006's declaration-order stream exactly.
+// `boundaries: boundaryConcurrency(n)` (opt-in `@purityjs/ssr/concurrency`)
+// lets up to n deferred suspense() views render at once and flushes each chunk
+// as soon as it settles. Without it the stream keeps ADR 0006's
+// declaration-order output exactly.
 
 import { resource, suspense } from '@purityjs/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
@@ -12,6 +13,7 @@ import {
   renderToStreamResponse,
   type RenderToStreamOptions,
 } from '../src/index.ts';
+import { boundaryConcurrency } from '../src/concurrency.ts';
 
 const renderers = [
   {
@@ -58,7 +60,7 @@ async function readAll(stream: ReadableStream<Uint8Array>): Promise<string> {
   return text + decoder.decode();
 }
 
-describe.each(renderers)('renderToStream boundaryConcurrency — $name', ({ render }) => {
+describe.each(renderers)('renderToStream boundaryConcurrency() — $name', ({ render }) => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => {
     vi.useRealTimers();
@@ -69,7 +71,7 @@ describe.each(renderers)('renderToStream boundaryConcurrency — $name', ({ rend
     const stream = await render(
       () => html`<main>${region('SLOW', 500)}${region('FAST', 10)}</main>`,
       {
-        boundaryConcurrency: 2,
+        boundaries: boundaryConcurrency(2),
       },
     );
     const reader = stream.getReader();
@@ -111,7 +113,7 @@ describe.each(renderers)('renderToStream boundaryConcurrency — $name', ({ rend
     );
     const stream = await render(
       () => html`<main>${views.map((view) => suspense(view, () => html`<p>WAITING</p>`))}</main>`,
-      { boundaryConcurrency: 3, serializeResources: false },
+      { boundaries: boundaryConcurrency(3), serializeResources: false },
     );
     const reader = stream.getReader();
     try {
@@ -151,7 +153,7 @@ describe.each(renderers)('renderToStream boundaryConcurrency — $name', ({ rend
           },
           () => html`<p>THROWN-FALLBACK</p>`,
         )}${region('OK', 5)}</main>`,
-      { boundaryConcurrency: 3 },
+      { boundaries: boundaryConcurrency(3) },
     );
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const done = readAll(stream);
@@ -175,7 +177,7 @@ describe.each(renderers)('renderToStream boundaryConcurrency — $name', ({ rend
   it('cancelling drops every in-flight view and clears their timers', async () => {
     const stream = await render(
       () => html`<main>${region('A', 1000)}${region('B', 1000)}${region('C', 1000)}</main>`,
-      { boundaryConcurrency: 3 },
+      { boundaries: boundaryConcurrency(3) },
     );
     const reader = stream.getReader();
     const shell = new TextDecoder().decode((await reader.read()).value);
@@ -191,7 +193,7 @@ describe.each(renderers)('renderToStream boundaryConcurrency — $name', ({ rend
   it('external abort ends the stream without the pending chunks', async () => {
     const abort = new AbortController();
     const stream = await render(() => html`<main>${region('A', 1000)}${region('B', 1000)}</main>`, {
-      boundaryConcurrency: 2,
+      boundaries: boundaryConcurrency(2),
       signal: abort.signal,
     });
     const done = readAll(stream);
@@ -206,18 +208,9 @@ describe.each(renderers)('renderToStream boundaryConcurrency — $name', ({ rend
   });
 });
 
-describe('renderToStream boundaryConcurrency validation', () => {
-  it.each([0, -1, 1.5, Number.NaN, '2'])('rejects %s', async (value) => {
-    expect(() =>
-      renderToStream(() => html`<p>x</p>`, {
-        boundaryConcurrency: value as unknown as number,
-      }),
-    ).toThrow(/boundaryConcurrency/);
-    await expect(
-      renderToStreamResponse(() => html`<p>x</p>`, {
-        boundaryConcurrency: value as unknown as number,
-      }),
-    ).rejects.toThrow(/boundaryConcurrency/);
+describe('boundaryConcurrency() validation', () => {
+  it.each([0, -1, 1.5, Number.NaN, '2', undefined])('rejects %s before any render', (value) => {
+    expect(() => boundaryConcurrency(value as unknown as number)).toThrow(/boundaryConcurrency/);
   });
 
   it('accepts Infinity and starts every view', async () => {
@@ -225,7 +218,7 @@ describe('renderToStream boundaryConcurrency validation', () => {
     const body = await readAll(
       renderToStream(
         () => html`<main>${views.map((view) => suspense(view, () => html`<p>w</p>`))}</main>`,
-        { boundaryConcurrency: Number.POSITIVE_INFINITY },
+        { boundaries: boundaryConcurrency(Number.POSITIVE_INFINITY) },
       ),
     );
     for (let id = 1; id <= views.length; id++) expect(body).toContain(`__purity_swap(${id});`);

@@ -311,23 +311,20 @@ export interface PurityPluginOptions {
  */
 export function purity(options?: PurityPluginOptions) {
   const strictAot = options?.strictAot !== false;
-  const hydratable = options?.hydratable === true;
-  const extensions = options?.include ?? ['.ts', '.js', '.tsx', '.jsx'];
   const stripServerModules = options?.stripServerModules !== false;
-  const stripServerActions = options?.stripServerActions !== false;
+  const settings: TransformSettings = {
+    strictAot,
+    hydratable: options?.hydratable === true,
+    extensions: options?.include ?? ['.ts', '.js', '.tsx', '.jsx'],
+    stripServerModules,
+    stripServerActions: options?.stripServerActions !== false,
+  };
   let serveDevtools = false;
   let isPreview = false;
   let devtoolsBase = '/';
   let serverBuild = false;
   let productionBuild = false;
-
-  const routesOpts = normaliseRoutesOption(options?.routes);
-  // Resolved at configResolved time once Vite tells us the project root.
-  let routesAbsDir: string | null = null;
-  let routesExt: string[] = [];
-  let virtualId = '';
-  let resolvedVirtualId = '';
-  let emitToAbs: string | null = null;
+  const routes = createRoutesWiring(options?.routes);
 
   return {
     name: 'purity',
@@ -401,30 +398,11 @@ export function purity(options?: PurityPluginOptions) {
       serveDevtools = options?.devtools === true && config.command === 'serve' && !isPreview;
       // Resolved Vite bases have a trailing slash; absolute bases use their path during dev.
       devtoolsBase = config.base ? new URL(config.base, 'http://vite.local').pathname : '/';
-      if (!routesOpts) return;
-      routesAbsDir = resolvePath(config.root, routesOpts.dir);
-      routesExt = routesOpts.extensions ?? ['.ts', '.tsx', '.js', '.jsx'];
-      virtualId = routesOpts.virtualId ?? 'purity:routes';
-      resolvedVirtualId = '\0' + virtualId;
-      emitToAbs = routesOpts.emitTo ? resolvePath(config.root, routesOpts.emitTo) : null;
+      routes.configResolved(config.root);
     },
 
     buildStart(this: unknown) {
-      // ADR 0033 — eager manifest emit. When `emitTo` is set we regenerate
-      // the on-disk file at the start of every `vite build` / `vite dev`,
-      // regardless of whether anything imports `purity:routes` in this run.
-      // Enables consumers that bundle the emitted file outside Vite
-      // (Cloudflare Workers via wrangler, Deno deploy, custom Node entries)
-      // to drive the emit with a plain `vite build` pre-step.
-      //
-      // ADR 0044 — sibling `.d.ts` emit. Alongside the runtime `.ts` we
-      // write a per-app type declaration that augments the virtual
-      // `purity:routes` module with literal tuple types, so apps that
-      // import from `'purity:routes'` get the same strong typing as apps
-      // that import from the on-disk `.ts`.
-      if (!routesOpts || emitToAbs === null || routesAbsDir === null) return;
-      const sources = generateManifestSources(hookContext(this), routesAbsDir, routesExt);
-      emitManifestFiles(emitToAbs, sources, hookWarn(this));
+      routes.buildStart(this);
     },
 
     resolveId(
@@ -438,9 +416,7 @@ export function purity(options?: PurityPluginOptions) {
         rejectServerAsset(source);
       }
       if (serveDevtools && source === DEVTOOLS_ID) return RESOLVED_DEVTOOLS_ID;
-      if (!routesOpts) return null;
-      if (source === virtualId) return resolvedVirtualId;
-      return null;
+      return routes.resolveId(source);
     },
 
     load(this: unknown, id: string, opts?: { ssr?: boolean | undefined }) {
@@ -449,16 +425,7 @@ export function purity(options?: PurityPluginOptions) {
         return '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\nexport {};\n';
       }
       if (serveDevtools && id === RESOLVED_DEVTOOLS_ID) return devtoolsClientSource;
-      if (!routesOpts || id !== resolvedVirtualId) return null;
-      // routesAbsDir is set in configResolved (always called before load).
-      const sources = generateManifestSources(hookContext(this), routesAbsDir as string, routesExt);
-      // ADR 0032: optional on-disk emit. Skip the write when content
-      // matches to avoid filesystem-watch loops in dev. Failures are
-      // non-fatal — virtual module still returns `source`.
-      // ADR 0044: alongside the `.ts`, write a sibling `.d.ts` so apps
-      // importing from `'purity:routes'` get the per-route typed `importFn`.
-      if (emitToAbs !== null) emitManifestFiles(emitToAbs, sources, hookWarn(this));
-      return sources.source;
+      return routes.load(this, id);
     },
 
     generateBundle(this: unknown, outputOptions: PurityOutputOptions, bundle: PurityOutputBundle) {
@@ -497,31 +464,7 @@ export function purity(options?: PurityPluginOptions) {
         };
       },
     ) {
-      if (!routesOpts || !routesAbsDir) return;
-      // Only invalidate the manifest when a file under the routes dir was
-      // added / removed / renamed. In-place edits to a route module HMR
-      // through their own module graph and don't need a manifest regen.
-      // Vite calls handleHotUpdate for every change including content
-      // edits, so we discriminate on whether the file currently exists vs
-      // was tracked previously. Cheap heuristic: if the changed file is
-      // under the routes dir but the loaded manifest doesn't reference it
-      // (or references it but the file no longer exists), invalidate.
-      const file = ctx.file.replace(/\\/g, '/');
-      const dir = routesAbsDir.replace(/\\/g, '/');
-      if (!file.startsWith(dir + '/')) return;
-      const mod = ctx.server.moduleGraph.getModuleById(resolvedVirtualId);
-      if (mod) ctx.server.moduleGraph.invalidateModule(mod);
-      // When `emitTo` is configured, consumers may import the on-disk
-      // file directly (ADR 0033) instead of the virtual module. In that
-      // case `load()` is never called on the virtual module after the
-      // invalidate above, so the emitted .ts/.d.ts go stale until the
-      // next full build. Re-run the emit here so the on-disk artefacts
-      // track filesystem changes regardless of which import path
-      // consumers use.
-      if (emitToAbs !== null) {
-        const sources = generateManifestSources(hookContext(this), routesAbsDir, routesExt);
-        emitManifestFiles(emitToAbs, sources, hookWarn(this));
-      }
+      routes.handleHotUpdate(this, ctx.file, ctx.server);
     },
 
     transform(
@@ -530,91 +473,212 @@ export function purity(options?: PurityPluginOptions) {
       id: string,
       transformOpts?: { ssr?: boolean | undefined },
     ) {
-      // Strip *.server.{ts,js,tsx,jsx} modules from client builds (ADR 0018).
-      // Server builds (transformOpts.ssr === true) pass through unchanged
-      // so handler bodies still execute on the server. Runs BEFORE the
-      // extension filter so the regex (which tolerates Vite query-string
-      // suffixes like `?import`, `?worker`, `?url`) is the source of truth.
-      if (stripServerModules && transformOpts?.ssr !== true && isServerOnlyId(id)) {
-        rejectServerAsset(id);
-        return {
-          code:
-            '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\n' +
-            'export {};\n',
-          map: null,
-        };
-      }
-      if (stripServerModules && transformOpts?.ssr !== true) checkAssetReferences(code, id);
-
-      // Security boundaries apply even to framework paths. Only skip actual
-      // framework directories when compiling templates, not consumer lookalikes.
-      if (isFrameworkInternal(id)) return null;
-
-      // Match plugin extension filter (also tolerates Vite query suffixes
-      // by stripping ?xxx before the suffix check).
-      const cleanId = id.split('?')[0]!;
-      if (!extensions.some((ext) => cleanId.endsWith(ext))) return null;
-
-      // ADR 0043 — smart serverAction body stripping. Runs in client builds
-      // only and only on files that pass the cheap precheck (mention both
-      // `@purityjs/core` and `serverAction`). Returns null when nothing to
-      // do, in which case we fall through to the html`` template pass.
-      let workingCode = code;
-      let rewritten = false;
-      if (stripServerActions && transformOpts?.ssr !== true) {
-        const stripped = stripServerActionBodies(workingCode, id);
-        if (stripped !== null) {
-          workingCode = stripped.code;
-          rewritten = true;
-        }
-      }
-
-      if (!workingCode.includes('html`')) {
-        if (!rewritten) return null;
-        // Preprocessing shifted source positions relative to the
-        // original file. Returning `map: null` would let consumers fall
-        // back to an identity map against the *rewritten* code, breaking
-        // stack traces inside this file. Emit an empty-mappings v3 map
-        // that still carries `sourcesContent` so downstream tools at least
-        // know not to treat the output as 1:1.
-        return { code: workingCode, map: emptyV3Map(id, code) };
-      }
-
-      const result = compileTemplates(
-        workingCode,
-        id,
-        transformOpts?.ssr === true,
-        strictAot !== false,
-        hydratable,
-      );
-
-      // Surface compile failures: prefer the Rollup/Vite plugin context
-      // (yields a proper warning in the dev overlay + build log) and fall
-      // back to console.warn when called outside Vite (unit tests). Emitted
-      // regardless of `changed` so a file containing only broken templates
-      // still reports the failure.
-      if (strictAot && result.warnings.length > 0) {
-        // Preprocessing can insert imports or remove server-action bodies.
-        // Recompile the original only on failure to recover source locations,
-        // without rejecting templates removed from a successful client pass.
-        const originalWarnings = rewritten
-          ? compileTemplates(code, id, transformOpts?.ssr === true, true, hydratable).warnings
-          : result.warnings;
-        throw new Error(
-          (originalWarnings.length > 0 ? originalWarnings : result.warnings).join('\n') +
-            '\n[purity] strictAot requires every template to compile. Fix the template or module syntax reported above; use strictAot: false only if runtime compilation is intended.',
-        );
-      }
-      const warn = hookWarn(this);
-      for (const w of result.warnings) warn(w);
-
-      if (!result.changed) {
-        if (rewritten) return { code: workingCode, map: emptyV3Map(id, code) };
-        return null;
-      }
-      return { code: result.code, map: result.map };
+      return transformModule(this, code, id, transformOpts?.ssr === true, settings);
     },
   } satisfies Plugin;
+}
+
+/** Options shared by every `transform` call of one plugin instance. */
+interface TransformSettings {
+  strictAot: boolean;
+  hydratable: boolean;
+  extensions: readonly string[];
+  stripServerModules: boolean;
+  stripServerActions: boolean;
+}
+
+/**
+ * Dev-server surface `handleHotUpdate` needs to invalidate the manifest.
+ * `moduleGraph` is read only after the routes-dir check: Vite's getter can
+ * print a future-deprecation warning, and non-routing apps never need it.
+ */
+interface RoutesDevServer {
+  moduleGraph: {
+    getModuleById(id: string): object | null | undefined;
+    invalidateModule(mod: object): void;
+  };
+}
+
+/**
+ * File-system routing hooks (ADR 0019, 0032, 0033, 0044). Inert when the
+ * `routes` option is absent, so `purity()` can call it unconditionally.
+ */
+function createRoutesWiring(opt: PurityPluginOptions['routes']) {
+  const routesOpts = normaliseRoutesOption(opt);
+  // Resolved at configResolved time once Vite tells us the project root.
+  let routesAbsDir: string | null = null;
+  let routesExt: string[] = [];
+  let virtualId = '';
+  let resolvedVirtualId = '';
+  let emitToAbs: string | null = null;
+
+  return {
+    configResolved(root: string): void {
+      if (!routesOpts) return;
+      routesAbsDir = resolvePath(root, routesOpts.dir);
+      routesExt = routesOpts.extensions ?? ['.ts', '.tsx', '.js', '.jsx'];
+      virtualId = routesOpts.virtualId ?? 'purity:routes';
+      resolvedVirtualId = '\0' + virtualId;
+      emitToAbs = routesOpts.emitTo ? resolvePath(root, routesOpts.emitTo) : null;
+    },
+
+    buildStart(ctx: unknown): void {
+      // ADR 0033 — eager manifest emit. When `emitTo` is set we regenerate
+      // the on-disk file at the start of every `vite build` / `vite dev`,
+      // regardless of whether anything imports `purity:routes` in this run.
+      // Enables consumers that bundle the emitted file outside Vite
+      // (Cloudflare Workers via wrangler, Deno deploy, custom Node entries)
+      // to drive the emit with a plain `vite build` pre-step.
+      //
+      // ADR 0044 — sibling `.d.ts` emit. Alongside the runtime `.ts` we
+      // write a per-app type declaration that augments the virtual
+      // `purity:routes` module with literal tuple types, so apps that
+      // import from `'purity:routes'` get the same strong typing as apps
+      // that import from the on-disk `.ts`.
+      if (emitToAbs === null || routesAbsDir === null) return;
+      const sources = generateManifestSources(hookContext(ctx), routesAbsDir, routesExt);
+      emitManifestFiles(emitToAbs, sources, hookWarn(ctx));
+    },
+
+    resolveId(source: string): string | null {
+      if (!routesOpts) return null;
+      if (source === virtualId) return resolvedVirtualId;
+      return null;
+    },
+
+    load(ctx: unknown, id: string): string | null {
+      if (!routesOpts || id !== resolvedVirtualId) return null;
+      // routesAbsDir is set in configResolved (always called before load).
+      const sources = generateManifestSources(hookContext(ctx), routesAbsDir as string, routesExt);
+      // ADR 0032: optional on-disk emit. Skip the write when content
+      // matches to avoid filesystem-watch loops in dev. Failures are
+      // non-fatal — virtual module still returns `source`.
+      // ADR 0044: alongside the `.ts`, write a sibling `.d.ts` so apps
+      // importing from `'purity:routes'` get the per-route typed `importFn`.
+      if (emitToAbs !== null) emitManifestFiles(emitToAbs, sources, hookWarn(ctx));
+      return sources.source;
+    },
+
+    handleHotUpdate(ctx: unknown, changedFile: string, server: RoutesDevServer): void {
+      if (!routesAbsDir) return;
+      // Only invalidate the manifest when a file under the routes dir was
+      // added / removed / renamed. In-place edits to a route module HMR
+      // through their own module graph and don't need a manifest regen.
+      // Vite calls handleHotUpdate for every change including content
+      // edits, so we discriminate on whether the file currently exists vs
+      // was tracked previously. Cheap heuristic: if the changed file is
+      // under the routes dir but the loaded manifest doesn't reference it
+      // (or references it but the file no longer exists), invalidate.
+      const file = changedFile.replace(/\\/g, '/');
+      const dir = routesAbsDir.replace(/\\/g, '/');
+      if (!file.startsWith(dir + '/')) return;
+      const moduleGraph = server.moduleGraph;
+      const mod = moduleGraph.getModuleById(resolvedVirtualId);
+      if (mod) moduleGraph.invalidateModule(mod);
+      // When `emitTo` is configured, consumers may import the on-disk
+      // file directly (ADR 0033) instead of the virtual module. In that
+      // case `load()` is never called on the virtual module after the
+      // invalidate above, so the emitted .ts/.d.ts go stale until the
+      // next full build. Re-run the emit here so the on-disk artefacts
+      // track filesystem changes regardless of which import path
+      // consumers use.
+      if (emitToAbs !== null) {
+        const sources = generateManifestSources(hookContext(ctx), routesAbsDir, routesExt);
+        emitManifestFiles(emitToAbs, sources, hookWarn(ctx));
+      }
+    },
+  };
+}
+
+/**
+ * The `transform` hook: server-module strip (ADR 0018), asset checks,
+ * serverAction body strip (ADR 0043), then the `html` template AOT pass.
+ */
+function transformModule(
+  ctx: unknown,
+  code: string,
+  id: string,
+  ssr: boolean,
+  settings: TransformSettings,
+) {
+  const { strictAot, hydratable, extensions, stripServerModules, stripServerActions } = settings;
+  // Strip *.server.{ts,js,tsx,jsx} modules from client builds (ADR 0018).
+  // Server builds (`ssr`) pass through unchanged
+  // so handler bodies still execute on the server. Runs BEFORE the
+  // extension filter so the regex (which tolerates Vite query-string
+  // suffixes like `?import`, `?worker`, `?url`) is the source of truth.
+  if (stripServerModules && !ssr && isServerOnlyId(id)) {
+    rejectServerAsset(id);
+    return {
+      code:
+        '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\n' +
+        'export {};\n',
+      map: null,
+    };
+  }
+  if (stripServerModules && !ssr) checkAssetReferences(code, id);
+
+  // Security boundaries apply even to framework paths. Only skip actual
+  // framework directories when compiling templates, not consumer lookalikes.
+  if (isFrameworkInternal(id)) return null;
+
+  // Match plugin extension filter (also tolerates Vite query suffixes
+  // by stripping ?xxx before the suffix check).
+  const cleanId = id.split('?')[0]!;
+  if (!extensions.some((ext) => cleanId.endsWith(ext))) return null;
+
+  // ADR 0043 — smart serverAction body stripping. Runs in client builds
+  // only and only on files that pass the cheap precheck (mention both
+  // `@purityjs/core` and `serverAction`). Returns null when nothing to
+  // do, in which case we fall through to the html`` template pass.
+  let workingCode = code;
+  let rewritten = false;
+  if (stripServerActions && !ssr) {
+    const stripped = stripServerActionBodies(workingCode, id);
+    if (stripped !== null) {
+      workingCode = stripped.code;
+      rewritten = true;
+    }
+  }
+
+  if (!workingCode.includes('html`')) {
+    if (!rewritten) return null;
+    // Preprocessing shifted source positions relative to the
+    // original file. Returning `map: null` would let consumers fall
+    // back to an identity map against the *rewritten* code, breaking
+    // stack traces inside this file. Emit an empty-mappings v3 map
+    // that still carries `sourcesContent` so downstream tools at least
+    // know not to treat the output as 1:1.
+    return { code: workingCode, map: emptyV3Map(id, code) };
+  }
+
+  const result = compileTemplates(workingCode, id, ssr, strictAot, hydratable);
+
+  // Surface compile failures: prefer the Rollup/Vite plugin context
+  // (yields a proper warning in the dev overlay + build log) and fall
+  // back to console.warn when called outside Vite (unit tests). Emitted
+  // regardless of `changed` so a file containing only broken templates
+  // still reports the failure.
+  if (strictAot && result.warnings.length > 0) {
+    // Preprocessing can insert imports or remove server-action bodies.
+    // Recompile the original only on failure to recover source locations,
+    // without rejecting templates removed from a successful client pass.
+    const originalWarnings = rewritten
+      ? compileTemplates(code, id, ssr, true, hydratable).warnings
+      : result.warnings;
+    throw new Error(
+      (originalWarnings.length > 0 ? originalWarnings : result.warnings).join('\n') +
+        '\n[purity] strictAot requires every template to compile. Fix the template or module syntax reported above; use strictAot: false only if runtime compilation is intended.',
+    );
+  }
+  const warn = hookWarn(ctx);
+  for (const w of result.warnings) warn(w);
+
+  if (!result.changed) {
+    if (rewritten) return { code: workingCode, map: emptyV3Map(id, code) };
+    return null;
+  }
+  return { code: result.code, map: result.map };
 }
 
 // Check the owner of the rendered module, including symlinked packages and

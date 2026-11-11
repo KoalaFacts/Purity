@@ -6,6 +6,7 @@ import {
   renderToStream,
   renderToString,
 } from '@purityjs/ssr';
+import { type BoundaryScheduler, boundaryConcurrency } from '@purityjs/ssr/concurrency';
 
 import { type Equal, expectType } from './expect';
 
@@ -31,3 +32,12 @@ const stream = renderToStream(app, { signal: new AbortController().signal });
 expectType<Equal<typeof stream, ReadableStream<Uint8Array>>>();
 // @ts-expect-error signal must be an AbortSignal
 renderToStream(app, { signal: true });
+
+// Opt-in boundary scheduler from @purityjs/ssr/concurrency (ADR 0062).
+const scheduler = boundaryConcurrency(2);
+expectType<Equal<typeof scheduler, BoundaryScheduler>>();
+renderToStream(app, { boundaries: scheduler });
+// @ts-expect-error the limit is a number
+boundaryConcurrency('2');
+// @ts-expect-error boundaries takes a scheduler, not a count
+renderToStream(app, { boundaries: 2 });

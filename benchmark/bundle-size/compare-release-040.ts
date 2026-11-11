@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 import { build, type Plugin } from 'vite';
-import { chromium, firefox, webkit } from 'playwright';
+import { chromium, firefox, webkit } from '../tools/playwright-engines.ts';
 import { purity as currentPlugin } from '../../packages/vite-plugin/dist/index.js';
 
 // Install the published packages in this ignored directory before measuring.

@@ -8,7 +8,7 @@
 // settles (commit, rejection or owner disposal).
 // ---------------------------------------------------------------------------
 
-import { batch, getCurrentContext, type StateAccessor, untracked } from '@purityjs/signals';
+import { batch, getCurrentContext, state, type StateAccessor, untracked } from '@purityjs/signals';
 
 /** Passed to the {@link transaction} callback. */
 export interface Transaction {
@@ -36,6 +36,18 @@ interface Overlay {
 type Target = StateAccessor<any>;
 
 const overlays = new Map<Target, Overlay>();
+const running = state(0);
+
+/**
+ * Number of transactions that have started and not yet settled (tracked).
+ * It drops in the same batch as the settling transaction's commit, so a
+ * reader never sees the count fall before the committed values.
+ *
+ * ```ts
+ * html`<button ?disabled=${() => pendingTransactions() > 0}>Save</button>`;
+ * ```
+ */
+export const pendingTransactions = (): number => running();
 
 // A write made directly to an overlaid signal becomes its new base.
 const adopt = (target: Target, entry: Overlay): void => {
@@ -108,6 +120,7 @@ export function transaction<R>(fn: (tx: Transaction) => R | PromiseLike<R>): Pro
     if (settled) return false;
     settled = true;
     batch(() => {
+      running.set(running.peek() - 1);
       drop(key, shownOn);
       if (commit && staged) for (const [target, value] of staged) write(target, value);
     });
@@ -133,6 +146,7 @@ export function transaction<R>(fn: (tx: Transaction) => R | PromiseLike<R>): Pro
     signal: controller.signal,
   };
 
+  running.set(running.peek() + 1);
   return new Promise<R>((resolve, reject) => {
     const ctx = getCurrentContext();
     if (ctx) {

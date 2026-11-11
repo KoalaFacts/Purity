@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import historicalV5 from './evidence/2026-10-30-architecture-redesign/before.json' with { type: 'json' };
 import historicalV7 from './evidence/2026-10-30-architecture-redesign/budget-baseline.json' with { type: 'json' };
+import frozenV7Budgets22 from './evidence/2026-11-06-v7-22-packages/budgets.json' with { type: 'json' };
 import v4Budgets from './budgets-v4.json' with { type: 'json' };
 import legacyBudgets from './budgets-v3.json' with { type: 'json' };
 
@@ -186,6 +187,76 @@ const packageNamesV7 = [
   'runtime-all',
   'ssr',
 ];
+const currentPackageNamesV7 = [...packageNamesV7, 'core-forms-lifecycle'];
+const latestPackageNamesV7 = [...currentPackageNamesV7, 'core-async'];
+const packageNamesV7_24 = [...latestPackageNamesV7, 'core-store'];
+const packageNamesV7_25 = [...packageNamesV7_24, 'core-boundary'];
+const packageNamesV7_26 = [...packageNamesV7_25, 'core-loading'];
+const packageNamesV7_27 = [...packageNamesV7_26, 'core-transaction'];
+const packageNamesV7_28 = [...packageNamesV7_27, 'core-owner'];
+const packageNamesV7_29 = [...packageNamesV7_28, 'ssr-concurrency'];
+// Frozen, explicit v7 identities. Future producer expansion must add a reviewed
+// contract rather than silently making previous CI reports incomparable.
+const frozenV7Budgets23 = {
+  ...frozenV7Budgets22,
+  packages: {
+    ...frozenV7Budgets22.packages,
+    'core-async': { gzipBytes: 640, brotliBytes: 576 },
+  },
+};
+const frozenV7Budgets24 = {
+  ...frozenV7Budgets23,
+  packages: {
+    ...frozenV7Budgets23.packages,
+    'core-store': { gzipBytes: 1024, brotliBytes: 960 },
+  },
+};
+const frozenV7Budgets25 = {
+  ...frozenV7Budgets24,
+  packages: {
+    ...frozenV7Budgets24.packages,
+    'core-boundary': { gzipBytes: 1344, brotliBytes: 1216 },
+  },
+};
+const frozenV7Budgets26 = {
+  ...frozenV7Budgets25,
+  packages: {
+    ...frozenV7Budgets25.packages,
+    'core-loading': { gzipBytes: 1472, brotliBytes: 1344 },
+  },
+};
+const frozenV7Budgets27 = {
+  ...frozenV7Budgets26,
+  packages: {
+    ...frozenV7Budgets26.packages,
+    'core-transaction': { gzipBytes: 768, brotliBytes: 704 },
+  },
+};
+const frozenV7Budgets28 = {
+  ...frozenV7Budgets27,
+  packages: {
+    ...frozenV7Budgets27.packages,
+    'core-owner': { gzipBytes: 576, brotliBytes: 512 },
+  },
+};
+const frozenV7Budgets29 = {
+  ...frozenV7Budgets28,
+  packages: {
+    ...frozenV7Budgets28.packages,
+    'ssr-concurrency': { gzipBytes: 448, brotliBytes: 384 },
+  },
+};
+const approvedV7Contracts = [
+  { budgets: historicalV7.budgets, packages: packageNamesV7 },
+  { budgets: frozenV7Budgets22, packages: currentPackageNamesV7 },
+  { budgets: frozenV7Budgets23, packages: latestPackageNamesV7 },
+  { budgets: frozenV7Budgets24, packages: packageNamesV7_24 },
+  { budgets: frozenV7Budgets25, packages: packageNamesV7_25 },
+  { budgets: frozenV7Budgets26, packages: packageNamesV7_26 },
+  { budgets: frozenV7Budgets27, packages: packageNamesV7_27 },
+  { budgets: frozenV7Budgets28, packages: packageNamesV7_28 },
+  { budgets: frozenV7Budgets29, packages: packageNamesV7_29 },
+];
 const profileNamesV4 = [...profileNames, 'counter-client-runtime', 'counter-client-aot'];
 const profileNamesV5 = [
   ...profileNamesV4,
@@ -284,24 +355,28 @@ function validateReportContract(report: Report, label: string) {
         'Original Brotli budget missing or changed: ' + name,
       );
     }
-  assert.equal(
-    normalized(report.budgets),
-    normalized(
-      report.schemaVersion === 7
-        ? historicalV7.budgets
-        : report.schemaVersion === 5
-          ? historicalV5.budgets
-          : expanded
-            ? v4Budgets
-            : legacyBudgets,
-    ),
+  // Historical v7 results and current v7 results have different approved
+  // budget inventories. Never substitute one for another mid-comparison:
+  // compareSizeReports still requires identical base/candidate budgets.
+  const v7Contract =
+    report.schemaVersion === 7
+      ? approvedV7Contracts.find(
+          (contract) => normalized(report.budgets) === normalized(contract.budgets),
+        )
+      : undefined;
+  const frozenBudgets =
+    report.schemaVersion === 7
+      ? approvedV7Contracts.map((contract) => contract.budgets)
+      : [report.schemaVersion === 5 ? historicalV5.budgets : expanded ? v4Budgets : legacyBudgets];
+  assert(
+    frozenBudgets.some((value) => normalized(report.budgets) === normalized(value)),
     'Missing or changed v' + report.schemaVersion + ' budgets: ' + label,
   );
   assert(Array.isArray(report.packages), 'Missing package entries: ' + label);
   assert(Array.isArray(report.measurements), 'Missing application profiles: ' + label);
   coverage(
     [...unique(report.packages, 'entry').keys()],
-    report.schemaVersion === 7 ? packageNamesV7 : expanded ? packageNamesV4 : packageNames,
+    report.schemaVersion === 7 ? v7Contract!.packages : expanded ? packageNamesV4 : packageNames,
     label + '/packages',
     report.schemaVersion,
   );

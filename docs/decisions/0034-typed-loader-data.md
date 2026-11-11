@@ -100,8 +100,10 @@ want strong types should:
    './.purity/routes.ts'` instead of `from 'purity:routes'`.
 
 The runtime behaviour is identical — the emitted file's content IS
-the virtual module's content (per ADR 0032). The choice is purely a
-typing one.
+the virtual module's content (per ADR 0032), plus `as const` on each
+export of a TypeScript emit (added 2026-11-08: without it `pattern`
+widened to `string` and `LoaderDataOf` resolved to `undefined`). The
+choice is purely a typing one.
 
 ### Layout / 404 / error-boundary entries
 

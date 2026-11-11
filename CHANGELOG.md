@@ -4,6 +4,17 @@
 
 ### Added
 
+- `pendingTransactions()` from `@purityjs/core/transaction`
+  ([ADR 0059](./docs/decisions/0059-async-transaction.md) slice 2): the
+  tracked number of running transactions, falling in the same batch as each
+  commit or rollback. `core-transaction` stays inside its budget.
+
+- `asyncCompute(fn)` accepts `AsyncIterable` results
+  ([ADR 0054](./docs/decisions/0054-async-derivation.md) slice 2): each yielded
+  value becomes current, `pending()` is `true` until the first one, rejections
+  become the outcome, and a superseded or disposed run drops later values and
+  closes its iterator. `core-async` stays inside its budget.
+
 - `__purity_inspect__` nodes carry `owner` (component tag path, outermost
   first) and, after `__purity_inspect__.captureSources(true)`, `source` (the
   creation stack frame) in development builds
@@ -16,6 +27,15 @@
   it (released at once if that owner is already gone or being released), and create detached
   owners whose `dispose` releases them exactly once. New bundle budget
   `core-owner`.
+- `boundaryConcurrency(n)` in the new opt-in entry `@purityjs/ssr/concurrency`
+  ([ADR 0062](./docs/decisions/0062-independent-boundary-progress.md)), passed
+  as the new `boundaries` option of `renderToStream()` /
+  `renderToStreamResponse()`: up to `n` deferred `suspense()` views render
+  at once and each chunk is flushed as soon as its view settles, so a fast
+  region no longer waits for a slow sibling declared before it. Views still
+  start only on consumer demand, so at most `n` rendered chunks are buffered.
+  Without it the stream keeps declaration order. New bundle budget
+  `ssr-concurrency`.
 - `transaction(fn)` in the new opt-in entry `@purityjs/core/transaction`
   ([ADR 0059](./docs/decisions/0059-async-transaction.md)): writes staged with
   `tx.set()` are applied in one batch when the async work resolves and
@@ -87,6 +107,13 @@
   flagged `hasLoader: true`, so the router runs it; before, the line-anchored
   scan missed it and the loader never ran. Detection now uses the module's
   static exports via `oxc-parser` (ADR 0022 amended).
+- `@purityjs/vite-plugin`: the on-disk `routes.ts` written for a TypeScript
+  `emitTo` path is const-asserted, so `import { routes } from
+  './.purity/routes.ts'` keeps literal patterns and `hasLoader` flags.
+  Before, `pattern` widened to `string`, `LoaderDataOf<'/users/:id', typeof
+  routes>` was `undefined`, and `asyncRoute(routes[i], …)` failed under
+  `exactOptionalPropertyTypes` (ADR 0032 amended, ADR 0034). The virtual
+  module and non-TypeScript emit paths are unchanged.
 - `@purityjs/vite-plugin` declarations compile without Node types. The built
   `index.d.ts` named Node's global `Buffer`, so a client tsconfig without
   `@types/node` and with `skipLibCheck: false` failed with TS2591 as soon as

@@ -271,6 +271,11 @@ const packageEntries = [
     dist: 'packages/core/dist/',
   },
   { name: 'ssr-runtime', specifier: '@purityjs/ssr/runtime', dist: 'packages/ssr/dist/' },
+  {
+    name: 'ssr-concurrency',
+    specifier: '@purityjs/ssr/concurrency',
+    dist: 'packages/ssr/dist/',
+  },
   { name: 'runtime-all', specifier: '@purityjs/core', dist: 'packages/core/dist/' },
   { name: 'ssr', specifier: '@purityjs/ssr', dist: 'packages/ssr/dist/' },
 ];

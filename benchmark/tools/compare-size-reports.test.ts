@@ -1,5 +1,10 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import currentBudgets from '../bundle-size/budgets-v4.json' with { type: 'json' };
 import clientBudgets from '../bundle-size/budgets.json' with { type: 'json' };
+import frozenV7Budgets22 from '../bundle-size/evidence/2026-11-06-v7-22-packages/budgets.json' with { type: 'json' };
 import historicalV5 from '../bundle-size/evidence/2026-10-30-architecture-redesign/before.json' with { type: 'json' };
 import historicalV7 from '../bundle-size/evidence/2026-10-30-architecture-redesign/budget-baseline.json' with { type: 'json' };
 import budgets from '../bundle-size/budgets-v3.json' with { type: 'json' };
@@ -529,5 +534,198 @@ it.each(['rawBytes', 'gzipBytes', 'brotliBytes'] as const)(
     const result = compareSizeReports(base, next);
     expect(result.appGrowth.map((row) => row.name)).toContain('controls-csr-aot');
     expect(result.chunkGrowth.map((row) => row.name)).toContain('controls-csr-aot/entry.js');
+  },
+);
+
+// Synthetic contract fixtures, not production measurements. Exercise the whole CLI.
+function currentSplitExample() {
+  const { base } = splitPackageExamples();
+  const current = { ...base, budgets: structuredClone(frozenV7Budgets22) };
+  current.packages.push({
+    entry: 'core-forms-lifecycle',
+    functionConstructorCalls: 0,
+    rawBytes: 100,
+    gzipBytes: 50,
+    brotliBytes: 40,
+  });
+  return current;
+}
+
+function latestSplitExample() {
+  const current = currentSplitExample();
+  const latest = {
+    ...current,
+    budgets: {
+      ...structuredClone(frozenV7Budgets22),
+      packages: {
+        ...structuredClone(frozenV7Budgets22.packages),
+        'core-async': { gzipBytes: 640, brotliBytes: 576 },
+      },
+    },
+  };
+  latest.packages.push({
+    entry: 'core-async',
+    functionConstructorCalls: 0,
+    rawBytes: 100,
+    gzipBytes: 50,
+    brotliBytes: 40,
+  });
+  return latest;
+}
+
+// Exercise post-23-entry schemas from immutable contracts, not mutable budgets.json.
+function extendedSplitExamples() {
+  let prior = latestSplitExample();
+  const additions = [
+    ['core-store', 1024, 960],
+    ['core-boundary', 1344, 1216],
+    ['core-loading', 1472, 1344],
+    ['core-transaction', 768, 704],
+    ['core-owner', 576, 512],
+  ] as const;
+  return additions.map(([entry, gzipBytes, brotliBytes]) => {
+    const next = structuredClone(prior);
+    Object.assign(next.budgets.packages, { [entry]: { gzipBytes, brotliBytes } });
+    next.packages.push({
+      entry,
+      functionConstructorCalls: 0,
+      rawBytes: 100,
+      gzipBytes: 50,
+      brotliBytes: 40,
+    });
+    prior = next;
+    return next;
+  });
+}
+
+function approvedV7Examples() {
+  return [
+    splitPackageExamples().base,
+    currentSplitExample(),
+    latestSplitExample(),
+    ...extendedSplitExamples(),
+  ];
+}
+
+function compareCLI(base: unknown, candidate: unknown) {
+  const dir = mkdtempSync(join(tmpdir(), 'purity-size-contract-'));
+  try {
+    const paths = ['base', 'candidate'].map((name, index) => {
+      const path = join(dir, name + '.json');
+      writeFileSync(path, JSON.stringify(index === 0 ? base : candidate));
+      return path;
+    });
+    return spawnSync(
+      process.execPath,
+      [
+        join(import.meta.dirname, '../bundle-size/compare-reports.ts'),
+        ...paths,
+        '--reject-app-growth',
+      ],
+      { encoding: 'utf8' },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+it('CLI pairs frozen 21 through 28 entry inventories with their exact v7 budgets', () => {
+  const approved = approvedV7Examples();
+  for (const base of approved) {
+    const result = compareCLI(base, base);
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Application payload regressions: 0 / 17');
+  }
+  for (let i = 1; i < approved.length; i++) {
+    const older = approved[i - 1];
+    const newer = approved[i];
+    const result = compareCLI(older, newer);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('INCOMPARABLE: changed budgets');
+  }
+});
+
+it('pins current 28-entry budgets independently of historical budget contracts', () => {
+  const baseline = approvedV7Examples().at(-1)!;
+  expect(Object.keys(clientBudgets.packages)).toHaveLength(28);
+  expect(clientBudgets).toEqual(baseline.budgets);
+  expect(compareSizeReports(baseline, structuredClone(baseline)).packages).toHaveLength(28);
+
+  const tampered = latestSplitExample();
+  tampered.budgets.packages['core-async'].brotliBytes++;
+  expect(() => compareSizeReports(tampered, structuredClone(tampered))).toThrow(
+    /Missing or changed v7 budgets/,
+  );
+  const missing = latestSplitExample();
+  missing.packages = missing.packages.filter((row) => row.entry !== 'core-async');
+  expect(() => compareSizeReports(missing, structuredClone(missing))).toThrow(
+    /Incomplete v7 coverage/,
+  );
+});
+
+it('rejects missing and budget-tampered entries for every additional v7 schema', () => {
+  for (const current of extendedSplitExamples()) {
+    const missing = structuredClone(current);
+    missing.packages.pop();
+    expect(() => compareSizeReports(missing, structuredClone(missing))).toThrow(
+      /Incomplete v7 coverage/,
+    );
+    const altered = structuredClone(current);
+    const entry = current.packages.at(-1)!.entry;
+    const packageBudgets = altered.budgets.packages as Record<
+      string,
+      { gzipBytes: number; brotliBytes: number }
+    >;
+    packageBudgets[entry].brotliBytes++;
+    expect(() => compareSizeReports(altered, structuredClone(altered))).toThrow(
+      /Missing or changed v7 budgets/,
+    );
+  }
+});
+
+it('CLI rejects missing current/latest entries, unknown historical packages and altered budgets', () => {
+  const missing = currentSplitExample();
+  missing.packages = missing.packages.filter((row) => row.entry !== 'core-forms-lifecycle');
+  const missingAsync = latestSplitExample();
+  missingAsync.packages = missingAsync.packages.filter((row) => row.entry !== 'core-async');
+  const extra = splitPackageExamples().base;
+  extra.packages.push({ ...extra.packages[0], entry: 'unknown-package' });
+  for (const base of [missing, missingAsync, extra]) {
+    const result = compareCLI(base, base);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Incomplete v7 coverage: baseline/packages');
+  }
+  for (const base of approvedV7Examples()) {
+    base.budgets.packages.core.gzipBytes++;
+    const result = compareCLI(base, base);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Missing or changed v7 budgets');
+  }
+});
+
+it.each(['rawBytes', 'gzipBytes', 'brotliBytes'] as const)(
+  'CLI still rejects v7 app and compensated required-chunk %s growth',
+  (metric) => {
+    for (const base of [
+      splitPackageExamples().base,
+      latestSplitExample(),
+      approvedV7Examples().at(-1)!,
+    ]) {
+      for (const compensated of [false, true]) {
+        const next = structuredClone(base);
+        next.measurements[0].chunks[1][metric]++;
+        if (compensated) next.measurements[0].chunks[0][metric]--;
+        else next.measurements[0][metric]++;
+        const result = compareCLI(base, next);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain(
+          compensated ? 'Individual JS chunk payload grew' : 'Same-function app JS payload grew',
+        );
+      }
+      const hidden = structuredClone(base);
+      hidden.measurements[0].chunks.pop();
+      expect(compareCLI(base, hidden).stderr).toContain('Unaccounted JS chunk bytes');
+    }
   },
 );

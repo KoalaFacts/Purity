@@ -395,8 +395,14 @@ function markDirty(observers: ComputedNode[]): void {
 // pass. Pushing children in reverse index order preserves the same
 // pre-order visitation (and thus pendingEffects push order) the old
 // recursive version produced.
+//
+// The stack is module-level and reused: no user code runs inside markCheck,
+// so it cannot re-enter, and every call drains it to length 0, so it holds
+// no node after it returns. This keeps a write that reaches a computed from
+// allocating a fresh array (CQ-12).
+const checkStack: ComputedNode[] = [];
 function markCheck(observers: ComputedNode[]): void {
-  const stack: ComputedNode[] = [];
+  const stack = checkStack;
   for (let i = observers.length - 1; i >= 0; i--) stack.push(observers[i]);
   while (stack.length > 0) {
     const o = stack.pop()!;

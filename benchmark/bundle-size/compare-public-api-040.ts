@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
-import { chromium, firefox, webkit } from 'playwright';
+import { chromium, firefox, webkit } from '../tools/playwright-engines.ts';
 import { build } from 'vite';
 
 const root = resolve(import.meta.dirname, '../..');

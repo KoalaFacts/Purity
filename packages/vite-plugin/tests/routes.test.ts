@@ -322,6 +322,12 @@ describe('detectLoaderExport — recognising named loader exports (ADR 0022)', (
     expect(detectLoaderExport("export { load as loader } from './data.ts';")).toBe(true);
   });
 
+  it('ignores a type-only export named loader', () => {
+    expect(detectLoaderExport("export type { loader } from './data.ts';")).toBe(false);
+    expect(detectLoaderExport('export type loader = () => Promise<void>;')).toBe(false);
+    expect(detectLoaderExport('export interface loader { id: string }')).toBe(false);
+  });
+
   it('ignores `export const loader` text inside a string', () => {
     expect(detectLoaderExport('export const doc = `\nexport const loader = 1;\n`;')).toBe(false);
   });
@@ -845,6 +851,73 @@ describe('purity({ routes }) — Vite plugin integration', () => {
     }
   });
 
+  it('keeps route state per plugin instance (two roots, custom virtual id, no routes)', () => {
+    const a = makeTmpPages({ 'pages/alpha.ts': '// a' });
+    const b = makeTmpPages({ 'views/beta.ts': '// b' });
+    try {
+      type Hooks = {
+        configResolved: (c: { root: string }) => void;
+        resolveId: (s: string) => string | null;
+        load: (id: string) => string | null;
+      };
+      const pa = purity({ strictAot: false, routes: { dir: 'pages' } }) as unknown as Hooks;
+      const pb = purity({
+        strictAot: false,
+        routes: { dir: 'views', virtualId: 'app:routes' },
+      }) as unknown as Hooks;
+      const none = purity({ strictAot: false }) as unknown as Hooks;
+      pa.configResolved({ root: a.root });
+      pb.configResolved({ root: b.root });
+      none.configResolved({ root: a.root });
+      expect(pa.resolveId('purity:routes')).toBe('\0purity:routes');
+      expect(pa.resolveId('app:routes')).toBeNull();
+      expect(pb.resolveId('app:routes')).toBe('\0app:routes');
+      expect(pb.resolveId('purity:routes')).toBeNull();
+      expect(none.resolveId('purity:routes')).toBeNull();
+      expect(none.load('\0purity:routes')).toBeNull();
+      const srcA = pa.load('\0purity:routes') as string;
+      const srcB = pb.load('\0app:routes') as string;
+      expect(srcA).toContain('pattern: "/alpha"');
+      expect(srcA).not.toContain('/beta');
+      expect(srcB).toContain('pattern: "/beta"');
+      expect(srcB).not.toContain('/alpha');
+      expect(pb.load('\0purity:routes')).toBeNull();
+    } finally {
+      a.cleanup();
+      b.cleanup();
+    }
+  });
+
+  it('handleHotUpdate reads server.moduleGraph only for files under the routes dir', () => {
+    const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
+    try {
+      let reads = 0;
+      const server = {
+        get moduleGraph() {
+          reads++;
+          return { getModuleById: () => null, invalidateModule: () => {} };
+        },
+      };
+      type Hooks = {
+        configResolved: (c: { root: string }) => void;
+        handleHotUpdate: (c: { file: string; server: typeof server }) => void;
+      };
+      const none = purity({ strictAot: false }) as unknown as Hooks;
+      none.configResolved({ root });
+      none.handleHotUpdate({ file: join(root, 'pages/new.ts'), server });
+      // Hosts that pass no dev server at all stay a no-op without routes.
+      (none.handleHotUpdate as (c: { file: string }) => void)({ file: join(root, 'a.ts') });
+      const withRoutes = purity({ strictAot: false, routes: { dir: 'pages' } }) as unknown as Hooks;
+      withRoutes.configResolved({ root });
+      withRoutes.handleHotUpdate({ file: join(root, 'src/other.ts'), server });
+      expect(reads).toBe(0);
+      withRoutes.handleHotUpdate({ file: join(root, 'pages/new.ts'), server });
+      expect(reads).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
+
   it('returns an empty manifest when the routes dir does not exist', () => {
     const { root, cleanup } = makeTmpPages({});
     try {
@@ -1147,7 +1220,8 @@ describe('purity({ routes: { emitTo } }) — on-disk manifest emit (ADR 0032)', 
 
       const emittedPath = join(root, '.purity/routes.ts');
       expect(existsSync(emittedPath)).toBe(true);
-      expect(readFileSync(emittedPath, 'utf8')).toBe(src);
+      // A `.ts` emit is the virtual source plus `as const` on each export (ADR 0034).
+      expect(readFileSync(emittedPath, 'utf8').replaceAll(' as const;', ';')).toBe(src);
     } finally {
       cleanup();
     }

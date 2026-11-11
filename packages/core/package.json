@@ -341,6 +341,156 @@
       "import": "./dist/csr/index.js",
       "require": "./dist/csr/index.cjs"
     },
+    "./store": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/store.d.ts",
+            "import": "./dist/store/index.js",
+            "require": "./dist/store/index.cjs"
+          },
+          "default": "./src/store.ts"
+        },
+        "types": "./dist/store.d.ts",
+        "import": "./dist/store/index.js",
+        "require": "./dist/store/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/store.d.ts",
+          "import": "./dist/store/index.js",
+          "require": "./dist/store/index.cjs"
+        },
+        "default": "./src/store.ts"
+      },
+      "types": "./dist/store.d.ts",
+      "browser": {
+        "import": "./dist/browser/store/index.js",
+        "require": "./dist/browser/store/index.cjs"
+      },
+      "import": "./dist/store/index.js",
+      "require": "./dist/store/index.cjs"
+    },
+    "./boundary": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/boundary.d.ts",
+            "import": "./dist/boundary/index.js",
+            "require": "./dist/boundary/index.cjs"
+          },
+          "default": "./src/boundary.ts"
+        },
+        "types": "./dist/boundary.d.ts",
+        "import": "./dist/boundary/index.js",
+        "require": "./dist/boundary/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/boundary.d.ts",
+          "import": "./dist/boundary/index.js",
+          "require": "./dist/boundary/index.cjs"
+        },
+        "default": "./src/boundary.ts"
+      },
+      "types": "./dist/boundary.d.ts",
+      "browser": {
+        "import": "./dist/browser/boundary/index.js",
+        "require": "./dist/browser/boundary/index.cjs"
+      },
+      "import": "./dist/boundary/index.js",
+      "require": "./dist/boundary/index.cjs"
+    },
+    "./loading": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/loading.d.ts",
+            "import": "./dist/loading/index.js",
+            "require": "./dist/loading/index.cjs"
+          },
+          "default": "./src/loading.ts"
+        },
+        "types": "./dist/loading.d.ts",
+        "import": "./dist/loading/index.js",
+        "require": "./dist/loading/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/loading.d.ts",
+          "import": "./dist/loading/index.js",
+          "require": "./dist/loading/index.cjs"
+        },
+        "default": "./src/loading.ts"
+      },
+      "types": "./dist/loading.d.ts",
+      "browser": {
+        "import": "./dist/browser/loading/index.js",
+        "require": "./dist/browser/loading/index.cjs"
+      },
+      "import": "./dist/loading/index.js",
+      "require": "./dist/loading/index.cjs"
+    },
+    "./transaction": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/transaction.d.ts",
+            "import": "./dist/transaction/index.js",
+            "require": "./dist/transaction/index.cjs"
+          },
+          "default": "./src/transaction.ts"
+        },
+        "types": "./dist/transaction.d.ts",
+        "import": "./dist/transaction/index.js",
+        "require": "./dist/transaction/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/transaction.d.ts",
+          "import": "./dist/transaction/index.js",
+          "require": "./dist/transaction/index.cjs"
+        },
+        "default": "./src/transaction.ts"
+      },
+      "types": "./dist/transaction.d.ts",
+      "browser": {
+        "import": "./dist/browser/transaction/index.js",
+        "require": "./dist/browser/transaction/index.cjs"
+      },
+      "import": "./dist/transaction/index.js",
+      "require": "./dist/transaction/index.cjs"
+    },
+    "./owner": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/owner.d.ts",
+            "import": "./dist/owner/index.js",
+            "require": "./dist/owner/index.cjs"
+          },
+          "default": "./src/owner.ts"
+        },
+        "types": "./dist/owner.d.ts",
+        "import": "./dist/owner/index.js",
+        "require": "./dist/owner/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/owner.d.ts",
+          "import": "./dist/owner/index.js",
+          "require": "./dist/owner/index.cjs"
+        },
+        "default": "./src/owner.ts"
+      },
+      "types": "./dist/owner.d.ts",
+      "browser": {
+        "import": "./dist/browser/owner/index.js",
+        "require": "./dist/browser/owner/index.cjs"
+      },
+      "import": "./dist/owner/index.js",
+      "require": "./dist/owner/index.cjs"
+    },
     "./virtual": {
       "purity-server": {
         "development": {
@@ -370,6 +520,36 @@
       },
       "import": "./dist/virtual/index.js",
       "require": "./dist/virtual/index.cjs"
+    },
+    "./async": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/async.d.ts",
+            "import": "./dist/async/index.js",
+            "require": "./dist/async/index.cjs"
+          },
+          "default": "./src/async.ts"
+        },
+        "types": "./dist/async.d.ts",
+        "import": "./dist/async/index.js",
+        "require": "./dist/async/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/async.d.ts",
+          "import": "./dist/async/index.js",
+          "require": "./dist/async/index.cjs"
+        },
+        "default": "./src/async.ts"
+      },
+      "types": "./dist/async.d.ts",
+      "browser": {
+        "import": "./dist/browser/async/index.js",
+        "require": "./dist/browser/async/index.cjs"
+      },
+      "import": "./dist/async/index.js",
+      "require": "./dist/async/index.cjs"
     },
     "./hydration-bridge": {
       "purity-server": {
@@ -408,6 +588,7 @@
   "scripts": {
     "build": "vp build && vp build -c vite.browser.config.ts && tsc --emitDeclarationOnly",
     "test": "vp test run",
+    "typecheck": "tsc -p tsconfig.tests.json",
     "bench": "vp test bench --run"
   },
   "dependencies": {

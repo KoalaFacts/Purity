@@ -148,11 +148,98 @@ const nodeFinalization: FinalizationRegistry<WeakRef<AnyNode>> | null =
       })
     : null;
 
+// Development-only attribution (ADR 0061). Owner paths are snapshots of
+// component names, shared per component instance, so a node never keeps its
+// owner context (and that context's DOM) alive. Source capture is off until
+// `__purity_inspect__.captureSources(true)`: each creation then pays for one
+// `new Error().stack`.
+const nodeOwners: WeakMap<AnyNode, readonly string[]> | null = __DEV__ ? new WeakMap() : null;
+const ownerPaths: WeakMap<ComponentContext, readonly string[]> | null = __DEV__
+  ? new WeakMap()
+  : null;
+const nodeSources: WeakMap<AnyNode, string> | null = __DEV__ ? new WeakMap() : null;
+let captureSources = false;
+// Frames from Purity and other dependencies are skipped; the first other
+// frame is the creation site. Matched by path (`node_modules`, Vite's
+// `.vite/deps` chunks, `@purityjs/…`, this repo's `packages/<name>/{src,dist}`)
+// and by this module's own file URL, which covers bundles that inline Purity
+// under another name.
+const FRAMEWORK_FRAME =
+  /[\\/]node_modules[\\/]|[\\/]\.vite[\\/]deps[\\/]|@purityjs[\\/_]|[\\/]packages[\\/](?:signals|core|compiler|ssr|router|platform)[\\/](?:src|dist)[\\/]/;
+const FRAME_FILE = /(?:\(|@|^at\s+)([^\s()]+?):\d+(?::\d+)?\)?$/;
+const frameFile = (line: string): string | undefined => FRAME_FILE.exec(line.trim())?.[1];
+// The first stack line with a file is this module (V8 prints an `Error`
+// header line first, Firefox and Safari do not).
+const firstFile = (stack: string | undefined): string | undefined => {
+  const lines = stack === undefined ? [] : stack.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const file = frameFile(lines[i]);
+    if (file !== undefined) return file;
+  }
+  return undefined;
+};
+const ownFile: string | undefined = __DEV__ ? firstFile(new Error().stack) : undefined;
+
+interface InspectHost {
+  localName?: string;
+  getRootNode?: () => { host?: InspectHost };
+}
+
+// Walks owner links from the creating context outwards. A custom element
+// contributes its composed shadow-host chain (connectedCallback runs outside
+// the parent's render, so its parent link is not the DOM parent) and ends the
+// walk; other owners (factory-called components, boundaries) are `#owner`,
+// and a mount()/hydrate() root is `#root`.
+function ownerPathOf(ctx: ComponentContext): readonly string[] {
+  let path = ownerPaths!.get(ctx);
+  if (path !== undefined) return path;
+  const names: string[] = [];
+  for (let c: ComponentContext | null | undefined = ctx; c; c = c.parent) {
+    let host = (c._shadowRoot as { host?: InspectHost } | undefined)?.host;
+    if (host?.localName !== undefined) {
+      for (let depth = 0; host?.localName !== undefined && depth < 64; depth++) {
+        names.push(host.localName);
+        host = host.getRootNode?.().host;
+      }
+      break;
+    }
+    names.push(c._rootContainer !== undefined ? '#root' : '#owner');
+  }
+  path = names.reverse();
+  ownerPaths!.set(ctx, path);
+  return path;
+}
+
+function creationSite(): string | undefined {
+  // V8 keeps 10 frames by default; deep creation stacks (a watch inside a
+  // template binding inside each()) would cut the user's frame off.
+  const V8Error = Error as { stackTraceLimit?: number };
+  const limit = V8Error.stackTraceLimit;
+  if (limit !== undefined) V8Error.stackTraceLimit = 64;
+  const stack = new Error().stack;
+  if (limit !== undefined) V8Error.stackTraceLimit = limit;
+  if (stack === undefined) return undefined;
+  const lines = stack.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (frameFile(line) === undefined || FRAMEWORK_FRAME.test(line)) continue;
+    if (ownFile !== undefined && frameFile(line) === ownFile) continue;
+    return line.replace(/^at\s+/, '');
+  }
+  return undefined;
+}
+
 function trackNode(node: AnyNode): void {
   if (trackedNodes === null) return;
   const ref = new WeakRef(node);
   trackedNodes.add(ref);
   nodeFinalization?.register(node, ref);
+  const owner = getCurrentComponent();
+  if (owner !== null) nodeOwners!.set(node, ownerPathOf(owner));
+  if (captureSources) {
+    const site = creationSite();
+    if (site !== undefined) nodeSources!.set(node, site);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -308,8 +395,14 @@ function markDirty(observers: ComputedNode[]): void {
 // pass. Pushing children in reverse index order preserves the same
 // pre-order visitation (and thus pendingEffects push order) the old
 // recursive version produced.
+//
+// The stack is module-level and reused: no user code runs inside markCheck,
+// so it cannot re-enter, and every call drains it to length 0, so it holds
+// no node after it returns. This keeps a write that reaches a computed from
+// allocating a fresh array (CQ-12).
+const checkStack: ComputedNode[] = [];
 function markCheck(observers: ComputedNode[]): void {
-  const stack: ComputedNode[] = [];
+  const stack = checkStack;
   for (let i = observers.length - 1; i >= 0; i--) stack.push(observers[i]);
   while (stack.length > 0) {
     const o = stack.pop()!;
@@ -963,21 +1056,21 @@ type InferSources<S extends readonly WatchSource<any>[]> = {
  * stop(); // dispose the watcher
  * ```
  *
+ * A returned function runs as cleanup; any other return value is ignored, so
+ * expression bodies such as `() => console.log(x())` type-check.
+ *
  * @returns Dispose function — call to stop watching.
  */
-export function watch(fn: () => undefined | Dispose): Dispose;
-export function watch<T>(
-  source: WatchSource<T>,
-  cb: (value: T, oldValue: T) => undefined | Dispose,
-): Dispose;
+export function watch(fn: () => unknown): Dispose;
+export function watch<T>(source: WatchSource<T>, cb: (value: T, oldValue: T) => unknown): Dispose;
 export function watch<const S extends readonly WatchSource<any>[]>(
   sources: [...S],
-  cb: (values: InferSources<S>, oldValues: InferSources<S>) => undefined | Dispose,
+  cb: (values: InferSources<S>, oldValues: InferSources<S>) => unknown,
 ): Dispose;
 
 export function watch(
-  sourceOrFn: WatchSource<any> | WatchSource<any>[] | (() => undefined | Dispose),
-  cb?: (value: any, oldValue: any) => undefined | Dispose,
+  sourceOrFn: WatchSource<any> | WatchSource<any>[] | (() => unknown),
+  cb?: (value: any, oldValue: any) => unknown,
 ): Dispose {
   if (!cb) {
     return watchEffectInternal(sourceOrFn as () => undefined | Dispose);
@@ -1014,7 +1107,7 @@ export function watch(
     oldValues = newValues;
     newValues = tmp;
 
-    return result;
+    return result as undefined | Dispose;
   });
 }
 
@@ -1060,6 +1153,10 @@ interface InspectorNode {
   version: number;
   status?: InspectorStatus;
   value: unknown;
+  /** Component names, outermost first, of the creating component (ADR 0061). */
+  owner?: readonly string[];
+  /** Creation stack frame, recorded while `captureSources(true)` is on. */
+  source?: string;
   sources: InspectorNode[];
   observers: InspectorNode[];
 }
@@ -1088,6 +1185,11 @@ if (__DEV__) {
       observers: [],
     };
     if (n.fn !== null) out.status = INSPECTOR_STATUS_LABELS[(n as ComputedNode).status];
+    const owner = nodeOwners!.get(n);
+    // A copy: the stored path is shared by every node of that component.
+    if (owner !== undefined) out.owner = owner.slice();
+    const source = nodeSources!.get(n);
+    if (source !== undefined) out.source = source;
     seen.set(n, out);
     if (n.fn !== null) {
       const sources = (n as ComputedNode).sources;
@@ -1128,6 +1230,12 @@ if (__DEV__) {
       nodes(): InspectorNode[] {
         const seen = new Map<AnyNode, InspectorNode>();
         return inspectorLiveNodes().map((n) => toInspectorNode(n, seen));
+      },
+      captureSources(on: boolean): void {
+        if (typeof on !== 'boolean') {
+          throw new TypeError('[Purity] __purity_inspect__.captureSources() expects a boolean.');
+        }
+        captureSources = on;
       },
     };
   }

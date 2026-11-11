@@ -75,6 +75,14 @@ accept. Numbered sequentially.
 | [0051](./0051-server-control-boundary.md)        | Register server control-flow rendering at SSR entry                           | Proposed                |
 | [0052](./0052-server-resource-boundary.md)       | Register server resource handling at SSR entry                                | Proposed                |
 | [0053](./0053-ordinary-list-specialization.md)   | Compile proven ordinary list calls to a smaller runtime                       | Superseded              |
+| [0054](./0054-async-derivation.md)               | Async derivation through the reactive graph                                   | Proposed                |
+| [0055](./0055-property-store.md)                 | Add a property-granular store as an opt-in core entry                         | Proposed                |
+| [0056](./0056-error-boundary.md)                 | Client error fallback and reset boundary                                      | Proposed                |
+| [0057](./0057-loading-boundary.md)               | Client loading boundary with retained content                                 | Proposed                |
+| [0058](./0058-each-current-position.md)          | Current keyed position in each()                                              | Proposed                |
+| [0059](./0059-async-transaction.md)              | Async transactions with optimistic overlays                                   | Proposed                |
+| [0060](./0060-owner-composition.md)              | Public owner composition: getOwner, runWithOwner, root                        | Proposed                |
+| [0061](./0061-inspector-attribution.md)          | Inspector owner and source attribution                                        | Proposed                |
 
 ## Template
 

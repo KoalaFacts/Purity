@@ -116,7 +116,7 @@ describe('formControl component option', () => {
     expect(internals.setFormValue).toHaveBeenLastCalledWith('Grace');
 
     label.textContent = 'Your name';
-    await new Promise((resolve) => queueMicrotask(resolve));
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
     expect(control.getAttribute('aria-label')).toBe('Your name');
   });
 
@@ -146,13 +146,13 @@ describe('formControl component option', () => {
 
       const replacement = document.createElement('input');
       shadow.replaceChildren(replacement);
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(syncLabel).toHaveBeenCalledTimes(2);
       expect(first.hasAttribute('aria-label')).toBe(false);
       expect(replacement.getAttribute('aria-label')).toBe('External name');
 
       replacement.setAttribute('aria-labelledby', 'native-name');
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(syncLabel).toHaveBeenCalledTimes(3);
       expect(replacement.hasAttribute('aria-label')).toBe(false);
     } finally {
@@ -183,12 +183,12 @@ describe('formControl component option', () => {
       expect(syncLabel).toHaveBeenCalledTimes(1);
 
       input.setAttribute('aria-labelledby', 'native-label');
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(syncLabel).toHaveBeenCalledTimes(2);
 
       bridge.disconnect();
       input.removeAttribute('aria-labelledby');
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(syncLabel).toHaveBeenCalledTimes(2);
 
       bridge.connect();
@@ -223,13 +223,13 @@ describe('formControl component option', () => {
       const newInput = document.createElement('input');
       oldInput.remove();
       shadow.append(newInput);
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(oldInput.hasAttribute('aria-label')).toBe(false);
       expect(newInput.getAttribute('aria-label')).toBe('External name');
 
       newInput.setAttribute('aria-label', 'Authored override');
       newInput.remove();
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(newInput.getAttribute('aria-label')).toBe('Authored override');
       expect(internals.setFormValue).toHaveBeenLastCalledWith(null);
     } finally {
@@ -262,11 +262,11 @@ describe('formControl component option', () => {
       bridge.connect();
       expect(input.getAttribute('aria-label')).toBe('Host name');
       input.setAttribute('aria-labelledby', nativeLabel.id);
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(input.hasAttribute('aria-label')).toBe(false);
 
       input.removeAttribute('aria-labelledby');
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(input.getAttribute('aria-label')).toBe('Host name');
     } finally {
       bridge.disconnect();
@@ -300,12 +300,12 @@ describe('formControl component option', () => {
       shadow.append(nativeLabel);
       nativeLabel.append(input);
       expect(input.labels?.length).toBe(1);
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(input.hasAttribute('aria-label')).toBe(false);
 
       nativeLabel.replaceWith(input);
       expect(input.labels?.length).toBe(0);
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(input.getAttribute('aria-label')).toBe('Host name');
     } finally {
       bridge.disconnect();
@@ -335,12 +335,12 @@ describe('formControl component option', () => {
       expect(input.getAttribute('aria-label')).toBe('Before disconnect');
       bridge.disconnect();
       label.textContent = 'While disconnected';
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(input.getAttribute('aria-label')).toBe('Before disconnect');
       bridge.connect();
       expect(input.getAttribute('aria-label')).toBe('While disconnected');
       label.textContent = 'After reconnect';
-      await new Promise((resolve) => queueMicrotask(resolve));
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
       expect(input.getAttribute('aria-label')).toBe('After reconnect');
     } finally {
       bridge.disconnect();

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { state } from '@purityjs/signals';
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 describe(':: two-way binding', () => {
   it('binds input value to state', async () => {
@@ -11,7 +11,7 @@ describe(':: two-way binding', () => {
 
     const container = document.createElement('div');
     container.appendChild(fragment);
-    const input = container.querySelector('input');
+    const input = container.querySelector('input')!;
 
     await tick();
     expect(input.value).toBe('hello');
@@ -28,7 +28,7 @@ describe(':: two-way binding', () => {
 
     const container = document.createElement('div');
     container.appendChild(fragment);
-    const input = container.querySelector('input');
+    const input = container.querySelector('input')!;
 
     await tick();
 
@@ -45,7 +45,7 @@ describe(':: two-way binding', () => {
 
     const container = document.createElement('div');
     container.appendChild(fragment);
-    const input = container.querySelector('input');
+    const input = container.querySelector('input')!;
 
     await tick();
     expect(input.checked).toBe(false);
@@ -73,7 +73,7 @@ describe(':: two-way binding', () => {
 
     const container = document.createElement('div');
     container.appendChild(fragment);
-    const select = container.querySelector('select');
+    const select = container.querySelector('select')!;
 
     await tick();
     expect(select.value).toBe('b');

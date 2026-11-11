@@ -11,7 +11,7 @@ import { html } from '../src/compiler/compile.ts';
 import { resource } from '../src/resource.ts';
 import { getCurrentComponent, state } from '@purityjs/signals';
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 beforeAll(() => {
   // Polyfill: every ElementInternals returned by jsdom's stub gets a fresh

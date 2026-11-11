@@ -251,7 +251,7 @@ describe('action.invoke() — client-side fetch helper', () => {
   it('honors init overrides (method, headers, credentials)', async () => {
     const action = serverAction('/api/x', async () => new Response());
     const originalFetch = globalThis.fetch;
-    let captured: RequestInit | null = null;
+    let captured = null as RequestInit | null;
     globalThis.fetch = (async (_url: string, init: RequestInit) => {
       captured = init;
       return new Response();
@@ -276,7 +276,7 @@ describe('action.invoke() — client-side fetch helper', () => {
   it('passes null body through cleanly when omitted', async () => {
     const action = serverAction('/api/null', async () => new Response());
     const originalFetch = globalThis.fetch;
-    let captured: RequestInit | null = null;
+    let captured = null as RequestInit | null;
     globalThis.fetch = (async (_url: string, init: RequestInit) => {
       captured = init;
       return new Response();
@@ -452,7 +452,7 @@ describe('audit-v2: invoke() init / body coercion', () => {
     // defaults to POST when init.method is undefined.
     const action = serverAction('/api/override', async () => new Response());
     const originalFetch = globalThis.fetch;
-    let captured: RequestInit | null = null;
+    let captured = null as RequestInit | null;
     globalThis.fetch = (async (_url: string, init: RequestInit) => {
       captured = init;
       return new Response();
@@ -474,7 +474,7 @@ describe('audit-v2: invoke() init / body coercion', () => {
     // default sticky against explicit undefined.
     const action = serverAction('/api/method-default', async () => new Response());
     const originalFetch = globalThis.fetch;
-    let captured: RequestInit | null = null;
+    let captured = null as RequestInit | null;
     globalThis.fetch = (async (_url: string, init: RequestInit) => {
       captured = init;
       return new Response();

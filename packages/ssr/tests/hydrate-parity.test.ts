@@ -324,7 +324,7 @@ function eachApp(items: ReturnType<typeof state<Todo[]>>): (h: AnyHtml) => unkno
     const list = h === (ssrHtml as AnyHtml) ? eachSSR : each;
     return h`<ul>${list(
       () => items(),
-      (todo: () => Todo) => h`<li class="row">${() => todo().text}</li>`,
+      (todo: () => Todo) => h`<li class="row">${() => todo().text}</li>` as Node,
       (todo: Todo) => todo.id,
     )}</ul>`;
   };
@@ -498,7 +498,7 @@ describe('SSR → hydrate parity (each per-row reconciliation)', () => {
       const list = h === (ssrHtml as AnyHtml) ? eachSSR : each;
       return h`<ul>${list(
         () => items(),
-        (item: () => Tagged) => h`<li class="row">${() => item().label}</li>`,
+        (item: () => Tagged) => h`<li class="row">${() => item().label}</li>` as Node,
         (item: Tagged) => item.id,
       )}</ul>`;
     };
@@ -758,7 +758,7 @@ describe('SSR → hydrate parity (when/match per-case adoption)', () => {
 
   it('match(): falls back to fresh DOM when SSR key disagrees with client key', async () => {
     // SSR rendered with status="ready", client hydrates with status="error".
-    const ssrStatus: 'ready' | 'error' = 'ready';
+    const ssrStatus = 'ready' as 'ready' | 'error';
     const clientStatus = state<'ready' | 'error'>('error');
 
     const ssrOutput = await renderToString(

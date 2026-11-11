@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { batch, compute, state, watch } from '@purityjs/signals';
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 // Generous thresholds — perf tests verify O(n) behavior, not absolute speed.
 // Actual timings are logged for manual review.
@@ -74,7 +74,7 @@ describe('performance', () => {
   describe('computed propagation', () => {
     it('propagates through 1000-deep chain', () => {
       const source = state(0);
-      let current = source;
+      let current: () => number = source;
       for (let i = 0; i < 1000; i++) {
         const prev = current;
         current = compute(() => prev() + 1);
@@ -181,7 +181,7 @@ describe('performance', () => {
 
   describe('batch', () => {
     it('10k writes triggers effect once', async () => {
-      const signals = [];
+      const signals: ReturnType<typeof state<number>>[] = [];
       for (let i = 0; i < 100; i++) signals.push(state(0));
 
       let runs = 0;

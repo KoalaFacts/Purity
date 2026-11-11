@@ -55,6 +55,12 @@ The template compiler (`packages/compiler/src/`, published as `@purityjs/compile
 
 Beyond AOT compilation, the plugin keeps server code out of the browser bundle: it replaces `*.server.{ts,js,tsx,jsx}` modules with `export {};` in client builds (ADR 0018), strips inline `serverAction(url, handler)` handler bodies via `oxc-parser` in ordinary files (ADR 0043), and exposes opt-in file-system routing (`routes` option → virtual `purity:routes` module, ADR 0019) with layouts, error boundaries, data-loader detection, and a sibling `routes.d.ts` typing surface. Client SSR detection is `opts.ssr !== true`.
 
+## Verifying a change
+
+Before claiming a change works, follow `.claude/skills/verification-first/SKILL.md` and exercise the affected rows of `.claude/skills/verify-purity/SKILL.md` (built packages in headless Chromium, SSR then hydration, CLI scaffold, benchmark against Solid); keep that feature map current when a feature changes.
+
+The scheduled development task follows `.claude/skills/advance-purity/SKILL.md` (goal, gate, work order, project rules).
+
 ## Commands
 
 ```bash
@@ -63,6 +69,8 @@ npm test -w packages/core       # one package
 npm run build                   # build all packages
 npm run check                   # format check + lint (oxfmt + oxlint, --deny-warnings)
 npm run check:fix               # auto-fix formatting and lint
+npm run typecheck               # tsc over src + tests (packages with a tsconfig.tests.json)
+npm run check:declarations      # strict consumers vs built dist/*.d.ts, @ts-expect-error contracts (after build)
 
 # Single test / file (run from the package dir, e.g. packages/core):
 npx vitest run tests/resource.test.ts      # one file

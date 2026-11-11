@@ -9,6 +9,7 @@ export {
   onMount,
 } from './component.ts';
 export {
+  type EachMapFn,
   type SuspenseErrorInfo,
   type SuspenseErrorPhase,
   type SuspenseOptions,

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import { popContext, pushContext, type Scope } from '@purityjs/signals';
 import { compute, disposeScope, state, watch, type ComputedAccessor } from '@purityjs/signals';
 
-const tick = (): Promise<void> => new Promise((resolve) => queueMicrotask(resolve));
+const tick = (): Promise<void> => new Promise<void>((resolve) => queueMicrotask(resolve));
 
 describe('computed and effect node initialization', () => {
   it('keeps computes lazy and effects eager after sharing the node shape', async () => {

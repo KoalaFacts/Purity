@@ -80,7 +80,7 @@ describe('generateRouteManifestTypes — pure codegen', () => {
           filePath: 'index.ts',
           layouts: [],
           errorBoundary: { filePath: '_error.ts' },
-          hasLoader: true,
+          hasLoader: true as const,
         },
       ],
       notFoundChain: [],
@@ -274,7 +274,7 @@ describe('LoaderDataOf via virtual module — type-level integration', () => {
           pattern: '/',
           filePath: 'index.ts',
           layouts: [],
-          hasLoader: true,
+          hasLoader: true as const,
         },
       ],
       notFoundChain: [],
@@ -284,5 +284,45 @@ describe('LoaderDataOf via virtual module — type-level integration', () => {
     // pattern. Full integration is exercised by the apps/examples.
     expect(out).toContain('Extract'.length > 0 ? 'readonly pattern: "/"' : 'never');
     expect(out).toContain('readonly hasLoader: true');
+  });
+});
+
+describe('purity({ routes: { emitTo } }) — literal types in the on-disk manifest (ADR 0034)', () => {
+  function emit(emitTo: string): { root: string; cleanup: () => void; virtual: string } {
+    const tmp = makeTmpPages({
+      'pages/index.ts': 'export const loader = () => 1;',
+      'pages/_404.ts': '// 404',
+    });
+    const plugin = purity({ routes: { dir: 'pages', emitTo } });
+    (plugin as { configResolved: (c: { root: string }) => void }).configResolved({
+      root: tmp.root,
+    });
+    const resolved = (plugin as { resolveId: (s: string) => string | null }).resolveId(
+      'purity:routes',
+    ) as string;
+    const virtual = (plugin as { load: (id: string) => string | null }).load(resolved) as string;
+    return { ...tmp, virtual };
+  }
+
+  it('const-asserts every export of a TypeScript emit and keeps the virtual module plain JS', () => {
+    const { root, cleanup, virtual } = emit('.purity/routes.ts');
+    try {
+      const disk = readFileSync(join(root, '.purity/routes.ts'), 'utf8');
+      expect(disk.match(/ as const;/g)).toHaveLength(3);
+      expect(disk).toContain('] as const;\nexport const notFound = {');
+      expect(virtual).not.toContain('as const');
+      expect(disk.replaceAll(' as const;', ';')).toBe(virtual);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('writes plain JS to a non-TypeScript emit path', () => {
+    const { root, cleanup, virtual } = emit('.purity/routes.js');
+    try {
+      expect(readFileSync(join(root, '.purity/routes.js'), 'utf8')).toBe(virtual);
+    } finally {
+      cleanup();
+    }
   });
 });

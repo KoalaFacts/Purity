@@ -9,7 +9,7 @@ import { _resetLocalSignalRegistry } from '../src/browser-signals/local-signal.t
 import { popSSRRenderContext, pushSSRRenderContext } from '../../core/src/ssr-context.ts';
 import { makeSSRContext } from '../../core/tests/_helpers.ts';
 
-const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+const tick = (): Promise<void> => new Promise<void>((r) => queueMicrotask(r));
 
 // Build a `storage`-typed Event with the relevant StorageEventInit fields
 // patched on. Constructing `new StorageEvent('storage', init)` is

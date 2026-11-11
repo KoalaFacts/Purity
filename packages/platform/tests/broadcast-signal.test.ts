@@ -9,9 +9,9 @@ import { _resetBroadcastSignalRegistry } from '../src/browser-signals/broadcast-
 import { popSSRRenderContext, pushSSRRenderContext } from '../../core/src/ssr-context.ts';
 import { makeSSRContext } from '../../core/tests/_helpers.ts';
 
-const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+const tick = (): Promise<void> => new Promise<void>((r) => queueMicrotask(r));
 // jsdom delivers BroadcastChannel messages on a macrotask, not microtask.
-const flushBC = (): Promise<void> => new Promise((r) => setTimeout(r, 10));
+const flushBC = (): Promise<void> => new Promise<void>((r) => setTimeout(r, 10));
 
 // Common validators used across tests.
 const isNumber = (v: unknown): v is number => typeof v === 'number';

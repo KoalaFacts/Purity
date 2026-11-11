@@ -1,5 +1,6 @@
 import { Readable, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { resource, suspense } from '@purityjs/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import {
@@ -112,7 +113,7 @@ describe.each(renderers)('SSR backpressure — $name', ({ render }) => {
         } else callback();
       },
     });
-    const done = pipeline(Readable.fromWeb(stream), sink);
+    const done = pipeline(Readable.fromWeb(stream as WebReadableStream<Uint8Array>), sink);
     try {
       await started;
       await vi.advanceTimersByTimeAsync(0);

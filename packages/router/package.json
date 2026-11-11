@@ -58,7 +58,8 @@
   },
   "scripts": {
     "build": "vp build && vp build -c vite.browser.config.ts && tsc --emitDeclarationOnly",
-    "test": "vp test run"
+    "test": "vp test run",
+    "typecheck": "tsc -p tsconfig.tests.json"
   },
   "dependencies": {
     "@purityjs/signals": "^0.5.2"

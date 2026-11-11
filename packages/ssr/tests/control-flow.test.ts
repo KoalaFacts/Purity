@@ -1,5 +1,8 @@
 import { eachSSR, listSSR, matchSSR, whenSSR } from '@purityjs/ssr/runtime';
 import { state } from '@purityjs/core';
+import { asyncCompute } from '@purityjs/core/async';
+import { errorBoundary } from '@purityjs/core/boundary';
+import { loading } from '@purityjs/core/loading';
 import { describe, expect, it } from 'vite-plus/test';
 import { html, renderToString } from '../src/index.ts';
 
@@ -55,7 +58,7 @@ describe('matchSSR + html', () => {
       () =>
         html`<section>
           ${matchSSR(
-            () => 'unknown',
+            () => 'unknown' as string,
             { a: () => html`<p>A</p>` },
             () => html`<p>fallback</p>`,
           )}
@@ -84,6 +87,23 @@ describe('eachSSR + html', () => {
         '<!--er:c--><li><!--[-->c<!--]--></li><!--/er-->' +
         '<!--/e--><!--]--></ul>',
     );
+  });
+
+  it('passes the current position as the third argument (SV2-008)', async () => {
+    const out = await renderToString(
+      () =>
+        html`<ol>
+          ${eachSSR(
+            () => ['x', 'x', 'y'],
+            (item, _index, position) => html`<li>${() => `${position()}:${item()}`}</li>`,
+            (item) => item,
+          )}
+        </ol>`,
+    );
+    // Duplicate key 'x' renders once; 'y' is the second rendered row but its
+    // position is its index in the source list, matching the client.
+    expect(out).toContain('<li><!--[-->0:x<!--]--></li>');
+    expect(out).toContain('<li><!--[-->2:y<!--]--></li>');
   });
 
   it('renders an empty list', async () => {
@@ -149,5 +169,68 @@ describe('listSSR + html', () => {
         </ul>`,
     );
     expect(out).toContain('<li class="a&quot;b">&lt;x&gt;</li>');
+  });
+});
+
+describe('errorBoundary() on the server', () => {
+  it('renders the view when it does not throw', async () => {
+    const out = await renderToString(
+      () =>
+        html`<div>${errorBoundary(
+          () => html`<p>ok</p>`,
+          () => html`<p>failed</p>`,
+        )}</div>`,
+    );
+    expect(out).toBe('<div><!--[--><p>ok</p><!--]--></div>');
+  });
+
+  it('renders the fallback on a synchronous throw', async () => {
+    const out = await renderToString(
+      () =>
+        html`<div>${errorBoundary(
+          () => {
+            throw new Error('server view');
+          },
+          (error) => html`<p>${(error as Error).message}</p>`,
+        )}</div>`,
+    );
+    expect(out).toBe('<div><!--[--><p><!--[-->server view<!--]--></p><!--]--></div>');
+  });
+});
+
+describe('loading() on the server', () => {
+  it('renders the view when nothing is pending', async () => {
+    const out = await renderToString(
+      () =>
+        html`<div>${loading(
+          () => html`<p>ready</p>`,
+          () => html`<p>wait</p>`,
+        )}</div>`,
+    );
+    expect(out).toBe('<div><!--[--><p>ready</p><!--]--></div>');
+  });
+
+  it('renders the fallback for an unresolved async read and rethrows other errors', async () => {
+    const value = asyncCompute(() => new Promise<string>(() => {}));
+    const out = await renderToString(
+      () =>
+        html`<div>${loading(
+          () => html`<p>${value()}</p>`,
+          () => html`<p>wait</p>`,
+        )}</div>`,
+    );
+    expect(out).toBe('<div><!--[--><p>wait</p><!--]--></div>');
+    value.dispose();
+    await expect(
+      renderToString(
+        () =>
+          html`<div>${loading(
+            () => {
+              throw new Error('server view');
+            },
+            () => html`<p>wait</p>`,
+          )}</div>`,
+      ),
+    ).rejects.toThrow('server view');
   });
 });

@@ -5,7 +5,7 @@ import { mount } from '../src/component.ts';
 import { state } from '@purityjs/signals';
 import { css } from '../src/styles.ts';
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 describe('css', () => {
   it('returns a unique scope class', () => {

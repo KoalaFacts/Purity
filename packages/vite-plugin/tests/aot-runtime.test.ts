@@ -15,7 +15,7 @@ import { safeUrl, template } from '@purityjs/core/csr-runtime';
 import { purity } from '../src/index.ts';
 
 describe('AOT output runs correctly under jsdom', () => {
-  const plugin = purity({ hydratable: true, strictAot: false, ...{ strictAot: true } });
+  const plugin = purity({ hydratable: true, strictAot: true });
 
   it('hydrates nested template arrays without runtime code generation or changing property data', async () => {
     const { make } = evalAot(
@@ -31,7 +31,7 @@ describe('AOT output runs correctly under jsdom', () => {
     try {
       globalThis.Function = (() => {
         throw new Error('runtime code generation during nested AOT hydration');
-      }) as FunctionConstructor;
+      }) as unknown as FunctionConstructor;
       enterHydration();
       let deferred: unknown;
       try {
@@ -195,7 +195,7 @@ describe('AOT output runs correctly under jsdom', () => {
       { ssr },
     );
     expect(result).not.toBeNull();
-    expect(result.code).not.toContain('html`');
+    expect(result!.code).not.toContain('html`');
   });
 
   it('hoisted simple template (single element) still works', () => {
@@ -233,7 +233,7 @@ describe('AOT output runs correctly under jsdom', () => {
     try {
       globalThis.Function = (() => {
         throw new Error('runtime code generation during AOT hydration');
-      }) as FunctionConstructor;
+      }) as unknown as FunctionConstructor;
       enterHydration();
       let deferred: unknown;
       try {

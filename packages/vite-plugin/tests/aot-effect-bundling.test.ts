@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { resolve } from 'node:path';
-import { build, type Plugin } from 'vite';
+import { build, type Plugin, type Rolldown } from 'vite';
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
@@ -47,7 +47,7 @@ async function bundle(source: string, hydratable = false) {
       rollupOptions: { input: entry, preserveEntrySignatures: 'strict' },
     },
   });
-  const result = Array.isArray(built) ? built[0] : built;
+  const result = (Array.isArray(built) ? built[0] : built) as Rolldown.RolldownOutput;
   const chunks = result.output.filter((part) => part.type === 'chunk');
   expect(chunks).toHaveLength(1);
   expect(transformed).toContain('__purity_tpl_');

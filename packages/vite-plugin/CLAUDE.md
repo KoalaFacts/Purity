@@ -27,7 +27,7 @@ src/
 
 ## Key Functions
 
-- `purity(options?)` — Vite plugin factory, returns { name, enforce, transform }
+- `purity(options?)` — Vite plugin factory, checked with `satisfies Plugin` (type-only import from the `vite` peer); hooks keep their concrete types for direct calls in tests. Hooks take `this: unknown` and read the context only through `hookContext()` / `hookWarn()` (`PurityHookContext`), because tests and non-Vite hosts call them without one
 - `compileTemplates(source, id)` — collects `Edit[]` for each html``, hoist insert, and `html`import strip; defers all writes to`applyEdits`
 - `compileNestedTemplates(source, ctx)` — handles `html` inside `${...}` expressions
 - `extractTemplateLiteral(source, pos)` — extracts strings + expression sources
@@ -46,3 +46,4 @@ npx vitest run
 - Plugin runs in `enforce: 'pre'` phase
 - Skips files containing `@purityjs/` or `packages/core/` paths
 - Generated code uses `__purity_w__` as watch import alias
+- `typescript/no-explicit-any` is an error under `src/` (CQ-09e): read oxc AST nodes structurally through `astObject()` / `astList()` / `someAstNode()` instead of `any`

@@ -18,6 +18,9 @@ export default defineConfig({
       '@purityjs/core/hydration-bridge': resolve(import.meta.dirname, '../core/src/hydrate.ts'),
       '@purityjs/core/ssr-bridge': resolve(import.meta.dirname, '../core/src/ssr-bridge.ts'),
       '@purityjs/core/jit': resolve(import.meta.dirname, '../core/src/compiler/jit.ts'),
+      '@purityjs/core/boundary': resolve(import.meta.dirname, '../core/src/boundary.ts'),
+      '@purityjs/core/loading': resolve(import.meta.dirname, '../core/src/loading.ts'),
+      '@purityjs/core/async': resolve(import.meta.dirname, '../core/src/async.ts'),
       '@purityjs/core/runtime': resolve(import.meta.dirname, '../core/src/compiler/runtime.ts'),
       '@purityjs/platform/signals': resolve(
         import.meta.dirname,

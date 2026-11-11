@@ -2,6 +2,73 @@
 
 ## Unreleased
 
+### Added
+
+- `pendingTransactions()` from `@purityjs/core/transaction`
+  ([ADR 0059](./docs/decisions/0059-async-transaction.md) slice 2): the
+  tracked number of running transactions, falling in the same batch as each
+  commit or rollback. `core-transaction` stays inside its budget.
+
+- `asyncCompute(fn)` accepts `AsyncIterable` results
+  ([ADR 0054](./docs/decisions/0054-async-derivation.md) slice 2): each yielded
+  value becomes current, `pending()` is `true` until the first one, rejections
+  become the outcome, and a superseded or disposed run drops later values and
+  closes its iterator. `core-async` stays inside its budget.
+
+- `__purity_inspect__` nodes carry `owner` (component tag path, outermost
+  first) and, after `__purity_inspect__.captureSources(true)`, `source` (the
+  creation stack frame) in development builds
+  ([ADR 0061](./docs/decisions/0061-inspector-attribution.md)); production
+  builds are unchanged.
+- `getOwner()`, `runWithOwner(owner, fn)` and `root(fn)` in the new opt-in
+  entry `@purityjs/core/owner`
+  ([ADR 0060](./docs/decisions/0060-owner-composition.md)): bind work created
+  in a later callback to a component, effect run or row so it is released with
+  it (released at once if that owner is already gone or being released), and create detached
+  owners whose `dispose` releases them exactly once. New bundle budget
+  `core-owner`.
+- `transaction(fn)` in the new opt-in entry `@purityjs/core/transaction`
+  ([ADR 0059](./docs/decisions/0059-async-transaction.md)): writes staged with
+  `tx.set()` are applied in one batch when the async work resolves and
+  discarded when it rejects; `tx.optimistic()` shows a tentative value at once
+  and removes it exactly once when the transaction settles. Overlapping
+  tentative values stack per signal; disposing the owner it was started in
+  (setup or render) aborts it.
+  New bundle budget `core-transaction`.
+- `each()` passes the row renderer a third argument, `position: () => number`,
+  the row's current index ([ADR 0058](./docs/decisions/0058-each-current-position.md)).
+  It follows keyed reorders without re-rendering the row (same nodes, focus
+  and input state), is created lazily on first read, and is supplied on the
+  server (`eachSSR`) and to hydrated rows. Existing arguments are unchanged.
+- `asyncCompute(fn)` in the new opt-in entry `@purityjs/core/async`
+  ([ADR 0054](./docs/decisions/0054-async-derivation.md)): feed a
+  Promise-returning computation into ordinary `compute()` chains. Unresolved
+  reads throw `PendingError` (test with `isPending`), which downstream computes
+  cache and rethrow, so no `undefined` or `Promise` reaches application code as
+  data; refetches keep the previous value while `pending()` is `true`; a newer
+  run aborts the previous run's `AbortSignal` and only the latest run can become
+  current. Existing entries do not change size.
+- `store(initial)` in the new entry `@purityjs/core/store` ([ADR 0055](./docs/decisions/0055-property-store.md)):
+  property-granular nested state. Reads through the returned read-only view
+  track one property at a time (key sets and array length separately);
+  `update(draft => …)` applies writes in one batch and notifies only readers
+  of changed properties. New bundle budget `core-store`; no existing entry
+  changes size.
+- `errorBoundary(view, fallback)` in the new opt-in entry
+  `@purityjs/core/boundary` (ADR 0056): a throw while the view renders, or later
+  from one of its bindings or watches, replaces only that part of the page with
+  `fallback(error, reset)`; `reset()` renders the view again, and a throwing
+  fallback reaches the next outer boundary or the component's `onError`. On the
+  server a synchronous throw renders the fallback. Hydrated content is not
+  guarded yet.
+- `loading(view, fallback)` in the new opt-in entry `@purityjs/core/loading`
+  (ADR 0057): while the view's first render reads an unresolved
+  `asyncCompute()` value it shows `fallback()`, and renders the view once that
+  value settles; after that a refetch keeps the shown view, its DOM nodes and
+  edited input state. Rejections go to the surrounding `errorBoundary()` or
+  `onError`. On the server an unresolved read renders the fallback.
+  `PendingError` gains an optional `source`. New bundle budget `core-loading`.
+
 ### Changed
 
 - Text slots (`${() => value}` rendering a string, number or boolean) skip the
@@ -22,6 +89,54 @@
   reorders only the changed range. An `each()` inside a `when()`/`match()`
   branch or inside another row no longer rewrites the branch's node list when
   its keys are unchanged.
+
+### Fixed
+
+- `@purityjs/vite-plugin`: the on-disk `routes.ts` written for a TypeScript
+  `emitTo` path is const-asserted, so `import { routes } from
+  './.purity/routes.ts'` keeps literal patterns and `hasLoader` flags.
+  Before, `pattern` widened to `string`, `LoaderDataOf<'/users/:id', typeof
+  routes>` was `undefined`, and `asyncRoute(routes[i], …)` failed under
+  `exactOptionalPropertyTypes` (ADR 0032 amended, ADR 0034). The virtual
+  module and non-TypeScript emit paths are unchanged.
+- `@purityjs/vite-plugin` declarations compile without Node types. The built
+  `index.d.ts` named Node's global `Buffer`, so a client tsconfig without
+  `@types/node` and with `skipLibCheck: false` failed with TS2591 as soon as
+  it imported `LoaderDataOf` or the emitted `routes.d.ts`. The inline-limit
+  callback now receives Node's `Buffer` when Node types are loaded and
+  `Uint8Array` otherwise. Emitted JavaScript is unchanged.
+- `@purityjs/vite-plugin` types work under `exactOptionalPropertyTypes`:
+  `const plugin: Plugin = purity()` failed because the `resolveId`/`load`/
+  `transform` options and `PurityOutputOptions.paths` rejected the
+  `undefined` Vite passes, and `purity({ hydratable: flag })` with
+  `flag: boolean | undefined` was rejected. Every optional member of
+  `PurityPluginOptions`, `RoutesOptions` and the hook parameter types now
+  accepts `undefined`. Emitted JavaScript is unchanged.
+- `watch()` accepts effects and callbacks with any return type. A returned
+  function still runs as cleanup and other values are ignored, as at runtime;
+  before, `watch(() => console.log(count()))` — the README example — and
+  `watch(count, (v) => list.push(v))` failed to type-check under `strict`.
+- Untyped `component()` calls type-check: props default to
+  `Record<string, any>` and slots to no-argument accessors (they defaulted to
+  `never`, so `({ title }, { default: body }) => … ${body()}` from the README
+  failed under `strict`). Explicit generics are unchanged.
+- `each()`, `when()`, `match()` and `virtualEach()` are typed as returning
+  `DocumentFragment`, like `html`, so `parent.appendChild(each(…))` and a
+  `when()` returned from an `each()` row compile. The runtime values are
+  unchanged.
+- `@purityjs/ssr`'s `html` is a typed drop-in inside components and list
+  rows: `component()` render functions and `each()`/`virtualEach()` row
+  callbacks accept its `SSRHtml` result (``component('x', () => html`…`)``
+  with the server `html` failed to type-check).
+- `purity()` from `@purityjs/vite-plugin` is checked against Vite's `Plugin`
+  type at build time, so a hook that drifts from Vite's signature fails the
+  package build instead of a consumer's strict config.
+- `@purityjs/vite-plugin`'s published hook types no longer use `any`: hooks
+  take `this: unknown` and read only the exported `PurityHookContext` members
+  (`warn`, `environment.config.consumer`); `generateBundle` takes the exported
+  `PurityOutputOptions` and `PurityOutputBundle`. The stale hand-written
+  `src/index.d.ts` (it declared only `include`/`strictAot` and `transform`)
+  is removed; the generated `dist/index.d.ts` is the declaration file.
 
 ## 0.5.2
 

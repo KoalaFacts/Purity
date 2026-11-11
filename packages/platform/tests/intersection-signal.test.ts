@@ -12,7 +12,7 @@ import { batch, mount, watch } from '../../core/src/index.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../../core/src/ssr-context.ts';
 import { makeSSRContext } from '../../core/tests/_helpers.ts';
 
-const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+const tick = (): Promise<void> => new Promise<void>((r) => queueMicrotask(r));
 
 type Instance = {
   callback: IntersectionObserverCallback;
@@ -153,8 +153,8 @@ describe('intersectionSignal — client (ADR 0040)', () => {
     const sig = intersectionSignal(el);
     instances[0].callback(
       [
-        { target: el, isIntersecting: false } as IntersectionObserverEntry,
-        { target: el, isIntersecting: true } as IntersectionObserverEntry,
+        { target: el, isIntersecting: false } as unknown as IntersectionObserverEntry,
+        { target: el, isIntersecting: true } as unknown as IntersectionObserverEntry,
       ],
       {} as IntersectionObserver,
     );
@@ -185,7 +185,7 @@ describe('intersectionSignal — client (ADR 0040)', () => {
     // component.ts (`console.error('[Purity] Error during disposal:'`).
     const el = document.createElement('div');
     const sig = intersectionSignal(el);
-    const errors: unknown[] = [];
+    const errors: unknown[][] = [];
     const origError = console.error;
     console.error = (...args: unknown[]) => {
       errors.push(args);
@@ -218,7 +218,8 @@ describe('intersectionSignal — client (ADR 0040)', () => {
     // late option validation, etc.) the just-constructed observer was
     // leaked. We now disconnect before rethrowing so the OS-side
     // observer is released.
-    const OrigMockIO = (globalThis as { IntersectionObserver: typeof MockIO }).IntersectionObserver;
+    const OrigMockIO = (globalThis as unknown as { IntersectionObserver: typeof MockIO })
+      .IntersectionObserver;
     let disconnects = 0;
     class ObserveThrowsIO extends OrigMockIO {
       observe(): void {
@@ -246,7 +247,8 @@ describe('intersectionSignal — client (ADR 0040)', () => {
     // a `disposed` flag inside the disposer closure so the contract is
     // explicit, regardless of engine-level idempotency.
     let disconnects = 0;
-    const OrigMockIO = (globalThis as { IntersectionObserver: typeof MockIO }).IntersectionObserver;
+    const OrigMockIO = (globalThis as unknown as { IntersectionObserver: typeof MockIO })
+      .IntersectionObserver;
     class CountingIO extends OrigMockIO {
       disconnect(): void {
         disconnects++;
@@ -281,7 +283,8 @@ describe('intersectionSignal — client (ADR 0040)', () => {
     // unmount. Without it the observer outlived the component and pinned
     // the captured signal-graph closure until the accessor was GC'd.
     let disconnects = 0;
-    const OrigMockIO = (globalThis as { IntersectionObserver: typeof MockIO }).IntersectionObserver;
+    const OrigMockIO = (globalThis as unknown as { IntersectionObserver: typeof MockIO })
+      .IntersectionObserver;
     class CountingIO extends OrigMockIO {
       disconnect(): void {
         disconnects++;

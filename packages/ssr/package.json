@@ -61,7 +61,8 @@
   },
   "scripts": {
     "build": "vp build && tsc --emitDeclarationOnly",
-    "test": "vp test run"
+    "test": "vp test run",
+    "typecheck": "tsc -p tsconfig.tests.json"
   },
   "dependencies": {
     "@purityjs/compiler": "^0.5.2",

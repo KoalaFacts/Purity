@@ -10,7 +10,10 @@ import {
 } from '../src/index.ts';
 
 const renderers = [
-  { name: 'buffered', render: renderToString },
+  {
+    name: 'buffered',
+    render: (view: () => unknown, options: RenderToStreamOptions) => renderToString(view, options),
+  },
   {
     name: 'direct stream',
     render: async (view: () => unknown, options: RenderToStreamOptions) =>

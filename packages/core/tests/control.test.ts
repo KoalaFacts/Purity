@@ -17,7 +17,7 @@ import { inflateDeferredEach, type CapturedDeferredEach } from '../src/control/h
 import { eachSSR, listSSR } from '@purityjs/ssr/runtime';
 import { state, watch } from '@purityjs/signals';
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 
 describe('shared CSR/hydration node helpers', () => {
   it('snapshots multi-root and singleton fragments without moving their children', () => {
@@ -241,7 +241,7 @@ describe('each', () => {
         li.textContent = String(item());
         return li;
       },
-    );
+    ) as DocumentFragment;
 
     expect(renderedIndices).toHaveLength(40);
     expect(renderedIndices[0]).toBe(0);
@@ -273,7 +273,7 @@ describe('each', () => {
         row.getBoundingClientRect = () => new DOMRect(0, index * 24 - container.scrollTop, 200, 24);
         return row;
       },
-    );
+    ) as DocumentFragment;
 
     await tick();
     document.body.appendChild(container);
@@ -284,7 +284,7 @@ describe('each', () => {
     topSpacer.getBoundingClientRect = () => new DOMRect(0, -container.scrollTop, 200, 0);
     container.scrollTop = 1200;
     container.dispatchEvent(new Event('scroll'));
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise<void>((resolve) => setTimeout(resolve, 80));
     expect(Array.from(container.children).some((row) => row.textContent === '50')).toBe(true);
     container.remove();
   });
@@ -306,7 +306,7 @@ describe('each', () => {
             row.getBoundingClientRect = () => new DOMRect(0, top, 200, height);
             return row;
           },
-        ),
+        ) as DocumentFragment,
       container,
     );
     await tick();
@@ -347,7 +347,7 @@ describe('each', () => {
             return li;
           },
           (item) => item,
-        ),
+        ) as DocumentFragment,
       container,
     );
     await tick();
@@ -359,7 +359,7 @@ describe('each', () => {
 
     container.scrollTop = 1200;
     container.dispatchEvent(new Event('scroll'));
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise<void>((resolve) => setTimeout(resolve, 80));
     await tick();
     await tick();
     const rows = container.querySelectorAll('li:not([data-purity-window-spacer])');
@@ -374,7 +374,7 @@ describe('each', () => {
     const renderCountAfterUnmount = renderedIndices.length;
     container.scrollTop = 0;
     container.dispatchEvent(new Event('scroll'));
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await new Promise<void>((resolve) => setTimeout(resolve, 30));
     expect(renderedIndices).toHaveLength(renderCountAfterUnmount);
   });
 
@@ -424,7 +424,7 @@ describe('each', () => {
             return li;
           },
           (item) => item,
-        ),
+        ) as DocumentFragment,
       container,
     );
     await tick();
@@ -434,7 +434,7 @@ describe('each', () => {
     topSpacer.getBoundingClientRect = () => new DOMRect(0, -container.scrollTop, 200, 0);
     container.scrollTop = rowOffset(20);
     container.dispatchEvent(new Event('scroll'));
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise<void>((resolve) => setTimeout(resolve, 80));
     await tick();
     await tick();
 
@@ -475,7 +475,7 @@ describe('each', () => {
             return li;
           },
           (item) => item.id,
-        ),
+        ) as DocumentFragment,
       container,
     );
     await tick();
@@ -486,7 +486,7 @@ describe('each', () => {
     topSpacer.getBoundingClientRect = () => new DOMRect(0, -container.scrollTop, 200, 0);
     container.scrollTop = 400;
     container.dispatchEvent(new Event('scroll'));
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise<void>((resolve) => setTimeout(resolve, 80));
     await tick();
     await tick();
     const heightOfWindow = () => {
@@ -506,7 +506,7 @@ describe('each', () => {
     await tick();
     expect(container.querySelector(`li[data-row="${targetId}"]`)?.textContent).toBe('expanded');
     container.ownerDocument.defaultView!.dispatchEvent(new Event('resize'));
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise<void>((resolve) => setTimeout(resolve, 80));
     await tick();
     await tick();
 
@@ -536,7 +536,7 @@ describe('each', () => {
             return li;
           },
           (item) => item,
-        ),
+        ) as DocumentFragment,
       container,
     );
     await tick();
@@ -546,13 +546,13 @@ describe('each', () => {
     topSpacer.getBoundingClientRect = () => new DOMRect(0, -container.scrollTop, 200, 0);
     container.scrollTop = 800;
     container.dispatchEvent(new Event('scroll'));
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise<void>((resolve) => setTimeout(resolve, 80));
     await tick();
     await tick();
 
     items([...items().slice(0, 40), 100, 101, 102, ...items().slice(40)]);
     await tick();
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise<void>((resolve) => setTimeout(resolve, 80));
     await tick();
     await tick();
 
@@ -587,7 +587,7 @@ describe('each', () => {
             return li;
           },
           (item) => item,
-        ),
+        ) as DocumentFragment,
       container,
     );
     await tick();
@@ -597,13 +597,13 @@ describe('each', () => {
     topSpacer.getBoundingClientRect = () => new DOMRect(0, -container.scrollTop, 200, 0);
     container.scrollTop = 800;
     container.dispatchEvent(new Event('scroll'));
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise<void>((resolve) => setTimeout(resolve, 80));
     await tick();
     await tick();
 
     items(items().filter((id) => id < 40 || id > 42));
     await tick();
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise<void>((resolve) => setTimeout(resolve, 80));
     await tick();
     await tick();
 
@@ -632,13 +632,17 @@ describe('each', () => {
     const closeMarker = document.createComment('slot-close');
     host.appendChild(closeMarker);
     const context = new ComponentContext();
+    const argCounts = new Set<number>();
     const deferred = withHydration(() =>
       virtualEach(
         items,
-        (item) => html`<li>${item()}</li>`,
+        (...args: [() => number, number]) => {
+          argCounts.add(args.length);
+          return html`<li>${args[0]()}</li>`;
+        },
         (item) => item,
       ),
-    ) as CapturedDeferredEach<number>;
+    ) as unknown as CapturedDeferredEach<number>;
 
     pushContext(context);
     try {
@@ -653,6 +657,8 @@ describe('each', () => {
     expect(rows).toHaveLength(40);
     expect(rows[0].textContent).toBe('0');
     expect(rows[39].textContent).toBe('39');
+    // virtualEach renderers take (item, index) only — no each() position (SV2-008).
+    expect([...argCounts]).toEqual([2]);
 
     for (const dispose of context.disposers ?? []) dispose();
     host.remove();
@@ -672,7 +678,7 @@ describe('each', () => {
     const context = new ComponentContext();
     const deferred = withHydration(() =>
       virtualEach(items, (item) => html`<li>${item()}</li>`),
-    ) as CapturedDeferredEach<number | undefined>;
+    ) as unknown as CapturedDeferredEach<number | undefined>;
 
     pushContext(context);
     try {
@@ -1703,11 +1709,12 @@ describe('each — SSR-context dispatch (ADR 0023)', () => {
   });
 
   it('keeps the complete list in SSR when virtual rendering is enabled', () => {
-    const result = inSSRContext(() =>
-      virtualEach(
-        Array.from({ length: 100 }, (_, index) => index),
-        (item) => `<li>${item()}</li>`,
-      ),
+    const result = inSSRContext(
+      () =>
+        virtualEach(
+          Array.from({ length: 100 }, (_, index) => index),
+          (item) => `<li>${item()}</li>`,
+        ) as DocumentFragment,
     );
     const html = ssrHtmlText(result);
     expect(html.match(/<!--er:/g)).toHaveLength(100);
@@ -2393,7 +2400,7 @@ describe('duplicate keys — review follow-ups (hydration, virtual, listSSR, dia
           return row;
         },
         (item: Row) => item.id,
-      );
+      ) as DocumentFragment;
       document.body.appendChild(container);
       container.appendChild(fragment);
       await tick();
@@ -2402,7 +2409,7 @@ describe('duplicate keys — review follow-ups (hydration, virtual, listSSR, dia
       topSpacer.getBoundingClientRect = () => new DOMRect(0, -container.scrollTop, 200, 0);
       container.scrollTop = 32 * 66; // EACH_WINDOW_ESTIMATED_ROW_HEIGHT rows
       container.dispatchEvent(new Event('scroll'));
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      await new Promise<void>((resolve) => setTimeout(resolve, 80));
 
       const rowTexts = Array.from(container.children)
         .filter((el) => !el.hasAttribute('data-purity-window-spacer'))
@@ -2422,7 +2429,7 @@ describe('duplicate keys — review follow-ups (hydration, virtual, listSSR, dia
   it('listSSR uses the options key (not the 4th argument) when an options object is passed, like list()', () => {
     const warn = warnSpy();
     try {
-      const out = listSSR(
+      const out = listSSR<Row & { k: string }>(
         'li',
         [
           { id: 1, k: 'x', v: 'a' },
@@ -2475,7 +2482,7 @@ describe('each() — index-sensitive keys with a dropped duplicate', () => {
       const expected = ['a@0', 'b@2', 'c@3'];
 
       const plain = each(values, mapFn, keyFn);
-      const virtual = virtualEach(values, mapFn, keyFn);
+      const virtual = virtualEach(values, mapFn, keyFn) as DocumentFragment;
 
       expect(Array.from(plain.querySelectorAll('li')).map((li) => li.textContent)).toEqual(
         expected,

@@ -533,7 +533,7 @@ describe('mountIslands() — idle trigger (ADR 0038 Phase 4)', () => {
     host = makeWrapper(1, 'idle', '<span>x</span>');
 
     mountIslands([island(View, { hydrate: 'idle' })], { onMount });
-    await new Promise((r) => setTimeout(r, 10));
+    await new Promise<void>((r) => setTimeout(r, 10));
     expect(onMount).toHaveBeenCalledTimes(1);
   });
 });

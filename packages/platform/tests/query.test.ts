@@ -12,7 +12,7 @@ import { _resetQueryCache } from '../src/query.ts';
 import { popSSRRenderContext, pushSSRRenderContext } from '../../core/src/ssr-context.ts';
 import { makeSSRContext } from '../../core/tests/_helpers.ts';
 
-const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+const tick = (): Promise<void> => new Promise<void>((r) => queueMicrotask(r));
 const drain = async (): Promise<void> => {
   for (let i = 0; i < 5; i++) await tick();
 };

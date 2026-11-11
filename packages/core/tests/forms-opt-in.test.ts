@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { component } from '../src/elements.ts';
+import { component, type ComponentOptions } from '../src/elements.ts';
 
 describe('form support opt-in', () => {
-  it.each([{ formControl: true }, { formAssociated: true }])(
+  it.each<ComponentOptions>([{ formControl: true }, { formAssociated: true }])(
     'rejects form options before the forms runtime is enabled: %o',
     (options) => {
       expect(() =>

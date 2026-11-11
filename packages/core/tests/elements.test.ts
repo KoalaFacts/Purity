@@ -5,9 +5,9 @@ import { component, slot, teleport } from '../src/elements.ts';
 import { onFormDisabled, onFormReset } from '../src/forms.ts';
 import { compute, state, watch } from '@purityjs/signals';
 
-const tick = () => new Promise((r) => queueMicrotask(r));
+const tick = () => new Promise<void>((r) => queueMicrotask(r));
 let tagCounter = 0;
-const tag = (base) => `p-${base}-${tagCounter++}`;
+const tag = (base: string) => `p-${base}-${tagCounter++}`;
 
 describe('component() with tag name', () => {
   it('creates a component with props (programmatic)', () => {
@@ -61,7 +61,7 @@ describe('component() with tag name', () => {
     await tick();
 
     // Custom element should have rendered
-    expect(el.shadowRoot.querySelector('.card')).not.toBeNull();
+    expect(el.shadowRoot!.querySelector('.card')).not.toBeNull();
 
     document.body.removeChild(container);
   });
@@ -74,10 +74,13 @@ describe('slots — callback syntax', () => {
       sameAccessor = slots.header === slots.header;
       return html`<header>${slots.header()}</header><main>${slots.default()}</main>`;
     });
-    const result = Card({}, ({ header, default: fill }) => {
-      header('Title');
-      fill('Body');
-    });
+    const result = Card(
+      {},
+      ({ header, default: fill }: Record<string, (content: unknown) => void>) => {
+        header('Title');
+        fill('Body');
+      },
+    );
 
     expect(sameAccessor).toBe(true);
     expect(result.textContent).toBe('TitleBody');
@@ -106,11 +109,11 @@ describe('slots — callback syntax', () => {
 
     const container = document.createElement('div');
     container.appendChild(
-      html`${Card({ title: 'Hi' }, ({ default: fill }) => fill(html`<p>Body</p>`))}`,
+      html`${Card({ title: 'Hi' }, ({ default: fill }: Record<string, (content: unknown) => void>) => fill(html`<p>Body</p>`))}`,
     );
 
-    expect(container.querySelector('h2').textContent).toBe('Hi');
-    expect(container.querySelector('p').textContent).toBe('Body');
+    expect(container.querySelector('h2')!.textContent).toBe('Hi');
+    expect(container.querySelector('p')!.textContent).toBe('Body');
   });
 
   it('consumer fills named slots via callback', () => {
@@ -124,16 +127,19 @@ describe('slots — callback syntax', () => {
 
     const container = document.createElement('div');
     container.appendChild(
-      html`${Layout({}, ({ header, default: body, footer }) => {
-        header(html`<h1>Title</h1>`);
-        body(html`<p>Main</p>`);
-        footer(html`<small>Foot</small>`);
-      })}`,
+      html`${Layout(
+        {},
+        ({ header, default: body, footer }: Record<string, (content: unknown) => void>) => {
+          header(html`<h1>Title</h1>`);
+          body(html`<p>Main</p>`);
+          footer(html`<small>Foot</small>`);
+        },
+      )}`,
     );
 
-    expect(container.querySelector('header h1').textContent).toBe('Title');
-    expect(container.querySelector('main p').textContent).toBe('Main');
-    expect(container.querySelector('footer small').textContent).toBe('Foot');
+    expect(container.querySelector('header h1')!.textContent).toBe('Title');
+    expect(container.querySelector('main p')!.textContent).toBe('Main');
+    expect(container.querySelector('footer small')!.textContent).toBe('Foot');
   });
 
   it('component exposes data to consumer callback', () => {
@@ -147,12 +153,12 @@ describe('slots — callback syntax', () => {
 
     const container = document.createElement('div');
     container.appendChild(
-      html`${Form({}, ({ validate }) => {
+      html`${Form({}, ({ validate }: Record<string, () => unknown>) => {
         return html`<span class="v">${() => (validate() ? 'valid' : 'invalid')}</span>`;
       })}`,
     );
 
-    expect(container.querySelector('.v').textContent).toBe('valid');
+    expect(container.querySelector('.v')!.textContent).toBe('valid');
   });
 });
 
@@ -174,8 +180,8 @@ describe('slots — map syntax', () => {
       )}`,
     );
 
-    expect(container.querySelector('h1').textContent).toBe('Title');
-    expect(container.querySelector('p').textContent).toBe('Main');
+    expect(container.querySelector('h1')!.textContent).toBe('Title');
+    expect(container.querySelector('p')!.textContent).toBe('Main');
   });
 
   it('renders with plain content as default slot', () => {
@@ -186,7 +192,7 @@ describe('slots — map syntax', () => {
     const container = document.createElement('div');
     container.appendChild(html`${Box({}, html`<p>Content</p>`)}`);
 
-    expect(container.querySelector('.box p').textContent).toBe('Content');
+    expect(container.querySelector('.box p')!.textContent).toBe('Content');
   });
 });
 
@@ -195,7 +201,7 @@ describe(':prop binding', () => {
     const div = document.createElement('div');
     div.appendChild(html`<input type="text" :value=${'hello'} />`);
 
-    const input = div.querySelector('input');
+    const input = div.querySelector('input')!;
     expect(input.value).toBe('hello');
   });
 
@@ -204,7 +210,7 @@ describe(':prop binding', () => {
     const div = document.createElement('div');
     div.appendChild(html`<input type="text" :value=${() => val()} />`);
 
-    const input = div.querySelector('input');
+    const input = div.querySelector('input')!;
     expect(input.value).toBe('initial');
 
     val('updated');
@@ -219,7 +225,7 @@ describe('@event on components', () => {
     const div = document.createElement('div');
     div.appendChild(html`<button @click=${handler}>Test</button>`);
 
-    const btn = div.querySelector('button');
+    const btn = div.querySelector('button')!;
     btn.click();
     expect(handler).toHaveBeenCalledTimes(1);
   });
@@ -257,7 +263,7 @@ describe('slot() standalone', () => {
 
     const container = document.createElement('div');
     container.appendChild(html`${Card({ title: 'Hi' }, html`<p>Works</p>`)}`);
-    expect(container.querySelector('p').textContent).toBe('Works');
+    expect(container.querySelector('p')!.textContent).toBe('Works');
   });
 
   it('throws when called outside a component', () => {
@@ -277,7 +283,7 @@ describe('teleport()', () => {
     );
 
     await tick();
-    expect(target.querySelector('.ported').textContent).toBe('Teleported!');
+    expect(target.querySelector('.ported')!.textContent).toBe('Teleported!');
     document.body.removeChild(target);
   });
 

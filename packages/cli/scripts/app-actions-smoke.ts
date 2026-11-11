@@ -8,7 +8,8 @@ import { createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { chromium, firefox, webkit, type BrowserType } from 'playwright';
+import type { BrowserType } from 'playwright';
+import { browserEngines } from '../../../benchmark/tools/browser-engines.ts';
 
 const repo = resolve(import.meta.dirname, '../../..');
 const npmCli = process.env.npm_execpath;
@@ -1110,7 +1111,7 @@ export function installRouteProbe() {
       await checkHttp(origin);
       await checkDisconnects(origin, server.output);
       await checkRenderTimeouts(origin);
-      for (const engine of [chromium, firefox, webkit]) await checkBrowser(engine, origin);
+      for (const [, engine] of browserEngines) await checkBrowser(engine, origin);
       assert.doesNotMatch(
         server.output(),
         /AbortError|ERR_STREAM_PREMATURE_CLOSE|ECONNRESET|Internal Server Error/,

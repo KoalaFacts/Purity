@@ -154,7 +154,7 @@ export interface RenderOutput {
 export type RenderFn<P, S> = (
   props: P,
   slots: { [K in keyof S]: SlotAccessor<S[K]> },
-) => Node | DocumentFragment | RenderOutput;
+) => Node | DocumentFragment | RenderOutput | SSRHtml;
 
 export interface ComponentOptions {
   /** Forward host focus to a focusable descendant in the shadow tree. */
@@ -172,7 +172,7 @@ function runRender<P, S>(
   ctx: ComponentContext,
 ): { result: Node | DocumentFragment; exposed: Record<string, unknown> } {
   pushContext(ctx);
-  let output: Node | DocumentFragment | RenderOutput;
+  let output: ReturnType<RenderFn<P, S>>;
   try {
     try {
       output = renderFn(props, slotAccessors);
@@ -216,8 +216,8 @@ export function _getRegisteredComponentEntry(tag: string): RegisteredComponentEn
  * Define a component as a Custom Element with Shadow DOM.
  */
 export function component<
-  P extends Record<string, unknown> = Record<string, never>,
-  S extends Record<string, unknown> = Record<string, never>,
+  P extends Record<string, unknown> = Record<string, any>,
+  S extends Record<string, unknown> = Record<string, void>,
 >(
   tagName: string,
   renderFn: RenderFn<P, S>,

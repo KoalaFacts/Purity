@@ -13,13 +13,13 @@ describe('html tagged template', () => {
   it('creates DOM from static HTML', () => {
     const result = html`<p>Hello World</p>`;
     const c = render(result);
-    expect(c.querySelector('p').textContent).toBe('Hello World');
+    expect(c.querySelector('p')!.textContent).toBe('Hello World');
   });
 
   it('interpolates static string values', () => {
     const name = 'Purity';
     const c = render(html`<p>Hello ${name}</p>`);
-    expect(c.querySelector('p').textContent).toBe('Hello Purity');
+    expect(c.querySelector('p')!.textContent).toBe('Hello Purity');
   });
 
   it('interpolates static number values', () => {
@@ -56,7 +56,7 @@ describe('html tagged template', () => {
 
   it('handles null/false values by rendering nothing', () => {
     const c = render(html`<div>${undefined}${false}</div>`);
-    expect(c.querySelector('div').textContent.trim()).toBe('');
+    expect(c.querySelector('div')!.textContent.trim()).toBe('');
   });
 
   it('creates reactive text bindings with functions', async () => {
@@ -64,12 +64,12 @@ describe('html tagged template', () => {
     const result = html`<p>${() => count()}</p>`;
 
     document.body.appendChild(result);
-    const p = document.body.querySelector('p');
+    const p = document.body.querySelector('p')!;
 
     expect(p.textContent).toBe('0');
 
     count(5);
-    await new Promise((r) => queueMicrotask(r));
+    await new Promise<void>((r) => queueMicrotask(r));
     expect(p.textContent).toBe('5');
 
     p.remove();
@@ -80,7 +80,7 @@ describe('html tagged template', () => {
     const result = html`<button @click=${handler}>Click</button>`;
     document.body.appendChild(result);
 
-    const btn = document.body.querySelector('button');
+    const btn = document.body.querySelector('button')!;
     btn.click();
     expect(handler).toHaveBeenCalledTimes(1);
 
@@ -92,13 +92,13 @@ describe('html tagged template', () => {
       <h1>Title</h1>
       <p>Paragraph</p>
     `);
-    expect(c.querySelector('h1').textContent).toBe('Title');
-    expect(c.querySelector('p').textContent).toBe('Paragraph');
+    expect(c.querySelector('h1')!.textContent).toBe('Title');
+    expect(c.querySelector('p')!.textContent).toBe('Paragraph');
   });
 
   it('handles nested html templates', () => {
     const inner = html`<span>inner</span>`;
     const c = render(html`<div>${inner}</div>`);
-    expect(c.querySelector('div span').textContent).toBe('inner');
+    expect(c.querySelector('div span')!.textContent).toBe('inner');
   });
 });

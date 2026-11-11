@@ -75,8 +75,19 @@ jobs:
           npm run build -w packages/vite-plugin
           npm run build -w packages/cli
 
-      - name: 🔷 Type check @purityjs/core
-        run: cd packages/core && npx tsc --noEmit
+      - name: 🔷 Type check core sources and package tests
+        # Package tests are type-checked through each package's
+        # tsconfig.tests.json (CQ-09); `npm run typecheck` lists the packages.
+        run: |
+          (cd packages/core && npx tsc --noEmit)
+          npm run typecheck
+
+      - name: 🔷 Type check consumers against built declarations
+        # Strict consumers with negative contracts (`@ts-expect-error`) compiled
+        # against each package's built dist/*.d.ts, no source aliases (SV2-014).
+        run: |
+          npm run check:declarations
+          npm run test:declarations
 
       - name: 🧪 Test workspaces
         run: |

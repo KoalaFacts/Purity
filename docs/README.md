@@ -33,20 +33,16 @@ Every Markdown file under `docs/` is reachable from this page; `npm run check:do
 | [`solid-competitor-roadmap.md`](./solid-competitor-roadmap.md)         | Execution roadmap against Solid v2 (SV2 row order)                                                                      |
 | [`solid-v2-gap-analysis.md`](./solid-v2-gap-analysis.md)               | Capability-level gaps versus Solid v2 with acceptance scenarios; machine-readable rows in `solid-v2-gaps.json`          |
 | [`2026-execution-model-roadmap.md`](./2026-execution-model-roadmap.md) | Research note: execution modes (resumability, server-driven interactivity) other frameworks ship and Purity doesn't yet |
-| [`2026-platform-opportunities.md`](./2026-platform-opportunities.md)   | Research note (May 2026): web platform specs Purity could build on                                                      |
 
 ## Dated records (historical, for reference)
 
-| Doc                                                                                            | What it records                                                                              |
-| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| [`code-quality-audit-2026-11-05.md`](./code-quality-audit-2026-11-05.md)                       | Code-level audit CQ-01..CQ-13 against Solid v2 rc.20; findings tracked in the ledger         |
-| [`security-audit-2026-10-03.md`](./security-audit-2026-10-03.md)                               | Request and script security audit of 0.3.2 and its fixes                                     |
-| [`releases/0.5.0.md`](./releases/0.5.0.md)                                                     | 0.5.0 release notes                                                                          |
-| [`releases/0.5.1.md`](./releases/0.5.1.md)                                                     | 0.5.1 release notes                                                                          |
-| [`releases/0.5.2.md`](./releases/0.5.2.md)                                                     | 0.5.2 release notes                                                                          |
-| [`archive/next-handoff-adr-0007-0034.md`](./archive/next-handoff-adr-0007-0034.md)             | Handoff note from the branch that added ADRs 0007–0034 (formerly the root `NEXT_HANDOFF.md`) |
-| [`archive/0038-islands-plan.md`](./archive/0038-islands-plan.md)                               | Shipped implementation plan for islands (ADR 0038)                                           |
-| [`archive/2026-10-28-client-first-aot-plan.md`](./archive/2026-10-28-client-first-aot-plan.md) | Shipped implementation plan for client-first AOT                                             |
+| Doc                                                                      | What it records                                                                      |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| [`code-quality-audit-2026-11-05.md`](./code-quality-audit-2026-11-05.md) | Code-level audit CQ-01..CQ-13 against Solid v2 rc.20; findings tracked in the ledger |
+| [`security-audit-2026-10-03.md`](./security-audit-2026-10-03.md)         | Request and script security audit of 0.3.2 and its fixes                             |
+| [`releases/0.5.0.md`](./releases/0.5.0.md)                               | 0.5.0 release notes                                                                  |
+| [`releases/0.5.1.md`](./releases/0.5.1.md)                               | 0.5.1 release notes                                                                  |
+| [`releases/0.5.2.md`](./releases/0.5.2.md)                               | 0.5.2 release notes                                                                  |
 
 These are pre-1.0 working docs. If something's wrong or missing, please
 open an issue.

@@ -30,7 +30,13 @@ condition resolves to `dist` (see `packages/compiler/package.json`), so after ed
 
 Set `CHROMIUM_PATH` to use a system Chrome/Chromium instead of Playwright's
 bundled browser. `run-bench.ts`, `tools/profile.ts`, `tools/sanity.ts` and
-`tools/memory-leak-check.ts` honour it.
+`tools/memory-leak-check.ts` honour it, and so does every browser check and
+a11y scanner that takes its engines from `tools/playwright-engines.ts`
+(directly or through `tools/browser-engines.ts`): the `test:browser:*` scripts,
+`test:browser:devtools`, the `a11y*` tools and the `bundle-size/` browser
+verifiers. Prefer a headless-shell binary:
+a full Chrome build in headless mode requests `/favicon.ico`, and checks that
+assert an empty console then see its 404.
 
 ## Single-framework profile
 

@@ -3,7 +3,7 @@
 // Usage: npm run a11y:form -- http://localhost:5173/Purity/
 
 import assert from 'node:assert/strict';
-import { chromium, firefox, webkit } from 'playwright';
+import { chromium, firefox, webkit } from './playwright-engines.ts';
 
 const base = process.argv[2];
 if (!base) {

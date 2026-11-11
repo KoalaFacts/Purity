@@ -7,7 +7,8 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'vite';
 import { purity } from '../../packages/vite-plugin/dist/index.js';
-import { chromium, firefox, webkit, type Page } from 'playwright';
+import type { Page } from 'playwright';
+import { chromium, firefox, webkit } from '../tools/playwright-engines.ts';
 
 async function renderControls(root: string, outputDir: string): Promise<string> {
   let serverTemplateSeen = false;

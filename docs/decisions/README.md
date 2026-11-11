@@ -82,7 +82,8 @@ accept. Numbered sequentially.
 | [0058](./0058-each-current-position.md)          | Current keyed position in each()                                              | Proposed                |
 | [0059](./0059-async-transaction.md)              | Async transactions with optimistic overlays                                   | Proposed                |
 | [0060](./0060-owner-composition.md)              | Public owner composition: getOwner, runWithOwner, root                        | Proposed                |
-| [0061](./0061-independent-boundary-progress.md)  | Independent progress for streamed Suspense boundaries                         | Proposed                |
+| [0061](./0061-inspector-attribution.md)          | Inspector owner and source attribution                                        | Proposed                |
+| [0062](./0062-independent-boundary-progress.md)  | Independent progress for streamed Suspense boundaries                         | Proposed                |
 
 ## Template
 

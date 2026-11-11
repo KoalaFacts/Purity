@@ -80,7 +80,7 @@ export interface RenderToStreamOptions {
    */
   request?: Request;
   /**
-   * How many deferred `suspense()` views may render at once (ADR 0061).
+   * How many deferred `suspense()` views may render at once (ADR 0062).
    * Default 1: views render one after another and chunks arrive in
    * declaration order. With n > 1 (or `Infinity`), up to n views render
    * concurrently and each chunk is flushed as soon as its view settles, so a
@@ -253,7 +253,7 @@ function createStream(
 
       // ----- Boundary chunks ----------------------------------------------
       // Up to `concurrency` views render at once; each chunk is emitted when
-      // its view settles (ADR 0061). With the default of 1 this is the
+      // its view settles (ADR 0062). With the default of 1 this is the
       // declaration-order loop of ADR 0006. New views start only after the
       // consumer has taken the previous chunk, so backpressure still bounds
       // how many rendered chunks wait in memory.

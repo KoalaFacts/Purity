@@ -4,6 +4,22 @@
 
 ### Added
 
+- `pendingTransactions()` from `@purityjs/core/transaction`
+  ([ADR 0059](./docs/decisions/0059-async-transaction.md) slice 2): the
+  tracked number of running transactions, falling in the same batch as each
+  commit or rollback. `core-transaction` stays inside its budget.
+
+- `asyncCompute(fn)` accepts `AsyncIterable` results
+  ([ADR 0054](./docs/decisions/0054-async-derivation.md) slice 2): each yielded
+  value becomes current, `pending()` is `true` until the first one, rejections
+  become the outcome, and a superseded or disposed run drops later values and
+  closes its iterator. `core-async` stays inside its budget.
+
+- `__purity_inspect__` nodes carry `owner` (component tag path, outermost
+  first) and, after `__purity_inspect__.captureSources(true)`, `source` (the
+  creation stack frame) in development builds
+  ([ADR 0061](./docs/decisions/0061-inspector-attribution.md)); production
+  builds are unchanged.
 - `getOwner()`, `runWithOwner(owner, fn)` and `root(fn)` in the new opt-in
   entry `@purityjs/core/owner`
   ([ADR 0060](./docs/decisions/0060-owner-composition.md)): bind work created
@@ -12,7 +28,7 @@
   owners whose `dispose` releases them exactly once. New bundle budget
   `core-owner`.
 - `renderToStream()` / `renderToStreamResponse()` option `boundaryConcurrency`
-  ([ADR 0061](./docs/decisions/0061-independent-boundary-progress.md)): with
+  ([ADR 0062](./docs/decisions/0062-independent-boundary-progress.md)): with
   `n > 1`, up to `n` deferred `suspense()` views render at once and each chunk
   is flushed as soon as its view settles, so a fast region no longer waits for
   a slow sibling declared before it. Views still start only on consumer
@@ -83,6 +99,26 @@
 
 ### Fixed
 
+- `@purityjs/vite-plugin`: the on-disk `routes.ts` written for a TypeScript
+  `emitTo` path is const-asserted, so `import { routes } from
+  './.purity/routes.ts'` keeps literal patterns and `hasLoader` flags.
+  Before, `pattern` widened to `string`, `LoaderDataOf<'/users/:id', typeof
+  routes>` was `undefined`, and `asyncRoute(routes[i], …)` failed under
+  `exactOptionalPropertyTypes` (ADR 0032 amended, ADR 0034). The virtual
+  module and non-TypeScript emit paths are unchanged.
+- `@purityjs/vite-plugin` declarations compile without Node types. The built
+  `index.d.ts` named Node's global `Buffer`, so a client tsconfig without
+  `@types/node` and with `skipLibCheck: false` failed with TS2591 as soon as
+  it imported `LoaderDataOf` or the emitted `routes.d.ts`. The inline-limit
+  callback now receives Node's `Buffer` when Node types are loaded and
+  `Uint8Array` otherwise. Emitted JavaScript is unchanged.
+- `@purityjs/vite-plugin` types work under `exactOptionalPropertyTypes`:
+  `const plugin: Plugin = purity()` failed because the `resolveId`/`load`/
+  `transform` options and `PurityOutputOptions.paths` rejected the
+  `undefined` Vite passes, and `purity({ hydratable: flag })` with
+  `flag: boolean | undefined` was rejected. Every optional member of
+  `PurityPluginOptions`, `RoutesOptions` and the hook parameter types now
+  accepts `undefined`. Emitted JavaScript is unchanged.
 - `watch()` accepts effects and callbacks with any return type. A returned
   function still runs as cleanup and other values are ignored, as at runtime;
   before, `watch(() => console.log(count()))` — the README example — and

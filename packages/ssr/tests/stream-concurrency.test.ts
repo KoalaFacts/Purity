@@ -1,4 +1,4 @@
-// Independent boundary progress — ADR 0061 (SV2-009 slice 1).
+// Independent boundary progress — ADR 0062 (SV2-009 slice 1).
 //
 // `boundaryConcurrency: n` lets up to n deferred suspense() views render at
 // once and flushes each chunk as soon as it settles. The default (1) keeps

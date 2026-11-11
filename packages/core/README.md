@@ -355,6 +355,19 @@ watch(() => {
 - A rejection of the latest run is rethrown to readers until a later run
   succeeds. `user.dispose()` (or disposing the owning scope) aborts the run.
 - The first run starts when the value is first read.
+- `fn` may also return an `AsyncIterable` (e.g. an `async function*`): each
+  yielded value becomes current in turn, `pending()` is `true` only until the
+  first value, and a newer run or disposal drops later values and closes the
+  iterator at its next value — listen to `signal` to stop a wait sooner.
+
+  ```ts
+  // priceFeed(symbol, { signal }) returns an AsyncIterable<number>
+  const price = asyncCompute(({ signal }) => priceFeed(symbol(), { signal }));
+  ```
+
+  As with `async` functions, only reads before the first `await` are tracked;
+  in an `async function*` that is the body up to its first `await`/`yield`.
+
 - A `watch` that reads an unresolved value without a guard throws
   `PendingError` from `watch()`; guard the read as above until the view
   boundary (SV2-004) lands.
@@ -623,6 +636,16 @@ it becomes visible when the last tentative value on that signal settles.
 Started during component setup or render, a transaction is aborted on unmount
 (writes dropped, tentative values removed, the promise rejects with
 `AbortError`); one started from an event handler always settles.
+
+`pendingTransactions()` is the tracked number of transactions still running;
+it drops in the same batch as the commit, so a "Saving…" label never
+disappears before the saved values appear:
+
+```ts
+import { pendingTransactions } from "@purityjs/core/transaction";
+
+html`<button ?disabled=${() => pendingTransactions() > 0}>Save</button>`;
+```
 
 ### Owner composition
 

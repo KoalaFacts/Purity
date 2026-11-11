@@ -1,4 +1,4 @@
-# 0061: Independent progress for streamed Suspense boundaries
+# 0062: Independent progress for streamed Suspense boundaries
 
 **Status:** Proposed (SV2-009; implementation slices tracked in
 [the surpass-Solid ledger](../plans/surpass-solid.md))

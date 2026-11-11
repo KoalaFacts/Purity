@@ -17,7 +17,11 @@ async function bundle(source: string): Promise<string> {
     logLevel: 'silent',
     mode: 'production',
     resolve: { conditions: ['module', 'node', 'production'] },
-    ssr: { noExternal: true },
+    // Vite picks the SSR `development` export condition whenever the host
+    // process is not NODE_ENV=production (Vitest runs with `test`), which
+    // bundled the development build of @purityjs/signals with its inspector.
+    // Pin the production conditions so this measures the production artifact.
+    ssr: { noExternal: true, resolve: { conditions: ['module', 'node', 'production'] } },
     plugins: [fixture, purity()],
     build: {
       ssr: true,
@@ -53,7 +57,8 @@ describe('production SSR helper pruning', () => {
       import { renderToString } from '@purityjs/ssr';
       export function render() { return renderToString(() => html\`<p>Hello</p>\`); }
     `);
-    expect(gzipSync(code, { level: 9 }).length).toBeLessThan(5150);
+    expect(gzipSync(code, { level: 9 }).length).toBeLessThan(4900);
+    expect(code).not.toContain('__purity_inspect__');
     const app = await load(code);
     expect(await app.render()).toBe('<p>Hello</p>');
   }, 30000);

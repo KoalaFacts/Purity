@@ -104,6 +104,10 @@
       "gzipBytes": 3328,
       "brotliBytes": 3072
     },
+    "ssr-concurrency": {
+      "gzipBytes": 448,
+      "brotliBytes": 384
+    },
     "runtime-all": {
       "gzipBytes": 52736,
       "brotliBytes": 46464

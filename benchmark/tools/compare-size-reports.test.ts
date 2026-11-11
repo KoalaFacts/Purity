@@ -582,6 +582,7 @@ function extendedSplitExamples() {
     ['core-loading', 1472, 1344],
     ['core-transaction', 768, 704],
     ['core-owner', 576, 512],
+    ['ssr-concurrency', 448, 384],
   ] as const;
   return additions.map(([entry, gzipBytes, brotliBytes]) => {
     const next = structuredClone(prior);
@@ -629,7 +630,7 @@ function compareCLI(base: unknown, candidate: unknown) {
   }
 }
 
-it('CLI pairs frozen 21 through 28 entry inventories with their exact v7 budgets', () => {
+it('CLI pairs frozen 21 through 29 entry inventories with their exact v7 budgets', () => {
   const approved = approvedV7Examples();
   for (const base of approved) {
     const result = compareCLI(base, base);
@@ -646,11 +647,11 @@ it('CLI pairs frozen 21 through 28 entry inventories with their exact v7 budgets
   }
 });
 
-it('pins current 28-entry budgets independently of historical budget contracts', () => {
+it('pins current 29-entry budgets independently of historical budget contracts', () => {
   const baseline = approvedV7Examples().at(-1)!;
-  expect(Object.keys(clientBudgets.packages)).toHaveLength(28);
+  expect(Object.keys(clientBudgets.packages)).toHaveLength(29);
   expect(clientBudgets).toEqual(baseline.budgets);
-  expect(compareSizeReports(baseline, structuredClone(baseline)).packages).toHaveLength(28);
+  expect(compareSizeReports(baseline, structuredClone(baseline)).packages).toHaveLength(29);
 
   const tampered = latestSplitExample();
   tampered.budgets.packages['core-async'].brotliBytes++;

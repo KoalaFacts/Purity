@@ -1,6 +1,6 @@
 # 0062: Independent progress for streamed Suspense boundaries
 
-**Status:** Proposed (SV2-009; implementation slices tracked in
+**Status:** Accepted (SV2-009; slice 1 shipped in #372; implementation slices tracked in
 [the surpass-Solid ledger](../plans/surpass-solid.md))
 **Date:** 2026-11-08
 

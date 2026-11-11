@@ -1,6 +1,6 @@
 # 0022: Data loaders — `loader` named export per route + layout
 
-**Status:** Accepted
+**Status:** Accepted; amended 2026-11-08: detection now reads the module's static export table with `oxc-parser` (already a plugin dependency since ADR 0043), so same-line (`export default Page; export const loader = …`) and multi-declarator exports are flagged and text in strings/comments and type-only exports (`export type { loader }`, `export type loader = …`) are not; a file that does not parse falls back to the regex scan described below. The regex points below describe the original decision.
 **Date:** 2026-05-11
 
 ## Context

@@ -101,6 +101,13 @@
 
 ### Fixed
 
+- `@purityjs/vite-plugin` file-system routes: a `loader` exported on the same
+  line as other code (`export default Page; export const loader = …`) or in a
+  multi-declarator export (`export const meta = {}, loader = …`) is now
+  flagged `hasLoader: true`, so the router runs it; before, the line-anchored
+  scan missed it and the loader never ran. Detection now uses the module's
+  static exports via `oxc-parser`, so `loader` text inside a string and a
+  type-only `export type { loader }` no longer set the flag (ADR 0022 amended).
 - `@purityjs/vite-plugin`: the on-disk `routes.ts` written for a TypeScript
   `emitTo` path is const-asserted, so `import { routes } from
   './.purity/routes.ts'` keeps literal patterns and `hasLoader` flags.

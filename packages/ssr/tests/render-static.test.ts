@@ -327,19 +327,33 @@ describe('renderStatic — composes routes via renderToString', () => {
         '//evil.example.com/admin',
         'http://evil.example.com/',
         '/ok',
+        '/space ok~',
+        '/caf\u00e9/\u{1f600}',
         '/with\r\ninjection',
+        '/nul\u0000byte',
+        '/unit\u001fsep',
+        '/del\u007fchar',
+        '/tab\there',
         '',
         'no-leading-slash',
       ],
       handler: () => () => ssrHtml`<p>safe</p>`,
     });
     expect(files.has('/ok')).toBe(true);
-    expect(files.size).toBe(1);
+    // Printable boundaries (U+0020 space, U+007E tilde) and non-ASCII
+    // (U+0080+, astral via surrogate pairs) stay allowed.
+    expect(files.has('/space ok~')).toBe(true);
+    expect(files.has('/caf\u00e9/\u{1f600}')).toBe(true);
+    expect(files.size).toBe(3);
     for (const path of [
       '/../../etc/passwd',
       '//evil.example.com/admin',
       'http://evil.example.com/',
       '/with\r\ninjection',
+      '/nul\u0000byte',
+      '/unit\u001fsep',
+      '/del\u007fchar',
+      '/tab\there',
       '',
       'no-leading-slash',
     ]) {

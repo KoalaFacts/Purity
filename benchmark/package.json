@@ -23,7 +23,7 @@
     "@purityjs/router": "*",
     "@purityjs/vite-plugin": "*",
     "@solidjs/vite-plugin": "3.0.0-next.55",
-    "@solidjs/web": "2.0.0-rc.20",
+    "@solidjs/web": "2.0.0-rc.21",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@vitejs/plugin-react": "6.2.1",
     "@vitejs/plugin-vue": "^6.0.10",

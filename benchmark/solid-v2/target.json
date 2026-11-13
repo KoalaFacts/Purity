@@ -5,24 +5,24 @@
   "baselineStatus": "Release candidate / prerelease",
   "baselineCommit": "225014bf8757421a2ea0a9c6ddc148b965eed000",
   "benchmarkWorkspaceComparator": {
-    "recordedAtAustraliaSydney": "2026-11-05",
-    "note": "The general benchmark workspace (benchmark/package.json, root package-lock.json) does not use this frozen target. Since #345 (1c76af6) it resolves the versions below. Runs of benchmark/run-bench.ts compare against these, are exploratory, and are not SV2-001 baseline evidence; the frozen rc.18 identity is still verified by benchmark/solid-v2/app-fixture. Re-freezing the target to a newer release is a separate, explicit baseline change.",
+    "recordedAtAustraliaSydney": "2026-11-14",
+    "note": "The general benchmark workspace (benchmark/package.json, root package-lock.json) does not use this frozen target. It resolves the versions below (checked against package-lock.json by benchmark/tools/comparator-record.test.ts). Runs of benchmark/run-bench.ts compare against these, are exploratory, and are not SV2-001 baseline evidence; the frozen rc.18 identity is still verified by benchmark/solid-v2/app-fixture. Re-freezing the target to a newer release is a separate, explicit baseline change.",
     "packages": {
       "solid-js": {
-        "version": "2.0.0-rc.20",
-        "integrity": "sha512-FxaEI7LHupehFoR9j2CfJAGCoRgiKgeNlzii4szUS6lnD8RkpdtvX1k6WFG71vl5bskXRRsmEQVAXsbIemQOuw=="
+        "version": "2.0.0-rc.21",
+        "integrity": "sha512-0Z8/qiJKnK6A2g8QspGthwxR0W8WauMOD2/LQtNmxBT8gpZkKaXmo/fdek/+cB+84w4HYejWJixSAn4fcAI0Uw=="
       },
       "@solidjs/web": {
-        "version": "2.0.0-rc.20",
-        "integrity": "sha512-ACGUZ1XBNxiHnWW274na+1JZfuIhiS/BN5XM72wVKNYSopR/NyjVPR4O/nvshtbYlEk1lKJ9d1uBaXDaz6ddYg=="
+        "version": "2.0.0-rc.21",
+        "integrity": "sha512-1E9dvR3/+5fQTI3oxxACBX2Rg4rezXgrljerhWDHR5uQZ04p5Z8qXROI7dIDJKyANtsnLKYbM2OyI/p/FmjGUA=="
       },
       "@solidjs/signals": {
         "version": "2.0.0-rc.21",
         "integrity": "sha512-F1TUMO/nd1XC//+tcaWxibOOgXBHQGmNQnAeiDnpLh+1smnlwIgKF6pc20evlyfQwqf0gP6rH4sNEqCPBNcpgg=="
       },
       "@solidjs/vite-plugin": {
-        "version": "3.0.0-next.55",
-        "integrity": "sha512-jMR8P9O+0qYW05xpQgLYRsHjgdSHyZRCXqgHhT3QpO63eXWt3H4tIwONxmm/r47Sed9Prk8N7EnMX2byro+FTA=="
+        "version": "3.0.0-next.57",
+        "integrity": "sha512-z05CuXxtHUSYfKBw8PirIpXkjSmqevUiygbqIMxCmc+ZCW4x2d+1zHw7nd98NdQsNAUIXJir3GmM7n3f/j0jZg=="
       }
     }
   },

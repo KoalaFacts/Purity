@@ -106,7 +106,7 @@ _Serves:_ SV2-001, working-agreement hygiene. _Fix:_ regenerate the package tabl
 
 <a id="cq-12"></a>
 
-**CQ-12 · Signal graph: allocation on every CHECK resolution and every write that reaches a computed.** `packages/signals/src/signals.ts:311-324` (`markCheck` allocates a stack per write), `357-365` (`resolveCheck` allocates a frame object and `?? []` fallbacks per pull). Not a measured bottleneck — Purity is level with or ahead of Solid on computed-chain and diamond — so this is optional: a depth-0 fast path (sources all CLEAN or states) avoids the frame allocation in the common case, and a module-level reusable stack suits `markCheck` because no user code runs inside it. `pendingEffects` can also hold the same effect twice (CHECK → DIRTY re-push, lines 299 and 318); harmless because the flush skips CLEAN entries.
+**CQ-12 · Signal graph: allocation on every CHECK resolution and every write that reaches a computed.** `packages/signals/src/signals.ts:311-324` (`markCheck` allocates a stack per write), `357-365` (`resolveCheck` allocates a frame object and `?? []` fallbacks per pull). Not a measured bottleneck — Purity is level with or ahead of Solid on computed-chain and diamond — so this is optional: a depth-0 fast path (sources all CLEAN or states) avoids the frame allocation in the common case, and a module-level reusable stack suits `markCheck` because no user code runs inside it. `pendingEffects` can also hold the same effect twice (CHECK → DIRTY re-push, lines 299 and 318); harmless because the flush skips CLEAN entries. Status: `markCheck` stack reuse done (PR #384); `resolveCheck` allocates nothing unless it descends (CQ-12 slice 2, see the ledger).
 
 <a id="cq-13"></a>
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { each, match, when } from '../src/control.ts';
 import { batch, compute, state, watch } from '@purityjs/signals';
+import { bestOfMs } from './_helpers.ts';
 
 const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 
@@ -307,8 +308,12 @@ describe('5. template rendering', () => {
     // Pair measurements so one noisy CI timeslice cannot decide the result.
     const ratios: number[] = [];
     for (let sample = 0; sample < 5; sample++) {
-      const runtimeElapsed = bench('1k complex via runtime html()', runtimeWork);
-      const aotElapsed = bench('1k complex via hoisted (AOT-equivalent)', aotWork);
+      // Best of 3 per side: a descheduled sample on a loaded runner does not skew the ratio.
+      const runtimeElapsed = bestOfMs(runtimeWork);
+      const aotElapsed = bestOfMs(aotWork);
+      console.log(
+        `  1k complex: runtime html() ${runtimeElapsed.toFixed(2)}ms, hoisted (AOT-equivalent) ${aotElapsed.toFixed(2)}ms`,
+      );
       ratios.push(aotElapsed / runtimeElapsed);
     }
     ratios.sort((a, b) => a - b);

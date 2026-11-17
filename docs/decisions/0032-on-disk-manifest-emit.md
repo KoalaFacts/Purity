@@ -1,6 +1,6 @@
 # 0032: `emitTo` — on-disk manifest emit
 
-**Status:** Accepted
+**Status:** Accepted; amended 2026-11-08 (SV2-014 slice 5): a TypeScript `emitTo` path (`.ts`/`.tsx`/`.mts`/`.cts`) now gets the virtual source with `as const` on each export, so direct imports type like the ADR 0044 `routes.d.ts` (readonly tuple, literal `pattern`/`hasLoader`) and ADR 0034 `LoaderDataOf` works; other extensions still get the virtual source unchanged. The "content is identical" and "no type-narrowing" points below describe the original decision.
 **Date:** 2026-05-11
 
 ## Context

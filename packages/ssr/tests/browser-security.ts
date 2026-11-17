@@ -3,8 +3,8 @@ import { createRequire } from 'node:module';
 import { createServer, type Server } from 'node:http';
 import { component, resource, suspense } from '@purityjs/core';
 import { handleAction, serverAction } from '@purityjs/platform/actions';
-import { chromium, firefox, webkit } from 'playwright';
 import { generate, generateHydrate, generateSSR, parse } from '@purityjs/compiler';
+import { browserEngines } from '../../../benchmark/tools/browser-engines.ts';
 import { isSSRHtml, markSSRHtml, valueToHtml } from '@purityjs/ssr/runtime';
 import {
   html,
@@ -247,7 +247,7 @@ try {
   const deepMarkup = await new Response(
     renderToStream(() => html`<textarea>${deep(12)}</textarea>`, { serializeResources: false }),
   ).text();
-  for (const browserType of [chromium, firefox, webkit]) {
+  for (const [, browserType] of browserEngines) {
     const browser = await browserType.launch();
     try {
       const page = await browser.newPage();

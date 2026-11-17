@@ -115,6 +115,20 @@ Custom-element tag names must contain a hyphen and avoid reserved names
 in Purity examples is the `p-` prefix — pick something distinctive for
 your app to avoid clashes with third-party widgets you may load later.
 
+### Styles outside a shadow root
+
+Outside a component, `css()` injects a `<style>` holding
+`@layer purity { @scope (.p-N) { … } }` and, once, `@layer purity, user;`
+([`styles.ts`](../packages/core/src/styles.ts)), so unlayered app CSS wins
+without `!important`. Browsers without `@layer` fall back to source order.
+
+Platform features reviewed (May 2026) and not used yet: CSS module scripts
+(Firefox gap), `:host-context()` (WebKit declined), cross-root ARIA (origin
+trial only), serializable shadow roots (SSR runs on Node) and scoped
+custom-element registries (`component()` uses the global registry on
+purpose). `ElementInternals.states`, `formAssociated` and `moveBefore` are
+used — ADRs 0035–0037.
+
 ## Escape hatches
 
 If a specific component needs to opt out, the cleanest options are:

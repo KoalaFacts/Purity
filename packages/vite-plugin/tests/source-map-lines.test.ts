@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
-import { SourceMapConsumer } from 'source-map-js';
+import { SourceMapConsumer, type RawSourceMap } from 'source-map-js';
 import { purity } from '../src/index.ts';
 
 const separators = [
@@ -30,14 +30,17 @@ for (const ssr of [false, true]) {
         const outputLines = lines(result.code);
         const line = outputLines.findIndex((text) => text.startsWith('throw new Error')) + 1;
         expect(
-          new SourceMapConsumer(result.map).originalPositionFor({ line, column: 0 }),
+          new SourceMapConsumer(result.map as unknown as RawSourceMap).originalPositionFor({
+            line,
+            column: 0,
+          }),
         ).toMatchObject({
           source: '/banner.ts',
           line: 4,
           column: 0,
         });
         expect(result.code.startsWith(prefix + '\n')).toBe(true);
-        expect(result.map.mappings.split(';')).toHaveLength(outputLines.length);
+        expect(result.map!.mappings.split(';')).toHaveLength(outputLines.length);
       });
     }
 
@@ -54,13 +57,16 @@ for (const ssr of [false, true]) {
         const outputLines = lines(result.code);
         const line = outputLines.findIndex((text) => text.startsWith('throw new Error')) + 1;
         expect(
-          new SourceMapConsumer(result.map).originalPositionFor({ line, column: 0 }),
+          new SourceMapConsumer(result.map as unknown as RawSourceMap).originalPositionFor({
+            line,
+            column: 0,
+          }),
         ).toMatchObject({
           source: '/removed.ts',
           line: 5,
           column: 0,
         });
-        expect(result.map.mappings.split(';')).toHaveLength(outputLines.length);
+        expect(result.map!.mappings.split(';')).toHaveLength(outputLines.length);
       });
     }
 
@@ -75,7 +81,7 @@ for (const ssr of [false, true]) {
         const result = purity({ hydratable: true, strictAot: false }).transform(source, '/app.ts', {
           ssr,
         })!;
-        const map = new SourceMapConsumer(result.map);
+        const map = new SourceMapConsumer(result.map as unknown as RawSourceMap);
         const outputLines = lines(result.code);
         const diagnosticLine = outputLines.findIndex((line) => line.startsWith('throw new Error'));
         expect(map.originalPositionFor({ line: diagnosticLine + 1, column: 0 })).toMatchObject({
@@ -87,8 +93,8 @@ for (const ssr of [false, true]) {
         expect(
           map.originalPositionFor({ line: templateLine + 1, column: 'const view = '.length }),
         ).toMatchObject({ source: '/app.ts', line: 3, column: 'const view = '.length });
-        expect(result.map.mappings.split(';')).toHaveLength(outputLines.length);
-        expect(result.map.sourcesContent).toEqual([source]);
+        expect(result.map!.mappings.split(';')).toHaveLength(outputLines.length);
+        expect(result.map!.sourcesContent).toEqual([source]);
         expect(result.code).toContain(separator + 'throw new Error(message);');
       });
 
@@ -124,14 +130,17 @@ for (const ssr of [false, true]) {
         const outputLines = lines(result.code);
         const line = outputLines.findIndex((text) => text.startsWith('throw new Error')) + 1;
         expect(
-          new SourceMapConsumer(result.map).originalPositionFor({ line, column: 0 }),
+          new SourceMapConsumer(result.map as unknown as RawSourceMap).originalPositionFor({
+            line,
+            column: 0,
+          }),
         ).toMatchObject({
           source: '/slot.ts',
           line: 5,
           column: 0,
         });
         expect(result.code).toContain(expression);
-        expect(result.map.mappings.split(';')).toHaveLength(outputLines.length);
+        expect(result.map!.mappings.split(';')).toHaveLength(outputLines.length);
       });
     }
   });

@@ -1,4 +1,4 @@
-import { SourceMapConsumer } from 'source-map-js';
+import { SourceMapConsumer, type RawSourceMap } from 'source-map-js';
 import { expect, it } from 'vite-plus/test';
 import { applyEdits, buildLineStarts, emptyV3Map, offsetToLineCol } from '../src/text-edits.ts';
 
@@ -25,9 +25,9 @@ it.each(boundaries)('preserves replacement and marker mapping after prefix %j', 
         const result = applyEdits(source, edits, buildLineStarts(source), '/test.ts');
         expect(result.code).toBe(left + inserted + right + 'MARKER');
         expect(result.map.mappings.split(';')).toHaveLength(lines(result.code).length);
-        const actual = new SourceMapConsumer(result.map).originalPositionFor(
-          position(result.code, result.code.indexOf('MARKER')),
-        );
+        const actual = new SourceMapConsumer(
+          result.map as unknown as RawSourceMap,
+        ).originalPositionFor(position(result.code, result.code.indexOf('MARKER')));
         expect({ line: actual.line, column: actual.column }).toEqual(
           position(source, source.indexOf('MARKER')),
         );

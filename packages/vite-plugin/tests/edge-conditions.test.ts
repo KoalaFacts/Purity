@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { build } from 'vite';
+import { build, type Rolldown } from 'vite';
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
@@ -52,8 +52,8 @@ describe('production package conditions for worker SSR', () => {
           {
             name: 'inspect-ssr-conditions',
             configResolved(config) {
-              conditions = config.ssr.resolve.conditions;
-              externalConditions = config.ssr.resolve.externalConditions;
+              conditions = config.ssr.resolve!.conditions!;
+              externalConditions = config.ssr.resolve!.externalConditions!;
             },
           },
         ],
@@ -71,7 +71,7 @@ describe('production package conditions for worker SSR', () => {
       expect(conditions).toContain('purity-server');
       expect(externalConditions).toContain('custom-external');
       expect(externalConditions).toContain('purity-server');
-      const output = Array.isArray(compiled) ? compiled[0] : compiled;
+      const output = (Array.isArray(compiled) ? compiled[0] : compiled) as Rolldown.RolldownOutput;
       const chunk = output.output.find((item) => item.type === 'chunk');
       expect(chunk).toBeDefined();
       const ids = Object.keys(chunk!.modules).map((id) => id.replaceAll('\\', '/'));
@@ -99,7 +99,9 @@ describe('production package conditions for worker SSR', () => {
         resolve: { conditions: ['module', 'browser', 'production'] },
         build: { lib: { entry: clientEntry, formats: ['es'] }, write: false, minify: false },
       });
-      const client = Array.isArray(clientBuild) ? clientBuild[0] : clientBuild;
+      const client = (
+        Array.isArray(clientBuild) ? clientBuild[0] : clientBuild
+      ) as Rolldown.RolldownOutput;
       const clientIds = client.output
         .filter((item) => item.type === 'chunk')
         .flatMap((item) => Object.keys(item.modules))

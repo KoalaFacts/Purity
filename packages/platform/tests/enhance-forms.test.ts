@@ -95,6 +95,23 @@ describe('enhanceForms', () => {
     },
   );
 
+  it('calls a method-style navigate with the options object as this', async () => {
+    const { root, form } = fixture();
+    const visited: string[] = [];
+    const options = {
+      visited,
+      navigate(href: string) {
+        this.visited.push(href);
+      },
+      fetch: vi.fn().mockResolvedValue(Response.json({ redirect: '/done' })),
+    };
+    const controller = enhanceForms(root, options);
+    cleanups.push(controller.dispose);
+    submit(form);
+    await finished(controller, form);
+    expect(visited).toEqual([new URL('/done', document.URL).href]);
+  });
+
   it.each([
     { status: 422, fieldErrors: { name: 'Invalid' } },
     { status: 500, fieldErrors: {} },
@@ -627,22 +644,30 @@ describe('enhanceForms', () => {
     expect(() => enhanceForms(document, { timeoutMs })).toThrow(/timeoutMs/);
   });
 
-  it.each(['unmarked', 'get', 'cross-origin', 'target', 'encoding', 'submitter-get'])(
-    'keeps native %s submissions',
-    (kind) => {
-      const { root, form, button } = fixture(kind !== 'unmarked');
-      if (kind === 'get') form.method = 'get';
-      if (kind === 'cross-origin') form.action = 'https://other.example/save';
-      if (kind === 'target') form.target = '_blank';
-      if (kind === 'encoding') form.enctype = 'text/plain';
-      if (kind === 'submitter-get') button.setAttribute('formmethod', 'get');
-      const fetch = vi.fn<typeof globalThis.fetch>();
-      const controller = enhanceForms(root, { fetch });
-      cleanups.push(controller.dispose);
-      expect(submit(form, button).defaultPrevented).toBe(false);
-      expect(fetch).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    'unmarked',
+    'get',
+    'dialog',
+    'cross-origin',
+    'target',
+    'encoding',
+    'submitter-get',
+    'submitter-dialog',
+  ])('keeps native %s submissions', (kind) => {
+    const { root, form, button } = fixture(kind !== 'unmarked');
+    if (kind === 'get') form.method = 'get';
+    if (kind === 'dialog') form.setAttribute('method', 'dialog');
+    if (kind === 'cross-origin') form.action = 'https://other.example/save';
+    if (kind === 'target') form.target = '_blank';
+    if (kind === 'encoding') form.enctype = 'text/plain';
+    if (kind === 'submitter-get') button.setAttribute('formmethod', 'get');
+    if (kind === 'submitter-dialog') button.setAttribute('formmethod', 'dialog');
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const controller = enhanceForms(root, { fetch });
+    cleanups.push(controller.dispose);
+    expect(submit(form, button).defaultPrevented).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });
 
 describe('enhanced validation errors in shadow trees', () => {

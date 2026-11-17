@@ -1,0 +1,149 @@
+{
+  "packages": {
+    "core": {
+      "gzipBytes": 12544,
+      "brotliBytes": 11264
+    },
+    "compiler": {
+      "gzipBytes": 9344,
+      "brotliBytes": 8576
+    },
+    "core-list-runtime": {
+      "gzipBytes": 2560,
+      "brotliBytes": 2304
+    },
+    "core-runtime": {
+      "gzipBytes": 2048,
+      "brotliBytes": 1792
+    },
+    "core-jit": {
+      "gzipBytes": 1280,
+      "brotliBytes": 1152
+    },
+    "core-jit-client": {
+      "gzipBytes": 1280,
+      "brotliBytes": 1280
+    },
+    "platform-signals": {
+      "gzipBytes": 7552,
+      "brotliBytes": 6784
+    },
+    "router": {
+      "gzipBytes": 6016,
+      "brotliBytes": 5376
+    },
+    "platform-actions": {
+      "gzipBytes": 4736,
+      "brotliBytes": 4224
+    },
+    "platform-islands": {
+      "gzipBytes": 3456,
+      "brotliBytes": 3072
+    },
+    "platform-query": {
+      "gzipBytes": 1664,
+      "brotliBytes": 1408
+    },
+    "reactive-signals": {
+      "gzipBytes": 2816,
+      "brotliBytes": 2688
+    },
+    "core-forms": {
+      "gzipBytes": 4736,
+      "brotliBytes": 4352
+    },
+    "core-forms-lifecycle": {
+      "gzipBytes": 3072,
+      "brotliBytes": 2688
+    },
+    "core-csr": {
+      "gzipBytes": 7808,
+      "brotliBytes": 7040
+    },
+    "core-virtual": {
+      "gzipBytes": 5120,
+      "brotliBytes": 4608
+    },
+    "core-ssr-bridge": {
+      "gzipBytes": 1664,
+      "brotliBytes": 1408
+    },
+    "core-hydration-bridge": {
+      "gzipBytes": 2816,
+      "brotliBytes": 2560
+    },
+    "core-csr-runtime": {
+      "gzipBytes": 1280,
+      "brotliBytes": 1024
+    },
+    "ssr-runtime": {
+      "gzipBytes": 3328,
+      "brotliBytes": 3072
+    },
+    "runtime-all": {
+      "gzipBytes": 52736,
+      "brotliBytes": 46464
+    },
+    "ssr": {
+      "gzipBytes": 9856,
+      "brotliBytes": 8960
+    }
+  },
+  "fixtures": {
+    "counter-runtime": {
+      "functionConstructorCalls": 1
+    },
+    "counter-aot": {
+      "functionConstructorCalls": 0
+    },
+    "counter-client-runtime": {
+      "functionConstructorCalls": 1
+    },
+    "counter-client-aot": {
+      "functionConstructorCalls": 0
+    },
+    "controls-runtime": {
+      "functionConstructorCalls": 1
+    },
+    "controls-aot": {
+      "functionConstructorCalls": 0,
+      "gzipBytes": 8960,
+      "brotliBytes": 7936
+    },
+    "form-runtime": {
+      "functionConstructorCalls": 1
+    },
+    "form-aot": {
+      "functionConstructorCalls": 0
+    },
+    "hydration-runtime": {
+      "functionConstructorCalls": 1
+    },
+    "hydration-aot": {
+      "functionConstructorCalls": 0,
+      "gzipBytes": 9472,
+      "brotliBytes": 8448
+    },
+    "resource-runtime": {
+      "functionConstructorCalls": 1
+    },
+    "resource-aot": {
+      "functionConstructorCalls": 0
+    },
+    "counter-csr-aot": {
+      "functionConstructorCalls": 0
+    },
+    "counter-client-csr-aot": {
+      "functionConstructorCalls": 0
+    },
+    "controls-csr-aot": {
+      "functionConstructorCalls": 0
+    },
+    "form-csr-aot": {
+      "functionConstructorCalls": 0
+    },
+    "resource-csr-aot": {
+      "functionConstructorCalls": 0
+    }
+  }
+}

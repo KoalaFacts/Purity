@@ -615,7 +615,8 @@ const virtualHydrationAdapter: EachHydrationAdapter = {
       ownerCtx,
       eachState,
       getList,
-      mapFn,
+      // virtualEach() renderers take (item, index); they have no position.
+      mapFn as (item: () => any, index: number) => Node | DocumentFragment | string,
       getKey,
       spacers,
     );
@@ -641,7 +642,8 @@ export function virtualEach<T>(
   if (isHydratingPassive() && captureHydratingEach) {
     return captureHydratingEach(
       listAccessor,
-      mapFn as (item: () => T, index: number) => Node | DocumentFragment | string,
+      // Hydration passes each()'s position; virtualEach rows take (item, index).
+      (item, index) => mapFn(item, index) as Node | DocumentFragment | string,
       keyFn,
       virtualHydrationAdapter,
     ) as DeferredEach<T>;

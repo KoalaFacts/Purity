@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { chromium, firefox, webkit, type BrowserType } from 'playwright';
+import type { BrowserType } from 'playwright';
+import { browserEngines } from './browser-engines.ts';
 import { build, preview } from 'vite';
 
 const benchmarkRoot = resolve(import.meta.dirname, '..');
@@ -155,7 +156,7 @@ try {
   const address = server.httpServer.address() as AddressInfo | null;
   assert.ok(address, 'Preview server did not start');
   const url = `http://127.0.0.1:${address.port}/Purity/apps/purity/virtual.html`;
-  for (const browserType of [chromium, firefox, webkit]) {
+  for (const [, browserType] of browserEngines) {
     await checkBrowser(browserType, url);
   }
 } finally {

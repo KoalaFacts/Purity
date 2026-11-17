@@ -1,3 +1,4 @@
+import type { Plugin } from 'vite';
 // ---------------------------------------------------------------------------
 // @purityjs/vite-plugin — AOT template compilation + file-system routing
 //
@@ -37,6 +38,62 @@ import {
 } from './text-edits.ts';
 
 export type { PuritySourceMap } from './text-edits.ts';
+
+/**
+ * Node's `Buffer` when `@types/node` is loaded, otherwise `Uint8Array`. Naming
+ * the global `Buffer` directly made the built declarations fail to compile in
+ * client tsconfigs without Node types (`types: ["vite/client"]`), which load
+ * them through `LoaderDataOf` or the emitted `routes.d.ts` (SV2-014).
+ */
+// Read through `alloc()`: `BufferConstructor` declares no `prototype`, so
+// inferring from it yields `Function.prototype` (`any`).
+type NodeBuffer = typeof globalThis extends { Buffer: { alloc(size: number): infer B } }
+  ? B
+  : Uint8Array;
+
+/**
+ * The parts of the Vite/Rolldown plugin context Purity's hooks read. Hooks
+ * also run without one (direct calls, non-Vite hosts), so they take
+ * `this: unknown` and every member here is optional.
+ */
+export interface PurityHookContext {
+  warn?: (message: string) => void;
+  environment?: { config?: { consumer?: string } };
+}
+
+/** The hook's plugin context, or null when a hook runs without one. */
+function hookContext(ctx: unknown): PurityHookContext | null {
+  return ctx !== null && typeof ctx === 'object' ? (ctx as PurityHookContext) : null;
+}
+
+/** Reports through the plugin context's `warn()` when present, else `console.warn`. */
+function hookWarn(ctx: unknown): (message: string) => void {
+  const host = hookContext(ctx);
+  return (message) => {
+    if (host && typeof host.warn === 'function') host.warn(message);
+    else console.warn(message);
+  };
+}
+
+/** Output options the `strictAot` bundle check reads. */
+export interface PurityOutputOptions {
+  format?: string | undefined;
+  paths?: Record<string, string> | ((id: string) => string) | undefined;
+  globals?: Record<string, string> | ((id: string) => string) | undefined;
+}
+
+/** Emitted bundle entries as the `generateBundle` checks read them. */
+export type PurityOutputBundle = Record<
+  string,
+  | { type: 'asset'; originalFileNames?: readonly string[] | undefined }
+  | {
+      type: 'chunk';
+      fileName: string;
+      code: string;
+      imports?: readonly string[] | undefined;
+      modules?: Record<string, { code?: string | null | undefined }> | undefined;
+    }
+>;
 
 const DEVTOOLS_ID = 'virtual:purity-devtools';
 const RESOLVED_DEVTOOLS_ID = '\0' + DEVTOOLS_ID;
@@ -124,33 +181,34 @@ function checkAssetReferences(code: string, id: string): void {
   if (!/\.[cm]?[jt]sx?(?:\?|$)/.test(id) || !code.includes('URL') || !code.includes('import.meta'))
     return;
   const { program } = parseSync(id.split('?')[0]!, code);
-  const visit = (node: any): void => {
-    if (!node || typeof node !== 'object') return;
-    if (node.type === 'NewExpression' && node.callee?.name === 'URL') {
-      const base = node.arguments?.[1];
-      if (
-        base?.type === 'MemberExpression' &&
-        base.property?.name === 'url' &&
-        base.object?.type === 'MetaProperty' &&
-        base.object.meta?.name === 'import'
-      ) {
-        const path = node.arguments[0];
-        if (typeof path?.value === 'string') rejectServerAssetPath(path.value);
-        // Vite expands dynamic template paths to an asset glob. The final quasi
-        // still identifies a server-only extension even when the stem varies.
-        if (path?.type === 'TemplateLiteral') {
-          rejectServerAssetPath(
-            path.quasis.map((q: any) => q.value.cooked ?? q.value.raw).join('*'),
-          );
-        }
+  someAstNode(program, (node) => {
+    if (node.type !== 'NewExpression' || astObject(node.callee)?.name !== 'URL') return false;
+    const args = astList(node.arguments);
+    const base = astObject(args[1]);
+    const baseObject = astObject(base?.object);
+    if (
+      base?.type === 'MemberExpression' &&
+      astObject(base.property)?.name === 'url' &&
+      baseObject?.type === 'MetaProperty' &&
+      astObject(baseObject.meta)?.name === 'import'
+    ) {
+      const path = astObject(args[0]);
+      if (typeof path?.value === 'string') rejectServerAssetPath(path.value);
+      // Vite expands dynamic template paths to an asset glob. The final quasi
+      // still identifies a server-only extension even when the stem varies.
+      if (path?.type === 'TemplateLiteral') {
+        rejectServerAssetPath(
+          astList(path.quasis)
+            .map((quasi) => {
+              const text = astObject(astObject(quasi)?.value);
+              return String(text?.cooked ?? text?.raw ?? '');
+            })
+            .join('*'),
+        );
       }
     }
-    for (const value of Object.values(node)) {
-      if (Array.isArray(value)) value.forEach(visit);
-      else if (value && typeof value === 'object') visit(value);
-    }
-  };
-  visit(program);
+    return false;
+  });
 }
 
 /**
@@ -166,12 +224,12 @@ export interface RoutesOptions {
    * File extensions counted as route modules.
    * @default ['.ts', '.tsx', '.js', '.jsx']
    */
-  extensions?: string[];
+  extensions?: string[] | undefined;
   /**
    * Virtual-module specifier the manifest is exposed under.
    * @default 'purity:routes'
    */
-  virtualId?: string;
+  virtualId?: string | undefined;
   /**
    * Optional on-disk emit (ADR 0032). When set, the plugin writes the
    * generated manifest source to this path (relative to Vite's project
@@ -181,7 +239,7 @@ export interface RoutesOptions {
    * already matches the new content. Add the emit path to `.gitignore`.
    * @example 'src/.purity/routes.ts'
    */
-  emitTo?: string;
+  emitTo?: string | undefined;
 }
 
 /**
@@ -190,24 +248,24 @@ export interface RoutesOptions {
 export interface PurityPluginOptions {
   /** Generate DOM-adoption walkers for SSR clients. Default false.
    * Client-only builds call create factories directly and cannot hydrate server DOM. */
-  hydratable?: boolean;
+  hydratable?: boolean | undefined;
   /** Fail template compilation instead of falling back to JIT, and reject
    * retained Purity runtime compilation in production client output. Default true. */
-  strictAot?: boolean;
+  strictAot?: boolean | undefined;
   /** Show the reactive graph panel during Vite dev. Off by default; excluded from builds and preview. */
-  devtools?: boolean;
+  devtools?: boolean | undefined;
   /**
    * File extensions to process for `html` tagged template compilation.
    * @default ['.ts', '.js', '.tsx', '.jsx']
    */
-  include?: string[];
+  include?: string[] | undefined;
   /**
    * Strip `*.server.{ts,js,tsx,jsx}` modules from client bundles
    * (replacing the file with `export {};`). Server-side builds pass
    * through unchanged. Default `true` — opt out by passing `false` for
    * apps that want a different convention. ADR 0018.
    */
-  stripServerModules?: boolean;
+  stripServerModules?: boolean | undefined;
   /**
    * Strip the inline handler body of `serverAction(url, handler)` calls
    * in client builds (ADR 0043). `.url` and `.invoke()` survive; the
@@ -217,7 +275,7 @@ export interface PurityPluginOptions {
    * mix server-action registration with client-bundled code. Default
    * `true` — opt out with `false`.
    */
-  stripServerActions?: boolean;
+  stripServerActions?: boolean | undefined;
   /**
    * Enable file-system routing (ADR 0019). Pass `true` for the default
    * `pages/` directory at the project root, or `{ dir, extensions?,
@@ -225,7 +283,7 @@ export interface PurityPluginOptions {
    * module (`purity:routes` by default) exporting a sorted route
    * manifest. Off by default — opt in.
    */
-  routes?: boolean | RoutesOptions;
+  routes?: boolean | RoutesOptions | undefined;
 }
 
 /**
@@ -253,23 +311,20 @@ export interface PurityPluginOptions {
  */
 export function purity(options?: PurityPluginOptions) {
   const strictAot = options?.strictAot !== false;
-  const hydratable = options?.hydratable === true;
-  const extensions = options?.include ?? ['.ts', '.js', '.tsx', '.jsx'];
   const stripServerModules = options?.stripServerModules !== false;
-  const stripServerActions = options?.stripServerActions !== false;
+  const settings: TransformSettings = {
+    strictAot,
+    hydratable: options?.hydratable === true,
+    extensions: options?.include ?? ['.ts', '.js', '.tsx', '.jsx'],
+    stripServerModules,
+    stripServerActions: options?.stripServerActions !== false,
+  };
   let serveDevtools = false;
   let isPreview = false;
   let devtoolsBase = '/';
   let serverBuild = false;
   let productionBuild = false;
-
-  const routesOpts = normaliseRoutesOption(options?.routes);
-  // Resolved at configResolved time once Vite tells us the project root.
-  let routesAbsDir: string | null = null;
-  let routesExt: string[] = [];
-  let virtualId = '';
-  let resolvedVirtualId = '';
-  let emitToAbs: string | null = null;
+  const routes = createRoutesWiring(options?.routes);
 
   return {
     name: 'purity',
@@ -277,12 +332,16 @@ export function purity(options?: PurityPluginOptions) {
 
     config(
       config: {
-        ssr?: {
-          target?: string;
-          resolve?: { conditions?: string[]; externalConditions?: string[] };
-        };
+        ssr?:
+          | {
+              target?: string | undefined;
+              resolve?:
+                | { conditions?: string[] | undefined; externalConditions?: string[] | undefined }
+                | undefined;
+            }
+          | undefined;
       },
-      env: { isPreview?: boolean },
+      env: { isPreview?: boolean | undefined },
     ) {
       isPreview = env.isPreview === true;
       if (config.ssr?.target !== 'webworker') return;
@@ -304,16 +363,21 @@ export function purity(options?: PurityPluginOptions) {
     },
 
     configResolved(
-      this: any,
+      this: unknown,
       config: {
         root: string;
-        command?: string;
-        base?: string;
-        resolve?: { alias?: readonly { find: string | RegExp }[] };
-        build?: {
-          ssr?: unknown;
-          assetsInlineLimit?: number | ((file: string, content: Buffer) => boolean | undefined);
-        };
+        command?: string | undefined;
+        base?: string | undefined;
+        resolve?: { alias?: readonly { find: string | RegExp }[] | undefined } | undefined;
+        build?:
+          | {
+              ssr?: unknown;
+              assetsInlineLimit?:
+                | number
+                | ((file: string, content: NodeBuffer) => boolean | undefined)
+                | undefined;
+            }
+          | undefined;
       },
     ) {
       serverBuild = !!config.build?.ssr;
@@ -334,76 +398,39 @@ export function purity(options?: PurityPluginOptions) {
       serveDevtools = options?.devtools === true && config.command === 'serve' && !isPreview;
       // Resolved Vite bases have a trailing slash; absolute bases use their path during dev.
       devtoolsBase = config.base ? new URL(config.base, 'http://vite.local').pathname : '/';
-      if (!routesOpts) return;
-      routesAbsDir = resolvePath(config.root, routesOpts.dir);
-      routesExt = routesOpts.extensions ?? ['.ts', '.tsx', '.js', '.jsx'];
-      virtualId = routesOpts.virtualId ?? 'purity:routes';
-      resolvedVirtualId = '\0' + virtualId;
-      emitToAbs = routesOpts.emitTo ? resolvePath(config.root, routesOpts.emitTo) : null;
+      routes.configResolved(config.root);
     },
 
-    buildStart(this: any) {
-      // ADR 0033 — eager manifest emit. When `emitTo` is set we regenerate
-      // the on-disk file at the start of every `vite build` / `vite dev`,
-      // regardless of whether anything imports `purity:routes` in this run.
-      // Enables consumers that bundle the emitted file outside Vite
-      // (Cloudflare Workers via wrangler, Deno deploy, custom Node entries)
-      // to drive the emit with a plain `vite build` pre-step.
-      //
-      // ADR 0044 — sibling `.d.ts` emit. Alongside the runtime `.ts` we
-      // write a per-app type declaration that augments the virtual
-      // `purity:routes` module with literal tuple types, so apps that
-      // import from `'purity:routes'` get the same strong typing as apps
-      // that import from the on-disk `.ts`.
-      if (!routesOpts || emitToAbs === null || routesAbsDir === null) return;
-      const { source, types } = generateManifestSources(this, routesAbsDir, routesExt);
-      const warn = (msg: string): void => {
-        if (this && typeof this.warn === 'function') this.warn(msg);
-        else console.warn(msg);
-      };
-      emitManifestToDisk(emitToAbs, source, warn);
-      emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
+    buildStart(this: unknown) {
+      routes.buildStart(this);
     },
 
-    resolveId(this: any, source: string, _importer?: string, opts?: { ssr?: boolean }) {
+    resolveId(
+      this: unknown,
+      source: string,
+      _importer?: string,
+      opts?: { ssr?: boolean | undefined },
+    ) {
       // Reject before Vite's asset loader can publish the original source.
       if (stripServerModules && opts?.ssr !== true && isServerOnlyId(source)) {
         rejectServerAsset(source);
       }
       if (serveDevtools && source === DEVTOOLS_ID) return RESOLVED_DEVTOOLS_ID;
-      if (!routesOpts) return null;
-      if (source === virtualId) return resolvedVirtualId;
-      return null;
+      return routes.resolveId(source);
     },
 
-    load(this: any, id: string, opts?: { ssr?: boolean }) {
+    load(this: unknown, id: string, opts?: { ssr?: boolean | undefined }) {
       if (stripServerModules && opts?.ssr !== true && isServerOnlyId(id)) {
         rejectServerAsset(id);
         return '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\nexport {};\n';
       }
       if (serveDevtools && id === RESOLVED_DEVTOOLS_ID) return devtoolsClientSource;
-      if (!routesOpts || id !== resolvedVirtualId) return null;
-      // routesAbsDir is set in configResolved (always called before load).
-      const { source, types } = generateManifestSources(this, routesAbsDir as string, routesExt);
-      // ADR 0032: optional on-disk emit. Skip the write when content
-      // matches to avoid filesystem-watch loops in dev. Failures are
-      // non-fatal — virtual module still returns `source`.
-      // ADR 0044: alongside the `.ts`, write a sibling `.d.ts` so apps
-      // importing from `'purity:routes'` get the per-route typed `importFn`.
-      if (emitToAbs !== null) {
-        const warn = (msg: string): void => {
-          if (this && typeof this.warn === 'function') this.warn(msg);
-          else console.warn(msg);
-        };
-        emitManifestToDisk(emitToAbs, source, warn);
-        emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
-      }
-      return source;
+      return routes.load(this, id);
     },
 
-    generateBundle(this: any, _options: any, bundle: Record<string, any>) {
-      const ssr = serverBuild || this?.environment?.config?.consumer === 'server';
-      if (strictAot && productionBuild && !ssr) assertStrictAotOutput(bundle, _options);
+    generateBundle(this: unknown, outputOptions: PurityOutputOptions, bundle: PurityOutputBundle) {
+      const ssr = serverBuild || hookContext(this)?.environment?.config?.consumer === 'server';
+      if (strictAot && productionBuild && !ssr) assertStrictAotOutput(bundle, outputOptions);
       if (!stripServerModules || ssr) return;
       for (const output of Object.values(bundle)) {
         if (output.type !== 'asset') continue;
@@ -425,8 +452,115 @@ export function purity(options?: PurityPluginOptions) {
       };
     },
 
-    handleHotUpdate(this: any, ctx: { file: string; server: { moduleGraph: any } }) {
-      if (!routesOpts || !routesAbsDir) return;
+    handleHotUpdate(
+      this: unknown,
+      ctx: {
+        file: string;
+        server: {
+          moduleGraph: {
+            getModuleById(id: string): object | null | undefined;
+            invalidateModule(mod: object): void;
+          };
+        };
+      },
+    ) {
+      routes.handleHotUpdate(this, ctx.file, ctx.server);
+    },
+
+    transform(
+      this: unknown,
+      code: string,
+      id: string,
+      transformOpts?: { ssr?: boolean | undefined },
+    ) {
+      return transformModule(this, code, id, transformOpts?.ssr === true, settings);
+    },
+  } satisfies Plugin;
+}
+
+/** Options shared by every `transform` call of one plugin instance. */
+interface TransformSettings {
+  strictAot: boolean;
+  hydratable: boolean;
+  extensions: readonly string[];
+  stripServerModules: boolean;
+  stripServerActions: boolean;
+}
+
+/**
+ * Dev-server surface `handleHotUpdate` needs to invalidate the manifest.
+ * `moduleGraph` is read only after the routes-dir check: Vite's getter can
+ * print a future-deprecation warning, and non-routing apps never need it.
+ */
+interface RoutesDevServer {
+  moduleGraph: {
+    getModuleById(id: string): object | null | undefined;
+    invalidateModule(mod: object): void;
+  };
+}
+
+/**
+ * File-system routing hooks (ADR 0019, 0032, 0033, 0044). Inert when the
+ * `routes` option is absent, so `purity()` can call it unconditionally.
+ */
+function createRoutesWiring(opt: PurityPluginOptions['routes']) {
+  const routesOpts = normaliseRoutesOption(opt);
+  // Resolved at configResolved time once Vite tells us the project root.
+  let routesAbsDir: string | null = null;
+  let routesExt: string[] = [];
+  let virtualId = '';
+  let resolvedVirtualId = '';
+  let emitToAbs: string | null = null;
+
+  return {
+    configResolved(root: string): void {
+      if (!routesOpts) return;
+      routesAbsDir = resolvePath(root, routesOpts.dir);
+      routesExt = routesOpts.extensions ?? ['.ts', '.tsx', '.js', '.jsx'];
+      virtualId = routesOpts.virtualId ?? 'purity:routes';
+      resolvedVirtualId = '\0' + virtualId;
+      emitToAbs = routesOpts.emitTo ? resolvePath(root, routesOpts.emitTo) : null;
+    },
+
+    buildStart(ctx: unknown): void {
+      // ADR 0033 — eager manifest emit. When `emitTo` is set we regenerate
+      // the on-disk file at the start of every `vite build` / `vite dev`,
+      // regardless of whether anything imports `purity:routes` in this run.
+      // Enables consumers that bundle the emitted file outside Vite
+      // (Cloudflare Workers via wrangler, Deno deploy, custom Node entries)
+      // to drive the emit with a plain `vite build` pre-step.
+      //
+      // ADR 0044 — sibling `.d.ts` emit. Alongside the runtime `.ts` we
+      // write a per-app type declaration that augments the virtual
+      // `purity:routes` module with literal tuple types, so apps that
+      // import from `'purity:routes'` get the same strong typing as apps
+      // that import from the on-disk `.ts`.
+      if (emitToAbs === null || routesAbsDir === null) return;
+      const sources = generateManifestSources(hookContext(ctx), routesAbsDir, routesExt);
+      emitManifestFiles(emitToAbs, sources, hookWarn(ctx));
+    },
+
+    resolveId(source: string): string | null {
+      if (!routesOpts) return null;
+      if (source === virtualId) return resolvedVirtualId;
+      return null;
+    },
+
+    load(ctx: unknown, id: string): string | null {
+      if (!routesOpts || id !== resolvedVirtualId) return null;
+      // routesAbsDir is set in configResolved (always called before load).
+      const sources = generateManifestSources(hookContext(ctx), routesAbsDir as string, routesExt);
+      // ADR 0032: optional on-disk emit. Skip the write when content
+      // matches to avoid filesystem-watch loops in dev. Failures are
+      // non-fatal — virtual module still returns `source`.
+      // ADR 0044: alongside the `.ts`, write a sibling `.d.ts` so apps
+      // importing from `'purity:routes'` get the per-route typed `importFn`.
+      if (emitToAbs !== null) emitManifestFiles(emitToAbs, sources, hookWarn(ctx));
+      return sources.source;
+    },
+
+    handleHotUpdate(ctx: unknown, changedFile: string, server: RoutesDevServer): void {
+      if (!routesAbsDir) return;
       // Only invalidate the manifest when a file under the routes dir was
       // added / removed / renamed. In-place edits to a route module HMR
       // through their own module graph and don't need a manifest regen.
@@ -435,11 +569,12 @@ export function purity(options?: PurityPluginOptions) {
       // was tracked previously. Cheap heuristic: if the changed file is
       // under the routes dir but the loaded manifest doesn't reference it
       // (or references it but the file no longer exists), invalidate.
-      const file = ctx.file.replace(/\\/g, '/');
+      const file = changedFile.replace(/\\/g, '/');
       const dir = routesAbsDir.replace(/\\/g, '/');
       if (!file.startsWith(dir + '/')) return;
-      const mod = ctx.server.moduleGraph.getModuleById(resolvedVirtualId);
-      if (mod) ctx.server.moduleGraph.invalidateModule(mod);
+      const moduleGraph = server.moduleGraph;
+      const mod = moduleGraph.getModuleById(resolvedVirtualId);
+      if (mod) moduleGraph.invalidateModule(mod);
       // When `emitTo` is configured, consumers may import the on-disk
       // file directly (ADR 0033) instead of the virtual module. In that
       // case `load()` is never called on the virtual module after the
@@ -448,104 +583,102 @@ export function purity(options?: PurityPluginOptions) {
       // track filesystem changes regardless of which import path
       // consumers use.
       if (emitToAbs !== null) {
-        const { source, types } = generateManifestSources(this, routesAbsDir, routesExt);
-        const warn = (msg: string): void => {
-          if (this && typeof this.warn === 'function') this.warn(msg);
-          else console.warn(msg);
-        };
-        emitManifestToDisk(emitToAbs, source, warn);
-        emitManifestToDisk(typesPathFor(emitToAbs), types, warn);
+        const sources = generateManifestSources(hookContext(ctx), routesAbsDir, routesExt);
+        emitManifestFiles(emitToAbs, sources, hookWarn(ctx));
       }
-    },
-
-    transform(this: any, code: string, id: string, transformOpts?: { ssr?: boolean }) {
-      // Strip *.server.{ts,js,tsx,jsx} modules from client builds (ADR 0018).
-      // Server builds (transformOpts.ssr === true) pass through unchanged
-      // so handler bodies still execute on the server. Runs BEFORE the
-      // extension filter so the regex (which tolerates Vite query-string
-      // suffixes like `?import`, `?worker`, `?url`) is the source of truth.
-      if (stripServerModules && transformOpts?.ssr !== true && isServerOnlyId(id)) {
-        rejectServerAsset(id);
-        return {
-          code:
-            '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\n' +
-            'export {};\n',
-          map: null,
-        };
-      }
-      if (stripServerModules && transformOpts?.ssr !== true) checkAssetReferences(code, id);
-
-      // Security boundaries apply even to framework paths. Only skip actual
-      // framework directories when compiling templates, not consumer lookalikes.
-      if (isFrameworkInternal(id)) return null;
-
-      // Match plugin extension filter (also tolerates Vite query suffixes
-      // by stripping ?xxx before the suffix check).
-      const cleanId = id.split('?')[0]!;
-      if (!extensions.some((ext) => cleanId.endsWith(ext))) return null;
-
-      // ADR 0043 — smart serverAction body stripping. Runs in client builds
-      // only and only on files that pass the cheap precheck (mention both
-      // `@purityjs/core` and `serverAction`). Returns null when nothing to
-      // do, in which case we fall through to the html`` template pass.
-      let workingCode = code;
-      let rewritten = false;
-      if (stripServerActions && transformOpts?.ssr !== true) {
-        const stripped = stripServerActionBodies(workingCode, id);
-        if (stripped !== null) {
-          workingCode = stripped.code;
-          rewritten = true;
-        }
-      }
-
-      if (!workingCode.includes('html`')) {
-        if (!rewritten) return null;
-        // Preprocessing shifted source positions relative to the
-        // original file. Returning `map: null` would let consumers fall
-        // back to an identity map against the *rewritten* code, breaking
-        // stack traces inside this file. Emit an empty-mappings v3 map
-        // that still carries `sourcesContent` so downstream tools at least
-        // know not to treat the output as 1:1.
-        return { code: workingCode, map: emptyV3Map(id, code) };
-      }
-
-      const result = compileTemplates(
-        workingCode,
-        id,
-        transformOpts?.ssr === true,
-        strictAot !== false,
-        hydratable,
-      );
-
-      // Surface compile failures: prefer the Rollup/Vite plugin context
-      // (yields a proper warning in the dev overlay + build log) and fall
-      // back to console.warn when called outside Vite (unit tests). Emitted
-      // regardless of `changed` so a file containing only broken templates
-      // still reports the failure.
-      if (strictAot && result.warnings.length > 0) {
-        // Preprocessing can insert imports or remove server-action bodies.
-        // Recompile the original only on failure to recover source locations,
-        // without rejecting templates removed from a successful client pass.
-        const originalWarnings = rewritten
-          ? compileTemplates(code, id, transformOpts?.ssr === true, true, hydratable).warnings
-          : result.warnings;
-        throw new Error(
-          (originalWarnings.length > 0 ? originalWarnings : result.warnings).join('\n') +
-            '\n[purity] strictAot requires every template to compile. Fix the template or module syntax reported above; use strictAot: false only if runtime compilation is intended.',
-        );
-      }
-      for (const w of result.warnings) {
-        if (this && typeof this.warn === 'function') this.warn(w);
-        else console.warn(w);
-      }
-
-      if (!result.changed) {
-        if (rewritten) return { code: workingCode, map: emptyV3Map(id, code) };
-        return null;
-      }
-      return { code: result.code, map: result.map };
     },
   };
+}
+
+/**
+ * The `transform` hook: server-module strip (ADR 0018), asset checks,
+ * serverAction body strip (ADR 0043), then the `html` template AOT pass.
+ */
+function transformModule(
+  ctx: unknown,
+  code: string,
+  id: string,
+  ssr: boolean,
+  settings: TransformSettings,
+) {
+  const { strictAot, hydratable, extensions, stripServerModules, stripServerActions } = settings;
+  // Strip *.server.{ts,js,tsx,jsx} modules from client builds (ADR 0018).
+  // Server builds (`ssr`) pass through unchanged
+  // so handler bodies still execute on the server. Runs BEFORE the
+  // extension filter so the regex (which tolerates Vite query-string
+  // suffixes like `?import`, `?worker`, `?url`) is the source of truth.
+  if (stripServerModules && !ssr && isServerOnlyId(id)) {
+    rejectServerAsset(id);
+    return {
+      code:
+        '// Server-only module stripped from client bundle by @purityjs/vite-plugin (ADR 0018).\n' +
+        'export {};\n',
+      map: null,
+    };
+  }
+  if (stripServerModules && !ssr) checkAssetReferences(code, id);
+
+  // Security boundaries apply even to framework paths. Only skip actual
+  // framework directories when compiling templates, not consumer lookalikes.
+  if (isFrameworkInternal(id)) return null;
+
+  // Match plugin extension filter (also tolerates Vite query suffixes
+  // by stripping ?xxx before the suffix check).
+  const cleanId = id.split('?')[0]!;
+  if (!extensions.some((ext) => cleanId.endsWith(ext))) return null;
+
+  // ADR 0043 — smart serverAction body stripping. Runs in client builds
+  // only and only on files that pass the cheap precheck (mention both
+  // `@purityjs/core` and `serverAction`). Returns null when nothing to
+  // do, in which case we fall through to the html`` template pass.
+  let workingCode = code;
+  let rewritten = false;
+  if (stripServerActions && !ssr) {
+    const stripped = stripServerActionBodies(workingCode, id);
+    if (stripped !== null) {
+      workingCode = stripped.code;
+      rewritten = true;
+    }
+  }
+
+  if (!workingCode.includes('html`')) {
+    if (!rewritten) return null;
+    // Preprocessing shifted source positions relative to the
+    // original file. Returning `map: null` would let consumers fall
+    // back to an identity map against the *rewritten* code, breaking
+    // stack traces inside this file. Emit an empty-mappings v3 map
+    // that still carries `sourcesContent` so downstream tools at least
+    // know not to treat the output as 1:1.
+    return { code: workingCode, map: emptyV3Map(id, code) };
+  }
+
+  const result = compileTemplates(workingCode, id, ssr, strictAot, hydratable);
+
+  // Surface compile failures: prefer the Rollup/Vite plugin context
+  // (yields a proper warning in the dev overlay + build log) and fall
+  // back to console.warn when called outside Vite (unit tests). Emitted
+  // regardless of `changed` so a file containing only broken templates
+  // still reports the failure.
+  if (strictAot && result.warnings.length > 0) {
+    // Preprocessing can insert imports or remove server-action bodies.
+    // Recompile the original only on failure to recover source locations,
+    // without rejecting templates removed from a successful client pass.
+    const originalWarnings = rewritten
+      ? compileTemplates(code, id, ssr, true, hydratable).warnings
+      : result.warnings;
+    throw new Error(
+      (originalWarnings.length > 0 ? originalWarnings : result.warnings).join('\n') +
+        '\n[purity] strictAot requires every template to compile. Fix the template or module syntax reported above; use strictAot: false only if runtime compilation is intended.',
+    );
+  }
+  const warn = hookWarn(ctx);
+  for (const w of result.warnings) warn(w);
+
+  if (!result.changed) {
+    if (rewritten) return { code: workingCode, map: emptyV3Map(id, code) };
+    return null;
+  }
+  return { code: result.code, map: result.map };
 }
 
 // Check the owner of the rendered module, including symlinked packages and
@@ -579,159 +712,217 @@ function isCompilerPackageModule(id: string, owners: Map<string, boolean>): bool
   return core;
 }
 
-function someAstNode(node: any, predicate: (node: any) => boolean): boolean {
-  if (!node || typeof node !== 'object') return false;
-  if (predicate(node)) return true;
+/** A parsed ESTree node (or nested AST object) read structurally. */
+type AstObject = { readonly [field: string]: unknown };
+
+/** `value` when it is a non-null object, else undefined. */
+function astObject(value: unknown): AstObject | undefined {
+  return value && typeof value === 'object' ? (value as AstObject) : undefined;
+}
+
+/** `value` when it is an array, else an empty list. */
+function astList(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function isFunctionNode(node: AstObject | undefined): boolean {
+  const type = node?.type;
+  return (
+    type === 'FunctionExpression' ||
+    type === 'FunctionDeclaration' ||
+    type === 'ArrowFunctionExpression'
+  );
+}
+
+/** Calls `test` on every object-valued field and array item of `node`; true when any test is. */
+function someAstChild(node: AstObject, test: (child: AstObject) => boolean): boolean {
   for (const value of Object.values(node)) {
     if (Array.isArray(value)) {
-      if (value.some((child) => someAstNode(child, predicate))) return true;
-    } else if (value && typeof value === 'object' && someAstNode(value, predicate)) return true;
+      for (const child of value) {
+        const item = astObject(child);
+        if (item && test(item)) return true;
+      }
+    } else {
+      const child = astObject(value);
+      if (child && test(child)) return true;
+    }
   }
   return false;
 }
 
-function retainedJitImport(node: any, sources: Set<string>): boolean {
-  const source = node.source?.value;
-  if (!sources.has(source)) return false;
+function someAstNode(node: unknown, predicate: (node: AstObject) => boolean): boolean {
+  const current = astObject(node);
+  if (!current) return false;
+  if (predicate(current)) return true;
+  return someAstChild(current, (child) => someAstNode(child, predicate));
+}
+
+function retainedJitImport(node: AstObject, sources: Set<string>): boolean {
+  const source = astObject(node.source)?.value;
+  if (typeof source !== 'string' || !sources.has(source)) return false;
   if (node.type === 'ImportExpression' || node.type === 'ExportAllDeclaration') return true;
   if (node.type !== 'ImportDeclaration' && node.type !== 'ExportNamedDeclaration') return false;
-  return node.specifiers.some((specifier: any) => {
+  return astList(node.specifiers).some((item) => {
+    const specifier = astObject(item);
     if (
-      specifier.type === 'ImportNamespaceSpecifier' ||
-      specifier.type === 'ImportDefaultSpecifier'
+      specifier?.type === 'ImportNamespaceSpecifier' ||
+      specifier?.type === 'ImportDefaultSpecifier'
     )
       return true;
-    const name = specifier.imported ?? specifier.local;
-    return ['html', 'makeDeferred'].includes(name?.name ?? name?.value);
+    const name = astObject(specifier?.imported ?? specifier?.local);
+    const spelled = name?.name ?? name?.value;
+    return spelled === 'html' || spelled === 'makeDeferred';
   });
 }
 
-function globalReference(node: any): string | null {
-  if (node?.type === 'Identifier') return node.name;
+function globalReference(value: unknown): string | null {
+  const node = astObject(value);
+  if (node?.type === 'Identifier') return typeof node.name === 'string' ? node.name : null;
   if (node?.type !== 'MemberExpression') return null;
   const object = globalReference(node.object);
-  const property = node.computed ? node.property?.value : node.property?.name;
+  const key = astObject(node.property);
+  const property = node.computed ? key?.value : key?.name;
   return object && typeof property === 'string' ? `${object}.${property}` : null;
 }
 
-function bindsName(pattern: any, name: string): boolean {
+function bindsName(value: unknown, name: string): boolean {
+  const pattern = astObject(value);
   if (!pattern) return false;
   if (pattern.type === 'Identifier') return pattern.name === name;
   if (pattern.type === 'RestElement') return bindsName(pattern.argument, name);
   if (pattern.type === 'AssignmentPattern') return bindsName(pattern.left, name);
   if (pattern.type === 'ArrayPattern')
-    return pattern.elements.some((item: any) => bindsName(item, name));
+    return astList(pattern.elements).some((item) => bindsName(item, name));
   if (pattern.type === 'ObjectPattern')
-    return pattern.properties.some((item: any) =>
-      bindsName(item.type === 'RestElement' ? item.argument : item.value, name),
-    );
+    return astList(pattern.properties).some((property) => {
+      const item = astObject(property);
+      return bindsName(item?.type === 'RestElement' ? item.argument : item?.value, name);
+    });
   return false;
 }
 
-function functionVarBinds(node: any, name: string): boolean {
-  if (!node || typeof node !== 'object') return false;
-  if (['FunctionExpression', 'FunctionDeclaration', 'ArrowFunctionExpression'].includes(node.type))
-    return false;
-  if (
-    node.type === 'VariableDeclaration' &&
-    node.kind === 'var' &&
-    node.declarations.some((declaration: any) => bindsName(declaration.id, name))
-  )
-    return true;
-  return Object.values(node).some((value) =>
-    Array.isArray(value)
-      ? value.some((child) => functionVarBinds(child, name))
-      : value && typeof value === 'object' && functionVarBinds(value, name),
+function declaresName(node: AstObject, name: string): boolean {
+  return astList(node.declarations).some((declaration) =>
+    bindsName(astObject(declaration)?.id, name),
   );
 }
 
-function usesCompilerNamespace(node: any, namespace: string, parent?: any): boolean {
-  if (!node || typeof node !== 'object') return false;
+function functionVarBinds(value: unknown, name: string): boolean {
+  const node = astObject(value);
+  if (!node || isFunctionNode(node)) return false;
+  if (node.type === 'VariableDeclaration' && node.kind === 'var' && declaresName(node, name))
+    return true;
+  return someAstChild(node, (child) => functionVarBinds(child, name));
+}
+
+function usesCompilerNamespace(value: unknown, namespace: string, parent?: AstObject): boolean {
+  const node = astObject(value);
+  if (!node) return false;
   // Follow lexical scope: minifiers reuse an outer parameter's spelling
   // for inner bindings even when those bindings never reference the import.
   if (
-    ['FunctionExpression', 'FunctionDeclaration', 'ArrowFunctionExpression'].includes(node.type) &&
-    (node.id?.name === namespace ||
-      node.params.some((parameter: any) => bindsName(parameter, namespace)) ||
+    isFunctionNode(node) &&
+    (astObject(node.id)?.name === namespace ||
+      astList(node.params).some((parameter) => bindsName(parameter, namespace)) ||
       functionVarBinds(node.body, namespace))
   )
     return false;
   if (
     node.type === 'BlockStatement' &&
-    node.body.some(
-      (statement: any) =>
-        (statement.type === 'VariableDeclaration' &&
+    astList(node.body).some((item) => {
+      const statement = astObject(item);
+      return (
+        (statement?.type === 'VariableDeclaration' &&
           statement.kind !== 'var' &&
-          statement.declarations.some((declaration: any) =>
-            bindsName(declaration.id, namespace),
-          )) ||
-        (['FunctionDeclaration', 'ClassDeclaration'].includes(statement.type) &&
-          statement.id?.name === namespace),
-    )
+          declaresName(statement, namespace)) ||
+        ((statement?.type === 'FunctionDeclaration' || statement?.type === 'ClassDeclaration') &&
+          astObject(statement.id)?.name === namespace)
+      );
+    })
   )
     return false;
   if (node.type === 'CatchClause' && bindsName(node.param, namespace)) return false;
-  const loopBinding =
+  const loopBinding = astObject(
     node.type === 'ForStatement'
       ? node.init
-      : ['ForInStatement', 'ForOfStatement'].includes(node.type)
+      : node.type === 'ForInStatement' || node.type === 'ForOfStatement'
         ? node.left
-        : null;
+        : null,
+  );
   if (
     loopBinding?.type === 'VariableDeclaration' &&
     loopBinding.kind !== 'var' &&
-    loopBinding.declarations.some((declaration: any) => bindsName(declaration.id, namespace))
+    declaresName(loopBinding, namespace)
   )
     return false;
   if (node.type === 'Identifier' && node.name === namespace) {
+    const parentType = parent?.type;
     // Static names are not variable reads. Computed keys and shorthand
     // properties still evaluate their identifiers and must remain checked.
     if (
-      ['Property', 'MethodDefinition', 'PropertyDefinition'].includes(parent?.type) &&
-      parent.key === node &&
-      !parent.computed &&
-      !parent.shorthand
+      (parentType === 'Property' ||
+        parentType === 'MethodDefinition' ||
+        parentType === 'PropertyDefinition') &&
+      parent!.key === node &&
+      !parent!.computed &&
+      !parent!.shorthand
     )
       return false;
     if (
-      ['LabeledStatement', 'BreakStatement', 'ContinueStatement'].includes(parent?.type) &&
-      parent.label === node
+      (parentType === 'LabeledStatement' ||
+        parentType === 'BreakStatement' ||
+        parentType === 'ContinueStatement') &&
+      parent!.label === node
     )
       return false;
-    if (parent?.type === 'MemberExpression' && parent.object === node) {
-      const member = parent.computed ? parent.property?.value : parent.property?.name;
-      return typeof member !== 'string' || ['html', 'makeDeferred', 'default'].includes(member);
+    if (parentType === 'MemberExpression' && parent!.object === node) {
+      const key = astObject(parent!.property);
+      const member = parent!.computed ? key?.value : key?.name;
+      return (
+        typeof member !== 'string' ||
+        member === 'html' ||
+        member === 'makeDeferred' ||
+        member === 'default'
+      );
     }
-    if (parent?.type === 'MemberExpression' && parent.property === node && !parent.computed)
+    if (parentType === 'MemberExpression' && parent!.property === node && !parent!.computed)
       return false;
     // Passing or exporting the whole namespace retains the compiler too.
     return true;
   }
-  return Object.values(node).some((value) =>
-    Array.isArray(value)
-      ? value.some((child) => usesCompilerNamespace(child, namespace, node))
-      : value && typeof value === 'object' && usesCompilerNamespace(value, namespace, node),
+  return someAstChild(node, (child) => usesCompilerNamespace(child, namespace, node));
+}
+
+/** `require('<source>')` whose string argument is one of `sources`. */
+function requiresSource(node: AstObject, sources: Set<string>): boolean {
+  const source = astObject(astList(node.arguments)[0])?.value;
+  return typeof source === 'string' && sources.has(source);
+}
+
+function isIifeCall(node: AstObject): boolean {
+  const calleeType = astObject(node.callee)?.type;
+  return (
+    node.type === 'CallExpression' &&
+    (calleeType === 'FunctionExpression' || calleeType === 'ArrowFunctionExpression')
   );
 }
 
-function hasExternalNamespaceArgument(node: any): boolean {
-  if (!node || typeof node !== 'object') return false;
-  if (['FunctionExpression', 'FunctionDeclaration', 'ArrowFunctionExpression'].includes(node.type))
-    return false;
+function hasExternalNamespaceArgument(value: unknown): boolean {
+  const node = astObject(value);
+  if (!node || isFunctionNode(node)) return false;
   if (
-    node.type === 'CallExpression' &&
-    ['FunctionExpression', 'ArrowFunctionExpression'].includes(node.callee?.type) &&
-    node.arguments.some((argument: any) => globalReference(argument) !== null)
+    isIifeCall(node) &&
+    astList(node.arguments).some((argument) => globalReference(argument) !== null)
   )
     return true;
-  return Object.values(node).some((value) =>
-    Array.isArray(value)
-      ? value.some(hasExternalNamespaceArgument)
-      : value && typeof value === 'object' && hasExternalNamespaceArgument(value),
-  );
+  return someAstChild(node, hasExternalNamespaceArgument);
 }
 
-function retainedIifeCompiler(program: Program, outputOptions: any, imports: string[]): boolean {
+function retainedIifeCompiler(
+  program: Program,
+  outputOptions: PurityOutputOptions,
+  imports: readonly string[],
+): boolean {
   if (outputOptions.format !== 'iife') return false;
   const globals = new Set<string>();
   for (const source of COMPILER_ENTRIES) {
@@ -741,7 +932,7 @@ function retainedIifeCompiler(program: Program, outputOptions: any, imports: str
       typeof outputOptions.paths === 'function'
         ? outputOptions.paths(source)
         : outputOptions.paths?.[source];
-    if (!imports.includes(source) && !imports.includes(mapped)) continue;
+    if (!imports.includes(source) && (mapped === undefined || !imports.includes(mapped))) continue;
     const global =
       typeof outputOptions.globals === 'function'
         ? outputOptions.globals(source)
@@ -755,15 +946,17 @@ function retainedIifeCompiler(program: Program, outputOptions: any, imports: str
     }
   }
   return someAstNode(program, (node) => {
-    if (
-      node.type !== 'CallExpression' ||
-      !['FunctionExpression', 'ArrowFunctionExpression'].includes(node.callee?.type)
-    )
-      return false;
-    return node.arguments.some((argument: any, index: number) => {
+    if (!isIifeCall(node)) return false;
+    const callee = astObject(node.callee)!;
+    const params = astList(callee.params);
+    return astList(node.arguments).some((argument, index) => {
       if (!globals.has(globalReference(argument) ?? '')) return false;
-      const namespace = node.callee.params[index]?.name;
-      return namespace && usesCompilerNamespace(node.callee.body, namespace);
+      const namespace = astObject(params[index])?.name;
+      return (
+        typeof namespace === 'string' &&
+        namespace !== '' &&
+        usesCompilerNamespace(callee.body, namespace)
+      );
     });
   });
 }
@@ -775,7 +968,10 @@ function externalCompilerError(fileName: string): Error {
   );
 }
 
-function assertStrictAotOutput(bundle: Record<string, any>, outputOptions: any): void {
+function assertStrictAotOutput(
+  bundle: PurityOutputBundle,
+  outputOptions: PurityOutputOptions,
+): void {
   const sources = new Set(COMPILER_ENTRIES);
   for (const source of COMPILER_ENTRIES) {
     const mapped =
@@ -788,19 +984,20 @@ function assertStrictAotOutput(bundle: Record<string, any>, outputOptions: any):
   for (const chunk of Object.values(bundle)) {
     if (chunk.type !== 'chunk') continue;
     for (const [id, rendered] of Object.entries(chunk.modules ?? {})) {
-      const code = (rendered as { code?: string | null }).code;
+      const code = rendered.code;
       // Rendered code has already been tree-shaken. The presence of the
       // original module in the graph alone must never reject a build.
       if (!code || !isCompilerPackageModule(id, owners)) continue;
       const { program } = parseSync('purity-rendered.js', code);
       if (
-        someAstNode(
-          program,
-          (node) =>
+        someAstNode(program, (node) => {
+          const callee = astObject(node.callee);
+          return (
             (node.type === 'NewExpression' || node.type === 'CallExpression') &&
-            node.callee?.type === 'Identifier' &&
-            node.callee.name === 'Function',
-        )
+            callee?.type === 'Identifier' &&
+            callee.name === 'Function'
+          );
+        })
       ) {
         throw new Error(
           `[purity] strictAot: retained Purity runtime compilation in ${chunk.fileName}, module ${id}. ` +
@@ -818,8 +1015,8 @@ function assertStrictAotOutput(bundle: Record<string, any>, outputOptions: any):
         (node) =>
           retainedJitImport(node, sources) ||
           (node.type === 'CallExpression' &&
-            node.callee?.name === 'require' &&
-            sources.has(node.arguments?.[0]?.value)),
+            astObject(node.callee)?.name === 'require' &&
+            requiresSource(node, sources)),
       )
     ) {
       throw externalCompilerError(chunk.fileName);
@@ -864,7 +1061,7 @@ function generateManifestSources(
   pluginCtx: { warn?: (m: string) => void } | null,
   dir: string,
   extensions: string[],
-): { source: string; types: string } {
+): { source: string; diskSource: string; types: string } {
   const files = listRouteFiles(dir);
   const manifest = buildRouteManifest(files, extensions, (pattern, kept, dropped) => {
     const msg =
@@ -900,6 +1097,7 @@ function generateManifestSources(
   const absPathFor = (filePath: string): string => posix.join(posixDir, filePath);
   return {
     source: generateRouteManifestSource(manifest, absPathFor),
+    diskSource: generateRouteManifestSource(manifest, absPathFor, true),
     types: generateRouteManifestTypes(manifest, absPathFor),
   };
 }
@@ -914,6 +1112,22 @@ function typesPathFor(absPath: string): string {
     return absPath.slice(0, -3) + '.d.ts';
   }
   return absPath + '.d.ts';
+}
+
+/**
+ * Write the `emitTo` manifest and its sibling `.d.ts`. A TypeScript emit
+ * path gets the `as const` source so direct imports of the file keep the
+ * literal types the `.d.ts` declares (ADR 0034); any other extension gets
+ * the plain JS source.
+ */
+function emitManifestFiles(
+  absPath: string,
+  sources: { source: string; diskSource: string; types: string },
+  warn: (m: string) => void,
+): void {
+  const typed = /\.[cm]?tsx?$/.test(absPath) && !absPath.endsWith('.d.ts');
+  emitManifestToDisk(absPath, typed ? sources.diskSource : sources.source, warn);
+  emitManifestToDisk(typesPathFor(absPath), sources.types, warn);
 }
 
 function emitManifestToDisk(absPath: string, source: string, warn: (m: string) => void): void {
@@ -1173,13 +1387,18 @@ function collectHtmlTemplates(root: unknown): HtmlTemplateNode[] {
       return;
     }
     if (!node || typeof node !== 'object') return;
-    const n = node as Record<string, any>;
+    const n = node as AstObject;
+    const tag = astObject(n.tag);
     if (
       n.type === 'TaggedTemplateExpression' &&
-      n.tag?.type === 'Identifier' &&
-      n.tag.name === 'html'
+      tag?.type === 'Identifier' &&
+      tag.name === 'html'
     ) {
-      found.push({ start: n.start, end: n.end, quasi: n.quasi });
+      found.push({
+        start: n.start as number,
+        end: n.end as number,
+        quasi: n.quasi as HtmlTemplateNode['quasi'],
+      });
     }
     for (const key of Object.keys(n)) {
       // Type positions never contain runtime expressions, so skip them.

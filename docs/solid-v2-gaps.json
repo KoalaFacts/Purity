@@ -476,7 +476,7 @@
       "title": "Enforced public declaration and negative typing contracts",
       "kind": "evidence",
       "priority": "P1",
-      "state": "open",
+      "state": "in_progress",
       "dependsOn": ["SV2-001"],
       "solid": "Compare actual public declarations and generated route APIs for the pinned v2 stack with an explicitly selected TypeScript version.",
       "purity": "Public declarations and strict scaffold builds exist. Core/plugin tsconfigs exclude tests; ordinary Vitest runs do not type-check compile-shaped cases or enforce their negative assertions.",
@@ -486,7 +486,7 @@
         "Cover overloaded watches, props/slots/events, resources, generated routes and action payloads.",
         "Prove an intended type error makes the negative test pass, and a removed diagnostic makes it fail."
       ],
-      "nextSlice": "Create a small declaration-consumer type gate with real negative cases using the existing compiler.",
+      "nextSlice": "Type-check a generated routes.d.ts and emitted manifest from a real vite-plugin route build in the declaration gate.",
       "files": [
         "packages/core/tsconfig.json",
         "packages/core/vitest.config.ts",
@@ -500,7 +500,15 @@
         "https://v2.solidjs.com/reference/solid-router"
       ],
       "workload": "W0",
-      "evidence": []
+      "evidence": [
+        {
+          "kind": "executed_gate",
+          "artifact": "../scripts/check-declarations.ts",
+          "reproduction": "../scripts/declaration-consumers/",
+          "scope": "Slices 1-2: strict consumers of @purityjs/signals, @purityjs/core (root, async, store), @purityjs/platform/actions, @purityjs/ssr and @purityjs/router compiled against built dist/*.d.ts with no source aliases; 36 @ts-expect-error negative contracts and exact Equal return-type checks (watch overloads, component props/slots, resources, each, asyncCompute, store, serverAction, renderToString overloads, renderToStream, routeData, loaderData); self-tests prove an unused negative fails with TS2578 and a development-condition alias fails. Generated routes.d.ts and vite-plugin consumers remain open.",
+          "wholeRowAccepted": false
+        }
+      ]
     },
     {
       "id": "SV2-015",

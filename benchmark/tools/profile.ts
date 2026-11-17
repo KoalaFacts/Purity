@@ -89,7 +89,8 @@ const timeline: Record<string, unknown> = {
   outDir,
 };
 
-const browser = await chromium.launch();
+// Same browser override as run-bench.ts (CQ-13).
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH });
 const page = await browser.newPage();
 const cdp = await page.context().newCDPSession(page);
 

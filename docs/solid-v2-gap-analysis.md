@@ -156,6 +156,8 @@ Executed bounded evidence: [four-observation trace](../benchmark/solid-v2/observ
 
 **Next bounded action:** Specify and implement the smallest owned async-derivation contract with deterministic settlement traces.
 
+**Purity now (slices 1–2):** `asyncCompute` in `@purityjs/core/async` ([ADR 0054](./decisions/0054-async-derivation.md)) accepts PromiseLike and AsyncIterable results; superseded iterators are closed at their next value. Remaining: SSR priming.
+
 Purity evidence paths: [packages/core/src/signals.ts](https://github.com/KoalaFacts/Purity/blob/58ff714a336ee1fb34a3d9f77f4e0601e64a2d8f/packages/core/src/signals.ts) · [packages/core/src/resource.ts](https://github.com/KoalaFacts/Purity/blob/58ff714a336ee1fb34a3d9f77f4e0601e64a2d8f/packages/core/src/resource.ts) · [packages/core/tests/resource-request-ownership.test.ts](https://github.com/KoalaFacts/Purity/blob/58ff714a336ee1fb34a3d9f77f4e0601e64a2d8f/packages/core/tests/resource-request-ownership.test.ts).
 
 Solid / comparison references: [1](https://v2.solidjs.com/reference/solid-js/reactivity/create-memo) · [2](https://v2.solidjs.com/concepts/async-reactivity).
@@ -251,6 +253,8 @@ Solid / comparison references: [1](https://v2.solidjs.com/reference/solid-js/com
 - Define overlapping operations and disposal without claiming general server-side business conflict resolution.
 
 **Next bounded action:** Add a controlled two-field mutation journey and document which transaction guarantees Purity will provide.
+
+**Purity now (slices 1–2):** `transaction(fn)` in `@purityjs/core/transaction` ([ADR 0059](./decisions/0059-async-transaction.md)) commits staged writes in one batch, layers tentative values and aborts with its owner; `pendingTransactions()` is the tracked count of running transactions, falling in the commit's batch. Remaining: `store()` drafts, platform `optimistic()` on these layers.
 
 Purity evidence paths: [packages/core/src/optimistic.ts](https://github.com/KoalaFacts/Purity/blob/58ff714a336ee1fb34a3d9f77f4e0601e64a2d8f/packages/core/src/optimistic.ts) · [packages/core/src/resource.ts](https://github.com/KoalaFacts/Purity/blob/58ff714a336ee1fb34a3d9f77f4e0601e64a2d8f/packages/core/src/resource.ts) · [packages/core/src/signals.ts](https://github.com/KoalaFacts/Purity/blob/58ff714a336ee1fb34a3d9f77f4e0601e64a2d8f/packages/core/src/signals.ts) · [packages/core/src/query.ts](https://github.com/KoalaFacts/Purity/blob/58ff714a336ee1fb34a3d9f77f4e0601e64a2d8f/packages/core/src/query.ts).
 
@@ -404,7 +408,9 @@ Solid / comparison references: [1](https://v2.solidjs.com/reference/solid-js/adv
 
 ### SV2-014 — Enforced public declaration and negative typing contracts
 
-**P1; Evidence gap; open.** Prerequisites: SV2-001. Workload: W0.
+**P1; Evidence gap; in progress.** Prerequisites: SV2-001. Workload: W0.
+
+**Purity now (slices 1–5):** `npm run check:declarations` ([`scripts/check-declarations.ts`](../scripts/check-declarations.ts)) compiles strict consumers in [`scripts/declaration-consumers/`](../scripts/declaration-consumers/) against the built `dist/*.d.ts` of signals, core (root, `async`, `store`, `transaction`), `platform/actions`, ssr, router and vite-plugin, fails if any `src/` file is resolved, and enforces 43 `@ts-expect-error` negative contracts plus exact `Equal<>` return-type checks (watch overloads, props/slots, resources, `each`, `asyncCompute`, `store`, `serverAction`, `renderToString` overloads, `renderToStream`, `routeData`, `loaderData`, `purity()` as a Vite `Plugin`, `RouteParams`, `LoaderDataOf`); runs in CI after the package build. Slice 3 found and fixed plugin hook parameter types that rejected Vite's `undefined` members under `exactOptionalPropertyTypes`. Slice 4 regenerates `routes.d.ts` with the built plugin from real `pages/` and type-checks a consumer of it (route tuple, `LoaderDataOf` from real loaders, router APIs accepting the manifest); it found and fixed a Node-global `Buffer` in the plugin declarations that broke client tsconfigs without Node types. Slice 5 adds a consumer of the on-disk `.purity/routes.ts` import, which now keeps literal types because a TypeScript `emitTo` is const-asserted.
 
 **Solid v2 target:** Compare actual public declarations and generated route APIs for the pinned v2 stack with an explicitly selected TypeScript version.
 

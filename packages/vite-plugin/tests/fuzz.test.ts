@@ -89,7 +89,7 @@ describe('plugin fuzz — never crashes on accepted input', () => {
         { maxDepth: 3 },
         fc.constant(''),
         fc.tuple(tie('braces'), tie('braces')).map(([a, b]) => `${a}${b}`),
-        tie('braces').map((s: string) => `{${s}}`),
+        (tie('braces') as fc.Arbitrary<string>).map((s) => `{${s}}`),
       ),
     })).braces as fc.Arbitrary<string>;
 

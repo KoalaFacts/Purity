@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
-import { build } from 'vite';
+import { build, type Rolldown } from 'vite';
 import { purity } from '../src/index.ts';
 import { renderToString } from '../../ssr/src/render-to-string.ts';
 
@@ -25,16 +25,13 @@ describe('strict AOT diagnostics', () => {
 
   it('fails real code generation with the source location and a repair hint', () => {
     expect(() =>
-      purity({ hydratable: true, strictAot: false, ...{ strictAot: true } }).transform(
-        source,
-        '/app/view.ts',
-      ),
+      purity({ hydratable: true, strictAot: true }).transform(source, '/app/view.ts'),
     ).toThrow(/\/app\/view\.ts:2:17.*failed to compile html``.*Invalid[\s\S]*strictAot/);
   });
 
   it('rejects a module parse failure with location information', () => {
     expect(() =>
-      purity({ hydratable: true, strictAot: false, ...{ strictAot: true } }).transform(
+      purity({ hydratable: true, strictAot: true }).transform(
         "import { html } from '@purityjs/core/jit';\nconst bad = html`<p>unfinished;",
         '/app/view.ts',
       ),
@@ -43,7 +40,7 @@ describe('strict AOT diagnostics', () => {
 
   it('rejects a nested real code generation failure', () => {
     expect(() =>
-      purity({ hydratable: true, strictAot: false, ...{ strictAot: true } }).transform(
+      purity({ hydratable: true, strictAot: true }).transform(
         "import { html } from '@purityjs/core/jit';\nconst view = html`<div>${html`<my:component/>`}</div>`;",
         '/app/view.ts',
       ),
@@ -52,7 +49,7 @@ describe('strict AOT diagnostics', () => {
 
   it('adds source diagnostics to existing fatal template errors', () => {
     expect(() =>
-      purity({ hydratable: true, strictAot: false, ...{ strictAot: true } }).transform(
+      purity({ hydratable: true, strictAot: true }).transform(
         "import { html } from '@purityjs/core/jit';\nconst bad = html`<button onclick=${handler}>go</button>`;",
         '/app/view.ts',
       ),
@@ -68,17 +65,14 @@ describe('strict AOT diagnostics', () => {
       'const view = html`<my:component/>`;',
     ].join('\n');
     expect(() =>
-      purity({ hydratable: true, strictAot: false, ...{ strictAot: true } }).transform(
-        source,
-        '/app/view.ts',
-      ),
+      purity({ hydratable: true, strictAot: true }).transform(source, '/app/view.ts'),
     ).toThrow(/view\.ts:5:14.*Invalid tag name/);
   });
 
   it('also fails SSR compilation when a template cannot compile', () => {
     // A JavaScript parse error is a compilation failure in either target.
     expect(() =>
-      purity({ hydratable: true, strictAot: false, ...{ strictAot: true } }).transform(
+      purity({ hydratable: true, strictAot: true }).transform(
         'const view = html`<p>unfinished;',
         '/app/view.ts',
         {
@@ -120,11 +114,8 @@ describe('strict production client output', () => {
       plugins: [
         purity({
           hydratable: true,
-          strictAot: false,
-          ...{
-            strictAot: options.strict !== false,
-            include: options.skip ? ['.ts'] : undefined,
-          },
+          strictAot: options.strict !== false,
+          include: options.skip ? ['.ts'] : undefined,
         }),
         ...(options.suppressWarnings
           ? [
@@ -165,7 +156,7 @@ describe('strict production client output', () => {
     const result = await buildFixture(
       "import { html } from '@purityjs/core/jit'; export const make = () => html`<button>ok</button>`;",
     );
-    const output = (Array.isArray(result) ? result[0] : result).output;
+    const output = ((Array.isArray(result) ? result[0] : result) as Rolldown.RolldownOutput).output;
     expect(
       output.some((item) => item.type === 'chunk' && item.code.includes('createElement')),
     ).toBe(true);
@@ -243,7 +234,8 @@ describe('strict production client output', () => {
         format: 'iife',
         strict,
       });
-      const output = (Array.isArray(result) ? result[0] : result).output;
+      const output = ((Array.isArray(result) ? result[0] : result) as Rolldown.RolldownOutput)
+        .output;
       const chunk = output.find((item) => item.type === 'chunk')!;
       const app = new Function('puritySSR', `${chunk.code}; return Test;`)({ renderToString });
       expect(app.render).toBe(renderToString);
@@ -255,7 +247,8 @@ describe('strict production client output', () => {
       "import { renderToString } from '@purityjs/ssr'; export const render = renderToString; export const compute = (x) => { const a = x(); return () => a; }; export const record = { t: 42 };";
     for (const strict of [false, true]) {
       const result = await buildFixture(source, { external: true, format: 'iife', strict });
-      const output = (Array.isArray(result) ? result[0] : result).output;
+      const output = ((Array.isArray(result) ? result[0] : result) as Rolldown.RolldownOutput)
+        .output;
       const chunk = output.find((item) => item.type === 'chunk')!;
       const app = new Function('puritySSR', `${chunk.code}; return Test;`)({ renderToString });
       expect(app.render).toBe(renderToString);
@@ -330,7 +323,7 @@ describe('strict production client output', () => {
         root: dir,
         configFile: false,
         logLevel: 'silent',
-        plugins: [purity({ hydratable: true, strictAot: false, ...{ strictAot: true } })],
+        plugins: [purity({ hydratable: true, strictAot: true })],
         build: {
           write: false,
           lib: { entry: join(dir, 'entry.js'), formats: ['es'], fileName: 'out' },

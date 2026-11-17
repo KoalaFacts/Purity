@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { resolve } from 'node:path';
-import { SourceMapConsumer } from 'source-map-js';
+import { SourceMapConsumer, type RawSourceMap } from 'source-map-js';
 import { build, type Plugin } from 'vite';
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
@@ -83,9 +83,9 @@ export const tail = state('ok');`;
     const lines = result!.code.split('\n');
     const line = lines.findIndex((text) => text.includes("export const tail = state('ok');")) + 1;
     expect(line).toBeGreaterThan(0);
-    const map = new SourceMapConsumer(result!.map);
+    const map = new SourceMapConsumer(result!.map as unknown as RawSourceMap);
     expect(map.originalPositionFor({ line, column: 0 }).line).toBe(7);
-    expect(result!.map.sourcesContent).toEqual([source]);
+    expect(result!.map!.sourcesContent).toEqual([source]);
   });
 
   it.each([false, true])(

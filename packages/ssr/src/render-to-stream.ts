@@ -79,7 +79,32 @@ export interface RenderToStreamOptions {
    * Cloudflare Workers, and Vercel Edge. ADR 0009.
    */
   request?: Request;
+  /**
+   * Decides when deferred `suspense()` views start and in which order their
+   * chunks are written. By default views render one after another and chunks
+   * follow declaration order (ADR 0006). `boundaryConcurrency(n)` from the
+   * opt-in `@purityjs/ssr/concurrency` entry renders up to n at once and
+   * writes each chunk as its view settles (ADR 0062).
+   */
+  boundaries?: BoundaryScheduler;
 }
+
+/**
+ * Runs deferred boundary views. `jobs` yields one `[id, start]` pair per
+ * boundary, lazily: pulling the next pair is what makes the stream start that
+ * boundary's bookkeeping, and calling `start()` renders its view. The
+ * scheduler yields each `[id, result]` when it should be written. Pulling
+ * from `jobs` only after the stream asks for the next result keeps consumer
+ * backpressure in force.
+ */
+export type BoundaryScheduler = <T>(
+  jobs: IterableIterator<[id: number, start: () => Promise<T>]>,
+) => AsyncIterable<[id: number, result: T]>;
+
+// ADR 0006: one view at a time, chunks in declaration order.
+const inOrder: BoundaryScheduler = async function* (jobs) {
+  for (const [id, start] of jobs) yield [id, await start()];
+};
 
 /** Shell metadata available before a streaming response is sent. */
 export interface RenderToStreamResponse {
@@ -102,11 +127,13 @@ export function renderToStream(
   component: () => unknown,
   options: RenderToStreamOptions = {},
 ): ReadableStream<Uint8Array> {
+  const schedule = options.boundaries ?? inOrder;
   options = snapshotRenderOptions(options, 'stream');
   validateRenderOptions(options, 'renderToStream');
   return createStream(
     (signal) => renderShell(component, options.timeout ?? DEFAULT_TIMEOUT, options.request, signal),
     options,
+    schedule,
   );
 }
 
@@ -119,6 +146,7 @@ export async function renderToStreamResponse(
   component: () => unknown,
   options: RenderToStreamOptions = {},
 ): Promise<RenderToStreamResponse> {
+  const schedule = options.boundaries ?? inOrder;
   options = snapshotRenderOptions(options, 'stream');
   validateRenderOptions(options, 'renderToStreamResponse');
   const cancellation = renderCancellation(options.request, options.signal);
@@ -138,7 +166,7 @@ export async function renderToStreamResponse(
     cancellation.finish();
   }
   const result: RenderToStreamResponse = {
-    body: createStream(() => Promise.resolve(shell), options),
+    body: createStream(() => Promise.resolve(shell), options, schedule),
     head: shell.head,
   };
   if (shell.status !== undefined) result.status = shell.status;
@@ -149,6 +177,7 @@ export async function renderToStreamResponse(
 function createStream(
   getShell: (signal: AbortSignal) => Promise<ShellResult>,
   options: RenderToStreamOptions,
+  schedule: BoundaryScheduler,
 ): ReadableStream<Uint8Array> {
   const timeout = options.timeout ?? DEFAULT_TIMEOUT;
   const serialize = options.serializeResources ?? true;
@@ -229,32 +258,35 @@ function createStream(
       yield* encodeChunks(buildShellOutput(shell));
 
       // ----- Boundary chunks ----------------------------------------------
-      for (const [id, boundary] of shell.boundaries) {
-        if (isAborted()) break;
-        // The active boundary lives in this iteration. Remove its callbacks
-        // from the queue so completed views do not stay pinned by later work.
-        shell.boundaries.delete(id);
-        // Defense-in-depth: even though `id` is typed as `number` from the
-        // Map, validate it's a finite non-negative integer before
-        // interpolating it into an inline `<script>__purity_swap(${id})`
-        // body. If a future refactor lets a non-numeric id slip in, this
-        // prevents code injection through the swap call site.
-        if (!Number.isSafeInteger(id) || id < 0) {
-          console.error(
-            `[Purity] renderToStream: refusing to emit chunk for non-integer boundary id ${String(
-              id,
-            )}; skipping.`,
-          );
-          continue;
+      // The scheduler pulls the next boundary only when it is ready to start
+      // its view, i.e. after the consumer took the previous chunk.
+      function* jobs(): Generator<[number, () => Promise<BoundaryResult | null>]> {
+        for (const [id, boundary] of shell.boundaries) {
+          if (isAborted()) return;
+          // The active boundary leaves the queue. Remove its callbacks so
+          // completed views do not stay pinned by later work.
+          shell.boundaries.delete(id);
+          // Defense-in-depth: even though `id` is typed as `number` from the
+          // Map, validate it's a finite non-negative integer before
+          // interpolating it into an inline `<script>__purity_swap(${id})`
+          // body. If a future refactor lets a non-numeric id slip in, this
+          // prevents code injection through the swap call site.
+          if (!Number.isSafeInteger(id) || id < 0) {
+            console.error(
+              `[Purity] renderToStream: refusing to emit chunk for non-integer boundary id ${String(
+                id,
+              )}; skipping.`,
+            );
+            continue;
+          }
+          yield [
+            id,
+            () =>
+              renderBoundary(id, boundary, timeout, request, workAbort.signal, shell.boundaryIds),
+          ];
         }
-        const result = await renderBoundary(
-          id,
-          boundary,
-          timeout,
-          request,
-          workAbort.signal,
-          shell.boundaryIds,
-        );
+      }
+      for await (const [id, result] of schedule(jobs())) {
         if (isAborted()) break;
         // null signals "boundary couldn't produce content; leave the
         // shell-rendered fallback in place." Without this skip, an

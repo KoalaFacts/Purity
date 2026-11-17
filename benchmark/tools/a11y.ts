@@ -3,7 +3,7 @@
 // Usage: npm run a11y -- http://localhost:4173/
 
 import axe from 'axe-core';
-import { chromium, firefox, webkit } from 'playwright';
+import { chromium, firefox, webkit } from './playwright-engines.ts';
 
 const target = process.argv[2];
 if (!target) {

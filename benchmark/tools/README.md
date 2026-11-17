@@ -28,6 +28,16 @@ Vite plugin loads `@purityjs/compiler` in Node, where its `development`
 condition resolves to `dist` (see `packages/compiler/package.json`), so after editing
 `packages/compiler/src/codegen.ts` run `npm run build -w @purityjs/compiler` first.
 
+Set `CHROMIUM_PATH` to use a system Chrome/Chromium instead of Playwright's
+bundled browser. `run-bench.ts`, `tools/profile.ts`, `tools/sanity.ts` and
+`tools/memory-leak-check.ts` honour it, and so does every browser check and
+a11y scanner that takes its engines from `tools/playwright-engines.ts`
+(directly or through `tools/browser-engines.ts`): the `test:browser:*` scripts,
+`test:browser:devtools`, the `a11y*` tools and the `bundle-size/` browser
+verifiers. Prefer a headless-shell binary:
+a full Chrome build in headless mode requests `/favicon.ico`, and checks that
+assert an empty console then see its 404.
+
 ## Single-framework profile
 
 ```bash
@@ -149,6 +159,14 @@ selectors, including `#result-container` (now present in Solid too).
 Both checks default to all three engines. For an explicitly scoped local run,
 use `node benchmark/tools/binding-browser-check.ts chromium` and
 `node benchmark/tools/fixture-parity-browser-check.ts chromium` after building.
+Browser checks select engines through `browser-engines.ts` (enforced by
+`browser-engines.test.ts`), so the same trailing engine name works for
+`virtual-browser-check.ts`, `packages/ssr/tests/browser-security.ts`,
+`packages/ssr/tests/browser-retention.ts`, `examples/islands-blog/browser-check.ts`
+(which also honours `PURITY_BROWSER`), `packages/vite-plugin/tests/devtools-browser.ts`
+and, through npm, for `npm run test:browser:app-actions -- chromium` and
+`npm run test:published-cli -- chromium`. The a11y scanners take a page URL
+instead and keep their own engine handling.
 CI rejects a single-engine selection; a local Chromium result never implies
 Firefox or WebKit passed.
 

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
-import { build } from 'vite';
+import { build, type Rolldown } from 'vite';
 import { describe, expect, it } from 'vite-plus/test';
 
 const repo = resolve(import.meta.dirname, '../../..');
@@ -141,7 +141,9 @@ describe('packed development conditions', () => {
         resolve: { conditions: ['browser', 'development'] },
         build: { lib: { entry, formats: ['es'] }, write: false, minify: false },
       });
-      const built = Array.isArray(clientOutput) ? clientOutput[0] : clientOutput;
+      const built = (
+        Array.isArray(clientOutput) ? clientOutput[0] : clientOutput
+      ) as Rolldown.RolldownOutput;
       const modules = built.output
         .filter((chunk) => chunk.type === 'chunk')
         .flatMap((chunk) => Object.keys(chunk.modules))

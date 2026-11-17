@@ -2,7 +2,7 @@
 // library and that it correctly maps known compiled positions back to the
 // original `html\`\`` location in user source.
 
-import { SourceMapConsumer } from 'source-map-js';
+import { SourceMapConsumer, type RawSourceMap } from 'source-map-js';
 import { describe, expect, it } from 'vite-plus/test';
 import { purity } from '../src/index.ts';
 
@@ -36,7 +36,7 @@ describe('source map round-trip via source-map-js', () => {
       `const a = 1;\n` + // line 2
       `const el = html\`<div>x</div>\`;`; // line 3
     const r = transform(code);
-    const consumer = new SourceMapConsumer(r.map!);
+    const consumer = new SourceMapConsumer(r.map! as unknown as RawSourceMap);
 
     const { line, column } = findInOutput(r.code, '__purity_renderCompiled__(__purity_tpl_0');
     const orig = consumer.originalPositionFor({ line, column });
@@ -52,7 +52,7 @@ describe('source map round-trip via source-map-js', () => {
       `const x = 42;\n` + // line 3
       `const el = html\`<p>x</p>\`;`; // line 4
     const r = transform(code);
-    const consumer = new SourceMapConsumer(r.map!);
+    const consumer = new SourceMapConsumer(r.map! as unknown as RawSourceMap);
 
     // The user's `// keep this comment` line should appear in the output and
     // map back to source line 2.
@@ -68,7 +68,7 @@ describe('source map round-trip via source-map-js', () => {
       `const x = 42;\n` + // line 2
       `const el = html\`<p>\${x}</p>\`;`; // line 3
     const r = transform(code);
-    const consumer = new SourceMapConsumer(r.map!);
+    const consumer = new SourceMapConsumer(r.map! as unknown as RawSourceMap);
 
     const { line, column } = findInOutput(r.code, 'const x = 42;');
     const orig = consumer.originalPositionFor({ line, column });
@@ -86,7 +86,7 @@ describe('source map round-trip via source-map-js', () => {
   it('gracefully handles a query for a position past the end of the map', () => {
     const code = `import { html } from '@purityjs/core/jit';\nconst el = html\`<p>x</p>\`;`;
     const r = transform(code);
-    const consumer = new SourceMapConsumer(r.map!);
+    const consumer = new SourceMapConsumer(r.map! as unknown as RawSourceMap);
     // Line 9999 is way past the output — consumer should return null fields,
     // not throw.
     const orig = consumer.originalPositionFor({ line: 9999, column: 0 });

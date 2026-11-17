@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
-import { chromium, firefox, webkit, type Browser, type Page } from 'playwright';
+import type { Browser, Page } from 'playwright';
+import { browserEngines } from '../../benchmark/tools/browser-engines.ts';
 
 type FixtureKind = 'form' | 'external-submitter' | 'shadow-form' | 'aria-button' | 'svg-click';
 const fixtureModule = '/src/interaction-fixture.ts';
@@ -225,8 +226,10 @@ try {
     await delay(100);
   }
   assert.ok(ready, `islands demo server did not start:\n${serverOutput}`);
-  for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
+  let checked = 0;
+  for (const [name, engine] of browserEngines) {
     if (process.env.PURITY_BROWSER && process.env.PURITY_BROWSER !== name) continue;
+    checked++;
     const browser = await engine.launch();
     try {
       await checkBrowser(name, browser, base);
@@ -234,6 +237,10 @@ try {
       await browser.close();
     }
   }
+  assert.ok(
+    checked > 0,
+    `PURITY_BROWSER=${process.env.PURITY_BROWSER} selects no engine from the chosen set`,
+  );
 } finally {
   server.kill();
 }

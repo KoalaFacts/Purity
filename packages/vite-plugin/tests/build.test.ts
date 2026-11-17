@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test';
-import { build } from 'vite';
+import { build, type Rolldown } from 'vite';
 import { purity } from '../src/index.ts';
 
 describe('vite build pipeline', () => {
@@ -33,7 +33,7 @@ describe('vite build pipeline', () => {
       plugins: [purity({ hydratable: true, strictAot: false, ...{ devtools: true } })],
       build: { write: false },
     });
-    const output = (Array.isArray(result) ? result[0] : result).output;
+    const output = ((Array.isArray(result) ? result[0] : result) as Rolldown.RolldownOutput).output;
     expect(output.some((item) => item.fileName === 'index.html')).toBe(true);
     for (const item of output) {
       const content = item.type === 'chunk' ? item.code : String(item.source);
@@ -142,7 +142,7 @@ describe('vite build pipeline', () => {
         lib: { entry: join(dir, 'entry.ts'), formats: ['es'], fileName: 'out' },
       },
     });
-    const output = (Array.isArray(result) ? result[0] : result).output;
+    const output = ((Array.isArray(result) ? result[0] : result) as Rolldown.RolldownOutput).output;
     const chunk = output.find((item) => item.type === 'chunk');
     expect(chunk?.code).toContain('.map(');
     expect(chunk?.code).not.toContain('@purityjs/core/list-runtime');

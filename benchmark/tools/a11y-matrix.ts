@@ -3,7 +3,8 @@
 // Usage: npm run a11y:matrix -- http://localhost:5173/Purity/
 
 import assert from 'node:assert/strict';
-import { chromium, firefox, webkit, type Browser, type Page } from 'playwright';
+import type { Browser, Page } from 'playwright';
+import { chromium, firefox, webkit } from './playwright-engines.ts';
 
 const base = process.argv[2];
 if (!base) {

@@ -632,10 +632,14 @@ describe('each', () => {
     const closeMarker = document.createComment('slot-close');
     host.appendChild(closeMarker);
     const context = new ComponentContext();
+    const argCounts = new Set<number>();
     const deferred = withHydration(() =>
       virtualEach(
         items,
-        (item) => html`<li>${item()}</li>`,
+        (...args: [() => number, number]) => {
+          argCounts.add(args.length);
+          return html`<li>${args[0]()}</li>`;
+        },
         (item) => item,
       ),
     ) as unknown as CapturedDeferredEach<number>;
@@ -653,6 +657,8 @@ describe('each', () => {
     expect(rows).toHaveLength(40);
     expect(rows[0].textContent).toBe('0');
     expect(rows[39].textContent).toBe('39');
+    // virtualEach renderers take (item, index) only — no each() position (SV2-008).
+    expect([...argCounts]).toEqual([2]);
 
     for (const dispose of context.disposers ?? []) dispose();
     host.remove();

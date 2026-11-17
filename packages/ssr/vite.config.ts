@@ -10,7 +10,11 @@ export default defineConfig({
   },
   build: {
     lib: {
-      entry: { index: 'src/index.ts', runtime: 'src/runtime.ts' },
+      entry: {
+        index: 'src/index.ts',
+        runtime: 'src/runtime.ts',
+        concurrency: 'src/concurrency.ts',
+      },
       formats: ['es', 'cjs'],
       fileName: (format, entryName) => (format === 'es' ? `${entryName}.js` : `${entryName}.cjs`),
     },

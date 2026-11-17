@@ -307,6 +307,35 @@ describe('nearestErrorDir — deepest-wins boundary resolution', () => {
 });
 
 describe('detectLoaderExport — recognising named loader exports (ADR 0022)', () => {
+  it('matches a loader exported on the same line as other code', () => {
+    expect(detectLoaderExport('export default () => 1; export const loader = () => 1;')).toBe(true);
+    expect(detectLoaderExport('const x = 1; export async function loader() { return x; }')).toBe(
+      true,
+    );
+  });
+
+  it('matches a loader in a multi-declarator export', () => {
+    expect(detectLoaderExport('export const meta = {}, loader = () => 1;')).toBe(true);
+  });
+
+  it('matches a loader re-exported from another module', () => {
+    expect(detectLoaderExport("export { load as loader } from './data.ts';")).toBe(true);
+  });
+
+  it('ignores a type-only export named loader', () => {
+    expect(detectLoaderExport("export type { loader } from './data.ts';")).toBe(false);
+    expect(detectLoaderExport('export type loader = () => Promise<void>;')).toBe(false);
+    expect(detectLoaderExport('export interface loader { id: string }')).toBe(false);
+  });
+
+  it('ignores `export const loader` text inside a string', () => {
+    expect(detectLoaderExport('export const doc = `\nexport const loader = 1;\n`;')).toBe(false);
+  });
+
+  it('falls back to the text scan for a file that does not parse', () => {
+    expect(detectLoaderExport('export const loader = () => {\n  return (;\n};')).toBe(true);
+  });
+
   it('matches `export const loader = …`', () => {
     expect(detectLoaderExport('export const loader = async () => {}')).toBe(true);
   });
@@ -630,6 +659,7 @@ describe('generateRouteManifestSource', () => {
           { pattern: '/', filePath: 'index.ts', layouts: [] },
           { pattern: '/users/:id', filePath: 'users/[id].ts', layouts: [] },
         ],
+        notFoundChain: [],
       },
       (rel) => `/abs/pages/${rel}`,
     );
@@ -648,7 +678,10 @@ describe('generateRouteManifestSource', () => {
 
   it('escapes patterns with quotes via JSON.stringify', () => {
     const src = generateRouteManifestSource(
-      { routes: [{ pattern: "/weird'path", filePath: "weird'path.ts", layouts: [] }] },
+      {
+        routes: [{ pattern: "/weird'path", filePath: "weird'path.ts", layouts: [] }],
+        notFoundChain: [],
+      },
       (rel) => `/abs/${rel}`,
     );
     // Single quotes inside double-quoted JSON strings need no escaping —
@@ -667,6 +700,7 @@ describe('generateRouteManifestSource', () => {
             layouts: [{ filePath: '_layout.ts' }, { filePath: 'users/_layout.ts' }],
           },
         ],
+        notFoundChain: [],
       },
       (rel) => `/abs/pages/${rel}`,
     );
@@ -690,6 +724,7 @@ describe('generateRouteManifestSource', () => {
             errorBoundary: { filePath: 'admin/_error.ts' },
           },
         ],
+        notFoundChain: [],
       },
       (rel) => `/abs/pages/${rel}`,
     );
@@ -700,7 +735,7 @@ describe('generateRouteManifestSource', () => {
 
   it('omits errorBoundary on entries that lack one', () => {
     const src = generateRouteManifestSource(
-      { routes: [{ pattern: '/', filePath: 'index.ts', layouts: [] }] },
+      { routes: [{ pattern: '/', filePath: 'index.ts', layouts: [] }], notFoundChain: [] },
       (rel) => `/abs/pages/${rel}`,
     );
     expect(src).not.toContain('errorBoundary');
@@ -717,6 +752,7 @@ describe('generateRouteManifestSource', () => {
             hasLoader: true,
           },
         ],
+        notFoundChain: [],
       },
       (rel) => `/abs/pages/${rel}`,
     );
@@ -729,7 +765,7 @@ describe('generateRouteManifestSource', () => {
 
   it('omits hasLoader on entries that lack one', () => {
     const src = generateRouteManifestSource(
-      { routes: [{ pattern: '/', filePath: 'index.ts', layouts: [] }] },
+      { routes: [{ pattern: '/', filePath: 'index.ts', layouts: [] }], notFoundChain: [] },
       (rel) => `/abs/pages/${rel}`,
     );
     expect(src).not.toContain('hasLoader');
@@ -810,6 +846,73 @@ describe('purity({ routes }) — Vite plugin integration', () => {
       const homeIdx = (src as string).indexOf('"/"');
       expect(meIdx).toBeLessThan(idIdx);
       expect(meIdx).toBeLessThan(homeIdx);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('keeps route state per plugin instance (two roots, custom virtual id, no routes)', () => {
+    const a = makeTmpPages({ 'pages/alpha.ts': '// a' });
+    const b = makeTmpPages({ 'views/beta.ts': '// b' });
+    try {
+      type Hooks = {
+        configResolved: (c: { root: string }) => void;
+        resolveId: (s: string) => string | null;
+        load: (id: string) => string | null;
+      };
+      const pa = purity({ strictAot: false, routes: { dir: 'pages' } }) as unknown as Hooks;
+      const pb = purity({
+        strictAot: false,
+        routes: { dir: 'views', virtualId: 'app:routes' },
+      }) as unknown as Hooks;
+      const none = purity({ strictAot: false }) as unknown as Hooks;
+      pa.configResolved({ root: a.root });
+      pb.configResolved({ root: b.root });
+      none.configResolved({ root: a.root });
+      expect(pa.resolveId('purity:routes')).toBe('\0purity:routes');
+      expect(pa.resolveId('app:routes')).toBeNull();
+      expect(pb.resolveId('app:routes')).toBe('\0app:routes');
+      expect(pb.resolveId('purity:routes')).toBeNull();
+      expect(none.resolveId('purity:routes')).toBeNull();
+      expect(none.load('\0purity:routes')).toBeNull();
+      const srcA = pa.load('\0purity:routes') as string;
+      const srcB = pb.load('\0app:routes') as string;
+      expect(srcA).toContain('pattern: "/alpha"');
+      expect(srcA).not.toContain('/beta');
+      expect(srcB).toContain('pattern: "/beta"');
+      expect(srcB).not.toContain('/alpha');
+      expect(pb.load('\0purity:routes')).toBeNull();
+    } finally {
+      a.cleanup();
+      b.cleanup();
+    }
+  });
+
+  it('handleHotUpdate reads server.moduleGraph only for files under the routes dir', () => {
+    const { root, cleanup } = makeTmpPages({ 'pages/index.ts': '// home' });
+    try {
+      let reads = 0;
+      const server = {
+        get moduleGraph() {
+          reads++;
+          return { getModuleById: () => null, invalidateModule: () => {} };
+        },
+      };
+      type Hooks = {
+        configResolved: (c: { root: string }) => void;
+        handleHotUpdate: (c: { file: string; server: typeof server }) => void;
+      };
+      const none = purity({ strictAot: false }) as unknown as Hooks;
+      none.configResolved({ root });
+      none.handleHotUpdate({ file: join(root, 'pages/new.ts'), server });
+      // Hosts that pass no dev server at all stay a no-op without routes.
+      (none.handleHotUpdate as (c: { file: string }) => void)({ file: join(root, 'a.ts') });
+      const withRoutes = purity({ strictAot: false, routes: { dir: 'pages' } }) as unknown as Hooks;
+      withRoutes.configResolved({ root });
+      withRoutes.handleHotUpdate({ file: join(root, 'src/other.ts'), server });
+      expect(reads).toBe(0);
+      withRoutes.handleHotUpdate({ file: join(root, 'pages/new.ts'), server });
+      expect(reads).toBe(1);
     } finally {
       cleanup();
     }
@@ -1117,7 +1220,8 @@ describe('purity({ routes: { emitTo } }) — on-disk manifest emit (ADR 0032)', 
 
       const emittedPath = join(root, '.purity/routes.ts');
       expect(existsSync(emittedPath)).toBe(true);
-      expect(readFileSync(emittedPath, 'utf8')).toBe(src);
+      // A `.ts` emit is the virtual source plus `as const` on each export (ADR 0034).
+      expect(readFileSync(emittedPath, 'utf8').replaceAll(' as const;', ';')).toBe(src);
     } finally {
       cleanup();
     }

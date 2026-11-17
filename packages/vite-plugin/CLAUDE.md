@@ -10,7 +10,7 @@ AOT template compilation for Purity. Transforms `html` tagged templates at build
 - **File-system routing (ADR 0019)** — opt-in `routes: { dir }` (or `routes: true` for `pages/`). Scans the directory and exposes a virtual `purity:routes` module exporting a sorted `RouteEntry[]`. Convention: `index.ts` → `/`, `[id].ts` → `:id`, `[...slug].ts` → `*` splat, `_*` reserved (skipped). HMR-aware via `handleHotUpdate`.
 - **Layouts (ADR 0020)** — `_layout.{ts,tsx,js,jsx}` per directory inside the routes dir. Each `RouteEntry` gets a `layouts: LayoutEntry[]` field with the inherited chain (root → leaf). Composer is user-land (`reduceRight` over the array). No new plugin option — convention-discovered.
 - **Error boundaries + 404 (ADR 0021)** — `_error.{ts,tsx,js,jsx}` per directory under the routes dir; `_404.{ts,tsx,js,jsx}` at the root only (Phase 1). Each `RouteEntry` gets an optional `errorBoundary?: LayoutEntry` (nearest in chain, single entry — no chained composition). The manifest gains a top-level `notFound?: LayoutEntry`. Both are emitted only when the corresponding files exist; consumers reading just `routes` keep working.
-- **Data loaders (ADR 0022)** — any route or layout module exporting a named `loader` gets a `hasLoader: true` flag in the manifest. Detection is regex-based on the module source (no parser dep); recognises `export const|let|var|function loader`, `export async function loader`, `export { loader }`, `export { x as loader }`, plus TypeScript-typed forms. Plugin reads each route + layout file once per build (cached via `attachLoaderInfo`'s internal map). Component-data plumbing stays user-land for Phase 1.
+- **Data loaders (ADR 0022)** — any route or layout module exporting a named `loader` gets a `hasLoader: true` flag in the manifest. Detection reads the static export table from `oxc-parser` (any export named `loader`, including same-line, multi-declarator and `export { x as loader } from …` forms; type-only exports ignored); a file that does not parse falls back to a line-anchored regex scan. Plugin reads each route + layout file once per build (cached via `attachLoaderInfo`'s internal map). Component-data plumbing stays user-land for Phase 1.
 - **Sibling routes.d.ts (ADR 0044)** — when `emitTo` is set, the plugin also writes a `.d.ts` next to the `.ts` (path swap: `.ts` → `.d.ts`, append for any other extension). The `.d.ts` declares the virtual `'purity:routes'` module with literal tuple types whose `importFn` is `() => Promise<typeof import('<abs>')>` per-entry, so apps that import from `'purity:routes'` get the same per-route typing surface as apps that import from the on-disk `.ts`. `LoaderDataOf<'/users/:id', typeof routes>` (ADR 0034) works against either import. Same content-equality skip as the `.ts` emit so dev-mode filesystem-watch loops stay quiet.
 - Skips framework internals (only compiles user code)
 - Emits a hand-rolled v3 source map (line-anchored — each output line maps back to the original line) so stack traces land in user source
@@ -27,7 +27,9 @@ src/
 
 ## Key Functions
 
-- `purity(options?)` — Vite plugin factory, returns { name, enforce, transform }
+- `purity(options?)` — Vite plugin factory, checked with `satisfies Plugin` (type-only import from the `vite` peer); hooks keep their concrete types for direct calls in tests. Hooks take `this: unknown` and read the context only through `hookContext()` / `hookWarn()` (`PurityHookContext`), because tests and non-Vite hosts call them without one
+- `createRoutesWiring(routes)` — per-instance file-system routing state and hooks (`configResolved` / `buildStart` / `resolveId` / `load` / `handleHotUpdate`); inert without the `routes` option
+- `transformModule(ctx, code, id, ssr, settings)` — the `transform` hook body: server-module strip, asset checks, serverAction strip, then the template AOT pass
 - `compileTemplates(source, id)` — collects `Edit[]` for each html``, hoist insert, and `html`import strip; defers all writes to`applyEdits`
 - `compileNestedTemplates(source, ctx)` — handles `html` inside `${...}` expressions
 - `extractTemplateLiteral(source, pos)` — extracts strings + expression sources
@@ -46,3 +48,4 @@ npx vitest run
 - Plugin runs in `enforce: 'pre'` phase
 - Skips files containing `@purityjs/` or `packages/core/` paths
 - Generated code uses `__purity_w__` as watch import alias
+- `typescript/no-explicit-any` is an error under `src/` (CQ-09e): read oxc AST nodes structurally through `astObject()` / `astList()` / `someAstNode()` instead of `any`

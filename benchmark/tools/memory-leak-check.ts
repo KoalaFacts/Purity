@@ -121,7 +121,10 @@ const server = await preview({
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 
 try {
-  browser = await chromium.launch({ args: ['--js-flags=--expose-gc'] });
+  browser = await chromium.launch({
+    executablePath: process.env.CHROMIUM_PATH,
+    args: ['--js-flags=--expose-gc'],
+  });
   const address = server.httpServer.address() as AddressInfo | null;
   assert.ok(address, 'Preview server did not start');
   const page = await browser.newPage();

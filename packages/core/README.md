@@ -41,6 +41,22 @@ batch(() => {
 }); // single flush
 ```
 
+Nested objects and arrays: `store()` from `@purityjs/core/store` tracks each
+property separately, so a write reruns only the readers of what changed
+([ADR 0055](../../docs/decisions/0055-property-store.md)).
+
+```ts
+import { store } from "@purityjs/core/store";
+
+const [form, update] = store({ name: "", address: { city: "" }, tags: ["a"] });
+compute(() => form.address.city); // reruns only when city changes
+update((draft) => {
+  draft.address.city = "Sydney"; // all writes in one batch
+  draft.tags.push("b");
+});
+// form.name = "x" throws: the view is read-only
+```
+
 ### Async Resources
 
 Race-safe async data, built on signals. Each `resource()` exposes reactive
@@ -307,6 +323,55 @@ cd benchmark && node --expose-gc \
   --conditions=development tools/resource-heap.ts   # heap diff per cycle
 ```
 
+### Async derivation (`@purityjs/core/async`)
+
+`asyncCompute` turns a Promise-returning computation into a value that ordinary
+`compute()` chains can read ([ADR 0054](../../docs/decisions/0054-async-derivation.md)).
+
+```ts
+import { compute, state, watch } from "@purityjs/core";
+import { asyncCompute, isPending } from "@purityjs/core/async";
+
+const id = state(1);
+const user = asyncCompute(({ signal }) =>
+  fetch(`/u/${id()}`, { signal }).then((r) => r.json() as Promise<{ name: string }>),
+);
+const greeting = compute(() => `Hello, ${user().name}`);
+
+watch(() => {
+  try {
+    console.log(greeting());
+  } catch (err) {
+    if (!isPending(err)) throw err; // first load: not ready yet
+  }
+});
+```
+
+- Reads made before the first `await` are tracked; changing one starts a new run
+  and aborts the previous run's `signal`. Only the latest run can become current.
+- Before the first settlement, reading throws `PendingError`; downstream
+  computes cache and rethrow it like any error. After that, a refetch keeps the
+  previous value while `user.pending()` is `true`.
+- A rejection of the latest run is rethrown to readers until a later run
+  succeeds. `user.dispose()` (or disposing the owning scope) aborts the run.
+- The first run starts when the value is first read.
+- `fn` may also return an `AsyncIterable` (e.g. an `async function*`): each
+  yielded value becomes current in turn, `pending()` is `true` only until the
+  first value, and a newer run or disposal drops later values and closes the
+  iterator at its next value — listen to `signal` to stop a wait sooner.
+
+  ```ts
+  // priceFeed(symbol, { signal }) returns an AsyncIterable<number>
+  const price = asyncCompute(({ signal }) => priceFeed(symbol(), { signal }));
+  ```
+
+  As with `async` functions, only reads before the first `await` are tracked;
+  in an `async function*` that is the body up to its first `await`/`yield`.
+
+- A `watch` that reads an unresolved value without a guard throws
+  `PendingError` from `watch()`; guard the read as above until the view
+  boundary (SV2-004) lands.
+
 ### Templates
 
 JIT compiled: `html` tagged literals → parse → AST → codegen → cached DOM factory.
@@ -469,6 +534,21 @@ only rows inside the changed range (fewest moves, via `moveBefore` where the
 browser has it). Keys must be unique; a repeated key renders only its first
 occurrence and logs a warning.
 
+The renderer's second argument is the index the row was created at; the third,
+`position`, is an accessor for its current index, so ordinal labels and
+position-based actions stay right after a keyed reorder without re-rendering
+the row ([ADR 0058](../../docs/decisions/0058-each-current-position.md)):
+
+```ts
+each(
+  () => todos(),
+  (todo, _index, position) =>
+    html`<li>${() => `${position() + 1}. ${todo().title}`}
+      <button @click=${() => removeAt(position())}>×</button></li>`,
+  (todo) => todo.id,
+);
+```
+
 For a long list, import `virtualEach` and put it in a scrollable container:
 
 ```ts
@@ -486,6 +566,113 @@ html`<ul style="max-height: 24rem; overflow-y: auto">
 Purity manages the visible range, spacers, and row-height measurements. Supply
 stable keys when items can be inserted, removed, or reordered. SSR still renders
 the full list; hydration adopts those rows before windowing them.
+
+To replace a part of the page when it fails, wrap it in `errorBoundary`:
+
+```ts
+import { errorBoundary } from "@purityjs/core/boundary";
+
+html`<section>
+  ${errorBoundary(
+    () => html`<p>${() => total().toFixed(2)}</p>`,
+    (error, reset) => html`<p role="alert">${String(error)}</p>
+      <button @click=${reset}>Retry</button>`,
+  )}
+</section>`;
+```
+
+A throw while the view renders, or later from one of its bindings or watches,
+disposes the view and shows `fallback(error, reset)`; the rest of the page keeps
+updating. `reset()` renders the view again. A throwing fallback goes to the next
+outer boundary or the component's `onError`. Event-handler errors, and errors
+inside a nested `component()` custom element, are not caught. On the server a synchronous throw renders the fallback; hydrated
+content is not guarded yet ([ADR 0056](../../docs/decisions/0056-error-boundary.md)).
+
+To show a placeholder until an `asyncCompute()` value first settles, wrap the
+part that reads it in `loading`:
+
+```ts
+import { asyncCompute } from "@purityjs/core/async";
+import { loading } from "@purityjs/core/loading";
+
+const user = asyncCompute(({ signal }) => fetchUser(id(), { signal }));
+
+html`<section>
+  ${loading(
+    () => html`<h2>${() => user().name}</h2><input placeholder="Note" />`,
+    () => html`<p aria-busy="true">Loading…</p>`,
+  )}
+</section>`;
+```
+
+The fallback shows until the view renders without an unresolved read. After
+that a refetch keeps the view as it is (same nodes, focus and typed input);
+use `user.pending()` for a busy indicator. A rejection goes to the surrounding
+`errorBoundary` or `onError`. Content created later (a new `when()` branch
+reading a new async value) needs its own `loading`. On the server an unresolved
+read renders the fallback ([ADR 0057](../../docs/decisions/0057-loading-boundary.md)).
+
+### Async transactions
+
+`transaction()` from `@purityjs/core/transaction` keeps writes made around
+async work together: values staged with `tx.set()` are applied in one batch
+when the work resolves and dropped when it rejects; `tx.optimistic()` shows a
+tentative value at once and removes it exactly once when the transaction
+settles ([ADR 0059](../../docs/decisions/0059-async-transaction.md)).
+
+```ts
+import { transaction } from "@purityjs/core/transaction";
+
+await transaction(async (tx) => {
+  tx.optimistic(title, draft); // shown now
+  const saved = await save(draft, { signal: tx.signal });
+  tx.set(title, saved.title); // both applied together
+  tx.set(updatedAt, saved.updatedAt);
+});
+```
+
+Overlapping transactions show the newest tentative value; a commit underneath
+it becomes visible when the last tentative value on that signal settles.
+Started during component setup or render, a transaction is aborted on unmount
+(writes dropped, tentative values removed, the promise rejects with
+`AbortError`); one started from an event handler always settles.
+
+`pendingTransactions()` is the tracked number of transactions still running;
+it drops in the same batch as the commit, so a "Saving…" label never
+disappears before the saved values appear:
+
+```ts
+import { pendingTransactions } from "@purityjs/core/transaction";
+
+html`<button ?disabled=${() => pendingTransactions() > 0}>Save</button>`;
+```
+
+### Owner composition
+
+Work created in a later callback (a timer, a socket message, a resolved
+promise) has no owner, so it is not stopped on unmount. `@purityjs/core/owner`
+lets an integration bind it explicitly
+([ADR 0060](../../docs/decisions/0060-owner-composition.md)):
+
+```ts
+import { getOwner, root, runWithOwner } from "@purityjs/core/owner";
+
+const Ticker = () => {
+  const owner = getOwner()!;
+  socket.on("price", (p) => {
+    // Stopped when Ticker unmounts; released at once if it already has.
+    runWithOwner(owner, () => watch(p.signal, render));
+  });
+  return html`<p>…</p>`;
+};
+
+// A detached cache with an explicit lifetime.
+const cache = root((dispose) => ({ total: compute(() => sum(items())), dispose }));
+cache.dispose(); // exactly once; later calls do nothing
+```
+
+`owner.alive` is `false` once the owner is disposed. Cleanup inside one owner
+runs in registration order.
 
 ### Teleport
 

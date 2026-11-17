@@ -56,7 +56,7 @@ export interface SSRControlHooks {
   when(conditionFn: () => boolean, thenFn: () => unknown, elseFn?: () => unknown): SSRHtml;
   each<T>(
     listAccessor: (() => T[]) | T[],
-    mapFn: (item: () => T, index: number) => unknown,
+    mapFn: (item: () => T, index: number, position: () => number) => unknown,
     keyFn?: (item: T, index: number) => unknown,
   ): SSRHtml;
   suspense<T>(
@@ -152,7 +152,7 @@ export type CaptureMatchHydrationFn = <T extends string | number | boolean>(
 
 export type CaptureEachHydrationFn = <T>(
   listAccessor: (() => T[]) | T[],
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  mapFn: (item: () => T, index: number, position: () => number) => Node | DocumentFragment | string,
   keyFn?: (item: T, index: number) => unknown,
   adapter?: unknown,
 ) => unknown;

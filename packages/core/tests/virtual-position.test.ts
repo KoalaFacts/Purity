@@ -80,7 +80,7 @@ describe('virtualEach() current position (SV2-008 slice 2)', () => {
     unmount();
   });
 
-  it('reports the source-list index, not the window index, when the window starts later', async () => {
+  it('updates retained rows to their new source index after rows before them are removed', async () => {
     const rows = state<Row[]>(rowsOf(100));
     const { host, unmount } = renderRows(rows);
     await tick();
@@ -99,6 +99,61 @@ describe('virtualEach() current position (SV2-008 slice 2)', () => {
     expect(retained.map((li) => li.at())).toEqual(before.map((p) => p - 10));
     expect(texts(host)[0]).toBe('1. r10');
     unmount();
+  });
+
+  it('reports the source-list index, not the window index, after scrolling', async () => {
+    // jsdom has no layout: stub the viewport, row and spacer boxes (24px rows).
+    const settle = async () => {
+      await new Promise<void>((r) => setTimeout(r, 80));
+      await tick();
+      await tick();
+    };
+    const items = state(Array.from({ length: 100 }, (_, i) => i));
+    const host = document.createElement('ul');
+    host.style.cssText = 'height:96px;overflow-y:auto';
+    Object.defineProperty(host, 'clientHeight', { configurable: true, value: 96 });
+    host.getBoundingClientRect = () => new DOMRect(0, 0, 200, 96);
+    document.body.appendChild(host);
+    const { unmount } = mount(
+      () =>
+        virtualEach(
+          items,
+          (item, _index, position) => {
+            const li = document.createElement('li') as HTMLLIElement & { at?: () => number };
+            li.textContent = String(item());
+            li.at = position;
+            li.getBoundingClientRect = () =>
+              new DOMRect(0, position() * 24 - host.scrollTop, 200, 24);
+            return li;
+          },
+          (item) => item,
+        ) as DocumentFragment,
+      host,
+    );
+    await tick();
+    await tick();
+    const top = host.querySelector<HTMLElement>('[data-purity-window-spacer]')!;
+    top.getBoundingClientRect = () => new DOMRect(0, -host.scrollTop, 200, 0);
+    host.scrollTop = 1200;
+    host.dispatchEvent(new Event('scroll'));
+    await settle();
+
+    const rowsNow = () =>
+      [...host.querySelectorAll('li:not([data-purity-window-spacer])')] as (HTMLLIElement & {
+        at: () => number;
+      })[];
+    const first = rowsNow()[0];
+    const value = Number(first.textContent);
+    expect(value).toBeGreaterThan(30);
+    expect(first.at()).toBe(value);
+
+    // Prepend before the window: the visible row keeps its node and shifts by one.
+    items([-1, ...items()]);
+    await settle();
+    expect(first.isConnected).toBe(true);
+    expect(first.at()).toBe(value + 1);
+    unmount();
+    host.remove();
   });
 
   it('keeps the position lazy and stops updating removed rows', async () => {

@@ -564,7 +564,9 @@ html`<ul style="max-height: 24rem; overflow-y: auto">
 ```
 
 Purity manages the visible range, spacers, and row-height measurements. Supply
-stable keys when items can be inserted, removed, or reordered. SSR still renders
+stable keys when items can be inserted, removed, or reordered. Rows get the same
+third argument as `each()`: `position()` is the row's index in the whole list,
+not in the rendered window, and follows keyed moves. SSR still renders
 the full list; hydration adopts those rows before windowing them.
 
 To replace a part of the page when it fails, wrap it in `errorBoundary`:

@@ -657,8 +657,8 @@ describe('each', () => {
     expect(rows).toHaveLength(40);
     expect(rows[0].textContent).toBe('0');
     expect(rows[39].textContent).toBe('39');
-    // virtualEach renderers take (item, index) only — no each() position (SV2-008).
-    expect([...argCounts]).toEqual([2]);
+    // virtualEach renderers get each()'s (item, index, position) (SV2-008 slice 2).
+    expect([...argCounts]).toEqual([3]);
 
     for (const dispose of context.disposers ?? []) dispose();
     host.remove();

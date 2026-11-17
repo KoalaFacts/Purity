@@ -53,6 +53,15 @@ Out of scope for slice 1: `list()` and `virtualEach()` (their renderers keep
 two arguments) and a positional (non-keyed) mode with fixed slots, which
 `each(list, mapFn, (_, i) => i)` already expresses.
 
+Slice 2 (`virtualEach()`): its renderer takes the same third argument with the
+same contract. `index` and `position()` are source-list indices (the first
+occurrence of a key, as `virtualEach()` already de-duplicates), never indices
+in the rendered window, so a row scrolled into a later window reports its place
+in the whole list; SSR passes `() => i` and hydrated rows are updated by later
+window reconciles. `list()` keeps two arguments: it re-applies its per-row
+callbacks with the current index on every reconcile, so it has no stale index
+to fix.
+
 ## Consequences
 
 - Ordinal labels and position-based callbacks stay correct after keyed

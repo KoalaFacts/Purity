@@ -33,6 +33,14 @@ async function checkBrowser(browserType: BrowserType, url: string): Promise<void
       ),
     );
     const bottomCount = await virtual.locator('.row').count();
+    // virtualEach() positions are source-list indices, not window indices (SV2-008).
+    const lastPos = await page.evaluate(
+      () =>
+        Array.from(document.querySelectorAll('#virtual-viewport .row'))
+          .find((row) => row.textContent?.includes('Row 9999'))
+          ?.getAttribute('data-pos') ?? null,
+    );
+    assert.equal(lastPos, '9999', `Row 9999 position: ${lastPos}`);
     assert.ok(bottomCount > 0 && bottomCount < 100, `Bottom virtual row count: ${bottomCount}`);
 
     await page.getByRole('button', { name: 'Clear' }).click();
@@ -139,7 +147,7 @@ async function checkBrowser(browserType: BrowserType, url: string): Promise<void
     }
 
     console.log(
-      `${browserType.name()}: ${initialCount} initial and ${bottomCount} bottom virtual rows; 10,000 regular rows; shadow scroll reached Row 9999`,
+      `${browserType.name()}: ${initialCount} initial and ${bottomCount} bottom virtual rows; Row 9999 position ${lastPos}; 10,000 regular rows; shadow scroll reached Row 9999`,
     );
   } finally {
     await browser.close();

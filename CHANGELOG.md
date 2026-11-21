@@ -4,6 +4,11 @@
 
 ### Added
 
+- `virtualEach()` row renderers get `each()`'s third argument,
+  `position: () => number` — the row's current index in the whole list (not
+  the rendered window), updated on keyed moves without re-rendering the row
+  ([ADR 0058](./docs/decisions/0058-each-current-position.md) slice 2).
+
 - `pendingTransactions()` from `@purityjs/core/transaction`
   ([ADR 0059](./docs/decisions/0059-async-transaction.md) slice 2): the
   tracked number of running transactions, falling in the same batch as each

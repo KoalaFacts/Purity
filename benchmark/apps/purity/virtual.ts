@@ -35,8 +35,9 @@ function updateMountedCount(viewport: HTMLElement): void {
   });
 }
 
-function renderRow(row: () => Row) {
-  return html`<div class="row">${() => row().label}</div>`;
+// `position` is the row's index in the whole list (SV2-008), also inside a window.
+function renderRow(row: () => Row, _index: number, position: () => number) {
+  return html`<div class="row" data-pos=${() => String(position())}>${() => row().label}</div>`;
 }
 
 fullViewport.appendChild(

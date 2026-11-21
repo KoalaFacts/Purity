@@ -15,10 +15,12 @@ import {
 import {
   type DeferredEach,
   type EachEntry,
+  type EachMapFn,
   type EachHydrationAdapter,
   disposeEntry,
   eachRowOps,
   type EachState,
+  type RowOps,
   reconcileEach,
   registerEachAutoDispose,
   replaceOwnedNodes,
@@ -477,6 +479,20 @@ function registerEachWindow<T>(
   };
 }
 
+/** Row ops for a window: `index` and `position` are source-list indices, not window ones. */
+function windowRowOps<T>(
+  mapFn: EachMapFn<T>,
+  indices: number[],
+  start: number,
+): RowOps<T, EachEntry<T>> {
+  const ops = eachRowOps(mapFn);
+  return {
+    create: (item, index) => ops.create(item, indices[start + index]),
+    update: (entry, item, index) => ops.update(entry, item, indices[start + index]),
+    release: ops.release,
+  };
+}
+
 function reconcileEachWindow<T>(
   eachState: EachState<T>,
   items: T[],
@@ -486,7 +502,7 @@ function reconcileEachWindow<T>(
   spacers: EachWindowSpacers,
   requestedRange: EachWindowRange,
   heights: EachWindowHeightIndex,
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  mapFn: EachMapFn<T>,
 ): void {
   const start = Math.min(Math.max(0, requestedRange.start), items.length);
   const visibleCount = Math.max(1, requestedRange.end - requestedRange.start);
@@ -506,7 +522,7 @@ function reconcileEachWindow<T>(
     parent,
     spacers.bottom,
     (_item, index) => keys[normalizedStart + index],
-    eachRowOps((item, index) => mapFn(item, indices[normalizedStart + index])),
+    windowRowOps(mapFn, indices, normalizedStart),
   );
 }
 
@@ -514,7 +530,7 @@ function createEachWindowController<T>(
   ownerCtx: Scope | null,
   eachState: EachState<T>,
   listAccessor: (() => T[]) | T[],
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string,
+  mapFn: EachMapFn<T>,
   getKey: (item: T, index: number) => unknown,
   spacers: EachWindowSpacers,
 ): () => void {
@@ -615,8 +631,7 @@ const virtualHydrationAdapter: EachHydrationAdapter = {
       ownerCtx,
       eachState,
       getList,
-      // virtualEach() renderers take (item, index); they have no position.
-      mapFn as (item: () => any, index: number) => Node | DocumentFragment | string,
+      mapFn as EachMapFn<any>,
       getKey,
       spacers,
     );
@@ -631,19 +646,18 @@ const virtualHydrationAdapter: EachHydrationAdapter = {
  */
 export function virtualEach<T>(
   listAccessor: (() => T[]) | T[],
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string | SSRHtml,
+  mapFn: EachMapFn<T, Node | DocumentFragment | string | SSRHtml>,
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment;
 export function virtualEach<T>(
   listAccessor: (() => T[]) | T[],
-  mapFn: (item: () => T, index: number) => Node | DocumentFragment | string | SSRHtml,
+  mapFn: EachMapFn<T, Node | DocumentFragment | string | SSRHtml>,
   keyFn?: (item: T, index: number) => unknown,
 ): DocumentFragment | DeferredEach<T> | SSRHtml {
   if (isHydratingPassive() && captureHydratingEach) {
     return captureHydratingEach(
       listAccessor,
-      // Hydration passes each()'s position; virtualEach rows take (item, index).
-      (item, index) => mapFn(item, index) as Node | DocumentFragment | string,
+      mapFn as EachMapFn<T>,
       keyFn,
       virtualHydrationAdapter,
     ) as DeferredEach<T>;
@@ -667,7 +681,7 @@ export function virtualEach<T>(
     ownerCtx,
     eachState,
     listAccessor,
-    mapFn as (item: () => T, index: number) => Node | DocumentFragment | string,
+    mapFn as EachMapFn<T>,
     getKey,
     spacers,
   );

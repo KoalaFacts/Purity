@@ -391,25 +391,27 @@ export function generateHydrateLinked(
 const FL_DEF =
   'var __purity_fl__=function(v,o,s){if(typeof v==="function")v=v();if(v==null||v===false)return o;' +
   'if(Array.isArray(v)){if(s===null)s=new WeakSet();if(s.has(v))return o;s.add(v);' +
-  'for(var i=0;i<v.length;i++)__purity_fl__(v[i],o,s);}else o.push(v);return o;};';
+  'for(var i=0;i<v.length;i++)__purity_fl__(v[i],o,s)}else o.push(v);return o};';
 const SW_DEF =
   'var __purity_sw__=function(c,v,m){var N=[],t=1,s="",O=Array.isArray(c)?c:[c],l=O[O.length-1],' +
   'p=l.parentNode,a=l.nextSibling,f=document.createDocumentFragment(),K;' +
   '(Array.isArray(v)?__purity_fl__(v,[],null):v==null||v===false?[]:[v]).forEach(function(y){' +
   'if(m&&y&&y.__purity_deferred__===true)m(y,y=document.createDocumentFragment(),false,true);' +
-  'if(!(y instanceof Node)){s+=y=String(y);N.push(y);}else if(y.nodeType!==11){t=0;N.push(y);}' +
-  'else for(t=0,y=y.firstChild;y;y=y.nextSibling)N.push(y);});' +
-  'N=t?[O[1]||l.nodeType!==3?document.createTextNode(""):l]:N.map(function(y){return typeof y=="string"?document.createTextNode(y):y;});' +
-  'if(t)N[0].data=s;N[0]||N.push(document.createTextNode(""));' +
-  'if(p){K=new Set(N);O.forEach(function(o){K.has(o)||o.remove();});N.forEach(function(n){f.appendChild(n);});p.insertBefore(f,a);}' +
-  'return N[1]?N:N[0];};';
+  'if(!(y instanceof Node)){s+=y=String(y);N.push(y)}else if(y.nodeType!==11){t=0;N.push(y)}' +
+  'else for(t=0,y=y.firstChild;y;y=y.nextSibling)N.push(y)});' +
+  // Text fast path (CQ-08, as in swapSlot): reuse the Text node, skip equal writes.
+  'if(t&&c.nodeType===3){c.data===s||(c.data=s);return c}' +
+  'N=t?[document.createTextNode(s)]:N.map(function(y){return typeof y=="string"?document.createTextNode(y):y});' +
+  'N[0]||N.push(document.createTextNode(""));' +
+  'if(p){K=new Set(N);O.forEach(function(o){K.has(o)||o.remove()});N.forEach(function(n){f.appendChild(n)});p.insertBefore(f,a)}' +
+  'return N[1]?N:N[0]};';
 const URL_DEF =
   "var __purity_url__=function(v){if(v==null||v===false)return v;if(v===true)return '';" +
   "var s=String(v),p=s.replace(/[\\u0000-\\u0020\\u007f]/g,'');" +
   'if(/^(?:javascript|vbscript):/i.test(p)||(/^data:/i.test(p)&&!/^data:image\\/(?:png|jpeg|gif|webp|avif|bmp|x-icon);base64,/i.test(p)))' +
-  "throw new Error('[Purity] Unsafe URL binding');return s;};";
+  "throw new Error('[Purity] Unsafe URL binding');return s};";
 const TMPL_DEF =
-  "var __purity_tmpl__=function(h,s,p){var r;return function(){if(!r){var t=document.createElement('template');t.innerHTML=h;if(p)p(t.content);r=s?t.content.firstChild:t.content;}return r.cloneNode(true);};};";
+  "var __purity_tmpl__=function(h,s,p){var r;return function(){if(!r){var t=document.createElement('template');t.innerHTML=h;if(p)p(t.content);r=s?t.content.firstChild:t.content}return r.cloneNode(true)}};";
 
 // Wrap linked source so it evaluates on its own, binding the helpers once per
 // factory. Output without helper references is returned unchanged.

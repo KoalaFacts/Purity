@@ -245,7 +245,7 @@ function isSafePath(path: string): boolean {
   if (path.startsWith('//')) return false;
   // ASCII control + DEL — CR/LF would let a hostile path inject
   // additional Request lines or break downstream filesystem tooling.
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberate
+  // oxlint-disable-next-line no-control-regex -- matching control characters is the point
   if (/[ -]/.test(path)) return false;
   // `..` as a path segment. Matches `/..`, `/../`, `/..?`, `/..#`.
   for (const seg of path.split(/[/?#]/)) {

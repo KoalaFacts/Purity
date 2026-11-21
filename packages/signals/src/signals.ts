@@ -420,13 +420,6 @@ function markCheck(observers: ComputedNode[]): void {
 // updateValue — pull a node back to CLEAN
 // ---------------------------------------------------------------------------
 
-interface CheckFrame {
-  node: ComputedNode;
-  sources: AnyNode[];
-  versions: number[];
-  idx: number;
-}
-
 // Iterative (explicit heap-allocated stack of frames) equivalent of the
 // natural recursive formulation: to resolve a CHECK node, first resolve each
 // CHECK/DIRTY source (depth-first), then compare versions and either settle
@@ -448,26 +441,26 @@ function updateValue(startNode: ComputedNode): void {
 }
 
 function resolveCheck(startNode: ComputedNode): void {
-  const stack: CheckFrame[] = [
-    {
-      node: startNode,
-      sources: startNode.sources ?? [],
-      versions: startNode.sourceMeta ?? [],
-      idx: 0,
-    },
-  ];
-  // Nodes with a frame on the stack. A self-referential computed lists itself
-  // as a source; descending into it again would push frames forever. Created
-  // lazily at the first descent, when the stack holds only startNode.
+  // The frame being walked lives in locals; `stack` holds only suspended
+  // ancestors and is created at the first descent. A node whose sources need
+  // no descent (the common case: states, CLEAN or DIRTY computeds) therefore
+  // resolves without allocating an array or a frame object (CQ-12).
+  let node = startNode;
+  let sources = node.sources ?? [];
+  let versions = node.sourceMeta ?? [];
+  let idx = 0;
+  // Suspended frames, flattened: node, sources, versions, idx per frame.
+  let stack: unknown[] | null = null;
+  // Nodes on the current path (the suspended ancestors plus `node`). A
+  // self-referential computed lists itself as a source; descending into it
+  // again would push frames forever. Created at the first descent.
   let onStack: Set<ComputedNode> | null = null;
 
-  while (stack.length > 0) {
-    const frame = stack[stack.length - 1];
-    const { node, sources, versions } = frame;
+  for (;;) {
     let descended = false;
 
-    while (frame.idx < sources.length) {
-      const src = sources[frame.idx];
+    while (idx < sources.length) {
+      const src = sources[idx];
       if (src.fn !== null) {
         const sc = src as ComputedNode;
         if (sc.disposed) {
@@ -475,17 +468,15 @@ function resolveCheck(startNode: ComputedNode): void {
         } else if (sc.status === STATUS_CHECK) {
           // A source already being resolved (a cycle) cannot be resolved again;
           // compare its version as it stands instead of descending.
-          const onPath = onStack !== null ? onStack.has(sc) : sc === node;
-          if (!onPath) {
+          if (!(onStack?.has(sc) ?? sc === node)) {
             // Resolve sc before we can know whether it actually changed —
-            // push a frame for it instead of recursing into updateValue(sc).
-            (onStack ??= new Set(stack.map((f) => f.node))).add(sc);
-            stack.push({
-              node: sc,
-              sources: sc.sources ?? [],
-              versions: sc.sourceMeta ?? [],
-              idx: 0,
-            });
+            // suspend this frame instead of recursing into updateValue(sc).
+            (onStack ??= new Set([node])).add(sc);
+            (stack ??= []).push(node, sources, versions, idx);
+            node = sc;
+            sources = sc.sources ?? [];
+            versions = sc.sourceMeta ?? [];
+            idx = 0;
             descended = true;
             break;
           }
@@ -493,11 +484,11 @@ function resolveCheck(startNode: ComputedNode): void {
           runComputed(sc);
         }
       }
-      if (src.version !== versions[frame.idx * 2]) {
+      if (src.version !== versions[idx * 2]) {
         node.status = STATUS_DIRTY;
         break;
       }
-      frame.idx++;
+      idx++;
     }
 
     if (descended) continue;
@@ -507,8 +498,12 @@ function resolveCheck(startNode: ComputedNode): void {
     } else {
       runComputed(node);
     }
-    onStack?.delete(node);
-    stack.pop();
+    if (stack === null || stack.length === 0) return;
+    onStack!.delete(node);
+    idx = stack.pop() as number;
+    versions = stack.pop() as number[];
+    sources = stack.pop() as AnyNode[];
+    node = stack.pop() as ComputedNode;
   }
 }
 

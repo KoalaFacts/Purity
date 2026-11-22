@@ -251,7 +251,7 @@ function getEachWindowRange(
   let viewportEnd: number;
   let spacerPosition: number;
 
-  if ('scrollTop' in viewport) {
+  if ('nodeType' in viewport) {
     const bounds = viewport.getBoundingClientRect();
     const scrollTop = viewport.scrollTop;
     spacerPosition =
@@ -405,7 +405,7 @@ function registerEachWindow<T>(
     let syncObservedRows = () => {};
     const updateRange = () => {
       if (cancelled) return;
-      if ('scrollTop' in viewport && viewport.clientHeight === 0) return;
+      if ('nodeType' in viewport && viewport.clientHeight === 0) return;
       syncObservedRows();
       if (measureEachWindowRows(eachState as EachState<unknown>, heights, parent, view)) {
         onHeightsChanged();
@@ -455,7 +455,7 @@ function registerEachWindow<T>(
     scrollTarget.addEventListener('scroll', scheduleUpdate, { passive: true });
     view.addEventListener('resize', scheduleUpdate, { passive: true });
     resizeObserver?.observe(parent);
-    if ('scrollTop' in viewport && viewport !== parent) resizeObserver?.observe(viewport);
+    if ('nodeType' in viewport && viewport !== parent) resizeObserver?.observe(viewport);
     syncObservedRows();
     updateRange();
 

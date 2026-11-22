@@ -1,6 +1,6 @@
 import { virtualEach } from '../src/virtual.ts';
 import { withHydration } from '../src/runtime/hydrate-runtime.ts';
-import { describe, expect, it, vi } from 'vite-plus/test';
+import { describe, expect, it, onTestFinished, vi } from 'vite-plus/test';
 import { html } from '../src/compiler/compile.ts';
 import { ComponentContext, popContext, pushContext } from '@purityjs/signals';
 import { mount, onDispose } from '../src/component.ts';
@@ -335,6 +335,7 @@ describe('each', () => {
     container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 96);
     // jsdom 31, like browsers, has no computed style for disconnected elements.
     document.body.appendChild(container);
+    onTestFinished(() => container.remove());
 
     const mounted = mount(
       () =>
@@ -378,7 +379,6 @@ describe('each', () => {
     container.dispatchEvent(new Event('scroll'));
     await new Promise<void>((resolve) => setTimeout(resolve, 30));
     expect(renderedIndices).toHaveLength(renderCountAfterUnmount);
-    container.remove();
   });
 
   it('preserves a disconnected custom element shadow tree containing a virtual list', async () => {
@@ -414,6 +414,7 @@ describe('each', () => {
     container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 100);
     // jsdom 31, like browsers, has no computed style for disconnected elements.
     document.body.appendChild(container);
+    onTestFinished(() => container.remove());
     const rowOffset = (index: number) => Math.floor(index / 2) * 60 + (index % 2) * 20;
 
     const mounted = mount(
@@ -450,7 +451,6 @@ describe('each', () => {
     expect(indices.length).toBeLessThan(40);
 
     mounted.unmount();
-    container.remove();
   });
 
   it('recalculates the visible range when reactive row content changes its height', async () => {

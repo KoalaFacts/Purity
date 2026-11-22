@@ -102,6 +102,8 @@ describe('development graph panel', () => {
     const root = open();
     document.getElementById('purity-devtools')!.remove();
     await Promise.resolve(); // MutationObserver delivery
+    // jsdom 31 queues its own short timers on open; flush them so only a leaked poll interval remains.
+    vi.advanceTimersByTime(3000);
     expect(vi.getTimerCount()).toBe(0);
     expect(root.querySelectorAll('.row')).toHaveLength(0);
     vi.advanceTimersByTime(3000);
@@ -112,6 +114,8 @@ describe('development graph panel', () => {
     const root = open();
     document.body.replaceWith(document.createElement('body'));
     await Promise.resolve();
+    // jsdom 31 queues its own short timers on open; flush them so only a leaked poll interval remains.
+    vi.advanceTimersByTime(3000);
     expect(vi.getTimerCount()).toBe(0);
     expect(root.querySelectorAll('.row')).toHaveLength(0);
   });
@@ -188,6 +192,8 @@ describe('development graph panel', () => {
     root.querySelector<HTMLButtonElement>('.trigger')!.click();
     cleanup!();
     expect(hot.accept).toHaveBeenCalledTimes(2);
+    // jsdom 31 queues its own short timers on open; flush them so only a leaked poll interval remains.
+    vi.advanceTimersByTime(3000);
     expect(vi.getTimerCount()).toBe(0);
     expect(document.getElementById('purity-devtools')).toBeNull();
     expect(root.querySelectorAll('.row')).toHaveLength(0);

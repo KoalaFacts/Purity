@@ -333,6 +333,8 @@ describe('each', () => {
     container.style.height = '96px';
     Object.defineProperty(container, 'clientHeight', { configurable: true, value: 96 });
     container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 96);
+    // jsdom 31, like browsers, has no computed style for disconnected elements.
+    document.body.appendChild(container);
 
     const mounted = mount(
       () =>
@@ -376,6 +378,7 @@ describe('each', () => {
     container.dispatchEvent(new Event('scroll'));
     await new Promise<void>((resolve) => setTimeout(resolve, 30));
     expect(renderedIndices).toHaveLength(renderCountAfterUnmount);
+    container.remove();
   });
 
   it('preserves a disconnected custom element shadow tree containing a virtual list', async () => {
@@ -409,6 +412,8 @@ describe('each', () => {
     container.style.height = '100px';
     Object.defineProperty(container, 'clientHeight', { configurable: true, value: 100 });
     container.getBoundingClientRect = () => new DOMRect(0, 0, 200, 100);
+    // jsdom 31, like browsers, has no computed style for disconnected elements.
+    document.body.appendChild(container);
     const rowOffset = (index: number) => Math.floor(index / 2) * 60 + (index % 2) * 20;
 
     const mounted = mount(
@@ -445,6 +450,7 @@ describe('each', () => {
     expect(indices.length).toBeLessThan(40);
 
     mounted.unmount();
+    container.remove();
   });
 
   it('recalculates the visible range when reactive row content changes its height', async () => {

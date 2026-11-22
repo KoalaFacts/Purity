@@ -417,7 +417,7 @@ export function eachRowOps<T>(mapFn: EachMapFn<T>): RowOps<T, EachEntry<T>> {
       return entry;
     },
     update(entry, item, index) {
-      entry.data(item);
+      entry.data.set(item);
       entry.i = index;
       entry.p?.(index);
     },

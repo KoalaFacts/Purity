@@ -21,6 +21,24 @@ describe('debounced', () => {
     expect(d()).toBe('hello');
   });
 
+  it('propagates a function value as the value, not as an updater', async () => {
+    let calls = 0;
+    const first = () => 'first';
+    const second = () => {
+      calls++;
+      return 'second';
+    };
+    const s = state<() => string>(first);
+    const d = debounced(s, 100);
+
+    s.set(second);
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(calls).toBe(0);
+    expect(d()).toBe(second);
+    d.dispose();
+  });
+
   it('delays propagation by the configured ms', async () => {
     const s = state('a');
     const d = debounced(s, 100);

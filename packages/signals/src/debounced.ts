@@ -59,7 +59,7 @@ export function debounced<T>(source: () => T, ms: number): DebouncedAccessor<T> 
     timer = setTimeout(() => {
       timer = null;
       if (disposed) return;
-      out(v);
+      out.set(v);
     }, ms);
     return cleanup;
   });

@@ -6,6 +6,8 @@ export {
   batch,
   compute,
   disposeScope,
+  type ItemSignal,
+  itemSignalInternal,
   state,
   untracked,
   watch,

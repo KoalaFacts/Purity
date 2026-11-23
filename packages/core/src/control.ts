@@ -6,8 +6,8 @@ import {
   pushContext,
   type Scope,
   type ComponentContext,
-  state as createState,
-  type StateAccessor,
+  itemSignalInternal,
+  type ItemSignal,
   watchEffectInternal,
 } from '@purityjs/signals';
 import { rowPosition } from './control/position.ts';
@@ -356,10 +356,10 @@ function lis(arr: number[]): number[] {
 /** @internal */
 export interface EachEntry<T = unknown> extends Scope {
   nodes: Node[];
-  data: StateAccessor<T>;
+  data: ItemSignal<T>;
   /** Current position (SV2-008); `p` is its signal, created on first read. */
   i?: number;
-  p?: StateAccessor<number>;
+  p?: ItemSignal<number>;
 }
 
 /** Each row renderer: `item` is reactive, `index` is the creation index, `position` the current one. */
@@ -398,7 +398,7 @@ export interface RowOps<T, E extends KeyedEntry> {
 export function eachRowOps<T>(mapFn: EachMapFn<T>): RowOps<T, EachEntry<T>> {
   return {
     create(item, index) {
-      const data = createState(item);
+      const data = itemSignalInternal(item);
       const entry: EachEntry<T> = { nodes: [], data, disposers: null };
       pushContext(entry);
       let content: Node | DocumentFragment | string;
@@ -417,7 +417,7 @@ export function eachRowOps<T>(mapFn: EachMapFn<T>): RowOps<T, EachEntry<T>> {
       return entry;
     },
     update(entry, item, index) {
-      entry.data.set(item);
+      entry.data(item);
       entry.i = index;
       entry.p?.(index);
     },

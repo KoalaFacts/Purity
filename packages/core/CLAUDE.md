@@ -152,6 +152,7 @@ npm run bench           # vitest micro-benchmarks (from packages/core)
 
 - `tests/resource.bench.ts` — vitest micro-benchmarks (init / fetch / debounce / mutate / poll cost)
 - `../../benchmark/tools/resource-heap.ts` — Node `--expose-gc` heap diff per cycle (run with `node --expose-gc --conditions=development tools/resource-heap.ts` from `/benchmark`)
+- `../../benchmark/tools/each-heap.ts` — Node `--expose-gc` heap per `each()` row (10k keyed rows; run from `/benchmark` after `npm run build:packages`)
 - See the package README "Performance" section for the latest numbers.
 
 ## Code Style

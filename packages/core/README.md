@@ -692,7 +692,8 @@ const user = from(userStore.subscribe); // any `subscribe(set) => unsubscribe` s
 ```
 
 Outside a component, effect or `root()` it throws, because nothing could
-release the subscription.
+release the subscription; don't call it inside a `compute()` body, which is not
+an owner.
 
 ### Teleport
 

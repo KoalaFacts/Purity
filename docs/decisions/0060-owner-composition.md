@@ -85,7 +85,10 @@ const user = from(userStore.subscribe); // Svelte-style store contract
   are ignored.
 - Outside any owner `from()` throws a `TypeError` naming `root()`: nothing
   could release the subscription. A throwing `subscribe` propagates and
-  registers nothing.
+  registers nothing. On an owner already released (a root disposed inside its
+  own `fn`, a destroyed component) the subscription is released at once.
+- Call it in a component, an effect (`watch`) or a root, not inside a
+  `compute()` body: a compute is not an owner, so its re-runs have none.
 - Pull-based sources (async iterators) stay with `asyncCompute()` (ADR 0054
   slice 2), which already closes the iterator on supersession and disposal.
 - Separate opt-in entry with its own budget `core-from`, so `core-owner`
@@ -118,7 +121,7 @@ const user = from(userStore.subscribe); // Svelte-style store contract
 `packages/core/tests/from.test.ts` (slice 2): template updates from pushed
 values; unsubscribe exactly once on unmount, effect supersession (recorded
 order `sub 1, unsub 1, sub 2, unsub 2`), `each()` row removal, `root()`
-disposal and a dead owner; late values ignored; function values stored
+disposal, a dead owner and a root released inside its own `fn`; late values ignored; function values stored
 as-is; a synchronous `set` during subscribe is the first value; reads inside
 `subscribe` do not track; outside an owner it throws.
 

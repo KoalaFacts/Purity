@@ -1,4 +1,4 @@
-import { compute, state, watch } from '@purityjs/signals';
+import { getCurrentContext, state, watch } from '@purityjs/signals';
 import { describe, expect, it } from 'vitest';
 import { html } from '../src/compiler/compile.ts';
 import { each, mount } from '../src/index.ts';
@@ -152,14 +152,12 @@ describe('from() external sources (SV2-017 slice 2)', () => {
     const outer = state(0);
     let runs = 0;
     const dispose = root((d) => {
-      const c = compute(() => {
+      watch(() => {
         runs++;
         from(() => {
           outer();
         });
-        return 1;
       });
-      watch(c, () => {});
       return d;
     });
     outer.set(1);
@@ -180,12 +178,29 @@ describe('from() external sources (SV2-017 slice 2)', () => {
   });
 
   it('a throwing subscribe propagates and registers nothing', () => {
-    expect(() =>
-      root(() =>
+    const owner = { disposers: null } as { disposers: (() => void)[] | null };
+    let release: (() => void) | null = null;
+    root((dispose) => {
+      release = dispose;
+      const scope = getCurrentContext() as typeof owner;
+      expect(() =>
         from(() => {
           throw new Error('boom');
         }),
-      ),
-    ).toThrow('boom');
+      ).toThrow('boom');
+      owner.disposers = scope.disposers ?? null;
+    });
+    expect(owner.disposers).toBeNull();
+    release!();
+  });
+
+  it('created on a root already released inside its own fn is released at once', () => {
+    const f = feed<number>();
+    root((dispose) => {
+      dispose();
+      from(f.subscribe, 0);
+    });
+    expect(f.counts).toEqual({ subscribed: 1, unsubscribed: 1 });
+    expect(f.size).toBe(0);
   });
 });

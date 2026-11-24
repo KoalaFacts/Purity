@@ -7,7 +7,7 @@
 // released exactly once when that owner is disposed.
 // ---------------------------------------------------------------------------
 
-import { getCurrentContext, itemSignalInternal, untracked } from '@purityjs/signals';
+import { getCurrentContext, itemSignalInternal, type Scope, untracked } from '@purityjs/signals';
 
 /** Subscribes `set` to an external source; may return the unsubscribe function. */
 export type FromSubscribe<T> = (set: (value: T) => void) => (() => void) | void;
@@ -42,9 +42,15 @@ export function from<T>(subscribe: FromSubscribe<T>, initial?: T): () => T | und
       if (live) value(v);
     }),
   );
-  (scope.disposers ??= []).push(() => {
+  const release = (): void => {
     live = false;
     if (stop) stop();
-  });
+  };
+  // An owner released before subscribe returned (a root disposed inside its
+  // own fn, a destroyed component, a disposed effect run) never runs new
+  // disposers: release now instead of leaking the subscription.
+  const dead = scope as Scope & { _isDestroyed?: boolean; disposed?: boolean };
+  if (dead._isDestroyed || dead.disposed) release();
+  else (scope.disposers ??= []).push(release);
   return () => value();
 }

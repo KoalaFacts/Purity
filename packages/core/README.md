@@ -676,6 +676,24 @@ cache.dispose(); // exactly once; later calls do nothing
 `owner.alive` is `false` once the owner is disposed. Cleanup inside one owner
 runs in registration order.
 
+`@purityjs/core/from` reads a push-based external source as a signal whose
+subscription is released with the owner that created it:
+
+```ts
+import { from } from "@purityjs/core/from";
+
+const Price = () => {
+  // feed.on() returns its off(); it runs once when Price unmounts.
+  const price = from<number>((set) => feed.on("price", set), 0);
+  return html`<p>${() => price()}</p>`;
+};
+
+const user = from(userStore.subscribe); // any `subscribe(set) => unsubscribe` store
+```
+
+Outside a component, effect or `root()` it throws, because nothing could
+release the subscription.
+
 ### Teleport
 
 ```ts

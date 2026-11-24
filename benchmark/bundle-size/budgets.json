@@ -72,6 +72,10 @@
       "gzipBytes": 576,
       "brotliBytes": 512
     },
+    "core-from": {
+      "gzipBytes": 320,
+      "brotliBytes": 256
+    },
     "core-csr": {
       "gzipBytes": 7808,
       "brotliBytes": 7040

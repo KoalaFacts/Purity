@@ -65,6 +65,40 @@ Cleanup order inside one owner is registration order (FIFO), as for every
 Purity scope; a child root registered with `onDispose(childDispose)` is
 released at that point in the order.
 
+### Slice 2 — external sources: `from()` (`@purityjs/core/from`)
+
+```ts
+import { from } from '@purityjs/core/from';
+
+const price = from<number>((set) => feed.on('price', set), 0); // on() returns off()
+const user = from(userStore.subscribe); // Svelte-style store contract
+```
+
+- `from(subscribe, initial?)` calls `subscribe(set)` once, untracked, and
+  returns a read accessor (`() => T`, or `() => T | undefined` without an
+  initial value). `set` stores values as-is: a function value is not called
+  as an updater.
+- The unsubscribe function `subscribe` returns is registered with the running
+  owner and runs exactly once when it is disposed — component unmount, a
+  superseded effect run, a removed `each()` row, `root()` disposal, or at once
+  when created through `runWithOwner` on a dead owner. `set` calls after that
+  are ignored.
+- Outside any owner `from()` throws a `TypeError` naming `root()`: nothing
+  could release the subscription. A throwing `subscribe` propagates and
+  registers nothing. On an owner already released (a root disposed inside its
+  own `fn`, a destroyed component) the subscription is released at once.
+- Call it in a component, an effect (`watch`) or a root, not inside a
+  `compute()` body: a compute is not an owner, so its re-runs have none.
+- Pull-based sources (async iterators) stay with `asyncCompute()` (ADR 0054
+  slice 2), which already closes the iterator on supersession and disposal.
+- Separate opt-in entry with its own budget `core-from`, so `core-owner`
+  does not grow.
+- Intentional differences from Solid v2: Solid's `from()` accepts producers
+  and observables and works without an owner (never releasing); Purity takes
+  the producer form only (an observable adapts in one line:
+  `(set) => { const s = obs.subscribe(set); return () => s.unsubscribe(); }`)
+  and refuses to create an unowned subscription.
+
 ## Acceptance tests
 
 `packages/core/tests/owner.test.ts`:
@@ -83,6 +117,13 @@ released at that point in the order.
 - The caller is not subscribed by reads in `runWithOwner` or `root`, and work
   re-entered into a root from inside a component render does not attach to
   that component.
+
+`packages/core/tests/from.test.ts` (slice 2): template updates from pushed
+values; unsubscribe exactly once on unmount, effect supersession (recorded
+order `sub 1, unsub 1, sub 2, unsub 2`), `each()` row removal, `root()`
+disposal, a dead owner and a root released inside its own `fn`; late values ignored; function values stored
+as-is; a synchronous `set` during subscribe is the first value; reads inside
+`subscribe` do not track; outside an owner it throws.
 
 ## Consequences
 

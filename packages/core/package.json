@@ -491,6 +491,36 @@
       "import": "./dist/owner/index.js",
       "require": "./dist/owner/index.cjs"
     },
+    "./from": {
+      "purity-server": {
+        "development": {
+          "node": {
+            "types": "./dist/from.d.ts",
+            "import": "./dist/from/index.js",
+            "require": "./dist/from/index.cjs"
+          },
+          "default": "./src/from.ts"
+        },
+        "types": "./dist/from.d.ts",
+        "import": "./dist/from/index.js",
+        "require": "./dist/from/index.cjs"
+      },
+      "development": {
+        "node": {
+          "types": "./dist/from.d.ts",
+          "import": "./dist/from/index.js",
+          "require": "./dist/from/index.cjs"
+        },
+        "default": "./src/from.ts"
+      },
+      "types": "./dist/from.d.ts",
+      "browser": {
+        "import": "./dist/browser/from/index.js",
+        "require": "./dist/browser/from/index.cjs"
+      },
+      "import": "./dist/from/index.js",
+      "require": "./dist/from/index.cjs"
+    },
     "./virtual": {
       "purity-server": {
         "development": {

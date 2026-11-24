@@ -44,6 +44,7 @@ virtualEach(items, render, key);
 | `@purityjs/core/loading`     | `loading` fallback on first load, retained view (ADR 0057)                        |
 | `@purityjs/core/transaction` | `transaction` coherent async writes, optimistic; `pendingTransactions` (ADR 0059) |
 | `@purityjs/core/owner`       | `getOwner`, `runWithOwner`, `root` owner composition (ADR 0060)                   |
+| `@purityjs/core/from`        | `from` external-source accessor released with its owner (ADR 0060 slice 2)        |
 | `@purityjs/core/virtual`     | `virtualEach` for measured windowed lists                                         |
 | `@purityjs/core/async`       | `asyncCompute` async derivation (ADR 0054)                                        |
 | `@purityjs/core/forms`       | Form-associated component features                                                |

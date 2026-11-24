@@ -195,6 +195,7 @@ const packageNamesV7_26 = [...packageNamesV7_25, 'core-loading'];
 const packageNamesV7_27 = [...packageNamesV7_26, 'core-transaction'];
 const packageNamesV7_28 = [...packageNamesV7_27, 'core-owner'];
 const packageNamesV7_29 = [...packageNamesV7_28, 'ssr-concurrency'];
+const packageNamesV7_30 = [...packageNamesV7_29, 'core-from'];
 // Frozen, explicit v7 identities. Future producer expansion must add a reviewed
 // contract rather than silently making previous CI reports incomparable.
 const frozenV7Budgets23 = {
@@ -246,6 +247,13 @@ const frozenV7Budgets29 = {
     'ssr-concurrency': { gzipBytes: 448, brotliBytes: 384 },
   },
 };
+const frozenV7Budgets30 = {
+  ...frozenV7Budgets29,
+  packages: {
+    ...frozenV7Budgets29.packages,
+    'core-from': { gzipBytes: 320, brotliBytes: 256 },
+  },
+};
 const approvedV7Contracts = [
   { budgets: historicalV7.budgets, packages: packageNamesV7 },
   { budgets: frozenV7Budgets22, packages: currentPackageNamesV7 },
@@ -256,6 +264,7 @@ const approvedV7Contracts = [
   { budgets: frozenV7Budgets27, packages: packageNamesV7_27 },
   { budgets: frozenV7Budgets28, packages: packageNamesV7_28 },
   { budgets: frozenV7Budgets29, packages: packageNamesV7_29 },
+  { budgets: frozenV7Budgets30, packages: packageNamesV7_30 },
 ];
 const profileNamesV4 = [...profileNames, 'counter-client-runtime', 'counter-client-aot'];
 const profileNamesV5 = [

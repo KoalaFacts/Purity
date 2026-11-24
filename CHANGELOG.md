@@ -4,6 +4,13 @@
 
 ### Added
 
+- `from(subscribe, initial?)` in the new opt-in entry `@purityjs/core/from`
+  ([ADR 0060](./docs/decisions/0060-owner-composition.md) slice 2): reads a
+  push-based external source (a store's `subscribe`, an emitter, an
+  observable) as a reactive accessor; the unsubscribe function runs exactly
+  once when the creating component, effect run, `each()` row or `root()` is
+  disposed. Throws outside any owner. New bundle budget `core-from`.
+
 - `virtualEach()` row renderers get `each()`'s third argument,
   `position: () => number` — the row's current index in the whole list (not
   the rendered window), updated on keyed moves without re-rendering the row

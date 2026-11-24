@@ -1,5 +1,6 @@
 // Consumer of the built `@purityjs/core` declarations (SV2-014).
 import { asyncCompute, isPending } from '@purityjs/core/async';
+import { from } from '@purityjs/core/from';
 import { type StoreView, store } from '@purityjs/core/store';
 import { pendingTransactions, transaction } from '@purityjs/core/transaction';
 import {
@@ -126,5 +127,18 @@ expectType<Equal<typeof saved, Promise<number>>>();
 expectType<Equal<ReturnType<typeof pendingTransactions>, number>>();
 // @ts-expect-error the pending count takes no arguments
 pendingTransactions(saved);
+
+// External sources (ADR 0060 slice 2): the initial value removes `undefined`.
+const price = from<number>((set) => {
+  set(1);
+  return () => {};
+});
+expectType<Equal<typeof price, () => number | undefined>>();
+const seeded = from<number>(() => {}, 0);
+expectType<Equal<typeof seeded, () => number>>();
+// @ts-expect-error set() takes the source's value type
+from<number>((set) => set('one'));
+// @ts-expect-error the unsubscribe result must be a function
+from<number>(() => 1);
 
 void [current, loading, eager, asString, done, typedView];

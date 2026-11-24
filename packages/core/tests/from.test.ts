@@ -203,4 +203,21 @@ describe('from() external sources (SV2-017 slice 2)', () => {
     expect(f.counts).toEqual({ subscribed: 1, unsubscribed: 1 });
     expect(f.size).toBe(0);
   });
+
+  it('an owner disposed by subscribe itself releases the subscription at once', () => {
+    const f = feed<number>();
+    let push: ((v: number) => void) | null = null;
+    let read: (() => number) | null = null;
+    root((dispose) => {
+      read = from<number>((set) => {
+        push = set;
+        const off = f.subscribe(set);
+        dispose();
+        return off;
+      }, 0);
+    });
+    expect(f.counts).toEqual({ subscribed: 1, unsubscribed: 1 });
+    push!(9);
+    expect(read!()).toBe(0);
+  });
 });

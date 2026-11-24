@@ -51,8 +51,8 @@ Tests first; cover error/disposal paths; keep `generate` / `generateSSR` / `gene
 ## Authority
 
 - Branch prefixes opened by this task: `perf/`, `feat/`, `fix/`, `test/`, `docs/`; housekeeping branch docs/tidy-YYYY-MM-DD; plus the PR for branch `audit/code-quality-2026-11-05`. Squash merge pinned to the head SHA.
-- Other sessions and Dependabot work in this repo: never push to, merge or close their PRs or branches (e.g. a PR another session is actively pushing to).
-- Publishing to npm stays the owner's: never run or dispatch the publish workflow, never bump versions for a release, never tag or create Releases. Merging deploys nothing beyond what the repo's workflows do on `main`.
+- Other sessions, Codex and Dependabot work in this repo: their PRs and branches are handled only through the open-PR triage (`autonomous-dev` §3 step 0 — merge when ready, continue when unfinished, close when superseded); never overwrite their commits, and leave alone anything pushed in the last 90 minutes.
+- Releases (owner, 2026-11-24): npm publishing, version bumps, tags and GitHub Releases follow `autonomous-dev` §0.2 — the task ships on its own when every condition there holds (merged, full gate on that commit, independent review PASS, SemVer with `CHANGELOG.md` in the same release, no breaking change to a published API, no paid resource, only already-configured credentials). Batch user-visible changes into meaningful releases.
 
 ## Project rules (stricter than the shared defaults)
 
@@ -68,7 +68,7 @@ Tests first; cover error/disposal paths; keep `generate` / `generateSSR` / `gene
 ## Owner decisions (never taken by the task)
 
 - Growth of an existing bundle budget entry.
-- npm publishing, versions, tags, releases.
+- A breaking change to a published API (packages already on npm).
 - Adding Codex credits or any paid service.
 
 ## Docs scope

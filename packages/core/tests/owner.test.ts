@@ -432,4 +432,27 @@ describe('work created directly in a released owner (FIX-ROOTWATCH)', () => {
     });
     expect(late).toHaveBeenCalledTimes(1);
   });
+
+  it('a watch and onDispose created in an effect run after it disposed itself are released', async () => {
+    const count = state(0);
+    const seen: number[] = [];
+    const late = vi.fn();
+    const host = state(0);
+    let selfStop: (() => void) | null = null;
+    selfStop = watch(() => {
+      host();
+      if (!selfStop) return;
+      selfStop();
+      watch(() => {
+        seen.push(count());
+      });
+      onDispose(late);
+    });
+    host.set(1);
+    await tick();
+    expect(late).toHaveBeenCalledTimes(1);
+    count.set(1);
+    await tick();
+    expect(seen).toEqual([0]);
+  });
 });

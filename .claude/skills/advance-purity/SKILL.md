@@ -1,6 +1,7 @@
 ---
 name: advance-purity
 description: How the scheduled "Purity 推进计划" task advances Purity — goal, metric, gate, work order, scope and project rules. Read with agent-harness/skills/autonomous-dev at the start of every run.
+ledger: docs/plans/surpass-solid.md
 ---
 
 # Advance Purity

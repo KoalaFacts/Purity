@@ -59,7 +59,12 @@ cache.dispose(); // released exactly once; further calls do nothing
 - `root(fn): T` runs `fn` under a new detached owner that the caller's owner
   does not release. `fn` receives `dispose`, which releases everything the
   root owns exactly once (idempotent). Reads in `fn` are untracked. If `fn`
-  throws, the root is released and the error rethrown.
+  throws, the root is released and the error rethrown. Work created directly
+  in a root (or component, or effect run) whose release already ran — a root
+  disposed inside its own `fn` — is released at once: a `watch()` stops after
+  its first run and an `onDispose()` callback runs immediately. A `compute()`
+  there stays readable and behaves like one created outside any owner, since
+  releasing it before its first read would freeze it at `undefined`.
 
 Cleanup order inside one owner is registration order (FIFO), as for every
 Purity scope; a child root registered with `onDispose(childDispose)` is

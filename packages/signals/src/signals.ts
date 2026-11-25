@@ -1,4 +1,5 @@
 import {
+  addDisposer,
   type ComponentContext,
   getCurrentComponent,
   getCurrentContext,
@@ -1024,9 +1025,9 @@ export function watchEffectInternal(fn: () => undefined | Dispose): Dispose {
 
   // Auto-register with the current component/render context so reactive
   // bindings created inside a template (or inside an each() entry, a
-  // component, etc.) are torn down when that scope unmounts.
-  const ctx = getCurrentContext();
-  if (ctx) (ctx.disposers ??= []).push(dispose);
+  // component, etc.) are torn down when that scope unmounts; an owner that
+  // is already released stops the effect at once.
+  addDisposer(dispose);
 
   return dispose;
 }

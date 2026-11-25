@@ -113,6 +113,12 @@
 
 ### Fixed
 
+- A `watch()` or `onDispose()` created directly in a `root()` that was
+  already disposed inside its own `fn` (or in a destroyed component or a
+  disposed effect run) is released at once instead of registering into a
+  disposer list nobody runs, so late or racing setup code no longer leaks
+  effects ([ADR 0060](./docs/decisions/0060-owner-composition.md)).
+
 - `@purityjs/vite-plugin` file-system routes: a `loader` exported on the same
   line as other code (`export default Page; export const loader = …`) or in a
   multi-declarator export (`export const meta = {}, loader = …`) is now

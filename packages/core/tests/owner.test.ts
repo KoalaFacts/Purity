@@ -392,3 +392,44 @@ describe('owner edge cases from verifier round 1 (SV2-017)', () => {
     expect(late).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('work created directly in a released owner (FIX-ROOTWATCH)', () => {
+  it('a watch created after its root was disposed inside fn stops at once', async () => {
+    const count = state(0);
+    const seen: number[] = [];
+    root((dispose) => {
+      dispose();
+      watch(() => {
+        seen.push(count());
+      });
+    });
+    expect(seen).toEqual([0]);
+    count.set(1);
+    await tick();
+    expect(seen).toEqual([0]);
+  });
+
+  it('a compute created after its root was disposed stays readable like an ownerless compute', () => {
+    // Disposing it eagerly would freeze it before its first read (undefined
+    // forever); it behaves like a compute created outside any owner instead.
+    const count = state(1);
+    let doubled!: () => number;
+    root((dispose) => {
+      dispose();
+      doubled = compute(() => count() * 2);
+    });
+    expect(doubled()).toBe(2);
+    count.set(2);
+    expect(doubled()).toBe(4);
+  });
+
+  it('an onDispose registered after its root was disposed runs at once', () => {
+    const late = vi.fn();
+    root((dispose) => {
+      dispose();
+      onDispose(late);
+      expect(late).toHaveBeenCalledTimes(1);
+    });
+    expect(late).toHaveBeenCalledTimes(1);
+  });
+});

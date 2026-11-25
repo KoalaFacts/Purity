@@ -93,6 +93,21 @@ export function getCurrentContext(): Scope | null {
 }
 
 /**
+ * Register `fn` with the current owner. An owner whose release already ran (a
+ * root disposed inside its own fn, a destroyed component, a disposed effect)
+ * never runs new disposers, so `fn` runs at once instead of leaking.
+ * @internal
+ */
+export function addDisposer(fn: () => void): void {
+  const ctx = getCurrentContext() as
+    | (Scope & { _isDestroyed?: boolean; disposed?: boolean })
+    | null;
+  if (!ctx) return;
+  if (ctx._isDestroyed || ctx.disposed) fn();
+  else (ctx.disposers ??= []).push(fn);
+}
+
+/**
  * Nearest enclosing component render context. Lean scopes pushed above it
  * (each() rows, match() branches, running effects) own disposal but must not
  * hide the component from component-only APIs (lifecycle hooks, css(),

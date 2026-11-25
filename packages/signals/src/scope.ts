@@ -103,8 +103,15 @@ export function addDisposer(fn: () => void): void {
     | (Scope & { _isDestroyed?: boolean; disposed?: boolean })
     | null;
   if (!ctx) return;
-  if (ctx._isDestroyed || ctx.disposed) fn();
-  else (ctx.disposers ??= []).push(fn);
+  if (ctx._isDestroyed || ctx.disposed) {
+    // Same isolation as disposeScope(): a throwing cleanup is logged, not
+    // propagated into the code that registered it.
+    try {
+      fn();
+    } catch (err) {
+      console.error('[Purity] Error during disposal:', err);
+    }
+  } else (ctx.disposers ??= []).push(fn);
 }
 
 /**

@@ -5,7 +5,7 @@ description: How the scheduled "Purity 推进计划" task advances Purity — go
 
 # Advance Purity
 
-Repo-specific half of the scheduled development task; the run loop is `agent-harness/skills/autonomous-dev` and verification is `agent-harness/skills/verification-first` (plus this repo's `.claude/skills/verification-first` and `verify-purity`). Created from the owner's seed `agent-harness/projects/purity.md`. The task keeps this file current through its own PRs. It may make rules stricter, never looser, and never relaxes the hard limits in the scheduled task's prompt. Where this file and the seed differ, the stricter wins.
+Repo-specific half of the scheduled development task; the run loop is `agent-harness/skills/autonomous-dev` and verification is `agent-harness/skills/verification-first` (plus this repo's `.claude/skills/verification-first` and `verify-purity`). It was created from the owner's former seed `agent-harness/projects/purity.md`, which is retired (owner, 2026-11-25): every owner rule it held is in this file, and the scheduled task's prompt and this file are the project rules. The task keeps this file current through its own PRs. It may make rules stricter, never looser, and never relaxes the hard limits in the scheduled task's prompt.
 
 ## Goal and metric
 
@@ -56,7 +56,7 @@ Tests first; cover error/disposal paths; keep `generate` / `generateSSR` / `gene
 
 ## Project rules (stricter than the shared defaults)
 
-- **Review:** Codex (`chatgpt-codex-connector`) reviews only the commit a PR was opened with, so review your own diff adversarially before opening. Fix or answer (with a traced reason) every finding and review comment and resolve its thread. Owner decision policy of 2026-11-17 (`agent-harness/skills/autonomous-dev` §0.1, which outranks the seed's P5 here): a Codex review that has not completed within 45 minutes of opening (across runs), or that ended "Failed", does not block — the full local gate plus the independent review agent (§3 step 5; for a small PR, the self-review) stand in, and the PR body says so. Never close and reopen a PR or push empty commits to get Codex or CI to run again.
+- **Review:** Codex (`chatgpt-codex-connector`) reviews only the commit a PR was opened with, so review your own diff adversarially before opening. Fix or answer (with a traced reason) every finding and review comment and resolve its thread. Owner decision policy of 2026-11-17 (`agent-harness/skills/autonomous-dev` §0.1, which outranks the former seed's P5 here): a Codex review that has not completed within 45 minutes of opening (across runs), or that ended "Failed", does not block — the full local gate plus the independent review agent (§3 step 5; for a small PR, the self-review) stand in, and the PR body says so. Never close and reopen a PR or push empty commits to get Codex or CI to run again.
 - The independent verifier verdict (`verification-first`) is separate from the Codex rule and does not replace it.
 - Every hosted CI check on the head ran and passed (a job cancelled by runner infrastructure may be re-run once; a second failure is real).
 - **Bundle budgets:** never raise an existing budget to pass; a new capability that needs bytes goes into an opt-in entry with its own new budget stated in the PR; unavoidable growth of an existing entry is an owner decision.

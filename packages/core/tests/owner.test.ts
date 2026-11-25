@@ -455,4 +455,19 @@ describe('work created directly in a released owner (FIX-ROOTWATCH)', () => {
     await tick();
     expect(seen).toEqual([0]);
   });
+
+  it('a throwing onDispose in a released root is logged, not thrown into the caller', () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const after = vi.fn();
+    root((dispose) => {
+      dispose();
+      onDispose(() => {
+        throw new Error('boom');
+      });
+      after();
+    });
+    expect(after).toHaveBeenCalledTimes(1);
+    expect(err).toHaveBeenCalledWith('[Purity] Error during disposal:', expect.any(Error));
+    err.mockRestore();
+  });
 });

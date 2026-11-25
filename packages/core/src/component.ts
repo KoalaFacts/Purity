@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import {
+  addDisposer,
   attachToOwner,
   ComponentContext,
   disposeScope,
@@ -103,8 +104,7 @@ export function onDestroy(fn: () => void): void {
  * Register a cleanup function that auto-runs on component or scope unmount.
  */
 export function onDispose(fn: () => void): void {
-  const ctx = getCurrentContext();
-  if (ctx) (ctx.disposers ??= []).push(fn);
+  addDisposer(fn);
 }
 
 /**

@@ -15,6 +15,7 @@ export {
 } from './signals.ts';
 export { type DebouncedAccessor, debounced } from './debounced.ts';
 export {
+  addDisposer,
   attachToOwner,
   ComponentContext,
   getCurrentComponent,

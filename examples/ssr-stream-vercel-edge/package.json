@@ -16,7 +16,7 @@
   },
   "devDependencies": {
     "@purityjs/vite-plugin": "*",
-    "vercel": "^65.12.1",
+    "vercel": "^66.6.0",
     "vite": "npm:@voidzero-dev/vite-plus-core@1.5.1"
   }
 }

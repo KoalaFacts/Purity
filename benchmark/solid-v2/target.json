@@ -5,24 +5,24 @@
   "baselineStatus": "Release candidate / prerelease",
   "baselineCommit": "225014bf8757421a2ea0a9c6ddc148b965eed000",
   "benchmarkWorkspaceComparator": {
-    "recordedAtAustraliaSydney": "2026-11-14",
+    "recordedAtAustraliaSydney": "2026-11-26",
     "note": "The general benchmark workspace (benchmark/package.json, root package-lock.json) does not use this frozen target. It resolves the versions below (checked against package-lock.json by benchmark/tools/comparator-record.test.ts). Runs of benchmark/run-bench.ts compare against these, are exploratory, and are not SV2-001 baseline evidence; the frozen rc.18 identity is still verified by benchmark/solid-v2/app-fixture. Re-freezing the target to a newer release is a separate, explicit baseline change.",
     "packages": {
       "solid-js": {
-        "version": "2.0.0-rc.21",
-        "integrity": "sha512-0Z8/qiJKnK6A2g8QspGthwxR0W8WauMOD2/LQtNmxBT8gpZkKaXmo/fdek/+cB+84w4HYejWJixSAn4fcAI0Uw=="
+        "version": "2.0.4",
+        "integrity": "sha512-RaBVDtzYGgQEAcMa9QgyT8UdzOayFgXJ1w1/f8vz7aoeF5tQDZwrHLfM1PDTIuprb8RdMWFGZwwyKCXtXEUX0w=="
       },
       "@solidjs/web": {
-        "version": "2.0.0-rc.21",
-        "integrity": "sha512-1E9dvR3/+5fQTI3oxxACBX2Rg4rezXgrljerhWDHR5uQZ04p5Z8qXROI7dIDJKyANtsnLKYbM2OyI/p/FmjGUA=="
+        "version": "2.0.4",
+        "integrity": "sha512-E7bEnI/+z5Lj8fthibMbud8zXbdn5fc0/QJpC4kruxmVIwj/FyrkgiMVqfBmILjaYtKXD3QNEZCKyTV3agbH5A=="
       },
       "@solidjs/signals": {
-        "version": "2.0.0-rc.21",
-        "integrity": "sha512-F1TUMO/nd1XC//+tcaWxibOOgXBHQGmNQnAeiDnpLh+1smnlwIgKF6pc20evlyfQwqf0gP6rH4sNEqCPBNcpgg=="
+        "version": "2.0.4",
+        "integrity": "sha512-U/Z0DOsoJO18Wsw/5piSrJhtj85nMOOD/ldn8ZP+CCA5RVcu4GDheNTOECOZwxCS+l7BVIzIakToJC91Q6lMXQ=="
       },
       "@solidjs/vite-plugin": {
-        "version": "3.0.0-next.57",
-        "integrity": "sha512-z05CuXxtHUSYfKBw8PirIpXkjSmqevUiygbqIMxCmc+ZCW4x2d+1zHw7nd98NdQsNAUIXJir3GmM7n3f/j0jZg=="
+        "version": "3.0.1",
+        "integrity": "sha512-dyRU4LJXhzEEgtF32AtUdjqaUuMVYTVLQvhYlT6HcYBvf10yIVmKgW9cg42b5YDxkl6BgAJ9o0OjUnAy3qKb9A=="
       }
     }
   },
